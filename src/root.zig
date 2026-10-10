@@ -223,6 +223,11 @@ pub const skills_store = @import("agentic_loop/skills_store.zig");
 /// `listSecretNames` / `listSecrets` never select the value column — only
 /// `loadSecretValues` does, for dispatch-time substitution.
 pub const secrets_store = @import("agentic_loop/secrets_store.zig");
+// Per-workspace config overlay: the sparse JSON merge rule and the
+// store behind `workspace_settings` (Migration 105). These two are what
+// make Profiles / MCP Servers / Tools / Skill Evals per-workspace.
+pub const workspace_settings_store = @import("agentic_loop/workspace_settings_store.zig");
+pub const workspace_config = @import("agentic_loop/workspace_config.zig");
 // 2026-08-19 — session_plan agent tools (Task 4 of 2026-08-19-session-plan-agent-tool.md).
 // Storage layer for the per-session markdown task plan (savePlan / getPlan / getPlanOpt).
 pub const session_plan = @import("agentic_loop/session_plan.zig");
@@ -304,6 +309,8 @@ test {
     // in one file. Same discovery workaround as the Lua hooks above — the
     // `pub const secrets_store` re-export alone doesn't pull tests in.
     _ = @import("agentic_loop/secrets_store.zig");
+    _ = @import("agentic_loop/workspace_settings_store.zig");
+    _ = @import("agentic_loop/workspace_config.zig");
     // Workspace-secret placeholder substitution: a pure module whose inline
     // tests are otherwise invisible to `zig build test` — the same discovery
     // workaround as the Lua hooks above.
