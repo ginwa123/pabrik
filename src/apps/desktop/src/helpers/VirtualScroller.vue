@@ -1567,6 +1567,29 @@ defineExpose({
   scrollToTop,
   scrollToBottom,
   bottomScrollTop,
+  /**
+   * Where the bottom sat as of the END of the last pass (or the last
+   * `scrollToBottom`), or null before anything has positioned the list.
+   *
+   * Exposed so the parent can judge "is the reader at the bottom" against the
+   * bottom AS IT WAS when the stick last acted, rather than against a freshly
+   * recomputed `bottomScrollTop()`. The live read is a MOVING TARGET: its two
+   * inputs (`scrollHeight - clientHeight`, the height model, and
+   * `topSpacer + content.offsetHeight`, the rendered rows) move independently,
+   * and the real-bottom override engages only while the model overshoots by
+   * more than `HYSTERESIS_PX`. So between two frames the same stationary reader
+   * can be measured 0px from the bottom and then 43px from it, with no gesture
+   * in between — which flips `isAtBottom` false, shows the jump-to-bottom arrow,
+   * and disarms every follow gate. That is the "the stick dies mid-stream"
+   * flake, and it is timing-dependent by construction.
+   *
+   * A getter, not a value: `settledBottom` is a plain `let` (deliberately not
+   * reactive — it is written inside measure passes and must not schedule a
+   * render), so a snapshot in `defineExpose` would be frozen at setup time.
+   */
+  get settledBottom() {
+    return settledBottom
+  },
   scrollToPosition,
   scrollToItem,
   remeasure,

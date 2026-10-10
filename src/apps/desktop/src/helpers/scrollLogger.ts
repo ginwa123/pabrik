@@ -254,6 +254,32 @@ export interface ScrollContext {
 export const BOTTOM_THRESHOLD = 10
 
 /**
+ * How far the height MODEL may sit above the real content bottom before
+ * `VirtualScroller.bottomScrollTop` switches to the real bottom. Mirrors the
+ * scroller's own `HYSTERESIS_PX`.
+ */
+export const MODEL_OVERSHOOT_HYSTERESIS_PX = 50
+
+/**
+ * Tolerance for the at-bottom judgement once it is measured against the
+ * STABLE anchor (`settledBottom`) rather than a live `bottomScrollTop()`.
+ *
+ * `BOTTOM_THRESHOLD` alone (10px) is too tight for a stable-anchor read: the
+ * anchor is written at the end of a measure pass, and the model can still
+ * converge before the next scroll event is handled. That residual is the
+ * model's own movement, not the reader's, so it must not disarm the stick —
+ * see the `atBottomEdge` note in ChatView.
+ *
+ * The bound is `BOTTOM_THRESHOLD + MODEL_OVERSHOOT_HYSTERESIS_PX` (60px): the
+ * overshoot the real-bottom override is allowed to introduce before it engages,
+ * which is the largest step the ruler can take between two frames. It is
+ * deliberately NOT `maxTailGap` (100px) — that would swallow a reader sitting
+ * 101px up, which `retainedThroughGrowth`'s own cap (`< 100`) exists to keep
+ * disengaged. A genuine scroll-up is still caught immediately.
+ */
+export const AT_BOTTOM_STABLE_TOLERANCE_PX = BOTTOM_THRESHOLD + MODEL_OVERSHOOT_HYSTERESIS_PX
+
+/**
  * Within this many px of the top counts as "at the top". Mirrors
  * `BOTTOM_THRESHOLD` so the two edges behave symmetrically in the
  * logger. Note: this is the threshold for the `reached-top` /
