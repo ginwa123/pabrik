@@ -545,6 +545,22 @@ fn registerWorkspaceDocumentRoutes(authed: *Group) !void {
     try authed.post("/api/workspaces/:workspace_id/secrets", ai_mod.http_handlers.secretsCreateHandler);
     try authed.patch("/api/workspaces/:workspace_id/secrets/:secret_id", ai_mod.http_handlers.secretsUpdateHandler);
     try authed.delete("/api/workspaces/:workspace_id/secrets/:secret_id", ai_mod.http_handlers.secretsDeleteHandler);
+
+    // Per-workspace config overlay (Migration 105): the config sections that
+    // moved out of the User-scope Pabrik page into Workspace settings.
+    //
+    // Route order: `/config` is a literal at the same depth as `/items`,
+    // `/documents`, `/skills` and `/secrets`, and there is NO
+    // `GET /api/workspaces/:workspace_id/:param` route, so no sibling param
+    // can capture it. `/config/copy` is one level deeper, where every
+    // existing route starts with a literal first segment (`/items/:item_id`,
+    // `/skills/:skill_name`, ...), so it is safe too - but the ordering rule
+    // still binds anything added at that depth later: a `:param` registered
+    // before a literal nested under it wins, silently.
+    try authed.get("/api/workspaces/:workspace_id/config", ai_mod.http_handlers.workspaceConfigGetHandler);
+    try authed.put("/api/workspaces/:workspace_id/config", ai_mod.http_handlers.workspaceConfigPutHandler);
+    try authed.delete("/api/workspaces/:workspace_id/config", ai_mod.http_handlers.workspaceConfigDeleteHandler);
+    try authed.post("/api/workspaces/:workspace_id/config/copy", ai_mod.http_handlers.workspaceConfigCopyHandler);
 }
 
 fn registerKanbanRoutes(authed: *Group) !void {

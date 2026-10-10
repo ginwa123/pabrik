@@ -354,6 +354,13 @@ pub fn makeErrorResponse(allocator: std.mem.Allocator, response: ErrorResponse) 
 }
 
 pub const PabrikConfigResponse = struct {
+    /// Workspace-scope ONLY metadata: does the workspace this response
+    /// describes carry its own config overlay, or is it inheriting the
+    /// user-level config? `null` (the default) in USER scope, where the
+    /// question does not apply - the two `GET` surfaces share this struct so
+    /// they cannot drift on masking or field set, and this one field is the
+    /// only thing either of them adds.
+    has_overlay: ?bool = null,
     // Plan 2026-08-24-config-simplify-remove-defaults: the top-level LLM
     // defaults (api_endpoint/api_key/model/url_style/temperature/
     // max_tokens/system_prompt) were REMOVED from the wire. The backend

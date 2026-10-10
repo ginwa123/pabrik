@@ -457,6 +457,7 @@ test {
     _ = @import("http_handlers/git_pr_diff.zig");
     _ = @import("http_handlers/git_pr_conflicts.zig");
     _ = @import("http_handlers/git_blame.zig");
+    _ = @import("http_handlers/workspace_config.zig");
 
     // ===== src/models/: Sanity tests for the entity models (split out of models_test.zig) =====
     // The per-model `init` / `deinit` / `clone` sanity tests used to live

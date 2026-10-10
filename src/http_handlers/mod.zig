@@ -413,6 +413,11 @@ pub const systemPromptGetHandler = @import("system_prompt_get.zig").systemPrompt
 // Pabrik config handlers
 pub const pabrikConfigGetHandler = @import("pabrik_config_get.zig").pabrikConfigGetHandler;
 pub const pabrikConfigPutHandler = @import("pabrik_config_put.zig").pabrikConfigPutHandler;
+// Per-workspace config overlay (Migration 105).
+pub const workspaceConfigGetHandler = @import("workspace_config.zig").workspaceConfigGetHandler;
+pub const workspaceConfigPutHandler = @import("workspace_config.zig").workspaceConfigPutHandler;
+pub const workspaceConfigDeleteHandler = @import("workspace_config.zig").workspaceConfigDeleteHandler;
+pub const workspaceConfigCopyHandler = @import("workspace_config.zig").workspaceConfigCopyHandler;
 pub const pabrikConfigProfileDeleteHandler = @import("pabrik_config_profile_delete.zig").pabrikConfigProfileDeleteHandler;
 // Use-case + domain types live in the same file as the handler. The
 // handler is a thin orchestrator over the use-case; both are scoped

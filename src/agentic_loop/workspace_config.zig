@@ -34,7 +34,8 @@
 //! behaves like the user config".
 
 const std = @import("std");
-const sqlite = @import("pabrikcore").sqlite;
+const pabrikcore = @import("pabrikcore");
+const sqlite = pabrikcore.sqlite;
 
 /// Merge `overlay_json` over `base_json`, returning a newly allocated JSON
 /// object text.
@@ -182,14 +183,33 @@ fn appendKeyJson(
 /// and silently stop a later General-tab change from reaching that workspace
 /// - a bug the user cannot see, because General is not even rendered in the
 /// workspace scope.
-pub const WORKSPACE_SCOPED_KEYS = [_][]const u8{
-    "profiles",
-    "active_profile",
-    "mcp_servers",
-    "tools",
-    "skill_evals",
-    "web_search",
+pub const ScopedKey = struct {
+    /// The spelling `LlmConfigJson` parses out of config.json - the one the
+    /// overlay MUST use, because the overlay is merged into that same text
+    /// and then handed to `LlmConfig.initFromJsonText`.
+    disk: []const u8,
+    /// The spelling the HTTP wire uses, when it differs. `profiles` is the
+    /// wire name and `profiles_models` is the on-disk one, so an overlay
+    /// written with the wire spelling would merge in cleanly and then be
+    /// IGNORED by the parser - a silent no-op with no error to debug.
+    wire: []const u8 = "",
 };
+
+pub const WORKSPACE_SCOPED_KEYS = [_]ScopedKey{
+    .{ .disk = "profiles_models", .wire = "profiles" },
+    .{ .disk = "active_profile" },
+    .{ .disk = "mcp_servers" },
+    .{ .disk = "tools" },
+    .{ .disk = "skill_evals" },
+    .{ .disk = "web_search" },
+};
+
+/// The value for one scoped key, preferring the ON-DISK spelling.
+fn scopedValue(obj: std.json.ObjectMap, key: ScopedKey) ?std.json.Value {
+    if (obj.get(key.disk)) |v| return v;
+    if (key.wire.len > 0) return obj.get(key.wire);
+    return null;
+}
 
 /// The workspace-scoped SLICE of a user-level config, as overlay JSON.
 ///
@@ -219,14 +239,15 @@ pub fn workspaceScopedOverlay(
     try out.append(allocator, '{');
     var first = true;
     for (WORKSPACE_SCOPED_KEYS) |key| {
-        const value = obj.get(key) orelse continue;
+        const value = scopedValue(obj, key) orelse continue;
         // A null value carries no override - copying `"tools": null` into the
         // overlay would say "this workspace overrides tools" and show an
         // Overridden pill over the user's own list.
         if (value == .null) continue;
         if (!first) try out.append(allocator, ',');
         first = false;
-        try appendKeyJson(allocator, &out, key);
+        // Always the DISK spelling, whichever spelling the input used.
+        try appendKeyJson(allocator, &out, key.disk);
         try out.append(allocator, ':');
         try appendValueJson(allocator, &out, value);
     }
@@ -264,21 +285,26 @@ pub fn seedWorkspaces(
     // and then the real config would never reach them.
     if (std.mem.eql(u8, overlay, "{}")) return report;
 
-    var q = db.query(allocator, "SELECT id FROM workspaces", &.{}) catch return report;
-    defer q.deinit();
-
-    // Collected first: `saveRaw` writes to the same backend while this
-    // reader is still open, and holding a read cursor across a write is how
-    // a pool deadlocks.
     var ids: std.ArrayList([]u8) = .empty;
     defer {
         for (ids.items) |id| allocator.free(id);
         ids.deinit(allocator);
     }
-    while (q.next() catch null) |row| {
-        defer row.deinit(allocator);
-        if (row.values.len == 0 or row.values[0].len == 0) continue;
-        try ids.append(allocator, try allocator.dupe(u8, row.values[0]));
+
+    // The reader lives in its OWN block so it is closed before the writes
+    // below, not at the end of the function. A `defer q.deinit()` at function
+    // scope keeps the read cursor open across `saveRaw`, and a read cursor
+    // held across a write on a pooled backend is a DEADLOCK - not a slow
+    // path, a hang with no error and no log, which is exactly what this cost
+    // once. Collect, close, then write.
+    {
+        var q = db.query(allocator, "SELECT id FROM workspaces", &.{}) catch return report;
+        defer q.deinit();
+        while (q.next() catch null) |row| {
+            defer row.deinit(allocator);
+            if (row.values.len == 0 or row.values[0].len == 0) continue;
+            try ids.append(allocator, try allocator.dupe(u8, row.values[0]));
+        }
     }
 
     for (ids.items) |id| {
@@ -291,6 +317,49 @@ pub fn seedWorkspaces(
         report.seeded += 1;
     }
     return report;
+}
+
+/// The user-level config TEXT that a workspace overlay is layered over.
+///
+///   * `--auth` ON  -> `users.config_json` for `owner`.
+///   * `--auth` OFF -> `config.json` on disk, whose path comes from the
+///     environment (`$HOME/.config/pabrik/config.json`, or the macOS
+///     Application Support location).
+///
+/// `null` means "there is nothing to layer over", and it covers every
+/// non-answer the same way on purpose: no saved user config, no config.json
+/// yet (a fresh install), an unreadable file, no environment. Every caller
+/// treats that as "the overlay stands alone", which is the honest reading -
+/// a user who has never configured anything has nothing to inherit.
+///
+/// Never returns an error: this runs on the chat path (`session_llm_config
+/// .forSession`) and a config read must not be able to fail a turn.
+///
+/// Caller owns the returned slice.
+pub fn baseConfigText(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    db: *sqlite.SqliteBackend,
+    environment: ?*const std.process.Environ.Map,
+    auth_enabled: bool,
+    owner: []const u8,
+) ?[]u8 {
+    if (auth_enabled) {
+        return pabrikcore.user_config_store.loadRaw(allocator, db, owner) catch null;
+    }
+
+    const env = environment orelse return null;
+    // `getDefaultConfigPath` only READS the map, but its parameter is a
+    // mutable pointer. Same cast the config handlers use.
+    const config_path = pabrikcore.config.getDefaultConfigPath(allocator, @constCast(env)) catch return null;
+    defer allocator.free(config_path);
+
+    const file = std.Io.Dir.openFileAbsolute(io, config_path, .{}) catch return null;
+    defer file.close(io);
+
+    var read_buffer: [4096]u8 = undefined;
+    var reader = file.reader(io, &read_buffer);
+    return reader.interface.allocRemaining(allocator, .limited(1024 * 1024)) catch null;
 }
 
 // =====================================================================
@@ -454,7 +523,7 @@ test "keys needing JSON escaping survive the round trip" {
 // control below proves the input really did contain those keys.
 
 const USER_CONFIG =
-    \\{"profiles":{"claude":{"model":"opus","api_key":"sk-secret"}},
+    \\{"profiles_models":{"claude":{"model":"opus","api_key":"sk-secret"}},
     \\ "active_profile":"claude",
     \\ "mcp_servers":{"files":{"transport":"stdio","command":"mcp-files"}},
     \\ "tools":["read_file","write_file"],
@@ -478,7 +547,7 @@ test "the copy carries every workspace-scoped key" {
     defer parsed.deinit();
     const obj = parsed.value.object;
 
-    try testing.expectEqualStrings("opus", obj.get("profiles").?.object.get("claude").?.object.get("model").?.string);
+    try testing.expectEqualStrings("opus", obj.get("profiles_models").?.object.get("claude").?.object.get("model").?.string);
     try testing.expectEqualStrings("claude", obj.get("active_profile").?.string);
     try testing.expect(obj.get("mcp_servers").?.object.get("files") != null);
     try testing.expectEqual(@as(usize, 2), obj.get("tools").?.array.items.len);
@@ -506,6 +575,44 @@ test "the copy does NOT carry the General-tab keys, so they keep applying everyw
     }
 }
 
+test "a config using the WIRE spelling is normalised to the on-disk one" {
+    const alloc = testing.allocator;
+
+    // The bug this pins: `LlmConfigJson` parses `profiles_models`, while the
+    // HTTP wire calls it `profiles`. An overlay written with the wire
+    // spelling merges in cleanly, parses as an unknown key, and is silently
+    // ignored - no error, no log, just a workspace whose profiles do nothing.
+    const wire_shaped = "{\"profiles\":{\"claude\":{\"model\":\"opus\"}},\"tools\":[\"read_file\"]}";
+    const copy = try workspaceScopedOverlay(alloc, wire_shaped);
+    defer alloc.free(copy);
+
+    var parsed = try parse(alloc, copy);
+    defer parsed.deinit();
+    try testing.expect(parsed.value.object.get("profiles") == null);
+    try testing.expectEqualStrings(
+        "opus",
+        parsed.value.object.get("profiles_models").?.object.get("claude").?.object.get("model").?.string,
+    );
+    // The keys that need no translation still come through.
+    try testing.expectEqual(@as(usize, 1), parsed.value.object.get("tools").?.array.items.len);
+}
+
+test "the on-disk spelling wins when a config carries both" {
+    const alloc = testing.allocator;
+    const copy = try workspaceScopedOverlay(
+        alloc,
+        "{\"profiles_models\":{\"a\":{\"model\":\"disk\"}},\"profiles\":{\"b\":{\"model\":\"wire\"}}}",
+    );
+    defer alloc.free(copy);
+
+    var parsed = try parse(alloc, copy);
+    defer parsed.deinit();
+    // One key, not two: emitting both would let a stale wire-spelled map
+    // shadow the real one depending on iteration order.
+    try testing.expectEqual(@as(usize, 1), parsed.value.object.count());
+    try testing.expect(parsed.value.object.get("profiles_models").?.object.get("a") != null);
+}
+
 test "the copy is exactly the workspace-scoped key set, no more" {
     const alloc = testing.allocator;
     const copy = try workspaceScopedOverlay(alloc, USER_CONFIG);
@@ -520,7 +627,7 @@ test "a null or absent key is not copied, so it cannot fake an override" {
     const alloc = testing.allocator;
     const copy = try workspaceScopedOverlay(
         alloc,
-        "{\"tools\":null,\"active_profile\":\"claude\",\"profiles\":{\"p\":{\"model\":\"m\"}}}",
+        "{\"tools\":null,\"active_profile\":\"claude\",\"profiles_models\":{\"p\":{\"model\":\"m\"}}}",
     );
     defer alloc.free(copy);
 
@@ -530,7 +637,7 @@ test "a null or absent key is not copied, so it cannot fake an override" {
     // claim this workspace overrides tools while overriding it with nothing.
     try testing.expect(parsed.value.object.get("tools") == null);
     try testing.expect(parsed.value.object.get("active_profile") != null);
-    try testing.expect(parsed.value.object.get("profiles") != null);
+    try testing.expect(parsed.value.object.get("profiles_models") != null);
 }
 
 test "a config with nothing to copy yields {}, never junk" {
@@ -608,9 +715,11 @@ test "seeding copies the user config into every existing workspace" {
     defer parsed.deinit();
     try testing.expectEqualStrings("claude", parsed.value.object.get("active_profile").?.string);
     // The credential travelled with the profile it belongs to.
+    // `profiles_models`, not `profiles`: the disk key is what the runtime
+    // parses - see `ScopedKey`.
     try testing.expectEqualStrings(
         "sk-secret",
-        parsed.value.object.get("profiles").?.object.get("claude").?.object.get("api_key").?.string,
+        parsed.value.object.get("profiles_models").?.object.get("claude").?.object.get("api_key").?.string,
     );
 
     const b = (try overlayBody(&ctx, "ws_b")) orelse return error.NotSeeded;
