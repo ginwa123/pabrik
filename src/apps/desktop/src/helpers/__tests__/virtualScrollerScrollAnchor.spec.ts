@@ -198,9 +198,23 @@ describe('computeAnchorCompensation', () => {
     expect(result.newScrollTop).toBe(3840)
   })
 
-  it('a no-op prefix delta writes nothing even at the bottom', () => {
-    // Ordered after the `shiftPx === 0` early return on purpose: a pass that
-    // changed nothing above the anchor must not nudge the reader at all.
+  it('a no-op prefix delta still re-pins a bottom reader whose bottom moved', () => {
+    // THE regression (2026-10-10). This used to assert the opposite — that a
+    // `shiftPx === 0` pass writes nothing even at the bottom — and that ordering
+    // is what stranded bottom readers mid-stream.
+    //
+    // Measured in a real browser: EVERY pass of a streaming turn had
+    // `shiftPx === 0`, because content grows AT/AFTER the anchor (so the prefix
+    // is unchanged) and the rendered window shifts with the anchor index (so the
+    // prefix at the anchor is unchanged too). With the bottom branch ordered
+    // after the early return, `atBottomTarget` was computed and then discarded,
+    // and the only thing re-pinning a bottom reader was ChatView's separate
+    // `scrollToBottom()` call. When that lost the race with the measure pass —
+    // timing dependent, hence macOS-only — the reader was left where the last
+    // successful pin put them while the bottom had moved on.
+    //
+    // The anchor path exists to hold a scrolled-up reader STILL. A bottom reader
+    // has no anchor to hold; they need re-pinning whenever the bottom moved.
     const result = computeAnchorCompensation({
       ...base,
       prevScrollTop: 96000,
@@ -209,20 +223,93 @@ describe('computeAnchorCompensation', () => {
       atBottomTarget: 96868,
     })
     expect(result.shiftPx).toBe(0)
+    expect(result.newScrollTop).toBe(96868)
+    expect(result.target).toBe('bottom')
+  })
+
+  it('a no-op prefix delta writes nothing when the bottom has not moved either', () => {
+    // The cost guard: a settled bottom reader must not be nudged. Without it
+    // every measure pass would write scrollTop, re-firing the scroll event and
+    // re-running the whole decision — the blinking-loop shape.
+    const result = computeAnchorCompensation({
+      ...base,
+      prevScrollTop: 96000,
+      oldAnchorTop: 96000,
+      newAnchorTop: 96000,
+      atBottomTarget: 96000,
+    })
+    expect(result.shiftPx).toBe(0)
     expect(result.newScrollTop).toBe(96000)
     expect(result.target).toBe('anchor')
   })
 
-  it('clamps a negative bottom target at 0 rather than scrolling above the top', () => {
+  it('a moved prefix keeps the compensation path — the re-pin must not fire', () => {
+    // THE guard on the fix above. The first attempt re-pinned whenever the
+    // target differed, and it regressed the send-from-history follow: a pass
+    // with `shiftPx = 1666` (a batch of rows above the viewport measured for the
+    // first time) and `atBottomTarget = 22800` against `prevScrollTop = 22987`
+    // wrote a position 187px ABOVE the reader and stranded them 1833px short.
+    //
+    // `atBottomTarget` is read after the model rebuild but before the DOM
+    // re-renders, so when the prefix moved it is derived from a topSpacer and a
+    // content height that never existed together. Only a pass that moved nothing
+    // above the anchor has a trustworthy target.
     const result = computeAnchorCompensation({
       ...base,
-      prevScrollTop: 120,
-      oldAnchorTop: 120,
-      newAnchorTop: -50,
-      atBottomTarget: -30,
+      prevScrollTop: 22987,
+      oldAnchorTop: 21321,
+      newAnchorTop: 22987,
+      atBottomTarget: 22800,
     })
-    expect(result.target).toBe('bottom')
+    expect(result.shiftPx).toBe(1666)
+    // Compensated around the anchor, NOT re-pinned to the (stale) bottom.
+    expect(result.target).toBe('anchor')
+    expect(result.newScrollTop).toBe(22987 + 1666)
+  })
+
+  it('a scrolled-up reader is still never re-pinned by a no-op pass', () => {
+    // The other half of the contract: no `atBottomTarget` means the caller says
+    // the reader is not at the bottom, so the anchor behaviour is untouched.
+    const result = computeAnchorCompensation({
+      ...base,
+      prevScrollTop: 40000,
+      oldAnchorTop: 40000,
+      newAnchorTop: 40000,
+    })
+    expect(result.shiftPx).toBe(0)
+    expect(result.newScrollTop).toBe(40000)
+    expect(result.target).toBe('anchor')
+  })
+
+  it('clamps a bottom target at 0 rather than scrolling above the top', () => {
+    // A degenerate short-list case: the whole transcript fits, so the bottom IS
+    // the top. `bottomScrollTop()` cannot actually return a negative number
+    // (`Math.max(0, …)` on both of its paths), so the target here is 0 rather
+    // than the -30 this test used to assert — but the clamp still has to hold,
+    // because `Math.max(0, atBottomTarget)` is what keeps a 0 target from
+    // becoming a negative scrollTop write.
+    const result = computeAnchorCompensation({
+      ...base,
+      prevScrollTop: 0,
+      oldAnchorTop: 0,
+      newAnchorTop: 0,
+      atBottomTarget: 0,
+    })
+    expect(result.target).toBe('anchor')
     expect(result.newScrollTop).toBe(0)
+  })
+
+  it('never writes a negative scrollTop even if a caller passes a negative target', () => {
+    // Belt-and-braces on the same clamp, exercised through the path that does
+    // reach `Math.max(0, …)`: a target below 0 with a reader already at 0.
+    const result = computeAnchorCompensation({
+      ...base,
+      prevScrollTop: 0,
+      oldAnchorTop: 0,
+      newAnchorTop: 500,
+      atBottomTarget: 0,
+    })
+    expect(result.newScrollTop).toBeGreaterThanOrEqual(0)
   })
 })
 

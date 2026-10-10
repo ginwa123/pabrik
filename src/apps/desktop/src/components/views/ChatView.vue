@@ -3475,8 +3475,18 @@ const handleVirtualScroll = (
   // disengaged. A genuine scroll-up is still caught immediately.
   const settled = virtualScrollerRef.value?.settledBottom
   const liveEdge = virtualScrollerRef.value?.bottomScrollTop?.() ?? scrollHeight - clientHeight
+  // The anchor is the bottom the reader was LAST parked at, so it is the number
+  // the reader's position is actually referenced to. Taking `Math.max` of the two
+  // would be exactly wrong: `settledBottom` is written from `bottomScrollTop()`
+  // at the end of a pass, and when the real-bottom override DISENGAGES that read
+  // returns the DOM edge — up to `maxTailGap` HIGHER than where the reader sits.
+  // Max-ing it in inflates the gap and disarms the stick it is meant to protect.
+  //
+  // So: use the anchor when we have one, and fall back to the live read only
+  // before anything has positioned the list. The widened tolerance below covers
+  // the anchor being slightly stale; the live read stays the tight path.
   const bottomEdge =
-    typeof settled === 'number' && Number.isFinite(settled) ? Math.max(settled, liveEdge) : liveEdge
+    typeof settled === 'number' && Number.isFinite(settled) ? settled : liveEdge
   const distanceFromBottom = Math.max(0, bottomEdge - actualScrollTop)
   const distanceFromTop = Math.max(0, actualScrollTop)
   // Widened only for the stable-anchor read; a live read keeps the tight

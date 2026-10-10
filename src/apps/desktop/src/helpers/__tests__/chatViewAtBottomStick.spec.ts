@@ -758,9 +758,15 @@ describe('wiring — both sides really use the shared ruler', () => {
     // The moving-target fix: `settledBottom` is read off the scroller and used
     // as the floor for the edge the decision measures against.
     expect(src).toMatch(/const settled = virtualScrollerRef\.value\?\.settledBottom/)
+    // The anchor REPLACES the live read; it is not max-ed with it. `settledBottom`
+    // comes from `bottomScrollTop()` at the end of a pass, and when the
+    // real-bottom override disengages that read returns the DOM edge — up to
+    // `maxTailGap` HIGHER than where the reader sits. Max-ing it in inflates the
+    // gap and disarms the very stick this protects.
     expect(src).toMatch(
-      /typeof settled === 'number' && Number\.isFinite\(settled\)\s*\?\s*Math\.max\(settled, liveEdge\)\s*:\s*liveEdge/,
+      /typeof settled === 'number' && Number\.isFinite\(settled\)\s*\?\s*settled\s*:\s*liveEdge/,
     )
+    expect(src).not.toMatch(/Math\.max\(settled, liveEdge\)/)
     // The widened tolerance applies ONLY on the stable-anchor path. A live read
     // must keep BOTTOM_THRESHOLD, or this is a fat threshold in disguise.
     expect(src).toMatch(/AT_BOTTOM_STABLE_TOLERANCE_PX/)

@@ -890,7 +890,21 @@ const measureItems = () => {
   // Same ruler ChatView's `isAtBottom` uses, same tolerance as its
   // `BOTTOM_THRESHOLD` (10px), so the two can never disagree about whether
   // the reader is at the bottom.
-  const wasAtBottom = prevScrollTop >= (settledBottom ?? bottomScrollTop()) - AT_BOTTOM_SLACK_PX
+  // Judge against the LIVE bottom, not `settledBottom`.
+  //
+  // `settledBottom` is where the bottom sat when the stick LAST acted, which is
+  // the right anchor for "has this reader moved?" but the WRONG one for "is this
+  // reader at the bottom right now?". Using it here meant a reader who scrolled
+  // up into history was still compared against the bottom as it had been, so
+  // `wasAtBottom` stayed true and the re-pin below yanked them straight back to
+  // the tail — the "bouncing text" failure, and a hard regression in
+  // `test_sending_from_history_still_lands_on_the_newest_turn`.
+  //
+  // The live read is correct here precisely because this runs BEFORE the model
+  // rebuild: `bottomScrollTop()` still describes the geometry the reader is
+  // actually sitting in. (It is re-read after the rebuild for `atBottomTarget`,
+  // which is the other half of the pair and wants the post-pass edge.)
+  const wasAtBottom = prevScrollTop >= bottomScrollTop() - AT_BOTTOM_SLACK_PX
   const oldAnchorTop = accumulatedHeights.value[anchorIndex] ?? 0
   const pendingMeasurements: AnchorMeasurement[] = []
   const children = content.children
