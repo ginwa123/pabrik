@@ -15,6 +15,8 @@ const static_files = @import("../modules/static_files.zig");
 const shutdown = @import("shutdown.zig");
 const db_config = @import("db_config.zig");
 const static_serve = @import("../http_static/static_serve.zig");
+const config_mod = @import("../modules/config/Config.zig");
+const workspace_config = @import("../agentic_loop/workspace_config.zig");
 
 /// Ignore SIGPIPE process-wide (non-Windows). A peer vanishing mid-write
 /// must surface as a write error, not a signal (OpenSSL uses plain write(2)).
@@ -132,6 +134,67 @@ pub fn runMigrations(allocator: std.mem.Allocator, db: *database.Db) !void {
     defer mm.deinit();
     try migration.registerAllMigrations(&mm);
     try mm.runMigrations();
+}
+
+/// Give every UNDECIDED workspace a copy of the user-level config.
+///
+/// This is what makes "Profiles / MCP Servers / Tools / Skill Evals live in
+/// Workspace settings" true for workspaces that already existed: each one
+/// starts with the sections the user already configured, editable in place,
+/// instead of an empty page the user has to rebuild.
+///
+/// BEST-EFFORT, and deliberately not an error path: the settings pages work
+/// off the user-level config whether or not this ran, so a failure here must
+/// never stop the server from booting. Every failure is logged.
+///
+/// Idempotent, so running it on every boot is safe: `workspace_config
+/// .seedWorkspaces` skips any workspace that already has a `workspace_settings`
+/// ROW. The row (not the body) is the test, which is what lets a deliberate
+/// "reset to inherited" survive the next boot instead of being re-copied.
+///
+/// `--auth` mode is SKIPPED on purpose: a workspace is shared between users
+/// and `workspace_settings` holds profiles with API keys in them, so seeding
+/// it from whichever user happened to be first would hand that user's
+/// credentials to every other member. Auth mode gets the same result through
+/// the explicit per-workspace copy endpoint, which knows who is asking.
+pub fn seedWorkspaceSettingsFromUserConfig(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    env: *std.process.Environ.Map,
+    db: *database.Db,
+    auth_enabled: bool,
+) void {
+    if (auth_enabled) {
+        std.log.info("workspace config seeding: skipped (--auth on: a shared workspace has no single user config to copy)", .{});
+        return;
+    }
+
+    const config_path = config_mod.getDefaultConfigPath(allocator, env) catch |err| {
+        std.log.warn("workspace config seeding: cannot resolve the config path: {s}", .{@errorName(err)});
+        return;
+    };
+    defer allocator.free(config_path);
+
+    // No config.json at all (a fresh install) is the ordinary first-boot
+    // case, not a failure - there is simply nothing to copy.
+    const file = std.Io.Dir.openFileAbsolute(io, config_path, .{}) catch return;
+    defer file.close(io);
+
+    var read_buffer: [4096]u8 = undefined;
+    var reader = file.reader(io, &read_buffer);
+    const content = reader.interface.allocRemaining(allocator, .limited(1024 * 1024)) catch |err| {
+        std.log.warn("workspace config seeding: cannot read {s}: {s}", .{ config_path, @errorName(err) });
+        return;
+    };
+    defer allocator.free(content);
+
+    const report = workspace_config.seedWorkspaces(allocator, db, content) catch |err| {
+        std.log.warn("workspace config seeding: {s}", .{@errorName(err)});
+        return;
+    };
+    if (report.seeded > 0) {
+        std.log.info("workspace config seeding: copied the user config into {d} workspace(s); {d} already decided", .{ report.seeded, report.already_decided });
+    }
 }
 
 /// Build the `--static-dir DIR` config: absolutize first (`openDirAbsolute`

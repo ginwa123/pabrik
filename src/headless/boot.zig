@@ -273,6 +273,11 @@ pub fn boot(
 
     try pabrikcore.setSingleton(ctx);
 
+    // Same one-shot seeding as the server boot. Headless has no auth
+    // (see `ctx.auth_enabled = false` above), so it always takes the
+    // file-mode path.
+    server_boot.seedWorkspaceSettingsFromUserConfig(allocator, io, @constCast(environment), &db_handles.db, false);
+
     ctx.mcp_stdio_registry = pabrikcore.mcp_stdio.StdioRegistry.global(allocator);
     ctx.mcp_http_registry = pabrikcore.mcp_http.HttpRegistry.global(allocator);
 

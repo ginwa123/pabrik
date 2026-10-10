@@ -6,12 +6,23 @@
 //! over the user-level config, so a workspace that only overrides `tools`
 //! still inherits every profile, MCP server and eval flag from the user.
 //!
-//! "No overlay" has EXACTLY ONE representation here, on purpose: an ABSENT
-//! row. `saveRaw` treats an empty string and `{}` as "clear" and deletes the
-//! row, and `loadRaw` maps a NULL column to `null` too. Two spellings of
-//! "inherit" that behave differently (absent row vs. stored `{}`) is how a
-//! settings screen ends up showing an "Overridden" pill over values nobody
-//! changed.
+//! ## Three states, and why the row's EXISTENCE matters
+//!
+//!   * NO ROW            - nobody has decided yet. `loadRaw` reads "inherit",
+//!                         and the one-shot `workspace_config` backfill is
+//!                         still allowed to seed this workspace.
+//!   * ROW, EMPTY BODY   - the user looked at this workspace and chose to
+//!                         inherit (or reset to inherited). `loadRaw` reads
+//!                         the same "inherit", but the backfill MUST leave it
+//!                         alone - otherwise every boot would resurrect the
+//!                         copy the user just deleted.
+//!   * ROW, WITH A BODY  - the workspace overrides those keys.
+//!
+//! So `loadRaw` and `hasOverlay` answer "does this workspace override
+//! anything?" (they look at the BODY), while `hasRow` answers "has this
+//! workspace been decided?" (it looks at the ROW). Collapsing the two would
+//! either lose a user's reset or re-copy config into a workspace that opted
+//! out.
 //!
 //! HOW THE OWNER IS DERIVED - the one thing callers must get right:
 //!   - `--auth` OFF  -> `FILE_MODE_OWNER` (`""`). One overlay per workspace.
@@ -82,10 +93,10 @@ pub fn loadRaw(
 
 /// Write the overlay for `(owner, workspace_id)`.
 ///
-/// An overlay that carries no overrides CLEARS the row instead of storing
-/// `{}` - see `isEmptyOverlay`. UPSERT (not INSERT-then-UPDATE) so concurrent
-/// saves for the same workspace converge on one row rather than racing to a
-/// constraint error.
+/// An overlay that carries no overrides writes the EMPTY-BODY marker instead
+/// of storing `{}` - see `isEmptyOverlay` and the module header. UPSERT (not
+/// INSERT-then-UPDATE) so concurrent saves for the same workspace converge on
+/// one row rather than racing to a constraint error.
 pub fn saveRaw(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -104,8 +115,13 @@ pub fn saveRaw(
     , &[_][]const u8{ owner, workspace_id, config_json });
 }
 
-/// Drop the overlay so the workspace inherits the user-level config again.
-/// Deleting an absent row is a no-op, so callers may call this blind.
+/// Record "this workspace inherits the user-level config", so the workspace
+/// inherits again AND the one-shot backfill leaves it alone.
+///
+/// Deliberately an UPSERT with an EMPTY body rather than a DELETE: a delete
+/// would make a deliberate reset indistinguishable from "never decided", and
+/// the next boot's backfill would re-copy the very config the user cleared.
+/// Idempotent, so callers may call this blind.
 pub fn clear(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -113,12 +129,40 @@ pub fn clear(
     workspace_id: []const u8,
 ) !void {
     if (workspace_id.len == 0) return error.WorkspaceIdRequired;
-    try db.exec(
+    try db.exec(allocator,
+        \\INSERT INTO workspace_settings (owner, workspace_id, config_json, updated_at)
+        \\VALUES (COALESCE(?, ''), ?, NULL, datetime('now'))
+        \\ON CONFLICT (owner, workspace_id) DO UPDATE SET
+        \\    config_json = NULL,
+        \\    updated_at = datetime('now')
+    , &[_][]const u8{ owner, workspace_id });
+}
+
+/// Has this `(owner, workspace_id)` been DECIDED yet - either overridden or
+/// explicitly left inherited?
+///
+/// The backfill's question, and it must not be `hasOverlay`: a workspace the
+/// user reset to inherited has a row and no overrides, and seeding it again
+/// would undo the reset on every boot.
+pub fn hasRow(
+    allocator: std.mem.Allocator,
+    db: *sqlite.SqliteBackend,
+    owner: []const u8,
+    workspace_id: []const u8,
+) !bool {
+    if (workspace_id.len == 0) return false;
+    var q = try db.query(
         allocator,
         // `COALESCE(?, '')` for the same reason as `loadRaw` - see there.
-        "DELETE FROM workspace_settings WHERE owner = COALESCE(?, '') AND workspace_id = ?",
+        "SELECT 1 FROM workspace_settings WHERE owner = COALESCE(?, '') AND workspace_id = ?",
         &[_][]const u8{ owner, workspace_id },
     );
+    defer q.deinit();
+    if ((try q.next())) |row| {
+        row.deinit(allocator);
+        return true;
+    }
+    return false;
 }
 
 /// Does this workspace carry any override at all?
@@ -164,7 +208,9 @@ pub fn hasOverlay(
 // user notices their workspace config bleed:
 //
 //   1. Round-trip is byte-exact - the overlay is opaque JSON to this layer.
-//   2. `{}` / '' CLEARS, so "no override" has one representation.
+//   2. `{}` / '' records an EXPLICIT INHERIT: no overrides, but a row, so the
+//      boot backfill can tell a deliberate reset from a never-configured
+//      workspace.
 //   3. A NULL column reads as "no overlay" (tolerance for a hand-edited DB).
 //   4. Two WORKSPACES never see each other's overlay.
 //   5. Two OWNERS in ONE workspace never see each other's overlay - the
@@ -232,25 +278,47 @@ test "overlay round-trips through saveRaw/loadRaw byte-for-byte" {
     try testing.expect(try hasOverlay(alloc, &ctx.db, FILE_MODE_OWNER, "ws_a"));
 }
 
-test "an empty or `{}` overlay clears the row instead of storing an empty object" {
+test "an empty or `{}` overlay records an explicit inherit, not an empty object" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer teardown(&ctx);
 
-    // Positive control: there IS an overlay to clear. Without this the two
-    // "cleared" assertions below would pass on a store that never wrote.
+    // Positive control: there IS an overlay to clear. Without this the
+    // "inherits" assertions below would pass on a store that never wrote.
     try saveRaw(alloc, &ctx.db, FILE_MODE_OWNER, "ws_a", "{\"retry_delay_ms\":500}");
-    try testing.expectEqual(@as(i64, 1), try rowCount(&ctx));
+    try testing.expect(try hasOverlay(alloc, &ctx.db, FILE_MODE_OWNER, "ws_a"));
 
     try saveRaw(alloc, &ctx.db, FILE_MODE_OWNER, "ws_a", "{}");
-    try testing.expectEqual(@as(i64, 0), try rowCount(&ctx));
+    // Inherits: no body, so nothing to override and no "Overridden" pill.
     try testing.expect((try loadRaw(alloc, &ctx.db, FILE_MODE_OWNER, "ws_a")) == null);
     try testing.expect(!try hasOverlay(alloc, &ctx.db, FILE_MODE_OWNER, "ws_a"));
+    // ...but DECIDED: the row is still there, which is what stops the boot
+    // backfill from re-copying the config the user just cleared.
+    try testing.expect(try hasRow(alloc, &ctx.db, FILE_MODE_OWNER, "ws_a"));
+    try testing.expectEqual(@as(i64, 1), try rowCount(&ctx));
 
     // Whitespace-only is the same "change nothing" as `{}`.
     try saveRaw(alloc, &ctx.db, FILE_MODE_OWNER, "ws_a", "{\"retry_delay_ms\":500}");
     try saveRaw(alloc, &ctx.db, FILE_MODE_OWNER, "ws_a", "  \n\t ");
-    try testing.expectEqual(@as(i64, 0), try rowCount(&ctx));
+    try testing.expect(!try hasOverlay(alloc, &ctx.db, FILE_MODE_OWNER, "ws_a"));
+    try testing.expect(try hasRow(alloc, &ctx.db, FILE_MODE_OWNER, "ws_a"));
+    try testing.expectEqual(@as(i64, 1), try rowCount(&ctx));
+}
+
+test "an undecided workspace has no row, so the backfill may seed it" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+
+    // The distinction `hasRow` exists for: never-decided (false, seedable)
+    // vs. explicitly-inherited (true, leave alone). Same `loadRaw` answer,
+    // opposite backfill decisions.
+    try testing.expect(!try hasRow(alloc, &ctx.db, FILE_MODE_OWNER, "ws_new"));
+    try testing.expect(!try hasOverlay(alloc, &ctx.db, FILE_MODE_OWNER, "ws_new"));
+
+    try clear(alloc, &ctx.db, FILE_MODE_OWNER, "ws_new");
+    try testing.expect(try hasRow(alloc, &ctx.db, FILE_MODE_OWNER, "ws_new"));
+    try testing.expect(!try hasOverlay(alloc, &ctx.db, FILE_MODE_OWNER, "ws_new"));
 }
 
 test "a NULL config_json column reads back as no overlay" {
@@ -288,6 +356,8 @@ test "two workspaces never share an overlay" {
 
     try clear(alloc, &ctx.db, FILE_MODE_OWNER, "ws_a");
     try testing.expect((try loadRaw(alloc, &ctx.db, FILE_MODE_OWNER, "ws_a")) == null);
+    // ws_b is still untouched: clearing ws_a must not decide ws_b for it.
+    try testing.expect(!try hasRow(alloc, &ctx.db, FILE_MODE_OWNER, "ws_b"));
 }
 
 test "two owners in one workspace never share an overlay (the --auth leak)" {

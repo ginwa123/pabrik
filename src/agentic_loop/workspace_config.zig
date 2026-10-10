@@ -34,6 +34,7 @@
 //! behaves like the user config".
 
 const std = @import("std");
+const sqlite = @import("pabrikcore").sqlite;
 
 /// Merge `overlay_json` over `base_json`, returning a newly allocated JSON
 /// object text.
@@ -164,6 +165,132 @@ fn appendKeyJson(
     key: []const u8,
 ) AppendError!void {
     try appendValueJson(allocator, out, .{ .string = key });
+}
+
+/// The config keys that MOVED to workspace scope.
+///
+/// `profiles` / `active_profile` / `mcp_servers` / `tools` / `skill_evals`
+/// are the four Settings sections this refactor relocates; `web_search` rides
+/// with the MCP tab because both answer "where does the agent reach outside
+/// this machine" (decision D3).
+///
+/// Everything NOT in this list stays a USER-level setting on purpose
+/// (decision D4): `notify_on_complete`, `notify_on_error`, `retry_delay_ms`,
+/// `web_launch_enabled`, `model_compaction_size_kb`,
+/// `max_capacity_token_model` and `compaction_threshold_percent` keep
+/// applying everywhere. Copying them into a workspace would freeze them there
+/// and silently stop a later General-tab change from reaching that workspace
+/// - a bug the user cannot see, because General is not even rendered in the
+/// workspace scope.
+pub const WORKSPACE_SCOPED_KEYS = [_][]const u8{
+    "profiles",
+    "active_profile",
+    "mcp_servers",
+    "tools",
+    "skill_evals",
+    "web_search",
+};
+
+/// The workspace-scoped SLICE of a user-level config, as overlay JSON.
+///
+/// This is the "copy the user's config into this workspace" operation: the
+/// result is written with `workspace_settings_store.saveRaw`, so the
+/// workspace owns an independent copy of the sections that moved and nothing
+/// else. An unparseable or empty input yields `{}` (which the store treats as
+/// "no overrides"), so a corrupt config cannot seed a workspace with junk.
+/// Caller owns the returned slice.
+pub fn workspaceScopedOverlay(
+    allocator: std.mem.Allocator,
+    user_config_json: []const u8,
+) ![]u8 {
+    const text = std.mem.trim(u8, user_config_json, " \t\r\n");
+    if (text.len == 0) return allocator.dupe(u8, "{}");
+
+    const parsed = std.json.parseFromSlice(std.json.Value, allocator, text, .{}) catch
+        return allocator.dupe(u8, "{}");
+    defer parsed.deinit();
+    const obj = switch (parsed.value) {
+        .object => |o| o,
+        else => return allocator.dupe(u8, "{}"),
+    };
+
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(allocator);
+    try out.append(allocator, '{');
+    var first = true;
+    for (WORKSPACE_SCOPED_KEYS) |key| {
+        const value = obj.get(key) orelse continue;
+        // A null value carries no override - copying `"tools": null` into the
+        // overlay would say "this workspace overrides tools" and show an
+        // Overridden pill over the user's own list.
+        if (value == .null) continue;
+        if (!first) try out.append(allocator, ',');
+        first = false;
+        try appendKeyJson(allocator, &out, key);
+        try out.append(allocator, ':');
+        try appendValueJson(allocator, &out, value);
+    }
+    try out.append(allocator, '}');
+    return out.toOwnedSlice(allocator);
+}
+
+/// How a seeding pass went. Boot logs it; tests assert on it.
+pub const SeedReport = struct {
+    seeded: usize = 0,
+    already_decided: usize = 0,
+};
+
+/// Give every UNDECIDED workspace a copy of the user-level config.
+///
+/// "Undecided" is `workspace_settings_store.hasRow`, not `hasOverlay`: a
+/// workspace whose row exists with an empty body was deliberately reset to
+/// inherit, and re-seeding it on every boot would undo that reset. A
+/// workspace with an overlay is left exactly as it is.
+///
+/// Idempotent, so it is safe to run at every boot. Caller owns nothing here;
+/// every allocation is freed before returning.
+pub fn seedWorkspaces(
+    allocator: std.mem.Allocator,
+    db: *sqlite.SqliteBackend,
+    base_config_json: []const u8,
+) !SeedReport {
+    const store = @import("workspace_settings_store.zig");
+    const overlay = try workspaceScopedOverlay(allocator, base_config_json);
+    defer allocator.free(overlay);
+
+    var report = SeedReport{};
+    // Nothing to copy: seeding every workspace with `{}` would write an
+    // "explicitly inherited" row for workspaces nobody has looked at yet,
+    // and then the real config would never reach them.
+    if (std.mem.eql(u8, overlay, "{}")) return report;
+
+    var q = db.query(allocator, "SELECT id FROM workspaces", &.{}) catch return report;
+    defer q.deinit();
+
+    // Collected first: `saveRaw` writes to the same backend while this
+    // reader is still open, and holding a read cursor across a write is how
+    // a pool deadlocks.
+    var ids: std.ArrayList([]u8) = .empty;
+    defer {
+        for (ids.items) |id| allocator.free(id);
+        ids.deinit(allocator);
+    }
+    while (q.next() catch null) |row| {
+        defer row.deinit(allocator);
+        if (row.values.len == 0 or row.values[0].len == 0) continue;
+        try ids.append(allocator, try allocator.dupe(u8, row.values[0]));
+    }
+
+    for (ids.items) |id| {
+        const decided = store.hasRow(allocator, db, store.FILE_MODE_OWNER, id) catch continue;
+        if (decided) {
+            report.already_decided += 1;
+            continue;
+        }
+        store.saveRaw(allocator, db, store.FILE_MODE_OWNER, id, overlay) catch continue;
+        report.seeded += 1;
+    }
+    return report;
 }
 
 // =====================================================================
@@ -315,4 +442,249 @@ test "keys needing JSON escaping survive the round trip" {
     var parsed = try parse(alloc, merged);
     defer parsed.deinit();
     try testing.expectEqual(@as(i64, 1), parsed.value.object.get("a\"b").?.integer);
+}
+
+// ─── the copy slice ────────────────────────────────────────────────────────
+//
+// The single most important property here is a NEGATIVE one: the copy must
+// NOT carry the General-tab keys. If it did, every workspace would freeze
+// `retry_delay_ms` / `notify_*` / `web_launch_enabled` at copy time, and a
+// later General change would silently stop reaching those workspaces - with
+// no UI in the workspace scope to even show what happened. The positive
+// control below proves the input really did contain those keys.
+
+const USER_CONFIG =
+    \\{"profiles":{"claude":{"model":"opus","api_key":"sk-secret"}},
+    \\ "active_profile":"claude",
+    \\ "mcp_servers":{"files":{"transport":"stdio","command":"mcp-files"}},
+    \\ "tools":["read_file","write_file"],
+    \\ "web_search":{"brave":{"url":"https://api.search.brave.com","key":"sk-search"}},
+    \\ "skill_evals":{"enabled":true,"max_skills_per_run":4},
+    \\ "notify_on_complete":true,
+    \\ "notify_on_error":true,
+    \\ "retry_delay_ms":2000,
+    \\ "web_launch_enabled":true,
+    \\ "model_compaction_size_kb":250,
+    \\ "max_capacity_token_model":200000,
+    \\ "compaction_threshold_percent":80}
+;
+
+test "the copy carries every workspace-scoped key" {
+    const alloc = testing.allocator;
+    const copy = try workspaceScopedOverlay(alloc, USER_CONFIG);
+    defer alloc.free(copy);
+
+    var parsed = try parse(alloc, copy);
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+
+    try testing.expectEqualStrings("opus", obj.get("profiles").?.object.get("claude").?.object.get("model").?.string);
+    try testing.expectEqualStrings("claude", obj.get("active_profile").?.string);
+    try testing.expect(obj.get("mcp_servers").?.object.get("files") != null);
+    try testing.expectEqual(@as(usize, 2), obj.get("tools").?.array.items.len);
+    try testing.expectEqual(true, obj.get("skill_evals").?.object.get("enabled").?.bool);
+    try testing.expect(obj.get("web_search") != null);
+}
+
+test "the copy does NOT carry the General-tab keys, so they keep applying everywhere" {
+    const alloc = testing.allocator;
+
+    // Positive control: the source really does have them.
+    var source = try parse(alloc, USER_CONFIG);
+    defer source.deinit();
+    for ([_][]const u8{ "notify_on_complete", "notify_on_error", "retry_delay_ms", "web_launch_enabled", "model_compaction_size_kb", "max_capacity_token_model", "compaction_threshold_percent" }) |key| {
+        try testing.expect(source.value.object.get(key) != null);
+    }
+
+    const copy = try workspaceScopedOverlay(alloc, USER_CONFIG);
+    defer alloc.free(copy);
+    var parsed = try parse(alloc, copy);
+    defer parsed.deinit();
+
+    for ([_][]const u8{ "notify_on_complete", "notify_on_error", "retry_delay_ms", "web_launch_enabled", "model_compaction_size_kb", "max_capacity_token_model", "compaction_threshold_percent" }) |key| {
+        try testing.expect(parsed.value.object.get(key) == null);
+    }
+}
+
+test "the copy is exactly the workspace-scoped key set, no more" {
+    const alloc = testing.allocator;
+    const copy = try workspaceScopedOverlay(alloc, USER_CONFIG);
+    defer alloc.free(copy);
+
+    var parsed = try parse(alloc, copy);
+    defer parsed.deinit();
+    try testing.expectEqual(WORKSPACE_SCOPED_KEYS.len, parsed.value.object.count());
+}
+
+test "a null or absent key is not copied, so it cannot fake an override" {
+    const alloc = testing.allocator;
+    const copy = try workspaceScopedOverlay(
+        alloc,
+        "{\"tools\":null,\"active_profile\":\"claude\",\"profiles\":{\"p\":{\"model\":\"m\"}}}",
+    );
+    defer alloc.free(copy);
+
+    var parsed = try parse(alloc, copy);
+    defer parsed.deinit();
+    // `tools: null` means "no explicit list" at user level. Copying it would
+    // claim this workspace overrides tools while overriding it with nothing.
+    try testing.expect(parsed.value.object.get("tools") == null);
+    try testing.expect(parsed.value.object.get("active_profile") != null);
+    try testing.expect(parsed.value.object.get("profiles") != null);
+}
+
+test "a config with nothing to copy yields {}, never junk" {
+    const alloc = testing.allocator;
+    for ([_][]const u8{ "", "   ", "not json", "[1,2]", "{}", "{\"retry_delay_ms\":2000}" }) |input| {
+        const copy = try workspaceScopedOverlay(alloc, input);
+        defer alloc.free(copy);
+        try testing.expectEqualStrings("{}", copy);
+    }
+}
+
+// ─── the seeding pass ──────────────────────────────────────────────────────
+
+const SeedCtx = struct {
+    db: sqlite.SqliteBackend,
+    threaded: std.Io.Threaded,
+};
+
+fn setupSeedDb() !SeedCtx {
+    const alloc = testing.allocator;
+    var threaded = std.Io.Threaded.init(alloc, .{});
+    errdefer threaded.deinit();
+    var db: sqlite.SqliteBackend = .{};
+    errdefer db.deinit();
+    try db.init(threaded.io(), ":memory:");
+    try db.exec(alloc, "CREATE TABLE workspaces (id TEXT PRIMARY KEY)", &.{});
+    try db.exec(alloc,
+        \\CREATE TABLE workspace_settings (
+        \\  owner TEXT NOT NULL DEFAULT '',
+        \\  workspace_id TEXT NOT NULL,
+        \\  config_json TEXT,
+        \\  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\  PRIMARY KEY (owner, workspace_id)
+        \\)
+    , &.{});
+    return .{ .db = db, .threaded = threaded };
+}
+
+fn teardownSeed(ctx: *SeedCtx) void {
+    ctx.db.deinit();
+    ctx.threaded.deinit();
+}
+
+fn addWorkspace(ctx: *SeedCtx, id: []const u8) !void {
+    try ctx.db.exec(testing.allocator, "INSERT INTO workspaces (id) VALUES (?)", &[_][]const u8{id});
+}
+
+fn overlayBody(ctx: *SeedCtx, workspace_id: []const u8) !?[]u8 {
+    const alloc = testing.allocator;
+    const store = @import("workspace_settings_store.zig");
+    return store.loadRaw(alloc, &ctx.db, store.FILE_MODE_OWNER, workspace_id);
+}
+
+fn hasSettingsRow(ctx: *SeedCtx, workspace_id: []const u8) !bool {
+    const store = @import("workspace_settings_store.zig");
+    return store.hasRow(testing.allocator, &ctx.db, store.FILE_MODE_OWNER, workspace_id);
+}
+
+test "seeding copies the user config into every existing workspace" {
+    const alloc = testing.allocator;
+    var ctx = try setupSeedDb();
+    defer teardownSeed(&ctx);
+
+    try addWorkspace(&ctx, "ws_a");
+    try addWorkspace(&ctx, "ws_b");
+
+    const report = try seedWorkspaces(alloc, &ctx.db, USER_CONFIG);
+    try testing.expectEqual(@as(usize, 2), report.seeded);
+    try testing.expectEqual(@as(usize, 0), report.already_decided);
+
+    const a = (try overlayBody(&ctx, "ws_a")) orelse return error.NotSeeded;
+    defer alloc.free(a);
+    var parsed = try parse(alloc, a);
+    defer parsed.deinit();
+    try testing.expectEqualStrings("claude", parsed.value.object.get("active_profile").?.string);
+    // The credential travelled with the profile it belongs to.
+    try testing.expectEqualStrings(
+        "sk-secret",
+        parsed.value.object.get("profiles").?.object.get("claude").?.object.get("api_key").?.string,
+    );
+
+    const b = (try overlayBody(&ctx, "ws_b")) orelse return error.NotSeeded;
+    defer alloc.free(b);
+}
+
+test "seeding is idempotent and never overwrites a workspace that already decided" {
+    const alloc = testing.allocator;
+    var ctx = try setupSeedDb();
+    defer teardownSeed(&ctx);
+
+    try addWorkspace(&ctx, "ws_a");
+    try addWorkspace(&ctx, "ws_b");
+    const store = @import("workspace_settings_store.zig");
+
+    // ws_a already has its own override.
+    try store.saveRaw(alloc, &ctx.db, store.FILE_MODE_OWNER, "ws_a", "{\"active_profile\":\"mine\"}");
+    // ws_b was deliberately reset to inherit.
+    try store.clear(alloc, &ctx.db, store.FILE_MODE_OWNER, "ws_b");
+
+    const report = try seedWorkspaces(alloc, &ctx.db, USER_CONFIG);
+    try testing.expectEqual(@as(usize, 0), report.seeded);
+    try testing.expectEqual(@as(usize, 2), report.already_decided);
+
+    // ws_a's own choice survived.
+    const a = (try overlayBody(&ctx, "ws_a")) orelse return error.OverrideLost;
+    defer alloc.free(a);
+    try testing.expectEqualStrings("{\"active_profile\":\"mine\"}", a);
+    // ws_b's RESET survived - this is the assertion that would fail if the
+    // pass asked `hasOverlay` instead of `hasRow`, and it is the difference
+    // between a reset that sticks and one that is undone at every boot.
+    try testing.expect((try overlayBody(&ctx, "ws_b")) == null);
+    try testing.expect(try hasSettingsRow(&ctx, "ws_b"));
+}
+
+test "a second seeding run adds no workspaces and changes nothing" {
+    const alloc = testing.allocator;
+    var ctx = try setupSeedDb();
+    defer teardownSeed(&ctx);
+
+    try addWorkspace(&ctx, "ws_a");
+    const first = try seedWorkspaces(alloc, &ctx.db, USER_CONFIG);
+    try testing.expectEqual(@as(usize, 1), first.seeded);
+
+    const second = try seedWorkspaces(alloc, &ctx.db, USER_CONFIG);
+    try testing.expectEqual(@as(usize, 0), second.seeded);
+    try testing.expectEqual(@as(usize, 1), second.already_decided);
+}
+
+test "a config with nothing workspace-scoped seeds nothing at all" {
+    const alloc = testing.allocator;
+    var ctx = try setupSeedDb();
+    defer teardownSeed(&ctx);
+
+    try addWorkspace(&ctx, "ws_a");
+
+    // The trap this guards: writing `{}` would create an "explicitly
+    // inherited" row for a workspace nobody has looked at, and the real
+    // config would never reach it afterwards.
+    const report = try seedWorkspaces(alloc, &ctx.db, "{\"retry_delay_ms\":2000}");
+    try testing.expectEqual(@as(usize, 0), report.seeded);
+    try testing.expect(!try hasSettingsRow(&ctx, "ws_a"));
+}
+
+test "a new workspace added later is seeded by the next boot" {
+    const alloc = testing.allocator;
+    var ctx = try setupSeedDb();
+    defer teardownSeed(&ctx);
+
+    try addWorkspace(&ctx, "ws_a");
+    _ = try seedWorkspaces(alloc, &ctx.db, USER_CONFIG);
+
+    try addWorkspace(&ctx, "ws_new");
+    const report = try seedWorkspaces(alloc, &ctx.db, USER_CONFIG);
+    try testing.expectEqual(@as(usize, 1), report.seeded);
+    try testing.expect(try hasSettingsRow(&ctx, "ws_new"));
 }
