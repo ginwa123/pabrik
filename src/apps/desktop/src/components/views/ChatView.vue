@@ -34,6 +34,7 @@ import {
   isAutoStickActive,
   AUTO_STICK_GATE_MS,
   BOTTOM_THRESHOLD,
+  AT_BOTTOM_STABLE_TOLERANCE_PX,
   TOP_THRESHOLD,
   decidePrefetchOlder,
   armRadiusPx,
@@ -1038,6 +1039,15 @@ interface VirtualScrollerExposed {
    * every later stick for the rest of the mount.
    */
   bottomScrollTop: () => number
+  /**
+   * Where the bottom sat when the stick LAST acted (end of the last measure
+   * pass, or the last `scrollToBottom`), or null before anything positioned
+   * the list. A getter on the child, so it always reads live.
+   *
+   * `handleVirtualScroll` prefers this over a live `bottomScrollTop()` — see
+   * `atBottomEdge` below for why the live read is a moving target.
+   */
+  readonly settledBottom?: number | null
   scrollToPosition: (scrollTop: number, behavior?: ScrollBehavior) => void
   scrollToItem: (index: number, behavior?: ScrollBehavior) => void
   /** Full height-model recompute from the live DOM (append-gap fix). */
@@ -3424,10 +3434,68 @@ const handleVirtualScroll = (
   // that makes the two disagree. Fall back to the DOM measure when the ref is
   // not populated (mount races, a caller without a scroller) — that path
   // existed before the override did, so it is the safe default.
-  const bottomEdge = virtualScrollerRef.value?.bottomScrollTop?.() ?? scrollHeight - clientHeight
+  //
+  // ── Stable anchor, not a live read (2026-10-10) ─────────────────────────
+  //
+  // `bottomScrollTop()` is a MOVING TARGET, and that is the "the stick dies
+  // mid-stream" flake. Its two inputs move independently:
+  //
+  //     domEdge    = scrollHeight - clientHeight       (the height MODEL)
+  //     realBottom = topSpacer + content.offsetHeight  (the RENDERED rows)
+  //     if (domEdge - realBottom + clientHeight > HYSTERESIS_PX) use realBottom
+  //
+  // The override engages only while the model overshoots by more than
+  // `HYSTERESIS_PX` (50px). So when the model converges — or the rendered
+  // window shifts and `topSpacer` jumps — the SAME stationary reader is
+  // suddenly measured against a different number. Instrumented trace, one
+  // chunk apart, reader never having moved:
+  //
+  //     frame A: bottomEdge=30114  scrollTop=30071  -> 43px short -> atBottom=false
+  //     frame B: bottomEdge=30093  scrollTop=30093  ->  0px short -> atBottom=true
+  //
+  // The reader did not move 43px; the RULER moved. `isAtBottom` therefore
+  // oscillates, the jump-to-bottom arrow blinks, and every follow gate that
+  // reads the flag disarms on the "short" frames. `retainedThroughGrowth`
+  // below papers over most of them, but it is capped at <100px and does not
+  // fire when `contentGrew` is false — so on a slow runner the last settle
+  // lands on a short frame and the arrow is up when anything samples it.
+  //
+  // The fix is to judge against the bottom AS IT WAS when the stick last
+  // acted — `settledBottom`, which `measureItems` and `scrollToBottom`
+  // already maintain for exactly this reason (see its own comment about
+  // judging `wasAtBottom` against a stale rather than a live read). That
+  // number only changes when the scroller deliberately repositions, so a
+  // stationary reader stays at-bottom across the model's own convergence.
+  //
+  // The tolerance widens to absorb the model's convergence between the last
+  // pass and this event: `BOTTOM_THRESHOLD` (10px) plus the overshoot hysteresis
+  // (50px) — the largest step the ruler can take between two frames. It is
+  // deliberately NOT `maxTailGap` (100px): that would swallow a reader sitting
+  // 101px up, which `retainedThroughGrowth`'s own `< 100` cap exists to keep
+  // disengaged. A genuine scroll-up is still caught immediately.
+  const settled = virtualScrollerRef.value?.settledBottom
+  const liveEdge = virtualScrollerRef.value?.bottomScrollTop?.() ?? scrollHeight - clientHeight
+  // The anchor is the bottom the reader was LAST parked at, so it is the number
+  // the reader's position is actually referenced to. Taking `Math.max` of the two
+  // would be exactly wrong: `settledBottom` is written from `bottomScrollTop()`
+  // at the end of a pass, and when the real-bottom override DISENGAGES that read
+  // returns the DOM edge — up to `maxTailGap` HIGHER than where the reader sits.
+  // Max-ing it in inflates the gap and disarms the stick it is meant to protect.
+  //
+  // So: use the anchor when we have one, and fall back to the live read only
+  // before anything has positioned the list. The widened tolerance below covers
+  // the anchor being slightly stale; the live read stays the tight path.
+  const bottomEdge =
+    typeof settled === 'number' && Number.isFinite(settled) ? settled : liveEdge
   const distanceFromBottom = Math.max(0, bottomEdge - actualScrollTop)
   const distanceFromTop = Math.max(0, actualScrollTop)
-  const newIsAtBottom = distanceFromBottom < BOTTOM_THRESHOLD
+  // Widened only for the stable-anchor read; a live read keeps the tight
+  // threshold so a genuine scroll-up is still caught immediately.
+  const atBottomTolerance =
+    typeof settled === 'number' && Number.isFinite(settled)
+      ? AT_BOTTOM_STABLE_TOLERANCE_PX
+      : BOTTOM_THRESHOLD
+  const newIsAtBottom = distanceFromBottom < atBottomTolerance
   const newIsAtTop = distanceFromTop < TOP_THRESHOLD
   const previousIsAtBottom = isAtBottom.value
   // Deltas: how much scrollTop moved since the last event, and how

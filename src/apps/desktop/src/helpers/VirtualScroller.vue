@@ -890,7 +890,21 @@ const measureItems = () => {
   // Same ruler ChatView's `isAtBottom` uses, same tolerance as its
   // `BOTTOM_THRESHOLD` (10px), so the two can never disagree about whether
   // the reader is at the bottom.
-  const wasAtBottom = prevScrollTop >= (settledBottom ?? bottomScrollTop()) - AT_BOTTOM_SLACK_PX
+  // Judge against the LIVE bottom, not `settledBottom`.
+  //
+  // `settledBottom` is where the bottom sat when the stick LAST acted, which is
+  // the right anchor for "has this reader moved?" but the WRONG one for "is this
+  // reader at the bottom right now?". Using it here meant a reader who scrolled
+  // up into history was still compared against the bottom as it had been, so
+  // `wasAtBottom` stayed true and the re-pin below yanked them straight back to
+  // the tail — the "bouncing text" failure, and a hard regression in
+  // `test_sending_from_history_still_lands_on_the_newest_turn`.
+  //
+  // The live read is correct here precisely because this runs BEFORE the model
+  // rebuild: `bottomScrollTop()` still describes the geometry the reader is
+  // actually sitting in. (It is re-read after the rebuild for `atBottomTarget`,
+  // which is the other half of the pair and wants the post-pass edge.)
+  const wasAtBottom = prevScrollTop >= bottomScrollTop() - AT_BOTTOM_SLACK_PX
   const oldAnchorTop = accumulatedHeights.value[anchorIndex] ?? 0
   const pendingMeasurements: AnchorMeasurement[] = []
   const children = content.children
@@ -1567,6 +1581,29 @@ defineExpose({
   scrollToTop,
   scrollToBottom,
   bottomScrollTop,
+  /**
+   * Where the bottom sat as of the END of the last pass (or the last
+   * `scrollToBottom`), or null before anything has positioned the list.
+   *
+   * Exposed so the parent can judge "is the reader at the bottom" against the
+   * bottom AS IT WAS when the stick last acted, rather than against a freshly
+   * recomputed `bottomScrollTop()`. The live read is a MOVING TARGET: its two
+   * inputs (`scrollHeight - clientHeight`, the height model, and
+   * `topSpacer + content.offsetHeight`, the rendered rows) move independently,
+   * and the real-bottom override engages only while the model overshoots by
+   * more than `HYSTERESIS_PX`. So between two frames the same stationary reader
+   * can be measured 0px from the bottom and then 43px from it, with no gesture
+   * in between — which flips `isAtBottom` false, shows the jump-to-bottom arrow,
+   * and disarms every follow gate. That is the "the stick dies mid-stream"
+   * flake, and it is timing-dependent by construction.
+   *
+   * A getter, not a value: `settledBottom` is a plain `let` (deliberately not
+   * reactive — it is written inside measure passes and must not schedule a
+   * render), so a snapshot in `defineExpose` would be frozen at setup time.
+   */
+  get settledBottom() {
+    return settledBottom
+  },
   scrollToPosition,
   scrollToItem,
   remeasure,

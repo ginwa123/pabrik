@@ -45,7 +45,11 @@ import { mount, type ComponentMountingOptions } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
 import VirtualScroller from '../VirtualScroller.vue'
-import { BOTTOM_THRESHOLD, buildScrollContext } from '../scrollLogger'
+import {
+  AT_BOTTOM_STABLE_TOLERANCE_PX,
+  BOTTOM_THRESHOLD,
+  buildScrollContext,
+} from '../scrollLogger'
 import { useChatScrollRestore } from '@/composables/useChatScrollRestore'
 
 /** scrollLogger.ts — the at-bottom tolerance itself. Deliberately tiny. */
@@ -110,6 +114,25 @@ interface DecisionInput {
  */
 function decideIsAtBottom(args: DecisionInput): boolean {
   const newIsAtBottom = args.distanceFromBottom < BOTTOM_THRESHOLD_PX
+  const retainedThroughGrowth =
+    args.previousIsAtBottom &&
+    args.contentGrew &&
+    !args.userScrolledUp &&
+    args.distanceFromBottom < RETENTION_CAP_PX
+  return newIsAtBottom || retainedThroughGrowth
+}
+
+/**
+ * The SHIPPED decision once the gap is measured against the STABLE anchor
+ * (`settledBottom`) rather than a live `bottomScrollTop()`.
+ *
+ * The tolerance widens to `AT_BOTTOM_STABLE_TOLERANCE_PX` because the anchor is
+ * written at the end of a measure pass and the model can still converge by up to
+ * the tail gap before the next scroll event is handled. That residual is the
+ * model's own movement, not the reader's.
+ */
+function decideIsAtBottomStableAnchor(args: DecisionInput): boolean {
+  const newIsAtBottom = args.distanceFromBottom < AT_BOTTOM_STABLE_TOLERANCE_PX
   const retainedThroughGrowth =
     args.previousIsAtBottom &&
     args.contentGrew &&
@@ -552,6 +575,138 @@ describe('useChatScrollRestore asks the caller where the bottom is', () => {
 
 // ── Wiring: the components must still call what the math assumed ────────────
 
+// ── The moving-target ruler (2026-10-10) ────────────────────────────────────
+//
+// The shared ruler fixed the DISAGREEMENT between two notions of the bottom. It
+// did not fix the fact that the shared one is recomputed from live DOM on every
+// read, and its two inputs move independently:
+//
+//     domEdge    = scrollHeight - clientHeight       (the height MODEL)
+//     realBottom = topSpacer + content.offsetHeight  (the RENDERED rows)
+//
+// The real-bottom override engages only while `domEdge - realBottom` exceeds
+// HYSTERESIS_PX. So when the model converges — or the rendered window shifts and
+// `topSpacer` jumps — the SAME stationary reader is measured against a different
+// number. Instrumented trace from a real browser, one SSE chunk apart, the reader
+// never having moved:
+//
+//     frame A: bottomEdge=30114  scrollTop=30071  -> 43px short -> atBottom=false
+//     frame B: bottomEdge=30093  scrollTop=30093  ->  0px short -> atBottom=true
+//
+// The reader did not move 43px; the RULER moved. `isAtBottom` therefore
+// oscillates, the jump-to-bottom arrow blinks, and every follow gate disarms on
+// the short frames. `retainedThroughGrowth` papers over most of them, but it is
+// capped at <100px and does not fire when `contentGrew` is false — so on a slow
+// runner the last settle lands on a short frame and the arrow is up when anything
+// samples it. That is the macOS flake in
+// `chatview_at_bottom_stick_ui_test.py::test_the_stick_survives_a_sizer_that_overshoots_the_content`.
+//
+// The fix: judge against `settledBottom` — where the bottom sat when the stick
+// LAST acted — which only changes when the scroller deliberately repositions.
+
+describe('the live ruler is a moving target, and the stick must not care', () => {
+  const clientHeight = 800
+
+  it('a stationary reader reads as at-bottom, then not, as the model converges', () => {
+    // The reader is parked at 30071 — exactly where the scroller put them.
+    const scrollTop = 30071
+
+    // Frame A: the model still overshoots by 150px, so the real-bottom override
+    // fires and the ruler reports the real content bottom. The reader sits 43px
+    // short of it.
+    const frameA = planBottom({
+      scrollHeight: scrollTop + clientHeight + 150,
+      clientHeight,
+      realBottom: scrollTop + clientHeight + 43,
+      windowCoversTail: true,
+      contentHeight: scrollTop + clientHeight + 43,
+    })
+    expect(frameA.usedRealBottom).toBe(true)
+    const gapA = frameA.target - scrollTop
+    expect(gapA).toBe(43)
+    expect(gapA).toBeGreaterThan(BOTTOM_THRESHOLD_PX)
+
+    // Frame B: the model has converged (topSpacer moved, the sizer shrank), so
+    // the override no longer fires and the ruler reports the DOM edge instead —
+    // which is exactly where the reader is sitting.
+    const frameB = planBottom({
+      scrollHeight: scrollTop + clientHeight,
+      clientHeight,
+      realBottom: scrollTop + clientHeight,
+      windowCoversTail: true,
+      contentHeight: scrollTop + clientHeight,
+    })
+    expect(frameB.usedRealBottom).toBe(false)
+    const gapB = frameB.target - scrollTop
+    expect(gapB).toBe(0)
+
+    // Same reader, same gesture (none), two different answers.
+    expect(decideIsAtBottom({ ...QUIET_FRAME, distanceFromBottom: gapA })).toBe(false)
+    expect(decideIsAtBottom({ ...QUIET_FRAME, distanceFromBottom: gapB })).toBe(true)
+  })
+
+  it('the stable anchor holds the answer still across that convergence', () => {
+    const scrollTop = 30071
+    // `settledBottom` is where the bottom sat when the stick last acted. The
+    // reader was parked there, so the gap against it is 0 in BOTH frames — the
+    // model converging underneath does not move the anchor.
+    const settledBottom = scrollTop
+
+    // The two frames from the test above: the live ruler answers 43px-short in
+    // one and 0px-short in the other.
+    const liveGaps = [43, 0]
+    for (const liveGap of liveGaps) {
+      const anchorGap = Math.max(0, settledBottom - scrollTop)
+      expect(anchorGap).toBe(0)
+      expect(
+        decideIsAtBottomStableAnchor({ ...QUIET_FRAME, distanceFromBottom: anchorGap }),
+      ).toBe(true)
+      // The live read is the one that flip-flops; that is the whole point.
+      expect(decideIsAtBottom({ ...QUIET_FRAME, distanceFromBottom: liveGap })).toBe(
+        liveGap < BOTTOM_THRESHOLD_PX,
+      )
+    }
+  })
+
+  it('the widened tolerance absorbs the model, not a deliberate scroll-up', () => {
+    // The bound is BOTTOM_THRESHOLD + the overshoot hysteresis: the largest step
+    // the ruler can take between two frames. NOT maxTailGap — that would swallow
+    // a reader 101px up, which retainedThroughGrowth's own cap keeps disengaged.
+    expect(AT_BOTTOM_STABLE_TOLERANCE_PX).toBe(BOTTOM_THRESHOLD_PX + HYSTERESIS_PX)
+    expect(AT_BOTTOM_STABLE_TOLERANCE_PX).toBeLessThan(RETENTION_CAP_PX)
+
+    // A reader one viewport up is nowhere near it and still reads as scrolled up.
+    expect(
+      decideIsAtBottomStableAnchor({
+        ...QUIET_FRAME,
+        distanceFromBottom: clientHeight,
+      }),
+    ).toBe(false)
+
+    // …and so is a reader a modest way up, well past the retention cap.
+    expect(
+      decideIsAtBottomStableAnchor({
+        ...QUIET_FRAME,
+        distanceFromBottom: RETENTION_CAP_PX + 1,
+      }),
+    ).toBe(false)
+
+    // The residual the widening exists to absorb — the 43px the instrumented
+    // trace showed the ruler moving under a stationary reader — is inside it.
+    expect(
+      decideIsAtBottomStableAnchor({ ...QUIET_FRAME, distanceFromBottom: 43 }),
+    ).toBe(true)
+  })
+
+  it('a live read keeps the tight threshold, so a real scroll-up is caught at once', () => {
+    // The widening applies ONLY to the stable-anchor path. A live read with a
+    // 43px gap must still disarm immediately — otherwise the fix would be a fat
+    // threshold wearing a different name.
+    expect(decideIsAtBottom({ ...QUIET_FRAME, distanceFromBottom: 43 })).toBe(false)
+    expect(AT_BOTTOM_STABLE_TOLERANCE_PX).toBeGreaterThan(BOTTOM_THRESHOLD_PX)
+  })
+})
+
 describe('wiring — both sides really use the shared ruler', () => {
   async function readSource(relPath: string): Promise<string> {
     const { readFileSync } = await import('node:fs')
@@ -587,15 +742,45 @@ describe('wiring — both sides really use the shared ruler', () => {
 
   it('ChatView measures at-bottom with bottomScrollTop, not the raw sizer', async () => {
     const src = await readSource('../../components/views/ChatView.vue')
-    // The decision line itself. Whitespace-tolerant: prettier wraps it.
+    // The live read is still there — it is the fallback and the ceiling.
     expect(src).toMatch(
-      /const bottomEdge = virtualScrollerRef\.value\?\.bottomScrollTop\?\.\(\)\s*\?\?\s*scrollHeight - clientHeight/,
+      /const liveEdge = virtualScrollerRef\.value\?\.bottomScrollTop\?\.\(\)\s*\?\?\s*scrollHeight - clientHeight/,
     )
     expect(src).toMatch(/const distanceFromBottom = Math\.max\(0, bottomEdge - actualScrollTop\)/)
     // The pre-fix expression must be GONE from the decision.
     expect(src).not.toMatch(
       /const distanceFromBottom = scrollHeight - actualScrollTop - clientHeight/,
     )
+  })
+
+  it('ChatView prefers the stable anchor over the live read', async () => {
+    const src = await readSource('../../components/views/ChatView.vue')
+    // The moving-target fix: `settledBottom` is read off the scroller and used
+    // as the floor for the edge the decision measures against.
+    expect(src).toMatch(/const settled = virtualScrollerRef\.value\?\.settledBottom/)
+    // The anchor REPLACES the live read; it is not max-ed with it. `settledBottom`
+    // comes from `bottomScrollTop()` at the end of a pass, and when the
+    // real-bottom override disengages that read returns the DOM edge — up to
+    // `maxTailGap` HIGHER than where the reader sits. Max-ing it in inflates the
+    // gap and disarms the very stick this protects.
+    expect(src).toMatch(
+      /typeof settled === 'number' && Number\.isFinite\(settled\)\s*\?\s*settled\s*:\s*liveEdge/,
+    )
+    expect(src).not.toMatch(/Math\.max\(settled, liveEdge\)/)
+    // The widened tolerance applies ONLY on the stable-anchor path. A live read
+    // must keep BOTTOM_THRESHOLD, or this is a fat threshold in disguise.
+    expect(src).toMatch(/AT_BOTTOM_STABLE_TOLERANCE_PX/)
+    // Whitespace-tolerant: prettier wraps the ternary across lines.
+    expect(src).toMatch(
+      /typeof settled === 'number' && Number\.isFinite\(settled\)\s*\?\s*AT_BOTTOM_STABLE_TOLERANCE_PX\s*:\s*BOTTOM_THRESHOLD/,
+    )
+  })
+
+  it('VirtualScroller exposes settledBottom as a live getter', async () => {
+    const src = await readSource('../VirtualScroller.vue')
+    // A getter, not a snapshot: `settledBottom` is a non-reactive `let` written
+    // inside measure passes, so a value in defineExpose would freeze at setup.
+    expect(src).toMatch(/defineExpose\(\{[\s\S]*?get settledBottom\(\)/)
   })
 
   it('ChatView hands the same ruler to the scroll-restore composable', async () => {

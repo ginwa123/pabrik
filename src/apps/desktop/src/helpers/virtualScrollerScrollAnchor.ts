@@ -177,21 +177,73 @@ export function computeAnchorCompensation(
   }
 
   const shiftPx = newAnchorTop - oldAnchorTop
-  if (shiftPx === 0) {
-    return { shiftPx: 0, newScrollTop: prevScrollTop, clamped: false, target: 'anchor' }
-  }
 
   // A reader at the bottom is re-targeted to the bottom edge rather than
   // compensated around the anchor — see `atBottomTarget` on the input type for
-  // the failure this prevents. Ordered AFTER the `shiftPx === 0` early return
-  // so a pass that changed nothing above the anchor still writes nothing.
-  if (typeof atBottomTarget === 'number' && Number.isFinite(atBottomTarget)) {
+  // the failure this prevents.
+  //
+  // Ordered BEFORE the `shiftPx === 0` early return, and that ordering is the
+  // fix (2026-10-10). It used to sit after it, on the reasoning that "a pass
+  // that changed nothing above the anchor still writes nothing". That is true
+  // for a scrolled-up reader and FALSE for a bottom one: the anchor path exists
+  // to hold a reader still, and a bottom reader has no anchor to hold — they
+  // need re-pinning whenever the bottom MOVED, which happens on every streaming
+  // chunk (content grows AT/AFTER the anchor, so the prefix is unchanged and
+  // `shiftPx` is 0) and whenever the rendered window shifts (the anchor index
+  // moves with it, so the prefix at the anchor is unchanged too).
+  //
+  // Measured: every pass in a real streaming turn had `shiftPx === 0`, so
+  // `atBottomTarget` was computed and then discarded, and the ONLY thing
+  // re-pinning a bottom reader was ChatView's separate `scrollToBottom()` call.
+  // When that call lost the race with the measure pass — which is timing
+  // dependent, and therefore why this only ever failed on the slower macOS
+  // runner — the reader was left where the last successful pin put them while
+  // the bottom had already moved on. That is the "the stick died mid-stream"
+  // flake.
+  //
+  // ── The guard is DIRECTION, not "did the target differ" ─────────────────
+  //
+  // The first attempt re-pinned whenever `atBottomTarget !== prevScrollTop`, and
+  // it regressed `chatview_send_scrolls_to_bottom_ui_test.py` hard. Measured
+  // pass, a send from history:
+  //
+  //     prevScrollTop=22987  oldAnchorTop=21321  newAnchorTop=22987  (shift +1666)
+  //     atBottomTarget=22800
+  //
+  // The re-pin wrote 22800 — 187px ABOVE the reader — and stranded them 1833px
+  // short of the bottom with no recovery. `atBottomTarget` comes from
+  // `bottomScrollTop()` read AFTER the model rebuild but BEFORE the DOM
+  // re-renders, so `content.offsetHeight` still describes the OLD window while
+  // `topSpacer` comes from the NEW one; when the prefix moved, that pair never
+  // existed together and the target is simply wrong.
+  //
+  // What distinguishes the bad pass from the good ones is not the prefix delta —
+  // it is which way the target sits relative to the reader. A re-pin exists to
+  // carry a bottom reader DOWN to content that grew below them. A target ABOVE
+  // where they already sit is never something to write: it is either a stale
+  // read or a reader already past the bottom, and writing it drags them UP,
+  // which is the one move the stick must never make.
+  //
+  // So the guard is `atBottomTarget > prevScrollTop`. That admits every pass
+  // whose target is genuinely further down (including the moved-prefix cases
+  // this helper was originally written for) and rejects the stale upward read.
+  // Scrolled-up readers are unaffected either way — the caller only passes
+  // `atBottomTarget` when it has judged the reader to be at the bottom.
+  if (
+    typeof atBottomTarget === 'number' &&
+    Number.isFinite(atBottomTarget) &&
+    atBottomTarget > prevScrollTop
+  ) {
     return {
       shiftPx,
       newScrollTop: Math.max(0, atBottomTarget),
       clamped: false,
       target: 'bottom',
     }
+  }
+
+  if (shiftPx === 0) {
+    return { shiftPx: 0, newScrollTop: prevScrollTop, clamped: false, target: 'anchor' }
   }
 
   const raw = prevScrollTop + shiftPx
