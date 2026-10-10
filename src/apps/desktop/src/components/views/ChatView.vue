@@ -125,7 +125,7 @@ import CodeViewerStage from './CodeViewerStage.vue'
 import { useRouter, useRoute } from 'vue-router'
 import type { LocationQueryRaw } from 'vue-router'
 import { useWorkspacesStore } from '../../stores/workspaces'
-import { buildAppUrl } from '../../helpers/appUrl'
+import { buildAppUrl, isChatRouteStaleForSession } from '../../helpers/appUrl'
 import CompactionCard from '../preview/CompactionCard.vue'
 // 2026-08-25 agent-error-card (task_1787663566535_2): dedicated renderer
 // for agentic-loop error/retry diagnostics (is_error=true SSE events).
@@ -708,6 +708,7 @@ function syncDiffQuery(mutate: (query: LocationQueryRaw) => void) {
   if (route.query.view !== undefined && route.query.view !== 'chat') return
   const routeSession = route.query.session
   if (typeof routeSession === 'string' && routeSession !== sessionId.value) return
+  if (isChatRouteStaleForSession(route.path, sessionId.value)) return
   const query: LocationQueryRaw = { ...route.query }
   mutate(query)
   router.replace({ path: route.path, query }).catch(() => {})
@@ -904,6 +905,7 @@ function syncDiffParam(path: string | null) {
   if (route.query.view !== undefined && route.query.view !== 'chat') return
   const routeSession = route.query.session
   if (typeof routeSession === 'string' && routeSession !== sessionId.value) return
+  if (isChatRouteStaleForSession(route.path, sessionId.value)) return
   const query = { ...route.query }
   if (path) query.diff = encodePathParam(path)
   else delete query.diff
