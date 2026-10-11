@@ -19,6 +19,15 @@
 //            reflects the flag (false → true across a PUT).
 //   Test 6 — Status URL is reachable (same origin serves the SPA).
 //
+// Lifecycle B: a taken default port falls back to a free one instead of
+// dying — on every platform. Covered here:
+//
+//   Test 7 — With 8081 held by another listener, a bare `pabrik` (no
+//            --port) boots on a different port, prints the real browser
+//            URL, and serves /health there. An explicit --port keeps
+//            failing loud (operator intent) — that path is not spawned
+//            here, it is the pre-existing exit(1) branch in main.zig.
+//
 // The harness boots pabrik on a random free port (never 8081), so Test 5
 // locks in that the status endpoint reports the LIVE port, not a
 // hardcoded default.
@@ -377,4 +386,170 @@ test "web_status_url_serves_http" {
         std.debug.print("{s} returned {d}\n", .{ health_url, status });
         return error.TestUnexpectedResult;
     }
+}
+
+// A taken default port falls back to a free one instead of dying — on
+// every platform (no OS branches below: raw loopback sockets, child
+// spawn with an explicit env map, and std.http.Client are all portable).
+//
+// The occupant is a held listener, not a second server: what matters is
+// EADDRINUSE on the server's bind, and a raw socket is the lightest
+// deterministic way to produce it. If 8081 is already taken by the
+// environment, skip — the fallback needs a controlled occupant, and
+// asserting against an unknown listener would prove nothing.
+test "busy_default_port_falls_back_to_a_free_port_and_serves" {
+    try harness.requirePabrikBin(io, gpa);
+
+    const held_addr: std.Io.net.IpAddress = .{ .ip4 = .loopback(8081) };
+    var held = held_addr.listen(io, .{ .reuse_address = true }) catch {
+        return error.SkipZigTest;
+    };
+    defer held.deinit(io);
+
+    const bin = try harness.resolvePabrikBin(io, gpa);
+    defer gpa.free(bin);
+
+    const scratch = try harness.makeScratchDir(gpa);
+    defer gpa.free(scratch);
+    defer harness.cleanupExtraDir(io, gpa, scratch);
+
+    // Child env mirrors Harness.boot's isolation so config + DB land
+    // inside scratch on all three platforms (POSIX: HOME + XDG;
+    // Windows: USERPROFILE + APPDATA/LOCALAPPDATA).
+    const home = try harness.harnessPath(gpa, scratch, &.{"home"});
+    defer gpa.free(home);
+    try std.Io.Dir.cwd().createDirPath(io, home);
+    const xdg_config = try harness.harnessPath(gpa, home, &.{ ".config", "pabrik" });
+    defer gpa.free(xdg_config);
+    const xdg_state = try harness.harnessPath(gpa, home, &.{ ".local", "state", "pabrik" });
+    defer gpa.free(xdg_state);
+    const xdg_data = try harness.harnessPath(gpa, home, &.{ ".local", "share", "pabrik" });
+    defer gpa.free(xdg_data);
+    const xdg_cache = try harness.harnessPath(gpa, home, &.{ ".cache", "pabrik" });
+    defer gpa.free(xdg_cache);
+    try std.Io.Dir.cwd().createDirPath(io, xdg_config);
+    try std.Io.Dir.cwd().createDirPath(io, xdg_state);
+    try std.Io.Dir.cwd().createDirPath(io, xdg_data);
+    try std.Io.Dir.cwd().createDirPath(io, xdg_cache);
+
+    var env_map = try std.process.Environ.createMap(std.testing.environ, gpa);
+    defer env_map.deinit();
+    try env_map.put("HOME", home);
+    try env_map.put("XDG_CONFIG_HOME", xdg_config);
+    try env_map.put("XDG_STATE_HOME", xdg_state);
+    try env_map.put("XDG_DATA_HOME", xdg_data);
+    try env_map.put("XDG_CACHE_HOME", xdg_cache);
+    if (builtin.os.tag == .windows) {
+        try env_map.put("USERPROFILE", home);
+        const roaming = try harness.harnessPath(gpa, home, &.{ "AppData", "Roaming" });
+        defer gpa.free(roaming);
+        const local = try harness.harnessPath(gpa, home, &.{ "AppData", "Local" });
+        defer gpa.free(local);
+        try std.Io.Dir.cwd().createDirPath(io, roaming);
+        try std.Io.Dir.cwd().createDirPath(io, local);
+        try env_map.put("APPDATA", roaming);
+        try env_map.put("LOCALAPPDATA", local);
+    }
+
+    const log_path = try harness.harnessPath(gpa, scratch, &.{"server.log"});
+    defer gpa.free(log_path);
+    var log_file = try std.Io.Dir.cwd().createFile(io, log_path, .{});
+    defer log_file.close(io);
+
+    // No --port: the whole point. The server must observe EADDRINUSE on
+    // 8081 and pick a free port itself.
+    const argv = [_][]const u8{bin};
+    var child = try std.process.spawn(io, .{
+        .argv = &argv,
+        .environ_map = &env_map,
+        .stdout = .{ .file = log_file },
+        .stderr = .{ .file = log_file },
+    });
+    // Error paths below must not leak the server.
+    errdefer {
+        child.kill(io);
+        _ = child.wait(io) catch {};
+    }
+
+    // Wait up to 30 s for readiness, polling the log (same signal the
+    // smoke script waits for).
+    var ready = false;
+    var attempt: usize = 0;
+    while (attempt < 300) : (attempt += 1) {
+        const body = std.Io.Dir.cwd().readFileAlloc(io, log_path, gpa, .limited(1 << 20)) catch {
+            std.Io.sleep(io, .fromMilliseconds(100), .awake) catch {};
+            continue;
+        };
+        ready = std.mem.indexOf(u8, body, "Agent is ready to serve!") != null;
+        gpa.free(body);
+        if (ready) break;
+        std.Io.sleep(io, .fromMilliseconds(100), .awake) catch {};
+    }
+    if (!ready) {
+        const body = std.Io.Dir.cwd().readFileAlloc(io, log_path, gpa, .limited(1 << 20)) catch "";
+        defer if (body.len > 0) gpa.free(body);
+        std.debug.print("fallback server never became ready; log:\n{s}\n", .{body});
+        return error.TestUnexpectedResult;
+    }
+
+    // The printed browser URL carries the fallback port, not 8081.
+    const log = try std.Io.Dir.cwd().readFileAlloc(io, log_path, gpa, .limited(1 << 20));
+    defer gpa.free(log);
+    if (std.mem.indexOf(u8, log, "already in use") == null) {
+        std.debug.print("log missing the port-in-use fallback line\n", .{});
+        return error.TestUnexpectedResult;
+    }
+    const url_prefix = "Open in your browser: http://127.0.0.1:";
+    const at = std.mem.indexOf(u8, log, url_prefix) orelse {
+        std.debug.print("log missing the browser URL line\n", .{});
+        return error.TestUnexpectedResult;
+    };
+    var end = at + url_prefix.len;
+    while (end < log.len and log[end] >= '0' and log[end] <= '9') : (end += 1) {}
+    const port = std.fmt.parseInt(u16, log[at + url_prefix.len .. end], 10) catch {
+        std.debug.print("could not parse fallback port from log\n", .{});
+        return error.TestUnexpectedResult;
+    };
+    if (port == 8081) {
+        std.debug.print("server stayed on the occupied 8081\n", .{});
+        return error.TestUnexpectedResult;
+    }
+
+    // And the fallback port actually serves (fresh client, like a browser).
+    {
+        var client: std.http.Client = .{ .allocator = gpa, .io = io };
+        defer client.deinit();
+        const health_url = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/health", .{port});
+        defer gpa.free(health_url);
+        var req = try client.request(.GET, try std.Uri.parse(health_url), .{
+            .redirect_behavior = .unhandled,
+        });
+        defer req.deinit();
+        try req.sendBodiless();
+        var resp = try req.receiveHead(&.{});
+        const status: u16 = @intFromEnum(resp.head.status);
+        var sink: std.Io.Writer.Discarding = .init(&.{});
+        _ = resp.reader(&.{}).streamRemaining(&sink.writer) catch {};
+        if (status != 200) {
+            std.debug.print("{s} returned {d}\n", .{ health_url, status });
+            return error.TestUnexpectedResult;
+        }
+    }
+
+    // Teardown: ask nicely, then make sure.
+    {
+        var client: std.http.Client = .{ .allocator = gpa, .io = io };
+        defer client.deinit();
+        const shutdown_url = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/test/shutdown", .{port});
+        defer gpa.free(shutdown_url);
+        if (client.request(.POST, try std.Uri.parse(shutdown_url), .{ .redirect_behavior = .unhandled })) |req| {
+            var r = req;
+            defer r.deinit();
+            r.sendBodiless() catch {};
+            _ = r.receiveHead(&.{}) catch {};
+        } else |_| {}
+    }
+    std.Io.sleep(io, .fromMilliseconds(2000), .awake) catch {};
+    child.kill(io);
+    _ = child.wait(io) catch {};
 }
