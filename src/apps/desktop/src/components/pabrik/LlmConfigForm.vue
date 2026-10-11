@@ -8,6 +8,22 @@ export interface LlmConfig {
   temperature: string
   url_style: string
   api_key: string
+  /** Which TRANSPORT runs this profile's calls: `"http"` (default) or
+   * `"claude-code"` (the local `claude` CLI, subscription auth via
+   * `claude login`). Orthogonal to `url_style`, which describes the HTTP
+   * wire format only.
+   *
+   * Optional on purpose: an absent key IS the documented `"http"` default,
+   * so a profile authored before this field existed (or one that only
+   * fills the HTTP fields) needs no change. */
+  backend?: string
+  /** Claude Code only: `CLAUDE_CONFIG_DIR`. Lets two profiles keep two
+   * different `claude login` sessions side by side — the way per-profile
+   * identity works when there is no API key. `null` = CLI default. */
+  config_dir?: string | null
+  /** Claude Code only: agentic turn ceiling (`--max-turns`).
+   * `null` = the CLI's own default. */
+  max_turns?: number | null
   /** Optional per-profile override for the context window (in tokens).
    * `null` = no per-profile override (fall through to top-level defaults
    * → built-in). Added in plan 2026-07-07-compaction-inline. */
@@ -128,6 +144,15 @@ function onTemperatureInput(raw: string) {
   if (normalized !== props.modelValue.temperature) update('temperature', normalized)
 }
 
+// === Transport gating — `backend` (orthogonal to `url_style`) ===
+// A claude-code profile runs the local `claude` CLI: there is no base URL,
+// no API key and no HTTP body shape to choose, so those controls are hidden
+// rather than shown-but-ignored. Its own knobs (`config_dir`, `max_turns`)
+// appear instead. Hidden fields keep their values (not nulled) so switching
+// backends back and forth does not lose what the user typed.
+const isClaudeCodeBackend = computed(() => props.modelValue.backend === 'claude-code')
+const isHttpBackend = computed(() => !isClaudeCodeBackend.value)
+
 // === Per-style gating — plan 2026-09-01-migrate-openai-legacy-to-response ===
 // thinking_budget_tokens is Anthropic-only; reasoning_effort is OpenAI + Responses.
 // Hidden fields preserve values (not nulled) so switching styles doesn't lose data.
@@ -139,6 +164,30 @@ const isOpenAIStyle = computed(
 
 <template>
   <div class="space-y-4">
+    <!-- Backend — which TRANSPORT runs this profile. Gates everything below:
+         HTTP shows base URL / API key / wire style; Claude Code shows the
+         CLI's own knobs. -->
+    <div>
+      <label :class="labelBase" :style="labelStyle">Backend</label>
+      <select
+        :value="modelValue.backend"
+        @change="update('backend', ($event.target as HTMLSelectElement).value)"
+        :class="inputBase"
+        :style="inputStyle()"
+        data-testid="backend-select"
+      >
+        <option value="http">HTTP (base URL + API key)</option>
+        <option value="claude-code">Claude Code (local CLI)</option>
+      </select>
+      <p class="text-dense mt-1" :style="helperStyle">
+        {{
+          isClaudeCodeBackend
+            ? 'Runs the local `claude` CLI with your subscription — no API key or Base URL.'
+            : 'Calls an HTTP endpoint using the wire format below.'
+        }}
+      </p>
+    </div>
+
     <!-- Model -->
     <div>
       <label :class="labelBase" :style="labelStyle">
@@ -148,7 +197,7 @@ const isOpenAIStyle = computed(
         :value="modelValue.model"
         @input="update('model', ($event.target as HTMLInputElement).value)"
         type="text"
-        placeholder="MiniMax-M2.7"
+        :placeholder="isClaudeCodeBackend ? 'sonnet' : 'MiniMax-M2.7'"
         :class="inputBase"
         :style="inputStyle(!!errors?.model)"
         data-testid="model-input"
@@ -156,8 +205,8 @@ const isOpenAIStyle = computed(
       <p v-if="errors?.model" class="text-dense mt-1" :style="errorStyle">{{ errors.model }}</p>
     </div>
 
-    <!-- Base URL -->
-    <div>
+    <!-- Base URL — HTTP only -->
+    <div v-if="isHttpBackend">
       <label :class="labelBase" :style="labelStyle">Base URL</label>
       <input
         :value="modelValue.base_url"
@@ -173,8 +222,8 @@ const isOpenAIStyle = computed(
       </p>
     </div>
 
-    <!-- Thinking / Temperature / URL style — 3 columns -->
-    <div class="grid grid-cols-3 gap-3">
+    <!-- Thinking / Temperature / URL style — HTTP only, 3 columns -->
+    <div v-if="isHttpBackend" class="grid grid-cols-3 gap-3">
       <div>
         <label :class="labelBase" :style="labelStyle">Thinking</label>
         <select
@@ -224,33 +273,77 @@ const isOpenAIStyle = computed(
           <option value="openai">OpenAI</option>
           <option value="openai-response">OpenAI Response</option>
           <option value="anthropic">Anthropic</option>
-          <option value="claude-code">Claude Code (CLI)</option>
         </select>
       </div>
     </div>
 
-    <div
-      v-if="modelValue.url_style === 'claude-code'"
-      class="rounded-md border px-3 py-2 text-dense"
-      style="border-color: var(--color-border); color: var(--semantic-text-dim)"
-      data-testid="claude-code-hint"
-    >
-      Claude Code runs the local <span class="font-mono">claude</span> CLI with your subscription
-      (<span class="font-mono">claude login</span>) — no API key or Base URL needed. Set Model to
-      <span class="font-mono">sonnet</span>, <span class="font-mono">opus</span>, or a full
-      <span class="font-mono">claude-sonnet-4-5-…</span> id. Phase 1 saves the profile; CLI
-      execution wires up in Phase 2.
+    <!-- Claude Code knobs — CLI only. `config_dir` is what makes two
+         profiles two different logins. -->
+    <div v-if="isClaudeCodeBackend" class="grid grid-cols-2 gap-3">
+      <div>
+        <label :class="labelBase" :style="labelStyle">
+          Config dir
+          <span class="block text-dense mt-0.5" :style="helperStyle">
+            CLAUDE_CONFIG_DIR. Blank = ~/.claude. Point two profiles at two dirs to keep two logins
+            apart.
+          </span>
+        </label>
+        <input
+          :value="modelValue.config_dir ?? ''"
+          @input="
+            (e) => {
+              const raw = (e.target as HTMLInputElement).value
+              update('config_dir', raw === '' ? null : raw)
+            }
+          "
+          type="text"
+          placeholder="~/.claude-work"
+          :class="inputBase"
+          :style="inputStyle()"
+          data-testid="claude-config-dir-input"
+        />
+      </div>
+      <div>
+        <label :class="labelBase" :style="labelStyle">
+          Max turns
+          <span class="block text-dense mt-0.5" :style="helperStyle">
+            Agentic turn ceiling (--max-turns). Blank = CLI default.
+          </span>
+        </label>
+        <input
+          :value="modelValue.max_turns ?? ''"
+          @input="
+            (e) => {
+              const raw = (e.target as HTMLInputElement).value
+              if (raw === '') {
+                update('max_turns', null)
+              } else {
+                const parsed = parseInt(raw, 10)
+                update('max_turns', Number.isFinite(parsed) ? Math.max(1, parsed) : null)
+              }
+            }
+          "
+          type="number"
+          min="1"
+          step="1"
+          placeholder="40"
+          :class="inputBase"
+          :style="inputStyle()"
+          data-testid="claude-max-turns-input"
+        />
+      </div>
     </div>
 
     <!-- Thinking budget + Reasoning effort — plan 2026-08-23-model-thinking.
          Per-style gating (plan 2026-09-01-migrate-openai-legacy-to-response):
            - thinking_budget_tokens: Anthropic only
            - reasoning_effort: OpenAI + OpenAI-Response
-         Hidden when thinking === "off" because the budget is irrelevant
-         and the effort dropdown is meaningless when extended reasoning
-         is disabled. Hidden fields preserve values (not nulled) so
-         switching styles doesn't lose data — only visibility changes. -->
-    <div v-if="modelValue.thinking !== 'off'" class="grid grid-cols-2 gap-3">
+         HTTP only: both are request-body knobs the CLI never sees. Hidden
+         when thinking === "off" because the budget is irrelevant and the
+         effort dropdown is meaningless when extended reasoning is disabled.
+         Hidden fields preserve values (not nulled) so switching styles
+         doesn't lose data — only visibility changes. -->
+    <div v-if="isHttpBackend && modelValue.thinking !== 'off'" class="grid grid-cols-2 gap-3">
       <div v-if="isAnthropic">
         <label :class="labelBase" :style="labelStyle">
           Thinking budget tokens
@@ -313,8 +406,8 @@ const isOpenAIStyle = computed(
       </div>
     </div>
 
-    <!-- API key with show/hide -->
-    <div>
+    <!-- API key with show/hide — HTTP only -->
+    <div v-if="isHttpBackend">
       <label :class="labelBase" :style="labelStyle">
         API key
         <span v-if="!modelValue.api_key" style="color: var(--color-red)">*</span>

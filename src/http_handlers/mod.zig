@@ -610,6 +610,7 @@ pub fn notifyTestHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, r
 // not a member of `pabrikcore`.
 const custom_http_client = @import("kabelweb").client;
 const helpers = @import("helpers");
+const claude_code = @import("../agentic_loop/claude_code.zig");
 
 /// Per-call deadline for the probe (libcurl has OS-level timeout
 /// support). Generous vs the MCP 10s probe because LLM inference —
@@ -641,6 +642,13 @@ const LlmTestRequest = struct {
     base_url: []const u8 = "",
     api_key: []const u8 = "",
     url_style: []const u8 = "openai",
+    /// Transport discriminator, mirroring a profile's `backend` key:
+    /// `"http"` (default) | `"claude-code"`. Absent from older frontends
+    /// that only ever sent `url_style`, which is why it defaults to http.
+    backend: []const u8 = "http",
+    /// Claude Code only: `CLAUDE_CONFIG_DIR`, so the probe checks the same
+    /// login the run would use.
+    config_dir: []const u8 = "",
 };
 
 // ─── Error mapping ──────────────────────────────────────────────────────────
@@ -668,21 +676,23 @@ const LlmTestOutcome = struct {
 
 /// Validate the candidate without touching the network. Empty api_key
 /// is ALLOWED (keyless local endpoints + stub upstreams in tests).
-/// `url_style="claude-code"` selects the local Claude Code CLI backend:
-/// it needs only `model` (subscription auth via `claude login`), so an
-/// empty `base_url` is accepted for that style.
+///
+/// The TRANSPORT decides which fields are required — `base_url` / `api_key`
+/// are HTTP concepts. A `backend="claude-code"` profile authenticates
+/// through the CLI's own `claude login` state, so it needs only `model`
+/// and its `url_style` is irrelevant (it never reaches a wire body).
 fn llmTestValidate(req: LlmTestRequest) LlmTestError!void {
     if (req.model.len == 0) return LlmTestError.MissingModel;
-    const is_claude_code = std.mem.eql(u8, req.url_style, "claude-code");
-    if (is_claude_code) return;
+
+    if (std.mem.eql(u8, req.backend, "claude-code")) return;
+
     if (req.base_url.len == 0) return LlmTestError.MissingBaseUrl;
     const has_http_scheme = std.mem.startsWith(u8, req.base_url, "http://") or
         std.mem.startsWith(u8, req.base_url, "https://");
     if (!has_http_scheme) return LlmTestError.InvalidBaseUrl;
     if (!(std.mem.eql(u8, req.url_style, "openai") or
         std.mem.eql(u8, req.url_style, "openai-response") or
-        std.mem.eql(u8, req.url_style, "anthropic") or
-        is_claude_code))
+        std.mem.eql(u8, req.url_style, "anthropic")))
         return LlmTestError.UnsupportedStyle;
 }
 
@@ -814,25 +824,80 @@ fn llmTestExtractReply(
 
 // ─── Use-case (network) ─────────────────────────────────────────────────────
 
+/// Probe a Claude Code profile by running `<binary> --version`.
+///
+/// Goes through `helpers.run_captured` — the only sanctioned spawn path in
+/// this codebase. It detaches the child's pipes before waiting (so std's
+/// `childCleanupPosix` can never abort the whole server), drains stdout and
+/// stderr concurrently (so a chatty child cannot deadlock on a full pipe),
+/// and bounds the run with a deadline. See its module doc for the three
+/// production incidents it exists to prevent.
+fn llmTestProbeClaudeCode(
+    allocator: std.mem.Allocator,
+    logger: *loggermod.Logger,
+    io: std.Io,
+    req: LlmTestRequest,
+) LlmTestError!LlmTestOutcome {
+    const binary = claude_code.resolveBinaryPath("");
+    const start_ns = helpers.monotonicTimestampNanos();
+
+    const argv = claude_code.buildVersionProbeArgs(allocator, binary) catch
+        return LlmTestError.OutOfMemory;
+    defer claude_code.freeArgs(allocator, argv);
+
+    var result = helpers.run_captured.run(
+        allocator,
+        io,
+        argv,
+        .{ .timeout_ms = TEST_LLM_TIMEOUT_MS },
+    ) catch |err| {
+        // Spawn-level failure is the normal "not installed" case, not an
+        // exceptional one: report it as a readable message rather than
+        // surfacing a bare error name the modal cannot explain.
+        logger.warnFmt("[llm_test] claude-code probe could not spawn '{s}': {s}", .{ binary, @errorName(err) });
+        const reply = claude_code.describeVersionProbe(allocator, binary, true, false, "", "") catch
+            return LlmTestError.OutOfMemory;
+        return .{ .model = req.model, .reply = reply, .latency_ms = 0 };
+    };
+    defer result.deinit(allocator);
+
+    const latency_ms: i64 = @intCast((helpers.monotonicTimestampNanos() - start_ns) / std.time.ns_per_ms);
+    const exited_zero = switch (result.term) {
+        .exited => |code| code == 0,
+        else => false,
+    };
+    logger.infoFmt(
+        "[llm_test] claude-code probe binary='{s}' exited_zero={} latency={d}ms",
+        .{ binary, exited_zero, latency_ms },
+    );
+
+    const reply = claude_code.describeVersionProbe(
+        allocator,
+        binary,
+        false,
+        exited_zero,
+        result.stdout,
+        result.stderr,
+    ) catch return LlmTestError.OutOfMemory;
+
+    return .{ .model = req.model, .reply = reply, .latency_ms = latency_ms };
+}
+
 fn llmTestUseCase(
     allocator: std.mem.Allocator,
     logger: *loggermod.Logger,
+    io: std.Io,
     req: LlmTestRequest,
     out_err_detail: *?[]const u8,
 ) LlmTestError!LlmTestOutcome {
     try llmTestValidate(req);
 
-    // Claude Code is a local CLI backend, not an HTTP endpoint — there is
-    // nothing to POST a probe to. Report success so the Test button
-    // confirms the config shape; the user verifies the binary locally
-    // via `claude --version` after `claude login`.
-    if (std.mem.eql(u8, req.url_style, "claude-code")) {
-        const reply = std.fmt.allocPrint(
-            allocator,
-            "claude-code backend selected (model={s}) — HTTP probe skipped; verify locally with `claude --version` after `claude login`.",
-            .{req.model},
-        ) catch return LlmTestError.OutOfMemory;
-        return .{ .model = req.model, .reply = reply, .latency_ms = 0 };
+    // Claude Code is a local CLI backend, not an HTTP endpoint: there is no
+    // POST to make. Probe the binary for REAL (`claude --version`) instead
+    // of reporting a green stub — that catches "not installed" and
+    // "installed but broken", which a config-shape check cannot.
+    if (std.mem.eql(u8, req.backend, "claude-code")) {
+        return llmTestProbeClaudeCode(allocator, logger, io, req);
     }
 
     var client = custom_http_client.Client.init(allocator);
@@ -947,12 +1012,12 @@ pub fn llmTestHandler(
 
     var err_detail: ?[]const u8 = null;
     defer if (err_detail) |d| allocator.free(d);
-    const outcome = llmTestUseCase(allocator, logger, parsed, &err_detail) catch |err| {
+    const outcome = llmTestUseCase(allocator, logger, di.io, parsed, &err_detail) catch |err| {
         const message: []const u8 = switch (err) {
             error.MissingModel => "model is required",
             error.MissingBaseUrl => "base_url is required",
             error.InvalidBaseUrl => "base_url must start with http:// or https://",
-            error.UnsupportedStyle => "url_style must be 'openai', 'openai-response', 'anthropic' or 'claude-code'",
+            error.UnsupportedStyle => "url_style must be 'openai', 'openai-response' or 'anthropic'",
             error.SendFailed => "failed to reach the LLM server (check base_url)",
             error.Timeout => "LLM server did not respond within 15 seconds",
             error.HttpError => "LLM server returned an error status",
@@ -1019,18 +1084,42 @@ test "llm_test validate: allows empty api_key (keyless local / stub upstream)" {
     try llmTestValidate(req);
 }
 
-test "llm_test validate: accepts all four known styles" {
-    for ([_][]const u8{ "openai", "openai-response", "anthropic", "claude-code" }) |style| {
+test "llm_test validate: accepts all three known styles" {
+    for ([_][]const u8{ "openai", "openai-response", "anthropic" }) |style| {
         const req: LlmTestRequest = .{ .model = "m", .base_url = "http://127.0.0.1:9/x", .url_style = style };
         try llmTestValidate(req);
     }
 }
 
-test "llm_test validate: claude-code needs model only, no base_url" {
-    const req: LlmTestRequest = .{ .model = "sonnet", .base_url = "", .url_style = "claude-code" };
+test "llm_test validate: claude-code backend needs model only, no base_url" {
+    const req: LlmTestRequest = .{ .model = "sonnet", .base_url = "", .backend = "claude-code" };
     try llmTestValidate(req);
-    const missing: LlmTestRequest = .{ .model = "", .base_url = "", .url_style = "claude-code" };
+    const missing: LlmTestRequest = .{ .model = "", .base_url = "", .backend = "claude-code" };
     try testing.expectError(LlmTestError.MissingModel, llmTestValidate(missing));
+}
+
+test "llm_test validate: url_style is irrelevant to the claude-code backend" {
+    // Claude Code never builds a wire body, so a garbage url_style must not
+    // fail the probe — the discriminator is `backend`, not `url_style`.
+    const req: LlmTestRequest = .{
+        .model = "sonnet",
+        .base_url = "not-a-url",
+        .url_style = "garbage",
+        .backend = "claude-code",
+    };
+    try llmTestValidate(req);
+}
+
+test "llm_test validate: claude-code in url_style is just an unknown style" {
+    // The old overload is gone: with backend=http (the default), a
+    // "claude-code" url_style is an unsupported WIRE FORMAT, and base_url is
+    // still required.
+    const req: LlmTestRequest = .{
+        .model = "m",
+        .base_url = "http://127.0.0.1:9/x",
+        .url_style = "claude-code",
+    };
+    try testing.expectError(LlmTestError.UnsupportedStyle, llmTestValidate(req));
 }
 
 test "llm_test buildProbeBody: openai body carries model + probe prompt" {

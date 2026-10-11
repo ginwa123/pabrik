@@ -1356,6 +1356,14 @@ pub const Agent = struct {
     allocator: std.mem.Allocator,
     httpOptions: HttpOptions = .{},
     UrlStyle: []const u8 = "openai",
+    /// Which TRANSPORT this call uses: `"http"` (default) | `"claude-code"`.
+    ///
+    /// Deliberately NOT a `UrlStyle` value. `UrlStyle` selects the HTTP body
+    /// shape (`openai` / `openai-response` / `anthropic`) and is read by
+    /// `buildJson*Request` and the SSE parsers; Claude Code has no URL and
+    /// no body, so folding it into `UrlStyle` would force a "not applicable"
+    /// arm into each of those. Set from `EffectiveProfile.backend`.
+    backend: []const u8 = "http",
     userIdentifier: []const u8 = "AnakMagang",
     /// Stable per-conversation session id for OpenCode Go / Zen routing.
     /// Sent as the `x-opencode-session` HTTP header on every LLM request
@@ -2903,10 +2911,10 @@ pub const Agent = struct {
         // user gets an actionable message instead of a confusing
         // InvalidUri from the empty base_url. Phase 2 will dispatch to
         // `agentic_loop/claude_code.zig` execution from this point.
-        if (std.mem.eql(u8, self.UrlStyle, "claude-code")) {
+        if (std.mem.eql(u8, self.backend, "claude-code")) {
             const detail = std.fmt.allocPrint(
                 self.allocator,
-                "profile uses url_style=\"claude-code\" (model=\"{s}\") but CLI execution is not wired yet (Phase 1: configuration only). Install the CLI (https://docs.anthropic.com/en/docs/claude-code) and run `claude login`, or switch the profile back to an HTTP url_style (openai|openai-response|anthropic).",
+                "profile uses backend=\"claude-code\" (model=\"{s}\") but CLI execution is not wired yet (Phase 1: configuration only). Install the CLI (https://docs.anthropic.com/en/docs/claude-code) and run `claude login`, or set the profile's backend back to \"http\".",
                 .{self.model},
             ) catch null;
             if (detail) |d| {
@@ -4097,18 +4105,35 @@ test "HttpOptions.idle_timeout_ms default stays above TCP keepalive window" {
     try expectEqualCallStreaming(@as(u32, 180_000), defaults.idle_timeout_ms);
 }
 
-test "callStreaming with claude-code style fails fast with actionable error" {
+test "callStreaming with claude-code backend fails fast with actionable error" {
     var a = Agent.init(testing_allocatorCallStreaming, std.testing.io);
     defer a.deinit();
     a.baseUrl = "";
     a.model = "sonnet";
     a.apiKey = "";
-    a.UrlStyle = "claude-code";
+    a.backend = "claude-code";
     const result = a.callStreaming(makeCall(), null, noopCallback);
     try expectErrorCallStreaming(error.ClaudeCodeNotWired, result);
     const detail = a.last_error_message orelse return error.MissingDetail;
     try expectCallStreaming(std.mem.indexOf(u8, detail, "claude-code") != null);
     try expectCallStreaming(std.mem.indexOf(u8, detail, "claude login") != null);
+}
+
+test "callStreaming ignores a claude-code UrlStyle when backend is http" {
+    // The discriminator is `backend`, NOT `UrlStyle`. A profile that names
+    // an unknown url_style but keeps backend="http" must take the HTTP path
+    // (and fail on the empty base_url), never the CLI guard — this pins the
+    // separation the whole design rests on.
+    var a = Agent.init(testing_allocatorCallStreaming, std.testing.io);
+    defer a.deinit();
+    a.baseUrl = "";
+    a.model = "sonnet";
+    a.apiKey = "k";
+    a.UrlStyle = "claude-code";
+    const result = a.callStreaming(makeCall(), null, noopCallback);
+    // Empty base_url has no scheme → the HTTP path's InvalidUri, not the
+    // CLI guard.
+    try expectErrorCallStreaming(error.InvalidUri, result);
 }
 
 // ============================================================================

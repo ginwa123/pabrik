@@ -1,63 +1,61 @@
 //! Claude Code agent backend — Phase 1 (configuration + detection).
 //!
-//! Pabrik's profiles have always been HTTP-only (`url_style` of
-//! `openai` | `openai-response` | `anthropic`, talking to `base_url`
-//! with `api_key`). Claude Code is different: it is a local `claude`
-//! CLI authenticated via the user's subscription (`claude login`,
-//! credentials in `~/.claude/`), not via an API key, and it owns its
-//! own agentic loop (file edits, bash, etc.).
+//! Pabrik profiles have always been HTTP-only: a profile names a `model`,
+//! a `base_url`, an `api_key` and a `url_style` (the HTTP body shape), and
+//! the workflow POSTs to that endpoint. Claude Code does not fit that
+//! shape — it is a local `claude` CLI authenticated by subscription
+//! (`claude login`, state under `~/.claude/`), and it owns its own agentic
+//! loop.
 //!
-//! Phase 1 models that backend as a fourth `url_style` value,
-//! `"claude-code"`, so the whole existing cascade
-//! (`resolveEffectiveProfile`, per-session overlays, sub-agent
-//! inheritance) keeps working unchanged. HTTP-only fields
-//! (`base_url`, `api_key`) are ignored for this style — a profile
-//! needs only `model` (e.g. `sonnet`, `opus`, or a full
-//! `claude-sonnet-4-5-...` id).
+//! So the transport lives in its OWN profile field, `backend`
+//! (`"http"` default | `"claude-code"`), and `url_style` keeps meaning
+//! exactly one thing: the HTTP wire format. Overloading `url_style` with a
+//! non-HTTP value would have left `base_url` / `api_key` present-but-dead
+//! and forced a "not applicable" arm into every wire-format dispatch site
+//! (`buildJson*Request`, the SSE parsers, the Settings probe).
 //!
 //! What this module owns:
-//!   * the canonical style string + predicate (`isClaudeCodeStyle`),
-//!   * profile validation for the style (`validateClaudeCodeProfile`),
+//!   * the backend predicates (`isClaudeCodeBackend`, `isKnownBackend`),
+//!   * profile validation for the CLI backend (`validateClaudeCodeProfile`),
 //!   * `claude` binary discovery (`resolveBinaryPath`),
 //!   * `claude -p` argv construction (`buildPrintArgs`),
-//!   * minimal `stream-json` line parsing (`parseResultLine`),
-//!     so the future execution wiring has one owner.
+//!   * the `CLAUDE_CONFIG_DIR` env overlay (`buildEnvOverlay`),
+//!   * the `claude --version` probe (`buildVersionProbeArgs` +
+//!     `describeVersionProbe`), and
+//!   * minimal `stream-json` line parsing (`parseResultLine`).
 //!
-//! What it does NOT do yet: execute the CLI or stream its output
-//! into the workflow. `workflow.zig` gates on this style and fails
-//! fast with an actionable message until that wiring lands (Phase 2).
+//! What it does NOT do yet: execute the CLI or stream its output into the
+//! workflow. `Agent.callStreaming` fails fast with
+//! `error.ClaudeCodeNotWired` until that wiring lands (Phase 2).
 
 const std = @import("std");
+const config_mod = @import("../modules/config/Config.zig");
 
-/// Canonical `url_style` value for the Claude Code CLI backend.
-/// Stored verbatim in `config.json` profiles alongside the three
-/// HTTP styles.
-pub const STYLE: []const u8 = "claude-code";
+/// Canonical `backend` values, re-exported from the config layer so there is
+/// one definition. `Config.zig` owns the names because it owns the parser.
+pub const Backend = config_mod.LlmConfig.Backend;
 
-/// Default binary name resolved via `PATH`. Users with a custom
-/// install set an absolute path instead (see `resolveBinaryPath`).
+/// Default binary name, resolved through `PATH`.
 pub const DEFAULT_BINARY: []const u8 = "claude";
 
-/// True when `url_style` selects the Claude Code CLI backend.
-pub fn isClaudeCodeStyle(url_style: []const u8) bool {
-    return std.mem.eql(u8, url_style, STYLE);
+/// True when `backend` selects the Claude Code CLI.
+pub fn isClaudeCodeBackend(backend: []const u8) bool {
+    return std.mem.eql(u8, backend, Backend.claude_code);
 }
 
-/// True when `url_style` is any value the backend understands
-/// (the three HTTP styles plus Claude Code).
-pub fn isKnownStyle(url_style: []const u8) bool {
-    return std.mem.eql(u8, url_style, "openai") or
-        std.mem.eql(u8, url_style, "openai-response") or
-        std.mem.eql(u8, url_style, "anthropic") or
-        isClaudeCodeStyle(url_style);
+/// True when `backend` is one this build understands. An empty value means
+/// "unset", which the cascade resolves to `http`.
+pub fn isKnownBackend(backend: []const u8) bool {
+    return backend.len == 0 or
+        std.mem.eql(u8, backend, Backend.http) or
+        isClaudeCodeBackend(backend);
 }
 
 /// Validation for a Claude Code profile.
 ///
-/// Unlike HTTP profiles, `base_url` and `api_key` are NOT required —
-/// auth comes from `claude login`, not from config. Only `model`
-/// must be non-empty (it selects the Claude model/alias the CLI
-/// passes via `--model`).
+/// Unlike HTTP profiles, `base_url` and `api_key` are NOT required — auth
+/// comes from `claude login`, not from config. Only `model` must be
+/// non-empty (it becomes the CLI's `--model`).
 pub fn validateClaudeCodeProfile(model: []const u8) error{MissingModel}!void {
     if (model.len == 0) return error.MissingModel;
 }
@@ -77,14 +75,14 @@ pub fn resolveBinaryPath(configured: []const u8) []const u8 {
 pub const PrintOptions = struct {
     /// Model/alias passed as `--model`. Empty = omit (CLI default).
     model: []const u8 = "",
-    /// Working directory passed as `--add-dir` so the CLI's file tools
-    /// stay scoped to the session cwd. Empty = omit.
+    /// Working directory passed as `--add-dir` so the CLI's file tools stay
+    /// scoped to the session cwd. Empty = omit.
     workdir: []const u8 = "",
     /// Maximum agentic turns (`--max-turns`). Null = omit (CLI default).
     max_turns: ?u32 = null,
-    /// When true, emit `--verbose --output-format stream-json` (the
-    /// streaming shape `parseResultLine` understands). Always true in
-    /// production; exposed so tests can assert the non-verbose shape.
+    /// When true, emit `--verbose --output-format stream-json` (the shape
+    /// `parseResultLine` understands). Always true in production; exposed so
+    /// tests can assert the non-streaming shape.
     stream_json: bool = true,
 };
 
@@ -93,8 +91,11 @@ pub const PrintOptions = struct {
 /// [--verbose --output-format stream-json]`.
 ///
 /// The caller owns the returned slice (each entry is duped; free with
-/// `freeArgs`). `prompt` is passed as the `-p` value — the CLI reads
-/// the turn prompt from argv, not stdin.
+/// `freeArgs`). `prompt` is passed as the `-p` value — the CLI reads the
+/// turn prompt from argv, not stdin.
+///
+/// NOTE: credentials never appear here. A key on argv is world-readable via
+/// `ps`; auth travels through the environment (see `buildEnvOverlay`).
 pub fn buildPrintArgs(
     allocator: std.mem.Allocator,
     binary: []const u8,
@@ -138,14 +139,112 @@ pub fn freeArgs(allocator: std.mem.Allocator, args: [][]const u8) void {
     allocator.free(args);
 }
 
+/// One environment variable to set on the CLI child process.
+pub const EnvVar = struct {
+    name: []const u8,
+    value: []const u8,
+};
+
+/// Build the environment overlay for one Claude Code run.
+///
+/// `config_dir` (the profile's `CLAUDE_CONFIG_DIR`) is what makes
+/// per-profile identity work without an API key: two profiles pointing at
+/// two directories are two DIFFERENT `claude login` sessions, so "which
+/// account is this?" is answered by the profile rather than by whatever the
+/// server process happens to have exported.
+///
+/// Phase 2 adds the credential vars (`ANTHROPIC_API_KEY` /
+/// `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL`) keyed on a per-profile
+/// `auth_mode`, plus the env ALLOWLIST that unsets every `ANTHROPIC_*` the
+/// profile did not ask for — without that scrub, a server started with
+/// `ANTHROPIC_API_KEY` exported would silently bill that account for a
+/// profile configured to use its subscription instead.
+///
+/// Caller owns the result; free with `freeEnvOverlay`.
+pub fn buildEnvOverlay(
+    allocator: std.mem.Allocator,
+    config_dir: ?[]const u8,
+) ![]EnvVar {
+    const dir = config_dir orelse return &.{};
+    if (dir.len == 0) return &.{};
+
+    const vars = try allocator.alloc(EnvVar, 1);
+    errdefer allocator.free(vars);
+    vars[0] = .{
+        .name = try allocator.dupe(u8, "CLAUDE_CONFIG_DIR"),
+        .value = try allocator.dupe(u8, dir),
+    };
+    return vars;
+}
+
+/// Free an overlay built by `buildEnvOverlay`.
+pub fn freeEnvOverlay(allocator: std.mem.Allocator, vars: []EnvVar) void {
+    for (vars) |v| {
+        allocator.free(v.name);
+        allocator.free(v.value);
+    }
+    if (vars.len > 0) allocator.free(vars);
+}
+
+/// argv for the health probe: `<binary> --version`.
+///
+/// This is why `backend` beats `url_style` for the Settings Test button:
+/// an HTTP backend is probed with a real POST, and the CLI backend is
+/// probed with a real `--version` — an actual check that the binary exists
+/// and answers, instead of a stub that only confirms the field parses.
+pub fn buildVersionProbeArgs(allocator: std.mem.Allocator, binary: []const u8) ![][]const u8 {
+    const args = try allocator.alloc([]const u8, 2);
+    errdefer allocator.free(args);
+    args[0] = try allocator.dupe(u8, binary);
+    errdefer allocator.free(args[0]);
+    args[1] = try allocator.dupe(u8, "--version");
+    return args;
+}
+
+/// Render the result of a `claude --version` probe as one human line.
+///
+/// Pure (no spawning) so every branch is unit-testable: the interesting
+/// cases are "binary not on PATH" and "binary exists but not logged in",
+/// neither of which should require the real CLI to be installed.
+pub fn describeVersionProbe(
+    allocator: std.mem.Allocator,
+    binary: []const u8,
+    spawn_failed: bool,
+    exited_zero: bool,
+    stdout: []const u8,
+    stderr: []const u8,
+) ![]u8 {
+    if (spawn_failed) {
+        return std.fmt.allocPrint(
+            allocator,
+            "'{s}' was not found or could not be executed. Install the Claude Code CLI and run `claude login`, or point the profile at an absolute binary path.",
+            .{binary},
+        );
+    }
+    const out = std.mem.trim(u8, stdout, " \t\r\n");
+    const err = std.mem.trim(u8, stderr, " \t\r\n");
+    if (!exited_zero) {
+        return std.fmt.allocPrint(
+            allocator,
+            "`{s} --version` exited non-zero: {s}",
+            .{ binary, if (err.len > 0) err else "(no stderr)" },
+        );
+    }
+    return std.fmt.allocPrint(
+        allocator,
+        "Claude Code CLI is available: {s}. Auth comes from `claude login` (no API key in config).",
+        .{if (out.len > 0) out else "version unknown"},
+    );
+}
+
 /// Result extracted from one `stream-json` output line.
 pub const ParsedLine = struct {
     /// Raw `type` field (e.g. `"result"`, `"assistant"`, `"system"`).
     /// Empty when the line has no string `type`.
     line_type: []const u8,
-    /// For `type == "result"`: the `result` text (borrowed from the
-    /// parsed JSON value — valid while `parsed` lives) or `subtype`
-    /// fallback. Empty otherwise.
+    /// For `type == "result"`: the `result` text (borrowed from the parsed
+    /// JSON value — valid while `parsed` lives) or the `subtype` fallback.
+    /// Empty otherwise.
     result_text: []const u8 = "",
     /// True iff this line is the terminal `type == "result"` message.
     is_result: bool = false,
@@ -156,9 +255,9 @@ pub const ParsedLine = struct {
 /// Returns `.is_result == true` only for the terminal
 /// `{"type":"result","result":"..."}` message. All other line types
 /// (assistant deltas, system init, tool uses) parse to
-/// `.is_result == false` so the caller can ignore-or-forward them.
-/// Invalid JSON parses to a benign non-result (never an error) —
-/// stdout interleaves human-readable logs the parser must skip.
+/// `.is_result == false` so the caller can ignore-or-forward them. Invalid
+/// JSON shapes parse to a benign non-result rather than an error — stdout
+/// interleaves human-readable lines the parser must skip.
 pub fn parseResultLine(
     parsed_value: std.json.Value,
 ) ParsedLine {
@@ -179,45 +278,44 @@ pub fn parseResultLine(
     return .{ .line_type = t, .result_text = text, .is_result = true };
 }
 
-/// Actionable error text surfaced when a Claude Code profile reaches
-/// the workflow before Phase 2 execution wiring lands. Kept here (not
-/// inlined at the call site) so the message has one owner and tests
-/// pin its wording without importing the workflow.
+/// Actionable error text surfaced when a Claude Code profile reaches the
+/// workflow before Phase 2 execution wiring lands. Kept here (not inlined at
+/// the call site) so the message has one owner and tests pin its wording
+/// without importing the workflow.
 pub fn notWiredMessage(
     allocator: std.mem.Allocator,
     model: []const u8,
 ) ![]u8 {
     return std.fmt.allocPrint(
         allocator,
-        "profile uses url_style=\"claude-code\" (model=\"{s}\") but CLI execution is not wired yet (Phase 1: configuration only). " ++
+        "profile uses backend=\"claude-code\" (model=\"{s}\") but CLI execution is not wired yet (Phase 1: configuration only). " ++
             "Install the CLI (https://docs.anthropic.com/en/docs/claude-code) and run `claude login`, " ++
-            "or switch the profile back to an HTTP url_style (openai|openai-response|anthropic).",
+            "or set the profile's backend back to \"http\".",
         .{model},
     );
 }
 
 // ─── Behaviour tests ─────────────────────────────────────────────
-// These call the module's functions and assert return values — never
-// source text (see AGENTS.md "Tests — Assert Behaviour").
+// These call the module's functions and assert return values — never source
+// text (see AGENTS.md "Tests — Assert Behaviour").
 
 const testing = std.testing;
 
-test "isClaudeCodeStyle matches only the canonical style" {
-    try testing.expect(isClaudeCodeStyle("claude-code"));
-    try testing.expect(!isClaudeCodeStyle("openai"));
-    try testing.expect(!isClaudeCodeStyle("openai-response"));
-    try testing.expect(!isClaudeCodeStyle("anthropic"));
-    try testing.expect(!isClaudeCodeStyle(""));
-    try testing.expect(!isClaudeCodeStyle("Claude-Code"));
+test "isClaudeCodeBackend matches only the canonical value" {
+    try testing.expect(isClaudeCodeBackend("claude-code"));
+    try testing.expect(!isClaudeCodeBackend("http"));
+    try testing.expect(!isClaudeCodeBackend(""));
+    try testing.expect(!isClaudeCodeBackend("Claude-Code"));
+    // A url_style value must never read as a backend.
+    try testing.expect(!isClaudeCodeBackend("anthropic"));
 }
 
-test "isKnownStyle accepts the three HTTP styles plus claude-code" {
-    try testing.expect(isKnownStyle("openai"));
-    try testing.expect(isKnownStyle("openai-response"));
-    try testing.expect(isKnownStyle("anthropic"));
-    try testing.expect(isKnownStyle("claude-code"));
-    try testing.expect(!isKnownStyle("weird"));
-    try testing.expect(!isKnownStyle(""));
+test "isKnownBackend accepts unset, http and claude-code" {
+    try testing.expect(isKnownBackend(""));
+    try testing.expect(isKnownBackend("http"));
+    try testing.expect(isKnownBackend("claude-code"));
+    try testing.expect(!isKnownBackend("codex"));
+    try testing.expect(!isKnownBackend("weird"));
 }
 
 test "validateClaudeCodeProfile requires model only" {
@@ -268,6 +366,68 @@ test "buildPrintArgs includes workdir and max-turns when set" {
     try testing.expectEqualStrings("5", args[6]);
 }
 
+test "buildPrintArgs never puts the prompt in a shell-interpreted position" {
+    // The prompt travels as a single argv element, so shell metacharacters
+    // in a user message stay literal.
+    const alloc = testing.allocator;
+    const args = try buildPrintArgs(alloc, "claude", "rm -rf /; echo $(whoami)", .{});
+    defer freeArgs(alloc, args);
+    try testing.expectEqualStrings("rm -rf /; echo $(whoami)", args[2]);
+}
+
+test "buildEnvOverlay sets CLAUDE_CONFIG_DIR for a configured dir" {
+    const alloc = testing.allocator;
+    const vars = try buildEnvOverlay(alloc, "/home/u/.claude-work");
+    defer freeEnvOverlay(alloc, vars);
+    try testing.expectEqual(@as(usize, 1), vars.len);
+    try testing.expectEqualStrings("CLAUDE_CONFIG_DIR", vars[0].name);
+    try testing.expectEqualStrings("/home/u/.claude-work", vars[0].value);
+}
+
+test "buildEnvOverlay is empty for null and empty config_dir" {
+    const alloc = testing.allocator;
+    const none = try buildEnvOverlay(alloc, null);
+    defer freeEnvOverlay(alloc, none);
+    try testing.expectEqual(@as(usize, 0), none.len);
+
+    const empty = try buildEnvOverlay(alloc, "");
+    defer freeEnvOverlay(alloc, empty);
+    try testing.expectEqual(@as(usize, 0), empty.len);
+}
+
+test "buildVersionProbeArgs is binary plus --version" {
+    const alloc = testing.allocator;
+    const args = try buildVersionProbeArgs(alloc, "claude");
+    defer freeArgs(alloc, args);
+    try testing.expectEqual(@as(usize, 2), args.len);
+    try testing.expectEqualStrings("claude", args[0]);
+    try testing.expectEqualStrings("--version", args[1]);
+}
+
+test "describeVersionProbe reports a successful probe with its version" {
+    const alloc = testing.allocator;
+    const msg = try describeVersionProbe(alloc, "claude", false, true, "1.2.3 (Claude Code)\n", "");
+    defer alloc.free(msg);
+    try testing.expect(std.mem.indexOf(u8, msg, "1.2.3") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "claude login") != null);
+}
+
+test "describeVersionProbe explains a missing binary" {
+    const alloc = testing.allocator;
+    const msg = try describeVersionProbe(alloc, "claude", true, false, "", "");
+    defer alloc.free(msg);
+    try testing.expect(std.mem.indexOf(u8, msg, "not found") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "claude login") != null);
+}
+
+test "describeVersionProbe surfaces stderr on a non-zero exit" {
+    const alloc = testing.allocator;
+    const msg = try describeVersionProbe(alloc, "claude", false, false, "", "boom");
+    defer alloc.free(msg);
+    try testing.expect(std.mem.indexOf(u8, msg, "non-zero") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "boom") != null);
+}
+
 test "parseResultLine extracts the terminal result text" {
     const alloc = testing.allocator;
     const doc = try std.json.parseFromSlice(std.json.Value, alloc, "{\"type\":\"result\",\"result\":\"done!\"}", .{});
@@ -292,11 +452,11 @@ test "parseResultLine ignores non-result lines and bad json shapes" {
     try testing.expect(!q.is_result);
 }
 
-test "notWiredMessage names the model and the remediation" {
+test "notWiredMessage names the backend, the model and the remediation" {
     const alloc = testing.allocator;
     const msg = try notWiredMessage(alloc, "sonnet");
     defer alloc.free(msg);
-    try testing.expect(std.mem.indexOf(u8, msg, "claude-code") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "backend=\"claude-code\"") != null);
     try testing.expect(std.mem.indexOf(u8, msg, "sonnet") != null);
     try testing.expect(std.mem.indexOf(u8, msg, "claude login") != null);
 }

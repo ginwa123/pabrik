@@ -403,6 +403,11 @@ function syncFromConfig() {
     temperature: p.temperature ?? 'auto',
     url_style: p.url_style ?? 'openai',
     api_key: p.api_key ?? '',
+    // Transport + its Claude Code knobs. Absent `backend` reads as "http",
+    // matching the backend's default so nothing migrates.
+    backend: p.backend ?? 'http',
+    config_dir: p.config_dir ?? null,
+    max_turns: p.max_turns ?? null,
     sub_agents: p.sub_agents ?? [],
     // Compaction overrides — both top-level and per-profile coexist. Each layer cascades over the
     // next; per-profile wins over top-level.
@@ -575,6 +580,9 @@ function startAddProfile() {
         temperature: 'auto',
         url_style: 'openai',
         api_key: '',
+        backend: 'http',
+        config_dir: null,
+        max_turns: null,
         max_capacity_tokens: null,
         compaction_threshold_percent: null,
         thinking_budget_tokens: null,
@@ -595,6 +603,9 @@ function startEditProfile(p: ProfileRow) {
         temperature: p.temperature ?? 'auto',
         url_style: p.url_style ?? 'openai',
         api_key: p.api_key ?? '',
+        backend: p.backend ?? 'http',
+        config_dir: p.config_dir ?? null,
+        max_turns: p.max_turns ?? null,
         // Compaction overrides — plan 2026-07-07-compaction-inline.
         max_capacity_tokens: p.max_capacity_tokens ?? null,
         compaction_threshold_percent: p.compaction_threshold_percent ?? null,
@@ -666,6 +677,9 @@ function startAddSubAgentInProfile(profileName: string) {
         temperature: 'auto',
         url_style: 'openai',
         api_key: '',
+        backend: '',
+        config_dir: null,
+        max_turns: null,
         max_capacity_tokens: null,
         compaction_threshold_percent: null,
         thinking_budget_tokens: null,
@@ -688,6 +702,11 @@ function startEditSubAgentInProfile(profileName: string, sa: SubAgent) {
         temperature: sa.temperature ?? 'auto',
         url_style: sa.url_style ?? 'openai',
         api_key: sa.api_key ?? '',
+        // Empty = inherit the parent profile's backend (the backend's own
+        // rule for `SubAgentConfig.backend`).
+        backend: sa.backend ?? '',
+        config_dir: sa.config_dir ?? null,
+        max_turns: sa.max_turns ?? null,
         // Compaction overrides (plan 2026-07-07-compaction-inline) —
         // required by LlmConfig type. Sub-agent-level overrides
         // currently cascade from the parent profile (Chunk 7).
@@ -1069,7 +1088,6 @@ const isLoading = computed(() => !loaded.value)
          were going; the sections below render their own skeletons via
          the `loading` prop. -->
     <template v-if="isLoading">
-
       <!-- Form / JSON. Not a section: it is a different way of looking at
            the whole config, so it stays reachable from every section. -->
       <div class="shrink-0 flex items-center justify-end gap-1 px-1 pt-1">
