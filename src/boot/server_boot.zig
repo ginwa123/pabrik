@@ -124,6 +124,11 @@ pub fn openDatabase(
     var db: database.Db = .{};
     errdefer db.deinit();
     try database.openWithConfig(&db, io, .{ .sqlite_path = db_path }, db_config.best);
+    // Before anything else can read the file: narrow its mode — it holds the
+    // LLM api_key, the MCP header values and every workspace secret — and turn
+    // on the pragmas `SqliteConfig` cannot express.
+    helpers.db_path.restrictDbPermissions(io, db_path);
+    db_config.applySecurityPragmas(allocator, &db);
     shutdown.logSqliteConfig(allocator, &db);
     try runMigrations(allocator, &db);
     return .{ .db_path = db_path, .db = db };

@@ -306,6 +306,10 @@ const SecretResolver = struct {
         // does not own are released here.
         var it = self.cache.iterator();
         while (it.next()) |entry| {
+            // A name is not a secret; a value is. This cache holds live
+            // credentials for the duration of one tool call, so the value is
+            // zeroed before the allocator recycles the page.
+            std.crypto.secureZero(u8, @constCast(entry.value_ptr.*));
             self.allocator.free(entry.key_ptr.*);
             self.allocator.free(entry.value_ptr.*);
         }

@@ -189,6 +189,10 @@ pub fn explain(allocator: std.mem.Allocator, err: anyerror, context: ?[]const u8
             context,
             "was rejected as unsafe or malformed. Send a plain absolute path with no NUL bytes, no control characters, and no `..` segments.",
         ),
+        error.CredentialStoreForbidden => try allocator.dupe(
+            u8,
+            "is the application's own credential store, which this tool will not read. The workspace secrets it holds are available to tools through their placeholders — ask the user to add the credential to the workspace instead of reading the database.",
+        ),
         error.PathTraversal => try pathMsg(
             allocator,
             context,
@@ -822,6 +826,7 @@ test "explain: every mapped error produces a non-empty, non-bare message" {
         error.MandatoryTimeoutMissing,
         error.MandatoryTimeoutTooLarge,
         error.CommandForbidden,
+        error.CredentialStoreForbidden,
         error.TooManyArgvPrefix,
         error.SyntaxError,
         error.UnexpectedEndOfInput,

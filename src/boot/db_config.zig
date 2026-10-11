@@ -124,6 +124,26 @@ pub fn describeReaderPool(buf: []u8) ![]const u8 {
     );
 }
 
+/// Apply the connection pragmas the policy struct cannot express.
+///
+/// `SqliteConfig` has no field for these, so they are issued as statements
+/// right after every open — by the daemon AND by the `create-admin` CLI, which
+/// open the same file (the reason this module exists at all).
+///
+/// `secure_delete = ON` makes SQLite overwrite deleted content instead of
+/// leaving it in the file's free pages. Without it, rotating a workspace secret
+/// writes the new value and leaves the OLD one readable inside `agent.db` for
+/// the life of the file: "delete" would not delete, and neither would "rotate".
+/// It is set on the write connection, which is the only one that deletes.
+///
+/// BEST-EFFORT, never fatal: the callers are boot paths, and refusing to start
+/// over a pragma would be worse than the gap it leaves. A failure is logged.
+pub fn applySecurityPragmas(allocator: std.mem.Allocator, db: *databases.database.Db) void {
+    db.exec(allocator, "PRAGMA secure_delete = ON", &[_][]const u8{}) catch |err| {
+        std.log.warn("db_config: secure_delete could not be enabled ({s}); deleted rows may survive in free pages", .{@errorName(err)});
+    };
+}
+
 /// Read one single-column pragma back from a live connection.
 fn readPragmaInt(db: *databases.database.Db, allocator: std.mem.Allocator, sql: []const u8) !i64 {
     var row = try db.queryRow(allocator, sql, &.{});
@@ -178,6 +198,13 @@ test "the policy pabrik opens with is the policy the connection reports" {
     try std.testing.expectEqual(@as(i64, 1_000), try readPragmaInt(&db, allocator, "PRAGMA wal_autocheckpoint"));
     // mmap_size may be clamped by the build/host, so assert "on", not a value.
     try std.testing.expect(try readPragmaInt(&db, allocator, "PRAGMA mmap_size") > 0);
+
+    // `secure_delete` has no `SqliteConfig` field, so this is the only proof
+    // that `applySecurityPragmas` ran at all. Without it a rotated or deleted
+    // workspace secret stays readable in the file's free pages for the life of
+    // the database.
+    applySecurityPragmas(allocator, &db);
+    try std.testing.expectEqual(@as(i64, 1), try readPragmaInt(&db, allocator, "PRAGMA secure_delete"));
 }
 
 test "a pooled connection still reads and writes correctly" {

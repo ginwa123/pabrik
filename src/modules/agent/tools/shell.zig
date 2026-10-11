@@ -938,20 +938,60 @@ pub fn build_argv(
     return list;
 }
 
-/// Detects forbidden command patterns that produce unbounded output.
-/// Currently disabled (returns `false` for every input) — the previous
-/// guard list (recursive `ls -R`, `find /` without `-maxdepth`, missing
-/// `timeout` / `head -n` prefix) is parked here in commented-out form
-/// pending a future hardening PR. Kept verbatim in shell.zig because
-/// the rule engine is shell-neutral (the same patterns apply to bash
-/// and to PowerShell `Get-ChildItem -Recurse`).
+/// Detects commands that must not run.
+///
+/// WHAT THIS CHECKS TODAY: a command that names the app's own config directory
+/// or database file. That file holds the LLM `api_key`, the MCP header values
+/// and every workspace secret, so `sqlite3 ~/.config/pabrik/agent.db 'select
+/// value from workspace_secrets'` is a one-call exfiltration of every secret in
+/// every workspace — and the whole `{{SECRETS:…}}` substitution feature exists
+/// to keep those values away from the model. `helpers.db_path` registers the
+/// resolved path at boot, so this guard and the `read_file` guard cannot drift
+/// apart: they ask the same registry.
+///
+/// WHY A PATH AND NOT A KEYWORD: refusing any command containing "agent.db" or
+/// "workspace_secrets" would also refuse `rg agent.db src/`, which is ordinary
+/// work in this repository. A guard that breaks real work gets deleted. See the
+/// registry's doc comment for the limitation that remains (a path assembled at
+/// runtime is not caught — this raises the cost of the one-liner, it is not a
+/// sandbox).
+///
+/// The unbounded-output guard list (recursive `ls -R`, `find /` without
+/// `-maxdepth`, a missing `timeout` / `head -n`) is still parked: it belongs to
+/// a separate pass about output size, and reviving it here would silently
+/// change which commands the agent may run. The rule engine stays shell-neutral
+/// so those patterns apply to bash and to PowerShell alike when they come back.
 pub fn is_forbidden_command(command: []const u8) bool {
     const trimmed = std.mem.trim(u8, command, " \t\n\r");
+    if (trimmed.len == 0) return false;
 
-    // temporary disabled forbidden command
-    _ = trimmed;
+    return helpers.db_path.mentionsProtectedPath(trimmed);
+}
 
-    return false;
+test "is_forbidden_command refuses the app's own credential store, and nothing else" {
+    defer helpers.db_path.clearProtectedPaths();
+    helpers.db_path.setProtectedPaths("/home/u/.config/pabrik/agent.db");
+
+    // The one-liner this guard exists for: every secret in every workspace.
+    try std.testing.expect(is_forbidden_command(
+        "sqlite3 /home/u/.config/pabrik/agent.db 'select name, value from workspace_secrets'",
+    ));
+    // The WAL holds the newest writes, so naming it counts too.
+    try std.testing.expect(is_forbidden_command("cat /home/u/.config/pabrik/agent.db-wal"));
+    try std.testing.expect(is_forbidden_command("ls -la /home/u/.config/pabrik"));
+
+    // The false positives that would get this guard deleted: naming the file,
+    // the table or an unrelated database in ordinary work.
+    try std.testing.expect(!is_forbidden_command("rg -n 'agent.db' src/"));
+    try std.testing.expect(!is_forbidden_command("grep -rn workspace_secrets src/"));
+    try std.testing.expect(!is_forbidden_command("sqlite3 /tmp/scratch.db 'select 1'"));
+    try std.testing.expect(!is_forbidden_command(""));
+    try std.testing.expect(!is_forbidden_command("   "));
+
+    // With nothing registered the guard is inert — which is what keeps it from
+    // refusing commands in unit tests and in any path-less context.
+    helpers.db_path.clearProtectedPaths();
+    try std.testing.expect(!is_forbidden_command("cat /home/u/.config/pabrik/agent.db"));
 }
 
 /// Encode special characters in URLs within double quotes

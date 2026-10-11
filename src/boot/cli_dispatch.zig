@@ -201,6 +201,10 @@ pub fn dispatchCreateAdmin(
     var dbSqlite: database.Db = .{};
     defer dbSqlite.deinit();
     try database.openWithConfig(&dbSqlite, io, .{ .sqlite_path = db_path }, db_config.best);
+    // Same two steps as the daemon's boot: this CLI opens the SAME file, and a
+    // CLI that left it world-readable would be the entire gap.
+    helpers.db_path.restrictDbPermissions(io, db_path);
+    db_config.applySecurityPragmas(allocator, &dbSqlite);
     var mm = migration.MigrationManager.init(allocator, &dbSqlite);
     defer mm.deinit();
     try migration.registerAllMigrations(&mm);

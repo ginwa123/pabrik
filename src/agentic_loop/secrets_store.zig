@@ -454,6 +454,11 @@ pub fn freeSecretNames(allocator: std.mem.Allocator, names: [][]u8) void {
 pub fn freeSecretValueRows(allocator: std.mem.Allocator, rows: []SecretValueRow) void {
     for (rows) |row| {
         allocator.free(row.name);
+        // The value is a live credential. Zero it before the allocator takes
+        // the page back: a freed-but-uncleared buffer survives in heap memory,
+        // in a core dump, and in whatever is handed that address next. A name
+        // is not a secret, so it is freed as-is.
+        std.crypto.secureZero(u8, @constCast(row.value));
         allocator.free(row.value);
     }
     allocator.free(rows);

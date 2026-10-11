@@ -6458,8 +6458,8 @@ export async function deleteDocument(
 //
 // NO RESPONSE EVER CONTAINS THE VALUE. `listSecrets`, `createSecret` and
 // `updateSecret` all return rows with `{ id, name, created_at, updated_at }`
-// and nothing else — the backend stores an encrypted blob and does not
-// decrypt to answer a read. There is deliberately no `value` field on
+// and nothing else — no HTTP read path ever carries the stored value. There is
+// deliberately no `value` field on
 // `Secret` and no `key_hint`: a hint is a partial disclosure of the very
 // thing being stored, and the UI has no use for it that is not a leak.
 //

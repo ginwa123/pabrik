@@ -41,6 +41,15 @@ pub fn readFile(
         return error.InvalidPathReason;
     }
 
+    // The app's own credential store. `agent.db` (and its `-wal`) holds every
+    // workspace secret and the LLM api_key, and it is a binary database — no
+    // legitimate read of it goes through this tool. `helpers.db_path` owns the
+    // resolved path, so this cannot drift from the `command` guard.
+    if (@import("helpers").db_path.isProtectedPath(path)) {
+        std.log.warn("read_file refused the app's own credential store", .{});
+        return error.CredentialStoreForbidden;
+    }
+
     const file = try std.Io.Dir.cwd().openFile(io, path, .{});
     defer std.Io.File.close(file, io);
 
