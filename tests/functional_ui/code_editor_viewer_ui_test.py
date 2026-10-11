@@ -212,12 +212,23 @@ def _goto(page, url: str) -> None:
 
 def _open_sidebar(page) -> None:
     """Open the chat-owned right sidebar (it is closed by default)."""
-    opener = page.locator('[data-testid="chat-sidebar-open"]')
+    sidebar = page.locator('[data-testid="chat-right-sidebar"]')
     try:
-        opener.wait_for(timeout=30000, state="visible")
-        opener.click()
+        sidebar.wait_for(timeout=3000, state="visible")
+        return  # already open (persisted per chat type)
     except Exception:
-        pass  # already open (persisted per chat type)
+        pass
+    # Header layout (standalone now renders ChatAppBar): app-bar toggle.
+    # Headerless fallback: floating button.
+    try:
+        page.locator('[data-testid="chat-app-bar-sidebar-toggle"]').click(timeout=10000)
+    except Exception:
+        opener = page.locator('[data-testid="chat-sidebar-open"]')
+        try:
+            opener.wait_for(timeout=10000, state="visible")
+            opener.click()
+        except Exception:
+            pass  # already open (persisted per chat type)
 
 
 def _assert_chat_layout_with_viewer(page) -> None:

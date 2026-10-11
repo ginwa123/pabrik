@@ -96,12 +96,22 @@ def _open_chat_and_terminal(
     """
     errors = _collect_errors(page)
     open_chatview(page, h, workspace_id, session_id)
-    # Standalone ChatView mount signal (empty session, no header).
+    # Standalone ChatView mount signal (empty session).
     page.locator("text=How can I help you?").first.wait_for(timeout=20000, state="visible")
 
-    # Headerless layout: floating ◫ button opens the sidebar.
-    page.locator('[data-testid="chat-sidebar-open"]').click()
-    page.locator('[data-testid="chat-right-sidebar"]').wait_for(timeout=10000, state="visible")
+    # Open the sidebar: header layout uses the app-bar ◫ toggle,
+    # headerless layout uses the floating button. Try the app-bar
+    # toggle first (standalone now renders ChatAppBar like every
+    # other chat mode), falling back to the floating button.
+    sidebar = page.locator('[data-testid="chat-right-sidebar"]')
+    try:
+        sidebar.wait_for(timeout=3000, state="visible")
+    except Exception:
+        try:
+            page.locator('[data-testid="chat-app-bar-sidebar-toggle"]').click(timeout=5000)
+        except Exception:
+            page.locator('[data-testid="chat-sidebar-open"]').click()
+        sidebar.wait_for(timeout=10000, state="visible")
 
     page.locator('[data-testid="chat-right-sidebar-tab-terminal"]').click()
     page.locator('[data-testid="terminal-xterm"]').wait_for(timeout=10000, state="visible")
@@ -201,12 +211,17 @@ def test_sidebar_terminal_persists_across_chat_switch(ui_harness: UIHarness, pag
         page.locator("text=How can I help you?").first.wait_for(timeout=20000, state="visible")
         # Sidebar open-state persists per chat type — it may already be open.
         try:
-            page.locator('[data-testid="chat-sidebar-open"]').wait_for(
+            page.locator('[data-testid="chat-right-sidebar"]').wait_for(
                 timeout=3000, state="visible"
             )
-            page.locator('[data-testid="chat-sidebar-open"]').click()
         except Exception:
-            pass
+            try:
+                page.locator('[data-testid="chat-app-bar-sidebar-toggle"]').click(timeout=5000)
+            except Exception:
+                try:
+                    page.locator('[data-testid="chat-sidebar-open"]').click(timeout=5000)
+                except Exception:
+                    pass
         page.locator('[data-testid="chat-right-sidebar"]').wait_for(timeout=10000, state="visible")
         # Panel tab persists too — clicking terminal is a no-op if active.
         page.locator('[data-testid="chat-right-sidebar-tab-terminal"]').click()

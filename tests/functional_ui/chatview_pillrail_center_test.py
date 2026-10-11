@@ -119,6 +119,7 @@ _GEOM_SCRIPT = r"""
   const column = document.querySelector('.chat-column');
   const dock = document.querySelector('.composer-dock');
   const rail = document.querySelector('[data-testid="user-pill-rail"]');
+  const wrapper = document.querySelector('.messages-scroll-hide-native');
   if (!column || !dock || !rail) return null;
   const box = (el) => {
     const r = el.getBoundingClientRect();
@@ -128,11 +129,13 @@ _GEOM_SCRIPT = r"""
   const insetRaw = getComputedStyle(column).getPropertyValue('--chat-composer-inset');
   return {
     column: box(column),
+    wrapper: wrapper ? box(wrapper) : null,
     dock: box(dock),
     rail: box(rail),
     railTop: getComputedStyle(rail).top,
     insetPx: parseFloat(insetRaw) || 0,
     pillCount: document.querySelectorAll('[data-testid="user-pill"]').length,
+    hasAppBar: !!document.querySelector('[data-testid="chat-app-bar"]'),
   };
 }
 """
@@ -161,15 +164,21 @@ def test_rail_is_centered_on_the_visible_transcript(ui_harness, page) -> None:
         f"(inset/2) would fit inside the {SLACK_PX}px slack and prove nothing: {g}"
     )
 
-    # The visible transcript runs from the column top to the dock top
-    # (the dock floats OVER the wrapper's bottom part).
-    visible_center = (g["column"]["top"] + g["dock"]["top"]) / 2
+    # The visible transcript runs from the wrapper top to the dock top
+    # (the dock floats OVER the wrapper's bottom part). The wrapper sits
+    # below the chat app bar when one is rendered (standalone now shows
+    # ChatAppBar like every other mode), so measuring from the column
+    # top would include the ~44px header and miss by header/2. Fall back
+    # to the column top only when the wrapper box is unavailable.
+    top = g["wrapper"]["top"] if g.get("wrapper") else g["column"]["top"]
+    visible_center = (top + g["dock"]["top"]) / 2
     rail_center = (g["rail"]["top"] + g["rail"]["bottom"]) / 2
     assert abs(rail_center - visible_center) <= SLACK_PX, (
         f"pill rail is not centered on the visible transcript: rail center "
         f"{rail_center:.1f} vs visible center {visible_center:.1f} "
-        f"(column top {g['column']['top']:.1f}, dock top {g['dock']['top']:.1f}, "
-        f"inset {g['insetPx']:.0f}px): {g}"
+        f"(wrapper top {top:.1f}, column top {g['column']['top']:.1f}, "
+        f"dock top {g['dock']['top']:.1f}, inset {g['insetPx']:.0f}px, "
+        f"appBar {g.get('hasAppBar')}): {g}"
     )
 
 
