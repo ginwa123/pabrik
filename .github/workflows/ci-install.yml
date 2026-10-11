@@ -199,6 +199,8 @@ jobs:
           # PABRIK_SMOKE_CHECK_APP follows the install step's bootstrap
           # probe (CHECK_APP=1 only once the release ships the UI + a
           # server that discovers it); unset/0 keeps the classic checks.
-          SMOKE_APP_ENV=""
-          if [ "${CHECK_APP:-0}" = "1" ]; then SMOKE_APP_ENV="PABRIK_SMOKE_CHECK_APP=1"; fi
-          PABRIK_BIN="$PABRIK_BIN" PABRIK_PORT=18080 $SMOKE_APP_ENV bash scripts/ci-smoke-test.sh
+          # NOTE: exported, not inlined as `$VAR bash ...` — a word from
+          # expansion is never treated as an env assignment (that exact
+          # one-liner failed CI with "command not found").
+          if [ "${CHECK_APP:-0}" = "1" ]; then export PABRIK_SMOKE_CHECK_APP=1; fi
+          PABRIK_BIN="$PABRIK_BIN" PABRIK_PORT=18080 bash scripts/ci-smoke-test.sh
