@@ -1241,8 +1241,13 @@ const onContentShift = (shift: { topSpacer: number; bottomSpacer: number; total:
     // sizer 22163 -> stick to 21007 -> sizer 21788 -> stick to 20632
     // -> sizer 20433 -> stick to 19277 -> sizer jumps back to 22163
     // (because at 19277 range no longer includes last item) -> gap.
-    // Also ignore tiny deltas (<50px) which are sub-pixel noise.
-    if (delta <= 0 || Math.abs(delta) < 50) {
+    // Ignore sub-threshold growth (<10px, BOTTOM_THRESHOLD): rounding /
+    // border noise that cannot change at-bottom state. Anything larger
+    // is real content the stick must follow — ignoring e.g. a 34px
+    // post-jump measure correction strands the reader above the newest
+    // message with the arrow hidden (standalone header layout,
+    // task_1791737106508_0).
+    if (delta <= 0 || delta < 10) {
       lastObservedScrollHeight = newScrollHeight
       return
     }
