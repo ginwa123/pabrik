@@ -71,6 +71,7 @@ const git_pr_checks_test = @import("git_pr_checks_test.zig");
 const git_pr_conflicts_test = @import("git_pr_conflicts_test.zig");
 const git_pr_diff_test = @import("git_pr_diff_test.zig");
 const git_pr_gitlab_test = @import("git_pr_gitlab_test.zig");
+const git_pr_merge_test = @import("git_pr_merge_test.zig");
 const git_pr_status_branch_test = @import("git_pr_status_branch_test.zig");
 const git_pr_status_crash_test = @import("git_pr_status_crash_test.zig");
 const git_pr_status_test = @import("git_pr_status_test.zig");
@@ -211,6 +212,7 @@ pub const suites = .{
     git_pr_conflicts_test,
     git_pr_diff_test,
     git_pr_gitlab_test,
+    git_pr_merge_test,
     git_pr_status_branch_test,
     git_pr_status_crash_test,
     git_pr_status_test,

@@ -769,6 +769,13 @@ pub const GitPrStatusResponse = struct {
     status: []const u8 = "",
     mergeable: []const u8 = "",
     merge_state: []const u8 = "",
+    /// The commit the head branch pointed at when the forge answered.
+    /// GitHub: `headRefOid`. GitLab: `sha`. Empty when the forge did not
+    /// send one (the parser defaults every field, so this is not an error).
+    ///
+    /// Load-bearing for merging: it is the `--match-head-commit` / `--sha`
+    /// guard, so a merge cannot land on a commit the user never saw.
+    head_sha: []const u8 = "",
     head_ref: []const u8 = "",
     base_ref: []const u8 = "",
     author: []const u8 = "",
@@ -782,6 +789,34 @@ pub const GitPrStatusResponse = struct {
 };
 
 pub fn makeGitPrStatusResponse(allocator: std.mem.Allocator, response: GitPrStatusResponse) ![]u8 {
+    return std.json.Stringify.valueAlloc(allocator, response, .{});
+}
+
+// ─── Git PR merge types ───────────────────────────────────────────────────
+// Wire shape for `POST /api/git/pr/merge`.
+//
+// The response is the SAME status payload the 30 s poll returns, re-read
+// after the merge command ran — deliberately, and not just for convenience.
+// A forge CLI exiting 0 is not proof that anything merged: `glab mr merge`
+// can exit 0 having only ARMED auto-merge (its `--auto-merge` default), and a
+// GitHub merge queue accepts a PR without merging it. Returning the forge's
+// own post-merge answer is the only way the badge, the box and the user can
+// all be looking at the same truth.
+pub const GitPrMergeResponse = struct {
+    /// True only when the forge reports the change request as merged NOW.
+    /// False with `pending` true is the honest "accepted, not merged yet".
+    success: bool = false,
+    /// "merge" | "squash" | "rebase" — echoed so the UI can say what it did.
+    method: []const u8 = "",
+    /// The command was accepted but the forge has not merged: a merge queue,
+    /// or an armed auto-merge. The UI must say so rather than render
+    /// "Merged".
+    pending: bool = false,
+    /// The forge's answer, re-read.
+    status: GitPrStatusResponse = .{},
+};
+
+pub fn makeGitPrMergeResponse(allocator: std.mem.Allocator, response: GitPrMergeResponse) ![]u8 {
     return std.json.Stringify.valueAlloc(allocator, response, .{});
 }
 

@@ -6,7 +6,7 @@ const PrProvider = pr_provider.PrProvider;
 /// Fields requested from `gh pr view --json`. Kept here (not next to
 /// the caller) so the argv builder and the parser it feeds cannot drift,
 /// and so the GitLab builder below has an obvious sibling to read.
-pub const GH_JSON_FIELDS = "number,title,url,state,mergeable,mergeStateStatus,headRefName,baseRefName,createdAt,updatedAt,mergedAt,closedAt,author,additions,deletions,changedFiles";
+pub const GH_JSON_FIELDS = "number,title,url,state,mergeable,mergeStateStatus,headRefName,baseRefName,createdAt,updatedAt,mergedAt,closedAt,author,additions,deletions,changedFiles,headRefOid";
 
 /// The command-line tool that owns a forge, plus the words its users
 /// expect to read. Every user-facing string and every argv in the git
@@ -177,6 +177,176 @@ pub fn createArgv(
             storage[n] = body;
             n += 1;
             storage[n] = "--yes";
+            n += 1;
+        },
+        .generic => unreachable,
+    }
+    return storage[0..n];
+}
+
+/// Which strategy a merge uses. Named after the three things a user picks
+/// between, not after the flags, because the flags differ per forge: GitHub
+/// spells all three out (`--merge` / `--squash` / `--rebase`) while GitLab's
+/// plain merge is the ABSENCE of a flag (`glab mr merge` with no strategy is
+/// a merge commit).
+///
+/// A method is mandatory at this layer for a load-bearing reason:
+/// `gh pr merge` with no strategy flag drops into an interactive prompt
+/// ("What merge method would you like to use?"), and a non-tty child cannot
+/// answer it, so the request would hang until the timeout killed it. Passing
+/// exactly one flag is what keeps the call non-interactive on GitHub.
+pub const MergeMethod = enum {
+    merge,
+    squash,
+    rebase,
+
+    pub fn fromString(s: []const u8) ?MergeMethod {
+        if (std.mem.eql(u8, s, "merge")) return .merge;
+        if (std.mem.eql(u8, s, "squash")) return .squash;
+        if (std.mem.eql(u8, s, "rebase")) return .rebase;
+        return null;
+    }
+
+    pub fn toString(self: MergeMethod) []const u8 {
+        return switch (self) {
+            .merge => "merge",
+            .squash => "squash",
+            .rebase => "rebase",
+        };
+    }
+
+    /// The strategy flag for `provider`, or null when the provider's default
+    /// already means this method. Null is a real answer, not a failure: on
+    /// GitLab, `--merge` does not exist and passing it would be a hard error.
+    pub fn flag(self: MergeMethod, provider: PrProvider) ?[]const u8 {
+        return switch (provider) {
+            .github => switch (self) {
+                .merge => "--merge",
+                .squash => "--squash",
+                .rebase => "--rebase",
+            },
+            .gitlab => switch (self) {
+                .merge => null,
+                .squash => "--squash",
+                .rebase => "--rebase",
+            },
+            .generic => null,
+        };
+    }
+};
+
+/// Everything a merge needs beyond the method itself. Every field is
+/// optional, and an empty one means "do not pass the flag" rather than
+/// "pass an empty value" — `gh --subject ""` is not the same request as no
+/// `--subject` at all.
+pub const MergeOptions = struct {
+    /// Delete the source branch after merging. OFF by default in the UI:
+    /// in this app the source branch is usually the session's own worktree
+    /// branch, so ticking this deletes the branch the session stands on.
+    delete_branch: bool = false,
+    /// The head commit the caller believes it is merging. Both forges accept
+    /// a guard, so a merge cannot land on a commit the user never saw.
+    /// Empty = no guard.
+    head_sha: []const u8 = "",
+    /// Title / body of the commit the merge creates (squash subject).
+    subject: []const u8 = "",
+    body: []const u8 = "",
+};
+
+/// Upper bound on `mergeArgv` output: prog, noun, "merge", ref, strategy
+/// flag, then at most four pairs of flag+value, plus GitLab's two mandatory
+/// flags. 18 is past every arm.
+pub const merge_argv_max = 18;
+
+/// Build the "merge this PR/MR" argv:
+/// `<prog> <pr|mr> merge [<ref>] <provider flags>`.
+///
+/// `prog` is explicit for the same test-injection reason as `viewArgv`.
+///
+/// Two GitLab flags are not optional and are appended unconditionally:
+///   - `-y/--yes` — without it `glab mr merge` blocks on a confirmation
+///     prompt that a non-tty child can never answer. This is the same trap
+///     `createArgv` documents above for `glab mr create`.
+///   - `--auto-merge=false` — `glab mr merge` defaults auto-merge to TRUE
+///     whenever a pipeline is running, which would turn "merge now" into
+///     "arm it and tell the user it worked". This app has no auto-merge
+///     feature, so the flag is forced off rather than merely omitted, which
+///     also means a future change to glab's default cannot reintroduce the
+///     lie.
+pub fn mergeArgv(
+    storage: [][]const u8,
+    provider: PrProvider,
+    prog: []const u8,
+    ref: []const u8,
+    method: MergeMethod,
+    opts: MergeOptions,
+) ?[]const []const u8 {
+    const c = cliFor(provider) orelse return null;
+    if (prog.len == 0) return null;
+    if (storage.len < merge_argv_max) return null;
+
+    var n: usize = 0;
+    storage[n] = prog;
+    n += 1;
+    storage[n] = c.noun;
+    n += 1;
+    storage[n] = "merge";
+    n += 1;
+    if (ref.len > 0) {
+        storage[n] = ref;
+        n += 1;
+    }
+    if (method.flag(provider)) |f| {
+        storage[n] = f;
+        n += 1;
+    }
+    switch (provider) {
+        .github => {
+            if (opts.delete_branch) {
+                storage[n] = "--delete-branch";
+                n += 1;
+            }
+            if (opts.head_sha.len > 0) {
+                storage[n] = "--match-head-commit";
+                n += 1;
+                storage[n] = opts.head_sha;
+                n += 1;
+            }
+            if (opts.subject.len > 0) {
+                storage[n] = "--subject";
+                n += 1;
+                storage[n] = opts.subject;
+                n += 1;
+            }
+            if (opts.body.len > 0) {
+                storage[n] = "--body";
+                n += 1;
+                storage[n] = opts.body;
+                n += 1;
+            }
+        },
+        .gitlab => {
+            if (opts.delete_branch) {
+                storage[n] = "--remove-source-branch";
+                n += 1;
+            }
+            if (opts.head_sha.len > 0) {
+                storage[n] = "--sha";
+                n += 1;
+                storage[n] = opts.head_sha;
+                n += 1;
+            }
+            if (opts.subject.len > 0) {
+                // GitLab separates the squash message from the merge-commit
+                // message; GitHub takes subject/body for both.
+                storage[n] = if (method == .squash) "--squash-message" else "--message";
+                n += 1;
+                storage[n] = opts.subject;
+                n += 1;
+            }
+            storage[n] = "--yes";
+            n += 1;
+            storage[n] = "--auto-merge=false";
             n += 1;
         },
         .generic => unreachable,
@@ -465,4 +635,116 @@ test "jobIdFromJobLink pulls the job id, and only from an Actions link" {
     try std.testing.expect(jobIdFromJobLink("https://github.com/acme/app/actions/runs/37146940187") == null);
     try std.testing.expect(jobIdFromJobLink("https://circleci.com/gh/acme/app/1") == null);
     try std.testing.expect(jobIdFromJobLink("") == null);
+}
+
+// ─── mergeArgv ───────────────────────────────────────────────────────────
+
+fn hasArg(argv: []const []const u8, needle: []const u8) bool {
+    for (argv) |a| {
+        if (std.mem.eql(u8, a, needle)) return true;
+    }
+    return false;
+}
+
+test "MergeMethod round-trips its wire names and refuses everything else" {
+    try std.testing.expectEqual(MergeMethod.merge, MergeMethod.fromString("merge").?);
+    try std.testing.expectEqual(MergeMethod.squash, MergeMethod.fromString("squash").?);
+    try std.testing.expectEqual(MergeMethod.rebase, MergeMethod.fromString("rebase").?);
+    try std.testing.expectEqualStrings("squash", MergeMethod.squash.toString());
+    // The contract the endpoint leans on: an empty or unknown method is
+    // refused BEFORE anything is spawned. `gh pr merge` with no strategy
+    // flag prompts for the method, and a non-tty child cannot answer.
+    try std.testing.expect(MergeMethod.fromString("") == null);
+    try std.testing.expect(MergeMethod.fromString("auto") == null);
+    try std.testing.expect(MergeMethod.fromString("Squash") == null);
+}
+
+test "mergeArgv: github passes exactly one strategy flag" {
+    var buf: [merge_argv_max][]const u8 = undefined;
+    try expectArgv(mergeArgv(&buf, .github, "gh", "891", .merge, .{}), &.{ "gh", "pr", "merge", "891", "--merge" });
+    try expectArgv(mergeArgv(&buf, .github, "gh", "891", .squash, .{}), &.{ "gh", "pr", "merge", "891", "--squash" });
+    try expectArgv(mergeArgv(&buf, .github, "gh", "891", .rebase, .{}), &.{ "gh", "pr", "merge", "891", "--rebase" });
+}
+
+test "mergeArgv: github carries the head guard, the message and delete-branch" {
+    var buf: [merge_argv_max][]const u8 = undefined;
+    try expectArgv(
+        mergeArgv(&buf, .github, "gh", "https://github.com/a/b/pull/891", .squash, .{
+            .delete_branch = true,
+            .head_sha = "4f21c9e",
+            .subject = "fix(chatview): land where the reader left it (#891)",
+            .body = "Squashed body",
+        }),
+        &.{
+            "gh",                  "pr",
+            "merge",               "https://github.com/a/b/pull/891",
+            "--squash",            "--delete-branch",
+            "--match-head-commit", "4f21c9e",
+            "--subject",           "fix(chatview): land where the reader left it (#891)",
+            "--body",              "Squashed body",
+        },
+    );
+}
+
+test "mergeArgv: a merge is never ARMED instead of performed" {
+    // The regression this pins: `gh pr merge --auto` exits 0 with the PR
+    // still open. Auto-merge is not a feature of this app, so the flag must
+    // never appear — otherwise the endpoint would report "Merged" for a PR
+    // that is merely queued, which is the one failure a merge button cannot
+    // afford.
+    var buf: [merge_argv_max][]const u8 = undefined;
+    const argv = mergeArgv(&buf, .github, "gh", "891", .squash, .{ .head_sha = "abc123" }).?;
+    try std.testing.expect(!hasArg(argv, "--auto"));
+    try std.testing.expect(!hasArg(argv, "--disable-auto"));
+}
+
+test "mergeArgv: gitlab forces --yes and --auto-merge=false" {
+    // Both flags are load-bearing and neither is optional:
+    //  - without -y/--yes, `glab mr merge` blocks on a confirmation prompt
+    //    that a non-tty child can never answer (the same trap `createArgv`
+    //    documents for `glab mr create`);
+    //  - `glab mr merge` defaults auto-merge to TRUE whenever a pipeline is
+    //    running, and exits 0 having only ARMED the merge. The flag is
+    //    forced off rather than omitted so a future change to glab's own
+    //    default cannot silently reintroduce that lie.
+    var buf: [merge_argv_max][]const u8 = undefined;
+    try expectArgv(
+        mergeArgv(&buf, .gitlab, "glab", "7", .squash, .{ .delete_branch = true, .head_sha = "4f21c9e" }),
+        &.{ "glab", "mr", "merge", "7", "--squash", "--remove-source-branch", "--sha", "4f21c9e", "--yes", "--auto-merge=false" },
+    );
+}
+
+test "mergeArgv: gitlab's plain merge passes no strategy flag" {
+    // `glab mr merge` with no strategy IS a merge commit. `--merge` is not a
+    // glab flag, so emitting it would fail the request outright.
+    var buf: [merge_argv_max][]const u8 = undefined;
+    try expectArgv(
+        mergeArgv(&buf, .gitlab, "glab", "7", .merge, .{}),
+        &.{ "glab", "mr", "merge", "7", "--yes", "--auto-merge=false" },
+    );
+    try std.testing.expect(MergeMethod.merge.flag(.gitlab) == null);
+    try std.testing.expectEqualStrings("--merge", MergeMethod.merge.flag(.github).?);
+}
+
+test "mergeArgv: gitlab separates the squash message from the merge message" {
+    var buf: [merge_argv_max][]const u8 = undefined;
+    const squashed = mergeArgv(&buf, .gitlab, "glab", "7", .squash, .{ .subject = "S" }).?;
+    try std.testing.expect(hasArg(squashed, "--squash-message"));
+    try std.testing.expect(!hasArg(squashed, "--message"));
+    const merged = mergeArgv(&buf, .gitlab, "glab", "7", .merge, .{ .subject = "S" }).?;
+    try std.testing.expect(hasArg(merged, "--message"));
+    try std.testing.expect(!hasArg(merged, "--squash-message"));
+}
+
+test "mergeArgv: an empty ref means the current branch, and empty options are omitted" {
+    var buf: [merge_argv_max][]const u8 = undefined;
+    try expectArgv(mergeArgv(&buf, .github, "gh", "", .squash, .{}), &.{ "gh", "pr", "merge", "--squash" });
+}
+
+test "mergeArgv: null for a provider with no CLI, an empty program, or a small buffer" {
+    var buf: [merge_argv_max][]const u8 = undefined;
+    try std.testing.expect(mergeArgv(&buf, .generic, "gh", "1", .squash, .{}) == null);
+    try std.testing.expect(mergeArgv(&buf, .github, "", "1", .squash, .{}) == null);
+    var tiny: [merge_argv_max - 1][]const u8 = undefined;
+    try std.testing.expect(mergeArgv(&tiny, .github, "1", "1", .squash, .{}) == null);
 }
