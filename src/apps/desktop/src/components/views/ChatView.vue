@@ -154,11 +154,9 @@ const props = defineProps<{
   /**
    * When true, render the shared chat app bar (ChatAppBar.vue —
    * chat name + `◫` sidebar toggle + `✕` close) above the
-   * messages. Every task-chat host sets this so all three
-   * workspace-item modes (kanban / agent / standard folder-chat)
-   * get the identical bar; the standalone `chat-<id>` branch
-   * leaves it false so a bare chat still fills the viewport
-   * edge-to-edge.
+   * messages. Every chat host sets this so all modes (kanban /
+   * agent / standard folder-chat / standalone `chat-<id>`)
+   * get the identical bar.
    *
    * Defaults to `false` so older call sites that don't supply it
    * still compile — see the pabrik-frontend-task-literal-typing-rule
@@ -4796,11 +4794,10 @@ const compactSession = async () => {
     <div :ref="setChatColumnEl" class="relative flex flex-col h-full flex-1 min-w-0 chat-column">
       <!--
         Chat app bar. Rendered only when the parent passed the
-        `showHeader` prop. Every task-chat host sets it (kanban
-        branch, AgentChatView, StandardTaskChatView) so all three
-        workspace-item modes get the identical bar; the standalone
-        `chat-<id>` branch leaves it false so a bare chat still
-        fills the viewport edge-to-edge. The markup itself lives in
+        `showHeader` prop. Every chat host sets it (kanban
+        branch, AgentChatView, StandardTaskChatView, standalone
+        `chat-<id>` branch) so all modes get the identical bar.
+        The markup itself lives in
         ChatAppBar.vue — the one app bar shared by every mode, so the
         title, the sidebar toggle and the ✕ cannot drift apart again.
         The `app-bar-extras` slot lets a host pin mode-specific bits
