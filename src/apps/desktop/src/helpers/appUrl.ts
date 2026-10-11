@@ -256,3 +256,34 @@ export function detectLegacyAppUrl(
   }
   return null
 }
+
+/**
+ * Stale-write guard for ChatView's diff URL writers (`syncDiffParam`,
+ * `syncDiffQuery`).
+ *
+ * Path-based URLs carry the session in the path, not the query, so the
+ * legacy `route.query.view/session` guards are no-ops there. A dying view
+ * (chat A unmounting while ChatsList navigates to chat B) must not issue
+ * `router.replace` once the path names another session: it either cancels
+ * B's pending navigation (view snaps back to A) or stamps A's `?diff=` onto
+ * B's URL — the "click a left chat after opening a right-sidebar file does
+ * nothing" repro.
+ *
+ * Returns true when the view owning `sessionId` must NOT touch `routePath`:
+ * - `/app/{ws}/chat/{sid}` with `sid !== sessionId` (including the
+ *   post-switch path `/app/{ws}/chat/B` seen from dying A);
+ * - `/app/{ws}/projects/{p}/chat/{tid}` with `tid !== sessionId`;
+ * - `/app/{ws}`, `/app/{ws}/projects/{p}`, `/app/{ws}/doc/{d}` — ChatView
+ *   never owns those surfaces, so any write from it is stale.
+ * Landing (`/app`) and unknown paths return false and defer to the legacy
+ * query guards (deep links, router-less mounts).
+ */
+export function isChatRouteStaleForSession(routePath: string, sessionId: string): boolean {
+  // parseAppPath is pure string matching with no throws (no I/O, no JSON),
+  // so no try/catch: a malformed path returns { kind: 'other' } below.
+  const parsed: ParsedAppPath = parseAppPath(routePath)
+  if (parsed.kind === 'chat') return parsed.sessionId !== sessionId
+  if (parsed.kind === 'projectChat') return parsed.chatTaskId !== sessionId
+  if (parsed.kind === 'workspace' || parsed.kind === 'project' || parsed.kind === 'doc') return true
+  return false
+}
