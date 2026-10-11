@@ -367,3 +367,37 @@
   background: var(--color-gray-3);
   border-radius: 3px;
 }
+
+/* ── Code token palette ───────────────────────────────────────────────
+ * The ONE home for the `tok-*` classes that `helpers/codeHighlight`
+ * produces. Every code surface — the code editor, every diff review, the
+ * tool cards — reads its colors from here, so adding a surface inherits
+ * the palette instead of copy-pasting it (it used to be duplicated
+ * verbatim in five scoped `<style>` blocks). Values are the original
+ * `pabrik-dark` table, now expressed with the theme vars above.
+ *
+ * `.tok-plain` deliberately inherits: an unknown/plaintext file renders
+ * exactly as it did before highlighting existed. */
+.tok-plain {
+  color: inherit;
+}
+.tok-keyword {
+  color: var(--color-violet);
+  font-weight: 600;
+}
+.tok-string {
+  color: var(--color-green);
+}
+.tok-comment {
+  color: var(--color-gray-3);
+  font-style: italic;
+}
+.tok-number {
+  color: var(--color-yellow);
+}
+.tok-function {
+  color: var(--color-aqua);
+}
+.tok-type {
+  color: var(--color-blue);
+}

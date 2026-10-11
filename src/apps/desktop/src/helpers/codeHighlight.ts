@@ -327,3 +327,38 @@ export function highlightLine(line: string, language: string): Token[] {
   flushPlain()
   return tokens.length > 0 ? tokens : [{ text: line, type: 'plain' }]
 }
+
+/**
+ * Tokenize every line against an ALREADY-RESOLVED monaco language id.
+ *
+ * For a caller that resolved the language itself — an explicit override, or
+ * a `detectLanguage` result it wants to reuse. Use `highlightLinesForFile`
+ * when all you have is a path: this function cannot tell a language id from
+ * a filename, and `highlightLines(lines, 'typescript')` /
+ * `highlightLinesForFile(lines, 'typescript')` are NOT interchangeable (the
+ * latter reads it as a path with no extension → plaintext).
+ *
+ * The result is parallel to `lines`: index it with the same row index the
+ * caller renders.
+ */
+export function highlightLines(lines: readonly string[], language: string): Token[][] {
+  return lines.map((line) => highlightLine(line, language))
+}
+
+/**
+ * Tokenize every line of one file for a render site that only knows the
+ * path — the diff reviews, the git viewers. Pairing `detectLanguage` with
+ * `highlightLine` happens exactly once, here, so a new code surface cannot
+ * drift from the others.
+ *
+ * The result is parallel to `lines`: index it with the same row index the
+ * caller renders. A `null`/unknown path yields `plaintext`, whose tokens
+ * are a single `plain` entry — byte-identical to the un-highlighted
+ * rendering this replaced.
+ */
+export function highlightLinesForFile(
+  lines: readonly string[],
+  filePath: string | null | undefined,
+): Token[][] {
+  return highlightLines(lines, detectLanguage(filePath ?? ''))
+}

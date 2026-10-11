@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUpdated, ref } from 'vue'
-import { detectLanguage, highlightLine } from '@/helpers/codeHighlight'
+import { detectLanguage, highlightLine, highlightLines, type Token } from '@/helpers/codeHighlight'
 import { displayPathFor } from '@/composables/useCodeEditorSession'
 import { getGitBlame, getGitWholeFileDiff } from '@/api'
 import { formatRelativeTime } from '@/helpers/relativeTime'
@@ -175,6 +175,22 @@ const isTarget = (lineNumber: number) =>
 
 /** Split one line into colored token spans (plaintext ⇒ one plain span). */
 const tokensFor = (line: string) => highlightLine(line, detectedLanguage.value)
+
+// Token spans for the Diff view's rows — computed once per parsed diff
+// rather than per render, and colored with the same palette as the code view.
+const diffTokens = computed<Token[][]>(() => {
+  const lines = parsedDiff.value?.lines ?? []
+  const tokens = highlightLines(
+    lines.map((line) => line.content),
+    detectedLanguage.value,
+  )
+  // A hunk header is diff METADATA, not code. Tokenizing `@@ -12,7 +12,9 @@`
+  // paints its numbers with `.tok-number` over the row's own hunk colour;
+  // every other unified surface renders hunks plain, so this one does too.
+  return lines.map((line, i) =>
+    line.type === 'hunk' ? [{ text: line.content, type: 'plain' }] : tokens[i]!,
+  )
+})
 
 const signFor = (type: string): string => {
   if (type === 'add') return '+'
@@ -440,7 +456,15 @@ const handleClose = () => {
         >
           <span class="diff-old">{{ dl.oldLineNum ?? '' }}</span>
           <span class="diff-new">{{ dl.newLineNum ?? '' }}</span>
-          <span class="diff-text">{{ signFor(dl.type) }}{{ dl.content }}</span>
+          <span class="diff-text"
+            >{{ signFor(dl.type)
+            }}<span
+              v-for="(tok, tIdx) in diffTokens[dlIdx]"
+              :key="tIdx"
+              :class="`tok-${tok.type}`"
+              >{{ tok.text || '\u00a0' }}</span
+            ></span
+          >
         </div>
       </div>
 
@@ -587,6 +611,10 @@ const handleClose = () => {
 .diff-view {
   white-space: pre-wrap;
   word-break: break-word;
+  /* The code view gets its colour from `td.code-content`; the Diff view has
+     no such cell, so the row colour is set here — `.tok-plain` inherits it
+     instead of falling back to the (black) initial value. */
+  color: var(--semantic-text);
 }
 .diff-row {
   display: flex;
@@ -645,32 +673,5 @@ const handleClose = () => {
 
 .code-body::-webkit-scrollbar-thumb:hover {
   background: var(--color-gray-3);
-}
-
-/* Code token colors — the shared palette from the diff review
-   (`tool_outputs/_shared/DiffView.vue`, `SidebarDiffView.vue`). Scoped
-   here so the viewer matches the diff cards exactly. */
-.tok-plain {
-  color: inherit;
-}
-.tok-keyword {
-  color: #8992a7;
-  font-weight: 600;
-}
-.tok-string {
-  color: #87a987;
-}
-.tok-comment {
-  color: #7a8382;
-  font-style: italic;
-}
-.tok-number {
-  color: #c4b28a;
-}
-.tok-function {
-  color: #8ea4a2;
-}
-.tok-type {
-  color: #8ba4b0;
 }
 </style>
