@@ -87,7 +87,12 @@ describe('SettingsShell', () => {
     for (const id of ['overview', 'secrets', 'skills', 'memories', 'profiles', 'mcp', 'tools', 'evals']) {
       expect(wrapper.find(`[data-testid="settings-nav-${id}"]`).exists()).toBe(true)
     }
-    expect(wrapper.find('[data-testid="settings-nav-overview"]').text()).toContain('Acme')
+    // The workspace comes from the URL, so nav items carry no per-item workspace
+    // suffix — the static name label above the nav is the only place it shows.
+    expect(wrapper.find('[data-testid="settings-nav-overview"]').text()).not.toContain('Acme')
+    for (const id of ['overview', 'secrets', 'skills', 'memories', 'profiles', 'mcp', 'tools', 'evals']) {
+      expect(wrapper.find(`[data-testid="settings-nav-${id}-workspace"]`).exists()).toBe(false)
+    }
 
     // The eight items are grouped: the config sections that moved here sit
     // under their own heading, which is what keeps "which of these edits one
@@ -97,9 +102,12 @@ describe('SettingsShell', () => {
     // No heading is rendered for the first group: the scope label above the
     // nav already says "Workspace — this workspace only".
     expect(wrapper.find('[data-testid="settings-nav-group-Workspace"]').exists()).toBe(false)
-    const picker = wrapper.find<HTMLSelectElement>('[data-testid="settings-workspace-picker"]')
-    expect(picker.exists()).toBe(true)
-    expect(picker.element.value).toBe('ws_1')
+    // No picker: the workspace is the URL (`/app/:workspaceId/settings`), so the
+    // shell shows it as a static label instead of a dropdown.
+    expect(wrapper.find('[data-testid="settings-workspace-picker"]').exists()).toBe(false)
+    const nameLabel = wrapper.find('[data-testid="settings-workspace-name"]')
+    expect(nameLabel.exists()).toBe(true)
+    expect(nameLabel.text()).toContain('Acme')
   })
 
   it('lists the workspace sections in order, under their group headings', async () => {
@@ -111,7 +119,7 @@ describe('SettingsShell', () => {
     wrapper = mountShell(router, { scope: 'workspace', workspaceId: 'ws_1' })
     await flushPromises()
 
-    const labels = wrapper.findAll('nav [role="tab"]').map((b) => b.text().replace(/Acme/g, '').trim())
+    const labels = wrapper.findAll('nav [role="tab"]').map((b) => b.text().trim())
     expect(labels).toEqual([
       'Overview',
       'Secrets',
@@ -154,15 +162,16 @@ describe('SettingsShell', () => {
     expect(push).toHaveBeenCalledWith({ path: '/app/ws_1/settings' })
   })
 
-  it('workspace picker navigates to the picked workspace settings', async () => {
+  it('workspace scope shows the route workspace as a static label, not a picker', async () => {
     const router = await makeRouter('/app/ws_1/settings')
-    const push = vi.spyOn(router, 'push')
     wrapper = mountShell(router, { scope: 'workspace', workspaceId: 'ws_1' })
     await flushPromises()
 
-    await wrapper.find('[data-testid="settings-workspace-picker"]').setValue('ws_2')
-    await flushPromises()
-    expect(push).toHaveBeenCalledWith({ path: '/app/ws_2/settings' })
+    // The URL is the workspace context — there is nothing to pick.
+    expect(wrapper.find('[data-testid="settings-workspace-picker"]').exists()).toBe(false)
+    const nameLabel = wrapper.find('[data-testid="settings-workspace-name"]')
+    expect(nameLabel.exists()).toBe(true)
+    expect(nameLabel.text()).toContain('Acme')
   })
 
   it('back button goes back in history', async () => {
