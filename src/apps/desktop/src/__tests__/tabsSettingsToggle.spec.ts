@@ -3,7 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as api from '../api'
-import PabrikSettings from '../components/PabrikSettings.vue'
+import PabrikConfigEditor from '../components/pabrik/PabrikConfigEditor.vue'
 import { __resetWindowIdForTests } from '../helpers/windowId'
 import { useTabsStore } from '../stores/tabs'
 import { makeLocalStorageStub } from './helpers'
@@ -40,12 +40,12 @@ function installStorage(): void {
 
 async function mountSettings() {
   mockGet.mockResolvedValueOnce({})
-  const wrapper = mount(PabrikSettings, { global: { stubs: { Teleport: true } } })
+  const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
   await flushPromises()
   return wrapper
 }
 
-describe('PabrikSettings — Browser-style tabs toggle', () => {
+describe('PabrikConfigEditor — Browser-style tabs toggle', () => {
   beforeEach(() => {
     installStorage()
     __resetWindowIdForTests()

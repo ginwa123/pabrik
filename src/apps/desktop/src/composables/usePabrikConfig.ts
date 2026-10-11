@@ -7,7 +7,8 @@
  * (shallow count; exact field-level diffs are not required for the
  * dirty pill).
  *
- * `save()` PUTs the whole config to `/api/config/pabrik`. On success
+ * `save()` writes the whole config through the given `PabrikConfigSource`.
+ * On success
  * the snapshot is refreshed; on failure `dirty` stays true so the
  * save bar keeps showing.
  *
@@ -15,9 +16,16 @@
  */
 import { computed, ref } from 'vue'
 
-import { getPabrikConfig, savePabrikConfig, type PabrikConfig } from '../api'
+import type { PabrikConfig } from '../api'
+import { userConfigSource, type PabrikConfigSource } from '../helpers/configSource'
 
-export function usePabrikConfig() {
+/**
+ * @param source where the config is read from and written to. Defaults to the
+ * user-level config, which is what every existing caller wants; the workspace
+ * scope passes `workspaceConfigSource(id)` instead. See
+ * `helpers/configSource.ts` for why the two are not interchangeable.
+ */
+export function usePabrikConfig(source: PabrikConfigSource = userConfigSource()) {
   const config = ref<PabrikConfig | null>(null)
   const loaded = ref(false)
   // JSON.stringify of config at load time. Empty string means
@@ -45,7 +53,7 @@ export function usePabrikConfig() {
 
   async function load() {
     try {
-      const data = await getPabrikConfig()
+      const data = await source.load()
       config.value = data ?? {}
     } catch {
       // localStorage fallback is handled by the orchestrator.
@@ -75,7 +83,7 @@ export function usePabrikConfig() {
     if (!config.value) return
     saving.value = true
     try {
-      await savePabrikConfig(config.value)
+      await source.save(config.value)
       takeSnapshot()
     } finally {
       saving.value = false

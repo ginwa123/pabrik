@@ -276,7 +276,7 @@ describe('McpServerModal — stdio transport', () => {
     await wrapper.vm.$nextTick()
 
     // Modal emits the parsed args array back via update:modelValue
-    // BEFORE the save event. The parent (PabrikSettings.vue) sees
+    // BEFORE the save event. The parent (PabrikConfigEditor.vue) sees
     // the parsed array on the modelValue and can persist it.
     const updates = wrapper.emitted('update:modelValue') ?? []
     const last = updates[updates.length - 1]?.[0] as McpServerModalValue | undefined
@@ -419,7 +419,7 @@ describe('McpServerModal — stdio transport', () => {
 
   it('clears the test result when the user edits any form field', async () => {
     // The modal's watcher fires on `props.modelValue` changes. In
-    // the parent (`PabrikSettings.vue`) this is wired via v-model;
+    // the parent (`PabrikConfigEditor.vue`) this is wired via v-model;
     // in this isolated test we have to manually re-feed the emitted
     // `update:modelValue` payload back into the prop via setProps.
     const testState = ref<McpServerModalValue>({ ...baseStdioServer })

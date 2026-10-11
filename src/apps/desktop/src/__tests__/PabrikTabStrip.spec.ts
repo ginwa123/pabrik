@@ -7,7 +7,7 @@ import { makeLocalStorageStub } from './helpers'
 
 /**
  * Test pattern: PabrikTabStrip is a controlled component. Clicking a
- * tab emits `update:modelValue`; the parent (PabrikSettings.vue) is
+ * tab emits `update:modelValue`; the parent (PabrikConfigEditor.vue) is
  * expected to update the bound prop. The component's `watch` on
  * `modelValue` then writes to localStorage. To simulate this in
  * tests, we react to the emit by calling `wrapper.setProps(...)`.

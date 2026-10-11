@@ -10,7 +10,7 @@
 -->
 <script setup lang="ts">
 import SettingsShell from '../settings/SettingsShell.vue'
-import PabrikSettings from '../PabrikSettings.vue'
+import PabrikConfigEditor from '../pabrik/PabrikConfigEditor.vue'
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for diff readability.
 const emit = defineEmits<{
@@ -21,7 +21,7 @@ const emit = defineEmits<{
 <template>
   <SettingsShell scope="user" workspace-id="">
     <template #default="{ notify }">
-      <PabrikSettings @notification="notify" />
+      <PabrikConfigEditor @notification="notify" />
     </template>
   </SettingsShell>
 </template>

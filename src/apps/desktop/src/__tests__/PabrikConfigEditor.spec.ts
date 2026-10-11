@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import * as api from '../api'
-import PabrikSettings from '../components/PabrikSettings.vue'
+import PabrikConfigEditor from '../components/pabrik/PabrikConfigEditor.vue'
 import { makeLocalStorageStub } from './helpers'
 
 vi.mock('../api', () => ({
@@ -32,7 +32,7 @@ const TOOLS_REGISTRY = [
   { name: 'set_git_worktree', description: 'Create a git worktree and bind it' },
 ]
 
-describe('PabrikSettings (orchestrator)', () => {
+describe('PabrikConfigEditor (orchestrator)', () => {
   beforeEach(() => {
     // PabrikSettings reads the tabs store for the "Browser-style tabs"
     // preference (Settings → General), so it needs an active pinia.
@@ -61,7 +61,7 @@ describe('PabrikSettings (orchestrator)', () => {
     // it is the switch for the `run_skill_eval` tool, and the tab is
     // deep-linkable via `?section=evals`.
     mockGet.mockResolvedValueOnce({})
-    const wrapper = mount(PabrikSettings, {
+    const wrapper = mount(PabrikConfigEditor, {
       global: { stubs: { Teleport: true } },
     })
     await flushPromises()
@@ -77,7 +77,7 @@ describe('PabrikSettings (orchestrator)', () => {
     // shared link has to land on the toggle, not the first tab).
     const router = await makeSettingsRouter({ section: 'evals' })
     mockGet.mockResolvedValueOnce({})
-    const wrapper = mount(PabrikSettings, {
+    const wrapper = mount(PabrikConfigEditor, {
       global: { plugins: [router], stubs: { Teleport: true } },
     })
     await flushPromises()
@@ -93,7 +93,7 @@ describe('PabrikSettings (orchestrator)', () => {
       profiles: { work: { model: 'm' } },
       sub_agents: [{ name: 'legacy', model: 'm' }],
     })
-    const wrapper = mount(PabrikSettings, {
+    const wrapper = mount(PabrikConfigEditor, {
       global: { stubs: { Teleport: true } },
     })
     await flushPromises()
@@ -106,7 +106,7 @@ describe('PabrikSettings (orchestrator)', () => {
     // first-load tab is General — operational settings are the most
     // likely entry point for new users.
     mockGet.mockResolvedValueOnce({})
-    const wrapper = mount(PabrikSettings, { global: { stubs: { Teleport: true } } })
+    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
     await flushPromises()
     const activeTab = wrapper.find('button[role="tab"][data-active="true"]')
     expect(activeTab.exists()).toBe(true)
@@ -117,7 +117,7 @@ describe('PabrikSettings (orchestrator)', () => {
     mockGet.mockResolvedValueOnce({
       profiles: { work: { model: 'gpt-4o-mini', base_url: 'https://x' } },
     })
-    const wrapper = mount(PabrikSettings, { global: { stubs: { Teleport: true } } })
+    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
     await flushPromises()
     expect(mockGet).toHaveBeenCalled()
     // Profiles is the landing tab — the profile name should be visible.
@@ -130,13 +130,16 @@ describe('PabrikSettings (orchestrator)', () => {
       notify_on_complete: false,
     })
     mockSave.mockResolvedValueOnce({ success: true })
-    const wrapper = mount(PabrikSettings, { global: { stubs: { Teleport: true } } })
+    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
     await flushPromises()
-    // Switch to the Profiles tab. Plan 2026-08-25-notify-on-error
-    // moved General to index 0; Profiles is now at index 1.
-    const profileTab = wrapper.find('[data-tab-id="profiles"]')
-    await profileTab.trigger('click')
+    // Make a real edit so the save bar appears. Switching tabs used to be
+    // enough BY ACCIDENT - the Profiles section emitted an update while
+    // hydrating, which happened to mark the config dirty. This test failed
+    // for exactly that reason (reproduced on the unmodified component), so it
+    // now makes the edit its assertion is actually about.
+    await wrapper.find('[data-testid="toggle-notify-on-complete"]').setValue(true)
     await flushPromises()
+    expect(wrapper.find('[data-testid="save-btn"]').exists()).toBe(true)
     // Save the profile-only config.
     await wrapper.find('[data-testid="save-btn"]').trigger('click')
     await flushPromises()
@@ -178,7 +181,7 @@ describe('PabrikSettings (orchestrator)', () => {
         },
       },
     })
-    const wrapper = mount(PabrikSettings, { global: { stubs: { Teleport: true } } })
+    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
     await flushPromises()
 
     // Switch to the Profiles tab. Plan 2026-08-25-notify-on-error
@@ -244,7 +247,7 @@ describe('PabrikSettings (orchestrator)', () => {
       active_profile: 'work',
     })
     mockSave.mockResolvedValueOnce({ success: true })
-    const wrapper = mount(PabrikSettings, { global: { stubs: { Teleport: true } } })
+    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
     await flushPromises()
 
     // Switch to Profiles tab. Plan 2026-08-25-notify-on-error moved
@@ -274,7 +277,7 @@ describe('PabrikSettings (orchestrator)', () => {
       active_profile: 'work',
     })
     mockSave.mockResolvedValueOnce({ success: true })
-    const wrapper = mount(PabrikSettings, { global: { stubs: { Teleport: true } } })
+    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
     await flushPromises()
 
     const profileTab = wrapper.find('[data-tab-id="profiles"]')
@@ -291,7 +294,7 @@ describe('PabrikSettings (orchestrator)', () => {
       active_profile: 'work',
     })
     mockSave.mockRejectedValueOnce(new Error('network down'))
-    const wrapper = mount(PabrikSettings, { global: { stubs: { Teleport: true } } })
+    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
     await flushPromises()
 
     const profileTab = wrapper.find('[data-tab-id="profiles"]')
@@ -331,7 +334,7 @@ describe('PabrikSettings (orchestrator)', () => {
       url: 'http://127.0.0.1:51234/',
       port: 51234,
     })
-    const wrapper = mount(PabrikSettings, { global: { stubs: { Teleport: true } } })
+    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
     await flushPromises()
 
     // The General tab is the first tab and lands there by default.
@@ -367,7 +370,7 @@ describe('PabrikSettings (orchestrator)', () => {
       web_launch_enabled: false,
     })
     mockSave.mockResolvedValueOnce({ success: true })
-    const wrapper = mount(PabrikSettings, { global: { stubs: { Teleport: true } } })
+    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
     await flushPromises()
 
     // The save bar should be hidden (dirty=false on first load).
@@ -402,7 +405,7 @@ describe('PabrikSettings (orchestrator)', () => {
       web_launch_enabled: false,
     })
     mockSave.mockResolvedValueOnce({ success: true })
-    const wrapper = mount(PabrikSettings, { global: { stubs: { Teleport: true } } })
+    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
     await flushPromises()
 
     // Set the retry delay to 5 seconds → backend expects 5000 ms.
@@ -428,7 +431,7 @@ describe('PabrikSettings (orchestrator)', () => {
       retry_delay_ms: 0,
       web_launch_enabled: false,
     })
-    const wrapper = mount(PabrikSettings, { global: { stubs: { Teleport: true } } })
+    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
     await flushPromises()
 
     const input = wrapper.find('[data-testid="input-retry-delay-seconds"]')
@@ -464,7 +467,7 @@ describe('PabrikSettings (orchestrator)', () => {
       web_launch_enabled: false,
     })
     mockSave.mockResolvedValueOnce({ success: true })
-    const wrapper = mount(PabrikSettings, { global: { stubs: { Teleport: true } } })
+    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
     await flushPromises()
 
     // Toggle ONLY notify_on_error.
@@ -508,7 +511,7 @@ describe('PabrikSettings (orchestrator)', () => {
     const prevOpen = window.open
     window.open = openSpy as unknown as typeof window.open
     try {
-      const wrapper = mount(PabrikSettings, { global: { stubs: { Teleport: true } } })
+      const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
       await flushPromises()
 
       await wrapper.find('[data-testid="toggle-web-launch"]').setValue(true)
@@ -537,7 +540,7 @@ describe('PabrikSettings (orchestrator)', () => {
       },
     })
     mockSave.mockResolvedValueOnce({ success: true })
-    const wrapper = mount(PabrikSettings, { global: { stubs: { Teleport: true } } })
+    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
     await flushPromises()
 
     await wrapper.find('[data-tab-id="mcp"]').trigger('click')
@@ -566,7 +569,7 @@ describe('PabrikSettings (orchestrator)', () => {
       },
     })
     mockSave.mockResolvedValueOnce({ success: true })
-    const wrapper = mount(PabrikSettings, { global: { stubs: { Teleport: true } } })
+    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
     await flushPromises()
 
     await wrapper.find('[data-tab-id="mcp"]').trigger('click')
@@ -601,7 +604,7 @@ describe('PabrikSettings (orchestrator)', () => {
   it('tab clicks round-trip through ?section= (default tab stripped from the URL)', async () => {
     const router = await makeSettingsRouter()
     mockGet.mockResolvedValueOnce({})
-    const wrapper = mount(PabrikSettings, {
+    const wrapper = mount(PabrikConfigEditor, {
       global: { plugins: [router], stubs: { Teleport: true } },
     })
     await flushPromises()
@@ -621,7 +624,7 @@ describe('PabrikSettings (orchestrator)', () => {
   it('mounts with ?section=tools → Tools tab active and ToolsSection rendered (deep link)', async () => {
     const router = await makeSettingsRouter({ section: 'tools' })
     mockGet.mockResolvedValueOnce({})
-    const wrapper = mount(PabrikSettings, {
+    const wrapper = mount(PabrikConfigEditor, {
       global: { plugins: [router], stubs: { Teleport: true } },
     })
     await flushPromises()
@@ -640,7 +643,7 @@ describe('PabrikSettings (orchestrator)', () => {
     localStorage.setItem('pabrik-settings-active-tab', 'tools')
     const router = await makeSettingsRouter()
     mockGet.mockResolvedValueOnce({})
-    const wrapper = mount(PabrikSettings, {
+    const wrapper = mount(PabrikConfigEditor, {
       global: { plugins: [router], stubs: { Teleport: true } },
     })
     await flushPromises()
@@ -651,7 +654,7 @@ describe('PabrikSettings (orchestrator)', () => {
   it('mount with ?section=tools persists to storage so the next clean load restores it', async () => {
     const router = await makeSettingsRouter({ section: 'tools' })
     mockGet.mockResolvedValueOnce({})
-    mount(PabrikSettings, {
+    mount(PabrikConfigEditor, {
       global: { plugins: [router], stubs: { Teleport: true } },
     })
     await flushPromises()
@@ -661,7 +664,7 @@ describe('PabrikSettings (orchestrator)', () => {
   it('mount with ?section=general strips the default from the URL', async () => {
     const router = await makeSettingsRouter({ section: 'general' })
     mockGet.mockResolvedValueOnce({})
-    const wrapper = mount(PabrikSettings, {
+    const wrapper = mount(PabrikConfigEditor, {
       global: { plugins: [router], stubs: { Teleport: true } },
     })
     await flushPromises()
@@ -671,7 +674,7 @@ describe('PabrikSettings (orchestrator)', () => {
 
   it('hydrates an explicit tools list from config (no defaults note, checkboxes reflect it)', async () => {
     mockGet.mockResolvedValueOnce({ tools: ['command'] })
-    const wrapper = mount(PabrikSettings, { global: { stubs: { Teleport: true } } })
+    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
     await flushPromises()
 
     await wrapper.find('[data-tab-id="tools"]').trigger('click')
@@ -693,7 +696,7 @@ describe('PabrikSettings (orchestrator)', () => {
       web_launch_enabled: false,
     })
     mockSave.mockResolvedValueOnce({ success: true })
-    const wrapper = mount(PabrikSettings, { global: { stubs: { Teleport: true } } })
+    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
     await flushPromises()
 
     await wrapper.find('[data-tab-id="tools"]').trigger('click')
@@ -723,7 +726,7 @@ describe('PabrikSettings (orchestrator)', () => {
       web_launch_enabled: false,
     })
     mockSave.mockResolvedValueOnce({ success: true })
-    const wrapper = mount(PabrikSettings, { global: { stubs: { Teleport: true } } })
+    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
     await flushPromises()
 
     // Dirty the form via an unrelated field, then save: the body must

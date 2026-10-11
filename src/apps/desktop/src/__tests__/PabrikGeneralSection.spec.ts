@@ -17,8 +17,8 @@
  *
  * The spec runs the component standalone with `defineModel<...>` —
  * vitest's mount helper auto-wires the v-model, so the parent's
- * PabrikSettings.vue is not exercised here (that's covered by
- * `PabrikSettings.spec.ts`'s "General tab" tests).
+ * PabrikConfigEditor.vue is not exercised here (that's covered by
+ * `PabrikConfigEditor.spec.ts`'s "General tab" tests).
  */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'

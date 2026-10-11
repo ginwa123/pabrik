@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUpdated } from 'vue'
+import { computed, onMounted, onUpdated } from 'vue'
 import { useRoute } from 'vue-router'
 
 const STORAGE_KEY = 'pabrik-settings-active-tab'
@@ -8,6 +8,12 @@ type TabId = 'general' | 'profiles' | 'mcp' | 'tools' | 'evals'
 
 const props = defineProps<{
   modelValue: TabId
+  /**
+   * Restrict the strip to these sections. Omitted (or empty) = all five, which
+   * is what the user-scope page wants; the workspace scope passes the four
+   * that moved there.
+   */
+  sections?: readonly TabId[]
 }>()
 
 const emit = defineEmits<{
@@ -31,19 +37,30 @@ const tabs: ReadonlyArray<{ id: TabId; label: string }> = [
   { id: 'evals', label: 'Skill Evals' },
 ] as const
 
+/**
+ * The tabs actually offered. A section the caller did not ask for is not
+ * rendered AND cannot be restored from storage below - otherwise a workspace
+ * page would silently jump to a tab it does not have.
+ */
+const visibleTabs = computed(() =>
+  props.sections && props.sections.length > 0
+    ? tabs.filter((t) => props.sections?.includes(t.id))
+    : tabs,
+)
+
 // Undefined when mounted without a router (unit tests). The restore
 // emit below must never run under a real router that already carries
 // a `?section=` deep link — it would clobber the linked tab with the
-// localStorage value on mount. The parent (PabrikSettings) reads
+// localStorage value on mount. The parent (PabrikConfigEditor) reads
 // `?section=` first, then falls back to localStorage itself.
 const route = useRoute()
 
 onMounted(() => {
   const raw = route?.query?.section
   const section = Array.isArray(raw) ? raw[0] : raw
-  if (typeof section === 'string' && tabs.some((t) => t.id === section)) return
+  if (typeof section === 'string' && visibleTabs.value.some((t) => t.id === section)) return
   const saved = localStorage.getItem(STORAGE_KEY)
-  if (saved && tabs.some((t) => t.id === saved) && saved !== props.modelValue) {
+  if (saved && visibleTabs.value.some((t) => t.id === saved) && saved !== props.modelValue) {
     emit('update:modelValue', saved as TabId)
   }
 })
@@ -83,7 +100,7 @@ onUpdated(() => {
     style="border-color: var(--color-border)"
   >
     <button
-      v-for="tab in tabs"
+      v-for="tab in visibleTabs"
       :key="tab.id"
       role="tab"
       type="button"

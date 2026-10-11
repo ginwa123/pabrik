@@ -14,7 +14,7 @@
       "count": 1
     }
   },
-  "src/components/PabrikSettings.vue": {
+  "src/components/pabrik/PabrikConfigEditor.vue": {
     "local/no-silent-fallback-catch": {
       "count": 3
     }

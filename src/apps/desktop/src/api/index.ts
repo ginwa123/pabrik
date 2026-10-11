@@ -4743,7 +4743,7 @@ export interface PabrikConfig {
    * field is present: `command` ⇒ stdio, `url` ⇒ http.
    *
    * Note: this type is also re-exported and re-used by the
-   * `PabrikSettings.vue` parser/serializer pair so the frontend
+   * `PabrikConfigEditor.vue` parser/serializer pair so the frontend
    * round-trips config.json unchanged. If you add a field here, add
    * it to the `McpServer` interface above too (camelCase).
    */
@@ -4849,6 +4849,17 @@ export interface PabrikConfig {
   // Per-profile compaction overrides (`max_capacity_tokens` /
   // `compaction_threshold_percent`) live on `PabrikProfile` (Chunk
   // 7.6) and remain there. Both layers coexist.
+  /**
+   * Workspace scope ONLY: does this workspace carry its own config overlay, or
+   * is it inheriting the user-level config? `null` (and `undefined`) on the
+   * user-scope `GET /api/config/pabrik`, where the question does not apply.
+   *
+   * This is what the settings page keys the "Inherited from User settings"
+   * vs "Overridden" pill off, so a workspace that has overridden nothing
+   * never renders as if it had.
+   */
+  has_overlay?: boolean | null
+
 }
 
 export async function getPabrikConfig(): Promise<PabrikConfig> {
@@ -4864,6 +4875,53 @@ export async function savePabrikConfig(config: PabrikConfig): Promise<{ success:
     method: 'PUT',
     body: config,
   })
+}
+
+// ─── Per-workspace config overlay (Migration 105) ────────────────────────
+//
+// The workspace-scope twin of the pair above. Same wire shape: `GET` returns
+// the EFFECTIVE config (user config with the workspace's overlay merged over
+// it) plus `has_overlay`, so the page shows what actually runs here rather
+// than a sparse diff the user has to reconcile by hand.
+//
+// `PUT` takes the same body as `savePabrikConfig`; the backend stores only
+// the workspace-scoped slice of it and 400s if the body carries none, so a
+// save that would silently do nothing is refused instead of reported as
+// successful.
+
+/** `GET /api/workspaces/:id/config` — throws on a non-2xx (unlike the
+ * user-scope `getPabrikConfig`, which swallows the failure into `{}`): the
+ * workspace page must be able to tell "inheriting" from "could not look". */
+export async function getWorkspaceConfig(workspaceId: string): Promise<PabrikConfig> {
+  return await apiFetch<PabrikConfig>(`/workspaces/${encodeURIComponent(workspaceId)}/config`)
+}
+
+export async function saveWorkspaceConfig(
+  workspaceId: string,
+  config: PabrikConfig,
+): Promise<{ success: boolean }> {
+  return await apiFetch<{ success: boolean }>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/config`,
+    { method: 'PUT', body: config },
+  )
+}
+
+/** Drop the overlay: this workspace inherits the user config again. */
+export async function clearWorkspaceConfig(workspaceId: string): Promise<{ success: boolean }> {
+  return await apiFetch<{ success: boolean }>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/config`,
+    { method: 'DELETE' },
+  )
+}
+
+/** Copy the user config's workspace-scoped slice into this workspace. */
+export async function copyUserConfigIntoWorkspace(
+  workspaceId: string,
+): Promise<{ success: boolean }> {
+  return await apiFetch<{ success: boolean }>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/config/copy`,
+    { method: 'POST' },
+  )
 }
 
 /**

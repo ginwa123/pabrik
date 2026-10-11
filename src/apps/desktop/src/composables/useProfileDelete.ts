@@ -43,7 +43,7 @@ export function useProfileDelete<TProfile extends { name: string }>(
     const previousActive = activeProfile.value
 
     // Optimistic local update (preserves the user's exact snippet at
-    // PabrikSettings.vue:290-295 from the original spec).
+    // PabrikConfigEditor.vue:290-295 from the original spec).
     isDeleting.value = true
     profiles.value = profiles.value.filter((p) => p.name !== name)
     if (activeProfile.value === name) {
