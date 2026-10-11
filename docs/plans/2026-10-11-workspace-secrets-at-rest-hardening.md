@@ -93,9 +93,9 @@ Half of that is right and half of it is not, and the difference decides how much
 | Key custody | (A) other local user | (B) same-user process / the agent | (C) copied or backed-up `.db` |
 |---|---|---|---|
 | **none — today** | reads value | reads value | reads value |
-| key file `0600` beside the DB | cannot read the key, cannot read the value | reads both → decrypts | **inert** ✅ |
-| OS keychain / DPAPI | cannot get the key | `secret-tool` / DPAPI *as the same user* still works while the session is unlocked — but it is now a second, auditable step, not a file read | **inert** ✅ |
+| OS keychain / Credential Manager, no key file | cannot get the key | `secret-tool` / Credential Manager *as the same user* still works while the session is unlocked — but it is now a second, auditable step, not a file read | **inert** ✅ |
 | passphrase, held only in server memory | cannot | cannot (must dump process memory) | **inert** ✅ |
+| *rejected:* key file `0600` beside the DB | cannot read the key, cannot read the value | reads both → decrypts | inert |
 
 Read that table honestly:
 
@@ -107,9 +107,15 @@ Read that table honestly:
   to defeat.
 - It is **wrong for row (A)** for a reason that has nothing to do with cryptography: the file is `0644`.
 
-So the honest ladder is: **`0600` gets most of (A) and (C) for ~20 lines; a keychain removes the key file
-from disk; only a passphrase meaningfully addresses (B).** The plan below keeps those three concerns
-separate instead of pretending one cipher solves all of them.
+So the honest ladder is: **file modes get most of (A) for ~20 lines; an OS keychain gets all of (C) without
+writing key material anywhere; only a passphrase meaningfully addresses (B).** The plan below keeps those
+three concerns separate instead of pretending one cipher solves all of them.
+
+**Decision (reviewer, 2026-10-11): there is no `secrets.key`.** Key material is never written into the
+config dir, not even as a fallback — a cipher whose key sits in the file it protects is a ceremony. The cost
+is stated plainly in [§7.4](#74-key-custody-per-platform): on a host with no OS keychain (headless Linux, a
+container, CI) Phase 1 has nothing to seal with, so that host stays on plaintext — visibly, never silently —
+and Phase 3's passphrase becomes the only way to seal it.
 
 ---
 
@@ -152,7 +158,7 @@ Nothing here is a cipher and all of it is independently worth doing:
 **Buys:** attacker (A) outright, +1 step for (B). **Cost:** hours. **Risk:** low — but (4) is a
 false-positive source, so it needs a narrow, tested pattern rather than a fuzzy one.
 
-### Phase 1 — envelope encryption, key in the OS keychain with a file fallback (≈1.5–2 days) — *recommended*
+### Phase 1 — envelope encryption, key held by the OS keychain, never on disk (≈1.5–2 days) — *recommended*
 
 `std.crypto.aead.aes_gcm.Aes256Gcm` and `std.crypto.hkdf` are already in the toolchain
 (`/usr/lib/zig/std/crypto/aes_gcm.zig`, Zig 0.16.0). **No new dependency.** The repo already has this
@@ -162,9 +168,10 @@ no equivalent yet — this closes that asymmetry.
 
 Details in [§7](#7-phase-1-design-details-so-the-reviewer-can-price-it).
 
-**Buys:** (C) completely, (A) completely, (B) partially. **Cost:** a crypto module, an envelope format, a key
-lifecycle and three platform paths — the exact price the original reviewer declined, now paid by value
-instead of by column.
+**Buys:** (C) completely, (A) completely, (B) partially — **but only on a host that has a keychain**
+([§7.4](#74-key-custody-per-platform)). **Cost:** a crypto module, an envelope format, a key lifecycle and
+three platform paths — the exact price the original reviewer declined, now paid by value instead of by
+column.
 
 ### Phase 2 — per-secret capability allowlist (≈1–2 days) — *the highest-leverage control for (B)*
 
@@ -206,7 +213,7 @@ nobody is at the keyboard, which means the passphrase lives in the environment, 
 |---|---|
 | Base64 / XOR / "encryption" with a key in the source | Theater. Worse than plaintext, because it stops people looking. |
 | Key derived from the `--auth` password hash (`auth_common.zig:347-355`) | Local, no-auth is the primary deployment and there is no password to derive from; the server must also run unattended. |
-| Key file in the same config dir as `config.json` | The rev-1 mistake, correctly rejected — but see [§3](#3-what-a-cipher-actually-buys-here--and-what-it-does-not): for the *copy* threat it is still strictly better than plaintext, so it belongs as Phase 1's **fallback**, never as the design. |
+| Key file in the same config dir as `config.json` | The rev-1 mistake, **rejected outright (reviewer, 2026-10-11)** — not even as a fallback, because it makes the cipher a function of the very file it exists to protect. A host without a keychain stays plaintext and says so. |
 | Whole-DB encryption (SQLCipher-style) | Needs a dependency and rewrites the DB layer to protect one column; still does not stop (B). |
 | Sandbox-only (`read_file` + `shell` deny-list) as *the* fix | Bypassable by any second interpreter. Phase 0 item, not a plan. |
 | "Don't store secrets, let users use their own env" | Changes the product to avoid the problem. |
@@ -219,8 +226,9 @@ nobody is at the keyboard, which means the passphrase lives in the environment, 
 2. **Phase 1 as the answering change to this task's question** — the stored value stops being readable in
    the file, and the module header gets an honest new disclaimer ([§7.6](#76-what-the-header-must-say)).
 3. **Phase 2 next**, because it is the only thing that constrains the credential's *use*.
-4. **Phase 3 only if the shared-host / stolen-laptop case is real for the user.** Otherwise the cost and the
-   unattended-agent consequence are not worth it.
+4. **Phase 3 for any host without a keychain, or when the stolen-laptop case is real.** With no key file it
+   is the *only* way a headless box ever seals, which lifts it above "paranoid option" — but it still breaks
+   unattended runs, so it stays opt-in and per-host rather than the default.
 
 ---
 
@@ -262,32 +270,42 @@ trusting is the one in [§9](#9-verification): grep the raw file bytes for the p
 
 ### 7.4 Key custody, per platform
 
-| Platform | Provider | Fallback |
+| Platform | Provider | Key material on disk? |
 |---|---|---|
-| Linux | freedesktop Secret Service via `secret-tool store/lookup` (libsecret); absent on most headless boxes | key file `0600` |
-| macOS | `security add-generic-password` / `find-generic-password` — always present | key file `0600` |
-| Windows | DPAPI (`CryptProtectData`, `-lcrypt32`) over a small blob; ties it to the login credentials, no extra store | key file `0600` |
+| Linux | freedesktop Secret Service via `secret-tool store/lookup` (libsecret); **absent on most headless boxes** | no — the daemon owns it |
+| macOS | Keychain via `security add-generic-password` / `find-generic-password` — always present | no |
+| Windows | **Credential Manager** (`CredWrite` / `CredRead`, or `cmdkey`), not DPAPI over a file of ours | no |
 
-The providers are reached by spawning the platform CLI (the app already spawns processes and has no C
-crypto bindings), behind one `KeyProvider` interface with a `file` implementation as the universal last
-resort. A missing keyring is a **warning**, never a startup failure — CI and containers have no D-Bus
-session.
+The providers are reached by spawning the platform CLI (the app already spawns processes and has no C crypto
+bindings), behind one `KeyProvider` interface. **There is no `file` implementation** — reviewer decision,
+2026-10-11. Two consequences, both deliberate:
+
+- **No keychain ⇒ no sealing.** `KeyProvider` reports `unavailable`, the boot seal pass is skipped, writes go
+  in plaintext, and the state is **visible**: a boot log line plus an "at-rest encryption unavailable on this
+  host" note in the Secrets section. A missing keyring is never a startup failure — CI and containers have no
+  D-Bus session — but it is never silently papered over either.
+- **A copied `.db` is only inert where a keychain exists.** The headless box — the machine whose database is
+  the one that actually gets copied — is the single host where Phase 1 buys nothing. That is precisely why
+  Phase 3 stops being optional there.
 
 ### 7.5 Failure states the code must distinguish
 
 `sealed` / `legacy-plaintext` (readable, will be sealed on next write) / `unavailable` (no key: writes go in
-plaintext with a loud log) / `wrong-key` (a row that will not open because `key_id` differs). Collapsing any
-of the last three into "empty secret" is exactly the failure mode this repo has a rule about.
+plaintext, logged at boot **and rendered in the Secrets section** — with no key file, this state is a normal
+host condition, not an incident) / `wrong-key` (a row that will not open because `key_id` differs).
+Collapsing any of the last three into "empty secret" is exactly the failure mode this repo has a rule
+about.
 
 ### 7.6 What the header must say
 
 The rev-1/2 wording must not come back as "secure storage". Replacement, in
 `secrets_store.zig`'s header and at `migration.zig:11437`:
 
-> `value` is sealed with AES-256-GCM under a key held by the OS keychain (or a `0600` key file when there is
-> none). **This protects the database file — backups, copies, another local account — not the account.**
-> A process running as the same user can obtain the key and decrypt; the substitution path, not this
-> cipher, is what keeps a value away from the model.
+> `value` is sealed with AES-256-GCM under a key held by the OS keychain — never a key file. **Where the
+> host has no keychain, the value is stored in plaintext, deliberately and visibly.** **This protects the
+> database file — backups, copies, another local account — not the account.** A process running as the same
+> user can obtain the key and decrypt; the substitution path, not this cipher, is what keeps a value away
+> from the model.
 
 Replacing the *plaintext* disclaimer with that is the point of the phase, not boilerplate.
 
@@ -329,9 +347,10 @@ refuses *with a named error*, and no value appears in the refusal.
 
 ## 10. Open questions for the reviewer
 
-1. **Key file fallback.** Accept `~/.config/pabrik/secrets.key` (`0600`) when there is no keyring, or refuse
-   to enable encryption at all without one? Refusing means headless boxes and CI keep today's plaintext —
-   honest, but then the column is plaintext in exactly the environment nobody watches.
+1. ~~**Key file fallback.**~~ **Resolved (reviewer, 2026-10-11): no `secrets.key`.** The question that
+   replaces it is only what a keychain-less host shows the user: allow the plaintext write with a visible
+   "unavailable" state ([§7.4](#74-key-custody-per-platform)), or refuse to store the secret at all there?
+   Allowing keeps the feature working; refusing turns the gap into a wall.
 2. **Scope.** `workspace_secrets` only, or the LLM `api_key` and MCP headers too ([§4](#4-scope-the-other-plaintext-credentials))?
 3. **Phase 2 default policy.** Allowlist-empty = deny (every new secret needs an entry and the first tool
    call after creating one fails) or permissive with a warning? Deny-by-default is the secure answer and the
@@ -352,13 +371,13 @@ refuses *with a named error*, and no value appears in the refusal.
 | | Phase 0 | Phase 1 | Phase 2 | Phase 3 |
 |---|---|---|---|---|
 | Stops another local user | ✅ | ✅ | | ✅ |
-| Makes a copied/backed-up DB inert | ❌ | ✅ | | ✅ |
+| Makes a copied/backed-up DB inert | ❌ | ✅ (where a keychain exists) | | ✅ |
 | Stops the agent reading the file | ~ | ~ | | ✅ |
 | Stops the agent *using* a secret against an unintended host | ❌ | ❌ | ✅ | ✅ |
 | Cost | ~0.5 d | ~1.5–2 d | ~1–2 d | ~3–5 d |
 | UX change | none | none | first-use friction | unlock prompt / env var |
 | Breaks unattended runs | no | no | possible (deny default) | yes, unless the passphrase is in the env |
 
-**Recommendation:** Phase 0 + Phase 1 as the answer to this task, Phase 2 as the immediate follow-up, Phase 3
-only if the shared-host or stolen-laptop case is real. Phase 1 on its own is worth it for §3 row (C) alone;
-it should just never be described as more than that.
+**Recommendation:** Phase 0 + Phase 1 as the answer to this task, Phase 2 as the immediate follow-up, and
+Phase 3 for any host without a keychain — with no key file, a passphrase is the only thing that can seal one.
+Phase 1 on its own is worth it for §3 row (C) alone; it should just never be described as more than that.
