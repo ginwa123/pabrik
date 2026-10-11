@@ -219,12 +219,27 @@ const isOpenAIStyle = computed(
           @change="update('url_style', ($event.target as HTMLSelectElement).value)"
           :class="inputBase"
           :style="inputStyle()"
+          data-testid="url-style-select"
         >
           <option value="openai">OpenAI</option>
           <option value="openai-response">OpenAI Response</option>
           <option value="anthropic">Anthropic</option>
+          <option value="claude-code">Claude Code (CLI)</option>
         </select>
       </div>
+    </div>
+
+    <div
+      v-if="modelValue.url_style === 'claude-code'"
+      class="rounded-md border px-3 py-2 text-dense"
+      style="border-color: var(--color-border); color: var(--semantic-text-dim)"
+      data-testid="claude-code-hint"
+    >
+      Claude Code runs the local <span class="font-mono">claude</span> CLI with your subscription
+      (<span class="font-mono">claude login</span>) — no API key or Base URL needed. Set Model to
+      <span class="font-mono">sonnet</span>, <span class="font-mono">opus</span>, or a full
+      <span class="font-mono">claude-sonnet-4-5-…</span> id. Phase 1 saves the profile; CLI
+      execution wires up in Phase 2.
     </div>
 
     <!-- Thinking budget + Reasoning effort — plan 2026-08-23-model-thinking.

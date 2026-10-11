@@ -1731,8 +1731,7 @@ pub const Agent = struct {
         // silent behavior change.
         if (thinking_on) {
             if (params.temperature) |t| {
-                if (t != 1.0) {
-                }
+                if (t != 1.0) {}
             }
         }
 
@@ -2157,8 +2156,7 @@ pub const Agent = struct {
         var aw2: std.Io.Writer.Allocating = .init(allocator);
         try aw2.writer.print("{f}", .{std.json.fmt(req, .{})});
         const out = try aw2.toOwnedSlice();
-        if (std.mem.eql(u8, self.UrlStyle, "openai-response")) {
-        }
+        if (std.mem.eql(u8, self.UrlStyle, "openai-response")) {}
         return out;
     }
 
@@ -2173,6 +2171,11 @@ pub const Agent = struct {
         ApiError,
         NoChoices,
         AllocFailed,
+        /// Profile selects url_style="claude-code" (local CLI backend).
+        /// Phase 1 models the backend (config + validation + CLI argv);
+        /// execution wiring lands in Phase 2, so streaming fails fast
+        /// with this error plus an actionable `last_error_message`.
+        ClaudeCodeNotWired,
         WriteFailed,
         OutOfMemory,
         Cancelled,
@@ -2894,6 +2897,25 @@ pub const Agent = struct {
         self.log_fmt(.info, "[STREAM START] model={s} | messages={} | tools={} | streaming=true", .{
             self.model, params.messages.len, params.tools.len,
         });
+
+        // Claude Code profiles select the local CLI backend, not HTTP.
+        // Phase 1 fails fast here (before any URL/auth handling) so the
+        // user gets an actionable message instead of a confusing
+        // InvalidUri from the empty base_url. Phase 2 will dispatch to
+        // `agentic_loop/claude_code.zig` execution from this point.
+        if (std.mem.eql(u8, self.UrlStyle, "claude-code")) {
+            const detail = std.fmt.allocPrint(
+                self.allocator,
+                "profile uses url_style=\"claude-code\" (model=\"{s}\") but CLI execution is not wired yet (Phase 1: configuration only). Install the CLI (https://docs.anthropic.com/en/docs/claude-code) and run `claude login`, or switch the profile back to an HTTP url_style (openai|openai-response|anthropic).",
+                .{self.model},
+            ) catch null;
+            if (detail) |d| {
+                if (self.last_error_message) |prev| self.allocator.free(prev);
+                self.last_error_message = d;
+            }
+            self.log_fmt(.err, "[STREAM] claude-code backend not wired yet (model={s})", .{self.model});
+            return error.ClaudeCodeNotWired;
+        }
 
         // Reset per-call Anthropic parser scratch state. The Agent is reused
         // across many calls; without this reset, the second call would see
@@ -4075,6 +4097,20 @@ test "HttpOptions.idle_timeout_ms default stays above TCP keepalive window" {
     try expectEqualCallStreaming(@as(u32, 180_000), defaults.idle_timeout_ms);
 }
 
+test "callStreaming with claude-code style fails fast with actionable error" {
+    var a = Agent.init(testing_allocatorCallStreaming, std.testing.io);
+    defer a.deinit();
+    a.baseUrl = "";
+    a.model = "sonnet";
+    a.apiKey = "";
+    a.UrlStyle = "claude-code";
+    const result = a.callStreaming(makeCall(), null, noopCallback);
+    try expectErrorCallStreaming(error.ClaudeCodeNotWired, result);
+    const detail = a.last_error_message orelse return error.MissingDetail;
+    try expectCallStreaming(std.mem.indexOf(u8, detail, "claude-code") != null);
+    try expectCallStreaming(std.mem.indexOf(u8, detail, "claude login") != null);
+}
+
 // ============================================================================
 // Real network test — spins up a fake HTTP server, points the agent at it,
 // and verifies the idle-timeout fix actually fires on a stalled connection.
@@ -4815,7 +4851,7 @@ test "ImageUrl - with detail option" {
 test "AgentMessage - with content_parts (multimodal)" {
     const text_part = try std.testing.allocator.dupe(u8, "What is in this image?");
     const url_str = try std.testing.allocator.dupe(u8, "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
-    
+
     const parts = try std.testing.allocator.alloc(ContentPart, 2);
     parts[0] = .{
         .part_type = "text",
@@ -4851,7 +4887,7 @@ test "AgentMessage - with content_parts (multimodal)" {
 test "AgentMessage deinit handles content_parts correctly" {
     const text_part = try std.testing.allocator.dupe(u8, "Hello");
     const url_str = try std.testing.allocator.dupe(u8, "data:image/png;base64,abc123");
-    
+
     const parts = try std.testing.allocator.alloc(ContentPart, 1);
     parts[0] = .{
         .part_type = "text",
@@ -4872,7 +4908,7 @@ test "AgentMessage deinit handles content_parts correctly" {
     };
     // deinit should free all allocated memory without leaking
     msg.deinit(std.testing.allocator);
-    
+
     // If we get here without memory errors, the test passes
     try expectImageContent(true);
 }
@@ -4882,7 +4918,7 @@ test "ContentPart - base64 image URL format validation" {
     // as expected by OpenAI API
     const base64_data = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
     const url = try std.fmt.allocPrint(std.testing.allocator, "data:image/png;base64,{s}", .{base64_data});
-    
+
     const part = ContentPart{
         .part_type = "image_url",
         .text = null,
@@ -4896,14 +4932,14 @@ test "ContentPart - base64 image URL format validation" {
             if (img.url) |u| std.testing.allocator.free(u);
         }
     }
-    
+
     try expectImageContent(std.mem.startsWith(u8, part.image_url.?.url.?, "data:image/png;base64,"));
 }
 
 test "AgentMessage - legacy content field still works" {
     // Verify backward compatibility - AgentMessage with plain content
     const content = try std.testing.allocator.dupe(u8, "Hello, this is plain text content");
-    
+
     const msg = AgentMessage{
         .role = .user,
         .content = content,
@@ -8040,4 +8076,3 @@ test "parse_stream_chunk (default UrlStyle): falls through to OpenAI parser" {
     try expectParseAnthropicSse(chunk != null);
     try expectEqualStringsParseAnthropicSse("world", chunk.?.content.?);
 }
-

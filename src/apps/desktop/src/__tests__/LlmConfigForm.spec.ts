@@ -34,7 +34,9 @@ describe('LlmConfigForm', () => {
   })
 
   it('renders 2 selects for anthropic (budget input, no reasoning_effort, freetext temperature)', () => {
-    const wrapper = mount(LlmConfigForm, { props: { modelValue: { ...baseValue, url_style: 'anthropic' } } })
+    const wrapper = mount(LlmConfigForm, {
+      props: { modelValue: { ...baseValue, url_style: 'anthropic' } },
+    })
     expect(wrapper.findAll('select').length).toBe(2) // thinking, url_style
     expect(wrapper.find('[data-testid=temperature-input]').exists()).toBe(true)
     expect(wrapper.find('[data-testid=thinking-budget-input]').exists()).toBe(true)
@@ -42,7 +44,9 @@ describe('LlmConfigForm', () => {
   })
 
   it('renders 3 selects for openai-response (reasoning_effort, no budget, freetext temperature)', () => {
-    const wrapper = mount(LlmConfigForm, { props: { modelValue: { ...baseValue, url_style: 'openai-response' } } })
+    const wrapper = mount(LlmConfigForm, {
+      props: { modelValue: { ...baseValue, url_style: 'openai-response' } },
+    })
     expect(wrapper.findAll('select').length).toBe(3)
     expect(wrapper.find('[data-testid=temperature-input]').exists()).toBe(true)
     expect(wrapper.find('[data-testid=reasoning-effort-select]').exists()).toBe(true)
@@ -51,20 +55,26 @@ describe('LlmConfigForm', () => {
 
   it('hides both budget and effort when thinking=off regardless of style', () => {
     for (const style of ['openai', 'openai-response', 'anthropic'] as const) {
-      const wrapper = mount(LlmConfigForm, { props: { modelValue: { ...baseValue, url_style: style, thinking: 'off' } } })
+      const wrapper = mount(LlmConfigForm, {
+        props: { modelValue: { ...baseValue, url_style: style, thinking: 'off' } },
+      })
       expect(wrapper.find('[data-testid=thinking-budget-input]').exists()).toBe(false)
       expect(wrapper.find('[data-testid=reasoning-effort-select]').exists()).toBe(false)
     }
   })
 
   it('hides the API key by default (type=password)', () => {
-    const wrapper = mount(LlmConfigForm, { props: { modelValue: { ...baseValue, api_key: 'sk-secret' } } })
+    const wrapper = mount(LlmConfigForm, {
+      props: { modelValue: { ...baseValue, api_key: 'sk-secret' } },
+    })
     const keyInput = wrapper.find('[data-testid="api-key-input"]')
     expect(keyInput.attributes('type')).toBe('password')
   })
 
   it('toggles the API key to type=text when the show button is clicked', async () => {
-    const wrapper = mount(LlmConfigForm, { props: { modelValue: { ...baseValue, api_key: 'sk-secret' } } })
+    const wrapper = mount(LlmConfigForm, {
+      props: { modelValue: { ...baseValue, api_key: 'sk-secret' } },
+    })
     await wrapper.find('[data-testid="api-key-toggle"]').trigger('click')
     expect(wrapper.find('[data-testid="api-key-input"]').attributes('type')).toBe('text')
     await wrapper.find('[data-testid="api-key-toggle"]').trigger('click')
@@ -158,7 +168,7 @@ describe('LlmConfigForm', () => {
     })
     await wrapper.find('[data-testid="profile-threshold-slider"]').setValue('120')
     const emitted = wrapper.emitted('update:modelValue')?.[0]?.[0] as typeof baseValue
-    expect(emitted.compaction_threshold_percent).toBe(100)  // clamped
+    expect(emitted.compaction_threshold_percent).toBe(100) // clamped
   })
 
   // ─── Temperature freetext (auto or 0–1) ───
@@ -168,7 +178,9 @@ describe('LlmConfigForm', () => {
     const input = wrapper.find('[data-testid="temperature-input"]')
     expect(input.exists()).toBe(true)
     expect(input.attributes('list')).toBe('llm-temperature-presets')
-    const options = wrapper.findAll('#llm-temperature-presets option').map((o) => (o.element as HTMLOptionElement).value)
+    const options = wrapper
+      .findAll('#llm-temperature-presets option')
+      .map((o) => (o.element as HTMLOptionElement).value)
     expect(options).toEqual(['auto', '0', '0.5', '1'])
   })
 
@@ -182,7 +194,9 @@ describe('LlmConfigForm', () => {
   })
 
   it('temperature normalizes AUTO to auto', async () => {
-    const wrapper = mount(LlmConfigForm, { props: { modelValue: { ...baseValue, temperature: '0.5' } } })
+    const wrapper = mount(LlmConfigForm, {
+      props: { modelValue: { ...baseValue, temperature: '0.5' } },
+    })
     await wrapper.find('[data-testid="temperature-input"]').setValue('AUTO')
     const emitted = wrapper.emitted('update:modelValue')?.[0]?.[0] as typeof baseValue | undefined
     expect(emitted?.temperature).toBe('auto')
@@ -208,5 +222,33 @@ describe('LlmConfigForm', () => {
     for (const s of selects) {
       expect((s.element as HTMLElement).style.colorScheme).toBe('dark')
     }
+  })
+
+  it('shows the claude-code hint and hides budget+effort for claude-code style', () => {
+    const wrapper = mount(LlmConfigForm, {
+      props: { modelValue: { ...baseValue, url_style: 'claude-code' } },
+    })
+    expect(wrapper.find('[data-testid=claude-code-hint]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('claude login')
+    expect(wrapper.find('[data-testid=thinking-budget-input]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid=reasoning-effort-select]').exists()).toBe(false)
+  })
+
+  it('hides the claude-code hint for HTTP styles', () => {
+    for (const style of ['openai', 'openai-response', 'anthropic'] as const) {
+      const wrapper = mount(LlmConfigForm, {
+        props: { modelValue: { ...baseValue, url_style: style } },
+      })
+      expect(wrapper.find('[data-testid=claude-code-hint]').exists()).toBe(false)
+    }
+  })
+
+  it('offers claude-code in the url-style select', () => {
+    const wrapper = mount(LlmConfigForm, { props: { modelValue: { ...baseValue } } })
+    const options = wrapper
+      .find('[data-testid=url-style-select]')
+      .findAll('option')
+      .map((o) => (o.element as HTMLOptionElement).value)
+    expect(options).toContain('claude-code')
   })
 })

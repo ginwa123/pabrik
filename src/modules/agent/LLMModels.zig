@@ -18,6 +18,28 @@ pub const MINIMAX_3 = LLMModels{
     .token_count = 500000,
 };
 
+/// Claude Sonnet alias for Claude Code CLI profiles
+/// (`url_style="claude-code"`, `--model sonnet`). 200k context.
+pub const CLAUDE_SONNET = LLMModels{
+    .name = "sonnet",
+    .description = "Claude Sonnet via the Claude Code CLI (subscription auth, no API key). Balanced speed and quality for everyday coding.",
+    .token_count = 200000,
+};
+
+/// Claude Opus alias for Claude Code CLI profiles. 200k context.
+pub const CLAUDE_OPUS = LLMModels{
+    .name = "opus",
+    .description = "Claude Opus via the Claude Code CLI (subscription auth, no API key). Strongest reasoning for hard tasks.",
+    .token_count = 200000,
+};
+
+/// Claude Sonnet 4.5 full model id (Anthropic API + CLI `--model`).
+pub const CLAUDE_SONNET_4_5 = LLMModels{
+    .name = "claude-sonnet-4-5-20250929",
+    .description = "Claude Sonnet 4.5 — best for coding agents on real-world tasks.",
+    .token_count = 200000,
+};
+
 /// Get model token count by model name string
 pub fn getModelTokenCount(model_name: []const u8) u32 {
     if (std.mem.eql(u8, model_name, MINIMAX_2_7.name)) {
@@ -26,6 +48,18 @@ pub fn getModelTokenCount(model_name: []const u8) u32 {
 
     if (std.mem.eql(u8, model_name, MINIMAX_3.name)) {
         return MINIMAX_3.token_count;
+    }
+
+    if (std.mem.eql(u8, model_name, CLAUDE_SONNET.name)) {
+        return CLAUDE_SONNET.token_count;
+    }
+
+    if (std.mem.eql(u8, model_name, CLAUDE_OPUS.name)) {
+        return CLAUDE_OPUS.token_count;
+    }
+
+    if (std.mem.eql(u8, model_name, CLAUDE_SONNET_4_5.name)) {
+        return CLAUDE_SONNET_4_5.token_count;
     }
     // Default fallback (e.g., 128k tokens)
     return 200000;
@@ -127,7 +161,7 @@ test "is_do_compact returns false at 0 tokens" {
 test "is_do_compact with real-world token values" {
     // Simulating MINIMAX-M2.7 with 200k context (80% threshold = 160k)
     const max_capacity = 200000;
-    
+
     // 250k message exceeds 80% threshold (160k) → should compact
     const large_message = 250000;
     try expect(isDoCompact(large_message, max_capacity));

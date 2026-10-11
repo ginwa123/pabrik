@@ -146,4 +146,7 @@ test {
     // Workspace-scoped chat history — session-to-workspace resolution
     // (task link + cwd heuristic) with in-memory SQLite tests.
     _ = @import("workspace_scope.zig");
+    // Claude Code CLI backend — Phase 1: style predicate, profile
+    // validation, `claude -p` argv builder, stream-json line parser.
+    _ = @import("claude_code.zig");
 }

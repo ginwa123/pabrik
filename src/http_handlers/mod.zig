@@ -668,15 +668,21 @@ const LlmTestOutcome = struct {
 
 /// Validate the candidate without touching the network. Empty api_key
 /// is ALLOWED (keyless local endpoints + stub upstreams in tests).
+/// `url_style="claude-code"` selects the local Claude Code CLI backend:
+/// it needs only `model` (subscription auth via `claude login`), so an
+/// empty `base_url` is accepted for that style.
 fn llmTestValidate(req: LlmTestRequest) LlmTestError!void {
     if (req.model.len == 0) return LlmTestError.MissingModel;
+    const is_claude_code = std.mem.eql(u8, req.url_style, "claude-code");
+    if (is_claude_code) return;
     if (req.base_url.len == 0) return LlmTestError.MissingBaseUrl;
     const has_http_scheme = std.mem.startsWith(u8, req.base_url, "http://") or
         std.mem.startsWith(u8, req.base_url, "https://");
     if (!has_http_scheme) return LlmTestError.InvalidBaseUrl;
     if (!(std.mem.eql(u8, req.url_style, "openai") or
         std.mem.eql(u8, req.url_style, "openai-response") or
-        std.mem.eql(u8, req.url_style, "anthropic")))
+        std.mem.eql(u8, req.url_style, "anthropic") or
+        is_claude_code))
         return LlmTestError.UnsupportedStyle;
 }
 
@@ -816,6 +822,19 @@ fn llmTestUseCase(
 ) LlmTestError!LlmTestOutcome {
     try llmTestValidate(req);
 
+    // Claude Code is a local CLI backend, not an HTTP endpoint — there is
+    // nothing to POST a probe to. Report success so the Test button
+    // confirms the config shape; the user verifies the binary locally
+    // via `claude --version` after `claude login`.
+    if (std.mem.eql(u8, req.url_style, "claude-code")) {
+        const reply = std.fmt.allocPrint(
+            allocator,
+            "claude-code backend selected (model={s}) — HTTP probe skipped; verify locally with `claude --version` after `claude login`.",
+            .{req.model},
+        ) catch return LlmTestError.OutOfMemory;
+        return .{ .model = req.model, .reply = reply, .latency_ms = 0 };
+    }
+
     var client = custom_http_client.Client.init(allocator);
     defer client.deinit();
 
@@ -933,7 +952,7 @@ pub fn llmTestHandler(
             error.MissingModel => "model is required",
             error.MissingBaseUrl => "base_url is required",
             error.InvalidBaseUrl => "base_url must start with http:// or https://",
-            error.UnsupportedStyle => "url_style must be 'openai', 'openai-response' or 'anthropic'",
+            error.UnsupportedStyle => "url_style must be 'openai', 'openai-response', 'anthropic' or 'claude-code'",
             error.SendFailed => "failed to reach the LLM server (check base_url)",
             error.Timeout => "LLM server did not respond within 15 seconds",
             error.HttpError => "LLM server returned an error status",
@@ -1000,11 +1019,18 @@ test "llm_test validate: allows empty api_key (keyless local / stub upstream)" {
     try llmTestValidate(req);
 }
 
-test "llm_test validate: accepts all three known styles" {
-    for ([_][]const u8{ "openai", "openai-response", "anthropic" }) |style| {
+test "llm_test validate: accepts all four known styles" {
+    for ([_][]const u8{ "openai", "openai-response", "anthropic", "claude-code" }) |style| {
         const req: LlmTestRequest = .{ .model = "m", .base_url = "http://127.0.0.1:9/x", .url_style = style };
         try llmTestValidate(req);
     }
+}
+
+test "llm_test validate: claude-code needs model only, no base_url" {
+    const req: LlmTestRequest = .{ .model = "sonnet", .base_url = "", .url_style = "claude-code" };
+    try llmTestValidate(req);
+    const missing: LlmTestRequest = .{ .model = "", .base_url = "", .url_style = "claude-code" };
+    try testing.expectError(LlmTestError.MissingModel, llmTestValidate(missing));
 }
 
 test "llm_test buildProbeBody: openai body carries model + probe prompt" {
