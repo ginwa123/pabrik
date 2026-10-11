@@ -467,12 +467,19 @@ test "statusFor/messageFor map every variant (a new one breaks this switch)" {
 }
 
 test "the GET response masks the web_search key, like the user-scope GET" {
-    const alloc = testing.allocator;
+    // An ARENA, exactly like the equivalent test in `pabrik_config_get.zig`:
+    // `maskProviders` builds a whole masked copy of the providers map and the
+    // response builder serialises it, and neither hands ownership back. That is
+    // correct in production - the request arena owns them - so the test has to
+    // provide one instead of counting their allocations as leaks.
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const alloc = arena_state.allocator();
+
     const secret = "SENTINEL_SECRET_DO_NOT_LEAK";
     const base = "{\"web_search\":{\"brave\":{\"url\":\"https://api.search.brave.com\",\"key\":\"" ++ secret ++ "\"}}}";
 
     const e = try effectiveConfig(alloc, base, null);
-    defer alloc.free(e.json);
     var parsed = try std.json.parseFromSlice(pabrik_config_get.ConfigJson, alloc, e.json, .{
         .ignore_unknown_fields = true,
     });
@@ -484,7 +491,6 @@ test "the GET response masks the web_search key, like the user-scope GET" {
     try testing.expect(std.mem.indexOf(u8, cfg.web_search.?.object.get("brave").?.object.get("key").?.string, secret) != null);
 
     const wire = try pabrik_config_get.makeConfigResponse(alloc, cfg, e.has_overlay);
-    defer alloc.free(wire);
     try testing.expect(std.mem.indexOf(u8, wire, secret) == null);
     // The section still ships - masking redacts the key, it does not drop the
     // block the Settings UI renders.
