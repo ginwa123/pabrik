@@ -27,8 +27,6 @@ vi.mock('../api', () => ({
   getAgentToolsRegistry: vi.fn(),
   getWorkspaceConfig: vi.fn(),
   saveWorkspaceConfig: vi.fn(),
-  clearWorkspaceConfig: vi.fn(),
-  copyUserConfigIntoWorkspace: vi.fn(),
 }))
 
 const mockGetWs = api.getWorkspaceConfig as unknown as ReturnType<typeof vi.fn>
@@ -61,7 +59,7 @@ describe('WorkspaceSettingsView — the moved config sections', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     mockGetWs.mockReset()
-    mockGetWs.mockResolvedValue({ active_profile: 'work', has_overlay: false })
+    mockGetWs.mockResolvedValue({ active_profile: 'work' })
     mockWebStatus.mockReset()
     mockWebStatus.mockResolvedValue(null)
     mockRegistry.mockReset()
@@ -87,14 +85,6 @@ describe('WorkspaceSettingsView — the moved config sections', () => {
       expect(mockGetWs).toHaveBeenCalledWith('ws_1')
     })
   }
-
-  it('shows the inherit bar, because a workspace page has something to inherit', async () => {
-    const wrapper = await mountAt('profiles')
-    await flushPromises()
-
-    expect(wrapper.find('[data-testid="workspace-inherit-bar"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="workspace-copy-user"]').exists()).toBe(true)
-  })
 
   it('does not mount the editor for a section that is not one of the four', async () => {
     const wrapper = await mountAt('overview')

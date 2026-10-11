@@ -78,6 +78,10 @@
 // User scope: General only. Everything else that used to live there was really
 // per-workspace, and hosting it under a scope labelled "applies everywhere" made
 // the label a lie.
+//
+// No "Inherited / Overridden" bar: every workspace is seeded from the user
+// config at boot, so the seeding IS the migration and there is nothing left to
+// reset to or copy in.
 const USER_SECTIONS = [
   { id: 'general', label: 'General', icon: '⚙' },
 ];
@@ -127,19 +131,6 @@ function jsonPanel() {
     <div class="row"><span class="muted">Apply is disabled while the JSON is invalid — an invalid paste can never be applied, left, or saved over.</span><button class="btn solid">Apply</button></div>`;
 }
 
-function inheritBar(overridden) {
-  return `<div class="card">
-    <div class="row">
-      <span>${overridden ? 'This workspace has its own settings.' : 'Inherited from your user settings.'}</span>
-      <span class="pill ${overridden ? 'ovr' : 'inh'}">${overridden ? 'overridden' : 'inherited'}</span>
-      ${overridden
-        ? '<button class="btn" disabled>Reset to inherited</button>'
-        : '<button class="btn" disabled>Copy user settings</button>'}
-    </div>
-    <p>Both actions re-read the config, so they are disabled while you have unsaved edits — the hint says why instead of discarding them.</p>
-  </div>`;
-}
-
 function render() {
   document.getElementById('scopeUser').classList.toggle('on', scope === 'user');
   document.getElementById('scopeWs').classList.toggle('on', scope === 'workspace');
@@ -169,7 +160,7 @@ function render() {
   if (mode === 'json') {
     body = jsonPanel();
   } else if (isAgent) {
-    body = inheritBar(section === 'tools') + `
+    body = `
       <div class="card"><h3>${{ profiles: 'Profiles', mcp: 'MCP Servers', tools: 'Tools', evals: 'Skill Evals' }[section]}</h3>
       <p>The same section form the user scope used to render — now editing THIS workspace's overlay.</p>
       <div class="row"><span class="muted">Effective value</span><span>${section === 'tools' ? '["read_file","write_file"]' : 'from your user settings'}</span></div></div>`;

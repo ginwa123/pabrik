@@ -17,8 +17,6 @@
  * the user-level editor does not have.
  */
 import {
-  clearWorkspaceConfig,
-  copyUserConfigIntoWorkspace,
   deleteProfile as apiDeleteProfile,
   getPabrikConfig,
   getWorkspaceConfig,
@@ -67,19 +65,6 @@ export interface PabrikConfigSource {
    * optimistic-delete flow identical in both scopes.
    */
   deleteProfile(name: string): Promise<void>
-  /**
-   * Drop the overlay so the workspace follows the user config again.
-   *
-   * Workspace scope ONLY - absent at user level, where there is no overlay
-   * to drop. Its presence is also how the editor knows to render the
-   * Inherited / Overridden affordance at all.
-   */
-  clear?(): Promise<void>
-  /**
-   * Copy the user config's workspace-scoped slice into this workspace.
-   * Workspace scope only, for the same reason as `clear`.
-   */
-  copyFromUser?(): Promise<void>
 }
 
 export function userConfigSource(): PabrikConfigSource {
@@ -104,12 +89,6 @@ export function workspaceConfigSource(workspaceId: string): PabrikConfigSource {
     },
     deleteProfile: async () => {
       // See the interface doc: no endpoint, and none is needed.
-    },
-    clear: async () => {
-      await clearWorkspaceConfig(workspaceId)
-    },
-    copyFromUser: async () => {
-      await copyUserConfigIntoWorkspace(workspaceId)
     },
   }
 }
