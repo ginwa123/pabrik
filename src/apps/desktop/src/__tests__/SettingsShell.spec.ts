@@ -60,15 +60,19 @@ describe('SettingsShell', () => {
     })
   })
 
-  it('user scope shows Pabrik only — no Skills/Memories menus', async () => {
+  it('user scope shows General only — nothing that is really per-workspace', async () => {
+    // Decision D4: General is the only setting that still applies everywhere.
+    // Profiles / MCP / Tools / Skill Evals moved to the workspace scope, and
+    // Skills / Memories were already there.
     const router = await makeRouter('/app/settings')
     wrapper = mountShell(router, { scope: 'user', workspaceId: '' })
     await flushPromises()
 
     expect(wrapper.find('[data-testid="settings-shell"]').attributes('data-scope')).toBe('user')
-    expect(wrapper.find('[data-testid="settings-nav-pabrik"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="settings-nav-skills"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="settings-nav-memories"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="settings-nav-general"]').exists()).toBe(true)
+    for (const id of ['pabrik', 'profiles', 'mcp', 'tools', 'evals', 'skills', 'memories']) {
+      expect(wrapper.find(`[data-testid="settings-nav-${id}"]`).exists()).toBe(false)
+    }
     expect(wrapper.find('[data-testid="settings-scope-label"]').text()).toContain('User')
   })
 
@@ -80,10 +84,19 @@ describe('SettingsShell', () => {
     expect(wrapper.find('[data-testid="settings-shell"]').attributes('data-scope')).toBe(
       'workspace',
     )
-    for (const id of ['overview', 'secrets', 'skills', 'memories']) {
+    for (const id of ['overview', 'secrets', 'skills', 'memories', 'profiles', 'mcp', 'tools', 'evals']) {
       expect(wrapper.find(`[data-testid="settings-nav-${id}"]`).exists()).toBe(true)
     }
     expect(wrapper.find('[data-testid="settings-nav-overview"]').text()).toContain('Acme')
+
+    // The eight items are grouped: the config sections that moved here sit
+    // under their own heading, which is what keeps "which of these edits one
+    // workspace?" answerable at a glance.
+    expect(wrapper.find('[data-testid="settings-nav-group-Agent"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="settings-nav-group-Agent"]').text()).toContain('Agent')
+    // No heading is rendered for the first group: the scope label above the
+    // nav already says "Workspace — this workspace only".
+    expect(wrapper.find('[data-testid="settings-nav-group-Workspace"]').exists()).toBe(false)
     const picker = wrapper.find<HTMLSelectElement>('[data-testid="settings-workspace-picker"]')
     expect(picker.exists()).toBe(true)
     expect(picker.element.value).toBe('ws_1')

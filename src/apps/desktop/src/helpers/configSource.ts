@@ -17,6 +17,8 @@
  * the user-level editor does not have.
  */
 import {
+  clearWorkspaceConfig,
+  copyUserConfigIntoWorkspace,
   deleteProfile as apiDeleteProfile,
   getPabrikConfig,
   getWorkspaceConfig,
@@ -26,6 +28,18 @@ import {
 } from '../api'
 
 export type ConfigScope = 'user' | 'workspace'
+
+/**
+ * The config sections that live in Workspace settings, in nav order.
+ *
+ * One list, two consumers: the settings shell renders a nav item per entry and
+ * the workspace view renders an editor for each - so a section can never be
+ * listed but unrenderable (a dead link) or renderable but unlisted.
+ *
+ * `general` is deliberately absent: it is the ONE thing left at user level
+ * (decision D4), because it genuinely applies to every workspace.
+ */
+export const WORKSPACE_AGENT_SECTIONS = ['profiles', 'mcp', 'tools', 'evals'] as const
 
 export interface PabrikConfigSource {
   /** Which scope this source edits. Drives labels, not requests. */
@@ -53,6 +67,19 @@ export interface PabrikConfigSource {
    * optimistic-delete flow identical in both scopes.
    */
   deleteProfile(name: string): Promise<void>
+  /**
+   * Drop the overlay so the workspace follows the user config again.
+   *
+   * Workspace scope ONLY - absent at user level, where there is no overlay
+   * to drop. Its presence is also how the editor knows to render the
+   * Inherited / Overridden affordance at all.
+   */
+  clear?(): Promise<void>
+  /**
+   * Copy the user config's workspace-scoped slice into this workspace.
+   * Workspace scope only, for the same reason as `clear`.
+   */
+  copyFromUser?(): Promise<void>
 }
 
 export function userConfigSource(): PabrikConfigSource {
@@ -77,6 +104,12 @@ export function workspaceConfigSource(workspaceId: string): PabrikConfigSource {
     },
     deleteProfile: async () => {
       // See the interface doc: no endpoint, and none is needed.
+    },
+    clear: async () => {
+      await clearWorkspaceConfig(workspaceId)
+    },
+    copyFromUser: async () => {
+      await copyUserConfigIntoWorkspace(workspaceId)
     },
   }
 }

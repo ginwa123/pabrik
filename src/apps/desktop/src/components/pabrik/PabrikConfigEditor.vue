@@ -179,7 +179,11 @@ function readStoredTab(): Tab | null {
   }
 }
 
-const activeTabLocal = ref<Tab>(readStoredTab() ?? 'general')
+// Falls back to the FIRST section this editor offers, not to `general`:
+// an editor mounted with `sections: ['profiles', ...]` has no General to show,
+// and defaulting to it renders an empty pane.
+const firstTab = computed<Tab>(() => props.sections[0] ?? 'general')
+const activeTabLocal = ref<Tab>(readStoredTab() ?? props.sections[0] ?? 'general')
 
 const activeTab = computed<Tab>({
   get() {
@@ -187,7 +191,7 @@ const activeTab = computed<Tab>({
       const raw = route.query.section
       const section = Array.isArray(raw) ? raw[0] : raw
       if (typeof section === 'string' && TAB_IDS.value.includes(section)) return section as Tab
-      return readStoredTab() ?? 'general'
+      return readStoredTab() ?? firstTab.value
     }
     return activeTabLocal.value
   },
@@ -336,25 +340,12 @@ onMounted(async () => {
   // component to the user scope no matter which source it was given - the
   // workspace page would then render (and later save) the WRONG config, which
   // is the one failure of this extraction that is invisible on screen.
-  let apiData: PabrikConfig | null = null
-  try {
-    apiData = await source.load()
-  } catch (err) {
-    // Start with an empty config, but SAY SO: an unreadable config and a
-    // workspace that legitimately inherits nothing must not look identical.
-    apiData = {}
-    emit(
-      'notification',
-      `Could not load the settings: ${err instanceof Error ? err.message : String(err)}`,
-      'error',
-    )
-  }
-  setConfig(apiData)
-  syncFromConfig()
-  // A `?mode=json` deep link lands in JSON mode without ever calling
-  // `showJson()`, so the textarea would otherwise be empty - and an empty
-  // textarea looks exactly like "this config is empty".
-  if (mode.value === 'json') seedJsonText()
+  // ONE load path, shared with the reset/copy buttons: three copies of
+  // "read, setConfig, syncFromConfig" is three places to forget one of
+  // them. `reload` also seeds the JSON textarea, which is what a
+  // `?mode=json` deep link needs - without it the textarea opens empty,
+  // which looks exactly like "this config is empty".
+  await reload()
 })
 
 // ─── Per-section view state ──────────────────────────────────────────────
@@ -1041,6 +1032,75 @@ function confirmDeleteProfile() {
   deleteProfile(name)
 }
 
+// ─── Inherit / override (workspace scope only) ───────────────────────────
+// A workspace either carries its own overlay or follows the user config, and
+// that is a STATE THE USER NEEDS TO SEE: without it, an inherited workspace
+// looks identical to one that has copied everything, and "I changed my user
+// settings, why did nothing happen here?" has no answer on screen.
+//
+// `has_overlay` comes from the server (the workspace GET merges the overlay
+// and reports whether one exists), so the pill describes what the BACKEND
+// resolved - not what this page happens to have edited since.
+const hasOverlay = computed(() => config.value?.has_overlay === true)
+
+/** True only in the workspace scope: the user scope has nothing to inherit. */
+const canInherit = computed(() => typeof source.clear === 'function')
+
+const inheritBusy = ref(false)
+
+/**
+ * Re-read the effective config.
+ *
+ * Shared by the mount path and the reset/copy buttons (both change what the
+ * server resolves). Discards in-flight edits BY DESIGN - the buttons that call
+ * it are disabled while the config is dirty.
+ */
+async function reload() {
+  try {
+    const data = await source.load()
+    setConfig(data ?? {})
+    syncFromConfig()
+    if (mode.value === 'json') seedJsonText()
+  } catch (err) {
+    // An unreadable config and a workspace that legitimately inherits nothing
+    // must not look identical.
+    emit(
+      'notification',
+      `Could not load the settings: ${err instanceof Error ? err.message : String(err)}`,
+      'error',
+    )
+  }
+}
+
+async function runInheritAction(action: () => Promise<void>, done: string) {
+  inheritBusy.value = true
+  try {
+    await action()
+    await reload()
+    emit('notification', done, 'success')
+  } catch (err) {
+    emit(
+      'notification',
+      `That did not work: ${err instanceof Error ? err.message : String(err)}`,
+      'error',
+    )
+  } finally {
+    inheritBusy.value = false
+  }
+}
+
+function resetToInherited() {
+  const clear = source.clear
+  if (!clear) return
+  void runInheritAction(() => clear(), 'This workspace follows your user settings again')
+}
+
+function copyUserSettings() {
+  const copy = source.copyFromUser
+  if (!copy) return
+  void runInheritAction(() => copy(), 'Your user settings were copied into this workspace')
+}
+
 // ─── Computed ────────────────────────────────────────────────────────────
 const isLoading = computed(() => !loaded.value)
 </script>
@@ -1135,6 +1195,59 @@ const isLoading = computed(() => !loaded.value)
         >
           JSON
         </button>
+      </div>
+
+      <!-- Inherit / override. Workspace scope only (`source.clear` exists
+           there and nowhere else): the user scope has nothing to inherit, and
+           an inert pill there would be noise. -->
+      <div v-if="canInherit" class="shrink-0 px-6 pt-3" data-testid="workspace-inherit-bar">
+        <div
+          class="flex items-center gap-3 flex-wrap rounded-md px-3 py-2"
+          style="border: 1px solid var(--color-border)"
+        >
+          <span class="text-dense" style="color: var(--semantic-text-muted)">
+            {{
+              hasOverlay
+                ? 'This workspace has its own settings.'
+                : 'Inherited from your user settings.'
+            }}
+          </span>
+          <button
+            v-if="hasOverlay"
+            type="button"
+            data-testid="workspace-reset-inherited"
+            :disabled="dirty || inheritBusy"
+            class="px-3 h-7 rounded-md text-dense font-medium"
+            :style="
+              dirty || inheritBusy
+                ? 'border: 1px solid var(--color-border); color: var(--semantic-text-muted); cursor: not-allowed;'
+                : 'border: 1px solid var(--color-border); color: var(--color-violet);'
+            "
+            @click="resetToInherited"
+          >
+            Reset to inherited
+          </button>
+          <button
+            v-else
+            type="button"
+            data-testid="workspace-copy-user"
+            :disabled="dirty || inheritBusy"
+            class="px-3 h-7 rounded-md text-dense font-medium"
+            :style="
+              dirty || inheritBusy
+                ? 'border: 1px solid var(--color-border); color: var(--semantic-text-muted); cursor: not-allowed;'
+                : 'border: 1px solid var(--color-border); color: var(--color-violet);'
+            "
+            @click="copyUserSettings"
+          >
+            Copy user settings
+          </button>
+          <!-- Both actions re-read the config, which would throw away unsaved
+               edits. Say so rather than silently discarding them. -->
+          <span v-if="dirty" class="text-dense" style="color: var(--semantic-text-muted)">
+            Save or reset your changes first.
+          </span>
+        </div>
       </div>
 
       <!-- Raw JSON view. Shows the WHOLE config in memory - which in the
