@@ -187,6 +187,29 @@ def _create_session(h: FunctionalHarness, cwd: Path) -> str:
     return r.json()["id"]
 
 
+def _goto(page, url: str) -> None:
+    """Navigate to an app deep link, gating on ``domcontentloaded``.
+
+    Never gate on the browser ``load`` event. ``load`` waits for EVERY
+    subresource the document pulls in, and this is a lazily-chunked SPA
+    served by pabrik's own static handler, so on a loaded runner a single
+    slow chunk turns into ``Page.goto: Timeout 30000ms exceeded`` — a
+    failure reported at the navigation, pointing at nothing the test is
+    about. That is what ``test_code_viewer_jump_to_line`` hit on CI run
+    38127927593 (shard 1/3, where the shard took 5m13s for 46 tests) while
+    macOS passed the same test on the same commit.
+
+    The readiness gate belongs at the product surface the test asserts on:
+    ``_assert_viewer_shows_code`` waits for ``[data-testid="code-editor"]``
+    with the file's marker rendered. ``domcontentloaded`` is still a real
+    barrier — module scripts are deferred, so it fires only after the
+    entry's whole static import graph has executed and the app has mounted
+    (same rationale as ``_open_agent_view`` in
+    agent_system_prompt_ui_test.py).
+    """
+    page.goto(url, wait_until="domcontentloaded", timeout=30000)
+
+
 def _open_sidebar(page) -> None:
     """Open the chat-owned right sidebar (it is closed by default)."""
     opener = page.locator('[data-testid="chat-sidebar-open"]')
@@ -343,7 +366,7 @@ def test_code_viewer_renders_code(prod_harness: FunctionalHarness, page) -> None
     errors = _collect_errors(page)
 
     try:
-        page.goto(_app_url(h, cwd), wait_until="load", timeout=30000)
+        _goto(page, _app_url(h, cwd))
         _assert_viewer_shows_code(page)
         # The view switch is deep-linkable: the browser URL carries it.
         assert "view=code-editor" in page.url, page.url
@@ -360,10 +383,12 @@ def test_code_viewer_restores_after_reload(prod_harness: FunctionalHarness, page
     errors = _collect_errors(page)
 
     try:
-        page.goto(_app_url(h, cwd), wait_until="load", timeout=30000)
+        _goto(page, _app_url(h, cwd))
         _assert_viewer_shows_code(page)
 
-        page.reload(wait_until="load", timeout=30000)
+        # Same gate as _goto: the reload only has to re-parse the
+        # document; the viewer assertions below are the real check.
+        page.reload(wait_until="domcontentloaded", timeout=30000)
         _assert_viewer_shows_code(page)
         _assert_no_module_resolution_error(errors)
     finally:
@@ -377,7 +402,7 @@ def test_code_viewer_jump_to_line(prod_harness: FunctionalHarness, page) -> None
     errors = _collect_errors(page)
 
     try:
-        page.goto(_app_url(h, cwd, line=MARKER_LINE), wait_until="load", timeout=30000)
+        _goto(page, _app_url(h, cwd, line=MARKER_LINE))
         _assert_viewer_shows_code(page)
 
         target = page.locator(
@@ -409,11 +434,7 @@ def test_right_sidebar_survives_the_code_viewer(prod_harness: FunctionalHarness,
     try:
         # Standalone chat in this workspace, Explorer panel preselected.
         query = urlencode({"session": session_id, "sidebar": "explorer"})
-        page.goto(
-            f"http://127.0.0.1:{h.port}/app/{ws_id}/chat/{session_id}?{query}",
-            wait_until="load",
-            timeout=30000,
-        )
+        _goto(page, f"http://127.0.0.1:{h.port}/app/{ws_id}/chat/{session_id}?{query}")
         # Ready-gate on the chat's messages container, not on the empty-state
         # greeting. That greeting only renders while a session has no
         # messages, so it is a sentinel that can simply never appear — which
@@ -435,11 +456,7 @@ def test_right_sidebar_survives_the_code_viewer(prod_harness: FunctionalHarness,
         # Navigating there directly is the same object graph the
         # Explorer's own click produces: same session, same viewer,
         # same sidebar.
-        page.goto(
-            _app_url(h, cwd, session_id=session_id, workspace_id=ws_id),
-            wait_until="load",
-            timeout=30000,
-        )
+        _goto(page, _app_url(h, cwd, session_id=session_id, workspace_id=ws_id))
 
         _assert_chat_layout_with_viewer(page)
         _assert_no_module_resolution_error(errors)

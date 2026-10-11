@@ -28,6 +28,19 @@ pub fn tlsDataDir(allocator: std.mem.Allocator, env: *const std.process.Environ.
     return std.fs.path.join(allocator, &.{ home, ".local", "share", app_name, "tls" });
 }
 
+/// Every static response MUST say this, because every static connection is
+/// closed right after it (`http_server.zig`, `.hijack_static` arm:
+/// "static responses are unframed: never reuse"). HTTP/1.1 is persistent by
+/// default, so a response that stays silent about the close is a promise the
+/// server does not keep: the client is entitled to reuse the socket
+/// (RFC 9112 §9.3) and Chromium does — it picks the doomed socket for the
+/// next asset, the server has already closed it, and the request comes back
+/// as `net::ERR_EMPTY_RESPONSE` with zero bytes. One such asset is enough to
+/// stop a production bundle from mounting, which is what kept
+/// tests/functional_ui/code_editor_viewer_ui_test.py red for a week on
+/// whichever test happened to be loading files when it struck.
+const CLOSE_HEADER = "Connection: close\r\n";
+
 /// `GinwaServer` static-dir callback: buffers the response in a per-request
 /// arena writer, then writes it to the socket. On internal error, resets to
 /// a minimal 500 rather than leaving the connection hanging.
@@ -50,7 +63,7 @@ pub fn staticDirHandler(
         try aw.writer.writeAll("HTTP/1.1 500 Internal Server Error\r\n");
         try aw.writer.print("Content-Length: {d}\r\n", .{err_body.len});
         try aw.writer.writeAll("Content-Type: text/plain; charset=utf-8\r\n");
-        try aw.writer.writeAll("Connection: close\r\n");
+        try aw.writer.writeAll(CLOSE_HEADER);
         try aw.writer.writeAll("\r\n");
         try aw.writer.writeAll(err_body);
     };
@@ -78,7 +91,7 @@ pub fn writeStaticFileResponse(
             try writer.writeAll("HTTP/1.1 404 Not Found\r\n");
             try writer.print("Content-Length: {d}\r\n", .{body.len});
             try writer.writeAll("Content-Type: text/plain; charset=utf-8\r\n");
-            try writer.writeAll("Connection: close\r\n");
+            try writer.writeAll(CLOSE_HEADER);
             try writer.writeAll("\r\n");
             try writer.writeAll(body);
         },
@@ -87,7 +100,7 @@ pub fn writeStaticFileResponse(
             try writer.writeAll("HTTP/1.1 403 Forbidden\r\n");
             try writer.print("Content-Length: {d}\r\n", .{body.len});
             try writer.writeAll("Content-Type: text/plain; charset=utf-8\r\n");
-            try writer.writeAll("Connection: close\r\n");
+            try writer.writeAll(CLOSE_HEADER);
             try writer.writeAll("\r\n");
             try writer.writeAll(body);
         },
@@ -108,6 +121,7 @@ pub fn writeStaticFileResponse(
                     try writer.print("Content-Type: {s}\r\n", .{f.mime});
                     try writer.print("ETag: {s}\r\n", .{etag});
                     try writer.writeAll("Cache-Control: public, max-age=3600\r\n");
+                    try writer.writeAll(CLOSE_HEADER);
                     try writer.writeAll("\r\n");
                     try writeFileRange(io, f.abs_path, range.start, range.end, writer);
                     return;
@@ -119,6 +133,7 @@ pub fn writeStaticFileResponse(
             try writer.print("Content-Type: {s}\r\n", .{f.mime});
             try writer.print("ETag: {s}\r\n", .{etag});
             try writer.writeAll("Cache-Control: public, max-age=3600\r\n");
+            try writer.writeAll(CLOSE_HEADER);
             try writer.writeAll("\r\n");
             try writeFileFull(io, f.abs_path, writer);
         },
@@ -230,6 +245,14 @@ test "static_serve: existing file round-trips its bytes with a 200" {
     try std.testing.expect(std.mem.startsWith(u8, out, "HTTP/1.1 200 OK\r\n"));
     try std.testing.expect(std.mem.indexOf(u8, out, "Content-Length: 11\r\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "Content-Type: text/plain; charset=utf-8\r\n") != null);
+    // The connection is closed right after this response, so the response
+    // has to SAY so — HTTP/1.1 is persistent by default and a client that is
+    // not told otherwise may reuse the socket for the next asset, which
+    // surfaces as `net::ERR_EMPTY_RESPONSE` (zero bytes) when the server has
+    // already closed it. Regression guard: this header was missing on the
+    // 200/206 paths only, and that omission is what kept
+    // tests/functional_ui/code_editor_viewer_ui_test.py red for a week.
+    try std.testing.expect(std.mem.indexOf(u8, out, "Connection: close\r\n") != null);
     try std.testing.expect(std.mem.endsWith(u8, out, "\r\n\r\nhello world"));
 }
 
@@ -250,6 +273,14 @@ test "static_serve: valid range yields a 206 with the requested slice" {
     const out = aw.writer.buffered();
     try std.testing.expect(std.mem.startsWith(u8, out, "HTTP/1.1 206 Partial Content\r\n"));
     try std.testing.expect(std.mem.indexOf(u8, out, "Content-Range: bytes 0-4/11\r\n") != null);
+    // The connection is closed right after this response, so the response
+    // has to SAY so — HTTP/1.1 is persistent by default and a client that is
+    // not told otherwise may reuse the socket for the next asset, which
+    // surfaces as `net::ERR_EMPTY_RESPONSE` (zero bytes) when the server has
+    // already closed it. Regression guard: this header was missing on the
+    // 200/206 paths only, and that omission is what kept
+    // tests/functional_ui/code_editor_viewer_ui_test.py red for a week.
+    try std.testing.expect(std.mem.indexOf(u8, out, "Connection: close\r\n") != null);
     try std.testing.expect(std.mem.endsWith(u8, out, "\r\n\r\nhello"));
 }
 
