@@ -452,3 +452,59 @@ wraps long `v-if` expressions across lines, so source-contract regexes must be
 whitespace-tolerant.
 
 
+
+## Settings — User scope vs Workspace scope
+
+The settings UI has exactly **two** scopes, and which one a setting lives in is
+a statement about what it applies to.
+
+| Scope | Route | Applies to |
+|---|---|---|
+| **User** | `/app/settings` | every workspace |
+| **Workspace** | `/app/:workspaceId/settings` | that one workspace |
+
+- **User scope holds `General` only** — notifications, retry delay, web launch,
+  browser tabs. Those genuinely apply everywhere.
+- **Workspace scope holds `Overview`, `Secrets`, `Skills`, `Memories`, and the
+  four config sections `Profiles`, `MCP Servers`, `Tools`, `Skill Evals`**
+  (web search rides inside MCP Servers).
+
+Why those four moved: they were never really user-level. A profile carries a
+model *and* an API key, an MCP server list and a tool allowlist are per-project
+facts, and skill evals run over the workspace's own skills. Hosting them under a
+scope whose own label reads "applies everywhere" made the label a lie.
+
+### How a workspace's config is stored
+
+`workspace_settings` (Migration 105) holds a **sparse JSON overlay** keyed on
+`(owner, workspace_id)`. `owner` is `''` without `--auth` and the user id with
+it — a workspace is shared between users and the overlay holds API keys.
+`src/agentic_loop/session_llm_config.zig` merges the overlay over the user-level
+config text *before* parsing, so a run in that workspace gets the merged config.
+
+The merge rule is one line: **objects deep-merge; scalars and arrays replace.**
+That is what lets a workspace override one profile's model and keep its key, and
+why a workspace's `tools` list REPLACES the user's rather than unioning.
+
+### Rules
+
+- **Only the workspace-scoped keys are stored.** `PUT
+  /api/workspaces/:id/config` slices the body down to them and returns **400**
+  when the body carries none — storing `{}` would report success while every
+  setting the user typed stayed at user level.
+- **Never touch the process-global `LlmConfig` singleton from the workspace
+  routes.** One pointer cannot serve N workspaces. That is the trap
+  `session_llm_config.zig` exists to avoid.
+- **"No overlay" is an ABSENT ROW; "deliberately inherited" is a row with an
+  EMPTY body.** `hasRow` ("may I seed this?") and `hasOverlay` ("does it
+  override anything?") are different questions — collapsing them makes a
+  deliberate reset come back on the next boot.
+- **The editor is `PabrikConfigEditor`** — one component, both scopes, driven by
+  a `PabrikConfigSource`. It renders ONE section; navigation is `SettingsShell`'s
+  sidebar plus `?section=`, and there is no tab strip inside it.
+- **Both scopes can edit the raw JSON** (`Form | JSON`, URL-backed as
+  `?mode=json`). An invalid paste can never be applied, left, or saved over
+  silently — that is the whole contract of that mode.
+- **A scope's sections live in ONE list.** `WORKSPACE_AGENT_SECTIONS` (in
+  `helpers/configSource.ts`) is what the shell derives its nav from and what the
+  workspace view renders, so a section cannot be listed but unrenderable.
