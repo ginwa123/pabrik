@@ -88,7 +88,7 @@ pub const best: databases.database.SqliteConfig = .{
     // expensive direction. `page_cache cost per concurrent read is known and
     // bounded` pins that relationship.
     .max_read_conns = 0,
-    .cache_size_kb = 8_000, // 8 MiB per connection (SQLite default is 2 MiB)
+    .cache_size_kb = 2_000, // 2 MiB per connection (SQLite default)
     .mmap_size_bytes = 256 * 1024 * 1024,
     .journal_size_limit_bytes = 64 * 1024 * 1024,
     .wal_autocheckpoint_pages = 1_000,
@@ -173,7 +173,7 @@ test "the policy pabrik opens with is the policy the connection reports" {
     // 2 = FULL (0 OFF, 1 NORMAL, 3 EXTRA).
     try std.testing.expectEqual(@as(i64, 2), try readPragmaInt(&db, allocator, "PRAGMA synchronous"));
     // SQLite reports the page cache as a NEGATIVE KiB count.
-    try std.testing.expectEqual(@as(i64, -8_000), try readPragmaInt(&db, allocator, "PRAGMA cache_size"));
+    try std.testing.expectEqual(@as(i64, -2_000), try readPragmaInt(&db, allocator, "PRAGMA cache_size"));
     try std.testing.expectEqual(@as(i64, 64 * 1024 * 1024), try readPragmaInt(&db, allocator, "PRAGMA journal_size_limit"));
     try std.testing.expectEqual(@as(i64, 1_000), try readPragmaInt(&db, allocator, "PRAGMA wal_autocheckpoint"));
     // mmap_size may be clamped by the build/host, so assert "on", not a value.
@@ -275,8 +275,8 @@ test "page cache cost per concurrent read is known and bounded" {
     //
     // This is the knob to turn if page cache ever matters: lower
     // `cache_size_kb`, or set `max_read_conns` to cap the pool.
-    try std.testing.expectEqual(@as(u32, 8_000), best.cache_size_kb);
-    try std.testing.expectEqual(@as(u32, 8_000), pageCacheBudgetKb(0));
+    try std.testing.expectEqual(@as(u32, 2_000), best.cache_size_kb);
+    try std.testing.expectEqual(@as(u32, 2_000), pageCacheBudgetKb(0));
     try std.testing.expect(pageCacheBudgetKb(best.read_conns) <= 128 * 1024);
 
     // Unlimited GROWTH is deliberate: a read must never queue behind
