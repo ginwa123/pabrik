@@ -13,8 +13,9 @@
 // the real Harness (PABRIK_BIN shadow, PathShadow-style) to prove the
 // browser URL serves.
 //
-//   Test 1 — install.sh exits 0 and the installed `pabrik --help` exits 0
-//            (the payload runs from its installed location).
+//   Test 1 — install.sh exits 0, the installed `pabrik --help` exits 0
+//            (the payload runs from its installed location), and the
+//            bindir is exported to PATH in the shell rc file.
 //   Test 2 — the installed binary boots and serves the browser URL:
 //            GET /health returns {"status":"ok",...} and
 //            GET /api/workspaces returns 200, both over the wire.
@@ -120,15 +121,33 @@ const EnvShadow = struct {
 
 /// Stage copies of the just-built binaries as fake release assets, run
 /// install.sh against them, and return the bindir holding the installed
-/// copies. The caller owns the returned slice; scratch cleanup stays
-/// with the caller's scratch dir.
-fn installToIsolatedBindir(scratch: []const u8, triple: []const u8) ![]u8 {
+/// copies plus the isolated HOME the install ran under. The caller owns
+/// both returned slices; scratch cleanup stays with the caller's scratch
+/// dir.
+const InstallDirs = struct { bindir: []u8, home: []u8 };
+
+fn installToIsolatedBindir(scratch: []const u8, triple: []const u8) !InstallDirs {
     const stage = try harness.harnessPath(gpa, scratch, &.{"release-stage"});
     defer gpa.free(stage);
     try Io.Dir.cwd().createDirPath(io, stage);
 
     const bindir = try harness.harnessPath(gpa, scratch, &.{"bin"});
     errdefer gpa.free(bindir);
+
+    // Isolated HOME with a pre-existing .bashrc: install.sh only appends
+    // its PATH export to rc files that already exist (never creates them),
+    // and the isolated HOME keeps the test from touching the developer's
+    // real ~/.bashrc.
+    const home = try harness.harnessPath(gpa, scratch, &.{"home"});
+    errdefer gpa.free(home);
+    try Io.Dir.cwd().createDirPath(io, home);
+    {
+        const rc = try std.fs.path.join(gpa, &.{ home, ".bashrc" });
+        defer gpa.free(rc);
+        var f = try Io.Dir.cwd().createFile(io, rc, .{});
+        defer f.close(io);
+        try f.writeStreamingAll(io, "# fake rc for the installer test\n");
+    }
 
     const real_bin = try harness.resolvePabrikBin(io, gpa);
     defer gpa.free(real_bin);
@@ -158,21 +177,24 @@ fn installToIsolatedBindir(scratch: []const u8, triple: []const u8) ![]u8 {
     // The user flow: pipe install.sh into a shell against the staged
     // "release". PABRIK_SKIP_DESKTOP_ENTRY=1 keeps the test hermetic
     // (no raw.githubusercontent fetch); the launcher step is covered
-    // by the install-linux CI job, which has network.
+    // by the install-linux CI job, which has network. HOME points at
+    // the isolated home dir (see above), never the developer's real one.
     try expectExitZero(
         try runChild(
             &.{ "bash", "install.sh", "--dir", bindir },
             &.{
                 .{ "PABRIK_BASE_URL", base_url },
                 .{ "PABRIK_SKIP_DESKTOP_ENTRY", "1" },
+                .{ "HOME", home },
             },
         ),
         "install.sh",
     );
-    return bindir;
+    return .{ .bindir = bindir, .home = home };
 }
 
-// install.sh exits 0 and drops runnable binaries into an isolated bindir.
+// install.sh exits 0, drops runnable binaries into an isolated bindir,
+// and appends the bindir to PATH in the (isolated) shell rc file.
 test "install_sh installs runnable pabrik binaries" {
     const triple = try installTriple();
     try harness.requirePabrikBin(io, gpa);
@@ -181,8 +203,10 @@ test "install_sh installs runnable pabrik binaries" {
     defer gpa.free(scratch);
     defer harness.cleanupExtraDir(io, gpa, scratch);
 
-    const bindir = try installToIsolatedBindir(scratch, triple);
-    defer gpa.free(bindir);
+    const dirs = try installToIsolatedBindir(scratch, triple);
+    defer gpa.free(dirs.bindir);
+    defer gpa.free(dirs.home);
+    const bindir = dirs.bindir;
 
     const installed = try std.fs.path.join(gpa, &.{ bindir, "pabrik" });
     defer gpa.free(installed);
@@ -204,6 +228,31 @@ test "install_sh installs runnable pabrik binaries" {
         try runChild(&.{ installed, "--help" }, &.{}),
         "installed pabrik --help",
     );
+
+    // And the bindir was exported to PATH in the isolated rc file
+    // (marker once — re-running the installer never duplicates it).
+    {
+        const rc = try std.fs.path.join(gpa, &.{ dirs.home, ".bashrc" });
+        defer gpa.free(rc);
+        const body = try Io.Dir.cwd().readFileAlloc(io, rc, gpa, .limited(1 << 20));
+        defer gpa.free(body);
+        if (std.mem.indexOf(u8, body, "# Added by pabrik installer") == null) {
+            std.debug.print("rc file missing the installer marker:\n{s}\n", .{body});
+            return error.TestUnexpectedResult;
+        }
+        if (std.mem.indexOf(u8, body, bindir) == null) {
+            std.debug.print("rc file missing the bindir export:\n{s}\n", .{body});
+            return error.TestUnexpectedResult;
+        }
+        var count: usize = 0;
+        var idx: usize = 0;
+        const marker = "# Added by pabrik installer";
+        while (std.mem.indexOfPos(u8, body, idx, marker)) |pos| {
+            count += 1;
+            idx = pos + marker.len;
+        }
+        try testing.expectEqual(@as(usize, 1), count);
+    }
 }
 
 // The installed binary boots and serves the browser URL: this is the
@@ -216,8 +265,10 @@ test "installed pabrik serves the browser url" {
     defer gpa.free(scratch);
     defer harness.cleanupExtraDir(io, gpa, scratch);
 
-    const bindir = try installToIsolatedBindir(scratch, triple);
-    defer gpa.free(bindir);
+    const dirs = try installToIsolatedBindir(scratch, triple);
+    defer gpa.free(dirs.bindir);
+    defer gpa.free(dirs.home);
+    const bindir = dirs.bindir;
 
     const installed = try std.fs.path.join(gpa, &.{ bindir, "pabrik" });
     defer gpa.free(installed);

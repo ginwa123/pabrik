@@ -17,6 +17,8 @@
 #                    Tests point it at a local file:// staging dir.
 #   PABRIK_SKIP_DESKTOP_ENTRY=1  skip the Linux .desktop launcher fetch
 #                    (hermetic/offline installs and tests).
+#   PABRIK_NO_MODIFY_PATH=1  print the export line instead of appending
+#                    it to ~/.bashrc / ~/.zshrc (CI, tests).
 #   PABRIK_DRY_RUN=1 print resolved asset URLs and exit (no download, no install)
 #
 # Flags: --help | --version TAG | --dir DIR | --system | --no-desktop | --uninstall
@@ -163,13 +165,50 @@ if ! "$BIN_PABRIK" --help >/dev/null 2>&1; then
     echo "warning: installed binary failed '--help' check at ${BIN_PABRIK}" >&2
 fi
 
-case ":$PATH:" in
-    *":${BINDIR}:"*) ;;
-    *)
+# Add BINDIR to the user's PATH for future shells by appending an export
+# line to ~/.bashrc / ~/.zshrc (whichever files already exist). A piped
+# `curl | bash` runs in a child process and cannot change the parent
+# shell's PATH, so rc files are the only automatic route — the current
+# shell still needs `source ~/.bashrc` (or a new terminal), printed below.
+# Idempotent via the marker comment (re-running never duplicates the line).
+# Skipped with --system (/usr/local/bin is already on PATH), when BINDIR
+# is already on PATH, or with PABRIK_NO_MODIFY_PATH=1 (CI, tests).
+ensure_path() {
+    case ":$PATH:" in
+        *":${BINDIR}:") return 0 ;;
+    esac
+    local line
+    if [[ "$BINDIR" == "$HOME"/* ]]; then
+        line="export PATH=\"\$HOME/${BINDIR#"$HOME"/}:\$PATH\""
+    else
+        line="export PATH=\"${BINDIR}:\$PATH\""
+    fi
+    if [[ "$SYSTEM" -eq 1 || "${PABRIK_NO_MODIFY_PATH:-0}" -eq 1 ]]; then
         echo "Add ${BINDIR} to your PATH, e.g.:"
-        echo "  export PATH=\"${BINDIR}:\$PATH\""
-        ;;
-esac
+        echo "  $line"
+        return 0
+    fi
+    local marker="# Added by pabrik installer"
+    local touched=0
+    local rc
+    for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+        if [[ -f "$rc" ]]; then
+            if ! grep -qF "$marker" "$rc" 2>/dev/null; then
+                printf '%s\n%s\n' "$marker" "$line" >> "$rc"
+            fi
+            touched=1
+        fi
+    done
+    if [[ "$touched" -eq 1 ]]; then
+        echo "Added ${BINDIR} to your PATH in your shell rc file."
+        echo "Restart your terminal or run: $line"
+    else
+        echo "Add ${BINDIR} to your PATH, e.g.:"
+        echo "  $line"
+    fi
+}
+
+ensure_path
 
 echo "Installed: ${BIN_PABRIK}"
 [[ "$WITH_DESKTOP" -eq 1 ]] && echo "Installed: ${BIN_DESKTOP}"
