@@ -220,6 +220,18 @@ pub fn main(init: std.process.Init) !void {
     ctxParent.server.sse_manager.on_disconnect = ai_mod.handleClientDisconnect;
 
     std.debug.print("Agent is ready to serve!\n", .{});
+    // The browser URL, on every boot path — not just web-launch mode.
+    // A bare `pabrik` (default port 8081, no --static-dir) used to print
+    // nothing but the line above, so users never learned where to point
+    // the browser. The /app entry is only advertised when a static dir
+    // is actually serving it; otherwise / is API-only (404) and the
+    // honest check is /health.
+    std.debug.print("Open in your browser: http://127.0.0.1:{d}/\n", .{port});
+    if (ctxParent.static_dir_path != null) {
+        std.debug.print("App: http://127.0.0.1:{d}/app\n", .{port});
+    } else {
+        std.debug.print("Health check: http://127.0.0.1:{d}/health\n", .{port});
+    }
 
     const boot_unix = std.Io.Clock.now(.real, io).toSeconds();
     _ = gs.cronjob_manager.register(

@@ -299,4 +299,18 @@ test "installed pabrik serves the browser url" {
         var r = try h.http(io, .GET, "/api/workspaces", .{});
         defer r.deinit();
     }
+
+    // The startup log tells the user where to point the browser: the
+    // base URL on every boot path (this is the reported bug — a bare
+    // `pabrik` used to print no URL at all).
+    {
+        const log = try Io.Dir.cwd().readFileAlloc(io, h.log_path, gpa, .limited(1 << 20));
+        defer gpa.free(log);
+        const port_str = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/", .{h.port});
+        defer gpa.free(port_str);
+        if (std.mem.indexOf(u8, log, port_str) == null) {
+            std.debug.print("server log missing the browser URL {s}\n", .{port_str});
+            return error.TestUnexpectedResult;
+        }
+    }
 }
