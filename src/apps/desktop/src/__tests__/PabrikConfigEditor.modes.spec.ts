@@ -226,25 +226,39 @@ describe('PabrikConfigEditor — workspace scope', () => {
     })
   })
 
-  it('offers only the sections that moved to workspace scope, with no strip tab for General', async () => {
-    mockGetWs.mockResolvedValueOnce({ active_profile: 'work' })
+  it('accepts only the four moved sections, and General is not one of them', async () => {
+    // The editor no longer owns a nav, so "which sections does it offer?" is
+    // observable through what it RENDERS for a given `?section=`: the first
+    // entry is the fallback, and a section outside the list falls back to it
+    // rather than rendering a pane that belongs to the user scope.
+    // A profile, so ProfilesSection renders its list rather than its empty
+    // state - `profile-list` is the anchor unique to that section.
+    mockGetWs.mockResolvedValueOnce({ active_profile: 'work', profiles: { work: { model: 'm' } } })
     const wrapper = mountEditor({
-      props: {
-        source: workspaceConfigSource('ws_1'),
-        sections: [...WORKSPACE_TABS],
-      },
+      props: { source: workspaceConfigSource('ws_1'), sections: [...WORKSPACE_TABS] },
     })
     await flushPromises()
 
-    const ids = wrapper.findAll('[data-tab-id]').map((b) => b.attributes('data-tab-id'))
-    expect(ids).toEqual(['profiles', 'mcp', 'tools', 'evals'])
-    expect(wrapper.find('[data-tab-id="general"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="profile-list"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="pabrik-general-section"]').exists()).toBe(false)
+
+    // `general` is deliberately NOT in WORKSPACE_AGENT_SECTIONS (decision D4),
+    // so asking for it lands back on the first offered section.
+    const router = await makeRouter({ section: 'general' })
+    mockGetWs.mockResolvedValueOnce({ active_profile: 'work', profiles: { work: { model: 'm' } } })
+    const withGeneral = mountEditor({
+      props: { source: workspaceConfigSource('ws_1'), sections: [...WORKSPACE_TABS] },
+      global: { plugins: [router], stubs: { Teleport: true } },
+    })
+    await flushPromises()
+
+    expect(withGeneral.find('[data-testid="pabrik-general-section"]').exists()).toBe(false)
+    expect(withGeneral.find('[data-testid="profile-list"]').exists()).toBe(true)
   })
 
   it('reads and writes through the workspace endpoints, never the user ones', async () => {
-    // Section comes from the URL, not the strip: that is how the workspace
-    // scope actually navigates (the settings shell owns the nav and writes
-    // `?section=`), so this also proves the editor honours a hidden strip.
+    // Section comes from the URL: that is how the workspace scope actually
+    // navigates (the settings shell owns the nav and writes `?section=`).
     const router = await makeRouter({ section: 'tools' })
     mockGetWs.mockResolvedValueOnce({ active_profile: 'work', tools: ['read_file'] })
     mockSaveWs.mockResolvedValueOnce({ success: true })
@@ -257,7 +271,6 @@ describe('PabrikConfigEditor — workspace scope', () => {
       props: {
         source: workspaceConfigSource('ws_1'),
         sections: [...WORKSPACE_TABS],
-        showStrip: false,
       },
       global: { plugins: [router], stubs: { Teleport: true } },
     })
@@ -279,16 +292,16 @@ describe('PabrikConfigEditor — workspace scope', () => {
     expect(mockSaveWs.mock.calls[0]![0]).toBe('ws_1')
   })
 
-  it('hides the strip when the surrounding page navigates sections itself', async () => {
+  it('owns no section nav of its own — the settings shell does', async () => {
     mockGetWs.mockResolvedValueOnce({})
     const wrapper = mountEditor({
-      props: { source: workspaceConfigSource('ws_1'), sections: [...WORKSPACE_TABS], showStrip: false },
+      props: { source: workspaceConfigSource('ws_1'), sections: [...WORKSPACE_TABS] },
     })
     await flushPromises()
 
-    // The settings shell renders the section nav, so a second strip here would
-    // be a duplicate control that disagrees with the URL.
-    expect(wrapper.find('button[role="tab"][data-tab-id]').exists()).toBe(false)
+    // A second nav inside the editor would be a control that can disagree with
+    // the URL the shell writes.
+    expect(wrapper.find('button[role="tab"]').exists()).toBe(false)
     // ...but the mode toggle stays: the raw view is not a section.
     expect(wrapper.find('[data-testid="mode-json"]').exists()).toBe(true)
   })
@@ -296,7 +309,7 @@ describe('PabrikConfigEditor — workspace scope', () => {
   it('tells the user that only the workspace-scoped settings are stored here', async () => {
     mockGetWs.mockResolvedValueOnce({ active_profile: 'work' })
     const wrapper = mountEditor({
-      props: { source: workspaceConfigSource('ws_1'), sections: [...WORKSPACE_TABS], showStrip: false },
+      props: { source: workspaceConfigSource('ws_1'), sections: [...WORKSPACE_TABS] },
     })
     await flushPromises()
     await wrapper.find('[data-testid="mode-json"]').trigger('click')
@@ -336,7 +349,6 @@ describe('PabrikConfigEditor — inherit / override (workspace scope)', () => {
       props: {
         source: workspaceConfigSource('ws_1'),
         sections: [...WORKSPACE_TABS],
-        showStrip: false,
       },
     })
   }
@@ -396,18 +408,17 @@ describe('PabrikConfigEditor — inherit / override (workspace scope)', () => {
     mockRegistry.mockResolvedValue({
       tools: [{ name: 'set_git_worktree', description: 'Create a git worktree and bind it' }],
     })
-    // Strip ON here (the workspace page turns it off) so the test can reach
-    // the Tools section and make a real edit.
+    // Reach Tools through the URL, which is how the shell navigates.
+    const router = await makeRouter({ section: 'tools' })
     const wrapper = mountEditor({
       props: { source: workspaceConfigSource('ws_1'), sections: [...WORKSPACE_TABS] },
+      global: { plugins: [router], stubs: { Teleport: true } },
     })
     await flushPromises()
 
     const reset = wrapper.find('[data-testid="workspace-reset-inherited"]')
     expect((reset.element as HTMLButtonElement).disabled).toBe(false)
 
-    await wrapper.find('[data-tab-id="tools"]').trigger('click')
-    await flushPromises()
     await wrapper.find('[data-testid="row-set_git_worktree"] input').setValue(true)
     await flushPromises()
 

@@ -102,6 +102,30 @@ describe('SettingsShell', () => {
     expect(picker.element.value).toBe('ws_1')
   })
 
+  it('lists the workspace sections in order, under their group headings', async () => {
+    // This used to be asserted against the editor's own tab strip, which is
+    // gone: the shell owns navigation now, so the ORDER lives here. Order
+    // matters - the four moved config sections come after the workspace ones,
+    // under their own heading, because they are a different kind of thing.
+    const router = await makeRouter('/app/ws_1/settings')
+    wrapper = mountShell(router, { scope: 'workspace', workspaceId: 'ws_1' })
+    await flushPromises()
+
+    const labels = wrapper.findAll('nav [role="tab"]').map((b) => b.text().replace(/Acme/g, '').trim())
+    expect(labels).toEqual([
+      'Overview',
+      'Secrets',
+      'Skills',
+      'Memories',
+      'Profiles',
+      'MCP Servers',
+      'Tools',
+      'Skill Evals',
+    ])
+    // No 'Sub-agents' section: per-profile lists are the only editor.
+    expect(labels).not.toContain('Sub-agents')
+  })
+
   it('restores the section from ?section= and strips the default on the way back', async () => {
     const router = await makeRouter('/app/ws_1/settings', { section: 'secrets', focus: 'x' })
     const replace = vi.spyOn(router, 'replace')

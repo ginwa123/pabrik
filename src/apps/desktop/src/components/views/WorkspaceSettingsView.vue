@@ -214,8 +214,7 @@ function handleRetry(): void {
               :key="workspaceId"
               :source="agentSource"
               :sections="WORKSPACE_AGENT_SECTIONS"
-              :show-strip="false"
-              @notification="notify"
+                            @notification="notify"
             />
           </section>
         </div>

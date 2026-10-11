@@ -13,7 +13,6 @@ import { usePabrikConfig } from '../../composables/usePabrikConfig'
 import { useRoute, useRouter } from 'vue-router'
 import { useTabsStore } from '../../stores/tabs'
 
-import PabrikTabStrip from './PabrikTabStrip.vue'
 import PabrikSaveBar from './PabrikSaveBar.vue'
 import PabrikGeneralSection, { type PabrikGeneralSettings } from './PabrikGeneralSection.vue'
 import ProfilesSection, { type ProfileRow } from './ProfilesSection.vue'
@@ -49,6 +48,9 @@ const emit = defineEmits<{
 }>()
 
 // ─── Scope ────────────────────────────────────────────────────────────────
+// Navigation lives in `SettingsShell` (flat sidebar items + `?section=`), so
+// this component renders ONE section at a time and owns no tab strip.
+//
 // One editor, two scopes. The user scope (`/app/settings`) edits the config
 // that applies everywhere; the workspace scope edits ONE workspace's overlay,
 // which the backend merges over that config. Everything below is identical
@@ -65,13 +67,12 @@ const props = withDefaults(
   defineProps<{
     /** Where the config is read from and written to. */
     source?: PabrikConfigSource
-    /** Which sections this editor offers. */
-    sections?: readonly Tab[]
     /**
-     * Render the pill tab strip? False when the surrounding page navigates
-     * sections itself (the workspace settings shell does).
+     * Which sections this editor offers. The settings shell renders the nav,
+     * so this is the editor's ACCEPT list: a `?section=` outside it falls back
+     * to the first entry instead of rendering an empty pane.
      */
-    showStrip?: boolean
+    sections?: readonly Tab[]
   }>(),
   {
     source: undefined,
@@ -79,7 +80,6 @@ const props = withDefaults(
     // setup body, so its default factories may not reference a local
     // declaration. The type annotation is erased and therefore fine.
     sections: () => ['general', 'profiles', 'mcp', 'tools', 'evals'] as Tab[],
-    showStrip: true,
   },
 )
 
@@ -100,7 +100,7 @@ defineExpose({
 // Plan 2026-09-04-subagents-per-profile: 'sub-agents' tab removed —
 // sub-agents live inside each profile row (Profiles tab expand chevron).
 
-// Same key PabrikTabStrip persists to — read here so the URL-backed
+// Same key the shell's section state persists to — read here so the URL-backed
 // computed below can fall back to it when the URL has no `?section=`.
 const TAB_STORAGE_KEY = 'pabrik-settings-active-tab'
 
@@ -1113,14 +1113,9 @@ const isLoading = computed(() => !loaded.value)
          were going; the sections below render their own skeletons via
          the `loading` prop. -->
     <template v-if="isLoading">
-      <div v-if="props.showStrip" class="shrink-0 px-1 pt-1">
-        <PabrikTabStrip v-model="activeTab" :sections="props.sections" />
-      </div>
 
-      <!-- Form / JSON. Sits outside the section strip on purpose: the raw
-           view is not a section, it is a different way of looking at the
-           whole config, and it must stay reachable in the workspace scope
-           where the strip is hidden. -->
+      <!-- Form / JSON. Not a section: it is a different way of looking at
+           the whole config, so it stays reachable from every section. -->
       <div class="shrink-0 flex items-center justify-end gap-1 px-1 pt-1">
         <button
           type="button"
@@ -1158,14 +1153,9 @@ const isLoading = computed(() => !loaded.value)
 
     <template v-else>
       <!-- Tab strip -->
-      <div v-if="props.showStrip" class="shrink-0 px-1 pt-1">
-        <PabrikTabStrip v-model="activeTab" :sections="props.sections" />
-      </div>
 
-      <!-- Form / JSON. Sits outside the section strip on purpose: the raw
-           view is not a section, it is a different way of looking at the
-           whole config, and it must stay reachable in the workspace scope
-           where the strip is hidden. -->
+      <!-- Form / JSON. Not a section: it is a different way of looking at
+           the whole config, so it stays reachable from every section. -->
       <div class="shrink-0 flex items-center justify-end gap-1 px-1 pt-1">
         <button
           type="button"
@@ -1426,8 +1416,7 @@ const isLoading = computed(() => !loaded.value)
         <!-- Plan 2026-07-07-compaction-inline: the dedicated Compaction
              tab is REMOVED. Compaction settings now live in the Defaults
              tab (top-level defaults) + the Edit-profile modal
-             (per-profile overrides). The tab id 'compaction' was removed
-             from PabrikTabStrip.vue. -->
+             (per-profile overrides). There is no 'compaction' section. -->
       </div>
 
       <!-- Sticky save bar (only when dirty) -->

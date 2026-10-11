@@ -26,8 +26,7 @@ const emit = defineEmits<{
     <template #default="{ notify }">
       <PabrikConfigEditor
         :sections="['general']"
-        :show-strip="false"
-        @notification="notify"
+                @notification="notify"
       />
     </template>
   </SettingsShell>

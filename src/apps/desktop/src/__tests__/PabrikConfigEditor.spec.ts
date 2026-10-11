@@ -50,27 +50,6 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     })
   })
 
-  it('renders the tab labels in order: General / Profiles / MCP Servers / Tools / Skill Evals (no global Sub-agents)', async () => {
-    // Plan 2026-08-25-notify-on-error-and-retry-ms-in-settings: the
-    // General tab is the FIRST tab. Tab order matters — operational
-    // settings (notification toggles + retry delay) belong at the top.
-    // Plan 2026-09-04-subagents-per-profile: the global Sub-agents tab
-    // is removed — sub-agents live inside each profile row. The Tools
-    // tab sits after MCP Servers (plan
-    // 2026-09-22-tools-menu-config-default-tools). Skill Evals is last:
-    // it is the switch for the `run_skill_eval` tool, and the tab is
-    // deep-linkable via `?section=evals`.
-    mockGet.mockResolvedValueOnce({})
-    const wrapper = mount(PabrikConfigEditor, {
-      global: { stubs: { Teleport: true } },
-    })
-    await flushPromises()
-    const tabs = wrapper.findAll('button[role="tab"]').map((b) => b.text().trim())
-    expect(tabs).toEqual(['General', 'Profiles', 'MCP Servers', 'Tools', 'Skill Evals'])
-    expect(wrapper.text()).not.toContain('Defaults')
-    expect(wrapper.find('[data-tab-id="sub-agents"]').exists()).toBe(false)
-  })
-
   it('deep-links ?section=evals to the Skill Evals toggle', async () => {
     // The Evals sidebar panel links here when it has nothing to show, so
     // the destination must be reachable by URL alone (a refresh or a
@@ -81,7 +60,6 @@ describe('PabrikConfigEditor (orchestrator)', () => {
       global: { plugins: [router], stubs: { Teleport: true } },
     })
     await flushPromises()
-    expect(wrapper.find('[data-tab-id="evals"][data-active="true"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="skill-evals-section"]').exists()).toBe(true)
   })
 
@@ -98,7 +76,6 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     })
     await flushPromises()
     expect(wrapper.find('[data-testid="subagent-list"]').exists()).toBe(false)
-    expect(wrapper.find('[data-tab-id="sub-agents"]').exists()).toBe(false)
   })
 
   it('lands on the General tab by default', async () => {
@@ -108,20 +85,19 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     mockGet.mockResolvedValueOnce({})
     const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
     await flushPromises()
-    const activeTab = wrapper.find('button[role="tab"][data-active="true"]')
-    expect(activeTab.exists()).toBe(true)
-    expect(activeTab.text()).toBe('General')
+    expect(wrapper.find('[data-testid="pabrik-general-section"]').exists()).toBe(true)
   })
 
   it('loads the config on mount and shows the Profiles section', async () => {
     mockGet.mockResolvedValueOnce({
       profiles: { work: { model: 'gpt-4o-mini', base_url: 'https://x' } },
     })
-    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
-    await flushPromises()
+    const wrapper = await mountAt('profiles')
     expect(mockGet).toHaveBeenCalled()
-    // Profiles is the landing tab — the profile name should be visible.
-    expect(wrapper.text()).toContain('work')
+    // The profile name is visible. (This used to assert `toContain('work')`
+    // while landing on GENERAL, so it passed on the word "worktree" in an
+    // unrelated registry blurb - a green test that proved nothing.)
+    expect(wrapper.find('[data-testid="profile-list"]').text()).toContain('work')
   })
 
   it('does not send top-level LLM defaults in the PUT body (config-simplify)', async () => {
@@ -181,15 +157,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
         },
       },
     })
-    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
-    await flushPromises()
-
-    // Switch to the Profiles tab. Plan 2026-08-25-notify-on-error
-    // moved General to index 0; Profiles is now at index 1.
-    const profileTab = wrapper.find('[data-tab-id="profiles"]')
-    expect(profileTab.text()).toBe('Profiles')
-    await profileTab.trigger('click')
-    await flushPromises()
+    const wrapper = await mountAt('profiles')
 
     // 'work' is expanded by default, so open + Add sub-agent directly.
     await wrapper.find('[data-testid="add-sub-agent-btn-work"]').trigger('click')
@@ -247,14 +215,10 @@ describe('PabrikConfigEditor (orchestrator)', () => {
       active_profile: 'work',
     })
     mockSave.mockResolvedValueOnce({ success: true })
-    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
-    await flushPromises()
+    const wrapper = await mountAt('profiles')
 
     // Switch to Profiles tab. Plan 2026-08-25-notify-on-error moved
     // General to index 0; Profiles is now at index 1.
-    const profileTab = wrapper.find('[data-tab-id="profiles"]')
-    await profileTab.trigger('click')
-    await flushPromises()
 
     // The active pill should show 'work' and the Reset button should
     // be visible.
@@ -277,11 +241,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
       active_profile: 'work',
     })
     mockSave.mockResolvedValueOnce({ success: true })
-    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
-    await flushPromises()
-
-    const profileTab = wrapper.find('[data-tab-id="profiles"]')
-    await profileTab.trigger('click')
+    const wrapper = await mountAt('profiles')
     await flushPromises()
     await wrapper.find('[data-testid="reset-active-btn"]').trigger('click')
     await flushPromises()
@@ -294,14 +254,9 @@ describe('PabrikConfigEditor (orchestrator)', () => {
       active_profile: 'work',
     })
     mockSave.mockRejectedValueOnce(new Error('network down'))
-    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
-    await flushPromises()
-
-    const profileTab = wrapper.find('[data-tab-id="profiles"]')
-    await profileTab.trigger('click')
+    const wrapper = await mountAt('profiles')
     await flushPromises()
     await wrapper.find('[data-testid="reset-active-btn"]').trigger('click')
-    await flushPromises()
 
     // After the failed save, the local activeProfile should still
     // reflect the original value (rolled back from the optimistic null).
@@ -338,7 +293,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     await flushPromises()
 
     // The General tab is the first tab and lands there by default.
-    expect(wrapper.find('button[role="tab"][data-active="true"]').text()).toBe('General')
+    expect(wrapper.find('[data-testid="pabrik-general-section"]').exists()).toBe(true)
     // Both toggles reflect the loaded values.
     expect(
       (wrapper.find('[data-testid="toggle-notify-on-complete"]').element as HTMLInputElement)
@@ -540,10 +495,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
       },
     })
     mockSave.mockResolvedValueOnce({ success: true })
-    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
-    await flushPromises()
-
-    await wrapper.find('[data-tab-id="mcp"]').trigger('click')
+    const wrapper = await mountAt('mcp')
     await flushPromises()
 
     const toggles = wrapper.findAll('[data-testid="toggle-btn"]')
@@ -569,10 +521,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
       },
     })
     mockSave.mockResolvedValueOnce({ success: true })
-    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
-    await flushPromises()
-
-    await wrapper.find('[data-tab-id="mcp"]').trigger('click')
+    const wrapper = await mountAt('mcp')
     await flushPromises()
 
     await wrapper.find('[data-testid="toggle-btn"]').trigger('click')
@@ -601,7 +550,23 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     return router
   }
 
-  it('tab clicks round-trip through ?section= (default tab stripped from the URL)', async () => {
+  /**
+   * Mount the editor with a section already open.
+   *
+   * The editor no longer owns a tab strip - the settings shell navigates and
+   * the section lives in `?section=` - so a spec opens a section the way the
+   * app does: through the URL.
+   */
+  async function mountAt(section: string, query: Record<string, string> = {}) {
+    const router = await makeSettingsRouter(section === 'general' ? query : { ...query, section })
+    const wrapper = mount(PabrikConfigEditor, {
+      global: { plugins: [router], stubs: { Teleport: true } },
+    })
+    await flushPromises()
+    return wrapper
+  }
+
+  it('the URL decides the section, and changing it swaps the rendered section', async () => {
     const router = await makeSettingsRouter()
     mockGet.mockResolvedValueOnce({})
     const wrapper = mount(PabrikConfigEditor, {
@@ -609,16 +574,20 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     })
     await flushPromises()
 
-    await wrapper.find('[data-tab-id="tools"]').trigger('click')
+    // Mounting clean lands on General.
+    expect(wrapper.find('[data-testid="pabrik-general-section"]').exists()).toBe(true)
+
+    // The section is a URL fact now: the shell writes it, the editor obeys.
+    await router.push({ path: '/app/settings', query: { section: 'tools' } })
     await flushPromises()
-    expect(router.currentRoute.value.query.section).toBe('tools')
-    expect(wrapper.find('[data-tab-id="tools"][data-active="true"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="tools-section"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="pabrik-general-section"]').exists()).toBe(false)
 
     // 'general' is the default — back on it, the query is dropped.
-    await wrapper.find('[data-tab-id="general"]').trigger('click')
+    await router.push({ path: '/app/settings', query: {} })
     await flushPromises()
     expect(router.currentRoute.value.query.section).toBeUndefined()
-    expect(wrapper.find('[data-tab-id="general"][data-active="true"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="pabrik-general-section"]').exists()).toBe(true)
   })
 
   it('mounts with ?section=tools → Tools tab active and ToolsSection rendered (deep link)', async () => {
@@ -628,7 +597,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
       global: { plugins: [router], stubs: { Teleport: true } },
     })
     await flushPromises()
-    expect(wrapper.find('[data-tab-id="tools"][data-active="true"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="tools-section"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="tools-section"]').exists()).toBe(true)
     // Config has no `tools` key → built-in defaults + dim note.
     expect(wrapper.find('[data-testid="defaults-note"]').exists()).toBe(true)
@@ -647,7 +616,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
       global: { plugins: [router], stubs: { Teleport: true } },
     })
     await flushPromises()
-    expect(wrapper.find('[data-tab-id="tools"][data-active="true"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="tools-section"]').exists()).toBe(true)
     expect(router.currentRoute.value.query.section).toBe('tools')
   })
 
@@ -668,16 +637,13 @@ describe('PabrikConfigEditor (orchestrator)', () => {
       global: { plugins: [router], stubs: { Teleport: true } },
     })
     await flushPromises()
-    expect(wrapper.find('[data-tab-id="general"][data-active="true"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="pabrik-general-section"]').exists()).toBe(true)
     expect(router.currentRoute.value.query.section).toBeUndefined()
   })
 
   it('hydrates an explicit tools list from config (no defaults note, checkboxes reflect it)', async () => {
     mockGet.mockResolvedValueOnce({ tools: ['command'] })
-    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
-    await flushPromises()
-
-    await wrapper.find('[data-tab-id="tools"]').trigger('click')
+    const wrapper = await mountAt('tools')
     await flushPromises()
 
     expect(wrapper.find('[data-testid="defaults-note"]').exists()).toBe(false)
@@ -696,11 +662,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
       web_launch_enabled: false,
     })
     mockSave.mockResolvedValueOnce({ success: true })
-    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
-    await flushPromises()
-
-    await wrapper.find('[data-tab-id="tools"]').trigger('click')
-    await flushPromises()
+    const wrapper = await mountAt('tools')
 
     // Untouched checklist (null) → nothing to write, save bar hidden.
     expect(wrapper.find('[data-testid="save-bar"]').exists()).toBe(false)
