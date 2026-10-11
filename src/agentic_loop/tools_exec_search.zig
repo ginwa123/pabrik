@@ -177,7 +177,6 @@ test "TDD: execSearch accepts head=100 with tail=0 and returns a successful matc
         .agent_temperature = &dummy_temperature,
         .is_thinking = &dummy_thinking,
         .environment = null,
-        .active_loops = undefined,
     };
     const tool_call = agent.ToolCall{
         .id = "call-search-tail-zero",
@@ -250,7 +249,6 @@ test "execSearch returns success for an oversized stdout search with a truncatio
         .agent_temperature = &dummy_temperature,
         .is_thinking = &dummy_thinking,
         .environment = null,
-        .active_loops = undefined,
     };
     const tool_call = agent.ToolCall{
         .id = "call-search-output-cap",

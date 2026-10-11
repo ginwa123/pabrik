@@ -177,8 +177,8 @@ fn setupDb() !TestCtx {
 }
 
 /// Build a `ToolExecContext` for the exec wrapper. Fields the wrapper
-/// never dereferences on the tested paths (`logger`, `config`,
-/// `active_loops`) are left `undefined`, mirroring the get_plan harness.
+/// never dereferences on the tested paths (`logger`, `config`)
+/// are left `undefined`, mirroring the get_plan harness.
 fn makeTestCtx(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8) ToolExecContext {
     var dummy_f32: f32 = 0.0;
     var dummy_bool: bool = false;
@@ -196,7 +196,6 @@ fn makeTestCtx(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, session_
         .agent_temperature = &dummy_f32,
         .is_thinking = &dummy_bool,
         .environment = null,
-        .active_loops = undefined,
     };
 }
 

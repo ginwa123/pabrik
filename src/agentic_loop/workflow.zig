@@ -128,7 +128,6 @@ pub const CallbackAiWorkerFlow = struct {
         defer arena_allocator.deinit();
         const allocator = arena_allocator.allocator();
 
-        const active_loops = di.active_loops;
         const event_bus = di.event_bus;
         const db = di.db;
         const io = di.io;
@@ -142,7 +141,6 @@ pub const CallbackAiWorkerFlow = struct {
             .io = io,
             .logger = logger,
             .event_bus = event_bus,
-            .active_loops = active_loops,
             .di = di,
             .environment = environment,
         }, data) catch |err| {
@@ -205,7 +203,6 @@ pub const RunAgenticMultiStepInput = struct {
     db: *sqlite.SqliteBackend,
     logger: *logger_mod.Logger,
     event_bus: *event_bus_mod.EventBus,
-    active_loops: *models.ActiveLoops,
     di: *pabrikcore.App,
     environment: ?*const std.process.Environ.Map,
 };
@@ -581,7 +578,6 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
 
     const db = di.db;
     const logger = di.logger;
-    const active_loops = di.active_loops;
     const event_bus = di.event_bus;
     const io = di.io;
     const environment = di.environment;
@@ -699,9 +695,13 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
     );
     const initial_agent = initial_agent_state.agent;
 
-    // Check if session is already running (exists in worker table)
+    // Check if session is already running (exists in worker table).
+    // The worker row is the single source of truth: it is upserted before
+    // the loop and on every iteration (plus per tool call), and deleted by
+    // the `defer deleteWorker` below at run end. Stale rows (kill -9, crash)
+    // are reaped by the `cleanup_stale_worker` cron.
     const is_worker_running = isWorkerRunning(parent_allocator, db, copy_session_id);
-    if (is_worker_running and active_loops.contains(io, copy_session_id)) {
+    if (is_worker_running) {
         logger.infoFmt(
             "[CHECKPOINT] worker busy, queueing message session_id={s} msg_len={d} image_urls_len={d}",
             .{ copy_session_id, copy_message.len, copy_image_urls.len },
@@ -737,8 +737,6 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             logger.errFmt("Failed to delete worker: {s}", .{@errorName(err)});
         };
     }
-
-    defer active_loops.remove(io, copy_session_id);
 
     if (!params.skip_initial_queue_message) {
         try insertQueueMessage(InsertQueueMessageInput{
@@ -843,7 +841,6 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
     const allocator = arenaAllocatorWhileLoop.allocator();
     while (true) {
         _ = arenaAllocatorWhileLoop.reset(.free_all);
-        _ = active_loops.tryInsert(io, copy_session_id);
 
         touchCheckpointWorkers(.{
             .allocator = allocator,
@@ -1671,7 +1668,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                 // sub-agents stuck to the profile at run start.) The snapshot
                 // stays allocated for the run's lifetime as the fallback if
                 // a future iteration's re-read fails.
-                try handle_tool(allocator, io, db, logger, copy_session_id, copy_parent_session_id, eff.model, copy_cwd, loop_counter, res_dynamic_agent, &agent_temperature, &isThinking, config.api_key, config.base_url, config, environment, active_loops, live_selected_profile_model, copy_allowed_tools, copy_is_sub_agent);
+                try handle_tool(allocator, io, db, logger, copy_session_id, copy_parent_session_id, eff.model, copy_cwd, loop_counter, res_dynamic_agent, &agent_temperature, &isThinking, config.api_key, config.base_url, config, environment, live_selected_profile_model, copy_allowed_tools, copy_is_sub_agent);
 
                 // `ask_user` ends the turn rather than parking the loop. The
                 // tool recorded a pending question and returned

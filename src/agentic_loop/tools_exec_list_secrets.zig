@@ -252,7 +252,6 @@ fn testCtx(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []co
         .agent_temperature = &dummy_f32,
         .is_thinking = &dummy_bool,
         .environment = null,
-        .active_loops = undefined,
     };
 }
 

@@ -114,7 +114,6 @@ pub fn main(init: std.process.Init) !void {
         .llm_config_holder = .{ .current = initial_llm_config_ptr },
         .logger = global_logger_ptr,
         .environment = environment,
-        .active_loops = undefined, // set below after initialization
         .event_bus = undefined, // set below after initialization
         .server = undefined, // set below after initialization
         .group_emit_session_create = .init,
@@ -155,10 +154,6 @@ pub fn main(init: std.process.Init) !void {
     ai_mod.startup.start(allocator, dbSqlite, ctxParent, io) catch |err| {
         std.log.err("Failed to submit routine scheduler: {s}", .{@errorName(err)});
     };
-
-    var active_loops = ai_mod.models.ActiveLoops.init(allocator);
-    defer active_loops.deinit(allocator);
-    ctxParent.active_loops = &active_loops;
 
     // Explicit --port wins; otherwise web_launch_enabled decides.
     var port: u16 = server_boot.resolvePort(cli.port, llm_config.web_launch_enabled);

@@ -112,7 +112,6 @@ pub const App = struct {
     llm_config_holder: LlmConfigHolder,
     logger: *loggermod.Logger,
     environment: ?*const std.process.Environ.Map,
-    active_loops: *ai_mod.active_loops,
     event_bus: *event_bus.EventBus,
     server: *gserverz.GinwaServer,
 

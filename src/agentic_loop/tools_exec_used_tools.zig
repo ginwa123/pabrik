@@ -169,7 +169,6 @@ fn makeTestCtx(
         .agent_temperature = &dummy_f32,
         .is_thinking = &dummy_bool,
         .environment = null,
-        .active_loops = undefined,
         .selected_profile_model = "",
         .allowed_tools = allowed_tools,
         .is_sub_agent = is_sub_agent,

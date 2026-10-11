@@ -40,9 +40,9 @@
 //!
 //! ## Why `boot` takes an out-param and does not return a value
 //!
-//! `App.db`, `App.event_bus` and `App.active_loops` are pointers INTO the
+//! `App.db` and `App.event_bus` are pointers INTO the
 //! `Backend` struct. Returning that struct by value would copy it to the
-//! caller's address while those three pointers still aimed at `boot`'s
+//! caller's address while those two pointers still aimed at `boot`'s
 //! own frame — which dies on return. The first `db.query()` then reads
 //! the reader pool out of reused stack memory and segfaults inside
 //! `ArrayList.pop` (observed: SEGV at `array_list.zig` `pop`, fault
@@ -83,7 +83,6 @@ pub const Backend = struct {
     llm_config_ptr: *pabrikcore.config.LlmConfig,
     ctx: *pabrikcore.App,
     event_bus: pabrikcore.event_bus.EventBus,
-    active_loops: pabrikcore.ai_mod.active_loops,
     logger: *pabrikcore.loggermod.Logger,
     log_file_path: []u8,
     /// A real `GinwaServer` that never bound a socket. See the module header.
@@ -110,7 +109,6 @@ pub const Backend = struct {
         self.ctx.group_emit_session_create.cancel(io);
         self.ctx.group_emit_session_create.await(io) catch {};
 
-        self.active_loops.deinit(allocator);
         self.event_bus.deinit();
 
         // `destroy` calls `deinit` internally (http_server.zig:564), so
@@ -241,7 +239,6 @@ pub fn boot(
         .llm_config_ptr = llm_config_ptr,
         .ctx = undefined,
         .event_bus = undefined,
-        .active_loops = undefined,
         .logger = global_logger_ptr,
         .log_file_path = log_file_path,
         .server = undefined,
@@ -258,7 +255,6 @@ pub fn boot(
         .llm_config_holder = .{ .current = llm_config_ptr },
         .logger = global_logger_ptr,
         .environment = environment,
-        .active_loops = undefined,
         .event_bus = undefined,
         .server = undefined,
         .group_emit_session_create = .init,
@@ -286,9 +282,6 @@ pub fn boot(
     out.event_bus = pabrikcore.event_bus.EventBus.init("my-bus", allocator, io);
     ctx.event_bus = &out.event_bus;
     const backend_event_bus = &out.event_bus;
-
-    out.active_loops = pabrikcore.ai_mod.active_loops.init(allocator);
-    ctx.active_loops = &out.active_loops;
 
     // The subscriber that turns a `RunParamsNew` emit into an actual turn.
     // `main.zig` installs this right after `registerAll`; without it,

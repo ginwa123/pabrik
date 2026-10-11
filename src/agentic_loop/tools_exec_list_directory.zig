@@ -123,7 +123,6 @@ test "execListDirectory: absolute path passes through and lists entries" {
         .agent_temperature = &dummy_f32,
         .is_thinking = &dummy_bool,
         .environment = null,
-        .active_loops = undefined,
     };
     // Build JSON with the absolute path embedded. The previous
     // `std.fmt.allocPrint` template did NOT escape backslashes, so on
@@ -227,7 +226,6 @@ test "execListDirectory: absolute path returns success envelope without validato
         .agent_temperature = &dummy_f32,
         .is_thinking = &dummy_bool,
         .environment = null,
-        .active_loops = undefined,
     };
 
     // Splice the path into the arguments JSON. It MUST be escaped: on
@@ -299,7 +297,6 @@ fn testCtx(
         .agent_temperature = temperature,
         .is_thinking = thinking,
         .environment = null,
-        .active_loops = undefined,
     };
 }
 

@@ -106,7 +106,7 @@ fn setupDb() !TestCtx {
 
 /// Build a `ToolExecContext` that the exec wrapper can use. The exec
 /// wrapper only reads `allocator`, `db`, and `session_id`; the other
-/// fields (`logger`, `config`, `active_loops`, etc.) are left
+/// fields (`logger`, `config`, etc.) are left
 /// `undefined` because the wrapper never dereferences them.
 fn makeTestCtx(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend) ToolExecContext {
     var dummy_f32: f32 = 0.0;
@@ -125,7 +125,6 @@ fn makeTestCtx(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend) ToolExec
         .agent_temperature = &dummy_f32,
         .is_thinking = &dummy_bool,
         .environment = null,
-        .active_loops = undefined,
     };
 }
 

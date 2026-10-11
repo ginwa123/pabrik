@@ -4,7 +4,6 @@ const pabrikcore = @import("pabrikcore");
 const logger_mod = pabrikcore.loggermod;
 const sqlite = pabrikcore.sqlite;
 const config_mod = pabrikcore.config;
-const ActiveLoops = @import("ActiveLoops.zig").ActiveLoops;
 
 pub const all_agent_tools = @import("tools_equipped.zig").equips;
 pub const wrapToolOutput = @import("tools_wrap_output.zig").wrapToolOutput;
@@ -109,7 +108,6 @@ pub const ToolExecContext = struct {
     agent_temperature: *f32,
     is_thinking: *bool,
     environment: ?*const std.process.Environ.Map,
-    active_loops: *ActiveLoops,
     selected_profile_model: []const u8 = "",
     cwd_override: ?[]const u8 = null,
     /// The active design page id (when the LLM is in a design-item

@@ -168,9 +168,6 @@ fn setupDb() !struct { db: pabrikcore.sqlite.SqliteBackend, threaded: std.Io.Thr
 const CtxHolder = struct {
     temp: f32 = 0.2,
     thinking: bool = false,
-    /// `ActiveLoops` owns a hash map, so it needs an allocator — built in
-    /// `build` rather than defaulted.
-    loops: @import("ActiveLoops.zig").ActiveLoops = undefined,
     /// A real (silent) logger: the sub-agent path logs a warning, and the
     /// config is what keeps it out of the test output.
     logger: pabrikcore.loggermod.Logger = undefined,
@@ -182,7 +179,6 @@ const CtxHolder = struct {
         db: *pabrikcore.sqlite.SqliteBackend,
         is_sub_agent: bool,
     ) ToolExecContext {
-        self.loops = @import("ActiveLoops.zig").ActiveLoops.init(allocator);
         self.logger = pabrikcore.loggermod.Logger.init(allocator, io, .{
             .min_level = .err,
             .include_timestamp = false,
@@ -204,7 +200,6 @@ const CtxHolder = struct {
             .agent_temperature = &self.temp,
             .is_thinking = &self.thinking,
             .environment = null,
-            .active_loops = &self.loops,
             .tool_call_id = "call_1",
             .llm_history_id = "row_1",
             .is_sub_agent = is_sub_agent,

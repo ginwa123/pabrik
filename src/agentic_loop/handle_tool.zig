@@ -14,7 +14,6 @@ const get_current_agent_by_session_id = llm_history.get_current_agent_by_session
 const tool_models = pabrik.tool_models;
 const getLatestMessage = llm_history.getLatestMessage;
 const handle_mcp_tool = @import("handle_mcp_tool.zig");
-const ActiveLoops = @import("ActiveLoops.zig").ActiveLoops;
 const agentic_loop_mod = @import("workflow.zig");
 const wrapToolOutput = agentic_loop_mod.tools.wrapToolOutput;
 const xmlUnescape = @import("helpers").xmlUnescape;
@@ -56,7 +55,6 @@ const ToolContext = struct {
     agent_temperature: *f32,
     is_thinking: *bool,
     environment: ?*const std.process.Environ.Map,
-    active_loops: *ActiveLoops,
     selected_profile_model: []const u8 = "",
     /// See `tools.ToolExecContext.allowed_tools` — the progressive-tool
     /// adapter needs it to know which built-ins are not enabled.
@@ -524,7 +522,6 @@ fn dispatchFromRegistry(ctx: ToolContext, tool_call: agent.ToolCall, exec: tools
         .agent_temperature = ctx.agent_temperature,
         .is_thinking = ctx.is_thinking,
         .environment = ctx.environment,
-        .active_loops = ctx.active_loops,
         .selected_profile_model = ctx.selected_profile_model,
         // 2026-08-23 spawn-subagent-live-progress: thread the
         // parent's tool_call.id through ToolExecContext so
@@ -770,7 +767,6 @@ pub fn handle_tool(
     base_url: []const u8,
     config: *const config_mod.LlmConfig,
     environment: ?*const std.process.Environ.Map,
-    active_loops: *ActiveLoops,
     selected_profile_model: []const u8,
     // Passed straight through to `ToolExecContext`. Zig has no default
     // parameter values, so every caller must supply them; `workflow.zig`
@@ -990,7 +986,6 @@ pub fn handle_tool(
             .agent_temperature = agent_temperature,
             .is_thinking = isThinking,
             .environment = environment,
-            .active_loops = active_loops,
             .selected_profile_model = selected_profile_model,
             .allowed_tools = allowed_tools,
             .is_sub_agent = is_sub_agent,
@@ -1881,7 +1876,6 @@ fn hookTestCtx(
         .agent_temperature = &temp,
         .is_thinking = &thinking,
         .environment = environment,
-        .active_loops = undefined,
     };
 }
 
@@ -2046,7 +2040,6 @@ fn hookDispatchCtx(
         .agent_temperature = &temp,
         .is_thinking = &thinking,
         .environment = environment,
-        .active_loops = undefined,
     };
 }
 
@@ -2386,7 +2379,6 @@ fn secretsCtx(
         .agent_temperature = &temp,
         .is_thinking = &thinking,
         .environment = environment,
-        .active_loops = undefined,
     };
 }
 
