@@ -154,11 +154,9 @@ const props = defineProps<{
   /**
    * When true, render the shared chat app bar (ChatAppBar.vue —
    * chat name + `◫` sidebar toggle + `✕` close) above the
-   * messages. Every task-chat host sets this so all three
-   * workspace-item modes (kanban / agent / standard folder-chat)
-   * get the identical bar; the standalone `chat-<id>` branch
-   * leaves it false so a bare chat still fills the viewport
-   * edge-to-edge.
+   * messages. Every chat host sets this so all modes (kanban /
+   * agent / standard folder-chat / standalone `chat-<id>`)
+   * get the identical bar.
    *
    * Defaults to `false` so older call sites that don't supply it
    * still compile — see the pabrik-frontend-task-literal-typing-rule
@@ -1243,8 +1241,13 @@ const onContentShift = (shift: { topSpacer: number; bottomSpacer: number; total:
     // sizer 22163 -> stick to 21007 -> sizer 21788 -> stick to 20632
     // -> sizer 20433 -> stick to 19277 -> sizer jumps back to 22163
     // (because at 19277 range no longer includes last item) -> gap.
-    // Also ignore tiny deltas (<50px) which are sub-pixel noise.
-    if (delta <= 0 || Math.abs(delta) < 50) {
+    // Ignore sub-threshold growth (<10px, BOTTOM_THRESHOLD): rounding /
+    // border noise that cannot change at-bottom state. Anything larger
+    // is real content the stick must follow — ignoring e.g. a 34px
+    // post-jump measure correction strands the reader above the newest
+    // message with the arrow hidden (standalone header layout,
+    // task_1791737106508_0).
+    if (delta <= 0 || delta < 10) {
       lastObservedScrollHeight = newScrollHeight
       return
     }
@@ -4796,11 +4799,10 @@ const compactSession = async () => {
     <div :ref="setChatColumnEl" class="relative flex flex-col h-full flex-1 min-w-0 chat-column">
       <!--
         Chat app bar. Rendered only when the parent passed the
-        `showHeader` prop. Every task-chat host sets it (kanban
-        branch, AgentChatView, StandardTaskChatView) so all three
-        workspace-item modes get the identical bar; the standalone
-        `chat-<id>` branch leaves it false so a bare chat still
-        fills the viewport edge-to-edge. The markup itself lives in
+        `showHeader` prop. Every chat host sets it (kanban
+        branch, AgentChatView, StandardTaskChatView, standalone
+        `chat-<id>` branch) so all modes get the identical bar.
+        The markup itself lives in
         ChatAppBar.vue — the one app bar shared by every mode, so the
         title, the sidebar toggle and the ✕ cannot drift apart again.
         The `app-bar-extras` slot lets a host pin mode-specific bits

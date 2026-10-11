@@ -1,5 +1,5 @@
 <!--
-  ChatAppBar — the ONE app bar every task-chat surface renders.
+  ChatAppBar — the ONE app bar every chat surface renders.
 
   Before this component each workspace-item mode hand-rolled its own
   bar, so the three surfaces disagreed on height, padding, background
@@ -17,8 +17,9 @@
   across the window, and silently dropped the sidebar toggle. This
   component is the single source of truth: ChatView renders it when
   the host sets `showHeader`, and every host (kanban branch,
-  AgentChatView, StandardTaskChatView) sets it, so the bar is
-  pixel-identical in all three modes.
+  AgentChatView, StandardTaskChatView, standalone `chat-<id>`
+  branch) sets it, so the bar is
+  pixel-identical in all modes.
 
   It lives INSIDE the chat column, beside the right sidebar, so the
   bar's bottom edge lines up with the sidebar's own "Explorer"

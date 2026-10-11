@@ -3528,13 +3528,20 @@ defineExpose({
         @update-chat-id="handleUpdateChatId"
         @close="handleCloseTaskView"
       />
+      <!-- Standalone chat (sidebar-opened `chat-<id>` sessions, no task).
+           Renders the same shared ChatAppBar as the kanban / agent /
+           standard branches above, so the title / ◫ / ✕ sit in the
+           same place in every mode. `@close` reuses handleCloseTaskView,
+           which clears both the task and the chat. -->
       <ChatView
         v-else-if="activeChatId.startsWith('chat-')"
         :key="activeChatId"
         :chat-id="activeChatId"
         :chat-name="activeChatName"
         :cwd="effectiveChatCwd"
+        :show-header="true"
         @update-chat-id="handleUpdateChatId"
+        @close="handleCloseTaskView"
       />
       <Chats v-else-if="currentView === 'chat'" />
       <!--
