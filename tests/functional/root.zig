@@ -59,6 +59,7 @@ const default_workspace_provisioning_test = @import("default_workspace_provision
 const design_advanced_test = @import("design_advanced_test.zig");
 const design_lifecycle_test = @import("design_lifecycle_test.zig");
 const desktop_webapp_404_test = @import("desktop_webapp_404_test.zig");
+const static_serve_concurrency_test = @import("static_serve_concurrency_test.zig");
 const desktop_webapp_stable_symlink_test = @import("desktop_webapp_stable_symlink_test.zig");
 const document_agent_tools_test = @import("document_agent_tools_test.zig");
 const frontend_log_dedup_test = @import("frontend_log_dedup_test.zig");
@@ -202,6 +203,7 @@ pub const suites = .{
     design_advanced_test,
     design_lifecycle_test,
     desktop_webapp_404_test,
+    static_serve_concurrency_test,
     desktop_webapp_stable_symlink_test,
     document_agent_tools_test,
     frontend_log_dedup_test,
