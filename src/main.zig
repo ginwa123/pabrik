@@ -169,14 +169,31 @@ pub fn main(init: std.process.Init) !void {
         std.log.info("web launch: browser mode on http://127.0.0.1:{d}/", .{port});
     }
 
-    const address = gserverz.Address.init("127.0.0.1", port) catch |err| switch (err) {
-        // A busy port is an operator error, not a crash: report + exit(1)
-        // instead of dying with SIGSEGV down the runtime error path.
-        error.BindFailed => {
-            std.log.err("cannot bind 127.0.0.1:{d} - address already in use (is another pabrik already running on this port?)", .{port});
-            std.process.exit(1);
-        },
-        else => return err,
+    const address = blk: {
+        const first = gserverz.Address.init("127.0.0.1", port) catch |err| switch (err) {
+            error.BindFailed => {
+                // An explicit --port is operator intent: fail loud so a
+                // typo'd flag never silently serves somewhere unexpected.
+                if (cli.port != null) {
+                    std.log.err("cannot bind 127.0.0.1:{d} - address already in use (is another pabrik already running on this port?)", .{port});
+                    std.process.exit(1);
+                }
+                // Default-port convenience, on every platform: the user
+                // asked for no port in particular (usually the 8081
+                // default), so a taken port picks a free one instead of
+                // dying. Second `pabrik` on any OS is the common case —
+                // a dev server or stale listener holding 8081 must not
+                // cost the user their session.
+                std.log.warn("port {d} is already in use - picking a free port instead", .{port});
+                port = pabrikcore.web_port.pickFreePort(io) catch |pick_err| {
+                    std.log.err("no free port available: {s}", .{@errorName(pick_err)});
+                    return pick_err;
+                };
+                break :blk try gserverz.Address.init("127.0.0.1", port);
+            },
+            else => return err,
+        };
+        break :blk first;
     };
     const gs = try gserverz.GinwaServer.init(allocator, io, address);
     defer gs.deinit();
