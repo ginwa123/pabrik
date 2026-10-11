@@ -846,10 +846,12 @@ export async function getTasksMedia(
   taskIds: string[],
 ): Promise<Map<string, TaskMedia | null>> {
   const settled = await Promise.allSettled(
-    taskIds.map(async (taskId): Promise<[string, TaskMedia | null]> => [
-      taskId,
-      await getTaskMedia(workspaceId, itemId, taskId),
-    ]),
+    taskIds.map(
+      async (taskId): Promise<[string, TaskMedia | null]> => [
+        taskId,
+        await getTaskMedia(workspaceId, itemId, taskId),
+      ],
+    ),
   )
   const out = new Map<string, TaskMedia | null>()
   settled.forEach((entry, i) => {
@@ -4901,7 +4903,6 @@ export interface PabrikConfig {
   // Per-profile compaction overrides (`max_capacity_tokens` /
   // `compaction_threshold_percent`) live on `PabrikProfile` (Chunk
   // 7.6) and remain there. Both layers coexist.
-
 }
 
 export async function getPabrikConfig(): Promise<PabrikConfig> {
@@ -5225,6 +5226,10 @@ export interface GitPrStatus {
   status: string // open | closed | merged (lowercased by backend)
   mergeable: string
   merge_state: string
+  /** The commit the head branch points at (`headRefOid` / GitLab `sha`). It is
+   *  the merge box's head guard: `--match-head-commit` / `--sha`, so a merge
+   *  cannot land on a commit the user never saw. `''` on older servers. */
+  head_sha: string
   head_ref: string
   base_ref: string
   author: string
@@ -5248,6 +5253,65 @@ export async function getPrStatus(
   })
   if (opts?.provider) params.set('provider', opts.provider)
   return await apiFetch<GitPrStatus>(`/git/pr/status?${params.toString()}`, { silent: true })
+}
+
+/**
+ * Merge a PR/MR (POST /api/git/pr/merge).
+ *
+ * `method` is REQUIRED: the backend refuses an empty one with a 400 rather
+ * than spawning, because `gh pr merge` without a strategy flag prompts for the
+ * method and a non-tty child cannot answer it.
+ *
+ * The response carries BOTH an outcome and the forge's own status payload,
+ * re-read after the command ran. `success` is `status.status === 'merged'`, not
+ * an exit code: `glab mr merge` can return 0 having only armed auto-merge, and
+ * a GitHub merge queue accepts a PR without merging it. `pending` is that
+ * middle state, and the UI must render it as "not merged yet".
+ */
+export interface GitPrMerge {
+  success: boolean
+  method: string
+  pending: boolean
+  status: GitPrStatus
+}
+
+export interface MergePrOptions {
+  provider?: string
+  method: 'merge' | 'squash' | 'rebase'
+  /** Commit message for the merge/squash commit. */
+  title?: string
+  body?: string
+  /** Delete the source branch after merging. Off by default in the UI: the
+   *  source branch is usually the session's own worktree branch. */
+  delete_branch?: boolean
+  /** The head commit the user was looking at. Both CLIs guard on it. */
+  head_sha?: string
+}
+
+export async function mergePr(
+  cwd: string,
+  prUrl: string,
+  opts: MergePrOptions,
+): Promise<GitPrMerge> {
+  // The route spawns a forge CLI against a network, so it is given a far
+  // larger budget than the 15 s default — the same reason `git_pr_merge.zig`
+  // runs the child under a 60 s deadline. `silent` because the box renders the
+  // server's own words inline instead of a toast.
+  return await apiFetch<GitPrMerge>('/git/pr/merge', {
+    method: 'POST',
+    silent: true,
+    timeoutMs: 90_000,
+    body: {
+      path: cwd,
+      pr: prUrl,
+      provider: opts.provider || undefined,
+      method: opts.method,
+      title: opts.title || undefined,
+      body: opts.body || undefined,
+      delete_branch: !!opts.delete_branch,
+      head_sha: opts.head_sha || undefined,
+    },
+  })
 }
 
 /**
