@@ -3841,6 +3841,21 @@ export interface SkillEvalEvent {
   result_id: string
 }
 
+// File stage/unstage SSE event (see
+// src/agentic_loop/git_file_stage_events.zig). Both granular wire names
+// (`git_file_staged` / `git_file_unstaged`) share this payload; the consumer
+// filters by `cwd` and moves ONE row between Staged / Changes / Untracked
+// instead of re-fetching the whole git-status list.
+export interface GitFileStageEvent {
+  action: 'staged' | 'unstaged'
+  /** Repo-relative path that moved. */
+  path: string
+  /** The worktree the git command ran in. */
+  cwd: string
+  /** True when git failed for this path — the row must NOT move. */
+  failed: boolean
+}
+
 // ─── Skill Evals read surface (GET /api/skill-evals/*) ──────────────────
 
 export interface SkillEvalRun {
@@ -4067,6 +4082,15 @@ export interface UnifiedChannels {
    */
   skillEvals?: (event: SkillEvalEvent) => void
   /**
+   * Subscribe to file stage/unstage events. The backend emits two granular
+   * names (`git_file_staged` on `git add`, `git_file_unstaged` on
+   * `git restore --staged`) that share the same `GitFileStageEvent`
+   * payload. Both route on the central `git_file_stage` key — the consumer
+   * filters by `event.cwd` JS-side and moves ONE row between Staged /
+   * Changes / Untracked instead of re-fetching the whole git-status list.
+   */
+  gitFileStage?: (event: GitFileStageEvent) => void
+  /**
    * Subscribe to design-mode element mutations. The backend emits
    * three granular event names (`design_element_created`,
    * `design_element_updated`, `design_element_deleted`) that share
@@ -4132,6 +4156,7 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
   }
   if (opts.channels.backgroundProcess) tokens.push('background_process')
   if (opts.channels.skillEvals) tokens.push('skill_evals')
+  if (opts.channels.gitFileStage) tokens.push('git_file_stage')
 
   // Empty subscriptions are meaningless; the backend would 400 anyway.
   // Throw early with a developer-friendly message. The console.error
@@ -4240,6 +4265,14 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
       'skill_evals_run_started',
       'skill_evals_run_finished',
       'skill_evals_result_applied',
+      // File stage/unstage (see src/agentic_loop/git_file_stage_events.zig).
+      // Two granular names share one payload; both route on the central
+      // `git_file_stage` key. Without pre-registration the browser drops
+      // them before onEvent ever fires, so the Files tab would keep
+      // re-fetching the whole git-status list on every +/− — the exact
+      // refresh this channel exists to remove.
+      'git_file_staged',
+      'git_file_unstaged',
     ],
     // Default heartbeat filter (matches backend sse_manager.sendHeartbeat).
     heartbeatData: 'ping',
@@ -4399,6 +4432,25 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
           opts.channels.sessions(data as SessionEvent)
         } catch (err) {
           console.error('[unifiedSSE] session event parse failed:', err, raw)
+        }
+        return
+      }
+
+      // File stage/unstage. Both granular names share the
+      // `GitFileStageEvent` payload — the consumer filters by `cwd` and
+      // moves ONE row between Staged / Changes / Untracked instead of
+      // re-fetching the whole git-status list. The pre-registration in
+      // `additionalEventTypes` above is what wires the browser's
+      // EventSource to fire onEvent for these names — without it the wire
+      // event is dropped on the floor (see project memory
+      // browser-eventsource-named-events.md).
+      if (eventType === 'git_file_staged' || eventType === 'git_file_unstaged') {
+        if (!opts.channels.gitFileStage) return
+        try {
+          const data = JSON.parse(raw)
+          opts.channels.gitFileStage(data as GitFileStageEvent)
+        } catch (err) {
+          console.error('[unifiedSSE] git_file_stage event parse failed:', err, raw)
         }
         return
       }

@@ -15,6 +15,7 @@ import type {
   QueueMessageEvent,
   BackgroundProcessEvent,
   SkillEvalEvent,
+  GitFileStageEvent,
 } from '../api'
 
 // NOTE: Plan's Chunk 1 spec imports `KanbanEvent` and `LlmChunkEvent`
@@ -50,6 +51,14 @@ type SseEventMap = {
   // this single channel; the consumer filters by `session_id` and
   // re-fetches the eval list for the Evals tab.
   skillEvals: SkillEvalEvent
+  // File stage/unstage. The backend emits two granular names
+  // (`git_file_staged` / `git_file_unstaged`) that share the
+  // `GitFileStageEvent` payload — see
+  // src/agentic_loop/git_file_stage_events.zig. The bus routes both to
+  // this single channel; the consumer filters by `cwd` and moves ONE row
+  // between Staged / Changes / Untracked instead of re-fetching the whole
+  // git-status list.
+  gitFileStage: GitFileStageEvent
 }
 
 type Listener<K extends keyof SseEventMap> = (event: SseEventMap[K]) => void
@@ -234,6 +243,7 @@ export function installSseBus(_app?: App, options?: SseBusInstallOptions): SseBu
     queue: new Set<Listener<'queue'>>(),
     backgroundProcess: new Set<Listener<'backgroundProcess'>>(),
     skillEvals: new Set<Listener<'skillEvals'>>(),
+    gitFileStage: new Set<Listener<'gitFileStage'>>(),
   }
 
   const state = shallowRef<SseState>('closed')
@@ -298,6 +308,11 @@ export function installSseBus(_app?: App, options?: SseBusInstallOptions): SseBu
         // emits on "skill_evals", frontend filters by `event.session_id`
         // in the Evals tab's store.
         skillEvals: (e) => forward('skillEvals', e),
+        // File stage/unstage — same central-broadcast pattern: backend
+        // emits on "git_file_stage", frontend filters by `event.cwd` in
+        // SidebarDiffPanel.vue and moves ONE row instead of re-fetching
+        // the whole git-status list.
+        gitFileStage: (e) => forward('gitFileStage', e),
       },
       onError: (err) => {
         console.error('[sseBus] global SSE failed permanently:', err)
