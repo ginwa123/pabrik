@@ -1,0 +1,126 @@
+# Reusable installer check: ONE platform per call.
+#
+# NO BUILD. Each call downloads the PREBUILT binaries from the rolling
+# `ci-latest` GitHub release using the installer scripts under test
+# (`install.sh` / `install.ps1`, checked out at this SHA), then proves
+# the installed binary serves the browser URL with
+# `scripts/ci-smoke-test.sh` — the same "type `pabrik`, open the URL"
+# flow a user gets.
+#
+# WHAT THIS COVERS (and what it does not)
+# ---------------------------------------
+# - The installer scripts themselves: triple resolution, download URLs,
+#   install locations, shortcuts/launchers. That is this pipeline's
+#   change surface (install.sh / install.ps1 ship at the repo root).
+# - The run→URL contract against real release binaries: the installed
+#   `pabrik` prints "Agent is ready to serve!" and answers
+#   http://127.0.0.1:<port>/health with {"status":"ok",...}.
+# - It does NOT pin the release bytes to this SHA: on a push to main
+#   the backend cells publish `ci-latest` concurrently with this job,
+#   so the downloaded build may lag by one commit. The Zig suite
+#   `install_browser_url_test.zig` covers the exact-bytes path instead
+#   (it stages the just-built binary as a fake release and installs
+#   from file://). PRs exercise these scripts against the newest green
+#   main build, which is the right oracle for "does the installer work".
+#
+# NO `concurrency:` BLOCK, DELIBERATELY — same reason as ci-backend.yml:
+# inside a CALLED workflow `github.workflow` resolves to the CALLER's
+# name, so three calls would share one group and cancel each other.
+name: install (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        description: GitHub-hosted runner label. Pinned, not `-latest` — same rule as the backend cells.
+        required: true
+        type: string
+      label:
+        description: Human platform name, used in the log banner.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    # NO `name:` here — ci.yml's caller jobs already name each cell
+    # ("install (Linux X64)"), same convention as ci-backend.yml.
+    runs-on: ${{ inputs.os }}
+    # Ceiling for download (~150 MB) + boot + smoke steps. Healthy runs
+    # are minutes inside this; the cap only releases a wedged runner.
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install with install.sh (Linux/macOS)
+        # The real user flow: the script under test, unmodified, against
+        # the real release. --dir keeps the runner's real ~/.local/bin
+        # untouched; the .desktop launcher fetch stays enabled so this
+        # job also covers that network path.
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "→ install (${{ inputs.label }}): running install.sh from this SHA"
+          bash install.sh --dir "$RUNNER_TEMP/pabrik-bin"
+          test -x "$RUNNER_TEMP/pabrik-bin/pabrik" || { echo "✗ installed pabrik missing"; exit 1; }
+          echo "INSTALL_BIN=$RUNNER_TEMP/pabrik-bin/pabrik" >> "$GITHUB_ENV"
+
+      - name: Install with install.ps1 (Windows)
+        # Same flow via the PowerShell installer. LOCALAPPDATA/APPDATA
+        # are redirected into RUNNER_TEMP for this step only, so the
+        # per-user install roots (%LOCALAPPDATA%\pabrik, Start Menu
+        # shortcut) land on scratch instead of the runner's profile.
+        # The SMOKE step below is a separate process with the stock env
+        # (same as the backend smoke test) — only the install location
+        # stays isolated, which is what this job asserts.
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tempData = Join-Path $env:RUNNER_TEMP 'pabrik-data'
+          $env:LOCALAPPDATA = Join-Path $tempData 'Local'
+          $env:APPDATA = Join-Path $tempData 'Roaming'
+          # The shipped Install-Pabrik.ps1 assumes the Start Menu Programs
+          # dir exists (true on any real profile, false on this scratch
+          # APPDATA) — pre-create the full subtree so $lnk.Save() lands.
+          $startMenuDir = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
+          New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA, $env:APPDATA, $startMenuDir | Out-Null
+          Write-Output "→ install (${{ inputs.label }}): running install.ps1 from this SHA"
+          & "$PWD\install.ps1"
+          $bin = Join-Path $env:LOCALAPPDATA 'pabrik\bin\pabrik.exe'
+          if (-not (Test-Path -LiteralPath $bin)) { Write-Error "✗ installed pabrik.exe missing at $bin"; exit 1 }
+          # --help proves the payload runs from its installed location
+          # (loader finds the DLLs beside it) before the smoke test boots it.
+          & $bin --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { Write-Error "✗ installed pabrik.exe --help exited $LASTEXITCODE"; exit 1 }
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "INSTALL_BIN=$bin"
+
+      - name: Smoke test the installed binary (browser URL)
+        # scripts/ci-smoke-test.sh boots $INSTALL_BIN on $PABRIK_PORT
+        # with an isolated HOME, waits for "Agent is ready to serve!",
+        # then GETs http://127.0.0.1:<port>/health and
+        # /api/workspaces — the URL a user opens in a browser.
+        # Port 18080: same as the backend smoke test (fresh VM per job,
+        # so no collision), far from the dev ports 8080/8081.
+        # `shell: bash` on all three cells, Windows included (Git Bash
+        # ships on windows-2022) — one step shape, same as the backend.
+        shell: bash
+        run: |
+          set -u
+          # MinGW-built pabrik.exe dlopens the UCRT forwarders by exact
+          # filename; Windows 11 keeps them in System32\downlevel (not on
+          # the default PATH). Same fix as the backend smoke step.
+          if [[ "${RUNNER_OS:-}" == "Windows" ]]; then
+            export PATH="/c/Windows/System32/downlevel:$PATH"
+            # Backslash path from the pwsh step → POSIX for Git Bash.
+            PABRIK_BIN="$(cygpath "$INSTALL_BIN")"
+          else
+            PABRIK_BIN="$INSTALL_BIN"
+          fi
+          echo "→ smoke test: using installed $PABRIK_BIN"
+          echo "→ browser URL: http://127.0.0.1:18080/health"
+          PABRIK_BIN="$PABRIK_BIN" PABRIK_PORT=18080 bash scripts/ci-smoke-test.sh
