@@ -334,6 +334,11 @@ pub const gitPrDiffHandler = @import("git_pr_diff.zig").gitPrDiffHandler;
 pub const gitPrStatusHandler = @import("git_pr_status.zig").gitPrStatusHandler;
 pub const gitPrConflictsHandler = @import("git_pr_conflicts.zig").gitPrConflictsHandler;
 
+/// POST /api/git/pr/merge — merge a PR/MR through the forge CLI. Returns the
+/// status payload RE-READ after the command, because a zero exit code is not
+/// proof that anything merged (see git_pr_merge.zig).
+pub const gitPrMergeHandler = @import("git_pr_merge.zig").gitPrMergeHandler;
+
 /// GET /api/git/pr/checks — CI jobs for a PR plus the steps inside each
 /// failed one. Registered next to the status handler because the two
 /// share provider resolution (`git_pr_status.resolveProvider`).

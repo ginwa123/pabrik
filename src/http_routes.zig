@@ -327,6 +327,9 @@ fn registerGitRoutes(authed: *Group) !void {
     try authed.get("/api/git/pr/checks", ai_mod.http_handlers.gitPrChecksHandler);
     try authed.get("/api/git/pr/diff", ai_mod.http_handlers.gitPrDiffHandler);
     try authed.get("/api/git/pr/conflicts", ai_mod.http_handlers.gitPrConflictsHandler);
+    // POST, and the only mutating forge endpoint: `gh pr merge` / `glab mr
+    // merge` change a remote branch, so it is never reachable unauthenticated.
+    try authed.post("/api/git/pr/merge", ai_mod.http_handlers.gitPrMergeHandler);
 }
 
 fn registerFileRoutes(authed: *Group) !void {

@@ -15,6 +15,7 @@ import EmptyState from '../../pabrik/EmptyState.vue'
 import GitCommits from '../../git/GitCommits.vue'
 import ForgeIcon from '../../git/ForgeIcon.vue'
 import PrChecksPanel from './PrChecksPanel.vue'
+import MergeBox from './MergeBox.vue'
 import SkillEvalsPanel from './SkillEvalsPanel.vue'
 import {
   countDiffLines,
@@ -194,6 +195,17 @@ const prError = ref<string | null>(null)
 // Empty = unknown (fetch failed or not yet loaded) — badge hidden.
 const prStatus = ref('')
 const prStatusTitle = ref('')
+/**
+ * The whole status payload, not just the derived strings above.
+ *
+ * The merge box needs `head_sha` (the merge's head guard), `base_ref` (to say
+ * "into main"), `number`/`title`/`head_ref` (the default commit message) and
+ * `mergeable` / `merge_state` (whether a merge is allowed, and why not). All of
+ * them arrive in the request the 30 s poll already makes, so keeping the object
+ * costs nothing and a second fetch for them would be the expensive way to own
+ * two sources of truth.
+ */
+const prStatusData = ref<api.GitPrStatus | null>(null)
 // Conflict flag from the same payload (`mergeable`/`merge_state`).
 // Quiet-when-clean: only CONFLICTING/DIRTY surfaces UI; every other
 // value behaves exactly as before (no banner, no badge).
@@ -579,6 +591,7 @@ const loadPrStatus = async () => {
     prMergeable.value = ''
     prMergeState.value = ''
     prStatusError.value = ''
+    prStatusData.value = null
     return
   }
   const seq = ++prSeq
@@ -591,6 +604,7 @@ const loadPrStatus = async () => {
     prStatusTitle.value = data.title || ''
     prMergeable.value = data.mergeable || ''
     prMergeState.value = data.merge_state || ''
+    prStatusData.value = data
     prStatusError.value = ''
     // The conflict badge just turned on or off — re-derive the file list in
     // the same turn so the section never lags the badge by a render.
@@ -601,9 +615,21 @@ const loadPrStatus = async () => {
     prStatusTitle.value = ''
     prMergeable.value = ''
     prMergeState.value = ''
+    prStatusData.value = null
     prStatusError.value = serverErrorMessage(err, 'Failed to load PR status')
     await loadPrConflicts()
   }
+}
+
+/**
+ * A merge landed (or was accepted) — re-read NOW.
+ *
+ * The poll would pick it up within 30 s, but the user just took a destructive
+ * action and the badge has to agree with it immediately; a PR still reading
+ * "Open" one second after "Confirm and merge" looks like the merge failed.
+ */
+const onMerged = () => {
+  void loadPrStatus()
 }
 
 const retryPr = () => {
@@ -959,7 +985,15 @@ function nextStageList(from: StageList, action: 'staged' | 'unstaged'): StageLis
  * in Staged and Changes at once, and clicking the `+` on its Changes row
  * must move THAT row, not silently treat it as an unstage of the Staged one.
  */
-function actingList(lists: { staged: api.GitFileChange[]; unstaged: api.GitFileChange[]; untracked: api.GitFileChange[] }, path: string, action: 'staged' | 'unstaged'): StageList | null {
+function actingList(
+  lists: {
+    staged: api.GitFileChange[]
+    unstaged: api.GitFileChange[]
+    untracked: api.GitFileChange[]
+  },
+  path: string,
+  action: 'staged' | 'unstaged',
+): StageList | null {
   const has = (arr: api.GitFileChange[]) => arr.some((f) => f.path === path)
   if (action === 'staged') {
     // The `+` button's two homes. Untracked first: staging an untracked path
@@ -2171,6 +2205,19 @@ defineExpose({
         </template>
       </template>
     </div>
+
+    <!-- The merge box is a FOOTER of the PR tab: a sibling of the scrolling
+         list, so it stays put while the file list scrolls and grows into its
+         confirm step without reflowing anything. PR tab only — a merge button
+         on the Checks or Commits tab would be an action with no context. -->
+    <MergeBox
+      v-if="showPr"
+      :cwd="cwd"
+      :pr-url="prUrl ?? ''"
+      :pr-provider="prProvider"
+      :status="prStatusData"
+      @merged="onMerged"
+    />
 
     <OpenInNewTabMenu
       v-if="menuPos"

@@ -28,6 +28,10 @@ const GhPrView = struct {
     mergeStateStatus: []const u8 = "",
     headRefName: []const u8 = "",
     baseRefName: []const u8 = "",
+    /// The commit the head branch points at. This is the `--match-head-commit`
+    /// guard's input; without it a merge could land on a commit the user
+    /// never saw.
+    headRefOid: []const u8 = "",
     createdAt: []const u8 = "",
     updatedAt: []const u8 = "",
     mergedAt: ?[]const u8 = null,
@@ -293,7 +297,12 @@ fn useCaseWith(
 /// `useCase` with both forge binaries injectable so the inline tests can
 /// drive the whole path against fixture scripts instead of real,
 /// authenticated GitHub/GitLab CLIs.
-fn useCaseWithPrograms(
+///
+/// `pub` because `git_pr_merge.zig` re-reads the status through it after
+/// running `gh pr merge` / `glab mr merge`: the merge endpoint must answer
+/// with exactly the payload the 30 s poll returns, and a second copy of the
+/// status path is how the badge and the box would drift apart.
+pub fn useCaseWithPrograms(
     allocator: std.mem.Allocator,
     io: std.Io,
     programs: Programs,
@@ -484,6 +493,7 @@ fn buildResponse(
         .status = try allocator.dupe(u8, normalizeStatus(parsed.state)),
         .mergeable = try allocator.dupe(u8, parsed.mergeable),
         .merge_state = try allocator.dupe(u8, parsed.mergeStateStatus),
+        .head_sha = try allocator.dupe(u8, parsed.headRefOid),
         .head_ref = try allocator.dupe(u8, parsed.headRefName),
         .base_ref = try allocator.dupe(u8, parsed.baseRefName),
         .author = try allocator.dupe(u8, parsed.author.login),
@@ -520,6 +530,9 @@ const GlabMrView = struct {
     state: []const u8 = "",
     source_branch: []const u8 = "",
     target_branch: []const u8 = "",
+    /// The head commit. GitLab calls it `sha` (not `headRefOid`); it is
+    /// what `glab mr merge --sha` guards on.
+    sha: []const u8 = "",
     detailed_merge_status: []const u8 = "",
     merge_status: []const u8 = "",
     created_at: []const u8 = "",
@@ -571,6 +584,7 @@ fn buildGlabResponse(
         .status = try allocator.dupe(u8, normalizeStatus(mr.state)),
         .mergeable = try allocator.dupe(u8, firstNonEmpty(&.{ detailed, merge_status })),
         .merge_state = try allocator.dupe(u8, firstNonEmpty(&.{ merge_status, detailed })),
+        .head_sha = try allocator.dupe(u8, mr.sha),
         .head_ref = try allocator.dupe(u8, mr.source_branch),
         .base_ref = try allocator.dupe(u8, mr.target_branch),
         .author = try allocator.dupe(u8, glabAuthorName(mr.author)),
