@@ -1335,6 +1335,43 @@ export async function runAllAgentsInColumn(
   )
 }
 
+/**
+ * Bulk "Stop all agents" for one kanban column — the mirror of
+ * `runAllAgentsInColumn` above.
+ *
+ *   POST /api/workspaces/:workspace_id/items/:item_id/kanban/columns/:column_id/stop_all_agents
+ *   200: `{ success: true, column_id, stopped: string[], skipped: string[], failed: string[] }`
+ *   404: unknown column
+ *   500: server error
+ *
+ * The server owns the task list (SELECTs all task ids for the column
+ * server-side and cancels each running worker via `cancelSession`),
+ * so pagination is irrelevant — the frontend calls this once and surfaces
+ * the `{stopped, skipped, failed}` summary. `skipped` = idle tasks with
+ * no worker row; `stopped` = workers whose `cancelled` flag was flipped.
+ * No new SSE event; run-state visuals stay on the existing
+ * `processingState`/SessionSlider flow (the `worker deleted` event
+ * clears each card's spinner).
+ */
+export interface StopAllAgentsSummary {
+  success: boolean
+  column_id?: string
+  stopped: string[]
+  skipped: string[]
+  failed: string[]
+}
+
+export async function stopAllAgentsInColumn(
+  workspaceId: string,
+  itemId: string,
+  columnId: string,
+): Promise<StopAllAgentsSummary> {
+  return await apiFetch<StopAllAgentsSummary>(
+    `/workspaces/${workspaceId}/items/${itemId}/kanban/columns/${columnId}/stop_all_agents`,
+    { method: 'POST' },
+  )
+}
+
 // Chat API - Zig Backend Integration (Zig backend calls LLM backend internally)
 export interface Chat {
   session_id: string
@@ -4901,7 +4938,6 @@ export interface PabrikConfig {
   // Per-profile compaction overrides (`max_capacity_tokens` /
   // `compaction_threshold_percent`) live on `PabrikProfile` (Chunk
   // 7.6) and remain there. Both layers coexist.
-
 }
 
 export async function getPabrikConfig(): Promise<PabrikConfig> {

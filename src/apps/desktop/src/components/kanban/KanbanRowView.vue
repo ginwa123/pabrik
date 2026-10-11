@@ -50,6 +50,7 @@ const props = withDefaults(
     cwd?: string
     collapsedIds: string[]
     runAllBusyByColumn?: Record<string, boolean>
+    stopAllBusyByColumn?: Record<string, boolean>
     /**
      * Row height. `comfortable` is the two-line record (name +
      * metadata); `compact` drops back to a single line for boards with
@@ -61,6 +62,7 @@ const props = withDefaults(
   {
     cwd: '',
     runAllBusyByColumn: () => ({}),
+    stopAllBusyByColumn: () => ({}),
     density: 'comfortable',
   },
 )
@@ -71,6 +73,7 @@ const emit = defineEmits<{
   requestRenameColumn: [columnId: string]
   requestDeleteColumn: [columnId: string]
   requestRunAllAgents: [columnId: string]
+  requestStopAllAgents: [columnId: string]
   sortChange: [
     {
       columnId: string
@@ -164,6 +167,10 @@ const handleMenuDelete = (columnId: string) => {
 const handleMenuRunAll = (columnId: string) => {
   closeMenu()
   emit('requestRunAllAgents', columnId)
+}
+const handleMenuStopAll = (columnId: string) => {
+  closeMenu()
+  emit('requestStopAllAgents', columnId)
 }
 
 // ─── Per-group sort modal ──────────────────────────────────────────────────
@@ -437,6 +444,22 @@ onUnmounted(() => {
                     props.runAllBusyByColumn[group.column.id]
                       ? 'Running all agents…'
                       : 'Run all agents'
+                  }}
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  class="w-full px-3 py-2 text-left text-body hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
+                  style="color: var(--semantic-text)"
+                  :data-testid="`kanban-row-group-${group.column.id}-menu-stop-all`"
+                  :disabled="!!props.stopAllBusyByColumn[group.column.id]"
+                  @click="handleMenuStopAll(group.column.id)"
+                >
+                  {{
+                    props.stopAllBusyByColumn[group.column.id]
+                      ? 'Stopping all agents…'
+                      : 'Stop all agents'
                   }}
                 </button>
               </li>

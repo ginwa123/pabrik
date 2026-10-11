@@ -76,6 +76,10 @@ const props = withDefaults(
     // `handleRunAllAgents` POST is in flight; the menu item is disabled
     // while true.
     runAllBusy?: boolean
+    // In-flight state for the column's bulk "Stop all agents" action.
+    // Mirror of `runAllBusy` — the host sets this while its per-column
+    // `handleStopAllAgents` POST is in flight.
+    stopAllBusy?: boolean
     // Every column on the board, already ordered. Threaded to each
     // card so its context menu can render the "Move to column"
     // submenu. Empty (default) hides the submenu entirely.
@@ -84,6 +88,7 @@ const props = withDefaults(
   {
     cwd: '',
     runAllBusy: false,
+    stopAllBusy: false,
     columns: () => [],
   },
 )
@@ -104,6 +109,10 @@ const emit = defineEmits<{
   // The "⋮" menu's "Run all agents" option. The host (KanbanView)
   // listens for this and runs the bulk endpoint for the column.
   requestRunAllAgents: [columnId: string]
+  // The "⋮" menu's "Stop all agents" option — the mirror of
+  // `requestRunAllAgents`. The host listens for this and runs the bulk
+  // stop endpoint for the column.
+  requestStopAllAgents: [columnId: string]
   // Fired when the user picks a sort mode in the column's "Sort
   // tasks…" modal. The host (KanbanView) listens for this and:
   //   1. fires `fetchKanbanTasks` for ONLY the changed column with
@@ -454,6 +463,15 @@ const handleMenuRunAll = () => {
   if (props.runAllBusy) return
   menuOpen.value = false
   emit('requestRunAllAgents', props.column.id)
+}
+
+// The column "⋮" menu's "Stop all agents" option — the mirror of
+// `handleMenuRunAll`. Closes the menu and emits the column id; the host
+// owns the confirm gate + bulk stop POST. No-op while `stopAllBusy`.
+const handleMenuStopAll = () => {
+  if (props.stopAllBusy) return
+  menuOpen.value = false
+  emit('requestStopAllAgents', props.column.id)
 }
 
 // ─── Per-column sort modal (kanban-sort-by, plan Task 4) ─────────────
@@ -831,6 +849,24 @@ const handleColumnDrop = (event: DragEvent) => {
               @click="handleMenuRunAll"
             >
               {{ runAllBusy ? 'Running all agents…' : 'Run all agents' }}
+            </button>
+          </li>
+          <li>
+            <!--
+              Bulk "Stop all agents" — the mirror of "Run all agents" above.
+              Cancels every running agent in this column via the server-side
+              bulk stop endpoint (pagination-irrelevant). Disabled while the
+              host's per-column bulk stop is in flight.
+            -->
+            <button
+              type="button"
+              class="w-full px-3 py-2 text-left text-body hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
+              style="color: var(--semantic-text)"
+              :data-testid="`kanban-column-${column.id}-menu-stop-all`"
+              :disabled="stopAllBusy"
+              @click="handleMenuStopAll"
+            >
+              {{ stopAllBusy ? 'Stopping all agents…' : 'Stop all agents' }}
             </button>
           </li>
         </ul>

@@ -1096,6 +1096,12 @@ const handleStartAgent = async (payload: { taskId: string }) => {
 // `processingState`/SessionSlider SSE flow.
 const runAllBusyByColumn = ref<Record<string, boolean>>({})
 const runAllSummary = ref<string | null>(null)
+// In-flight state for the per-column bulk "Stop all agents" action.
+// Mirror of `runAllBusyByColumn` — the "⋮" menu's "Stop all agents"
+// item is disabled while the stop POST for that column is in flight.
+// The summary reuses `runAllSummary` (one banner slot; a stop that lands
+// after a run overwrites it, which matches the single-action UX).
+const stopAllBusyByColumn = ref<Record<string, boolean>>({})
 
 const handleRunAllAgents = async (columnId: string) => {
   if (!columnId || runAllBusyByColumn.value[columnId]) return
@@ -1123,6 +1129,46 @@ const handleRunAllAgents = async (columnId: string) => {
     runAllSummary.value = err instanceof Error ? err.message : String(err)
   } finally {
     runAllBusyByColumn.value[columnId] = false
+  }
+}
+
+// Column "Stop all agents" host handler — the mirror of
+// `handleRunAllAgents` above. Wired to KanbanColumn's (and KanbanRowView's)
+// `@request-stop-all-agents` emit. Shows a `confirm()` gate (stopping is
+// destructive to in-flight LLM work), delegates to
+// `workspacesStore.stopAllAgentsInColumn` (which POSTs once to the
+// server-side bulk stop endpoint — pagination-irrelevant), and surfaces
+// the `{stopped, skipped, failed}` summary in `runAllSummary`.
+// Per-column re-entrancy guard mirrors `runAllBusyByColumn`.
+// Run-state visuals stay with the existing
+// `processingState`/SessionSlider SSE flow (each cancelled worker emits
+// `worker deleted`, which clears its card spinner).
+const handleStopAllAgents = async (columnId: string) => {
+  if (!columnId || stopAllBusyByColumn.value[columnId]) return
+  const column = (props.item.kanban_columns ?? []).find((c) => c.id === columnId)
+  const columnName = column?.name ?? columnId
+  if (!confirm(`Stop all agents in '${columnName}'?`)) return
+  stopAllBusyByColumn.value[columnId] = true
+  runAllSummary.value = null
+  try {
+    const result = await workspacesStore.stopAllAgentsInColumn(
+      props.workspaceId,
+      props.itemId || props.item.id,
+      columnId,
+    )
+    if (result?.success === false) {
+      runAllSummary.value = 'Failed to stop all agents in column.'
+    } else {
+      const stopped = result?.stopped ?? []
+      const skipped = result?.skipped ?? []
+      const failed = result?.failed ?? []
+      runAllSummary.value = `Stopped ${stopped.length}, skipped ${skipped.length} (not running), failed ${failed.length}.`
+    }
+  } catch (err) {
+    console.error('Failed to stop all agents in column:', err)
+    runAllSummary.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    stopAllBusyByColumn.value[columnId] = false
   }
 }
 
@@ -1723,6 +1769,8 @@ const handleCreateTaskSave = async (payload: {
             @request-run-all-agents="handleRunAllAgents"
             @run-agent="(payload) => handleRunAgentFromMenu(payload)"
             :run-all-busy="!!runAllBusyByColumn[column.id]"
+            :stop-all-busy="!!stopAllBusyByColumn[column.id]"
+            @request-stop-all-agents="handleStopAllAgents"
             @select-task="(id) => emit('selectTask', id)"
             @open-task-in-background="(payload) => emit('openTaskInBackground', payload)"
             @open-task-detail-in-background="
@@ -1752,12 +1800,14 @@ const handleCreateTaskSave = async (payload: {
           :collapsed-ids="collapsedColumnIds"
           :density="rowDensity"
           :run-all-busy-by-column="runAllBusyByColumn"
+          :stop-all-busy-by-column="stopAllBusyByColumn"
           @toggle-collapse="toggleColumnCollapsed"
           @rename-column="(payload) => emit('renameColumn', payload)"
           @delete-column="(columnId) => emit('deleteColumn', columnId)"
           @request-rename-column="(columnId) => emit('requestRenameColumn', columnId)"
           @request-delete-column="(columnId) => emit('requestDeleteColumn', columnId)"
           @request-run-all-agents="handleRunAllAgents"
+          @request-stop-all-agents="handleStopAllAgents"
           @select-task="(id) => emit('selectTask', id)"
           @open-task-in-background="(payload) => emit('openTaskInBackground', payload)"
           @open-task-detail-in-background="(payload) => emit('openTaskDetailInBackground', payload)"

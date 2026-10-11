@@ -265,6 +265,7 @@ pub const startAgentHandler = @import("start_agent.zig").startAgentHandler;
 // `task_delete.zig::deleteTaskUseCase` re-export convention).
 pub const startAgentUseCase = @import("start_agent.zig").startAgentUseCase;
 pub const runAllAgentsHandler = @import("run_all_agents.zig").runAllAgentsHandler;
+pub const stopAllAgentsHandler = @import("stop_all_agents.zig").stopAllAgentsHandler;
 // NOTE: routinesListHandler deleted with the per-task `routines` table
 // (Migration 084, plan 2026-09-10-workspace-items-routines).
 
