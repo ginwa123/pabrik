@@ -65,7 +65,10 @@ jobs:
         run: |
           set -euo pipefail
           echo "→ install (${{ inputs.label }}): running install.sh from this SHA"
-          bash install.sh --dir "$RUNNER_TEMP/pabrik-bin"
+          # PABRIK_NO_MODIFY_PATH=1: the runner's rc files stay untouched;
+          # the rc-append path is covered hermetically by
+          # install_browser_url_test.zig instead.
+          PABRIK_NO_MODIFY_PATH=1 bash install.sh --dir "$RUNNER_TEMP/pabrik-bin"
           test -x "$RUNNER_TEMP/pabrik-bin/pabrik" || { echo "✗ installed pabrik missing"; exit 1; }
           echo "INSTALL_BIN=$RUNNER_TEMP/pabrik-bin/pabrik" >> "$GITHUB_ENV"
 
@@ -89,6 +92,9 @@ jobs:
           # APPDATA) — pre-create the full subtree so $lnk.Save() lands.
           $startMenuDir = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
           New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA, $env:APPDATA, $startMenuDir | Out-Null
+          # NOTE: no PABRIK_NO_MODIFY_PATH here on purpose — the runner is
+          # ephemeral, so letting the user-PATH write run proves the code
+          # path executes instead of shipping it blind (no pwsh on dev boxes).
           Write-Output "→ install (${{ inputs.label }}): running install.ps1 from this SHA"
           & "$PWD\install.ps1"
           $bin = Join-Path $env:LOCALAPPDATA 'pabrik\bin\pabrik.exe'

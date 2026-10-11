@@ -86,6 +86,25 @@ try {
     $probe = Join-Path $env:LOCALAPPDATA "pabrik\bin\pabrik.exe"
     try { & $probe --help | Out-Null } catch { Write-Warning "installed binary failed '--help' check at $probe" }
 
+    # User PATH so `pabrik` works on the command line without the full
+    # path. Idempotent (skips when already listed); skipped with
+    # PABRIK_NO_MODIFY_PATH=1. New terminals pick it up automatically.
+    $binDir = Join-Path $env:LOCALAPPDATA "pabrik\bin"
+    if ($env:PABRIK_NO_MODIFY_PATH -ne "1") {
+        $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+        $already = $false
+        if ($userPath) {
+            foreach ($p in ($userPath -split ';')) {
+                if ($p.TrimEnd('\') -ieq $binDir.TrimEnd('\')) { $already = $true; break }
+            }
+        }
+        if (-not $already) {
+            $newPath = if ($userPath) { $userPath + ';' + $binDir } else { $binDir }
+            [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+            Write-Output "Added $binDir to your user PATH (new terminals)."
+        }
+    }
+
     Write-Output "Installed Pabrik. Press Win key and type 'Pabrik' to launch it."
 } finally {
     if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue }
