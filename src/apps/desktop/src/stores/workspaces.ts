@@ -3332,6 +3332,27 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     }
   }
 
+  // Column "Stop all agents" flow — the mirror of `runAllAgentsInColumn`
+  // above. Thin wrapper around api.stopAllAgentsInColumn (POST
+  // .../kanban/columns/:columnId/stop_all_agents) so KanbanView doesn't
+  // import the wire shape directly. No client-side task iteration —
+  // the server owns the list, so pagination is irrelevant.
+  //
+  // On API throw returns an empty-lists summary (no unhandled
+  // rejection); the host surfaces the counts in its summary banner.
+  async function stopAllAgentsInColumn(
+    workspaceId: string,
+    itemId: string,
+    columnId: string,
+  ): Promise<api.StopAllAgentsSummary> {
+    try {
+      return await api.stopAllAgentsInColumn(workspaceId, itemId, columnId)
+    } catch (err) {
+      console.error('Failed to stop all agents in column:', err)
+      return { success: false, stopped: [], skipped: [], failed: [] }
+    }
+  }
+
   // Kanban "create task & run agent" flow (plan:
   // docs/superpowers/plans/2026-08-06-kanban-create-task-run-agent.md).
   // Wraps api.sendChatMessage so KanbanView doesn't import the wire
@@ -4837,6 +4858,8 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     // NEW (plan: 2026-09-09-run-all-agents-by-column, Task 4, Option C).
     // Bulk run for one column — server owns the task list.
     runAllAgentsInColumn,
+    // Bulk stop for one column — the mirror of runAllAgentsInColumn.
+    stopAllAgentsInColumn,
     addKanbanTask,
     pinTask,
     reorderPinnedTasks,

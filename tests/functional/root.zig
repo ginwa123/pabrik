@@ -85,6 +85,7 @@ const http2_test = @import("http2_test.zig");
 const http2_tls_test = @import("http2_tls_test.zig");
 const kanban_advanced_test = @import("kanban_advanced_test.zig");
 const kanban_column_run_all_agents_test = @import("kanban_column_run_all_agents_test.zig");
+const kanban_column_stop_all_agents_test = @import("kanban_column_stop_all_agents_test.zig");
 const kanban_create_session_user_message_test = @import("kanban_create_session_user_message_test.zig");
 const kanban_lifecycle_test = @import("kanban_lifecycle_test.zig");
 const kanban_task_create_message_format_test = @import("kanban_task_create_message_format_test.zig");
@@ -226,6 +227,7 @@ pub const suites = .{
     http2_tls_test,
     kanban_advanced_test,
     kanban_column_run_all_agents_test,
+    kanban_column_stop_all_agents_test,
     kanban_create_session_user_message_test,
     kanban_lifecycle_test,
     kanban_task_create_message_format_test,

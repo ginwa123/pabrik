@@ -60,6 +60,7 @@ _ = @import("../../http_handlers/task_create.zig");
     // Option C): handler + useCase + inline tests live in a single file,
     // mirroring start_agent.zig above (no separate _test.zig).
     _ = @import("../../http_handlers/run_all_agents.zig");
+    _ = @import("../../http_handlers/stop_all_agents.zig");
     // NOTE: routines_list_test.zig deleted with the per-task `routines`
     // table (Migration 084). New workspace-routine handlers carry
     // inline tests (imported as impl files, like start_agent.zig).
