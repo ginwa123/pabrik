@@ -146,7 +146,6 @@ const ExecEnv = struct {
             .agent_temperature = &self.dangle_f32,
             .is_thinking = &self.dangle_bool,
             .environment = null,
-            .active_loops = undefined,
         };
     }
 

@@ -384,7 +384,6 @@ fn searchToolOutput(a: std.mem.Allocator, db: *test_sqlite.SqliteBackend, io: st
         .agent_temperature = &dummy_f32,
         .is_thinking = &dummy_bool,
         .environment = null,
-        .active_loops = undefined,
         .allowed_tools = "read_file,search_tool",
         .is_sub_agent = false,
     };
@@ -558,7 +557,6 @@ fn useToolResult(
         .agent_temperature = &dummy_f32,
         .is_thinking = &dummy_bool,
         .environment = null,
-        .active_loops = undefined,
         .allowed_tools = "read_file,search_tool",
         .is_sub_agent = false,
     };

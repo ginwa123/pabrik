@@ -177,7 +177,6 @@ fn commandTestCtx(allocator: std.mem.Allocator, io: std.Io) ToolExecContext {
         .agent_temperature = &test_temperature,
         .is_thinking = &test_thinking,
         .environment = null,
-        .active_loops = undefined,
     };
 }
 

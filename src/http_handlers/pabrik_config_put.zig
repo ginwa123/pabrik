@@ -1445,7 +1445,6 @@ fn makeCtx(allocator: std.mem.Allocator, holder: LlmConfigHolder) !*App {
         .llm_config_holder = holder,
         .logger = undefined, // not used by holder helpers
         .environment = null, // not used by holder helpers
-        .active_loops = undefined, // not used by holder helpers
         .event_bus = undefined, // not used by holder helpers
         .server = undefined, // not used by holder helpers
         .group_emit_session_create = undefined, // not used by holder helpers

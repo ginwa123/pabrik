@@ -91,8 +91,8 @@ fn runTurn(
     a: headless.args.RunArgs,
     log_file: ?[]const u8,
 ) !void {
-    // Declared HERE, not returned by value: `App.db` / `.event_bus` /
-    // `.active_loops` point into this struct, so it must live in the
+    // Declared HERE, not returned by value: `App.db` / `.event_bus`
+    // point into this struct, so it must live in the
     // caller's frame. See the `boot.zig` module header.
     var backend: headless.boot.Backend = undefined;
     headless.boot.boot(&backend, allocator, io, environment, .{ .log_file = log_file }) catch |err| {
@@ -152,8 +152,8 @@ fn listSessions(
     a: headless.args.SessionsArgs,
     log_file: ?[]const u8,
 ) !void {
-    // Declared HERE, not returned by value: `App.db` / `.event_bus` /
-    // `.active_loops` point into this struct, so it must live in the
+    // Declared HERE, not returned by value: `App.db` / `.event_bus`
+    // point into this struct, so it must live in the
     // caller's frame. See the `boot.zig` module header.
     var backend: headless.boot.Backend = undefined;
     headless.boot.boot(&backend, allocator, io, environment, .{ .log_file = log_file }) catch |err| {
@@ -194,8 +194,8 @@ fn listMessages(
     a: headless.args.MessagesArgs,
     log_file: ?[]const u8,
 ) !void {
-    // Declared HERE, not returned by value: `App.db` / `.event_bus` /
-    // `.active_loops` point into this struct, so it must live in the
+    // Declared HERE, not returned by value: `App.db` / `.event_bus`
+    // point into this struct, so it must live in the
     // caller's frame. See the `boot.zig` module header.
     var backend: headless.boot.Backend = undefined;
     headless.boot.boot(&backend, allocator, io, environment, .{ .log_file = log_file }) catch |err| {

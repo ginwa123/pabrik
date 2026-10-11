@@ -64,7 +64,6 @@ and no separate `<file>_test.zig` files. The 3 exceptions that stay at
 | File | Type | Notes |
 |---|---|---|
 | `test_runner.zig` | re-exports | Registers every test-bearing file for `zig build test` discovery. |
-| `ActiveLoops.zig` | impl + inline tests | Per-session agentic-loop registry. |
 | `agent_memories.zig` | impl + inline tests | saveMemory / loadMemoriesByFts / getMemoryById. |
 | `background_process.zig` | impl + inline tests | Background process tracking. |
 | `delete_queue_worker.zig` | impl + inline tests | DB queue cleanup. |

@@ -632,7 +632,6 @@ fn setupDb() !TestCtx {
 fn makeTestCtx(allocator: std.mem.Allocator, db: *pabrikcore.sqlite.SqliteBackend) ToolExecContext {
     var dummy_f32: f32 = 0.0;
     var dummy_bool: bool = false;
-    var dummy_active_loops: pabrikcore.ai_mod.active_loops = undefined;
     return .{
         .allocator = allocator,
         .io = std.testing.io,
@@ -647,7 +646,6 @@ fn makeTestCtx(allocator: std.mem.Allocator, db: *pabrikcore.sqlite.SqliteBacken
         .agent_temperature = &dummy_f32,
         .is_thinking = &dummy_bool,
         .environment = null,
-        .active_loops = &dummy_active_loops,
     };
 }
 

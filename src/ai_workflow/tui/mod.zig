@@ -20,7 +20,6 @@ pub const file_sandbox = @import("../../modules/agent/tools/file_sandbox.zig");
 pub const generate_image = @import("../../modules/agent/tools/generate_image.zig");
 pub const get_design_context = @import("../../modules/agent/tools/get_design_context.zig");
 pub const preview_design_page = @import("../../modules/agent/tools/preview_design_page.zig");
-pub const active_loops = @import("../../agentic_loop/ActiveLoops.zig").ActiveLoops;
 pub const delete_worker = @import("../../agentic_loop/delete_worker.zig");
 // Background-command completion queue (bg-completion Task 1+2) — pure log
 // helpers + completion envelope, consumed by the

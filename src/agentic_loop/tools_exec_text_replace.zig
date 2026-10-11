@@ -192,7 +192,6 @@ fn minimalCtxTr(allocator: std.mem.Allocator) ToolExecContext {
         .agent_temperature = &dummy_f32,
         .is_thinking = &dummy_bool,
         .environment = null,
-        .active_loops = undefined,
     };
 }
 

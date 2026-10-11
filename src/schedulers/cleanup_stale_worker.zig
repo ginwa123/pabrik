@@ -1,8 +1,8 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
-// Route `delete_worker` and `ActiveLoops` through `pabrikcore` (the
-// `root` module) instead of @import'ing them directly. The exe
+// Route `delete_worker` through `pabrikcore` (the
+// `root` module) instead of @import'ing it directly. The exe
 // module compiles `main.zig` which imports `cleanup_stale_worker.zig`;
 // if we reach into `src/agentic_loop/` directly, those
 // files end up in TWO modules (root via root.zig → mod.zig AND main
@@ -10,7 +10,6 @@ const sqlite = pabrikcore.sqlite;
 // error fires. The exe module already has `pabrikcore` as an import
 // (per build.zig), so route through it.
 const delete_worker_mod = pabrikcore.ai_mod.delete_worker;
-const ActiveLoops = pabrikcore.ai_mod.active_loops;
 const event_bus_mod = pabrikcore.event_bus;
 const logger_mod = pabrikcore.loggermod;
 const testing = std.testing;
@@ -21,11 +20,9 @@ pub const stale_threshold_seconds: i64 = 600;
 
 pub const CleanupStaleWorkerInput = struct {
     allocator: std.mem.Allocator,
-    io: std.Io,
     db: *sqlite.SqliteBackend,
     logger: ?*logger_mod.Logger,
     event_bus: ?*event_bus_mod.EventBus,
-    active_loops: *ActiveLoops,
     now_unix: i64,
     threshold_seconds: i64 = stale_threshold_seconds,
 };
@@ -33,13 +30,14 @@ pub const CleanupStaleWorkerInput = struct {
 pub const CleanupResult = struct {
     stale_count: usize = 0,
     deleted_count: usize = 0,
-    removed_loop_count: usize = 0,
 };
 
 /// Delete every worker row whose `last_activity_nano` is older than
-/// `now_unix - threshold_seconds` (or NULL), and clear any matching
-/// `ActiveLoops` entry first. Reuses `deleteWorker` so the SSE
-/// `action="deleted"` event fires and the UI updates.
+/// `now_unix - threshold_seconds` (or NULL). Reuses `deleteWorker` so
+/// the SSE `action="deleted"` event fires and the UI updates.
+/// The worker row is the single source of truth for "is this session
+/// running" (see `is_worker_running.zig`), so deleting the row is the
+/// whole cleanup — there is no in-memory registry to clear.
 ///
 /// Per-row isolation: if one row's `deleteWorker` fails, log via
 /// `logger.?errFmt` and continue to the next row — the cron tick
@@ -47,9 +45,7 @@ pub const CleanupResult = struct {
 pub fn cleanupStaleWorkers(input: CleanupStaleWorkerInput) anyerror!CleanupResult {
     const allocator = input.allocator;
     const db = input.db;
-    const io = input.io;
     const event_bus = input.event_bus;
-    const active_loops = input.active_loops;
     const logger = input.logger;
 
     var result = CleanupResult{};
@@ -57,7 +53,7 @@ pub fn cleanupStaleWorkers(input: CleanupStaleWorkerInput) anyerror!CleanupResul
     const cutoff_str = try std.fmt.allocPrint(allocator, "{d}", .{cutoff});
 
     const sql =
-        \\SELECT id, session_id
+        \\SELECT id
         \\FROM worker
         \\WHERE last_activity_nano IS NULL OR last_activity_nano < ?
     ;
@@ -69,17 +65,7 @@ pub fn cleanupStaleWorkers(input: CleanupStaleWorkerInput) anyerror!CleanupResul
         defer row.deinit(allocator);
 
         const id = row.values[0];
-        const session_id = row.values[1];
         result.stale_count += 1;
-
-        // Always try to clear the matching ActiveLoops entry first
-        // (idempotent — no-op if absent). Covers the "stale in DB
-        // AND in memory" case (a `kill -9` left both, and the
-        // active_loops.remove prevents the user from being told
-        // "session is busy" forever).
-        const had_loop = active_loops.contains(io, session_id);
-        active_loops.remove(io, session_id);
-        if (had_loop) result.removed_loop_count += 1;
 
         // Delete the worker row + emit the SSE `action="deleted"`
         // event. `deleteWorker` uses `id` as the primary key, which
@@ -129,11 +115,9 @@ pub fn handle(ctx: ?*anyopaque, now_unix: i64) void {
 
     const result = cleanupStaleWorkers(.{
         .allocator = a,
-        .io = di.io,
         .db = di.db,
         .logger = logger,
         .event_bus = di.event_bus,
-        .active_loops = di.active_loops,
         .now_unix = now_unix,
     }) catch |err| {
         logger.errFmt("[cleanup_stale_worker] tick failed: {s}\n", .{@errorName(err)});
@@ -141,8 +125,8 @@ pub fn handle(ctx: ?*anyopaque, now_unix: i64) void {
     };
 
     logger.infoFmt(
-        "[cleanup_stale_worker] tick summary: stale={d} deleted={d} removed_loops={d}",
-        .{ result.stale_count, result.deleted_count, result.removed_loop_count },
+        "[cleanup_stale_worker] tick summary: stale={d} deleted={d}",
+        .{ result.stale_count, result.deleted_count },
     );
 }
 
@@ -157,11 +141,9 @@ pub fn handle(ctx: ?*anyopaque, now_unix: i64) void {
 const TestCtx = struct {
     db: sqlite.SqliteBackend,
     threaded: std.Io.Threaded,
-    active_loops: ActiveLoops,
     arena: std.heap.ArenaAllocator,
 
     fn deinit(self: *TestCtx) void {
-        self.active_loops.deinit(testing.allocator);
         self.db.deinit();
         self.threaded.deinit();
         self.arena.deinit();
@@ -196,19 +178,9 @@ fn setupCtx() !TestCtx {
         \\)
     , &.{});
 
-    // ActiveLoops uses testing.allocator directly (NOT the arena) — the
-    // hash map stores the allocator pointer for the lifetime of the
-    // structure, and our arena outlives the test body via `defer
-    // ctx.deinit()`, so the arena path *should* work, but Zig 0.16's
-    // StringHashMap managed-allocator path appears to mis-handle the
-    // arena's vtable in this configuration. Using testing.allocator
-    // is simpler and matches the per-test lifetime.
-    const active_loops = ActiveLoops.init(alloc);
-
     return .{
         .db = db,
         .threaded = threaded,
-        .active_loops = active_loops,
         .arena = arena,
     };
 }
@@ -257,11 +229,9 @@ test "cleanupStaleWorkers deletes a worker whose last_activity_nano is older tha
 
     _ = try cleanupStaleWorkers(.{
         .allocator = a,
-        .io = ctx.threaded.io(),
         .db = &ctx.db,
         .logger = null,
         .event_bus = null,
-        .active_loops = &ctx.active_loops,
         .now_unix = now,
     });
 
@@ -281,11 +251,9 @@ test "cleanupStaleWorkers keeps a worker whose last_activity_nano is fresher tha
 
     _ = try cleanupStaleWorkers(.{
         .allocator = a,
-        .io = ctx.threaded.io(),
         .db = &ctx.db,
         .logger = null,
         .event_bus = null,
-        .active_loops = &ctx.active_loops,
         .now_unix = now,
     });
 
@@ -299,45 +267,21 @@ test "cleanupStaleWorkers treats NULL last_activity_nano as stale (pre-migration
     const now: i64 = 1_000_000;
 
     // NULL last_activity_nano (pre-migration-075 rows may look like this)
-    try ctx.db.exec(a,
+    try ctx.db.exec(
+        a,
         "INSERT INTO worker (id, session_id, last_activity_nano) VALUES ('w_null', 's_null', NULL)",
         &.{},
     );
 
     _ = try cleanupStaleWorkers(.{
         .allocator = a,
-        .io = ctx.threaded.io(),
         .db = &ctx.db,
         .logger = null,
         .event_bus = null,
-        .active_loops = &ctx.active_loops,
         .now_unix = now,
     });
 
     try testing.expectEqual(@as(usize, 0), try rowExists(&ctx.db, a, "w_null"));
-}
-
-test "cleanupStaleWorkers removes the matching ActiveLoops entry when present" {
-    var ctx = try setupCtx();
-    defer ctx.deinit();
-    const a = ctx.arena.allocator();
-    const io = ctx.threaded.io();
-    const now: i64 = 1_000_000;
-
-    try seedWorker(&ctx.db, a, "w_old", "s_old", "100");
-    try testing.expect(ctx.active_loops.tryInsert(io, "s_old"));
-
-    _ = try cleanupStaleWorkers(.{
-        .allocator = a,
-        .io = io,
-        .db = &ctx.db,
-        .logger = null,
-        .event_bus = null,
-        .active_loops = &ctx.active_loops,
-        .now_unix = now,
-    });
-
-    try testing.expect(!ctx.active_loops.contains(io, "s_old"));
 }
 
 test "cleanupStaleWorkers is a no-op when the worker table is empty" {
@@ -347,43 +291,14 @@ test "cleanupStaleWorkers is a no-op when the worker table is empty" {
 
     const result = try cleanupStaleWorkers(.{
         .allocator = a,
-        .io = ctx.threaded.io(),
         .db = &ctx.db,
         .logger = null,
         .event_bus = null,
-        .active_loops = &ctx.active_loops,
         .now_unix = 1_000_000,
     });
 
     try testing.expectEqual(@as(usize, 0), result.stale_count);
     try testing.expectEqual(@as(usize, 0), result.deleted_count);
-}
-
-test "cleanupStaleWorkers clears ActiveLoops for a session whose worker is stale (idempotent remove)" {
-    var ctx = try setupCtx();
-    defer ctx.deinit();
-    const a = ctx.arena.allocator();
-    const io = ctx.threaded.io();
-    const now: i64 = 1_000_000;
-
-    // Pre-populate ActiveLoops with an entry whose worker row is
-    // ALREADY stale. After cleanup, the entry should be gone (the
-    // helper iterates stale workers from the SQL and removes their
-    // matching active_loops entries).
-    try seedWorker(&ctx.db, a, "w_stale", "s_stale", "100");
-    try testing.expect(ctx.active_loops.tryInsert(io, "s_stale"));
-
-    _ = try cleanupStaleWorkers(.{
-        .allocator = a,
-        .io = io,
-        .db = &ctx.db,
-        .logger = null,
-        .event_bus = null,
-        .active_loops = &ctx.active_loops,
-        .now_unix = now,
-    });
-
-    try testing.expect(!ctx.active_loops.contains(io, "s_stale"));
 }
 
 test "cleanupStaleWorkers processes multiple stale workers in one call" {
@@ -399,11 +314,9 @@ test "cleanupStaleWorkers processes multiple stale workers in one call" {
 
     const result = try cleanupStaleWorkers(.{
         .allocator = a,
-        .io = ctx.threaded.io(),
         .db = &ctx.db,
         .logger = null,
         .event_bus = null,
-        .active_loops = &ctx.active_loops,
         .now_unix = now,
     });
 
@@ -428,34 +341,29 @@ test "cleanupStaleWorkers does NOT delete a worker whose last_activity_nano is e
 
     _ = try cleanupStaleWorkers(.{
         .allocator = a,
-        .io = ctx.threaded.io(),
         .db = &ctx.db,
         .logger = null,
         .event_bus = null,
-        .active_loops = &ctx.active_loops,
         .now_unix = now,
     });
 
     try testing.expectEqual(@as(usize, 1), try rowExists(&ctx.db, a, "w_boundary"));
 }
 
-test "cleanupStaleWorkers uses SQL as the gating check (ActiveLoops state is irrelevant for keep/delete)" {
+test "cleanupStaleWorkers keeps a fresh worker row" {
     var ctx = try setupCtx();
     defer ctx.deinit();
     const a = ctx.arena.allocator();
     const now: i64 = 1_000_000;
 
-    // Fresh row (last_activity close to now). ActiveLoops does NOT
-    // contain it. The helper should still keep it.
+    // Fresh row (last_activity close to now) — the helper keeps it.
     try seedWorker(&ctx.db, a, "w_fresh", "s_fresh", "999_500");
 
     _ = try cleanupStaleWorkers(.{
         .allocator = a,
-        .io = ctx.threaded.io(),
         .db = &ctx.db,
         .logger = null,
         .event_bus = null,
-        .active_loops = &ctx.active_loops,
         .now_unix = now,
     });
 
@@ -490,22 +398,11 @@ test "cleanupStaleWorkers returns the DB error when the worker table itself is m
     try db.init(io, ":memory:");
     // NO CREATE TABLE — the query will fail with "no such table".
 
-    // Failure-tolerance test doesn't mutate the loops map (it never
-    // calls tryInsert / remove), so technically `const` would be
-    // correct — but the helper takes `*ActiveLoops` and `deinit`
-    // also takes `*ActiveLoops`. Wrap in a holder struct so the
-    // `loops` field has a mutable lvalue.
-    const LoopsHolder = struct { loops: ActiveLoops };
-    var holder = LoopsHolder{ .loops = ActiveLoops.init(alloc) };
-    defer holder.loops.deinit(alloc);
-
     const result = cleanupStaleWorkers(.{
         .allocator = a,
-        .io = io,
         .db = &db,
         .logger = null,
         .event_bus = null,
-        .active_loops = &holder.loops,
         .now_unix = 1_000_000,
     });
 

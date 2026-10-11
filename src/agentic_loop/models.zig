@@ -4,9 +4,7 @@ const loggermod = @import("pabrikcore").loggermod;
 const pabrikcore = @import("pabrikcore");
 const event_bus = pabrikcore.event_bus;
 const std = @import("std");
-pub const ActiveLoops = @import("ActiveLoops.zig").ActiveLoops;
 const gserverz = pabrikcore.gserverz;
-
 
 pub const TUIHistory = struct {
     id: []const u8,
@@ -68,7 +66,6 @@ pub const TUIHistory = struct {
     }
 };
 
-
 pub const WorkflowArgs = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -81,6 +78,4 @@ pub const WorkflowArgs = struct {
     body: []const u8 = "",
     allowed_tools: []const u8 = "", // empty string = no tools allowed, "all" = all tools allowed, comma-separated list = specific tools
     environment: ?*const std.process.Environ.Map,
-    active_loops: *ActiveLoops,
 };
-

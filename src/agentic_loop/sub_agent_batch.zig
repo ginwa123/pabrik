@@ -322,7 +322,6 @@ fn runSubAgent(args_ptr: *SubAgentThreadArgs) void {
         .io = di.io,
         .logger = di.logger,
         .event_bus = di.event_bus,
-        .active_loops = di.active_loops,
         // Live DI handle: re-read inside the workflow loop so PabrikSettings
         // changes take effect per iteration.
         .di = di,
@@ -615,7 +614,7 @@ test "validateJobs refuses an empty allowlist and the all wildcard" {
     const empty = [_]BatchJob{.{ .name = "j", .instruction = "i", .tools = &.{} }};
     try testing.expectError(error.EmptySubAgentTools, validateJobs(&empty));
 
-    const all = [_]BatchJob{.{ .name = "j", .instruction = "i", .tools = &.{"read_file", "all"} }};
+    const all = [_]BatchJob{.{ .name = "j", .instruction = "i", .tools = &.{ "read_file", "all" } }};
     try testing.expectError(error.AllToolsNotAllowed, validateJobs(&all));
 
     const blank = [_]BatchJob{.{ .name = "j", .instruction = "i", .tools = &.{"  "} }};
