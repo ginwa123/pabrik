@@ -438,6 +438,7 @@ jobs:
     with:
       os: ubuntu-24.04
       label: Linux X64
+      target_zig: x86_64-linux-gnu
 
   install-macos:
     name: install (macOS ARM64)
@@ -447,6 +448,7 @@ jobs:
     with:
       os: macos-15
       label: macOS ARM64
+      target_zig: aarch64-macos
 
   install-windows:
     name: install (Windows X64)
@@ -456,6 +458,7 @@ jobs:
     with:
       os: windows-2022
       label: Windows X64
+      target_zig: x86_64-windows-gnu
 
   # ── 5. Android, beside the backends rather than under them ──────────
   # Both android jobs used to `needs: backend`, so a 30-minute Gradle

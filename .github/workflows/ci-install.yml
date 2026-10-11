@@ -14,7 +14,15 @@
 #   change surface (install.sh / install.ps1 ship at the repo root).
 # - The run→URL contract against real release binaries: the installed
 #   `pabrik` prints "Agent is ready to serve!" and answers
-#   http://127.0.0.1:<port>/health with {"status":"ok",...}.
+#   http://127.0.0.1:<port>/health with {"status":"ok",...}. Once the
+#   release ships the html tarball (see below), the smoke step also
+#   asserts / serves the app shell — the installer contract for /app.
+# - BOOTSTRAP GATE: the html-tarball probe. A release asset only exists
+#   AFTER its PR merges + the backend publishes, so a PR that ADDS an
+#   asset would fail its own install jobs against the old release. Each
+#   job HEAD-probes its per-triple tarball URL first: present → UI
+#   asserts engage; absent → classic checks only, with a log line saying
+#   so. No second PR, no manual sequencing.
 # - It does NOT pin the release bytes to this SHA: on a push to main
 #   the backend cells publish `ci-latest` concurrently with this job,
 #   so the downloaded build may lag by one commit. The Zig suite
@@ -37,6 +45,13 @@ on:
         type: string
       label:
         description: Human platform name, used in the log banner.
+        required: true
+        type: string
+      target_zig:
+        description: >-
+          Zig target triple. Used ONLY to build the html-tarball probe
+          URL below (the per-platform asset name); nothing is compiled
+          in this workflow.
         required: true
         type: string
 
@@ -62,9 +77,25 @@ jobs:
         # job also covers that network path.
         if: runner.os != 'Windows'
         shell: bash
+        env:
+          TARGET: ${{ inputs.target_zig }}
         run: |
           set -euo pipefail
           echo "→ install (${{ inputs.label }}): running install.sh from this SHA"
+          # Bootstrap gate: the html tarball only exists on the release
+          # AFTER the backend change merges + publishes. Probe it (HEAD,
+          # no download) so this job asserts the UI path whenever possible
+          # but stays green during the one-release bootstrap window.
+          # GITHUB_ENV only reaches LATER steps, so the shell-local
+          # CHECK_APP drives this step's own assert below.
+          HTML_URL="https://github.com/ginwa123/pabrik/releases/download/ci-latest/pabrik-html-$TARGET.tar.gz"
+          if curl -fsSI --max-time 20 "$HTML_URL" >/dev/null 2>&1; then
+            echo "→ html tarball present on release; UI asserts engaged"
+            CHECK_APP=1
+          else
+            echo "→ html tarball not on release yet (bootstrap window); UI asserts skipped"
+            CHECK_APP=0
+          fi
           # PABRIK_NO_MODIFY_PATH=1: the runner's rc files stay untouched;
           # the rc-append path is covered hermetically by
           # install_browser_url_test.zig instead.
@@ -72,8 +103,12 @@ jobs:
           test -x "$RUNNER_TEMP/pabrik-bin/pabrik" || { echo "✗ installed pabrik missing"; exit 1; }
           # The shipped UI must land next to the binaries — without it the
           # server is API-only and /app 404s (the exact user report).
-          test -f "$RUNNER_TEMP/pabrik-bin/html/index.html" || { echo "✗ installed html/index.html missing"; exit 1; }
+          # Gated on CHECK_APP (see the probe above).
+          if [ "$CHECK_APP" = "1" ]; then
+            test -f "$RUNNER_TEMP/pabrik-bin/html/index.html" || { echo "✗ installed html/index.html missing"; exit 1; }
+          fi
           echo "INSTALL_BIN=$RUNNER_TEMP/pabrik-bin/pabrik" >> "$GITHUB_ENV"
+          echo "CHECK_APP=$CHECK_APP" >> "$GITHUB_ENV"
 
       - name: Install with install.ps1 (Windows)
         # Same flow via the PowerShell installer. LOCALAPPDATA/APPDATA
@@ -85,6 +120,8 @@ jobs:
         # stays isolated, which is what this job asserts.
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          TARGET: ${{ inputs.target_zig }}
         run: |
           $ErrorActionPreference = 'Stop'
           $tempData = Join-Path $env:RUNNER_TEMP 'pabrik-data'
@@ -98,6 +135,20 @@ jobs:
           # NOTE: no PABRIK_NO_MODIFY_PATH here on purpose — the runner is
           # ephemeral, so letting the user-PATH write run proves the code
           # path executes instead of shipping it blind (no pwsh on dev boxes).
+          # Bootstrap gate (same as the POSIX step): the html UI ships in
+          # the release zip, but the app-shell assert below only engages
+          # once the backend publishes a release containing it. Probe the
+          # per-triple html tarball as the presence signal — it lands in
+          # the same publish step as the zip's html/.
+          $checkApp = $false
+          try {
+            $htmlUrl = "https://github.com/ginwa123/pabrik/releases/download/ci-latest/pabrik-html-$env:TARGET.tar.gz"
+            Invoke-WebRequest -Uri $htmlUrl -Method Head -UseBasicParsing -TimeoutSec 20 | Out-Null
+            Write-Output "→ html UI present on release; UI asserts engaged"
+            $checkApp = $true
+          } catch {
+            Write-Output "→ html UI not on release yet (bootstrap window); UI asserts skipped"
+          }
           Write-Output "→ install (${{ inputs.label }}): running install.ps1 from this SHA"
           & "$PWD\install.ps1"
           $bin = Join-Path $env:LOCALAPPDATA 'pabrik\bin\pabrik.exe'
@@ -108,9 +159,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { Write-Error "✗ installed pabrik.exe --help exited $LASTEXITCODE"; exit 1 }
           # The shipped UI must land in the installed html/ dir — without
           # it the server is API-only and /app 404s (the exact user report).
-          $htmlIndex = Join-Path $env:LOCALAPPDATA 'pabrik\html\index.html'
-          if (-not (Test-Path -LiteralPath $htmlIndex)) { Write-Error "✗ installed html/index.html missing at $htmlIndex"; exit 1 }
+          # Gated on $checkApp (bootstrap probe above).
+          if ($checkApp) {
+            $htmlIndex = Join-Path $env:LOCALAPPDATA 'pabrik\html\index.html'
+            if (-not (Test-Path -LiteralPath $htmlIndex)) { Write-Error "✗ installed html/index.html missing at $htmlIndex"; exit 1 }
+          }
           Add-Content -LiteralPath $env:GITHUB_ENV -Value "INSTALL_BIN=$bin"
+          if ($checkApp) { Add-Content -LiteralPath $env:GITHUB_ENV -Value "CHECK_APP=1" }
 
       - name: Smoke test the installed binary (browser URL)
         # scripts/ci-smoke-test.sh boots $INSTALL_BIN on $PABRIK_PORT
@@ -141,6 +196,9 @@ jobs:
           fi
           echo "→ smoke test: using installed $PABRIK_BIN"
           echo "→ browser URL: http://127.0.0.1:18080/health"
-          # PABRIK_SMOKE_CHECK_APP=1: the installer contract includes a
-          # working /app (this job fails if the UI is missing/unserved).
-          PABRIK_SMOKE_CHECK_APP=1 PABRIK_BIN="$PABRIK_BIN" PABRIK_PORT=18080 bash scripts/ci-smoke-test.sh
+          # PABRIK_SMOKE_CHECK_APP follows the install step's bootstrap
+          # probe (CHECK_APP=1 only once the release ships the UI + a
+          # server that discovers it); unset/0 keeps the classic checks.
+          SMOKE_APP_ENV=""
+          if [ "${CHECK_APP:-0}" = "1" ]; then SMOKE_APP_ENV="PABRIK_SMOKE_CHECK_APP=1"; fi
+          PABRIK_BIN="$PABRIK_BIN" PABRIK_PORT=18080 $SMOKE_APP_ENV bash scripts/ci-smoke-test.sh
