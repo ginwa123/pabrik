@@ -252,6 +252,12 @@ v1:<key_id>:<base64url(nonce || ciphertext || tag)>
   from bricking.
 - Per-workspace subkeys via `HKDF(master_key, salt=workspace_id)` are cheap and give room for a future
   per-workspace re-key; optional, and not worth doing if it is not going to be used.
+- **Nonce and master key come from the OS entropy switch the tree already has** —
+  `agent_memories.zig:409-441` (Linux `getrandom(2)`, Apple `arc4random_buf`, Windows `BCryptGenRandom`).
+  It should be lifted into a shared `helpers/random.zig` and reused. This is not optional plumbing:
+  `std.crypto.random` **does not exist in Zig 0.16** (`Config.zig:2884` says so outright, and the repo
+  already hand-rolls the switch because of it). Reusing it removes one of the three platform-conditional
+  paths the original reviewer priced.
 
 ### 7.2 Where the sealing pass runs
 
@@ -308,6 +314,64 @@ The rev-1/2 wording must not come back as "secure storage". Replacement, in
 > from the model.
 
 Replacing the *plaintext* disclaimer with that is the point of the phase, not boilerplate.
+
+### 7.7 What the stored row looks like after Phase 1
+
+**The table does not change.** No migration, no new column, no renamed column: `id`, `workspace_id`,
+`name`, `created_at`, `updated_at` are untouched and the unique index on `(workspace_id, name)` still
+serves the list path. The only thing that changes is the *format of `value`*.
+
+Before (today — what the screenshot shows):
+
+```
+id                    workspace_id            name          value      updated_at
+sec_1791642999287     ws_1790703859430_0      KEYYYYYY      asdasdasd  2026-10-10 14:36:39
+sec_1791658108892     ws_1785055733544_2      AAA           gilang     2026-10-10 18:48:37
+```
+
+After (Phase 1, on a host with a keychain):
+
+```
+id                    workspace_id            name          value
+sec_1791642999287     ws_1790703859430_0      KEYYYYYY      v1:b38d9170:LXgF6wC9_CCfTFCAEmC-TBuq6QT98XOCOwjJyVu0hisOOlG73w
+sec_1791658108892     ws_1785055733544_2      AAA           v1:b38d9170:g2hXSknjBJzDh_L_vlKQZ-syqiuplYAPkYxZZe8EnxnE0g
+sec_1791999999999     ws_1785055733544_2      GITHUB_TOKEN  v1:b38d9170:0vEEbzh3RtfPvfru6WBr1rGL5mLCoqedAqS2GRpwzEuoNPLrSqTngH273HbJSon8XbYjbp7S4I_oSqNR6luvbcn17bU
+```
+
+Those envelopes are **real**: produced by a throwaway Zig 0.16 program running the exact format in
+[§7.1](#71-envelope-format) (`Aes256Gcm` + `getrandom`, decrypt round-trip asserted) against a random
+key that no longer exists. They are the shape, not the data — there is no key to open them with, which
+is the point.
+
+Properties a reader should be able to check off:
+
+- **Size.** `≈ (N + 28) × 1.34 + 12` bytes: 6 B → 58 B, 9 B → 62 B, 40 B → 103 B. A credential is a few
+  hundred bytes at worst; the growth is irrelevant next to a 4.4 GB database, and no query path touches
+  `value` except the one substitution read.
+- **`key_id` is identical on every row of a host** (one master key) — visible as `b38d9170` above. It
+  exists so "this row was sealed with a different key" is a *different error* from "this row is corrupt".
+- **The prefix is the whole state machine.** No prefix = legacy plaintext, read as-is. `v1:` = sealed.
+  That is why the upgrade cannot brick: an unsealed row is a valid row.
+- **Rows can be mixed, and after a real upgrade they will be.** A host with no keychain keeps plaintext;
+  a value written while the key was unavailable is plaintext; the boot seal pass converts whatever it can.
+  So "is my database encrypted?" is answered per row by the prefix, and per host by the boot log line and
+  the Secrets-section notice — never by assumption.
+- **Rotating the same credential produces different ciphertext**, because the nonce is fresh per write.
+  Nobody reading the database can tell whether a rotation actually changed the value — only `updated_at`
+  moves.
+- **There is deliberately no `key_hint` column.** The rev-1 plan wanted one (last 4 chars, for a
+  `ghp_••••3f9a` display). The UI today shows name + `CONFIGURED` + `updated_at` and does not need a hint,
+  so a 4-character slice of every live credential is a leak bought for nothing.
+
+Phase 2 is the one that adds columns (all nullable, `NULL` = today's behaviour, so an un-upgraded row is
+still valid):
+
+```
+allowed_tools TEXT    -- JSON array, NULL = any tool
+allowed_hosts TEXT    -- JSON array, NULL = any host
+expires_at    DATETIME
+last_used_at  DATETIME
+```
 
 ---
 
