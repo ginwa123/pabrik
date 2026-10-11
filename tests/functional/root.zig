@@ -156,6 +156,7 @@ const used_tools_test = @import("used_tools_test.zig");
 const user_config_test = @import("user_config_test.zig");
 const web_launch_toggle_test = @import("web_launch_toggle_test.zig");
 const web_search_config_test = @import("web_search_config_test.zig");
+const workspace_config_test = @import("workspace_config_test.zig");
 const workspace_isolation_test = @import("workspace_isolation_test.zig");
 const workspace_items_test = @import("workspace_items_test.zig");
 const workspace_lifecycle_test = @import("workspace_lifecycle_test.zig");
@@ -294,6 +295,7 @@ pub const suites = .{
     user_config_test,
     web_launch_toggle_test,
     web_search_config_test,
+    workspace_config_test,
     workspace_isolation_test,
     workspace_items_test,
     workspace_lifecycle_test,

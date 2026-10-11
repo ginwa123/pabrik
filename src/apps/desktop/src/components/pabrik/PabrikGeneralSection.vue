@@ -18,7 +18,7 @@
  *    (see pabrik_config_put.zig:133-135).
  *
  * Single `defineModel<{ ... }>()` v-model surface so the orchestrator
- * (PabrikSettings.vue) hydrates from `syncFromConfig` and writes back
+ * (PabrikConfigEditor.vue) hydrates from `syncFromConfig` and writes back
  * via `syncToConfig` — same pattern as the other sections.
  */
 import { computed } from 'vue'

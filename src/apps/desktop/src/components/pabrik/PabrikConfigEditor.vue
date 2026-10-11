@@ -2,31 +2,28 @@
 import { computed, onMounted, ref } from 'vue'
 
 import {
-  deleteProfile as apiDeleteProfile,
-  getPabrikConfig,
   getWebStatus,
   savePabrikConfig,
   type McpServer,
   type PabrikConfig,
   type PabrikProfile,
   type SubAgent,
-} from '../api'
-import { usePabrikConfig } from '../composables/usePabrikConfig'
+} from '../../api'
+import { usePabrikConfig } from '../../composables/usePabrikConfig'
 import { useRoute, useRouter } from 'vue-router'
-import { useTabsStore } from '../stores/tabs'
+import { useTabsStore } from '../../stores/tabs'
 
-import PabrikTabStrip from './pabrik/PabrikTabStrip.vue'
-import PabrikSaveBar from './pabrik/PabrikSaveBar.vue'
-import PabrikGeneralSection, { type PabrikGeneralSettings } from './pabrik/PabrikGeneralSection.vue'
-import ProfilesSection, { type ProfileRow } from './pabrik/ProfilesSection.vue'
+import PabrikSaveBar from './PabrikSaveBar.vue'
+import PabrikGeneralSection, { type PabrikGeneralSettings } from './PabrikGeneralSection.vue'
+import ProfilesSection, { type ProfileRow } from './ProfilesSection.vue'
 // Plan 2026-09-04-subagents-per-profile: SubAgentsSection.vue is no longer
 // mounted here (no global list). The file is kept for now — see note below.
-import McpServersSection from './pabrik/McpServersSection.vue'
-import WebSearchSection from './pabrik/WebSearchSection.vue'
-import ToolsSection from './pabrik/ToolsSection.vue'
-import SettingsSkeleton from './pabrik/SettingsSkeleton.vue'
-import SkillEvalsSection, { type SkillEvalsSettings } from './pabrik/SkillEvalsSection.vue'
-import { parseMcpServers, serializeMcpServers } from './pabrik/mcpServers'
+import McpServersSection from './McpServersSection.vue'
+import WebSearchSection from './WebSearchSection.vue'
+import ToolsSection from './ToolsSection.vue'
+import SettingsSkeleton from './SettingsSkeleton.vue'
+import SkillEvalsSection, { type SkillEvalsSettings } from './SkillEvalsSection.vue'
+import { parseMcpServers, serializeMcpServers } from './mcpServers'
 import {
   createWebSearchProviderRow,
   parseWebSearchProviders,
@@ -34,20 +31,59 @@ import {
   validateWebSearchRows,
   webSearchRowErrorsFromMessage,
   type WebSearchProviderRow,
-} from './pabrik/webSearchProviders'
+} from './webSearchProviders'
 // plan 2026-07-07-compaction-inline: CompactionSection.vue is removed
 // (compaction settings live in the Defaults tab + Edit-profile modal now).
 // No import here.
-import ProfileModal from './pabrik/ProfileModal.vue'
-import { type LlmConfigModalValue } from './pabrik/LlmConfigModal.vue'
-import SubAgentModal, { type SubAgentModalValue } from './pabrik/SubAgentModal.vue'
-import McpServerModal, { type McpServerModalValue } from './pabrik/McpServerModal.vue'
-import ConfirmDialog from './dialogs/ConfirmDialog.vue'
-import UiIcon from './ui/UiIcon.vue'
+import ProfileModal from './ProfileModal.vue'
+import { type LlmConfigModalValue } from './LlmConfigModal.vue'
+import SubAgentModal, { type SubAgentModalValue } from './SubAgentModal.vue'
+import McpServerModal, { type McpServerModalValue } from './McpServerModal.vue'
+import ConfirmDialog from '../dialogs/ConfirmDialog.vue'
+import UiIcon from '../ui/UiIcon.vue'
+import { userConfigSource, type PabrikConfigSource } from '../../helpers/configSource'
 
 const emit = defineEmits<{
   notification: [message: string, type: 'success' | 'error']
 }>()
+
+// ─── Scope ────────────────────────────────────────────────────────────────
+// Navigation lives in `SettingsShell` (flat sidebar items + `?section=`), so
+// this component renders ONE section at a time and owns no tab strip.
+//
+// One editor, two scopes. The user scope (`/app/settings`) edits the config
+// that applies everywhere; the workspace scope edits ONE workspace's overlay,
+// which the backend merges over that config. Everything below is identical
+// except where the config is read from and written to, which is what
+// `source` abstracts - see `helpers/configSource.ts`.
+//
+// Defaults preserve the user-scope page exactly: all five sections, strip
+// shown, user config source. The workspace scope passes the four sections
+// that moved there and hides the strip, because the settings shell already
+// navigates sections.
+type Tab = 'general' | 'profiles' | 'mcp' | 'tools' | 'evals'
+
+const props = withDefaults(
+  defineProps<{
+    /** Where the config is read from and written to. */
+    source?: PabrikConfigSource
+    /**
+     * Which sections this editor offers. The settings shell renders the nav,
+     * so this is the editor's ACCEPT list: a `?section=` outside it falls back
+     * to the first entry instead of rendering an empty pane.
+     */
+    sections?: readonly Tab[]
+  }>(),
+  {
+    source: undefined,
+    // Inline, not a module constant: `defineProps` is hoisted above the
+    // setup body, so its default factories may not reference a local
+    // declaration. The type annotation is erased and therefore fine.
+    sections: () => ['general', 'profiles', 'mcp', 'tools', 'evals'] as Tab[],
+  },
+)
+
+const source = props.source ?? userConfigSource()
 
 // Expose saveSettings / resetSettings so the parent can trigger them
 // (preserves the previous defineExpose surface).
@@ -63,14 +99,59 @@ defineExpose({
 // retry delay) are the broadest, most-frequently-touched UI surface.
 // Plan 2026-09-04-subagents-per-profile: 'sub-agents' tab removed —
 // sub-agents live inside each profile row (Profiles tab expand chevron).
-type Tab = 'general' | 'profiles' | 'mcp' | 'tools' | 'evals'
-const TAB_IDS: readonly string[] = ['general', 'profiles', 'mcp', 'tools', 'evals']
-// Same key PabrikTabStrip persists to — read here so the URL-backed
+
+// Same key the shell's section state persists to — read here so the URL-backed
 // computed below can fall back to it when the URL has no `?section=`.
 const TAB_STORAGE_KEY = 'pabrik-settings-active-tab'
 
+/**
+ * The section ids this editor accepts. Derived from the `sections` prop, so a
+ * URL or a stored value pointing at a section this editor does not offer
+ * falls back instead of rendering nothing.
+ */
+const TAB_IDS = computed<readonly string[]>(() => props.sections)
+// ─── Edit mode: the form, or the raw JSON ────────────────────────────────
+// Some edits are far easier to express as JSON - pasting a whole profile map
+// from another machine, or reading the exact keys the backend will store -
+// and a workspace's config IS a JSON document on the wire. So the raw view is
+// a first-class mode, not a hidden escape hatch.
+//
+// It lives in the URL (`?mode=json`) for the same reason `?section=` does:
+// refresh, Back/Forward and a shared link must restore the view. `form` is
+// the default and is stripped from the query to keep URLs clean.
+type EditorMode = 'form' | 'json'
+const MODE_PARAM = 'mode'
+
+const jsonText = ref('')
+/** Has the textarea's content been folded into the in-memory config? */
+const jsonApplied = ref(false)
+
+/**
+ * What is wrong with the textarea, or null when it is applicable.
+ *
+ * Live, not on-submit: the Apply button is disabled and the reason is on
+ * screen while the user types, so an invalid paste never looks like it
+ * worked. Never reformats the text - rewriting what somebody is typing is
+ * the fastest way to lose an edit.
+ */
+const jsonProblem = computed<string | null>(() => {
+  const text = jsonText.value.trim()
+  if (text.length === 0) return 'Nothing to apply — the JSON is empty.'
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e)
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return 'The config must be a JSON object.'
+  }
+  return null
+})
+
 // ─── Central config (usePabrikConfig composable) ──────────────────────────
-const { config, loaded, dirty, unsavedCount, saving, setConfig, save, reset } = usePabrikConfig()
+const { config, loaded, dirty, unsavedCount, saving, setConfig, save, reset } =
+  usePabrikConfig(source)
 
 // ─── Tab mode ────────────────────────────────────────────────────────────
 // This one is an app preference, not part of the server config: the tab set
@@ -92,21 +173,25 @@ const route = useRoute()
 function readStoredTab(): Tab | null {
   try {
     const saved = localStorage.getItem(TAB_STORAGE_KEY)
-    return saved && TAB_IDS.includes(saved) ? (saved as Tab) : null
+    return saved && TAB_IDS.value.includes(saved) ? (saved as Tab) : null
   } catch {
     return null // storage unavailable (private mode / no stub)
   }
 }
 
-const activeTabLocal = ref<Tab>(readStoredTab() ?? 'general')
+// Falls back to the FIRST section this editor offers, not to `general`:
+// an editor mounted with `sections: ['profiles', ...]` has no General to show,
+// and defaulting to it renders an empty pane.
+const firstTab = computed<Tab>(() => props.sections[0] ?? 'general')
+const activeTabLocal = ref<Tab>(readStoredTab() ?? props.sections[0] ?? 'general')
 
 const activeTab = computed<Tab>({
   get() {
     if (route) {
       const raw = route.query.section
       const section = Array.isArray(raw) ? raw[0] : raw
-      if (typeof section === 'string' && TAB_IDS.includes(section)) return section as Tab
-      return readStoredTab() ?? 'general'
+      if (typeof section === 'string' && TAB_IDS.value.includes(section)) return section as Tab
+      return readStoredTab() ?? firstTab.value
     }
     return activeTabLocal.value
   },
@@ -142,6 +227,74 @@ function onToggleBrowserTabs(value: boolean) {
   void router.replace({ path: route.path, query })
 }
 
+// ─── Mode: URL-backed, with a local fallback for router-less mounts ──────
+const modeLocal = ref<EditorMode>('form')
+
+const mode = computed<EditorMode>({
+  get() {
+    if (!route) return modeLocal.value
+    const raw = route.query[MODE_PARAM]
+    const value = Array.isArray(raw) ? raw[0] : raw
+    return value === 'json' ? 'json' : 'form'
+  },
+  set(next) {
+    modeLocal.value = next
+    if (!router || !route) return
+    const rest = { ...route.query }
+    // The default mode is stripped, mirroring `?section=`.
+    if (next === 'form') delete rest[MODE_PARAM]
+    else rest[MODE_PARAM] = next
+    void router.replace({ query: rest })
+  },
+})
+
+/** Format the config in memory into the textarea. */
+function seedJsonText() {
+  jsonText.value = JSON.stringify(config.value ?? {}, null, 2)
+  jsonApplied.value = false
+}
+
+/** Enter JSON mode: format whatever the config holds right now. */
+function showJson() {
+  seedJsonText()
+  mode.value = 'json'
+}
+
+/**
+ * Leave JSON mode.
+ *
+ * Refuses to leave when the textarea holds text that has NOT been applied and
+ * cannot be - leaving would silently discard an edit the user is mid-way
+ * through. EMPTY is not "unusable": there is nothing to lose, so leaving is
+ * allowed (which is what makes a `?mode=json` deep link escapable before the
+ * textarea has been seeded).
+ */
+function showForm() {
+  if (mode.value === 'json' && jsonText.value.trim().length > 0 && !applyJson()) return
+  mode.value = 'form'
+}
+
+function onJsonInput() {
+  jsonApplied.value = false
+}
+
+/**
+ * Fold the textarea into the in-memory config, then re-hydrate the sections.
+ *
+ * Written straight to `config` rather than through `setConfig`: `setConfig`
+ * re-snapshots, which would mark this edit as already-saved and hide the save
+ * bar. The snapshot must keep describing what the SERVER last gave us.
+ *
+ * Returns false (leaving the config untouched) when the text is unusable.
+ */
+function applyJson(): boolean {
+  if (jsonProblem.value !== null) return false
+  config.value = JSON.parse(jsonText.value) as PabrikConfig
+  syncFromConfig()
+  jsonApplied.value = true
+  return true
+}
+
 onMounted(async () => {
   // Every view switch lands in the URL (?section=) so refresh /
   // Back-Forward / shared links keep the open tab. The computed getter
@@ -164,7 +317,7 @@ onMounted(async () => {
       const raw = route.query.section
       const urlSection = Array.isArray(raw) ? raw[0] : raw
       const urlValid =
-        typeof urlSection === 'string' && TAB_IDS.includes(urlSection)
+        typeof urlSection === 'string' && TAB_IDS.value.includes(urlSection)
           ? (urlSection as Tab)
           : undefined
       if (actual === 'general') {
@@ -183,15 +336,16 @@ onMounted(async () => {
   // Plan 2026-08-24-config-simplify-remove-defaults: the legacy
   // localStorage fallback (which existed solely to seed the removed
   // Defaults form) is gone. The API response is the only source.
-  let apiData: PabrikConfig | null = null
-  try {
-    apiData = await getPabrikConfig()
-  } catch {
-    // Network/API failure — start with an empty config.
-    apiData = {}
-  }
-  setConfig(apiData)
-  syncFromConfig()
+  // Read through the SOURCE. Calling `getPabrikConfig` here would pin this
+  // component to the user scope no matter which source it was given - the
+  // workspace page would then render (and later save) the WRONG config, which
+  // is the one failure of this extraction that is invisible on screen.
+  // ONE load path, shared with the reset/copy buttons: three copies of
+  // "read, setConfig, syncFromConfig" is three places to forget one of
+  // them. `reload` also seeds the JSON textarea, which is what a
+  // `?mode=json` deep link needs - without it the textarea opens empty,
+  // which looks exactly like "this config is empty".
+  await reload()
 })
 
 // ─── Per-section view state ──────────────────────────────────────────────
@@ -486,7 +640,7 @@ function deleteProfile(name: string) {
   profilesList.value = profilesList.value.filter((p) => p.name !== name)
   if (activeProfile.value === name) activeProfile.value = null
   syncToConfig()
-  apiDeleteProfile(name).catch((err) => {
+  source.deleteProfile(name).catch((err) => {
     profilesList.value = previous
     activeProfile.value = previousActive
     syncToConfig()
@@ -772,6 +926,13 @@ async function clearActiveProfile() {
 
 // ─── Save / Reset ────────────────────────────────────────────────────────
 async function handleSave() {
+  // In JSON mode the textarea can hold edits that were never applied, and
+  // saving without them would report success while quietly dropping what the
+  // user typed. Apply first, and refuse to save if the text is unusable.
+  if (mode.value === 'json' && jsonText.value.trim().length > 0 && !applyJson()) {
+    emit('notification', 'Fix the JSON before saving', 'error')
+    return
+  }
   // Capture the OFF→ON transition BEFORE save (prevWebLaunch tracks the
   // last persisted flag; generalSettings holds the pending edit).
   const autoOpen = generalSettings.value.web_launch_enabled && !prevWebLaunch.value
@@ -871,6 +1032,75 @@ function confirmDeleteProfile() {
   deleteProfile(name)
 }
 
+// ─── Inherit / override (workspace scope only) ───────────────────────────
+// A workspace either carries its own overlay or follows the user config, and
+// that is a STATE THE USER NEEDS TO SEE: without it, an inherited workspace
+// looks identical to one that has copied everything, and "I changed my user
+// settings, why did nothing happen here?" has no answer on screen.
+//
+// `has_overlay` comes from the server (the workspace GET merges the overlay
+// and reports whether one exists), so the pill describes what the BACKEND
+// resolved - not what this page happens to have edited since.
+const hasOverlay = computed(() => config.value?.has_overlay === true)
+
+/** True only in the workspace scope: the user scope has nothing to inherit. */
+const canInherit = computed(() => typeof source.clear === 'function')
+
+const inheritBusy = ref(false)
+
+/**
+ * Re-read the effective config.
+ *
+ * Shared by the mount path and the reset/copy buttons (both change what the
+ * server resolves). Discards in-flight edits BY DESIGN - the buttons that call
+ * it are disabled while the config is dirty.
+ */
+async function reload() {
+  try {
+    const data = await source.load()
+    setConfig(data ?? {})
+    syncFromConfig()
+    if (mode.value === 'json') seedJsonText()
+  } catch (err) {
+    // An unreadable config and a workspace that legitimately inherits nothing
+    // must not look identical.
+    emit(
+      'notification',
+      `Could not load the settings: ${err instanceof Error ? err.message : String(err)}`,
+      'error',
+    )
+  }
+}
+
+async function runInheritAction(action: () => Promise<void>, done: string) {
+  inheritBusy.value = true
+  try {
+    await action()
+    await reload()
+    emit('notification', done, 'success')
+  } catch (err) {
+    emit(
+      'notification',
+      `That did not work: ${err instanceof Error ? err.message : String(err)}`,
+      'error',
+    )
+  } finally {
+    inheritBusy.value = false
+  }
+}
+
+function resetToInherited() {
+  const clear = source.clear
+  if (!clear) return
+  void runInheritAction(() => clear(), 'This workspace follows your user settings again')
+}
+
+function copyUserSettings() {
+  const copy = source.copyFromUser
+  if (!copy) return
+  void runInheritAction(() => copy(), 'Your user settings were copied into this workspace')
+}
+
 // ─── Computed ────────────────────────────────────────────────────────────
 const isLoading = computed(() => !loaded.value)
 </script>
@@ -883,8 +1113,38 @@ const isLoading = computed(() => !loaded.value)
          were going; the sections below render their own skeletons via
          the `loading` prop. -->
     <template v-if="isLoading">
-      <div class="shrink-0 px-1 pt-1">
-        <PabrikTabStrip v-model="activeTab" />
+
+      <!-- Form / JSON. Not a section: it is a different way of looking at
+           the whole config, so it stays reachable from every section. -->
+      <div class="shrink-0 flex items-center justify-end gap-1 px-1 pt-1">
+        <button
+          type="button"
+          data-testid="mode-form"
+          :data-active="mode === 'form' ? 'true' : 'false'"
+          class="px-3 h-7 rounded-md text-dense font-medium transition-colors duration-150"
+          :style="
+            mode === 'form'
+              ? 'background-color: var(--semantic-active-bg); color: var(--semantic-active-text);'
+              : 'color: var(--semantic-text-muted);'
+          "
+          @click="showForm"
+        >
+          Form
+        </button>
+        <button
+          type="button"
+          data-testid="mode-json"
+          :data-active="mode === 'json' ? 'true' : 'false'"
+          class="px-3 h-7 rounded-md text-dense font-medium transition-colors duration-150"
+          :style="
+            mode === 'json'
+              ? 'background-color: var(--semantic-active-bg); color: var(--semantic-active-text);'
+              : 'color: var(--semantic-text-muted);'
+          "
+          @click="showJson"
+        >
+          JSON
+        </button>
       </div>
       <div class="flex-1 overflow-y-auto p-6 space-y-6" data-testid="pabrik-settings-skeleton">
         <SettingsSkeleton :rows="4" test-id="pabrik-settings-loading-skeleton" />
@@ -893,12 +1153,159 @@ const isLoading = computed(() => !loaded.value)
 
     <template v-else>
       <!-- Tab strip -->
-      <div class="shrink-0 px-1 pt-1">
-        <PabrikTabStrip v-model="activeTab" />
+
+      <!-- Form / JSON. Not a section: it is a different way of looking at
+           the whole config, so it stays reachable from every section. -->
+      <div class="shrink-0 flex items-center justify-end gap-1 px-1 pt-1">
+        <button
+          type="button"
+          data-testid="mode-form"
+          :data-active="mode === 'form' ? 'true' : 'false'"
+          class="px-3 h-7 rounded-md text-dense font-medium transition-colors duration-150"
+          :style="
+            mode === 'form'
+              ? 'background-color: var(--semantic-active-bg); color: var(--semantic-active-text);'
+              : 'color: var(--semantic-text-muted);'
+          "
+          @click="showForm"
+        >
+          Form
+        </button>
+        <button
+          type="button"
+          data-testid="mode-json"
+          :data-active="mode === 'json' ? 'true' : 'false'"
+          class="px-3 h-7 rounded-md text-dense font-medium transition-colors duration-150"
+          :style="
+            mode === 'json'
+              ? 'background-color: var(--semantic-active-bg); color: var(--semantic-active-text);'
+              : 'color: var(--semantic-text-muted);'
+          "
+          @click="showJson"
+        >
+          JSON
+        </button>
+      </div>
+
+      <!-- Inherit / override. Workspace scope only (`source.clear` exists
+           there and nowhere else): the user scope has nothing to inherit, and
+           an inert pill there would be noise. -->
+      <div v-if="canInherit" class="shrink-0 px-6 pt-3" data-testid="workspace-inherit-bar">
+        <div
+          class="flex items-center gap-3 flex-wrap rounded-md px-3 py-2"
+          style="border: 1px solid var(--color-border)"
+        >
+          <span class="text-dense" style="color: var(--semantic-text-muted)">
+            {{
+              hasOverlay
+                ? 'This workspace has its own settings.'
+                : 'Inherited from your user settings.'
+            }}
+          </span>
+          <button
+            v-if="hasOverlay"
+            type="button"
+            data-testid="workspace-reset-inherited"
+            :disabled="dirty || inheritBusy"
+            class="px-3 h-7 rounded-md text-dense font-medium"
+            :style="
+              dirty || inheritBusy
+                ? 'border: 1px solid var(--color-border); color: var(--semantic-text-muted); cursor: not-allowed;'
+                : 'border: 1px solid var(--color-border); color: var(--color-violet);'
+            "
+            @click="resetToInherited"
+          >
+            Reset to inherited
+          </button>
+          <button
+            v-else
+            type="button"
+            data-testid="workspace-copy-user"
+            :disabled="dirty || inheritBusy"
+            class="px-3 h-7 rounded-md text-dense font-medium"
+            :style="
+              dirty || inheritBusy
+                ? 'border: 1px solid var(--color-border); color: var(--semantic-text-muted); cursor: not-allowed;'
+                : 'border: 1px solid var(--color-border); color: var(--color-violet);'
+            "
+            @click="copyUserSettings"
+          >
+            Copy user settings
+          </button>
+          <!-- Both actions re-read the config, which would throw away unsaved
+               edits. Say so rather than silently discarding them. -->
+          <span v-if="dirty" class="text-dense" style="color: var(--semantic-text-muted)">
+            Save or reset your changes first.
+          </span>
+        </div>
+      </div>
+
+      <!-- Raw JSON view. Shows the WHOLE config in memory - which in the
+           workspace scope is the effective config (the user's, with this
+           workspace's overlay merged over it), so what you read here is what
+           a run in this workspace actually uses. -->
+      <div
+        v-if="mode === 'json'"
+        class="flex-1 overflow-y-auto p-6 space-y-3"
+        data-testid="config-json-panel"
+      >
+        <p class="text-dense" style="color: var(--semantic-text-muted)">
+          <template v-if="source.scope === 'workspace'">
+            Only the settings that live in Workspace settings — profiles, MCP servers, tools, skill
+            evals and web search — are stored for this workspace. Everything else comes from your
+            user settings and is not saved from here.
+          </template>
+          <template v-else>
+            This is the whole config that applies to every workspace, exactly as it is stored.
+          </template>
+        </p>
+
+        <textarea
+          v-model="jsonText"
+          data-testid="config-json-textarea"
+          spellcheck="false"
+          rows="20"
+          class="w-full rounded-md p-3 font-mono text-dense"
+          style="
+            background-color: var(--semantic-content-bg);
+            color: var(--semantic-text);
+            border: 1px solid var(--color-border);
+          "
+          @input="onJsonInput"
+        />
+
+        <p
+          v-if="jsonProblem"
+          data-testid="config-json-error"
+          class="text-dense"
+          style="color: var(--color-red)"
+        >
+          {{ jsonProblem }}
+        </p>
+
+        <div class="flex items-center gap-3">
+          <button
+            type="button"
+            data-testid="config-json-apply"
+            :disabled="jsonProblem !== null"
+            class="px-3 h-8 rounded-md text-dense font-medium"
+            :style="
+              jsonProblem !== null
+                ? 'background-color: var(--semantic-content-bg); color: var(--semantic-text-muted); cursor: not-allowed;'
+                : 'background-color: var(--color-violet); color: var(--semantic-active-text);'
+            "
+            @click="applyJson"
+          >
+            Apply
+          </button>
+          <span v-if="jsonApplied" class="text-dense" style="color: var(--semantic-text-muted)">
+            Applied — Save writes it.
+          </span>
+        </div>
       </div>
 
       <!-- Scrollable tab content -->
-      <div class="flex-1 overflow-y-auto p-6 space-y-6">
+      <div v-else class="flex-1 overflow-y-auto p-6 space-y-6">
         <PabrikGeneralSection
           v-if="activeTab === 'general'"
           v-model="generalSettings"
@@ -1009,8 +1416,7 @@ const isLoading = computed(() => !loaded.value)
         <!-- Plan 2026-07-07-compaction-inline: the dedicated Compaction
              tab is REMOVED. Compaction settings now live in the Defaults
              tab (top-level defaults) + the Edit-profile modal
-             (per-profile overrides). The tab id 'compaction' was removed
-             from PabrikTabStrip.vue. -->
+             (per-profile overrides). There is no 'compaction' section. -->
       </div>
 
       <!-- Sticky save bar (only when dirty) -->

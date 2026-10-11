@@ -123,6 +123,19 @@ fn useCase(
         return error.DatabaseError;
     };
 
+    // Same reason as the secrets above: `PRAGMA foreign_keys` is OFF, so
+    // Migration 105's `ON DELETE CASCADE` never fires. Without this the
+    // workspace's saved profiles - and the API keys inside them - would
+    // outlive the workspace and resurface if its id were ever reused.
+    tx.exec(
+        allocator,
+        "DELETE FROM workspace_settings WHERE workspace_id = ?",
+        &[_][]const u8{id},
+    ) catch {
+        std.log.warn("workspaceDelete: config overlay cleanup failed for {s}", .{id});
+        return error.DatabaseError;
+    };
+
     tx.commit() catch {
         std.log.warn("workspaceDelete: COMMIT failed for {s}", .{id});
         return error.DatabaseError;
@@ -189,6 +202,20 @@ fn setupDeleteDb() !DeleteCtx {
         \\  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         \\)
     , &.{});
+    // Mirrors Migration 105's `workspace_settings`. Same reason as the
+    // secrets table above: this fixture stays independent of the migration
+    // chain, and the delete path must be exercised against the table it
+    // actually writes to.
+    try db.exec(alloc,
+        \\CREATE TABLE workspace_settings (
+        \\  owner TEXT NOT NULL DEFAULT '',
+        \\  workspace_id TEXT NOT NULL,
+        \\  config_json TEXT,
+        \\  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\  PRIMARY KEY (owner, workspace_id)
+        \\)
+    , &.{});
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -220,6 +247,7 @@ test "workspaceDelete removes the membership rows, not just the workspace" {
     try ctx.db.exec(alloc, "INSERT INTO workspaces (id, name, user_id) VALUES ('ws_x', 'X', 'user_a')", &.{});
     try ctx.db.exec(alloc, "INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ('ws_x', 'user_a', 'owner'), ('ws_x', 'user_b', 'viewer')", &.{});
     try ctx.db.exec(alloc, "INSERT INTO workspace_secrets (id, workspace_id, name, value) VALUES ('sec_1', 'ws_x', 'GITHUB_TOKEN', 'ghp_x')", &.{});
+    try ctx.db.exec(alloc, "INSERT INTO workspace_settings (owner, workspace_id, config_json) VALUES ('', 'ws_x', '{\"active_profile\":\"claude\"}')", &.{});
     try testing.expectEqual(@as(u64, 2), try countRows(&ctx, "SELECT COUNT(*) FROM workspace_members WHERE workspace_id = 'ws_x'", &.{}));
 
     const r = try useCase(alloc, &ctx.db, "ws_x", true, NoCookie{});
@@ -232,6 +260,11 @@ test "workspaceDelete removes the membership rows, not just the workspace" {
     // The secrets cleanup (Migration 103): a deleted workspace leaves no
     // credentials behind for a future workspace reusing the id.
     try testing.expectEqual(@as(u64, 0), try countRows(&ctx, "SELECT COUNT(*) FROM workspace_secrets WHERE workspace_id = 'ws_x'", &.{}));
+    // The config-overlay cleanup (Migration 105) for the same reason, and
+    // with a sharper edge: an orphaned overlay holds PROFILES, which hold
+    // API keys, so a reused workspace id would come back pre-configured with
+    // a stranger's credentials.
+    try testing.expectEqual(@as(u64, 0), try countRows(&ctx, "SELECT COUNT(*) FROM workspace_settings WHERE workspace_id = 'ws_x'", &.{}));
 }
 
 test "workspaceDelete refuses an unknown workspace and deletes nothing" {

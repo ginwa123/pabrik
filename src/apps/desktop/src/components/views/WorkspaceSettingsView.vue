@@ -1,6 +1,12 @@
 <!--
   Workspace settings (`/app/:workspaceId/settings`) — one workspace's
-  Overview, Secrets, Skills and Memories.
+  Overview, Secrets, Skills, Memories, and the config sections that moved
+  here: Profiles, MCP Servers, Tools and Skill Evals.
+
+  The config sections edit THIS workspace's overlay
+  (`/api/workspaces/:id/config`), which the backend merges over the
+  user-level config. A workspace that has overridden nothing therefore
+  behaves exactly as it did before they existed.
 
   Skills are rows scoped to one workspace (`GET
   /workspaces/:id/skills`), so the panel binds the route workspace — not
@@ -15,6 +21,8 @@ import { onBeforeRouteUpdate, useRoute } from 'vue-router'
 import { useSecretsStore } from '../../stores/secrets'
 import { useWorkspacesStore } from '../../stores/workspaces'
 import SettingsShell from '../settings/SettingsShell.vue'
+import PabrikConfigEditor from '../pabrik/PabrikConfigEditor.vue'
+import { WORKSPACE_AGENT_SECTIONS, workspaceConfigSource } from '../../helpers/configSource'
 import SecretsSection from '../workspace/SecretsSection.vue'
 import SkillsSettings from '../preview/SkillsSettings.vue'
 import WorkspaceMemoriesSection from '../workspace/WorkspaceMemoriesSection.vue'
@@ -43,6 +51,27 @@ const workspaceName = computed<string>(() => {
   }
   return workspaceId.value || 'this workspace'
 })
+
+/**
+ * The four sections that moved here from the User-scope Pabrik page.
+ *
+ * They render through ONE long-lived `PabrikConfigEditor` rather than one
+ * instance per section: switching between them must not remount the editor,
+ * or every unsaved edit would be thrown away by a nav click.
+ */
+const isAgentSection = computed<boolean>(() =>
+  (WORKSPACE_AGENT_SECTIONS as readonly string[]).includes(route?.params ? sectionFromRoute() : ''),
+)
+
+function sectionFromRoute(): string {
+  const raw = route?.query?.section
+  const value = Array.isArray(raw) ? raw[0] : raw
+  return typeof value === 'string' ? value : ''
+}
+
+/** The source is rebuilt per workspace; the editor is keyed on the id so a
+ * workspace switch remounts it rather than editing the previous workspace. */
+const agentSource = computed(() => workspaceConfigSource(workspaceId.value))
 
 const itemCount = computed<number>(() => {
   const ws = workspacesStore.activeWorkspace
@@ -172,6 +201,21 @@ function handleRetry(): void {
         <div v-else-if="section === 'memories'" class="h-full">
           <section data-testid="memories-section" role="tabpanel" class="h-full">
             <WorkspaceMemoriesSection :workspace-id="workspaceId" />
+          </section>
+        </div>
+
+        <!-- Profiles / MCP Servers / Tools / Skill Evals, in this workspace's
+             scope. `:key` on the workspace id, NOT on the section: a section
+             switch must keep the same editor instance (unsaved edits), while a
+             workspace switch must not (they belong to the other workspace). -->
+        <div v-else-if="isAgentSection" class="h-full">
+          <section :data-testid="`${section}-section`" role="tabpanel" class="h-full">
+            <PabrikConfigEditor
+              :key="workspaceId"
+              :source="agentSource"
+              :sections="WORKSPACE_AGENT_SECTIONS"
+                            @notification="notify"
+            />
           </section>
         </div>
       </template>

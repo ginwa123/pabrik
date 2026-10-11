@@ -20,7 +20,7 @@
  * sent back verbatim from whatever GET returned so that toggling `enabled`
  * can never clobber a value the user hand-edited in config.json.
  *
- * Single `defineModel` v-model surface so `PabrikSettings.vue` hydrates via
+ * Single `defineModel` v-model surface so `PabrikConfigEditor.vue` hydrates via
  * `syncFromConfig` and writes back via `syncToConfig`, like every other
  * section — the save itself goes through the shared `PUT /api/config/pabrik`.
  */

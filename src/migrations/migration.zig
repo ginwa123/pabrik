@@ -117,6 +117,7 @@ const migration_101 = @import("migration_101.zig");
 const migration_102 = @import("migration_102.zig");
 const migration_103 = @import("migration_103.zig");
 const migration_104 = @import("migration_104.zig");
+const migration_105 = @import("migration_105.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -223,6 +224,7 @@ pub const Migration101GuardLlmHistoryModel = migration_101.Migration101GuardLlmH
 pub const Migration102CreateSkills = migration_102.Migration102CreateSkills;
 pub const Migration103CreateWorkspaceSecrets = migration_103.Migration103CreateWorkspaceSecrets;
 pub const Migration104AddSessionPinned = migration_104.Migration104AddSessionPinned;
+pub const Migration105CreateWorkspaceSettings = migration_105.Migration105CreateWorkspaceSettings;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -503,6 +505,15 @@ pub const allMigrations: []const Migration = &.{
     .{ .version = Migration102CreateSkills.version, .name = Migration102CreateSkills.name, .up = Migration102CreateSkills.up },
     .{ .version = Migration103CreateWorkspaceSecrets.version, .name = Migration103CreateWorkspaceSecrets.name, .up = Migration103CreateWorkspaceSecrets.up },
     .{ .version = Migration104AddSessionPinned.version, .name = Migration104AddSessionPinned.name, .up = Migration104AddSessionPinned.up },
+    // Migration 105 - the per-workspace config OVERLAY. A workspace's
+    // `config_json` here is SPARSE: its keys win over the user-level
+    // config and every other key still comes from there, which is what
+    // lets Profiles / MCP Servers / Tools / Skill Evals live in Workspace
+    // settings without every workspace being forced to redefine its
+    // model and its credentials. Keyed on `(owner, workspace_id)` because
+    // a workspace is shared when `--auth` is on and this table holds API
+    // keys - see `workspace_settings_store.zig` for the owner rule.
+    .{ .version = Migration105CreateWorkspaceSettings.version, .name = Migration105CreateWorkspaceSettings.name, .up = Migration105CreateWorkspaceSettings.up },
 };
 
 /// Register all migrations with a MigrationManager
@@ -11914,4 +11925,147 @@ test "Migration103 is registered in allMigrations" {
         if (m.version == Migration103CreateWorkspaceSecrets.version) return;
     }
     return error.Migration103NotRegistered;
+}
+
+
+// ============================================================================
+// Migration 105 tests
+// ============================================================================
+//
+// Four properties, each pinned because its failure mode is a silent
+// cross-workspace (or cross-user) bleed rather than a crash:
+//
+//   1. The shape is exactly the five agreed columns: `owner` IS present
+//      (unlike `workspace_secrets`, which deliberately has no owner column -
+//      membership answers entitlement there). Here the owner is the second
+//      half of the key, because this table stores credentials.
+//   2. `config_json` is NULLABLE, so "clear the overlay" is representable.
+//      A NOT NULL column would turn the clear path into a constraint error,
+//      because this backend binds an empty slice as SQL NULL.
+//   3. The PRIMARY KEY is `(owner, workspace_id)`. If it were
+//      `workspace_id` alone, one user's saved profiles - API keys included -
+//      would REPLACE every other user's in a shared workspace.
+//   4. A re-run is idempotent and does not disturb a stored overlay.
+
+fn countWorkspaceSettings(ctx: *TestCtx) !i64 {
+    const alloc = testing.allocator;
+    var q = try ctx.db.query(alloc, "SELECT COUNT(*) FROM workspace_settings", &.{});
+    defer q.deinit();
+    const row = (try q.next()) orelse return error.RowMissing;
+    defer row.deinit(alloc);
+    return std.fmt.parseInt(i64, row.values[0], 10);
+}
+
+test "Migration105 creates workspace_settings with exactly the five agreed columns" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try Migration105CreateWorkspaceSettings.up(&ctx.db, alloc);
+
+    const cols = try columnsOf(&ctx, "workspace_settings");
+    defer {
+        for (cols) |c| alloc.free(c);
+        alloc.free(cols);
+    }
+    try expectColumnsEqual(cols, &[_][]const u8{
+        "owner", "workspace_id", "config_json", "created_at", "updated_at",
+    });
+
+    // The owner column is the whole `--auth` isolation story, so name it
+    // explicitly: a future edit that "simplifies" the key back to
+    // `workspace_id` (or drops the column) fails here with a readable message
+    // instead of in production as a credential leak.
+    var saw_owner = false;
+    for (cols) |c| {
+        if (std.mem.eql(u8, c, "owner")) saw_owner = true;
+    }
+    try testing.expect(saw_owner);
+}
+
+test "Migration105's config_json is nullable, so clearing the overlay is representable" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try Migration105CreateWorkspaceSettings.up(&ctx.db, alloc);
+
+    // notnull == 0 is what makes `DELETE`/NULL the "inherit everything"
+    // representation. An explicit NULL insert would fail on a NOT NULL column.
+    var q = try ctx.db.query(
+        alloc,
+        "SELECT \"notnull\" FROM pragma_table_info('workspace_settings') WHERE name = 'config_json'",
+        &.{},
+    );
+    defer q.deinit();
+    const row = (try q.next()) orelse return error.ColumnMissing;
+    defer row.deinit(alloc);
+    try testing.expectEqualStrings("0", row.values[0]);
+}
+
+test "Migration105 keys on (owner, workspace_id), not workspace_id alone" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try Migration105CreateWorkspaceSettings.up(&ctx.db, alloc);
+
+    try ctx.db.exec(alloc,
+        \\INSERT INTO workspace_settings (owner, workspace_id, config_json)
+        \\VALUES ('u1', 'ws_1', '{"active_profile":"mine"}')
+    , &.{});
+    try ctx.db.exec(alloc,
+        \\INSERT INTO workspace_settings (owner, workspace_id, config_json)
+        \\VALUES ('u2', 'ws_1', '{"active_profile":"theirs"}')
+    , &.{});
+    try testing.expectEqual(@as(i64, 2), try countWorkspaceSettings(&ctx));
+
+    // Replacing u2's row must NOT touch u1's. If the key were `workspace_id`
+    // alone, this REPLACE would evict u1 - which is the leak this key exists
+    // to prevent, so the count assertion below is the real witness.
+    try ctx.db.exec(alloc,
+        \\INSERT OR REPLACE INTO workspace_settings (owner, workspace_id, config_json)
+        \\VALUES ('u2', 'ws_1', '{"active_profile":"changed"}')
+    , &.{});
+    try testing.expectEqual(@as(i64, 2), try countWorkspaceSettings(&ctx));
+
+    var q = try ctx.db.query(
+        alloc,
+        "SELECT COALESCE(config_json, '') FROM workspace_settings WHERE owner = 'u1' AND workspace_id = 'ws_1'",
+        &.{},
+    );
+    defer q.deinit();
+    const row = (try q.next()) orelse return error.RowMissing;
+    defer row.deinit(alloc);
+    try testing.expectEqualStrings("{\"active_profile\":\"mine\"}", row.values[0]);
+}
+
+test "Migration105 is idempotent on a re-run and keeps the stored overlay" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try Migration105CreateWorkspaceSettings.up(&ctx.db, alloc);
+    try ctx.db.exec(alloc,
+        \\INSERT INTO workspace_settings (owner, workspace_id, config_json)
+        \\VALUES ('', 'ws_1', '{"retry_delay_ms":500}')
+    , &.{});
+
+    try Migration105CreateWorkspaceSettings.up(&ctx.db, alloc);
+    try Migration105CreateWorkspaceSettings.up(&ctx.db, alloc);
+
+    // CREATE TABLE IF NOT EXISTS means a re-run neither throws "table already
+    // exists" nor drops the workspace's saved overrides.
+    try testing.expectEqual(@as(i64, 1), try countWorkspaceSettings(&ctx));
+}
+
+test "Migration105 is registered in allMigrations" {
+    for (allMigrations) |m| {
+        if (m.version == Migration105CreateWorkspaceSettings.version) return;
+    }
+    return error.Migration105NotRegistered;
 }

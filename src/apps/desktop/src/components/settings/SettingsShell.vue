@@ -18,6 +18,7 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useWorkspacesStore } from '../../stores/workspaces'
 import { useSettingsSection } from '../../composables/useSettingsSection'
+import { WORKSPACE_AGENT_SECTIONS } from '../../helpers/configSource'
 import UiIcon from '../ui/UiIcon.vue'
 import type { UiIconName } from '../ui/icons'
 
@@ -27,18 +28,51 @@ export interface SettingsSectionItem {
   id: string
   label: string
   icon: UiIconName
+  /**
+   * Heading this item sits under. A heading is rendered only where the group
+   * CHANGES, so the first group needs no separate label above the scope
+   * label the sidebar already shows.
+   */
+  group?: string
 }
 
 const USER_SECTIONS: readonly SettingsSectionItem[] = [
-  { id: 'pabrik', label: 'Pabrik', icon: 'robot' },
+  // Decision D4: General is the ONLY thing left at user level. Profiles, MCP
+  // servers, tools, skill evals and web search moved to Workspace settings -
+  // they were always really per-workspace values, and a scope whose own label
+  // says "applies everywhere" cannot host them honestly.
+  { id: 'general', label: 'General', icon: 'settings' },
 ]
 
+/**
+ * Presentation for each moved config section. A `Record` keyed by the section
+ * ids, not a parallel hand-written list: adding an id to
+ * `WORKSPACE_AGENT_SECTIONS` without a label here is then a TYPE error, which
+ * is what stops the nav and the workspace view drifting into a dead nav item.
+ */
+const AGENT_SECTION_META: Record<
+  (typeof WORKSPACE_AGENT_SECTIONS)[number],
+  { label: string; icon: UiIconName }
+> = {
+  profiles: { label: 'Profiles', icon: 'atom' },
+  mcp: { label: 'MCP Servers', icon: 'globe' },
+  tools: { label: 'Tools', icon: 'tools' },
+  evals: { label: 'Skill Evals', icon: 'sparkle' },
+}
+
 const WORKSPACE_SECTIONS: readonly SettingsSectionItem[] = [
-  { id: 'overview', label: 'Overview', icon: 'cards' },
-  { id: 'secrets', label: 'Secrets', icon: 'key' },
-  { id: 'skills', label: 'Skills', icon: 'tools' },
-  { id: 'memories', label: 'Memories', icon: 'brain' },
+  { id: 'overview', label: 'Overview', icon: 'cards', group: 'Workspace' },
+  { id: 'secrets', label: 'Secrets', icon: 'key', group: 'Workspace' },
+  { id: 'skills', label: 'Skills', icon: 'books', group: 'Workspace' },
+  { id: 'memories', label: 'Memories', icon: 'brain', group: 'Workspace' },
+  // The sections that moved here (Migration 105 + `PabrikConfigEditor`): they
+  // edit THIS workspace's config overlay, which the backend merges over the
+  // user-level config, so a workspace that overrides nothing still behaves
+  // exactly as it did before they existed. DERIVED from the list the workspace
+  // view renders - see AGENT_SECTION_META.
+  ...WORKSPACE_AGENT_SECTIONS.map((id) => ({ id, ...AGENT_SECTION_META[id], group: 'Agent' })),
 ]
+
 
 const USER_STORAGE_KEY = 'settings-shell-user-section'
 const WORKSPACE_STORAGE_KEY = 'settings-shell-workspace-section'
@@ -227,15 +261,22 @@ function notify(message: string, type: 'success' | 'error'): void {
         >
           {{ scopeLabel }}
         </p>
-        <button
-          v-for="item in sections"
-          :key="item.id"
-          :data-testid="`settings-nav-${item.id}`"
-          :data-tab-id="item.id"
-          :data-active="section === item.id ? 'true' : 'false'"
-          role="tab"
-          :aria-selected="section === item.id"
-          class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-body font-medium transition-all duration-200 mb-1"
+        <template v-for="(item, index) in sections" :key="item.id">
+          <p
+            v-if="index > 0 && item.group !== sections[index - 1]?.group"
+            class="px-3 mt-4 mb-2 text-dense uppercase tracking-wide"
+            style="color: var(--semantic-text-muted)"
+            :data-testid="`settings-nav-group-${item.group ?? 'other'}`"
+          >
+            {{ item.group }}
+          </p>
+          <button
+            :data-testid="`settings-nav-${item.id}`"
+            :data-tab-id="item.id"
+            :data-active="section === item.id ? 'true' : 'false'"
+            role="tab"
+            :aria-selected="section === item.id"
+            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-body font-medium transition-all duration-200 mb-1"
           :style="
             section === item.id
               ? 'background-color: var(--semantic-active-bg); color: var(--semantic-active-text);'
@@ -245,15 +286,16 @@ function notify(message: string, type: 'success' | 'error'): void {
         >
           <UiIcon :name="item.icon" size-class="w-4.5 h-4.5" />
           <span>{{ item.label }}</span>
-          <span
-            v-if="props.scope === 'workspace'"
-            class="ml-auto text-dense"
-            style="color: var(--semantic-text-muted)"
-            :data-testid="`settings-nav-${item.id}-workspace`"
-          >
-            {{ workspaceName }}
-          </span>
-        </button>
+            <span
+              v-if="props.scope === 'workspace'"
+              class="ml-auto text-dense"
+              style="color: var(--semantic-text-muted)"
+              :data-testid="`settings-nav-${item.id}-workspace`"
+            >
+              {{ workspaceName }}
+            </span>
+          </button>
+        </template>
       </nav>
     </div>
 

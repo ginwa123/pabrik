@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Settings — User vs Workspace (v3, shipped)</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Inter, system-ui, -apple-system, sans-serif; background: #1D1C19; color: #c5c9c5; min-height: 100vh; }
+  .bar { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid #282727; flex-wrap: wrap; position: sticky; top: 0; background: #1D1C19; z-index: 10; }
+  .bar h1 { font-size: 16px; font-weight: 600; }
+  .scope { display: flex; background: #141311; border: 1px solid #282727; border-radius: 999px; padding: 3px; gap: 2px; }
+  .scope button { border: 0; background: transparent; color: #a6a69c; font-size: 13px; padding: 7px 16px; border-radius: 999px; cursor: pointer; }
+  .scope button.on { background: #2b2a26; color: #fff; font-weight: 600; }
+  .ws-pick { background: #141311; border: 1px solid #282727; color: #c5c9c5; font-size: 13px; border-radius: 8px; padding: 7px 10px; }
+  .url { font-family: monospace; font-size: 11px; color: #a6a69c; background: #141311; border: 1px solid #282727; border-radius: 6px; padding: 5px 10px; }
+  .layout { display: flex; min-height: calc(100vh - 57px); }
+  .side { width: 250px; border-right: 1px solid #282727; padding: 14px; display: flex; flex-direction: column; gap: 2px; flex-shrink: 0; }
+  .side h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #a6a69c; margin: 12px 8px 6px; }
+  .side h4:first-child { margin-top: 0; }
+  .item { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: transparent; border: 0; color: #a6a69c; font-size: 13.5px; padding: 9px 10px; border-radius: 8px; cursor: pointer; }
+  .item:hover { background: #22211e; }
+  .item.on { background: #2e2d29; color: #fff; }
+  .item .ico { width: 20px; text-align: center; }
+  .main { flex: 1; padding: 24px; min-width: 0; max-width: 880px; }
+  .main h2 { font-size: 18px; margin-bottom: 4px; }
+  .sub { font-size: 13px; color: #a6a69c; margin-bottom: 16px; line-height: 1.5; }
+  .sub code { font-family: monospace; font-size: 12px; background: #141311; border: 1px solid #282727; border-radius: 4px; padding: 1px 6px; }
+  .card { background: #22211e; border: 1px solid #282727; border-radius: 10px; padding: 16px; margin-bottom: 12px; }
+  .card h3 { font-size: 14px; margin-bottom: 4px; }
+  .card p { font-size: 13px; color: #a6a69c; line-height: 1.5; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 0; border-top: 1px solid #282727; font-size: 13px; flex-wrap: wrap; }
+  .row:first-of-type { border-top: 0; }
+  .row .muted { color: #a6a69c; font-size: 12px; }
+  .pill { font-size: 11px; padding: 3px 9px; border-radius: 999px; border: 1px solid #282727; color: #a6a69c; white-space: nowrap; }
+  .pill.inh { color: #8ba4b0; border-color: #3a4a52; }
+  .pill.ovr { color: #c9a86a; border-color: #54482f; }
+  .btn { font-size: 12px; padding: 6px 12px; border-radius: 7px; border: 1px solid #3a4a52; background: transparent; color: #8ba4b0; cursor: pointer; }
+  .btn.solid { background: #8ba4b0; border-color: #8ba4b0; color: #141311; font-weight: 600; }
+  .btn[disabled] { border-color: #282727; color: #6b6b64; cursor: not-allowed; }
+  .mode { display: flex; gap: 4px; justify-content: flex-end; margin-bottom: 10px; }
+  .mode button { border: 0; background: transparent; color: #a6a69c; font-size: 12.5px; padding: 5px 12px; border-radius: 7px; cursor: pointer; }
+  .mode button.on { background: #2e2d29; color: #fff; font-weight: 600; }
+  .note { font-size: 12px; color: #a6a69c; background: #141311; border: 1px dashed #3a3a36; border-radius: 8px; padding: 10px 12px; margin-top: 12px; line-height: 1.6; }
+  .note code { font-family: monospace; font-size: 11px; background: #22211e; border: 1px solid #282727; border-radius: 4px; padding: 1px 6px; }
+  .rec { border-left: 3px solid #8ba4b0; padding: 12px 16px; margin-bottom: 20px; background: #22211e; border-radius: 0 10px 10px 0; }
+  .rec h2 { font-size: 15px; margin-bottom: 6px; }
+  .rec ul { font-size: 13px; color: #a6a69c; line-height: 1.7; padding-left: 18px; }
+  .rec li b { color: #c5c9c5; }
+  textarea { width: 100%; min-height: 190px; background: #141311; color: #c5c9c5; border: 1px solid #282727; border-radius: 8px; padding: 12px; font-family: monospace; font-size: 12px; }
+  @media (max-width: 720px) { .layout { flex-direction: column; } .side { width: 100%; border-right: 0; border-bottom: 1px solid #282727; } }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <h1>Settings</h1>
+  <div class="scope" role="tablist" aria-label="Settings scope">
+    <button id="scopeUser" class="on" onclick="setScope('user')">User</button>
+    <button id="scopeWs" onclick="setScope('workspace')">Workspace</button>
+  </div>
+  <select class="ws-pick" id="wsPick" onchange="setScope('workspace')" aria-label="Workspace picker">
+    <option>acme-website</option>
+    <option>ios-app</option>
+  </select>
+  <span class="url" id="urlBar">?section=general</span>
+</div>
+
+<div class="layout">
+  <nav class="side" id="sideNav"></nav>
+  <main class="main" id="main"></main>
+</div>
+
+<script>
+// v3 — WHAT SHIPPED (the v2 draft put Profiles/MCP/Tools/Evals under User scope
+// and invented a workspace "Agent defaults" section; both were wrong).
+//
+// User scope: General only. Everything else that used to live there was really
+// per-workspace, and hosting it under a scope labelled "applies everywhere" made
+// the label a lie.
+const USER_SECTIONS = [
+  { id: 'general', label: 'General', icon: '⚙' },
+];
+const WS_SECTIONS = [
+  { group: 'Workspace' },
+  { id: 'overview', label: 'Overview', icon: '▤' },
+  { id: 'secrets', label: 'Secrets', icon: '⚿' },
+  { id: 'skills', label: 'Skills', icon: '❏' },
+  { id: 'memories', label: 'Memories', icon: '☰' },
+  { group: 'Agent' },
+  { id: 'profiles', label: 'Profiles', icon: '◈' },
+  { id: 'mcp', label: 'MCP Servers', icon: '⬡' },
+  { id: 'tools', label: 'Tools', icon: '✳' },
+  { id: 'evals', label: 'Skill Evals', icon: '✦' },
+];
+const AGENT = ['profiles', 'mcp', 'tools', 'evals'];
+
+let scope = 'user';
+let section = 'general';
+let mode = 'form';
+
+const CONFIG_JSON = {
+  profiles: { claude: { model: 'opus', api_key: 'sk-…' } },
+  active_profile: 'claude',
+  mcp_servers: { files: { transport: 'stdio', command: 'mcp-files' } },
+  tools: ['read_file', 'write_file'],
+  web_search: { brave: { url: 'https://api.search.brave.com', key: '••••3f' } },
+  skill_evals: { enabled: true },
+  notify_on_complete: true,
+  retry_delay_ms: 2000,
+};
+
+function modeToggle() {
+  return `<div class="mode">
+    <button class="${mode === 'form' ? 'on' : ''}" onclick="setMode('form')">Form</button>
+    <button class="${mode === 'json' ? 'on' : ''}" onclick="setMode('json')">JSON</button>
+  </div>`;
+}
+
+function jsonPanel() {
+  const ws = scope === 'workspace';
+  return modeToggle() + `
+    <p class="sub">${ws
+      ? 'Only the settings that live in Workspace settings — profiles, MCP servers, tools, skill evals and web search — are stored for this workspace. Everything else comes from your user settings and is not saved from here.'
+      : 'This is the whole config that applies to every workspace, exactly as it is stored.'}</p>
+    <textarea spellcheck="false">${JSON.stringify(CONFIG_JSON, null, 2)}</textarea>
+    <div class="row"><span class="muted">Apply is disabled while the JSON is invalid — an invalid paste can never be applied, left, or saved over.</span><button class="btn solid">Apply</button></div>`;
+}
+
+function inheritBar(overridden) {
+  return `<div class="card">
+    <div class="row">
+      <span>${overridden ? 'This workspace has its own settings.' : 'Inherited from your user settings.'}</span>
+      <span class="pill ${overridden ? 'ovr' : 'inh'}">${overridden ? 'overridden' : 'inherited'}</span>
+      ${overridden
+        ? '<button class="btn" disabled>Reset to inherited</button>'
+        : '<button class="btn" disabled>Copy user settings</button>'}
+    </div>
+    <p>Both actions re-read the config, so they are disabled while you have unsaved edits — the hint says why instead of discarding them.</p>
+  </div>`;
+}
+
+function render() {
+  document.getElementById('scopeUser').classList.toggle('on', scope === 'user');
+  document.getElementById('scopeWs').classList.toggle('on', scope === 'workspace');
+  document.getElementById('wsPick').style.display = scope === 'workspace' ? '' : 'none';
+
+  const sections = scope === 'user' ? USER_SECTIONS : WS_SECTIONS;
+  const nav = document.getElementById('sideNav');
+  nav.innerHTML = '';
+  let prevGroup = null;
+  sections.forEach(s => {
+    if (s.group) {
+      // A heading only where the group CHANGES: the scope label above the nav
+      // already names the first group.
+      if (prevGroup !== null) { const h = document.createElement('h4'); h.textContent = s.group; nav.appendChild(h); }
+      prevGroup = s.group;
+      return;
+    }
+    const b = document.createElement('button');
+    b.className = 'item' + (s.id === section ? ' on' : '');
+    b.innerHTML = `<span class="ico">${s.icon}</span><span>${s.label}</span>`;
+    b.onclick = () => { section = s.id; render(); };
+    nav.appendChild(b);
+  });
+
+  const isAgent = scope === 'workspace' && AGENT.includes(section);
+  let body;
+  if (mode === 'json') {
+    body = jsonPanel();
+  } else if (isAgent) {
+    body = inheritBar(section === 'tools') + `
+      <div class="card"><h3>${{ profiles: 'Profiles', mcp: 'MCP Servers', tools: 'Tools', evals: 'Skill Evals' }[section]}</h3>
+      <p>The same section form the user scope used to render — now editing THIS workspace's overlay.</p>
+      <div class="row"><span class="muted">Effective value</span><span>${section === 'tools' ? '["read_file","write_file"]' : 'from your user settings'}</span></div></div>`;
+  } else if (scope === 'user') {
+    body = modeToggle() + `<div class="card"><h3>General</h3>
+      <div class="row"><span>Notify on complete</span><span class="pill">on</span></div>
+      <div class="row"><span>Retry delay</span><span class="pill">2000 ms</span></div>
+      <div class="row"><span>Browser-style tabs</span><span class="pill">off</span></div></div>
+      <div class="note">Everything here applies to <b>every</b> workspace. That is the whole reason Profiles, MCP Servers, Tools and Skill Evals are not here.</div>`;
+  } else {
+    body = `<div class="card"><h3>${section}</h3><p>Workspace-scoped section (unchanged by this refactor).</p></div>`;
+  }
+
+  document.getElementById('main').innerHTML =
+    `<h2>${scope === 'user' ? 'User' : 'Workspace: ' + document.getElementById('wsPick').value}</h2>` +
+    `<p class="sub">${scope === 'user' ? 'Applies everywhere.' : 'Applies to this workspace only. Config sections here override your user settings, key by key.'}</p>` +
+    body;
+
+  document.getElementById('urlBar').textContent =
+    '?section=' + section + (mode === 'json' ? '&mode=json' : '');
+}
+function setScope(next) {
+  scope = next;
+  section = next === 'user' ? 'general' : 'overview';
+  mode = 'form';
+  render();
+}
+function setMode(next) { mode = next; render(); }
+render();
+</script>
+</body>
+</html>

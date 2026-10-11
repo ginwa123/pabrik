@@ -1,16 +1,19 @@
 <!--
-  User settings (`/app/settings`) — the Pabrik page.
+  User settings (`/app/settings`) — General only.
 
-  User scope edits `~/.config/pabrik/` and applies everywhere: LLM
-  profiles, general behaviour (notifications, retry, browser launch),
-  MCP servers, web search providers, tool defaults, skill evals. Skills
-  and Memories are workspace-scoped and live under the Workspace scope
-  instead — they were removed from this sidebar because the panels always
-  showed the active workspace's rows without saying so.
+  Decision D4: General (notifications, retry delay, web launch, browser tabs)
+  is the only thing that still applies to every workspace, so it is the only
+  thing left here. Profiles, MCP servers, tools, skill evals and web search
+  moved to Workspace settings — they were always per-workspace values, and
+  hosting them under a scope whose label says "applies everywhere" made the
+  label a lie. Skills and Memories were already workspace-scoped.
+
+  The section comes from the shell's nav (`?section=`), so the editor renders
+  one section with no strip of its own.
 -->
 <script setup lang="ts">
 import SettingsShell from '../settings/SettingsShell.vue'
-import PabrikSettings from '../PabrikSettings.vue'
+import PabrikConfigEditor from '../pabrik/PabrikConfigEditor.vue'
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for diff readability.
 const emit = defineEmits<{
@@ -21,7 +24,10 @@ const emit = defineEmits<{
 <template>
   <SettingsShell scope="user" workspace-id="">
     <template #default="{ notify }">
-      <PabrikSettings @notification="notify" />
+      <PabrikConfigEditor
+        :sections="['general']"
+                @notification="notify"
+      />
     </template>
   </SettingsShell>
 </template>

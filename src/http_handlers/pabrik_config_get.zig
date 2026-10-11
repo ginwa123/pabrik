@@ -56,35 +56,12 @@ pub fn pabrikConfigGetHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
         const cfg = parsed;
         _ = cfg.sub_agents;
 
-        // Mask every provider credential before it reaches the browser. The
-        // `Parsed` borrows from the config parse tree, so it is released
-        // after the response has been serialized.
-        const masked_web_search = web_search_mask.maskProviders(allocator, cfg.web_search);
+        // Masking happens inside `makeConfigResponse`, which is the ONE
+        // place the wire shape is built - so this branch and the file branch
+        // below cannot disagree about it.
         return res.jsonResponse(.{
             .status_code = 200,
-            .data = try http_response.makePabrikConfigResponse(allocator, .{
-                .profiles = cfg.profiles_models,
-                .active_profile = cfg.active_profile,
-                .mcp_servers = cfg.mcp_servers,
-                .sub_agents = null,
-                .notify_on_complete = cfg.notify_on_complete,
-                .notify_on_error = cfg.notify_on_error,
-                .web_launch_enabled = cfg.web_launch_enabled,
-                .model_compaction_size_kb = cfg.model_compaction_size_kb,
-                .max_capacity_token_model = cfg.max_capacity_token_model,
-                .compaction_threshold_percent = cfg.compaction_threshold_percent,
-                .retry_delay_ms = cfg.retry_delay_ms,
-                .tools = cfg.tools,
-            .web_search = masked_web_search,
-                .skill_evals = .{
-                    .enabled = cfg.skill_evals.enabled,
-                    .max_skills_per_run = cfg.skill_evals.max_skills_per_run,
-                    .max_evals_per_day = cfg.skill_evals.max_evals_per_day,
-                    .fact_lease_seconds = cfg.skill_evals.fact_lease_seconds,
-                    .include_listed_without_loading = cfg.skill_evals.include_listed_without_loading,
-                    .apply_mode = cfg.skill_evals.apply_mode,
-                },
-            }),
+            .data = try makeConfigResponse(allocator, cfg, null),
         });
     }
     const environment_ptr = di.environment orelse return res.jsonResponse(.{
@@ -145,50 +122,65 @@ pub fn pabrikConfigGetHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
     // never sent; prefix with underscore to mark intentionally unused.)
     _ = cfg.sub_agents;
 
-    // Mask every provider credential before it reaches the browser. Same as
-    // the auth branch above — BOTH allowlist sites need this, or the key is
-    // masked in one deployment mode and sent in cleartext in the other.
-    const masked_web_search = web_search_mask.maskProviders(allocator, cfg.web_search);
-
+    // Masking happens inside `makeConfigResponse` - see the auth branch above.
     return res.jsonResponse(.{
         .status_code = 200,
-        .data = try http_response.makePabrikConfigResponse(allocator, .{
-            // Plan 2026-08-24-config-simplify-remove-defaults: the
-            // top-level LLM defaults are no longer on the wire. Profiles
-            // + operational settings only.
-            .profiles = cfg.profiles_models,
-            .active_profile = cfg.active_profile,
-            .mcp_servers = cfg.mcp_servers,
-            // Plan 2026-09-04-subagents-per-profile: top-level
-            // subagents are removed from the wire. Each profile
-            // carries its own `sub_agents` inside `profiles` (raw
-            // JSON passthrough above). The on-disk key is still
-            // parsed (compat) but never sent.
-            .sub_agents = null,
-            .notify_on_complete = cfg.notify_on_complete,
-            .notify_on_error = cfg.notify_on_error,
-            .web_launch_enabled = cfg.web_launch_enabled,
-            .model_compaction_size_kb = cfg.model_compaction_size_kb,
-            // Top-level compaction defaults — restored in plan
-            // 2026-07-07-compaction-inline.
-            .max_capacity_token_model = cfg.max_capacity_token_model,
-            .compaction_threshold_percent = cfg.compaction_threshold_percent,
-            .retry_delay_ms = cfg.retry_delay_ms,
-            .tools = cfg.tools,
-            .web_search = masked_web_search,
-            .skill_evals = .{
-                .enabled = cfg.skill_evals.enabled,
-                .max_skills_per_run = cfg.skill_evals.max_skills_per_run,
-                .max_evals_per_day = cfg.skill_evals.max_evals_per_day,
-                .fact_lease_seconds = cfg.skill_evals.fact_lease_seconds,
-                .include_listed_without_loading = cfg.skill_evals.include_listed_without_loading,
-                .apply_mode = cfg.skill_evals.apply_mode,
-            },
-        }),
+        .data = try makeConfigResponse(allocator, cfg, null),
     });
 }
 
-const ConfigJson = struct {
+/// The wire shape for one parsed config, in ONE place.
+///
+/// Both config surfaces build through this: `/api/config/pabrik` (user scope,
+/// `has_overlay` null) and `/api/workspaces/:id/config` (workspace scope,
+/// where the effective config is user ⊕ overlay and `has_overlay` says which
+/// of the two the caller is looking at). Forking it would let one surface
+/// mask `web_search` and the other ship the key in cleartext - the exact bug
+/// the masking test at the bottom of this file exists to catch.
+pub fn makeConfigResponse(
+    allocator: std.mem.Allocator,
+    cfg: ConfigJson,
+    has_overlay: ?bool,
+) ![]u8 {
+    // Mask every provider credential before it reaches the browser. The
+    // parse tree `cfg` borrows from is released by the caller AFTER this
+    // returns, so the masked values stay alive for the serialization.
+    const masked_web_search = web_search_mask.maskProviders(allocator, cfg.web_search);
+    return http_response.makePabrikConfigResponse(allocator, .{
+        // Plan 2026-08-24-config-simplify-remove-defaults: the top-level LLM
+        // defaults are no longer on the wire. Profiles + operational
+        // settings only.
+        .profiles = cfg.profiles_models,
+        .active_profile = cfg.active_profile,
+        .mcp_servers = cfg.mcp_servers,
+        // Plan 2026-09-04-subagents-per-profile: top-level sub-agents are
+        // removed from the wire. Each profile carries its own `sub_agents`
+        // inside `profiles` (raw JSON passthrough above). The on-disk key is
+        // still parsed (compat) but never sent.
+        .sub_agents = null,
+        .notify_on_complete = cfg.notify_on_complete,
+        .notify_on_error = cfg.notify_on_error,
+        .web_launch_enabled = cfg.web_launch_enabled,
+        .model_compaction_size_kb = cfg.model_compaction_size_kb,
+        // Top-level compaction defaults - plan 2026-07-07-compaction-inline.
+        .max_capacity_token_model = cfg.max_capacity_token_model,
+        .compaction_threshold_percent = cfg.compaction_threshold_percent,
+        .retry_delay_ms = cfg.retry_delay_ms,
+        .tools = cfg.tools,
+        .web_search = masked_web_search,
+        .skill_evals = .{
+            .enabled = cfg.skill_evals.enabled,
+            .max_skills_per_run = cfg.skill_evals.max_skills_per_run,
+            .max_evals_per_day = cfg.skill_evals.max_evals_per_day,
+            .fact_lease_seconds = cfg.skill_evals.fact_lease_seconds,
+            .include_listed_without_loading = cfg.skill_evals.include_listed_without_loading,
+            .apply_mode = cfg.skill_evals.apply_mode,
+        },
+        .has_overlay = has_overlay,
+    });
+}
+
+pub const ConfigJson = struct {
     /// Configured web-search providers, keyed by provider name. Raw so the
     /// handler can mask each `key` on the way out without re-typing it.
     web_search: ?json.Value = null,

@@ -45,7 +45,7 @@ const nameInput = ref<HTMLInputElement | null>(null)
 // Plan: docs/superpowers/plans/2026-07-10-empty-workspace-item-bug.md.
 const nameTouched = ref(false)
 // Computed error string. `null` when no error should be shown.
-// Mirrors `PabrikSettings.vue:295` / `FileInput.vue:543` styling.
+// Mirrors `PabrikConfigEditor.vue:295` / `FileInput.vue:543` styling.
 const nameError = computed<string | null>(() => {
   if (!nameTouched.value) return null
   if (name.value.trim().length === 0) return 'Name is required'

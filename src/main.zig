@@ -133,6 +133,11 @@ pub fn main(init: std.process.Init) !void {
 
     _ = try pabrikcore.setSingleton(ctxParent);
 
+    // Copy the user-level config into every workspace that has not decided
+    // yet, so existing workspaces open with the sections that moved to
+    // Workspace settings already populated. Idempotent + best-effort.
+    server_boot.seedWorkspaceSettingsFromUserConfig(allocator, io, environment, dbSqlite, cli.auth_enabled);
+
     // Eager globals: call sites go through the singleton instead of
     // lazy-init on first MCP use; the defers free the arenas at shutdown.
     ctxParent.mcp_stdio_registry = pabrikcore.mcp_stdio.StdioRegistry.global(allocator);
