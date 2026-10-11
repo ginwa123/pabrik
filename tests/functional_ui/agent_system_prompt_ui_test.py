@@ -193,11 +193,28 @@ def test_remove_system_prompt(ui_harness: UIHarness, page) -> None:
     _open_agent_view(page, h, ws_id, agent_id)
     _wait_for_text(page, "Doomed")
 
-    page.locator('[data-testid="agent-remove-system-prompt"]').first.click()
+    # The click is NOT a barrier for the DELETE. `handleAgentRemoveSystemPrompt`
+    # filters the row out of `agentSystemPrompts` and only then awaits
+    # `api.deleteAgentSystemPrompt`, so the two optimistic assertions below are
+    # satisfied while the request is still in flight — and the bundle GET after
+    # them can overtake it. That is what "delete did not persist" was on CI run
+    # 38127927593 (shard 1/3, a loaded runner): the row was read back mid-flight,
+    # not left behind. Waiting on the DELETE's own response is the barrier, and
+    # it also means a silently-failing delete can no longer pass.
+    with page.expect_response(
+        lambda r: r.request.method == "DELETE" and "/system_prompt/" in r.url
+    ) as deleted:
+        page.locator('[data-testid="agent-remove-system-prompt"]').first.click()
 
     # Row disappears optimistically; empty state returns.
     page.locator("text=Doomed").first.wait_for(timeout=10000, state="detached")
     _wait_for_text(page, "No system prompts yet")
+
+    # A non-2xx leaves the row in place (the handler restores it), so the
+    # persistence check below is only meaningful once this is green.
+    assert deleted.value.status == 200, (
+        f"DELETE /system_prompt returned {deleted.value.status}"
+    )
 
     # Persisted: the bundle no longer lists it.
     bundle = h.http(
