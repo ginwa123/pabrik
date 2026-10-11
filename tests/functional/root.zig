@@ -84,6 +84,7 @@ const hook_zig_fmt_test = @import("hook_zig_fmt_test.zig");
 const hooks_lua_test = @import("hooks_lua_test.zig");
 const http2_test = @import("http2_test.zig");
 const http2_tls_test = @import("http2_tls_test.zig");
+const install_browser_url_test = @import("install_browser_url_test.zig");
 const kanban_advanced_test = @import("kanban_advanced_test.zig");
 const kanban_column_run_all_agents_test = @import("kanban_column_run_all_agents_test.zig");
 const kanban_column_stop_all_agents_test = @import("kanban_column_stop_all_agents_test.zig");
@@ -227,6 +228,7 @@ pub const suites = .{
     hooks_lua_test,
     http2_test,
     http2_tls_test,
+    install_browser_url_test,
     kanban_advanced_test,
     kanban_column_run_all_agents_test,
     kanban_column_stop_all_agents_test,
