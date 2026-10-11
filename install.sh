@@ -115,14 +115,36 @@ have_cmd() { command -v "$1" >/dev/null 2>&1; }
 
 download() {
     local url="$1" dest="$2"
+    local name
+    name="$(basename "$url")"
+    echo "Downloading $name ..."
     if have_cmd curl; then
-        curl -fsSL --retry 3 -o "$dest" "$url"
+        # Timeouts so a stalled connection fails instead of hanging
+        # forever; a progress bar on interactive terminals so a ~130 MB
+        # binary does not look frozen, silence otherwise (CI logs).
+        if [[ -t 2 ]]; then
+            curl -fSL --progress-bar --connect-timeout 20 --max-time 900 \
+                --retry 3 -o "$dest" "$url"
+        else
+            curl -fsSL --connect-timeout 20 --max-time 900 \
+                --retry 3 -o "$dest" "$url"
+        fi
     elif have_cmd wget; then
-        wget -qO "$dest" "$url"
+        # --tries=3: wget defaults to 20 retries, which reads as a hang
+        # on a dead mirror. --timeout bounds connect/read stalls.
+        if [[ -t 2 ]]; then
+            wget --timeout=20 --tries=3 --show-progress -O "$dest" "$url"
+        else
+            wget --timeout=20 --tries=3 -qO "$dest" "$url"
+        fi
     else
         echo "Need curl or wget to download ${url}" >&2
         return 1
     fi
+    # Confirm movement: the byte count proves the download landed.
+    local size
+    size="$(du -h "$dest" 2>/dev/null | cut -f1)" || size="?"
+    echo "  -> $name ($size)"
 }
 
 mkdir -p "$BINDIR"
