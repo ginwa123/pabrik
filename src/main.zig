@@ -95,7 +95,7 @@ pub fn main(init: std.process.Init) !void {
 
     pabrikcore.loggermod.initGlobalColor(allocator, io, .{
         .min_level = .debug,
-        .output_mode = .file,
+        .output_mode = .stdout,
         .log_file_path = log_file_path,
         .include_location = true,
         .include_request_id = true,

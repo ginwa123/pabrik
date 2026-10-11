@@ -11,6 +11,7 @@ export {
   createScrollLogger,
   buildScrollContext,
   BOTTOM_THRESHOLD,
+  AT_BOTTOM_STABLE_TOLERANCE_PX,
   TOP_THRESHOLD,
   markProgrammatic,
 } from './scrollLogger'

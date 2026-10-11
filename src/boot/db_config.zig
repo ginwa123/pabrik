@@ -65,7 +65,7 @@ pub const best: databases.database.SqliteConfig = .{
     // measures the other setting so the two stay distinguishable.
     .synchronous = .full,
     .busy_timeout_ms = 15_000,
-    .read_conns = 7, // warm floor: readers opened up front at boot
+    .read_conns = 1, // warm floor: readers opened up front at boot
     // 0 = no POLICY cap: read concurrency tracks in-flight reads rather than a
     // fixed pool size, which is what removed the queueing that cost 70% of
     // read throughput. `read_conns` above is the warm floor, not the ceiling.

@@ -49,10 +49,7 @@ function makeFolderItem(overrides: Partial<WorkspaceItemType> = {}): WorkspaceIt
   }
 }
 
-function mountItem(
-  item: WorkspaceItemType,
-  busyIds: string[] = [],
-) {
+function mountItem(item: WorkspaceItemType, busyIds: string[] = []) {
   const now = Date.now()
   const processingState = ref<Record<string, boolean>>(
     Object.fromEntries(busyIds.map((id) => [id, true])),
@@ -107,7 +104,25 @@ describe('WorkspaceItem — row layout single right cluster', () => {
     expect(name.exists()).toBe(true)
     expect(name.classes()).toContain('flex-1')
     expect(name.classes()).toContain('truncate')
+    expect(name.classes()).toContain('text-left')
     expect(name.attributes('title')).toBe(item.name)
+    wrapper.unmount()
+  })
+
+  it('row button left-aligns text (native button centers without text-left)', async () => {
+    // Native <button> UA stylesheet is text-align:center, which inherits
+    // into the flex-1 truncate name span and centers titles (screenshot:
+    // pabrik / website pabrik / ruangsql all centered). text-left on the
+    // button overrides the UA default; text-left on the name is defense
+    // in depth. TaskRow + DocumentsList rows already carry it — this row
+    // was the only one missing it.
+    const wrapper = mountItem(makeFolderItem())
+    await flushPromises()
+    await nextTick()
+    const nameEl = wrapper.find('[data-testid="item-name"]').element
+    const button = nameEl.parentElement!
+    expect(button.tagName.toLowerCase()).toBe('button')
+    expect(Array.from(button.classList)).toContain('text-left')
     wrapper.unmount()
   })
 

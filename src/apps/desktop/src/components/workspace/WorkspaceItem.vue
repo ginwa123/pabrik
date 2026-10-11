@@ -618,7 +618,7 @@ const handlePinnedDrop = (event: DragEvent) => {
           @click="handleClick($event)"
           @auxclick="onItemRowAuxClick"
           @contextmenu.prevent="onItemRowContextMenu"
-          class="relative flex-1 flex items-center gap-2 px-[var(--sb-gutter)] h-[var(--sb-row)] rounded-lg text-dense transition-colors duration-150"
+          class="relative flex-1 flex items-center gap-2 px-[var(--sb-gutter)] h-[var(--sb-row)] rounded-lg text-dense text-left transition-colors duration-150"
           :style="
             isCurrentMainView
               ? `background-color: #2e2d29; color: #fff; box-shadow: inset 2px 0 0 0 var(--color-violet);`
@@ -652,7 +652,7 @@ const handlePinnedDrop = (event: DragEvent) => {
                flex-1 min-w-0 keeps the trailing meta slot from being
                pushed out at narrow widths. -->
           <span
-            class="flex-1 min-w-0 truncate"
+            class="flex-1 min-w-0 truncate text-left"
             :title="item.name || 'Untitled project'"
             data-testid="item-name"
             >{{ item.name || 'Untitled project' }}</span
