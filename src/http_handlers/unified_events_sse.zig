@@ -27,6 +27,11 @@
 //!   background_process → "background_process" (central key — all sessions'
 //!                    background-process created/completed events; the
 //!                    frontend filters by `data.session_id` JS-side)
+//!   git_file_stage → "git_file_stage" (central key — the `git_file_staged` /
+//!                    `git_file_unstaged` events emitted by
+//!                    POST /api/git/stage and /api/git/unstage; the frontend
+//!                    filters by `data.cwd` JS-side and moves ONE row instead
+//!                    of re-fetching the whole git-status list)
 //!
 //! Plan: docs/superpowers/plans/2026-06-30-unify-sse-endpoints.md
 
@@ -269,6 +274,12 @@ pub fn parseChannels(allocator: std.mem.Allocator, raw: []const u8) ChannelParse
             // covers all three granular event types; the frontend filters
             // by `data.session_id` JS-side.
             try routing_keys.append(allocator, try allocator.dupe(u8, "skill_evals"));
+        } else if (std.mem.eql(u8, token, "git_file_stage")) {
+            // File stage/unstage (`git_file_staged` / `git_file_unstaged` on
+            // the central "git_file_stage" key — see
+            // git_file_stage_events.zig). Single key covers both granular
+            // event types; the frontend filters by `data.cwd` JS-side.
+            try routing_keys.append(allocator, try allocator.dupe(u8, "git_file_stage"));
         } else if (std.mem.eql(u8, token, "design_element")) {
             // Design-mode element mutations. The frontend
             // `createUnifiedSseConnection` sends this token; the
@@ -376,6 +387,17 @@ pub const CallbackUnifiedBackgroundProcessStream = struct {
 pub const CallbackUnifiedSkillEvalsStream = struct {
     pub fn callback(data: ai_mod.on_event_sent.SseEvent) void {
         forwardToClients("skill_evals", data);
+    }
+};
+
+/// Callback for the central "git_file_stage" routing key. Forwards to every
+/// client registered under "git_file_stage" — the frontend listener
+/// (`SidebarDiffPanel.vue`) then filters by `data.cwd` on the JS side and
+/// moves the ONE row the event names, instead of re-fetching the whole
+/// git-status list.
+pub const CallbackUnifiedGitFileStageStream = struct {
+    pub fn callback(data: ai_mod.on_event_sent.SseEvent) void {
+        forwardToClients("git_file_stage", data);
     }
 };
 
@@ -522,6 +544,8 @@ pub fn unifiedEventsStreamHandler(
                 event_bus.subscribe(ai_mod.on_event_sent.SseEvent, rk, CallbackUnifiedBackgroundProcessStream.callback) catch {};
             } else if (std.mem.eql(u8, rk, "skill_evals")) {
                 event_bus.subscribe(ai_mod.on_event_sent.SseEvent, rk, CallbackUnifiedSkillEvalsStream.callback) catch {};
+            } else if (std.mem.eql(u8, rk, "git_file_stage")) {
+                event_bus.subscribe(ai_mod.on_event_sent.SseEvent, rk, CallbackUnifiedGitFileStageStream.callback) catch {};
             }
         }
 
@@ -651,6 +675,14 @@ test "parseChannels: multiple bare tokens (llm+queue repeated) → 2 keys" {
     try testing.expectEqualStrings("llm", list.routing_keys[1]);
     try testing.expectEqualStrings("queue", list.routing_keys[2]);
     try testing.expectEqualStrings("queue", list.routing_keys[3]);
+}
+
+test "parseChannels: bare 'git_file_stage' → central 'git_file_stage' routing key" {
+    const allocator = testing.allocator;
+    const list = try parseChannels(allocator, "git_file_stage");
+    defer list.deinit(allocator);
+    try testing.expectEqual(@as(usize, 1), list.routing_keys.len);
+    try testing.expectEqualStrings("git_file_stage", list.routing_keys[0]);
 }
 
 test "parseChannels: empty string → error.MissingChannels" {

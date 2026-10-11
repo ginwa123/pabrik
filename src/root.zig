@@ -102,6 +102,7 @@ pub const mcp_types = @import("modules/agent/mcp/mcp/mcp_types.zig");
 pub const skill_mod = @import("modules/agent/tools/skills.zig");
 pub const skill_evals_db = @import("agentic_loop/skill_evals_db.zig");
 pub const skill_eval_events = @import("agentic_loop/skill_eval_events.zig");
+pub const git_file_stage_events = @import("agentic_loop/git_file_stage_events.zig");
 pub const skill_evals_drift = @import("agentic_loop/skill_evals_drift.zig");
 pub const add_skill = skill_tools;
 pub const edit_skill = skill_tools;

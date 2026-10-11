@@ -45,6 +45,7 @@ test {
     _ = @import("skill_evals_drift.zig"); // Skill Evals — Tier-0 deterministic checks
     _ = @import("run_skill_eval.zig"); // Skill Evals — the run_skill_eval tool
     _ = @import("skill_eval_events.zig"); // Skill Evals — the skill_evals SSE channel
+    _ = @import("git_file_stage_events.zig"); // git_file_stage SSE channel — surgical row move on +/−
     _ = @import("sub_agent_batch.zig"); // the one sub-agent batch runner (tool + judge tier)
     _ = @import("skill_eval_judge.zig"); // Skill Evals — the LLM judge tier's prompt + parser
     _ = @import("session_plan.zig"); // 2026-08-19-session-plan-agent-tool — inlined 6 tests from session_plan_test.zig

@@ -5,6 +5,27 @@ const gserverz = pabrik_core.gserverz;
 
 const GitStageResponse = http_response.GitStageResponse;
 
+/// Tell the UI one path moved into the index, so the Files tab can move ONE
+/// row instead of re-fetching the whole git-status list.
+///
+/// Emitted per path (not once per request) because the frontend's local
+/// update is per path: a batch stage of 5 files is 5 row moves, and one
+/// event carrying 5 paths would push the join logic back into the client.
+///
+/// Never fails the caller — a successful `git add` must not be reported as a
+/// failure because the UI could not be told about it. The frontend falls back
+/// to a manual refresh.
+fn emitStageEvent(ctx: gserverz.HttpContext, path_param: []const u8, file: []const u8, failed: bool) void {
+    const di = pabrik_core.getSingleton() catch return;
+    pabrik_core.git_file_stage_events.emitStaged(ctx.allocator, di.event_bus, path_param, file, failed);
+}
+
+/// Tell the UI one path left the index. Same contract as `emitStageEvent`.
+fn emitUnstageEvent(ctx: gserverz.HttpContext, path_param: []const u8, file: []const u8, failed: bool) void {
+    const di = pabrik_core.getSingleton() catch return;
+    pabrik_core.git_file_stage_events.emitUnstaged(ctx.allocator, di.event_bus, path_param, file, failed);
+}
+
 /// Stage files (git add)
 pub fn gitStageHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
@@ -53,11 +74,14 @@ pub fn gitStageHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res
         if (std.process.run(allocator, io, .{ .argv = &argv })) |result| {
             if (result.term.exited == 0) {
                 staged_files.append(allocator, file) catch {};
+                emitStageEvent(ctx, path_param, file, false);
             } else {
                 failed_files.append(allocator, file) catch {};
+                emitStageEvent(ctx, path_param, file, true);
             }
         } else |_| {
             failed_files.append(allocator, file) catch {};
+            emitStageEvent(ctx, path_param, file, true);
         }
     }
 
@@ -119,17 +143,21 @@ pub fn gitUnstageHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, r
         if (std.process.run(allocator, io, .{ .argv = &argv })) |result| {
             if (result.term.exited == 0) {
                 unstaged_files.append(allocator, file) catch {};
+                emitUnstageEvent(ctx, path_param, file, false);
             } else {
                 // Fallback to git reset HEAD if restore fails
                 const reset_argv = [_][]const u8{ "git", "-C", path_param, "reset", "-q", "--", file };
                 if (std.process.run(allocator, io, .{ .argv = &reset_argv })) |reset_result| {
                     if (reset_result.term.exited == 0) {
                         unstaged_files.append(allocator, file) catch {};
+                        emitUnstageEvent(ctx, path_param, file, false);
                     } else {
                         failed_files.append(allocator, file) catch {};
+                        emitUnstageEvent(ctx, path_param, file, true);
                     }
                 } else |_| {
                     failed_files.append(allocator, file) catch {};
+                    emitUnstageEvent(ctx, path_param, file, true);
                 }
             }
         } else |_| {
@@ -138,11 +166,14 @@ pub fn gitUnstageHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, r
             if (std.process.run(allocator, io, .{ .argv = &reset_argv })) |reset_result| {
                 if (reset_result.term.exited == 0) {
                     unstaged_files.append(allocator, file) catch {};
+                    emitUnstageEvent(ctx, path_param, file, false);
                 } else {
                     failed_files.append(allocator, file) catch {};
+                    emitUnstageEvent(ctx, path_param, file, true);
                 }
             } else |_| {
                 failed_files.append(allocator, file) catch {};
+                emitUnstageEvent(ctx, path_param, file, true);
             }
         }
     }

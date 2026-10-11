@@ -6,6 +6,7 @@ import { openInNewTab } from '../../../helpers/openInNewTab'
 import { conflictsUrl, forgeWording } from '../../../helpers/forgeWording'
 import { isBackgroundOpenEvent } from '../../../helpers/tabTarget'
 import { fetchFolderDiff, folderDiffKey, primeFolderDiffs } from '../../../helpers/folderDiffCache'
+import { useSseBus } from '../../../helpers/sseBus'
 import { useContextMenu } from '../../../composables/useContextMenu'
 import OpenInNewTabMenu from '../../shell/OpenInNewTabMenu.vue'
 import SpinnerIcon from '../../shell/SpinnerIcon.vue'
@@ -69,6 +70,8 @@ const isLoadingGit = ref(false)
 const gitError = ref<string | null>(null)
 const isStaging = ref(false)
 let loadSeq = 0
+/// Unsubscribe handle for the `gitFileStage` bus listener (see onMounted).
+let unsubscribeFileStage: (() => void) | null = null
 
 const selectedPath = ref<string | null>(null)
 const selectedStaged = ref(false)
@@ -914,13 +917,141 @@ const onCommitFileClick = async (payload: { commit: api.GitCommit; file: api.Git
   }
 }
 
+// ── Surgical stage/unstage (SSE-driven) ─────────────────────────────────
+//
+// `+` / `−` used to answer with `await loadGitStatus()` — a full
+// `git status --porcelain -uall` plus untracked-directory expansion, then a
+// second folder-wide diff request. On a 40-file worktree that is two git
+// spawns and a re-render of every row, for a change that moved exactly one
+// path between two lists. The list visibly blanks and repopulates.
+//
+// Now the backend emits `git_file_staged` / `git_file_unstaged` on the
+// central `git_file_stage` routing key (see
+// src/agentic_loop/git_file_stage_events.zig) and this handler moves the ONE
+// row the event names. No list fetch, no blink.
+//
+// The row move is a pure function of the three lists, so it is exported for
+// the spec to drive directly (see SidebarDiffPanel.stage.spec.ts).
+
+/** Which of the three worktree lists a path can sit in. */
+type StageList = 'staged' | 'unstaged' | 'untracked'
+
+/**
+ * Where a path belongs after a stage/unstage.
+ *
+ * Unstaging a file that was ONLY staged leaves it modified in the worktree;
+ * unstaging one that was untracked-and-just-staged puts it back under
+ * Untracked. The backend's porcelain parse makes the same call: `??` →
+ * untracked, anything else with a worktree status → modified.
+ */
+function nextStageList(from: StageList, action: 'staged' | 'unstaged'): StageList {
+  if (action === 'staged') return 'staged'
+  return from === 'untracked' ? 'untracked' : 'unstaged'
+}
+
+/**
+ * The list the row the user just acted on was in.
+ *
+ * Derived from the ACTION, not from list precedence, because the action IS
+ * the evidence: the `+` button only exists on a Changes or Untracked row and
+ * the `−` button only on a Staged one. Precedence would get the
+ * both-lists case wrong — a path that is staged AND further modified appears
+ * in Staged and Changes at once, and clicking the `+` on its Changes row
+ * must move THAT row, not silently treat it as an unstage of the Staged one.
+ */
+function actingList(lists: { staged: api.GitFileChange[]; unstaged: api.GitFileChange[]; untracked: api.GitFileChange[] }, path: string, action: 'staged' | 'unstaged'): StageList | null {
+  const has = (arr: api.GitFileChange[]) => arr.some((f) => f.path === path)
+  if (action === 'staged') {
+    // The `+` button's two homes. Untracked first: staging an untracked path
+    // is the only move that can put the row back under Untracked later.
+    if (has(lists.untracked)) return 'untracked'
+    if (has(lists.unstaged)) return 'unstaged'
+    return null
+  }
+  // The `−` button only ever lives on a Staged row.
+  if (has(lists.staged)) return 'staged'
+  return null
+}
+
+/**
+ * Move one path between the three lists.
+ *
+ * A path that is BOTH staged and further modified appears in two lists at
+ * once (index M + worktree M), so each list is filtered on its own merits
+ * rather than the path being removed everywhere:
+ *
+ *   - `git add` folds the worktree change INTO the index, so the Changes row
+ *     for that path really is gone — but a Staged row must survive.
+ *   - `git restore --staged` reverts the index only, so the Changes row
+ *     really is still there — but an Untracked row is not invented for a
+ *     path git tracks.
+ *
+ * Returns the rewritten lists plus where the row came from and went, so the
+ * caller can re-prime only the diffs whose meaning changed. `from === null`
+ * means this path was not on screen in either of the button's homes, which
+ * also makes a duplicate delivery (the POST fallback plus the SSE event)
+ * a no-op.
+ */
+function moveFileBetweenLists(
+  lists: {
+    staged: api.GitFileChange[]
+    unstaged: api.GitFileChange[]
+    untracked: api.GitFileChange[]
+  },
+  path: string,
+  action: 'staged' | 'unstaged',
+): {
+  staged: api.GitFileChange[]
+  unstaged: api.GitFileChange[]
+  untracked: api.GitFileChange[]
+  from: StageList | null
+  to: StageList
+} {
+  const from = actingList(lists, path, action)
+  const to = nextStageList(from ?? 'unstaged', action)
+  if (from === null || from === to) return { ...lists, from, to }
+
+  const has = (arr: api.GitFileChange[]) => arr.some((f) => f.path === path)
+
+  if (action === 'staged') {
+    // `git add` on a path that is ALREADY in the index updates that entry —
+    // it does not create a second one, so the existing Staged row stays
+    // exactly where it is instead of being duplicated.
+    if (from === 'untracked') {
+      lists.untracked = lists.untracked.filter((f) => f.path !== path)
+    } else {
+      lists.unstaged = lists.unstaged.filter((f) => f.path !== path)
+    }
+    if (!has(lists.staged)) {
+      lists.staged = [...lists.staged, { index_status: 'A', worktree_status: ' ', path }]
+    }
+  } else {
+    // The mirror: a path that already has a Changes row keeps it rather than
+    // gaining a second one.
+    lists.staged = lists.staged.filter((f) => f.path !== path)
+    if (to === 'untracked') {
+      if (!has(lists.untracked)) {
+        lists.untracked = [...lists.untracked, { index_status: '??', worktree_status: '??', path }]
+      }
+    } else if (!has(lists.unstaged)) {
+      lists.unstaged = [...lists.unstaged, { index_status: ' ', worktree_status: 'M', path }]
+    }
+  }
+
+  return { ...lists, from, to }
+}
+
 const stageFile = async (file: api.GitFileChange) => {
   if (!props.cwd || isStaging.value) return
   isStaging.value = true
   try {
     await api.stageGitFiles(props.cwd, [file.path])
-    await loadGitStatus()
-    await loadDiff()
+    // The SSE event is the primary path: the backend emits `git_file_staged`
+    // and `applyFileStageEvent` moves the row. The local move below is the
+    // fallback for a bus that is not installed (tests, or a host that never
+    // installed it) — without it the row would sit in the wrong list until
+    // the next manual refresh.
+    applyFileStageEvent({ action: 'staged', path: file.path, cwd: props.cwd, failed: false })
   } catch (err) {
     console.error('Failed to stage file:', err)
   } finally {
@@ -933,12 +1064,74 @@ const unstageFile = async (file: api.GitFileChange) => {
   isStaging.value = true
   try {
     await api.unstageGitFiles(props.cwd, [file.path])
-    await loadGitStatus()
-    await loadDiff()
+    applyFileStageEvent({ action: 'unstaged', path: file.path, cwd: props.cwd, failed: false })
   } catch (err) {
     console.error('Failed to unstage file:', err)
   } finally {
     isStaging.value = false
+  }
+}
+
+/**
+ * Apply one `git_file_stage` SSE event: move the row it names and re-prime
+ * only that file's diff and counts.
+ *
+ * Deliberately does NOT call `loadGitStatus()` — that is the whole point of
+ * the channel. The manual ↻ refresh and the commit flow keep the full
+ * reload path.
+ */
+function applyFileStageEvent(event: api.GitFileStageEvent): void {
+  // A failed git command must not move anything: the row stays where it is
+  // and the user sees the file still listed on the side they left it.
+  if (event.failed) return
+  // One browser tab can show several worktrees; only the panel bound to the
+  // event's cwd may move a row.
+  if (!props.cwd || event.cwd !== props.cwd) return
+  if (!event.path) return
+  // PR mode has no worktree lists to move.
+  if (isPrMode.value) return
+
+  const moved = moveFileBetweenLists(
+    {
+      staged: stagedFiles.value,
+      unstaged: unstagedFiles.value,
+      untracked: untrackedFiles.value,
+    },
+    event.path,
+    event.action,
+  )
+  stagedFiles.value = moved.staged
+  unstagedFiles.value = moved.unstaged
+  untrackedFiles.value = moved.untracked
+
+  // Re-prime the one file's diff + counts. `getGitFileDiffs` in LIST mode is
+  // one request for one path — not the folder-wide re-fetch the old code did.
+  void reprimeFileDiff(event.path, moved.to === 'staged')
+  // Keep the centre column's open diff in step with the row that just moved.
+  if (selectedPath.value === event.path) {
+    selectedStaged.value = moved.to === 'staged'
+    void loadDiff()
+  }
+}
+
+/**
+ * Fetch one file's diff and fold it into the shared snapshot + the row's
+ * counts. A failure leaves the previous counts in place rather than showing
+ * `+0 -0`, which would read as "this file is unchanged".
+ */
+async function reprimeFileDiff(path: string, staged: boolean): Promise<void> {
+  if (!props.cwd) return
+  try {
+    const batch = await api.getGitFileDiffs(props.cwd, [{ file: path, staged }])
+    const entry = batch.diffs.find((d) => d.path === path && d.staged === staged)
+    if (!entry) return
+    primeFolderDiffs(props.cwd, batch.diffs)
+    const { added, removed } = countDiffLines(entry.diff_content)
+    const next = new Map(diffCounts.value)
+    next.set(folderDiffKey(staged, path), { added, removed })
+    diffCounts.value = next
+  } catch (err) {
+    console.error(`[SidebarDiffPanel] re-prime diff failed for ${path}:`, err)
   }
 }
 
@@ -1024,10 +1217,26 @@ onMounted(() => {
   prPollTimer = window.setInterval(() => {
     if (showPr.value) void loadPrStatus()
   }, 30000)
+  // The backend pushes `git_file_staged` / `git_file_unstaged` after every
+  // `git add` / `git restore --staged`, so a +/− click moves ONE row instead
+  // of re-fetching the whole git-status list. A listener that throws must not
+  // take down the SSE client, so the callback is defensive.
+  try {
+    const bus = useSseBus()
+    unsubscribeFileStage = bus.on('gitFileStage', (event: api.GitFileStageEvent) => {
+      applyFileStageEvent(event)
+    })
+  } catch {
+    // No bus installed (tests, or a host that never installed it). The panel
+    // still works — `stageFile` / `unstageFile` apply the same local move
+    // directly, so the row never sits in the wrong list.
+  }
 })
 
 onUnmounted(() => {
   if (prPollTimer !== undefined) window.clearInterval(prPollTimer)
+  unsubscribeFileStage?.()
+  unsubscribeFileStage = null
 })
 
 defineExpose({
