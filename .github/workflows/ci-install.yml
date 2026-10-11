@@ -84,7 +84,11 @@ jobs:
           $tempData = Join-Path $env:RUNNER_TEMP 'pabrik-data'
           $env:LOCALAPPDATA = Join-Path $tempData 'Local'
           $env:APPDATA = Join-Path $tempData 'Roaming'
-          New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA, $env:APPDATA | Out-Null
+          # The shipped Install-Pabrik.ps1 assumes the Start Menu Programs
+          # dir exists (true on any real profile, false on this scratch
+          # APPDATA) — pre-create the full subtree so $lnk.Save() lands.
+          $startMenuDir = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
+          New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA, $env:APPDATA, $startMenuDir | Out-Null
           Write-Output "→ install (${{ inputs.label }}): running install.ps1 from this SHA"
           & "$PWD\install.ps1"
           $bin = Join-Path $env:LOCALAPPDATA 'pabrik\bin\pabrik.exe'
