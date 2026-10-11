@@ -389,9 +389,14 @@ test "effectiveConfig: an overlay wins and the base survives underneath" {
     defer alloc.free(e.json);
     try testing.expect(e.has_overlay);
 
-    const cfg = try std.json.parseFromSliceLeaky(pabrik_config_get.ConfigJson, alloc, e.json, .{
+    // `parseFromSlice` + deinit, NOT the leaky variant: the leaky one exists
+    // for an arena-backed request allocator, and under `testing.allocator` it
+    // reports every allocation as a leak (which is how CI caught this file).
+    var parsed = try std.json.parseFromSlice(pabrik_config_get.ConfigJson, alloc, e.json, .{
         .ignore_unknown_fields = true,
     });
+    defer parsed.deinit();
+    const cfg = parsed.value;
     // The overlay's list replaced the user's two-entry list...
     try testing.expectEqual(@as(usize, 1), cfg.tools.?.len);
     // ...and the profile the workspace never mentioned - with its credential
@@ -409,7 +414,14 @@ test "effectiveConfig: no base at all still applies the overlay" {
 }
 
 test "overlayFromPutBody keeps only the workspace-scoped keys" {
-    const alloc = testing.allocator;
+    // An arena, because `overlayFromPutBody` runs the same
+    // `parseConfigInput` the HTTP handler does - and that parser is
+    // `parseFromSliceLeaky` on purpose, since the handler gives it the request
+    // arena. Under `testing.allocator` every one of its allocations would be
+    // reported as a leak.
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const alloc = arena_state.allocator();
     const body =
         \\{"profiles":{"claude":{"model":"opus"}},
         \\ "tools":["read_file"],
@@ -418,9 +430,8 @@ test "overlayFromPutBody keeps only the workspace-scoped keys" {
         \\ "web_launch_enabled":true}
     ;
     const overlay = try overlayFromPutBody(alloc, body);
-    defer alloc.free(overlay);
 
-    var parsed = try std.json.parseFromSlice(std.json.Value, alloc, overlay, .{});
+    var parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, overlay, .{});
     defer parsed.deinit();
     const obj = parsed.value.object;
     // `profiles` is normalised to the on-disk `profiles_models` - see
@@ -434,7 +445,11 @@ test "overlayFromPutBody keeps only the workspace-scoped keys" {
 }
 
 test "overlayFromPutBody refuses a body with nothing scoped, and malformed JSON" {
-    const alloc = testing.allocator;
+    // Arena for the same reason as the test above: the parse that REFUSES also
+    // goes through the leaky parser.
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const alloc = arena_state.allocator();
     // Refusing beats storing `{}`: storing it would look like a successful
     // save while every setting the user typed silently stayed user-level.
     try testing.expectError(error.NothingScoped, overlayFromPutBody(alloc, "{\"retry_delay_ms\":2000}"));
@@ -458,9 +473,11 @@ test "the GET response masks the web_search key, like the user-scope GET" {
 
     const e = try effectiveConfig(alloc, base, null);
     defer alloc.free(e.json);
-    const cfg = try std.json.parseFromSliceLeaky(pabrik_config_get.ConfigJson, alloc, e.json, .{
+    var parsed = try std.json.parseFromSlice(pabrik_config_get.ConfigJson, alloc, e.json, .{
         .ignore_unknown_fields = true,
     });
+    defer parsed.deinit();
+    const cfg = parsed.value;
 
     // Positive control: the unmasked field really does hold the secret, so
     // the absence assertion below cannot pass vacuously.
@@ -476,7 +493,9 @@ test "the GET response masks the web_search key, like the user-scope GET" {
 
 test "the workspace GET carries has_overlay, the user GET does not" {
     const alloc = testing.allocator;
-    const cfg = try std.json.parseFromSliceLeaky(pabrik_config_get.ConfigJson, alloc, "{}", .{});
+    var parsed = try std.json.parseFromSlice(pabrik_config_get.ConfigJson, alloc, "{}", .{});
+    defer parsed.deinit();
+    const cfg = parsed.value;
 
     const ws_wire = try pabrik_config_get.makeConfigResponse(alloc, cfg, true);
     defer alloc.free(ws_wire);
@@ -495,20 +514,18 @@ test "a workspace's overlay is invisible to another workspace over the store pat
 
     try store.saveRaw(alloc, &ctx.db, store.FILE_MODE_OWNER, "ws_a", "{\"active_profile\":\"a\"}");
 
-    const for_a = try effectiveConfig(
-        alloc,
-        USER_CONFIG,
-        store.loadRaw(alloc, &ctx.db, store.FILE_MODE_OWNER, "ws_a") catch null,
-    );
+    // Captured and freed: `loadRaw` returns an OWNED slice, and passing it
+    // straight into the call leaked it (CI: "leaked 1 allocations").
+    const overlay_a = store.loadRaw(alloc, &ctx.db, store.FILE_MODE_OWNER, "ws_a") catch null;
+    defer if (overlay_a) |o| alloc.free(o);
+    const for_a = try effectiveConfig(alloc, USER_CONFIG, overlay_a);
     defer alloc.free(for_a.json);
     try testing.expect(for_a.has_overlay);
     try testing.expect(std.mem.indexOf(u8, for_a.json, "\"a\"") != null);
 
-    const for_b = try effectiveConfig(
-        alloc,
-        USER_CONFIG,
-        store.loadRaw(alloc, &ctx.db, store.FILE_MODE_OWNER, "ws_b") catch null,
-    );
+    const overlay_b = store.loadRaw(alloc, &ctx.db, store.FILE_MODE_OWNER, "ws_b") catch null;
+    defer if (overlay_b) |o| alloc.free(o);
+    const for_b = try effectiveConfig(alloc, USER_CONFIG, overlay_b);
     defer alloc.free(for_b.json);
     // Inheriting: the user's profile, not ws_a's override.
     try testing.expect(!for_b.has_overlay);

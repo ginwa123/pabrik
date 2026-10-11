@@ -146,18 +146,25 @@ pub fn mergedConfigTextFor(
     defer if (overlay) |o| allocator.free(o);
 
     const base = workspace_config.baseConfigText(allocator, io, db, environment, auth_enabled, owner);
-    defer if (base) |b| allocator.free(b);
 
     if (overlay == null) {
-        // Case 1 and 2 - see the doc comment. A file-mode read that found a
-        // config.json still answers null, because the singleton already holds
-        // exactly those bytes.
-        if (!auth_enabled) return null;
+        // Case 1 and 2 - see the doc comment.
+        if (!auth_enabled) {
+            // File mode: a config.json read that found the file still answers
+            // null, because the singleton already holds exactly those bytes.
+            if (base) |b| allocator.free(b);
+            return null;
+        }
+        // Ownership of `base` MOVES TO THE CALLER here. Freeing it on the way
+        // out - the `defer` this used to have - handed the caller freed
+        // memory to parse, which is a crash, not a leak.
         return base;
     }
 
-    // Case 3. A malformed base degrades to `{}` inside `overlayJson`, so the
-    // overlay still applies rather than being silently dropped.
+    // Case 3. The base is only an INPUT to the merge, so it is freed here;
+    // a malformed base degrades to `{}` inside `overlayJson`, so the overlay
+    // still applies rather than being silently dropped.
+    defer if (base) |b| allocator.free(b);
     return workspace_config.overlayJson(allocator, base orelse "", overlay.?) catch null;
 }
 
@@ -526,8 +533,12 @@ test "an overlay never reaches another workspace" {
     try putOverlay(&ctx.db, "", "ws_a", "{\"active_profile\":\"mine\"}");
 
     try testing.expect(mergedConfigTextFor(alloc, ctx.threaded.io(), &ctx.db, null, false, "", "ws_b") == null);
-    // Positive control: ws_a itself does see it.
-    try testing.expect(mergedConfigTextFor(alloc, ctx.threaded.io(), &ctx.db, null, false, "", "ws_a") != null);
+    // Positive control: ws_a itself does see it. The slice is owned, so it is
+    // freed - an assertion that only checks `!= null` leaks the whole config.
+    const seen = mergedConfigTextFor(alloc, ctx.threaded.io(), &ctx.db, null, false, "", "ws_a") orelse
+        return error.OverlayInvisible;
+    defer alloc.free(seen);
+    try testing.expect(std.mem.indexOf(u8, seen, "mine") != null);
 }
 
 test "an overlay never reaches another user in the same workspace" {
