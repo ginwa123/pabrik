@@ -16,10 +16,23 @@
 //!
 //! ## The value column
 //!
-//! `value` is PLAINTEXT. It is never selected on any read path except
-//! `loadSecretValues`, which exists solely for the dispatch-time
-//! substitution in `secrets_substitution.zig`. `listSecretNames` is the only
-//! function the agent-facing paths may call, and it selects `name` alone.
+//! `value` is an ENVELOPE sealed with AES-256-GCM under a key held by the OS
+//! keychain — `v1:<key_id>:<base64url(nonce || ciphertext || tag)>` — or, on a
+//! host with no keychain, the plaintext, on purpose and visibly. Writes seal
+//! (`createSecret`, `updateSecret`), reads open (`loadSecretValues`), and a row
+//! with no `v1:` prefix is legacy plaintext read as-is, which is why the
+//! upgrade cannot brick. See `secrets_at_rest.zig` for the format and for what
+//! the cipher does and does not protect.
+//!
+//! **The cipher protects the FILE — backups, copies, another local account —
+//! not the account.** A process running as this user can ask the keychain for
+//! the key and decrypt; what keeps a value away from the model is the
+//! substitution path, not this.
+//!
+//! The value is never selected on any read path except `loadSecretValues`,
+//! which exists solely for the dispatch-time substitution in
+//! `secrets_substitution.zig`. `listSecretNames` is the only function the
+//! agent-facing paths may call, and it selects `name` alone.
 //!
 //! Ownership: every string in a returned `SecretRow` or `SecretValueRow` is
 //! allocator-owned. Free one row with `freeSecretRow` / a slice with
@@ -28,6 +41,7 @@
 const std = @import("std");
 const sqlite = @import("pabrikcore").sqlite;
 const helpers = @import("helpers");
+const secrets_at_rest = @import("secrets_at_rest.zig");
 
 /// Longest legal secret name. The name is what a model types into a
 /// `{{SECRETS:NAME}}` placeholder, so the grammar is kept narrow on purpose:
@@ -53,8 +67,13 @@ pub const SecretRow = struct {
 ///
 /// A caller holding one of these holds a live credential: never log it,
 /// never persist it, never put it in a tool result or an SSE frame.
+///
+/// `id` is carried because it is the envelope's associated data: opening a
+/// value needs the id it was sealed under, and re-deriving it would mean a
+/// second query per secret.
 pub const SecretValueRow = struct {
     name: []const u8,
+    id: []const u8,
     value: []const u8,
 };
 
@@ -91,6 +110,22 @@ pub const SecretsError = error{
     OutOfMemory,
 };
 
+/// The error set of the VALUE read path, kept separate from `SecretsError`.
+///
+/// `ValueUnreadable` is a state only this path can be in — a sealed row whose
+/// envelope will not open — and folding it into the CRUD error set would make
+/// every HTTP handler's exhaustive switch grow a variant it can never see.
+pub const LoadValuesError = error{
+    WorkspaceIdRequired,
+    QueryFailed,
+    OutOfMemory,
+    /// A sealed row could not be opened: the key is gone, or the row is
+    /// corrupt. Distinct from "no such secret" on purpose — reporting a live
+    /// secret as absent is how a substitution silently becomes an empty
+    /// credential.
+    ValueUnreadable,
+};
+
 /// The read shape shared by every value-free read, so no call site can
 /// accidentally return a different projection. There is deliberately no
 /// `value` in this list — see the module header.
@@ -108,8 +143,11 @@ const SELECT_NAMES =
 
 /// Prefix for `loadSecretValues`, which appends the `IN (...)` list. The
 /// only two functions in this file whose SQL mentions `value`.
+///
+/// `id` rides along because it is the envelope's associated data — see
+/// `secrets_at_rest.seal`. Without it the read path could not open a row.
 const SELECT_NAME_VALUE_PREFIX =
-    "SELECT name, value FROM workspace_secrets WHERE workspace_id = ? AND name IN (";
+    "SELECT name, value, id FROM workspace_secrets WHERE workspace_id = ? AND name IN (";
 
 fn rowFromValues(allocator: std.mem.Allocator, values: []const []const u8) !SecretRow {
     return .{
@@ -211,10 +249,17 @@ pub fn createSecret(
     // empty-slice-binds-as-NULL reason described above. `workspace_id` and
     // `name` cannot be empty by this point, but the idiom is applied
     // uniformly so no later edit has to remember which columns are guarded.
+    // Seal before the column sees it. With no key on this host `sealValue`
+    // returns the plaintext — the write is not refused, because refusing would
+    // break the feature on every headless box — and the boot log says why.
+    const stored_value = secrets_at_rest.sealValue(allocator, secret_id, args.value) catch
+        return error.InsertFailed;
+    defer allocator.free(stored_value);
+
     db.exec(allocator,
         \\INSERT INTO workspace_secrets (id, workspace_id, name, value, created_at, updated_at)
         \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-    , &[_][]const u8{ secret_id, args.workspace_id, name, args.value }) catch |err| switch (err) {
+    , &[_][]const u8{ secret_id, args.workspace_id, name, stored_value }) catch |err| switch (err) {
         error.ExecuteFailed => {
             // A failed INSERT is not automatically a taken name: it is also
             // what a same-nanosecond primary-key collision looks like.
@@ -270,11 +315,19 @@ pub fn updateSecret(
         r.deinit(allocator);
     } else return error.NotFound;
 
+    // Same seal as create, and the same plaintext fallback when this host has
+    // no keychain. A rotation therefore rewrites the envelope with a FRESH
+    // nonce, so the file does not reveal whether the credential actually
+    // changed.
+    const stored_value = secrets_at_rest.sealValue(allocator, args.secret_id, args.value) catch
+        return error.UpdateFailed;
+    defer allocator.free(stored_value);
+
     db.exec(allocator,
         \\UPDATE workspace_secrets
         \\SET value = COALESCE(NULLIF(?, ''), ''), updated_at = CURRENT_TIMESTAMP
         \\WHERE id = ? AND workspace_id = ?
-    , &[_][]const u8{ args.value, args.secret_id, args.workspace_id }) catch
+    , &[_][]const u8{ stored_value, args.secret_id, args.workspace_id }) catch
         return error.UpdateFailed;
 
     return getSecret(allocator, db, args.workspace_id, args.secret_id) catch
@@ -355,7 +408,7 @@ pub fn loadSecretValues(
     db: *sqlite.SqliteBackend,
     workspace_id: []const u8,
     names: []const []const u8,
-) SecretsError![]SecretValueRow {
+) LoadValuesError![]SecretValueRow {
     if (workspace_id.len == 0) return error.WorkspaceIdRequired;
 
     var out: std.ArrayList(SecretValueRow) = .empty;
@@ -385,9 +438,21 @@ pub fn loadSecretValues(
         defer r.deinit(allocator);
         const name_copy = try allocator.dupe(u8, r.values[0]);
         errdefer allocator.free(name_copy);
-        const value_copy = try allocator.dupe(u8, r.values[1]);
+        const id_copy = try allocator.dupe(u8, r.values[2]);
+        errdefer allocator.free(id_copy);
+
+        // Open here, once, so nothing downstream has to know whether a row was
+        // sealed or is legacy plaintext. A row that will not open is reported,
+        // never substituted as an empty credential.
+        const value_copy = secrets_at_rest.openValue(allocator, id_copy, r.values[1]) catch |err| {
+            std.log.warn(
+                "secrets_store: the stored value for {s} cannot be opened ({s}); refusing it rather than substituting an empty credential",
+                .{ name_copy, @errorName(err) },
+            );
+            return error.ValueUnreadable;
+        };
         errdefer allocator.free(value_copy);
-        try out.append(allocator, .{ .name = name_copy, .value = value_copy });
+        try out.append(allocator, .{ .name = name_copy, .id = id_copy, .value = value_copy });
     }
     return out.toOwnedSlice(allocator);
 }
@@ -454,6 +519,7 @@ pub fn freeSecretNames(allocator: std.mem.Allocator, names: [][]u8) void {
 pub fn freeSecretValueRows(allocator: std.mem.Allocator, rows: []SecretValueRow) void {
     for (rows) |row| {
         allocator.free(row.name);
+        allocator.free(row.id);
         // The value is a live credential. Zero it before the allocator takes
         // the page back: a freed-but-uncleared buffer survives in heap memory,
         // in a core dump, and in whatever is handed that address next. A name

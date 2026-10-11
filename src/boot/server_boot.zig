@@ -14,6 +14,8 @@ const migration = @import("../migrations/mod.zig").migration;
 const static_files = @import("../modules/static_files.zig");
 const shutdown = @import("shutdown.zig");
 const db_config = @import("db_config.zig");
+const secrets_key = @import("secrets_key.zig");
+const secrets_at_rest = @import("../agentic_loop/secrets_at_rest.zig");
 const static_serve = @import("../http_static/static_serve.zig");
 const config_mod = @import("../modules/config/Config.zig");
 const workspace_config = @import("../agentic_loop/workspace_config.zig");
@@ -131,7 +133,65 @@ pub fn openDatabase(
     db_config.applySecurityPragmas(allocator, &db);
     shutdown.logSqliteConfig(allocator, &db);
     try runMigrations(allocator, &db);
+
+    // At-rest sealing, before the server accepts a request.
+    //
+    // The key comes from the OS keychain and nowhere else, so a host without
+    // one keeps working in plaintext and SAYS SO (see `logSecretsAtRestState`)
+    // rather than silently downgrading. This is deliberately after migrations
+    // and NOT a migration: the chain has to stay runnable where no key can be
+    // obtained, and `migration_103.up` is pure SQL.
+    const key_status = secrets_key.load(allocator, io);
+    secrets_at_rest.setKey(key_status.key);
+    logSecretsAtRestState(key_status);
+    sealLegacySecretValues(allocator, io, &db, db_path);
+
     return .{ .db_path = db_path, .db = db };
+}
+
+/// One boot-log line saying whether values are sealed, and exactly how to fix
+/// it when they are not.
+///
+/// A silent downgrade to plaintext is the failure mode this exists to prevent:
+/// the operator has to be able to tell "this host is sealing" from "this host
+/// gave up and stored the credential in the clear", and the second case has to
+/// come with the command that ends it.
+fn logSecretsAtRestState(status: secrets_key.Status) void {
+    if (status.sealed()) {
+        std.log.info("secrets: workspace secret values are sealed at rest (AES-256-GCM, key held by the OS keychain)", .{});
+        return;
+    }
+    std.log.warn("secrets: {s}", .{status.unavailable.describe()});
+    if (secrets_key.provisionCommand()) |cmd| {
+        std.log.warn(
+            "secrets: to seal them, store a 32-byte key (64 hex chars) in the OS keychain and restart — {s}",
+            .{cmd},
+        );
+    }
+}
+
+/// Seal every row written before the cipher existed, then make the file agree
+/// with the claim.
+///
+/// Both steps are best-effort and neither is fatal: a boot that cannot seal is
+/// still a boot, and the log says what was left behind.
+fn sealLegacySecretValues(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    db: *database.Db,
+    db_path: []const u8,
+) void {
+    const sealed_count = secrets_at_rest.sealLegacyRows(allocator, db) catch |err| {
+        std.log.warn("secrets: the seal pass failed ({s}); values written before now stay in plaintext", .{@errorName(err)});
+        return;
+    };
+    if (sealed_count == 0) return;
+
+    std.log.info(
+        "secrets: sealed {d} previously plaintext value(s); compacting so the old bytes do not survive in the file",
+        .{sealed_count},
+    );
+    secrets_at_rest.compactAfterSeal(allocator, db, db_path, io);
 }
 
 pub fn runMigrations(allocator: std.mem.Allocator, db: *database.Db) !void {
