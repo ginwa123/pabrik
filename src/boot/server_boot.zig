@@ -237,6 +237,28 @@ pub fn freeStaticDir(allocator: std.mem.Allocator, cfg: *static_files.StaticDirC
     allocator.destroy(cfg);
 }
 
+/// Find a shipped webapp dir (its `index.html`) without any flags, for
+/// installer layouts where the UI ships beside the install root:
+/// `install.sh` extracts `html/` next to the binaries (mirroring the
+/// `zig-out/bin/html` checkout layout), Windows keeps
+/// `%LOCALAPPDATA%\pabrik\html`. Probes each candidate dir for
+/// `index.html`, first hit wins; returns the owned dir path or null.
+/// Pure probe — no logging (callers report the chosen dir, and the test
+/// runner fails any test that logs at err level).
+pub fn findBundledWebapp(
+    io: std.Io,
+    allocator: std.mem.Allocator,
+    candidates: []const []const u8,
+) ?[]u8 {
+    for (candidates) |dir| {
+        const probe = std.fs.path.join(allocator, &.{ dir, "index.html" }) catch continue;
+        defer allocator.free(probe);
+        std.Io.Dir.cwd().access(io, probe, .{}) catch continue;
+        return allocator.dupe(u8, dir) catch null;
+    }
+    return null;
+}
+
 // ---------------------------------------------------------------------------
 // Behaviour tests (call the phase fns, assert outputs)
 // ---------------------------------------------------------------------------
@@ -249,6 +271,44 @@ test "server_boot: resolvePort prefers an explicit --port either way" {
 test "server_boot: resolvePort falls back to web-launch mode" {
     try std.testing.expectEqual(@as(u16, 0), resolvePort(null, true));
     try std.testing.expectEqual(@as(u16, 8081), resolvePort(null, false));
+}
+
+test "findBundledWebapp: returns null when no candidate holds index.html" {
+    const found = findBundledWebapp(
+        std.testing.io,
+        std.testing.allocator,
+        &.{ "/nonexistent-pabrik-dir-xyz", "/also-nonexistent-pabrik-dir-xyz" },
+    );
+    try std.testing.expect(found == null);
+}
+
+test "findBundledWebapp: returns the first candidate holding index.html" {
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // <tmp>/first/ stays empty; <tmp>/second/html/index.html is the hit.
+    try tmp.dir.createDirPath(io, "first");
+    try tmp.dir.createDirPath(io, "second/html");
+    try tmp.dir.writeFile(io, .{
+        .sub_path = "second/html/index.html",
+        .data = "<!doctype html>",
+        .flags = .{ .truncate = true },
+    });
+
+    const abs_file = try tmp.dir.realPathFileAlloc(io, "second/html/index.html", allocator);
+    defer allocator.free(abs_file);
+    const abs_html = std.fs.path.dirname(abs_file).?;
+    const abs_second = std.fs.path.dirname(abs_html).?;
+    const abs_tmp = std.fs.path.dirname(abs_second).?;
+    const first = try std.fs.path.join(allocator, &.{ abs_tmp, "first" });
+    defer allocator.free(first);
+
+    const found = findBundledWebapp(io, allocator, &.{ first, abs_html }) orelse
+        return error.TestUnexpectedResult;
+    defer allocator.free(found);
+    try std.testing.expectEqualStrings(abs_html, found);
 }
 
 test "server_boot: tryParseCliArgs maps a bad --port to invalid" {

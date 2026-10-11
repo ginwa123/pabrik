@@ -6,6 +6,7 @@
 #   2. Emits "Agent is ready to serve!" (src/main.zig:380) within 30s
 #   3. Serves /health with {"status":"ok",...}
 #   4. Serves /api/workspaces with HTTP 200
+#   4b. (opt-in via PABRIK_SMOKE_CHECK_APP=1) Serves / with the app shell
 #   5. Shuts down cleanly when /test/shutdown is POSTed
 #
 # Designed to be run on a CI runner (or locally) where no pabrik is
@@ -104,6 +105,25 @@ if [ "$WORKSPACES_STATUS" = "200" ]; then
 else
   echo "✗ /api/workspaces returned $WORKSPACES_STATUS (expected 200)" >&2
   exit 1
+fi
+
+# Step 3b (opt-in via PABRIK_SMOKE_CHECK_APP=1): GET / serves the app
+# shell (proves a shipped/installed html/ is discovered). Off by default:
+# backend cells boot from zig-out layouts where html/ may legitimately be
+# absent (fresh checkout without a webapp build); the install jobs turn it
+# on because their contract IS "the installer ships a working /app".
+if [ "${PABRIK_SMOKE_CHECK_APP:-0}" = "1" ]; then
+  APP_BODY="$(curl -fsS --max-time 5 "http://127.0.0.1:${PABRIK_PORT}/" 2>&1)" || {
+    echo "✗ / request failed: $APP_BODY" >&2
+    exit 1;
+  }
+  case "$APP_BODY" in
+    *'<'*) echo "✓ step 3b/5: / serves the app shell" ;;
+    *)
+      echo "✗ / did not serve the app shell" >&2
+      exit 1
+      ;;
+  esac
 fi
 
 # Step 4: POST /test/shutdown — expect {"message":"Server shutdown initiated"}

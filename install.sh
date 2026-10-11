@@ -98,11 +98,13 @@ if [[ "${PABRIK_DRY_RUN:-0}" -eq 1 ]]; then
     echo "repo=${REPO} tag=${TAG} triple=${TRIPLE} bindir=${BINDIR}"
     echo "${BASE_URL}/pabrik-${TRIPLE}"
     echo "${BASE_URL}/pabrik-desktop-${TRIPLE}"
+    echo "${BASE_URL}/pabrik-html-${TRIPLE}.tar.gz"
     exit 0
 fi
 
 if [[ "$UNINSTALL" -eq 1 ]]; then
     rm -f "$BIN_PABRIK" "$BIN_DESKTOP"
+    rm -rf "${BINDIR}/html"
     rm -f "$HOME/.local/share/applications/pabrik.desktop" "$HOME/.local/share/applications/pabrik-browser.desktop"
     if [[ "$SYSTEM" -eq 1 ]]; then
         rm -f /usr/share/applications/pabrik.desktop /usr/share/applications/pabrik-browser.desktop
@@ -160,6 +162,22 @@ fi
 install -m 0755 "${TMPDIR}/pabrik" "$BIN_PABRIK"
 if [[ "$WITH_DESKTOP" -eq 1 ]]; then
     install -m 0755 "${TMPDIR}/pabrik-desktop" "$BIN_DESKTOP"
+fi
+
+# Shipped UI (serves /app): the server auto-discovers "${BINDIR}/html"
+# (same portable layout as zig-out/bin/html in a checkout), so a bare
+# `pabrik` opens the app with no --static-dir flag. Best-effort: a
+# missing tar binary or a release without the asset degrades to
+# API-only, never fails the install.
+if have_cmd tar; then
+    if download "${BASE_URL}/pabrik-html-${TRIPLE}.tar.gz" "${TMPDIR}/html.tar.gz" 2>/dev/null; then
+        rm -rf "${BINDIR}/html"
+        tar -xzf "${TMPDIR}/html.tar.gz" -C "${BINDIR}" || echo "warning: could not extract shipped UI (serves API-only)" >&2
+    else
+        echo "warning: no shipped UI asset for ${TRIPLE} (serves API-only)" >&2
+    fi
+else
+    echo "warning: tar not found -- skipping shipped UI (serves API-only)" >&2
 fi
 
 # Linux desktop launchers (best-effort): fetch the .desktop files shipped in
