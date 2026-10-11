@@ -32,15 +32,16 @@ if (
   ).HTMLElement.prototype.scrollTo = function () {}
 }
 
+// Inert global SSE stub. This spec never drives a state transition, so
+// `getState()` reads the captured initial value directly — no mutable
+// `_state` field to cast through.
 function makeStubClient(initial: SseState = 'open'): SseClient {
-  const stub = {
+  return {
     close: vi.fn(),
     reconnect: vi.fn(),
-    getState: () => (stub as { _state: SseState })._state,
+    getState: (): SseState => initial,
     onStateChange: () => () => {},
-    _state: initial,
-  } as unknown as SseClient
-  return stub
+  }
 }
 
 const WS = 'ws_guard_repro'
