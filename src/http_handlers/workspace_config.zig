@@ -1,19 +1,17 @@
 //! The per-workspace config overlay over HTTP.
 //!
-//!   * `GET    /api/workspaces/:workspace_id/config` - the EFFECTIVE config
-//!     (user config ⊕ workspace overlay) plus `has_overlay`, so the settings
-//!     page can show what actually runs here AND whether this workspace has
-//!     taken over from the user-level config.
-//!   * `PUT    /api/workspaces/:workspace_id/config` - replace the overlay
-//!     with the workspace-scoped slice of the request body. An empty slice
-//!     (`{}`) records an explicit "inherit", it does not store an empty
-//!     object.
-//!   * `DELETE /api/workspaces/:workspace_id/config` - same as PUT `{}`:
-//!     back to inheriting, and remembered as a decision.
-//!   * `POST   /api/workspaces/:workspace_id/config/copy` - copy the
-//!     workspace-scoped slice of the USER config into this workspace. This is
-//!     the auth-mode path (boot seeding deliberately skips auth mode) and the
-//!     UI's "Copy user settings into this workspace" button.
+//!   * `GET /api/workspaces/:workspace_id/config` - the EFFECTIVE config (user
+//!     config with this workspace's overlay merged over it), so the settings
+//!     page shows what actually runs here rather than a sparse diff.
+//!   * `PUT /api/workspaces/:workspace_id/config` - replace the overlay with
+//!     the workspace-scoped slice of the request body. An empty slice records
+//!     an explicit "inherit"; it does not store an empty object.
+//!
+//! There is deliberately no reset/copy route. Every workspace is seeded from
+//! the user config at boot (`server_boot.seedWorkspaceSettingsFromUserConfig`)
+//! and the seeding is the migration, so a per-workspace "copy the user
+//! settings in" or "reset to inherited" control had nothing left to do.
+//! `PUT {}` still expresses "inherit" for anything that needs it.
 //!
 //! ## What this file deliberately does NOT do
 //!
@@ -54,34 +52,22 @@ pub const WorkspaceConfigError = error{
 // Use cases (no HTTP, no io - so every rule below is testable)
 // =====================================================================
 
-pub const EffectiveConfig = struct {
-    /// Owned JSON text: `base` with `overlay` merged over it.
-    json: []u8,
-    /// Is the workspace carrying its own overlay, or inheriting?
-    has_overlay: bool,
-};
-
-/// Merge a base config with a workspace overlay.
+/// The effective config TEXT: `base` with `overlay` merged over it. Owned by
+/// the caller.
 ///
 /// `base_json` is null when there is no user-level config to layer over (a
-/// fresh install, or a user who never saved settings); the overlay then
-/// stands alone, which is the honest answer rather than an error.
+/// fresh install, or a user who never saved settings); the overlay then stands
+/// alone, which is the honest answer rather than an error.
 pub fn effectiveConfig(
     allocator: std.mem.Allocator,
     base_json: ?[]const u8,
     overlay_json: ?[]const u8,
-) WorkspaceConfigError!EffectiveConfig {
+) WorkspaceConfigError![]u8 {
     if (overlay_json == null) {
-        return .{
-            .json = allocator.dupe(u8, base_json orelse "{}") catch return error.OutOfMemory,
-            .has_overlay = false,
-        };
+        return allocator.dupe(u8, base_json orelse "{}") catch return error.OutOfMemory;
     }
-    return .{
-        .json = workspace_config.overlayJson(allocator, base_json orelse "", overlay_json.?) catch
-            return error.OutOfMemory,
-        .has_overlay = true,
-    };
+    return workspace_config.overlayJson(allocator, base_json orelse "", overlay_json.?) catch
+        return error.OutOfMemory;
 }
 
 /// The overlay the PUT body should store: its workspace-scoped slice.
@@ -217,18 +203,18 @@ pub fn workspaceConfigGetHandler(
 
     const effective = effectiveConfig(allocator, base, overlay) catch |err|
         return errorResponse(res, allocator, err);
-    defer allocator.free(effective.json);
+    defer allocator.free(effective);
 
     // The SAME parse struct and the SAME response builder as
     // `GET /api/config/pabrik`, so the two surfaces cannot drift on the field
     // set or on masking `web_search`.
-    const cfg = std.json.parseFromSliceLeaky(pabrik_config_get.ConfigJson, allocator, effective.json, .{
+    const cfg = std.json.parseFromSliceLeaky(pabrik_config_get.ConfigJson, allocator, effective, .{
         .ignore_unknown_fields = true,
     }) catch return errorResponse(res, allocator, error.InvalidBody);
 
     return res.jsonResponse(.{
         .status_code = 200,
-        .data = try pabrik_config_get.makeConfigResponse(allocator, cfg, effective.has_overlay),
+        .data = try pabrik_config_get.makeConfigResponse(allocator, cfg),
     });
 }
 
@@ -274,72 +260,6 @@ pub fn workspaceConfigPutHandler(
     });
 }
 
-pub fn workspaceConfigDeleteHandler(
-    ctx: gserverz.HttpContext,
-    req: gserverz.HttpRequest,
-    res: gserverz.HttpResponse,
-) !gserverz.HttpResponse {
-    const allocator = ctx.allocator;
-    const di = try pabrikcore.getSingleton();
-
-    const workspace_id = req.params.get("workspace_id") orelse "";
-    if (workspace_id.len == 0) return errorResponse(res, allocator, error.WorkspaceIdRequired);
-
-    const owner = ownerForRequest(allocator, di, req) orelse
-        return errorResponse(res, allocator, error.OutOfMemory);
-    defer allocator.free(owner);
-
-    store.clear(allocator, di.db, owner, workspace_id) catch
-        return errorResponse(res, allocator, error.QueryFailed);
-    return res.jsonResponse(.{
-        .status_code = 200,
-        .data = try okResponse(allocator, "workspace config inherits the user config"),
-    });
-}
-
-pub fn workspaceConfigCopyHandler(
-    ctx: gserverz.HttpContext,
-    req: gserverz.HttpRequest,
-    res: gserverz.HttpResponse,
-) !gserverz.HttpResponse {
-    const allocator = ctx.allocator;
-    const di = try pabrikcore.getSingleton();
-
-    const workspace_id = req.params.get("workspace_id") orelse "";
-    if (workspace_id.len == 0) return errorResponse(res, allocator, error.WorkspaceIdRequired);
-
-    const owner = ownerForRequest(allocator, di, req) orelse
-        return errorResponse(res, allocator, error.OutOfMemory);
-    defer allocator.free(owner);
-
-    const base = loadBase(allocator, di, owner);
-    defer if (base) |b| allocator.free(b);
-
-    const overlay = workspace_config.workspaceScopedOverlay(allocator, base orelse "") catch
-        return errorResponse(res, allocator, error.OutOfMemory);
-    defer allocator.free(overlay);
-
-    // Nothing to copy is not a failure: a user who has never configured
-    // anything has nothing to hand down, and writing `{}` would record a
-    // decision they never made.
-    if (std.mem.eql(u8, overlay, "{}")) {
-        return res.jsonResponse(.{
-            .status_code = 200,
-            .data = try http_response.makeErrorResponse(allocator, .{
-                .@"error" = "The user config has no workspace-scoped settings to copy",
-            }),
-        });
-    }
-
-    store.saveRaw(allocator, di.db, owner, workspace_id, overlay) catch
-        return errorResponse(res, allocator, error.QueryFailed);
-
-    return res.jsonResponse(.{
-        .status_code = 200,
-        .data = try okResponse(allocator, "user settings copied into this workspace"),
-    });
-}
-
 // =====================================================================
 // Tests
 // =====================================================================
@@ -375,24 +295,22 @@ const USER_CONFIG =
     \\ "retry_delay_ms":2000}
 ;
 
-test "effectiveConfig: no overlay means the base, and has_overlay false" {
+test "effectiveConfig: no overlay means the base, unchanged" {
     const alloc = testing.allocator;
-    const e = try effectiveConfig(alloc, "{\"active_profile\":\"claude\"}", null);
-    defer alloc.free(e.json);
-    try testing.expectEqualStrings("{\"active_profile\":\"claude\"}", e.json);
-    try testing.expect(!e.has_overlay);
+    const merged = try effectiveConfig(alloc, "{\"active_profile\":\"claude\"}", null);
+    defer alloc.free(merged);
+    try testing.expectEqualStrings("{\"active_profile\":\"claude\"}", merged);
 }
 
 test "effectiveConfig: an overlay wins and the base survives underneath" {
     const alloc = testing.allocator;
     const e = try effectiveConfig(alloc, USER_CONFIG, "{\"tools\":[\"read_file\"]}");
-    defer alloc.free(e.json);
-    try testing.expect(e.has_overlay);
+    defer alloc.free(e);
 
     // `parseFromSlice` + deinit, NOT the leaky variant: the leaky one exists
     // for an arena-backed request allocator, and under `testing.allocator` it
     // reports every allocation as a leak (which is how CI caught this file).
-    var parsed = try std.json.parseFromSlice(pabrik_config_get.ConfigJson, alloc, e.json, .{
+    var parsed = try std.json.parseFromSlice(pabrik_config_get.ConfigJson, alloc, e, .{
         .ignore_unknown_fields = true,
     });
     defer parsed.deinit();
@@ -401,16 +319,15 @@ test "effectiveConfig: an overlay wins and the base survives underneath" {
     try testing.expectEqual(@as(usize, 1), cfg.tools.?.len);
     // ...and the profile the workspace never mentioned - with its credential
     // - is still there.
-    try testing.expect(std.mem.indexOf(u8, e.json, "sk-user") != null);
+    try testing.expect(std.mem.indexOf(u8, e, "sk-user") != null);
     try testing.expectEqual(@as(u32, 2000), cfg.retry_delay_ms);
 }
 
 test "effectiveConfig: no base at all still applies the overlay" {
     const alloc = testing.allocator;
-    const e = try effectiveConfig(alloc, null, "{\"active_profile\":\"mine\"}");
-    defer alloc.free(e.json);
-    try testing.expectEqualStrings("{\"active_profile\":\"mine\"}", e.json);
-    try testing.expect(e.has_overlay);
+    const merged = try effectiveConfig(alloc, null, "{\"active_profile\":\"mine\"}");
+    defer alloc.free(merged);
+    try testing.expectEqualStrings("{\"active_profile\":\"mine\"}", merged);
 }
 
 test "overlayFromPutBody keeps only the workspace-scoped keys" {
@@ -480,7 +397,7 @@ test "the GET response masks the web_search key, like the user-scope GET" {
     const base = "{\"web_search\":{\"brave\":{\"url\":\"https://api.search.brave.com\",\"key\":\"" ++ secret ++ "\"}}}";
 
     const e = try effectiveConfig(alloc, base, null);
-    var parsed = try std.json.parseFromSlice(pabrik_config_get.ConfigJson, alloc, e.json, .{
+    var parsed = try std.json.parseFromSlice(pabrik_config_get.ConfigJson, alloc, e, .{
         .ignore_unknown_fields = true,
     });
     defer parsed.deinit();
@@ -490,26 +407,11 @@ test "the GET response masks the web_search key, like the user-scope GET" {
     // the absence assertion below cannot pass vacuously.
     try testing.expect(std.mem.indexOf(u8, cfg.web_search.?.object.get("brave").?.object.get("key").?.string, secret) != null);
 
-    const wire = try pabrik_config_get.makeConfigResponse(alloc, cfg, e.has_overlay);
+    const wire = try pabrik_config_get.makeConfigResponse(alloc, cfg);
     try testing.expect(std.mem.indexOf(u8, wire, secret) == null);
     // The section still ships - masking redacts the key, it does not drop the
     // block the Settings UI renders.
     try testing.expect(std.mem.indexOf(u8, wire, "\"web_search\":{") != null);
-}
-
-test "the workspace GET carries has_overlay, the user GET does not" {
-    const alloc = testing.allocator;
-    var parsed = try std.json.parseFromSlice(pabrik_config_get.ConfigJson, alloc, "{}", .{});
-    defer parsed.deinit();
-    const cfg = parsed.value;
-
-    const ws_wire = try pabrik_config_get.makeConfigResponse(alloc, cfg, true);
-    defer alloc.free(ws_wire);
-    try testing.expect(std.mem.indexOf(u8, ws_wire, "\"has_overlay\":true") != null);
-
-    const user_wire = try pabrik_config_get.makeConfigResponse(alloc, cfg, null);
-    defer alloc.free(user_wire);
-    try testing.expect(std.mem.indexOf(u8, user_wire, "\"has_overlay\":true") == null);
 }
 
 test "a workspace's overlay is invisible to another workspace over the store path" {
@@ -525,15 +427,13 @@ test "a workspace's overlay is invisible to another workspace over the store pat
     const overlay_a = store.loadRaw(alloc, &ctx.db, store.FILE_MODE_OWNER, "ws_a") catch null;
     defer if (overlay_a) |o| alloc.free(o);
     const for_a = try effectiveConfig(alloc, USER_CONFIG, overlay_a);
-    defer alloc.free(for_a.json);
-    try testing.expect(for_a.has_overlay);
-    try testing.expect(std.mem.indexOf(u8, for_a.json, "\"a\"") != null);
+    defer alloc.free(for_a);
+    try testing.expect(std.mem.indexOf(u8, for_a, "\"a\"") != null);
 
     const overlay_b = store.loadRaw(alloc, &ctx.db, store.FILE_MODE_OWNER, "ws_b") catch null;
     defer if (overlay_b) |o| alloc.free(o);
     const for_b = try effectiveConfig(alloc, USER_CONFIG, overlay_b);
-    defer alloc.free(for_b.json);
+    defer alloc.free(for_b);
     // Inheriting: the user's profile, not ws_a's override.
-    try testing.expect(!for_b.has_overlay);
-    try testing.expect(std.mem.indexOf(u8, for_b.json, "claude") != null);
+    try testing.expect(std.mem.indexOf(u8, for_b, "claude") != null);
 }

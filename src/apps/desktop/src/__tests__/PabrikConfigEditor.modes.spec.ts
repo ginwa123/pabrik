@@ -28,8 +28,6 @@ vi.mock('../api', () => ({
   getAgentToolsRegistry: vi.fn(),
   getWorkspaceConfig: vi.fn(),
   saveWorkspaceConfig: vi.fn(),
-  clearWorkspaceConfig: vi.fn(),
-  copyUserConfigIntoWorkspace: vi.fn(),
 }))
 
 const mockGet = api.getPabrikConfig as unknown as ReturnType<typeof vi.fn>
@@ -38,8 +36,6 @@ const mockWebStatus = api.getWebStatus as unknown as ReturnType<typeof vi.fn>
 const mockRegistry = api.getAgentToolsRegistry as unknown as ReturnType<typeof vi.fn>
 const mockGetWs = api.getWorkspaceConfig as unknown as ReturnType<typeof vi.fn>
 const mockSaveWs = api.saveWorkspaceConfig as unknown as ReturnType<typeof vi.fn>
-const mockClearWs = api.clearWorkspaceConfig as unknown as ReturnType<typeof vi.fn>
-const mockCopyWs = api.copyUserConfigIntoWorkspace as unknown as ReturnType<typeof vi.fn>
 
 const WORKSPACE_TABS = ['profiles', 'mcp', 'tools', 'evals'] as const
 
@@ -321,118 +317,5 @@ describe('PabrikConfigEditor — workspace scope', () => {
     expect(wrapper.find('[data-testid="config-json-panel"]').text()).toContain(
       'Only the settings that live in Workspace settings',
     )
-  })
-})
-
-describe('PabrikConfigEditor — inherit / override (workspace scope)', () => {
-  beforeEach(() => {
-    setActivePinia(createPinia())
-    mockGet.mockReset()
-    mockSave.mockReset()
-    mockGetWs.mockReset()
-    mockSaveWs.mockReset()
-    mockClearWs.mockReset()
-    mockCopyWs.mockReset()
-    mockWebStatus.mockReset()
-    mockWebStatus.mockResolvedValue(null)
-    mockRegistry.mockReset()
-    mockRegistry.mockResolvedValue({ tools: [] })
-    Object.defineProperty(globalThis, 'localStorage', {
-      value: makeLocalStorageStub(),
-      writable: true,
-      configurable: true,
-    })
-  })
-
-  function mountWorkspace() {
-    return mountEditor({
-      props: {
-        source: workspaceConfigSource('ws_1'),
-        sections: [...WORKSPACE_TABS],
-      },
-    })
-  }
-
-  it('says "inherited" and offers Copy when the workspace has no overlay', async () => {
-    // `has_overlay` comes from the SERVER, so this describes what the backend
-    // resolved - an inherited workspace must not look like one that has
-    // already copied everything.
-    mockGetWs.mockResolvedValueOnce({ active_profile: 'work', has_overlay: false })
-    const wrapper = mountWorkspace()
-    await flushPromises()
-
-    const bar = wrapper.find('[data-testid="workspace-inherit-bar"]')
-    expect(bar.exists()).toBe(true)
-    expect(bar.text()).toContain('Inherited from your user settings')
-    expect(wrapper.find('[data-testid="workspace-copy-user"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="workspace-reset-inherited"]').exists()).toBe(false)
-
-    // Copy hits the workspace copy endpoint, then re-reads the effective
-    // config so the bar flips to "overridden" without a reload.
-    mockCopyWs.mockResolvedValueOnce({ success: true })
-    mockGetWs.mockResolvedValueOnce({ active_profile: 'work', has_overlay: true })
-    await wrapper.find('[data-testid="workspace-copy-user"]').trigger('click')
-    await flushPromises()
-
-    expect(mockCopyWs).toHaveBeenCalledWith('ws_1')
-    expect(mockGetWs).toHaveBeenCalledTimes(2)
-    expect(wrapper.find('[data-testid="workspace-inherit-bar"]').text()).toContain(
-      'This workspace has its own settings',
-    )
-    expect(wrapper.find('[data-testid="workspace-reset-inherited"]').exists()).toBe(true)
-  })
-
-  it('offers Reset when the workspace is overridden, and it clears the overlay', async () => {
-    mockGetWs.mockResolvedValueOnce({ active_profile: 'work', has_overlay: true })
-    const wrapper = mountWorkspace()
-    await flushPromises()
-
-    expect(wrapper.find('[data-testid="workspace-reset-inherited"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="workspace-copy-user"]').exists()).toBe(false)
-
-    mockClearWs.mockResolvedValueOnce({ success: true })
-    mockGetWs.mockResolvedValueOnce({ active_profile: 'work', has_overlay: false })
-    await wrapper.find('[data-testid="workspace-reset-inherited"]').trigger('click')
-    await flushPromises()
-
-    expect(mockClearWs).toHaveBeenCalledWith('ws_1')
-    expect(wrapper.find('[data-testid="workspace-inherit-bar"]').text()).toContain(
-      'Inherited from your user settings',
-    )
-  })
-
-  it('disables both actions while there are unsaved edits', async () => {
-    // Both actions re-read the config, which would throw away the edits. The
-    // alternative - silently discarding them - is the thing this prevents.
-    mockGetWs.mockResolvedValueOnce({ active_profile: 'work', has_overlay: true, tools: ['read_file'] })
-    mockRegistry.mockResolvedValue({
-      tools: [{ name: 'set_git_worktree', description: 'Create a git worktree and bind it' }],
-    })
-    // Reach Tools through the URL, which is how the shell navigates.
-    const router = await makeRouter({ section: 'tools' })
-    const wrapper = mountEditor({
-      props: { source: workspaceConfigSource('ws_1'), sections: [...WORKSPACE_TABS] },
-      global: { plugins: [router], stubs: { Teleport: true } },
-    })
-    await flushPromises()
-
-    const reset = wrapper.find('[data-testid="workspace-reset-inherited"]')
-    expect((reset.element as HTMLButtonElement).disabled).toBe(false)
-
-    await wrapper.find('[data-testid="row-set_git_worktree"] input').setValue(true)
-    await flushPromises()
-
-    expect((wrapper.find('[data-testid="workspace-reset-inherited"]').element as HTMLButtonElement).disabled).toBe(true)
-    expect(wrapper.find('[data-testid="workspace-inherit-bar"]').text()).toContain(
-      'Save or reset your changes first',
-    )
-  })
-
-  it('renders no inherit bar in the user scope, where there is nothing to inherit', async () => {
-    mockGet.mockResolvedValueOnce({ active_profile: 'work' })
-    const wrapper = mountEditor()
-    await flushPromises()
-
-    expect(wrapper.find('[data-testid="workspace-inherit-bar"]').exists()).toBe(false)
   })
 })

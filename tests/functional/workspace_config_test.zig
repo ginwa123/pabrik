@@ -7,11 +7,12 @@
 //! of that is visible from the use-case unit tests — route ORDER, the exact
 //! wire shape and "did the user config change?" are wire facts.
 //!
-//!   GET    /api/workspaces/:id/config        effective config + has_overlay
-//!   PUT    /api/workspaces/:id/config        store the workspace-scoped slice
-//!   DELETE /api/workspaces/:id/config        back to inheriting
-//!   POST   /api/workspaces/:id/config/copy   copy the user config in
+//!   GET  /api/workspaces/:id/config   the effective config (user ⊕ overlay)
+//!   PUT  /api/workspaces/:id/config   store the workspace-scoped slice
 //!
+//! Two routes only: the boot seeding IS the migration, so there is no
+//! reset/copy endpoint. `PUT` with an EMPTY body is the "inherit" path and is
+//! covered below.
 //! NOT covered here: the boot-time seeding of existing workspaces
 //! (`server_boot.seedWorkspaceSettingsFromUserConfig`). Its loop is unit
 //! tested (`workspace_config.seedWorkspaces`, 8 tests) and its boot wiring is
@@ -78,22 +79,21 @@ fn wsPath(allocator: std.mem.Allocator, workspace_id: []const u8, suffix: []cons
     return std.fmt.allocPrint(allocator, "/api/workspaces/{s}/config{s}", .{ workspace_id, suffix });
 }
 
-/// GET a workspace's effective config, with the response body asserted to carry
-/// the workspace-scope marker. `has_overlay` being PRESENT is also the
+/// GET a workspace's effective config. `profiles` being PRESENT is also the
 /// route-order probe: a request captured by another `/api/workspaces/:id/...`
-/// route would not answer with this shape at all.
-fn getWorkspaceConfig(h: *Harness, workspace_id: []const u8) !struct { r: harness.Response, doc: harness.Json, has_overlay: bool } {
+/// route would not answer with the config shape at all.
+fn getWorkspaceConfig(h: *Harness, workspace_id: []const u8) !struct { r: harness.Response, doc: harness.Json } {
     const path = try wsPath(gpa, workspace_id, "");
     defer gpa.free(path);
     var r = try h.http(io, .GET, path, .{ .expect = &.{200} });
     errdefer r.deinit();
     var doc = try r.json();
-    const has_overlay = doc.boolean("has_overlay") orelse {
+    if (doc.object("profiles") == null) {
         doc.deinit();
         r.deinit();
-        return error.HasOverlayMissing;
-    };
-    return .{ .r = r, .doc = doc, .has_overlay = has_overlay };
+        return error.NotTheConfigShape;
+    }
+    return .{ .r = r, .doc = doc };
 }
 
 fn toolNames(doc: *const harness.Json) ![]const []const u8 {
@@ -120,14 +120,17 @@ test "workspace_config_route_answers_the_config_handler" {
     const id = try createWorkspace(&h, "Route Probe");
     defer gpa.free(id);
 
-    // A 200 whose body carries `has_overlay` is the config handler's shape.
-    // `matchRoute` walks routes in registration order and returns the first
-    // hit, so a `/config` captured by a `:param` sibling would answer
-    // differently (or 404) — and only a wire test can see that.
+    // A 200 whose body carries `profiles` is the config handler's shape (the
+    // helper asserts it). `matchRoute` walks routes in registration order and
+    // returns the first hit, so a `/config` captured by a `:param` sibling
+    // would answer differently (or 404) — and only a wire test can see that.
     var got = try getWorkspaceConfig(&h, id);
     defer got.doc.deinit();
     defer got.r.deinit();
-    try testing.expect(!got.has_overlay);
+    // The stub profile the harness booted with is what this fresh workspace
+    // resolves to - the point here is the SHAPE, which the helper asserts.
+    const profiles = got.doc.object("profiles") orelse return error.NoProfiles;
+    try testing.expect(profiles.get("stub") != null);
 }
 
 // ============================================================================
@@ -146,7 +149,6 @@ test "workspace_config_inherits_the_user_config_by_default" {
     defer got.doc.deinit();
     defer got.r.deinit();
 
-    try testing.expect(!got.has_overlay);
     // The user's profiles are what a run here would use.
     const profiles = got.doc.object("profiles") orelse return error.NoProfiles;
     try testing.expect(profiles.get("stub") != null);
@@ -189,7 +191,6 @@ test "workspace_config_put_overrides_only_the_workspace_scoped_keys" {
         defer got.doc.deinit();
         defer got.r.deinit();
 
-        try testing.expect(got.has_overlay);
         // The workspace's own values won...
         const tools = try toolNames(&got.doc);
         defer gpa.free(tools);
@@ -221,8 +222,6 @@ test "workspace_config_put_overrides_only_the_workspace_scoped_keys" {
         try testing.expectEqualStrings("command", tools[0]);
         try testing.expectEqualStrings("glob", tools[1]);
         try testing.expectEqualStrings("extra", doc.str("active_profile").?);
-        // And the user-scope response carries no workspace marker.
-        try testing.expect(doc.boolean("has_overlay") == null);
     }
 }
 
@@ -251,11 +250,16 @@ test "workspace_config_put_refuses_a_body_with_nothing_workspace_scoped" {
         defer r.deinit();
     }
     {
-        // Still inheriting: the refusal changed nothing.
+        // The refusal changed nothing: the workspace still resolves to the
+        // user's own list.
         var got = try getWorkspaceConfig(&h, id);
         defer got.doc.deinit();
         defer got.r.deinit();
-        try testing.expect(!got.has_overlay);
+        const tools = try toolNames(&got.doc);
+        defer gpa.free(tools);
+        try testing.expectEqual(@as(usize, 2), tools.len);
+        try testing.expectEqualStrings("command", tools[0]);
+        try testing.expectEqualStrings("glob", tools[1]);
     }
     {
         var r = try h.http(io, .PUT, path, .{ .json_body = "{\"tools\":", .expect = &.{400} });
@@ -267,12 +271,12 @@ test "workspace_config_put_refuses_a_body_with_nothing_workspace_scoped" {
 // DELETE: back to inheriting, and the decision is remembered
 // ============================================================================
 
-test "workspace_config_delete_returns_to_inheriting" {
+test "workspace_config_put_with_an_empty_body_returns_to_inheriting" {
     var h = try boot();
     defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
     try putUserConfig(&h);
 
-    const id = try createWorkspace(&h, "Reset");
+    const id = try createWorkspace(&h, "InheritAgain");
     defer gpa.free(id);
 
     const path = try wsPath(gpa, id, "");
@@ -286,53 +290,27 @@ test "workspace_config_delete_returns_to_inheriting" {
         var got = try getWorkspaceConfig(&h, id);
         defer got.doc.deinit();
         defer got.r.deinit();
-        try testing.expect(got.has_overlay);
+        const tools = try toolNames(&got.doc);
+        defer gpa.free(tools);
+        try testing.expectEqual(@as(usize, 1), tools.len);
     }
     {
-        var r = try h.http(io, .DELETE, path, .{ .expect = &.{200} });
+        // An EMPTY body means "inherit", not "store an empty object" — the
+        // documented sentinel the settings page sends when it resets a
+        // workspace to the user-level config.
+        var r = try h.http(io, .PUT, path, .{ .json_body = "", .expect = &.{200} });
         defer r.deinit();
     }
     {
         var got = try getWorkspaceConfig(&h, id);
         defer got.doc.deinit();
         defer got.r.deinit();
-        try testing.expect(!got.has_overlay);
         const tools = try toolNames(&got.doc);
         defer gpa.free(tools);
         try testing.expectEqual(@as(usize, 2), tools.len);
+        try testing.expectEqualStrings("command", tools[0]);
+        try testing.expectEqualStrings("glob", tools[1]);
     }
-}
-
-// ============================================================================
-// POST copy
-// ============================================================================
-
-test "workspace_config_copy_takes_the_user_config" {
-    var h = try boot();
-    defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
-    try putUserConfig(&h);
-
-    const id = try createWorkspace(&h, "Copy");
-    defer gpa.free(id);
-
-    const path = try wsPath(gpa, id, "/copy");
-    defer gpa.free(path);
-
-    {
-        var r = try h.http(io, .POST, path, .{ .expect = &.{200} });
-        defer r.deinit();
-    }
-    var got = try getWorkspaceConfig(&h, id);
-    defer got.doc.deinit();
-    defer got.r.deinit();
-
-    try testing.expect(got.has_overlay);
-    const tools = try toolNames(&got.doc);
-    defer gpa.free(tools);
-    try testing.expectEqual(@as(usize, 2), tools.len);
-    const profiles = got.doc.object("profiles") orelse return error.NoProfiles;
-    try testing.expect(profiles.get("stub") != null);
-    try testing.expect(profiles.get("extra") != null);
 }
 
 // ============================================================================
@@ -360,7 +338,6 @@ test "workspace_config_is_isolated_per_workspace" {
         var a = try getWorkspaceConfig(&h, ws_a);
         defer a.doc.deinit();
         defer a.r.deinit();
-        try testing.expect(a.has_overlay);
         try testing.expectEqualStrings("stub", a.doc.str("active_profile").?);
     }
     {
@@ -369,7 +346,6 @@ test "workspace_config_is_isolated_per_workspace" {
         var b = try getWorkspaceConfig(&h, ws_b);
         defer b.doc.deinit();
         defer b.r.deinit();
-        try testing.expect(!b.has_overlay);
         try testing.expectEqualStrings("extra", b.doc.str("active_profile").?);
     }
 }

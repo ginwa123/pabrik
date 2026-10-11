@@ -61,7 +61,7 @@ pub fn pabrikConfigGetHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
         // below cannot disagree about it.
         return res.jsonResponse(.{
             .status_code = 200,
-            .data = try makeConfigResponse(allocator, cfg, null),
+            .data = try makeConfigResponse(allocator, cfg),
         });
     }
     const environment_ptr = di.environment orelse return res.jsonResponse(.{
@@ -125,23 +125,18 @@ pub fn pabrikConfigGetHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
     // Masking happens inside `makeConfigResponse` - see the auth branch above.
     return res.jsonResponse(.{
         .status_code = 200,
-        .data = try makeConfigResponse(allocator, cfg, null),
+        .data = try makeConfigResponse(allocator, cfg),
     });
 }
 
 /// The wire shape for one parsed config, in ONE place.
 ///
-/// Both config surfaces build through this: `/api/config/pabrik` (user scope,
-/// `has_overlay` null) and `/api/workspaces/:id/config` (workspace scope,
-/// where the effective config is user ⊕ overlay and `has_overlay` says which
-/// of the two the caller is looking at). Forking it would let one surface
+/// Both config surfaces build through this: `/api/config/pabrik` (user scope)
+/// and `/api/workspaces/:id/config` (workspace scope, where the caller hands
+/// it the EFFECTIVE config - user ⊕ overlay). Forking it would let one surface
 /// mask `web_search` and the other ship the key in cleartext - the exact bug
 /// the masking test at the bottom of this file exists to catch.
-pub fn makeConfigResponse(
-    allocator: std.mem.Allocator,
-    cfg: ConfigJson,
-    has_overlay: ?bool,
-) ![]u8 {
+pub fn makeConfigResponse(allocator: std.mem.Allocator, cfg: ConfigJson) ![]u8 {
     // Mask every provider credential before it reaches the browser. The
     // parse tree `cfg` borrows from is released by the caller AFTER this
     // returns, so the masked values stay alive for the serialization.
@@ -176,7 +171,6 @@ pub fn makeConfigResponse(
             .include_listed_without_loading = cfg.skill_evals.include_listed_without_loading,
             .apply_mode = cfg.skill_evals.apply_mode,
         },
-        .has_overlay = has_overlay,
     });
 }
 
