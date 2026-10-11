@@ -430,7 +430,63 @@ refuses *with a named error*, and no value appears in the refusal.
 
 ---
 
-## 11. Summary
+## 11. Can the frontend read a value back? (reveal)
+
+**No — and encryption is orthogonal to that answer.** Worth stating explicitly, because "the backend
+encrypts it" is widely read as "the backend cannot hand it back", and that is not what at-rest encryption
+means.
+
+- **Today there is no read path at all.** Four routes exist — list, create, patch, delete
+  (`http_routes.zig:544-547`) — and there is deliberately no `GET …/secrets/:id`. The wire shape
+  `SecretResponse` (`http_response.zig:1376-1381`) has no `value`, with `DO NOT add a value field here to
+  make some later feature easier` written above it. The frontend `Secret` type and the Pinia store have
+  none either, so the value exists only for the duration of a POST/PATCH.
+- **Phase 1 does not change this.** Encryption protects the *file*. The server holds the key and decrypts
+  on every substitution — `loadSecretValues` is a decryption path that runs on each tool call that uses a
+  secret. A server that can decrypt for the executor can decrypt for an endpoint; whether it *does* is a
+  policy decision, not a capability limit. So "should the UI be able to show the value" is a product
+  question that this plan neither answers nor forecloses.
+- **The design's stated cost** (`http_response.zig:1366-1370`): rotation cannot be read back, it is
+  confirmed by having saved it. That is what the `Rotate` button in the UI is for.
+
+### If reveal is wanted, there are two very different versions of it
+
+**Option 1 — echo the value back in the create/rotate response.** Marginal risk ≈ 0: the browser *just
+sent* that value, so it is already in the request body, the network tab and any XSS alive at that instant.
+Nothing new is exposed, and it answers the only real question a user has at that moment — "did I paste the
+right thing?". Cheap, and it needs no new route.
+
+**Option 2 — a reveal endpoint (`POST …/secrets/:id/reveal` → `{value}`).** This is the capability Design
+Decision 9 refused, and it is a genuinely new exposure: at create time the user just typed the credential;
+a reveal endpoint lets a *session* fetch one at a moment when nobody typed anything. To be defensible it
+would need all of:
+
+- `POST`, never `GET` — a GET lands in browser history, server access logs and prefetch
+- `Cache-Control: no-store`, no `ETag`, and no request/response body in any log
+- one secret per call, never the list
+- re-authentication: with `--auth`, the account password again; on a local no-auth install there is **no
+  second factor available**, so a click-through confirm is the ceiling
+- never retained: clipboard or a field cleared on blur — never a Pinia ref, a `title=`, or a `v-model`
+- an **audit line** (who revealed which name, when) — the compensating control, and the only thing that
+  makes the endpoint survivable
+- fail closed while a Phase 3 vault is locked, and when no keychain is available (a clear error, never an
+  empty string)
+
+**Recommendation: stay write-only, and take Option 1 if the need is verification.** A reveal endpoint turns
+the one credential the design keeps out of the browser into a value any script on the page can ask for.
+
+### A stale comment this uncovered
+
+`src/apps/desktop/src/api/index.ts:6461` says *"the backend stores an encrypted blob and does not decrypt
+to answer a read"*. **The first half is false today** — `value` is plaintext (`migration.zig:11437`), which
+is this plan's whole subject. It is a leftover from plan rev 1, and it is the kind of sentence that makes a
+reader believe the database is safe when it is not. Fix it when Phase 1 lands, and reword the second half:
+the backend *does* decrypt — on the substitution path, by design; it simply never decrypts to answer an
+HTTP read.
+
+---
+
+## 12. Summary
 
 | | Phase 0 | Phase 1 | Phase 2 | Phase 3 |
 |---|---|---|---|---|
