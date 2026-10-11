@@ -1050,6 +1050,12 @@ interface VirtualScrollerExposed {
    * `atBottomEdge` below for why the live read is a moving target.
    */
   readonly settledBottom?: number | null
+  /**
+   * Whether a real height has replaced an estimate yet. False while the model
+   * is pure `defaultItemHeight` guesswork, which is exactly the window the
+   * scroll-restore must not write into (see `waitForScrollerMeasured`).
+   */
+  readonly hasMeasuredItems?: boolean
   scrollToPosition: (scrollTop: number, behavior?: ScrollBehavior) => void
   scrollToItem: (index: number, behavior?: ScrollBehavior) => void
   /** Full height-model recompute from the live DOM (append-gap fix). */
@@ -3136,6 +3142,35 @@ const runHistoryLoadAttempt = async () => {
     // scrollToBottom behavior. This is the chat-specific
     // counterpart of the kanban composable's restore-on-mount
     // path.
+    //
+    // ── Wait for a MEASURED model before deciding ─────────────────────────
+    //
+    // Both halves of the decision read the container's geometry, and at this
+    // point that geometry is still the ESTIMATE: `defaultItemHeight` is 64 and
+    // the scroller's first `measureItems` pass does not run until ~100 ms
+    // after mount. So on a 100-row chat the model claims a 6400px sizer
+    // (max 5600) against a real 20000px transcript (max 19200), and:
+    //
+    //   - `restore()`'s "near bottom" test compares the saved value against
+    //     5600, so a reader who closed mid-transcript reads as AT the bottom
+    //     and gets `scrollToBottom` instead of their own position.
+    //   - `scrollToPosition(saved)` clamps to 5600, so even when the restore
+    //     does fire it writes a real coordinate into an estimated model — and
+    //     the first measure pass then compensates the reader by the whole
+    //     estimate error above the anchor.
+    //
+    // Measured on the real component: saved=9000 landed at 19200 (the bottom),
+    // saved=500 landed at 1452, saved=5000 landed at 15608. That is the
+    // "reopening a chat always lands a bit on top" report.
+    //
+    // One measure pass is enough to wait for — `heightEstimator.observe()`
+    // feeds the running median and `estimateHeight` returns it for EVERY
+    // unmeasured item, so the whole model converges at once rather than row by
+    // row. The wait is bounded so a scroller that never measures (empty chat,
+    // a 0x0 container) still lands somewhere instead of hanging the mount.
+    if (chatScrollRestore.hasSavedPosition()) {
+      await waitForScrollerMeasured()
+    }
     const savedScrollTop = chatScrollRestore.restore()
     if (savedScrollTop !== null) {
       scrollLogger.markProgrammatic()
@@ -3245,6 +3280,36 @@ const loadChatHistory = async () => {
 }
 
 // ─── Scroll ──────────────────────────────────────────────────────────────────
+
+/**
+ * Resolve once the VirtualScroller's height model describes the CONTENT rather
+ * than the estimate, or after `MEASURE_WAIT_TIMEOUT_MS` — whichever comes
+ * first.
+ *
+ * Why the restore has to wait: `restore()`'s "near bottom" test and
+ * `scrollToPosition`'s clamp both read `scrollHeight - clientHeight`, and until
+ * the first `measureItems` pass that number is `defaultItemHeight × items` — a
+ * guess. On a 100-row chat the guess is 6400px against a real 20000px, so the
+ * restore is either discarded as "already at the bottom" or written into a
+ * model the next pass then compensates the reader out of. Both land the reader
+ * somewhere they never were.
+ *
+ * The timeout is the safety net, not the mechanism: a scroller that never
+ * measures (an empty chat, a 0×0 container, a jsdom mount with no layout) must
+ * still let the mount finish. It is deliberately the same 500 ms budget the
+ * restore composable already uses for its own scrollability poll, so the two
+ * waits cannot stack into a visibly slow open.
+ */
+const MEASURE_WAIT_TIMEOUT_MS = 500
+const MEASURE_POLL_MS = 16
+
+const waitForScrollerMeasured = async (): Promise<void> => {
+  const start = Date.now()
+  while (Date.now() - start < MEASURE_WAIT_TIMEOUT_MS) {
+    if (virtualScrollerRef.value?.hasMeasuredItems) return
+    await new Promise<void>((r) => setTimeout(r, MEASURE_POLL_MS))
+  }
+}
 
 const scrollToBottom = async (force = false, trigger: string = 'unspecified') => {
   await nextTick()

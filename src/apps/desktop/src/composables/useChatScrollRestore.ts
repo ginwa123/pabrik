@@ -29,7 +29,18 @@ import { onBeforeUnmount, onMounted, onUpdated, ref, type Ref } from 'vue'
  *     item measurement) or a 500 ms safety net, then attaches
  *     scroll + scrollend listeners. Exposes `restore()` (returns
  *     the saved value, or `null` if at-bottom / not set / not
- *     scrollable) and `restorePosition(value)` (clamps + applies).
+ *     scrollable), `hasSavedPosition()` (whether a restoreable
+ *     value exists at all, WITHOUT reading the container's
+ *     geometry) and `restorePosition(value)` (clamps + applies).
+ *
+ * `hasSavedPosition()` exists so the caller can tell "there is
+ * nothing to restore" apart from "the geometry is not ready yet".
+ * The two need opposite handling: the first should fall through to
+ * `scrollToBottom` immediately, the second should WAIT. Reading
+ * `restore()` for that distinction conflates them, because
+ * `restore()` returns `null` for both — and a caller that waits on
+ * it parks a first-time visitor at the top of an empty scroll for
+ * the whole timeout.
  *   - **On `scrollend`** (fast path): writes the current `scrollTop`
  *     synchronously and cancels any pending debounced write.
  *   - **On `scroll`** (fallback path): schedules a debounced 250 ms
@@ -87,6 +98,15 @@ export function useChatScrollRestore(
   resolveBottomEdge?: (container: HTMLElement) => number,
 ): {
   restore: () => number | null
+  /**
+   * Whether a restoreable value is stored, judged WITHOUT the container.
+   *
+   * `restore()` cannot answer this: it returns `null` both for "nothing
+   * saved" and for "the container is not scrollable yet", and the caller must
+   * treat those two differently — fall through to the bottom immediately
+   * versus wait for the scroller to measure. See the header note.
+   */
+  hasSavedPosition: () => boolean
   restorePosition: (value: number) => void
 } {
   const bottomEdgeOf = (el: HTMLElement): number => {
@@ -227,6 +247,17 @@ export function useChatScrollRestore(
     return savedScrollTop
   }
 
+  /**
+   * True when localStorage holds a positive value for the current key.
+   *
+   * Deliberately reads NOTHING from the container: the question is "did this
+   * reader ever leave a position behind?", which is a fact about storage, not
+   * about layout. Answering it from `restore()` instead would make a
+   * not-yet-measured scroller look like "nothing to restore".
+   */
+  const hasSavedPosition = (): boolean =>
+    savedScrollTop !== null && savedScrollTop > 0
+
   const restorePosition = (value: number): void => {
     const el = containerRef.value
     if (!el) return
@@ -238,5 +269,5 @@ export function useChatScrollRestore(
     el.scrollTop = clamped
   }
 
-  return { restore, restorePosition }
+  return { restore, hasSavedPosition, restorePosition }
 }

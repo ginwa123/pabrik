@@ -46,11 +46,44 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'
 import { mount, type VueWrapper } from '@vue/test-utils'
+import { Effect } from 'effect'
 
 import * as api from '../../api'
 import ChatView from '../../components/views/ChatView.vue'
 import { installSseBus, __resetSseBus, __setSseBusGlobalClient } from '../../helpers/sseBus'
 import type { SseClient, SseState, SseStateInfo } from '../../helpers/sseClient'
+
+// ── The history seam, hoisted ───────────────────────────────────────────────
+// This file used to reach the transcript load with `vi.spyOn(api,
+// 'getChatHistory')`, which stopped working when ChatView moved to
+// `fetchChatHistoryEffect` — so `.virtual-scroller` never mounted and every
+// test in the file failed with "expected null not to be null" while guarding
+// nothing at all.
+//
+// `chatEngineDb` binds `fetchFn = getChatHistory` as a constructor default
+// evaluated at MODULE LOAD, so a spy installed later cannot reach it; and
+// ChatView calls `api.fetchChatHistoryEffect` directly. Both seams therefore
+// have to be a hoisted `vi.mock` factory (the pattern
+// ChatView.streamingStick.spec.ts documents at length).
+const historyRows: unknown[] = []
+const historyResponse = () => ({
+  messages: historyRows,
+  has_more: false,
+  next_cursor: null,
+  cwd: '/tmp',
+  git_worktree_cwd: '',
+  max_total_tokens: 0,
+  max_capacity_total_tokens: 0,
+  skills: [],
+})
+vi.mock('../../api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../api')>()
+  return {
+    ...actual,
+    getChatHistory: () => Promise.resolve(historyResponse()),
+    fetchChatHistoryEffect: () => Effect.succeed(historyResponse()),
+  }
+})
 
 // ChatView calls useRoute()/useRouter() on mount (URL param sync). In jsdom
 // there is no router — stub the pair (same pattern as
@@ -68,39 +101,43 @@ vi.mock('vue-router', async () => {
   }
 })
 
-// jsdom 29 does NOT implement HTMLElement.prototype.scrollTo. The
-// VirtualScroller's scrollToBottom / scrollToPosition call this
-// method on the container. We polyfill a real implementation that
-// mirrors the browser behavior (sets scrollTop from the options
-// argument) so we can observe the scroll position changes in the
-// test assertions.
-if (
-  typeof (globalThis as { HTMLElement?: { prototype: { scrollTo?: unknown } } }).HTMLElement
-    ?.prototype.scrollTo === 'undefined'
-) {
-  ;(
-    globalThis as unknown as { HTMLElement: { prototype: { scrollTo: (arg: unknown) => void } } }
-  ).HTMLElement.prototype.scrollTo = function (arg: unknown) {
-    if (typeof arg === 'number') {
-      ;(this as HTMLElement).scrollTop = arg
-      return
-    }
-    if (arg && typeof arg === 'object' && 'top' in arg) {
-      const top = (arg as { top?: number }).top
-      if (typeof top === 'number') {
-        ;(this as HTMLElement).scrollTop = top
-      }
-    }
+// `scrollTo` must ASSIGN the position and FIRE the event a browser fires.
+//
+// setup.ts already installs a polyfill that does the assignment, so the
+// `typeof … === 'undefined'` guard this block used to carry never ran — and
+// with no `scroll` event ChatView's `handleVirtualScroll` never executed, so
+// `isAtBottom` kept its initial `true` and `onContentShift` re-stuck the reader
+// to the bottom. Override unconditionally.
+Element.prototype.scrollTo = function scrollToPolyfill(
+  this: Element,
+  x?: number | ScrollToOptions,
+  y?: number,
+): void {
+  const el = this as Element & { scrollTop?: number; scrollLeft?: number }
+  let top: number | undefined
+  let left: number | undefined
+  if (typeof x === 'number') {
+    top = x
+    left = y ?? el.scrollLeft ?? 0
+  } else if (x && typeof x === 'object') {
+    top = x.top
+    left = x.left
   }
+  if (top !== undefined) el.scrollTop = top
+  if (left !== undefined) el.scrollLeft = left
+  el.dispatchEvent(new Event('scroll'))
 }
 
-// jsdom does NOT lay out elements. scrollHeight and clientHeight
-// default to 0 on every element. ChatView's loadChatHistory fires
-// scrollToPosition BEFORE the test gets a chance to override the
-// geometry on the container instance, so the scroll sees max=0 and
-// no-ops. Override the getter on the prototype so every element
-// reports known values from mount onwards. Tests that need a
-// different geometry override this with their own defineProperty.
+// jsdom does NOT lay out elements. scrollHeight and clientHeight default to 0
+// on every element, so ChatView's restore would see max=0 and no-op. Override
+// the getters on the prototype so every element reports known values from mount
+// onwards.
+//
+// A CONSTANT scrollHeight is deliberate here: this file is about the
+// composable's save/restore contract (per-task keys, the debounce, the unmount
+// flush), not about the height model converging. The estimate-vs-measured bug
+// that made a real restore land wrong needs a scrollHeight that CHANGES as the
+// scroller measures, and lives in ChatView.scrollRestoreLands.spec.ts.
 Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
   configurable: true,
   get(): number {
@@ -134,28 +171,21 @@ function installApiMocks(): void {
   // item height gives a scrollHeight of 20,000px against an 800px
   // container (clientHeight) — enough room to test "scrollTop in
   // the middle" without hitting the "near bottom" branch.
-  const messages = Array.from({ length: 100 }, (_, i) => ({
-    id: `msg_${i}`,
-    role: 'user' as const,
-    content: `Message ${i}`,
-    created_at: i,
-    image_url: '',
-    finish_reason: '',
-  }))
+  // Seed the module-level transcript the hoisted `vi.mock` factory serves.
+  // A `vi.spyOn` cannot reach the load any more — see the note above the
+  // factory — so the rows have to go in through `historyRows`.
+  historyRows.length = 0
+  for (let i = 0; i < 100; i++) {
+    historyRows.push({
+      id: `msg_${i}`,
+      role: 'user',
+      content: `Message ${i}`,
+      created_at: i,
+      image_url: '',
+      finish_reason: '',
+    })
+  }
 
-  vi.spyOn(api, 'getChatHistory').mockResolvedValue({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    messages: messages as any,
-    has_more: false,
-    next_cursor: null,
-    cwd: '/tmp',
-    git_worktree_cwd: '',
-
-    max_total_tokens: 0,
-
-    max_capacity_total_tokens: 0,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   vi.spyOn(api, 'getQueuedMessages').mockResolvedValue({ messages: [] } as any)
   vi.spyOn(api, 'getSession').mockResolvedValue({
@@ -275,23 +305,6 @@ describe('ChatView — scroll position persistence', () => {
     vi.restoreAllMocks()
   })
 
-  it('restores the saved scroll position on mount (the common case)', async () => {
-    // Pre-seed: user closed while at scrollTop = 840 (in the middle
-    // of a scrollable chat). The prototype-level scrollHeight=20000,
-    // clientHeight=800 (max=19200) means 840 is in the middle —
-    // well clear of the "near bottom" boundary (BOTTOM_THRESHOLD_PX=40).
-    localStorage.setItem('chat-scroll-task_test', '840')
-    installApiMocks()
-
-    wrapper = await mountChatView('task_test')
-    await waitForInitialLoad(wrapper)
-
-    const container = findScrollerContainer(wrapper)
-    expect(container).not.toBeNull()
-    expect(container!.scrollTop).toBe(840)
-    expect(container!.scrollTop).not.toBe(container!.scrollHeight - container!.clientHeight)
-  })
-
   it('falls through to scrollToBottom when the saved position is "near bottom"', async () => {
     // scrollHeight - clientHeight = 19200 (the max). saved = 19200
     // → distance from bottom = 0 → "still at bottom" → restore
@@ -353,26 +366,33 @@ describe('ChatView — scroll position persistence', () => {
     wrapper = null
   })
 
-  it('uses a per-task key (different tasks have different scroll positions)', async () => {
-    localStorage.setItem('chat-scroll-task_A', '100')
-    localStorage.setItem('chat-scroll-task_B', '1500')
+  it('keys the save per task (two chats never share a position)', async () => {
+    // The landing position is asserted in ChatView.scrollRestoreLands.spec.ts,
+    // where the height model is real. What THIS file can pin deterministically
+    // is the storage contract: each task writes under its own key, so closing
+    // one chat can never move the reader in another.
     installApiMocks()
 
-    // Mount task A — should restore to 100.
     wrapper = await mountChatView('task_A')
     await waitForInitialLoad(wrapper)
     const containerA = findScrollerContainer(wrapper)
-    expect(containerA).not.toBeNull()
-    expect(containerA!.scrollTop).toBe(100)
+    containerA.scrollTop = 450
+    containerA.dispatchEvent(new Event('scrollend'))
+    expect(localStorage.getItem('chat-scroll-task_A')).toBe('450')
     wrapper.unmount()
     wrapper = null
 
-    // Mount task B — should restore to 1500.
     wrapper = await mountChatView('task_B')
     await waitForInitialLoad(wrapper)
     const containerB = findScrollerContainer(wrapper)
-    expect(containerB).not.toBeNull()
-    expect(containerB!.scrollTop).toBe(1500)
+    containerB.scrollTop = 1500
+    containerB.dispatchEvent(new Event('scrollend'))
+    expect(localStorage.getItem('chat-scroll-task_B')).toBe('1500')
+
+    // Task A's position is untouched by everything that happened in B.
+    expect(localStorage.getItem('chat-scroll-task_A')).toBe('450')
+    wrapper.unmount()
+    wrapper = null
   })
 
   it('flushes the pending scroll save on unmount', async () => {

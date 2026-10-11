@@ -842,6 +842,23 @@ const AT_BOTTOM_SLACK_PX = 10
 // reader scrolled UP is below this number, so the test still fails for them.
 let settledBottom: number | null = null
 
+// True once a measure pass has admitted at least one REAL height over an
+// estimate. Until then every number the scroller publishes — `sizerHeight`,
+// `modelTotal`, `bottomScrollTop()`, `scrollHeight - clientHeight` — describes
+// the ESTIMATE, not the content.
+//
+// A parent that wants to write an absolute pixel position (ChatView's
+// scroll-restore) must wait for this. Writing a real coordinate into an
+// estimated model lands wherever the estimate happens to put the bottom, and
+// the first measure pass then compensates the reader by the whole estimate
+// error above the anchor — which is the "reopening a chat lands a bit on top"
+// report.
+//
+// One pass is enough, not one per item: `heightEstimator.observe()` feeds the
+// running median and `estimateHeight` returns `clampEstimate(median)` for EVERY
+// unmeasured item, so the whole model converges at once rather than row by row.
+let hasMeasuredItems = false
+
 const measureItems = () => {
   if (!containerRef.value) return
   const content = containerRef.value.querySelector('.virtual-scroller-content')
@@ -999,6 +1016,9 @@ const measureItems = () => {
   }
   for (const [key, heightPx, realIndex] of pendingWrites) {
     itemHeights.value.set(key, heightPx)
+    // A real height is now in the model, so every published number describes
+    // the content rather than the estimate (see `hasMeasuredItems`).
+    hasMeasuredItems = true
     // Feed the adaptive estimator so future unmeasured items inherit a
     // realistic median instead of the static prop guess.
     heightEstimator.observe(heightPx)
@@ -1425,12 +1445,36 @@ const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
   // arrow, and it is the exact moment the reported bug used to be armed.
   settledBottom = target
 }
+/**
+ * Put the container at an arbitrary scrollTop, clamped to the DOM max.
+ *
+ * ── Why this clears `settledBottom` ─────────────────────────────────────────
+ *
+ * `settledBottom` is "where the bottom sat when the stick LAST acted". It is
+ * what makes a stationary reader read as at-bottom while the model converges,
+ * and it is only valid for a reader the scroller itself parked at the bottom.
+ *
+ * An explicit reposition is the opposite gesture: the caller has put the reader
+ * somewhere specific, and the previous anchor now describes a position they are
+ * not in. Leaving it in place makes the next scroll event measure the reader
+ * against a bottom that has already moved on — and because the anchor is BELOW
+ * the new position, `distanceFromBottom` clamps to 0 and the reader reads as
+ * "past the bottom", i.e. at-bottom.
+ *
+ * That is exactly how a restored position used to get overridden: the restore
+ * wrote the saved scrollTop, the stale anchor from the pre-measure
+ * `scrollToBottom` reported the reader as at-bottom, and `onContentShift`
+ * re-stuck them to the tail on the next layout shift. Clearing the anchor makes
+ * the next judgement use the live `bottomScrollTop()`, which is the tight path
+ * and the honest one for a reader who was just moved deliberately.
+ */
 const scrollToPosition = (scrollTop: number, behavior: ScrollBehavior = 'auto') => {
   if (!containerRef.value) return
   const clientHeight = containerRef.value.clientHeight
   const max = containerRef.value.scrollHeight - clientHeight
   if (max <= 0) return
   const clamped = Math.max(0, Math.min(scrollTop, max))
+  settledBottom = null
   containerRef.value.scrollTo({ top: clamped, behavior })
 }
 const scrollToItem = (index: number, behavior: ScrollBehavior = 'auto') =>
@@ -1603,6 +1647,22 @@ defineExpose({
    */
   get settledBottom() {
     return settledBottom
+  },
+  /**
+   * Whether any real height has replaced an estimate yet.
+   *
+   * A getter, not a value: `hasMeasuredItems` is a plain `let` written inside
+   * measure passes and must not schedule a render, so a snapshot in
+   * `defineExpose` would freeze at setup time — exactly the failure
+   * `settledBottom` above documents.
+   *
+   * ChatView's scroll-restore waits on this before writing an absolute pixel
+   * position. Before the first measurement the model is pure estimate, so the
+   * restore would be clamped to (and then compensated away from) a bottom that
+   * does not exist.
+   */
+  get hasMeasuredItems() {
+    return hasMeasuredItems
   },
   scrollToPosition,
   scrollToItem,
