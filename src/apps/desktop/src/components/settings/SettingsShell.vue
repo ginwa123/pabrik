@@ -73,7 +73,6 @@ const WORKSPACE_SECTIONS: readonly SettingsSectionItem[] = [
   ...WORKSPACE_AGENT_SECTIONS.map((id) => ({ id, ...AGENT_SECTION_META[id], group: 'Agent' })),
 ]
 
-
 const USER_STORAGE_KEY = 'settings-shell-user-section'
 const WORKSPACE_STORAGE_KEY = 'settings-shell-workspace-section'
 
@@ -233,23 +232,21 @@ function notify(message: string, type: 'success' | 'error'): void {
             Workspace
           </button>
         </div>
-        <select
+        <!-- Workspace context comes from the URL (`/app/:workspaceId/settings`), so there is
+          no picker here: switching workspaces is the sidebar's job, not settings'. -->
+        <div
           v-if="props.scope === 'workspace'"
-          :value="props.workspaceId"
-          aria-label="Workspace"
-          data-testid="settings-workspace-picker"
-          class="w-full mt-2 px-2 py-1.5 rounded-md text-dense"
+          data-testid="settings-workspace-name"
+          class="w-full mt-2 px-2 py-1.5 rounded-md text-dense truncate"
           style="
             background-color: var(--semantic-content-bg);
             color: var(--semantic-text);
             border: 1px solid var(--color-border);
           "
-          @change="goWorkspace(($event.target as HTMLSelectElement).value)"
+          :title="workspaceName"
         >
-          <option v-for="ws in workspaceOptions" :key="ws.id" :value="ws.id">
-            {{ ws.name }}
-          </option>
-        </select>
+          {{ workspaceName }}
+        </div>
       </div>
 
       <!-- Settings Menu -->
@@ -277,23 +274,15 @@ function notify(message: string, type: 'success' | 'error'): void {
             role="tab"
             :aria-selected="section === item.id"
             class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-body font-medium transition-all duration-200 mb-1"
-          :style="
-            section === item.id
-              ? 'background-color: var(--semantic-active-bg); color: var(--semantic-active-text);'
-              : 'color: var(--semantic-text-muted);'
-          "
-          @click="select(item.id)"
-        >
-          <UiIcon :name="item.icon" size-class="w-4.5 h-4.5" />
-          <span>{{ item.label }}</span>
-            <span
-              v-if="props.scope === 'workspace'"
-              class="ml-auto text-dense"
-              style="color: var(--semantic-text-muted)"
-              :data-testid="`settings-nav-${item.id}-workspace`"
-            >
-              {{ workspaceName }}
-            </span>
+            :style="
+              section === item.id
+                ? 'background-color: var(--semantic-active-bg); color: var(--semantic-active-text);'
+                : 'color: var(--semantic-text-muted);'
+            "
+            @click="select(item.id)"
+          >
+            <UiIcon :name="item.icon" size-class="w-4.5 h-4.5" />
+            <span>{{ item.label }}</span>
           </button>
         </template>
       </nav>
