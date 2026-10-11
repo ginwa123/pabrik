@@ -125,6 +125,58 @@ pub fn main(init: std.process.Init) !void {
         if (cli.static_dir) |dir_arg| allocator.free(dir_arg);
         std.log.info("--no-static-dir: API only, no static files at /.", .{});
     } else if (cli.static_dir) |dir_arg| ctxParent.static_dir_path = dir_arg;
+    // Installer layouts ship html/ beside the install root (install.sh
+    // extracts it next to the binaries, mirroring zig-out/bin/html;
+    // Windows keeps %LOCALAPPDATA%\pabrik\html): serve it without
+    // requiring --static-dir, so a bare `pabrik` opens the app instead
+    // of 404ing /. Explicit flags still win; --no-static-dir above
+    // already took the API-only branch.
+    if (ctxParent.static_dir_path == null) {
+        var candidates: std.ArrayList([]const u8) = .empty;
+        defer {
+            for (candidates.items) |c| allocator.free(c);
+            candidates.deinit(allocator);
+        }
+        const addCandidate = struct {
+            fn run(
+                list: *std.ArrayList([]const u8),
+                alloc: std.mem.Allocator,
+                parts: []const []const u8,
+            ) void {
+                const dir = std.fs.path.join(alloc, parts) catch return;
+                list.append(alloc, dir) catch alloc.free(dir);
+            }
+        }.run;
+        // Next-to-executable probe, only when argv[0] carries a dir
+        // (a bare `pabrik` via PATH has none — the data dirs below
+        // cover that case; probing ./html would be cwd roulette).
+        if (argv_flat.items.len > 0) {
+            const argv0 = argv_flat.items[0];
+            if (std.mem.indexOfAny(u8, argv0, "/\\") != null) {
+                if (std.fs.path.dirname(argv0)) |exe_dir| {
+                    addCandidate(&candidates, allocator, &.{ exe_dir, "html" });
+                }
+            }
+        }
+        if (@import("builtin").os.tag == .windows) {
+            if (environment.get("LOCALAPPDATA")) |appdata| {
+                addCandidate(&candidates, allocator, &.{ appdata, "pabrik", "html" });
+            }
+        } else {
+            if (environment.get("XDG_DATA_HOME")) |xdg| {
+                addCandidate(&candidates, allocator, &.{ xdg, "pabrik", "html" });
+            } else if (environment.get("HOME")) |home| {
+                addCandidate(&candidates, allocator, &.{ home, ".local", "share", "pabrik", "html" });
+            }
+            // System installs (--system): absolute from the start.
+            addCandidate(&candidates, allocator, &.{ "/", "usr", "local", "share", "pabrik", "html" });
+            addCandidate(&candidates, allocator, &.{ "/", "usr", "share", "pabrik", "html" });
+        }
+        if (server_boot.findBundledWebapp(io, allocator, candidates.items)) |dir| {
+            ctxParent.static_dir_path = dir;
+            std.log.info("serving installed webapp from {s}", .{dir});
+        }
+    }
     ctxParent.auth_enabled = cli.auth_enabled;
     if (cli.auth_enabled) {
         std.log.info("--auth on: per-user LLM config comes from users.config_json; config.json is ignored.", .{});

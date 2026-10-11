@@ -27,7 +27,9 @@ Rolling release — binaries from the latest green `main` build.
 
 Asset names carry the binary name + zig target triple.
 Linux/macOS ship bare binaries, e.g. `pabrik-x86_64-linux-gnu`,
-`pabrik-desktop-aarch64-macos`.
+`pabrik-desktop-aarch64-macos`, plus `pabrik-html-<triple>.tar.gz`
+holding the web UI — `install.sh` extracts it next to the binaries so
+a bare `pabrik` serves /app with no flags.
 macOS also ships `Pabrik-aarch64-macos.zip` holding Pabrik.app
 (pabrik-desktop + pabrik service inside, ad-hoc signed).
 macOS setup (no sudo): extract the zip, move Pabrik.app to

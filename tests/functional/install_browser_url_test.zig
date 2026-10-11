@@ -19,6 +19,9 @@
 //   Test 2 — the installed binary boots and serves the browser URL:
 //            GET /health returns {"status":"ok",...} and
 //            GET /api/workspaces returns 200, both over the wire.
+//   Test 3 — with a shipped UI beside the installed binary (the html/
+//            tarball layout), GET / serves the app shell with no
+//            --static-dir flag (the "/app 404" report).
 //
 // Windows is skipped here: install.sh refuses Windows itself (it prints
 // the irm line), and install.ps1 gets the same install-then-URL coverage
@@ -310,6 +313,62 @@ test "installed pabrik serves the browser url" {
         defer gpa.free(port_str);
         if (std.mem.indexOf(u8, log, port_str) == null) {
             std.debug.print("server log missing the browser URL {s}\n", .{port_str});
+            return error.TestUnexpectedResult;
+        }
+    }
+}
+
+// The installed server discovers the shipped UI next to itself and
+// serves the app with no --static-dir flag: this is the "/app 404"
+// report. The fixture stands in for the html/ tarball install.sh
+// extracts (tarball download+extract itself is asserted by the
+// install-* CI jobs against the real release, which have network;
+// here the server-side discovery is what's under test, over the wire).
+test "installed pabrik serves the app from its bundled html dir" {
+    const triple = try installTriple();
+    try harness.requirePabrikBin(io, gpa);
+
+    const scratch = try harness.makeScratchDir(gpa);
+    defer gpa.free(scratch);
+    defer harness.cleanupExtraDir(io, gpa, scratch);
+
+    const dirs = try installToIsolatedBindir(scratch, triple);
+    defer gpa.free(dirs.bindir);
+    defer gpa.free(dirs.home);
+    const bindir = dirs.bindir;
+
+    // Fixture UI at <bindir>/html/index.html — the exact layout
+    // install.sh produces and the server's next-to-exe probe reads.
+    // Harness.boot passes the installed binary by absolute path, so
+    // argv[0] carries a dir and the probe engages.
+    const html_dir = try std.fs.path.join(gpa, &.{ bindir, "html" });
+    defer gpa.free(html_dir);
+    try Io.Dir.cwd().createDirPath(io, html_dir);
+    const index_path = try std.fs.path.join(gpa, &.{ html_dir, "index.html" });
+    defer gpa.free(index_path);
+    {
+        var f = try Io.Dir.cwd().createFile(io, index_path, .{});
+        defer f.close(io);
+        try f.writeStreamingAll(io, "<!DOCTYPE html><html><body>pabrik installed app shell</body></html>");
+    }
+
+    const installed = try std.fs.path.join(gpa, &.{ bindir, "pabrik" });
+    defer gpa.free(installed);
+
+    const shadow = try EnvShadow.install("PABRIK_BIN", installed);
+    defer shadow.restore();
+
+    var h = try Harness.boot(io, gpa, .{});
+    defer h.deinit(io) catch |err| {
+        std.debug.print("teardown: {s}\n", .{@errorName(err)});
+    };
+
+    // GET / serves the bundled shell — not a 404.
+    {
+        var r = try h.http(io, .GET, "/", .{});
+        defer r.deinit();
+        if (std.mem.indexOf(u8, r.text(), "pabrik installed app shell") == null) {
+            std.debug.print("GET / did not serve the bundled app shell: {s}\n", .{r.text()});
             return error.TestUnexpectedResult;
         }
     }

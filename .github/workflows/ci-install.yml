@@ -70,6 +70,9 @@ jobs:
           # install_browser_url_test.zig instead.
           PABRIK_NO_MODIFY_PATH=1 bash install.sh --dir "$RUNNER_TEMP/pabrik-bin"
           test -x "$RUNNER_TEMP/pabrik-bin/pabrik" || { echo "✗ installed pabrik missing"; exit 1; }
+          # The shipped UI must land next to the binaries — without it the
+          # server is API-only and /app 404s (the exact user report).
+          test -f "$RUNNER_TEMP/pabrik-bin/html/index.html" || { echo "✗ installed html/index.html missing"; exit 1; }
           echo "INSTALL_BIN=$RUNNER_TEMP/pabrik-bin/pabrik" >> "$GITHUB_ENV"
 
       - name: Install with install.ps1 (Windows)
@@ -103,6 +106,10 @@ jobs:
           # (loader finds the DLLs beside it) before the smoke test boots it.
           & $bin --help | Out-Null
           if ($LASTEXITCODE -ne 0) { Write-Error "✗ installed pabrik.exe --help exited $LASTEXITCODE"; exit 1 }
+          # The shipped UI must land in the installed html/ dir — without
+          # it the server is API-only and /app 404s (the exact user report).
+          $htmlIndex = Join-Path $env:LOCALAPPDATA 'pabrik\html\index.html'
+          if (-not (Test-Path -LiteralPath $htmlIndex)) { Write-Error "✗ installed html/index.html missing at $htmlIndex"; exit 1 }
           Add-Content -LiteralPath $env:GITHUB_ENV -Value "INSTALL_BIN=$bin"
 
       - name: Smoke test the installed binary (browser URL)
@@ -124,9 +131,16 @@ jobs:
             export PATH="/c/Windows/System32/downlevel:$PATH"
             # Backslash path from the pwsh step → POSIX for Git Bash.
             PABRIK_BIN="$(cygpath "$INSTALL_BIN")"
+            # Point the server at the SAME redirected profile the install
+            # used, so its %LOCALAPPDATA%\pabrik\html probe finds the
+            # installed UI (stock env would miss it and serve API-only).
+            export LOCALAPPDATA="$(cygpath "$RUNNER_TEMP/pabrik-data/Local")"
+            export APPDATA="$(cygpath "$RUNNER_TEMP/pabrik-data/Roaming")"
           else
             PABRIK_BIN="$INSTALL_BIN"
           fi
           echo "→ smoke test: using installed $PABRIK_BIN"
           echo "→ browser URL: http://127.0.0.1:18080/health"
-          PABRIK_BIN="$PABRIK_BIN" PABRIK_PORT=18080 bash scripts/ci-smoke-test.sh
+          # PABRIK_SMOKE_CHECK_APP=1: the installer contract includes a
+          # working /app (this job fails if the UI is missing/unserved).
+          PABRIK_SMOKE_CHECK_APP=1 PABRIK_BIN="$PABRIK_BIN" PABRIK_PORT=18080 bash scripts/ci-smoke-test.sh
