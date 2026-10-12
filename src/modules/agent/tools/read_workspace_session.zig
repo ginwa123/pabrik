@@ -42,7 +42,7 @@ pub const ReadWorkspaceSessionInput = struct {
     /// `live_only`.
     compacted_only: bool = false,
     /// Optional exact-match filter on `tool_name`. Useful for "find every
-    /// bash invocation that ran `cargo test`".
+    /// `command` invocation that ran `cargo test`".
     tool_name: []const u8 = "",
     /// Optional exact-match filter on `parent_session_id`. Useful for
     /// sub-agent debugging — find every message in any session whose parent
@@ -126,7 +126,7 @@ pub const read_workspace_session_tool = AgentTool{
         \\
         \\Filters (optional, apply to SEARCH/READ/SEARCH-WITHIN unless noted):
         \\- role: "user", "assistant", or "tool" — exact match.
-        \\- tool_name: exact-match filter on the tool that produced the row. Useful for "find every bash invocation that ran `cargo test`".
+        \\- tool_name: exact-match filter on the tool that produced the row. Useful for "find every `command` invocation that ran `cargo test`".
         \\- parent_session_id: exact-match filter on sub-agent sessions. Useful for tracing a sub-agent's full session.
         \\- agent: exact-match filter on the agent name (e.g. "main", "planning", "compaction").
         \\- live_only / compacted_only (mutually exclusive): restrict to messages still in your live context (is_feed_to_llm=1) vs. dropped by compaction (is_feed_to_llm=0). Default returns both.
@@ -153,7 +153,7 @@ pub const read_workspace_session_tool = AgentTool{
                 .{ .name = "query", .type = "string", .description = "FTS5 search query (auto-sanitized) for SEARCH / SEARCH-WITHIN." },
                 .{ .name = "message_ids", .type = "string", .description = "Comma-separated ids. Returns full <content> for these ids (workspace-scoped). Capped at 50 per call — split into batches for more." },
                 .{ .name = "role", .type = "string", .description = "Optional exact-match role filter: 'user', 'assistant', or 'tool'." },
-                .{ .name = "tool_name", .type = "string", .description = "Optional exact-match filter on tool_name. Useful for finding every bash / read_file / search invocation." },
+                .{ .name = "tool_name", .type = "string", .description = "Optional exact-match filter on tool_name. Useful for finding every `command` / read_file / search invocation." },
                 .{ .name = "parent_session_id", .type = "string", .description = "Optional exact-match filter on parent_session_id. Useful for tracing a sub-agent's full session." },
                 .{ .name = "agent", .type = "string", .description = "Optional exact-match filter on agent name (e.g. 'main', 'planning', 'compaction')." },
                 .{ .name = "live_only", .type = "boolean", .description = "If true, restrict to messages still in the LLM's live context (is_feed_to_llm=1). Mutually exclusive with compacted_only." },
@@ -1085,7 +1085,8 @@ test "read_workspace_session: SEARCH with no peer session returns empty, never a
         \\INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position)
         \\VALUES ('i3', 'w3', 'kanban', 'C', '/proj/c', 1)
     , &.{});
-    try s.db.exec(alloc,
+    try s.db.exec(
+        alloc,
         "INSERT INTO sessions (id, name, status, cwd) VALUES ('s4', 'Alone', 'active', '/proj/c')",
         &.{},
     );

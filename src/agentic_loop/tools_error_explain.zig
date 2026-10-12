@@ -67,11 +67,19 @@ pub fn explain(allocator: std.mem.Allocator, err: anyerror, context: ?[]const u8
         // ── command / shell ────────────────────────────────────────────
         error.MandatoryTimeoutMissing => try allocator.dupe(
             u8,
-            "`mandatory_timeout` is required and has no default. It is the only deadline for a foreground command — add \"mandatory_timeout\": <seconds> (1–600) to the arguments. Use `background=true` instead for a long-running process that must not be killed.",
+            "`mandatory_timeout` is required and has no default. It is the only deadline for a foreground command — add \"mandatory_timeout\": <seconds> (1–60) to the arguments. Use `background=true` instead for a long-running process that must not be killed.",
         ),
         error.MandatoryTimeoutTooLarge => try allocator.dupe(
             u8,
-            "`mandatory_timeout` must be 600 seconds or fewer. A larger deadline is the same as no deadline, so it is refused. Split the work into smaller steps, or pass `background=true` for a process that outlives the call.",
+            "`mandatory_timeout` must be 60 seconds or fewer — one minute is the ceiling for a foreground command. Split the work into smaller steps, or pass `background=true` for a process that outlives the call.",
+        ),
+        error.MandatoryCwdMissing => try allocator.dupe(
+            u8,
+            "`cwd` is required and has no default. Without it the command runs in the SERVER's working directory (the project root), not your worktree — so a build or a test run silently acts on the wrong tree. Add \"cwd\": \"/absolute/path\" to the arguments.",
+        ),
+        error.CwdNotAbsolute => try allocator.dupe(
+            u8,
+            "`cwd` must be an ABSOLUTE path. A relative path is resolved against the server's working directory rather than where you are working, so it silently lands somewhere else. Send the full path — it starts with `/`, or a drive letter like `C:\\`.",
         ),
         error.CommandForbidden => try allocator.dupe(
             u8,
@@ -784,7 +792,7 @@ test "explain: MandatoryTimeoutMissing names the field and the fix" {
 test "explain: MandatoryTimeoutTooLarge states the ceiling and the alternative" {
     const msg = try explain(testing.allocator, error.MandatoryTimeoutTooLarge, null);
     defer testing.allocator.free(msg);
-    try testing.expect(std.mem.indexOf(u8, msg, "600") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "60 seconds or fewer") != null);
     try testing.expect(std.mem.indexOf(u8, msg, "background=true") != null);
 }
 

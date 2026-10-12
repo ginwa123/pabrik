@@ -622,10 +622,25 @@ pub fn getToolNames() []const []const u8 {
 /// the offending tool nor any way forward, so the model had no correction to
 /// make and simply emitted the same name again on the next turn.
 ///
+/// Two shapes, because the two misses need different answers:
+///   - a RETIRED name (`bash`, `pwsh`) gets the replacement named directly —
+///     the model reached for it because it was trained on it, and listing
+///     ~40 registry names buries the one line it needs;
+///   - a name nobody ever had gets the enumeration, since there is no single
+///     entry to point at.
+///
 /// Lists the registry names deliberately: dispatch is registry-scoped (there
 /// is no allowlist re-check in `dispatchTool`), so this list is exactly the
 /// set of names the dispatcher would accept.
 fn unknownToolMessage(allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
+    if (tools_equipped.retiredToolSuggestion(name)) |replacement| {
+        return std.fmt.allocPrint(
+            allocator,
+            "unknown tool '{s}' — it was retired and is not available in this session; do not call it again. Re-issue the same call as `{s}`.",
+            .{ name, replacement },
+        );
+    }
+
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(allocator);
 
@@ -1037,9 +1052,11 @@ pub fn handle_tool(
                 tool_call.function.arguments,
             ) catch {};
 
-            // A name that reaches here is genuinely unknown: the deprecated
-            // aliases (`bash` → `command`) were already accepted by
-            // `isKnownToolOrMCP` above. Write an ACTIONABLE result into the
+            // A name that reaches here is genuinely unknown: the tolerated
+            // alias (`run_command` → `command`) was already accepted by
+            // `isKnownToolOrMCP` above, and the retired shell names (`bash`,
+            // `pwsh`) are deliberately NOT accepted so the correction below
+            // reaches the model. Write an ACTIONABLE result into the
             // Phase 1 placeholder rather than `continue`-ing. The bare skip
             // left the placeholder's `data:null` + a non-actionable
             // "unknown tools" as the FINAL tool_result, so the model got
@@ -1786,15 +1803,30 @@ test "parseDiffViewFromResult - unescapes multiline content with entities" {
 // =============================================================================
 
 test "unknownToolMessage names the offending tool and offers the real ones" {
-    const msg = try unknownToolMessage(std.testing.allocator, "bash");
-    defer std.testing.allocator.free(msg);
+    // A RETIRED name gets the targeted correction rather than the ~40-name
+    // menu: the model reached for `bash` because it was trained on it, and
+    // the one thing it needs is the name that replaced it.
+    const retired_msg = try unknownToolMessage(std.testing.allocator, "bash");
+    defer std.testing.allocator.free(retired_msg);
 
     // Names the tool so the model knows WHICH call was rejected...
-    try std.testing.expect(std.mem.indexOf(u8, msg, "unknown tool 'bash'") != null);
-    // ...and offers a way forward, including the canonical shell name. This is
-    // what the model was missing when it re-emitted `bash` four turns running.
-    try std.testing.expect(std.mem.indexOf(u8, msg, "command") != null);
-    try std.testing.expect(std.mem.indexOf(u8, msg, "do not call it again") != null);
+    try std.testing.expect(std.mem.indexOf(u8, retired_msg, "unknown tool 'bash'") != null);
+    // ...states that the name is gone, so retrying it is pointless...
+    try std.testing.expect(std.mem.indexOf(u8, retired_msg, "retired") != null);
+    try std.testing.expect(std.mem.indexOf(u8, retired_msg, "do not call it again") != null);
+    // ...and names the replacement explicitly. This is the whole point of
+    // retiring the alias: "unknown tool" alone left the model with nothing
+    // to correct against and it re-emitted `bash` four turns running.
+    try std.testing.expect(std.mem.indexOf(u8, retired_msg, "`command`") != null);
+    try std.testing.expect(std.mem.indexOf(u8, retired_msg, "Re-issue the same call as") != null);
+
+    // A name nobody ever had still gets the enumeration, so the model can
+    // pick a real one instead.
+    const made_up_msg = try unknownToolMessage(std.testing.allocator, "totally_made_up_tool");
+    defer std.testing.allocator.free(made_up_msg);
+    try std.testing.expect(std.mem.indexOf(u8, made_up_msg, "unknown tool 'totally_made_up_tool'") != null);
+    try std.testing.expect(std.mem.indexOf(u8, made_up_msg, "command") != null);
+    try std.testing.expect(std.mem.indexOf(u8, made_up_msg, "do not call it again") != null);
 }
 
 test "wrapToolOutput envelope is round-trip parseable (envelope shape vs frontend)" {
@@ -2588,14 +2620,16 @@ test "secrets: the shell echo case is scrubbed too (shell.zig puts the command i
     // is the leak that survives when redaction is applied anywhere other than
     // immediately before persistence.
     //
-    // `mandatory_timeout` is required by `execute_command`; without it the tool
-    // returns an error envelope and never runs a shell, which would leave the
-    // Stays under shell.zig MAX_MANDATORY_TIMEOUT_SEC (600): an over-max
-    // deadline is rejected before any child spawns, shorting the leak the same way.
-    // leak one layer short and the test below passing for the wrong reason.
+    // `mandatory_timeout` and `cwd` are BOTH required by `execute_command`;
+    // without either the tool returns an error envelope and never runs a shell,
+    // which would leave the leak one layer short and the test below passing for
+    // the wrong reason.
+    // 60 also sits at exactly shell.zig's MAX_MANDATORY_TIMEOUT_SEC, so an
+    // over-max deadline would short the leak the same way — the minted value
+    // must stay at or under one minute.
     const args = try std.fmt.allocPrint(
         allocator,
-        "{{\"command\":\"echo {{{{SECRETS:TOK}}}}\",\"mandatory_timeout\":60}}",
+        "{{\"command\":\"echo {{{{SECRETS:TOK}}}}\",\"cwd\":\"/tmp\",\"mandatory_timeout\":60}}",
         .{},
     );
     const tc = agent.ToolCall{ .id = "call_secrets_shell", .function = .{ .name = "command", .arguments = args } };
