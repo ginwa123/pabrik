@@ -721,6 +721,46 @@ const applyTailCapLatch = (end: number) => {
  * left untouched rather than guessed — a wrong real bottom would either
  * re-open the phantom (too large) or hide real content (too small).
  */
+/**
+ * Write the height the model implies onto the sizer element RIGHT NOW.
+ *
+ * Why this exists (2026-10-12): the sizer is a `:style` binding, so Vue applies
+ * it on its NEXT render — while `measureItems` mutates the model and writes
+ * `scrollTop` in the SAME synchronous pass. Between those two moments
+ * `container.scrollHeight` still describes the PREVIOUS model, and the browser
+ * clamps any `scrollTop` past it. So a pass that grew the model had its
+ * compensation silently truncated against a range the model no longer had:
+ *
+ *     model total 143,132, rendered sizer 120,830 (stale)
+ *     compensation target 138,880  ->  browser clamped to 120,074
+ *     reader teleported up ~18.8k, the next pass wrote -38,808 to undo it
+ *
+ * Idempotent by construction: this writes the exact value the pending render is
+ * about to write (both read `sizerHeight`, and the computed caches behind its
+ * dead-band), so Vue's patch is a no-op when it lands. The comparison guard
+ * keeps a pass that changed nothing from touching layout at all.
+ */
+const syncSizerHeightToDom = (): void => {
+  const el = containerRef.value
+  if (!el) return
+  const sizer = el.querySelector('.virtual-scroller-sizer') as HTMLElement | null
+  if (!sizer) return
+  const px = `${sizerHeight.value}px`
+  if (sizer.style.height === px) return
+  sizer.style.height = px
+}
+
+/**
+ * Highest `scrollTop` the container can reach as its geometry stands NOW. Read
+ * after `syncSizerHeightToDom` so it describes the model this pass built rather
+ * than the previous render's (see `maxScrollTop` on the compensation helper).
+ */
+const reachableScrollTop = (): number => {
+  const el = containerRef.value
+  if (!el) return 0
+  return Math.max(0, el.scrollHeight - el.clientHeight)
+}
+
 const recordTailContentBottom = (
   childrenSum: number,
   firstIndex: number,
@@ -1119,6 +1159,10 @@ const measureItems = () => {
   // happens — it absorbs the model change and keeps them on the newest
   // content — but it leaves them at the bottom instead of stranding them
   // `shiftPx` px above it with the auto-stick already disarmed.
+  // The sizer must describe the model this pass just built BEFORE anything asks
+  // how far the container can scroll — otherwise the bound below is the previous
+  // model's, and the compensation gets truncated by the browser silently.
+  syncSizerHeightToDom()
   const result = computeAnchorCompensation({
     anchorIndex,
     prevScrollTop,
@@ -1128,7 +1172,23 @@ const measureItems = () => {
     // it is now. Passing it is the whole point: a bottom reader is re-targeted
     // instead of compensated around an anchor they never chose.
     atBottomTarget: wasAtBottom ? bottomScrollTop() : undefined,
+    maxScrollTop: reachableScrollTop(),
   })
+  // ── The write gate is `shiftPx !== 0`, and that is deliberate but partial ──
+  //
+  // It drops the helper's OTHER return: `target: 'bottom'` carries the prefix
+  // delta it absorbed alongside, and on a streaming turn that delta is normally
+  // 0 (content grows AT/AFTER the anchor, so the prefix above it does not move),
+  // so the re-target a bottom reader gets is computed and then discarded here.
+  //
+  // Not changed with the 2026-10-12 compensation work, on purpose. Staging the
+  // case — park at the bottom, grow the last rendered row by 2000px, run
+  // `remeasure()` — re-pins the reader anyway, because ChatView's `onContentShift`
+  // re-stick fires off the sizer change and calls `scrollToBottom`. So the gap is
+  // latent, not demonstrated, and widening this gate is a behaviour change to the
+  // streaming stick path (which has a history of CI flakes) with no witness to
+  // justify it. If it ever needs to be closed, that is the change to make — the
+  // helper's `atBottomTarget > prevScrollTop` guard already makes it downward-only.
   if (result.shiftPx !== 0 && !isPreservingScroll.value) {
     // Mark BEFORE the write: assigning .scrollTop fires a native scroll
     // event that onScroll must label as programmatic (see the counter
@@ -1158,6 +1218,13 @@ const measureItems = () => {
             shiftPx: result.shiftPx,
             target: result.target,
             wasAtBottom,
+            // True when the target exceeded the reachable range even after the
+            // sizer was brought up to date — the view could not be held exactly,
+            // and the NEXT pass will re-derive the reader's position from where
+            // this left them. Expect it to be false; a run of trues means the
+            // model is claiming a position the container cannot hold.
+            clampedToMax: result.clampedToMax,
+            reachableScrollTop: reachableScrollTop(),
             pendingMeasurements,
             pendingWritesLen: pendingWrites.length,
           },

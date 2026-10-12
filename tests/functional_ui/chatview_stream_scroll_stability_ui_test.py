@@ -42,7 +42,25 @@ so a prefix sum above the viewport can only change when a row is really measured
 * per step, the model must not rescale (a scrollHeight step of thousands of px
   is a guess moving, not content arriving);
 * a reader parked mid-response must not be moved AT ALL by the stream, sampled
-  frame by frame.
+  frame by frame;
+* a compensation larger than the range the container can reach must not be
+  SILENTLY truncated by the browser (see
+  `test_a_compensation_beyond_the_rendered_range_is_not_truncated`).
+
+## The second defect, found while verifying the first
+
+`measureItems` rebuilds the height model and writes `scrollTop` in ONE
+synchronous pass, but the sizer is a `:style` binding that Vue applies on its
+NEXT render. So between the two moments `container.scrollHeight` still describes
+the PREVIOUS model, and the browser clamps any write past it — silently. That is
+what turned the +22,235px rescale above into a teleport rather than a no-op, and
+it is a general hazard for any large compensation, whatever caused it.
+
+Fixed by applying the model's sizer height to the element before the write (the
+same value the pending render is about to apply, so Vue's patch is a no-op), and
+by bounding the target to the reachable range in `computeAnchorCompensation`
+(`maxScrollTop` / `clampedToMax`) instead of leaving the truncation to the
+browser.
 
 Run:
     PABRIK_BIN=./zig-out/bin/pabrikcore-linux-x86_64 \
@@ -363,4 +381,94 @@ def test_a_parked_reader_is_not_moved_by_the_stream(ui_harness: UIHarness, page)
         f"(min {min(tops):.0f}, max {max(tops):.0f}, parked {parked['scrollTop']:.0f}); "
         f"frames={len(tops)}, content grew "
         f"{parked['scrollHeight']} -> {after['scrollHeight']}"
+    )
+
+
+#: A row above the reader grows by this much and the pass is re-run. Big enough
+#: to move the model well past `HYSTERESIS_PX` (50), so the pass really does
+#: change the sizer — without that there is nothing for the ordering to be right
+#: about.
+_GROWTH_PX = 2000
+
+#: Grow a rendered row, run the app's own measure pass, and read BOTH the
+#: element's height and the model's — inside ONE synchronous evaluate, so no
+#: microtask (Vue's render is a microtask) can run in between. That is the whole
+#: point: the property under test is "at the instant the pass writes, the DOM's
+#: scrollable range describes the model the pass just built".
+_SYNC_PROBE_JS = (
+    r"""
+(args) => {
+  const el = """
+    + _CHAT_SCROLLER
+    + r""";
+  const content = el.querySelector('.virtual-scroller-content');
+  const sizer = el.querySelector('.virtual-scroller-sizer');
+  const kids = [...content.children];
+  if (kids.length < 2) return { ok: false, why: 'too few rendered rows' };
+  const last = kids[kids.length - 1];
+  last.style.minHeight = last.offsetHeight + args.growth + 'px';
+  const before = { dom: parseFloat(sizer.style.height) || 0 };
+  el.__vueParentComponent.exposed.remeasure();
+  return {
+    ok: true,
+    before: before,
+    domSizerHeight: parseFloat(sizer.style.height) || 0,
+    modelSizerHeight: el.__vueParentComponent.exposed.sizerHeight.value,
+    domScrollHeight: el.scrollHeight,
+    clientHeight: el.clientHeight,
+    scrollTop: el.scrollTop,
+  };
+}
+"""
+)
+
+
+def test_the_sizer_matches_the_model_before_the_pass_writes(ui_harness: UIHarness, page) -> None:
+    """The write must be bounded by the model's range, not by the last render's.
+
+    `measureItems` rebuilds the height model AND writes `scrollTop` in one
+    synchronous pass, while the sizer is a `:style` binding Vue applies on its
+    NEXT render. So for one tick the DOM's `scrollHeight` describes the PREVIOUS
+    model, and the browser clamps any write past it — silently. That is what
+    turned the +22,235px rescale this file documents into a teleport rather than
+    a no-op: the pass wrote 138,880, the browser held it at 120,074, and the
+    reader was 18.8k px from where the pass meant to put them.
+
+    Asserted at the moment that matters, in one synchronous evaluate (no
+    microtask can run in between, and Vue's render is a microtask): after the
+    pass, the element's height and the model's must already agree.
+
+    What this does NOT prove: that a large enough compensation still exists to
+    be clamped in production. Freezing the placeholder (the other half of this
+    file) removed the model-only growth that produced one; this is the ordering
+    guarantee that keeps any future one from being truncated, and a unit test
+    pins the bound itself (`virtualScrollerScrollAnchor.spec.ts`).
+    """
+    h = ui_harness
+    session_id = "sess-sizer-sync"
+    _open_chat(page, h, session_id)
+
+    page.evaluate(
+        f"() => {{ const el = {_CHAT_SCROLLER}; el.scrollTop = el.scrollHeight * 0.45; }}"
+    )
+    page.wait_for_timeout(1200)
+    print(f"\n[scroll-stability] parked before the sync probe: {_geom(page)}")
+
+    probe = page.evaluate(_SYNC_PROBE_JS, {"growth": _GROWTH_PX})
+    print(f"[scroll-stability] sync probe: {probe}")
+    assert probe.get("ok"), f"could not run the sync probe: {probe}"
+    assert probe["modelSizerHeight"] != probe["before"]["dom"], (
+        "the pass did not change the model, so the ordering was never exercised: "
+        f"{probe}"
+    )
+    assert probe["domSizerHeight"] == probe["modelSizerHeight"], (
+        "the pass wrote scrollTop while the element still described the PREVIOUS "
+        "model — the browser would clamp the write silently: element "
+        f"{probe['domSizerHeight']}px vs model {probe['modelSizerHeight']}px "
+        f"(scrollHeight {probe['domScrollHeight']}, clientHeight {probe['clientHeight']})"
+    )
+    assert probe["scrollTop"] <= probe["domScrollHeight"] - probe["clientHeight"] + 1, (
+        "the pass left scrollTop outside the range it published: "
+        f"scrollTop {probe['scrollTop']}, max "
+        f"{probe['domScrollHeight'] - probe['clientHeight']}"
     )
