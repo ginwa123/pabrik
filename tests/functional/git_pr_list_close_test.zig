@@ -335,12 +335,19 @@ fn expectObjBool(o: std.json.ObjectMap, key: []const u8, want: bool) !void {
 /// The `error` sentence, which must be PRESENT — an absent key is a failure,
 /// not an empty string.
 fn requireError(doc: *const harness.Json, needle: []const u8) !void {
-    const got = doc.str("error") orelse {
-        std.debug.print("body carries no `error` field\n", .{});
+    return requireField(doc, "error", needle);
+}
+
+/// A named string field that must exist and mention `needle`. Shared by the
+/// error bodies (`error`) and the `{ closed: false }` answer (`detail`) — the
+/// assertion is the same, because "the sentence must be there" is.
+fn requireField(doc: *const harness.Json, field: []const u8, needle: []const u8) !void {
+    const got = doc.str(field) orelse {
+        std.debug.print("body carries no `{s}` field\n", .{field});
         return error.TestUnexpectedResult;
     };
     if (needle.len > 0 and std.mem.indexOf(u8, got, needle) == null) {
-        std.debug.print("`error` = \"{s}\", expected it to mention \"{s}\"\n", .{ got, needle });
+        std.debug.print("`{s}` = \"{s}\", expected it to mention \"{s}\"\n", .{ field, got, needle });
         return error.TestUnexpectedResult;
     }
 }
@@ -697,7 +704,14 @@ test "close_that_the_forge_still_reports_open_is_not_success" {
     defer doc.deinit();
 
     try expectEqualBool(&doc, "closed", false);
-    try requireError(&doc, "still reports");
+    // The sentence rides in `detail`: this is a 200, because the forge DID answer —
+    // it simply did not do what was asked. An `error` field here would be claiming a
+    // transport/command failure the forge never reported.
+    try requireField(&doc, "detail", "still reports");
+    if (doc.get("error") != null) {
+        std.debug.print("closed:false must not carry an `error`\n", .{});
+        return error.TestUnexpectedResult;
+    }
 }
 
 // 11. A close the forge refuses is a 502 with the forge's sentence. It must
@@ -757,5 +771,6 @@ comptime {
     _ = expectObjStr;
     _ = expectObjBool;
     _ = requireError;
+    _ = requireField;
     _ = bootHarness;
 }
