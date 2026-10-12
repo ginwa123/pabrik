@@ -1286,13 +1286,15 @@ jobs:
             exit 1
           fi
           # Shipped UI for installer layouts (Linux/macOS bare binaries
-          # have no other UI source; Windows bundles html/ inside its zip
-          # instead). One tarball per triple keeps the cells from
-          # colliding on a shared name. Built from the JUST-CLEANED
-          # zig-out/bin/html (see the pre-clean step) with a top-level
-          # html/ dir, so install.sh extracts it straight into $BINDIR
-          # and the server's next-to-exe probe finds it.
-          if [ "${RUNNER_OS:-}" != "Windows" ] && [ -f "zig-out/bin/html/index.html" ]; then
+          # have no other UI source; the Windows zip carries html/ too,
+          # but the tarball is ALSO staged there: it is the uniform
+          # presence signal every install job probes, and per-triple
+          # names keep the three cells from colliding on the release).
+          # Built from the JUST-CLEANED zig-out/bin/html (see the
+          # pre-clean step) with a top-level html/ dir, so install.sh
+          # extracts it straight into $BINDIR and the server's
+          # next-to-exe probe finds it.
+          if [ -f "zig-out/bin/html/index.html" ]; then
             tar -czf "$stage/pabrik-html-$TARGET.tar.gz" -C zig-out/bin html
             echo "→ staged $stage/pabrik-html-$TARGET.tar.gz"
           fi
