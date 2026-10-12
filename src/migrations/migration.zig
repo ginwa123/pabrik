@@ -118,6 +118,7 @@ const migration_102 = @import("migration_102.zig");
 const migration_103 = @import("migration_103.zig");
 const migration_104 = @import("migration_104.zig");
 const migration_105 = @import("migration_105.zig");
+const migration_106 = @import("migration_106.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -225,6 +226,7 @@ pub const Migration102CreateSkills = migration_102.Migration102CreateSkills;
 pub const Migration103CreateWorkspaceSecrets = migration_103.Migration103CreateWorkspaceSecrets;
 pub const Migration104AddSessionPinned = migration_104.Migration104AddSessionPinned;
 pub const Migration105CreateWorkspaceSettings = migration_105.Migration105CreateWorkspaceSettings;
+pub const Migration106CreateModelCatalog = migration_106.Migration106CreateModelCatalog;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -514,6 +516,7 @@ pub const allMigrations: []const Migration = &.{
     // a workspace is shared when `--auth` is on and this table holds API
     // keys - see `workspace_settings_store.zig` for the owner rule.
     .{ .version = Migration105CreateWorkspaceSettings.version, .name = Migration105CreateWorkspaceSettings.name, .up = Migration105CreateWorkspaceSettings.up },
+    .{ .version = Migration106CreateModelCatalog.version, .name = Migration106CreateModelCatalog.name, .up = Migration106CreateModelCatalog.up },
 };
 
 /// Register all migrations with a MigrationManager

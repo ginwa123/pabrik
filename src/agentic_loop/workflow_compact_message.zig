@@ -25,6 +25,7 @@
 //!     `CompactDeps`, `shouldCompactDefault`, `defaultCompactDeps`,
 //!     `maybeCompactMessagesNew`, `compactMessageInMemoryNew`
 
+const model_catalog = @import("model_catalog.zig");
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const mark_history_not_for_llmrun = @import("markHistoryNotForLLMRun.zig").markHistoryNotForLLMRun;
@@ -821,7 +822,7 @@ pub fn shouldCompactDefault(ctx: ThresholdCtx) bool {
     if (ctx.force) return true;
     return agent.LLMModels.shouldCompact(
         ctx.total_tokens,
-        ctx.llm_config.maxCapacityForModel(ctx.profile, null, ctx.llm_config, ctx.model),
+        ctx.llm_config.maxCapacityForModelWith(ctx.profile, null, ctx.llm_config, ctx.model, model_catalog.getSingleton()),
         ctx.llm_config.compactionThresholdPercent(ctx.profile, null, ctx.llm_config),
     );
 }

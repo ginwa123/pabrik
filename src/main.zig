@@ -202,6 +202,11 @@ pub fn main(init: std.process.Init) !void {
     // Workspace settings already populated. Idempotent + best-effort.
     server_boot.seedWorkspaceSettingsFromUserConfig(allocator, io, environment, dbSqlite, cli.auth_enabled);
 
+    // models.dev model catalog: read the cached snapshot from the DB (local,
+    // no network) and kick the detached hourly sync. This is what makes a
+    // non-MiniMax model resolve to its real context window instead of 200k.
+    server_boot.loadModelCatalog(allocator, dbSqlite);
+
     // Eager globals: call sites go through the singleton instead of
     // lazy-init on first MCP use; the defers free the arenas at shutdown.
     ctxParent.mcp_stdio_registry = pabrikcore.mcp_stdio.StdioRegistry.global(allocator);
