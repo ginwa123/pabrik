@@ -127,7 +127,7 @@ const EnvShadow = struct {
 /// copies plus the isolated HOME the install ran under. The caller owns
 /// both returned slices; scratch cleanup stays with the caller's scratch
 /// dir.
-const InstallDirs = struct { bindir: []u8, home: []u8 };
+const InstallDirs = struct { bindir: []u8, home: []u8, base_url: []u8 };
 
 fn installToIsolatedBindir(scratch: []const u8, triple: []const u8) !InstallDirs {
     const stage = try harness.harnessPath(gpa, scratch, &.{"release-stage"});
@@ -175,7 +175,7 @@ fn installToIsolatedBindir(scratch: []const u8, triple: []const u8) !InstallDirs
     }
 
     const base_url = try std.fmt.allocPrint(gpa, "file://{s}", .{stage});
-    defer gpa.free(base_url);
+    errdefer gpa.free(base_url);
 
     // The user flow: pipe install.sh into a shell against the staged
     // "release". PABRIK_SKIP_DESKTOP_ENTRY=1 keeps the test hermetic
@@ -193,7 +193,7 @@ fn installToIsolatedBindir(scratch: []const u8, triple: []const u8) !InstallDirs
         ),
         "install.sh",
     );
-    return .{ .bindir = bindir, .home = home };
+    return .{ .bindir = bindir, .home = home, .base_url = base_url };
 }
 
 // install.sh exits 0, drops runnable binaries into an isolated bindir,
@@ -209,6 +209,7 @@ test "install_sh installs runnable pabrik binaries" {
     const dirs = try installToIsolatedBindir(scratch, triple);
     defer gpa.free(dirs.bindir);
     defer gpa.free(dirs.home);
+    defer gpa.free(dirs.base_url);
     const bindir = dirs.bindir;
 
     const installed = try std.fs.path.join(gpa, &.{ bindir, "pabrik" });
@@ -230,6 +231,21 @@ test "install_sh installs runnable pabrik binaries" {
     try expectExitZero(
         try runChild(&.{ installed, "--help" }, &.{}),
         "installed pabrik --help",
+    );
+
+    // Re-running against identical content exits 0 via the up-to-date
+    // path (no reinstall, no duplicate rc lines) — the "user updates"
+    // flow when there is nothing new.
+    try expectExitZero(
+        try runChild(
+            &.{ "bash", "install.sh", "--dir", bindir },
+            &.{
+                .{ "PABRIK_BASE_URL", dirs.base_url },
+                .{ "PABRIK_SKIP_DESKTOP_ENTRY", "1" },
+                .{ "HOME", dirs.home },
+            },
+        ),
+        "install.sh re-run",
     );
 
     // And the bindir was exported to PATH in the isolated rc file
@@ -271,6 +287,7 @@ test "installed pabrik serves the browser url" {
     const dirs = try installToIsolatedBindir(scratch, triple);
     defer gpa.free(dirs.bindir);
     defer gpa.free(dirs.home);
+    defer gpa.free(dirs.base_url);
     const bindir = dirs.bindir;
 
     const installed = try std.fs.path.join(gpa, &.{ bindir, "pabrik" });
@@ -335,6 +352,7 @@ test "installed pabrik serves the app from its bundled html dir" {
     const dirs = try installToIsolatedBindir(scratch, triple);
     defer gpa.free(dirs.bindir);
     defer gpa.free(dirs.home);
+    defer gpa.free(dirs.base_url);
     const bindir = dirs.bindir;
 
     // Fixture UI at <bindir>/html/index.html — the exact layout

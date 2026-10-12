@@ -50,7 +50,9 @@ What it does: installs `pabrik` + `pabrik-desktop` to `~/.local/bin`
 (Linux/macOS) or `%LOCALAPPDATA%\pabrik\bin` + a Start Menu shortcut
 (Windows), and adds the bindir to your PATH automatically
 (`~/.bashrc` / `~/.zshrc` on Linux/macOS, user PATH on Windows —
-new terminals pick it up; `PABRIK_NO_MODIFY_PATH=1` opts out). Options: `bash install.sh --system` for `/usr/local/bin`,
+new terminals pick it up; `PABRIK_NO_MODIFY_PATH=1` opts out).
+Re-running the installer updates an existing install in place (it says
+already-up-to-date when the binaries match, `Updated …` otherwise). Options: `bash install.sh --system` for `/usr/local/bin`,
 `--no-desktop` for the server only, `--version TAG` for a pinned release,
 `--uninstall` to remove. macOS GUI users can also grab `Pabrik-*.zip`
 (Pabrik.app) from the
