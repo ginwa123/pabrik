@@ -77,6 +77,26 @@ try {
     $setup = Join-Path $extract "Install-Pabrik.ps1"
     if (-not (Test-Path $setup)) { Write-Error "Install-Pabrik.ps1 missing in $ZipName -- bad release asset?"; exit 1 }
 
+    # Update detection: the exes carry no --version flag, so content is
+    # the version — SHA256 the downloads against an existing install.
+    # Identical → already up to date, exit before touching anything.
+    # Differing (or missing) → install + report the update below.
+    $installedDesktop = Join-Path $env:LOCALAPPDATA "pabrik\bin\pabrik-desktop.exe"
+    $installedService = Join-Path $env:LOCALAPPDATA "pabrik\bin\pabrik.exe"
+    $newDesktop = Join-Path $extract "pabrik-desktop.exe"
+    $newService = Join-Path $extract "pabrik.exe"
+    function Same-File($a, $b) {
+        if (-not (Test-Path -LiteralPath $a)) { return $false }
+        if (-not (Test-Path -LiteralPath $b)) { return $false }
+        return (Get-FileHash -LiteralPath $a -Algorithm SHA256).Hash -eq `
+               (Get-FileHash -LiteralPath $b -Algorithm SHA256).Hash
+    }
+    $hadExisting = Test-Path -LiteralPath $installedService
+    if ((Same-File $newDesktop $installedDesktop) -and (Same-File $newService $installedService)) {
+        Write-Output "pabrik is already up to date ($Tag)."
+        exit 0
+    }
+
     $args = @()
     if ($DesktopShortcut) { $args += "-DesktopShortcut" }
     Write-Output "Running Install-Pabrik.ps1 ..."
@@ -106,6 +126,7 @@ try {
     }
 
     Write-Output "Installed Pabrik. Press Win key and type 'Pabrik' to launch it."
+    if ($hadExisting) { Write-Output "Updated existing installation to $Tag." }
 } finally {
     if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue }
 }

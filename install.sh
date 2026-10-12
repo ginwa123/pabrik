@@ -117,8 +117,9 @@ have_cmd() { command -v "$1" >/dev/null 2>&1; }
 
 download() {
     local url="$1" dest="$2"
-    local name
+    local name rc
     name="$(basename "$url")"
+    rc=0
     echo "Downloading $name ..."
     if have_cmd curl; then
         # Timeouts so a stalled connection fails instead of hanging
@@ -126,27 +127,32 @@ download() {
         # binary does not look frozen, silence otherwise (CI logs).
         if [[ -t 2 ]]; then
             curl -fSL --progress-bar --connect-timeout 20 --max-time 900 \
-                --retry 3 -o "$dest" "$url"
+                --retry 3 -o "$dest" "$url" || rc=$?
         else
             curl -fsSL --connect-timeout 20 --max-time 900 \
-                --retry 3 -o "$dest" "$url"
+                --retry 3 -o "$dest" "$url" || rc=$?
         fi
     elif have_cmd wget; then
         # --tries=3: wget defaults to 20 retries, which reads as a hang
         # on a dead mirror. --timeout bounds connect/read stalls.
         if [[ -t 2 ]]; then
-            wget --timeout=20 --tries=3 --show-progress -O "$dest" "$url"
+            wget --timeout=20 --tries=3 --show-progress -O "$dest" "$url" || rc=$?
         else
-            wget --timeout=20 --tries=3 -qO "$dest" "$url"
+            wget --timeout=20 --tries=3 -qO "$dest" "$url" || rc=$?
         fi
     else
         echo "Need curl or wget to download ${url}" >&2
         return 1
     fi
+    # Propagate fetch failures: callers gate on our exit status (e.g.
+    # the shipped-UI download is best-effort). The size echo below must
+    # not mask it, so return early here.
+    if [[ "$rc" -ne 0 ]]; then return "$rc"; fi
     # Confirm movement: the byte count proves the download landed.
     local size
     size="$(du -h "$dest" 2>/dev/null | cut -f1)" || size="?"
     echo "  -> $name ($size)"
+    return 0
 }
 
 mkdir -p "$BINDIR"
@@ -159,9 +165,35 @@ if [[ "$WITH_DESKTOP" -eq 1 ]]; then
     download "${BASE_URL}/pabrik-desktop-${TRIPLE}" "${TMPDIR}/pabrik-desktop"
 fi
 
+# Update detection: byte-compare the downloads against an existing
+# install (the binaries carry no --version flag, so content is the
+# version). Identical → already up to date, exit before touching
+# anything. Differing (or missing) → install + report the update.
+# `cmp -s` is POSIX-adjacent everywhere this script runs (coreutils,
+# macOS file_cmds, Git Bash); without it, fall through to installing.
+HAD_EXISTING=0
+if [[ -f "$BIN_PABRIK" ]]; then HAD_EXISTING=1; fi
+if have_cmd cmp && [[ -f "$BIN_PABRIK" ]]; then
+    up_to_date=1
+    cmp -s "${TMPDIR}/pabrik" "$BIN_PABRIK" || up_to_date=0
+    if [[ "$WITH_DESKTOP" -eq 1 ]]; then
+        [[ -f "$BIN_DESKTOP" ]] || up_to_date=0
+        if [[ "$up_to_date" -eq 1 ]]; then
+            cmp -s "${TMPDIR}/pabrik-desktop" "$BIN_DESKTOP" || up_to_date=0
+        fi
+    fi
+    if [[ "$up_to_date" -eq 1 ]]; then
+        echo "pabrik is already up to date (${TAG})."
+        exit 0
+    fi
+fi
+
 install -m 0755 "${TMPDIR}/pabrik" "$BIN_PABRIK"
 if [[ "$WITH_DESKTOP" -eq 1 ]]; then
     install -m 0755 "${TMPDIR}/pabrik-desktop" "$BIN_DESKTOP"
+fi
+if [[ "$HAD_EXISTING" -eq 1 ]]; then
+    echo "Updated existing installation to ${TAG}."
 fi
 
 # Shipped UI (serves /app): the server auto-discovers "${BINDIR}/html"
