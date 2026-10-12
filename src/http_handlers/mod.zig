@@ -343,6 +343,13 @@ pub const gitPrMergeHandler = @import("git_pr_merge.zig").gitPrMergeHandler;
 /// failed one. Registered next to the status handler because the two
 /// share provider resolution (`git_pr_status.resolveProvider`).
 pub const gitPrChecksHandler = @import("git_pr_checks.zig").gitPrChecksHandler;
+/// GET /api/git/pr/list — the repo's change requests (the kanban board's PR
+/// list). Shares provider resolution with the status endpoint.
+pub const gitPrListHandler = @import("git_pr_list.zig").gitPrListHandler;
+/// POST /api/git/pr/close — close a PR/MR through the forge CLI. Mutating,
+/// so it is only ever reachable authenticated; the answer is a re-read of the
+/// forge's status, never the CLI's exit code.
+pub const gitPrCloseHandler = @import("git_pr_close.zig").gitPrCloseHandler;
 
 // Queue messages handlers
 pub const queueMessagesGetHandler = @import("queue_messages_get.zig").queueMessagesGetHandler;

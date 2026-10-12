@@ -820,6 +820,77 @@ pub fn makeGitPrMergeResponse(allocator: std.mem.Allocator, response: GitPrMerge
     return std.json.Stringify.valueAlloc(allocator, response, .{});
 }
 
+// ─── Git PR list types ────────────────────────────────────────────────────
+// Wire shape for
+// `GET /api/git/pr/list?path=<repo>[&state=open|closed|merged|all][&limit=30][&provider=]`.
+//
+// This is a LIST of a repository's change requests, not the status of one:
+// the kanban board's PR surface shows every open PR/MR of the board's repo,
+// including the ones whose card was deleted. N calls to `/status` could not
+// answer that — there is no way to enumerate a repo through `gh pr view`.
+pub const GitPrListItem = struct {
+    number: i64 = 0,
+    title: []const u8 = "",
+    url: []const u8 = "",
+    /// Normalized: `open` | `closed` | `merged` (anything else passes
+    /// through lowercased). GitHub says OPEN/CLOSED/MERGED, GitLab says
+    /// opened/closed/merged, and the UI must not have to know both.
+    state: []const u8 = "",
+    is_draft: bool = false,
+    head_ref: []const u8 = "",
+    base_ref: []const u8 = "",
+    author: []const u8 = "",
+    updated_at: []const u8 = "",
+};
+
+pub const GitPrListResponse = struct {
+    /// Which forge answered ("github" | "gitlab") — the frontend labels the
+    /// whole surface from this (pull requests vs merge requests).
+    provider: []const u8 = "",
+    /// The CLI that produced the rows (`gh` | `glab`), named in error text
+    /// and in the "via gh" line so a failure tells the user which program to
+    /// look at.
+    program: []const u8 = "",
+    /// Echoed back: which filter actually produced this page.
+    state: []const u8 = "",
+    changes: []const GitPrListItem = &.{},
+    /// Exactly `limit` rows came back, so there may be more. The UI says so
+    /// rather than presenting one page as the whole truth.
+    truncated: bool = false,
+    /// A non-fatal note about the answer — empty unless there is something
+    /// worth saying (e.g. the CLI printed nothing at all). Errors are status
+    /// codes, never this field.
+    detail: []const u8 = "",
+};
+
+pub fn makeGitPrListResponse(allocator: std.mem.Allocator, response: GitPrListResponse) ![]u8 {
+    return std.json.Stringify.valueAlloc(allocator, response, .{});
+}
+
+// ─── Git PR close types ───────────────────────────────────────────────────
+// Wire shape for `POST /api/git/pr/close`.
+//
+// `closed` is the FORGE's answer, re-read through the same path the 30 s
+// poll uses — not the CLI's exit code. A forge CLI can exit 0 having done
+// nothing (`glab` prints a warning and succeeds in several cases), so the
+// re-read is what makes `false` + `detail` expressible at all.
+pub const GitPrCloseResponse = struct {
+    /// True only when the forge now reports the change request as closed.
+    closed: bool = false,
+    /// The forge's own sentence when `closed` is false: the re-read still
+    /// shows it open, or the close command itself failed (which is a 502
+    /// instead — this field is for the honest in-between).
+    detail: []const u8 = "",
+    provider: []const u8 = "",
+    /// The post-close status, so the row can render the same shape the PR
+    /// tab's badge uses.
+    status: GitPrStatusResponse = .{},
+};
+
+pub fn makeGitPrCloseResponse(allocator: std.mem.Allocator, response: GitPrCloseResponse) ![]u8 {
+    return std.json.Stringify.valueAlloc(allocator, response, .{});
+}
+
 // ─── Git PR checks types ──────────────────────────────────────────────────
 // Wire shape for `GET /api/git/pr/checks?path=<repo>[&pr=<n|url>][&provider=]`.
 // One row per CI job, plus the steps inside a failed one — "which job failed"

@@ -354,6 +354,190 @@ pub fn mergeArgv(
     return storage[0..n];
 }
 
+// ─── listArgv ────────────────────────────────────────────────────────────
+
+/// Fields requested from `gh pr list --json`.
+///
+/// Deliberately its own list rather than a reuse of `GH_JSON_FIELDS`:
+/// `gh pr list` is search-backed and validates field names against its own
+/// allow-list, which is narrower than `gh pr view`'s (the list command has
+/// no `additions`, no `mergedAt`, no `headRefOid`). Sharing one constant
+/// would fail whichever side it was trimmed for.
+pub const GH_LIST_JSON_FIELDS = "number,title,url,state,isDraft,headRefName,baseRefName,author,updatedAt";
+
+/// Which change requests a list asks for.
+///
+/// The value is handed to the forge's OWN notion of the state rather than
+/// translated into ours, because the two forges disagree: GitHub's `closed`
+/// includes merged PRs (which is exactly what its own "Closed" tab shows),
+/// while `glab`'s `--closed` does not — GitLab's UI has separate Merged and
+/// Closed tabs. Any translation between them would be a rule neither forge
+/// has.
+pub const ListState = enum {
+    open,
+    closed,
+    merged,
+    all,
+
+    /// Empty means `open`: both CLIs default to open, so a caller that omits
+    /// the parameter reads the same list the forge's own UI opens on.
+    pub fn fromString(s: []const u8) ?ListState {
+        if (s.len == 0) return .open;
+        if (std.mem.eql(u8, s, "open")) return .open;
+        if (std.mem.eql(u8, s, "closed")) return .closed;
+        if (std.mem.eql(u8, s, "merged")) return .merged;
+        if (std.mem.eql(u8, s, "all")) return .all;
+        return null;
+    }
+
+    /// The wire name, echoed back in the response so the caller can label a
+    /// tab from what the backend actually asked for.
+    pub fn toString(self: ListState) []const u8 {
+        return switch (self) {
+            .open => "open",
+            .closed => "closed",
+            .merged => "merged",
+            .all => "all",
+        };
+    }
+
+    /// The GitLab arm of the filter, or null for `open` — GitLab expresses
+    /// these as four booleans with open as the default, so there is no
+    /// `--open` to pass. (`--opened` is not a glab flag.)
+    fn glabFlag(self: ListState) ?[]const u8 {
+        return switch (self) {
+            .open => null,
+            .closed => "--closed",
+            .merged => "--merged",
+            .all => "--all",
+        };
+    }
+};
+
+/// Upper bound on `listArgv` output: prog, noun, "list", GitHub's three
+/// flag+value pairs, GitLab's state flag plus four pairs.
+pub const list_argv_max = 16;
+
+/// Build the "list the change requests" argv:
+/// `<prog> <pr|mr> list <state filter> <limit> <json flag>`.
+///
+/// `limit_buf` is where the decimal limit is rendered, and it is the
+/// CALLER's storage rather than a local: a local would hand argv a slice
+/// into a dead stack frame, so the spawn would read freed memory. (Same
+/// class of bug the `source_branch` lifetime comment in
+/// `git_pr_create.zig` documents.)
+///
+/// `prog` is explicit for the same test-injection reason as `viewArgv`.
+pub fn listArgv(
+    storage: [][]const u8,
+    limit_buf: []u8,
+    provider: PrProvider,
+    prog: []const u8,
+    state: ListState,
+    limit: u32,
+) ?[]const []const u8 {
+    const c = cliFor(provider) orelse return null;
+    if (prog.len == 0) return null;
+    if (limit == 0) return null;
+    if (storage.len < list_argv_max) return null;
+
+    const limit_str = std.fmt.bufPrint(limit_buf, "{d}", .{limit}) catch return null;
+
+    var n: usize = 0;
+    storage[n] = prog;
+    n += 1;
+    storage[n] = c.noun;
+    n += 1;
+    storage[n] = "list";
+    n += 1;
+    switch (provider) {
+        .github => {
+            storage[n] = "--state";
+            n += 1;
+            storage[n] = state.toString();
+            n += 1;
+            storage[n] = "--limit";
+            n += 1;
+            storage[n] = limit_str;
+            n += 1;
+            storage[n] = "--json";
+            n += 1;
+            storage[n] = GH_LIST_JSON_FIELDS;
+            n += 1;
+        },
+        .gitlab => {
+            if (state.glabFlag()) |flag| {
+                storage[n] = flag;
+                n += 1;
+            }
+            storage[n] = "-P";
+            n += 1;
+            storage[n] = limit_str;
+            n += 1;
+            // Without an explicit order the list arrives in whatever order
+            // the API happens to return, and the UI's "newest activity
+            // first" line would be a claim about nothing.
+            storage[n] = "-o";
+            n += 1;
+            storage[n] = "updated_at";
+            n += 1;
+            storage[n] = "-S";
+            n += 1;
+            storage[n] = "desc";
+            n += 1;
+            storage[n] = "-F";
+            n += 1;
+            storage[n] = "json";
+            n += 1;
+        },
+        .generic => unreachable,
+    }
+    return storage[0..n];
+}
+
+// ─── closeArgv ───────────────────────────────────────────────────────────
+
+/// Upper bound on `closeArgv` output (prog, noun, "close", ref).
+pub const close_argv_max = 4;
+
+/// Build the "close this PR/MR" argv: `<prog> <pr|mr> close <ref>`.
+///
+/// `ref` is REQUIRED here, unlike `viewArgv`. Both CLIs read a missing ref
+/// as "the one for the currently checked-out branch", and closing whatever
+/// happens to be checked out is not something a row in a list can mean.
+/// Refusing an empty ref is the difference between "close #893" and "close
+/// something".
+///
+/// Two flags are deliberately absent:
+///   - `--comment`: `gh pr close -c` has no `glab` counterpart, so a shared
+///     closing-comment field would silently do nothing for every GitLab
+///     user. A field that only works on one forge is worse than no field.
+///   - `--delete-branch` / `--remove-source-branch`: on a pabrik board the
+///     head branch is a live session worktree — a directory an agent may be
+///     standing in. The forge's own PR page still offers it.
+pub fn closeArgv(
+    storage: [][]const u8,
+    provider: PrProvider,
+    prog: []const u8,
+    ref: []const u8,
+) ?[]const []const u8 {
+    const c = cliFor(provider) orelse return null;
+    if (prog.len == 0) return null;
+    if (ref.len == 0) return null;
+    if (storage.len < close_argv_max) return null;
+
+    var n: usize = 0;
+    storage[n] = prog;
+    n += 1;
+    storage[n] = c.noun;
+    n += 1;
+    storage[n] = "close";
+    n += 1;
+    storage[n] = ref;
+    n += 1;
+    return storage[0..n];
+}
+
 /// Fields requested from `gh pr checks --json`. `bucket` earns its place:
 /// `state` is free-form (`SUCCESS`, `FAILURE`, `NEUTRAL`), `bucket` is gh's own
 /// rollup into pass/fail/pending/skipping/cancel, which a UI can switch on.
@@ -747,4 +931,109 @@ test "mergeArgv: null for a provider with no CLI, an empty program, or a small b
     try std.testing.expect(mergeArgv(&buf, .github, "", "1", .squash, .{}) == null);
     var tiny: [merge_argv_max - 1][]const u8 = undefined;
     try std.testing.expect(mergeArgv(&tiny, .github, "1", "1", .squash, .{}) == null);
+}
+
+// ─── listArgv / closeArgv ────────────────────────────────────────────────
+
+test "ListState round-trips its wire names, defaults empty to open, and refuses the rest" {
+    try std.testing.expectEqual(ListState.open, ListState.fromString("open").?);
+    try std.testing.expectEqual(ListState.closed, ListState.fromString("closed").?);
+    try std.testing.expectEqual(ListState.merged, ListState.fromString("merged").?);
+    try std.testing.expectEqual(ListState.all, ListState.fromString("all").?);
+    // A caller that omits the parameter gets the forge's own default.
+    try std.testing.expectEqual(ListState.open, ListState.fromString("").?);
+    // `OPEN` is the gh JSON state, not a filter value: accepting either
+    // case here would let a query param mean two different things.
+    try std.testing.expect(ListState.fromString("OPEN") == null);
+    try std.testing.expect(ListState.fromString("opened") == null);
+    try std.testing.expect(ListState.fromString("draft") == null);
+    try std.testing.expectEqualStrings("closed", ListState.closed.toString());
+}
+
+test "listArgv: github passes the state by value, the limit, and a list-only field set" {
+    var buf: [list_argv_max][]const u8 = undefined;
+    var lb: [16]u8 = undefined;
+    try expectArgv(
+        listArgv(&buf, &lb, .github, "gh", .open, 30),
+        &.{ "gh", "pr", "list", "--state", "open", "--limit", "30", "--json", GH_LIST_JSON_FIELDS },
+    );
+    try expectArgv(
+        listArgv(&buf, &lb, .github, "gh", .closed, 7),
+        &.{ "gh", "pr", "list", "--state", "closed", "--limit", "7", "--json", GH_LIST_JSON_FIELDS },
+    );
+}
+
+test "listArgv: gitlab maps the four states onto its four booleans" {
+    var buf: [list_argv_max][]const u8 = undefined;
+    var lb: [16]u8 = undefined;
+
+    // `open` is glab's default, so no state flag at all — there is no
+    // `--open`, and `--opened` is not a glab flag.
+    const open = listArgv(&buf, &lb, .gitlab, "glab", .open, 30).?;
+    try std.testing.expect(!hasArg(open, "--closed") and !hasArg(open, "--merged") and !hasArg(open, "--all"));
+    try expectArgv(
+        open,
+        &.{ "glab", "mr", "list", "-P", "30", "-o", "updated_at", "-S", "desc", "-F", "json" },
+    );
+
+    try expectArgv(
+        listArgv(&buf, &lb, .gitlab, "glab", .closed, 30),
+        &.{ "glab", "mr", "list", "--closed", "-P", "30", "-o", "updated_at", "-S", "desc", "-F", "json" },
+    );
+    try expectArgv(
+        listArgv(&buf, &lb, .gitlab, "glab", .merged, 30),
+        &.{ "glab", "mr", "list", "--merged", "-P", "30", "-o", "updated_at", "-S", "desc", "-F", "json" },
+    );
+    try expectArgv(
+        listArgv(&buf, &lb, .gitlab, "glab", .all, 30),
+        &.{ "glab", "mr", "list", "--all", "-P", "30", "-o", "updated_at", "-S", "desc", "-F", "json" },
+    );
+}
+
+test "listArgv: null for no CLI, an empty program, a zero limit, or too little storage" {
+    var buf: [list_argv_max][]const u8 = undefined;
+    var lb: [16]u8 = undefined;
+    try std.testing.expect(listArgv(&buf, &lb, .generic, "gh", .open, 30) == null);
+    try std.testing.expect(listArgv(&buf, &lb, .github, "", .open, 30) == null);
+    // A zero limit would ask for nothing and render as an empty list, which
+    // is indistinguishable from "there are none" — refused, not clamped.
+    try std.testing.expect(listArgv(&buf, &lb, .github, "gh", .open, 0) == null);
+    var tiny: [list_argv_max - 1][]const u8 = undefined;
+    try std.testing.expect(listArgv(&tiny, &lb, .github, "gh", .open, 30) == null);
+    // 5 bytes cannot hold "30" plus the terminator's headroom for larger
+    // limits; bufPrint fails, and the builder must not hand back a
+    // half-built argv.
+    var small_lb: [1]u8 = undefined;
+    try std.testing.expect(listArgv(&buf, &small_lb, .github, "gh", .open, 30) == null);
+}
+
+test "closeArgv: a plain close, with no comment and no branch deletion" {
+    var buf: [close_argv_max][]const u8 = undefined;
+    try expectArgv(closeArgv(&buf, .github, "gh", "893"), &.{ "gh", "pr", "close", "893" });
+    try expectArgv(closeArgv(&buf, .gitlab, "glab", "7"), &.{ "glab", "mr", "close", "7" });
+
+    // The two flags that must never appear. `--comment` has no glab
+    // counterpart (so it would be a GitHub-only lie), and a branch deletion
+    // here would delete the directory a session worktree lives in.
+    const argv = closeArgv(&buf, .github, "gh", "893").?;
+    try std.testing.expect(!hasArg(argv, "--comment"));
+    try std.testing.expect(!hasArg(argv, "-c"));
+    try std.testing.expect(!hasArg(argv, "--delete-branch"));
+    try std.testing.expect(!hasArg(argv, "--remove-source-branch"));
+}
+
+test "closeArgv: a number, an IID, a URL or a branch all pass through verbatim" {
+    var buf: [close_argv_max][]const u8 = undefined;
+    try expectArgv(closeArgv(&buf, .github, "gh", "https://github.com/acme/app/pull/42"), &.{ "gh", "pr", "close", "https://github.com/acme/app/pull/42" });
+    try expectArgv(closeArgv(&buf, .github, "gh", "worktree/feature-x"), &.{ "gh", "pr", "close", "worktree/feature-x" });
+}
+
+test "closeArgv: an empty ref is refused rather than closing the current branch" {
+    var buf: [close_argv_max][]const u8 = undefined;
+    try std.testing.expect(closeArgv(&buf, .github, "gh", "") == null);
+    try std.testing.expect(closeArgv(&buf, .gitlab, "glab", "") == null);
+    try std.testing.expect(closeArgv(&buf, .generic, "gh", "1") == null);
+    try std.testing.expect(closeArgv(&buf, .github, "", "1") == null);
+    var tiny: [close_argv_max - 1][]const u8 = undefined;
+    try std.testing.expect(closeArgv(&tiny, .github, "gh", "1") == null);
 }

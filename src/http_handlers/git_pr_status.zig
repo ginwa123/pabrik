@@ -50,7 +50,11 @@ const GhPrView = struct {
 /// would report status "opened" and the frontend's `status === 'open'`
 /// check would treat it as neither open nor merged nor closed.
 /// Unknown values pass through lowercased.
-fn normalizeStatus(state: []const u8) []const u8 {
+///
+/// `pub` so `git_pr_list.zig` normalizes a row's state through the same
+/// table: a list row and the card badge for the same PR disagreeing about
+/// what "open" means is exactly the drift this function exists to stop.
+pub fn normalizeStatus(state: []const u8) []const u8 {
     if (std.ascii.eqlIgnoreCase(state, "OPEN") or std.ascii.eqlIgnoreCase(state, "OPENED")) return "open";
     if (std.ascii.eqlIgnoreCase(state, "CLOSED")) return "closed";
     if (std.ascii.eqlIgnoreCase(state, "MERGED")) return "merged";
@@ -58,6 +62,24 @@ fn normalizeStatus(state: []const u8) []const u8 {
     // it is not open, so do not let it read as one.
     if (std.ascii.eqlIgnoreCase(state, "LOCKED")) return "locked";
     return state;
+}
+
+/// `setFetchDetail` for a formatted message.
+///
+/// The `allocPrint` spelling is a leak: `setFetchDetail` COPIES the text into
+/// the request arena, so the temporary it was handed is never freed — and in a
+/// test the leak detector reports it as a failure. Format into a stack buffer
+/// instead. (`git_pr_create.zig` documents the same rule for its spawn-failure
+/// message; this makes it reusable rather than repeated.)
+pub fn setFetchDetailFmt(
+    allocator: std.mem.Allocator,
+    slot: *?[]u8,
+    comptime fmt: []const u8,
+    args: anytype,
+) void {
+    var buf: [256]u8 = undefined;
+    const msg = std.fmt.bufPrint(&buf, fmt, args) catch "the forge CLI call failed";
+    setFetchDetail(allocator, slot, msg);
 }
 
 /// Max bytes of `gh` stderr (or context) surfaced in the HTTP 502
@@ -601,7 +623,7 @@ fn buildGlabResponse(
 /// The first non-empty candidate, or "" — the alias-chain reader used
 /// for fields glab has renamed between releases. Returns a slice
 /// borrowing from one of `candidates`.
-fn firstNonEmpty(candidates: []const []const u8) []const u8 {
+pub fn firstNonEmpty(candidates: []const []const u8) []const u8 {
     for (candidates) |c| if (c.len > 0) return c;
     return "";
 }
@@ -619,7 +641,7 @@ fn jsonInt(v: std.json.Value) ?i64 {
 /// The display name for a glab `author`, which is an object with
 /// `username`/`name` — but which some glab versions render as a bare
 /// string. Returns "" rather than guessing.
-fn glabAuthorName(v: std.json.Value) []const u8 {
+pub fn glabAuthorName(v: std.json.Value) []const u8 {
     return switch (v) {
         .string => |s| s,
         .object => |o| blk: {
@@ -859,7 +881,7 @@ fn makeGitRepo(fx: *Fixture) ![]u8 {
 /// this repo — `git -C <that dir> rev-parse --git-dir` walks up and
 /// succeeds, so the `NotARepository` gate would never trip. Go to the
 /// system temp dir instead.
-fn makeNonRepoDir(allocator: std.mem.Allocator) ![]u8 {
+pub fn makeNonRepoDir(allocator: std.mem.Allocator) ![]u8 {
     var name_buf: [48]u8 = undefined;
     var seed: [4]u8 = undefined;
     std.Io.random(std.testing.io, &seed);
@@ -873,7 +895,7 @@ fn makeNonRepoDir(allocator: std.mem.Allocator) ![]u8 {
     return path;
 }
 
-fn removeNonRepoDir(allocator: std.mem.Allocator, path: []const u8) void {
+pub fn removeNonRepoDir(allocator: std.mem.Allocator, path: []const u8) void {
     std.Io.Dir.cwd().deleteTree(std.testing.io, path) catch {};
     allocator.free(path);
 }
@@ -885,7 +907,7 @@ fn removeNonRepoDir(allocator: std.mem.Allocator, path: []const u8) void {
 /// `zig build test`) this is true and the gate is bypassed for reasons
 /// this test cannot fix. Detected by running the very same probe
 /// against a directory that is definitely not a repository.
-fn gitProbeIsEnvHijacked(allocator: std.mem.Allocator, empty_dir: []const u8) bool {
+pub fn gitProbeIsEnvHijacked(allocator: std.mem.Allocator, empty_dir: []const u8) bool {
     const check = std.process.run(allocator, std.testing.io, .{
         .argv = &.{ "git", "-C", empty_dir, "rev-parse", "--git-dir" },
     }) catch return true;
