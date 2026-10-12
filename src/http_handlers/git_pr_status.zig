@@ -50,7 +50,11 @@ const GhPrView = struct {
 /// would report status "opened" and the frontend's `status === 'open'`
 /// check would treat it as neither open nor merged nor closed.
 /// Unknown values pass through lowercased.
-fn normalizeStatus(state: []const u8) []const u8 {
+///
+/// `pub` so `git_pr_list.zig` normalizes a row's state through the same
+/// table: a list row and the card badge for the same PR disagreeing about
+/// what "open" means is exactly the drift this function exists to stop.
+pub fn normalizeStatus(state: []const u8) []const u8 {
     if (std.ascii.eqlIgnoreCase(state, "OPEN") or std.ascii.eqlIgnoreCase(state, "OPENED")) return "open";
     if (std.ascii.eqlIgnoreCase(state, "CLOSED")) return "closed";
     if (std.ascii.eqlIgnoreCase(state, "MERGED")) return "merged";
@@ -601,7 +605,7 @@ fn buildGlabResponse(
 /// The first non-empty candidate, or "" — the alias-chain reader used
 /// for fields glab has renamed between releases. Returns a slice
 /// borrowing from one of `candidates`.
-fn firstNonEmpty(candidates: []const []const u8) []const u8 {
+pub fn firstNonEmpty(candidates: []const []const u8) []const u8 {
     for (candidates) |c| if (c.len > 0) return c;
     return "";
 }
@@ -619,7 +623,7 @@ fn jsonInt(v: std.json.Value) ?i64 {
 /// The display name for a glab `author`, which is an object with
 /// `username`/`name` — but which some glab versions render as a bare
 /// string. Returns "" rather than guessing.
-fn glabAuthorName(v: std.json.Value) []const u8 {
+pub fn glabAuthorName(v: std.json.Value) []const u8 {
     return switch (v) {
         .string => |s| s,
         .object => |o| blk: {

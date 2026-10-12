@@ -792,6 +792,10 @@ const handleOpenCreateDialog = () => {
 // source, same select-pick-cancel flow.
 import { getSystemFolder, listFolder, updateTaskSimple, type FolderEntry } from '../../api'
 import { updateSession as apiUpdateSession } from '../../api'
+import { listPrs } from '../../api'
+import { invalidatePrStatus } from '../../helpers/prStatusCache'
+import { forgeWording } from '../../helpers/forgeWording'
+import KanbanPrList, { type PrListTab } from './KanbanPrList.vue'
 import FilePickerDialog from '../FilePickerDialog.vue'
 import UiIcon from '../ui/UiIcon.vue'
 
@@ -920,6 +924,144 @@ const buildAppUrlForBoard = (query: Record<string, string>) => {
   return buildAppUrl({ workspaceId: wsId, projectId: itemId, query })
 }
 
+// ─── Board-level PR/MR list (kanban-pull-request-button) ──────────────────
+//
+// Header button → full-cover <KanbanPrList>, URL-backed as `?prs=` so a
+// deep link / refresh restores it:
+//   - opening pushes `?prs=open` (navigation — Back returns to board),
+//   - tab switches replace `?prs=open|closed` (a view switch inside
+//     the view must not stack history),
+//   - the Back link drops the param with `replace`.
+// Sibling params (`sorts`, `layout`, `detail`) are preserved via
+// flatQuery + buildAppUrlForBoard, like every other writer here.
+const PRS_PARAM = 'prs'
+
+const prsOpen = ref(false)
+const prsTab = ref<PrListTab>('open')
+// Handle to the mounted list for explicit reloads (tab switches).
+// The list exposes `reload()` instead of watching its props.
+const prListRef = ref<{ reload: () => void } | null>(null)
+// Open-count badge: null until the forge answers — never a fake 0.
+const prOpenCount = ref<number | null>(null)
+const prOpenTruncated = ref(false)
+// Forge guess for the button label + close calls. Updated by the
+// mount fetch; the list view learns the authoritative provider from
+// its own response.
+const prProviderGuess = ref('')
+const prPluralLabel = computed(() =>
+  forgeWording(prProviderGuess.value || undefined).short === 'MR'
+    ? 'Merge requests'
+    : 'Pull requests',
+)
+
+const readPrsParam = (): PrListTab | null => {
+  // No try/catch here: `local/no-silent-fallback-catch` counts this
+  // file's fallbacks against a baseline, and a `catch → null` would
+  // be an 8th. Optional chaining is total on null/undefined, so
+  // there is nothing to catch.
+  const raw: unknown = route?.query?.[PRS_PARAM]
+  return raw === 'open' || raw === 'closed' ? raw : null
+}
+
+const openPrsFromRoute = () => {
+  const tab = readPrsParam()
+  if (tab) {
+    prsTab.value = tab
+    prsOpen.value = true
+  }
+}
+
+const openPrList = () => {
+  if (!props.item.path || prsOpen.value) return
+  prsOpen.value = true
+  prsTab.value = 'open'
+  try {
+    const query = flatQuery()
+    query[PRS_PARAM] = 'open'
+    void router.push(buildAppUrlForBoard(query))
+  } catch {
+    // Router absent in unit tests — local state already updated.
+  }
+}
+
+const onPrTabChange = (tab: PrListTab) => {
+  prsTab.value = tab
+  // The list does not watch the tab prop (`local/no-watch` bans new
+  // watchers) — reload explicitly, after the prop has propagated.
+  void nextTick(() => prListRef.value?.reload())
+  try {
+    const query = flatQuery()
+    query[PRS_PARAM] = tab
+    void router.replace(buildAppUrlForBoard(query))
+  } catch {
+    // Router absent in unit tests — local state already updated.
+  }
+}
+
+const closePrList = () => {
+  prsOpen.value = false
+  try {
+    const query = flatQuery()
+    delete query[PRS_PARAM]
+    void router.replace(buildAppUrlForBoard(query))
+  } catch {
+    // Router absent in unit tests — local state already cleared.
+  }
+}
+
+const onPrListOpenCount = (n: number) => {
+  prOpenCount.value = n
+}
+
+// One open-count fetch on mount. A failure leaves the badge absent
+// rather than showing 0 — the `.then(ok, err)` shape (no
+// try/catch) matches the list view's own fail-visible contract.
+const fetchPrOpenCount = () => {
+  const cwd = props.item.path || ''
+  if (!cwd) return
+  listPrs(cwd, { state: 'open', limit: 30 }).then(
+    (resp) => {
+      prOpenCount.value = (resp.changes ?? []).length
+      prOpenTruncated.value = !!resp.truncated
+      prProviderGuess.value = resp.provider || ''
+    },
+    () => {
+      // Leave the badge absent — a fake 0 is worse than no badge.
+    },
+  )
+}
+
+// After a successful close the board button's count drops by one
+// and the affected card's badge must flip from open to closed.
+// WorkspaceItemTaskCard has no public refresh hook — it loads PR
+// status onMounted (and onUpdated when branch/cwd changes) via the
+// shared cache — so the honest re-read is: invalidate the cache
+// entry, then remount the KanbanColumn(s) holding that branch via
+// a key bump, which re-runs the card's mount load against the
+// forge. Row-mode (KanbanRowView) cards are NOT remounted by this;
+// they pick the closed state up on their next mount or TTL expiry.
+const prBadgeTick = ref(0)
+const prClosedBranches = ref<string[]>([])
+
+const prColumnKey = (columnId: string): string => {
+  if (prBadgeTick.value === 0) return columnId
+  const holds = (tasks.value ?? []).some(
+    (t) => t.kanban_column_id === columnId && prClosedBranches.value.includes(t.git_branch ?? ''),
+  )
+  return holds ? `${columnId}:pr${prBadgeTick.value}` : columnId
+}
+
+const onPrListClosed = (payload: { number: number; headRef: string }) => {
+  const cwd = props.item.path || ''
+  if (cwd && payload.headRef) {
+    invalidatePrStatus(cwd, payload.headRef, prProviderGuess.value)
+    if (!prClosedBranches.value.includes(payload.headRef))
+      prClosedBranches.value = [...prClosedBranches.value, payload.headRef]
+    prBadgeTick.value += 1
+  }
+  if (prOpenCount.value !== null) prOpenCount.value = Math.max(0, prOpenCount.value - 1)
+}
+
 // Close the inline detail panel + drop the ?detail= param so the
 // URL reflects the board-only state. Used by save-success,
 // start-agent-success, and the panel's close/cancel affordance.
@@ -974,6 +1116,8 @@ const closeDetailLocal = () => {
 
 onMounted(() => {
   openDetailFromRoute()
+  openPrsFromRoute()
+  fetchPrOpenCount()
 })
 
 // Back/forward + in-app query navigations while this kanban stays
@@ -997,6 +1141,20 @@ onBeforeRouteUpdate((to) => {
   const rawLayout = toQuery[LAYOUT_PARAM]
   const nextLayout: KanbanLayout = rawLayout === 'rows' ? 'rows' : 'columns'
   if (nextLayout !== layout.value) layout.value = nextLayout
+  // ?prs= mirrors the detail pattern: a present value opens the
+  // list on that tab, a dropped value closes it locally (the URL is
+  // already the board URL — no router call). A tab change while the
+  // list is already open reloads explicitly — the list exposes
+  // `reload()` instead of watching the prop (`local/no-watch`).
+  const rawPrs = toQuery[PRS_PARAM]
+  if (rawPrs === 'open' || rawPrs === 'closed') {
+    const tabChanged = prsOpen.value && prsTab.value !== rawPrs
+    prsOpen.value = true
+    prsTab.value = rawPrs
+    if (tabChanged) void nextTick(() => prListRef.value?.reload())
+  } else if (prsOpen.value) {
+    prsOpen.value = false
+  }
 })
 
 // (The old ?detail= watcher lived here — now handled by the
@@ -1659,6 +1817,45 @@ const handleCreateTaskSave = async (payload: {
           <span class="ml-1">Add task</span>
         </button>
 
+        <!-- Board-level change-request list (kanban-pull-request-button).
+             Opens the full-cover KanbanPrList (?prs=open). The badge
+             shows the open count once the forge answers — it is
+             omitted (not 0) until then. Disabled without a project
+             root, with the reason visible AND in `title`. -->
+        <button
+          type="button"
+          class="px-2 py-1 rounded text-dense font-medium hover:opacity-80 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+          style="
+            background-color: var(--semantic-sidebar-bg);
+            border: 1px solid var(--color-border);
+            color: var(--semantic-text-muted);
+          "
+          :data-testid="`kanban-view-${item.id}-pr-button`"
+          :disabled="!item.path"
+          :title="
+            item.path ? `Open the ${prPluralLabel.toLowerCase()} list` : 'Set a project root first'
+          "
+          @click="openPrList"
+        >
+          <UiIcon name="pr" />
+          <span class="ml-1">{{ prPluralLabel }}</span>
+          <span
+            v-if="prOpenCount !== null"
+            class="ml-1 px-1.5 rounded-full text-micro"
+            style="background-color: var(--color-violet); color: var(--color-bg)"
+            :data-testid="`kanban-view-${item.id}-pr-count`"
+            :title="prOpenTruncated ? `At least ${prOpenCount} open` : `${prOpenCount} open`"
+            >{{ prOpenCount }}{{ prOpenTruncated ? '+' : '' }}</span
+          >
+          <span
+            v-else-if="!item.path"
+            class="ml-1 text-micro"
+            style="color: var(--semantic-text-dim)"
+          >
+            needs project root
+          </span>
+        </button>
+
         <button
           type="button"
           class="px-2 py-1 rounded text-dense font-medium hover:opacity-80 transition-opacity"
@@ -1752,7 +1949,7 @@ const handleCreateTaskSave = async (payload: {
         <div class="flex gap-3 p-3 h-full items-stretch">
           <KanbanColumn
             v-for="column in sortedColumns"
-            :key="column.id"
+            :key="prColumnKey(column.id)"
             :ref="setColumnRef(column.id)"
             :column="column"
             :tasks="tasks"
@@ -1869,6 +2066,33 @@ const handleCreateTaskSave = async (payload: {
           @column-change="(columnId) => (activeCreateColumnId = columnId)"
         />
       </div>
+    </div>
+    <!--
+    Full-cover change-request list (kanban-pull-request-button).
+    Mounted like the task detail panel above: a `v-if` full-cover
+    block that hides the board underneath. `?prs=` in the URL is the
+    source of truth (Back drops the param, the route guard closes
+    this locally). No `data-testid` on this wrapper — the component
+    root already carries `kanban-pr-list-panel`.
+  -->
+    <div
+      v-if="prsOpen"
+      class="absolute inset-0 z-30 overflow-y-auto"
+      style="background-color: var(--semantic-card-bg)"
+    >
+      <KanbanPrList
+        ref="prListRef"
+        :item-path="item.path || ''"
+        :item-id="itemId || item.id"
+        :workspace-id="workspaceId"
+        :tasks="tasks"
+        :open="prsOpen"
+        :tab="prsTab"
+        @back="closePrList"
+        @tab-change="onPrTabChange"
+        @open-count="onPrListOpenCount"
+        @closed="onPrListClosed"
+      />
     </div>
   </div>
   <!--

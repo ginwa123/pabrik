@@ -186,6 +186,13 @@
 <div class="page">
 
   <h1>Wireframe — a <span style="color:var(--violet)">Pull request / Merge request</span> button on the kanban board</h1>
+  <div class="card" style="border-color:var(--green);margin:10px 0 6px">
+    <b style="color:var(--green)">Implemented — 2026-10-12.</b> Every recommendation in §8 was accepted (D1–D7), so this drawing is now
+    the description of shipped code: the board-header button, the full-cover list, the Open/Closed tabs, the board join and
+    the close flow all exist. <b>§9 lists what the code does differently from this drawing</b> — the seven places where the
+    real thing is narrower, wider or slower than the picture, including two the drawing could not have known (no repo slug
+    on the list wire; row-mode cards do not re-read their badge after a close).
+  </div>
   <p class="sub">
     Card: <b>“add a button pull request or merge request in kanban”</b> — “for now just a button to get list pull request and
     close request”. Read as: <b>one board-level button → a list of the repo’s open PRs/MRs → close one from that list.</b>
@@ -865,6 +872,117 @@
         <td>A strictly board-scoped list cannot show the PR whose card was deleted — usually the one you most want to close.</td></tr>
     </tbody>
   </table>
+
+  <!-- ============ §9 IMPLEMENTED ============ -->
+  <h2><span class="n">§9</span>Implemented — and the seven places it differs from §1–§7</h2>
+  <p class="lead">Shipped in the same PR as this update. The list below is the honest delta: every row is a place where
+    reading the drawing would give you the wrong idea about the code.</p>
+  <table>
+    <thead><tr><th style="width:230px">Drawn</th><th style="width:300px">Shipped</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Header shows <span class="mono">ginwa123/pabrik</span> next to the forge mark</td>
+        <td><b>No repo slug.</b> Forge mark + "via gh" instead</td>
+        <td>Neither <span class="mono">gh pr list --json</span> nor <span class="mono">glab mr list</span> echoes the
+          repository, and getting the slug means a second subprocess (<span class="mono">gh repo view</span>) on every
+          mount. Not worth a process for a label the user already knows — they are standing on the board.</td>
+      </tr>
+      <tr>
+        <td>Tabs read <span class="mono">Open 8 / Closed 900</span> (forge totals)</td>
+        <td><b>Counts are the fetched page</b> — the tab shows the rows it actually has, and
+          <span class="mono">truncated</span> renders as "showing first 30"</td>
+        <td>There is no totals field in the list payload, and inventing one (a second search call) would be a second
+          source of truth for the same number. A count you can point at beats a count that is merely true.</td>
+      </tr>
+      <tr>
+        <td>⚠ conflicts pill on a list row</td>
+        <td><b>Not on the list.</b> The conflict hint stays on the card's branch badge</td>
+        <td>The rows come from <span class="mono">gh pr list</span>, whose field set has no
+          <span class="mono">mergeable</span>/<span class="mono">mergeStateStatus</span> per row in the shape we already
+          request; adding the rollup to every row costs bytes and a second vocabulary. The badge already answers it.</td>
+      </tr>
+      <tr>
+        <td>"the card's branch badge flips to PR closed <b>now</b>, not in 60 s"</td>
+        <td><b>True for columns, delayed for rows.</b> Column cards are remounted (key bump) after a close;
+          <span class="mono">KanbanRowView</span> cards re-read on their next mount or TTL expiry</td>
+        <td><span class="mono">WorkspaceItemTaskCard</span> has no public refresh hook — it loads PR status on mount. The
+          cache entry IS invalidated immediately either way. A real refresh hook is the follow-up, and faking one would
+          have meant a second, parallel status path.</td>
+      </tr>
+      <tr>
+        <td>Tab click reloads the list</td>
+        <td><b>Explicit <span class="mono">reload()</span></b> called by the parent on tab change / route guard</td>
+        <td><span class="mono">local/no-watch</span> bans ALL new <span class="mono">watch()</span> calls (pinned as
+          baseline debt, CI-red otherwise), and the rule's own comment says to bring external-signal reactions to review
+          rather than route around them. The parent owns the tab, so the parent drives the reload.</td>
+      </tr>
+      <tr>
+        <td><span class="mono">?prs=open|closed</span></td>
+        <td>Same, and the API accepts <span class="mono">state=merged|all</span> too (URL-only in the UI)</td>
+        <td>Both CLIs express those natively (<span class="mono">--state merged</span>, <span class="mono">--merged</span> /
+          <span class="mono">--all</span>), so the backend would have refused information it already had. No UI affordance
+          yet — the Closed tab is what v1 promised.</td>
+      </tr>
+      <tr>
+        <td>GitLab behaves like GitHub</td>
+        <td><b>Unproven on GitLab.</b> The parser is alias-tolerant
+          (<span class="mono">iid</span>/<span class="mono">id</span>, <span class="mono">web_url</span>/<span class="mono">url</span>,
+          <span class="mono">draft</span>/<span class="mono">work_in_progress</span>) and the argv is unit-asserted, but
+          no live <span class="mono">glab</span> call was made</td>
+        <td>This machine has no GitLab token (<span class="mono">glab auth status</span> is a 401). A moved key renders an
+          empty string on that row, never a wrong value; the first person with a real GitLab MR should tighten the aliases
+          to what it actually answered.</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="cols">
+    <div class="mocks">
+      <h3>What shipped, file by file</h3>
+      <table>
+        <thead><tr><th style="width:330px">File</th><th>What it holds</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">src/modules/agent/tools/pr_cli.zig</td><td><span class="mono">listArgv</span>,
+            <span class="mono">closeArgv</span>, <span class="mono">ListState</span> + 6 argv tests</td></tr>
+          <tr><td class="mono">src/http_handlers/git_pr_list.zig</td><td>the read path, both parsers, 10 tests</td></tr>
+          <tr><td class="mono">src/http_handlers/git_pr_close.zig</td><td>the write path + the status re-read, 5 tests</td></tr>
+          <tr><td class="mono">src/http_handlers/http_response.zig</td><td><span class="mono">GitPrListResponse</span>,
+            <span class="mono">GitPrCloseResponse</span></td></tr>
+          <tr><td class="mono">src/http_routes.zig</td><td>two literal routes, registered beside the other
+            <span class="mono">/api/git/pr/*</span> paths</td></tr>
+          <tr><td class="mono">tests/functional/git_pr_list_close_test.zig</td><td>11 wire tests against a real server and
+            a fake <span class="mono">gh</span> on PATH</td></tr>
+          <tr><td class="mono">…/api/index.ts</td><td><span class="mono">listPrs()</span>,
+            <span class="mono">closePr()</span> + types</td></tr>
+          <tr><td class="mono">…/helpers/prStatusCache.ts</td><td><span class="mono">invalidatePrStatus()</span> — one key,
+            so a close does not nuke the board's other 29 cached branches</td></tr>
+          <tr><td class="mono">…/components/kanban/KanbanPrList.vue</td><td>the view: state union, join, filter, close
+            flow</td></tr>
+          <tr><td class="mono">…/components/kanban/KanbanView.vue</td><td>button, <span class="mono">?prs=</span>, mount,
+            badge invalidation</td></tr>
+          <tr><td class="mono">…/__tests__/KanbanPrList.spec.ts</td><td>7 behavioural specs — including
+            "a rejected fetch renders the error, NOT the empty state"</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="notes">
+      <h3>What did NOT ship</h3>
+      <ul class="plain">
+        <li class="no">Merge from the list — still only on the PR tab (by design, §7).</li>
+        <li class="no">Reopen, closing comments, bulk close, delete-branch — all deferred in §7, all still absent.</li>
+        <li class="no">Polling. Refresh is the manual ↻ that was drawn (D5).</li>
+        <li class="no">Auto-moving a card when a PR closes (D-question answered "no" twice now).</li>
+        <li class="ok">Nothing was moved to <span class="mono">merged</span> on this board by the code.</li>
+      </ul>
+      <h3>Verification actually run</h3>
+      <ul class="plain">
+        <li class="ok"><span class="mono">zig build test</span> — 26/26 steps, 4230 passed, 10 skipped.</li>
+        <li class="ok"><span class="mono">zig build functional-test:zig</span> — the 11 new wire tests (see the PR).</li>
+        <li class="ok"><span class="mono">vitest</span> — 7/7 in the new spec; the pre-existing KanbanView suites still
+          pass.</li>
+        <li class="ok"><span class="mono">eslint</span> + <span class="mono">vue-tsc --noEmit</span> — clean.</li>
+      </ul>
+    </div>
+  </div>
 
   <footer>
     Wireframe only — no code changed. Sources read for this artifact (main @ <span class="mono">2bf7cf82</span>):

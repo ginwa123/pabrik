@@ -330,6 +330,12 @@ fn registerGitRoutes(authed: *Group) !void {
     // POST, and the only mutating forge endpoint: `gh pr merge` / `glab mr
     // merge` change a remote branch, so it is never reachable unauthenticated.
     try authed.post("/api/git/pr/merge", ai_mod.http_handlers.gitPrMergeHandler);
+    // Literal paths under `/api/git/pr/` (no `:param` sibling exists, so
+    // matchRoute cannot shadow them — the router walks registration order).
+    try authed.get("/api/git/pr/list", ai_mod.http_handlers.gitPrListHandler);
+    // The second mutating forge endpoint: `gh pr close` / `glab mr close`
+    // write to a remote, so it is never reachable unauthenticated.
+    try authed.post("/api/git/pr/close", ai_mod.http_handlers.gitPrCloseHandler);
 }
 
 fn registerFileRoutes(authed: *Group) !void {

@@ -5292,6 +5292,76 @@ export async function getPrStatus(
   return await apiFetch<GitPrStatus>(`/git/pr/status?${params.toString()}`, { silent: true })
 }
 
+// PR/MR list for a repo (GET /api/git/pr/list via `gh pr list` /
+// `glab mr list`). Powers the board-level change-request list — one
+// call for the whole repo, not one per card.
+export interface GitPrListItem {
+  number: number
+  title: string
+  url: string
+  state: string
+  is_draft: boolean
+  head_ref: string
+  base_ref: string
+  author: string
+  updated_at: string
+}
+
+export interface GitPrListResponse {
+  provider: string
+  program: string
+  state: string
+  truncated: boolean
+  detail: string
+  changes: GitPrListItem[]
+}
+
+export async function listPrs(
+  cwd: string,
+  opts?: { provider?: string; state?: string; limit?: number },
+): Promise<GitPrListResponse> {
+  const params = new URLSearchParams({
+    path: cwd,
+  })
+  if (opts?.state) params.set('state', opts.state)
+  if (opts?.limit !== undefined) params.set('limit', String(opts.limit))
+  if (opts?.provider) params.set('provider', opts.provider)
+  // silent: true — the list view renders the forge's own error
+  // sentence inline (an error banner, not a toast), and the board
+  // button leaves its badge absent on failure.
+  return await apiFetch<GitPrListResponse>(`/git/pr/list?${params.toString()}`, { silent: true })
+}
+
+// Close a PR/MR (POST /api/git/pr/close). `closed: false` with a
+// `detail` is NOT an error status — the forge accepted the command
+// but the re-read still shows it open, so the UI must render the
+// forge's sentence rather than claim success.
+export interface GitPrCloseResponse {
+  closed: boolean
+  detail: string
+  provider: string
+  status: GitPrStatus
+}
+
+export async function closePr(
+  cwd: string,
+  pr: string,
+  opts?: { provider?: string },
+): Promise<GitPrCloseResponse> {
+  // silent: true — the list view renders both the `closed: false`
+  // detail and the 502 `{ error }` sentence inline next to the row.
+  return await apiFetch<GitPrCloseResponse>('/git/pr/close', {
+    method: 'POST',
+    silent: true,
+    timeoutMs: 90_000,
+    body: {
+      path: cwd,
+      pr,
+      provider: opts?.provider || undefined,
+    },
+  })
+}
+
 /**
  * Merge a PR/MR (POST /api/git/pr/merge).
  *
