@@ -58,6 +58,7 @@ const cross_project_cwd_prompt_test = @import("cross_project_cwd_prompt_test.zig
 const default_workspace_provisioning_test = @import("default_workspace_provisioning_test.zig");
 const design_advanced_test = @import("design_advanced_test.zig");
 const design_lifecycle_test = @import("design_lifecycle_test.zig");
+const desktop_app_icon_test = @import("desktop_app_icon_test.zig");
 const desktop_webapp_404_test = @import("desktop_webapp_404_test.zig");
 const static_serve_concurrency_test = @import("static_serve_concurrency_test.zig");
 const desktop_webapp_stable_symlink_test = @import("desktop_webapp_stable_symlink_test.zig");
@@ -203,6 +204,7 @@ pub const suites = .{
     default_workspace_provisioning_test,
     design_advanced_test,
     design_lifecycle_test,
+    desktop_app_icon_test,
     desktop_webapp_404_test,
     static_serve_concurrency_test,
     desktop_webapp_stable_symlink_test,

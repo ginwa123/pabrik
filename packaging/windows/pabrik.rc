@@ -1,0 +1,14 @@
+// pabrik.rc — Windows application icon for pabrik-desktop.exe.
+//
+// The brand "P" mark (packaging/icons, same artwork as the web
+// favicon.ico). Zig embeds it via `addWin32ResourceFile` in build.zig;
+// the Start Menu shortcuts in Install-Pabrik.ps1 already use the exe
+// itself as their IconLocation, so they pick this up with no script
+// change.
+//
+// NOTE: the filename below is bare on purpose — build.zig passes
+// packaging/icons as an include path, so the resource compiler resolves
+// it there regardless of its working directory.
+#include <windows.h>
+
+IDI_ICON1 ICON "pabrik.ico"

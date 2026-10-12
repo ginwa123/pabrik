@@ -2,7 +2,7 @@
 Name=Pabrik
 Comment=Pabrik Desktop — agent workspace
 Exec=/usr/local/bin/pabrik-desktop
-Icon=/usr/share/pixmaps/pabrik.ico
+Icon=pabrik
 Terminal=false
 Type=Application
 Categories=Development;
