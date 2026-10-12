@@ -177,27 +177,71 @@ Route-order note: these are all literals under `/api/models/…`; check no `/api
 pattern is registered before them (`matchRoute` walks registration order — a literal
 registered after a wildcard is captured by the wildcard).
 
-### 4.4 UI
+### 4.4 UI — the aim is "two fields and one line"
 
-`LlmConfigForm.vue` becomes three visible inputs plus a derived strip; every other field
-moves behind one **Advanced** disclosure. Full visual in the wireframe. In short:
+`LlmConfigForm.vue` is rebuilt around the principle that **the face of the dialog shows only
+the two numbers that change behaviour: the context window, and where compaction fires.**
+Everything else is a fact the user is not choosing, and it moves to the one place a default
+already belongs — `Advanced`.
 
-- **Model** → combobox: free text *plus* catalog matches (`deepseek-flash · DeepSeek — 1.0M ctx`).
-  Free text stays, because self-hosted endpoints and the screenshot's
-  `https://opencode.ai/zen/go/v1/chat/completions` are not what the catalog says.
-- **Derived strip** (read-only): provider · context window · output cap · body shape ·
-  reasoning options · cost, and the compaction line `80% of 1.0M = 800,000 tokens`, with
-  `source: models.dev · cached <ts>` underneath.
-- **Advanced**: `base_url`, `url_style`, `thinking`, `reasoning_effort`,
-  `thinking_budget_tokens`, `temperature`, and the two compaction overrides. Each is an
-  *override* whose **placeholder carries the derived value**, with a source badge
-  (`catalog`, `global · 80`) and a ✕ to clear.
-- **The two override checkboxes and the inclusive-fallback prose are deleted.** Empty
-  already means inherit; a checkbox whose only job is to enable the field beneath it is noise.
-- `ProfilesSection.vue:80` `compactionSummary` prints the **effective** window, not
-  `default`.
-- Capability gating moves from `url_style` to the model's `reasoning_options` /
-  `temperature` flags.
+The final layout (v2 in the wireframe; v1, the 7-row "Resolved from models.dev" panel, is kept
+in the same file for comparison and is **not** the target):
+
+```
+Edit profile            deepseek auto        ✕
+────────────────────────────────────────────────
+Model *
+[ deepseek-flash                         ▾ ]
+DeepSeek · 1M context · compacts at 800k · $0.15/$0.60 · models.dev
+
+API key *
+[ •••••••••••••••••••••••••••••• ]      ○
+
+▸ Advanced                    nothing overridden
+────────────────────────────────────────────────
+Test                     Cancel      Save
+```
+
+- **Two controls in Edit mode** (Model, API key). Today the dialog exposes 12.
+- **One fact line** under the model: provider · context window · where compaction fires ·
+  price · provenance. It answers "what will this profile actually do" without a table, and it
+  is the only place a number appears.
+- **Name leaves the form.** It is already read-only in Edit mode — a whole row spent saying
+  "you cannot change this". It moves into the dialog title. Add mode keeps the field.
+- **Zero helper text on the face.** Each Advanced field's placeholder *is* its documentation
+  (`inherit — openai`, `inherit — 80%`, `inherit — 1,000,000`), so the three copies of
+  "Falls back to top-level defaults → built-in" are deleted rather than reworded.
+- **Nothing is removed.** All 7 overrides still exist, still write the same JSON keys,
+   still resolve through the same cascade.
+
+`Advanced`, grouped so it can be scanned rather than read:
+
+| group | fields |
+|---|---|
+| Connection | `Base URL` (inherit — provider.api), `Body shape` (inherit — openai / openai-response / anthropic) |
+| Behaviour | `Thinking` (inherit — Auto), `Effort` (label names the model's own options), `Temperature` (inherit — auto) |
+| Compaction | `Threshold %` (inherit — the global default), `Context window` (inherit — catalog) |
+
+One sentence explains the whole section ("every field inherits until you type in it; ✕ goes back
+to inheriting") instead of seven per-field explanations. The override checkboxes are gone —
+empty already means inherit — and a ✕ clears a filled field explicitly.
+
+`ProfilesSection.vue` gets the same treatment — 4 lines per row to 2:
+
+| | |
+|---|---|
+| **now** | `deepseek auto · active` / `deepseek-flash · https://opencode.ai/zen/go/v1/chat/completions` / `▾ 2 sub-agents` / `Compaction: 97% @ 1000k tokens` |
+| **v2** | `deepseek auto · active` + `2 sub-agents` trailing / `deepseek-flash · 1M context · compacts at 800k` |
+
+The base URL becomes a tooltip — it is an implementation detail of the model choice, and every
+row printing a full endpoint was the noisiest thing in the list. `compactionSummary`
+(`ProfilesSection.vue:80-90`) stops printing `default (80%) @ default` and states the numbers
+that actually apply.
+
+Both honest states are visible, not silent:
+
+- unknown model ⇒ the line turns amber: `unknown model · set the context window in Advanced`
+- catalog absent (offline) ⇒ `200k context (built-in)` — today's behaviour, said out loud
 
 ### 4.5 What deliberately does **not** change
 
@@ -220,7 +264,8 @@ moves behind one **Advanced** disclosure. Full visual in the wireframe. In short
 | **P1** | catalog module + cache file + trim + lookup. No HTTP, no UI. | `src/agentic_loop/model_catalog.zig` (new), `src/root.zig` (export + test import) |
 | **P2** | wire the catalog into the resolution cascade; `getModelTokenCountFrom`. | `src/modules/config/Config.zig:2742`, `src/modules/agent/LLMModels.zig` |
 | **P3** | three routes + refresh. | `src/http_routes.zig`, `src/http_handlers/model_catalog_*.zig` (new) |
-| **P4** | UI: combobox, derived strip, Advanced disclosure; delete the checkboxes. | `LlmConfigForm.vue`, `PabrikConfigEditor.vue:568-605` (seeding), `ProfilesSection.vue:80` |
+| **P4** | UI: combobox, the one fact line, grouped Advanced, name into the title; delete the checkboxes and the helper prose. | `LlmConfigForm.vue`, `LlmConfigModal.vue` (title), `PabrikConfigEditor.vue:568-605` (seeding) |
+| **P4b** | Profile-row summary: 4 lines → 2, effective window instead of `default`. | `ProfilesSection.vue:80-90` |
 | **P5** | the orphaned global defaults (decision D3). | Settings → General block + `PabrikConfigEditor.vue` |
 
 P1–P3 are independently shippable: with the backend catalog in place but the old UI, the
@@ -273,9 +318,10 @@ A `test` block calls the code and asserts what comes back.
   cascade as dead UI — but workspace overlays and hand-edited configs already use them.
 - **D4 — model entry stays a combobox, not a select.** A strict dropdown breaks self-hosted
   endpoints and the screenshot's `opencode.ai/zen` URL, which is not in the catalog.
-- **D5 — output cap + price.** *Recommend: show both read-only now*; add a real
-  `max_output_tokens` profile field only if you want `Agent.maxTokens` to stop being 4096.
-  Pricing is per-provider and goes stale — information, not configuration.
+- **D5 — output cap + price on the fact line.** *Recommend: price yes, output cap no.*
+  Nothing reads an output cap today (`Agent.maxTokens` is a flat 4096), so printing 393,216
+  would be a number that changes nothing — and the fact line is worth keeping to four tokens.
+  Pricing stays read-only: per-provider, and it goes stale.
 - **D6 — workspace scope.** Workspace settings can override `profiles_models`; does a
   workspace get its own catalog cache? *Recommend: one machine-wide cache* — it is model
   metadata, not user data.

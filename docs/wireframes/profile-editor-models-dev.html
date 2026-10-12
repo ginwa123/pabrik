@@ -3,28 +3,29 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Edit profile — simplified with models.dev (plan, not shipped)</title>
+<title>Edit profile — simpler, with models.dev defaults (plan, not shipped)</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Inter, system-ui, -apple-system, sans-serif; background: #1D1C19; color: #c5c9c5; min-height: 100vh; line-height: 1.5; }
   .bar { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid #282727; flex-wrap: wrap; position: sticky; top: 0; background: #1D1C19; z-index: 20; }
   .bar h1 { font-size: 15px; font-weight: 600; }
-  .bar .tag { font-size: 11px; font-family: monospace; color: #c9a86a; border: 1px solid #54482f; border-radius: 999px; padding: 3px 10px; }
-  .switch { display: flex; background: #141311; border: 1px solid #282727; border-radius: 999px; padding: 3px; gap: 2px; }
-  .switch button { border: 0; background: transparent; color: #a6a69c; font-size: 12.5px; padding: 6px 14px; border-radius: 999px; cursor: pointer; }
+  .tag { font-size: 11px; font-family: monospace; color: #c9a86a; border: 1px solid #54482f; border-radius: 999px; padding: 3px 10px; }
+  .switch { display: flex; background: #141311; border: 1px solid #282727; border-radius: 999px; padding: 3px; gap: 2px; flex-wrap: wrap; }
+  .switch button { border: 0; background: transparent; color: #a6a69c; font-size: 12.5px; padding: 6px 13px; border-radius: 999px; cursor: pointer; }
   .switch button.on { background: #2b2a26; color: #fff; font-weight: 600; }
-  .wrap { padding: 22px 20px 60px; max-width: 1420px; }
-  .panes { display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap; }
+  .wrap { padding: 20px 20px 60px; max-width: 1480px; }
+  .panes { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
   .pane { flex: 0 0 auto; }
   .pane-label { font-size: 11px; font-family: monospace; text-transform: uppercase; letter-spacing: .09em; color: #a6a69c; margin-bottom: 8px; }
   .pane-label b { color: #c5c9c5; }
 
-  /* ── modal shell (mirrors LlmConfigModal.vue: max-w-md, 70vh scroll) ── */
-  .modal { width: 470px; background: #22211e; border: 1px solid #282727; border-radius: 6px; display: flex; flex-direction: column; }
-  .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 0 20px; height: 48px; border-bottom: 1px solid #282727; }
-  .modal-head h3 { font-size: 13px; font-weight: 600; }
+  /* ── modal shell ── */
+  .modal { width: 452px; background: #22211e; border: 1px solid #282727; border-radius: 6px; display: flex; flex-direction: column; }
+  .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 20px; height: 48px; border-bottom: 1px solid #282727; }
+  .modal-head h3 { font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .modal-head .name { font-family: monospace; font-size: 12px; color: #a6a69c; border: 1px solid #282727; border-radius: 999px; padding: 2px 9px; }
   .modal-head .x { color: #6b6b64; font-size: 13px; }
-  .modal-body { padding: 20px; display: flex; flex-direction: column; gap: 16px; max-height: 74vh; overflow-y: auto; }
+  .modal-body { padding: 18px 20px; display: flex; flex-direction: column; gap: 15px; max-height: 74vh; overflow-y: auto; }
   .modal-foot { display: flex; align-items: center; justify-content: space-between; padding: 0 20px; height: 56px; border-top: 1px solid #282727; }
   .foot-right { display: flex; gap: 8px; }
 
@@ -35,41 +36,18 @@
   .f-static { display: flex; align-items: center; color: #6b6b64; font-family: monospace; font-size: 12px; }
   input.f::placeholder { color: #55554f; }
   .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .btn { font-size: 12px; padding: 6px 16px; height: 32px; border-radius: 6px; border: 1px solid #282727; background: transparent; color: #a6a69c; cursor: pointer; }
   .btn.violet { border-color: #8992a7; color: #8992a7; font-weight: 500; }
-  .btn.tiny { height: 22px; padding: 0 8px; font-size: 10.5px; font-family: monospace; }
 
-  .sec-head { font-family: monospace; font-size: 11px; text-transform: uppercase; letter-spacing: .09em; color: #a6a69c; border-top: 1px solid #282727; padding-top: 14px; margin-top: 4px; }
+  .sec-head { font-family: monospace; font-size: 11px; text-transform: uppercase; letter-spacing: .09em; color: #a6a69c; border-top: 1px solid #282727; padding-top: 14px; margin-top: 2px; }
   .check-row { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; }
   .check-row input { margin-top: 3px; accent-color: #8992a7; }
-  .off { opacity: .45; pointer-events: none; }
-  .slider { width: 100%; accent-color: #8ba4b0; }
   input[type=range] { width: 100%; accent-color: #8ba4b0; }
-
-  /* ── annotations ── */
   .anno { display: flex; gap: 8px; align-items: flex-start; font-size: 11.5px; color: #a6a69c; margin-top: 6px; }
   .anno .n { flex: 0 0 auto; width: 15px; height: 15px; border-radius: 50%; background: #54482f; color: #e8c98a; font-size: 9.5px; font-family: monospace; display: flex; align-items: center; justify-content: center; margin-top: 2px; }
   .mark { outline: 1px dashed #54482f; outline-offset: 3px; border-radius: 6px; }
 
-  /* ── proposed-only bits ── */
-  .row-line { display: flex; align-items: center; gap: 8px; }
-  .id-chip { font-family: monospace; font-size: 12px; padding: 3px 9px; border-radius: 999px; background: #141311; border: 1px solid #282727; color: #a6a69c; }
-  .combo { position: relative; }
-  .combo .caret { position: absolute; right: 10px; top: 9px; color: #6b6b64; font-size: 10px; }
-  .menu { margin-top: 6px; background: #141311; border: 1px solid #282727; border-radius: 8px; overflow: hidden; }
-  .menu .mh { font-size: 10px; font-family: monospace; text-transform: uppercase; letter-spacing: .08em; color: #6b6b64; padding: 7px 12px; border-bottom: 1px solid #282727; }
-  .mrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px; font-size: 12px; border-bottom: 1px solid #201f1c; cursor: pointer; }
-  .mrow:last-child { border-bottom: 0; }
-  .mrow.hi { background: #22211e; }
-  .mrow .mi { font-family: monospace; font-size: 11.5px; color: #c5c9c5; }
-  .mrow .ms { font-family: monospace; font-size: 10.5px; color: #6b6b64; }
-  .mrow .mc { font-family: monospace; font-size: 10.5px; color: #8ba4b0; white-space: nowrap; }
-
-  .facts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
-  .fact { font-family: monospace; font-size: 10.5px; padding: 3px 8px; border-radius: 5px; background: #141311; border: 1px solid #282727; color: #a6a69c; }
-  .fact.on { color: #8ba4b0; border-color: #3a4a52; }
-  .fact.warn { color: #c9a86a; border-color: #54482f; }
+  /* ── v1 only: the derived panel ── */
   .derived { border: 1px solid #2f3b41; background: #1a1f21; border-radius: 8px; padding: 12px; }
   .derived .dt { font-size: 10.5px; font-family: monospace; text-transform: uppercase; letter-spacing: .08em; color: #8ba4b0; margin-bottom: 8px; }
   .derived .dline { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; padding: 3px 0; }
@@ -77,19 +55,45 @@
   .derived .dline span:last-child { font-family: monospace; color: #c5c9c5; }
   .derived .src { font-family: monospace; font-size: 10px; color: #6b6b64; margin-top: 8px; padding-top: 8px; border-top: 1px solid #282727; }
 
+  /* ── v2: one fact line ── */
+  .factline { font-family: monospace; font-size: 11.5px; color: #8ba4b0; margin-top: 7px; }
+  .factline .sep { color: #3a4a52; padding: 0 4px; }
+  .factline .src { color: #6b6b64; }
+  .factline.unknown { color: #c9a86a; }
+  .factline.unknown .why { color: #6b6b64; }
+
+  .combo { position: relative; }
+  .combo .caret { position: absolute; right: 10px; top: 9px; color: #6b6b64; font-size: 10px; }
+  .menu { margin-top: 6px; background: #141311; border: 1px solid #282727; border-radius: 8px; overflow: hidden; }
+  .menu .mh { font-size: 10px; font-family: monospace; text-transform: uppercase; letter-spacing: .08em; color: #6b6b64; padding: 7px 12px; border-bottom: 1px solid #282727; }
+  .mrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px; font-size: 12px; border-bottom: 1px solid #201f1c; }
+  .mrow:last-child { border-bottom: 0; }
+  .mrow.hi { background: #22211e; }
+  .mrow .mi { font-family: monospace; font-size: 11.5px; color: #c5c9c5; }
+  .mrow .ms { font-family: monospace; font-size: 10.5px; color: #6b6b64; }
+  .mrow .mc { font-family: monospace; font-size: 10.5px; color: #8ba4b0; white-space: nowrap; }
+
   details.adv { border: 1px solid #282727; border-radius: 8px; }
   details.adv > summary { list-style: none; cursor: pointer; padding: 10px 12px; font-size: 12px; color: #a6a69c; display: flex; justify-content: space-between; align-items: center; }
   details.adv > summary::-webkit-details-marker { display: none; }
   details.adv[open] > summary { border-bottom: 1px solid #282727; }
-  .adv-body { padding: 14px 12px; display: flex; flex-direction: column; gap: 14px; }
+  .adv-body { padding: 13px 12px; display: flex; flex-direction: column; gap: 13px; }
+  .grp { font-family: monospace; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: #6b6b64; }
   .ovr { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
   .ovr .clear { width: 24px; height: 24px; border-radius: 6px; border: 1px solid #282727; background: transparent; color: #6b6b64; cursor: pointer; font-size: 11px; }
-  .badge { font-family: monospace; font-size: 9.5px; padding: 2px 6px; border-radius: 4px; border: 1px solid #282727; color: #6b6b64; white-space: nowrap; }
-  .badge.cat { color: #8ba4b0; border-color: #3a4a52; }
+  .adv-note { font-size: 11px; color: #6b6b64; line-height: 1.5; }
 
-  /* ── doc sections ── */
-  .doc { margin-top: 34px; max-width: 1100px; }
-  .doc h2 { font-size: 15px; margin-bottom: 8px; }
+  /* ── profile list rows ── */
+  .listrow { width: 452px; background: #22211e; border: 1px solid #282727; border-radius: 8px; padding: 12px 14px; }
+  .lhead { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .ldot { width: 6px; height: 6px; border-radius: 50%; background: #8992a7; }
+  .lpill { font-size: 10px; font-family: monospace; padding: 2px 7px; border-radius: 4px; background: #8992a7; color: #181616; }
+  .lmeta { font-family: monospace; font-size: 11.5px; color: #a6a69c; margin-top: 5px; }
+  .ldim { font-family: monospace; font-size: 11.5px; color: #6b6b64; margin-top: 4px; }
+
+  /* ── doc ── */
+  .doc { margin-top: 34px; max-width: 1180px; }
+  .doc h2 { font-size: 15px; margin: 22px 0 8px; }
   .doc h3 { font-size: 13px; margin: 18px 0 6px; color: #c5c9c5; }
   .doc p { font-size: 13px; color: #a6a69c; margin-bottom: 10px; }
   .doc ul, .doc ol { font-size: 13px; color: #a6a69c; padding-left: 20px; margin-bottom: 10px; }
@@ -100,13 +104,13 @@
   th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #282727; vertical-align: top; }
   th { color: #a6a69c; font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
   td b { color: #c5c9c5; }
-  td code { font-size: 11px; }
-  .note { font-size: 12px; color: #a6a69c; background: #141311; border: 1px dashed #3a3a36; border-radius: 8px; padding: 12px 14px; margin: 12px 0; line-height: 1.65; }
-  .dec { border-left: 3px solid #8ba4b0; background: #22211e; border-radius: 0 8px 8px 0; padding: 12px 16px; margin-bottom: 12px; }
+  .counts { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+  .count { font-family: monospace; font-size: 11.5px; border: 1px solid #282727; background: #141311; border-radius: 6px; padding: 6px 11px; color: #a6a69c; }
+  .count b { color: #8ba4b0; }
+  .dec { border-left: 3px solid #8ba4b0; background: #22211e; border-radius: 0 8px 8px 0; padding: 12px 16px; margin-bottom: 10px; }
   .dec h4 { font-size: 13px; margin-bottom: 4px; }
   .dec p { font-size: 12.5px; margin-bottom: 0; }
   .dec .rec { color: #8ba4b0; font-weight: 600; }
-  .hide { display: none; }
 </style>
 </head>
 <body>
@@ -116,19 +120,26 @@
   <span class="tag">PLAN — nothing shipped</span>
   <div class="switch" role="tablist">
     <button id="bBefore" onclick="show('before')">Now (shipped)</button>
-    <button id="bAfter" class="on" onclick="show('after')">Proposed</button>
-    <button id="bAdv" onclick="show('adv')">Proposed — Advanced open</button>
+    <button id="bV1" onclick="show('v1')">v1 — derived strip</button>
+    <button id="bV2" class="on" onclick="show('v2')">v2 — simpler</button>
+    <button id="bAdv" onclick="show('adv')">v2 — Advanced open</button>
   </div>
-  <span style="font-size:11.5px;color:#6b6b64;font-family:monospace">Settings → Profiles → Edit &nbsp;·&nbsp; LlmConfigForm.vue</span>
 </div>
 
 <div class="wrap">
 
-<div class="panes">
+<div class="counts">
+  <span class="count">controls on the face <b>12 → 2</b></span>
+  <span class="count">fallback-prose lines <b>3 → 0</b></span>
+  <span class="count">checkboxes + slider <b>2 + 1 → 0</b></span>
+  <span class="count">profile-row lines <b>4 → 2</b></span>
+</div>
 
-  <!-- ══════════════════════ BEFORE ══════════════════════ -->
+<div class="panes" style="margin-top:16px">
+
+  <!-- ══════════════════════ NOW ══════════════════════ -->
   <div class="pane" id="paneBefore" style="display:none">
-    <div class="pane-label">Pane 1 — <b>what the modal asks for today</b> (11 inputs)</div>
+    <div class="pane-label">Now — <b>12 controls</b>, two override checkboxes, a slider</div>
     <div class="modal">
       <div class="modal-head"><h3>Edit profile</h3><span class="x">✕</span></div>
       <div class="modal-body">
@@ -147,18 +158,9 @@
           <span class="f-help">Typed by hand, or copied from a provider's docs.</span>
         </div>
         <div class="grid3">
-          <div>
-            <label class="f-label">Thinking</label>
-            <select class="f"><option>Auto</option></select>
-          </div>
-          <div>
-            <label class="f-label">Temperature</label>
-            <input class="f" value="auto">
-          </div>
-          <div class="mark">
-            <label class="f-label">URL style</label>
-            <select class="f"><option>OpenAI</option></select>
-          </div>
+          <div><label class="f-label">Thinking</label><select class="f"><option>Auto</option></select></div>
+          <div><label class="f-label">Temperature</label><input class="f" value="auto"></div>
+          <div class="mark"><label class="f-label">URL style</label><select class="f"><option>OpenAI</option></select></div>
         </div>
         <div class="mark">
           <label class="f-label">Reasoning effort</label>
@@ -170,18 +172,13 @@
           <label class="f-label">API key <span class="req">*</span></label>
           <input class="f" type="password" value="sk-0000000000000000000000000000">
         </div>
-
         <div>
           <div class="sec-head">── Compaction overrides ──</div>
           <div style="display:flex;flex-direction:column;gap:12px;margin-top:12px">
             <div class="mark">
-              <label class="check-row">
-                <input type="checkbox" checked>
-                <span>
-                  Override the context window
-                  <span class="f-help">Falls back to top-level defaults → built-in.</span>
-                </span>
-              </label>
+              <label class="check-row"><input type="checkbox" checked>
+                <span>Override the context window
+                  <span class="f-help">Falls back to top-level defaults → built-in.</span></span></label>
               <span class="f-help" style="color:#c9a86a">↑ the "top-level defaults" it promises have no UI anywhere in the app.</span>
             </div>
             <div>
@@ -190,13 +187,9 @@
               <span class="f-help" style="color:#c9a86a">Hand-typed. Delete it and compaction silently drops from 800k to 160k.</span>
             </div>
             <div class="mark">
-              <label class="check-row">
-                <input type="checkbox" checked>
-                <span>
-                  Override the compaction threshold
-                  <span class="f-help">Falls back to top-level defaults → built-in 80.</span>
-                </span>
-              </label>
+              <label class="check-row"><input type="checkbox" checked>
+                <span>Override the compaction threshold
+                  <span class="f-help">Falls back to top-level defaults → built-in 80.</span></span></label>
             </div>
             <div>
               <div style="display:flex;justify-content:space-between;margin-bottom:6px">
@@ -213,63 +206,39 @@
         <div class="foot-right"><button class="btn">Cancel</button><button class="btn violet">Save</button></div>
       </div>
     </div>
-
-    <div class="doc" style="max-width:470px">
-      <h3 style="margin-top:22px">What is actually wrong</h3>
-      <div class="anno"><span class="n">1</span><span><b>Every non-MiniMax profile compacts at the wrong window.</b> <code>LLMModels.getModelTokenCount</code> knows exactly two models (MiniMax-M2.7 = 200k, MiniMax-M3 = 500k) and returns <b>200_000</b> for everything else. So this profile — untouched — would compact at 80% × 200k = <b>160k tokens</b> instead of 800k. The hand-typed <code>1000000</code> in the field above is the only reason it is correct, and nothing on this screen can tell you it is.</span></div>
-      <div class="anno"><span class="n">2</span><span><b>The fallback the help text promises does not exist.</b> "Falls back to top-level defaults → built-in" — the top-level <code>max_capacity_token_model</code> / <code>compaction_threshold_percent</code> have no UI since the Defaults tab was removed. Only a hand-edit of <code>config.json</code> can set them.</span></div>
-      <div class="anno"><span class="n">3</span><span><b>Model · Base URL · URL style is a triple the user must keep consistent</b>, and nothing validates it against each other — three fields encoding one decision (which provider am I talking to).</span></div>
-      <div class="anno"><span class="n">4</span><span><b>Reasoning / thinking controls are gated on <code>url_style</code>, not on the model.</b> You can pick "High" effort for a model that ignores <code>reasoning_effort</code> entirely.</span></div>
-      <div class="anno"><span class="n">5</span><span><b>Two override checkboxes + a slider + three lines of jargon</b> for a number the app could know. 97% is a power-user value sitting in the same visual weight as the API key.</span></div>
+    <div class="doc" style="max-width:452px">
+      <div class="anno"><span class="n">1</span><span><b>Every non-MiniMax profile compacts at the wrong window.</b> <code>LLMModels.getModelTokenCount</code> knows two models and returns <b>200_000</b> otherwise — so this profile would compact at <b>160k</b>, not 800k. The typed <code>1000000</code> is the only thing holding it together.</span></div>
+      <div class="anno"><span class="n">2</span><span><b>The fallback the help text promises does not exist.</b> The top-level compaction defaults lost their UI when the Defaults tab was removed.</span></div>
+      <div class="anno"><span class="n">3</span><span><b>Model · Base URL · URL style is one decision spread over three controls</b>, with nothing keeping them consistent.</span></div>
+      <div class="anno"><span class="n">4</span><span><b>Capability controls are gated on the wire shape, not the model</b> — a model that ignores <code>reasoning_effort</code> still gets a live dropdown.</span></div>
     </div>
   </div>
 
-  <!-- ══════════════════════ AFTER ══════════════════════ -->
-  <div class="pane" id="paneAfter">
-    <div class="pane-label">Pane 2 — <b>proposed: 3 inputs, the rest is derived</b></div>
+  <!-- ══════════════════════ V1 ══════════════════════ -->
+  <div class="pane" id="paneV1" style="display:none">
+    <div class="pane-label">v1 (previous draft) — <b>3 inputs + a 7-row derived panel</b></div>
     <div class="modal">
       <div class="modal-head"><h3>Edit profile</h3><span class="x">✕</span></div>
       <div class="modal-body">
-
         <div>
           <label class="f-label">Name <span class="req">*</span></label>
           <input class="f" value="deepseek auto" disabled>
         </div>
-
         <div>
           <label class="f-label">Model <span class="req">*</span></label>
-          <div class="combo">
-            <input class="f" value="deepseek-flash">
-            <span class="caret">▾</span>
-          </div>
+          <div class="combo"><input class="f" value="deepseek-flash"><span class="caret">▾</span></div>
           <span class="f-help">Free text still works (self-hosted, gateways). Typing searches the catalog.</span>
           <div class="menu">
             <div class="mh">7 matches · 227 providers, 8,562 models</div>
-            <div class="mrow hi">
-              <span><span class="mi">deepseek-flash</span> <span class="ms">· DeepSeek</span></span>
-              <span class="mc">1.0M ctx · 393k out</span>
-            </div>
-            <div class="mrow">
-              <span><span class="mi">deepseek-v4-pro</span> <span class="ms">· DeepSeek</span></span>
-              <span class="mc">1.0M ctx · 393k out</span>
-            </div>
-            <div class="mrow">
-              <span><span class="mi">deepseek-flash</span> <span class="ms">· opencode-go</span></span>
-              <span class="mc">1.0M ctx · 393k out</span>
-            </div>
-            <div class="mrow">
-              <span><span class="mi">deepseek-v4-flash-vision-exp</span> <span class="ms">· DeepSeek</span></span>
-              <span class="mc">1.0M ctx · 393k out</span>
-            </div>
+            <div class="mrow hi"><span><span class="mi">deepseek-flash</span> <span class="ms">· DeepSeek</span></span><span class="mc">1.0M ctx · 393k out</span></div>
+            <div class="mrow"><span><span class="mi">deepseek-v4-pro</span> <span class="ms">· DeepSeek</span></span><span class="mc">1.0M ctx · 393k out</span></div>
+            <div class="mrow"><span><span class="mi">deepseek-flash</span> <span class="ms">· opencode-go</span></span><span class="mc">1.0M ctx · 393k out</span></div>
           </div>
         </div>
-
         <div>
           <label class="f-label">API key <span class="req">*</span></label>
           <input class="f" type="password" value="sk-0000000000000000000000000000">
         </div>
-
-        <!-- derived strip: replaces 6 fields + 2 checkboxes + a slider -->
         <div class="derived">
           <div class="dt">Resolved from models.dev</div>
           <div class="dline"><span>Provider</span><span>DeepSeek</span></div>
@@ -281,14 +250,54 @@
           <div class="dline" style="border-top:1px solid #282727;margin-top:6px;padding-top:8px">
             <span>Compaction</span><span>80% of 1.0M = 800,000 tokens</span>
           </div>
-          <div class="src">source: models.dev · catalog cached 2026-10-13 03:03 · everything below is a default you can override</div>
+          <div class="src">source: models.dev · cached 2026-10-13 03:03</div>
+        </div>
+        <details class="adv">
+          <summary><span>Advanced — 7 overrides</span><span style="font-family:monospace;font-size:11px;color:#6b6b64">none set ▸</span></summary>
+        </details>
+      </div>
+      <div class="modal-foot">
+        <button class="btn">Test</button>
+        <div class="foot-right"><button class="btn">Cancel</button><button class="btn violet">Save</button></div>
+      </div>
+    </div>
+    <div class="doc" style="max-width:452px">
+      <div class="anno"><span class="n">→</span><span>Better, but the 7-row panel is <b>a table to read, not a decision to make</b>. Six of its rows never change a behaviour the user is choosing; only the context window and the compaction point do. v2 keeps those two and pushes the rest into Advanced, where their defaults already live.</span></div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════ V2 ══════════════════════ -->
+  <div class="pane" id="paneV2">
+    <div class="pane-label">v2 — <b>2 inputs + one fact line</b> + one collapsed Advanced</div>
+    <div class="modal">
+      <div class="modal-head">
+        <h3>Edit profile</h3>
+        <span class="name">deepseek auto</span>
+        <span class="x" style="flex:1;text-align:right">✕</span>
+      </div>
+      <div class="modal-body">
+
+        <div>
+          <label class="f-label">Model <span class="req">*</span></label>
+          <div class="combo"><input class="f" value="deepseek-flash"><span class="caret">▾</span></div>
+          <div class="factline">
+            DeepSeek<span class="sep">·</span>1M context<span class="sep">·</span>compacts at 800k<span class="sep">·</span>$0.15/$0.60<span class="sep">·</span><span class="src">models.dev</span>
+          </div>
+          <div class="menu">
+            <div class="mh">7 matches</div>
+            <div class="mrow hi"><span><span class="mi">deepseek-flash</span> <span class="ms">· DeepSeek</span></span><span class="mc">1.0M ctx</span></div>
+            <div class="mrow"><span><span class="mi">deepseek-v4-pro</span> <span class="ms">· DeepSeek</span></span><span class="mc">1.0M ctx</span></div>
+            <div class="mrow"><span><span class="mi">deepseek-flash</span> <span class="ms">· opencode-go</span></span><span class="mc">1.0M ctx</span></div>
+          </div>
+        </div>
+
+        <div>
+          <label class="f-label">API key <span class="req">*</span></label>
+          <input class="f" type="password" value="sk-0000000000000000000000000000">
         </div>
 
         <details class="adv">
-          <summary>
-            <span>Advanced — 7 overrides</span>
-            <span style="font-family:monospace;font-size:11px;color:#6b6b64">none set&nbsp; ▸</span>
-          </summary>
+          <summary><span>Advanced</span><span style="font-family:monospace;font-size:11px;color:#6b6b64">nothing overridden ▸</span></summary>
         </details>
 
       </div>
@@ -298,113 +307,91 @@
       </div>
     </div>
 
-    <div class="doc" style="max-width:470px">
-      <h3 style="margin-top:22px">Why this is simpler and not just shorter</h3>
+    <div class="doc" style="max-width:452px">
+      <h3 style="margin-top:18px">What changed from v1</h3>
       <ul style="font-size:12.5px">
-        <li><b>Nothing is removed.</b> All 7 advanced fields still exist and still write the same JSON keys. They just stop being the default thing you stare at.</li>
-        <li><b>The context window stops being a user responsibility.</b> <code>max_capacity_tokens</code> stays <code>null</code> for this profile and resolves at read time — so a catalog refresh fixes every profile at once instead of leaving stale hand-typed numbers behind.</li>
-        <li><b>Override = type something.</b> Empty field ⇒ inherit. That is exactly the existing <code>null</code>-vs-value model on the wire, so no config migration and no new sentinel.</li>
-        <li><b>Unknown model degrades honestly.</b> Free text with no catalog hit ⇒ the strip says <code>unknown model — set the context window manually</code> and the compaction line shows the built-in 200k, which is today's behaviour.</li>
+        <li><b>The 7-row panel became one line.</b> The only two numbers that decide behaviour — the context window and where compaction fires — plus the price and the provenance. Provider, output cap, body shape and reasoning options moved to Advanced, where their defaults were already shown.</li>
+        <li><b>Name left the form.</b> It is read-only in Edit mode today (it already eats a whole row to say "you cannot change this"), so it moved into the title. Add mode keeps the field.</li>
+        <li><b>Zero help text.</b> Every field's placeholder is its own documentation — <code>inherit — openai</code>, <code>inherit — 80%</code> — so the seven lines of "falls back to…" prose are gone.</li>
+        <li><b>Unknown model is still honest:</b> the line turns amber and reads <code>unknown model · set the context window in Advanced</code>.</li>
       </ul>
     </div>
   </div>
 
-  <!-- ══════════════════════ AFTER — ADVANCED ══════════════════════ -->
+  <!-- ══════════════════════ V2 ADVANCED ══════════════════════ -->
   <div class="pane" id="paneAdv" style="display:none">
-    <div class="pane-label">Pane 3 — <b>Advanced open</b> (placeholders carry the derived default)</div>
+    <div class="pane-label">v2 Advanced open — <b>7 overrides in 3 groups</b>, placeholders carry the defaults</div>
     <div class="modal">
-      <div class="modal-head"><h3>Edit profile</h3><span class="x">✕</span></div>
+      <div class="modal-head">
+        <h3>Edit profile</h3>
+        <span class="name">deepseek auto</span>
+        <span class="x" style="flex:1;text-align:right">✕</span>
+      </div>
       <div class="modal-body">
-        <div class="derived">
-          <div class="dt">Resolved from models.dev</div>
-          <div class="dline"><span>Context window</span><span>1,000,000 tokens</span></div>
-          <div class="dline"><span>Body shape · reasoning · cost</span><span>openai · effort · $0.15/$0.60</span></div>
+
+        <div>
+          <label class="f-label">Model <span class="req">*</span></label>
+          <div class="combo"><input class="f" value="deepseek-flash"><span class="caret">▾</span></div>
+          <div class="factline">
+            DeepSeek<span class="sep">·</span>1M context<span class="sep">·</span>compacts at 800k<span class="sep">·</span>$0.15/$0.60<span class="sep">·</span><span class="src">models.dev</span>
+          </div>
+        </div>
+
+        <div>
+          <label class="f-label">API key <span class="req">*</span></label>
+          <input class="f" type="password" value="sk-0000000000000000000000000000">
         </div>
 
         <details class="adv" open>
-          <summary>
-            <span>Advanced — 7 overrides</span>
-            <span style="font-family:monospace;font-size:11px;color:#8ba4b0">1 set&nbsp; ▾</span>
-          </summary>
+          <summary><span>Advanced</span><span style="font-family:monospace;font-size:11px;color:#8ba4b0">1 overridden ▾</span></summary>
           <div class="adv-body">
+            <div class="adv-note">Every field inherits until you type in it. <b style="color:#c5c9c5">✕</b> goes back to inheriting.</div>
 
+            <div class="grp">Connection</div>
             <div>
-              <div class="row-line" style="justify-content:space-between">
-                <label class="f-label" style="margin:0">Base URL</label>
-                <span class="badge cat">catalog</span>
+              <label class="f-label">Base URL</label>
+              <div class="ovr">
+                <input class="f" placeholder="inherit — https://api.deepseek.com">
+                <button class="clear" title="Clear override">✕</button>
               </div>
-              <input class="f" placeholder="https://api.deepseek.com">
-              <span class="f-help">Empty ⇒ the provider's catalog base URL. Your <code>…/zen/go/v1/chat/completions</code> differs from the catalog → type it here.</span>
+            </div>
+            <div>
+              <label class="f-label">Body shape</label>
+              <select class="f"><option>inherit — openai</option><option>openai-response</option><option>anthropic</option></select>
             </div>
 
+            <div class="grp">Behaviour</div>
             <div>
-              <div class="row-line" style="justify-content:space-between">
-                <label class="f-label" style="margin:0">URL style</label>
-                <span class="badge cat">catalog · openai</span>
-              </div>
-              <select class="f"><option>Inherit — openai</option><option>openai-response</option><option>anthropic</option></select>
+              <label class="f-label">Thinking</label>
+              <select class="f"><option>inherit — Auto</option><option>On</option><option>Off</option></select>
+            </div>
+            <div>
+              <label class="f-label">Effort (this model: low · high · max)</label>
+              <select class="f"><option>inherit — Auto</option><option>Low</option><option>High</option></select>
+            </div>
+            <div>
+              <label class="f-label">Temperature</label>
+              <input class="f" placeholder="inherit — auto">
             </div>
 
+            <div class="grp">Compaction</div>
             <div>
-              <div class="row-line" style="justify-content:space-between">
-                <label class="f-label" style="margin:0">Thinking</label>
-                <span class="badge cat">catalog · supported</span>
-              </div>
-              <select class="f"><option>Inherit — Auto</option><option>On</option><option>Off</option></select>
-            </div>
-
-            <div>
-              <div class="row-line" style="justify-content:space-between">
-                <label class="f-label" style="margin:0">Reasoning effort</label>
-                <span class="badge cat">low · high · max</span>
-              </div>
-              <select class="f"><option>Inherit — Auto</option><option>Low</option><option>High</option></select>
-              <span class="f-help">Options come from the model's own <code>reasoning_options</code> — a non-reasoning model shows "this model has no effort control" instead of a dead dropdown.</span>
-            </div>
-
-            <div>
-              <div class="row-line" style="justify-content:space-between">
-                <label class="f-label" style="margin:0">Thinking budget tokens</label>
-                <span class="badge">anthropic only · hidden</span>
-              </div>
-              <div class="f-static">hidden — this model is OpenAI-shaped</div>
-            </div>
-
-            <div>
-              <div class="row-line" style="justify-content:space-between">
-                <label class="f-label" style="margin:0">Temperature</label>
-                <span class="badge cat">catalog · supported</span>
-              </div>
-              <input class="f" placeholder="auto">
-              <span class="f-help">Hidden with a reason when the model does not accept it.</span>
-            </div>
-
-            <div>
-              <div class="row-line" style="justify-content:space-between">
-                <label class="f-label" style="margin:0">Compaction threshold (%)</label>
-                <span class="badge">global · 80</span>
-              </div>
+              <label class="f-label">Threshold (%)</label>
               <div class="ovr">
                 <input class="f" value="97">
                 <button class="clear" title="Clear override">✕</button>
               </div>
-              <span class="f-help">Empty ⇒ the global threshold in Settings → General. Set here only when this profile should differ.</span>
             </div>
-
             <div>
-              <div class="row-line" style="justify-content:space-between">
-                <label class="f-label" style="margin:0">Context window (tokens)</label>
-                <span class="badge cat">catalog · 1,000,000</span>
-              </div>
+              <label class="f-label">Context window (tokens)</label>
               <div class="ovr">
-                <input class="f" placeholder="1,000,000 (DeepSeek V4.1 Flash)">
+                <input class="f" placeholder="inherit — 1,000,000">
                 <button class="clear" title="Clear override">✕</button>
               </div>
-              <span class="f-help">Empty ⇒ catalog. Set only to under-provision for cost, or for a model the catalog does not know.</span>
             </div>
-
           </div>
         </details>
+
       </div>
       <div class="modal-foot">
         <button class="btn">Test</button>
@@ -412,15 +399,39 @@
       </div>
     </div>
 
-    <div class="doc" style="max-width:470px">
-      <h3 style="margin-top:22px">Two changes worth calling out</h3>
-      <ul style="font-size:12.5px">
-        <li><b>The override checkboxes are gone.</b> A checkbox whose only job is to enable the field beneath it is noise; <i>empty</i> already means <i>inherit</i>. The ✕ button is the explicit "clear", so a value can be removed without hunting for an untick.</li>
-        <li><b>Every override says who currently owns the value</b> (<code>catalog</code>, <code>global · 80</code>), replacing three copies of "Falls back to top-level defaults → built-in".</li>
-      </ul>
+    <div class="doc" style="max-width:452px">
+      <div class="anno"><span class="n">→</span><span><b>Advanced is a real screen, not a demotion.</b> Three groups the user can scan (Connection / Behaviour / Compaction), one sentence of explanation for the whole section, and each placeholder states the default in words — <code>inherit — 1,000,000</code> — so no field needs its own helper text.</span></div>
     </div>
   </div>
 
+</div>
+
+<!-- ══════════════════════════ PROFILE LIST ROW ══════════════════════════ -->
+<div class="doc">
+  <h2>The profile list row, same treatment</h2>
+  <div class="panes">
+    <div class="pane">
+      <div class="pane-label">Now — <b>4 lines per row</b></div>
+      <div class="listrow">
+        <div class="lhead"><span style="color:#a6a69c">▼</span><span class="ldot"></span><b>deepseek auto</b><span class="lpill">active</span></div>
+        <div class="lmeta">deepseek-flash · https://opencode.ai/zen/go/v1/chat/completions</div>
+        <div class="ldim">▾ 2 sub-agents</div>
+        <div class="ldim">Compaction: 97% @ 1000k tokens</div>
+      </div>
+    </div>
+    <div class="pane">
+      <div class="pane-label">v2 — <b>2 lines</b></div>
+      <div class="listrow">
+        <div class="lhead"><span style="color:#a6a69c">▼</span><span class="ldot"></span><b>deepseek auto</b><span class="lpill">active</span><span style="flex:1"></span><span class="ldim" style="margin:0">2 sub-agents</span></div>
+        <div class="lmeta">deepseek-flash · 1M context · compacts at 800k</div>
+      </div>
+    </div>
+  </div>
+  <p style="font-size:12.5px;color:#a6a69c;margin-top:8px">
+    The base URL becomes a tooltip — it is an implementation detail of the model choice, and every row
+    printing a full endpoint was the noisiest thing in the list. The compaction summary stops saying
+    <code>default (80%) @ default</code> and states the two numbers that actually apply.
+  </p>
 </div>
 
 <!-- ══════════════════════════ DOC ══════════════════════════ -->
@@ -428,100 +439,74 @@
 
   <h2>Where each value comes from</h2>
   <table>
-    <thead><tr><th style="width:170px">Field</th><th style="width:180px">Now</th><th>Proposed</th></tr></thead>
+    <thead><tr><th style="width:170px">Field</th><th style="width:200px">Now</th><th>v2</th></tr></thead>
     <tbody>
-      <tr><td><b>model</b></td><td>free text</td><td>combobox: free text + catalog search (grouped by provider, context size shown per row)</td></tr>
-      <tr><td><b>base_url</b></td><td>free text, required in practice</td><td>empty ⇒ <code>provider.api</code> from the catalog; still overridable (the screenshot's <code>/zen/go/v1</code> URL genuinely differs from the catalog's <code>/inference/go/v1</code>)</td></tr>
-      <tr><td><b>url_style</b></td><td>3-way guess</td><td>empty ⇒ derived from <code>provider.npm</code>: <code>@ai-sdk/anthropic</code> / <code>@ai-sdk/google-vertex/anthropic</code> ⇒ <code>anthropic</code>, everything else ⇒ <code>openai</code></td></tr>
-      <tr><td><b>max_capacity_tokens</b></td><td>hand-typed, or a 200k guess</td><td>empty ⇒ <code>model.limit.context</code> from the catalog, resolved at read time (profile keeps <code>null</code>)</td></tr>
-      <tr><td><b>(new) max_output_tokens</b></td><td>does not exist — <code>Agent.maxTokens</code> is a hardcoded 4096</td><td>catalog <code>model.limit.output</code>, surface it as the effective value and, if wanted, a real field (decision D5)</td></tr>
-      <tr><td><b>thinking</b> / <b>thinking_budget_tokens</b></td><td>shown whenever <code>url_style === 'anthropic'</code></td><td>shown when the <i>model</i> has a <code>budget_tokens</code> reasoning option; the budget min (1024) comes from the catalog</td></tr>
-      <tr><td><b>reasoning_effort</b></td><td>dropdown shown for every OpenAI-shaped profile</td><td>options come from <code>model.reasoning_options[type=effort].values</code> (e.g. <code>low · high · max</code>), intersected with what pabrik can send (<code>low|medium|high|auto</code>); non-reasoning models get an explanation, not a dropdown</td></tr>
-      <tr><td><b>temperature</b></td><td>always shown</td><td>hidden with <code>model.temperature: false</code> — shown again the moment the model accepts it</td></tr>
-      <tr><td><b>compaction_threshold_percent</b></td><td>per-profile checkbox + slider, fallback UI does not exist</td><td>empty ⇒ global default (decision D3); per-profile only as an override in Advanced</td></tr>
+      <tr><td><b>model</b></td><td>free text</td><td>combobox: free text + catalog search (provider and context size on each row)</td></tr>
+      <tr><td><b>base_url</b></td><td>free text, required in practice</td><td>Advanced. Empty ⇒ <code>provider.api</code>. The screenshot's <code>/zen/go/v1</code> genuinely differs from the catalog's <code>/inference/go/v1</code>, so it stays overridable.</td></tr>
+      <tr><td><b>url_style</b></td><td>3-way guess on the face</td><td>Advanced, derived from <code>provider.npm</code> (<code>@ai-sdk/anthropic</code> ⇒ <code>anthropic</code>, else <code>openai</code>)</td></tr>
+      <tr><td><b>max_capacity_tokens</b></td><td>hand-typed, else a 200k guess</td><td>Advanced; empty ⇒ <code>model.limit.context</code>, resolved at read time (profile keeps <code>null</code>). Shown as <code>1M context</code> on the fact line.</td></tr>
+      <tr><td><b>compaction_threshold_percent</b></td><td>checkbox + slider on the face</td><td>Advanced; empty ⇒ the global default. The fact line shows the result: <code>compacts at 800k</code>.</td></tr>
+      <tr><td><b>thinking</b> / <b>thinking_budget_tokens</b></td><td>shown when <code>url_style === 'anthropic'</code></td><td>Advanced; shown when the model has a <code>budget_tokens</code> reasoning option</td></tr>
+      <tr><td><b>reasoning_effort</b></td><td>dropdown for every OpenAI-shaped profile</td><td>Advanced; the label names the model's own options (<code>low · high · max</code>), and a non-reasoning model says so instead of offering a dead dropdown</td></tr>
+      <tr><td><b>temperature</b></td><td>always shown</td><td>Advanced; hidden with a reason when <code>model.temperature</code> is false</td></tr>
+      <tr><td><b>name</b></td><td>full row, disabled in Edit mode</td><td>the dialog title (Edit) / a field (Add)</td></tr>
     </tbody>
   </table>
 
-  <h2>models.dev — what we would actually consume</h2>
-  <p>Fetched <code>https://models.dev/api.json</code> on 2026-10-13: <b>5,451,834 bytes</b>, <b>227 providers</b>, <b>8,562 models</b>, 8,402 of them carrying a context limit. It sends <code>access-control-allow-origin: *</code>, so a plain webview <code>fetch()</code> would work too — but the context window is needed <i>server-side</i> (compaction is decided in <code>workflow_compact_message.zig</code>), so the backend should own the catalog.</p>
+  <h2>models.dev — what we would consume</h2>
+  <p>Fetched <code>https://models.dev/api.json</code> on 2026-10-13: <b>5,451,834 bytes</b>, <b>227 providers</b>,
+  <b>8,562 models</b> (8,402 with a context limit), <code>access-control-allow-origin: *</code>. It answers the
+  question the dialog currently asks the user, and the backend needs the same answer to decide when to compact.</p>
   <table>
-    <thead><tr><th style="width:200px">models.dev field</th><th style="width:180px">maps to</th><th>notes</th></tr></thead>
+    <thead><tr><th style="width:210px">models.dev field</th><th style="width:180px">maps to</th><th>notes</th></tr></thead>
     <tbody>
-      <tr><td><code>provider.api</code></td><td><code>base_url</code></td><td><b>202 of 227</b> providers have it. <code>anthropic</code> is one of the 25 without — keep a tiny built-in map for the headliners, and let the field stay editable.</td></tr>
-      <tr><td><code>provider.npm</code></td><td><code>url_style</code></td><td>all 227 have it; 6,276 models sit on <code>@ai-sdk/openai-compatible</code>, i.e. plain <code>openai</code> shape.</td></tr>
-      <tr><td><code>provider.env</code></td><td>placeholder text only</td><td>tells the user which env var name the provider expects (<code>DEEPSEEK_API_KEY</code>) — we never read the env.</td></tr>
-      <tr><td><code>model.limit.context</code></td><td><code>max_capacity_tokens</code></td><td>the whole point of the exercise. <code>deepseek-flash</code> ⇒ <b>1,000,000</b>.</td></tr>
-      <tr><td><code>model.limit.output</code></td><td>max output tokens</td><td><code>deepseek-flash</code> ⇒ 393,216. Today <code>Agent.maxTokens = 4096</code> for every model.</td></tr>
-      <tr><td><code>model.reasoning</code> + <code>reasoning_options</code></td><td>thinking / reasoning effort</td><td><code>[{type:"toggle"},{type:"effort",values:["low","high","max"]}]</code> and <code>[{type:"budget_tokens",min:1024}]</code> — the two shapes pabrik already speaks.</td></tr>
-      <tr><td><code>model.temperature</code></td><td>whether to show temperature</td><td>boolean "this model accepts temperature".</td></tr>
-      <tr><td><code>model.cost</code></td><td>read-only info</td><td><code>{input, output, cache_read, cache_write}</code> per Mtok. Display only — decision D5.</td></tr>
-      <tr><td><code>model.attachment</code> / <code>modalities</code></td><td>read-only info</td><td>whether the model takes images/pdf. Also display only.</td></tr>
+      <tr><td><code>provider.api</code></td><td><code>base_url</code></td><td><b>202 of 227</b> providers have it. <code>anthropic</code> has none ⇒ keep a tiny built-in map for headliners, and keep the field editable.</td></tr>
+      <tr><td><code>provider.npm</code></td><td><code>url_style</code></td><td>227/227. 6,276 models sit on <code>@ai-sdk/openai-compatible</code>, i.e. plain <code>openai</code> shape.</td></tr>
+      <tr><td><code>model.limit.context</code></td><td><code>max_capacity_tokens</code></td><td>the whole point. <code>deepseek-flash</code> ⇒ <b>1,000,000</b>.</td></tr>
+      <tr><td><code>model.limit.output</code></td><td>max output tokens</td><td><code>deepseek-flash</code> ⇒ 393,216; today <code>Agent.maxTokens</code> is a flat 4096 (<code>Agent.zig:1327</code>).</td></tr>
+      <tr><td><code>model.reasoning</code> + <code>reasoning_options</code></td><td>thinking / effort</td><td><code>[{"type":"effort","values":["low","high","max"]}]</code> and <code>[{"type":"budget_tokens","min":1024}]</code> — both shapes pabrik already speaks.</td></tr>
+      <tr><td><code>model.temperature</code></td><td>whether Temperature applies</td><td>boolean.</td></tr>
+      <tr><td><code>model.cost</code></td><td>the price on the fact line</td><td><code>{input, output, cache_read, cache_write}</code> per Mtok. Display only — decision D5.</td></tr>
     </tbody>
   </table>
+  <p>Trimmed to just these: <b>≈2.3 MB</b> of compact JSON. A fine cache file
+  (<code>~/.config/pabrik/models-dev.json</code>), a bad thing to commit — hence decision D1.</p>
 
-  <div class="note">
-    <b>Trimmed size.</b> Keeping only the fields above cuts the payload from 5.45 MB to <b>≈2.3 MB</b> of compact JSON (measured). That is a fine cache file and a bad thing to commit, which is why the plan recommends <b>fetch + cache</b> rather than a bundled snapshot in git (decision D1). <code>~/config/pabrik/models-dev.json</code> with an <code>fetched_at</code>, refreshed by an explicit button.
-  </div>
+  <h2>Decisions to confirm</h2>
+  <div class="dec"><h4>D1 — where the catalog lives</h4><p><span class="rec">Recommend: runtime fetch + on-disk cache, backend-owned</span> (one module, mirroring <code>session_llm_config.zig</code>'s "one owner" rule). Alternatives: a 2.3 MB snapshot in git (rots, unreviewable diffs), or frontend-only <code>fetch()</code> (the server-side compaction bug survives).</p></div>
+  <div class="dec"><h4>D2 — when we refresh</h4><p><span class="rec">Recommend: an explicit "Refresh catalog" button</span> with a stale badge, never at boot — CI stays hermetic and the app never phones home unasked.</p></div>
+  <div class="dec"><h4>D3 — the orphaned global defaults</h4><p><span class="rec">Recommend: one small "Compaction" block in Settings → General</span> (threshold %, optional forced window). That is the single global home the fact line's <code>compacts at 800k</code> inherits from. Alternative: delete the cascade steps as dead UI — but workspace overlays and hand-edited configs use them.</p></div>
+  <div class="dec"><h4>D4 — model entry stays a combobox, not a select</h4><p><span class="rec">Recommend: free text + catalog search.</span> A strict dropdown breaks self-hosted endpoints and your <code>opencode.ai/zen</code> URL, which is not what the catalog says.</p></div>
+  <div class="dec"><h4>D5 — output cap and price on the fact line</h4><p><span class="rec">Recommend: price yes, output cap no</span> — the cap changes nothing today (nothing reads it), and the fact line is worth keeping to four tokens. Add a real <code>max_output_tokens</code> field only if you want <code>Agent.maxTokens</code> to stop being 4096.</p></div>
+  <div class="dec"><h4>D6 — workspace scope</h4><p><span class="rec">Recommend: one machine-wide catalog cache</span> — model metadata, not user data.</p></div>
 
-  <h2>Decisions to confirm before implementation</h2>
-
-  <div class="dec">
-    <h4>D1 — where the catalog lives</h4>
-    <p><span class="rec">Recommend: runtime fetch + on-disk cache, backend-owned.</span> One module (<code>model_catalog.zig</code>) owns load/refresh/lookup, mirroring <code>session_llm_config.zig</code>'s "one owner" rule. Alternatives: bundling a 2.3 MB trimmed snapshot in git (works offline, rots, huge diffs on every refresh), or frontend-only <code>fetch()</code> (no server-side compaction gain — the bug stays).</p>
-  </div>
-
-  <div class="dec">
-    <h4>D2 — when we refresh</h4>
-    <p><span class="rec">Recommend: an explicit "Refresh catalog" button</span> in Settings (General), plus a stale badge. Never at boot — a desktop app that silently phones home on every launch is a smell, and CI must stay hermetic.</p>
-  </div>
-
-  <div class="dec">
-    <h4>D3 — the orphaned top-level compaction defaults</h4>
-    <p><span class="rec">Recommend: put one "Compaction" block back in Settings → General</span> (threshold %, optional forced context window), and make it the single global home for D3's cascade step 3. The alternative is deleting <code>max_capacity_token_model</code> / <code>compaction_threshold_percent</code> from the cascade as dead UI — but workspace overlays and hand-edited configs already use them.</p>
-  </div>
-
-  <div class="dec">
-    <h4>D4 — model entry stays free text</h4>
-    <p><span class="rec">Recommend: combobox, not a select.</span> A strict dropdown would break self-hosted endpoints and the <code>opencode.ai/zen</code> URL in the screenshot, which is not what the catalog says. Unknown ⇒ show the honest "set it manually" state.</p>
-  </div>
-
-  <div class="dec">
-    <h4>D5 — do we surface output cap + price?</h4>
-    <p><span class="rec">Recommend: show both as read-only facts now; add <code>max_output_tokens</code> as a real profile field only if you want it.</span> Pricing goes stale and is per-provider — it is information, not configuration.</p>
-  </div>
-
-  <div class="dec">
-    <h4>D6 — workspace scope</h4>
-    <p>Workspace settings can override <code>profiles_models</code>. Does a workspace get its own catalog cache (per-owner path), or does every scope read the one machine-wide cache? <span class="rec">Recommend: one machine-wide cache</span> — it is model metadata, not user data.</p>
-  </div>
-
-  <h2>What changes on the wire (nothing, deliberately)</h2>
+  <h2>What does not change</h2>
   <ul>
-    <li><code>max_capacity_tokens</code> / <code>compaction_threshold_percent</code> / <code>thinking_budget_tokens</code> stay <code>number | null</code>. <b>Empty field ⇒ <code>null</code>, never <code>""</code></b> — an empty slice binds as SQL NULL in this codebase's SQLite contract, and a cleared override must round-trip as <code>null</code>.</li>
-    <li>The catalog never <i>writes</i> into a profile. It supplies defaults at the four resolution points the backend already has (<code>maxCapacityForModel</code>, <code>compactionThresholdPercent</code>, the thinking/effort gates, the base-URL fallback). A catalog refresh therefore fixes every profile at once.</li>
-    <li>No config migration. An existing <code>config.json</code> is byte-identical after this change; only the resolved values differ (correctly, for non-MiniMax models).</li>
+    <li><b>The wire format.</b> <code>max_capacity_tokens</code> / <code>compaction_threshold_percent</code> / <code>thinking_budget_tokens</code> stay <code>number | null</code>. An empty field must serialize to <code>null</code>, never <code>""</code> (an empty slice binds as SQL NULL here).</li>
+    <li><b>No config migration.</b> An existing <code>config.json</code> is byte-identical; only resolved values differ — correctly, for non-MiniMax models.</li>
+    <li><b>The catalog never writes into a profile.</b> It supplies defaults at the resolution points the backend already has, so one refresh corrects every profile at once.</li>
   </ul>
 
-  <h2>Open risk</h2>
+  <h2>Risks</h2>
   <ul>
-    <li><b>Offline / air-gapped.</b> First run with no cache ⇒ catalog absent ⇒ every profile falls back to today's 200k built-in. The plan must make that state visible in the UI ("catalog unavailable — context window is the 200k built-in") rather than silently keeping the wrong number.</li>
-    <li><b>Provider/model ambiguity.</b> <code>deepseek-flash</code> exists under several providers with different context sizes (DeepSeek's own vs <code>opencode-go</code>'s). The resolution needs the provider, not just <code>model</code> — so a bare model name picks the highest-ranked match and the UI names the choice.</li>
-    <li><b>Upstream trust.</b> A wrong <code>limit.context</code> upstream silently changes when pabrik compacts. An override that the user typed must always win, and the resolved source must be shown next to the number.</li>
+    <li><b>Offline.</b> No cache ⇒ today's 200k built-in. The fact line must say so (<span style="font-family:monospace;font-size:11.5px;color:#c9a86a">200k context (built-in)</span>) instead of showing a confidently wrong number.</li>
+    <li><b>Ambiguity.</b> <code>deepseek-flash</code> exists under several providers. A bare model name needs a ranked match, and the fact line must name the provider it picked.</li>
+    <li><b>Upstream trust.</b> A wrong <code>limit.context</code> silently moves the compaction point. A typed override must always win.</li>
   </ul>
 
 </div>
 </div>
 
-<!-- JS-OFF: this file must still render the PROPOSED pane. That default is baked into
-     the markup, not applied by script: #paneBefore and #paneAdv carry inline
-     style="display:none", #bAfter carries class="on". The show('after') call below is a
-     re-assertion, not the thing that makes the default correct. Verified with
-     agent-browser (3 panes, 1 visible, 1 .on button matching it, 0 checkboxes in the
-     proposed pane, no horizontal overflow). -->
+<!-- JS-OFF: this file must still render the v2 pane. That default is baked into the markup,
+     not applied by script: #paneBefore / #paneV1 / #paneAdv carry inline style="display:none"
+     and #bV2 carries class="on". The show('v2') call below is a re-assertion, not the thing
+     that makes the default correct. Verified in agent-browser (exactly one pane visible, one
+     .on switch button matching it, v2 carries 0 checkboxes vs the shipped pane's 2 + 1 slider,
+     no horizontal overflow). -->
 <script>
 function show(which) {
-  var panes = { before: 'paneBefore', after: 'paneAfter', adv: 'paneAdv' }
-  var btns = { before: 'bBefore', after: 'bAfter', adv: 'bAdv' }
+  var panes = { before: 'paneBefore', v1: 'paneV1', v2: 'paneV2', adv: 'paneAdv' }
+  var btns = { before: 'bBefore', v1: 'bV1', v2: 'bV2', adv: 'bAdv' }
   Object.keys(panes).forEach(function (k) {
     document.getElementById(panes[k]).style.display = k === which ? '' : 'none'
     document.getElementById(btns[k]).classList.toggle('on', k === which)
@@ -530,7 +515,7 @@ function show(which) {
   var d = document.querySelector('#paneAdv details.adv')
   if (d) d.open = true
 }
-show('after')
+show('v2')
 </script>
 </body>
 </html>
