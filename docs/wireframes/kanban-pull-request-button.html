@@ -976,7 +976,15 @@
       <h3>Verification actually run</h3>
       <ul class="plain">
         <li class="ok"><span class="mono">zig build test</span> — 26/26 steps, 4230 passed, 10 skipped.</li>
-        <li class="ok"><span class="mono">zig build functional-test:zig</span> — the 11 new wire tests (see the PR).</li>
+        <li class="ok"><span class="mono">zig test --test-filter "git_pr_" tests/functional/root.zig</span> — 55 passed,
+          2 skipped, 0 failed. That is every PR suite against a real server (<span class="mono">status</span>,
+          <span class="mono">checks</span>, <span class="mono">conflicts</span>, <span class="mono">diff</span>,
+          <span class="mono">gitlab</span>, <span class="mono">merge</span>) plus the 12 new
+          <span class="mono">git_pr_list_close_test</span> wire tests — the 400 / 404 / 422 / 502 mapping included.
+          Running them is what found the two bugs named in §9's notes: the suite was never registered in
+          <span class="mono">root.zig</span> (so it would have run zero tests and reported green), and one assertion
+          read <span class="mono">error</span> where a <span class="mono">closed: false</span> answer carries
+          <span class="mono">detail</span>.</li>
         <li class="ok"><span class="mono">vitest</span> — 7/7 in the new spec; the pre-existing KanbanView suites still
           pass.</li>
         <li class="ok"><span class="mono">eslint</span> + <span class="mono">vue-tsc --noEmit</span> — clean.</li>
