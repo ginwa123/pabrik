@@ -8,6 +8,33 @@
         // Pinned by URL + hash; exposes a single `databases` module;
         // consumers `@import("databases")` to use it.
         .databases = .{
+            // 2b17251 = branch `fix/fd-headroom-scales-with-budget`
+            // (ruangsql#9): the reader pool's ceiling no longer collapses to 1
+            // when the process's soft `RLIMIT_NOFILE` is at or below
+            // `FD_HEADROOM`. The reserve is now `min(FD_HEADROOM, soft / 2)`,
+            // so macOS's default of 256 funds 64 readers instead of 1, while
+            // every budget at or above 512 keeps the ceiling it had.
+            //
+            // WHAT THAT COST BEFORE THIS PIN. macOS hands a process 256, which
+            // IS `FD_HEADROOM`, so the ceiling evaluated to 1 — the elastic
+            // pool could never open a second reader past its warm floor, and
+            // every read that found that one reader busy waited out the whole
+            // `reader_wait_ms` budget:
+            //
+            //   warning: sqlite: reader pool unavailable after waiting 5000ms
+            //            (PoolExhausted); serving this read on the write
+            //            connection
+            //
+            // Measured (isolated HOME, `ulimit -S -n 256`):
+            // `GET /api/llm/session` 5.001 s x4 with `fd_backstop=1`; the same
+            // request is sub-millisecond at 262+. The regression test for it is
+            // `tests/functional/fd_limit_reader_pool_test.zig`.
+            //
+            // This is a BRANCH SHA, not main: move it to the merge SHA once #9
+            // lands.
+            //
+            // PREVIOUS PIN, kept because both essays below still describe the
+            // trap that makes moving this pin dangerous —
             // 4667a64 = branch `fix/pool-wait-instead-of-hijack-writer`
             // (ruangsql#6), "a read waits for a reader instead of taking the
             // write connection", plus the idle reaper (8dbfd61) and "a
@@ -102,8 +129,8 @@
             // prints. Then `rm -rf zig-pkg && zig build` and confirm the
             // new symbol you rely on actually exists in the extracted
             // package.
-            .url = "git+https://github.com/ginwa123/ruangsql.git#4667a64326feb0153ee38138ec7f5bd4e65e3501",
-            .hash = "databases-0.0.0-vy-BCPJXBgDFSm8zatg9HPEaUtpl3vjAFRrlOpSzeXPh",
+            .url = "git+https://github.com/ginwa123/ruangsql.git#2b17251898b78eb879fb0b09dc1f2968ee0200ef",
+            .hash = "databases-0.0.0-vy-BCE1qBgCG8uwiEeCykTNb8j63ENIeS4VJAuAtnRXb",
         },
         // External web-framework library (pure-Zig HTTP server +
         // libcurl-backed HTTP client). Exposes a single `kabelweb` module
