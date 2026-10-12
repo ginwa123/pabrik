@@ -406,6 +406,50 @@ const ESTIMATE_MIN_PX = 32
 const ESTIMATE_MAX_PX = 1600
 const clampEstimate = (px: number): number =>
   Math.min(ESTIMATE_MAX_PX, Math.max(ESTIMATE_MIN_PX, px))
+
+/**
+ * How many observations the estimator must hold before its estimate is
+ * frozen (see `estimateHeight`).
+ *
+ * At this count the rolling window is FULL, so the learned median describes a
+ * whole window of real rows rather than the handful that happened to render
+ * first — and, because it was just fed by those rows, freezing it is a no-op
+ * for the model: nothing moves at the moment of the freeze. Only the LATER
+ * drift is prevented, which is the part that moves content.
+ */
+const ESTIMATOR_FREEZE_SAMPLES = 64
+
+/**
+ * Height for an item with no stored measurement — a PLACEHOLDER, and one that
+ * is deliberately not allowed to move once the estimator has learned a
+ * realistic median (`heightEstimator.freeze()` below).
+ *
+ * The model is `sum over items of estimateHeight(i)`, and in a long chat most
+ * items are placeholders rather than measurements: 561 of 600 in the recorded
+ * probe run. So the placeholder is not a small local guess — it is multiplied
+ * by the number of never-rendered items, and a 1px move in it moves the whole
+ * list by that count. That is exactly what used to happen: the estimate is fed
+ * by whichever rows are on screen, so SCROLLING moved it, which rescaled every
+ * prefix sum, which the anchor compensation below turned into a `scrollTop`
+ * write of the same size.
+ *
+ * Measured (tests/functional_ui/chatview_stream_scroll_stability_ui_test.py,
+ * a 600-message chat, 100px upward steps while SSE streams):
+ *
+ *     oldAnchorTop 116536 -> newAnchorTop 138771        (+22,235 in one pass,
+ *                                                        no content measured)
+ *     comp writes:  138880 (clamped by the browser to 120074), then 81266,
+ *                   then 80966, ...                      (the flip-flop)
+ *
+ * Freezing the placeholder after that run removed it entirely: `scrollHeight`
+ * moved ±41px per pass instead of ±18,573, no pass produced a |shift| > 300px,
+ * and each 100px step applied within ±41px of what the reader asked for.
+ *
+ * The invariant this buys: `estimateHeight` depends only on (this item's stored
+ * measurement | the frozen placeholder) — never on `scrollTop`. Every prefix sum
+ * above the viewport is therefore stationary except when a row is really
+ * measured, and the compensation absorbs only real corrections.
+ */
 const estimateHeight = (index: number): number => {
   const stored = itemHeights.value.get(keyOf(index))
   if (stored !== undefined) return stored
@@ -1025,6 +1069,16 @@ const measureItems = () => {
     // Track the measurement frontier: the learned median is only
     // trusted for items at or before this index (see estimateHeight).
     if (realIndex > maxMeasuredIndex) maxMeasuredIndex = realIndex
+  }
+  // Freeze the placeholder once the estimator's window is full — from here on
+  // `estimateHeight` may only change for a MEASURED row, so no scroll gesture
+  // can rescale the model above the reader (see `estimateHeight` for the
+  // measured jump this prevents). Freezing is a no-op for the model at this
+  // instant BY CONSTRUCTION: the samples are the rows just measured, so the
+  // frozen value is the live median that `updateAccumulatedHeights` below
+  // would have used anyway.
+  if (!heightEstimator.isFrozen && heightEstimator.sampleCount >= ESTIMATOR_FREEZE_SAMPLES) {
+    heightEstimator.freeze()
   }
   updateAccumulatedHeights()
   // Prefixes moved: recompute the measured tail bottom against the fresh
