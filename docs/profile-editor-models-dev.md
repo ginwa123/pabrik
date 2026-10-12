@@ -115,39 +115,31 @@ Fine as a cache file; a bad thing to commit.
 
 ## 4. Design
 
-### 4.1 One owner: `src/agentic_loop/model_catalog.zig`
+### 4.1 One owner, split three ways
 
-Mirrors the rule `session_llm_config.zig` established — one module owns one question
-("what do we know about this model?"), and call sites do not hand-roll it.
+`session_llm_config.zig`'s rule applies: one owner per question. The question here
+("what do we know about this model?") is answered by three files with one job each:
 
-```
-model_catalog.zig
-  load(alloc, io) ?*const Catalog          // cache file, else null — never silently invents data
-  refresh(alloc, io, url) !RefreshReport   // GET → trim → atomic write → report counts
-  lookup(catalog, provider_or_null, model) ?ModelFacts
-  ModelFacts { id, provider_id, provider_name, base_url, url_style,
-               context_window, output_tokens, reasoning:ReasoningKind,
-               temperature:bool, cost:?Cost, attachment:bool }
-```
+| file | job | testability |
+|---|---|---|
+| `src/agentic_loop/model_catalog.zig` | trim models.dev's payload, parse it, look a model up | **std-only**, so `zig test <file>` runs it standalone in ~2s |
+| `src/models/model_catalog_store.zig` | snapshot to / load from the DB | in-memory SQLite, like every other store |
+| `src/agentic_loop/model_catalog_refresh.zig` | the libcurl fetch and the hourly timer | functional harness |
 
-Cache: `~/.config/pabrik/models-dev.json`
-```json
-{ "fetched_at": "2026-10-13T03:03:00Z", "etag": "...", "source": "https://models.dev/api.json",
-  "providers": { "deepseek": { "name": "DeepSeek", "api": "https://api.deepseek.com",
-                               "npm": "@ai-sdk/openai-compatible", "env": ["DEEPSEEK_API_KEY"],
-                               "models": { "deepseek-flash": { "name": "DeepSeek V4.1 Flash",
-                                          "limit": {"context":1000000,"output":393216},
-                                          "reasoning": [{"type":"effort","values":["low","high","max"]}],
-                                          "temperature": true,
-                                          "cost": {"input":0.15,"output":0.6} } } } } }
-```
+**The cache lives in the DATABASE — decided with the user, and different from this plan's
+first draft.** Migration 106 adds `model_catalog_providers` / `model_catalog_models` /
+`model_catalog_meta`; the store snapshots to and loads from them. A JSON file *plus* a table
+would be two sources of truth for the same 8,562 rows, and the first time they disagreed
+nobody could say which was lying. There is no file cache.
 
-Three states, all distinguishable (this repo's "no silent fallback" rule):
-`absent` (never fetched / air-gapped) · `stale` (`fetched_at` older than N days) ·
-`fresh`. Corruption is an **error surfaced to the caller**, never a silent empty catalog.
+The in-memory `Catalog` is a projection of those tables, and it exists because the
+compaction decision reads a context window on **every loop iteration** — a query per
+iteration is not acceptable.
 
-**No bundled snapshot, no `@embedFile` blob.** A 2.3 MB generated artifact in git would
-rot between refreshes and produce unreviewable diffs.
+**Boot reads the DB only; it never touches the network.** The fetch runs on a detached
+thread, hourly. `saveCatalog` always runs *before* the index swap, so a failed fetch or a
+failed write leaves every session compacting against exactly the numbers it had a moment
+earlier. An empty catalog is refused outright rather than traded for a good snapshot.
 
 ### 4.2 Backend resolution — add a catalog step, keep every pure function pure
 
@@ -306,12 +298,13 @@ A `test` block calls the code and asserts what comes back.
 
 ## 7. Decisions to confirm
 
-- **D1 — where the catalog lives.** *Recommend: runtime fetch + on-disk cache, backend-owned.*
-  Alternatives: a 2.3 MB snapshot committed to git (works offline, rots, unreviewable diffs),
-  or frontend-only `fetch()` (the CORS header allows it, but server-side compaction learns
-  nothing — the bug in §2.1 survives).
-- **D2 — when we refresh.** *Recommend: an explicit "Refresh catalog" button* with a stale
-  badge. Never at boot. A desktop app that silently calls out on every launch is a smell, and CI must stay hermetic.
+- **D1 — where the catalog lives.** **DECIDED (user): the database.** Migration 106 + a
+  store, no file cache. A committed snapshot was rejected (2.3 MB that rots), and
+  frontend-only `fetch()` was rejected because the server-side compaction bug would survive it.
+- **D2 — when we refresh.** **DECIDED (user): in the background, every hour, non-blocking.**
+  Boot installs the cached snapshot with no network call at all. The manual
+  `POST /api/models/refresh` is for "I just changed providers and do not want to wait", not
+  the primary path.
 - **D3 — the orphaned top-level defaults.** *Recommend: put one "Compaction" block back in
   Settings → General* (threshold %, optional forced window) as the single global home.
   Alternative: delete `max_capacity_token_model` / `compaction_threshold_percent` from the
