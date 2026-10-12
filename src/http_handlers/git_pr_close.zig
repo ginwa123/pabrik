@@ -135,8 +135,7 @@ pub fn closeUseCaseWithPrograms(
     defer res.deinit(allocator);
 
     if (res.timed_out) {
-        const msg = std.fmt.allocPrint(allocator, "{s} {s} close timed out after {d}s", .{ cli.program, cli.noun, CLOSE_TIMEOUT_MS / 1000 }) catch "close timed out";
-        pr_status.setFetchDetail(allocator, detail, msg);
+        pr_status.setFetchDetailFmt(allocator, detail, "{s} {s} close timed out after {d}s", .{ cli.program, cli.noun, CLOSE_TIMEOUT_MS / 1000 });
         return error.CloseFailed;
     }
 
@@ -148,15 +147,13 @@ pub fn closeUseCaseWithPrograms(
                 // protected-branch refusal. Rendered verbatim.
                 pr_status.setFetchDetail(allocator, detail, res.stderr);
                 if (detail.* == null) {
-                    const msg = std.fmt.allocPrint(allocator, "{s} {s} close exited with code {d} (no stderr)", .{ cli.program, cli.noun, code }) catch "close failed (no stderr)";
-                    pr_status.setFetchDetail(allocator, detail, msg);
+                    pr_status.setFetchDetailFmt(allocator, detail, "{s} {s} close exited with code {d} (no stderr)", .{ cli.program, cli.noun, code });
                 }
                 return error.CloseFailed;
             }
         },
         else => {
-            const msg = std.fmt.allocPrint(allocator, "the {s} CLI was killed before it finished", .{cli.program}) catch "the forge CLI was killed before it finished";
-            pr_status.setFetchDetail(allocator, detail, msg);
+            pr_status.setFetchDetailFmt(allocator, detail, "the {s} CLI was killed before it finished", .{cli.program});
             return error.CloseFailed;
         },
     }
@@ -176,12 +173,12 @@ pub fn closeUseCaseWithPrograms(
         provider_override,
         &status_detail,
     ) catch {
-        const msg = std.fmt.allocPrint(
+        pr_status.setFetchDetailFmt(
             allocator,
+            detail,
             "the {s} command was accepted, but the resulting status could not be read: {s}",
             .{ cli.program, status_detail orelse "unknown error" },
-        ) catch "status re-read failed";
-        pr_status.setFetchDetail(allocator, detail, msg);
+        );
         return error.CloseFailed;
     };
 
@@ -190,12 +187,12 @@ pub fn closeUseCaseWithPrograms(
         // The honest in-between: the CLI exited 0 and the forge did NOT close
         // it. This is a 200 with closed:false — an error status here would
         // hide the one fact the user needs, which is what the forge thinks.
-        const msg = std.fmt.allocPrint(
+        pr_status.setFetchDetailFmt(
             allocator,
+            detail,
             "the {s} command was accepted, but the forge still reports #{d} as {s}",
             .{ cli.program, status.number, if (status.status.len > 0) status.status else "unchanged" },
-        ) catch "the forge did not close it";
-        pr_status.setFetchDetail(allocator, detail, msg);
+        );
     }
 
     return .{ .closed = closed, .provider = provider, .status = status };

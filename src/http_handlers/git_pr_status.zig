@@ -64,6 +64,24 @@ pub fn normalizeStatus(state: []const u8) []const u8 {
     return state;
 }
 
+/// `setFetchDetail` for a formatted message.
+///
+/// The `allocPrint` spelling is a leak: `setFetchDetail` COPIES the text into
+/// the request arena, so the temporary it was handed is never freed — and in a
+/// test the leak detector reports it as a failure. Format into a stack buffer
+/// instead. (`git_pr_create.zig` documents the same rule for its spawn-failure
+/// message; this makes it reusable rather than repeated.)
+pub fn setFetchDetailFmt(
+    allocator: std.mem.Allocator,
+    slot: *?[]u8,
+    comptime fmt: []const u8,
+    args: anytype,
+) void {
+    var buf: [256]u8 = undefined;
+    const msg = std.fmt.bufPrint(&buf, fmt, args) catch "the forge CLI call failed";
+    setFetchDetail(allocator, slot, msg);
+}
+
 /// Max bytes of `gh` stderr (or context) surfaced in the HTTP 502
 /// `error` field. `gh` failures are usually one line (`HTTP 401: ...`,
 /// `could not resolve to a Repository ...`), but auth hints can run a

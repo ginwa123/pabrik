@@ -139,8 +139,7 @@ pub fn listUseCaseWithPrograms(
     defer res.deinit(allocator);
 
     if (res.timed_out) {
-        const msg = std.fmt.allocPrint(allocator, "{s} {s} list timed out after {d}s", .{ cli.program, cli.noun, LIST_TIMEOUT_MS / 1000 }) catch "forge CLI list timed out";
-        pr_status.setFetchDetail(allocator, detail, msg);
+        pr_status.setFetchDetailFmt(allocator, detail, "{s} {s} list timed out after {d}s", .{ cli.program, cli.noun, LIST_TIMEOUT_MS / 1000 });
         return error.FetchFailed;
     }
 
@@ -160,8 +159,7 @@ pub fn listUseCaseWithPrograms(
             }
         },
         else => {
-            const msg = std.fmt.allocPrint(allocator, "{s} {s} list was killed before it finished", .{ cli.program, cli.noun }) catch "forge CLI list was killed";
-            pr_status.setFetchDetail(allocator, detail, msg);
+            pr_status.setFetchDetailFmt(allocator, detail, "{s} {s} list was killed before it finished", .{ cli.program, cli.noun });
             return error.FetchFailed;
         },
     }
