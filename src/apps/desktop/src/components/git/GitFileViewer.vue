@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { ref, onMounted, onUpdated } from 'vue'
+import { computed, ref, onMounted, onUpdated } from 'vue'
 import UiIcon from '../ui/UiIcon.vue'
 import type { GitFileDiff } from '../../api'
 import { fetchFolderDiff } from '../../helpers/folderDiffCache'
+import { highlightLinesForFile } from '../../helpers/codeHighlight'
 import DiffCommentBox, {
   type DiffCommentSavePayload,
 } from '../views/chat_right_sidebar/DiffCommentBox.vue'
 import {
-  escapeDiffHtml,
   parseUnifiedDiff,
   type ParsedDiffLine as DiffLine,
 } from '../views/chat_right_sidebar/parseUnifiedDiff'
@@ -48,6 +48,15 @@ const stats = ref({ added: 0, removed: 0 })
 
 // DiffLine is the shared ParsedDiffLine (see parseUnifiedDiff module).
 const diffLines = ref<DiffLine[]>([])
+
+// Token spans per diff row, computed once per diff (not per render). The
+// row keeps its red/green background; only the code inside is colored.
+const diffTokens = computed(() =>
+  highlightLinesForFile(
+    diffLines.value.map((line) => line.content),
+    props.filePath,
+  ),
+)
 
 // Mini chat functions
 const openMiniChat = (event: MouseEvent, line: DiffLine) => {
@@ -116,8 +125,8 @@ const applyParsedDiff = (diffText: string) => {
   stats.value = { added: parsed.added, removed: parsed.removed }
 }
 
-// tryParseInt/highlightLine now live in the shared module
-// (escapeDiffHtml); the template below calls escapeDiffHtml directly.
+// Diff parsing delegates to the shared pure module; token coloring comes
+// from the shared highlighter, so this viewer matches the diff review.
 // Load diff data
 const loadDiff = async () => {
   if (!props.cwd || !props.filePath) return
@@ -318,7 +327,12 @@ onMounted(() => {
                 "
               >
                 <span style="color: var(--color-green); font-weight: bold">+</span>
-                <span v-html="escapeDiffHtml(line.content)"></span>
+                <span
+                  v-for="(tok, tIdx) in diffTokens[idx]"
+                  :key="tIdx"
+                  :class="`tok-${tok.type}`"
+                  >{{ tok.text || '\u00a0' }}</span
+                >
               </td>
             </tr>
 
@@ -348,7 +362,12 @@ onMounted(() => {
                 "
               >
                 <span style="color: var(--color-red); font-weight: bold">-</span>
-                <span v-html="escapeDiffHtml(line.content)"></span>
+                <span
+                  v-for="(tok, tIdx) in diffTokens[idx]"
+                  :key="tIdx"
+                  :class="`tok-${tok.type}`"
+                  >{{ tok.text || '\u00a0' }}</span
+                >
               </td>
             </tr>
 
@@ -371,7 +390,12 @@ onMounted(() => {
                 style="border-left: 3px solid transparent; color: var(--semantic-text)"
               >
                 <span style="color: var(--semantic-text-dim)"> </span>
-                <span v-html="escapeDiffHtml(line.content)"></span>
+                <span
+                  v-for="(tok, tIdx) in diffTokens[idx]"
+                  :key="tIdx"
+                  :class="`tok-${tok.type}`"
+                  >{{ tok.text || '\u00a0' }}</span
+                >
               </td>
             </tr>
           </template>

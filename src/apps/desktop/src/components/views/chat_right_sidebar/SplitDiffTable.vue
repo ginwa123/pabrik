@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { escapeDiffHtml } from './parseUnifiedDiff'
+import { computed } from 'vue'
+import { highlightLinesForFile, type Token } from '@/helpers/codeHighlight'
 import type { SplitRow } from './pairSplitRows'
 
 /**
@@ -16,7 +17,21 @@ import type { SplitRow } from './pairSplitRows'
  */
 const props = defineProps<{
   rows: SplitRow[]
+  /** Path of the file under review — drives the token language. */
+  path: string
 }>()
+
+// Token spans per side, computed once per diff rather than once per render.
+// A side that has no line here (`null`) tokenizes to a single empty plain
+// token, which the filler cell never renders (see the `v-if`s below).
+const tokensForSide = (pick: (row: SplitRow) => string | null): Token[][] =>
+  highlightLinesForFile(
+    props.rows.map((row) => pick(row) ?? ''),
+    props.path,
+  )
+
+const oldTokens = computed(() => tokensForSide((row) => row.oldText))
+const newTokens = computed(() => tokensForSide((row) => row.newText))
 
 const emit = defineEmits<{
   /** A change line was clicked. `sourceIndex` indexes the caller's parsed
@@ -85,7 +100,14 @@ const onRowClick = (event: MouseEvent, row: SplitRow) => {
               :data-side="'old'"
             >
               <span v-if="row.isChanged && row.oldText !== null" class="split-sign remove">−</span>
-              <span v-if="row.oldText !== null" v-html="escapeDiffHtml(row.oldText)"></span>
+              <template v-if="row.oldText !== null">
+                <span
+                  v-for="(tok, tIdx) in oldTokens[idx]"
+                  :key="tIdx"
+                  :class="`tok-${tok.type}`"
+                  >{{ tok.text || '\u00a0' }}</span
+                >
+              </template>
             </td>
             <td class="split-sep"></td>
             <!-- new side -->
@@ -114,7 +136,14 @@ const onRowClick = (event: MouseEvent, row: SplitRow) => {
               :data-side="'new'"
             >
               <span v-if="row.isChanged && row.newText !== null" class="split-sign add">+</span>
-              <span v-if="row.newText !== null" v-html="escapeDiffHtml(row.newText)"></span>
+              <template v-if="row.newText !== null">
+                <span
+                  v-for="(tok, tIdx) in newTokens[idx]"
+                  :key="tIdx"
+                  :class="`tok-${tok.type}`"
+                  >{{ tok.text || '\u00a0' }}</span
+                >
+              </template>
             </td>
           </tr>
           <slot name="threads" :row-index="idx" />
