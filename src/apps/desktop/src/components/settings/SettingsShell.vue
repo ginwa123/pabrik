@@ -111,11 +111,6 @@ const scopeLabel = computed(() =>
   props.scope === 'user' ? 'User — applies everywhere' : 'Workspace — this workspace only',
 )
 
-const workspaceName = computed(() => {
-  const found = workspacesStore.workspaces.find((w) => w.id === props.workspaceId)
-  return found?.name ?? props.workspaceId
-})
-
 const workspaceOptions = computed(() =>
   workspacesStore.workspaces.map((w) => ({ id: w.id, name: w.name })),
 )
@@ -232,21 +227,9 @@ function notify(message: string, type: 'success' | 'error'): void {
             Workspace
           </button>
         </div>
-        <!-- Workspace context comes from the URL (`/app/:workspaceId/settings`), so there is
-          no picker here: switching workspaces is the sidebar's job, not settings'. -->
-        <div
-          v-if="props.scope === 'workspace'"
-          data-testid="settings-workspace-name"
-          class="w-full mt-2 px-2 py-1.5 rounded-md text-dense truncate"
-          style="
-            background-color: var(--semantic-content-bg);
-            color: var(--semantic-text);
-            border: 1px solid var(--color-border);
-          "
-          :title="workspaceName"
-        >
-          {{ workspaceName }}
-        </div>
+        <!-- Workspace context is the URL (`/app/:workspaceId/settings`): no
+          label or picker here. Switching workspaces is the sidebar's job,
+          not settings'. -->
       </div>
 
       <!-- Settings Menu -->
