@@ -508,3 +508,35 @@ why a workspace's `tools` list REPLACES the user's rather than unioning.
 - **A scope's sections live in ONE list.** `WORKSPACE_AGENT_SECTIONS` (in
   `helpers/configSource.ts`) is what the shell derives its nav from and what the
   workspace view renders, so a section cannot be listed but unrenderable.
+
+## Crash Triage — Read the Reporter Before Theorising
+
+When a `pabrik` process dies — `thread <tid> panic: reached unreachable code`,
+a SIGSEGV/SIGABRT, or an agent run that simply stops — the report is ALREADY
+WRITTEN. Never start from the terminal scrollback: it is truncated, and a
+Ctrl-C swallows the stack trace entirely.
+
+- **`$TMPDIR/agentic_coding.log`** is the crash log (`src/main.zig:90-93` sets
+  the path; `src/service/crash_handler.zig` writes it). The panic handler and
+  the signal handler both append here and mirror the same block to stderr, so
+  a functional-test child's report also lands in the harness's captured log.
+- One report = one block: `=== CRASH: received signal <SIG>` … `=============`,
+  carrying the build mode, the fault address, a symbolicated trace
+  (`function` + `file:line`) and raw addresses for `addr2line -e <exe> <addr>`.
+- **The log is truncated on every boot.** Copy it out (`cp
+  $TMPDIR/agentic_coding.log /tmp/…`) the moment a crash is reported, or the
+  evidence is gone — that is exactly what happened to the 2026-10-12T16:57
+  `loop_counter=79` crash.
+- Triage by SIGNATURE, not by count: `(signal, build mode, first frame under
+  src/)` collapsed one 31k-line log into 3 distinct bugs, not 15 bugs. The *victim* frame
+  is often innocent — a wild `close(2)` reports wherever it happens to land, so
+  a static-serve fd bug can surface inside an agent-loop thread.
+
+`reached unreachable code` on a **Debug** build is Zig's runtime-safety panic,
+not pabrik's. It is most often `std.Io.Threaded.recoverableOsBugDetected()`
+firing because `close(2)` returned `EBADF`: a descriptor closed twice, usually
+by a raw fd close racing an `Io` handle that no longer owns the number. Find
+the FIRST close, not the reported one — and note `ReleaseFast` skips
+`recoverableOsBugDetected` entirely, so the same bug is silent there and only
+shows up as a truncated response. `tests/functional/static_serve_concurrency_test.zig`
+is the guard for that class.

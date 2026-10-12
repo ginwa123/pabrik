@@ -31,6 +31,22 @@
 //! dependency's own unit-level guard is kabelweb's
 //! `event loop: a hijacked conn's closed fd never kills another connection`.
 //!
+//! THE OTHER HALF OF THE DEFECT — WHY THE PROCESS ITSELF MUST SURVIVE. The
+//! same mis-indexed close closes a descriptor that the static pool still
+//! owns, so the pool's own `close` lands on a RECYCLED descriptor number.
+//! Zig's `Io.Threaded` treats `EBADF` from `close` as
+//! `recoverableOsBugDetected()`, which in a Debug build is `unreachable`:
+//! it panics `reached unreachable code` and aborts the ENTIRE server —
+//! every running agent session with it. That is the crash pabrik's own
+//! reporter recorded twelve times in `$TMPDIR/agentic_coding.log`
+//! (`std/Io/Threaded.zig closeFd`, victim frames
+//! `src/modules/static_files.zig:279`, `:323` and
+//! `src/http_static/static_serve.zig:147`). A truncated asset is bad; a
+//! dead server is worse, and the zero-byte assertion cannot see it: a
+//! response can arrive intact and the process still die on a later close.
+//! So the hammer also asserts the child is STILL ALIVE and wrote NO crash
+//! report — the process-survival half of the same invariant.
+//!
 //! WHY IT IS NOT A `h.http(...)` LOOP. `Harness.http` speaks one request per
 //! call with its own connection management; the defect lives in the reactor's
 //! fd bookkeeping under parallel short-lived connections, so the client here
@@ -42,6 +58,7 @@ const builtin = @import("builtin");
 const testing = std.testing;
 const harness = @import("harness.zig");
 const Harness = harness.Harness;
+const Allocator = std.mem.Allocator;
 
 const Io = std.Io;
 
@@ -94,6 +111,33 @@ fn armRecvDeadline(handle: std.posix.socket_t, seconds: i64) void {
         std.posix.SO.RCVTIMEO,
         std.mem.asBytes(&tv),
     ) catch {};
+}
+
+/// The banner pabrik's crash reporter writes at the head of every report
+/// (`src/service/crash_handler.zig::emitCrashReport`). The report goes to
+/// the crash log file AND is mirrored to stderr, which the harness captures
+/// into `Harness.log_path` — so this banner is observable from the test even
+/// when the child died before it could answer another request.
+const CRASH_BANNER = "=== CRASH:";
+
+/// Count crash reports in captured child output. Pure — the positive
+/// control below pins that it fires on the banner and not on prose.
+fn crashReportCount(log: []const u8) usize {
+    var n: usize = 0;
+    var i: usize = 0;
+    while (std.mem.indexOfPos(u8, log, i, CRASH_BANNER)) |at| {
+        n += 1;
+        i = at + CRASH_BANNER.len;
+    }
+    return n;
+}
+
+/// The harness's captured stdout+stderr for the child, whole.
+fn readChildLog(h: *Harness, allocator: Allocator) ![]u8 {
+    return std.Io.Dir.cwd().readFileAlloc(io, h.log_path, allocator, .limited(4 << 20)) catch |err| switch (err) {
+        error.FileNotFound => try allocator.dupe(u8, ""),
+        else => return err,
+    };
 }
 
 const Hammer = struct {
@@ -192,6 +236,33 @@ test "static_serve_answers_every_request_under_concurrency" {
     for (&threads) |*t| t.* = try std.Thread.spawn(.{}, hammer, .{&state});
     for (&threads) |*t| t.join();
 
+    // Read the child's output BEFORE asserting on anything else: if the
+    // server died, the crash report is the evidence and the failure has to
+    // quote it (a dead server also makes every later request fail, which
+    // would otherwise surface as a confusing "served == 0").
+    const child_log = try readChildLog(&h, gpa);
+    defer gpa.free(child_log);
+    const crashes = crashReportCount(child_log);
+    const alive = h.health(io);
+    if (crashes != 0 or !alive) {
+        std.debug.print(
+            "the static-serve hammer KILLED THE SERVER: crashes={d} alive={}\n" ++
+                "A Debug build turns the double close into `reached unreachable code`\n" ++
+                "(`recoverableOsBugDetected`) and the process aborts, taking every\n" ++
+                "running agent session with it.\n",
+            .{ crashes, alive },
+        );
+        if (std.mem.lastIndexOf(u8, child_log, CRASH_BANNER)) |at| {
+            const from = if (at > 600) at - 600 else 0;
+            std.debug.print("---- last crash report ----\n{s}\n", .{child_log[from..]});
+        } else {
+            const tail = try h.tailLog(io, gpa, 40);
+            defer gpa.free(tail);
+            std.debug.print("---- last log lines ----\n{s}\n", .{tail});
+        }
+        return error.TestUnexpectedResult;
+    }
+
     const served = state.served.load(.monotonic);
     const bare = state.bare_close.load(.monotonic);
     try testing.expect(served > 0);
@@ -204,4 +275,22 @@ test "static_serve_answers_every_request_under_concurrency" {
         );
         return error.TestUnexpectedResult;
     }
+}
+
+// Positive control for the crash detector: it fires on the reporter's
+// banner and stays silent on prose that merely says "CRASH".
+test "crashReportCount counts the reporter's banner (positive control)" {
+    try testing.expectEqual(@as(usize, 0), crashReportCount(""));
+    try testing.expectEqual(@as(usize, 0), crashReportCount("all good\ninfo: serving\n"));
+    // Prose, not a banner: a detector without a positive control could pass
+    // vacuously by never matching anything.
+    try testing.expectEqual(@as(usize, 0), crashReportCount("CRASH: reached unreachable code\n"));
+    try testing.expectEqual(
+        @as(usize, 1),
+        crashReportCount("x\n=== CRASH: received signal ABRT (signal number 6) ===\nbody\n"),
+    );
+    try testing.expectEqual(
+        @as(usize, 2),
+        crashReportCount("=== CRASH: a\nbody\n=== CRASH: b\nbody\n"),
+    );
 }
