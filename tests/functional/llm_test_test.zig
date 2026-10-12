@@ -101,6 +101,14 @@ const Stub = struct {
     /// neither of which should ever be abandoned halfway.
     mutex: Io.Mutex = .init,
     reqs: std.ArrayList(Recorded) = .empty,
+    /// REASONING-MODEL EMULATION. `0` (the default) answers every request
+    /// with `payload` — a plain canned stub. Non-zero = the model spends
+    /// that many tokens thinking before it writes anything visible, so a
+    /// request whose output budget does not EXCEED it is answered with
+    /// `reasoning_payload` instead: the reasoning-only body a real
+    /// provider returns when the budget runs out mid-thought.
+    reasoning_spend: u32 = 0,
+    reasoning_payload: []const u8 = "",
 
     /// Bind and start serving on `stub`.
     ///
@@ -131,6 +139,35 @@ const Stub = struct {
         stub.server = try addr.listen(io, .{ .reuse_address = true });
         errdefer stub.server.deinit(io);
         stub.thread = try std.Thread.spawn(.{}, serve, .{stub});
+    }
+
+    /// Start a stub that behaves like a REASONING model: it answers with
+    /// `payload` only when the request's output budget is larger than
+    /// `reasoning_spend`, and with `reasoning_payload` otherwise. That one
+    /// rule is the whole provider contract the Edit-profile Test button was
+    /// tripping over — a reasoning model's hidden tokens come out of the
+    /// same budget as its visible ones.
+    fn startReasoning(
+        stub: *Stub,
+        reasoning_spend: u32,
+        reasoning_payload: []const u8,
+        payload: []const u8,
+    ) !void {
+        try stub.start(200, payload);
+        stub.reasoning_spend = reasoning_spend;
+        stub.reasoning_payload = reasoning_payload;
+    }
+
+    /// The body to answer with. Plain `payload`, unless this is a reasoning
+    /// stub whose `reasoning_spend` the request's budget fails to cover.
+    fn payloadFor(self: *Stub, body: []const u8) []const u8 {
+        if (self.reasoning_spend == 0) return self.payload;
+        if (requestedBudget(body)) |budget| {
+            if (budget > @as(i64, self.reasoning_spend)) return self.payload;
+        }
+        // No budget named at all counts as "not enough" — a provider that
+        // lets the model think unbounded is not what this stub emulates.
+        return self.reasoning_payload;
     }
 
     /// Wake the blocked `accept`, join, and free.
@@ -237,6 +274,10 @@ fn handleRequest(stub: *Stub, stream: Io.net.Stream) !void {
         .body = try gpa.dupe(u8, body_acc.written()),
     });
 
+    // A reasoning stub picks its answer from the request's budget; a plain
+    // stub always sends `payload`.
+    const payload = stub.payloadFor(body_acc.written());
+
     const response = try std.fmt.allocPrint(
         gpa,
         "HTTP/1.1 {d} {s}\r\n" ++
@@ -245,7 +286,7 @@ fn handleRequest(stub: *Stub, stream: Io.net.Stream) !void {
             "Connection: close\r\n" ++
             "\r\n" ++
             "{s}",
-        .{ stub.status, reasonPhrase(stub.status), stub.payload.len, stub.payload },
+        .{ stub.status, reasonPhrase(stub.status), payload.len, payload },
     );
     defer gpa.free(response);
 
@@ -305,6 +346,38 @@ fn hasHeader(head: []const u8, name: []const u8) bool {
 fn contentLength(head: []const u8) usize {
     const v = headerValue(head, "content-length") orelse return 0;
     return std.fmt.parseInt(usize, v, 10) catch 0;
+}
+
+/// The output budget a request asked for: `max_output_tokens` (Responses
+/// API) or `max_tokens` (chat completions / Anthropic). Null when the
+/// request carries neither or the body is not JSON.
+fn requestedBudget(body: []const u8) ?i64 {
+    var parsed = std.json.parseFromSlice(std.json.Value, gpa, body, .{}) catch return null;
+    defer parsed.deinit();
+    const root = switch (parsed.value) {
+        .object => |o| o,
+        else => return null,
+    };
+    const v = root.get("max_output_tokens") orelse root.get("max_tokens") orelse return null;
+    return switch (v) {
+        .integer => |i| i,
+        else => null,
+    };
+}
+
+/// Every recorded request's output budget, oldest first. Owned.
+fn stubBudgets(stub: *Stub) !std.ArrayList(i64) {
+    var seen = try stub.snapshot();
+    defer {
+        for (seen.items) |*r| r.deinit();
+        seen.deinit(gpa);
+    }
+    var out: std.ArrayList(i64) = .empty;
+    errdefer out.deinit(gpa);
+    for (seen.items) |r| {
+        try out.append(gpa, requestedBudget(r.body) orelse 0);
+    }
+    return out;
 }
 
 /// Python's `_stub_body`: the last request's body, parsed.
@@ -414,6 +487,21 @@ const MSG_OK =
 /// Canonical Responses-API `output[]` reply.
 const RESP_OK =
     \\{"id":"resp_1","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}]}
+;
+
+/// What a reasoning model returns when its hidden reasoning consumed the
+/// whole output budget: `status: "incomplete"`, no `message` item, and so
+/// no `output_text` for the probe to show. Trimmed from the real body the
+/// Edit-profile Test button got back from a Responses-style gateway for a
+/// profile that works fine in a chat turn.
+/// The chat-completions spelling of the same truncation: the model wrote no
+/// text (`content: ""`) because it hit the output cap mid-reasoning.
+const CHATCMPL_TRUNCATED =
+    \\{"id":"chatcmpl-1","choices":[{"message":{"role":"assistant","content":""},"finish_reason":"length"}]}
+;
+
+const RESP_REASONING_ONLY =
+    \\{"id":"resp_6accc040156123a58d294be8e","object":"response","created_at":1791803456,"status":"incomplete","parallel_tool_calls":true,"temperature":1,"top_p":1,"max_output_tokens":16,"background":false,"incomplete_details":{"reason":"max_output_tokens"},"output":[{"id":"rs_1","type":"reasoning","summary":[]}],"usage":{"input_tokens":11,"output_tokens":16,"total_tokens":27}}
 ;
 
 // ============================================================================
@@ -572,8 +660,11 @@ test "llm_test_anthropic_success_uses_x_api_key" {
             return error.TestUnexpectedResult;
         },
     };
-    if (max_tokens != 16) {
-        std.debug.print("max_tokens = {d}, expected 16\n", .{max_tokens});
+    // The Anthropic Messages API REQUIRES `max_tokens`; its value is the
+    // probe's reasoning-safe budget (asserted behaviourally by the
+    // reasoning-model tests below, not as a literal here).
+    if (max_tokens <= 0) {
+        std.debug.print("max_tokens = {d}, expected a positive budget\n", .{max_tokens});
         return error.TestUnexpectedResult;
     }
 }
@@ -627,6 +718,153 @@ test "llm_test_openai_response_success_parses_output_items" {
     };
     if (std.mem.indexOf(u8, input, "Reply with exactly: ok") == null) {
         std.debug.print("probe prompt not found in `input`: {s}\n", .{input});
+        return error.TestUnexpectedResult;
+    }
+}
+
+// ============================================================================
+// Test 9: a reasoning model answers — the budget must cover the thinking
+// ============================================================================
+
+// REGRESSION, the reported bug: the Edit-profile Test button said
+// "LLM server response did not contain a reply" for a profile that works in
+// a real chat turn. The probe asked for a 16-token output budget, and a
+// reasoning model spends that budget on hidden reasoning before writing a
+// single visible token, so the reply came back `status: "incomplete"` with a
+// reasoning item and NO `output_text` item. The chat path budgets thousands,
+// which is the whole difference.
+//
+// The stub below is that provider: it writes visible text only when the
+// request's budget EXCEEDS the reasoning it wants to do. A probe that asks
+// for 16 tokens gets the reasoning-only body; one that leaves real room gets
+// the reply. Nothing here pins the budget to a literal — the property under
+// test is "the probe's budget is bigger than the model's thinking".
+test "llm_test_reasoning_model_still_replies_when_probe_allows_for_thinking" {
+    try harness.requirePabrikBin(io, gpa);
+
+    var stub: Stub = undefined;
+    // 800 tokens of thinking: comfortably more than the old 16-token probe,
+    // comfortably less than any sane reasoning-safe budget.
+    try stub.startReasoning(800, RESP_REASONING_ONLY, RESP_OK);
+    defer stub.deinit();
+
+    var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
+    defer h.deinit(io) catch |err| {
+        std.debug.print("teardown: {s}\n", .{@errorName(err)});
+    };
+
+    const base_url = try stubBaseUrl(stub.port, "/v1/responses");
+    defer gpa.free(base_url);
+    const body = try probeBody("stub-reasoning-model", base_url, "sk-test-stub", "openai-response");
+    defer gpa.free(body);
+
+    var r = try postTest(&h, body);
+    defer r.deinit();
+    var doc = try r.json();
+    defer doc.deinit();
+
+    try expectOk(&doc, r.body);
+    try expectReply(&doc, "ok");
+}
+
+// The same bug one wire style over. `openai` (chat completions) has no
+// `status: incomplete`: a truncated reply is `content: ""` with
+// `finish_reason: "length"`, so the OLD probe returned `ok: true` with an
+// EMPTY reply — a green tick that proved nothing, because the model never
+// wrote a word. The budget argument and the truncation signal are shared by
+// both styles, so cover both.
+test "llm_test_reasoning_model_still_replies_on_chat_completions_style" {
+    try harness.requirePabrikBin(io, gpa);
+
+    var stub: Stub = undefined;
+    try stub.startReasoning(800, CHATCMPL_TRUNCATED, CHATCMPL_OK);
+    defer stub.deinit();
+
+    var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
+    defer h.deinit(io) catch |err| {
+        std.debug.print("teardown: {s}\n", .{@errorName(err)});
+    };
+
+    const base_url = try stubBaseUrl(stub.port, "/v1/chat/completions");
+    defer gpa.free(base_url);
+    const body = try probeBody("stub-reasoning-chat", base_url, "sk-test-stub", "openai");
+    defer gpa.free(body);
+
+    var r = try postTest(&h, body);
+    defer r.deinit();
+    var doc = try r.json();
+    defer doc.deinit();
+
+    try expectOk(&doc, r.body);
+    try expectReply(&doc, "ok");
+}
+
+// ============================================================================
+// Test 10: a model that never gets to write text — say so, and try harder
+// ============================================================================
+
+// A model whose thinking always eats the budget (the stub is set to a spend
+// no probe budget can exceed) must not come back as the misleading
+// "LLM server response did not contain a reply" — that reads as "your key is
+// broken" for a profile that is fine in a chat turn.
+//
+// Two behaviours, both asserted on the wire:
+//   1. The probe RETRIES once with more room, instead of giving up on a
+//      budget the model never got to the end of.
+//   2. The error names the cause (reasoning / budget), not a missing reply.
+test "llm_test_reasoning_only_model_retries_then_names_the_budget" {
+    try harness.requirePabrikBin(io, gpa);
+
+    var stub: Stub = undefined;
+    // No finite budget can cover this spend, so the FIRST body comes back
+    // every time — i.e. the model never produces text at all.
+    try stub.startReasoning(std.math.maxInt(u32), RESP_REASONING_ONLY, RESP_OK);
+    defer stub.deinit();
+
+    var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
+    defer h.deinit(io) catch |err| {
+        std.debug.print("teardown: {s}\n", .{@errorName(err)});
+    };
+
+    const base_url = try stubBaseUrl(stub.port, "/v1/responses");
+    defer gpa.free(base_url);
+    const body = try probeBody("stub-reasoning-only", base_url, "sk-test-stub", "openai-response");
+    defer gpa.free(body);
+
+    var r = try postTest(&h, body);
+    defer r.deinit();
+    var doc = try r.json();
+    defer doc.deinit();
+
+    try expectNotOk(&doc, r.body);
+
+    const message = doc.str("error") orelse "";
+    if (containsIgnoreCase(message, "did not contain a reply")) {
+        std.debug.print(
+            "a budget-exhausted reasoning model must not be reported as a missing reply: {s}\n",
+            .{r.body},
+        );
+        return error.TestUnexpectedResult;
+    }
+    if (!containsIgnoreCase(message, "reasoning") and !containsIgnoreCase(message, "budget")) {
+        std.debug.print("error should name the cause (reasoning/budget): {s}\n", .{r.body});
+        return error.TestUnexpectedResult;
+    }
+
+    // Behaviour 1 on the wire: exactly two probes, the second one with more
+    // room than the first. A single request would mean the probe never tried
+    // harder; an identical budget would mean the retry is theatre.
+    var budgets = try stubBudgets(&stub);
+    defer budgets.deinit(gpa);
+    if (budgets.items.len != 2) {
+        std.debug.print("expected one retry (2 probes), got {d}\n", .{budgets.items.len});
+        return error.TestUnexpectedResult;
+    }
+    if (budgets.items[1] <= budgets.items[0]) {
+        std.debug.print(
+            "retry must offer a bigger budget, got {d} then {d}\n",
+            .{ budgets.items[0], budgets.items[1] },
+        );
         return error.TestUnexpectedResult;
     }
 }
@@ -867,4 +1105,10 @@ comptime {
     _ = containsIgnoreCase;
     _ = stubBaseUrl;
     _ = probeBody;
+    _ = RESP_REASONING_ONLY;
+    _ = CHATCMPL_TRUNCATED;
+    _ = Stub.startReasoning;
+    _ = Stub.payloadFor;
+    _ = requestedBudget;
+    _ = stubBudgets;
 }
