@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wireframe — Pull request / Merge request button on the kanban board</title>
+<style>
+  :root {
+    --bg: #181616; --bg-m1: #1D1C19; --bg-m2: #12120f;
+    --bg-p1: #282727; --bg-p2: #393836;
+    --border: #282727; --border-light: #393836;
+    --text: #c5c9c5; --text-muted: #a6a69c; --text-dim: #7a8382;
+    --violet: #8992a7; --aqua: #8ea4a2; --yellow: #c4b28a; --blue: #8ba4b0;
+    --green: #87a987; --pink: #a292a3; --orange: #b6927b; --red: #c4746e;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px; line-height: 1.5; padding: 32px;
+  }
+  .page { max-width: 1320px; margin: 0 auto; }
+  h1 { font-size: 21px; font-weight: 600; margin-bottom: 4px; }
+  .sub { color: var(--text-dim); font-size: 13px; margin-bottom: 10px; }
+  .sub b { color: var(--text-muted); font-weight: 500; }
+  .flow { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .flow .step { background: var(--bg-m1); border: 1px solid var(--border); border-radius: 5px; padding: 3px 10px; }
+  .flow .step.now { border-color: var(--violet); color: var(--text); }
+  .flow .arrow { color: var(--violet); }
+
+  h2 { font-size: 15px; font-weight: 600; margin: 26px 0 4px; }
+  h2 .n { color: var(--violet); font-weight: 500; margin-right: 6px; }
+  h3 { font-size: 13px; font-weight: 600; color: var(--text-muted); margin: 18px 0 6px; }
+  p.lead { color: var(--text-muted); font-size: 13px; margin-bottom: 10px; max-width: 100ch; }
+  code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px;
+         background: var(--bg-m2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
+  .card { background: var(--bg-m1); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin: 10px 0 18px; }
+  .cols { display: flex; gap: 26px; align-items: flex-start; }
+  .mocks { flex: 1 1 auto; min-width: 0; }
+  .notes { width: 420px; flex-shrink: 0; }
+  @media (max-width: 1080px) { .cols { flex-direction: column; } .notes { width: 100%; } }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.fixed { table-layout: fixed; }
+  th { text-align: left; font-weight: 600; color: var(--text-muted); font-size: 10px;
+       text-transform: uppercase; letter-spacing: .06em; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td.mono, .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
+  .dim { color: var(--text-dim); }
+  .muted { color: var(--text-muted); }
+
+  /* ---------- app window ---------- */
+  .mocklabel { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-dim); padding: 0 2px 6px; }
+  .mocklabel.proposed { margin-top: 20px; }
+  .win { background: var(--bg-m2); border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+         margin-bottom: 18px; box-shadow: 0 8px 32px rgba(0,0,0,.5); }
+  .win-bar { display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+             border-bottom: 1px solid var(--border); background: var(--bg-m1); }
+  .win-bar .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bg-p2); }
+  .win-bar .win-title { font-size: 11px; color: var(--text-dim); margin-left: 6px; }
+  .win-body { padding: 0; }
+
+  /* ---------- board header ---------- */
+  .bh { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .bh .title { font-size: 14px; font-weight: 600; flex: 1 1 auto; min-width: 0; }
+  .btn { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 5px;
+         font-size: 12px; font-weight: 500; white-space: nowrap;
+         background: var(--bg-m1); border: 1px solid var(--border); color: var(--text-muted); }
+  .btn.ghost { background: transparent; }
+  .btn.on { background: var(--violet); border-color: var(--violet); color: var(--bg); }
+  .btn.primary { background: var(--violet); border-color: var(--violet); color: var(--bg); }
+  .btn.danger { color: var(--red); border-color: rgba(196,116,110,.45); }
+  .btn.disabled { opacity: .45; }
+  .btn .count { background: rgba(255,255,255,.06); border-radius: 20px; padding: 0 5px; font-size: 11px; color: var(--text); }
+  .btn .count.hot { background: rgba(137,146,167,.22); color: var(--text); }
+  .search { flex: 0 1 200px; display:flex; align-items:center; gap:5px; padding: 4px 8px; border-radius: 5px;
+            background: var(--bg-m1); border: 1px solid var(--border); color: var(--text-dim); font-size: 12px; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
+  .seg span { padding: 4px 8px; font-size: 12px; color: var(--text-dim); }
+  .seg span.on { background: var(--violet); color: var(--bg); }
+  .newspot { border: 1px dashed var(--violet); border-radius: 5px; padding: 3px 8px; font-size: 11px; color: var(--violet); }
+  .ico { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.75;
+         stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+  .ico.big { width: 16px; height: 16px; }
+
+  /* ---------- forge chip (stands in for ForgeIcon.vue) ---------- */
+  .forge { display:inline-flex; align-items:center; justify-content:center; width: 20px; height: 20px;
+           border-radius: 4px; border: 1px solid var(--border-light); font-size: 9px; font-weight: 700;
+           letter-spacing: .02em; color: var(--text-muted); background: var(--bg-p1); flex-shrink: 0; }
+
+  /* ---------- PR list view ---------- */
+  .viewframe { position: relative; }
+  .vhead { display:flex; align-items:center; gap:8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  .vhead .vr { margin-left: auto; display:flex; align-items:center; gap:8px; }
+  .backlink { display:inline-flex; align-items:center; gap:6px; color: var(--semantic-link, #8ba4b0); font-size: 12px; }
+  .tabs { display:flex; align-items:center; gap:4px; padding: 6px 12px 0; border-bottom: 1px solid var(--border); }
+  .tab { padding: 5px 10px; font-size: 12px; color: var(--text-dim); border-bottom: 2px solid transparent; }
+  .tab.on { color: var(--text); border-bottom-color: var(--violet); }
+  .tabs .tright { margin-left:auto; font-size:11px; color: var(--text-dim); padding-bottom: 4px; }
+  .meta { display:flex; align-items:center; gap:8px; padding: 7px 12px; font-size: 11px; color: var(--text-dim); border-bottom: 1px solid var(--border); }
+  .vbody { min-height: 250px; }
+  .prow { display:grid; grid-template-columns: 44px 20px 1fr 190px 92px 96px 118px; gap: 8px; align-items: center;
+          padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .prow.head { color: var(--text-muted); font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
+               background: var(--bg-m1); border-bottom: 1px solid var(--border); }
+  .prow .num { color: var(--text-dim); font-family: ui-monospace, Menlo, monospace; }
+  .prow .ti { min-width:0; }
+  .prow .ti .t1 { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .prow .ti .t2 { display:flex; align-items:center; gap:6px; margin-top: 2px; font-size: 11px; color: var(--text-dim); flex-wrap: wrap; }
+  .prow .who { color: var(--text-muted); font-size: 11px; }
+  .prow .when { color: var(--text-dim); font-size: 11px; }
+  .prow .acts { display:flex; gap:6px; justify-content: flex-end; }
+  .branch { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--aqua);
+            background: rgba(142,164,162,.10); border: 1px solid rgba(142,164,162,.25); border-radius: 4px; padding: 0 5px;
+            max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .boardjoin { display:inline-flex; align-items:center; gap:5px; font-size: 11px; color: var(--text-muted);
+               border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; max-width: 100%; overflow: hidden; }
+  .boardjoin .dotg { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+  .boardjoin.none { border-style: dashed; color: var(--text-dim); }
+  .pill { display:inline-flex; align-items:center; gap:4px; border-radius: 20px; padding: 1px 7px; font-size: 10px;
+          border: 1px solid var(--border-light); color: var(--text-muted); white-space: nowrap; }
+  .pill.warn { color: var(--orange); border-color: rgba(182,146,123,.45); background: rgba(182,146,123,.10); }
+  .pill.ok { color: var(--green); border-color: rgba(135,169,135,.40); background: rgba(135,169,135,.10); }
+  .pill.mut { color: var(--violet); border-color: rgba(137,146,167,.40); background: rgba(137,146,167,.10); }
+  .pill.danger { color: var(--red); border-color: rgba(196,116,110,.45); background: rgba(196,116,110,.10); }
+  .pill.draft { color: var(--text-dim); }
+  .st { display:inline-block; width:8px; height:8px; border-radius:50%; }
+  .st.open { background: var(--green); } .st.closed { background: var(--red); } .st.merged { background: var(--violet); }
+  .vfoot { display:flex; align-items:center; gap:8px; padding: 7px 12px; border-top: 1px solid var(--border);
+           font-size: 11px; color: var(--text-dim); background: var(--bg-m1); }
+  .skel { height: 11px; border-radius: 4px; background: var(--bg-p1); }
+  .skel.w40 { width: 40%; } .skel.w70 { width: 70%; } .skel.w55 { width: 55%; } .skel.w25 { width: 25%; }
+  .statebox { padding: 34px 18px; text-align: center; }
+  .statebox .sh { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  .statebox .sp { font-size: 12px; color: var(--text-dim); max-width: 62ch; margin: 0 auto 12px; }
+  .statebox .sactions { display:flex; gap:8px; justify-content:center; }
+  .glyphbox { width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-m1);
+              display:flex; align-items:center; justify-content:center; margin: 0 auto 10px; color: var(--text-dim); }
+
+  /* ---------- switcher ---------- */
+  .switcher { display:flex; align-items:center; gap:6px; flex-wrap: wrap; margin: 0 0 14px; }
+  .switcher .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-dim); margin-right: 4px; }
+  .chipbtn { font-size: 11px; padding: 3px 9px; border-radius: 20px; border: 1px solid var(--border);
+             background: var(--bg-m1); color: var(--text-muted); cursor: pointer; }
+  .chipbtn[aria-pressed="true"] { background: var(--violet); border-color: var(--violet); color: var(--bg); }
+  /* state containers — NOT `[data-kind]`, which would also match <body> */
+  .k-list, .k-loading, .k-empty, .k-error, .k-denied { display: none; }
+  body[data-kind="list"]   .k-list,   body[data-kind="loading"] .k-loading,
+  body[data-kind="empty"]  .k-empty,  body[data-kind="error"]   .k-error,
+  body[data-kind="denied"] .k-denied { display: block; }
+  .tabbody { display: none; }
+  body[data-tab="open"]   .tb-open,   body[data-tab="closed"] .tb-closed { display: block; }
+  .confirmwrap { display: none; }
+  body[data-confirm="on"] .confirmwrap { display: block; }
+  body[data-confirm="on"] .listdim { opacity: .35; }
+  .modalback { position: absolute; inset: 0; background: rgba(0,0,0,.55); border-radius: 8px; }
+  .dialog { position: relative; width: 100%; max-width: 420px; margin: 64px auto 0; background: var(--bg-m1);
+            border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 24px 60px rgba(0,0,0,.6); }
+  .dialog .dh { padding: 16px 18px 6px; font-size: 15px; font-weight: 600; }
+  .dialog .db { padding: 0 18px 14px; font-size: 13px; color: var(--text-muted); }
+  .dialog .db .subject { display:block; margin: 8px 0; padding: 8px 10px; border: 1px solid var(--border);
+                         border-radius: 6px; background: var(--bg-m2); color: var(--text); font-size: 12px; }
+  .dialog .df { padding: 0 18px 16px; display:flex; gap:8px; justify-content: flex-end; }
+  .toast { position: absolute; left: 50%; transform: translateX(-50%); bottom: 14px; display:flex; align-items:center; gap:8px;
+           background: var(--bg-p1); border: 1px solid var(--border-light); border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--text); }
+
+  /* ---------- notes ---------- */
+  .notes h3 { margin-top: 0; }
+  ol.note { list-style: none; counter-reset: n; }
+  ol.note li { position: relative; padding: 0 0 11px 24px; font-size: 12px; color: var(--text-muted); }
+  ol.note li::before { counter-increment: n; content: counter(n); position: absolute; left: 0; top: 1px;
+    width: 16px; height: 16px; border-radius: 50%; background: var(--bg-p1); border: 1px solid var(--border-light);
+    color: var(--violet); font-size: 10px; text-align: center; line-height: 15px; }
+  ol.note li b { color: var(--text); font-weight: 600; }
+  ol.note li .mono { color: var(--aqua); }
+  ul.plain { list-style: none; font-size: 12px; color: var(--text-muted); }
+  ul.plain li { padding: 3px 0 3px 14px; position: relative; }
+  ul.plain li::before { content: ""; position: absolute; left: 2px; top: 10px; width: 4px; height: 4px; border-radius: 50%; background: var(--text-dim); }
+  .ok::before { background: var(--green) !important; }
+  .no::before { background: var(--red) !important; }
+  footer { margin-top: 30px; padding-top: 12px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 11px; }
+</style>
+</head>
+<body data-kind="list" data-tab="open" data-confirm="off">
+<div class="page">
+
+  <h1>Wireframe — a <span style="color:var(--violet)">Pull request / Merge request</span> button on the kanban board</h1>
+  <p class="sub">
+    Card: <b>“add a button pull request or merge request in kanban”</b> — “for now just a button to get list pull request and
+    close request”. Read as: <b>one board-level button → a list of the repo’s open PRs/MRs → close one from that list.</b>
+    v1 is list + close; everything else is named in §7. Nothing here is implemented — this is the artifact for approval.
+  </p>
+  <div class="flow">
+    <span class="step">kanban board</span><span class="arrow">→</span>
+    <span class="step now">button in the board header</span><span class="arrow">→</span>
+    <span class="step">PR list view</span><span class="arrow">→</span>
+    <span class="step">Close → confirm</span><span class="arrow">→</span>
+    <span class="step">row leaves the list, card badge flips</span>
+  </div>
+
+  <div class="switcher">
+    <span class="lbl">live states</span>
+    <button class="chipbtn" data-frame="list"    aria-pressed="true"  onclick="setKind('list')">loaded</button>
+    <button class="chipbtn" data-frame="loading" aria-pressed="false" onclick="setKind('loading')">loading</button>
+    <button class="chipbtn" data-frame="empty"   aria-pressed="false" onclick="setKind('empty')">empty</button>
+    <button class="chipbtn" data-frame="error"   aria-pressed="false" onclick="setKind('error')">forge error</button>
+    <button class="chipbtn" data-frame="denied"  aria-pressed="false" onclick="setKind('denied')">not a repo / no forge CLI</button>
+    <span class="lbl" style="margin-left:10px">tab</span>
+    <button class="chipbtn" data-tabbtn="open"   aria-pressed="true"  onclick="setTab('open')">Open</button>
+    <button class="chipbtn" data-tabbtn="closed" aria-pressed="false" onclick="setTab('closed')">Closed</button>
+    <span class="lbl" style="margin-left:10px">close</span>
+    <button class="chipbtn" data-confirmbtn="on" aria-pressed="false" onclick="setConfirm()">confirm dialog</button>
+  </div>
+
+  <div class="cols">
+    <div class="mocks">
+
+      <!-- ============ §1 PLACEMENT ============ -->
+      <h2><span class="n">§1</span>Where the button lives</h2>
+      <p class="lead">The board header already carries six controls. The new one is a <b>board-level</b> action, so it belongs
+        with them — and the board already knows its repo (<code>item.path</code>), which is the whole reason a PR list can be
+        asked for at all.</p>
+
+      <div class="mocklabel">today — KanbanView.vue:1519 header (six controls, no PR affordance)</div>
+      <div class="win">
+        <div class="win-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          <span class="win-title">pabrik — workspace / kanban</span></div>
+        <div class="bh" data-testid="board-header-today">
+          <span class="title">in_review_task</span>
+          <span class="search">⌕ Search tasks…</span>
+          <span class="seg"><span>▦ Columns</span><span class="on">☰ Rows</span></span>
+          <span class="btn"><svg class="ico" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg>Add task</span>
+          <span class="btn"><svg class="ico" viewBox="0 0 24 24"><path d="M6 21V9a9 9 0 0 0 9 9"/><path d="M15 18a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M3 6a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/></svg>Settings</span>
+          <span class="btn"><svg class="ico" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/></svg>Agent</span>
+        </div>
+        <div class="win-body" style="padding:10px 12px">
+          <div class="dim" style="font-size:12px">… columns of cards …</div>
+        </div>
+      </div>
+
+      <div class="mocklabel proposed">proposed — one button, left of Settings, forge-aware label + open count ① ②</div>
+      <div class="win">
+        <div class="win-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          <span class="win-title">pabrik — workspace / kanban</span></div>
+        <div class="bh" data-testid="board-header-proposed">
+          <span class="title">in_review_task</span>
+          <span class="search">⌕ Search tasks…</span>
+          <span class="seg"><span>▦ Columns</span><span class="on">☰ Rows</span></span>
+          <span class="btn"><svg class="ico" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg>Add task</span>
+          <span class="btn" data-testid="kanban-view-ITEM-pr-button" style="border-color:var(--violet);color:var(--text)">
+            <svg class="ico" viewBox="0 0 24 24"><path d="M15 18a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M3 6a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M6 21V9a9 9 0 0 0 9 9"/></svg>
+            Pull requests <span class="count hot">8</span>
+          </span>
+          <span class="btn"><svg class="ico" viewBox="0 0 24 24"><path d="M6 21V9a9 9 0 0 0 9 9"/><path d="M15 18a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M3 6a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/></svg>Settings</span>
+          <span class="btn"><svg class="ico" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/></svg>Agent</span>
+        </div>
+        <div class="win-body" style="padding:10px 12px">
+          <div class="dim" style="font-size:12px">… columns of cards …</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0">Three candidate placements — pick one (D1)</h3>
+        <table>
+          <thead><tr><th style="width:34px"></th><th style="width:210px">Where</th><th>What it buys</th><th>What it costs</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><span class="pill mut">A · recommended</span></td>
+              <td><b>Board header button</b><br><span class="dim">KanbanView header, before Settings</span></td>
+              <td>Answers the literal ask (“a button … in kanban”); sees the whole repo, so a PR whose card was deleted is still closeable; one place, one count badge.</td>
+              <td>One more control in a header that already wraps; repo-wide, so it is not scoped to what you are looking at.</td>
+            </tr>
+            <tr>
+              <td><span class="pill">B</span></td>
+              <td><b>Card git-branch badge menu</b><br><span class="dim">GitBranchMenu.vue, already exists</span></td>
+              <td>The PR is found by the branch you are pointing at (exact join: <span class="mono">worktree/&lt;slug&gt;-&lt;ts&gt;</span>); “Close this PR” sits next to “Open PR in new tab”.</td>
+              <td>Not a list — one PR at a time, and only for a card you can see. It is the natural v1.1, not the v1 ask.</td>
+            </tr>
+            <tr>
+              <td><span class="pill">C</span></td>
+              <td><b>Column header ⋮ menu</b><br><span class="dim">KanbanColumn.vue, already exists</span></td>
+              <td>Fits the existing “Run all agents / Stop all agents” bulk-action family.</td>
+              <td>Columns are not PR scopes. A column of 40 merged cards would need a rule we would have to invent (per-column? per-board? filtered by what?).</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="notes">
+        <h3>Annotations</h3>
+        <ol class="note">
+          <li><b>Label is forge-aware, never hardcoded.</b> Text comes from <span class="mono">helpers/forgeWording.ts</span> —
+            “Pull requests” on GitHub, “Merge requests” on GitLab. A GitLab user reading “Pull requests” is the same class
+            of bug that module was written to kill.</li>
+          <li><b>The count is open change requests only</b> (the same number as the forge’s own “Pull requests 8” tab, which
+            matches this repo today). It is <span class="mono">''</span> — no badge — until the first fetch answers; it is
+            never a fake 0, because “0 open” and “we could not ask” must look different.</li>
+          <li><b>Icon is <span class="mono">UiIcon name="pr"</span></b> — the name already exists
+            (<span class="mono">components/ui/icons.ts:157</span>). No emoji anywhere in this surface: the button, the rows
+            and the dialog all render inline SVG or the allowed typographic set (↗ ↻ ✕ ⋮ ⚠).</li>
+          <li><b>The button is disabled with a visible reason, not a tooltip</b>, when the board has no project root
+            (<span class="mono">item.path</span> is null — legacy boards; the yellow “Set project root” banner already
+            handles that case) or when the forge has no CLI (<span class="mono">generic</span> provider). A mute greyed
+            button is how a user learns nothing.</li>
+          <li><b>Width honesty:</b> the header is <span class="mono">flex-wrap: wrap</span> already, and the density toggle
+            only renders in row mode. Adding a labelled button costs ≈120px at the 280px side-panel widths this app runs at.
+            If it wraps badly, the fallback is icon-only + count with the label in <span class="mono">title</span> — decided
+            by measurement, not taste.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ §2 THE LIST VIEW ============ -->
+  <h2><span class="n">§2</span>The list view — what the button opens</h2>
+  <p class="lead">
+    A full-cover view over the board, exactly the shell the task detail already uses
+    (<code>KanbanView.vue:1833</code> — <code>absolute inset-0 z-30</code>, board stays mounted underneath, browser Back
+    returns to the board). Full-cover rather than a modal because this is a table: eight rows of title + branch + card, and
+    the forge’s own page for comparison is full width. Real rows below from <code>gh pr list --state open</code> in this repo.
+  </p>
+
+  <div class="win viewframe" data-testid="pr-list-view">
+    <div class="listdim">
+      <div class="vhead">
+        <span class="backlink">‹ Back to board</span>
+        <span style="color:var(--border-light)">|</span>
+        <svg class="ico big" viewBox="0 0 24 24"><path d="M15 18a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M3 6a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M6 21V9a9 9 0 0 0 9 9"/></svg>
+        <span style="font-size:14px;font-weight:600">Pull requests</span>
+        <span class="forge" data-forge="github" title="ForgeIcon.vue — provider=&quot;github&quot;">GH</span>
+        <span class="mono dim">ginwa123/pabrik</span>
+        <span class="vr">
+          <span class="btn" title="Re-ask the forge now"><svg class="ico" viewBox="0 0 24 24" style="stroke-width:2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1 -6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>Refresh</span>
+          <span class="btn ghost" style="color:var(--text-muted)">New pull request <span aria-hidden="true">↗</span></span>
+        </span>
+      </div>
+      <div class="tabs">
+        <span class="tab on">Open <span class="dim">8</span></span>
+        <span class="tab">Closed <span class="dim">900</span></span>
+        <span class="tright">via <span class="mono">gh</span> · checked just now</span>
+      </div>
+      <div class="meta">
+        <span class="pill mut"><svg class="ico" viewBox="0 0 24 24" style="width:11px;height:11px"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m8 12 3 3 5-5"/></svg>Only this board <span class="dim">· 5 of 8</span></span>
+        <span class="dim">|</span>
+        <span class="dim">sorted by updated ↓</span>
+        <span style="margin-left:auto" class="dim">Close here · review, checks and merge stay on the task’s PR tab</span>
+      </div>
+
+      <div class="vbody">
+        <!-- ---------- loaded ---------- -->
+        <div class="k-list">
+          <div class="tabbody tb-open">
+            <div class="prow head">
+              <span>#</span><span></span><span>Title</span><span>Board card</span><span>Author</span><span>Updated</span><span></span>
+            </div>
+            <div class="prow" data-testid="pr-row-909">
+              <span class="num">909</span>
+              <span class="forge" data-forge="github">GH</span>
+              <span class="ti">
+                <span class="t1">fix(settings): remove redundant workspace-name box</span>
+                <span class="t2"><span class="branch">worktree/why-theres-a-box-workspace-1791785919283</span><span class="dim">→ main</span></span>
+              </span>
+              <span><span class="boardjoin"><span class="dotg" style="background:var(--yellow)"></span>in_review_task · why theres a box…</span></span>
+              <span class="who">ginwa123</span>
+              <span class="when">2 min ago</span>
+              <span class="acts"><span class="btn ghost" title="Open on GitHub"><span aria-hidden="true">↗</span></span><span class="btn danger">Close</span></span>
+            </div>
+            <div class="prow" data-testid="pr-row-898">
+              <span class="num">898</span>
+              <span class="forge" data-forge="github">GH</span>
+              <span class="ti">
+                <span class="t1">Add Claude Code CLI backend as a <span class="mono">backend</span> discriminator (Phase 1)</span>
+                <span class="t2"><span class="branch">worktree/add-support-claude-code-ai-agent-1791739224845</span><span class="dim">→ main</span><span class="pill">draft</span></span>
+              </span>
+              <span><span class="boardjoin"><span class="dotg" style="background:var(--yellow)"></span>in_review_task · Add support clau…</span></span>
+              <span class="who">ginwa123</span>
+              <span class="when">13 h ago</span>
+              <span class="acts"><span class="btn ghost"><span aria-hidden="true">↗</span></span><span class="btn danger">Close</span></span>
+            </div>
+            <div class="prow" data-testid="pr-row-893">
+              <span class="num">893</span>
+              <span class="forge" data-forge="github">GH</span>
+              <span class="ti">
+                <span class="t1">feat(secrets): seal workspace secret values at rest + narrow the credential store</span>
+                <span class="t2"><span class="branch">worktree/workspace-secrets-hardening-impl</span><span class="dim">→ main</span><span class="pill warn">⚠ conflicts</span></span>
+              </span>
+              <span><span class="boardjoin"><span class="dotg" style="background:var(--yellow)"></span>in_review_task · any idea how to m…</span></span>
+              <span class="who">ginwa123</span>
+              <span class="when">18 h ago</span>
+              <span class="acts"><span class="btn ghost"><span aria-hidden="true">↗</span></span><span class="btn danger">Close</span></span>
+            </div>
+            <div class="prow" data-testid="pr-row-890">
+              <span class="num">890</span>
+              <span class="forge" data-forge="github">GH</span>
+              <span class="ti">
+                <span class="t1">docs(secrets): plan — hardening the workspace secret value at rest</span>
+                <span class="t2"><span class="branch">worktree/any-idea-how-to-make-key-value-more-secure-1791715847013</span><span class="dim">→ main</span></span>
+              </span>
+              <span><span class="boardjoin"><span class="dotg" style="background:var(--yellow)"></span>in_review_task · any idea how to m…</span></span>
+              <span class="who">ginwa123</span>
+              <span class="when">19 h ago</span>
+              <span class="acts"><span class="btn ghost"><span aria-hidden="true">↗</span></span><span class="btn danger">Close</span></span>
+            </div>
+            <div class="prow" data-testid="pr-row-878">
+              <span class="num">878</span>
+              <span class="forge" data-forge="github">GH</span>
+              <span class="ti">
+                <span class="t1">test(chatview): measure the send-follow with the app’s own bottom ruler</span>
+                <span class="t2"><span class="branch">worktree/issue-chatview-lazy-1791636173013</span><span class="dim">→ main</span></span>
+              </span>
+              <span><span class="boardjoin"><span class="dotg" style="background:var(--yellow)"></span>Chatview when sse data…</span></span>
+              <span class="who">ginwa123</span>
+              <span class="when">2 d ago</span>
+              <span class="acts"><span class="btn ghost"><span aria-hidden="true">↗</span></span><span class="btn danger">Close</span></span>
+            </div>
+            <div class="prow" data-testid="pr-row-788">
+              <span class="num">788</span>
+              <span class="forge" data-forge="github">GH</span>
+              <span class="ti">
+                <span class="t1">fix(windows-ci): colliding row ids + a liveness probe that called live servers dead</span>
+                <span class="t2"><span class="branch">worktree/fix-windows-ci</span><span class="dim">→ main</span></span>
+              </span>
+              <span><span class="boardjoin none">no card on this board</span></span>
+              <span class="who">ginwa123</span>
+              <span class="when">7 d ago</span>
+              <span class="acts"><span class="btn ghost"><span aria-hidden="true">↗</span></span><span class="btn danger">Close</span></span>
+            </div>
+            <div class="prow" data-testid="pr-row-704">
+              <span class="num">704</span>
+              <span class="forge" data-forge="github">GH</span>
+              <span class="ti">
+                <span class="t1">docs(plan): a real-data, isolated functional UI suite for the Android client</span>
+                <span class="t2"><span class="branch">worktree/android-functional-ui</span><span class="dim">→ main</span></span>
+              </span>
+              <span><span class="boardjoin none">no card on this board</span></span>
+              <span class="who">ginwa123</span>
+              <span class="when">2 w ago</span>
+              <span class="acts"><span class="btn ghost"><span aria-hidden="true">↗</span></span><span class="btn danger">Close</span></span>
+            </div>
+            <div class="prow" data-testid="pr-row-703">
+              <span class="num">703</span>
+              <span class="forge" data-forge="github">GH</span>
+              <span class="ti">
+                <span class="t1">docs: plan for skill evals (evaluate the skills an agent actually used)</span>
+                <span class="t2"><span class="branch">worktree/skill-evals-plan</span><span class="dim">→ main</span></span>
+              </span>
+              <span><span class="boardjoin none">no card on this board</span></span>
+              <span class="who">ginwa123</span>
+              <span class="when">2 w ago</span>
+              <span class="acts"><span class="btn ghost"><span aria-hidden="true">↗</span></span><span class="btn danger">Close</span></span>
+            </div>
+          </div>
+          <div class="tabbody tb-closed">
+            <div class="prow head">
+              <span>#</span><span></span><span>Title</span><span>Board card</span><span>Author</span><span>Closed</span><span></span>
+            </div>
+            <div class="prow" data-testid="pr-row-closed-908">
+              <span class="num">908</span>
+              <span class="forge" data-forge="github">GH</span>
+              <span class="ti">
+                <span class="t1">Re-running the installer updates in place or reports up-to-date</span>
+                <span class="t2"><span class="branch">worktree/install-update</span><span class="dim">→ main</span><span class="pill ok">merged</span></span>
+              </span>
+              <span><span class="boardjoin"><span class="dotg" style="background:var(--violet)"></span>merged · create a installation…</span></span>
+              <span class="who">ginwa123</span>
+              <span class="when">1 h ago</span>
+              <span class="acts"><span class="btn ghost"><span aria-hidden="true">↗</span></span></span>
+            </div>
+            <div class="prow" data-testid="pr-row-closed-812">
+              <span class="num">812</span>
+              <span class="forge" data-forge="github">GH</span>
+              <span class="ti">
+                <span class="t1">chore: drop the experimental split diff</span>
+                <span class="t2"><span class="branch">worktree/split-diff-experiment</span><span class="dim">→ main</span></span>
+              </span>
+              <span><span class="boardjoin none">no card on this board</span></span>
+              <span class="who">ginwa123</span>
+              <span class="when">3 d ago</span>
+              <span class="acts"><span class="btn ghost"><span aria-hidden="true">↗</span></span><span class="btn ghost muted">Reopen</span></span>
+            </div>
+            <div class="vfoot">Closed and merged are read-only here in v1 — no reopen, no delete branch.</div>
+          </div>
+        </div>
+
+        <!-- ---------- loading ---------- -->
+        <div class="k-loading" data-testid="pr-list-loading">
+          <div class="prow"><span class="skel w25"></span><span class="skel w25"></span><span><span class="skel w70"></span></span><span class="skel w55"></span><span class="skel w55"></span><span class="skel w55"></span><span></span></div>
+          <div class="prow"><span class="skel w25"></span><span class="skel w25"></span><span><span class="skel w55"></span></span><span class="skel w55"></span><span class="skel w55"></span><span class="skel w55"></span><span></span></div>
+          <div class="prow"><span class="skel w25"></span><span class="skel w25"></span><span><span class="skel w40"></span></span><span class="skel w55"></span><span class="skel w55"></span><span class="skel w55"></span><span></span></div>
+        </div>
+
+        <!-- ---------- empty ---------- -->
+        <div class="k-empty statebox" data-testid="pr-list-empty">
+          <div class="glyphbox"><svg class="ico big" viewBox="0 0 24 24"><path d="M15 18a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M3 6a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M6 21V9a9 9 0 0 0 9 9"/></svg></div>
+          <div class="sh">No open pull requests</div>
+          <div class="sp">The forge answered: <span class="mono">ginwa123/pabrik</span> has zero open change requests.
+            A card gets one when its agent runs <span class="mono">set_pull_request</span>, or from the task chat’s
+            “Create pull request”.</div>
+          <div class="sactions"><span class="btn">↻ Refresh</span><span class="btn ghost">New pull request <span aria-hidden="true">↗</span></span></div>
+        </div>
+
+        <!-- ---------- forge error ---------- -->
+        <div class="k-error statebox" data-testid="pr-list-error">
+          <div class="glyphbox" style="color:var(--red);border-color:rgba(196,116,110,.4)">⚠</div>
+          <div class="sh">GitHub could not be asked</div>
+          <div class="sp"><span class="mono">gh</span> exited 4: <i>To get started with GitHub CLI, please run: gh auth login</i><br>
+            The list is <b>unknown</b>, not empty — nothing below this line is a claim about your pull requests.</div>
+          <div class="sactions"><span class="btn">↻ Retry</span><span class="btn ghost">Copy error</span></div>
+        </div>
+
+        <!-- ---------- denied (button should not have opened) ---------- -->
+        <div class="k-denied statebox" data-testid="pr-list-denied">
+          <div class="glyphbox">⚠</div>
+          <div class="sh">This board has no repo to ask</div>
+          <div class="sp">Two ways to land here, both of which the <b>button itself</b> should have prevented —
+            it renders disabled with this sentence as its <span class="mono">title</span>:
+            the board has no project root, or the repo’s forge has no CLI (<span class="mono">generic</span> provider).</div>
+          <div class="sactions"><span class="btn">Choose project root…</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------- close confirm ---------- -->
+    <div class="confirmwrap" data-testid="pr-close-confirm">
+      <div class="modalback"></div>
+      <div class="dialog">
+        <div class="dh">Close pull request #893?</div>
+        <div class="db">
+          <span class="subject"><b>feat(secrets): seal workspace secret values at rest…</b><br>
+            <span class="mono dim">ginwa123/pabrik · worktree/workspace-secrets-hardening-impl → main</span></span>
+          Closing happens on GitHub, not locally. The branch, the worktree and the board card are untouched —
+          <b>and the card does not move columns</b>.
+          <span class="dim" style="display:block;margin-top:8px">A closing comment is offered on GitHub only —
+            <span class="mono">glab mr close</span> has no comment flag, so v1 sends none rather than a comment that
+            silently never lands on GitLab.</span>
+        </div>
+        <div class="df"><span class="btn">Cancel</span><span class="btn danger" style="color:var(--red)">Close pull request</span></div>
+      </div>
+    </div>
+
+    <!-- ---------- post-close toast ---------- -->
+    <div class="toast" data-testid="pr-close-toast" style="display:none">
+      <span class="st closed"></span>Closed #893 · <span class="mono dim">worktree/workspace-secrets-hardening-impl</span>
+      <span class="dim">— the card’s branch badge flips to “PR closed” now, not in 60 s</span>
+    </div>
+  </div>
+
+  <div class="cols">
+    <div class="mocks">
+      <h3 style="margin-top:6px">Notes on the list</h3>
+      <ol class="note">
+        <li><b>The forge is named in the header, and in the verb of every action.</b> “Pull request” / “merge request”,
+          “Close” / “Close”, <span class="mono">via gh</span> / <span class="mono">via glab</span> — all from
+          <span class="mono">forgeWording()</span>, with the forge mark from the existing
+          <span class="mono">ForgeIcon.vue</span>. Nothing in this surface hardcodes GitHub prose.</li>
+        <li><b>The board join is the reason this belongs in kanban rather than in a browser tab.</b> Every card already
+          carries <span class="mono">task.git_branch</span>, and this repo’s PRs are opened from exactly that branch
+          (<span class="mono">worktree/&lt;slug&gt;-&lt;ts&gt;</span>, verified on the 8 open PRs today) — so the match is
+          exact, not fuzzy. It is a <b>client-side</b> join against <span class="mono">item.tasks</span>: no extra request,
+          and it works while the list is loaded. The badge names the column too, so the row says where that work sits.</li>
+        <li><b>“no card on this board” is a first-class row, not a filter.</b> A PR whose card was deleted, or that
+          predates the board, is exactly the kind of thing you want to find and close — the reason a board-scoped list
+          would be worse than a repo-scoped one.</li>
+        <li><b>⚠ conflicts reuses the vocabulary the card badge already speaks</b>
+          (<span class="mono">isPrConflictValue()</span> in <span class="mono">prStatusCache.ts</span>: GitHub
+          <span class="mono">CONFLICTING/DIRTY</span>, GitLab <span class="mono">CONFLICTED/NOT_MERGEABLE</span>). One
+          conflict rule for the whole app, or the row and the card will disagree.</li>
+        <li><b>Close is the only write in v1, and it is the quiet colour</b> — outline red, never a filled primary. The
+          filled button in this app means “the thing you came to do”, and coming here means <i>looking</i>.</li>
+        <li><b>Merge is deliberately absent.</b> It shipped on the PR tab (<span class="mono">MergeBox.vue</span>,
+          <span class="mono">POST /api/git/pr/merge</span> — PR #895) with a review of merge state, head sha and the
+          delete-branch decision in front of it. A bare “Merge” in a list would be a second, weaker door onto the same
+          write. The row links to the board instead.</li>
+        <li><b>“Only this board” is a filter, not a second request</b> — the join is already in memory. Default <b>on</b>
+          is the honest default for a board surface: you came from the board. The count is stated
+          (<span class="mono">5 of 8</span>) so a hidden row is never a mystery.</li>
+        <li><b>Loading, empty and error are three different pictures.</b> This is the whole point of the
+          Effect-TS rule: the state comes from a typed <span class="mono">Effect&lt;A, PrListError&gt;</span>, so
+          “no open pull requests” can never be what a failed <span class="mono">gh</span> call looks like. Empty states
+          say <i>who answered</i>; error states say <i>what failed and what to do</i>.</li>
+      </ol>
+    </div>
+    <div class="notes">
+      <h3>Annotations</h3>
+      <ol class="note">
+        <li><span class="mono">‹ Back to board</span> drops <span class="mono">?prs=</span> with
+          <span class="mono">router.replace</span>, so browser Back and this link do the same thing.</li>
+        <li>The tab strip is the <b>only</b> view state here worth a URL param, and it uses the same one as the view:
+          <span class="mono">?prs=open|closed</span>. A local <span class="mono">ref</span> for it would be a house-rule
+          violation — refresh and Back/Forward have to restore the tab.</li>
+        <li><span class="mono">↻ Refresh</span> is manual in v1 (D5). The PR tab’s 30 s poll is not inherited: a table of
+          repo-wide PRs is not worth a subprocess every 30 s while it is open.</li>
+        <li><b>“New pull request ↗” links out</b> — creating one already exists in the task chat
+          (<span class="mono">CreatePrDialog</span>, opened from <span class="mono">ChatView.vue:6130</span>), and that one
+          knows which worktree and base branch it is creating from. This button must not become a second, dumber form (D4).</li>
+        <li>Row actions are two hits: <span class="mono">↗</span> (open on the forge) and <b>Close</b>. No kebab menu —
+          a menu for two items costs a click and hides the destructive one.</li>
+        <li>The confirm dialog reuses <span class="mono">dialogs/ConfirmDialog.vue</span> (Teleport, backdrop, Esc) and
+          names the branch, because “close” is a write on a remote and the branch is what ties it back to a card here.</li>
+        <li><span class="mono">data-testid</span>s are drawn where they belong: <span class="mono">kanban-view-&lt;itemId&gt;-pr-button</span>
+          follows the existing board-header convention; row ids (<span class="mono">pr-row-893</span>) make the close flow
+          assertable without a live forge.</li>
+      </ol>
+    </div>
+  </div>
+
+  <!-- ============ §3 CLOSE FLOW ============ -->
+  <h2><span class="n">§3</span>The close flow, step by step</h2>
+  <p class="lead">Close is a write on a remote with other people’s reviews on it. Four things must be true before the button is
+    live, and the fourth is the one that keeps the board honest.</p>
+  <div class="cols">
+    <div class="mocks">
+      <table class="fixed">
+        <colgroup><col style="width:52px"><col style="width:190px"><col><col></colgroup>
+        <thead><tr><th>Step</th><th>Screen</th><th>What happens</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">1</td><td><b>Row → Close</b></td>
+            <td>Nothing is sent. The confirm dialog opens with the PR name, repo, <span class="mono">head → base</span> and
+              the sentence “the card does not move columns”.</td></tr>
+          <tr><td class="mono">2</td><td><b>Confirm → Close pull request</b></td>
+            <td>The row enters a closing state: the Close button becomes a spinner, every other row’s Close is disabled, the
+              dialog stays until the answer arrives. Esc / backdrop / Cancel abort <b>before</b> the request; after it, no —
+              the request is already out and a cancel button that cancels nothing is a lie.</td></tr>
+          <tr><td class="mono">3</td><td><b>Answer</b></td>
+            <td><span class="mono">POST /api/git/pr/close</span> returns a <b>re-read</b> of the forge’s status, not an exit
+              code (§6). <span class="mono">closed: true</span> → the row leaves the Open list. <span class="mono">closed:
+              false</span> + <span class="mono">detail</span> → an error banner with the forge’s own sentence and Retry; the
+              row stays where it was.</td></tr>
+          <tr><td class="mono">4</td><td><b>After</b></td>
+            <td>Toast (<span class="mono">Closed #893 · worktree/…</span>), the open count drops by one on the board
+              button, and <b>the card’s branch badge flips to “PR closed” immediately</b> — one
+              <span class="mono">invalidatePrStatus(cwd, branch)</span> call, because the shared cache has a 60 s TTL and
+              the user just watched the thing change.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>After a close — the row is gone. Where did it go?</h3>
+      <div class="win" style="margin-bottom:8px">
+        <div class="tabs" style="padding-top:6px">
+          <span class="tab on">Open <span class="dim">7</span></span>
+          <span class="tab">Closed <span class="dim">901</span></span>
+          <span class="tright">just now: #893 closed</span>
+        </div>
+        <div class="vfoot">The Closed tab is one flag on the same request — and without it a close is indistinguishable
+          from a row that vanished. That is why it is in v1 (D3), not deferred.</div>
+      </div>
+    </div>
+    <div class="notes">
+      <h3>Annotations</h3>
+      <ol class="note">
+        <li><b>No optimistic removal.</b> The row stays until the forge says closed. A list that drops the row on click
+          and re-adds it on failure teaches the user to distrust the list.</li>
+        <li><b>No auto-move of the card.</b> The board’s own contract says only a human moves a card into
+          <span class="mono">merged</span>, and that question was already answered “no auto-move” on the merge box
+          (<span class="mono">task_1791718426390_4</span>). Closing a PR on the board moves nothing on the board.</li>
+        <li><b>No <span class="mono">--delete-branch</span> in v1 (D6).</b> The board’s branches are the session worktrees
+          — deleting one from a list row would delete the directory an agent is standing in. The forge page still offers it.</li>
+        <li><b>Errors are sentences from the forge</b>, capped and trimmed by the same
+          <span class="mono">setFetchDetail</span> discipline the status/merge handlers use. “gh exited 1” is not a message;
+          “Pull request #893 is not open” is.</li>
+        <li><b>The card badge invalidation is part of the change, not a nicety.</b>
+          <span class="mono">prStatusCache.ts</span> exposes only a test-only <span class="mono">clearPrStatusCache()</span>
+          today; this work adds a per-key invalidation so one close does not nuke the board’s 30 cached branches.</li>
+      </ol>
+    </div>
+  </div>
+
+  <!-- ============ §4 STATE MATRIX ============ -->
+  <h2><span class="n">§4</span>State matrix — every state, and what renders</h2>
+  <table>
+    <thead><tr><th style="width:150px">State</th><th style="width:220px">Trigger</th><th>What the user sees</th><th style="width:180px">Where it lives in code</th></tr></thead>
+    <tbody>
+      <tr><td><b>Closed</b> (button idle)</td><td>board opens</td>
+        <td>Header button, no count badge yet.</td><td>KanbanView header</td></tr>
+      <tr><td><b>Counted</b></td><td>first list answer</td>
+        <td>Button shows <span class="mono">Pull requests 8</span>; count = open.</td><td>KanbanView (list state)</td></tr>
+      <tr><td><b>Loading</b></td><td>open the view / ↻</td><td>Skeleton rows; header + tabs already drawn so the layout does not jump.</td><td><span class="mono">k-loading</span></td></tr>
+      <tr><td><b>Loaded · open</b></td><td>200, ≥1 item</td><td>Table, tab strip with counts, “Only this board” filter.</td><td><span class="mono">k-list .tb-open</span></td></tr>
+      <tr><td><b>Loaded · closed</b></td><td><span class="mono">?prs=closed</span></td><td>Same table, closed/merged rows, read-only actions.</td><td><span class="mono">k-list .tb-closed</span></td></tr>
+      <tr><td><b>Empty</b></td><td>200, 0 items</td><td>“No open pull requests” + who answered + Refresh + link out to create.</td><td><span class="mono">k-empty</span></td></tr>
+      <tr><td><b>Forge error</b></td><td>non-zero exit, timeout, no auth, network</td>
+        <td>Error card: forge named, program named, CLI’s own sentence, Retry + Copy error. <b>Never rendered as an empty list.</b></td><td><span class="mono">k-error</span></td></tr>
+      <tr><td><b>No CLI</b></td><td>provider <span class="mono">generic</span></td>
+        <td>Button disabled with the reason as its <span class="mono">title</span>; the view is never reached.</td><td>KanbanView (button)</td></tr>
+      <tr><td><b>No project root</b></td><td><span class="mono">item.path</span> null</td>
+        <td>Same, and the existing yellow “Set project root” banner is the way out.</td><td>KanbanView (button)</td></tr>
+      <tr><td><b>Confirm open</b></td><td>row → Close</td><td>Backdrop + dialog over the dimmed list; PR + branch named.</td><td>ConfirmDialog</td></tr>
+      <tr><td><b>Closing</b></td><td>confirm → Close</td><td>Row-level spinner, sibling Close buttons disabled, dialog still up.</td><td>row state</td></tr>
+      <tr><td><b>Close failed</b></td><td>non-zero exit / still open</td><td>Inline error above the table with the forge’s sentence + Retry; row unchanged.</td><td>banner</td></tr>
+      <tr><td><b>Closed ok</b></td><td><span class="mono">closed: true</span></td><td>Row leaves Open, count −1, toast, card badge invalidated.</td><td>toast + store</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ============ §5 URL + EVENTS ============ -->
+  <h2><span class="n">§5</span>URL contract and the one shared rule</h2>
+  <div class="cols">
+    <div class="mocks">
+      <table>
+        <thead><tr><th style="width:210px">URL</th><th style="width:150px">Means</th><th>Written by</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">/app/…/kanban/&lt;itemId&gt;</td><td>board, nothing open</td><td>—</td></tr>
+          <tr><td class="mono">?prs=open</td><td>PR list, Open tab</td><td>the header button (<span class="mono">router.push</span>)</td></tr>
+          <tr><td class="mono">?prs=closed</td><td>PR list, Closed tab</td><td>the tab (<span class="mono">router.replace</span>)</td></tr>
+          <tr><td class="mono">?prs=open&amp;sorts=…&amp;layout=rows</td><td>siblings untouched</td><td>the existing board URL builder</td></tr>
+          <tr><td class="mono">?detail=&lt;taskId&gt;</td><td>unchanged, unrelated</td><td>existing</td></tr>
+        </tbody>
+      </table>
+      <ul class="plain" style="margin-top:10px">
+        <li class="ok">Opening the view is navigation → <span class="mono">router.push</span>, so Back returns to the board.</li>
+        <li class="ok">Switching the tab inside it is a view switch → <span class="mono">router.replace</span>, so it does not stack history.</li>
+        <li class="ok">The tab is read back on mount, so a shared link opens on the Closed tab.</li>
+        <li class="no">A local <span class="mono">ref</span> for “is the PR list open” or “which tab” — unreachable by refresh, Back/Forward and shared links.</li>
+        <li class="no">Dropping <span class="mono">sorts</span>/<span class="mono">layout</span>/<span class="mono">detail</span> when writing <span class="mono">prs</span> — the board already has a builder for exactly this reason.</li>
+      </ul>
+    </div>
+    <div class="notes">
+      <h3>The board join, precisely</h3>
+      <ol class="note">
+        <li>Row ← <span class="mono">head_ref</span> (GitHub <span class="mono">headRefName</span> / GitLab
+          <span class="mono">source_branch</span>).</li>
+        <li>Card ← <span class="mono">item.tasks[].git_branch</span>, exact string equality. No prefix matching: two cards
+          whose slugs start alike must not both claim a row.</li>
+        <li>Two PRs can point at one card (row #890 and #893 today are the same task’s plan and code) — the badge repeats,
+          which is correct.</li>
+        <li>No card → <span class="mono">boardjoin.none</span>: “no card on this board”, still closeable.</li>
+      </ol>
+    </div>
+  </div>
+
+  <!-- ============ §6 WIRE CONTRACT ============ -->
+  <h2><span class="n">§6</span>Wire and CLI contract (what implementation will add)</h2>
+  <p class="lead">Both endpoints are authed, sit beside the existing <span class="mono">/api/git/pr/*</span> routes
+    (<span class="mono">http_routes.zig:323-332</span>), use the injectable <span class="mono">Programs</span> seam and
+    <span class="mono">helpers.run_captured</span> — never a hand-rolled spawn, which SIGABRTs.</p>
+
+  <div class="cols">
+    <div class="mocks">
+      <h3>GET /api/git/pr/list</h3>
+      <table>
+        <thead><tr><th style="width:150px">Param</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">path</td><td>the board’s <span class="mono">item.path</span> (repo). 400 when missing.</td></tr>
+          <tr><td class="mono">provider</td><td>optional override; otherwise auto-detected from the repo’s remote.</td></tr>
+          <tr><td class="mono">state</td><td><span class="mono">open</span> (default) | <span class="mono">closed</span> — the tab.</td></tr>
+          <tr><td class="mono">limit</td><td>default 30, capped; <span class="mono">truncated: true</span> when the cap binds.</td></tr>
+        </tbody>
+      </table>
+      <pre style="background:var(--bg-m2);border:1px solid var(--border);border-radius:6px;padding:10px;font-size:11px;overflow:auto;margin-top:8px;color:var(--text-muted)">{
+  "provider": "github", "program": "gh", "repo": "ginwa123/pabrik",
+  "state": "open", "truncated": false, "detail": "",
+  "changes": [
+    { "number": 909, "title": "fix(settings): remove redundant …",
+      "state": "open", "is_draft": false,
+      "url": "https://github.com/ginwa123/pabrik/pull/909",
+      "author": "ginwa123", "head_ref": "worktree/why-theres-a-box-…",
+      "base_ref": "main", "updated_at": "2026-10-12T06:34:01Z",
+      "merge_state": "", "mergeable": "", "badge": "open" }
+  ]
+}</pre>
+      <h3>POST /api/git/pr/close</h3>
+      <pre style="background:var(--bg-m2);border:1px solid var(--border);border-radius:6px;padding:10px;font-size:11px;overflow:auto;color:var(--text-muted)">{ "path": "&lt;repo&gt;", "pr": "893", "provider": "github" }
+
+200 → { "closed": true,  "status": &lt;GitPrStatusResponse, re-read after the close&gt; }
+200 → { "closed": false, "detail": "…", "status": &lt;re-read: still open&gt; }   // never a silent success</pre>
+      <ul class="plain">
+        <li class="ok"><span class="mono">pr_cli.listArgv()</span> and <span class="mono">pr_cli.closeArgv()</span> join
+          <span class="mono">viewArgv/createArgv/mergeArgv/checksArgv</span> in <span class="mono">modules/agent/tools/pr_cli.zig</span>,
+          with the same <span class="mono">Cli</span> table (program/noun/label/short/forge) and the same argv tests.</li>
+        <li class="ok">New handlers <span class="mono">git_pr_list.zig</span> / <span class="mono">git_pr_close.zig</span>,
+          wire structs next to <span class="mono">GitPrStatusResponse</span> in <span class="mono">http_response.zig</span>, 60 s
+          timeout and a 64 KiB capture cap like <span class="mono">git_pr_merge.zig</span>.</li>
+        <li class="ok">Frontend: <span class="mono">listPrs()</span> / <span class="mono">closePr()</span> in
+          <span class="mono">api/index.ts</span> (beside <span class="mono">getPrStatus()</span>, ~line 5218), returned as
+          <span class="mono">Effect&lt;A, PrForgeError&gt;</span> — tagged error, no <span class="mono">try/catch</span>,
+          run through <span class="mono">sync/runtime.ts</span>.</li>
+      </ul>
+    </div>
+    <div class="notes">
+      <h3>CLI facts — verified on this machine, 2026-10-12</h3>
+      <ol class="note">
+        <li><span class="mono">gh pr list</span>: <span class="mono">--state {open|closed|merged|all}</span>,
+          <span class="mono">--limit</span>, <span class="mono">--head</span>, <span class="mono">--json</span> with the full
+          field list (number, title, url, state, isDraft, headRefName, baseRefName, author, updatedAt, reviewDecision,
+          mergeStateStatus, mergeable, statusCheckRollup…).</li>
+        <li><span class="mono">gh pr close {&lt;number&gt;|&lt;url&gt;|&lt;branch&gt;} [-c|--comment] [-d|--delete-branch]</span>.</li>
+        <li><span class="mono">glab mr list</span>: defaults to open; <span class="mono">-c|--closed</span>,
+          <span class="mono">-M|--merged</span>, <span class="mono">-A|--all</span>,
+          <span class="mono">-F|--output json</span>, <span class="mono">-P|--per-page</span>,
+          <span class="mono">-o|--order</span>, <span class="mono">-S|--sort</span>. <b>The state mapping is not symmetric</b>:
+          GitHub takes a value, GitLab takes one of four booleans — the argv builder owns that mapping, not the caller.</li>
+        <li><span class="mono">glab mr close [&lt;id&gt;|&lt;branch&gt;…]</span> takes <b>no comment flag</b> and needs no
+          <span class="mono">--yes</span> (that trap was <span class="mono">glab mr create</span>). Hence: no comment field in
+          v1 — a field that silently does nothing on one forge is worse than no field.</li>
+        <li><b>Unverified, must be checked before the parser is written:</b> the exact JSON key names of
+          <span class="mono">glab mr list -F json</span> (machine’s GitLab token is absent, so it cannot be run here). Precedent
+          for the risk: the alias-tolerant parse style of <span class="mono">GlabMrView</span>. Do not ship GitLab columns on
+          an assumed field name.</li>
+        <li><b>Route order:</b> <span class="mono">/api/git/pr/list</span> and <span class="mono">/api/git/pr/close</span> are
+          literals with no <span class="mono">:param</span> sibling under <span class="mono">/api/git/pr/</span> — keep it that
+          way (the comment at <span class="mono">http_routes.zig:325</span> exists because the alternative silently changes
+          which handler a path resolves to), and assert it by matching, not by grepping the source.</li>
+      </ol>
+    </div>
+  </div>
+
+  <!-- ============ §7 SCOPE ============ -->
+  <h2><span class="n">§7</span>Scope — v1, next, and never-in-this-card</h2>
+  <div class="cols">
+    <div class="mocks">
+      <table>
+        <thead><tr><th style="width:64px">Bucket</th><th>Item</th><th style="width:300px">Why</th></tr></thead>
+        <tbody>
+          <tr><td><span class="pill ok">v1</span></td><td>Board-header button with forge-aware label + open count</td><td>The literal ask.</td></tr>
+          <tr><td><span class="pill ok">v1</span></td><td>Full-cover list view, <span class="mono">?prs=open|closed</span></td><td>Same shell as the task detail; the tab is what proves a close happened.</td></tr>
+          <tr><td><span class="pill ok">v1</span></td><td>Board join badge (column + card) and “Only this board” filter</td><td>No extra request; the reason this lives in kanban.</td></tr>
+          <tr><td><span class="pill ok">v1</span></td><td>Close with confirm → re-read status → toast → badge invalidation</td><td>One write, done the way the merge box already does writes.</td></tr>
+          <tr><td><span class="pill ok">v1</span></td><td>Loading / empty / error / denied states, typed as Effect</td><td>An “empty” that means “we could not ask” is the PR #719 bug class.</td></tr>
+          <tr><td><span class="pill ok">v1</span></td><td>Platform tests: argv builders (Zig) + a functional wire test for both routes</td><td>Route order and empty-slice/NULL binding only surface on the wire.</td></tr>
+          <tr><td><span class="pill mut">next</span></td><td>Card git-branch menu gains “Close this PR” (placement B)</td><td>Same endpoint; puts the action where the branch is.</td></tr>
+          <tr><td><span class="pill mut">next</span></td><td>Reopen (<span class="mono">gh pr reopen</span> / <span class="mono">glab mr reopen</span>)</td><td>Draws the Closed tab as read-only in v1.</td></tr>
+          <tr><td><span class="pill mut">next</span></td><td>Closing comment (GitHub only, or GitLab via a note + close)</td><td>Blocked by the flag asymmetry, not by effort.</td></tr>
+          <tr><td><span class="pill mut">next</span></td><td>Bulk close (checkbox column), author/label filters, 30 s poll</td><td>The reference page has them; not needed to answer the ask.</td></tr>
+          <tr><td><span class="pill danger">never here</span></td><td>Merge from this list</td><td>Already shipped on the PR tab with the head-sha guard; one door per write.</td></tr>
+          <tr><td><span class="pill danger">never here</span></td><td>Creating a PR from this list</td><td><span class="mono">CreatePrDialog</span> in the task chat knows the worktree and base; a list-row form does not.</td></tr>
+          <tr><td><span class="pill danger">never here</span></td><td>Auto-moving the card to <span class="mono">merged</span></td><td>Board contract: only a human moves a card there (answered on the merge-box wireframe).</td></tr>
+          <tr><td><span class="pill danger">never here</span></td><td>Delete branch on close</td><td>Board branches are live session worktrees.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="notes">
+      <h3>Blast radius</h3>
+      <ul class="plain">
+        <li>New: <span class="mono">git_pr_list.zig</span>, <span class="mono">git_pr_close.zig</span>,
+          <span class="mono">KanbanPrList.vue</span>, 2 argv builders + their tests.</li>
+        <li>Edit: <span class="mono">http_routes.zig</span> (2 literal routes), <span class="mono">http_response.zig</span>
+          (2 structs), <span class="mono">pr_cli.zig</span>, <span class="mono">api/index.ts</span>,
+          <span class="mono">KanbanView.vue</span> (button + view mount + <span class="mono">?prs=</span>),
+          <span class="mono">prStatusCache.ts</span> (per-key invalidation).</li>
+        <li>Untouched: <span class="mono">MergeBox.vue</span>, the PR tab, <span class="mono">CreatePrDialog</span>, the card
+          badge, kanban CRUD, the SSE store.</li>
+        <li>No migration, no config key, no new dependency — the forge CLIs are already required by the PR tab.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ============ §8 DECISIONS ============ -->
+  <h2><span class="n">§8</span>Decisions I need from you (each has a recommendation)</h2>
+  <table>
+    <thead><tr><th style="width:44px"></th><th style="width:250px">Question</th><th style="width:270px">My recommendation</th><th>Alternative, and what it costs</th></tr></thead>
+    <tbody>
+      <tr><td><b>D1</b></td><td>Where does the button live?</td><td><b>Board header</b> (A), before Settings</td>
+        <td>Card branch menu (B) — better ergonomics per PR, but it is not “a button to get list pull requests”. Can be added later on the same endpoint.</td></tr>
+      <tr><td><b>D2</b></td><td>Full-cover view, modal, or side drawer?</td><td><b>Full-cover</b> (precedent: <span class="mono">?detail=</span>)</td>
+        <td>Modal caps at <span class="mono">max-w-sm</span>-ish for 8 columns of data; a drawer has no precedent here and would need a width contract.</td></tr>
+      <tr><td><b>D3</b></td><td>Is the Closed tab in v1?</td><td><b>Yes</b> — one flag on the same request</td>
+        <td>Deferring it makes a close look like a disappearing row, and “what did I just close?” has no answer in-app.</td></tr>
+      <tr><td><b>D4</b></td><td>What does “New pull request” do?</td><td><b>Link out to the forge</b></td>
+        <td>An in-app create form here duplicates <span class="mono">CreatePrDialog</span> without its worktree/base context and doubles the surface to maintain.</td></tr>
+      <tr><td><b>D5</b></td><td>Refresh: manual or polled?</td><td><b>Manual ↻</b> in v1</td>
+        <td>A 30 s poll buys near-live counts for a subprocess every 30 s per open board tab.</td></tr>
+      <tr><td><b>D6</b></td><td>Offer “also delete the branch”?</td><td><b>No</b></td>
+        <td><span class="mono">--delete-branch</span> removes the local + remote branch, i.e. possibly a live worktree an agent is running in.</td></tr>
+      <tr><td><b>D7</b></td><td>Is the list repo-wide or board-scoped?</td><td><b>Repo-wide, filtered by a default-on “Only this board” pill</b></td>
+        <td>A strictly board-scoped list cannot show the PR whose card was deleted — usually the one you most want to close.</td></tr>
+    </tbody>
+  </table>
+
+  <footer>
+    Wireframe only — no code changed. Sources read for this artifact (main @ <span class="mono">2bf7cf82</span>):
+    <span class="mono">components/kanban/KanbanView.vue</span>,
+    <span class="mono">components/kanban/KanbanCard.vue</span>,
+    <span class="mono">components/workspace/WorkspaceItemTaskCard.vue</span>,
+    <span class="mono">components/shell/GitBranchMenu.vue</span>,
+    <span class="mono">components/ui/icons.ts</span>,
+    <span class="mono">components/dialogs/ConfirmDialog.vue</span>,
+    <span class="mono">helpers/forgeWording.ts</span>,
+    <span class="mono">helpers/prStatusCache.ts</span>,
+    <span class="mono">api/index.ts</span>,
+    <span class="mono">src/http_routes.zig</span>,
+    <span class="mono">src/http_handlers/git_pr_merge.zig</span>,
+    <span class="mono">src/modules/agent/tools/pr_cli.zig</span>.
+    CLI flags verified by running <span class="mono">gh pr list/close --help</span> and
+    <span class="mono">glab mr list/close --help</span> on this machine, plus one real
+    <span class="mono">gh pr list --state open</span> whose rows are the ones drawn above.
+  </footer>
+</div>
+
+<script>
+  function setKind(k) {
+    document.body.dataset.kind = k;
+    document.querySelectorAll('[data-frame]').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.frame === k));
+    });
+  }
+  function setTab(t) {
+    document.body.dataset.tab = t;
+    document.querySelectorAll('[data-tabbtn]').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.tabbtn === t));
+    });
+    document.querySelectorAll('.tabs .tab').forEach(function (el) {
+      var label = el.textContent.trim().toLowerCase();
+      el.classList.toggle('on', label.indexOf(t) === 0);
+    });
+  }
+  function setConfirm() {
+    var on = document.body.dataset.confirm !== 'on';
+    document.body.dataset.confirm = on ? 'on' : 'off';
+    document.querySelector('[data-confirmbtn]').setAttribute('aria-pressed', String(on));
+  }
+</script>
+</body>
+</html>
