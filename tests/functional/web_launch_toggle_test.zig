@@ -467,8 +467,8 @@ test "busy_default_port_falls_back_to_a_free_port_and_serves" {
     });
     // Error paths below must not leak the server.
     errdefer {
+        // kill() already reaps and clears the id; wait() would assert.
         child.kill(io);
-        _ = child.wait(io) catch {};
     }
 
     // Wait up to 30 s for readiness, polling the log (same signal the
@@ -545,11 +545,10 @@ test "busy_default_port_falls_back_to_a_free_port_and_serves" {
         if (client.request(.POST, try std.Uri.parse(shutdown_url), .{ .redirect_behavior = .unhandled })) |req| {
             var r = req;
             defer r.deinit();
-            r.sendBodiless() catch {};
+            r.sendBodyComplete(&.{}) catch {};
             _ = r.receiveHead(&.{}) catch {};
         } else |_| {}
     }
     std.Io.sleep(io, .fromMilliseconds(2000), .awake) catch {};
-    child.kill(io);
-    _ = child.wait(io) catch {};
+    child.kill(io); // reaps + clears the id (wait() after this would assert)
 }

@@ -373,21 +373,122 @@ test "installed pabrik serves the app from its bundled html dir" {
     const installed = try std.fs.path.join(gpa, &.{ bindir, "pabrik" });
     defer gpa.free(installed);
 
-    const shadow = try EnvShadow.install("PABRIK_BIN", installed);
-    defer shadow.restore();
+    // Spawn EXACTLY like the user does: bare `pabrik`, resolved through
+    // PATH — so argv[0] has no directory at all. This is the shape that
+    // broke Linux/macOS (the exe-dir probe must come from the real
+    // executable path, not argv[0]); a harness boot would pass argv[0]
+    // as an absolute path and hide the bug.
+    var env_map = try std.process.Environ.createMap(std.testing.environ, gpa);
+    defer env_map.deinit();
+    try env_map.put("HOME", dirs.home);
+    const path_val = try std.fmt.allocPrint(gpa, "{s}{c}{s}", .{
+        bindir,
+        std.fs.path.delimiter,
+        env_map.get("PATH") orelse "",
+    });
+    defer gpa.free(path_val);
+    try env_map.put("PATH", path_val);
 
-    var h = try Harness.boot(io, gpa, .{});
-    defer h.deinit(io) catch |err| {
-        std.debug.print("teardown: {s}\n", .{@errorName(err)});
+    const log_path = try std.fs.path.join(gpa, &.{ bindir, "server.log" });
+    defer gpa.free(log_path);
+    var log_file = try Io.Dir.cwd().createFile(io, log_path, .{});
+    defer log_file.close(io);
+
+    // argv[0] is the BARE name, and cwd is the repo root — nothing ties
+    // this process to bindir except PATH.
+    // `bash -c 'exec pabrik'`, not a bare argv[0]: Zig's spawn resolves a
+    // bare argv[0] against the PARENT's PATH, so a developer machine with
+    // pabrik in ~/.local/bin would run THAT binary and hide the bug (the
+    // first version of this test did exactly that). A shell resolves
+    // `pabrik` against the child's PATH — which is the real user's
+    // behavior — and `exec` keeps argv[0] as the bare name.
+    const argv = [_][]const u8{ "bash", "-c", "exec pabrik" };
+    var child = try std.process.spawn(io, .{
+        .argv = &argv,
+        .environ_map = &env_map,
+        .stdout = .{ .file = log_file },
+        .stderr = .{ .file = log_file },
+    });
+    errdefer {
+        // kill() already reaps and clears the id; wait() would assert.
+        child.kill(io);
+    }
+
+    // Wait for readiness, then read the port off the startup line.
+    var ready = false;
+    var attempt: usize = 0;
+    while (attempt < 300) : (attempt += 1) {
+        const body = Io.Dir.cwd().readFileAlloc(io, log_path, gpa, .limited(1 << 20)) catch {
+            Io.sleep(io, .fromMilliseconds(100), .awake) catch {};
+            continue;
+        };
+        ready = std.mem.indexOf(u8, body, "Agent is ready to serve!") != null;
+        gpa.free(body);
+        if (ready) break;
+        Io.sleep(io, .fromMilliseconds(100), .awake) catch {};
+    }
+    if (!ready) {
+        const body = Io.Dir.cwd().readFileAlloc(io, log_path, gpa, .limited(1 << 20)) catch "";
+        defer if (body.len > 0) gpa.free(body);
+        std.debug.print("installed server never became ready; log:\n{s}\n", .{body});
+        return error.TestUnexpectedResult;
+    }
+
+    const log = try Io.Dir.cwd().readFileAlloc(io, log_path, gpa, .limited(1 << 20));
+    defer gpa.free(log);
+    const url_prefix = "Open in your browser: http://127.0.0.1:";
+    const at = std.mem.indexOf(u8, log, url_prefix) orelse {
+        std.debug.print("log missing the browser URL line\n", .{});
+        return error.TestUnexpectedResult;
     };
+    var end = at + url_prefix.len;
+    while (end < log.len and log[end] >= '0' and log[end] <= '9') : (end += 1) {}
+    const port = std.fmt.parseInt(u16, log[at + url_prefix.len .. end], 10) catch {
+        std.debug.print("could not parse the port from the log\n", .{});
+        return error.TestUnexpectedResult;
+    };
+    if (std.mem.indexOf(u8, log, "serving installed webapp") == null) {
+        std.debug.print("server did not discover the bundled html dir; log:\n{s}\n", .{log});
+        return error.TestUnexpectedResult;
+    }
 
     // GET / serves the bundled shell — not a 404.
+    var client: std.http.Client = .{ .allocator = gpa, .io = io };
+    defer client.deinit();
+    const app_url = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/", .{port});
+    defer gpa.free(app_url);
     {
-        var r = try h.http(io, .GET, "/", .{});
-        defer r.deinit();
-        if (std.mem.indexOf(u8, r.text(), "pabrik installed app shell") == null) {
-            std.debug.print("GET / did not serve the bundled app shell: {s}\n", .{r.text()});
+        var req = try client.request(.GET, try std.Uri.parse(app_url), .{ .redirect_behavior = .unhandled });
+        defer req.deinit();
+        try req.sendBodiless();
+        var resp = try req.receiveHead(&.{});
+        const status: u16 = @intFromEnum(resp.head.status);
+        var body_buf: [4096]u8 = undefined;
+        var body_len: usize = 0;
+        var reader = resp.reader(&.{});
+        while (body_len < body_buf.len) {
+            const n = reader.readSliceShort(body_buf[body_len..]) catch break;
+            if (n == 0) break;
+            body_len += n;
+        }
+        const page = body_buf[0..body_len];
+        if (status != 200 or std.mem.indexOf(u8, page, "pabrik installed app shell") == null) {
+            std.debug.print("GET / returned {d}, body: {s}\n", .{ status, page });
             return error.TestUnexpectedResult;
         }
     }
+
+    // Teardown: ask nicely, then make sure.
+    {
+        const shutdown_url = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/test/shutdown", .{port});
+        defer gpa.free(shutdown_url);
+        if (client.request(.POST, try std.Uri.parse(shutdown_url), .{ .redirect_behavior = .unhandled })) |req| {
+            var r = req;
+            defer r.deinit();
+            r.sendBodyComplete(&.{}) catch {};
+            _ = r.receiveHead(&.{}) catch {};
+        } else |_| {}
+    }
+    Io.sleep(io, .fromMilliseconds(2000), .awake) catch {};
+    child.kill(io); // reaps + clears the id (wait() after this would assert)
 }
