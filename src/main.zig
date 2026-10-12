@@ -147,16 +147,29 @@ pub fn main(init: std.process.Init) !void {
                 list.append(alloc, dir) catch alloc.free(dir);
             }
         }.run;
-        // Next-to-executable probe, only when argv[0] carries a dir
-        // (a bare `pabrik` via PATH has none — the data dirs below
-        // cover that case; probing ./html would be cwd roulette).
-        if (argv_flat.items.len > 0) {
+        // Next-to-executable probe. The REAL exe path, not argv[0]: a
+        // user runs `pabrik` from PATH, where argv[0] is the bare name
+        // "pabrik" with no directory at all (argv[0] is only a fallback,
+        // and only when it carries a dir). `executablePathAlloc` is
+        // Linux /proc/self/exe, macOS _NSGetExecutablePath, Windows
+        // GetModuleFileName — so the shipped html/ sitting beside the
+        // installed binary is found on every platform.
+        var exe_dir: ?[]u8 = null;
+        defer if (exe_dir) |d| allocator.free(d);
+        if (std.process.executablePathAlloc(io, allocator)) |exe_path| {
+            defer allocator.free(exe_path);
+            if (std.fs.path.dirname(exe_path)) |d| {
+                exe_dir = allocator.dupe(u8, d) catch null;
+            }
+        } else |_| {}
+        if (exe_dir == null and argv_flat.items.len > 0) {
             const argv0 = argv_flat.items[0];
             if (std.mem.indexOfAny(u8, argv0, "/\\") != null) {
-                if (std.fs.path.dirname(argv0)) |exe_dir| {
-                    addCandidate(&candidates, allocator, &.{ exe_dir, "html" });
-                }
+                if (std.fs.path.dirname(argv0)) |d| exe_dir = allocator.dupe(u8, d) catch null;
             }
+        }
+        if (exe_dir) |d| {
+            addCandidate(&candidates, allocator, &.{ d, "html" });
         }
         if (@import("builtin").os.tag == .windows) {
             if (environment.get("LOCALAPPDATA")) |appdata| {
