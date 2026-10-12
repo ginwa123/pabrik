@@ -863,7 +863,7 @@ fn makeGitRepo(fx: *Fixture) ![]u8 {
 /// this repo — `git -C <that dir> rev-parse --git-dir` walks up and
 /// succeeds, so the `NotARepository` gate would never trip. Go to the
 /// system temp dir instead.
-fn makeNonRepoDir(allocator: std.mem.Allocator) ![]u8 {
+pub fn makeNonRepoDir(allocator: std.mem.Allocator) ![]u8 {
     var name_buf: [48]u8 = undefined;
     var seed: [4]u8 = undefined;
     std.Io.random(std.testing.io, &seed);
@@ -877,7 +877,7 @@ fn makeNonRepoDir(allocator: std.mem.Allocator) ![]u8 {
     return path;
 }
 
-fn removeNonRepoDir(allocator: std.mem.Allocator, path: []const u8) void {
+pub fn removeNonRepoDir(allocator: std.mem.Allocator, path: []const u8) void {
     std.Io.Dir.cwd().deleteTree(std.testing.io, path) catch {};
     allocator.free(path);
 }
@@ -889,7 +889,7 @@ fn removeNonRepoDir(allocator: std.mem.Allocator, path: []const u8) void {
 /// `zig build test`) this is true and the gate is bypassed for reasons
 /// this test cannot fix. Detected by running the very same probe
 /// against a directory that is definitely not a repository.
-fn gitProbeIsEnvHijacked(allocator: std.mem.Allocator, empty_dir: []const u8) bool {
+pub fn gitProbeIsEnvHijacked(allocator: std.mem.Allocator, empty_dir: []const u8) bool {
     const check = std.process.run(allocator, std.testing.io, .{
         .argv = &.{ "git", "-C", empty_dir, "rev-parse", "--git-dir" },
     }) catch return true;

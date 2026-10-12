@@ -296,13 +296,21 @@ const Fixture = struct {
     }
 };
 
-/// A script that answers like `gh`: `close` records argv and exits with
-/// `close_code`; anything else (the `view` re-read) prints `view_json`.
+/// A script that answers like `gh`: `close` records the whole argv and exits
+/// with `close_code`; anything else (the `view` re-read) prints `view_json`.
+///
+/// The recorded line is `basename $0` followed by `$@` for a reason: `$@` holds
+/// the ARGUMENTS only, so a dump built from it alone can never contain the
+/// program — and an assertion naming `argv[0]` would then fail for a fixture
+/// that is behaving perfectly. The dump lives inside the `close` branch so the
+/// follow-up `view` cannot clobber it.
 fn ghScript(fx: *Fixture, argv_file: []const u8, close_code: u8, close_stderr: []const u8, view_json: []const u8) ![]u8 {
-    return fx.writeExec("gh", try std.fmt.allocPrint(fx.allocator,
+    // The script text is owned only until it has been written to the file.
+    const script = try std.fmt.allocPrint(fx.allocator,
         \\#!/bin/sh
         \\if [ "$2" = "close" ]; then
-        \\  for a in "$@"; do echo "$a"; done > '{s}'
+        \\  echo "$(basename "$0")" > '{s}'
+        \\  for a in "$@"; do echo "$a"; done >> '{s}'
         \\  echo '{s}' >&2
         \\  exit {d}
         \\fi
@@ -310,7 +318,11 @@ fn ghScript(fx: *Fixture, argv_file: []const u8, close_code: u8, close_stderr: [
         \\{s}
         \\JSONEOF
         \\
-    , .{ argv_file, close_stderr, close_code, view_json }));
+    // Two `{s}` for the dump path (the program line, then the arguments), then
+    // the stderr text, the exit code and the status payload.
+    , .{ argv_file, argv_file, close_stderr, close_code, view_json });
+    defer fx.allocator.free(script);
+    return fx.writeExec("gh", script);
 }
 
 const CLOSED_VIEW =

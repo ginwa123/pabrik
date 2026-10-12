@@ -241,10 +241,17 @@ fn parseGithubList(
     cli: pr_cli.Cli,
     detail: *?[]u8,
 ) ![]http_response.GitPrListItem {
-    const rows = std.json.parseFromSliceLeaky([]const GhPrRow, allocator, trimmed, .{ .ignore_unknown_fields = true }) catch {
+    // `parseFromSlice`, deliberately NOT the Leaky variant: parsing an ARRAY
+    // with the Leaky variant allocates the array and its element buffers and
+    // offers no `deinit`, so it is only correct under an arena — every string
+    // below is copied into the caller's allocator before this returns, so the
+    // `defer` is safe and the function works with a plain GPA too.
+    var parsed = std.json.parseFromSlice([]const GhPrRow, allocator, trimmed, .{ .ignore_unknown_fields = true }) catch {
         setParseDetail(allocator, detail, cli, trimmed.len);
         return error.FetchFailed;
     };
+    defer parsed.deinit();
+    const rows = parsed.value;
     const out = try allocator.alloc(http_response.GitPrListItem, rows.len);
     for (rows, 0..) |r, i| {
         out[i] = .{
@@ -464,6 +471,26 @@ const Fixture = struct {
     }
 };
 
+/// Frees every owned field of a list response. A test that forgets one field
+/// fails CI's leak detector, and hand-written frees forget exactly one — so
+/// all of them go through here.
+fn freeListResponse(a: std.mem.Allocator, res: http_response.GitPrListResponse) void {
+    a.free(res.provider);
+    a.free(res.program);
+    a.free(res.state);
+    a.free(res.detail);
+    for (res.changes) |r| {
+        a.free(r.title);
+        a.free(r.url);
+        a.free(r.state);
+        a.free(r.head_ref);
+        a.free(r.base_ref);
+        a.free(r.author);
+        a.free(r.updated_at);
+    }
+    a.free(res.changes);
+}
+
 /// A git repo inside the fixture (the use case gates on `rev-parse`).
 fn makeGitRepo(fx: *Fixture) ![]u8 {
     const a = fx.allocator;
@@ -476,10 +503,15 @@ fn makeGitRepo(fx: *Fixture) ![]u8 {
 
 /// A `gh`/`glab` stand-in that records its argv and prints `payload`.
 fn scriptPrinting(fx: *Fixture, name: []const u8, argv_file: []const u8, payload: []const u8) ![]u8 {
-    return fx.writeExec(name, try std.fmt.allocPrint(fx.allocator,
+    // The script text is only needed until `writeExec` has written it — the
+    // child reads the FILE — so it is freed here rather than left for the leak
+    // detector. (CI reports every unfreed byte in a test as a failure.)
+    const script = try std.fmt.allocPrint(fx.allocator,
         "#!/bin/sh\nfor a in \"$@\"; do echo \"$a\"; done > '{s}'\ncat <<'JSONEOF'\n{s}\nJSONEOF\n",
         .{ argv_file, payload },
-    ));
+    );
+    defer fx.allocator.free(script);
+    return fx.writeExec(name, script);
 }
 
 test "parseLimit: default, explicit, and the values it refuses" {
@@ -602,21 +634,7 @@ test "list: github asks by state and limit, and the recorded argv says so" {
 
     var detail: ?[]u8 = null;
     const out = try listUseCaseWithPrograms(a, testing.io, .{ .gh = gh }, repo, .closed, 5, "github", &detail);
-    defer {
-        a.free(out.provider);
-        a.free(out.program);
-        a.free(out.state);
-        for (out.changes) |r| {
-            a.free(r.title);
-            a.free(r.url);
-            a.free(r.state);
-            a.free(r.head_ref);
-            a.free(r.base_ref);
-            a.free(r.author);
-            a.free(r.updated_at);
-        }
-        a.free(out.changes);
-    }
+    defer freeListResponse(a, out);
 
     try testing.expectEqualStrings("github", out.provider);
     try testing.expectEqualStrings("gh", out.program);
@@ -651,6 +669,7 @@ test "list: a full page reports truncated, and an empty stdout is an empty resul
 
     var detail: ?[]u8 = null;
     const full = try listUseCaseWithPrograms(a, testing.io, .{ .gh = two }, repo, .open, 2, "github", &detail);
+    defer freeListResponse(a, full);
     try testing.expect(full.truncated);
     try testing.expectEqual(@as(usize, 2), full.changes.len);
 
@@ -660,6 +679,7 @@ test "list: a full page reports truncated, and an empty stdout is an empty resul
     defer a.free(silent);
     var detail2: ?[]u8 = null;
     const none = try listUseCaseWithPrograms(a, testing.io, .{ .gh = silent }, repo, .open, 30, "github", &detail2);
+    defer freeListResponse(a, none);
     try testing.expectEqual(@as(usize, 0), none.changes.len);
     try testing.expect(!none.truncated);
     try testing.expect(none.detail.len > 0);
@@ -698,11 +718,27 @@ test "list: a missing CLI is CliMissing (422), not a fetch failure" {
 }
 
 test "list: a non-repository path is refused before any CLI runs" {
+    // Three guards, all copied from the status suite's repo-gate test rather
+    // than invented here — each one is a way this assertion was already known
+    // to lie:
+    //  1. `std.testing.tmpDir` lands in `<cwd>/.zig-cache/tmp`, which is INSIDE
+    //     this repo, so `git -C` walks up and answers "yes, a repository" — the
+    //     fixture must live outside the repo, hence `makeNonRepoDir` (/tmp).
+    //  2. Windows skips the whole fixture dance (the fixtures are /bin/sh).
+    //  3. An environment that exports GIT_DIR makes git call ANY path a
+    //     repository, so the probe cannot distinguish anything and the test
+    //     has nothing to assert (see the KNOWN LIMITATION note on
+    //     `listUseCaseWithPrograms`).
+    if (skipOnWindows()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();
+    const not_repo = try pr_status.makeNonRepoDir(a);
+    defer pr_status.removeNonRepoDir(a, not_repo);
+    if (pr_status.gitProbeIsEnvHijacked(a, not_repo)) return error.SkipZigTest;
+
     var detail: ?[]u8 = null;
-    const res = listUseCaseWithPrograms(a, testing.io, .{}, fx.root, .open, 30, "github", &detail);
+    const res = listUseCaseWithPrograms(a, testing.io, .{}, not_repo, .open, 30, "github", &detail);
     try testing.expectError(error.NotARepository, res);
 }
 
