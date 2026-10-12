@@ -1095,15 +1095,20 @@ const loadHomeDir = async () => {
   }
 }
 
-// NEW (plan: 2026-08-06-kanban-task-profile-selector). Load profiles
-// from LlmConfig (mirrors ChatView.loadProfiles). Called on dialog
-// open in create mode; failure -> empty list (the picker still
-// works, just only shows "Default").
+// Plan 2026-08-06-kanban-task-profile-selector. Load the profiles this
+// workspace can actually RUN with (mirrors ChatView.loadProfiles). Called on
+// dialog open in create mode; failure -> empty list (the picker still works,
+// just only shows "Default").
+//
+// The workspace scope matters: a run merges this workspace's config overlay
+// over the user config, so a profile defined only in the overlay is selectable
+// here and the user-scope `/api/config/pabrik` would not list it.
 const loadProfiles = async () => {
   if (!isCreateMode.value) return
   profilesLoading.value = true
   try {
-    const config = await api.getPabrikConfig()
+    const wsId = props.workspaceId ?? ''
+    const config = wsId ? await api.getWorkspaceConfig(wsId) : await api.getPabrikConfig()
     const profiles = (config.profiles ?? {}) as Record<
       string,
       { model?: string; base_url?: string }
