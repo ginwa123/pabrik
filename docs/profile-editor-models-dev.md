@@ -1,0 +1,307 @@
+# Simplify the Edit-profile dialog, and source model defaults from models.dev
+
+**Status:** plan only — nothing implemented. **Wireframe:** `docs/wireframes/profile-editor-models-dev.html`
+**Base:** `main` @ `69c6df2d` · **Task:** `task_1791835298377_3`
+
+---
+
+## 1. What the user asked for
+
+"i want simplify this settings profiles — also implement models.dev to get defaults,
+value compaction token window context."
+
+Two things, and they are the same thing: the dialog (screenshot: `deepseek auto` —
+Name, Model, Base URL, Thinking, Temperature, URL style, Reasoning effort, API key,
+then *Compaction overrides* with two checkboxes and a slider) asks the user to supply
+facts the app should already know. models.dev is where those facts live.
+
+---
+
+## 2. What is actually wrong today (verified, not guessed)
+
+### 2.1 The real bug — every non-MiniMax profile compacts at the wrong window
+
+`src/modules/agent/LLMModels.zig:22` `getModelTokenCount` knows exactly **two** models:
+
+```zig
+if (std.mem.eql(u8, model_name, MINIMAX_2_7.name)) return MINIMAX_2_7.token_count; // 200_000
+if (std.mem.eql(u8, model_name, MINIMAX_3.name))   return MINIMAX_3.token_count;   // 500_000
+return 200000;  // "Default fallback (e.g., 128k tokens)"
+```
+
+That function is the last step of the context-window cascade
+(`src/modules/config/Config.zig:2742` `maxCapacityForModel`, step 4) and of the
+compaction threshold (`Config.zig:2764`, step 4 = 80).
+
+So for the profile in the screenshot:
+
+| | value |
+|---|---|
+| `deepseek-flash` real context window (models.dev `limit.context`) | **1,000,000** |
+| what pabrik believes with no override | **200,000** |
+| where it compacts | 80% × 200k = **160,000** |
+| where it should compact | 80% × 1M = **800,000** |
+
+The hand-typed `1000000` in the *Max capacity (tokens)* field is the **only** reason
+that profile compacts correctly, and nothing on the screen says so. Delete the field and
+the same profile silently throws away ~4/5 of its window. This is not a UI nit; it is the
+compaction bug the models.dev work exists to fix.
+
+### 2.2 The fallback the help text promises does not exist
+
+`LlmConfigForm.vue:352` and `:387` say *"Falls back to top-level defaults → built-in."*
+The top-level fields are `LlmConfig.max_capacity_token_model` (`Config.zig:173`) and
+`LlmConfig.compaction_threshold_percent` (`Config.zig:179`) — cascade steps 3.
+
+**No component writes them.** `rg max_capacity_token_model src/apps/desktop/src` returns
+the TypeScript type (`api/index.ts:4917`) and a write-through spread
+(`PabrikConfigEditor.vue:508`) — no input, no slider, no section. The Defaults tab that
+used to own them was removed by plan `2026-08-24-config-simplify-remove-defaults`, and the
+comment at `PabrikConfigEditor.vue:1319-1322` still claims they live there. So the dialog
+points at a setting the user cannot reach.
+
+### 2.3 Three fields encode one decision
+
+`model` + `base_url` + `url_style` are free-text + free-text + 3-way select, and nothing
+validates them against each other. They are one decision ("which provider am I talking
+to, and what body shape does it speak") spread over three controls.
+
+### 2.4 Capability controls are gated on the wire shape, not the model
+
+`LlmConfigForm.vue:134-137`: `thinking_budget_tokens` shows for `url_style === 'anthropic'`,
+`reasoning_effort` for `url_style.startsWith('openai')`. A model that ignores
+`reasoning_effort` still gets a live **Reasoning effort** dropdown; an Anthropic-shaped
+URL gets a budget field even for a model with no extended thinking.
+
+### 2.5 Compaction is expressed twice
+
+Per-profile overrides in the modal (`LlmConfigForm.vue:332-415`) *and* a summary line in
+the profile row (`ProfilesSection.vue:80-90` `compactionSummary`) that recomputes from the
+raw fields and prints `default (80%) @ default` — which reads as "nothing is going on"
+when in fact 200k × 80% is about to happen.
+
+---
+
+## 3. What models.dev gives us
+
+`https://models.dev/api.json`, fetched 2026-10-13:
+
+| | |
+|---|---|
+| size | **5,451,834 bytes** raw JSON |
+| providers | **227** |
+| models | **8,562** (8,402 carry a context limit) |
+| CORS | `access-control-allow-origin: *` (so a webview `fetch()` would work) |
+| cache | `cf-cache-status: HIT`, `etag` present |
+
+Only a fraction is needed:
+
+| models.dev | pabrik field | coverage / notes |
+|---|---|---|
+| `provider.api` | `base_url` | **202 of 227**. `anthropic` has none ⇒ keep a tiny built-in map for headliners. |
+| `provider.npm` | `url_style` | 227/227. `@ai-sdk/anthropic`, `@ai-sdk/google-vertex/anthropic` ⇒ `anthropic`; everything else ⇒ `openai`. 6,276 models are `@ai-sdk/openai-compatible`. |
+| `provider.env` | API-key placeholder | `DEEPSEEK_API_KEY`. Documentation only — never read the env. |
+| `model.limit.context` | `max_capacity_tokens` | the point of the exercise. `deepseek-flash` ⇒ 1,000,000. |
+| `model.limit.output` | max output tokens | `deepseek-flash` ⇒ 393,216. Today `Agent.maxTokens` is a flat **4096** (`Agent.zig:1327`). |
+| `model.reasoning` + `model.reasoning_options` | `thinking` / `reasoning_effort` | `[{"type":"toggle"},{"type":"effort","values":["low","high","max"]}]`, `[{"type":"budget_tokens","min":1024}]` — both shapes pabrik already speaks. |
+| `model.temperature` | whether to show the Temperature field | boolean. |
+| `model.cost{input,output,cache_read,cache_write}` | read-only info | `deepseek-flash` ⇒ 0.15 / 0.6 per Mtok. |
+| `model.attachment`, `model.modalities` | read-only info | images / pdf. |
+
+**Trimmed payload ≈ 2.3 MB** (measured, compact JSON, keeping only the fields above).
+Fine as a cache file; a bad thing to commit.
+
+---
+
+## 4. Design
+
+### 4.1 One owner: `src/agentic_loop/model_catalog.zig`
+
+Mirrors the rule `session_llm_config.zig` established — one module owns one question
+("what do we know about this model?"), and call sites do not hand-roll it.
+
+```
+model_catalog.zig
+  load(alloc, io) ?*const Catalog          // cache file, else null — never silently invents data
+  refresh(alloc, io, url) !RefreshReport   // GET → trim → atomic write → report counts
+  lookup(catalog, provider_or_null, model) ?ModelFacts
+  ModelFacts { id, provider_id, provider_name, base_url, url_style,
+               context_window, output_tokens, reasoning:ReasoningKind,
+               temperature:bool, cost:?Cost, attachment:bool }
+```
+
+Cache: `~/.config/pabrik/models-dev.json`
+```json
+{ "fetched_at": "2026-10-13T03:03:00Z", "etag": "...", "source": "https://models.dev/api.json",
+  "providers": { "deepseek": { "name": "DeepSeek", "api": "https://api.deepseek.com",
+                               "npm": "@ai-sdk/openai-compatible", "env": ["DEEPSEEK_API_KEY"],
+                               "models": { "deepseek-flash": { "name": "DeepSeek V4.1 Flash",
+                                          "limit": {"context":1000000,"output":393216},
+                                          "reasoning": [{"type":"effort","values":["low","high","max"]}],
+                                          "temperature": true,
+                                          "cost": {"input":0.15,"output":0.6} } } } } }
+```
+
+Three states, all distinguishable (this repo's "no silent fallback" rule):
+`absent` (never fetched / air-gapped) · `stale` (`fetched_at` older than N days) ·
+`fresh`. Corruption is an **error surfaced to the caller**, never a silent empty catalog.
+
+**No bundled snapshot, no `@embedFile` blob.** A 2.3 MB generated artifact in git would
+rot between refreshes and produce unreviewable diffs.
+
+### 4.2 Backend resolution — add a catalog step, keep every pure function pure
+
+`Config.zig` `maxCapacityForModel` (`:2742`) keeps its shape and gains one step:
+
+```
+1. sub_agent.max_capacity_tokens
+2. profile.max_capacity_tokens
+3. defaults.max_capacity_token_model
+4. NEW  catalog.lookup(provider, model).context_window
+5. LLMModels.getModelTokenCount(model)        // 200k built-in, unchanged
+```
+
+`LLMModels.getModelTokenCount` stays pure and untouched (all 14 existing tests keep
+passing); a new `getModelTokenCountFrom(catalog, provider, model)` is the catalog-aware
+sibling. `compactionThresholdPercent` needs no catalog — 80 is a policy, not a model fact.
+
+### 4.3 HTTP surface (`src/http_routes.zig`, all under the existing `authed` group)
+
+| route | purpose |
+|---|---|
+| `GET /api/models/catalog?q=&provider=&limit=` | trimmed catalog for the picker. Filtered + paged server-side — never ship 2.3 MB to the webview on open. |
+| `GET /api/models/resolve?model=&provider=&base_url=` | the single call the modal makes: `{ context_window, output_tokens, url_style, base_url, reasoning, temperature, cost, source: "catalog"\|"builtin", catalog: "fresh"\|"stale"\|"absent" }` |
+| `POST /api/models/refresh` | explicit fetch + write + report `{ok, providers, models, fetched_at}` or a real error envelope. |
+
+Route-order note: these are all literals under `/api/models/…`; check no `/api/models/:param`
+pattern is registered before them (`matchRoute` walks registration order — a literal
+registered after a wildcard is captured by the wildcard).
+
+### 4.4 UI
+
+`LlmConfigForm.vue` becomes three visible inputs plus a derived strip; every other field
+moves behind one **Advanced** disclosure. Full visual in the wireframe. In short:
+
+- **Model** → combobox: free text *plus* catalog matches (`deepseek-flash · DeepSeek — 1.0M ctx`).
+  Free text stays, because self-hosted endpoints and the screenshot's
+  `https://opencode.ai/zen/go/v1/chat/completions` are not what the catalog says.
+- **Derived strip** (read-only): provider · context window · output cap · body shape ·
+  reasoning options · cost, and the compaction line `80% of 1.0M = 800,000 tokens`, with
+  `source: models.dev · cached <ts>` underneath.
+- **Advanced**: `base_url`, `url_style`, `thinking`, `reasoning_effort`,
+  `thinking_budget_tokens`, `temperature`, and the two compaction overrides. Each is an
+  *override* whose **placeholder carries the derived value**, with a source badge
+  (`catalog`, `global · 80`) and a ✕ to clear.
+- **The two override checkboxes and the inclusive-fallback prose are deleted.** Empty
+  already means inherit; a checkbox whose only job is to enable the field beneath it is noise.
+- `ProfilesSection.vue:80` `compactionSummary` prints the **effective** window, not
+  `default`.
+- Capability gating moves from `url_style` to the model's `reasoning_options` /
+  `temperature` flags.
+
+### 4.5 What deliberately does **not** change
+
+- **The wire format.** `max_capacity_tokens` / `compaction_threshold_percent` /
+  `thinking_budget_tokens` stay `number | null`. An **empty field must serialize to `null`,
+  never `""`** — an empty slice binds as SQL NULL through this codebase's SQLite layer, and
+  a cleared override has to round-trip as `null`.
+- **No config migration.** An existing `config.json` is byte-identical after this change;
+  only *resolved* values differ (correctly, for non-MiniMax models).
+- **The catalog never writes into a profile.** It supplies defaults at the existing
+  resolution points, so one refresh corrects every profile instead of leaving stale
+  hand-typed numbers behind.
+
+---
+
+## 5. Phased implementation
+
+| phase | scope | files |
+|---|---|---|
+| **P1** | catalog module + cache file + trim + lookup. No HTTP, no UI. | `src/agentic_loop/model_catalog.zig` (new), `src/root.zig` (export + test import) |
+| **P2** | wire the catalog into the resolution cascade; `getModelTokenCountFrom`. | `src/modules/config/Config.zig:2742`, `src/modules/agent/LLMModels.zig` |
+| **P3** | three routes + refresh. | `src/http_routes.zig`, `src/http_handlers/model_catalog_*.zig` (new) |
+| **P4** | UI: combobox, derived strip, Advanced disclosure; delete the checkboxes. | `LlmConfigForm.vue`, `PabrikConfigEditor.vue:568-605` (seeding), `ProfilesSection.vue:80` |
+| **P5** | the orphaned global defaults (decision D3). | Settings → General block + `PabrikConfigEditor.vue` |
+
+P1–P3 are independently shippable: with the backend catalog in place but the old UI, the
+compaction bug is already fixed for every profile that leaves `max_capacity_tokens` null.
+
+---
+
+## 6. Verification (functional, not source-greps)
+
+Per this repo's rule: **no test may open a `.zig` file under `src/` and search its text.**
+A `test` block calls the code and asserts what comes back.
+
+- **Unit (in-memory SQLite/JSON, no network)** — `model_catalog.zig`:
+  trim from a fixture slice → lookup by (provider, model) → `context_window == 1_000_000`
+  for `deepseek-flash`; unknown model ⇒ `null` (not a fabricated number); a **corrupt**
+  cache file ⇒ a named error, not an empty catalog; a provider without `api` ⇒
+  `base_url == null` while `url_style == "anthropic"`.
+- **Unit** — `Config.maxCapacityForModel`: a profile with `max_capacity_tokens = null`
+  and a catalog that knows the model resolves to the catalog value, pre-empting the 200k
+  built-in; the user's typed override still wins over the catalog (positive control).
+- **Functional (Zig harness, isolated tmpdir HOME, port never 8081)** —
+  `tests/functional/model_catalog_test.zig`:
+  1. seed `models-dev.json` in the tmpdir HOME → `GET /api/models/resolve?model=deepseek-flash`
+     returns `1_000_000` and `source: "catalog"`;
+  2. delete the cache → same request returns `200_000`, `source: "builtin"`,
+     `catalog: "absent"` — the **absence must be visible in the payload**, not swallowed;
+  3. `POST /api/models/refresh` with the upstream pointed at a **local stub HTTP server**
+     (never models.dev from CI) → 200 + cache file written; stub returning garbage ⇒ a
+     non-2xx with a real error, and the previous cache left intact.
+- **Frontend (vitest)** — `LlmConfigForm.spec.ts` (extend the existing file, do not fork):
+  typing a catalog-known model fills the derived strip and emits
+  `max_capacity_tokens: null` (**not** a materialized number); clearing a previously-set
+  override emits `null` and never `""`; an unknown model shows the manual state; a
+  non-reasoning model does not render the effort dropdown.
+- **Manual**: `zig build test --summary all` + the frontend build, in the worktree.
+
+---
+
+## 7. Decisions to confirm
+
+- **D1 — where the catalog lives.** *Recommend: runtime fetch + on-disk cache, backend-owned.*
+  Alternatives: a 2.3 MB snapshot committed to git (works offline, rots, unreviewable diffs),
+  or frontend-only `fetch()` (the CORS header allows it, but server-side compaction learns
+  nothing — the bug in §2.1 survives).
+- **D2 — when we refresh.** *Recommend: an explicit "Refresh catalog" button* with a stale
+  badge. Never at boot. A desktop app that silently calls out on every launch is a smell, and CI must stay hermetic.
+- **D3 — the orphaned top-level defaults.** *Recommend: put one "Compaction" block back in
+  Settings → General* (threshold %, optional forced window) as the single global home.
+  Alternative: delete `max_capacity_token_model` / `compaction_threshold_percent` from the
+  cascade as dead UI — but workspace overlays and hand-edited configs already use them.
+- **D4 — model entry stays a combobox, not a select.** A strict dropdown breaks self-hosted
+  endpoints and the screenshot's `opencode.ai/zen` URL, which is not in the catalog.
+- **D5 — output cap + price.** *Recommend: show both read-only now*; add a real
+  `max_output_tokens` profile field only if you want `Agent.maxTokens` to stop being 4096.
+  Pricing is per-provider and goes stale — information, not configuration.
+- **D6 — workspace scope.** Workspace settings can override `profiles_models`; does a
+  workspace get its own catalog cache? *Recommend: one machine-wide cache* — it is model
+  metadata, not user data.
+
+---
+
+## 8. Risks
+
+- **Offline / air-gapped.** No cache ⇒ catalog absent ⇒ today's 200k built-in. The UI must
+  *say* that (`catalog unavailable — context window is the 200k built-in`) instead of
+  showing a confidently wrong number.
+- **Provider/model ambiguity.** `deepseek-flash` exists under several providers with
+  different limits. Resolution needs the provider, not just `model`; a bare model name must
+  pick a ranked match and name it in the UI.
+- **Upstream trust.** A wrong `limit.context` upstream silently changes when pabrik
+  compacts. A user-typed override must always win, and the resolved source must be visible
+  next to the number.
+- **Staleness of the trimmed schema.** models.dev is an external schema; the trim step must
+  tolerate missing/renamed fields (unknown ⇒ `null`, never a default) and the cache must
+  carry a schema version so a shape change invalidates rather than mis-parses.
+
+---
+
+## 9. Non-goals
+
+- Changing where compaction happens, or how the compaction prompt is built.
+- A pricing/billing surface, model leaderboards, or model switching outside profiles.
+- Migrating any existing `config.json`.
+- Touching `session_llm_config.zig`'s per-owner/per-workspace resolution.
