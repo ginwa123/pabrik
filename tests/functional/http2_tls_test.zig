@@ -52,46 +52,28 @@
 //       PABRIK_BIN=$(pwd)/zig-out/bin/pabrikcore-linux-x86_64 \
 //           python3 -m pytest tests/functional/http2_tls_test.py -v
 //
-//   KNOWN-BROKEN UPSTREAM: the TLS serve path
-//   ------------------------------------------
-//   The four tests that actually put a TLS request on the wire are currently
-//   skipped — see ``_TLS_TRANSPORT_BROKEN_UPSTREAM`` below. Diagnosis, with the
-//   evidence:
-//
-//       $ openssl s_client -connect 127.0.0.1:<port>
-//       CONNECTION ESTABLISHED
-//       Protocol version: TLSv1.3
-//       Ciphersuite: TLS_AES_256_GCM_SHA384
-//       Peer certificate: CN=localhost
-//       40B73A3A:error:0A000126:SSL routines::unexpected eof while reading
+//   FORMERLY KNOWN-BROKEN, NOW FIXED: the TLS serve path
+//   ---------------------------------------------------
+//   These four tests used to be skipped behind `PABRIK_RUN_KNOWN_BROKEN_TLS`.
+//   The handshake completed (``TLSv1.3``, ``CN=localhost``) and the server then
+//   dropped the socket without answering::
 //
 //       $ curl -k https://127.0.0.1:<port>/health
 //       curl: (35) Send failure: Broken pipe
 //
-//   The handshake itself succeeds and the certificate is valid (``CN=localhost``,
-//   SAN ``DNS:localhost, IP:127.0.0.1``, one-year validity). pabrik logs ``TLS
-//   enabled (ALPN: h2, http/1.1) cert=…`` and then ``Agent is ready to serve!`` and
-//   stays alive. The connection is accepted, the handshake completes, and the
-//   server then drops the socket without emitting an HTTP response.
+//   That was a bug in the pinned ``kabelweb`` dep, not in pabrik — pabrik's
+//   ``src/`` has no ``SSL_accept`` / ``SSL_read`` / ``SSL_write`` at all; it only
+//   builds the context (``gserverz.tls.Ctx.init(...)``) and hands it to the
+//   server (``gs.setTlsCtx(ctx)``). The event loop hands every hijack runner a
+//   NON-BLOCKING fd, and every runner restored blocking mode before its blocking
+//   work — except ``runTlsServe``, which called ``SSL_accept`` once on that fd,
+//   got ``WANT_READ`` (the ClientHello had barely landed) and reported
+//   ``HandshakeFailed``.
 //
-//   That is not pabrik's code. ``src/main.zig`` only *constructs* the TLS context
-//   (``gserverz.tls.Ctx.init(allocator, cert, key, &.{alpn_h2, alpn_http1})`` at
-//   line 168) and hands it to the server (``gs.setTlsCtx(ctx)`` at line 398); the
-//   accept/serve loop that drops the connection lives in the pinned ``kabelweb``
-//   dependency (``build.zig.zon`` → ``git+https://github.com/ginwa123/kabelweb.git``
-//   @ ``7e97a09``). ``src/`` contains no ``SSL_accept`` / ``SSL_read`` /
-//   ``SSL_write`` at all.
-//
-//   Plaintext HTTP/2 is unaffected: ``http2_test.py`` (h2c) passes on every run,
-//   and so do the two tests in this file that never put a request on a TLS socket
-//   (``test_plaintext_still_works_without_tls_flags``,
-//   ``test_tls_flag_requires_both_files``). So this is the TLS transport only.
-//
-//   Fixing it means a kabelweb change plus a new pinned hash — not something this
-//   repo can do. The tests are left in place and skipped rather than deleted, so
-//   they start guarding again the moment the pin is bumped. Re-enable them with:
-//
-//       PABRIK_RUN_KNOWN_BROKEN_TLS=1 python3 -m pytest tests/functional/http2_tls_test.py -v
+//   Fixed upstream by kabelweb PR #7 (``fix(tls): restore blocking mode before
+//   the TLS handshake in runTlsServe``) and picked up here by the ``eaf2b583``
+//   pin. The gate is gone with it: these four tests now run on every
+//   ``zig build functional-test:zig``, which is the point of keeping them.
 //   """
 //
 // ── PORTING NOTES ───────────────────────────────────────────────────────
@@ -142,34 +124,9 @@ const posix = std.posix;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
-// Known-broken upstream gate
-// ============================================================================
-
-/// The TLS transport in the pinned `kabelweb` dep accepts the connection and
-/// completes the handshake, then closes the socket before writing a
-/// response (`curl: (35) Send failure: Broken pipe`). The evidence and the
-/// file-level write-up are in this module's docstring. Only the four tests
-/// that put a request on a TLS socket are gated; the plaintext and
-/// flag-validation tests in this file still run, as does the whole h2c
-/// suite in `http2_test.py`.
-const TLS_TRANSPORT_BROKEN_UPSTREAM =
-    "kabelweb TLS transport drops the connection after a successful handshake " ++
-    "(upstream dep, pinned at 7e97a09; src/ has no SSL_accept/SSL_read/" ++
-    "SSL_write). Re-enable with PABRIK_RUN_KNOWN_BROKEN_TLS=1.";
-
-/// The Python `skipif` marker, as `error.SkipZigTest`.
-fn requireTlsTransportFixed() !void {
-    const v = std.process.Environ.getAlloc(std.testing.environ, gpa, "PABRIK_RUN_KNOWN_BROKEN_TLS") catch {
-        std.debug.print("skipping (TLS transport is broken upstream): {s}\n", .{TLS_TRANSPORT_BROKEN_UPSTREAM});
-        return error.SkipZigTest;
-    };
-    defer gpa.free(v);
-    if (!std.mem.eql(u8, v, "1")) {
-        std.debug.print("skipping (TLS transport is broken upstream): {s}\n", .{TLS_TRANSPORT_BROKEN_UPSTREAM});
-        return error.SkipZigTest;
-    }
-}
+// The `PABRIK_RUN_KNOWN_BROKEN_TLS` gate that used to live here is gone: the
+// upstream fix is in the pinned kabelweb (PR #7, pinned at `eaf2b583`). The
+// docstring above keeps the diagnosis for the next person who sees `curl: (35)`.
 
 // ============================================================================
 // curl helpers
@@ -741,7 +698,6 @@ fn tlsCertPath(h: *Harness) ?[]u8 {
 // reports `2` only if the server offered `h2` first and our client took it.
 test "tls_selfsigned_serves_http2" {
     try harness.requirePabrikBin(io, gpa);
-    try requireTlsTransportFixed();
 
     var b = try spawnTlsPabrik(&.{"--tls-selfsigned"}, true, 45_000);
     defer b.deinit();
@@ -776,7 +732,6 @@ test "tls_selfsigned_serves_http2" {
 // from every TLS client.
 test "tls_offers_http11_fallback" {
     try harness.requirePabrikBin(io, gpa);
-    try requireTlsTransportFixed();
 
     var b = try spawnTlsPabrik(&.{"--tls-selfsigned"}, true, 45_000);
     defer b.deinit();
@@ -813,7 +768,6 @@ test "tls_offers_http11_fallback" {
 // loads the app from one of those two names, depending on backend).
 test "tls_cert_san_matches_localhost" {
     try harness.requirePabrikBin(io, gpa);
-    try requireTlsTransportFixed();
 
     var b = try spawnTlsPabrik(&.{"--tls-selfsigned"}, true, 45_000);
     defer b.deinit();
@@ -978,7 +932,6 @@ test "tls_flag_requires_both_files" {
 // this test is the one that must be revised — deliberately, with the contract.)
 test "tls_and_h2c_are_mutually_exclusive_on_a_port" {
     try harness.requirePabrikBin(io, gpa);
-    try requireTlsTransportFixed();
 
     var b = try spawnTlsPabrik(&.{"--tls-selfsigned"}, true, 45_000);
     defer b.deinit();
@@ -1020,7 +973,6 @@ test "tls_and_h2c_are_mutually_exclusive_on_a_port" {
 // Body-analysis barrier: an unreferenced helper is never type-checked, so a
 // stdlib rename inside one stays invisible until a caller appears.
 comptime {
-    _ = requireTlsTransportFixed;
     _ = findCurl;
     _ = requireHttp2Curl;
     _ = curlRun;

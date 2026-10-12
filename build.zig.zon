@@ -137,20 +137,28 @@
         // — consumers `@import("kabelweb")` and reach
         // `kabelweb.server` / `kabelweb.client`.
         //
-        // LOCAL DEV OVERRIDE: this is the sibling checkout so the SSE fixes
-        // developed in ../kabelweb are exercised here immediately (notably
-        // commit 7e97a09 — "keep SSE clients registered after the handler
-        // returns + real loop threads", which stops /api/events from
-        // delivering a single `connected` frame and then going silent).
+        // TLS + event-loop fixes, all upstream in kabelweb and all in this
+        // pin:
+        //   #7 fix(tls): restore blocking mode before the TLS handshake in
+        //      runTlsServe — without it every HTTPS client to a `--tls`
+        //      server died with `curl: (35) Send failure: Broken pipe`
+        //      (tests/functional/http2_tls_test.zig was gated on it).
+        //   #8 fix(event loop): keep fds the loop no longer owns out of the
+        //      poll set.
+        //   #9 fix(windows): one dead handle must not fail the whole WSAPoll.
         //
-        // To restore the released/pinned dependency (CI, other machines),
-        // swap this back to:
-        //   .url = "git+https://github.com/ginwa123/kabelweb.git#<commit>",
-        //   .hash = "kabelweb-0.0.0-<hash>",
-        // after pushing the kabelweb commit you want to pin.
+        // eaf2b583 = the merge of #9, i.e. the first commit on kabelweb main
+        // that carries all three. CI on kabelweb is green for it (all four
+        // jobs, windows-latest included).
+        //
+        // To move it again: bump the SHA, then re-derive the hash with
+        //   zig fetch "git+https://github.com/ginwa123/kabelweb.git#<sha>"
+        // and paste the `kabelweb-0.0.0-…` line it prints. Expect to
+        // `rm -rf zig-pkg` first: Zig keys the package cache by `.hash`, so a
+        // stale extract will happily satisfy a build after the URL moves.
         .kabelweb = .{
-            .url = "git+https://github.com/ginwa123/kabelweb.git#02cc37f7cd064a94fe6385d293969d6cc3220bfd",
-            .hash = "kabelweb-0.0.0-vhZam5cXHQDuXHyFVwHUaROmfGKA69u4F-Spzbc3btsU",
+            .url = "git+https://github.com/ginwa123/kabelweb.git#eaf2b583ac71f4a59e5557694f1c2527042dcb0b",
+            .hash = "kabelweb-0.0.0-vhZamyhIHQClP1WlXj3emwesAFmiyR96sTFZ0kc60Abv",
         },
         // Cross-platform portable helpers (sleep, fileExists,
         // unixTimestampNanos, etc.) used by every module. Promoted
