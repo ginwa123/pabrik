@@ -10,6 +10,8 @@
     <string>Pabrik Browser</string>
     <key>CFBundleExecutable</key>
     <string>pabrik-browser</string>
+    <key>CFBundleIconFile</key>
+    <string>Pabrik</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleVersion</key>

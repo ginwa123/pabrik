@@ -2,7 +2,7 @@
 Name=Pabrik Browser
 Comment=Pabrik Browser — open agent workspace in default browser tab
 Exec=/usr/local/bin/pabrik-desktop --browser
-Icon=/usr/share/pixmaps/pabrik.ico
+Icon=pabrik
 Terminal=false
 Type=Application
 Categories=Development;

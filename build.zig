@@ -2497,6 +2497,16 @@ const check_webapp_node = b.addSystemCommand(switch (b.graph.host.result.os.tag)
     });
     desktop_exe.root_module.linkSystemLibrary("c", .{});
 
+    // Windows application icon: the brand "P" mark (packaging/icons,
+    // same artwork as the web favicon.ico). Ignored on non-COFF targets
+    // (see addWin32ResourceFile docs), so this is unconditional. The
+    // Start Menu shortcuts use the exe itself as their IconLocation, so
+    // they pick this up with no script change.
+    desktop_exe.root_module.addWin32ResourceFile(.{
+        .file = b.path("packaging/windows/pabrik.rc"),
+        .include_paths = &.{b.path("packaging/icons")},
+    });
+
     // Set by the `.windows` prong below when the real WebView2 build is
     // taken: install step copying WebView2Loader.dll next to the exe.
     // Declared here (outside the switch) because `desktop_install` —
@@ -3800,7 +3810,12 @@ const check_webapp_node = b.addSystemCommand(switch (b.graph.host.result.os.tag)
     //   zig-out/bin/pabrik (service)      → /usr/local/bin/pabrik
     //   packaging/linux/pabrik.desktop    → /usr/share/applications/pabrik.desktop
     //   packaging/linux/pabrik-browser.desktop → /usr/share/applications/pabrik-browser.desktop
-    //   src/apps/desktop/public/favicon.ico → /usr/share/pixmaps/pabrik.ico
+    //   packaging/icons/pabrik-*.png      → /usr/share/icons/hicolor/<size>/apps/pabrik.png
+    //   packaging/icons/pabrik-256.png    → /usr/share/pixmaps/pabrik.png (legacy fallback)
+    //
+    // The .desktop files use the themed `Icon=pabrik` name so the hicolor
+    // lookup above resolves at every size; the pixmaps copy keeps old
+    // absolute-path references working.
     //
     // The service copy is REQUIRED, not optional: the desktop resolves
     // its backend as `--pabrik-path` → next-to-self → $PATH
@@ -3847,7 +3862,7 @@ const check_webapp_node = b.addSystemCommand(switch (b.graph.host.result.os.tag)
     linux_app_step.dependOn(&install_desktop_file.step);
     const install_desktop_icon = b.addSystemCommand(&.{
         "/bin/sh", "-c",
-        "mkdir -p /usr/share/pixmaps && cp src/apps/desktop/public/favicon.ico /usr/share/pixmaps/pabrik.ico && chmod 644 /usr/share/pixmaps/pabrik.ico",
+        "for s in 16 32 48 64 128 256 512; do mkdir -p /usr/share/icons/hicolor/${s}x${s}/apps && cp packaging/icons/pabrik-${s}.png /usr/share/icons/hicolor/${s}x${s}/apps/pabrik.png && chmod 644 /usr/share/icons/hicolor/${s}x${s}/apps/pabrik.png; done; mkdir -p /usr/share/pixmaps && cp packaging/icons/pabrik-256.png /usr/share/pixmaps/pabrik.png && chmod 644 /usr/share/pixmaps/pabrik.png",
     });
     install_desktop_icon.step.dependOn(&install_desktop_file.step);
     linux_app_step.dependOn(&install_desktop_icon.step);
