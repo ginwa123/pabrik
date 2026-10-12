@@ -653,6 +653,18 @@ pub const Harness = struct {
         /// process env is never mutated; each pair is added to the copied
         /// `env_map` `boot` already builds.
         extra_env: []const [2][]const u8 = &.{},
+        /// Lower the CHILD's soft `RLIMIT_NOFILE` to this value before it
+        /// execs, without touching the hard limit.
+        ///
+        /// `std.process.spawn` has no rlimit knob, so the binary is booted
+        /// through `/bin/sh -c 'ulimit -S -n N; exec ...'` — the shell only
+        /// lowers the soft limit and then `exec`s, so the pid and the process
+        /// group are the binary's own. Used to reproduce macOS's default
+        /// (256), which collapses the SQLite reader pool's fd-derived ceiling
+        /// to a single reader.
+        ///
+        /// POSIX only; asking on Windows is an error, not a silent no-op.
+        no_file_limit: ?u64 = null,
     };
 
     /// Boot a fresh `pabrik` binary against an isolated tmpdir HOME.
@@ -784,6 +796,21 @@ pub const Harness = struct {
 
         var argv: std.ArrayList([]const u8) = .empty;
         defer argv.deinit(gpa);
+        var ulimit_script: ?[]u8 = null;
+        defer if (ulimit_script) |script| gpa.free(script);
+        if (opts.no_file_limit) |limit| {
+            if (is_windows) return error.NoFileLimitUnsupported;
+            // `$0` is the binary, `$@` the args after it — `exec` replaces the
+            // shell, so the recorded pid keeps pointing at the server.
+            ulimit_script = try std.fmt.allocPrint(
+                gpa,
+                "ulimit -S -n {d} || exit 126; exec \"$0\" \"$@\"",
+                .{limit},
+            );
+            try argv.append(gpa, "/bin/sh");
+            try argv.append(gpa, "-c");
+            try argv.append(gpa, ulimit_script.?);
+        }
         try argv.append(gpa, bin_path);
         try argv.append(gpa, "--port");
         try argv.append(gpa, port_str);
