@@ -311,6 +311,99 @@ describe('computeAnchorCompensation', () => {
     })
     expect(result.newScrollTop).toBeGreaterThanOrEqual(0)
   })
+
+  // ── maxScrollTop: bound the target to the range the DOM can reach ─────────
+  //
+  // `measureItems` rebuilds the model and writes scrollTop in ONE synchronous
+  // pass, while the sizer is a `:style` binding Vue applies on its next render.
+  // Without a bound, a target past the element's CURRENT range is truncated by
+  // the browser — silently — which is a teleport rather than a no-op (the pass
+  // meant to hold the reader's view still leaves them short, and the next pass
+  // compensates from the displaced position). Measured 2026-10-12: a +22,235px
+  // compensation written as 138,880 and held at 120,074.
+
+  it('cuts a target that exceeds the reachable range and says so', () => {
+    const result = computeAnchorCompensation({
+      ...base,
+      prevScrollTop: 90_000,
+      oldAnchorTop: 90_000,
+      newAnchorTop: 112_235,
+      maxScrollTop: 120_074,
+    })
+    expect(result.shiftPx).toBe(22_235)
+    expect(result.newScrollTop).toBe(112_235) // 90_000 + 22_235, inside the range
+    expect(result.clampedToMax).toBe(false)
+
+    const beyond = computeAnchorCompensation({
+      ...base,
+      prevScrollTop: 116_645,
+      oldAnchorTop: 116_536,
+      newAnchorTop: 138_771,
+      maxScrollTop: 120_074,
+    })
+    expect(beyond.shiftPx).toBe(22_235)
+    expect(beyond.newScrollTop).toBe(120_074)
+    expect(beyond.clampedToMax).toBe(true)
+  })
+
+  it('leaves the target alone when no bound is supplied', () => {
+    const result = computeAnchorCompensation({
+      ...base,
+      prevScrollTop: 100,
+      oldAnchorTop: 100,
+      newAnchorTop: 200,
+    })
+    expect(result.newScrollTop).toBe(200)
+    expect(result.clampedToMax).toBe(false)
+  })
+
+  it('bounds the at-bottom re-pin too, and reports which rule was used', () => {
+    const result = computeAnchorCompensation({
+      ...base,
+      prevScrollTop: 100,
+      oldAnchorTop: 100,
+      newAnchorTop: 100,
+      atBottomTarget: 5000,
+      maxScrollTop: 1200,
+    })
+    expect(result.target).toBe('bottom')
+    expect(result.newScrollTop).toBe(1200)
+    expect(result.clampedToMax).toBe(true)
+  })
+
+  it('treats a non-finite bound as unbounded and a negative one as 0', () => {
+    const unbounded = computeAnchorCompensation({
+      ...base,
+      prevScrollTop: 100,
+      oldAnchorTop: 100,
+      newAnchorTop: 900,
+      maxScrollTop: NaN,
+    })
+    expect(unbounded.newScrollTop).toBe(900)
+    expect(unbounded.clampedToMax).toBe(false)
+
+    const zero = computeAnchorCompensation({
+      ...base,
+      prevScrollTop: 100,
+      oldAnchorTop: 100,
+      newAnchorTop: 900,
+      maxScrollTop: -50,
+    })
+    expect(zero.newScrollTop).toBe(0)
+    expect(zero.clampedToMax).toBe(true)
+  })
+
+  it('does not flag a bound when the target already sits on it', () => {
+    const result = computeAnchorCompensation({
+      ...base,
+      prevScrollTop: 100,
+      oldAnchorTop: 100,
+      newAnchorTop: 900,
+      maxScrollTop: 900,
+    })
+    expect(result.newScrollTop).toBe(900)
+    expect(result.clampedToMax).toBe(false)
+  })
 })
 
 // ─── Integration tests (mounted component) ───────────────────────────────────
