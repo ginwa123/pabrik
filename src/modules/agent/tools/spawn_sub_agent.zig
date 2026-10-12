@@ -43,7 +43,7 @@ pub const spawn_sub_agent_tool_system_prompt =
     \\- `ask_user` and `spawn_sub_agent` are main-agent-only: never list them for a sub-agent (rejected at parse time). A sub-agent cannot reach the human — if you need a decision, ask it yourself with `ask_user` before spawning, or bake the answer into the `instruction`.
     \\- Use for parallel research or multi-file work, not for trivial single-step tasks. Up to 20 sub-agents in parallel.
     \\- Explorer-code sub-agents (read-only: read_file, glob, search) share your cwd — NO new worktree needed.
-    \\- Writer sub-agents (write_file, text_replace, remove_file, writing bash) MUST be told explicitly in `instruction` to call `set_git_worktree` first (path `.worktree/worktrees_agent_<randomname>`), do the work there, then return a summary of changed files and optionally push. Include `set_git_worktree` in their `tools`.
+    \\- Writer sub-agents (write_file, text_replace, remove_file, shell commands via `command`) MUST be told explicitly in `instruction` to call `set_git_worktree` first (path `.worktree/worktrees_agent_<randomname>`), do the work there, then return a summary of changed files and optionally push. Include `set_git_worktree` in their `tools`.
     \\
 ;
 
@@ -238,9 +238,7 @@ fn parseSubAgentsFromValue(
                 return error.InvalidSubAgentsFormat;
             }
             break :blk parsed_str.value.array;
-        }
-    else
-        return error.InvalidSubAgentsFormat;
+        } else return error.InvalidSubAgentsFormat;
 
     if (agents_array.items.len == 0) {
         return error.NoSubAgents;

@@ -126,7 +126,8 @@ pub const CompactionAgent =
     \\Filters available (use these to scope reads and searches):
     \\- `role`: "user" | "assistant" | "tool" — exact match.
     \\- `tool_name`: exact-match filter on the tool that produced
-    \\  the row. Useful for "find every bash invocation that ran `cargo test`".
+    \\  the row. Useful for "find every `command` invocation that ran `cargo test`".
+    \\  (Rows written before 2026-10-12 stored the shell tool as `bash`.)
     \\- `parent_session_id`: exact-match filter on sub-agent sessions.
     \\  Useful for "show me every message in the sub-agent that was spawned for X".
     \\- `agent`: exact-match filter on the agent name (e.g. "main",

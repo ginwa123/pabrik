@@ -1355,10 +1355,10 @@ pub const search_tool = AgentTool{
     .function = .{
         .name = "search",
         .description =
-        \\PRIMARY search tool for code navigation. Use THIS tool — not `bash rg`,
-        \\`bash grep`, `bash grep -r`, or `bash find` — to search the codebase.
+        \\PRIMARY search tool for code navigation. Use THIS tool — not a shell
+        \\`rg` / `grep` / `find` run through `command` — to search the codebase.
         \\
-        \\WHY THIS TOOL OVER `bash rg ...`
+        \\WHY THIS TOOL OVER A SHELL `rg ...`
         \\- Structured JSON output with line numbers and file paths — no shell
         \\  parsing or `rg --line-number --no-heading` flag-juggling required.
         \\- Automatically respects .gitignore / .ignore / .rgignore (skips
@@ -1369,7 +1369,7 @@ pub const search_tool = AgentTool{
         \\  from filling the context window.
         \\- Identical behavior across platforms — no per-OS rg-flag differences.
         \\
-        \\Fall back to `bash rg` ONLY when you need an rg flag this tool does
+        \\Fall back to a shell `rg` (via `command`) ONLY when you need an rg flag this tool does
         \\not expose (rare — word_boundary / literal / only_matching cover the
         \\common cases below).
         \\
@@ -1384,8 +1384,8 @@ pub const search_tool = AgentTool{
         \\WHEN NOT TO USE
         \\- You already know the exact file path → use read_file.
         \\- You want to find files BY NAME (not by content) → use glob.
-        \\- You need a real ripgrep flag this tool does not expose → `bash rg`
-        \\  fallback, but first check whether the flag has a parameter here.
+        \\- You need a real ripgrep flag this tool does not expose → run `rg`
+        \\  through `command`, but first check whether the flag has a parameter here.
         \\
         \\RESPONSE FORMAT
         \\Results are a JSON object carrying the args plus the

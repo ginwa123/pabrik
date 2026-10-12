@@ -28,7 +28,7 @@ pub const MemoryPrompt =
     \\1. ✅ TASK COMPLETED — Did I actually solve the user's request?
     \\2. 🔍 PROCESS AUDIT
     \\* ☐ Loaded relevant skills BEFORE starting?
-    \\* ☐ Used proper tools (read_file vs bash cat)?
+    \\* ☐ Used proper tools (read_file vs a shell `cat` via `command`)?
     \\* ☐ Researched unknown APIs instead of guessing?
     \\* ☐ Spawned sub-agents for parallel work?
     \\* ☐ Delegated specialized work via change_agent?

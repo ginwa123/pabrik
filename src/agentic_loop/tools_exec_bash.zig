@@ -1,4 +1,6 @@
-// DEPRECATED: use tools_exec_command.execCommand instead — this file is a thin shim keeping the `"bash"` exec path: `execBash` delegates to `execCommand`.
+// RETIRED: the `"bash"` exec path. `execBash` delegates to
+// tools_exec_command.execCommand; the name itself is no longer dispatchable
+// (see tools_equipped.zig :: RETIRED_TOOL_NAMES).
 const pabrikcore = @import("pabrikcore");
 const tools = @import("tools.zig");
 const command_exec = @import("tools_exec_command.zig");

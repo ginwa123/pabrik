@@ -132,20 +132,7 @@ test "build_agent_prompt loads memory files into Global Knowledge section" {
         makeTool("read_file", "Read a file"),
         makeTool("list_memory", "List memory files"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(
-        alloc,
-        io,
-        "/tmp",
-        "",
-        "",
-        "",
-        "",
-        &tools,
-        "",
-        &env,
-        "",
-        "",
-        "", "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", &env, "", "", "", "");
     defer alloc.free(prompt);
 
     // The Global Knowledge section is present
@@ -195,20 +182,7 @@ test "build_agent_prompt omits Available Skills section when search_skills tool 
     const tools = [_]AgentTool{
         makeTool("read_file", "Read a file"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(
-        alloc,
-        io,
-        "/tmp",
-        "",
-        "",
-        "",
-        "",
-        &tools,
-        "",
-        &env,
-        "",
-        "",
-        "", "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", &env, "", "", "", "");
     defer alloc.free(prompt);
 
     try std.testing.expect(!contains(prompt, "## Available Skills"));
@@ -224,20 +198,8 @@ test "build_agent_prompt silently skips Available Skills when env is null" {
         makeTool("read_file", "Read a file"),
         makeTool("search_skills", "Search available skills"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(
-        alloc,
-        io,
-        "/tmp",
-        "",
-        "",
-        "",
-        "",
-        &tools,
-        "",
-        null, // ← env is null
-        "",
-        "",
-        "", "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", null, // ← env is null
+        "", "", "", "");
     defer alloc.free(prompt);
 
     // No section emitted; no error thrown
@@ -274,20 +236,8 @@ test "build_agent_prompt injects Local Knowledge section from <cwd>/.pabrik/memo
     const tools = [_]AgentTool{
         makeTool("read_file", "Read a file"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(
-        alloc,
-        io,
-        tmp_cwd,
-        "",
-        "",
-        "",
-        "",
-        &tools,
-        "",
-        null, // env is null — only local knowledge should be present
-        "",
-        "",
-        "", "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, tmp_cwd, "", "", "", "", &tools, "", null, // env is null — only local knowledge should be present
+        "", "", "", "");
     defer alloc.free(prompt);
 
     // The section header is present
@@ -344,11 +294,7 @@ test "build_agent_prompt Global Knowledge section emits each memory's absolute p
     const tools = [_]AgentTool{
         makeTool("list_memory", "List memory files"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(
-        alloc,
-        io,
-        "/tmp",
-        "", "", "", "", &tools, "", &env, "", "", "", "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", &env, "", "", "", "");
     defer alloc.free(prompt);
 
     // The full absolute path appears in the prompt — copy-pasteable
@@ -388,11 +334,7 @@ test "build_agent_prompt Local Knowledge section emits each memory's absolute pa
     const tools = [_]AgentTool{
         makeTool("read_file", "Read a file"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(
-        alloc,
-        io,
-        tmp_cwd,
-        "", "", "", "", &tools, "", null, "", "", "", "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, tmp_cwd, "", "", "", "", &tools, "", null, "", "", "", "");
     defer alloc.free(prompt);
 
     // Full absolute path of the local memory, copy-pasteable.
@@ -456,20 +398,7 @@ test "build_agent_prompt renders Local and Global Knowledge together when both e
         makeTool("read_file", "Read a file"),
         makeTool("list_memory", "List memory files"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(
-        alloc,
-        io,
-        tmp_cwd,
-        "",
-        "",
-        "",
-        "",
-        &tools,
-        "",
-        &env,
-        "",
-        "",
-        "", "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, tmp_cwd, "", "", "", "", &tools, "", &env, "", "", "", "");
     defer alloc.free(prompt);
 
     // Both sections are present
@@ -502,20 +431,7 @@ test "build_agent_prompt omits Local Knowledge when <cwd>/.pabrik/memories does 
     const tools = [_]AgentTool{
         makeTool("read_file", "Read a file"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(
-        alloc,
-        io,
-        tmp_cwd,
-        "",
-        "",
-        "",
-        "",
-        &tools,
-        "",
-        null,
-        "",
-        "",
-        "", "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, tmp_cwd, "", "", "", "", &tools, "", null, "", "", "", "");
     defer alloc.free(prompt);
 
     // No .pabrik/memories → no Local Knowledge section
@@ -529,20 +445,8 @@ test "build_agent_prompt omits Local Knowledge when cwd is empty" {
     const tools = [_]AgentTool{
         makeTool("read_file", "Read a file"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(
-        alloc,
-        io,
-        "", // ← cwd is empty
-        "",
-        "",
-        "",
-        "",
-        &tools,
-        "",
-        null,
-        "",
-        "",
-        "", "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "", // ← cwd is empty
+        "", "", "", "", &tools, "", null, "", "", "", "");
     defer alloc.free(prompt);
 
     // No cwd → no Local Knowledge section
@@ -578,20 +482,7 @@ test "build_agent_prompt omits Local Knowledge when <cwd>/.pabrik/memories has n
     const tools = [_]AgentTool{
         makeTool("read_file", "Read a file"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(
-        alloc,
-        io,
-        tmp_cwd,
-        "",
-        "",
-        "",
-        "",
-        &tools,
-        "",
-        null,
-        "",
-        "",
-        "", "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, tmp_cwd, "", "", "", "", &tools, "", null, "", "", "", "");
     defer alloc.free(prompt);
 
     // Dir exists but has no .md files → no section
@@ -765,20 +656,7 @@ test "build_agent_prompt renders Kanban Status Tracking when section is non-empt
         \\- **complete** — move to `done` before your final reply
         \\- **blocked** — do NOT move
     ;
-    const prompt = try prompts_mod.build_agent_prompt(
-        alloc,
-        io,
-        "/tmp",
-        "",
-        "",
-        "",
-        "",
-        &tools,
-        "",
-        null,
-        "",
-        "",
-        kanban_block, "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", null, "", "", kanban_block, "");
     defer alloc.free(prompt);
 
     try std.testing.expect(contains(prompt, "## Kanban Status Tracking"));
@@ -1338,20 +1216,7 @@ test "build_agent_prompt renders Workspace Context when section is non-empty" {
         \\  - task: `API` (type: standard, session: `sess_backend`)
         \\
     ;
-    const prompt = try prompts_mod.build_agent_prompt(
-        alloc,
-        io,
-        "/tmp",
-        "",
-        "",
-        "",
-        "",
-        &tools,
-        "",
-        null,
-        "",
-        workspaceContext,
-        "", "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", null, "", workspaceContext, "", "");
     defer alloc.free(prompt);
 
     // Section header is present.
@@ -1417,7 +1282,7 @@ test "build_agent_prompt omits Workspace Context when section is empty" {
 // ---------------------------------------------------------------------------
 // build_agent_prompt — Search Tool Preference (MANDATORY) section.
 //
-// Added to enforce `search` tool usage over `bash rg`/`grep`/`find` for
+// Added to enforce `search` tool usage over a shell `rg`/`grep`/`find` for
 // code/text search. The section is unconditional (no `requires_tool` gate),
 // so it appears in every agent's prompt regardless of tool list.
 // ---------------------------------------------------------------------------
@@ -1450,14 +1315,17 @@ test "build_agent_prompt always renders Search Tool Preference (unconditional)" 
     try std.testing.expect(contains(prompt, "## Search Tool Preference (MANDATORY)"));
     // Hard-rule language is preserved.
     try std.testing.expect(contains(prompt, "always use the `search` tool"));
-    try std.testing.expect(contains(prompt, "Do NOT use `bash`"));
+    // The rule names the live tool, not the retired one — teaching `bash` is
+    // what kept the model emitting it.
+    try std.testing.expect(contains(prompt, "Do NOT run `rg`, `grep`, or `find` through the `command` tool"));
     // Mapping examples survived into the rendered prompt.
     try std.testing.expect(contains(prompt, "search(pattern=\"pattern\""));
     try std.testing.expect(contains(prompt, "group_by_file: false"));
     try std.testing.expect(contains(prompt, "word_boundary: true"));
     try std.testing.expect(contains(prompt, "literal: true"));
-    // The opt-in rg fallback list is also present so agents know when bash rg is OK.
-    try std.testing.expect(contains(prompt, "When `bash rg` IS allowed"));
+    // The opt-in rg fallback list is also present so agents know when a shell
+    // `rg` (via `command`) is OK.
+    try std.testing.expect(contains(prompt, "When a shell `rg` IS allowed"));
     try std.testing.expect(contains(prompt, "rg -C N"));
     try std.testing.expect(contains(prompt, "rg --json"));
     // Self-check is the closing reinforcement.
@@ -1936,7 +1804,6 @@ test "ReadWorkspaceSessionToolRule names the tool and the four behaviors" {
     try std.testing.expect(contains(prompt, "compacted_only"));
     try std.testing.expect(!contains(prompt, "compacted_messages"));
 }
-
 
 test "SkillEvalToolRule names the tool and its non-negotiable behaviors" {
     const prompt: []const u8 = SkillEvalToolRule;

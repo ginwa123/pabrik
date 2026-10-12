@@ -471,16 +471,12 @@ pub fn isKnownToolName(name: []const u8) bool {
 }
 
 // =====================================================================
-// Deprecated tool names → current registry entry.
+// Tolerated tool names → current registry entry.
 //
-// `bash` and `pwsh` were merged into `command` on 2026-09-04 (the exec
-// shims in tools_exec_bash.zig / tools_exec_pwsh.zig delegate to
-// execCommand to this day). Models do not forget that rename: they were
-// trained on the Claude-style `bash` tool and keep emitting it, and an
-// unknown-name miss used to resolve to a bare `continue` in handle_tool's
-// Phase 3 — the call never ran, the placeholder stayed `data:null`, and
-// the shell card renders `error` nowhere, so a dead tool call looked
-// exactly like a flaky shell.
+// A name belongs here only when the product never advertised it (so a
+// model emitting it is guessing, not remembering) and running it is
+// harmless. Today that is `run_command`, a Claude-style shell name this
+// codebase never shipped.
 //
 // DISPATCH-ONLY on purpose. `UNIFIED_TOOL_REGISTRY` is the single
 // ADVERTISED list handed to the LLM; a compat entry there would teach the
@@ -488,8 +484,6 @@ pub fn isKnownToolName(name: []const u8) bool {
 // already been emitted, to make it run instead of fail.
 // =====================================================================
 pub const TOOL_NAME_ALIASES = [_]struct { alias: []const u8, target: []const u8 }{
-    .{ .alias = "bash", .target = "command" },
-    .{ .alias = "pwsh", .target = "command" },
     .{ .alias = "run_command", .target = "command" },
 };
 
@@ -503,9 +497,43 @@ pub fn resolveToolAlias(name: []const u8) ?[]const u8 {
     return null;
 }
 
-/// True when the name can be dispatched: a registry name, or an alias of
-/// one. This is the gate handle_tool uses to decide whether to run a call —
-/// it must stay alias-aware or a `bash` call is silently dropped again.
+// =====================================================================
+// RETIRED tool names — refused, with the replacement named.
+//
+// `bash` and `pwsh` were merged into `command` on 2026-09-04, then survived
+// another five weeks as DISPATCH-ONLY ALIASES so a stale `bash` call still
+// ran. That tolerance was the bug: because the call worked, nothing ever
+// corrected the model, and the transcript kept showing `bash $` cards for a
+// tool the product does not have. The alias taught the model nothing and
+// hid the fact that it had reached for the wrong name.
+//
+// Retired is a THIRD state, distinct from both an alias and an unknown
+// name: the call must not run (so `resolveToolAlias` must never learn these
+// back — see the guard test below) AND the miss must carry the replacement,
+// because "unknown tool" alone leaves the model re-emitting the same name.
+// `handle_tool.zig`'s `unknownToolMessage` is the caller that builds it.
+//
+// Added 2026-10-12 (kanban task_1791832963630_2).
+// =====================================================================
+pub const RETIRED_TOOL_NAMES = [_]struct { name: []const u8, replacement: []const u8 }{
+    .{ .name = "bash", .replacement = "command" },
+    .{ .name = "pwsh", .replacement = "command" },
+};
+
+/// The registry entry that replaced a retired tool name, or null when
+/// `name` was never retired. Turns an unknown-tool miss into a correction
+/// instead of a dead end.
+pub fn retiredToolSuggestion(name: []const u8) ?[]const u8 {
+    for (RETIRED_TOOL_NAMES) |entry| {
+        if (std.mem.eql(u8, name, entry.name)) return entry.replacement;
+    }
+    return null;
+}
+
+/// True when the name can be dispatched: a registry name, or a tolerated
+/// alias of one. This is the gate handle_tool uses to decide whether to run
+/// a call. A RETIRED name is deliberately NOT dispatchable — that refusal is
+/// what makes the correction reach the model.
 pub fn isDispatchableToolName(name: []const u8) bool {
     if (isKnownToolName(name)) return true;
     const target = resolveToolAlias(name) orelse return false;
@@ -523,15 +551,44 @@ test "every tool alias points at a real registry entry" {
     }
 }
 
-test "shell aliases from the pre-2026-09-04 merge resolve to command" {
-    for ([_][]const u8{ "bash", "pwsh", "run_command" }) |stale| {
-        try std.testing.expectEqualStrings("command", resolveToolAlias(stale).?);
-        try std.testing.expect(isDispatchableToolName(stale));
+test "retired shell names (bash/pwsh) are REFUSED, not aliased back to command" {
+    // Banned 2026-10-12. The old alias made a stale `bash` call WORK, so the
+    // model was never corrected and the transcript kept rendering `bash $`
+    // cards for a tool the product does not have. Dispatch must miss now, and
+    // the miss must name the replacement.
+    for ([_][]const u8{ "bash", "pwsh" }) |retired| {
+        try std.testing.expectEqual(@as(?[]const u8, null), resolveToolAlias(retired));
+        try std.testing.expect(!isDispatchableToolName(retired));
+        try std.testing.expectEqualStrings("command", retiredToolSuggestion(retired).?);
     }
-    // `command` itself is untouched, and a name nobody ever had is not
-    // dispatchable.
+
+    // `run_command` stays dispatchable: this product never advertised it, so
+    // tolerating it corrects nothing and breaks nothing.
+    try std.testing.expectEqualStrings("command", resolveToolAlias("run_command").?);
+    try std.testing.expect(isDispatchableToolName("run_command"));
+
+    // `command` itself is untouched, and a name nobody ever had is neither
+    // dispatchable nor retired.
     try std.testing.expectEqual(@as(?[]const u8, null), resolveToolAlias("command"));
     try std.testing.expect(!isDispatchableToolName("definitely_not_a_tool"));
+    try std.testing.expectEqual(@as(?[]const u8, null), retiredToolSuggestion("definitely_not_a_tool"));
+}
+
+test "every retired name names a live replacement, stays undispatchable, and is not also an alias" {
+    try std.testing.expect(RETIRED_TOOL_NAMES.len > 0);
+    for (RETIRED_TOOL_NAMES) |entry| {
+        // The replacement must be a real registry entry, or the correction
+        // would send the model to a second dead end.
+        try std.testing.expect(isKnownToolName(entry.replacement));
+        // A retired name must not shadow a live registry name either.
+        try std.testing.expect(!isKnownToolName(entry.name));
+        try std.testing.expect(!isDispatchableToolName(entry.name));
+        // The two tables must not overlap — a name cannot be both tolerated
+        // and retired, or which table gets consulted first would decide.
+        for (TOOL_NAME_ALIASES) |pair| {
+            try std.testing.expect(!std.mem.eql(u8, pair.alias, entry.name));
+        }
+    }
 }
 
 /// Filter a config-derived list to registry names, deduplicated,
