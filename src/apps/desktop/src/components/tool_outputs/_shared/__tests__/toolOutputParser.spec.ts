@@ -25,6 +25,7 @@ import {
   parseRemoveSkill,
   parseSearch,
   parseSetGitWorktree,
+  parseSetPullRequest,
   parseTextReplace,
   parseKanbanList,
   parseKanbanMove,
@@ -896,5 +897,97 @@ describe('present files helpers', () => {
     expect(formatBytes(11)).toBe('11 B')
     expect(formatBytes(48211)).toBe('47.1 KB')
     expect(formatBytes(50 * 1024 * 1024)).toBe('50.0 MB')
+  })
+})
+
+/**
+ * `set_pull_request` — the payload has exactly two success shapes plus the
+ * error shape. These cases are copied from real rows in the live DB
+ * (`llm_history.response_content`) so the parser is pinned to the wire, not to
+ * a guess about it.
+ */
+describe('parseSetPullRequest', () => {
+  const ATTACH_GITHUB = {
+    session_id: 'task_1791883461055_3',
+    attached: true,
+    url: 'https://github.com/ginwa123/pabrik/pull/922',
+    provider: 'github',
+    number: '922',
+    verified: true,
+    warning: null,
+    base: null,
+    head: null,
+  }
+
+  it('reads the attach payload field-for-field', () => {
+    const r = parseSetPullRequest(ATTACH_GITHUB)
+    expect(r).toEqual({
+      url: 'https://github.com/ginwa123/pabrik/pull/922',
+      provider: 'github',
+      number: '922',
+      attached: true,
+      cleared: false,
+      verified: true,
+      warning: null,
+      base: null,
+      head: null,
+      sessionId: 'task_1791883461055_3',
+      success: true,
+      error: null,
+    })
+  })
+
+  it('keeps a non-numeric IID as a string (GitLab/patchset numbering)', () => {
+    const r = parseSetPullRequest({ ...ATTACH_GITHUB, provider: 'gitlab', number: '7a' })
+    expect(r.number).toBe('7a')
+  })
+
+  it('surfaces a degraded bind: verified=false with a warning', () => {
+    const r = parseSetPullRequest({
+      ...ATTACH_GITHUB,
+      provider: 'generic',
+      number: null,
+      verified: false,
+      warning: 'gh CLI not found; bound without verification',
+    })
+    expect(r.verified).toBe(false)
+    expect(r.number).toBeNull()
+    expect(r.warning).toContain('without verification')
+    expect(r.success).toBe(true)
+  })
+
+  it('reads the clear payload ({session_id, cleared:true})', () => {
+    const r = parseSetPullRequest({ session_id: 'task_1', cleared: true })
+    expect(r.cleared).toBe(true)
+    expect(r.attached).toBe(false)
+    expect(r.url).toBeNull()
+    expect(r.success).toBe(true)
+  })
+
+  it('reads the error payload', () => {
+    const r = parseSetPullRequest({ error: 'PR verification failed: no such PR' })
+    expect(r.success).toBe(false)
+    expect(r.error).toBe('PR verification failed: no such PR')
+  })
+
+  it('unwraps a full envelope as well as the bare data payload', () => {
+    const envelope = JSON.stringify({
+      tool: 'set_pull_request',
+      parameters: { pr_url: ATTACH_GITHUB.url },
+      success: true,
+      data: ATTACH_GITHUB,
+      error: null,
+      v: 1,
+    })
+    expect(parseSetPullRequest(envelope).number).toBe('922')
+    expect(parseSetPullRequest(ATTACH_GITHUB).number).toBe('922')
+  })
+
+  it('never throws on empty or non-object content', () => {
+    for (const input of [null, undefined, '', 'not json', 42, []]) {
+      const r = parseSetPullRequest(input)
+      expect(r.url).toBeNull()
+      expect(r.success).toBe(true)
+    }
   })
 })

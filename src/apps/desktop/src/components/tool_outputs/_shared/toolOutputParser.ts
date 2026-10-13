@@ -393,6 +393,53 @@ export function parseSetGitWorktree(data: unknown): ParsedSetGitWorktree {
   }
 }
 
+/**
+ * `set_pull_request` result — attach-only, so the payload is one of exactly
+ * two shapes (`src/modules/agent/tools/set_pull_request.zig`):
+ *
+ *   attach: {session_id, attached:true, url, provider, number|null,
+ *            verified, warning|null, base|null, head|null}
+ *   clear:  {session_id, cleared:true}
+ *
+ * `number` arrives as a STRING in the wire payload (the backend keeps it a
+ * `[]const u8` because clones/forks carry non-numeric IIDs), so it is read
+ * as an optional string and never coerced to a number.
+ */
+export interface ParsedSetPullRequest {
+  url: string | null
+  provider: string | null
+  number: string | null
+  attached: boolean
+  cleared: boolean
+  verified: boolean
+  /** Non-fatal note from the attach (e.g. the forge CLI was missing). */
+  warning: string | null
+  base: string | null
+  head: string | null
+  sessionId: string | null
+  success: boolean
+  error: string | null
+}
+
+export function parseSetPullRequest(data: unknown): ParsedSetPullRequest {
+  const o = unwrapDataRecord(data)
+  const error = strOrNullField(o, 'error')
+  return {
+    url: strOrNullField(o, 'url'),
+    provider: strOrNullField(o, 'provider'),
+    number: strOrNullField(o, 'number'),
+    attached: boolField(o, 'attached', false),
+    cleared: boolField(o, 'cleared', false),
+    verified: boolField(o, 'verified', false),
+    warning: strOrNullField(o, 'warning'),
+    base: strOrNullField(o, 'base'),
+    head: strOrNullField(o, 'head'),
+    sessionId: strOrNullField(o, 'session_id'),
+    success: error === null,
+    error,
+  }
+}
+
 export interface ParsedBash {
   command: string | null
   stdout: string

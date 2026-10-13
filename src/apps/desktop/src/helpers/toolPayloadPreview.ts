@@ -1,0 +1,54 @@
+import { tryUnwrapToolOutput } from './unwrapToolOutput'
+
+/**
+ * Render a tool result's payload as readable text for the EXPANDED body of
+ * ChatView's generic tool fallback.
+ *
+ * Why this exists: a tool with no registered output card used to show its
+ * whole payload in the COLLAPSED pill (`renderResponse` printed the first 80
+ * characters of `data`, and — when the content was not JSON at all — the
+ * entire body). The payload was therefore either unreadable JSON on one line
+ * or a 50 KB wall of text. The pill now carries only the tool name and
+ * status, and this is where the data itself goes: on demand, pretty-printed,
+ * inside a collapsed-by-default body.
+ *
+ * Shape rules:
+ *   - `success:false` → the error sentence (the payload is null on failure).
+ *   - a JSON envelope → `data`, pretty-printed with two-space indent.
+ *   - anything else — legacy `<tool>` XML rows, a raw MCP passthrough, a
+ *     partial stream — → the content verbatim, so nothing is ever lost.
+ *
+ * Result is capped at `maxChars` with an explicit truncation marker: an
+ * `add_element` row in the live DB reaches 52 KB, and an uncapped `<pre>`
+ * would stall the scroll model.
+ */
+export const TOOL_PAYLOAD_PREVIEW_MAX = 20_000
+
+function cap(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text
+  const dropped = text.length - maxChars
+  return `${text.slice(0, maxChars)}\n… truncated (${dropped} more characters)`
+}
+
+export function toolPayloadPreview(
+  content: unknown,
+  maxChars: number = TOOL_PAYLOAD_PREVIEW_MAX,
+): string {
+  if (typeof content !== 'string') return ''
+  const raw = content.trim()
+  if (raw === '') return ''
+
+  // `tryUnwrapToolOutput` swallows its own `JSON.parse` failure and answers
+  // `null`; the fallback below is the same bytes the caller already had, not
+  // a hidden failure, so there is nothing to log.
+  const unwrapped = tryUnwrapToolOutput(raw)
+  if (unwrapped === null) return cap(raw, maxChars)
+  if (!unwrapped.success) {
+    const message = (unwrapped.error ?? 'tool failed').trim()
+    return cap(message || 'tool failed', maxChars)
+  }
+  if (unwrapped.data === null || unwrapped.data === undefined) return cap(raw, maxChars)
+  // `data` came out of JSON.parse, so it is acyclic and free of BigInt —
+  // `JSON.stringify` here cannot throw.
+  return cap(JSON.stringify(unwrapped.data, null, 2), maxChars)
+}

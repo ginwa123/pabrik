@@ -20,6 +20,7 @@ import {
   isHtmlTags,
   VirtualScroller,
   renderResponse,
+  toolPayloadPreview,
   CHAT_HTML_FRAME_RESIZE_SOURCE,
   autoResizeScript,
   growFrameToContent,
@@ -91,6 +92,7 @@ import GenerateImage from '../tool_outputs/GenerateImage.vue'
 import WebSearch from '../tool_outputs/WebSearch.vue'
 import ListSearchProviders from '../tool_outputs/ListSearchProviders.vue'
 import SetGitWorktree from '../tool_outputs/SetGitWorktree.vue'
+import SetPullRequest from '../tool_outputs/SetPullRequest.vue'
 import ReadCompactedMessages from '../tool_outputs/ReadCompactedMessages.vue'
 import KanbanMove from '../tool_outputs/KanbanMove.vue'
 import KanbanList from '../tool_outputs/KanbanList.vue'
@@ -5376,6 +5378,12 @@ const compactSession = async () => {
                             :parameters="getParametersForMessage(msg)"
                             :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
                           />
+                          <SetPullRequest
+                            v-else-if="msg.tool_name === 'set_pull_request'"
+                            :content="innerToolData(msg)"
+                            :parameters="getParametersForMessage(msg)"
+                            :expanded="expandedToolIds.has(toolExpandKey(msg, groupIndex, idx))"
+                          />
                           <ReadCompactedMessages
                             v-else-if="msg.tool_name === 'read_compacted_messages'"
                             :content="innerToolData(msg)"
@@ -5579,6 +5587,23 @@ const compactSession = async () => {
                                 :file-path="msg.tool_name"
                                 @jump-to-line="handleFallbackJumpToLine"
                               />
+                              <!--
+                                No diff, no card: this is a tool with no
+                                registered output component, so the payload
+                                itself is the content. Pretty-printed and
+                                capped by the helper (a legacy `add_element`
+                                row reaches 52 KB). Before this, expanding an
+                                unregistered tool showed a PREVIEW of the
+                                payload or, with no diffview columns, an
+                                entirely empty body.
+                              -->
+                              <pre
+                                v-else-if="toolPayloadPreview(msg.content)"
+                                class="tool-payload text-dense font-mono whitespace-pre-wrap break-all px-2 py-1.5 m-0"
+                                :style="{ color: 'var(--semantic-text-dim)' }"
+                                data-testid="tool-payload-preview"
+                                >{{ toolPayloadPreview(msg.content) }}</pre
+                              >
                             </div>
                           </div>
                         </div>
