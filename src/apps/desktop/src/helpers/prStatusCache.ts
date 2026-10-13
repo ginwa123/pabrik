@@ -29,7 +29,9 @@
  * register a callback with `onPrStatusInvalidated` instead of watching
  * (see that function for why).
  */
+import { Cause, Data, Effect } from 'effect'
 import { ApiError, getPrStatus } from '../api'
+import { describeCause } from './effectRuntime'
 // Type-only: the bus is passed in by the owner (App.vue), so this module never
 // reaches into the SSE singleton itself.
 import type { SseBus } from './sseBus'
@@ -99,6 +101,14 @@ export interface PrStatusInvalidation {
 const invalidationSubscribers = new Set<(change: PrStatusInvalidation) => void>()
 
 /**
+ * A registered badge threw while re-reading. Reported, never propagated: the
+ * invalidation may be running inside a merge that already succeeded.
+ */
+class PrStatusSubscriberError extends Data.TaggedError('PrStatusSubscriberError')<{
+  readonly reason: string
+}> {}
+
+/**
  * Register `cb` to run whenever a cached answer is invalidated, with the
  * (cwd, branch) it was for. Returns the unsubscribe handle — call it from
  * `onUnmounted`.
@@ -158,13 +168,22 @@ export function invalidatePrStatus(cwd: string, branch: string): void {
     bumpEpoch(k)
   }
   for (const cb of invalidationSubscribers) {
-    // A buggy subscriber must not stop the others (same contract as the SSE
-    // bus's `dispatch`).
-    try {
-      cb({ cwd, branch })
-    } catch (err) {
-      console.error('[pr-status] invalidation subscriber threw:', err)
-    }
+    // A buggy badge must not stop the other badges from re-reading, nor fail
+    // the merge that triggered the invalidation. Each notification is its own
+    // Effect whose failure is REPORTED rather than propagated — no `catch`,
+    // whose binding would be `unknown` (local/no-try-catch).
+    Effect.runSync(
+      Effect.try({
+        try: () => cb({ cwd, branch }),
+        catch: (cause) => new PrStatusSubscriberError({ reason: describeCause(Cause.fail(cause)) }),
+      }).pipe(
+        Effect.catchTag('PrStatusSubscriberError', (e) =>
+          Effect.sync(() => {
+            console.error('[pr-status] invalidation subscriber threw:', e.reason)
+          }),
+        ),
+      ),
+    )
   }
 }
 

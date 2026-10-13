@@ -3,7 +3,7 @@
 
 import { createSseClient, type SseClient } from '../helpers/sseClient'
 import { readGitStatusCache, writeGitStatusCache } from '../helpers/gitStatusCache'
-import { Cause, Data, Effect } from 'effect'
+import { Cause, Data, Effect, Exit, Option } from 'effect'
 import { describeCause } from '../helpers/effectRuntime'
 import { joinMediaUrlsWire } from '../helpers/mediaUrls'
 
@@ -1463,6 +1463,19 @@ function parseTimestamp(ts: number | string): number {
  */
 export class ChatHistoryError extends Data.TaggedError('ChatHistoryError')<{
   readonly sessionId: string
+  readonly reason: string
+}> {}
+
+/**
+ * An SSE frame that arrived on a named channel with a body that is not the
+ * JSON its wire name promises.
+ *
+ * Named so the failure is DISTINGUISHABLE from "the event never arrived": the
+ * frame is dropped and the reason is logged, but a parse failure on one frame
+ * must not take down the dispatcher that is delivering the rest.
+ */
+export class SseFrameError extends Data.TaggedError('SseFrameError')<{
+  readonly eventType: string
   readonly reason: string
 }> {}
 
@@ -4532,13 +4545,28 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
       // browser's EventSource to fire onEvent for these names — without it the
       // wire event is dropped on the floor (see project memory
       // browser-eventsource-named-events.md).
+      //
+      // The parse failure goes in the TYPE (local/no-try-catch): a malformed
+      // frame becomes a named `SseFrameError` carrying the reason, and only
+      // THAT frame is dropped — never a `catch` whose binding is `unknown`.
       if (eventType === 'git_pr_state_merged' || eventType === 'git_pr_state_closed') {
         if (!opts.channels.gitPrState) return
-        try {
-          const data = JSON.parse(raw)
-          opts.channels.gitPrState(data as GitPrStateEvent)
-        } catch (err) {
-          console.error('[unifiedSSE] git_pr_state event parse failed:', err, raw)
+        const frame = Effect.runSyncExit(
+          Effect.try({
+            try: () => JSON.parse(raw) as GitPrStateEvent,
+            catch: (cause) =>
+              new SseFrameError({ eventType, reason: describeCause(Cause.fail(cause)) }),
+          }),
+        )
+        if (Exit.isSuccess(frame)) {
+          opts.channels.gitPrState(frame.value)
+        } else {
+          const failed = Option.getOrUndefined(Cause.failureOption(frame.cause))
+          console.error(
+            `[unifiedSSE] ${eventType} event parse failed:`,
+            failed instanceof SseFrameError ? failed.reason : describeCause(frame.cause),
+            raw,
+          )
         }
         return
       }
