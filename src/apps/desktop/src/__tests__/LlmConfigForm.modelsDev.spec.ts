@@ -21,7 +21,25 @@ vi.mock('../api', () => ({
   getModelCatalog: vi.fn(),
 }))
 
-const baseValue = {
+/**
+ * Typed explicitly: with `as const`-style inference the nullable fields narrow
+ * to the literal `null`, so passing an override that sets one to a NUMBER is a
+ * type error (`vue-tsc` catches it; `vitest` alone would not).
+ */
+interface FormValue {
+  model: string
+  base_url: string
+  thinking: string
+  temperature: string
+  url_style: string
+  api_key: string
+  max_capacity_tokens: number | null
+  compaction_threshold_percent: number | null
+  thinking_budget_tokens: number | null
+  reasoning_effort: 'low' | 'medium' | 'high' | 'auto' | null
+}
+
+const baseValue: FormValue = {
   model: 'deepseek-flash',
   base_url: '',
   thinking: 'auto',
@@ -34,7 +52,7 @@ const baseValue = {
   reasoning_effort: null,
 }
 
-function mountForm(overrides: Partial<typeof baseValue> = {}) {
+function mountForm(overrides: Partial<FormValue> = {}) {
   return mount(LlmConfigForm, { props: { modelValue: { ...baseValue, ...overrides } } })
 }
 
@@ -177,7 +195,7 @@ describe('LlmConfigForm — the model picker', () => {
     expect(picker.text()).toContain('opencode-go')
 
     await wrapper.find('[data-testid=model-option-deepseek-v4-pro]').trigger('mousedown')
-    const emitted = wrapper.emitted('update:modelValue')?.at(-1)?.[0] as typeof baseValue
+    const emitted = wrapper.emitted('update:modelValue')?.at(-1)?.[0] as FormValue
     expect(emitted.model).toBe('deepseek-v4-pro')
   })
 

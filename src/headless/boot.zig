@@ -274,6 +274,11 @@ pub fn boot(
     // file-mode path.
     server_boot.seedWorkspaceSettingsFromUserConfig(allocator, io, @constCast(environment), &db_handles.db, false);
 
+    // models.dev catalog, same as the server boot: a local DB read plus the
+    // detached hourly sync. Without this the CLI runs with no catalog and every
+    // model falls back to the built-in 200k window.
+    server_boot.loadModelCatalog(allocator, &db_handles.db);
+
     ctx.mcp_stdio_registry = pabrikcore.mcp_stdio.StdioRegistry.global(allocator);
     ctx.mcp_http_registry = pabrikcore.mcp_http.HttpRegistry.global(allocator);
 
