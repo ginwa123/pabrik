@@ -41,7 +41,7 @@ pub const SetGitWorktreeInput = struct {
 pub const set_git_worktree_tool_system_prompt =
     \\## Set Git Worktree Tool — Behavior (MANDATORY when applicable)
     \\If you are creating a worktree, or the human requests a git worktree,
-    \\you MUST call `set_git_worktree` before any `bash`/`read_file`/`write_file`
+    \\you MUST call `set_git_worktree` before any `command`/`read_file`/`write_file`
     \\operation touches repo files. Never operate on the original repo path.
     \\
     \\- Canonical root (Option A): `$HOME/.config/pabrik/.worktrees/<task-slug>`.
@@ -58,7 +58,7 @@ pub const set_git_worktree_tool_system_prompt =
     \\  has no `Base:` line.
     \\- `path` MUST NOT contain `..`.
     \\- The parent directory MUST exist.
-    \\- Once set, all subsequent `bash`/`read_file`/`write_file` operations run
+    \\- Once set, all subsequent `command`/`read_file`/`write_file` operations run
     \\  inside that worktree.
     \\- Pass `clear=true` to remove the binding before switching or finishing.
     \\
@@ -68,9 +68,9 @@ pub const set_git_worktree_tool = AgentTool{
     .function = .{
         .name = "set_git_worktree",
         .description =
-        \\Create a git worktree at an absolute path you provide and bind it as the session's working directory. Canonical root is `$HOME/.config/pabrik/.worktrees/<task-slug>` (e.g. '/home/you/.config/pabrik/.worktrees/fix-login') — the kanban dialog prefills this as the `Path:` line after `#Notes UseGitWorktree`. A custom absolute path elsewhere is accepted for ad-hoc use. While bound, bash/read_file/write_file/text_replace/glob/search operate on the worktree instead of the session's original cwd. The branch defaults to 'worktree/<basename(path)>'. Pass `base` (e.g. 'origin/main') to create the branch FROM that ref instead of the repo's current HEAD — the kanban note carries it as the `Base:` line. If a path starts with `~/`, expand `~` to `$HOME` before calling (non-absolute paths are rejected). Call again with a different path to switch the binding to that worktree. Pass clear=true to remove the worktree directory and clear the binding.
+        \\Create a git worktree at an absolute path you provide and bind it as the session's working directory. Canonical root is `$HOME/.config/pabrik/.worktrees/<task-slug>` (e.g. '/home/you/.config/pabrik/.worktrees/fix-login') — the kanban dialog prefills this as the `Path:` line after `#Notes UseGitWorktree`. A custom absolute path elsewhere is accepted for ad-hoc use. While bound, command/read_file/write_file/text_replace/glob/search operate on the worktree instead of the session's original cwd. The branch defaults to 'worktree/<basename(path)>'. Pass `base` (e.g. 'origin/main') to create the branch FROM that ref instead of the repo's current HEAD — the kanban note carries it as the `Base:` line. If a path starts with `~/`, expand `~` to `$HOME` before calling (non-absolute paths are rejected). Call again with a different path to switch the binding to that worktree. Pass clear=true to remove the worktree directory and clear the binding.
         \\
-        \\On error, recover by: (1) the tool pre-checks for path collisions before invoking git, so a "path already exists" error means the path is occupied by an existing worktree — pass `branch=<existing-branch>` to auto-bind to it, or pick a different path; (2) for branch conflicts (a different worktree already has the same branch checked out), pass `branch=''` to use the auto-derived name `worktree/<basename(path)>`; (3) NEVER `rm -rf` the conflicting path — there may be uncommitted work in it. Use `bash` + `git -C <repo> worktree list --porcelain` to inspect the current state if the error is unclear.
+        \\On error, recover by: (1) the tool pre-checks for path collisions before invoking git, so a "path already exists" error means the path is occupied by an existing worktree — pass `branch=<existing-branch>` to auto-bind to it, or pick a different path; (2) for branch conflicts (a different worktree already has the same branch checked out), pass `branch=''` to use the auto-derived name `worktree/<basename(path)>`; (3) NEVER `rm -rf` the conflicting path — there may be uncommitted work in it. Use `command` + `git -C <repo> worktree list --porcelain` to inspect the current state if the error is unclear.
         ,
         .parameters = .{
             .type = "object",

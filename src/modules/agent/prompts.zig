@@ -55,6 +55,11 @@ pub const SkillEvalToolRule = prompts.SkillEvalToolRule;
 // it closes that loop. Both tools are always equipped, so the block is
 // appended unconditionally and stays byte-identical for every agent.
 pub const SkillWriteToolRule = prompts.SkillWriteToolRule;
+// Session VCS binding — see the comment above the constants in
+// `prompts/core.zig`. Appended unconditionally by `buildMessages`, immediately
+// after `SkillWriteToolRule` and before the gated Secrets rule.
+pub const GitWorktreeToolRule = prompts.GitWorktreeToolRule;
+pub const PullRequestToolRule = prompts.PullRequestToolRule;
 
 // ---------------------------------------------------------------------------
 // Thin delegating re-exports for the two pure helpers that
@@ -1498,13 +1503,14 @@ test "ResponseFormatting teaches the <html> wrapper tag" {
 
 // -------------------------------------------------------------------------
 // ProgressiveToolRule + SkillsToolRule + MemoryToolRule +
-// ReadWorkspaceSessionToolRule — the "tools the agent must actually use"
-// mandates wired into buildMessages. Four properties are pinned:
+// ReadWorkspaceSessionToolRule + GitWorktreeToolRule + PullRequestToolRule —
+// the "tools the agent must actually use" mandates wired into buildMessages.
+// Four properties are pinned:
 //   1. Content: each rule names its tools and states the mandate.
 //   2. No bloat: no rule pre-lists skills, and buildMessages never injects
 //      skill bodies — discovery stays a `search_skills` call so the cacheable
 //      system-prompt prefix does not grow with the user's skill library.
-//   3. Cache-stability: all six are appended unconditionally (no hasTool
+//   3. Cache-stability: all eight are appended unconditionally (no hasTool
 //      gate), so the block is byte-identical for every agent and the shared
 //      prefix stays a cache hit instead of fragmenting per tool set.
 //   4. Live-path coverage: each rule must survive into the prompt
@@ -1607,6 +1613,8 @@ const mandate_order = [_][]const u8{
     ReadWorkspaceSessionToolRule,
     SkillEvalToolRule,
     SkillWriteToolRule,
+    GitWorktreeToolRule,
+    PullRequestToolRule,
 };
 
 /// Assemble one session's system prompt through the live path and hand
@@ -1631,7 +1639,7 @@ fn buildSystemPrompt(ctx: *PromptDbCtx, cwd: []const u8, session_id: []const u8,
     return prompt;
 }
 
-test "buildMessages: the six mandates reach the live prompt, ungated by the tool list" {
+test "buildMessages: the eight mandates reach the live prompt, ungated by the tool list" {
     var ctx = try setupPromptDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
@@ -1658,6 +1666,9 @@ test "buildMessages: the six mandates reach the live prompt, ungated by the tool
         makeTool("run_skill_eval", "Evaluate the skills this task used"),
         makeTool("add_skill", "Write a skill"),
         makeTool("edit_skill", "Update a skill"),
+        makeTool("set_git_worktree", "Bind a worktree to this session"),
+        makeTool("set_pull_request", "Bind a PR to this session"),
+        makeTool("status_pull_request", "Read the bound PR's live status"),
     };
     // ... and one with none of them. The mandates are deliberately NOT
     // gated: a per-agent bit inside the cacheable prefix would fragment
@@ -1722,9 +1733,13 @@ test "buildMessages: the mandates hold a byte-identical prefix across sessions" 
     const b = try buildSystemPrompt(&ctx, cwd_b, "sess_prefix_b", &tools);
     defer std.testing.allocator.free(b);
 
-    const tail = std.mem.indexOf(u8, a, SkillWriteToolRule) orelse
+    // The tail is the LAST unconditional mandate. Everything after it (the
+    // gated Secrets rule onward) is where a per-session payload may start, so
+    // the shared prefix runs to the end of the last rule appended for every
+    // agent.
+    const tail = std.mem.indexOf(u8, a, PullRequestToolRule) orelse
         return error.MandateMissingFromLivePrompt;
-    const prefix_len = tail + SkillWriteToolRule.len;
+    const prefix_len = tail + PullRequestToolRule.len;
     try std.testing.expect(prefix_len <= a.len);
     try std.testing.expect(prefix_len <= b.len);
     // Every byte up to the end of the last mandate is shared, so the block
@@ -1759,6 +1774,9 @@ test "the tools the mandates name are really in the equipped set" {
         "run_skill_eval",
         "add_skill",
         "edit_skill",
+        "set_git_worktree",
+        "set_pull_request",
+        "status_pull_request",
     };
     for (named) |name| {
         var found = false;
@@ -1877,4 +1895,62 @@ test "SkillWriteToolRule states when NOT to write and what a skill body needs" {
     try std.testing.expect(!contains(prompt, "SKILL.MD"));
     try std.testing.expect(!contains(prompt, ".nalar/skills/"));
     try std.testing.expect(!contains(prompt, "is_global"));
+}
+
+
+// -------------------------------------------------------------------------
+// GitWorktreeToolRule + PullRequestToolRule — the session VCS-binding
+// mandates. Both tools exist, are dispatchable and are reachable, but neither
+// is in DEFAULT_AGENT_TOOLS, and before these rules the prompt mentioned
+// worktrees and pull requests nowhere at all. An agent told to work in a
+// worktree could only hand-roll `git worktree add` — which makes the directory
+// and writes none of the session state the rest of the product reads — and a
+// PR it opened reached the human as a bare URL with no panel behind it.
+//
+// Each rule is pinned on the three things it cannot work without: the tool
+// name, the shell/CLI prohibition with its reason, and the
+// `search_tool` → `use_tool` hatch, because a session that does not carry the
+// tool must be told how to get it instead of being left to guess.
+// -------------------------------------------------------------------------
+
+test "GitWorktreeToolRule mandates the tool, forbids the hand-rolled command, names the hatch" {
+    const prompt: []const u8 = GitWorktreeToolRule;
+
+    try std.testing.expect(contains(prompt, "set_git_worktree"));
+    // The mandate, blunt: the tool, not the shell command.
+    try std.testing.expect(contains(prompt, "MUST use"));
+    try std.testing.expect(contains(prompt, "NOT a substitute"));
+    try std.testing.expect(contains(prompt, "git worktree"));
+    // The reason, so a paraphrased rule still carries it: it is the session
+    // BINDING the tool writes — what the UI and the other tools read — not
+    // merely the directory.
+    try std.testing.expect(contains(prompt, "sessions.git_worktree_cwd"));
+    // The task-note contract the kanban dialog bakes in.
+    try std.testing.expect(contains(prompt, "#Notes UseGitWorktree"));
+    try std.testing.expect(contains(prompt, "Base:"));
+    try std.testing.expect(contains(prompt, "clear=true"));
+    // The escape hatch: this tool is NOT in DEFAULT_AGENT_TOOLS, so an
+    // unconditional rule naming it is only honest if it also says how to
+    // equip it.
+    try std.testing.expect(contains(prompt, "search_tool"));
+    try std.testing.expect(contains(prompt, "use_tool"));
+    try std.testing.expect(contains(prompt, "Self-check"));
+}
+
+test "PullRequestToolRule mandates the binding, keeps creation with the forge CLI, names status_pull_request" {
+    const prompt: []const u8 = PullRequestToolRule;
+
+    try std.testing.expect(contains(prompt, "set_pull_request"));
+    try std.testing.expect(contains(prompt, "MUST call"));
+    // Creation is NOT this tool's job — the rule must not send the model to
+    // `set_pull_request` to open a PR that does not exist yet.
+    try std.testing.expect(contains(prompt, "gh pr create"));
+    try std.testing.expect(contains(prompt, "glab mr create"));
+    try std.testing.expect(contains(prompt, "only attaches"));
+    // Live status is the second half of the same surface.
+    try std.testing.expect(contains(prompt, "status_pull_request"));
+    // The escape hatch, same reasoning as the worktree rule above.
+    try std.testing.expect(contains(prompt, "search_tool"));
+    try std.testing.expect(contains(prompt, "use_tool"));
+    try std.testing.expect(contains(prompt, "Self-check"));
 }
