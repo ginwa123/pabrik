@@ -121,7 +121,20 @@ async function onTest() {
           class="flex items-center justify-between px-5 h-12 border-b shrink-0"
           style="border-color: var(--color-border)"
         >
-          <h3 class="text-body font-semibold" style="color: var(--semantic-text)">{{ title }}</h3>
+          <div class="flex items-center gap-2 min-w-0">
+            <h3 class="text-body font-semibold shrink-0" style="color: var(--semantic-text)">
+              {{ title }}
+            </h3>
+            <!-- Edit mode: the name is NOT editable, so a whole row spent saying
+                 "you cannot change this" was waste. It reads as a chip here. -->
+            <span
+              v-if="!nameEditable && modelValue.name"
+              data-testid="profile-name-chip"
+              class="text-dense font-mono px-2 h-5 inline-flex items-center rounded-md border truncate"
+              :title="modelValue.name"
+              style="color: var(--semantic-text-muted); border-color: var(--color-border)"
+            >{{ modelValue.name }}</span>
+          </div>
           <button
             type="button"
             @click="emit('cancel')"
@@ -134,8 +147,8 @@ async function onTest() {
         </div>
 
         <div class="p-5 space-y-4 overflow-y-auto" style="max-height: 70vh">
-          <!-- Name -->
-          <div>
+          <!-- Name — Add mode only; Edit mode shows it in the title. -->
+          <div v-if="nameEditable">
             <label
               class="block text-dense font-medium mb-1.5"
               style="color: var(--semantic-text-muted)"

@@ -71,23 +71,32 @@ function toggleExpand(key: string): void {
   collapsed.value = next
 }
 
+/** 1_000_000 -> "1.0M", 500000 -> "500k". */
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  return `${Math.round(n / 1_000)}k`
+}
+
 /**
- * Compact compaction summary for the profile row.
- * Format: "threshold% @ capacity tokens" when overrides are set,
- * "default" when both fields are null. The exact wording is a UX
- * choice — picked to fit the existing summary line style.
+ * Line 2 of the row.
+ *
+ * The old row printed the full base URL, a sub-agent count, and
+ * `Compaction: 97% @ 1000k tokens` — four lines that mostly restated the raw
+ * fields. This states the two facts that decide what the profile DOES:
+ * where the context window comes from, and where compaction fires. A `null`
+ * override is not "default" (which read as "nothing is going on"); it is
+ * "the catalog's window" and "the global threshold".
  */
-function compactionSummary(profile: ProfileRow): string {
+function rowSummary(profile: ProfileRow): string {
   const cap = profile.max_capacity_tokens
   const thr = profile.compaction_threshold_percent
   const capStr =
-    cap === null || cap === undefined
-      ? 'default'
-      : `${(cap / 1000).toFixed(0)}k tokens`
-  const thrStr = thr === null || thr === undefined ? 'default (80%)' : `${thr}%`
-  // Compact format: "80% @ 500k" or "default (80%) @ default" or similar.
-  return `${thrStr} @ ${capStr}`
+    cap === null || cap === undefined ? 'window: catalog' : `window: ${fmtTokens(cap)}`
+  const thrStr =
+    thr === null || thr === undefined ? 'threshold: 80% (global)' : `threshold: ${thr}%`
+  return `${capStr} · ${thrStr}`
 }
+
 </script>
 
 <template>
@@ -179,29 +188,23 @@ function compactionSummary(profile: ProfileRow): string {
                 class="text-micro px-1.5 h-5 inline-flex items-center rounded font-mono"
                 style="background-color: var(--color-violet); color: #181616;"
               >active</span>
+              <span style="flex: 1"></span>
+              <span
+                v-if="profile.sub_agents && profile.sub_agents.length > 0"
+                class="text-micro font-mono shrink-0"
+                style="color: var(--color-violet);"
+              >▾ {{ profile.sub_agents.length }} sub-agent{{ profile.sub_agents.length === 1 ? '' : 's' }}</span>
+              <span v-else class="text-micro font-mono shrink-0" style="color: var(--semantic-text-dim);">no sub-agents</span>
             </div>
-            <div class="text-dense font-mono mt-0.5 truncate" style="color: var(--semantic-text-dim);">
-              {{ profile.model }} · {{ profile.base_url || '—' }}
-            </div>
-            <div class="text-dense font-mono mt-1" style="color: var(--semantic-text-dim);">
-              <template v-if="profile.sub_agents && profile.sub_agents.length > 0">
-                <span style="color: var(--color-violet);">▾ {{ profile.sub_agents.length }} sub-agent{{ profile.sub_agents.length === 1 ? '' : 's' }}</span>
-              </template>
-              <template v-else>
-                <span>· no sub-agents</span>
-              </template>
-            </div>
-            <!-- Compaction summary (plan 2026-07-07-compaction-inline):
-                 show the effective compaction for this profile (with
-                 explicit overrides) or "default" when no override is
-                 set. Clicking Edit still opens the full modal where
-                 the override can be toggled. -->
+            <!-- Model + the two facts that decide what this profile does. The
+                 base URL is a tooltip: it belongs to the model choice. -->
             <div
               class="text-dense font-mono mt-0.5 truncate"
               style="color: var(--semantic-text-dim);"
-              data-testid="compaction-summary"
+              :title="profile.base_url || undefined"
+              data-testid="profile-summary"
             >
-              Compaction: {{ compactionSummary(profile) }}
+              {{ profile.model }} · {{ rowSummary(profile) }}
             </div>
           </div>
           <div class="flex items-center gap-1.5 shrink-0">
