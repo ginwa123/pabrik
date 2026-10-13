@@ -1,0 +1,84 @@
+# Periodic Windows check.
+#
+# WHY A SCHEDULE AND NOT ONLY A PR GATE
+# -------------------------------------
+# `ci.yml` already runs `backend (Windows X64) / build` on every heavy PR,
+# and that cell runs `zig build test` on windows-2022. Two things it
+# cannot do, and this workflow is those two things:
+#
+#   1. Catch a Windows-only regression that landed on a PR nobody
+#      thought needed the heavy path (a docs-adjacent or frontend-only
+#      change classifies as light, so the backend cells never ran).
+#   2. Give the Windows skips a heartbeat. Measured 2026-10-13: Windows
+#      skips 94 tests where Linux skips 10 and macOS 15 — the reams of
+#      `if (skipOnWindows()) return error.SkipZigTest;` in the git/PR and
+#      child-spawn suites. Converting them needs a real Windows run per
+#      payload, and a nightly run is what makes that iterable instead of
+#      a per-PR 40-minute round trip. `scripts/check-zig-test-skips.sh`
+#      (run inside the cell) prints the number and fails if it grows, so
+#      the count is visible here every night and can only be lowered
+#      deliberately.
+#
+# WHAT IT RUNS
+# ------------
+# The SAME reusable workflow the PR pipeline calls, with the same pinned
+# windows-2022 image, the same vcpkg ports, the same MSVC setup, the same
+# `zig build test --summary all -Dno-webapp-rebuild`. A nightly that built
+# Windows differently from the gate would be a second, weaker check.
+#
+# `publish: false` is the one difference, and it is load-bearing: without
+# it a scheduled run would fall through to the publish step on the manual
+# `workflow_dispatch` path and replace the rolling `ci-latest` release —
+# the one that is supposed to track main's newest GREEN build — with a
+# nightly artifact. A check must not be able to rewrite what it checks.
+#
+# A nightly failure means one of:
+#   * a real Windows-only break that the PR path missed — fix it, or make
+#     the PR path heavy;
+#   * a Windows FLAKE (the event-loop/PollFailed family kabelweb has) —
+#     re-run it before believing it;
+#   * the skipped-test ceiling tripped — a new platform gate landed.
+#
+# The `contents: write` grant below looks wrong for a read-only check and
+# is not: a called workflow's `permissions:` can only be a SUBSET of the
+# caller's, so granting less than `ci-backend.yml`'s job declares makes
+# GitHub refuse the run outright. `publish: false` is what keeps the token
+# unused — nothing in this run writes anything.
+name: ci-windows-nightly
+
+on:
+  schedule:
+    # 03:17 UTC, not 03:00: the top of the hour is when every scheduled
+    # workflow on GitHub queues, and the Windows runners are the scarcest
+    # label in the pool. Minutes past the hour cost nothing and queue less.
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+# Same shape as ci.yml's group. Without it, a manually dispatched run and
+# the nightly tick can overlap and each hold a Windows runner for ~40 min.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    # Renders as `windows backend (nightly) / build` — the job id of the
+    # called workflow, so the check keeps the same ` / build` suffix the
+    # PR cell has and is recognisable in the Checks list.
+    name: windows backend (nightly)
+    permissions:
+      contents: write
+    uses: ./.github/workflows/ci-backend.yml
+    with:
+      os: windows-2022
+      label: Windows X64
+      # Native build, no target override: build.zig follows
+      # b.graph.host.result on a Windows host and looks for the vcpkg
+      # sysroot under C:\vcpkg\installed\x64-windows. Same value the
+      # PR cell passes.
+      target_zig: x86_64-windows-gnu
+      target_step: install:windows-nat
+      publish: false

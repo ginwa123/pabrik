@@ -150,7 +150,191 @@ should be.
 
 ---
 
-## 2. Adding a new rule here
+## 2. A test handles every platform, or it is not a test
+
+**Banned.** A test that only asserts on the host it was written for. The
+target is **zero skipped tests on every platform** — the same tests, the
+same assertions, on Linux, macOS and Windows. The checker is
+`scripts/check-zig-test-skips.sh`, wired into
+the `Skipped-test ceiling (zig build test)` step of
+`.github/workflows/ci-backend.yml` — so it runs on all three
+`backend (<platform>) / build` cells — and re-run every night on Windows
+by `.github/workflows/ci-windows-nightly.yml`.
+
+```zig
+// WRONG — 94 tests did this on Windows, and nothing said so.
+test "..." {
+    if (builtin.os.tag == .windows) return error.SkipZigTest;
+    ...
+}
+
+// ALSO WRONG — the same thing with the evidence removed: the runner
+// counts this as a PASS, so the test reports green while asserting
+// nothing at all on the platform it declined to check.
+test "..." {
+    if (builtin.os.tag == .windows) return;
+    ...
+}
+
+// STILL WRONG — a test that is about one platform. It looks thorough and
+// it is the same defect: on the hosts it does not name, this test
+// asserted nothing, and its name says so.
+test "buildOpenArgv returns a two-word opener plus url on unix" {
+    if (comptime builtin.os.tag == .windows) return error.SkipZigTest;
+    ...
+}
+```
+
+The fix for all three is one test that covers every host — a table over
+the platforms the code switches on, with an unknown host FAILING rather
+than passing vacuously (see `src/apps/desktop_app/browser.zig`, whose
+Windows argv is three words and whose unix argv is two, and which now
+asserts both from one test body with no branch that declines):
+
+```zig
+test "buildOpenArgv: this host's opener words, then the url" {
+    var opener_words: []const []const u8 = &.{};
+    switch (builtin.os.tag) {
+        .windows => opener_words = &.{ "rundll32", "url.dll,FileProtocolHandler" },
+        .macos => opener_words = &.{"open"},
+        .linux => opener_words = &.{"xdg-open"},
+        else => {}, // leaves it empty -> the length assert below FAILS
+    }
+    var buf: [3][]const u8 = undefined;
+    const argv = buildOpenArgv(url, &buf);
+    try testing.expectEqual(opener_words.len + 1, argv.len);
+    for (opener_words, 0..) |word, i| try testing.expectEqualStrings(word, argv[i]);
+    try testing.expectEqualStrings(url, argv[argv.len - 1]);
+}
+```
+
+### Why
+
+Zig has exactly one way for a test to decline to run:
+`return error.SkipZigTest;`. The runner counts it, prints no failure, and
+`zig build test --summary all` ends with
+
+```
+Build Summary: 14/14 steps succeeded; 4163/4257 tests passed (94 skipped)
+```
+
+Measured on one *green* run (2026-10-13, run 38428191906):
+
+| cell | result | skipped |
+|---|---|---|
+| `backend (Linux X64)` | 4247/4257 passed | **10** |
+| `backend (macOS ARM64)` | 4229/4244 passed | **15** |
+| `backend (Windows X64)` | 4163/4257 passed | **94** |
+
+Windows skipped nine times what Linux did, on a green pipeline, with 81
+test bodies under `src/` able to bail out on Windows — 61 through a
+`skipOnWindows()` helper, 17 behind a direct `.windows` gate, 3 that need
+a symlink privilege. The overwhelming majority spawn a fixture that is a
+`/bin/sh` script, so the Windows runner could never execute them; every
+Windows-only regression in child-process spawn/capture and in the
+git/PR handlers shipped with no test behind it. The `return;` form is
+worse still, because it does not even show up in that `(94 skipped)`
+count.
+
+The failure mode is the point: **a skip does not fail anything.** A
+component that is untested on a platform looks exactly like a component
+that is well tested on it, and the only place the difference appears is a
+parenthesised number nobody diffs.
+
+### The rule
+
+**Target: zero on every platform.** Until it is reached, the skipped
+count is a metric with a per-platform ceiling, and the ceiling may only
+fall (see "Why a ceiling exists at all" below for the date on it):
+
+| count vs ceiling | verdict |
+|---|---|
+| `count > ceiling` | **FAIL** — a platform silently lost coverage |
+| `count < ceiling` | PASS, with a notice naming the exact value to re-pin |
+| no `N/M tests passed` line | **FAIL** — "could not measure" must never read as "no skips" |
+
+The ceilings live in `baseline_for()` in
+`scripts/check-zig-test-skips.sh` and are lowered by editing that
+function, so every change to them is in a diff a reviewer sees.
+`--strict` (fail on any skip at all) is the end state and is available
+today.
+
+### What is NOT banned
+
+- **`error.SkipZigTest` as a construct.** It is the right primitive for a
+  test whose subject genuinely does not exist on this host. What is
+  banned is a skip that nobody notices, which is why it is a counted,
+  ceilinged number rather than a forbidden token.
+- **A local run.** The checker runs where the count is meaningful: the
+  three backend cells and the nightly Windows job. Nothing about
+  `zig build test` on a dev box changes.
+- **`.husky/pre-commit`.** §3 asks a new rule to be mirrored there, and
+  this one deliberately is not: the hook mirrors the `lint` job, whose
+  work is a scan of the tree, while this rule's input is a full
+  `zig build test` run. `--selftest` is the part worth running on every
+  commit, and it is cheap.
+- **A host table inside one test.** Naming each platform the code under
+  test switches on — and failing on one nobody handled — is not a
+  platform-specific test; it is the general form. What is banned is a
+  body that *declines work* for a host (`return`, `return
+  error.SkipZigTest`, or an `if/else` that asserts only on one side).
+- **Production code that switches on the platform.** The rule is about
+  the test asserting for every platform, not about removing
+  platform-dependent *behaviour* from the code. If behaviour is
+  genuinely host-specific, the test's job is to cover every host, not to
+  pick one.
+
+### Running it
+
+```bash
+scripts/check-zig-test-skips.sh --selftest          # verify the parser/verdict
+scripts/check-zig-test-skips.sh --baselines         # print the ceilings
+scripts/check-zig-test-skips.sh --run               # run the suite and check it
+scripts/check-zig-test-skips.sh --summary build.log --platform windows
+zig build test --summary all | tee build.log        # what CI feeds it
+```
+
+The `--selftest` mode runs the parser and the verdict against fixtures —
+the real aggregate line, the paren-less zero-skip form, a log with
+several `Build Summary:` lines, a log with none (must report
+unmeasurable, not clean), a missing file, the ceiling boundary, and
+`--strict` — for the same reason
+`lint-no-catch-unreachable.sh --selftest` exists: a parser that has
+quietly stopped matching is a silent outage, and the only way to notice
+is to run it against known input on every invocation.
+
+### Why a ceiling exists at all — and when it goes away
+
+**Zero on every platform is the requirement. The ceiling is a dated
+stopgap, not the rule's final form**, and this is the deliberate
+exception to §3's "land it with zero debt".
+
+The debt is 91 Windows skips. Their fix is not a per-platform test — it
+is a fixture that runs everywhere, which for this repo means no test may
+depend on `/bin/sh` being present. That conversion cannot be verified
+from POSIX (a Windows payload is only known-good when Windows has run
+it), so a flat zero shipped today would be either a permanently red
+Windows cell or deleted tests. The ceiling exists so the number is
+printed on every cell and every night, cannot grow, and names the edit
+that lowers it.
+
+The conversion, in one line per family:
+
+| family | tests | shape of the fix |
+|---|---|---|
+| `git_pr_status` | 25 | fixture program + spec, not `#!/bin/sh` |
+| `run_captured` | 16 | a host payload per test, as its own `probe_argv` already does |
+| `git_pr_list` / `create` / `close`, `status_pull_request` | 18 | same fixture program as `git_pr_status` |
+| `mcp_stdio` | 6 | same fixture program (an NDJSON speaker) |
+| symlink / `/proc` / `setenv` sites | 6 | a host-general helper (handle count, env set, link-or-fail-loudly) |
+| the ~84 `return;` vacuous passes | 0 counted | convert to a real assertion, never to a skip |
+
+`--strict` is the finish line and is already wired and tested; flipping
+the step to it is a one-word change once the table above is empty.
+
+---
+
+## 3. Adding a new rule here
 
 A rule belongs in this file when a machine can check it and a human
 should not have to remember it. Before adding one:
