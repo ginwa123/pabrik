@@ -802,30 +802,19 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         .is_sub_agent = params.is_sub_agent,
     });
 
-    // Fetch-once MCP tools cache (plan: mcp-fetch-once-cache). Fast path:
-    // cache hit (2nd session, queued message, retry) = zero `tools/list`
-    // I/O. Slow path: exactly one fetch per boot / per config mutation,
-    // published to the singleton for all future runs.
-    //
-    // `var` (not `const`): the in-loop "Live MCP tools refresh" block
-    // below re-points this after a mid-run config mutation (e.g. MCP
-    // server toggle via PabrikSettings). The abandoned slice stays owned
-    // by the parent arena (freed at run end) — toggles are rare, so the
-    // transient waste is negligible and there is no leak.
-    var mcp_tools: ?[]pabrikcore.tool_models.AgentTool = if (di.di.isMcpToolsInit())
-        di.di.getMcpToolsCached(parent_allocator)
-    else blk: {
+    // Fetch-once MCP tools cache (plan: mcp-fetch-once-cache): one
+    // `tools/list` per boot / per config mutation, published to the
+    // singleton for every future run. This block only warms/publishes the
+    // cache — the per-turn SNAPSHOT is taken inside the loop below, because
+    // a slice read on every turn must be owned by an allocator that
+    // outlives every turn.
+    if (!di.di.isMcpToolsInit()) {
         const fresh = fetchMcpToolsFresh(parent_allocator, db, copy_session_id, initial_config, logger);
         // Publish for all future runs. On error (`fresh == null`) pass
         // mark_init=false so the next run retries instead of caching
         // the failure forever.
-        if (fresh) |f| {
-            di.di.storeMcpToolsCache(f, true);
-        } else {
-            di.di.storeMcpToolsCache(null, false);
-        }
-        break :blk di.di.getMcpToolsCached(parent_allocator);
-    };
+        di.di.storeMcpToolsCache(fresh, fresh != null);
+    }
 
     // Per-turn arena: every allocation inside the while loop below uses
     // `allocator` from this arena — no `parent_allocator` inside the loop.
@@ -899,13 +888,23 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         // retries (same fail-soft contract as the pre-loop fetch).
         if (!di.di.isMcpToolsInit()) {
             const fresh = fetchMcpToolsFresh(allocator, db, copy_session_id, config, logger);
-            if (fresh) |f| {
-                di.di.storeMcpToolsCache(f, true);
-            } else {
-                di.di.storeMcpToolsCache(null, false);
-            }
-            mcp_tools = di.di.getMcpToolsCached(allocator);
+            // `fresh` is consumed by `storeMcpToolsCache` (which deep-dupes
+            // onto the singleton), so it is safe for this to live in the
+            // per-turn arena.
+            di.di.storeMcpToolsCache(fresh, fresh != null);
         }
+
+        // ─── MCP tools for THIS TURN ONLY ───
+        // The snapshot is owned by the per-turn arena `allocator`, which
+        // `arenaAllocatorWhileLoop.reset(.free_all)` at the top of every
+        // iteration frees. It is therefore read in the iteration that takes
+        // it and never kept: carrying it across turns (a `var mcp_tools`
+        // declared outside the loop and re-pointed only while the cache was
+        // uninitialized) left the turn AFTER a config mutation reading a
+        // slice the reset had already freed — the use-after-free behind the
+        // SEGV reported at `progressive_catalog.buildCatalog`, reached from
+        // `sub_agent_batch.runSubAgent`.
+        const mcp_tools: ?[]pabrikcore.tool_models.AgentTool = di.di.getMcpToolsCached(allocator);
 
         // ─── Live per-session profile re-read (plan 2026-08-06-workflow-re-read-profile) ───
         // The previous snapshot pattern (params.selected_profile_model) silently
@@ -1456,12 +1455,12 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             // reflects — not the first failure of this session.
             last_retry_error = err;
             last_retry_source = "callDynamicAgentNew";
-            // Cross-turn carry: duped into the per-turn arena so every
-            // allocation inside the loop uses the same `allocator`.
-            // Bounded (retries are capped and the message is clamped to
-            // 500 chars at use) — reclaimed by the next turn's reset.
+            // Cross-turn carry: the retry-budget check at the TOP of a
+            // later iteration reads this, and every iteration frees the
+            // per-turn arena — so the copy must live in the RUN arena
+            // (`parent_allocator`, freed at run end), not the turn arena.
             last_retry_server_detail = if (last_dynamic_agent_error_message) |msg|
-                allocator.dupe(u8, msg) catch null
+                parent_allocator.dupe(u8, msg) catch null
             else
                 null;
             // The agent populated `last_dynamic_agent_error_message` with
