@@ -1245,6 +1245,7 @@ pub const LlmConfig = struct {
             allocator.free(entry.value_ptr.url_style);
             if (entry.value_ptr.backend.len > 0) allocator.free(entry.value_ptr.backend);
             if (entry.value_ptr.config_dir) |d| allocator.free(d);
+            if (entry.value_ptr.opencode_agent) |a| allocator.free(a);
             if (entry.value_ptr.reasoning_effort) |re| allocator.free(re);
             freeSubAgentsList(entry.value_ptr.sub_agents, allocator);
         }
