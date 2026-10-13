@@ -295,7 +295,7 @@ pub const App = struct {
                         .selected_profile_model = spm,
                         .is_auto_retry_until_stop = iaur,
                         .user_id = uid,
-                    }) catch unreachable;
+                    }) catch @panic("allocPrint failed building the ai_worker_flow RunParamsNew event");
 
                     event_buss.emit(agentic_loop_mod.RunParamsNew, "ai_worker_flow", .{
                         .parent_session_id = sid,

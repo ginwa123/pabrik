@@ -7778,7 +7778,7 @@ fn reorderSetupDb() !struct {
     return .{ .db = db, .threaded = threaded, .alloc = alloc };
 }
 
-fn reorderTeardown(s: *@TypeOf(reorderSetupDb() catch unreachable)) void {
+fn reorderTeardown(s: *@TypeOf(reorderSetupDb() catch @panic("reorderSetupDb failed in the design_model test fixture"))) void {
     s.db.deinit();
     s.threaded.deinit();
 }

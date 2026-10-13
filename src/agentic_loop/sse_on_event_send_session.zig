@@ -121,7 +121,7 @@ fn setupSessionBus() !struct {
     return .{ .bus = bus, .threaded = threaded };
 }
 
-fn teardownSessionBus(s: *@TypeOf(setupSessionBus() catch unreachable)) void {
+fn teardownSessionBus(s: *@TypeOf(setupSessionBus() catch @panic("setupSessionBus failed in the sse_on_event_send_session test fixture"))) void {
     s.bus.deinit();
     s.threaded.deinit();
 }

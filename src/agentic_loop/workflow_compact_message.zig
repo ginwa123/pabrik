@@ -1315,7 +1315,7 @@ fn setupDb() !struct {
     return .{ .db = db, .threaded = threaded };
 }
 
-fn teardownDb(s: *@TypeOf(setupDb() catch unreachable)) void {
+fn teardownDb(s: *@TypeOf(setupDb() catch @panic("setupDb failed in the workflow_compact_message test fixture"))) void {
     s.db.deinit();
     s.threaded.deinit();
 }
@@ -3000,7 +3000,7 @@ fn setupDbForEnrichmentTest() !struct {
     return .{ .db = db, .threaded = threaded };
 }
 
-fn teardownDbForEnrichmentTest(s: *@TypeOf(setupDbForEnrichmentTest() catch unreachable)) void {
+fn teardownDbForEnrichmentTest(s: *@TypeOf(setupDbForEnrichmentTest() catch @panic("setupDbForEnrichmentTest failed in the workflow_compact_message test fixture"))) void {
     s.db.deinit();
     s.threaded.deinit();
 }
@@ -3787,7 +3787,7 @@ fn envelopeSetupDb() !struct {
     return .{ .db = db, .threaded = threaded };
 }
 
-fn envelopeTeardownDb(s: *@TypeOf(envelopeSetupDb() catch unreachable)) void {
+fn envelopeTeardownDb(s: *@TypeOf(envelopeSetupDb() catch @panic("envelopeSetupDb failed in the workflow_compact_message test fixture"))) void {
     s.db.deinit();
     s.threaded.deinit();
 }

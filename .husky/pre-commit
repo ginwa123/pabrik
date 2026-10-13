@@ -2,13 +2,16 @@
 # Pre-commit hook — mirror CI's `lint (oxlint + eslint)` job exactly so
 # commits can't slip past locally with lint errors that CI would catch.
 #
-# Mirrors the "Lint (oxlint + eslint, fail-on-issue mode)" step in the
-# `lint` job of `.github/workflows/ci.yml`:
+# Mirrors the two lint steps in the `lint` job of
+# `.github/workflows/ci.yml`:
 #   working-directory: src/apps/desktop
 #   run: pnpm run lint:check
+# and
+#   run: bash scripts/lint-no-catch-unreachable.sh --selftest
+#        bash scripts/lint-no-catch-unreachable.sh
 #
-# That step used to live at ci.yml lines 1485-1491 and the CI job was
-# deleted in PR #398 ("drop frontend job"), which left this hook
+# That first step used to live at ci.yml lines 1485-1491 and the CI job
+# was deleted in PR #398 ("drop frontend job"), which left this hook
 # mirroring nothing. It is back as a gate as of the pipeline
 # restructure, so the mirror is real again.
 #
@@ -16,7 +19,18 @@
 # pnpm lint scripts resolve relative to CWD. Husky runs this script from
 # the worktree root (per core.hooksPath), so we MUST cd first.
 #
+# The Zig half needs no cd: the lint script resolves the repo root from
+# its own location, so it works from anywhere.
+#
 # Bypass for emergencies: `git commit --no-verify`.
+
+set -e
 
 cd src/apps/desktop || exit 1
 pnpm run lint:check
+
+cd ../..
+
+echo "→ zig coding standards (no catch unreachable)"
+bash scripts/lint-no-catch-unreachable.sh --selftest
+bash scripts/lint-no-catch-unreachable.sh
