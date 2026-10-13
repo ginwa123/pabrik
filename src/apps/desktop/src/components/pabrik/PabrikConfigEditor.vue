@@ -32,9 +32,10 @@ import {
   webSearchRowErrorsFromMessage,
   type WebSearchProviderRow,
 } from './webSearchProviders'
-// plan 2026-07-07-compaction-inline: CompactionSection.vue is removed
-// (compaction settings live in the Defaults tab + Edit-profile modal now).
-// No import here.
+// The models.dev catalog: its status for the block below, and the manual
+// refresh. Both live in the General tab because the catalog is machine-wide —
+// it is not a per-workspace or per-profile fact.
+import { getModelCatalog, refreshModelCatalog } from '../../api'
 import ProfileModal from './ProfileModal.vue'
 import { type LlmConfigModalValue } from './LlmConfigModal.vue'
 import SubAgentModal, { type SubAgentModalValue } from './SubAgentModal.vue'
@@ -457,6 +458,86 @@ function syncFromConfig() {
   skillEvalsHydrated.value = c.skill_evals?.enabled ?? false
   skillEvalsSettings.value = { enabled: skillEvalsHydrated.value }
 }
+
+// ─── Models & compaction ──────────────────────────────────────────────
+//
+// THE TWO FIELDS THAT HAD NO UI. `max_capacity_token_model` and
+// `compaction_threshold_percent` are cascade steps 3 — the values every profile
+// that does not override them resolves against — and between the removal of the
+// Defaults tab and this block NOTHING could set them. The profile dialog's
+// "falls back to top-level defaults" pointed at a setting no user could reach.
+//
+// They stay NULL by default. `null` is not a number, it is "ask the catalog,
+// then the built-in" — which is why the inputs are empty rather than pre-filled
+// with 80 or 200000.
+
+const catalogFreshness = ref<'fresh' | 'stale' | 'absent'>('absent')
+const catalogModelTotal = ref<number | null>(null)
+const catalogError = ref<string | null>(null)
+const refreshingCatalog = ref(false)
+
+const catalogFreshnessLabel = computed<string>(() => {
+  if (catalogError.value !== null) return 'catalog unavailable'
+  switch (catalogFreshness.value) {
+    case 'fresh':
+      return catalogModelTotal.value === null
+        ? 'catalog ready'
+        : `catalog ready · ${catalogModelTotal.value} models`
+    case 'stale':
+      return 'catalog stale'
+    default:
+      return 'catalog not synced yet'
+  }
+})
+
+function setGlobalThreshold(raw: string): void {
+  if (!config.value) return
+  const trimmed = raw.trim()
+  const parsed = Math.floor(Number(trimmed))
+  config.value.compaction_threshold_percent =
+    trimmed === '' || !Number.isFinite(parsed) ? null : Math.max(0, Math.min(100, parsed))
+  syncToConfig()
+}
+
+function setGlobalWindow(raw: string): void {
+  if (!config.value) return
+  const trimmed = raw.trim()
+  const parsed = Math.floor(Number(trimmed))
+  config.value.max_capacity_token_model =
+    trimmed === '' || !Number.isFinite(parsed) || parsed <= 0 ? null : parsed
+  syncToConfig()
+}
+
+async function loadCatalogStatus(): Promise<void> {
+  try {
+    // `limit=1` because only the STATUS is wanted here; the picker asks for rows.
+    const res = await getModelCatalog(undefined, undefined, 1)
+    catalogFreshness.value = res.catalog
+    catalogModelTotal.value = res.total
+    catalogError.value = null
+  } catch (err) {
+    // Surface it: "not synced yet" and "the server is down" are different
+    // states and the label must not collapse them.
+    catalogFreshness.value = 'absent'
+    catalogModelTotal.value = null
+    catalogError.value = err instanceof Error ? err.message : String(err)
+  }
+}
+
+async function refreshCatalog(): Promise<void> {
+  if (refreshingCatalog.value) return
+  refreshingCatalog.value = true
+  try {
+    await refreshModelCatalog()
+    await loadCatalogStatus()
+  } catch (err) {
+    catalogError.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    refreshingCatalog.value = false
+  }
+}
+
+onMounted(() => void loadCatalogStatus())
 
 function syncToConfig() {
   if (!config.value) return
@@ -1252,6 +1333,101 @@ const isLoading = computed(() => !loaded.value)
               </div>
             </div>
           </label>
+        </div>
+
+        <!-- Models & compaction — the global knobs over the catalog's window. -->
+        <div
+          v-if="activeTab === 'general'"
+          class="rounded-lg p-5 space-y-3"
+          style="background-color: var(--semantic-content-bg); border: 1px solid var(--color-border)"
+          data-testid="models-compaction-block"
+        >
+          <div class="flex items-center gap-2">
+            <UiIcon name="atom" class="w-4 h-4" />
+            <h3 class="text-body font-semibold" style="color: var(--semantic-text)">
+              Models &amp; compaction
+            </h3>
+            <span
+              class="ml-auto font-mono text-dense"
+              :style="
+                catalogFreshness === 'fresh'
+                  ? { color: 'var(--color-violet)' }
+                  : { color: 'var(--semantic-text-dim)' }
+              "
+              data-testid="catalog-freshness"
+            >{{ catalogFreshnessLabel }}</span>
+          </div>
+          <p class="text-dense" style="color: var(--semantic-text-dim)">
+            pabrik reads each model's context window, output cap and reasoning shape from
+            <span class="font-mono">models.dev</span>, cached in the database and synced in the
+            background every hour. Compaction then fires at the threshold below of that window.
+            These two fields override the catalog for every profile that does not set its own.
+          </p>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-dense font-medium mb-1.5" style="color: var(--semantic-text-muted)">
+                Default compaction threshold (%)
+              </label>
+              <input
+                :value="config?.compaction_threshold_percent ?? ''"
+                @input="setGlobalThreshold(($event.target as HTMLInputElement).value)"
+                type="number"
+                min="0"
+                max="100"
+                placeholder="built-in 80"
+                class="w-full px-3 h-8 rounded-md border text-body"
+                style="
+                  background-color: var(--semantic-content-bg);
+                  color: var(--semantic-text);
+                  border-color: var(--color-border);
+                "
+                data-testid="global-threshold-input"
+              />
+            </div>
+            <div>
+              <label class="block text-dense font-medium mb-1.5" style="color: var(--semantic-text-muted)">
+                Force context window (tokens)
+              </label>
+              <input
+                :value="config?.max_capacity_token_model ?? ''"
+                @input="setGlobalWindow(($event.target as HTMLInputElement).value)"
+                type="number"
+                min="0"
+                step="1000"
+                placeholder="from the model"
+                class="w-full px-3 h-8 rounded-md border text-body"
+                style="
+                  background-color: var(--semantic-content-bg);
+                  color: var(--semantic-text);
+                  border-color: var(--color-border);
+                "
+                data-testid="global-window-input"
+              />
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <button
+              type="button"
+              @click="refreshCatalog"
+              :disabled="refreshingCatalog"
+              class="px-3 h-8 rounded-md text-dense border transition-colors duration-150"
+              :style="{
+                borderColor: 'var(--color-border)',
+                color: refreshingCatalog ? 'var(--semantic-text-dim)' : 'var(--semantic-text)',
+                backgroundColor: 'transparent',
+                cursor: refreshingCatalog ? 'wait' : 'pointer',
+              }"
+              data-testid="refresh-catalog-btn"
+            >
+              {{ refreshingCatalog ? 'Refreshing…' : 'Refresh catalog now' }}
+            </button>
+            <span
+              v-if="catalogError"
+              class="font-mono text-dense"
+              style="color: var(--color-red)"
+              data-testid="catalog-error"
+            >{{ catalogError }}</span>
+          </div>
         </div>
 
         <SkillEvalsSection
