@@ -153,6 +153,17 @@ pub fn freeMeta(alloc: Allocator, meta: *const Meta) void {
 /// still a catalog — the caller sees `providerCount() == 0` rather than a
 /// `null` it would have to guess about.
 pub fn loadCatalog(db: *sqlite.SqliteBackend, alloc: Allocator) !?*catalog.Catalog {
+    // `std.json.parseFromSliceLeaky` is LEAKY BY DESIGN — it wants an allocator
+    // whose memory is released wholesale, not one that has to free each piece.
+    // Handing it the caller's allocator leaked two allocations per loaded model
+    // and turned `zig build test` red on every platform. This scratch arena is
+    // that "wholesale" scope; nothing parsed here has to outlive the function
+    // because `putProvider` / `putModel` dupe what they are given into the
+    // CATALOG's own arena.
+    var scratch = std.heap.ArenaAllocator.init(alloc);
+    defer scratch.deinit();
+    const sa = scratch.allocator();
+
     const meta = try loadMeta(db, alloc) orelse return null;
     defer freeMeta(alloc, &meta);
     if (meta.schema_version != catalog.SCHEMA_VERSION) return null;
@@ -184,7 +195,7 @@ pub fn loadCatalog(db: *sqlite.SqliteBackend, alloc: Allocator) !?*catalog.Catal
             const id = row.values[0];
             const name = row.values[1];
 
-            const env = std.json.parseFromSliceLeaky([]const []const u8, alloc, row.values[4], .{
+            const env = std.json.parseFromSliceLeaky([]const []const u8, sa, row.values[4], .{
                 .ignore_unknown_fields = true,
             }) catch &[_][]const u8{};
 
@@ -213,7 +224,7 @@ pub fn loadCatalog(db: *sqlite.SqliteBackend, alloc: Allocator) !?*catalog.Catal
             defer row.deinit(alloc);
             const provider_id = row.values[0];
 
-            const effort = std.json.parseFromSliceLeaky([]const []const u8, alloc, row.values[6], .{
+            const effort = std.json.parseFromSliceLeaky([]const []const u8, sa, row.values[6], .{
                 .ignore_unknown_fields = true,
             }) catch &[_][]const u8{};
 
