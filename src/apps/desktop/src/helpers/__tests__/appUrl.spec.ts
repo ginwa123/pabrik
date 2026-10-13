@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildAppUrl,
+  buildSettingsUrl,
   buildTaskAppUrl,
   detectLegacyAppUrl,
   isAppPath,
@@ -9,6 +10,36 @@ import {
 } from '../appUrl'
 
 describe('appUrl — path-based URL contract (2026-09-22 revamp)', () => {
+  describe('buildSettingsUrl', () => {
+    it('carries the workspace in the path, so settings always knows its scope', () => {
+      expect(buildSettingsUrl('ws_1')).toEqual({ path: '/app/ws_1/settings', query: {} })
+    })
+    it('passes the remembered section through as ?section=', () => {
+      expect(buildSettingsUrl('ws_1', 'profiles')).toEqual({
+        path: '/app/ws_1/settings',
+        query: { section: 'profiles' },
+      })
+    })
+    it('drops an empty section rather than emitting ?section=', () => {
+      expect(buildSettingsUrl('ws_1', '')).toEqual({ path: '/app/ws_1/settings', query: {} })
+      expect(buildSettingsUrl('ws_1', null)).toEqual({ path: '/app/ws_1/settings', query: {} })
+    })
+    it('user scope only when no workspace is in scope at all', () => {
+      // `/app/settings` is General-only and genuinely not about a workspace;
+      // it must never be the answer for a known workspace (that is the bug:
+      // the URL lost the workspace and the Workspace tab then guessed one).
+      expect(buildSettingsUrl('')).toEqual({ path: '/app/settings', query: {} })
+      expect(buildSettingsUrl(undefined)).toEqual({ path: '/app/settings', query: {} })
+      expect(buildSettingsUrl('  ')).toEqual({ path: '/app/settings', query: {} })
+    })
+    it('never sends a section to the user-scope page', () => {
+      // `profiles` is workspace-scoped since Migration 105; the user page has
+      // no such tab, so a `?section=profiles` there would name a tab it cannot
+      // render.
+      expect(buildSettingsUrl('', 'profiles')).toEqual({ path: '/app/settings', query: {} })
+    })
+  })
+
   describe('buildAppUrl', () => {
     it('landing: no ids → /app', () => {
       expect(buildAppUrl({})).toEqual({ path: '/app', query: {} })

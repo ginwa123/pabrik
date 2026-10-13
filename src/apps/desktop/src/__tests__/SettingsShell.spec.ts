@@ -159,7 +159,28 @@ describe('SettingsShell', () => {
 
     await wrapper.find('[data-testid="settings-scope-workspace"]').trigger('click')
     await flushPromises()
+    // Nothing names a workspace here (no URL id, nothing active), so the tab
+    // falls back to the first listed row — the last resort, not the rule.
     expect(push).toHaveBeenCalledWith({ path: '/app/ws_1/settings' })
+  })
+
+  it('the Workspace tab opens the workspace in scope, not the first listed row', async () => {
+    // Regression: the tab used to navigate to `workspaceOptions[0]`
+    // unconditionally, and the list API sorts by `position DESC, created_at
+    // DESC` — so it left the user's workspace for whenever they had last moved
+    // to the top. The settings URL lost the workspace id, and one workspace's
+    // Profiles list (per-workspace config overlays, Migration 105) was shown
+    // while the user was working in another.
+    const router = await makeRouter('/app/settings')
+    const push = vi.spyOn(router, 'push')
+    useWorkspacesStore().activeWorkspaceId = 'ws_2'
+    wrapper = mountShell(router, { scope: 'user', workspaceId: '' })
+    await flushPromises()
+
+    await wrapper.find('[data-testid="settings-scope-workspace"]').trigger('click')
+    await flushPromises()
+    expect(push).toHaveBeenCalledWith({ path: '/app/ws_2/settings' })
+    expect(push).not.toHaveBeenCalledWith({ path: '/app/ws_1/settings' })
   })
 
   it('workspace scope shows no workspace box — the URL is the context', async () => {

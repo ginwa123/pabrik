@@ -21,6 +21,7 @@ import {
   type SkillEvalRun,
 } from '../../../api'
 import { useSseBus } from '../../../helpers/sseBus'
+import { resolveWorkspaceId } from '../../../helpers/workspaceScope'
 
 const props = defineProps<{
   /** The session whose evals to show. Empty = every session. */
@@ -70,7 +71,14 @@ const selectedRunId = ref<string>(readRunParam())
  * the user may want to Back out of.
  */
 function openSettings() {
-  void router.push({ path: '/app/settings', query: { section: 'evals' } })
+  // `evals` is a WORKSPACE-scoped section (Migration 105), so the shortcut has
+  // to carry the workspace in the path the way the settings nav does. Pushing
+  // `/app/settings` (user scope, General only) showed General instead.
+  const wsId = resolveWorkspaceId(route.params.workspaceId, null)
+  void router.push({
+    path: wsId ? `/app/${wsId}/settings` : '/app/settings',
+    query: wsId ? { section: 'evals' } : {},
+  })
 }
 
 // ─── loading ────────────────────────────────────────────────────────────

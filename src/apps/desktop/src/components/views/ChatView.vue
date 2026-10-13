@@ -54,6 +54,7 @@ import {
   INITIAL_HISTORY_TIMEOUT_MS,
 } from '../../helpers/chatHistoryRetry'
 import { ChatHistoryError } from '../../api'
+import { resolveWorkspaceId } from '../../helpers/workspaceScope'
 import { tryUnwrapToolOutput, type UnwrappedToolOutput } from '@/helpers/unwrapToolOutput'
 import {
   isBackgroundCommandOutput,
@@ -1437,9 +1438,27 @@ const showProfilePicker = ref(false)
 const isUpdatingProfile = ref(false)
 const profilePickerRef = ref<HTMLElement | null>(null)
 
+/**
+ * The workspace whose profiles the picker must list: the route's, else the one
+ * the app is in.
+ *
+ * The picker must offer what actually RUNS here, and a run uses the
+ * workspace's config overlay merged over the user config
+ * (`session_llm_config.mergedConfigTextFor`). `/api/config/pabrik` is the
+ * user-scope config - it carries no overlay - so a profile that lives only in
+ * a workspace overlay (Settings -> Workspace -> Profiles) was missing from
+ * this list, and a profile the overlay overrides showed the USER-level model
+ * and base_url. `kilo` was such a profile: present in the settings page of the
+ * workspace that owns it, absent from every New Chat picker.
+ */
+const profilePickerWorkspaceId = computed<string>(() =>
+  resolveWorkspaceId(route?.params?.workspaceId, workspacesStore.activeWorkspace?.id),
+)
+
 const loadProfiles = async () => {
   try {
-    const config = await api.getPabrikConfig()
+    const wsId = profilePickerWorkspaceId.value
+    const config = wsId ? await api.getWorkspaceConfig(wsId) : await api.getPabrikConfig()
     const profiles = (config.profiles ?? {}) as Record<
       string,
       { model?: string; base_url?: string }
