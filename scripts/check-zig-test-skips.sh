@@ -30,8 +30,12 @@
 #
 # WHAT THIS SCRIPT ENFORCES
 # -------------------------
-# The skipped count is a METRIC WITH A CEILING, per platform, and the
-# ceiling may only ever fall:
+# TARGET: ZERO skipped tests on EVERY platform. A test must handle all
+# three hosts; a body that is about one platform is the defect, not the
+# escape hatch. The per-platform ceiling below is a DATE-LIMITED stopgap
+# in service of that target -- it exists because the debt (mostly
+# `/bin/sh` fixtures, which cannot run on Windows) has to be paid down
+# one family at a time, and it may only ever fall:
 #
 #   * count > baseline  -> FAIL. A new skip landed; the platform it
 #     covers silently lost coverage.
@@ -199,14 +203,19 @@ check_log() { # check_log <log> <platform> <strict>
   echo "  failing, which is exactly why this check exists: the suite reports" >&2
   echo "  green while the platform runs less of it." >&2
   echo >&2
-  echo "  What to do, in order of preference (CODING_STANDARDS.md §3):" >&2
-  echo "    1. Make the test run here too -- assert the platform's real" >&2
-  echo "       behaviour instead of bailing out. Most of these are a" >&2
-  echo "       '/bin/sh' fixture payload that has a native equivalent." >&2
-  echo "    2. Give the test a portable fixture so it needs no shell at all." >&2
-  echo "    3. Only if the subject genuinely does not exist here, keep the" >&2
-  echo "       skip AND lower nothing: a new gate raises this ceiling, which" >&2
-  echo "       is a deliberate, reviewed edit -- never an accident." >&2
+  echo "  The target is ZERO skips on EVERY platform, and the fix is never a" >&2
+  echo "  per-platform test. In order (CODING_STANDARDS.md §2):" >&2
+  echo "    1. Replace the '/bin/sh' fixture with one that runs on every host" >&2
+  echo "       (a fixture program + spec file beats a script, because a" >&2
+  echo "       script needs a shell the host may not have)." >&2
+  echo "    2. Keep ONE test that covers every platform the code switches on," >&2
+  echo "       with a host table, and make an unknown host FAIL rather than" >&2
+  echo "       pass vacuously." >&2
+  echo "    3. Never 'assert on one platform, return on the others' -- that" >&2
+  echo "       reports green without having checked anything." >&2
+  echo >&2
+  echo "  Raising a ceiling to land a new platform gate is a deliberate," >&2
+  echo "  reviewed edit, never an accident -- and it is debt, not a fix." >&2
   echo >&2
   echo "  Find the offending sites with:" >&2
   echo "    rg -n 'error\.SkipZigTest' src/" >&2

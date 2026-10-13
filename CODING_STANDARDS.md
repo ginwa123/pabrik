@@ -150,9 +150,12 @@ should be.
 
 ---
 
-## 2. A test may not be skipped silently
+## 2. A test handles every platform, or it is not a test
 
-**Banned.** The checker is `scripts/check-zig-test-skips.sh`, wired into
+**Banned.** A test that only asserts on the host it was written for. The
+target is **zero skipped tests on every platform** — the same tests, the
+same assertions, on Linux, macOS and Windows. The checker is
+`scripts/check-zig-test-skips.sh`, wired into
 the `Skipped-test ceiling (zig build test)` step of
 `.github/workflows/ci-backend.yml` — so it runs on all three
 `backend (<platform>) / build` cells — and re-run every night on Windows
@@ -171,6 +174,37 @@ test "..." {
 test "..." {
     if (builtin.os.tag == .windows) return;
     ...
+}
+
+// STILL WRONG — a test that is about one platform. It looks thorough and
+// it is the same defect: on the hosts it does not name, this test
+// asserted nothing, and its name says so.
+test "buildOpenArgv returns a two-word opener plus url on unix" {
+    if (comptime builtin.os.tag == .windows) return error.SkipZigTest;
+    ...
+}
+```
+
+The fix for all three is one test that covers every host — a table over
+the platforms the code switches on, with an unknown host FAILING rather
+than passing vacuously (see `src/apps/desktop_app/browser.zig`, whose
+Windows argv is three words and whose unix argv is two, and which now
+asserts both from one test body with no branch that declines):
+
+```zig
+test "buildOpenArgv: this host's opener words, then the url" {
+    var opener_words: []const []const u8 = &.{};
+    switch (builtin.os.tag) {
+        .windows => opener_words = &.{ "rundll32", "url.dll,FileProtocolHandler" },
+        .macos => opener_words = &.{"open"},
+        .linux => opener_words = &.{"xdg-open"},
+        else => {}, // leaves it empty -> the length assert below FAILS
+    }
+    var buf: [3][]const u8 = undefined;
+    const argv = buildOpenArgv(url, &buf);
+    try testing.expectEqual(opener_words.len + 1, argv.len);
+    for (opener_words, 0..) |word, i| try testing.expectEqualStrings(word, argv[i]);
+    try testing.expectEqualStrings(url, argv[argv.len - 1]);
 }
 ```
 
@@ -209,8 +243,9 @@ parenthesised number nobody diffs.
 
 ### The rule
 
-The skipped count is a metric with a per-platform ceiling, and the ceiling
-may only fall:
+**Target: zero on every platform.** Until it is reached, the skipped
+count is a metric with a per-platform ceiling, and the ceiling may only
+fall (see "Why a ceiling exists at all" below for the date on it):
 
 | count vs ceiling | verdict |
 |---|---|
@@ -238,10 +273,16 @@ today.
   work is a scan of the tree, while this rule's input is a full
   `zig build test` run. `--selftest` is the part worth running on every
   commit, and it is cheap.
-- **Platform-specific *assertions*.** `if (comptime builtin.os.tag ==
-  .windows) { try expectEqual(3, argv.len); } else { ... }` is the
-  preferred shape — it asserts the host's real behaviour instead of
-  declining to look at it.
+- **A host table inside one test.** Naming each platform the code under
+  test switches on — and failing on one nobody handled — is not a
+  platform-specific test; it is the general form. What is banned is a
+  body that *declines work* for a host (`return`, `return
+  error.SkipZigTest`, or an `if/else` that asserts only on one side).
+- **Production code that switches on the platform.** The rule is about
+  the test asserting for every platform, not about removing
+  platform-dependent *behaviour* from the code. If behaviour is
+  genuinely host-specific, the test's job is to cover every host, not to
+  pick one.
 
 ### Running it
 
@@ -262,18 +303,34 @@ unmeasurable, not clean), a missing file, the ceiling boundary, and
 quietly stopped matching is a silent outage, and the only way to notice
 is to run it against known input on every invocation.
 
-### Why a ceiling and not zero
+### Why a ceiling exists at all — and when it goes away
 
-Zero is the goal, and this is the deliberate exception to §3's
-"land it with zero debt". The debt here is 94 Windows skips whose fix is
-a `/bin/sh` fixture payload per test, and a payload that is only correct
-on POSIX cannot be verified on POSIX — the conversion needs a real
-Windows run per test. Shipping the rule as a hard zero would therefore
-mean either a permanently red Windows cell or deleting the tests, and
-both are worse than a number that is printed on every run, cannot grow,
-and names the exact edit that lowers it in the notice beside it. The
-nightly Windows job is what makes the conversion iterable; each landed
-payload lowers the ceiling in the same change that lands it.
+**Zero on every platform is the requirement. The ceiling is a dated
+stopgap, not the rule's final form**, and this is the deliberate
+exception to §3's "land it with zero debt".
+
+The debt is 91 Windows skips. Their fix is not a per-platform test — it
+is a fixture that runs everywhere, which for this repo means no test may
+depend on `/bin/sh` being present. That conversion cannot be verified
+from POSIX (a Windows payload is only known-good when Windows has run
+it), so a flat zero shipped today would be either a permanently red
+Windows cell or deleted tests. The ceiling exists so the number is
+printed on every cell and every night, cannot grow, and names the edit
+that lowers it.
+
+The conversion, in one line per family:
+
+| family | tests | shape of the fix |
+|---|---|---|
+| `git_pr_status` | 25 | fixture program + spec, not `#!/bin/sh` |
+| `run_captured` | 16 | a host payload per test, as its own `probe_argv` already does |
+| `git_pr_list` / `create` / `close`, `status_pull_request` | 18 | same fixture program as `git_pr_status` |
+| `mcp_stdio` | 6 | same fixture program (an NDJSON speaker) |
+| symlink / `/proc` / `setenv` sites | 6 | a host-general helper (handle count, env set, link-or-fail-loudly) |
+| the ~84 `return;` vacuous passes | 0 counted | convert to a real assertion, never to a skip |
+
+`--strict` is the finish line and is already wired and tested; flipping
+the step to it is a one-word change once the table above is empty.
 
 ---
 

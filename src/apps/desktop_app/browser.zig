@@ -67,28 +67,33 @@ pub fn openBrowser(io: std.Io, url: []const u8) !void {
 
 const testing = std.testing;
 
-test "buildOpenArgv names this host's opener and appends the url" {
-    // Every branch is asserted on ITS host rather than bailed out of: the
-    // Windows opener is not `open`+url but `rundll32 url.dll,
-    // FileProtocolHandler`+url, so the argv is three words there and two
-    // elsewhere. Bailing out on Windows left the only desktop-app
-    // browser-launch test unrun on one of the three shipped platforms.
-    var buf: [3][]const u8 = undefined;
-    const argv = buildOpenArgv("http://127.0.0.1:8081/", &buf);
-    if (comptime builtin.os.tag == .windows) {
-        try testing.expectEqual(@as(usize, 3), argv.len);
-        try testing.expectEqualStrings("rundll32", argv[0]);
-        try testing.expectEqualStrings("url.dll,FileProtocolHandler", argv[1]);
-        try testing.expectEqualStrings("http://127.0.0.1:8081/", argv[2]);
-    } else {
-        try testing.expectEqual(@as(usize, 2), argv.len);
-        try testing.expectEqualStrings("http://127.0.0.1:8081/", argv[1]);
-        if (comptime builtin.os.tag == .macos) {
-            try testing.expectEqualStrings("open", argv[0]);
-        } else {
-            try testing.expectEqualStrings("xdg-open", argv[0]);
-        }
+test "buildOpenArgv: this host's opener words, then the url" {
+    // One test, every host, no branch that declines to look. The opener
+    // table below covers each platform the SUT switches on, and an
+    // unknown host fails this test (it does not pass vacuously): the
+    // argv it produces has one word too few, so `expectEqual` on the
+    // length goes red and names the platform nobody handled.
+    //
+    // A per-platform test would have been the easy thing here — the
+    // Windows argv is `rundll32 url.dll,FileProtocolHandler <url>` and
+    // the unix one is `open|xdg-open <url>`, three words against two —
+    // and that is exactly the shape this suite is moving away from: a
+    // test that only asserts on the host it was written for reports
+    // green everywhere else without having checked anything.
+    var opener_words: []const []const u8 = &.{};
+    switch (builtin.os.tag) {
+        .windows => opener_words = &.{ "rundll32", "url.dll,FileProtocolHandler" },
+        .macos => opener_words = &.{"open"},
+        .linux => opener_words = &.{"xdg-open"},
+        else => {},
     }
+
+    var buf: [3][]const u8 = undefined;
+    const url = "http://127.0.0.1:8081/";
+    const argv = buildOpenArgv(url, &buf);
+    try testing.expectEqual(opener_words.len + 1, argv.len);
+    for (opener_words, 0..) |word, i| try testing.expectEqualStrings(word, argv[i]);
+    try testing.expectEqualStrings(url, argv[argv.len - 1]);
 }
 
 test "buildOpenArgv borrows the url slice without copying" {
