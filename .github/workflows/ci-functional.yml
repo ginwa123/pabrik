@@ -142,12 +142,29 @@ jobs:
     # run therefore misses the cache, pays another cold ~90 MB compile, and
     # dies on the same wall. The cache key was never once found in a log:
     #   `Cache not found for input keys: v1-func-zig-windows-2022-...`
-    # So the honest fix is headroom; once ONE run completes, its cache is
-    # saved and every later run starts warm.
     #
-    # 150, not 360: a timeout is a ceiling, not a target — a job that needs
-    # 90 still exits at 90 — so the only thing a generous ceiling costs is
-    # when something is genuinely wedged, and 2.5 h bounds that.
+    # THE ACTUAL ROOT CAUSE, found on a Windows dev box (2026-10-13) — not
+    # headroom. Every UI test leaked its Vite dev server.
+    # `ui_harness._stop_vite` signalled the pid `subprocess.Popen` returned
+    # for `pnpm run dev`, which on Windows is the `pnpm.cmd` / `cmd.exe`
+    # launcher rather than the `node` process that binds the port, so
+    # teardown left a ~500 MB dev server behind PER TEST. Measured: a
+    # 4-test run left 4-5 `node.exe` still LISTENING in the harness's
+    # 20000-31999 range, with every harness tmpdir already rmtree'd (the
+    # backend half of teardown worked; the vite half did not), and the
+    # fifth test then wedged with pytest alive, vite alive and a dead
+    # backend. A shard runs roughly 40 UI tests, so the job accumulated
+    # dozens of those servers before it hit the wall — the 75/150-minute
+    # timeout was the symptom, the leak is why no Windows shard could ever
+    # finish. `_reap_port_listener` now kills the process LISTENING on the
+    # shard's own vite port as the last step of teardown, and the
+    # cache-never-saved effect above is downstream of the same wedge (a job
+    # that dies mid-run saves nothing).
+    #
+    # Headroom stays, but as a ceiling rather than a workaround: 150, not
+    # 360 — a timeout is a ceiling, not a target, so a job that needs 90
+    # still exits at 90, and the only thing a generous ceiling costs is when
+    # something is genuinely wedged.
     timeout-minutes: ${{ inputs.os == 'windows-2022' && 150 || 75 }}
     steps:
       - name: Checkout
@@ -490,6 +507,17 @@ jobs:
         # BindFailed at boot. If this job ever needs to be faster, the fix
         # is a reservation protocol in the picker (bind, hold, hand off),
         # not a flag.
+        #
+        # Measured on a 4-core Windows dev box (2026-10-13), and the same
+        # conclusion holds for shards sharing one machine: four concurrent
+        # `functional-test-ui:shard:<i>` steps left the FIRST test of every
+        # shard unfinished after 8 minutes, against a ~33 s single-shard
+        # baseline. Each test boots a Vite dev server + headless Chromium +
+        # a pabrik backend, so one shard is already ~2 cores of demand; four
+        # of them on four cores is thrash, not parallelism. Shards belong in
+        # separate JOBS (what this workflow does — each cell is its own VM)
+        # or in separate shells on a much bigger host. `-Dfunc-shards=N`
+        # fans out for convenience; it does not make N of them free.
         shell: bash
         env:
           # The pytest venv lives OUTSIDE the workspace because the
@@ -500,18 +528,24 @@ jobs:
           # layout.
           PABRIK_FUNC_VENV_DIR: ${{ runner.temp }}/pabrik-ci-venv
           # ── THE SHARD ─────────────────────────────────────────────
-          # These two variables are the entire sharding contract; they
-          # are read by tests/conftest.py, which slices the collected
-          # items with `index % total == index`. Nothing about them
-          # reaches build.zig: `b.addSystemCommand` inherits the parent
-          # environment, so `zig build functional-test-all` forwards them
-          # to the pytest process it spawns, and the invocation stays
-          # the one the local dev loop uses.
+          # These two values are the workflow INPUTS. The build below is
+          # handed them as `-Dfunc-shards=` / `-Dfunc-shard-index=`, and
+          # build.zig turns them into the two env vars the selector
+          # documents on the pytest child itself.
           #
-          # They are set on THIS STEP rather than at job level because
-          # job-level `env:` is also visible to the cache steps, where a
-          # stray PABRIK_FUNC_SHARD_* would make a cache key look shard-
-          # specific for no reason.
+          # They used to be the only channel — the step exported
+          # PABRIK_FUNC_SHARD_*, `b.addSystemCommand` inherited the
+          # environment, and the pytest child read it. That is invisible to
+          # the build, which therefore cannot validate the pair: a stale
+          # value left in a shell silently turns a local `zig build
+          # functional-test-all` into one third of the suite, and an index
+          # typo only surfaces after collection. Now the build hard-errors
+          # at configure time, naming both numbers, and
+          # tests/func_shard.py stays the single owner of the env-var
+          # contract (func_shard_test.py still pins the names).
+          #
+          # Set on THIS STEP rather than at job level: job-level `env:` is
+          # visible to the cache steps too.
           PABRIK_FUNC_SHARD_TOTAL: ${{ inputs.shard_total }}
           PABRIK_FUNC_SHARD_INDEX: ${{ inputs.shard_index }}
         run: |
@@ -553,7 +587,13 @@ jobs:
           while [ "$attempt" -le "$max_attempts" ]; do
             echo "→ functional-test: attempt $attempt/$max_attempts"
             set +e
-            zig build functional-test-all --summary all 2>&1 | tee /tmp/functional-test.log | tail -n 80
+            # The shard is a BUILD flag, not an inherited variable (see the
+            # `env:` block above): build.zig validates the pair and sets
+            # PABRIK_FUNC_SHARD_TOTAL/INDEX on the pytest child itself.
+            zig build functional-test-all --summary all \
+              -Dfunc-shards="$PABRIK_FUNC_SHARD_TOTAL" \
+              -Dfunc-shard-index="$PABRIK_FUNC_SHARD_INDEX" \
+              2>&1 | tee /tmp/functional-test.log | tail -n 80
             rc=${PIPESTATUS[0]}
             set -e
             echo "→ functional-test: attempt $attempt exit code $rc"

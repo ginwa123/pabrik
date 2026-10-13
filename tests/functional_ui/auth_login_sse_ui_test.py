@@ -102,7 +102,16 @@ def test_login_redirect_keeps_sse_connected(
             )
 
             # 1. Deep-link /app while logged out → must bounce to /login.
-            page.goto(h.web_url("/app"), wait_until="domcontentloaded", timeout=30000)
+            #
+            # 60s, not the usual 30s: this is the FIRST page load and, on a
+            # cold Vite transform cache, it pulls the whole module graph
+            # (~800 requests — measured with a request listener on a Windows
+            # box). With a warm cache it is ~5s; cold it exceeded 30s and the
+            # test failed on `Page.goto: Timeout 30000ms exceeded` rather
+            # than on anything it exists to assert. The redirect itself is
+            # client-side, so a generous ceiling here costs nothing when the
+            # cache is warm.
+            page.goto(h.web_url("/app"), wait_until="domcontentloaded", timeout=60000)
             page.wait_for_url("**/login**", timeout=15000)
 
             # 1b. Force the production race: the global SSE bus connects

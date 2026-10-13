@@ -35,7 +35,9 @@ confirms the assertions fail for the right reason rather than silently).
 
 from __future__ import annotations
 
+import contextlib
 import sqlite3
+from typing import Iterator
 
 from harness import harness_path
 from ui_harness import UIHarness
@@ -100,8 +102,30 @@ def _create_chat(h: UIHarness, ws_name: str, agent_name: str, chat_name: str) ->
 # ─── Direct DB reads — the assertions that matter are about the two tables ──
 
 
-def _db(h: UIHarness) -> sqlite3.Connection:
-    return sqlite3.connect(str(h.temp_dir / ".config" / "pabrik" / "agent.db"))
+@contextlib.contextmanager
+def _db(h: UIHarness) -> Iterator[sqlite3.Connection]:
+    """A connection to the harness's agent.db that is CLOSED on exit.
+
+    `with sqlite3.connect(...) as conn` is NOT a closing block — sqlite3's
+    context manager only commits or rolls back the transaction — so every
+    read in this module used to leave the file handle open. Linux and
+    macOS unlink an open file happily and never noticed; on Windows the
+    harness's teardown rmtree then dies with
+
+        PermissionError: [WinError 32] The process cannot access the file
+        because it is being used by another process: ...\\agent.db
+
+    which pytest reports as the test PASSING and then ERRORING. That is
+    what this module did for all eight of its tests. Closing the handle is
+    the teardown's precondition; the commit-on-exit behaviour is kept
+    explicitly so nothing else about the helper changes.
+    """
+    conn = sqlite3.connect(str(h.temp_dir / ".config" / "pabrik" / "agent.db"))
+    try:
+        yield conn
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _task_name(h: UIHarness, task_id: str) -> str:

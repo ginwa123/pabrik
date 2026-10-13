@@ -311,6 +311,10 @@ class FunctionalHarness:
     orig_home: str
     log_path: Path
     pid: int | None = None
+    # The Popen `boot()` spawned, kept so `_wait_dead` can poll it:
+    # `Popen.poll()` is the only portable NON-BLOCKING liveness probe (see
+    # `_wait_dead`). None only for a hand-constructed harness.
+    proc: subprocess.Popen | None = dataclasses.field(default=None, repr=False)
     dry_run: bool = False
     _stopped: bool = dataclasses.field(default=False, repr=False)
     # Windows original env snapshot (USERPROFILE/APPDATA/LOCALAPPDATA) — empty on POSIX.
@@ -546,6 +550,7 @@ class FunctionalHarness:
             orig_home=orig_home,
             log_path=log_path,
             pid=proc.pid,
+            proc=proc,
             dry_run=os.environ.get("PABRIK_FUNCTIONAL_DRY_RUN") == "1",
             orig_userprofile=orig_userprofile,
             orig_appdata=orig_appdata,
@@ -812,26 +817,42 @@ class FunctionalHarness:
           - ``(pid, status)``     — child has exited and we JUST reaped it
           - raises ``OSError`` (ECHILD) — child doesn't exist (no zombie either)
 
-        On Windows, ``os.waitpid`` is unavailable; we fall back to
-        ``os.kill(pid, 0)``. The Windows backend doesn't have zombie
-        processes (CreateProcess+wait semantics differ), so the
-        heuristic is sufficient there.
+        ``Popen.poll()`` is preferred and is the only branch that cannot
+        block: it is ``WaitForSingleObject(handle, 0)`` on Windows and
+        ``waitpid(WNOHANG)`` on POSIX, and it reaps the child on both.
+        Windows DOES have ``os.waitpid`` but does NOT have ``os.WNOHANG``,
+        so the old ``wnohang = 0`` fallback turned this loop into a
+        blocking wait — which hung the entire test process in
+        ``_stop_binary``'s first ``_wait_dead`` whenever the child did not
+        exit on the graceful path. The remaining branches are kept for a
+        harness with no ``proc`` (``waitpid`` only where WNOHANG exists,
+        otherwise a ``kill(pid, 0)`` probe).
         """
         assert self.pid is not None
         has_waitpid = hasattr(os, "waitpid")
-        # WNOHANG may not exist on some platforms; fall back to 0
-        # (blocking) but we cap the loop with `timeout` so it's not
-        # actually blocking.
-        try:
-            wnohang = os.WNOHANG
-        except AttributeError:
-            wnohang = 0
+        # `os.WNOHANG` does NOT exist on Windows, and the old fallback of
+        # `wnohang = 0` ("blocking, but the loop deadline caps it") is
+        # WRONG: the deadline is only checked BEFORE the call, so a
+        # blocking `os.waitpid(pid, 0)` on a child that never exits hangs
+        # the whole test process inside `_stop_binary`'s FIRST
+        # `_wait_dead`, and the SIGTERM/SIGKILL fallbacks below it are
+        # never reached. Treat "no WNOHANG" as "waitpid cannot poll here".
+        has_waitpid = hasattr(os, "waitpid") and hasattr(os, "WNOHANG")
+        wnohang = os.WNOHANG if has_waitpid else 0
         t0 = time.monotonic()
         deadline = time.monotonic() + timeout
         polls = 0
         while time.monotonic() < deadline:
             polls += 1
-            if has_waitpid:
+            # `Popen.poll()` FIRST — the only probe here that is
+            # non-blocking on every platform (WaitForSingleObject(0) on
+            # Windows, waitpid(WNOHANG) on POSIX) and the only one that
+            # cannot hang the caller, because it also reaps the child.
+            # `self.proc` is the Popen `boot()` spawned.
+            if self.proc is not None:
+                if self.proc.poll() is not None:
+                    return True
+            elif has_waitpid:
                 try:
                     wpid, _status = os.waitpid(self.pid, wnohang)
                 except ChildProcessError:

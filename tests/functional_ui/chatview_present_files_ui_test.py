@@ -88,8 +88,16 @@ def test_present_files_html_renders_inline_in_chatview(
     session_id = "sess_present_files_html_001"
 
     # 1. Real file on disk inside the isolated tmpdir (the session cwd).
+    #
+    # BYTES, not `write_text`: text mode translates "\n" to "\r\n" on
+    # Windows, so the file on disk was CRLF while the assertion below
+    # compares against the LF literal — the test failed on Windows for a
+    # reason that had nothing to do with the download endpoint. Writing
+    # bytes makes the fixture byte-exact on every platform, which is what
+    # "the endpoint must serve the exact file bytes" needs in order to
+    # mean anything.
     html_path = h.temp_dir / "wireframe.html"
-    html_path.write_text(HTML_DOC, encoding="utf-8")
+    html_path.write_bytes(HTML_DOC.encode("utf-8"))
     html_bytes = html_path.stat().st_size
 
     # 2. Lock the root cause on the wire: framing headers present, body
