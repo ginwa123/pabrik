@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import contextlib
 import sqlite3
+import time
 from typing import Iterator
 
 from harness import harness_path
@@ -143,6 +144,36 @@ def _session_row(h: UIHarness, session_id: str) -> sqlite3.Row:
         row = conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
     assert row is not None, f"session {session_id} not found"
     return row
+
+
+def _wait_for_row_names(
+    h: UIHarness, task_id: str, expected: str, timeout_s: float = 10.0
+) -> tuple[str, str]:
+    """Poll BOTH rename targets until they read ``expected``.
+
+    The rename is one UI action but two writes — ``sessions.name`` and the
+    ``workspace_item_tasks.name`` half of the cascade — and the sidebar
+    repaint that the test waits on is driven by the SSE broadcast that summarises
+    them. Reading the tables the instant the sidebar shows the new text can
+    therefore land between the two statements and report a half-applied
+    rename; CI run 38436976454, shard 1/3 hit exactly that
+    (``assert 'UI_MENU_ORIGINAL' == 'UI_MENU_RENAMED'``, with the sidebar
+    already repainted).
+
+    Returns ``(task_name, session_name)`` as last observed, so the caller
+    keeps its own assertions and error messages: a rename that never lands
+    still fails, just after this budget rather than instantly.
+    """
+    deadline = time.monotonic() + timeout_s
+    task_name = _task_name(h, task_id)
+    session_name = _session_row(h, task_id)["name"]
+    while time.monotonic() < deadline and (
+        task_name != expected or session_name != expected
+    ):
+        time.sleep(0.2)
+        task_name = _task_name(h, task_id)
+        session_name = _session_row(h, task_id)["name"]
+    return task_name, session_name
 
 
 def _seed_running_worker(h: UIHarness, session_id: str) -> None:
@@ -302,11 +333,23 @@ def test_rename_chat_updates_task_and_session_names(ui_harness: UIHarness, page)
 
         # The half that breaks silently: the task list still shows the old
         # name, so the kanban board and the sidebar disagree.
-        assert _task_name(h, task_id) == "UI_MENU_RENAMED", (
+        #
+        # Polled, not read once. The sidebar text above is driven by the SSE
+        # broadcast; the two rows it summarises are written by separate
+        # statements (`sessions` then the `workspace_item_tasks` half of the
+        # rename cascade), so reading the tables the instant the sidebar
+        # updates races the tail of the cascade and reports a half-applied
+        # rename. That is exactly what CI run 38436976454, shard 1/3 saw:
+        # `assert 'UI_MENU_ORIGINAL' == 'UI_MENU_RENAMED'` while the sidebar
+        # had already repainted. The assertion is unchanged — a rename that
+        # never reaches the task row still fails, after the same budget the
+        # sidebar text is given.
+        task_name, session_name = _wait_for_row_names(h, task_id, "UI_MENU_RENAMED")
+        assert task_name == "UI_MENU_RENAMED", (
             "workspace_item_tasks.name was not updated — the kanban board would "
             "still show the old name"
         )
-        assert _session_row(h, task_id)["name"] == "UI_MENU_RENAMED", (
+        assert session_name == "UI_MENU_RENAMED", (
             "sessions.name was not updated — the chat header would still show "
             "the old name"
         )
