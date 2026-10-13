@@ -252,7 +252,7 @@ fn setupLlmBusAndIo() !struct {
     return .{ .bus = bus, .threaded = threaded, .logger = logger };
 }
 
-fn teardownLlmBus(s: *@TypeOf(setupLlmBusAndIo() catch unreachable)) void {
+fn teardownLlmBus(s: *@TypeOf(setupLlmBusAndIo() catch @panic("setupLlmBusAndIo failed in the sse_on_event_send_llm_history test fixture"))) void {
     s.bus.deinit();
     s.threaded.deinit();
     s.logger.deinit();

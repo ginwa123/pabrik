@@ -87,7 +87,7 @@ test "hasQueuedMessages LIMIT 1 returns true after many queued messages" {
     defer s.threaded.deinit();
     var i: usize = 0;
     while (i < 5) : (i += 1) {
-        const id = std.fmt.allocPrint(testing.allocator, "m{d}", .{i}) catch unreachable;
+        const id = std.fmt.allocPrint(testing.allocator, "m{d}", .{i}) catch @panic("allocPrint failed for the has_queue_messagge fixture id");
         try s.db.exec(testing.allocator,
             "INSERT INTO session_queue_messages (id, session_id, message, image_url) VALUES (?, 's1', ?, '')",
             &.{ id, id });

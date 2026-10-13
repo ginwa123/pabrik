@@ -50,7 +50,7 @@ pub const RequestId = struct {
             seconds,
             random_bytes[0],
             random_bytes[1],
-        }) catch unreachable;
+        }) catch @panic("bufPrint failed formatting the request id");
         
         return self;
     }
@@ -136,7 +136,7 @@ pub const SessionId = struct {
             random_bytes[1],
             random_bytes[2],
             random_bytes[3],
-        }) catch unreachable;
+        }) catch @panic("bufPrint failed formatting the session id");
 
         return self;
     }

@@ -10,8 +10,13 @@
 
   irm https://raw.githubusercontent.com/ginwa123/pabrik/main/install.ps1 | iex
 
-  Pinned version:
-    $v = "ci-latest"; irm https://raw.githubusercontent.com/ginwa123/pabrik/main/install.ps1 | iex
+  Pinned version -- the environment variable, not a local one: the text
+  above runs in YOUR session, so it takes no arguments from there.
+    $env:PABRIK_VERSION = "v0.3.0"; irm https://raw.githubusercontent.com/ginwa123/pabrik/main/install.ps1 | iex
+
+  A switch (-Uninstall, -DesktopShortcut) can only be passed through a file:
+    irm https://raw.githubusercontent.com/ginwa123/pabrik/main/install.ps1 -OutFile "$env:TEMP\install-pabrik.ps1"
+    powershell -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\install-pabrik.ps1" -Uninstall
 
 .PARAMETER Version
   Release tag to download. Default "ci-latest".
@@ -32,6 +37,18 @@ param(
 $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
+# No `exit` anywhere below, deliberately. The documented one-liner pipes
+# this text into iex, which runs it in the CALLER's session, so a top-level
+# `exit` ends that session and closes the terminal window with it -- which
+# is what a re-run on an up-to-date install used to do, right after
+# printing "already up to date". Instead: a success that should stop early
+# returns (the caller's prompt survives, and `powershell -File install.ps1`
+# still exits 0), and a failure is a terminating error -- `-ErrorAction
+# Stop` on every `Write-Error` below says so at the call site -- which
+# prints the reason and returns to the prompt under iex, and still exits 1
+# under -File. (install.sh has no such problem: `curl | bash` runs in a
+# child process.)
+
 $Repo = if ($env:PABRIK_REPO) { $env:PABRIK_REPO } else { "ginwa123/pabrik" }
 $Tag = if ($Version -ne "") { $Version } elseif ($env:PABRIK_VERSION) { $env:PABRIK_VERSION } else { "ci-latest" }
 $Triple = "x86_64-windows-gnu"
@@ -41,8 +58,7 @@ $ZipName = "pabrik-desktop-$Triple.zip"
 $BaseUrl = if ($env:PABRIK_BASE_URL) { $env:PABRIK_BASE_URL } else { "https://github.com/$Repo/releases/download/$Tag" }
 
 if (-not [Environment]::Is64BitOperatingSystem) {
-    Write-Error "Pabrik ships a 64-bit Windows build only; 32-bit Windows is not supported."
-    exit 1
+    Write-Error -Message "Pabrik ships a 64-bit Windows build only; 32-bit Windows is not supported." -ErrorAction Stop
 }
 if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") {
     Write-Warning "ARM64 Windows has no prebuilt binary (only x64); the x64 build may work under emulation, continuing."
@@ -60,7 +76,7 @@ if ($Uninstall) {
         if (Test-Path $link) { Remove-Item $link -Force }
     }
     Write-Output "Uninstalled Pabrik."
-    exit 0
+    return
 }
 
 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("pabrik-install-" + [System.Guid]::NewGuid().ToString("N"))
@@ -75,11 +91,11 @@ try {
     Expand-Archive -Path $zipPath -DestinationPath $extract -Force
 
     $setup = Join-Path $extract "Install-Pabrik.ps1"
-    if (-not (Test-Path $setup)) { Write-Error "Install-Pabrik.ps1 missing in $ZipName -- bad release asset?"; exit 1 }
+    if (-not (Test-Path $setup)) { Write-Error -Message "Install-Pabrik.ps1 missing in $ZipName -- bad release asset?" -ErrorAction Stop }
 
     # Update detection: the exes carry no --version flag, so content is
     # the version — SHA256 the downloads against an existing install.
-    # Identical → already up to date, exit before touching anything.
+    # Identical → already up to date, stop before touching anything.
     # Differing (or missing) → install + report the update below.
     $installedDesktop = Join-Path $env:LOCALAPPDATA "pabrik\bin\pabrik-desktop.exe"
     $installedService = Join-Path $env:LOCALAPPDATA "pabrik\bin\pabrik.exe"
@@ -94,14 +110,14 @@ try {
     $hadExisting = Test-Path -LiteralPath $installedService
     if ((Same-File $newDesktop $installedDesktop) -and (Same-File $newService $installedService)) {
         Write-Output "pabrik is already up to date ($Tag)."
-        exit 0
+        return
     }
 
     $args = @()
     if ($DesktopShortcut) { $args += "-DesktopShortcut" }
     Write-Output "Running Install-Pabrik.ps1 ..."
     & powershell -NoProfile -ExecutionPolicy Bypass -File $setup @args
-    if ($LASTEXITCODE -ne 0) { Write-Error "Install-Pabrik.ps1 failed (exit $LASTEXITCODE)"; exit 1 }
+    if ($LASTEXITCODE -ne 0) { Write-Error -Message "Install-Pabrik.ps1 failed (exit $LASTEXITCODE)" -ErrorAction Stop }
 
     $probe = Join-Path $env:LOCALAPPDATA "pabrik\bin\pabrik.exe"
     try { & $probe --help | Out-Null } catch { Write-Warning "installed binary failed '--help' check at $probe" }

@@ -230,7 +230,7 @@ pub fn buildJsonRequestBody(allocator: std.mem.Allocator, input: GenerateImageIn
     // n (number, no quotes)
     try json.appendSlice(allocator, ",\"n\":");
     var n_buf: [16]u8 = undefined;
-    const n_str = std.fmt.bufPrint(&n_buf, "{d}", .{n}) catch unreachable;
+    const n_str = std.fmt.bufPrint(&n_buf, "{d}", .{n}) catch @panic("bufPrint failed formatting the image count");
     try json.appendSlice(allocator, n_str);
 
     // size

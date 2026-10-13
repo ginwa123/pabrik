@@ -1317,7 +1317,7 @@ fn jsonEscape(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
             // Escape other control characters (0x00-0x1F except those above) as \u00XX
             0x00...0x07, 0x0E...0x1F => {
                 var buf: [6]u8 = undefined;
-                const hex_str = std.fmt.bufPrint(&buf, "\\u00{X}", .{c}) catch unreachable;
+                const hex_str = std.fmt.bufPrint(&buf, "\\u00{X}", .{c}) catch @panic("bufPrint failed formatting a \\u00XX escape in jsonEscape");
                 try result.appendSlice(allocator, hex_str);
             },
             else => try result.append(allocator, c),
@@ -9148,7 +9148,7 @@ test "needs_human_review predicate returns 0 when human touched AFTER the AI fin
     // timestamp above.
     const now_ms: i64 = 2_000_000_000_000; // year 2033 in unix-ms
     var t_buf: [32]u8 = undefined;
-    const t_str = std.fmt.bufPrint(&t_buf, "{d}", .{now_ms}) catch unreachable;
+    const t_str = std.fmt.bufPrint(&t_buf, "{d}", .{now_ms}) catch @panic("bufPrint failed formatting the fixed fixture timestamp");
     try db.exec(alloc,
         "INSERT INTO workspace_item_tasks (id, name, workspace_item_id, last_human_touched_at_nano) " ++
         "VALUES ('task_reviewed', 'T', 'wi_1', ?)",
@@ -9954,7 +9954,7 @@ fn llmHistoryCompactedMessagesSetupDb() !struct {
     return .{ .db = db, .threaded = threaded };
 }
 
-fn llmHistoryCompactedMessagesTeardownDb(s: *@TypeOf(llmHistoryCompactedMessagesSetupDb() catch unreachable)) void {
+fn llmHistoryCompactedMessagesTeardownDb(s: *@TypeOf(llmHistoryCompactedMessagesSetupDb() catch @panic("llmHistoryCompactedMessagesSetupDb failed in the llm_history test fixture"))) void {
     s.db.deinit();
     s.threaded.deinit();
 }

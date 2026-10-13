@@ -1064,9 +1064,9 @@ test "toJSONSuccess keeps raw path with & and < (JSON needs no escaping)" {
     const allocator = std.testing.allocator;
     var result: text_replace.TextReplaceResult = .{ .ok = {} };
     defer result.deinit(allocator);
-    const before = allocator.dupe(u8, "x") catch unreachable;
-    const after = allocator.dupe(u8, "y") catch unreachable;
-    const unified = allocator.dupe(u8, "--- a\n+++ b\n-old\n+new") catch unreachable;
+    const before = allocator.dupe(u8, "x") catch @panic("dupe failed for the text_replace before fixture");
+    const after = allocator.dupe(u8, "y") catch @panic("dupe failed for the text_replace after fixture");
+    const unified = allocator.dupe(u8, "--- a\n+++ b\n-old\n+new") catch @panic("dupe failed for the text_replace unified fixture");
     result.diff_view = .{
         .unified = unified,
         .before = before,
@@ -1109,9 +1109,9 @@ test "toJSONSuccess includes the unified diff field" {
     const allocator = std.testing.allocator;
     var result: text_replace.TextReplaceResult = .{ .ok = {} };
     defer result.deinit(allocator);
-    const before = allocator.dupe(u8, "old line") catch unreachable;
-    const after = allocator.dupe(u8, "new line") catch unreachable;
-    const unified = allocator.dupe(u8, "--- a/x\n+++ b/x\n@@ -1,1 +1,1 @@\n-old line\n+new line") catch unreachable;
+    const before = allocator.dupe(u8, "old line") catch @panic("dupe failed for the text_replace before fixture");
+    const after = allocator.dupe(u8, "new line") catch @panic("dupe failed for the text_replace after fixture");
+    const unified = allocator.dupe(u8, "--- a/x\n+++ b/x\n@@ -1,1 +1,1 @@\n-old line\n+new line") catch @panic("dupe failed for the text_replace unified fixture");
     result.diff_view = .{
         .unified = unified,
         .before = before,
@@ -1586,7 +1586,7 @@ test "generateUnifiedDiff - very long file (>10 lines) — context window is 3" 
         const formatted_line = if (i == 10)
             "TARGET\n"
         else
-            std.fmt.bufPrint(&line_buf, "line_{d:0>2}\n", .{i}) catch unreachable;
+            std.fmt.bufPrint(&line_buf, "line_{d:0>2}\n", .{i}) catch @panic("bufPrint failed formatting a text_replace fixture line");
         @memcpy(raw_buf[pos..][0..formatted_line.len], formatted_line);
         pos += formatted_line.len;
     }
@@ -2060,7 +2060,7 @@ test "executeTextReplace - large file (50 lines) succeeds" {
     var pos: usize = 0;
     for (0..49) |i| {
         var line_buf: [32]u8 = undefined;
-        const line = std.fmt.bufPrint(&line_buf, "line_{d:0>2}\n", .{i}) catch unreachable;
+        const line = std.fmt.bufPrint(&line_buf, "line_{d:0>2}\n", .{i}) catch @panic("bufPrint failed formatting a text_replace fixture line");
         @memcpy(content_buf[pos..][0..line.len], line);
         pos += line.len;
     }

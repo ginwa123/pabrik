@@ -1277,8 +1277,8 @@ test "GitignoreContext with entries" {
         .pattern = "*.log",
     };
     var owned_entry = entry;
-    owned_entry.pattern = allocator.dupe(u8, "*.log") catch unreachable;
-    ctx.entries.append(allocator, owned_entry) catch unreachable;
+    owned_entry.pattern = allocator.dupe(u8, "*.log") catch @panic("dupe failed for the gitignore *.log pattern");
+    ctx.entries.append(allocator, owned_entry) catch @panic("append failed for the gitignore *.log entry");
 
     const test_path = "/tmp/gitignore_ctx_test/debug.log";
     const result = ctx.isIgnored(test_path);
@@ -1299,7 +1299,7 @@ test "loadGitignoreForDir with relative path does not crash" {
     }
 
     // Create the subdirectory
-    const subdir_path = std.fs.path.join(allocator, &.{ tmp_dir_path, "test_subdir" }) catch unreachable;
+    const subdir_path = std.fs.path.join(allocator, &.{ tmp_dir_path, "test_subdir" }) catch @panic("join failed for the gitignore test subdir path");
     defer allocator.free(subdir_path);
     std.Io.Dir.cwd().createDirPath(std.testing.io, subdir_path) catch {};
 

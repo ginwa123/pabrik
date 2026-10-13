@@ -311,7 +311,7 @@ fn runSubAgent(args_ptr: *SubAgentThreadArgs) void {
         .elapsed_ms = elapsedMs(args_ptr),
     });
 
-    const di = pabrikcore.getSingleton() catch unreachable;
+    const di = pabrikcore.getSingleton() catch @panic("getSingleton failed in the sub-agent worker thread");
 
     const is_sub_agent = std.mem.indexOf(u8, sess_id, "subagent") != null;
     args_ptr.logger.debugFmt("Calling workflow.runAgenticMultiStep for '{s}'", .{args_ptr.agent_name});

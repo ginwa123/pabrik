@@ -917,7 +917,7 @@ test "save_memory_tool: returns error JSON on content > 1 MiB" {
     defer ctx.db.deinit();
 
     // Allocate 1 MiB + 1 byte of garbage.
-    const oversize = alloc.alloc(u8, (1 << 20) + 1) catch unreachable;
+    const oversize = alloc.alloc(u8, (1 << 20) + 1) catch @panic("alloc failed for the oversize memory-tool fixture");
     defer alloc.free(oversize);
     @memset(oversize, 'x');
 

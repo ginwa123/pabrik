@@ -198,6 +198,23 @@ fn mergeUseCaseWithPrograms(
     };
 }
 
+/// Tell every client that this branch's change request moved, so the sidebar's
+/// RECENT icon and the kanban card badge re-read the forge instead of keeping
+/// the colour they cached before the mutation.
+///
+/// Never fails the caller — a successful merge must not be reported as a
+/// failure because the UI could not be told about it. The merge box's own
+/// local invalidate is the path that cannot be lost; this one is what carries
+/// the news to a second tab (see agentic_loop/git_pr_state_events.zig).
+fn emitPrStateEvent(ctx: gserverz.HttpContext, cwd: []const u8, branch: []const u8, action: []const u8) void {
+    const di = pabrik_core.getSingleton() catch return;
+    pabrik_core.git_pr_state_events.emitGitPrStateEvent(ctx.allocator, di.event_bus, .{
+        .action = action,
+        .cwd = cwd,
+        .branch = branch,
+    });
+}
+
 /// POST /api/git/pr/merge
 pub fn gitPrMergeHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
@@ -263,6 +280,18 @@ pub fn gitPrMergeHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, r
             return res.jsonResponse(.{ .status_code = 502, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = msg }) });
         },
     };
+
+    // A merge MOVED this branch's change request, and every badge reads a
+    // shared 60s cache that still holds the pre-merge answer. Emitted only for
+    // a REAL merge: an accepted-but-pending one (a merge queue, an armed
+    // auto-merge) leaves the change request `open`, so there is no state change
+    // to show.
+    //
+    // Free of extra forge work: the status re-read above already carries
+    // `head_ref`, which is exactly the branch half of the frontend's cache key.
+    if (!outcome.pending and outcome.status.head_ref.len > 0) {
+        emitPrStateEvent(ctx, parsed.path, outcome.status.head_ref, "merged");
+    }
 
     return res.jsonResponse(.{ .status_code = 200, .data = try http_response.makeGitPrMergeResponse(allocator, .{
         .success = !outcome.pending,

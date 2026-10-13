@@ -76,6 +76,7 @@ const git_pr_diff_test = @import("git_pr_diff_test.zig");
 const git_pr_gitlab_test = @import("git_pr_gitlab_test.zig");
 const git_pr_list_close_test = @import("git_pr_list_close_test.zig");
 const git_pr_merge_test = @import("git_pr_merge_test.zig");
+const git_pr_state_sse_test = @import("git_pr_state_sse_test.zig");
 const git_pr_status_branch_test = @import("git_pr_status_branch_test.zig");
 const git_pr_status_crash_test = @import("git_pr_status_crash_test.zig");
 const git_pr_status_test = @import("git_pr_status_test.zig");
@@ -166,7 +167,9 @@ const user_config_test = @import("user_config_test.zig");
 const web_launch_toggle_test = @import("web_launch_toggle_test.zig");
 const web_search_config_test = @import("web_search_config_test.zig");
 const worker_gate_queue_test = @import("worker_gate_queue_test.zig");
+const workflow_mcp_snapshot_turn_lifetime_test = @import("workflow_mcp_snapshot_turn_lifetime_test.zig");
 const workspace_config_test = @import("workspace_config_test.zig");
+const workspace_default_profile_test = @import("workspace_default_profile_test.zig");
 const workspace_isolation_test = @import("workspace_isolation_test.zig");
 const workspace_items_test = @import("workspace_items_test.zig");
 const workspace_lifecycle_test = @import("workspace_lifecycle_test.zig");
@@ -225,6 +228,7 @@ pub const suites = .{
     git_pr_gitlab_test,
     git_pr_list_close_test,
     git_pr_merge_test,
+    git_pr_state_sse_test,
     git_pr_status_branch_test,
     git_pr_status_crash_test,
     git_pr_status_test,
@@ -315,7 +319,9 @@ pub const suites = .{
     web_launch_toggle_test,
     web_search_config_test,
     worker_gate_queue_test,
+    workflow_mcp_snapshot_turn_lifetime_test,
     workspace_config_test,
+    workspace_default_profile_test,
     workspace_isolation_test,
     workspace_items_test,
     workspace_lifecycle_test,

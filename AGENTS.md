@@ -164,6 +164,17 @@ will find those too; the new name keeps them out of that scan.
 reach the behaviour from a test, write the contract down in the plan and say
 where it belongs (lint vs. functional harness). Do not write the grep.
 
+**A test handles every platform, or it is not a test.** The target is *zero*
+skipped tests on Linux, macOS and Windows alike — measured 2026-10-13: Linux 10,
+macOS 15, Windows 94, enforced by `scripts/check-zig-test-skips.sh` in every
+backend cell and nightly on Windows. So: one test that covers every host (a table
+over the platforms the code switches on, with an unknown host FAILING), never a
+test that is *about* one platform. `return error.SkipZigTest;`,
+`if (builtin.os.tag == .windows) return;` (which reports PASS while asserting
+nothing) and `... returns a two-word opener plus url on unix`-style names are all
+the same defect. Rule, the worked example and the family-by-family conversion
+recipe: `CODING_STANDARDS.md` §2.
+
 ## Code Exploration with Graphify — graph-first, grep-second
 
 > **Audience:** any AI agent (Claude, GPT, sub-agent, future-me) that writes,
@@ -388,6 +399,13 @@ New frontend code in `src/apps/desktop/` MUST express fallibility in the
 **type**, not in a `try`/`catch` block. `src/apps/desktop/src/sync/` is the
 reference implementation; the `effect` package is already a dependency.
 
+**This is now enforced, not advisory.** `local/no-try-catch`
+(`src/apps/desktop/eslint-rules/noTryCatch.ts`) bans the construct outright;
+537 pre-existing sites across 132 files are pinned as baseline debt in
+`eslint-suppressions.json`, so the count can only fall. The full policy — the
+Effect spellings, the `runSync*` seam table, and what stays legal — is
+`src/apps/desktop/docs/try-catch-policy.md`.
+
 **Why — this is not a style preference, it is a correctness rule.**
 `SyncError.ts` says it outright: before Effect, *"a backend outage, a corrupt
 IndexedDB database and a legitimately empty result all reached the UI as the
@@ -427,10 +445,18 @@ route to them was a `catch` around a function that could never throw.
   run an `Effect`, log the squashed cause in dev, and degrade to a value the
   caller named. `Effect.runPromise(Effect.exit(effect))` + `Exit.isSuccess` is
   the shape to copy for a new seam.
-- **Reserve `try`/`catch` for the genuinely exceptional**: a Vue event handler
-  that must not reject, a `finally` that releases a resource, or a parser
-  around untrusted input. Even there, say in a comment why the failure cannot
-  be handled by the type.
+- **`try { … } finally { … }` with no handler is still allowed** — releasing a
+  resource is not handling a failure, and there is no error channel to widen.
+  A `catch` is not, however exceptional the case: the rule fires on the
+  construct, because a `catch` binding is `unknown` and the caller's signature
+  still claims success. If a case genuinely cannot be an Effect, add
+  `// eslint-disable-next-line local/no-try-catch -- <reason>` and bring it to
+  review — that is the exemption process, not a helper that hides the `catch`.
+- **`promise.catch(fn)` is deliberately NOT banned.** Ten of its 30 sites are
+  fire-and-forget `router.replace(...)` navigations and three are best-effort
+  `res.text()` reads, where the failure genuinely cannot reach the user. The
+  dangerous subset — the one that returns an empty-looking value with no
+  diagnostic — is already caught by `local/no-silent-fallback-catch`.
 - **Never let a caught error disappear into a value the UI cannot
   distinguish from a legitimate answer.** If a fallback value is returned,
   the reason must still reach a log or a ref.
@@ -450,6 +476,11 @@ union (a retry is not a scroll reason — use `console.warn`); `oxlint`'s
 `no-useless-catch` rejects a `catch (e) { throw e }` wrapper; and prettier
 wraps long `v-if` expressions across lines, so source-contract regexes must be
 whitespace-tolerant.
+
+**Paying the debt down is a separate task.** The baseline is 537 sites; each
+fix is usually a one-line `Effect.tryPromise` around the single `await` inside
+the `try`. Regenerate with `pnpm run lint:banned-baseline` **after** fixing
+debt, never to silence a new violation.
 
 
 

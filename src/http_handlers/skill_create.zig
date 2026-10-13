@@ -321,7 +321,7 @@ test "useCase: an empty workspace_id is WorkspaceIdRequired, a 400" {
         error.WorkspaceIdRequired,
         alloc,
         "",
-    ) catch unreachable);
+    ) catch @panic("allocPrint failed for the skill_create message fixture"));
 }
 
 test "useCase: a blank name is NameRequired, a 400" {
@@ -341,7 +341,7 @@ test "useCase: a blank name is NameRequired, a 400" {
         error.NameRequired,
         alloc,
         "",
-    ) catch unreachable);
+    ) catch @panic("allocPrint failed for the skill_create message fixture"));
 
     // Nothing was written on the way to the error.
     try testing.expectEqual(@as(usize, 0), try countRows(&ctx));
@@ -429,7 +429,7 @@ test "useCase: the same name in a second workspace is not a duplicate" {
 
 test "useCase: a store failure is a 500 DB error" {
     try testing.expectEqual(@as(u16, 500), statusFor(error.WriteFailed));
-    try testing.expectEqualStrings("DB error", messageFor(error.WriteFailed, testing.allocator, "x") catch unreachable);
+    try testing.expectEqualStrings("DB error", messageFor(error.WriteFailed, testing.allocator, "x") catch @panic("allocPrint failed for the skill_create message fixture"));
     try testing.expectEqual(@as(u16, 500), statusFor(error.OutOfMemory));
     try testing.expectEqual(@as(u16, 413), statusFor(error.ContentTooLarge));
 }

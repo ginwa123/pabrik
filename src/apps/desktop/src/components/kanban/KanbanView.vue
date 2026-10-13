@@ -1033,13 +1033,11 @@ const fetchPrOpenCount = () => {
 
 // After a successful close the board button's count drops by one
 // and the affected card's badge must flip from open to closed.
-// WorkspaceItemTaskCard has no public refresh hook — it loads PR
-// status onMounted (and onUpdated when branch/cwd changes) via the
-// shared cache — so the honest re-read is: invalidate the cache
-// entry, then remount the KanbanColumn(s) holding that branch via
-// a key bump, which re-runs the card's mount load against the
-// forge. Row-mode (KanbanRowView) cards are NOT remounted by this;
-// they pick the closed state up on their next mount or TTL expiry.
+// `invalidatePrStatus` drops the cache entry AND bumps the shared
+// `prStatusVersion`, which every mounted card watches — so the badge
+// re-reads on its own, in card and row mode alike. The column key bump
+// below predates that tick and is kept as the belt to its braces: it
+// forces the remount for the column that holds the branch.
 const prBadgeTick = ref(0)
 const prClosedBranches = ref<string[]>([])
 
@@ -1054,7 +1052,7 @@ const prColumnKey = (columnId: string): string => {
 const onPrListClosed = (payload: { number: number; headRef: string }) => {
   const cwd = props.item.path || ''
   if (cwd && payload.headRef) {
-    invalidatePrStatus(cwd, payload.headRef, prProviderGuess.value)
+    invalidatePrStatus(cwd, payload.headRef)
     if (!prClosedBranches.value.includes(payload.headRef))
       prClosedBranches.value = [...prClosedBranches.value, payload.headRef]
     prBadgeTick.value += 1

@@ -80,11 +80,11 @@ pub fn kanbanTasksCreateHandler(
 
     const di = try pabrikcore.getSingleton();
     const sqlite_db = di.db;
-    // Per-user LLM config under `--auth` — the active-profile default and the
-    // model seed below both belong to the REQUESTING user, resolved through
-    // the one config-resolution module (`session_llm_config.zig`).
-    const user_cfg = auth_common.requestUserConfig(allocator, di.db, di.auth_enabled, req.headers) orelse
-        pabrikcore.getLlmConfig(di);
+    // The per-user LLM config is resolved further down, once `:workspace_id`
+    // is parsed: the seeding below needs the EFFECTIVE config for THIS
+    // workspace (the user config layered under the workspace overlay), and
+    // that needs the workspace id. See
+    // `session_llm_config.forOwnerAndWorkspace`.
 
     // Owner for the `sessions` row this request creates (plan 2026-09-25).
     // Server-derived from the `pabrik_session` cookie only — never a body
@@ -153,9 +153,7 @@ pub fn kanbanTasksCreateHandler(
 
     // 3. Verify parent item is a kanban — reject 404 otherwise.
     {
-        var q = sqlite_db.query(allocator,
-            "SELECT 1 FROM workspace_items WHERE id = ? AND item_type = 'kanban'",
-            &[_][]const u8{item_id}) catch {
+        var q = sqlite_db.query(allocator, "SELECT 1 FROM workspace_items WHERE id = ? AND item_type = 'kanban'", &[_][]const u8{item_id}) catch {
             return res.jsonResponse(.{
                 .status_code = 500,
                 .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "Failed to verify parent item" }),
@@ -259,6 +257,27 @@ pub fn kanbanTasksCreateHandler(
             break :blk "0";
         };
         var profile: []const u8 = parsed.selected_profile_model orelse "";
+        // Per-user LLM config under `--auth` — the active-profile default and
+        // the model seed below both belong to the REQUESTING user, resolved
+        // through the one config-resolution module (`session_llm_config.zig`).
+        //
+        // Workspace-scoped, not user-only: this route carries `:workspace_id`,
+        // and Settings -> Workspace -> "Set active" writes the workspace
+        // overlay, so the EFFECTIVE config is what this task must be seeded
+        // from. Resolving `forOwner` here seeded a brand-new task in a
+        // workspace whose Active profile is `deepseek auto` with the
+        // user-level `killll`; the workflow's non-empty profile write-back
+        // then made that the chat's model for every later turn.
+        const user_cfg = pabrikcore.session_llm_config.forOwnerAndWorkspace(
+            allocator,
+            di.io,
+            di.db,
+            di.environment,
+            di.auth_enabled,
+            owner,
+            ws_id,
+        ) orelse auth_common.requestUserConfig(allocator, di.db, di.auth_enabled, req.headers) orelse
+            pabrikcore.getLlmConfig(di);
         if (profile.len == 0) {
             if (user_cfg.active_profile) |ap| {
                 profile = ap;
