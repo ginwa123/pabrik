@@ -28,7 +28,7 @@
 // composables/useTaskActions.ts; this file owns ONLY the card
 // layout and the card-specific computeds (description preview, meta
 // row, Jira-style type accent).
-import { inject, ref, computed, onMounted, onUpdated, type Ref } from 'vue'
+import { inject, ref, computed, onMounted, onUnmounted, onUpdated, type Ref } from 'vue'
 import { useWorkspacesStore } from '../../stores/workspaces'
 import { useAgentErrorStore } from '../../stores/agentError'
 import { useContextMenu } from '../../composables/useContextMenu'
@@ -44,6 +44,7 @@ import {
   fetchPrStatusCached,
   fetchPrConflictCached,
   branchUrlFromPrUrl,
+  onPrStatusInvalidated,
 } from '../../helpers/prStatusCache'
 import { formatTaskTimestamp as formatRelativeTime } from '../../helpers/formatTaskTimestamp'
 import UiIcon from '../ui/UiIcon.vue'
@@ -547,9 +548,27 @@ const loadPrStatus = async () => {
 // initial load, prev-combo guard on update covers branch/cwd swaps.
 const prevPrKey = ref('')
 const prKey = () => `${gitBranchBadge.value ?? ''}|${effectiveCwd.value}`
+
+// A merge or close ANYWHERE — this tab's MergeBox, or the `git_pr_state` SSE
+// event from another client — drops the shared cache entry for that branch and
+// calls this back with the pair. Without it the badge keeps the `open` green it
+// fetched before the merge until the card happens to remount.
+//
+// A subscription, not a `watch`: `local/no-watch` bans reacting to change inside
+// a component, and this signal comes from outside it. The filter is what keeps
+// a merge on one branch from re-reading all ~140 cards on the board.
+let unsubscribePrStatus: (() => void) | null = null
 onMounted(() => {
   prevPrKey.value = prKey()
   void loadPrStatus()
+  unsubscribePrStatus = onPrStatusInvalidated((change) => {
+    if (change.cwd !== effectiveCwd.value || change.branch !== gitBranchBadge.value) return
+    void loadPrStatus()
+  })
+})
+onUnmounted(() => {
+  unsubscribePrStatus?.()
+  unsubscribePrStatus = null
 })
 onUpdated(() => {
   const key = prKey()

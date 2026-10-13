@@ -24,6 +24,7 @@ import { computed, ref } from 'vue'
 import { Effect } from 'effect'
 import { mergePr, type GitPrStatus } from '../../../api'
 import { forgeWording } from '../../../helpers/forgeWording'
+import { invalidatePrStatus } from '../../../helpers/prStatusCache'
 import {
   MERGE_METHODS,
   mergeWording,
@@ -186,6 +187,13 @@ async function submit() {
   // `pending`, and saying "Merged" for it is the one failure a merge button
   // cannot afford.
   pendingNotice.value = result.value.pending
+  // The merge moved this BRANCH's change-request state, and the sidebar's
+  // RECENT icon and the kanban card badge read the shared 60s cache — which
+  // still holds the `open` answer they fetched before this click. Drop it and
+  // call the registered badges back so they re-read now. Without this the icon
+  // stays green until the row happens to remount. (The `git_pr_state` SSE event
+  // does the same for every OTHER client.)
+  if (props.status?.head_ref) invalidatePrStatus(props.cwd, props.status.head_ref)
   emit('merged')
 }
 </script>

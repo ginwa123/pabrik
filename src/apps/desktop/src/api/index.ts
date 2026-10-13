@@ -3893,6 +3893,21 @@ export interface GitFileStageEvent {
   failed: boolean
 }
 
+// Change-request state SSE event (see
+// src/agentic_loop/git_pr_state_events.zig). Both granular wire names
+// (`git_pr_state_merged` / `git_pr_state_closed`) share this payload; the
+// consumer filters by `cwd` and drops the shared PR-status cache entry for
+// `branch`, so the sidebar's RECENT branch icon and the kanban card badge
+// re-ask the forge instead of keeping the colour they fetched before the
+// merge. `cwd` + `branch` are deliberately the two halves of that cache key.
+export interface GitPrStateEvent {
+  action: 'merged' | 'closed'
+  /** The worktree the forge command ran in. */
+  cwd: string
+  /** The change request's head branch (`head_ref`). */
+  branch: string
+}
+
 // ─── Skill Evals read surface (GET /api/skill-evals/*) ──────────────────
 
 export interface SkillEvalRun {
@@ -4128,6 +4143,15 @@ export interface UnifiedChannels {
    */
   gitFileStage?: (event: GitFileStageEvent) => void
   /**
+   * Subscribe to change-request state events. The backend emits two granular
+   * names (`git_pr_state_merged` / `git_pr_state_closed`) that share the same
+   * `GitPrStateEvent` payload; both route on the central `git_pr_state` key —
+   * the consumer filters by `event.cwd` JS-side and invalidates the shared
+   * PR-status cache entry for `event.branch`, so the badges that read it re-ask
+   * the forge (see helpers/prStatusCache.ts `subscribePrStatusEvents`).
+   */
+  gitPrState?: (event: GitPrStateEvent) => void
+  /**
    * Subscribe to design-mode element mutations. The backend emits
    * three granular event names (`design_element_created`,
    * `design_element_updated`, `design_element_deleted`) that share
@@ -4194,6 +4218,7 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
   if (opts.channels.backgroundProcess) tokens.push('background_process')
   if (opts.channels.skillEvals) tokens.push('skill_evals')
   if (opts.channels.gitFileStage) tokens.push('git_file_stage')
+  if (opts.channels.gitPrState) tokens.push('git_pr_state')
 
   // Empty subscriptions are meaningless; the backend would 400 anyway.
   // Throw early with a developer-friendly message. The console.error
@@ -4310,6 +4335,13 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
       // refresh this channel exists to remove.
       'git_file_staged',
       'git_file_unstaged',
+      // Change-request state (see src/agentic_loop/git_pr_state_events.zig).
+      // Two granular names share one payload; both route on the central
+      // `git_pr_state` key. Without pre-registration the browser drops them
+      // before onEvent ever fires, so a merge performed in another tab would
+      // never reach this one's badges — indistinguishable from a dead stream.
+      'git_pr_state_merged',
+      'git_pr_state_closed',
     ],
     // Default heartbeat filter (matches backend sse_manager.sendHeartbeat).
     heartbeatData: 'ping',
@@ -4488,6 +4520,25 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
           opts.channels.gitFileStage(data as GitFileStageEvent)
         } catch (err) {
           console.error('[unifiedSSE] git_file_stage event parse failed:', err, raw)
+        }
+        return
+      }
+
+      // Change-request state (merged / closed). Both granular names share the
+      // `GitPrStateEvent` payload — the consumer filters by `cwd` and drops the
+      // shared PR-status cache entry for `branch`, which is what makes the
+      // sidebar branch icon and the kanban badge re-read after a merge. The
+      // pre-registration in `additionalEventTypes` above is what wires the
+      // browser's EventSource to fire onEvent for these names — without it the
+      // wire event is dropped on the floor (see project memory
+      // browser-eventsource-named-events.md).
+      if (eventType === 'git_pr_state_merged' || eventType === 'git_pr_state_closed') {
+        if (!opts.channels.gitPrState) return
+        try {
+          const data = JSON.parse(raw)
+          opts.channels.gitPrState(data as GitPrStateEvent)
+        } catch (err) {
+          console.error('[unifiedSSE] git_pr_state event parse failed:', err, raw)
         }
         return
       }
@@ -6905,8 +6956,7 @@ export async function refreshModelCatalog(): Promise<{
  * rule exists to prevent. Mirrors `testLlmProfile`, which also never rejects.
  */
 export type ModelResolveOutcome =
-  | { kind: 'ok'; value: ModelResolve }
-  | { kind: 'error'; message: string }
+  { kind: 'ok'; value: ModelResolve } | { kind: 'error'; message: string }
 
 export async function resolveModelOutcome(
   model: string,

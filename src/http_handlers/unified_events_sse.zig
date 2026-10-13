@@ -32,6 +32,12 @@
 //!                    POST /api/git/stage and /api/git/unstage; the frontend
 //!                    filters by `data.cwd` JS-side and moves ONE row instead
 //!                    of re-fetching the whole git-status list)
+//!   git_pr_state  → "git_pr_state" (central key — the `git_pr_state_merged` /
+//!                    `git_pr_state_closed` events emitted by
+//!                    POST /api/git/pr/merge and /api/git/pr/close; the
+//!                    frontend invalidates the shared PR-status cache for
+//!                    `data.cwd` + `data.branch`, so the sidebar branch icon and
+//!                    the kanban card badge re-read after a merge)
 //!
 //! Plan: docs/superpowers/plans/2026-06-30-unify-sse-endpoints.md
 
@@ -205,9 +211,6 @@ fn workerSessionId(allocator: std.mem.Allocator, db: *pabrikcore.sqlite.SqliteBa
     return allocator.dupe(u8, r.values[0]) catch null;
 }
 
-
-
-
 /// ChannelList — the parsed result of `?channels=`.
 pub const ChannelList = struct {
     /// Each entry is a routing key the handler must subscribe a
@@ -280,6 +283,13 @@ pub fn parseChannels(allocator: std.mem.Allocator, raw: []const u8) ChannelParse
             // git_file_stage_events.zig). Single key covers both granular
             // event types; the frontend filters by `data.cwd` JS-side.
             try routing_keys.append(allocator, try allocator.dupe(u8, "git_file_stage"));
+        } else if (std.mem.eql(u8, token, "git_pr_state")) {
+            // Change-request state (`git_pr_state_merged` /
+            // `git_pr_state_closed` on the central "git_pr_state" key — see
+            // git_pr_state_events.zig). Single key covers both granular event
+            // types; the frontend filters by `data.cwd` JS-side and drops the
+            // shared PR-status cache entry for `data.branch`.
+            try routing_keys.append(allocator, try allocator.dupe(u8, "git_pr_state"));
         } else if (std.mem.eql(u8, token, "design_element")) {
             // Design-mode element mutations. The frontend
             // `createUnifiedSseConnection` sends this token; the
@@ -398,6 +408,17 @@ pub const CallbackUnifiedSkillEvalsStream = struct {
 pub const CallbackUnifiedGitFileStageStream = struct {
     pub fn callback(data: ai_mod.on_event_sent.SseEvent) void {
         forwardToClients("git_file_stage", data);
+    }
+};
+
+/// Callback for the central "git_pr_state" routing key. Forwards to every
+/// client registered under "git_pr_state" — the frontend listener then filters
+/// by `data.cwd` / `data.branch` on the JS side and drops the shared PR-status
+/// cache entry for that pair, so every badge (sidebar RECENT icon, kanban card)
+/// re-reads the forge after a merge or close, in every tab.
+pub const CallbackUnifiedGitPrStateStream = struct {
+    pub fn callback(data: ai_mod.on_event_sent.SseEvent) void {
+        forwardToClients("git_pr_state", data);
     }
 };
 
@@ -546,6 +567,8 @@ pub fn unifiedEventsStreamHandler(
                 event_bus.subscribe(ai_mod.on_event_sent.SseEvent, rk, CallbackUnifiedSkillEvalsStream.callback) catch {};
             } else if (std.mem.eql(u8, rk, "git_file_stage")) {
                 event_bus.subscribe(ai_mod.on_event_sent.SseEvent, rk, CallbackUnifiedGitFileStageStream.callback) catch {};
+            } else if (std.mem.eql(u8, rk, "git_pr_state")) {
+                event_bus.subscribe(ai_mod.on_event_sent.SseEvent, rk, CallbackUnifiedGitPrStateStream.callback) catch {};
             }
         }
 
@@ -560,7 +583,7 @@ pub fn unifiedEventsStreamHandler(
 
 // ===== Tests merged from sse_handshake_test.zig (2026-09-11 flatten) =====
 // Regression test for the SSE `connected` event handshake.
-// 
+//
 // Why this file exists
 // ────────────────────
 // The frontend `SseStatusBadge`
@@ -569,15 +592,15 @@ pub fn unifiedEventsStreamHandler(
 // (src/apps/desktop/src/helpers/sseClient.ts) only transition
 // from `'connecting'` to `'open'` when the server sends the SSE
 // `connected` named event:
-// 
+//
 //     event: connected\ndata: {"connected": true}\n\n
-// 
+//
 // Two of the four legacy backend SSE handlers used to skip this
 // handshake, leaving the badge stuck on "Connecting…" forever
 // (the stream was alive and streaming, but the badge had no
 // signal to hide). See docs/plans/2026-06-05-stuck-connecting-badge.md
 // for the full trace.
-// 
+//
 // After the 5→1 SSE endpoint unification (plan
 // docs/superpowers/plans/2026-06-30-unify-sse-endpoints.md),
 // only ONE backend SSE handler is registered
@@ -648,8 +671,7 @@ test "parseChannels: bare 'queue' → central 'queue' routing key" {
 
 test "parseChannels: mixed 5 channels (bare llm+queue) → 6 routing keys (kanban expands)" {
     const allocator = testing.allocator;
-    const list = try parseChannels(allocator,
-        "workers,sessions,kanban,llm,queue");
+    const list = try parseChannels(allocator, "workers,sessions,kanban,llm,queue");
     defer list.deinit(allocator);
     try testing.expectEqual(@as(usize, 6), list.routing_keys.len);
     // workers, sessions, kanban_column, kanban_task, llm, queue (in registration order)
@@ -667,8 +689,7 @@ test "parseChannels: multiple bare tokens (llm+queue repeated) → 2 keys" {
     // central key. The ChannelList does NOT deduplicate (see the
     // ChannelList docstring); the SSE event_bus handles duplicate
     // subscribers without error.
-    const list = try parseChannels(allocator,
-        "llm,llm,queue,queue");
+    const list = try parseChannels(allocator, "llm,llm,queue,queue");
     defer list.deinit(allocator);
     try testing.expectEqual(@as(usize, 4), list.routing_keys.len);
     try testing.expectEqualStrings("llm", list.routing_keys[0]);
@@ -741,9 +762,7 @@ fn testDb(alloc: std.mem.Allocator) !pabrikcore.sqlite.SqliteBackend {
     try db.init(std.testing.io, ":memory:");
     try db.exec(alloc, "CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id TEXT)", &.{});
     try db.exec(alloc, "CREATE TABLE worker (id TEXT PRIMARY KEY, session_id TEXT)", &.{});
-    try db.exec(alloc,
-        "INSERT INTO sessions (id, user_id) VALUES ('s_a','user_a'), ('s_b','user_b')",
-        &.{});
+    try db.exec(alloc, "INSERT INTO sessions (id, user_id) VALUES ('s_a','user_a'), ('s_b','user_b')", &.{});
     try db.exec(alloc, "INSERT INTO worker (id, session_id) VALUES ('w_a','s_a')", &.{});
     return db;
 }

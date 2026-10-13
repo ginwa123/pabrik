@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import * as api from './api'
 import TopLoadingBar from './components/shell/TopLoadingBar.vue'
 import { installSseBus, useSseBus } from './helpers/sseBus'
+import { subscribePrStatusEvents } from './helpers/prStatusCache'
 import { useTabsStore } from './stores/tabs'
 import { useNavigationStore } from './stores/navigation'
 import { useDocumentTitle } from './composables/useDocumentTitle'
@@ -185,6 +186,7 @@ const fetchInitialWorkers = async () => {
 
 let offWorker: (() => void) | null = null
 let offBusOpen: (() => void) | null = null
+let offPrState: (() => void) | null = null
 
 onMounted(() => {
   // `installSseBus(_app?: App)` takes an optional `App` parameter for
@@ -194,6 +196,13 @@ onMounted(() => {
   // mounting first) returns the same singleton.
   const bus = installSseBus()
   offWorker = bus.on('worker', handleWorkerEvent)
+
+  // PR-status badges (the sidebar's RECENT branch icon, the kanban card badge)
+  // read a shared 60s cache — see helpers/prStatusCache.ts. A merge or close
+  // performed ANYWHERE invalidates it; subscribed HERE, next to the install,
+  // for the same reason the title feed is: children mount before their parent,
+  // so a child-side subscription can silently never attach.
+  offPrState = subscribePrStatusEvents(bus)
 
   // Tab titles for chat sessions. Subscribed HERE, next to the install, because
   // children mount before their parent: an AppLayout-side subscription runs
@@ -264,6 +273,10 @@ onUnmounted(() => {
   if (offBusOpen) {
     offBusOpen()
     offBusOpen = null
+  }
+  if (offPrState) {
+    offPrState()
+    offPrState = null
   }
   useTabsStore().disposeTitleFeed()
   // The worker ticker is app-scoped, so it outlives any single chip.

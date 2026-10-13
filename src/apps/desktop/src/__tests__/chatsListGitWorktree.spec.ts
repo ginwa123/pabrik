@@ -14,7 +14,7 @@ import * as api from '../api'
 import ChatsList from '../components/views/ChatsList.vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { makeLocalStorageStub } from './helpers'
-import { clearPrStatusCache } from '../helpers/prStatusCache'
+import { clearPrStatusCache, invalidatePrStatus } from '../helpers/prStatusCache'
 import { installSseBus, __resetSseBus, __setSseBusGlobalClient } from '../helpers/sseBus'
 import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 
@@ -253,6 +253,62 @@ describe('ChatsList git icon', () => {
     // Tooltip surfaces the branch + full worktree path.
     expect(badge.attributes('title')).toContain('worktree/feature-x')
     expect(badge.attributes('title')).toContain('/repo/.worktrees/feature-x')
+  })
+
+  it('re-reads the branch icon after a merge invalidates the shared cache', async () => {
+    // The reported bug: the RECENT row's branch icon kept the `open` green it
+    // fetched before the merge, because a row reads the shared 60s cache once on
+    // mount and again only when its branch/cwd key changes. The invalidation
+    // (MergeBox for this tab, the `git_pr_state` SSE event for every other one)
+    // drops the entry and ticks; the row must then re-read and recolour.
+    vi.spyOn(api, 'getChats').mockResolvedValue({
+      sessions: [
+        {
+          session_id: 'session_merged',
+          session_name: 'Merged Chat',
+          updated_at: '2026-06-18T10:00:00Z',
+          selected_profile_model: '',
+          cwd: '/repo',
+          git_worktree_cwd: '/repo/.worktrees/feature-x',
+          git_branch: 'worktree/feature-x',
+        },
+      ],
+      has_more: false,
+      next_cursor: null,
+      total: 1,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any)
+    vi.spyOn(api, 'getPrStatus').mockResolvedValue({
+      status: 'open',
+      state: 'OPEN',
+      mergeable: 'MERGEABLE',
+      merge_state: 'CLEAN',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any)
+
+    const wrapper = mountChatsList()
+    await flushPromises()
+    await nextTick()
+    const badge = wrapper.find('[data-testid="chat-git-branch"]')
+    expect(badge.attributes('data-pr-status')).toBe('open')
+    expect(badge.attributes('style')).toContain('var(--color-green)')
+
+    // The forge has now merged it — and the cache entry from before is dropped.
+    vi.spyOn(api, 'getPrStatus').mockResolvedValue({
+      status: 'merged',
+      state: 'MERGED',
+      mergeable: '',
+      merge_state: '',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any)
+    invalidatePrStatus('/repo/.worktrees/feature-x', 'worktree/feature-x')
+    await flushPromises()
+    await nextTick()
+
+    const after = wrapper.find('[data-testid="chat-git-branch"]')
+    expect(after.attributes('data-pr-status')).toBe('merged')
+    expect(after.attributes('style')).toContain('var(--color-violet)')
+    expect(after.attributes('title')).toContain('PR merged — worktree/feature-x')
   })
 
   it('does NOT render a git badge when the branch has no pull request', async () => {
