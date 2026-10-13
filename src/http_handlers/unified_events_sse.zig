@@ -698,6 +698,14 @@ test "parseChannels: multiple bare tokens (llm+queue repeated) → 2 keys" {
     try testing.expectEqualStrings("queue", list.routing_keys[3]);
 }
 
+test "parseChannels: bare 'git_pr_state' → central 'git_pr_state' routing key" {
+    const allocator = testing.allocator;
+    const list = try parseChannels(allocator, "git_pr_state");
+    defer list.deinit(allocator);
+    try testing.expectEqual(@as(usize, 1), list.routing_keys.len);
+    try testing.expectEqualStrings("git_pr_state", list.routing_keys[0]);
+}
+
 test "parseChannels: bare 'git_file_stage' → central 'git_file_stage' routing key" {
     const allocator = testing.allocator;
     const list = try parseChannels(allocator, "git_file_stage");
