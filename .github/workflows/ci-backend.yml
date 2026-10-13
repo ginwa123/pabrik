@@ -60,6 +60,16 @@ on:
           fire on every cell, Windows included.
         required: true
         type: string
+      publish:
+        description: >-
+          Publish the staged binaries to the rolling `ci-latest` release.
+          `false` turns this workflow into a pure CHECK, which is what the
+          scheduled Windows job passes: a nightly run must never overwrite
+          the release that tracks main's newest green build (and must never
+          need `contents: write` to do it).
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -875,7 +885,40 @@ jobs:
           # so the test build succeeds on Windows. The trade-off:
           # Debug binaries are bigger and slower, but the test step
           # ONLY runs the test binary, not pabrik.exe.
-          zig build test --summary all -Dno-webapp-rebuild
+          # `tee` the summary into a file so the ceiling check below reads
+          # the SAME run instead of paying for a second one. `pipefail` is
+          # what keeps this step's exit status `zig build`'s rather than
+          # `tee`'s — without it a failing suite would report success.
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/zig-test"
+          zig build test --summary all -Dno-webapp-rebuild 2>&1 \
+            | tee "$RUNNER_TEMP/zig-test/summary.log"
+
+      - name: Skipped-test ceiling (zig build test)
+        # Every platform's `zig build test` prints
+        #     Build Summary: N/N steps succeeded; P/T tests passed (K skipped)
+        # and K is the number of tests that platform did NOT run. It is the
+        # only signal that says a platform is silently running less of the
+        # suite than its siblings — measured 2026-10-13: Linux 10, macOS 15,
+        # Windows 94. This step fails when K grows past the pinned ceiling
+        # for the platform, so a new platform gate can never land unnoticed,
+        # and prints a notice naming the exact value to re-pin when K falls.
+        #
+        # Runs only when the test step succeeded (no `if:`), because its
+        # input IS that step's log: on a red suite the log is partial and
+        # "could not measure" would just be noise on an already-failing job.
+        shell: bash
+        run: |
+          set -uo pipefail
+          case "${RUNNER_OS:-}" in
+            Linux)   platform=linux ;;
+            macOS)   platform=macos ;;
+            Windows) platform=windows ;;
+            *) echo "x unknown RUNNER_OS '${RUNNER_OS:-}'" >&2; exit 1 ;;
+          esac
+          bash scripts/check-zig-test-skips.sh \
+            --summary "$RUNNER_TEMP/zig-test/summary.log" \
+            --platform "$platform"
 
       - name: Cross-target compile check (desktop app per-OS branches)
         # Compiles the desktop app's Windows + macOS branches FROM LINUX. A
@@ -1455,7 +1498,7 @@ jobs:
         # windows-2022 image ships Git Bash and this workflow already runs
         # `shell: bash` steps on it, so one step shape covers every OS
         # instead of a pwsh twin.
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        if: inputs.publish && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         shell: bash
         env:
           # Read from the environment, not interpolated into the sed
@@ -1486,7 +1529,7 @@ jobs:
         # shadows real versioned releases; softprops/action-gh-release@v2
         # updates the tag + replaces same-named assets in place, so
         # `ci-latest` always tracks the newest green main build.
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        if: inputs.publish && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ci-latest

@@ -150,7 +150,134 @@ should be.
 
 ---
 
-## 2. Adding a new rule here
+## 2. A test may not be skipped silently
+
+**Banned.** The checker is `scripts/check-zig-test-skips.sh`, wired into
+the `Skipped-test ceiling (zig build test)` step of
+`.github/workflows/ci-backend.yml` — so it runs on all three
+`backend (<platform>) / build` cells — and re-run every night on Windows
+by `.github/workflows/ci-windows-nightly.yml`.
+
+```zig
+// WRONG — 94 tests did this on Windows, and nothing said so.
+test "..." {
+    if (builtin.os.tag == .windows) return error.SkipZigTest;
+    ...
+}
+
+// ALSO WRONG — the same thing with the evidence removed: the runner
+// counts this as a PASS, so the test reports green while asserting
+// nothing at all on the platform it declined to check.
+test "..." {
+    if (builtin.os.tag == .windows) return;
+    ...
+}
+```
+
+### Why
+
+Zig has exactly one way for a test to decline to run:
+`return error.SkipZigTest;`. The runner counts it, prints no failure, and
+`zig build test --summary all` ends with
+
+```
+Build Summary: 14/14 steps succeeded; 4163/4257 tests passed (94 skipped)
+```
+
+Measured on one *green* run (2026-10-13, run 38428191906):
+
+| cell | result | skipped |
+|---|---|---|
+| `backend (Linux X64)` | 4247/4257 passed | **10** |
+| `backend (macOS ARM64)` | 4229/4244 passed | **15** |
+| `backend (Windows X64)` | 4163/4257 passed | **94** |
+
+Windows skipped nine times what Linux did, on a green pipeline, with 81
+test bodies under `src/` able to bail out on Windows — 61 through a
+`skipOnWindows()` helper, 17 behind a direct `.windows` gate, 3 that need
+a symlink privilege. The overwhelming majority spawn a fixture that is a
+`/bin/sh` script, so the Windows runner could never execute them; every
+Windows-only regression in child-process spawn/capture and in the
+git/PR handlers shipped with no test behind it. The `return;` form is
+worse still, because it does not even show up in that `(94 skipped)`
+count.
+
+The failure mode is the point: **a skip does not fail anything.** A
+component that is untested on a platform looks exactly like a component
+that is well tested on it, and the only place the difference appears is a
+parenthesised number nobody diffs.
+
+### The rule
+
+The skipped count is a metric with a per-platform ceiling, and the ceiling
+may only fall:
+
+| count vs ceiling | verdict |
+|---|---|
+| `count > ceiling` | **FAIL** — a platform silently lost coverage |
+| `count < ceiling` | PASS, with a notice naming the exact value to re-pin |
+| no `N/M tests passed` line | **FAIL** — "could not measure" must never read as "no skips" |
+
+The ceilings live in `baseline_for()` in
+`scripts/check-zig-test-skips.sh` and are lowered by editing that
+function, so every change to them is in a diff a reviewer sees.
+`--strict` (fail on any skip at all) is the end state and is available
+today.
+
+### What is NOT banned
+
+- **`error.SkipZigTest` as a construct.** It is the right primitive for a
+  test whose subject genuinely does not exist on this host. What is
+  banned is a skip that nobody notices, which is why it is a counted,
+  ceilinged number rather than a forbidden token.
+- **A local run.** The checker runs where the count is meaningful: the
+  three backend cells and the nightly Windows job. Nothing about
+  `zig build test` on a dev box changes.
+- **`.husky/pre-commit`.** §3 asks a new rule to be mirrored there, and
+  this one deliberately is not: the hook mirrors the `lint` job, whose
+  work is a scan of the tree, while this rule's input is a full
+  `zig build test` run. `--selftest` is the part worth running on every
+  commit, and it is cheap.
+- **Platform-specific *assertions*.** `if (comptime builtin.os.tag ==
+  .windows) { try expectEqual(3, argv.len); } else { ... }` is the
+  preferred shape — it asserts the host's real behaviour instead of
+  declining to look at it.
+
+### Running it
+
+```bash
+scripts/check-zig-test-skips.sh --selftest          # verify the parser/verdict
+scripts/check-zig-test-skips.sh --baselines         # print the ceilings
+scripts/check-zig-test-skips.sh --run               # run the suite and check it
+scripts/check-zig-test-skips.sh --summary build.log --platform windows
+zig build test --summary all | tee build.log        # what CI feeds it
+```
+
+The `--selftest` mode runs the parser and the verdict against fixtures —
+the real aggregate line, the paren-less zero-skip form, a log with
+several `Build Summary:` lines, a log with none (must report
+unmeasurable, not clean), a missing file, the ceiling boundary, and
+`--strict` — for the same reason
+`lint-no-catch-unreachable.sh --selftest` exists: a parser that has
+quietly stopped matching is a silent outage, and the only way to notice
+is to run it against known input on every invocation.
+
+### Why a ceiling and not zero
+
+Zero is the goal, and this is the deliberate exception to §3's
+"land it with zero debt". The debt here is 94 Windows skips whose fix is
+a `/bin/sh` fixture payload per test, and a payload that is only correct
+on POSIX cannot be verified on POSIX — the conversion needs a real
+Windows run per test. Shipping the rule as a hard zero would therefore
+mean either a permanently red Windows cell or deleting the tests, and
+both are worse than a number that is printed on every run, cannot grow,
+and names the exact edit that lowers it in the notice beside it. The
+nightly Windows job is what makes the conversion iterable; each landed
+payload lowers the ceiling in the same change that lands it.
+
+---
+
+## 3. Adding a new rule here
 
 A rule belongs in this file when a machine can check it and a human
 should not have to remember it. Before adding one:

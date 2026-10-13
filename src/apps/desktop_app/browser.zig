@@ -67,16 +67,27 @@ pub fn openBrowser(io: std.Io, url: []const u8) !void {
 
 const testing = std.testing;
 
-test "buildOpenArgv returns a two-word opener plus url on unix" {
-    if (comptime builtin.os.tag == .windows) return error.SkipZigTest;
+test "buildOpenArgv names this host's opener and appends the url" {
+    // Every branch is asserted on ITS host rather than bailed out of: the
+    // Windows opener is not `open`+url but `rundll32 url.dll,
+    // FileProtocolHandler`+url, so the argv is three words there and two
+    // elsewhere. Bailing out on Windows left the only desktop-app
+    // browser-launch test unrun on one of the three shipped platforms.
     var buf: [3][]const u8 = undefined;
     const argv = buildOpenArgv("http://127.0.0.1:8081/", &buf);
-    try testing.expectEqual(@as(usize, 2), argv.len);
-    try testing.expectEqualStrings("http://127.0.0.1:8081/", argv[1]);
-    if (comptime builtin.os.tag == .macos) {
-        try testing.expectEqualStrings("open", argv[0]);
+    if (comptime builtin.os.tag == .windows) {
+        try testing.expectEqual(@as(usize, 3), argv.len);
+        try testing.expectEqualStrings("rundll32", argv[0]);
+        try testing.expectEqualStrings("url.dll,FileProtocolHandler", argv[1]);
+        try testing.expectEqualStrings("http://127.0.0.1:8081/", argv[2]);
     } else {
-        try testing.expectEqualStrings("xdg-open", argv[0]);
+        try testing.expectEqual(@as(usize, 2), argv.len);
+        try testing.expectEqualStrings("http://127.0.0.1:8081/", argv[1]);
+        if (comptime builtin.os.tag == .macos) {
+            try testing.expectEqualStrings("open", argv[0]);
+        } else {
+            try testing.expectEqualStrings("xdg-open", argv[0]);
+        }
     }
 }
 

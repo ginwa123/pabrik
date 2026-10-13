@@ -844,7 +844,10 @@ fn expectAllIdsDistinct(a: std.mem.Allocator, ids: []const ?[]const u8, count: u
 }
 
 test "task_create: generateTaskId mints distinct ids from 32 concurrent threads" {
-    if (@import("builtin").os.tag == .windows) return error.SkipZigTest;
+    // No platform gate: the id is `<unix-ms>_<atomic counter>` and
+    // both halves exist on Windows. The gate that used to sit here
+    // was a leftover from before the counter became atomic, and it
+    // cost Windows the only concurrency coverage this generator has.
     const a = testing.allocator;
     const n = 32;
     const ids = try a.alloc(?[]const u8, n);
@@ -859,7 +862,10 @@ test "task_create: generateTaskId mints distinct ids from 32 concurrent threads"
 }
 
 test "workspaces_create: generateWorkspaceId mints distinct ids from 32 concurrent threads" {
-    if (@import("builtin").os.tag == .windows) return error.SkipZigTest;
+    // No platform gate: the id is `<unix-ms>_<atomic counter>` and
+    // both halves exist on Windows. The gate that used to sit here
+    // was a leftover from before the counter became atomic, and it
+    // cost Windows the only concurrency coverage this generator has.
     const a = testing.allocator;
     const n = 32;
     const ids = try a.alloc(?[]const u8, n);

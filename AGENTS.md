@@ -164,6 +164,16 @@ will find those too; the new name keeps them out of that scan.
 reach the behaviour from a test, write the contract down in the plan and say
 where it belongs (lint vs. functional harness). Do not write the grep.
 
+**A test that declines to run is a test that did not run.** Zig's
+`return error.SkipZigTest;` is the right primitive for a test whose subject
+genuinely does not exist on the host, but the count of them is a *metric with a
+per-platform ceiling* — measured 2026-10-13: Linux 10, macOS 15, Windows 94 —
+enforced by `scripts/check-zig-test-skips.sh` in every backend cell and nightly
+on Windows. Prefer a platform-specific assertion over a bail-out, and never
+write `if (builtin.os.tag == .windows) return;`, which reports PASS while
+asserting nothing. Rule, rationale and the conversion recipe:
+`CODING_STANDARDS.md` §2.
+
 ## Code Exploration with Graphify — graph-first, grep-second
 
 > **Audience:** any AI agent (Claude, GPT, sub-agent, future-me) that writes,
