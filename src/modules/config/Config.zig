@@ -246,6 +246,21 @@ pub const LlmConfig = struct {
         InvalidReasoningEffort,
     };
 
+    /// Canonical `backend` values — the transport discriminator, orthogonal
+    /// to `url_style` (which describes HTTP wire format only).
+    ///
+    /// The names live here, in the lower layer, so `agentic_loop/claude_code.zig`
+    /// references them instead of re-typing string literals that could drift
+    /// out of sync with the config parser.
+    pub const Backend = struct {
+        /// POST to `base_url` using the profile's `url_style`. The default
+        /// for every config that does not name a backend.
+        pub const http = "http";
+        /// Run the local `claude` CLI (subscription auth via `claude login`).
+        /// `base_url` / `api_key` / `url_style` do not apply.
+        pub const claude_code = "claude-code";
+    };
+
     /// Individual profile settings.
     ///
     /// The compaction-related fields (`max_capacity_tokens`,
@@ -261,6 +276,28 @@ pub const LlmConfig = struct {
         temperature: []const u8 = "auto",
         api_key: []const u8 = "",
         url_style: []const u8 = "openai",
+        /// Transport discriminator — `""` (unset → resolves to `"http"`) or
+        /// `"claude-code"`. See `Backend` for why this is orthogonal to
+        /// `url_style` rather than a fourth `url_style` value.
+        ///
+        /// The EMPTY default is deliberate and load-bearing: `addProfile`
+        /// owns a duped copy, and `freeProfilesMap` frees only a non-empty
+        /// value. A producer that constructs `LlmProfile{}` without setting
+        /// this therefore stores a literal, which is never freed — whereas
+        /// defaulting to the `"http"` literal would make that same producer
+        /// hand a non-heap pointer to `free`. The transport is resolved
+        /// through `resolveEffectiveProfile`/`effectiveBackend`, both of
+        /// which treat `""` as `"http"`.
+        backend: []const u8 = "",
+        /// Claude Code only: the directory the `claude` CLI reads its
+        /// credentials/config from (`CLAUDE_CONFIG_DIR`). Lets two
+        /// profiles keep two DIFFERENT subscription logins side by side,
+        /// which is how per-profile identity works when there is no API
+        /// key. `null` = the CLI default (`~/.claude`).
+        config_dir: ?[]const u8 = null,
+        /// Claude Code only: agentic turn ceiling passed as
+        /// `--max-turns`. `null` = the CLI's own default.
+        max_turns: ?u32 = null,
         /// Per-profile sub-agents. Owned `[]SubAgentConfig` (default empty).
         /// Each entry's strings are allocated with the parent `LlmConfig.allocator`.
         sub_agents: SubAgentsList = &.{},
@@ -304,6 +341,15 @@ pub const LlmConfig = struct {
         url_style: []const u8,
         api_key: []const u8,
         system_prompt: []const u8,
+        /// Transport discriminator — `"http"` (default) | `"claude-code"`.
+        /// Empty = inherit the parent orchestrator's backend.
+        backend: []const u8 = "",
+        /// Claude Code only: `CLAUDE_CONFIG_DIR` override. `null` =
+        /// inherit the parent profile (then the CLI default).
+        config_dir: ?[]const u8 = null,
+        /// Claude Code only: `--max-turns` override. `null` = inherit the
+        /// parent profile.
+        max_turns: ?u32 = null,
         /// Optional override for the context window (in tokens) for
         /// this sub-agent. `null` = inherit from the parent profile (or
         /// the built-in default if no profile).
@@ -364,6 +410,19 @@ pub const LlmConfig = struct {
         api_key: []const u8,
         url_style: []const u8,
 
+        /// Resolved transport — `"http"` | `"claude-code"`. Unlike the
+        /// other string fields this is never empty: an unset sub-agent
+        /// `backend` inherits the orchestrator's, and the orchestrator's
+        /// is always one of the two known values.
+        backend: []const u8,
+
+        /// Claude Code only: resolved `CLAUDE_CONFIG_DIR` (`null` =
+        /// inherit / CLI default).
+        config_dir: ?[]const u8,
+
+        /// Claude Code only: resolved `--max-turns` (`null` = inherit).
+        max_turns: ?u32,
+
         /// Resolved `thinking` setting. `null` = "auto" — inherit
         /// from parent's value at run time.
         is_thinking: ?bool,
@@ -401,6 +460,13 @@ pub const LlmConfig = struct {
         temperature: []const u8 = "auto",
         api_key: []const u8 = "",
         url_style: []const u8 = "openai",
+        /// Transport discriminator. Absent key = `"http"`, which is what
+        /// keeps every pre-existing config byte-identical.
+        backend: []const u8 = "http",
+        /// Claude Code only: `CLAUDE_CONFIG_DIR`. Null = CLI default.
+        config_dir: ?[]const u8 = null,
+        /// Claude Code only: `--max-turns`. Null = CLI default.
+        max_turns: ?u32 = null,
         /// Per-profile sub-agents (typed — defaults to absent). Each entry
         /// is parsed via the existing `SubAgentJson` struct, so unknown
         /// fields are silently ignored and missing fields fall back to
@@ -501,6 +567,13 @@ pub const LlmConfig = struct {
         url_style: []const u8 = "openai",
         api_key: []const u8 = "",
         system_prompt: []const u8 = "",
+        /// Transport discriminator. Empty = inherit the parent profile's
+        /// backend (see `SubAgentConfig.backend`).
+        backend: []const u8 = "",
+        /// Claude Code only: `CLAUDE_CONFIG_DIR` override.
+        config_dir: ?[]const u8 = null,
+        /// Claude Code only: `--max-turns` override.
+        max_turns: ?u32 = null,
         /// Optional per-sub-agent override for the context window (in tokens).
         max_capacity_tokens: ?u32 = null,
         /// Optional per-sub-agent override for the compaction threshold
@@ -1138,6 +1211,8 @@ pub const LlmConfig = struct {
             allocator.free(entry.value_ptr.temperature);
             allocator.free(entry.value_ptr.api_key);
             allocator.free(entry.value_ptr.url_style);
+            if (entry.value_ptr.backend.len > 0) allocator.free(entry.value_ptr.backend);
+            if (entry.value_ptr.config_dir) |d| allocator.free(d);
             if (entry.value_ptr.reasoning_effort) |re| allocator.free(re);
             freeSubAgentsList(entry.value_ptr.sub_agents, allocator);
         }
@@ -1169,6 +1244,22 @@ pub const LlmConfig = struct {
         const api_key = try alloc.dupe(u8, profile.api_key);
         errdefer alloc.free(api_key);
 
+        // Transport + its Claude Code knobs. Empty `backend` stays the
+        // struct's literal default (never duped, never freed) — so an
+        // absent key costs no allocation and `freeProfilesMap` stays
+        // balanced. `config_dir` normalises "" to null for the same reason.
+        const backend: []const u8 = if (profile.backend.len > 0)
+            try alloc.dupe(u8, profile.backend)
+        else
+            "";
+        errdefer if (backend.len > 0) alloc.free(backend);
+        const config_dir: ?[]const u8 = blk: {
+            const d = profile.config_dir orelse break :blk null;
+            if (d.len == 0) break :blk null;
+            break :blk try alloc.dupe(u8, d);
+        };
+        errdefer if (config_dir) |d| alloc.free(d);
+
         const profile_sub_agents = try parseSubAgentsJson(alloc, profile.sub_agents);
         errdefer freeSubAgentsList(profile_sub_agents, alloc);
 
@@ -1179,6 +1270,9 @@ pub const LlmConfig = struct {
             .temperature = temperature,
             .api_key = api_key,
             .url_style = url_style,
+            .backend = backend,
+            .config_dir = config_dir,
+            .max_turns = profile.max_turns,
             .sub_agents = profile_sub_agents,
             // Per-profile compaction overrides — optional, parsed from JSON.
             .max_capacity_tokens = profile.max_capacity_tokens,
@@ -1201,6 +1295,11 @@ pub const LlmConfig = struct {
             allocator.free(sa.url_style);
             allocator.free(sa.api_key);
             allocator.free(sa.system_prompt);
+            // Empty = "inherit the parent's backend", stored as the struct's
+            // literal default rather than a heap copy — freeing it would
+            // abort on a non-heap pointer. Only a non-empty value was duped.
+            if (sa.backend.len > 0) allocator.free(sa.backend);
+            if (sa.config_dir) |d| allocator.free(d);
             if (sa.reasoning_effort) |re| allocator.free(re);
         }
         if (slice.len > 0) allocator.free(slice);
@@ -1225,6 +1324,8 @@ pub const LlmConfig = struct {
                 allocator.free(sa.url_style);
                 allocator.free(sa.api_key);
                 allocator.free(sa.system_prompt);
+                if (sa.backend.len > 0) allocator.free(sa.backend);
+                if (sa.config_dir) |d| allocator.free(d);
             }
             list.deinit(allocator);
         }
@@ -1251,6 +1352,19 @@ pub const LlmConfig = struct {
             errdefer allocator.free(api_key);
             const system_prompt = try allocator.dupe(u8, j.system_prompt);
             errdefer allocator.free(system_prompt);
+            // Empty backend/config_dir stay literal/absent — see
+            // `freeSubAgentsList` for why only non-empty values are freed.
+            const backend: []const u8 = if (j.backend.len > 0)
+                try allocator.dupe(u8, j.backend)
+            else
+                "";
+            errdefer if (backend.len > 0) allocator.free(backend);
+            const config_dir: ?[]const u8 = blk: {
+                const d = j.config_dir orelse break :blk null;
+                if (d.len == 0) break :blk null;
+                break :blk try allocator.dupe(u8, d);
+            };
+            errdefer if (config_dir) |d| allocator.free(d);
 
             try list.append(allocator, .{
                 .name = name,
@@ -1261,6 +1375,9 @@ pub const LlmConfig = struct {
                 .url_style = url_style,
                 .api_key = api_key,
                 .system_prompt = system_prompt,
+                .backend = backend,
+                .config_dir = config_dir,
+                .max_turns = j.max_turns,
                 // Per-sub-agent compaction overrides — optional, parsed from JSON.
                 .max_capacity_tokens = j.max_capacity_tokens,
                 .compaction_threshold_percent = j.compaction_threshold_percent,
@@ -1295,6 +1412,8 @@ pub const LlmConfig = struct {
                 allocator.free(sa.url_style);
                 allocator.free(sa.api_key);
                 allocator.free(sa.system_prompt);
+                if (sa.backend.len > 0) allocator.free(sa.backend);
+                if (sa.config_dir) |d| allocator.free(d);
                 if (sa.reasoning_effort) |re| allocator.free(re);
             }
             list.deinit(allocator);
@@ -1338,6 +1457,17 @@ pub const LlmConfig = struct {
             errdefer allocator.free(api_key);
             const system_prompt = try allocator.dupe(u8, j.system_prompt);
             errdefer allocator.free(system_prompt);
+            const backend: []const u8 = if (j.backend.len > 0)
+                try allocator.dupe(u8, j.backend)
+            else
+                "";
+            errdefer if (backend.len > 0) allocator.free(backend);
+            const config_dir: ?[]const u8 = blk: {
+                const d = j.config_dir orelse break :blk null;
+                if (d.len == 0) break :blk null;
+                break :blk try allocator.dupe(u8, d);
+            };
+            errdefer if (config_dir) |d| allocator.free(d);
 
             try list.append(allocator, .{
                 .name = name,
@@ -1348,6 +1478,9 @@ pub const LlmConfig = struct {
                 .url_style = url_style,
                 .api_key = api_key,
                 .system_prompt = system_prompt,
+                .backend = backend,
+                .config_dir = config_dir,
+                .max_turns = j.max_turns,
                 // Model-thinking knobs — Anthropic budget + OpenAI effort.
                 // Range validation is the HTTP layer's job; this site
                 // just threads the JSON-parsed values through.
@@ -1371,6 +1504,11 @@ pub const LlmConfig = struct {
             .url_style = try allocator.dupe(u8, sa.url_style),
             .api_key = try allocator.dupe(u8, sa.api_key),
             .system_prompt = try allocator.dupe(u8, sa.system_prompt),
+            // Empty/absent stay that way so `freeSubAgentsList`'s
+            // "only free non-empty" rule holds for copies too.
+            .backend = if (sa.backend.len > 0) try allocator.dupe(u8, sa.backend) else "",
+            .config_dir = if (sa.config_dir) |d| try allocator.dupe(u8, d) else null,
+            .max_turns = sa.max_turns,
             .max_capacity_tokens = sa.max_capacity_tokens,
             .compaction_threshold_percent = sa.compaction_threshold_percent,
             .thinking_budget_tokens = sa.thinking_budget_tokens,
@@ -1809,6 +1947,9 @@ pub const LlmConfig = struct {
                     .temperature = entry.value_ptr.temperature,
                     .api_key = entry.value_ptr.api_key,
                     .url_style = entry.value_ptr.url_style,
+                    .backend = entry.value_ptr.backend,
+                    .config_dir = entry.value_ptr.config_dir,
+                    .max_turns = entry.value_ptr.max_turns,
                     .sub_agents = null,
                 },
                 self.allocator,
@@ -1829,6 +1970,9 @@ pub const LlmConfig = struct {
         }
 
         // Deep-copy top-level sub_agents into a freshly allocated slice.
+        // `dupeSubAgentConfig` is the single copier — the inline field list
+        // this loop used to carry silently dropped the compaction and
+        // thinking overrides, so a clone could lose them.
         var sub_agents_list = std.ArrayList(SubAgentConfig).empty;
         errdefer {
             for (sub_agents_list.items) |sa| {
@@ -1840,20 +1984,14 @@ pub const LlmConfig = struct {
                 self.allocator.free(sa.url_style);
                 self.allocator.free(sa.api_key);
                 self.allocator.free(sa.system_prompt);
+                if (sa.backend.len > 0) self.allocator.free(sa.backend);
+                if (sa.config_dir) |d| self.allocator.free(d);
+                if (sa.reasoning_effort) |re| self.allocator.free(re);
             }
             sub_agents_list.deinit(self.allocator);
         }
         for (self.sub_agents) |sa| {
-            try sub_agents_list.append(self.allocator, .{
-                .name = try self.allocator.dupe(u8, sa.name),
-                .model = try self.allocator.dupe(u8, sa.model),
-                .base_url = try self.allocator.dupe(u8, sa.base_url),
-                .thinking = try self.allocator.dupe(u8, sa.thinking),
-                .temperature = try self.allocator.dupe(u8, sa.temperature),
-                .url_style = try self.allocator.dupe(u8, sa.url_style),
-                .api_key = try self.allocator.dupe(u8, sa.api_key),
-                .system_prompt = try self.allocator.dupe(u8, sa.system_prompt),
-            });
+            try sub_agents_list.append(self.allocator, try dupeSubAgentConfig(self.allocator, sa));
         }
         config.sub_agents = try sub_agents_list.toOwnedSlice(self.allocator);
 
@@ -1861,18 +1999,39 @@ pub const LlmConfig = struct {
     }
 
     pub fn validate(self: *const LlmConfig) LoadError!void {
-        if (self.api_key.len == 0) {
-            std.log.warn("Missing required field: api_key", .{});
-            return error.MissingRequiredField;
-        }
+        // The TRANSPORT decides which fields are required. `base_url` and
+        // `api_key` are HTTP concepts; a Claude Code profile authenticates
+        // through the `claude` CLI's own `claude login` state, so demanding
+        // them would make a correct CLI-only config unloadable (and the
+        // warning below would tell the user to populate keys they must not
+        // set).
+        const backend = self.effectiveBackend();
+
         if (self.model.len == 0) {
             std.log.warn("Missing required field: model", .{});
+            return error.MissingRequiredField;
+        }
+        if (std.mem.eql(u8, backend, Backend.claude_code)) return;
+        if (self.api_key.len == 0) {
+            std.log.warn("Missing required field: api_key", .{});
             return error.MissingRequiredField;
         }
         if (self.base_url.len == 0) {
             std.log.warn("Missing required field: base_url", .{});
             return error.MissingRequiredField;
         }
+    }
+
+    /// The transport the ACTIVE profile selects, defaulting to `"http"`.
+    ///
+    /// Mirrors `resolveEffectiveProfile(...).backend` for callers that need
+    /// only the discriminator (validation, the Settings probes) and do not
+    /// want to build a whole `EffectiveProfile` — which requires a
+    /// `selected_profile_model` they may not have.
+    pub fn effectiveBackend(self: *const LlmConfig) []const u8 {
+        const p = self.resolveSessionProfileCompat("") orelse return Backend.http;
+        if (p.backend.len == 0) return Backend.http;
+        return p.backend;
     }
 
     /// Convenience accessor — returns the live json.Value or null.
@@ -2398,6 +2557,26 @@ pub const LlmConfig = struct {
         base_url: []const u8,
         api_key: []const u8,
         url_style: []const u8,
+        /// Which transport runs this call: `"http"` | `"claude-code"`.
+        ///
+        /// Never empty. `url_style` answers "what HTTP body shape" — a
+        /// question Claude Code cannot answer, because it has no URL — so
+        /// the transport lives in its own field rather than as a fourth
+        /// `url_style` value. Overloading `url_style` would leave
+        /// `base_url` / `api_key` present-but-dead and force a "not
+        /// applicable" arm into every wire-format dispatch site.
+        ///
+        /// Absent on both the selected and active profile → `"http"`, so
+        /// every pre-existing config behaves exactly as before.
+        backend: []const u8,
+        /// Claude Code only: `CLAUDE_CONFIG_DIR` for this call. `null` =
+        /// the CLI's own default (`~/.claude`). Two profiles pointing at
+        /// two directories are two different logins, which is how
+        /// per-profile identity works without an API key.
+        config_dir: ?[]const u8,
+        /// Claude Code only: `--max-turns` for this call. `null` = CLI
+        /// default.
+        max_turns: ?u32,
         /// Raw resolved `thinking` string ("auto" when nothing set).
         thinking_str: []const u8,
         /// Derived: parseThinkingString(thinking_str) catch null.
@@ -2492,6 +2671,24 @@ pub const LlmConfig = struct {
             }
             break :blk null;
         };
+        // Transport. Empty on a profile means "not set" (same fall-through
+        // rule as the string fields above); nothing set anywhere → "http",
+        // which is what makes an absent `backend` key a no-op.
+        const backend: []const u8 = blk: {
+            if (sel) |p| if (p.backend.len > 0) break :blk p.backend;
+            if (act) |p| if (p.backend.len > 0) break :blk p.backend;
+            break :blk "http";
+        };
+        const config_dir: ?[]const u8 = blk: {
+            if (sel) |p| if (p.config_dir) |d| break :blk d;
+            if (act) |p| if (p.config_dir) |d| break :blk d;
+            break :blk null;
+        };
+        const max_turns: ?u32 = blk: {
+            if (sel) |p| if (p.max_turns) |n| break :blk n;
+            if (act) |p| if (p.max_turns) |n| break :blk n;
+            break :blk null;
+        };
 
         // Derived ONCE from the final string (pre-refactor:
         // workflow.zig:471 parseThinkingString catch null; :477 eql "auto").
@@ -2500,6 +2697,9 @@ pub const LlmConfig = struct {
             .base_url = base_url,
             .api_key = api_key,
             .url_style = url_style,
+            .backend = backend,
+            .config_dir = config_dir,
+            .max_turns = max_turns,
             .thinking_str = thinking_str,
             .is_thinking = parse_thinking.parseThinkingString(thinking_str) catch null,
             .thinking_adaptive = std.mem.eql(u8, thinking_str, "auto"),
@@ -2630,6 +2830,11 @@ pub const LlmConfig = struct {
                 self.random_names = grown;
             }
         }
+        // Transport for the random fallback: whatever the orchestrator
+        // resolves to. A sub-agent that exists only because the model asked
+        // for a name nobody configured must still run on the right backend,
+        // or a Claude Code session would silently POST to an empty URL.
+        const act_profile = self.resolveSessionProfileCompat("");
         return ResolvedSubAgent{
             .name = random_name,
             .is_random_fallback = true,
@@ -2638,6 +2843,9 @@ pub const LlmConfig = struct {
             .base_url = self.base_url,
             .api_key = self.api_key,
             .url_style = self.url_style,
+            .backend = self.effectiveBackend(),
+            .config_dir = if (act_profile) |p| p.config_dir else null,
+            .max_turns = if (act_profile) |p| p.max_turns else null,
             .is_thinking = null,
             .temperature = null,
             .thinking_budget_tokens = null,
@@ -2712,6 +2920,17 @@ pub const LlmConfig = struct {
             .base_url = if (sa.base_url.len > 0) sa.base_url else self.base_url,
             .api_key = if (sa.api_key.len > 0) sa.api_key else self.api_key,
             .url_style = if (sa.url_style.len > 0) sa.url_style else self.url_style,
+            // Transport follows the same overlay rule as the fields above:
+            // a sub-agent that names no backend runs on the orchestrator's.
+            .backend = if (sa.backend.len > 0) sa.backend else self.effectiveBackend(),
+            .config_dir = if (sa.config_dir) |d| d else blk: {
+                const p = self.resolveSessionProfileCompat("") orelse break :blk null;
+                break :blk p.config_dir;
+            },
+            .max_turns = if (sa.max_turns) |n| n else blk: {
+                const p = self.resolveSessionProfileCompat("") orelse break :blk null;
+                break :blk p.max_turns;
+            },
             .is_thinking = resolved_thinking,
             .temperature = resolved_temperature,
             .thinking_budget_tokens = resolved_budget,

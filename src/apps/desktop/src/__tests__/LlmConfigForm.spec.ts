@@ -29,6 +29,12 @@ const baseValue = {
   temperature: 'auto',
   url_style: 'openai',
   api_key: '',
+  // Transport discriminator + its Claude Code knobs. Absent `backend` reads
+  // as "http" (the backend's documented default), so these are optional in
+  // the form's type — but the specs set them so intent is explicit.
+  backend: 'http',
+  config_dir: null as string | null,
+  max_turns: null as number | null,
   // Plan 2026-07-07-compaction-inline: per-profile compaction overrides.
   max_capacity_tokens: null as number | null,
   compaction_threshold_percent: null as number | null,
@@ -38,31 +44,36 @@ const baseValue = {
 }
 
 describe('LlmConfigForm', () => {
-  it('renders all fields (openai: 3 selects + freetext temperature + reasoning_effort)', async () => {
+  it('renders all fields (openai: backend + 3 selects + freetext temperature)', async () => {
     const wrapper = await mountOpen(LlmConfigForm, { props: { modelValue: { ...baseValue } } })
     expect(wrapper.find('[data-testid=model-input]').exists()).toBe(true)
     expect(wrapper.find('[data-testid=base-url-input]').exists()).toBe(true)
     const selects = wrapper.findAll('select')
-    // thinking, url_style, reasoning_effort — 3 selects.
+    // backend, thinking, url_style, reasoning_effort — 4 selects.
     // (temperature is freetext input, not a select.)
-    // (plan 2026-08-23-model-thinking added reasoning_effort; plan 2026-09-01 gates it per style.)
-    expect(selects.length).toBe(3)
+    // (plan 2026-08-23-model-thinking added reasoning_effort; plan 2026-09-01 gates it per style;
+    //  the `backend` discriminator added the transport select.)
+    expect(selects.length).toBe(4)
     expect(wrapper.find('[data-testid=temperature-input]').exists()).toBe(true)
     expect(wrapper.find('[data-testid=reasoning-effort-select]').exists()).toBe(true)
     expect(wrapper.find('[data-testid=thinking-budget-input]').exists()).toBe(false)
   })
 
-  it('renders 2 selects for anthropic (budget input, no reasoning_effort, freetext temperature)', async () => {
-    const wrapper = await mountOpen(LlmConfigForm, { props: { modelValue: { ...baseValue, url_style: 'anthropic' } } })
-    expect(wrapper.findAll('select').length).toBe(2) // thinking, url_style
+  it('renders 3 selects for anthropic (budget input, no reasoning_effort)', async () => {
+    const wrapper = await mountOpen(LlmConfigForm, {
+      props: { modelValue: { ...baseValue, url_style: 'anthropic' } },
+    })
+    expect(wrapper.findAll('select').length).toBe(3) // backend, thinking, url_style
     expect(wrapper.find('[data-testid=temperature-input]').exists()).toBe(true)
     expect(wrapper.find('[data-testid=thinking-budget-input]').exists()).toBe(true)
     expect(wrapper.find('[data-testid=reasoning-effort-select]').exists()).toBe(false)
   })
 
-  it('renders 3 selects for openai-response (reasoning_effort, no budget, freetext temperature)', async () => {
-    const wrapper = await mountOpen(LlmConfigForm, { props: { modelValue: { ...baseValue, url_style: 'openai-response' } } })
-    expect(wrapper.findAll('select').length).toBe(3)
+  it('renders 4 selects for openai-response (reasoning_effort, no budget)', async () => {
+    const wrapper = await mountOpen(LlmConfigForm, {
+      props: { modelValue: { ...baseValue, url_style: 'openai-response' } },
+    })
+    expect(wrapper.findAll('select').length).toBe(4)
     expect(wrapper.find('[data-testid=temperature-input]').exists()).toBe(true)
     expect(wrapper.find('[data-testid=reasoning-effort-select]').exists()).toBe(true)
     expect(wrapper.find('[data-testid=thinking-budget-input]').exists()).toBe(false)
@@ -266,5 +277,101 @@ describe('LlmConfigForm', () => {
     for (const s of selects) {
       expect((s.element as HTMLElement).style.colorScheme).toBe('dark')
     }
+  })
+})
+
+/**
+ * The transport discriminator.
+ *
+ * `backend` is orthogonal to `url_style`: it says WHICH transport runs the
+ * call, while `url_style` keeps describing the HTTP body shape. A claude-code
+ * profile has no URL, no key and no request body, so those controls are
+ * hidden rather than shown-but-ignored.
+ */
+describe('LlmConfigForm — backend gating', () => {
+  it('offers exactly http and claude-code as backends', async () => {
+    const wrapper = await mountOpen(LlmConfigForm, { props: { modelValue: { ...baseValue } } })
+    const options = wrapper
+      .find('[data-testid=backend-select]')
+      .findAll('option')
+      .map((o) => (o.element as HTMLOptionElement).value)
+    expect(options).toEqual(['http', 'claude-code'])
+  })
+
+  it('hides every HTTP control for claude-code and shows the CLI knobs', async () => {
+    const wrapper = await mountOpen(LlmConfigForm, {
+      props: { modelValue: { ...baseValue, backend: 'claude-code', model: 'sonnet' } },
+    })
+    // No endpoint, no credential, no body shape, no request-body knobs.
+    expect(wrapper.find('[data-testid=base-url-input]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid=api-key-input]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid=url-style-select]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid=thinking-select]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid=temperature-input]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid=reasoning-effort-select]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid=thinking-budget-input]').exists()).toBe(false)
+    // The CLI's own knobs replace them.
+    expect(wrapper.find('[data-testid=claude-config-dir-input]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid=claude-max-turns-input]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('CLAUDE_CONFIG_DIR')
+  })
+
+  it('keeps the compaction controls for claude-code (the window matters either way)', async () => {
+    const wrapper = await mountOpen(LlmConfigForm, {
+      props: { modelValue: { ...baseValue, backend: 'claude-code' } },
+    })
+    expect(wrapper.find('[data-testid=profile-threshold-input]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid=profile-capacity-input]').exists()).toBe(true)
+  })
+
+  it('hides the CLI knobs for http', async () => {
+    const wrapper = await mountOpen(LlmConfigForm, { props: { modelValue: { ...baseValue } } })
+    expect(wrapper.find('[data-testid=claude-config-dir-input]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid=claude-max-turns-input]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid=backend-select]').exists()).toBe(true)
+  })
+
+  it('treats an ABSENT backend as http — the documented default', async () => {
+    // A profile written before this field existed must render exactly as it
+    // did: every HTTP control present, no CLI knob.
+    const { backend: _omitted, ...withoutBackend } = baseValue
+    const wrapper = await mountOpen(LlmConfigForm, { props: { modelValue: { ...withoutBackend } } })
+    expect(wrapper.find('[data-testid=base-url-input]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid=api-key-input]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid=claude-config-dir-input]').exists()).toBe(false)
+  })
+
+  it('switching the backend emits backend without touching url_style', async () => {
+    const wrapper = await mountOpen(LlmConfigForm, { props: { modelValue: { ...baseValue } } })
+    await wrapper.find('[data-testid=backend-select]').setValue('claude-code')
+    const emitted = wrapper.emitted('update:modelValue')?.[0]?.[0] as typeof baseValue
+    expect(emitted.backend).toBe('claude-code')
+    expect(emitted.url_style).toBe('openai')
+  })
+
+  it('config_dir emits a path and null when cleared', async () => {
+    const wrapper = await mountOpen(LlmConfigForm, {
+      props: { modelValue: { ...baseValue, backend: 'claude-code' } },
+    })
+    await wrapper.find('[data-testid=claude-config-dir-input]').setValue('~/.claude-work')
+    let emitted = wrapper.emitted('update:modelValue')?.at(-1)?.[0] as typeof baseValue
+    expect(emitted.config_dir).toBe('~/.claude-work')
+
+    await wrapper.find('[data-testid=claude-config-dir-input]').setValue('')
+    emitted = wrapper.emitted('update:modelValue')?.at(-1)?.[0] as typeof baseValue
+    expect(emitted.config_dir).toBeNull()
+  })
+
+  it('max_turns emits a number and null when cleared', async () => {
+    const wrapper = await mountOpen(LlmConfigForm, {
+      props: { modelValue: { ...baseValue, backend: 'claude-code' } },
+    })
+    await wrapper.find('[data-testid=claude-max-turns-input]').setValue('40')
+    let emitted = wrapper.emitted('update:modelValue')?.at(-1)?.[0] as typeof baseValue
+    expect(emitted.max_turns).toBe(40)
+
+    await wrapper.find('[data-testid=claude-max-turns-input]').setValue('')
+    emitted = wrapper.emitted('update:modelValue')?.at(-1)?.[0] as typeof baseValue
+    expect(emitted.max_turns).toBeNull()
   })
 })

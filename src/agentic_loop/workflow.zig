@@ -1108,6 +1108,12 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             if (ov.base_url.len > 0) eff.base_url = ov.base_url;
             if (ov.api_key.len > 0) eff.api_key = ov.api_key;
             if (ov.url_style.len > 0) eff.url_style = ov.url_style;
+            // Transport + its CLI knobs follow the same "non-empty wins"
+            // rule, so a Claude Code sub-agent overrides its HTTP parent
+            // (and vice versa) without touching the profile cascade.
+            if (ov.backend.len > 0) eff.backend = ov.backend;
+            if (ov.config_dir) |d| eff.config_dir = d;
+            if (ov.max_turns) |n| eff.max_turns = n;
             if (ov.is_thinking) |t| {
                 isThinking = t;
                 // Mirror the override onto the session-state carrier
@@ -1325,7 +1331,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             sessionNameIsPlaceholder(allocator, db, copy_session_id))
         {
             auto_name_attempted = true;
-            generateSessionNameNew(db_messages, allocator, eff.api_key, eff.model, eff.base_url, eff.url_style, copy_session_id, logger, io, db, event_bus);
+            generateSessionNameNew(db_messages, allocator, eff.api_key, eff.model, eff.base_url, eff.url_style, eff.backend, copy_session_id, logger, io, db, event_bus);
         }
 
         // ─── Progressive tool search ───────────────────────────────────
@@ -1419,7 +1425,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         // next turn.
         llm_cancel_thunk.register(.{ .db = db, .session_id = copy_session_id, .io = io });
         defer llm_cancel_thunk.unregister();
-        const res_dynamic_agent = callDynamicAgentNew(allocator, io, messagesLists, agent_temperature, current_max_tokens, isThinking, eff.thinking_budget_tokens, eff.thinking_adaptive, eff.reasoning_effort, eff.api_key, eff.model, eff.base_url, eff.url_style, copy_session_id, merged_tools, &llm_cancel_thunk.call, &last_dynamic_agent_error_message) catch |err| {
+        const res_dynamic_agent = callDynamicAgentNew(allocator, io, messagesLists, agent_temperature, current_max_tokens, isThinking, eff.thinking_budget_tokens, eff.thinking_adaptive, eff.reasoning_effort, eff.api_key, eff.model, eff.base_url, eff.url_style, eff.backend, copy_session_id, merged_tools, &llm_cancel_thunk.call, &last_dynamic_agent_error_message) catch |err| {
             if (err == error.Cancelled) {
                 logger.infoFmt("WORKFLOW CANCELLED during streaming: session_id={s}", .{copy_session_id});
                 // Keep the partial text and settle the transcript — without
@@ -1820,6 +1826,7 @@ fn generateSessionNameNew(
     model: []const u8,
     base_url: []const u8,
     url_style: []const u8,
+    backend: []const u8,
     session_id: []const u8,
     logger: *logger_mod.Logger,
     io: std.Io,
@@ -1863,6 +1870,7 @@ fn generateSessionNameNew(
     name_agent.model = model;
     name_agent.baseUrl = base_url;
     name_agent.UrlStyle = url_style;
+    name_agent.backend = backend;
     name_agent.sessionId = session_id;
     name_agent.thinkingEnabled = false;
     name_agent.httpOptions.read_timeout_ms = 300_000; // 10 minutes
@@ -2103,6 +2111,7 @@ fn callDynamicAgentNew(
     model: []const u8,
     base_url: []const u8,
     url_style: []const u8,
+    backend: []const u8,
     session_id: []const u8,
     equip_tools: []const agent.AgentTool,
     /// Polled by the agent's SSE chunk-read loop between chunks so a
@@ -2129,6 +2138,7 @@ fn callDynamicAgentNew(
     dynamic_agent.model = model;
     dynamic_agent.baseUrl = base_url;
     dynamic_agent.UrlStyle = url_style;
+    dynamic_agent.backend = backend;
     dynamic_agent.sessionId = session_id;
     // `messages_list.items` is `[]agent.AgentMessage`; the local
     // `agent.AgentCall.messages` wants the same type — direct assignment.
@@ -2429,6 +2439,13 @@ pub const SubAgentOverrides = struct {
     base_url: []const u8 = "",
     api_key: []const u8 = "",
     url_style: []const u8 = "",
+    /// Transport override — `"http"` | `"claude-code"`. Empty = keep the
+    /// parent's (see `ResolvedSubAgent.backend`).
+    backend: []const u8 = "",
+    /// Claude Code only: `CLAUDE_CONFIG_DIR` override. Null = parent's.
+    config_dir: ?[]const u8 = null,
+    /// Claude Code only: `--max-turns` override. Null = parent's.
+    max_turns: ?u32 = null,
     is_thinking: ?bool = null,
     temperature: ?f32 = null,
     /// Anthropic-only override for `thinking.budget_tokens`. When
@@ -3622,6 +3639,7 @@ test "generateSessionNameNew: name call failure leaves the placeholder name and 
         "m",
         "http://127.0.0.1:1/v1/chat/completions",
         "openai",
+        "http",
         session_id,
         &lg,
         s.threaded.io(),

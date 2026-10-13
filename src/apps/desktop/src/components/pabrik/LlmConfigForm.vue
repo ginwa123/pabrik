@@ -35,6 +35,22 @@ export interface LlmConfig {
   temperature: string
   url_style: string
   api_key: string
+  /** Which TRANSPORT runs this profile's calls: `"http"` (default) or
+   * `"claude-code"` (the local `claude` CLI, subscription auth via
+   * `claude login`). Orthogonal to `url_style`, which keeps describing the
+   * HTTP body shape only.
+   *
+   * Optional on purpose: an absent key IS the documented `"http"` default,
+   * so a profile that predates this field needs no change. */
+  backend?: string
+  /** Claude Code only: `CLAUDE_CONFIG_DIR`. Two profiles pointing at two
+   * directories are two different `claude login` sessions — the way
+   * per-profile identity works when there is no API key.
+   * `null` = the CLI default (`~/.claude`). */
+  config_dir?: string | null
+  /** Claude Code only: agentic turn ceiling (`--max-turns`).
+   * `null` = the CLI's own default. */
+  max_turns?: number | null
   /** Optional per-profile override for the context window (in tokens).
    * `null` = resolve from the catalog, then fall through to the built-in. */
   max_capacity_tokens: number | null
@@ -158,7 +174,11 @@ function chooseModel(entry: ModelCatalogEntry): void {
     ...props.modelValue,
     model: entry.model_id,
     // An empty base_url means "use the catalog's" — the field stays overrideable.
-    base_url: props.modelValue.base_url || entry.provider_name,
+    // NOT for claude-code: that backend has no endpoint at all, and setting one
+    // would trip the profile validator (base_url is rejected for the CLI).
+    base_url: isClaudeCodeBackend.value
+      ? props.modelValue.base_url
+      : props.modelValue.base_url || entry.provider_name,
   })
   pickerOpen.value = false
   void runResolve()
@@ -208,6 +228,15 @@ const factWarning = computed<string | null>(() => {
   }
   return null
 })
+
+// === Transport gating (`backend`, orthogonal to `url_style`) =============
+// A claude-code profile runs the local `claude` CLI: no base URL, no API key,
+// no HTTP body shape, and no request-body knobs. Those controls are HIDDEN
+// rather than shown-but-ignored, and the CLI's own knobs appear instead.
+// Hidden fields keep their values (never nulled) so flipping backends back
+// and forth does not discard what the user typed.
+const isClaudeCodeBackend = computed<boolean>(() => props.modelValue.backend === 'claude-code')
+const isHttpBackend = computed<boolean>(() => !isClaudeCodeBackend.value)
 
 // === Temperature (free text: "auto" or 0–1) =============================
 
@@ -274,7 +303,9 @@ const showKey = ref(false)
 
 const capacityDraft = computed<string>({
   get: () =>
-    props.modelValue.max_capacity_tokens === null ? '' : String(props.modelValue.max_capacity_tokens),
+    props.modelValue.max_capacity_tokens === null
+      ? ''
+      : String(props.modelValue.max_capacity_tokens),
   set: (raw: string) => {
     const trimmed = raw.trim()
     if (trimmed === '') {
@@ -319,9 +350,35 @@ const overrideCount = computed<number>(() => {
 
 <template>
   <div class="space-y-4">
+    <!-- ── Backend: which TRANSPORT runs this profile ────────────────── -->
+    <!-- Gates everything below. HTTP shows the connection + request-body
+         controls; claude-code shows the CLI's own knobs instead. -->
+    <div>
+      <label :class="labelBase" :style="labelStyle">Backend</label>
+      <select
+        :value="modelValue.backend ?? 'http'"
+        @change="update('backend', ($event.target as HTMLSelectElement).value)"
+        :class="inputBase"
+        :style="inputStyle()"
+        data-testid="backend-select"
+      >
+        <option value="http">HTTP (base URL + API key)</option>
+        <option value="claude-code">Claude Code (local CLI)</option>
+      </select>
+      <p class="text-dense mt-1" :style="helperStyle">
+        {{
+          isClaudeCodeBackend
+            ? 'Runs the local claude CLI with your subscription — no API key or Base URL.'
+            : 'Calls an HTTP endpoint using the body shape below.'
+        }}
+      </p>
+    </div>
+
     <!-- ── Model + the one fact line ─────────────────────────────────── -->
     <div>
-      <label :class="labelBase" :style="labelStyle">Model <span style="color: var(--color-red)">*</span></label>
+      <label :class="labelBase" :style="labelStyle"
+        >Model <span style="color: var(--color-red)">*</span></label
+      >
       <div class="relative">
         <input
           :value="modelValue.model"
@@ -338,7 +395,8 @@ const overrideCount = computed<number>(() => {
         <span
           class="absolute right-3 top-1/2 -translate-y-1/2 text-dense pointer-events-none"
           style="color: var(--semantic-text-dim)"
-        >{{ resolving ? '⋯' : '▾' }}</span>
+          >{{ resolving ? '⋯' : '▾' }}</span
+        >
       </div>
       <p v-if="errors?.model" class="text-dense mt-1" :style="errorStyle">{{ errors.model }}</p>
 
@@ -351,7 +409,9 @@ const overrideCount = computed<number>(() => {
       >
         <template v-for="(t, i) in factTokens" :key="t + i">
           <span v-if="i > 0" style="color: var(--semantic-text-dim)"> · </span>
-          <span :style="i === factTokens.length - 1 ? { color: 'var(--semantic-text-dim)' } : {}">{{ t }}</span>
+          <span :style="i === factTokens.length - 1 ? { color: 'var(--semantic-text-dim)' } : {}">{{
+            t
+          }}</span>
         </template>
       </p>
       <p
@@ -359,7 +419,9 @@ const overrideCount = computed<number>(() => {
         class="font-mono text-dense mt-1.5"
         data-testid="model-fact-line"
         style="color: var(--color-yellow, #c9a86a)"
-      >{{ factWarning }}</p>
+      >
+        {{ factWarning }}
+      </p>
 
       <!-- Picker: free text stays; this only offers what the catalog knows. -->
       <div
@@ -367,7 +429,9 @@ const overrideCount = computed<number>(() => {
         class="mt-1.5 px-3 py-1.5 rounded-md border font-mono text-dense"
         style="border-color: var(--color-border); color: var(--color-red)"
         data-testid="model-picker-error"
-      >catalog unavailable — {{ pickerError }}</div>
+      >
+        catalog unavailable — {{ pickerError }}
+      </div>
       <div
         v-else-if="pickerOpen && pickerResults.length > 0"
         class="mt-1.5 rounded-md border overflow-hidden"
@@ -377,7 +441,9 @@ const overrideCount = computed<number>(() => {
         <div
           class="text-micro font-mono px-3 py-1.5 border-b"
           style="color: var(--semantic-text-dim); border-color: var(--color-border)"
-        >{{ pickerTotal }} match{{ pickerTotal === 1 ? '' : 'es' }}</div>
+        >
+          {{ pickerTotal }} match{{ pickerTotal === 1 ? '' : 'es' }}
+        </div>
         <button
           v-for="m in pickerResults"
           :key="m.provider_id + '/' + m.model_id"
@@ -386,17 +452,22 @@ const overrideCount = computed<number>(() => {
           class="w-full flex items-center justify-between gap-3 px-3 py-1.5 hover:opacity-80 text-left"
           :data-testid="`model-option-${m.model_id}`"
         >
-          <span class="font-mono text-dense truncate" style="color: var(--semantic-text)">{{ m.model_id }}</span>
+          <span class="font-mono text-dense truncate" style="color: var(--semantic-text)">{{
+            m.model_id
+          }}</span>
           <span class="font-mono text-micro shrink-0" style="color: var(--semantic-text-dim)">
-            · {{ m.provider_name }}<template v-if="m.context_window"> · {{ fmtTokens(m.context_window) }}</template>
+            · {{ m.provider_name
+            }}<template v-if="m.context_window"> · {{ fmtTokens(m.context_window) }}</template>
           </span>
         </button>
       </div>
     </div>
 
-    <!-- ── API key ───────────────────────────────────────────────────── -->
-    <div>
-      <label :class="labelBase" :style="labelStyle">API key <span style="color: var(--color-red)">*</span></label>
+    <!-- ── API key (HTTP only) ───────────────────────────────────────── -->
+    <div v-if="isHttpBackend">
+      <label :class="labelBase" :style="labelStyle"
+        >API key <span style="color: var(--color-red)">*</span></label
+      >
       <div class="relative">
         <input
           :value="modelValue.api_key"
@@ -415,7 +486,9 @@ const overrideCount = computed<number>(() => {
           data-testid="api-key-toggle"
           class="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center text-dense"
           style="color: var(--semantic-text-dim)"
-        >{{ showKey ? '◉' : '○' }}</button>
+        >
+          {{ showKey ? '◉' : '○' }}
+        </button>
       </div>
       <p v-if="errors?.api_key" class="text-dense mt-1" :style="errorStyle">{{ errors.api_key }}</p>
     </div>
@@ -431,7 +504,8 @@ const overrideCount = computed<number>(() => {
       >
         <span style="color: var(--semantic-text-muted)">Advanced</span>
         <span class="font-mono text-dense" style="color: var(--semantic-text-dim)">
-          {{ overrideCount === 0 ? 'nothing overridden' : `${overrideCount} overridden` }} {{ advancedOpen ? '▾' : '▸' }}
+          {{ overrideCount === 0 ? 'nothing overridden' : `${overrideCount} overridden` }}
+          {{ advancedOpen ? '▾' : '▸' }}
         </span>
       </button>
 
@@ -445,8 +519,12 @@ const overrideCount = computed<number>(() => {
           Every field inherits until you type in it. The ✕ goes back to inheriting.
         </p>
 
+        <!-- Connection (HTTP only) -->
+        <template v-if="isHttpBackend">
         <!-- Connection -->
-        <div class="font-mono text-micro uppercase tracking-wider pt-1" :style="helperStyle">Connection</div>
+        <div class="font-mono text-micro uppercase tracking-wider pt-1" :style="helperStyle">
+          Connection
+        </div>
         <div>
           <label :class="labelBase" :style="labelStyle">Base URL</label>
           <div class="flex gap-2">
@@ -464,11 +542,19 @@ const overrideCount = computed<number>(() => {
               type="button"
               @click="update('base_url', '')"
               class="w-8 h-8 shrink-0 rounded-md border text-dense"
-              style="border-color: var(--color-border); color: var(--semantic-text-dim); background-color: transparent"
+              style="
+                border-color: var(--color-border);
+                color: var(--semantic-text-dim);
+                background-color: transparent;
+              "
               aria-label="Clear base URL override"
-            >✕</button>
+            >
+              ✕
+            </button>
           </div>
-          <p v-if="errors?.base_url" class="text-dense mt-1" :style="errorStyle">{{ errors.base_url }}</p>
+          <p v-if="errors?.base_url" class="text-dense mt-1" :style="errorStyle">
+            {{ errors.base_url }}
+          </p>
         </div>
         <div>
           <label :class="labelBase" :style="labelStyle">Body shape</label>
@@ -487,9 +573,72 @@ const overrideCount = computed<number>(() => {
             <option value="anthropic">anthropic</option>
           </select>
         </div>
+        </template>
 
+        <!-- Claude Code knobs (CLI only). `config_dir` is what makes two
+             profiles two different logins. -->
+        <template v-if="isClaudeCodeBackend">
+          <div class="font-mono text-micro uppercase tracking-wider pt-1" :style="helperStyle">
+            Claude Code
+          </div>
+          <div>
+            <label :class="labelBase" :style="labelStyle"
+              >Config dir
+              <span class="block text-dense mt-0.5" :style="helperStyle">
+                CLAUDE_CONFIG_DIR. Blank = ~/.claude. Point two profiles at two dirs to keep two
+                logins apart.
+              </span>
+            </label>
+            <input
+              :value="modelValue.config_dir ?? ''"
+              @input="
+                (e) => {
+                  const raw = (e.target as HTMLInputElement).value
+                  update('config_dir', raw === '' ? null : raw)
+                }
+              "
+              type="text"
+              placeholder="~/.claude-work"
+              :class="inputBase"
+              :style="inputStyle()"
+              data-testid="claude-config-dir-input"
+            />
+          </div>
+          <div>
+            <label :class="labelBase" :style="labelStyle"
+              >Max turns
+              <span class="block text-dense mt-0.5" :style="helperStyle">
+                Agentic turn ceiling (--max-turns). Blank = CLI default.
+              </span>
+            </label>
+            <input
+              :value="modelValue.max_turns ?? ''"
+              @input="
+                (e) => {
+                  const raw = (e.target as HTMLInputElement).value
+                  if (raw === '') return update('max_turns', null)
+                  const parsed = parseInt(raw, 10)
+                  update('max_turns', Number.isFinite(parsed) ? Math.max(1, parsed) : null)
+                }
+              "
+              type="number"
+              min="1"
+              step="1"
+              placeholder="40"
+              :class="inputBase"
+              :style="inputStyle()"
+              data-testid="claude-max-turns-input"
+            />
+          </div>
+        </template>
+
+        <!-- Behaviour (HTTP only: every field is a request-body knob the
+             CLI never sees) -->
+        <template v-if="isHttpBackend">
         <!-- Behaviour -->
-        <div class="font-mono text-micro uppercase tracking-wider pt-1" :style="helperStyle">Behaviour</div>
+        <div class="font-mono text-micro uppercase tracking-wider pt-1" :style="helperStyle">
+          Behaviour
+        </div>
         <div>
           <label :class="labelBase" :style="labelStyle">Thinking</label>
           <select
@@ -516,7 +665,10 @@ const overrideCount = computed<number>(() => {
             @change="
               (e) => {
                 const raw = (e.target as HTMLSelectElement).value
-                update('reasoning_effort', raw === '' ? null : (raw as 'low' | 'medium' | 'high' | 'auto'))
+                update(
+                  'reasoning_effort',
+                  raw === '' ? null : (raw as 'low' | 'medium' | 'high' | 'auto'),
+                )
               }
             "
             :class="inputBase"
@@ -524,12 +676,20 @@ const overrideCount = computed<number>(() => {
             data-testid="reasoning-effort-select"
           >
             <option value="">inherit — Auto</option>
-            <option v-for="v in (effortOptions.length > 0 ? effortOptions : ['low', 'medium', 'high'])" :key="v" :value="v">
+            <option
+              v-for="v in effortOptions.length > 0 ? effortOptions : ['low', 'medium', 'high']"
+              :key="v"
+              :value="v"
+            >
               {{ v }}
             </option>
           </select>
         </div>
-        <div v-else-if="hasFacts && !modelSupportsReasoning" class="text-dense" :style="helperStyle">
+        <div
+          v-else-if="hasFacts && !modelSupportsReasoning"
+          class="text-dense"
+          :style="helperStyle"
+        >
           This model has no extended-reasoning control.
         </div>
         <div v-if="showsBudget">
@@ -546,7 +706,10 @@ const overrideCount = computed<number>(() => {
                 const raw = (e.target as HTMLInputElement).value
                 if (raw === '') return update('thinking_budget_tokens', null)
                 const parsed = parseInt(raw, 10)
-                update('thinking_budget_tokens', Number.isFinite(parsed) ? Math.max(1024, parsed) : null)
+                update(
+                  'thinking_budget_tokens',
+                  Number.isFinite(parsed) ? Math.max(1024, parsed) : null,
+                )
               }
             "
             type="number"
@@ -578,11 +741,17 @@ const overrideCount = computed<number>(() => {
             <option value="0.5" />
             <option value="1" label="1 — Balanced" />
           </datalist>
-          <p v-if="temperatureError" class="text-dense mt-1" :style="errorStyle">{{ temperatureError }}</p>
+          <p v-if="temperatureError" class="text-dense mt-1" :style="errorStyle">
+            {{ temperatureError }}
+          </p>
         </div>
 
-        <!-- Compaction -->
-        <div class="font-mono text-micro uppercase tracking-wider pt-1" :style="helperStyle">Compaction</div>
+        </template>
+
+        <!-- Compaction (both backends: the context window matters either way) -->
+        <div class="font-mono text-micro uppercase tracking-wider pt-1" :style="helperStyle">
+          Compaction
+        </div>
         <div>
           <label :class="labelBase" :style="labelStyle">Threshold (%)</label>
           <div class="flex gap-2">
@@ -602,11 +771,21 @@ const overrideCount = computed<number>(() => {
               type="button"
               @click="update('compaction_threshold_percent', null)"
               class="w-8 h-8 shrink-0 rounded-md border text-dense"
-              style="border-color: var(--color-border); color: var(--semantic-text-dim); background-color: transparent"
+              style="
+                border-color: var(--color-border);
+                color: var(--semantic-text-dim);
+                background-color: transparent;
+              "
               aria-label="Clear threshold override"
-            >✕</button>
+            >
+              ✕
+            </button>
           </div>
-          <p v-if="errors?.compaction_threshold_percent" class="text-dense mt-1" :style="errorStyle">
+          <p
+            v-if="errors?.compaction_threshold_percent"
+            class="text-dense mt-1"
+            :style="errorStyle"
+          >
             {{ errors.compaction_threshold_percent }}
           </p>
         </div>
@@ -629,9 +808,15 @@ const overrideCount = computed<number>(() => {
               type="button"
               @click="update('max_capacity_tokens', null)"
               class="w-8 h-8 shrink-0 rounded-md border text-dense"
-              style="border-color: var(--color-border); color: var(--semantic-text-dim); background-color: transparent"
+              style="
+                border-color: var(--color-border);
+                color: var(--semantic-text-dim);
+                background-color: transparent;
+              "
               aria-label="Clear context window override"
-            >✕</button>
+            >
+              ✕
+            </button>
           </div>
           <p v-if="errors?.max_capacity_tokens" class="text-dense mt-1" :style="errorStyle">
             {{ errors.max_capacity_tokens }}

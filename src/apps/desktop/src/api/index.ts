@@ -846,12 +846,10 @@ export async function getTasksMedia(
   taskIds: string[],
 ): Promise<Map<string, TaskMedia | null>> {
   const settled = await Promise.allSettled(
-    taskIds.map(
-      async (taskId): Promise<[string, TaskMedia | null]> => [
-        taskId,
-        await getTaskMedia(workspaceId, itemId, taskId),
-      ],
-    ),
+    taskIds.map(async (taskId): Promise<[string, TaskMedia | null]> => [
+      taskId,
+      await getTaskMedia(workspaceId, itemId, taskId),
+    ]),
   )
   const out = new Map<string, TaskMedia | null>()
   settled.forEach((entry, i) => {
@@ -4667,6 +4665,29 @@ export interface PabrikProfile {
   url_style?: string
   api_key?: string
   /**
+   * Which TRANSPORT runs this profile's calls: `"http"` (default) or
+   * `"claude-code"` (the local `claude` CLI, subscription auth via
+   * `claude login`). Mirrors the backend's `LlmProfile.backend`.
+   *
+   * Orthogonal to `url_style`, which keeps describing the HTTP wire
+   * format only — a claude-code profile never builds a request body, so
+   * `base_url` / `api_key` / `url_style` do not apply to it. Absent =
+   * `"http"`, so existing configs need no migration.
+   */
+  backend?: string
+  /**
+   * Claude Code only: `CLAUDE_CONFIG_DIR` for this profile. Two profiles
+   * pointing at two directories are two different `claude login`
+   * sessions — the way per-profile identity works when there is no API
+   * key. Mirrors `LlmProfile.config_dir`. Null = CLI default (`~/.claude`).
+   */
+  config_dir?: string | null
+  /**
+   * Claude Code only: agentic turn ceiling passed as `--max-turns`.
+   * Mirrors `LlmProfile.max_turns`. Null = the CLI's own default.
+   */
+  max_turns?: number | null
+  /**
    * Per-profile sub-agents. Same shape as the top-level
    * `PabrikConfig.sub_agents` field — profiles can override the default
    * sub-agent set with their own.
@@ -4718,6 +4739,14 @@ export interface SubAgent {
   url_style: string
   api_key: string
   system_prompt: string
+  /** Transport discriminator, mirroring `PabrikProfile.backend`.
+   *  `"http"` (default) | `"claude-code"`. Empty/absent = inherit the
+   *  parent profile's backend. */
+  backend?: string
+  /** Claude Code only: `CLAUDE_CONFIG_DIR` override. */
+  config_dir?: string | null
+  /** Claude Code only: `--max-turns` override. */
+  max_turns?: number | null
   /** Anthropic-only override for `thinking.budget_tokens`. Plan
    * 2026-08-23-model-thinking. Mirrors `LlmProfile.thinking_budget_tokens`.
    * Optional in the wire shape — old configs without this field
