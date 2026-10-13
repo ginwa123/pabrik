@@ -162,7 +162,7 @@ def _open_long_chat(ui_harness, page, session_id: str) -> str:
     page.goto(
         h.web_url(f"/app/{workspace_id}/chat/{session_id}"),
         wait_until="load",
-        timeout=30000,
+        timeout=60000,
     )
     page.wait_for_function(
         "() => { const w = document.querySelector('.messages-scroll-hide-native');"

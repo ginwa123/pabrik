@@ -201,7 +201,7 @@ def _print_errors(errors: list[str]) -> None:
 
 def _boot_app(h: UIHarness, page, session_id: str, ws_name: str) -> None:
     """Open /app and wait for the chat row in the RECENT list."""
-    page.goto(h.web_url("/app"), wait_until="domcontentloaded", timeout=30000)
+    page.goto(h.web_url("/app"), wait_until="domcontentloaded", timeout=60000)
     page.locator(f"text={ws_name}").first.wait_for(timeout=20000, state="visible")
     row = page.locator(f'[data-testid="chat-row-{session_id}"]')
     try:

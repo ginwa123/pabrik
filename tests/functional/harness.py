@@ -982,18 +982,35 @@ def _find_free_port_sequential(start: int) -> int:
 
 
 def port_is_free_with_reuse(port: int) -> bool:
-    """Return True iff ``port`` can be bound on 127.0.0.1 with SO_REUSEADDR.
+    """Return True iff ``port`` can be bound on 127.0.0.1, EXCLUSIVELY.
 
     Used as the atomic-free primitive by both the random picker and
-    the sequential scan. SO_REUSEADDR lets the probe bind TIME_WAIT
-    ports; the subsequent pabrik/vite listener sets the same flag so
-    it can also bind the port despite lingering server-side TIME_WAITs.
+    the sequential scan.
+
+    POSIX: ``SO_REUSEADDR`` lets the probe bind a TIME_WAIT port; the
+    subsequent pabrik/vite listener sets the same flag so it can also
+    bind the port despite lingering server-side TIME_WAITs.
+
+    WINDOWS: ``SO_REUSEADDR`` does NOT mean that there, and treating it as
+    if it did makes this probe LIE. On Windows it lets a second socket
+    bind an address another socket is actively LISTENing on, so the probe
+    answers True for a port that is already serving. The picker then hands
+    that port to vite, `--strictPort` makes vite exit instead of sliding to
+    the next port, and the test dies with a boot error that reads like
+    flakiness — a stale leaked dev server (or anything else on the box) is
+    enough. Windows therefore sets ``SO_EXCLUSIVEADDRUSE`` — the documented
+    "this address is mine alone" — and takes a plain bind, which fails
+    exactly when the port is taken. A genuine TIME_WAIT port is then
+    reported busy: a false negative that only costs the picker another draw.
 
     Public so the ``UIHarness`` can share it without duplicating the
-    SO_REUSEADDR + bind() dance.
+    bind() dance.
     """
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if os.name == "nt":
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        else:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             s.bind(("127.0.0.1", port))
             return True

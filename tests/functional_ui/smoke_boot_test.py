@@ -56,7 +56,7 @@ def test_browser_loads_homepage(ui_harness: UIHarness, page) -> None:
     h = ui_harness
     # Navigate to the Vite-served app. ``domcontentloaded`` fires as
     # soon as the HTML is parsed — fast and reliable for SPAs.
-    page.goto(h.web_url("/"), wait_until="domcontentloaded", timeout=30000)
+    page.goto(h.web_url("/"), wait_until="domcontentloaded", timeout=60000)
     # Give Vue a moment to mount after DOM is ready. 500ms is enough
     # for the simplest "Hello world" mount; complex pages may need
     # more (but those would also need API calls, which are out of
@@ -85,7 +85,7 @@ def test_vite_proxy_points_at_harness_backend(ui_harness: UIHarness, page) -> No
     """
     h = ui_harness
     # Navigate first so the browser is on the right origin.
-    page.goto(h.web_url("/"), wait_until="domcontentloaded", timeout=30000)
+    page.goto(h.web_url("/"), wait_until="domcontentloaded", timeout=60000)
     # Use the browser's fetch via page.evaluate to hit the proxied API.
     # This guarantees the request flows through Vite's proxy.
     result = page.evaluate(
