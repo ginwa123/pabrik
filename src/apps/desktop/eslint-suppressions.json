@@ -1,282 +1,830 @@
 {
+  "src/App.vue": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
   "src/__tests__/KanbanRowView.preview.spec.ts": {
     "local/no-silent-fallback-catch": {
+      "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/__tests__/designLogger.spec.ts": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/__tests__/designSseStore.spec.ts": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/__tests__/kanbanSse.spec.ts": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/__tests__/kanbanSseMirrorMove.spec.ts": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/__tests__/sseClient.deeplog.spec.ts": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/api/__tests__/backgroundProcesses.spec.ts": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/api/__tests__/sseSkills.spec.ts": {
+    "local/no-try-catch": {
       "count": 1
     }
   },
   "src/api/index.ts": {
     "local/no-silent-fallback-catch": {
       "count": 4
+    },
+    "local/no-try-catch": {
+      "count": 47
     }
   },
   "src/components/AppLayout.vue": {
     "local/no-silent-fallback-catch": {
       "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 17
     }
   },
-  "src/components/pabrik/PabrikConfigEditor.vue": {
-    "local/no-silent-fallback-catch": {
-      "count": 2
+  "src/components/FilePickerDialog.vue": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/components/chat/ChatScrollSlider.vue": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/components/design/DesignElement.vue": {
+    "local/no-try-catch": {
+      "count": 1
     }
   },
   "src/components/design/DesignView.vue": {
     "local/no-silent-fallback-catch": {
+      "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 10
+    }
+  },
+  "src/components/design/PropertiesPanel.vue": {
+    "local/no-try-catch": {
+      "count": 2
+    }
+  },
+  "src/components/dialogs/AddMemoryDialog.vue": {
+    "local/no-try-catch": {
       "count": 1
     }
   },
   "src/components/dialogs/CopyKanbanSpecDialog.vue": {
     "local/no-silent-fallback-catch": {
       "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/components/dialogs/CreatePrDialog.vue": {
+    "local/no-try-catch": {
+      "count": 3
+    }
+  },
+  "src/components/file/FileInput.vue": {
+    "local/no-try-catch": {
+      "count": 2
+    }
+  },
+  "src/components/file/FolderExplorer.vue": {
+    "local/no-try-catch": {
+      "count": 2
+    }
+  },
+  "src/components/git/GitChanges.vue": {
+    "local/no-try-catch": {
+      "count": 5
     }
   },
   "src/components/git/GitCommits.vue": {
     "local/no-silent-fallback-catch": {
+      "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 3
+    }
+  },
+  "src/components/git/GitFileViewer.vue": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/components/kanban/FilePreviewModal.vue": {
+    "local/no-try-catch": {
       "count": 1
     }
   },
   "src/components/kanban/KanbanDescriptionEditor.vue": {
     "local/no-silent-fallback-catch": {
       "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 4
+    }
+  },
+  "src/components/kanban/KanbanPrList.vue": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/components/kanban/KanbanTaskDetail.vue": {
+    "local/no-try-catch": {
+      "count": 2
     }
   },
   "src/components/kanban/KanbanView.vue": {
     "local/no-silent-fallback-catch": {
       "count": 7
+    },
+    "local/no-try-catch": {
+      "count": 26
     }
   },
   "src/components/kanban/MarkdownDescription.vue": {
     "local/no-silent-fallback-catch": {
+      "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/components/memory/MemoryDetail.vue": {
+    "local/no-try-catch": {
+      "count": 4
+    }
+  },
+  "src/components/pabrik/LlmConfigForm.vue": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/components/pabrik/LlmConfigModal.vue": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/components/pabrik/McpServerModal.vue": {
+    "local/no-try-catch": {
+      "count": 2
+    }
+  },
+  "src/components/pabrik/PabrikConfigEditor.vue": {
+    "local/no-silent-fallback-catch": {
+      "count": 2
+    },
+    "local/no-try-catch": {
+      "count": 13
+    }
+  },
+  "src/components/preview/BackgroundCommandsPopup.vue": {
+    "local/no-try-catch": {
+      "count": 3
+    }
+  },
+  "src/components/preview/CompactionCard.vue": {
+    "local/no-try-catch": {
       "count": 1
     }
   },
   "src/components/preview/PreviewContentRenderer.vue": {
     "local/no-silent-fallback-catch": {
       "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 3
+    }
+  },
+  "src/components/preview/ShellTool.vue": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/components/preview/UseSkill.vue": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/components/settings/SettingsShell.vue": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/components/shell/RightSidebar.vue": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/components/shell/Sidebar.vue": {
+    "local/no-try-catch": {
+      "count": 6
+    }
+  },
+  "src/components/tool_outputs/AskUser.vue": {
+    "local/no-try-catch": {
+      "count": 2
+    }
+  },
+  "src/components/tool_outputs/GenerateImage.vue": {
+    "local/no-try-catch": {
+      "count": 2
     }
   },
   "src/components/tool_outputs/GetPlan.vue": {
     "local/no-silent-fallback-catch": {
       "count": 2
+    },
+    "local/no-try-catch": {
+      "count": 2
+    }
+  },
+  "src/components/tool_outputs/ListDirectory.vue": {
+    "local/no-try-catch": {
+      "count": 1
     }
   },
   "src/components/tool_outputs/ListSubAgent.vue": {
     "local/no-silent-fallback-catch": {
+      "count": 2
+    },
+    "local/no-try-catch": {
       "count": 2
     }
   },
   "src/components/tool_outputs/LoadMemory.vue": {
     "local/no-silent-fallback-catch": {
       "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/McpTool.vue": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/MemoryList.vue": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/PresentFiles.vue": {
+    "local/no-try-catch": {
+      "count": 5
     }
   },
   "src/components/tool_outputs/ReadCompactedMessages.vue": {
     "local/no-silent-fallback-catch": {
+      "count": 1
+    },
+    "local/no-try-catch": {
       "count": 1
     }
   },
   "src/components/tool_outputs/ReadWorkspaceSession.vue": {
     "local/no-silent-fallback-catch": {
       "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 2
     }
   },
   "src/components/tool_outputs/SaveMemory.vue": {
     "local/no-silent-fallback-catch": {
+      "count": 2
+    },
+    "local/no-try-catch": {
       "count": 2
     }
   },
   "src/components/tool_outputs/SpawnSubAgent.vue": {
     "local/no-silent-fallback-catch": {
       "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 1
     }
   },
   "src/components/tool_outputs/TextReplace.vue": {
     "local/no-silent-fallback-catch": {
+      "count": 1
+    },
+    "local/no-try-catch": {
       "count": 1
     }
   },
   "src/components/tool_outputs/UpdatePlan.vue": {
     "local/no-silent-fallback-catch": {
       "count": 2
+    },
+    "local/no-try-catch": {
+      "count": 2
     }
   },
   "src/components/tool_outputs/UsedTools.vue": {
     "local/no-silent-fallback-catch": {
+      "count": 2
+    },
+    "local/no-try-catch": {
+      "count": 2
+    }
+  },
+  "src/components/tool_outputs/WebSearch.vue": {
+    "local/no-try-catch": {
       "count": 2
     }
   },
   "src/components/tool_outputs/WriteFile.vue": {
     "local/no-silent-fallback-catch": {
       "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/__tests__/GetPlan.spec.ts": {
+    "local/no-try-catch": {
+      "count": 1
     }
   },
   "src/components/tool_outputs/__tests__/UpdatePlan.spec.ts": {
     "local/no-silent-fallback-catch": {
+      "count": 2
+    },
+    "local/no-try-catch": {
+      "count": 3
+    }
+  },
+  "src/components/tool_outputs/_shared/DiffView.vue": {
+    "local/no-try-catch": {
+      "count": 2
+    }
+  },
+  "src/components/tool_outputs/_shared/ToolCardHeader.vue": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/_shared/ToolParameters.vue": {
+    "local/no-try-catch": {
       "count": 2
     }
   },
   "src/components/tool_outputs/_shared/toolOutputParser.ts": {
     "local/no-silent-fallback-catch": {
       "count": 2
+    },
+    "local/no-try-catch": {
+      "count": 5
+    }
+  },
+  "src/components/views/AgentView.vue": {
+    "local/no-try-catch": {
+      "count": 1
     }
   },
   "src/components/views/ChatView.vue": {
     "local/no-silent-fallback-catch": {
       "count": 2
+    },
+    "local/no-try-catch": {
+      "count": 30
+    }
+  },
+  "src/components/views/ChatsList.vue": {
+    "local/no-try-catch": {
+      "count": 9
+    }
+  },
+  "src/components/views/CodeEditor.vue": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/components/views/KanbanKnowledgePanel.vue": {
+    "local/no-try-catch": {
+      "count": 7
     }
   },
   "src/components/views/KanbanSettingsView.vue": {
     "local/no-silent-fallback-catch": {
       "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 10
     }
   },
   "src/components/views/KanbanToolsPanel.vue": {
     "local/no-silent-fallback-catch": {
       "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 5
+    }
+  },
+  "src/components/views/LocalMemoryDetailView.vue": {
+    "local/no-try-catch": {
+      "count": 4
     }
   },
   "src/components/views/RoutineView.vue": {
     "local/no-silent-fallback-catch": {
+      "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 13
+    }
+  },
+  "src/components/views/WorkspaceItemMemoriesView.vue": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/components/views/__tests__/useChatRightSidebar.spec.ts": {
+    "local/no-try-catch": {
       "count": 1
     }
   },
   "src/components/views/chat_right_sidebar/ChatRightSidebar.vue": {
     "local/no-silent-fallback-catch": {
       "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 4
     }
   },
   "src/components/views/chat_right_sidebar/DiffCommentBox.vue": {
     "local/no-silent-fallback-catch": {
+      "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 10
+    }
+  },
+  "src/components/views/chat_right_sidebar/SidebarDiffPanel.vue": {
+    "local/no-try-catch": {
+      "count": 17
+    }
+  },
+  "src/components/views/chat_right_sidebar/SidebarDiffView.vue": {
+    "local/no-try-catch": {
       "count": 1
     }
   },
   "src/components/views/chat_right_sidebar/SkillEvalsPanel.vue": {
     "local/no-silent-fallback-catch": {
       "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 4
     }
   },
   "src/components/views/chat_right_sidebar/TerminalTab.vue": {
     "local/no-silent-fallback-catch": {
       "count": 2
+    },
+    "local/no-try-catch": {
+      "count": 12
     }
   },
   "src/components/views/chat_right_sidebar/parseUnifiedDiff.ts": {
     "local/no-silent-fallback-catch": {
+      "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 2
+    }
+  },
+  "src/components/views/chat_right_sidebar/useChatRightSidebar.ts": {
+    "local/no-try-catch": {
+      "count": 4
+    }
+  },
+  "src/components/workspace/WorkspaceItemTaskCard.vue": {
+    "local/no-try-catch": {
+      "count": 2
+    }
+  },
+  "src/components/workspace/WorkspaceItemTaskRow.vue": {
+    "local/no-try-catch": {
       "count": 1
     }
   },
   "src/composables/useChatScrollRestore.ts": {
     "local/no-silent-fallback-catch": {
       "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 2
     }
   },
   "src/composables/useCodeEditorSession.ts": {
     "local/no-silent-fallback-catch": {
       "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 6
     }
   },
   "src/composables/useDesignHandlers.ts": {
     "local/no-silent-fallback-catch": {
+      "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 11
+    }
+  },
+  "src/composables/useDesignHistory.ts": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/composables/useDocumentTitle.ts": {
+    "local/no-try-catch": {
       "count": 1
     }
   },
   "src/composables/useKanbanColumnScrollRestore.ts": {
     "local/no-silent-fallback-catch": {
       "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 2
     }
   },
   "src/composables/useKanbanScrollRestore.ts": {
     "local/no-silent-fallback-catch": {
       "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 2
     }
   },
   "src/composables/useKanbanTagSuggestions.ts": {
     "local/no-silent-fallback-catch": {
+      "count": 1
+    },
+    "local/no-try-catch": {
       "count": 1
     }
   },
   "src/composables/usePabrikConfig.ts": {
     "local/no-silent-fallback-catch": {
       "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 3
+    }
+  },
+  "src/composables/useProfileDelete.ts": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/composables/useSettingsSection.ts": {
+    "local/no-try-catch": {
+      "count": 5
+    }
+  },
+  "src/composables/useSubAgentPeek.ts": {
+    "local/no-try-catch": {
+      "count": 1
     }
   },
   "src/helpers/VirtualScroller.vue": {
     "local/no-silent-fallback-catch": {
+      "count": 2
+    },
+    "local/no-try-catch": {
       "count": 2
     }
   },
   "src/helpers/authMe.ts": {
     "local/no-silent-fallback-catch": {
       "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 5
+    }
+  },
+  "src/helpers/designLogger.ts": {
+    "local/no-try-catch": {
+      "count": 4
     }
   },
   "src/helpers/extractParam.ts": {
     "local/no-silent-fallback-catch": {
+      "count": 2
+    },
+    "local/no-try-catch": {
+      "count": 2
+    }
+  },
+  "src/helpers/frontendLogClient.ts": {
+    "local/no-try-catch": {
       "count": 2
     }
   },
   "src/helpers/gitStatusCache.ts": {
     "local/no-silent-fallback-catch": {
       "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 3
     }
   },
   "src/helpers/markdown.ts": {
     "local/no-silent-fallback-catch": {
       "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 3
+    }
+  },
+  "src/helpers/mergeWording.ts": {
+    "local/no-try-catch": {
+      "count": 2
     }
   },
   "src/helpers/parseSpawnSubAgentArgs.ts": {
     "local/no-silent-fallback-catch": {
       "count": 2
+    },
+    "local/no-try-catch": {
+      "count": 2
+    }
+  },
+  "src/helpers/prStatusCache.ts": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/helpers/renderResponse.ts": {
+    "local/no-try-catch": {
+      "count": 2
+    }
+  },
+  "src/helpers/scrollLogger.ts": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/helpers/sseBus.ts": {
+    "local/no-try-catch": {
+      "count": 5
+    }
+  },
+  "src/helpers/sseClient.ts": {
+    "local/no-try-catch": {
+      "count": 10
+    }
+  },
+  "src/helpers/sseTabChannel.ts": {
+    "local/no-try-catch": {
+      "count": 4
+    }
+  },
+  "src/helpers/tabTarget.ts": {
+    "local/no-try-catch": {
+      "count": 1
     }
   },
   "src/helpers/taskMediaCache.ts": {
     "local/no-silent-fallback-catch": {
       "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 6
     }
   },
   "src/helpers/unwrapToolOutput.ts": {
     "local/no-silent-fallback-catch": {
       "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 3
     }
   },
   "src/helpers/userScope.ts": {
     "local/no-silent-fallback-catch": {
+      "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 2
+    }
+  },
+  "src/helpers/windowId.ts": {
+    "local/no-try-catch": {
       "count": 1
     }
   },
   "src/helpers/workspacesCache.ts": {
     "local/no-silent-fallback-catch": {
       "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 3
     }
   },
   "src/router/index.ts": {
     "local/no-silent-fallback-catch": {
       "count": 2
+    },
+    "local/no-try-catch": {
+      "count": 3
+    }
+  },
+  "src/stores/agentToolToggle.ts": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/stores/agentTools.ts": {
+    "local/no-try-catch": {
+      "count": 1
     }
   },
   "src/stores/designHistory.ts": {
     "local/no-silent-fallback-catch": {
+      "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 2
+    }
+  },
+  "src/stores/documents.ts": {
+    "local/no-try-catch": {
+      "count": 4
+    }
+  },
+  "src/stores/kanbanSse.ts": {
+    "local/no-try-catch": {
       "count": 1
     }
   },
   "src/stores/recentFolders.ts": {
     "local/no-silent-fallback-catch": {
       "count": 1
+    },
+    "local/no-try-catch": {
+      "count": 2
     }
   },
   "src/stores/tabs.ts": {
     "local/no-silent-fallback-catch": {
       "count": 2
+    },
+    "local/no-try-catch": {
+      "count": 4
     }
   },
   "src/stores/workspaces.ts": {
     "local/no-silent-fallback-catch": {
       "count": 2
+    },
+    "local/no-try-catch": {
+      "count": 51
     }
   },
   "src/sync/IndexedDbStore.ts": {
     "local/no-silent-fallback-catch": {
       "count": 2
+    },
+    "local/no-try-catch": {
+      "count": 2
+    }
+  },
+  "src/views/LoginView.vue": {
+    "local/no-try-catch": {
+      "count": 3
     }
   }
 }
