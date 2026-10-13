@@ -666,7 +666,7 @@ test "saveMemory: content > 1 MiB returns ContentTooLarge" {
     defer ctx.db.deinit();
 
     // Allocate a 1 MiB + 1 byte buffer filled with 'x'.
-    const oversize = alloc.alloc(u8, (1 << 20) + 1) catch unreachable;
+    const oversize = alloc.alloc(u8, (1 << 20) + 1) catch @panic("alloc failed for the oversize agent-memories fixture");
     defer alloc.free(oversize);
     @memset(oversize, 'x');
 
@@ -800,7 +800,7 @@ test "loadMemoriesByFts: paginates via limit + offset and reports total_count" {
     // Insert 15 memories, each with a common word "match" (ids auto-generated).
     var i: u32 = 0;
     while (i < 15) : (i += 1) {
-        const content = std.fmt.allocPrint(alloc, "match row number {d}", .{i}) catch unreachable;
+        const content = std.fmt.allocPrint(alloc, "match row number {d}", .{i}) catch @panic("allocPrint failed for the agent-memories match row");
         defer alloc.free(content);
         const row = try saveMemory(alloc, &ctx.db, .{
             .content = content,

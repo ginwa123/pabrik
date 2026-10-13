@@ -653,7 +653,7 @@ test "extractPaths caps at MAX_REFERENCED_PATHS without erroring" {
     while (i < 120) : (i += 1) {
         try body.appendSlice(alloc, "src/dir");
         var buf: [16]u8 = undefined;
-        const n = std.fmt.bufPrint(&buf, "{d}", .{i}) catch unreachable;
+        const n = std.fmt.bufPrint(&buf, "{d}", .{i}) catch @panic("bufPrint failed formatting the skill-evals drift index");
         try body.appendSlice(alloc, n);
         try body.appendSlice(alloc, "/file.zig ");
     }

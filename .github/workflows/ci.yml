@@ -217,6 +217,24 @@ jobs:
         shell: bash
         run: pnpm run lint:check
 
+      - name: Zig coding standards (no `catch unreachable`)
+        # The second half of this job's gate, and the one .husky/pre-commit
+        # mirrors alongside the JS lint. It needs no toolchain install:
+        # the scan is a ripgrep one-liner, so it runs in ~50 ms and cannot
+        # fail for an environmental reason the way a build can.
+        #
+        # The selftest runs first for the same reason the `changes` job
+        # runs its own: a scanner that has stopped matching is a silent
+        # outage, and the only way to notice is to check it against known
+        # input on every invocation.
+        #
+        # The rule and its rationale live in CODING_STANDARDS.md.
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/lint-no-catch-unreachable.sh --selftest
+          bash scripts/lint-no-catch-unreachable.sh
+
   # ── 2. Backend, one job per platform ────────────────────────────────
   # Three calls of the same reusable workflow instead of one 3-cell
   # matrix. The `if` says three things at once, and each is load-bearing:

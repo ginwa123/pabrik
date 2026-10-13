@@ -2504,9 +2504,9 @@ pub const LlmConfig = struct {
         defer cfg.deinit();
 
         var cmd_buf: [16]u8 = undefined;
-        const cmd_src = std.fmt.bufPrint(&cmd_buf, "initial", .{}) catch unreachable;
+        const cmd_src = std.fmt.bufPrint(&cmd_buf, "initial", .{}) catch @panic("bufPrint failed formatting the addMcpServerStdio command fixture");
         var cwd_buf: [16]u8 = undefined;
-        const cwd_src = std.fmt.bufPrint(&cwd_buf, "/initial", .{}) catch unreachable;
+        const cwd_src = std.fmt.bufPrint(&cwd_buf, "/initial", .{}) catch @panic("bufPrint failed formatting the addMcpServerStdio cwd fixture");
 
         try cfg.addMcpServerStdio(.{
             .name = "leak-guard",

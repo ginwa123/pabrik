@@ -2511,7 +2511,7 @@ fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
     return .{ .db = db, .threaded = threaded };
 }
 
-fn teardownDb(s: *@TypeOf(setupDb() catch unreachable)) void {
+fn teardownDb(s: *@TypeOf(setupDb() catch @panic("setupDb failed in the workflow test fixture"))) void {
     s.db.deinit();
     s.threaded.deinit();
 }
