@@ -279,7 +279,7 @@ test "useCase: an empty workspace_id is WorkspaceIdRequired, a 400" {
         error.WorkspaceIdRequired,
         alloc,
         "",
-    ) catch unreachable);
+    ) catch @panic("allocPrint failed for the secrets_create message fixture"));
 }
 
 test "useCase: a blank name is NameRequired, a 400" {
@@ -314,7 +314,7 @@ test "useCase: a name the placeholder grammar cannot spell is InvalidName, a 400
         error.InvalidName,
         alloc,
         "x",
-    ) catch unreachable);
+    ) catch @panic("allocPrint failed for the secrets_create message fixture"));
 }
 
 test "useCase: value \"\" is ValueRequired, a 400 — never a 500 constraint error" {
@@ -339,7 +339,7 @@ test "useCase: value \"\" is ValueRequired, a 400 — never a 500 constraint err
         error.ValueRequired,
         alloc,
         "GITHUB_TOKEN",
-    ) catch unreachable);
+    ) catch @panic("allocPrint failed for the secrets_create message fixture"));
 
     // Nothing was written on the way to the error.
     try testing.expectEqual(@as(usize, 0), try countRows(&ctx));
@@ -408,6 +408,6 @@ test "useCase: the same name in a second workspace is not a duplicate" {
 
 test "useCase: a store failure is a 500 DB error" {
     try testing.expectEqual(@as(u16, 500), statusFor(error.InsertFailed));
-    try testing.expectEqualStrings("DB error", messageFor(error.InsertFailed, testing.allocator, "x") catch unreachable);
+    try testing.expectEqualStrings("DB error", messageFor(error.InsertFailed, testing.allocator, "x") catch @panic("allocPrint failed for the secrets_create message fixture"));
     try testing.expectEqual(@as(u16, 500), statusFor(error.OutOfMemory));
 }

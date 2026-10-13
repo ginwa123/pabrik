@@ -28,6 +28,12 @@
 //! `initFromJsonText` the on-disk path uses. A session with no overlay takes
 //! the pre-existing path unchanged.
 //!
+//! The session's workspace comes from `sessionWorkspace`:
+//! `sessions.workspace_id` when a writer has set it, else
+//! `workspace_scope.resolveWorkspaceId` (the task link, then the `cwd`
+//! heuristic). No INSERT populates that column, so the resolver is what
+//! actually finds the overlay for a real chat.
+//!
 //! `null` from either entry point means "the singleton is authoritative"
 //! and covers every case where the database is not: file mode (`--auth`
 //! off), no singleton, a session with no owner, a user who never saved
@@ -40,16 +46,20 @@
 //!
 //! THE RULE (one module, one owner): this file is the only place that decides
 //! which `LlmConfig` a user-scoped read sees. Call sites use one of exactly
-//! two entry points and MUST NOT hand-roll `getLlmConfig(di)` for user-scoped
+//! three entry points and MUST NOT hand-roll `getLlmConfig(di)` for user-scoped
 //! data:
 //!
 //!   * `forSession` — anything that has a `sessions.id` (the workflow loop,
 //!     the message and compaction read paths, the context-window cascade,
 //!     the session-create profile snapshot).
+//!   * `forOwnerAndWorkspace` — a request-scoped handler that knows the
+//!     workspace but has no session row yet (`kanban_tasks_create`). Same
+//!     layering as `forSession`, minus the session.
 //!   * `auth_common.requestUserConfig` (`http_handlers`) — request-scoped
-//!     handlers that have a cookie but no session row yet (workspace/agent/
-//!     kanban seeding, web status); it resolves the cookie to an owner and
-//!     calls `forOwner` here, so the rule still has one implementation.
+//!     handlers that have a cookie but no session row AND no workspace id
+//!     (workspace/agent seeding, web status); it resolves the cookie to an
+//!     owner and calls `forOwner` here, so the rule still has one
+//!     implementation.
 //!
 //! Direct `getLlmConfig(di)` reads that legitimately stay outside:
 //! boot (`main.zig`) and the Settings handlers (they read/write
@@ -65,6 +75,7 @@ const pabrikcore = @import("pabrikcore");
 const config_mod = @import("../modules/config/Config.zig");
 const workspace_config = @import("workspace_config.zig");
 const workspace_settings_store = @import("workspace_settings_store.zig");
+const workspace_scope = @import("workspace_scope.zig");
 
 /// The `LlmConfig` in force for `session_id`, or null when the process-global
 /// singleton should be read instead.
@@ -168,11 +179,33 @@ pub fn mergedConfigTextFor(
     return workspace_config.overlayJson(allocator, base orelse "", overlay.?) catch null;
 }
 
-/// The workspace this session belongs to, or `""` when the row carries none.
+/// The workspace this session belongs to, or `""` when it has none.
 ///
-/// Sibling of `sessionOwner`: same query, same table, same single-source rule
-/// - the workspace overlay's key needs BOTH halves, so they are read from one
-/// row in one place rather than assembled by each caller.
+/// Two sources, in order:
+///
+///   1. `sessions.workspace_id` — an explicit binding, authoritative when a
+///      writer has set one, and one cheap read.
+///   2. `workspace_scope.resolveWorkspaceId` — the SAME rule the rest of the
+///      app answers "which workspace is this chat in" with: the task link
+///      (`workspace_item_tasks.id` IS the session id for kanban / routine
+///      tasks), then a longest-prefix `cwd` match against
+///      `workspace_items.path`, fail-closed to null.
+///
+/// Step 2 is what makes the workspace layer reachable at all. The column has
+/// existed for a while, but NOTHING writes it: every INSERT that creates a
+/// session row (`session_create`, `kanban_tasks_create`, `insert_worker`,
+/// `ensureSessionExists`) omits `workspace_id`, and no statement in the repo
+/// runs `UPDATE sessions SET workspace_id = ...`. Reading only the column
+/// therefore answered `""` for every real session, `mergedConfigTextFor` took
+/// its "no overlay" branch, and the workspace overlay (Settings -> Workspace:
+/// Active, Profiles, tools, MCP servers) was silently dead for every run —
+/// the settings screen read the overlay while the turn read
+/// `users.config_json`. A kanban chat in a workspace whose Active profile is
+/// `deepseek auto` still ran the user-level `killll`, and the model changed
+/// under the user mid-conversation.
+///
+/// Sibling of `sessionOwner`: same table, same single-source rule — do not
+/// hand-roll a second "which workspace" query.
 pub fn sessionWorkspace(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -188,7 +221,14 @@ pub fn sessionWorkspace(
     const r = row orelse return error.UnknownSession;
     defer r.deinit(allocator);
     if (r.values.len < 1) return error.SessionHasNoWorkspace;
-    return try allocator.dupe(u8, r.values[0]);
+    if (r.values[0].len > 0) return try allocator.dupe(u8, r.values[0]);
+
+    // Empty column: fall back to the canonical resolver. An unresolvable
+    // session (no task link, no cwd match, an ambiguous tie) is a legal
+    // legacy row and reads as "no workspace" - no overlay, no error.
+    const resolved = try workspace_scope.resolveWorkspaceId(allocator, db, session_id);
+    if (resolved) |w| return w;
+    return try allocator.dupe(u8, "");
 }
 
 /// The `LlmConfig` stored in `users.config_json` for `owner`, or null when
@@ -213,6 +253,48 @@ pub fn forOwner(
     const content = raw orelse return null;
     defer allocator.free(content);
     return fromJsonText(allocator, content);
+}
+
+/// The `LlmConfig` for an `(owner, workspace)` pair with no session row in
+/// play: the request-scoped sibling of `forSession`.
+///
+/// For a handler that already knows its workspace — `kanban_tasks_create`
+/// carries `:workspace_id` in the path — this is the layered answer a run in
+/// that workspace will get, so a value seeded into a brand-new task's session
+/// row agrees with what the turn later resolves. `forOwner` there made a new
+/// task in a workspace whose Active profile is `deepseek auto` start on the
+/// user-level `killll`, and `workflow.zig`'s non-empty profile write-back then
+/// made that sticky.
+///
+/// `null` means "nothing scoped to read" — no overlay in file mode, an
+/// anonymous caller in `--auth` mode, an unparseable result — and every caller
+/// falls back to `forOwner` / the singleton, i.e. to the pre-existing
+/// behaviour. Allocated with `allocator` (a request arena in production).
+pub fn forOwnerAndWorkspace(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    db: *pabrikcore.sqlite.SqliteBackend,
+    environment: ?*const std.process.Environ.Map,
+    auth_enabled: bool,
+    owner: []const u8,
+    workspace_id: []const u8,
+) ?*config_mod.LlmConfig {
+    // In auth mode the overlay is keyed by the requesting user, so an empty
+    // owner is "no identity" and must not fall through to the shared
+    // file-mode bucket.
+    if (auth_enabled and owner.len == 0) return null;
+    if (workspace_id.len == 0) return forOwner(allocator, db, owner);
+    const text = mergedConfigTextFor(
+        allocator,
+        io,
+        db,
+        environment,
+        auth_enabled,
+        owner,
+        workspace_id,
+    ) orelse return null;
+    defer allocator.free(text);
+    return fromJsonText(allocator, text);
 }
 
 /// Parse one user's saved config into a heap `LlmConfig` owned by
@@ -604,4 +686,132 @@ test "sessionWorkspace reads the row, and an unknown session is an error" {
     const none = try sessionWorkspace(alloc, &ctx.db, "s_2");
     defer alloc.free(none);
     try testing.expectEqualStrings("", none);
+}
+
+// ─── Reachability of the workspace layer ───────────────────────────────────
+//
+// `forSession` is what makes the overlay apply to a real chat, and it can only
+// layer the overlay once it knows the workspace. Every INSERT that creates a
+// session row omits `workspace_id`, and no `UPDATE sessions SET workspace_id`
+// exists anywhere in the repo — so before the fallback in `sessionWorkspace`
+// the lookup answered "" for every session, `mergedConfigTextFor` always took
+// its "no overlay" branch, and the workspace layer was dead: the settings
+// screen showed the workspace's Active profile while every turn ran
+// `users.config_json`'s. These pin the seam that un-dies it.
+
+test "sessionWorkspace: an empty column resolves through the task link" {
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+    const alloc = testing.allocator;
+
+    // Exactly the shape a kanban create writes: a sessions row with no
+    // workspace_id, plus the task row whose id IS the session id (Migration
+    // 052 dropped the redundant `session_id` column).
+    try ctx.db.exec(
+        alloc,
+        "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('wi_1', 'ws_kanban', 'kanban')",
+        &.{},
+    );
+    try ctx.db.exec(
+        alloc,
+        "INSERT INTO workspace_item_tasks (id, name, workspace_item_id) VALUES ('s_task', 'T', 'wi_1')",
+        &.{},
+    );
+    try ctx.db.exec(
+        alloc,
+        "INSERT INTO sessions (id, name, status, user_id) VALUES ('s_task', 's', 'active', 'u_1')",
+        &.{},
+    );
+
+    const ws = try sessionWorkspace(alloc, &ctx.db, "s_task");
+    defer alloc.free(ws);
+    try testing.expectEqualStrings("ws_kanban", ws);
+}
+
+test "sessionWorkspace: a set column still wins over the task link" {
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+    const alloc = testing.allocator;
+
+    // An explicit binding is authoritative: a future writer of the column must
+    // not be overridden by the (heuristic) resolver.
+    try ctx.db.exec(
+        alloc,
+        "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('wi_1', 'ws_from_task', 'kanban')",
+        &.{},
+    );
+    try ctx.db.exec(
+        alloc,
+        "INSERT INTO workspace_item_tasks (id, name, workspace_item_id) VALUES ('s_bound', 'T', 'wi_1')",
+        &.{},
+    );
+    try ctx.db.exec(
+        alloc,
+        "INSERT INTO sessions (id, name, status, user_id, workspace_id) VALUES ('s_bound', 's', 'active', 'u_1', 'ws_bound')",
+        &.{},
+    );
+
+    const ws = try sessionWorkspace(alloc, &ctx.db, "s_bound");
+    defer alloc.free(ws);
+    try testing.expectEqualStrings("ws_bound", ws);
+}
+
+test "sessionWorkspace: no task link and no cwd match reads as no workspace" {
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+    const alloc = testing.allocator;
+
+    // A plain chat outside every workspace item path: fail closed to "", no
+    // overlay, no error. `workspace_scope.resolveWorkspaceId` owns that rule.
+    try ctx.db.exec(
+        alloc,
+        "INSERT INTO sessions (id, name, status, user_id, cwd) VALUES ('s_plain', 's', 'active', 'u_1', '/nowhere/at/all')",
+        &.{},
+    );
+    const ws = try sessionWorkspace(alloc, &ctx.db, "s_plain");
+    defer alloc.free(ws);
+    try testing.expectEqualStrings("", ws);
+}
+
+test "forOwnerAndWorkspace: the overlay's active_profile wins over the user's" {
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+    const alloc = testing.allocator;
+
+    try insertUser(
+        &ctx.db,
+        "u_1",
+        "{\"profiles_models\":{\"user-default\":{\"model\":\"user-model\",\"base_url\":\"http://user.example/v1\"}}," ++
+            "\"active_profile\":\"user-default\"}",
+    );
+    try putOverlay(
+        &ctx.db,
+        "u_1",
+        "ws_a",
+        "{\"profiles_models\":{\"ws-default\":{\"model\":\"ws-model\",\"base_url\":\"http://ws.example/v1\"}}," ++
+            "\"active_profile\":\"ws-default\"}",
+    );
+
+    const cfg = forOwnerAndWorkspace(alloc, ctx.threaded.io(), &ctx.db, null, true, "u_1", "ws_a") orelse
+        return error.ScopedConfigMissing;
+    defer freeResolved(cfg);
+    try testing.expectEqualStrings("ws-default", cfg.active_profile.?);
+    try testing.expectEqualStrings("ws-model", cfg.resolveEffectiveProfile(cfg.active_profile.?).model);
+    // The user's own profile survives the merge: the overlay only named the
+    // active one (positive control for "layered", not "swapped").
+    try testing.expect(cfg.profiles_models.get("user-default") != null);
+
+    // No workspace id: the user-level answer, unchanged.
+    const plain = forOwnerAndWorkspace(alloc, ctx.threaded.io(), &ctx.db, null, true, "u_1", "") orelse
+        return error.UserConfigMissing;
+    defer freeResolved(plain);
+    try testing.expectEqualStrings("user-default", plain.active_profile.?);
+
+    // No identity in auth mode: nothing scoped, so the caller falls back to
+    // the singleton rather than to the shared file-mode bucket.
+    try testing.expect(forOwnerAndWorkspace(alloc, ctx.threaded.io(), &ctx.db, null, true, "", "ws_a") == null);
 }

@@ -182,7 +182,7 @@ fn setupDb() !struct {
     return .{ .db = db, .threaded = threaded, .alloc = alloc };
 }
 
-fn teardown(s: *@TypeOf(setupDb() catch unreachable)) void {
+fn teardown(s: *@TypeOf(setupDb() catch @panic("setupDb failed in the design_elements_ungroup test fixture"))) void {
     s.db.deinit();
     s.threaded.deinit();
 }

@@ -36,7 +36,7 @@ pub const EventBus = struct {
     }
 
     pub fn unsubscribe(self: *Self, id: []const u8) void {
-        self.mutex.lock(self.io) catch unreachable;
+        self.mutex.lock(self.io) catch @panic("event_bus: mutex lock failed in unsubscribe");
         defer self.mutex.unlock(self.io);
 
         if (self.listeners.fetchRemove(id)) |entry| {
@@ -45,8 +45,9 @@ pub const EventBus = struct {
     }
 
     pub fn emit(self: *Self, comptime T: type, id: []const u8, data: T) void {
-        // self.mutex.lock(self.io) catch unreachable;
-        // defer self.mutex.unlock(self.io);
+        // Deliberately unlocked: emit runs on the caller's thread and the
+        // listener map is only mutated under the lock elsewhere, so taking
+        // it here would serialise every dispatch behind subscribe/unsubscribe.
 
         if (self.listeners.get(id)) |cb| {
             const typed_fn: *const fn (T) void = @ptrCast(@alignCast(cb.ptr));
@@ -55,7 +56,7 @@ pub const EventBus = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        self.mutex.lock(self.io) catch unreachable;
+        self.mutex.lock(self.io) catch @panic("event_bus: mutex lock failed in deinit");
         defer self.mutex.unlock(self.io);
 
         var it = self.listeners.keyIterator();

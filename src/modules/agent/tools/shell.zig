@@ -391,6 +391,341 @@ pub fn status_to_term(status: c_int) std.process.Child.Term {
     return .{ .unknown = u };
 }
 
+// ============================================================================
+// Foreground deadline enforcement
+//
+// The deadline has to mean two things, and the old code only delivered the
+// first:
+//
+//   1. the child is terminated when the deadline passes — on EVERY platform.
+//      Both kill sites used to be `if (comptime builtin.os.tag != .windows)`,
+//      so on Windows the deadline only recorded `timeout_hit` while the child
+//      — and any dialog it had put on screen — kept running.
+//   2. the CALL returns when the deadline says it does. That is the hard part:
+//      stdout/stderr are read by two threads that finish only on pipe EOF, and
+//      a process that survived the kill still holds the write ends (POSIX: a
+//      `setsid`/`nohup` descendant that escaped the process group; Windows: a
+//      `start /b` grandchild of the direct child). The old code then did a
+//      plain `std.Thread.join()`, which has no timeout — so the tool never
+//      returned and the agent workflow loop hung with it: "the deadline fired
+//      and nothing came back". `Reader` + `settleReader` below bound that join.
+// ============================================================================
+
+/// Win32 TerminateProcess — declared locally for the same reason as
+/// `GetExitCodeProcess` above: Zig 0.16's `std.os.windows` does not export it.
+/// `child.kill(io)` is NOT a substitute: on Windows it waits on the process
+/// handle without a bound, and it clears `child.id`, which `wait_pid_bounded`
+/// needs for the exit-code harvest.
+extern "kernel32" fn TerminateProcess(
+    hProcess: std.os.windows.HANDLE,
+    uExitCode: u32,
+) callconv(.winapi) std.os.windows.BOOL;
+
+/// Grace the reader threads get to observe EOF once the deadline kill has been
+/// issued. In the common case — the whole process group dies — EOF arrives in
+/// milliseconds; the grace exists for the case where a descendant SURVIVED the
+/// kill and therefore never closes the pipe. When it expires the call returns
+/// anyway; see `settleReader`.
+const READER_JOIN_GRACE_PERIOD_NS: u64 = 2 * std.time.ns_per_s;
+
+/// Reader threads that were handed off instead of joined (see `settleReader`).
+///
+/// Non-zero means a process that outlived the deadline kill is still holding a
+/// pipe. Each such reader releases its own state and decrements this once the
+/// pipe finally closes — it is the observable form of "we returned a timeout
+/// result without waiting for a stray descendant", and it returns to zero even
+/// though nobody joined that thread.
+pub var abandoned_reader_count: std.atomic.Value(usize) = .init(0);
+
+/// How the deadline terminates the child. Pure data, with the OS tag as a
+/// PARAMETER rather than a read of `builtin.os.tag`, so the Windows arm is
+/// assertable from a Linux runner — the same reason `backgroundSpec` takes the
+/// tag instead of reading the host.
+const TimeoutKill = enum {
+    /// `kill(-pgid, SIGKILL)`: the child leads its own process group
+    /// (`.pgid = 0` at spawn), so one syscall reaches the whole tree.
+    process_group,
+    /// `TerminateProcess(handle)`: Windows has no process groups, so the direct
+    /// child is the only handle we own.
+    child_handle,
+};
+
+fn timeoutKillPlan(comptime os_tag: std.Target.Os.Tag) []const TimeoutKill {
+    return switch (os_tag) {
+        .windows => &.{.child_handle},
+        else => &.{.process_group},
+    };
+}
+
+/// Terminate the child — and on POSIX its whole process group — when the
+/// deadline passes. Best-effort by nature: a descendant that escaped the group
+/// cannot be reached from here, which is exactly why the caller must not depend
+/// on the pipes closing (see `Reader`).
+fn terminateTimedOutChild(child: *const std.process.Child, child_pgid: c_int) void {
+    for (timeoutKillPlan(builtin.os.tag)) |kill| {
+        switch (kill) {
+            .process_group => {
+                if (comptime builtin.os.tag != .windows) {
+                    _ = std.posix.kill(-child_pgid, .KILL) catch {};
+                }
+            },
+            .child_handle => {
+                if (comptime builtin.os.tag == .windows) {
+                    if (child.id) |handle| _ = TerminateProcess(handle, 1);
+                }
+            },
+        }
+    }
+}
+
+/// One foreground output stream: the pipe, what has been captured from it, and
+/// the ownership protocol that lets the reader thread OUTLIVE the call that
+/// spawned it.
+///
+/// It is heap-allocated and self-contained on purpose. When a pipe holder
+/// survives the deadline kill the reader can still be parked in
+/// `readStreaming` long after `run_shell_command` has to return, so it cannot
+/// be left pointing at that frame — and it cannot use the caller's allocator
+/// either, because the caller's allocator may be an arena that dies with the
+/// tool call. The state and the captured bytes therefore come from
+/// `std.heap.smp_allocator` (thread-safe, process-lifetime), and the caller
+/// copies what it returns into its own allocator.
+const Reader = struct {
+    stream: std.Io.File,
+    io: std.Io,
+    buf: [4096]u8 = undefined,
+    data: std.ArrayList(u8) = .empty,
+    line_count: usize = 0,
+    truncated: bool = false,
+    max_output: usize,
+    max_lines: usize,
+    /// Published under `mutex` when the read loop is done; every field above is
+    /// frozen from that point on.
+    eof: std.atomic.Value(bool) = .init(false),
+    /// Set under `mutex` by the caller when it stops waiting for `eof`: the
+    /// reader stops capturing and takes ownership of this state.
+    handed_off: bool = false,
+    /// Lock-free mirror of `handed_off` for the capture path.
+    abandoned: std.atomic.Value(bool) = .init(false),
+    mutex: std.atomic.Mutex = .unlocked,
+
+    fn create(io: std.Io, stream: std.Io.File, max_output: usize, max_lines: usize) !*Reader {
+        const self = try std.heap.smp_allocator.create(Reader);
+        self.* = .{
+            .stream = stream,
+            .io = io,
+            .max_output = max_output,
+            .max_lines = max_lines,
+        };
+        return self;
+    }
+
+    /// Close the read end and release the state. Exactly one side calls this —
+    /// see `settleReader`.
+    fn destroy(self: *Reader) void {
+        self.stream.close(self.io);
+        self.data.deinit(std.heap.smp_allocator);
+        std.heap.smp_allocator.destroy(self);
+    }
+
+    fn lock(self: *Reader) void {
+        while (!self.mutex.tryLock()) std.atomic.spinLoopHint();
+    }
+
+    fn unlock(self: *Reader) void {
+        self.mutex.unlock();
+    }
+
+    fn run(self: *Reader) void {
+        self.readLoop();
+        self.publishEof();
+    }
+
+    /// Exit path. `eof` and the ownership decision are published in ONE critical
+    /// section, and the caller decides under the same `mutex`, so the two cannot
+    /// interleave: either the caller sees `eof` and releases the state, or it
+    /// leaves `handed_off` set and this thread releases it. Never both
+    /// (use-after-free), never neither (leak).
+    fn publishEof(self: *Reader) void {
+        self.lock();
+        const orphan = self.handed_off;
+        self.eof.store(true, .release);
+        self.unlock();
+        if (orphan) {
+            _ = abandoned_reader_count.fetchSub(1, .monotonic);
+            self.destroy();
+        }
+    }
+
+    fn readLoop(self: *Reader) void {
+        while (true) {
+            const n = std.Io.File.readStreaming(self.stream, self.io, &.{self.buf[0..]}) catch return;
+            if (n == 0) return;
+            for (self.buf[0..n]) |byte| {
+                if (byte == '\n') self.line_count += 1;
+            }
+            if (self.abandoned.load(.acquire)) {
+                // The caller has already built its answer from the snapshot.
+                // Keep draining — a detached writer must not block on a full
+                // pipe — but stop capturing, so nothing here grows after the
+                // call returned.
+                continue;
+            }
+            self.lock();
+            defer self.unlock();
+            if (self.abandoned.load(.acquire)) continue;
+            if (!self.truncated) {
+                self.data.appendSlice(std.heap.smp_allocator, self.buf[0..n]) catch return;
+                if (self.data.items.len >= self.max_output or self.line_count >= self.max_lines) {
+                    self.truncated = true;
+                    var trim_pos: usize = self.data.items.len;
+                    if (self.line_count >= self.max_lines) {
+                        var count: usize = 0;
+                        for (self.data.items, 0..) |b, i| {
+                            if (b == '\n') {
+                                count += 1;
+                                if (count == self.max_lines) {
+                                    trim_pos = i + 1;
+                                    break;
+                                }
+                            }
+                        }
+                    } else if (self.data.items.len > self.max_output) {
+                        trim_pos = self.max_output;
+                    }
+                    if (self.data.items.len > trim_pos) {
+                        self.data.shrinkAndFree(std.heap.smp_allocator, trim_pos);
+                    }
+                }
+            }
+        }
+    }
+};
+
+/// Whose job it is to release a settled reader state.
+const Ownership = enum {
+    /// The reader is done. Its fields are frozen, so the caller may read them
+    /// and must release the state (which closes the read end).
+    caller,
+    /// The reader never saw EOF: it was handed the state, stops capturing, and
+    /// releases it itself once the pipe finally closes.
+    reader,
+};
+
+/// Bounded join for one reader: wait until `deadline_ns` for EOF, then decide who
+/// releases the state.
+///
+/// This is the fix for the hang. `std.Thread.join` has no timeout, and a reader
+/// blocked on a pipe whose write end is held elsewhere never returns — so the
+/// wait has to be a poll, and the "join or hand off" decision has to be taken
+/// under the reader's own `mutex` to stay single-valued.
+///
+/// The deadline is ABSOLUTE and shared by both readers (`readersDeadline`), so
+/// the grace is a budget for the call, not two budgets spent back to back.
+fn settleReader(state: *Reader, thread: ?std.Thread, deadline_ns: u64, label: []const u8) Ownership {
+    if (thread == null) return .caller; // Spawn failed: it never ran, nothing to wait for.
+    while (true) {
+        state.lock();
+        if (state.eof.load(.acquire)) {
+            state.unlock();
+            thread.?.join(); // Already past its last statement.
+            return .caller;
+        }
+        if (helpers.monotonicTimestampNanos() >= deadline_ns) {
+            state.handed_off = true;
+            state.abandoned.store(true, .release);
+            state.unlock();
+            _ = abandoned_reader_count.fetchAdd(1, .monotonic);
+            std.log.warn(
+                "shell: a process that outlived the deadline kill still holds the {s} pipe; returning the timeout result without waiting for it",
+                .{label},
+            );
+            return .reader;
+        }
+        state.unlock();
+        pollSleep10ms();
+    }
+}
+
+/// Settle every reader that has not been taken over yet, and clear its slot so a
+/// later error cannot settle (and release) the same state twice.
+fn settlePendingReaders(pending: []?*Reader, threads: []const ?std.Thread, deadline_ns: u64) void {
+    const labels = [_][]const u8{ "stdout", "stderr" };
+    for (pending, 0..) |*slot, i| {
+        const state = slot.* orelse continue;
+        if (settleReader(state, threads[i], deadline_ns, labels[i]) == .caller) state.destroy();
+        slot.* = null;
+    }
+}
+
+/// When the readers have to be settled by: one grace period for the CALL, spent
+/// across both streams rather than two graces spent back to back.
+fn readersDeadline() u64 {
+    return helpers.monotonicTimestampNanos() + READER_JOIN_GRACE_PERIOD_NS;
+}
+
+/// What the caller gets back from one stream.
+const Captured = struct {
+    /// The bytes to return: the empty-capture placeholder, or the capture cut to
+    /// `max_output`. Owned by the caller's allocator.
+    bytes: []u8,
+    line_count: usize,
+    truncated: bool,
+    /// The reader was handed off — a pipe holder outlived the kill — so this is
+    /// whatever had arrived by the deadline.
+    abandoned: bool,
+};
+
+/// Settle one reader and copy what it captured, into `alloc`. The copy happens
+/// while this side still owns the state, which is what makes it safe even when
+/// the reader is handed off (an abandoned reader stops appending under its own
+/// lock, and we read under that same lock).
+///
+/// The state is released on EVERY path out of here — success, error, and
+/// handoff — so the caller must clear its pending slot before calling.
+fn captureStream(
+    alloc: std.mem.Allocator,
+    state: *Reader,
+    thread: ?std.Thread,
+    deadline_ns: u64,
+    label: []const u8,
+    max_output: usize,
+    empty_placeholder: []const u8,
+) !Captured {
+    const ownership = settleReader(state, thread, deadline_ns, label);
+    if (ownership == .reader) {
+        state.lock();
+        defer state.unlock();
+        return .{
+            .bytes = try shapeCapture(alloc, state.data.items, max_output, empty_placeholder),
+            .line_count = state.line_count,
+            .truncated = state.truncated,
+            .abandoned = true,
+        };
+    }
+    defer state.destroy();
+    return .{
+        .bytes = try shapeCapture(alloc, state.data.items, max_output, empty_placeholder),
+        .line_count = state.line_count,
+        .truncated = state.truncated,
+        .abandoned = false,
+    };
+}
+
+/// The empty / over-long policy the tool has always applied to a captured
+/// stream: no output at all reads as `empty_placeholder`, anything past
+/// `max_output` is cut.
+fn shapeCapture(
+    alloc: std.mem.Allocator,
+    raw: []const u8,
+    max_output: usize,
+    empty_placeholder: []const u8,
+) ![]u8 {
+    if (raw.len == 0) return alloc.dupe(u8, empty_placeholder);
+    if (raw.len > max_output) return alloc.dupe(u8, raw[0..max_output]);
+    return alloc.dupe(u8, raw);
+}
+
 pub fn execute_shell(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -521,9 +856,9 @@ pub fn run_shell_command(
         @compileError("child.id is not a POSIX pid_t on a POSIX host");
     };
     errdefer {
-        if (builtin.os.tag != .windows) {
-            _ = std.posix.kill(-child_pgid, .KILL) catch {};
-        }
+        // Terminate on every platform — see `terminateTimedOutChild`. This used
+        // to be POSIX-only, so a failed Windows spawn left the child running.
+        terminateTimedOutChild(&child, child_pgid);
         _ = wait_pid_bounded(io, &child, KILL_GRACE_PERIOD_NS);
         if (child.stdout) |stdout_pipe| stdout_pipe.close(io);
         if (child.stderr) |stderr_pipe| stderr_pipe.close(io);
@@ -542,123 +877,31 @@ pub fn run_shell_command(
 
     const timeout_ns = @as(u64, timeout_sec) * std.time.ns_per_s;
 
-    var stdout_data: std.ArrayList(u8) = .empty;
-    var stderr_data: std.ArrayList(u8) = .empty;
-    defer {
-        stdout_data.deinit(allocator);
-        stderr_data.deinit(allocator);
+    // The pipes stay attached to `child` until BOTH readers exist, so the
+    // spawn-time errdefer still closes them if one of these allocations fails.
+    const stdout_reader = try Reader.create(io, child.stdout.?, max_output, max_lines);
+    const stderr_reader = try Reader.create(io, child.stderr.?, max_output, max_lines);
+    // Ownership of both pipes is in the readers now: nothing below may close
+    // them, and the spawn-time errdefer above must not either.
+    child.stdout = null;
+    child.stderr = null;
+
+    const readers = [2]*Reader{ stdout_reader, stderr_reader };
+    // `pending` is the settle ledger: a slot goes null the moment that reader
+    // changes hands (`captureStream`), so the errdefer can never settle — and
+    // release — the same state twice. A slot whose spawn never happened is still
+    // set, and `settleReader` handles that (there is nothing to wait for).
+    var pending = [2]?*Reader{ stdout_reader, stderr_reader };
+    var threads: [2]?std.Thread = .{ null, null };
+    errdefer {
+        // The spawn-time errdefer above terminates the child; this one settles
+        // the readers — a plain `join()` here would be unbounded, which is the
+        // hang this file is fixing.
+        settlePendingReaders(pending[0..], threads[0..], readersDeadline());
     }
 
-    var stdout_line_count: usize = 0;
-    var stderr_line_count: usize = 0;
-    var stdout_truncated = false;
-    var stderr_truncated = false;
-    var stdout_eof = std.atomic.Value(bool).init(false);
-    var stderr_eof = std.atomic.Value(bool).init(false);
-    var stdout_mutex: std.atomic.Mutex = .unlocked;
-    var stderr_mutex: std.atomic.Mutex = .unlocked;
-
-    const ReadContext = struct {
-        stream: std.Io.File,
-        io: std.Io,
-        buf: *[4096]u8,
-        data: *std.ArrayList(u8),
-        line_count: *usize,
-        truncated: *bool,
-        max_output: usize,
-        max_lines: usize,
-        eof_flag: *std.atomic.Value(bool),
-        mutex: *std.atomic.Mutex,
-        allocator: std.mem.Allocator,
-    };
-
-    const readLoopFn = struct {
-        fn run(ctx: ReadContext) void {
-            defer ctx.eof_flag.store(true, .release);
-            while (true) {
-                const n = std.Io.File.readStreaming(ctx.stream, ctx.io, &.{ctx.buf}) catch return;
-                if (n == 0) return;
-                for (ctx.buf[0..n]) |byte| {
-                    if (byte == '\n') ctx.line_count.* += 1;
-                }
-                if (!ctx.truncated.*) {
-                    while (!ctx.mutex.tryLock()) {
-                        std.atomic.spinLoopHint();
-                    }
-                    defer ctx.mutex.unlock();
-                    ctx.data.appendSlice(ctx.allocator, ctx.buf[0..n]) catch return;
-                    if (ctx.data.items.len >= ctx.max_output or ctx.line_count.* >= ctx.max_lines) {
-                        ctx.truncated.* = true;
-                        var trim_pos: usize = ctx.data.items.len;
-                        if (ctx.line_count.* >= ctx.max_lines) {
-                            var count: usize = 0;
-                            for (ctx.data.items, 0..) |b, i| {
-                                if (b == '\n') {
-                                    count += 1;
-                                    if (count == ctx.max_lines) {
-                                        trim_pos = i + 1;
-                                        break;
-                                    }
-                                }
-                            }
-                        } else if (ctx.data.items.len > ctx.max_output) {
-                            trim_pos = ctx.max_output;
-                        }
-                        if (ctx.data.items.len > trim_pos) {
-                            ctx.data.shrinkAndFree(ctx.allocator, trim_pos);
-                        }
-                    }
-                }
-            }
-        }
-    }.run;
-
-    var stdout_buf: [4096]u8 = undefined;
-    var stderr_buf: [4096]u8 = undefined;
-
-    const stdout_ctx = ReadContext{
-        .stream = child.stdout.?,
-        .io = io,
-        .buf = &stdout_buf,
-        .data = &stdout_data,
-        .line_count = &stdout_line_count,
-        .truncated = &stdout_truncated,
-        .max_output = max_output,
-        .max_lines = max_lines,
-        .eof_flag = &stdout_eof,
-        .mutex = &stdout_mutex,
-        .allocator = allocator,
-    };
-    const stderr_ctx = ReadContext{
-        .stream = child.stderr.?,
-        .io = io,
-        .buf = &stderr_buf,
-        .data = &stderr_data,
-        .line_count = &stderr_line_count,
-        .truncated = &stderr_truncated,
-        .max_output = max_output,
-        .max_lines = max_lines,
-        .eof_flag = &stderr_eof,
-        .mutex = &stderr_mutex,
-        .allocator = allocator,
-    };
-
-    const stdout_thread = try std.Thread.spawn(.{}, readLoopFn, .{stdout_ctx});
-    const stderr_thread = try std.Thread.spawn(.{}, readLoopFn, .{stderr_ctx});
-    // Join-gate (same as search.zig): explicit joins below run on the
-    // happy path; any later `return error.X` fires this errdefer.
-    // Double-join is UB — SIGABRT on macOS — so the flag makes the
-    // errdefer a no-op once the explicit joins have run.
-    var threads_joined = false;
-    errdefer {
-        if (!threads_joined) {
-            if (comptime builtin.os.tag != .windows) _ = std.posix.kill(-child_pgid, .KILL) catch {};
-            _ = wait_pid_bounded(io, &child, KILL_GRACE_PERIOD_NS);
-            if (child.stdout) |stdout_pipe| stdout_pipe.close(io);
-            if (child.stderr) |stderr_pipe| stderr_pipe.close(io);
-            stdout_thread.join();
-            stderr_thread.join();
-        }
+    for (readers, 0..) |reader, i| {
+        threads[i] = try std.Thread.spawn(.{}, Reader.run, .{reader});
     }
 
     var timeout_hit = false;
@@ -674,13 +917,17 @@ pub fn run_shell_command(
     // exit code we harvested in `wait_pid_boundedWindows`.
     child_term = blk: {
         while (true) {
-            if (stdout_eof.load(.acquire) and stderr_eof.load(.acquire)) {
+            if (stdout_reader.eof.load(.acquire) and stderr_reader.eof.load(.acquire)) {
                 const wait_result = wait_pid_bounded(io, &child, KILL_GRACE_PERIOD_NS);
                 break :blk term_from_wait(wait_result);
             }
             if (std.Io.Timestamp.now(io, .real).nanoseconds >= deadline_ns) {
                 timeout_hit = true;
-                if (comptime builtin.os.tag != .windows) _ = std.posix.kill(-child_pgid, .KILL) catch {};
+                // Terminate on EVERY platform. This used to be POSIX-only, so on
+                // Windows the deadline recorded `timeout_hit` and then waited on a
+                // child nobody had asked to stop — which is how a modal dialog
+                // could hold the tool open past its own deadline.
+                terminateTimedOutChild(&child, child_pgid);
                 const wait_result = wait_pid_bounded(io, &child, KILL_GRACE_PERIOD_NS);
                 break :blk term_from_wait(wait_result);
             }
@@ -688,12 +935,22 @@ pub fn run_shell_command(
         }
     };
 
-    if (child.stdout) |stdout_pipe| stdout_pipe.close(io);
-    if (child.stderr) |stderr_pipe| stderr_pipe.close(io);
+    // Bounded. A pipe holder that outlived the kill — POSIX: a `setsid` descendant
+    // that escaped the process group; Windows: a `start /b` grandchild — must not
+    // keep the tool open past its deadline. `captureStream` joins the readers
+    // that did see EOF and hands the rest to the reader threads that still own
+    // them; the pipes are closed by whichever side releases a reader.
+    const readers_deadline = readersDeadline();
+    const stdout_state = pending[0].?;
+    pending[0] = null; // `captureStream` releases it on every path from here.
+    const stdout_cap = try captureStream(allocator, stdout_state, threads[0], readers_deadline, "stdout", max_output, "No output produced.");
+    errdefer allocator.free(stdout_cap.bytes);
 
-    stdout_thread.join();
-    stderr_thread.join();
-    threads_joined = true;
+    const stderr_state = pending[1].?;
+    pending[1] = null;
+    const stderr_cap = try captureStream(allocator, stderr_state, threads[1], readers_deadline, "stderr", max_output, "No errors.");
+    errdefer allocator.free(stderr_cap.bytes);
+
     if (child_term == null) {
         const wait_result = wait_pid_bounded(io, &child, KILL_GRACE_PERIOD_NS);
         child_term = term_from_wait(wait_result);
@@ -706,38 +963,22 @@ pub fn run_shell_command(
         .unknown => -1,
     };
 
-    const stdout_truncation_needed = stdout_data.items.len > max_output;
-    const stderr_truncation_needed = stderr_data.items.len > max_output;
-    const was_truncated = stdout_truncated or stderr_truncated;
+    const was_truncated = stdout_cap.truncated or stderr_cap.truncated;
 
     const command_copy = try allocator.dupe(u8, command);
     errdefer allocator.free(command_copy);
 
-    const stdout_copy = if (stdout_data.items.len == 0)
-        try allocator.dupe(u8, "No output produced.")
-    else if (stdout_truncation_needed)
-        try allocator.dupe(u8, stdout_data.items[0..max_output])
-    else
-        try allocator.dupe(u8, stdout_data.items);
-    errdefer allocator.free(stdout_copy);
-
-    const stderr_copy = if (stderr_data.items.len == 0)
-        try allocator.dupe(u8, "No errors.")
-    else if (stderr_truncation_needed)
-        try allocator.dupe(u8, stderr_data.items[0..max_output])
-    else
-        try allocator.dupe(u8, stderr_data.items);
-    errdefer allocator.free(stderr_copy);
-
+    // `captureStream` already applied the empty / over-long policy, so the
+    // capture IS the payload — no second copy of up to `max_output` bytes.
     return ShellOutput{
         .command = command_copy,
-        .stdout = stdout_copy,
-        .stderr = stderr_copy,
+        .stdout = stdout_cap.bytes,
+        .stderr = stderr_cap.bytes,
         .exit_code = exit_code,
         .truncated = was_truncated,
         .timeout = timeout_hit,
-        .stdout_lines = stdout_line_count,
-        .stderr_lines = stderr_line_count,
+        .stdout_lines = stdout_cap.line_count,
+        .stderr_lines = stderr_cap.line_count,
     };
 }
 
@@ -1160,6 +1401,76 @@ test "shell.execute_shell accepts mandatory_timeout at exactly MAX_MANDATORY_TIM
         testing.allocator.free(out.stderr);
     }
     try testing.expectEqual(@as(i32, 0), out.exit_code);
+}
+
+test "shell.execute_shell: a pipe holder that escapes the deadline kill cannot hold the call open" {
+    // The deadline path kills the child's PROCESS GROUP, so a descendant that
+    // stays in the group releases the pipe and the reader threads finally see
+    // EOF. The process group is not the whole story: `setsid` — which is what
+    // `nohup`, a daemonizing wrapper, or a shell with job control does — puts
+    // the descendant in a NEW session, in a process group `kill(-pgid, .KILL)`
+    // cannot reach. It still holds the pipe write ends, so both reader threads
+    // stay parked in `readStreaming`, and the unconditional
+    // `stdout_thread.join()` / `stderr_thread.join()` after the kill blocks the
+    // tool for as long as that descendant lives. That is the reported symptom:
+    // the deadline fired, the tool never returned, and the agent workflow loop
+    // hung with it.
+    //
+    // The escaped holder here releases the pipe after 6 s, so a regression
+    // costs 6 s instead of hanging the suite; the deadline is 1 s. A bounded
+    // implementation returns on the deadline's schedule (deadline + kill grace
+    // + reader-join grace); the unbounded one returns whenever the holder
+    // decides to let go.
+    if (builtin.os.tag != .linux) return; // `setsid` ships with util-linux.
+
+    const io = std.testing.io;
+    const start = std.Io.Timestamp.now(io, .real).nanoseconds;
+    const out = try shell.execute_shell(testing.allocator, io, &.{ "bash", "-c" }, .{
+        .command = "setsid bash -c 'sleep 6; exec 1>&- 2>&-' &",
+        .cwd = "/tmp",
+        .mandatory_timeout = 1,
+    });
+    defer {
+        testing.allocator.free(out.command);
+        testing.allocator.free(out.stdout);
+        testing.allocator.free(out.stderr);
+    }
+    const elapsed_ms: u64 = @intCast(@divTrunc(std.Io.Timestamp.now(io, .real).nanoseconds - start, 1_000_000));
+
+    // Positive control: `timeout` can only be true if the readers were still
+    // waiting for EOF when the deadline arrived — i.e. the escaped holder
+    // really did survive the group kill. Had it died with the group, the call
+    // would have returned before the deadline with `timeout == false`.
+    try testing.expect(out.timeout);
+    // ...and it returned on OUR schedule, not on the escaped holder's.
+    try testing.expect(elapsed_ms < 4500);
+
+    // The other half of the deal: the reader that was left behind is not a leak.
+    // The escaped holder releases the pipe at the 6 s mark, the abandoned thread
+    // sees EOF, frees its own state and decrements the counter — so nothing stays
+    // allocated for the life of the process.
+    const handoff_deadline = std.Io.Timestamp.now(io, .real).nanoseconds + 4 * std.time.ns_per_s;
+    while (abandoned_reader_count.load(.monotonic) > 0 and
+        std.Io.Timestamp.now(io, .real).nanoseconds < handoff_deadline)
+    {
+        helpers.sleepMillis(10);
+    }
+    try testing.expectEqual(@as(usize, 0), abandoned_reader_count.load(.monotonic));
+}
+
+test "shell.timeoutKillPlan: the deadline terminates the child on EVERY platform" {
+    // The reported Windows hang: both kill sites were
+    // `if (comptime builtin.os.tag != .windows)`, so on Windows the deadline
+    // recorded `timeout_hit` and then waited on a child nobody had asked to stop
+    // — the dialog stayed on screen and the tool stayed blocked behind it.
+    //
+    // The plan is pure data with the OS tag as a PARAMETER rather than a read of
+    // `builtin.os.tag`, precisely so the Windows arm is assertable from a Linux
+    // runner (the `backgroundSpec` precedent in this file). Without that, the
+    // arm can only ever be exercised on a Windows CI cell.
+    try testing.expectEqualSlices(TimeoutKill, &.{.child_handle}, timeoutKillPlan(.windows));
+    try testing.expectEqualSlices(TimeoutKill, &.{.process_group}, timeoutKillPlan(.linux));
+    try testing.expectEqualSlices(TimeoutKill, &.{.process_group}, timeoutKillPlan(.macos));
 }
 
 test "shell.execute_shell requires cwd in BOTH modes (MandatoryCwdMissing)" {

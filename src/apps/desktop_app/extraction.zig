@@ -400,7 +400,7 @@ fn assetSetHashHex(allocator: std.mem.Allocator, assets: anytype) ![]u8 {
     // the returned slice keeps the dir name correct even if that changes
     // (uninitialised trailing bytes in a path would silently break the
     // reuse property this whole function exists for).
-    const hex = std.fmt.bufPrint(&hex_buf, "{x}", .{digest[0..16]}) catch unreachable;
+    const hex = std.fmt.bufPrint(&hex_buf, "{x}", .{digest[0..16]}) catch @panic("bufPrint failed formatting the asset-set hash");
     return allocator.dupe(u8, hex);
 }
 
@@ -466,7 +466,7 @@ fn tmpDirBase(allocator: std.mem.Allocator) []u8 {
             if (std.c.getenv("TMP")) |t_z| {
                 break :blk allocator.dupe(u8, std.mem.span(t_z)) catch fallbackTmp(allocator);
             }
-            break :blk allocator.dupe(u8, "C:\\Windows\\Temp") catch unreachable;
+            break :blk allocator.dupe(u8, "C:\\Windows\\Temp") catch @panic("dupe failed for the Windows temp dir fallback");
         },
         else => fallbackTmp(allocator),
     };

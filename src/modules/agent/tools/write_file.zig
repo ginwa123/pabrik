@@ -1327,7 +1327,7 @@ test "writeFile - 5 sequential writes to files in same dir all succeed" {
     var path_bufs: [5][std.fs.max_path_bytes]u8 = undefined;
     var paths: [5][]const u8 = undefined;
     for (names_buf, &path_bufs, &paths) |name, *pb, *p| {
-        p.* = std.fmt.bufPrint(pb, "{f}", .{std.fs.path.fmtJoin(&.{ dir, name })}) catch unreachable;
+        p.* = std.fmt.bufPrint(pb, "{f}", .{std.fs.path.fmtJoin(&.{ dir, name })}) catch @panic("bufPrint failed formatting the joined write_file path");
     }
     defer {
         for (paths) |p| deleteFile(p);
@@ -1350,7 +1350,7 @@ test "writeFile - 5 sequential writes to files in same dir all succeed" {
         const read = try readFileContents(testing.allocator, full);
         defer testing.allocator.free(read);
         var expected_buf: [16]u8 = undefined;
-        const expected = std.fmt.bufPrint(&expected_buf, "file {d}", .{i}) catch unreachable;
+        const expected = std.fmt.bufPrint(&expected_buf, "file {d}", .{i}) catch @panic("bufPrint failed formatting the write_file expectation label");
         try testing.expectEqualStrings(expected, read);
     }
 }

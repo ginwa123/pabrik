@@ -459,7 +459,7 @@ pub fn currentTimeIsoLocal(allocator: std.mem.Allocator, io: std.Io) ![]u8 {
             day_seconds.getMinutesIntoHour(),
             day_seconds.getSecondsIntoMinute(),
         },
-    ) catch unreachable;
+    ) catch @panic("bufPrint failed formatting the local ISO timestamp");
 
     return allocator.dupe(u8, formatted);
 }

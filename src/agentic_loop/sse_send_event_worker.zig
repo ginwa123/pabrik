@@ -96,7 +96,7 @@ fn setupBusAndIo() !struct { bus: event_bus_mod.EventBus, threaded: std.Io.Threa
     return .{ .bus = bus, .threaded = threaded };
 }
 
-fn tearDownBusAndIo(s: *@TypeOf(setupBusAndIo() catch unreachable)) void {
+fn tearDownBusAndIo(s: *@TypeOf(setupBusAndIo() catch @panic("setupBusAndIo failed in the sse_send_event_worker test fixture"))) void {
     s.bus.deinit();
     s.threaded.deinit();
 }

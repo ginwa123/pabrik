@@ -470,7 +470,7 @@ fn redirectStdioToLogWindows(log_path: []const u8) !void {
 
     // Open "NUL" for stdin (Windows equivalent of /dev/null).
     var nul_w_buf: [8:0]u16 = undefined;
-    const nul_w_len = std.unicode.utf8ToUtf16Le(nul_w_buf[0..7], "NUL") catch unreachable;
+    const nul_w_len = std.unicode.utf8ToUtf16Le(nul_w_buf[0..7], "NUL") catch @panic("utf8ToUtf16Le failed converting \"NUL\" for the Windows stdio redirect");
     nul_w_buf[nul_w_len] = 0;
     const nul_handle = win32_apis.CreateFileW(
         nul_w_buf[0..nul_w_len :0].ptr,

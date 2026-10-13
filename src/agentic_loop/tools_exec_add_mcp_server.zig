@@ -221,14 +221,14 @@ fn substitutePersistedStatus(
 /// `defer`. On success the slice contains `"true"`; on any failure path
 /// it contains `"false: <reason>"` (allocated via `allocPrint`).
 fn persistAndReloadStatus(ctx: ToolExecContext) ![]u8 {
-    const di = pabrikcore.getSingleton() catch return ctx.allocator.dupe(u8, "false: getSingleton failed") catch return ctx.allocator.dupe(u8, "false") catch unreachable;
+    const di = pabrikcore.getSingleton() catch return ctx.allocator.dupe(u8, "false: getSingleton failed") catch return ctx.allocator.dupe(u8, "false") catch @panic("dupe failed for the add_mcp_server failure status");
     // Auth mode: persist into the session owner's users.config_json
     // (Migration 092) instead of config.json, and skip the global
     // live-reload (config is per-user). config.json is never touched.
     if (di.auth_enabled) {
         return persistAuthModeStatus(ctx, di);
     }
-    const env_ptr = di.environment orelse return std.fmt.allocPrint(ctx.allocator, "false: environment unavailable", .{}) catch ctx.allocator.dupe(u8, "false") catch unreachable;
+    const env_ptr = di.environment orelse return std.fmt.allocPrint(ctx.allocator, "false: environment unavailable", .{}) catch ctx.allocator.dupe(u8, "false") catch @panic("allocPrint failed for the add_mcp_server failure status");
     // getDefaultConfigDir takes a non-const pointer but doesn't mutate.
     const environment: *std.process.Environ.Map = @ptrCast(@constCast(env_ptr));
 
@@ -318,7 +318,7 @@ fn persistAndReloadStatus(ctx: ToolExecContext) ![]u8 {
     // the tools-list cache itself refreshes on the next run.
     di.clearMcpToolsCache();
 
-    return ctx.allocator.dupe(u8, "true") catch ctx.allocator.dupe(u8, "false") catch unreachable;
+    return ctx.allocator.dupe(u8, "true") catch ctx.allocator.dupe(u8, "false") catch @panic("dupe failed for the add_mcp_server success status");
 }
 
 /// Auth-mode persist for `add_mcp_server`: merge the live `mcp_servers`
@@ -370,7 +370,7 @@ fn persistAuthModeStatus(ctx: ToolExecContext, di: *pabrikcore.App) ![]u8 {
         return failStatus(ctx.allocator, "save user config", @errorName(err));
     };
     di.clearMcpToolsCache();
-    return ctx.allocator.dupe(u8, "true") catch ctx.allocator.dupe(u8, "false") catch unreachable;
+    return ctx.allocator.dupe(u8, "true") catch ctx.allocator.dupe(u8, "false") catch @panic("dupe failed for the add_mcp_server auth-mode status");
 }
 
 /// Build a `<persisted>false: <op> <reason></persisted>`-shaped
@@ -382,7 +382,7 @@ fn failStatus(allocator: std.mem.Allocator, op: []const u8, reason: []const u8) 
         allocator,
         "false: {s} {s}",
         .{ op, reason },
-    ) catch allocator.dupe(u8, "false") catch unreachable;
+    ) catch allocator.dupe(u8, "false") catch @panic("dupe failed for the add_mcp_server failure status");
 }
 
 /// Build the on-disk JSON body for the new config. Strategy:

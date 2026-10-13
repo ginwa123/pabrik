@@ -420,7 +420,7 @@ pub fn spawn(
     // We use a fixed-size array (max 5 args) and slice it down to the
     // actual count — avoids a heap allocation for the common case.
     var port_buf: [16]u8 = undefined;
-    const port_str = std.fmt.bufPrint(&port_buf, "{d}", .{port}) catch unreachable;
+    const port_str = std.fmt.bufPrint(&port_buf, "{d}", .{port}) catch @panic("bufPrint failed formatting the spawn port");
 
     var argv_buf: [5][]const u8 = .{
         pabrik_path, "--port", port_str, "--static-dir", undefined,

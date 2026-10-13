@@ -169,6 +169,7 @@ const web_search_config_test = @import("web_search_config_test.zig");
 const worker_gate_queue_test = @import("worker_gate_queue_test.zig");
 const workflow_mcp_snapshot_turn_lifetime_test = @import("workflow_mcp_snapshot_turn_lifetime_test.zig");
 const workspace_config_test = @import("workspace_config_test.zig");
+const workspace_default_profile_test = @import("workspace_default_profile_test.zig");
 const workspace_isolation_test = @import("workspace_isolation_test.zig");
 const workspace_items_test = @import("workspace_items_test.zig");
 const workspace_lifecycle_test = @import("workspace_lifecycle_test.zig");
@@ -320,6 +321,7 @@ pub const suites = .{
     worker_gate_queue_test,
     workflow_mcp_snapshot_turn_lifetime_test,
     workspace_config_test,
+    workspace_default_profile_test,
     workspace_isolation_test,
     workspace_items_test,
     workspace_lifecycle_test,

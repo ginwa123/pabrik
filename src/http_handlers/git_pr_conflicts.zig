@@ -793,7 +793,7 @@ test "useCase reports NotARepository for a path that does not exist" {
     defer fx.deinit();
 
     var missing_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
-    const missing = std.fmt.bufPrint(&missing_buf, "{s}/definitely-not-here", .{fx.path}) catch unreachable;
+    const missing = std.fmt.bufPrint(&missing_buf, "{s}/definitely-not-here", .{fx.path}) catch @panic("bufPrint failed formatting the missing-path probe");
 
     var detail: ?[]u8 = null;
     defer if (detail) |d| allocator.free(d);

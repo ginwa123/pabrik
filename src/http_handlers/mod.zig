@@ -1826,7 +1826,7 @@ fn mcpTestStdio(
             logger.warnFmt("[mcp_test] stdio send failed: {s}", .{@errorName(err)});
             if (attempts_used < 20) {
                 const stderr_dup = allocator.dupe(u8, @errorName(err)) catch
-                    allocator.dupe(u8, "OOM") catch unreachable;
+                    allocator.dupe(u8, "OOM") catch @panic("dupe failed for the mcp_test stderr error name");
                 @memcpy(attempts_codes[attempts_used * 8 ..][0..2], "SF");
                 @memset(attempts_codes[attempts_used * 8 + 2 ..][0..6], ' ');
                 stderrs_buf[attempts_used] = stderr_dup;
@@ -1938,7 +1938,7 @@ fn mcpTestStdio(
             );
             if (attempts_used < 20) {
                 const stderr_dup = allocator.dupe(u8, @errorName(err)) catch
-                    allocator.dupe(u8, "OOM") catch unreachable;
+                    allocator.dupe(u8, "OOM") catch @panic("dupe failed for the mcp_test stderr error name");
                 @memcpy(attempts_codes[attempts_used * 8 ..][0..2], "SF");
                 @memset(attempts_codes[attempts_used * 8 + 2 ..][0..6], ' ');
                 stderrs_buf[attempts_used] = stderr_dup;
@@ -2059,7 +2059,7 @@ fn drainStderr(allocator: std.mem.Allocator, io: std.Io, stderr: ?std.Io.File) [
     // Always heap-allocate so the caller can uniformly `free` the
     // returned slice. The empty fallback is also heap so `free` is
     // safe even when no bytes were captured.
-    const empty = allocator.dupe(u8, "") catch allocator.dupe(u8, "") catch unreachable;
+    const empty = allocator.dupe(u8, "") catch allocator.dupe(u8, "") catch @panic("dupe failed for the empty mcp_test stderr slot");
     const f = stderr orelse return empty;
     if (comptime builtin.os.tag != .windows) {
         var pfds = [_]std.posix.pollfd{.{
