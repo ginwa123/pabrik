@@ -171,18 +171,31 @@ pub fn sessionCreateHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
     });
 }
 
-/// The `active_profile` in force for the new session: the owner's stored
-/// config under `--auth`, the process-global one otherwise.
+/// The `active_profile` in force for this session's config scope: the session
+/// yourself (owner + the session's workspace overlay), the owner's stored
+/// config, the process-global one — in that order.
 ///
-/// Both paths go through the single config-resolution module
-/// (`agentic_loop/session_llm_config.zig`) so the snapshot cannot drift from
-/// what the workflow later resolves for the same session.
-fn activeProfileForOwner(
+/// `forSession` FIRST is the point. This is the "the caller sent no explicit
+/// profile" snapshot (the composer's Default, a send whose chip has not
+/// loaded yet, any non-Vue client), so it decides which model the turn runs
+/// on. Resolving it from `forOwner` alone skipped the workspace overlay —
+/// which is exactly where Settings -> Workspace -> "Set active" writes — so a
+/// workspace whose Active profile is `deepseek auto` still snapshotted the
+/// user-level `killll`; the workflow's non-empty write-back then persisted
+/// that into `sessions.selected_profile_model` and the chat's model changed
+/// under the user mid-conversation.
+///
+/// `forSession` needs the row to exist; a brand-new session has none yet, so
+/// it answers null and the owner/singleton ladder below still applies.
+fn activeProfileForSession(
     alloc: std.mem.Allocator,
     di: *pabrikcore.App,
+    session_id: []const u8,
     owner: []const u8,
 ) ?[]const u8 {
-    const cfg = session_llm_config.forOwner(alloc, di.db, owner) orelse pabrikcore.getLlmConfig(di);
+    const cfg = session_llm_config.forSession(alloc, di.db, session_id) orelse
+        session_llm_config.forOwner(alloc, di.db, owner) orelse
+        pabrikcore.getLlmConfig(di);
     return cfg.active_profile;
 }
 
@@ -342,8 +355,8 @@ pub fn useCase(alloc: std.mem.Allocator, io: std.Io, di: *pabrikcore.App, parsed
     var selected_profile_model: []const u8 = "";
     if (parsed.selected_profile_model.len > 0) {
         selected_profile_model = parsed.selected_profile_model;
-    } else if (activeProfileForOwner(alloc, di, owner)) |ap| {
-        // 2026-08-21 — snapshot the user's active profile into the
+    } else if (activeProfileForSession(alloc, di, session_id, owner)) |ap| {
+        // 2026-08-21 — snapshot the session's active profile into the
         // session row at create time. Without this, a "Default" chat
         // inherits the active profile only implicitly (via the workflow's
         // resolveProfileField cascade), so the chat footer computed its
@@ -354,6 +367,13 @@ pub fn useCase(alloc: std.mem.Allocator, io: std.Io, di: *pabrikcore.App, parsed
         // The user can still switch the chat to another profile later
         // via the dropdown (PUT /api/llm/session/:id overwrites the
         // column) or back to true-default by picking Default explicitly.
+        //
+        // "the active profile" is the SESSION-SCOPED one (owner + the
+        // session's workspace overlay), not the user-level one — see
+        // `activeProfileForSession`. A workspace's Settings -> Active
+        // profile is written to the overlay, so reading the user level here
+        // made the turn run a different model than the one the workspace
+        // (and the composer chip) showed.
         selected_profile_model = ap;
     }
 
