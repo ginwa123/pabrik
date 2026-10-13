@@ -1342,18 +1342,16 @@ const isLoading = ref(false)
 const isSendingAttachments = ref(false)
 const isLoadingMore = ref(false)
 const error = ref<string | null>(null)
-// Ready-gate: true while the initial mount fetch is outstanding (or the
-// session id hasn't been assigned yet). Drives the initializing skeleton
-// + composer disable. Deliberately NOT gated on SSE, git status, stream
-// snapshot, or queued messages — all best-effort/late by design, and
-// waiting on them would wedge the composer disabled after the chat is
-// already usable. Pending drafts (`pending-*`) skip history fetch by
-// design, so they count as ready immediately.
-const isInitializing = computed(
-  () =>
-    !isPendingSession.value &&
-    (!sessionId.value || (isLoading.value && messages.value.length === 0)),
-)
+// True while the REMOTE half of the transcript load is still outstanding.
+//
+// The load has two halves: the cache prime (IndexedDB, fast) and the network
+// page/delta (slow — bound by `INITIAL_HISTORY_TIMEOUT_MS`, currently 45 s,
+// plus the retry schedule). `isLoading` tracks neither cleanly, because a
+// cached mount clears it the instant the cached rows paint: it answers "the
+// local half is done", not "the transcript is known". This flag is the
+// network half. `isInitializing` (declared next to `messageGroups`, which it
+// reads) is the readgate built on top of it.
+const isRemoteLoadPending = ref(false)
 const hasMoreMessages = ref(true)
 const isAtBottom = ref(true)
 // "The server has answered, and the answer was: zero messages."
@@ -1897,6 +1895,45 @@ const messageGroups = computed((): MessageGroup[] => {
   // template remains as defense-in-depth.
   return groups.filter((g, i) => hasBubbleContent(g, i))
 })
+
+/**
+ * Ready-gate: true while the transcript load is outstanding AND there is
+ * nothing for the reader to look at yet. Drives the initializing skeleton and
+ * the composer disable.
+ *
+ * It is deliberately the *readgate* — "has anything painted?" — and not "has
+ * the request finished?", because the two mount paths need opposite answers:
+ *
+ *   - Cold mount (nothing cached): `messageGroups` is empty for the whole
+ *     network page, so the skeleton covers the remote fetch — the retry
+ *     schedule included. Unchanged.
+ *   - Cached mount with rows painted: `messageGroups` is non-empty the moment
+ *     the cache paints, so the skeleton comes down on that paint and the
+ *     network tail refresh runs behind real content. That is the entire point
+ *     of painting the cache, so this gate must NOT wait for
+ *     `isRemoteLoadPending` to clear.
+ *   - Cached mount that painted nothing renderable: `messageGroups` stays
+ *     empty, so the skeleton stays up through the fall-through to the full
+ *     page that `runHistoryLoadAttempt` now performs. Before this, that
+ *     window rendered a blank column.
+ *
+ * Deliberately NOT gated on SSE, git status, stream snapshot, or queued
+ * messages — all best-effort/late by design, and waiting on them would wedge
+ * the composer disabled after the chat is already usable. Pending drafts
+ * (`pending-*`) skip history fetch by design, so they count as ready
+ * immediately.
+ *
+ * Declared here rather than with the other state because it reads
+ * `messageGroups`, which is built from `filteredMessages` / `hasBubbleContent`
+ * declared further up this file; a `const` read above its own declaration is
+ * a TDZ error. `isInitializing` is only ever read from the template, so there
+ * is no script call site that needs it earlier.
+ */
+const isInitializing = computed(
+  () =>
+    !isPendingSession.value &&
+    (!sessionId.value || (isRemoteLoadPending.value && messageGroups.value.length === 0)),
+)
 
 /**
  * Group key of the group containing a message id (2026-09-06
@@ -3031,10 +3068,23 @@ const runHistoryLoadAttempt = async () => {
       // Painted rows exist either way, so "this session is empty" is now
       // ruled out — the empty state may be shown again if the session is
       // later reloaded.
-      historyConfirmed.value = true
-      setupCodeBlockCopyButtons()
-      void rehydrateSubAgentProgress()
-      return
+      //
+      // "Painted rows" has to mean rows the transcript can actually DRAW.
+      // A cache holding only unrenderable rows — an assistant turn whose
+      // content never landed, a tool row the renderer does not know — leaves
+      // `messageGroups` empty, and confirming emptiness from it would print
+      // "How can I help you?" over a session full of messages (the bug class
+      // PR #719 fixed for the network path). Confirm only when something is
+      // on screen; otherwise fall through to the authoritative full page
+      // below, which is the only thing that can answer. `isRemoteLoadPending`
+      // keeps the skeleton up across that fall-through, so the reader gets
+      // the placeholder instead of a blank column.
+      if (messageGroups.value.length > 0) {
+        historyConfirmed.value = true
+        setupCodeBlockCopyButtons()
+        void rehydrateSubAgentProgress()
+        return
+      }
     }
   } catch {
     // Ignore — network path below is authoritative.
@@ -3273,6 +3323,7 @@ const loadChatHistory = async () => {
   if (!sessionId.value || isPendingSession.value) return
 
   isLoading.value = true
+  isRemoteLoadPending.value = true
   messageCursor.value = null
   // Invalidate anything armed for the previous view of this session.
   resetOlderPrefetch('refresh')
@@ -3294,6 +3345,9 @@ const loadChatHistory = async () => {
       ),
       Effect.sync(() => {
         isLoading.value = false
+        // The network half is over — success, or every retry exhausted — so
+        // the readgate may fall through to the empty / error state.
+        isRemoteLoadPending.value = false
       }),
     ),
     'history.load',
@@ -4909,11 +4963,17 @@ const compactSession = async () => {
           </div>
         </div>
 
-        <!-- Initializing skeleton — shown while the first history fetch
-             is outstanding (isInitializing): covers the mount gap where
-             sessionId is still empty plus the getChatHistory round-trip.
-             Shimmer rows keep layout stable so the transcript doesn't
-             flash empty-state before content arrives. -->
+        <!-- Initializing skeleton — shown while the remote half of the
+             transcript load is outstanding AND nothing renderable has
+             painted (isInitializing): covers the mount gap where sessionId
+             is still empty, the whole cold-start network page (up to
+             INITIAL_HISTORY_TIMEOUT_MS, retries included), and the
+             cached-mount window whose cached rows do not render. A cached
+             mount whose rows DO render takes the skeleton down on the paint
+             — the cached transcript is a better placeholder than shimmer —
+             and the tail refresh runs behind it. Shimmer rows keep layout
+             stable so the transcript doesn't flash blank/empty-state before
+             content arrives. -->
         <div
           v-if="isInitializing"
           data-testid="chat-initializing-skeleton"

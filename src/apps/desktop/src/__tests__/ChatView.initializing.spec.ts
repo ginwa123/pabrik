@@ -6,17 +6,34 @@
  * disabled (textarea + send). Once history resolves, the skeleton goes
  * away and the composer enables. Pending drafts (`pending-*`) skip the
  * history fetch by design, so they render ready immediately.
+ *
+ * ⛔ WHY THIS FILE USES A `vi.mock` MODULE FACTORY, NOT `vi.spyOn`
+ *
+ * These tests used to drive the load with `vi.spyOn(api, 'getChatHistory')`
+ * and TWO of the three were red on `main` because of it: ChatView's initial
+ * load calls `api.fetchChatHistoryEffect` DIRECTLY, and `chatEngineDb` binds
+ * its own `fetchFn` to `getChatHistory` ONCE at module load — so a late
+ * `vi.spyOn` reached neither seam. The real `fetchChatHistoryEffect` then hit
+ * the network, the retry loop held `isLoading`, the skeleton never came down,
+ * and both "resolves to ready" and "renders the load error" asserted against a
+ * load that never settled. The seam that works is a hoisted `vi.mock` factory
+ * (see `ChatView.streamingStick.spec.ts` for the long version).
+ *
+ * The retry schedule is collapsed to zero here (via the same hoisted-mock
+ * seam) so the exhausted-retry path is reachable in milliseconds; the real
+ * schedule has its own spec in `helpers/__tests__/chatHistoryRetry.spec.ts`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'
-import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
+import { mount, type VueWrapper } from '@vue/test-utils'
+import { Effect } from 'effect'
 
 import * as api from '../api'
 import ChatView from '../components/views/ChatView.vue'
 import FileInput from '../components/file/FileInput.vue'
 import { installSseBus, __resetSseBus, __setSseBusGlobalClient } from '../helpers/sseBus'
-import type { SseClient, SseState } from '../helpers/sseClient'
+import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 import { makeLocalStorageStub } from './helpers'
 
 const { useRouteMock, useRouterMock } = vi.hoisted(() => ({
@@ -37,6 +54,67 @@ vi.mock('vue-router', async () => {
   }
 })
 
+const EMPTY_HISTORY = {
+  messages: [] as unknown[],
+  has_more: false,
+  next_cursor: null,
+  cwd: '/tmp',
+  git_worktree_cwd: '',
+  max_total_tokens: 0,
+  max_capacity_total_tokens: 0,
+  skills: [],
+}
+
+/** Read at CALL time by the mocked network seam (see the file header). */
+const ctl = vi.hoisted(() => ({
+  page: {
+    messages: [] as unknown[],
+    has_more: false,
+    next_cursor: null,
+    cwd: '/tmp',
+    git_worktree_cwd: '',
+    max_total_tokens: 0,
+    max_capacity_total_tokens: 0,
+    skills: [],
+  },
+  /** 'pending' = in flight until `release()`; 'resolve'; 'fail'. */
+  mode: 'pending' as 'pending' | 'resolve' | 'fail',
+  release: null as null | (() => void),
+  fetchCalls: 0,
+}))
+
+vi.mock('../api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api')>()
+  return {
+    ...actual,
+    getChatHistory: () => Promise.resolve(ctl.page),
+    fetchChatHistoryEffect: () => {
+      ctl.fetchCalls += 1
+      if (ctl.mode === 'resolve') return Effect.succeed(ctl.page)
+      if (ctl.mode === 'fail') return Effect.fail(new Error('offline'))
+      return Effect.promise(
+        () =>
+          new Promise((resolve) => {
+            ctl.release = () => resolve(ctl.page)
+          }),
+      )
+    },
+  }
+})
+
+// Collapse the backoff so the exhausted-retry path is reachable in ms. The
+// policy itself is covered by helpers/__tests__/chatHistoryRetry.spec.ts.
+vi.mock('../helpers/chatHistoryRetry', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../helpers/chatHistoryRetry')>()
+  return {
+    ...actual,
+    fetchInitialHistoryWithRetry: (
+      attempt: () => Effect.Effect<unknown, unknown>,
+      options: { onRetry?: (error: unknown) => void } = {},
+    ) => actual.fetchInitialHistoryWithRetry(attempt, { ...options, delaysMs: [0, 0, 0, 0] }),
+  }
+})
+
 if (
   typeof (globalThis as { HTMLElement?: { prototype: { scrollTo?: unknown } } }).HTMLElement
     ?.prototype.scrollTo === 'undefined'
@@ -48,13 +126,15 @@ if (
   }
 }
 
+const SKELETON = '[data-testid="chat-initializing-skeleton"]'
+
 function makeStubClient(): SseClient {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const stub: any = {
     close: vi.fn(),
     reconnect: vi.fn(),
     getState: () => 'connecting' as SseState,
-    onStateChange: () => () => {},
+    onStateChange: (_cb: (s: SseState, _info: SseStateInfo) => void) => () => {},
   }
   return stub as SseClient
 }
@@ -78,17 +158,19 @@ function installBaseMocks() {
     profiles: {},
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any)
+  vi.spyOn(api, 'getStreamSnapshot').mockResolvedValue({
+    active: false,
+    content: '',
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any)
 }
 
-function emptyHistory() {
-  return {
-    messages: [],
-    has_more: false,
-    next_cursor: null,
-    cwd: '/tmp',
-    git_worktree_cwd: '',
-    max_total_tokens: 0,
-    max_capacity_total_tokens: 0,
+/** Poll until `predicate` holds (or give up), flushing a macrotask each round. */
+async function waitFor(predicate: () => boolean, tries = 80): Promise<void> {
+  for (let i = 0; i < tries; i++) {
+    if (predicate()) return
+    await new Promise((r) => setTimeout(r, 10))
+    await nextTick()
   }
 }
 
@@ -107,6 +189,12 @@ describe('ChatView initializing gate', () => {
       localStorage.clear()
     }
     setActivePinia(createPinia())
+
+    ctl.page = { ...EMPTY_HISTORY }
+    ctl.mode = 'pending'
+    ctl.release = null
+    ctl.fetchCalls = 0
+
     __resetSseBus()
     app = createApp({})
     installSseBus(app)
@@ -123,24 +211,20 @@ describe('ChatView initializing gate', () => {
   })
 
   it('shows the skeleton + disabled composer while history is in flight, then resolves to ready', async () => {
-    let resolveHistory!: (v: unknown) => void
-    vi.spyOn(api, 'getChatHistory').mockReturnValue(
-      new Promise((r) => {
-        resolveHistory = r
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      }) as any,
-    )
+    ctl.mode = 'pending'
 
     wrapper = mount(ChatView, {
       props: { chatId: 's_init', chatName: 'Init Chat' },
       attachTo: document.body,
     })
-    await flushPromises()
-    await nextTick()
+    // The skeleton is up from the first frame, so waiting on it proves
+    // nothing — wait for the load to actually reach the network seam.
+    await waitFor(() => ctl.fetchCalls > 0)
 
     // Initializing: skeleton visible, empty state hidden, composer disabled.
-    expect(wrapper.find('[data-testid="chat-initializing-skeleton"]').exists()).toBe(true)
+    expect(wrapper.find(SKELETON).exists()).toBe(true)
     expect(wrapper.find('[data-testid="chat-load-error"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('How can I help you?')
     const fileInput = wrapper.findComponent(FileInput)
     expect(fileInput.props('isInitializing')).toBe(true)
     expect(
@@ -148,47 +232,44 @@ describe('ChatView initializing gate', () => {
     ).toBeDefined()
 
     // History resolves (empty) → skeleton gone, empty state shown, composer enabled.
-    resolveHistory(emptyHistory())
-    for (let i = 0; i < 50; i++) {
-      await new Promise((r) => setTimeout(r, 10))
-      await nextTick()
-      if (!wrapper.find('[data-testid="chat-initializing-skeleton"]').exists()) break
-    }
-    expect(wrapper.find('[data-testid="chat-initializing-skeleton"]').exists()).toBe(false)
+    ctl.release?.()
+    await waitFor(() => !wrapper!.find(SKELETON).exists())
+
+    expect(wrapper.find(SKELETON).exists()).toBe(false)
     expect(wrapper.findComponent(FileInput).props('isInitializing')).toBe(false)
     expect(
       wrapper.find('[data-testid="chat-message-textarea"]').attributes('disabled'),
     ).toBeUndefined()
+    expect(wrapper.text()).toContain('How can I help you?')
   })
 
   it('pending drafts render ready immediately (no skeleton)', async () => {
-    const historySpy = vi.spyOn(api, 'getChatHistory').mockResolvedValue(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      emptyHistory() as any,
-    )
     wrapper = mount(ChatView, {
       props: { chatId: 'pending-123', chatName: 'Draft' },
       attachTo: document.body,
     })
-    await flushPromises()
+    await new Promise((r) => setTimeout(r, 30))
     await nextTick()
 
-    expect(historySpy).not.toHaveBeenCalled()
-    expect(wrapper.find('[data-testid="chat-initializing-skeleton"]').exists()).toBe(false)
+    expect(ctl.fetchCalls).toBe(0)
+    expect(wrapper.find(SKELETON).exists()).toBe(false)
     expect(wrapper.findComponent(FileInput).props('isInitializing')).toBe(false)
   })
 
   it('renders the load error with retry when history fails', async () => {
-    vi.spyOn(api, 'getChatHistory').mockRejectedValue(new Error('offline'))
+    ctl.mode = 'fail'
     wrapper = mount(ChatView, {
       props: { chatId: 's_init', chatName: 'Init Chat' },
       attachTo: document.body,
     })
-    await flushPromises()
-    await nextTick()
+    // Every attempt fails; the collapsed schedule exhausts in milliseconds.
+    await waitFor(() => wrapper!.find('[data-testid="chat-load-error"]').exists())
 
-    const err = wrapper.find('[data-testid="chat-load-error"]')
-    expect(err.exists()).toBe(true)
-    expect(wrapper.find('[data-testid="chat-initializing-skeleton"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="chat-load-error"]').exists()).toBe(true)
+    expect(wrapper.find(SKELETON).exists()).toBe(false)
+    // The failure is a retried load, not a one-shot.
+    expect(ctl.fetchCalls).toBeGreaterThan(1)
+    // …and it is NOT the empty state: "the server is down" is not "no messages".
+    expect(wrapper.text()).not.toContain('How can I help you?')
   })
 })
