@@ -1242,6 +1242,22 @@ const isLoading = computed(() => !loaded.value)
         </button>
       </div>
 
+      <!-- Save bar (only when dirty). Pinned to the TOP of the pane, above
+           the scrollable content: the actions stay reachable no matter how
+           far down the section the user has scrolled, and the count of
+           unsaved changes is the first thing they see when they come back
+           to the page. It is a `shrink-0` flex item OUTSIDE the scrolling
+           region, so it does not scroll away with the content. -->
+      <div class="shrink-0">
+        <PabrikSaveBar
+          :dirty="dirty"
+          :unsaved-count="unsavedCount"
+          :saving="saving"
+          @reset="handleReset"
+          @save="handleSave"
+        />
+      </div>
+
       <!-- Raw JSON view. Shows the WHOLE config in memory - which in the
            workspace scope is the effective config (the user's, with this
            workspace's overlay merged over it), so what you read here is what
@@ -1516,16 +1532,6 @@ const isLoading = computed(() => !loaded.value)
              (per-profile overrides). There is no 'compaction' section. -->
       </div>
 
-      <!-- Sticky save bar (only when dirty) -->
-      <div class="shrink-0">
-        <PabrikSaveBar
-          :dirty="dirty"
-          :unsaved-count="unsavedCount"
-          :saving="saving"
-          @reset="handleReset"
-          @save="handleSave"
-        />
-      </div>
     </template>
 
     <!-- Modals -->
