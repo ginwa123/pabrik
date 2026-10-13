@@ -167,6 +167,69 @@ jobs:
           Add-Content -LiteralPath $env:GITHUB_ENV -Value "INSTALL_BIN=$bin"
           if ($checkApp) { Add-Content -LiteralPath $env:GITHUB_ENV -Value "CHECK_APP=1" }
 
+      - name: install.ps1 via iex must not close the caller's session (Windows)
+        # THE REPORTED BUG, asserted. The documented one-liner pipes the
+        # script text into iex, and iex runs it in the CALLER's session —
+        # so a top-level `exit` ends that session and closes the terminal
+        # window with it. The up-to-date re-run used to do exactly that
+        # (`exit 0` right after printing "already up to date"), and the
+        # install step above put byte-identical binaries under the
+        # redirected LOCALAPPDATA, which is what makes a re-run take that
+        # path. So this step replays the user's own flow against it.
+        #
+        # A CHILD powershell runs the iex and a line AFTER it prints a
+        # sentinel; the parent fails when the sentinel is missing. That
+        # indirection is the whole test: a bare `exit` kills the child
+        # before the sentinel runs, and the child's exit code (0, from
+        # `exit 0`) is what would otherwise look like success.
+        #
+        # BOTH hosts: `pwsh` is what this pipeline runs, but the Windows
+        # Terminal default profile is Windows PowerShell 5.1, which is
+        # what most users type the one-liner into.
+        #
+        # The cost is a second release download: install.ps1 hashes the
+        # zip against the installed exes, so the download precedes the
+        # up-to-date check. Same release, same runner — seconds.
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Same redirected profile the install step used, so the re-run
+          # finds the install it made.
+          $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP 'pabrik-data\Local'
+          $script = Join-Path $PWD 'install.ps1'
+          $child = "iex (Get-Content -Raw '{0}'); Write-Output 'IEX-SURVIVED'" -f $script
+          $broken = @()
+          foreach ($sh in @('pwsh', 'powershell')) {
+            if (-not (Get-Command $sh -ErrorAction SilentlyContinue)) {
+              Write-Warning "$sh is not on this runner; skipping that host"
+              continue
+            }
+            # Per-leg messages are Write-Host, not Write-Error: a
+            # terminating error here would end the step after the first
+            # broken host and hide the other leg's verdict. The single
+            # throw below is what fails the step.
+            $text = (& $sh -NoProfile -Command $child | Out-String)
+            $code = $LASTEXITCODE
+            Write-Output "→ ${sh}: iex'd re-run exit=$code output=[$($text.Trim())]"
+            if ($code -ne 0) {
+              $broken += "$sh exited $code"
+              continue
+            }
+            if ($text -notmatch 'IEX-SURVIVED') {
+              $broken += "$sh ended the session mid-script -- a top-level exit in install.ps1 closes the user's terminal window"
+              continue
+            }
+            if ($text -notmatch 'already up to date') {
+              $broken += "$sh never reached the up-to-date path, so this step stopped covering the bug it guards"
+            }
+          }
+          if ($broken.Count -gt 0) {
+            foreach ($b in $broken) { Write-Host "::error::$b" }
+            throw "install.ps1's iex contract broke: $($broken -join '; ')"
+          }
+          Write-Output "→ iex'd re-run survived on every host: the terminal window stays open"
+
       - name: Smoke test the installed binary (browser URL)
         # scripts/ci-smoke-test.sh boots $INSTALL_BIN on $PABRIK_PORT
         # with an isolated HOME, waits for "Agent is ready to serve!",
