@@ -17,6 +17,7 @@ const db_config = @import("db_config.zig");
 const static_serve = @import("../http_static/static_serve.zig");
 const config_mod = @import("../modules/config/Config.zig");
 const workspace_config = @import("../agentic_loop/workspace_config.zig");
+const model_catalog_refresh = @import("../agentic_loop/model_catalog_refresh.zig");
 
 /// Ignore SIGPIPE process-wide (non-Windows). A peer vanishing mid-write
 /// must surface as a write error, not a signal (OpenSSL uses plain write(2)).
@@ -202,6 +203,17 @@ pub fn seedWorkspaceSettingsFromUserConfig(
 /// reach it), then open + canonicalize, with the `/app` + `/login` SPA
 /// fallbacks so client-side routes survive reload. Caller frees via
 /// `freeStaticDir`.
+/// Load the models.dev catalog from the database and start its hourly sync.
+///
+/// NEVER blocks on the network: `loadAtBoot` is a local read, and the fetch
+/// happens on a detached thread whose first run is one interval away. A machine
+/// with no catalog at all still boots — every profile just falls back to the
+/// built-in window, exactly as before this feature existed.
+pub fn loadModelCatalog(allocator: std.mem.Allocator, db: *database.Db) void {
+    _ = model_catalog_refresh.loadAtBoot(allocator, db);
+    model_catalog_refresh.startBackgroundSync(allocator, db);
+}
+
 pub fn setupStaticDir(
     allocator: std.mem.Allocator,
     io: std.Io,

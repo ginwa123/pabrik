@@ -665,6 +665,13 @@ pub const Harness = struct {
         ///
         /// POSIX only; asking on Windows is an error, not a silent no-op.
         no_file_limit: ?u64 = null,
+
+        /// Run BEFORE the child is spawned, with the tmpdir HOME already in
+        /// place. Lets a suite seed state the binary reads AT BOOT — a
+        /// pre-migrated database, for instance — which the file-copy hooks
+        /// cannot express. A general seam on purpose: the alternative is one
+        /// bespoke hook per suite.
+        pre_boot_setup: ?*const fn (io: Io, allocator: Allocator, temp_dir: []const u8) anyerror!void = null,
     };
 
     /// Boot a fresh `pabrik` binary against an isolated tmpdir HOME.
@@ -815,6 +822,8 @@ pub const Harness = struct {
         try argv.append(gpa, "--port");
         try argv.append(gpa, port_str);
         try argv.appendSlice(gpa, opts.extra_args);
+
+        if (opts.pre_boot_setup) |setup| try setup(io, gpa, temp_dir);
 
         var child = try std.process.spawn(io, .{
             .argv = argv.items,
@@ -1677,11 +1686,17 @@ pub fn resolvePabrikBin(io: Io, gpa: Allocator) ![]u8 {
         if (env_bin.len > 0) {
             const resolved = resolveRelative(io, gpa, env_bin) catch env_bin;
             if (isExecutable(io, resolved)) return resolved;
+            // `catch env_bin` borrows, so only a fresh dupe may be freed.
+            if (resolved.ptr != env_bin.ptr) gpa.free(resolved);
         }
     } else |_| {}
     for (BIN_CANDIDATES) |c| {
         const resolved = try resolveRelative(io, gpa, c);
         if (isExecutable(io, resolved)) return resolved;
+        // A candidate that did not resolve is still an allocation. Dropping it
+        // here is what makes `boot` leak-free: without it every boot leaked one
+        // buffer per rejected candidate, and the test runner failed the suite.
+        gpa.free(resolved);
     }
     return error.BinaryNotFound;
 }
@@ -1694,6 +1709,8 @@ pub fn mcpHelloWorldBin(io: Io, gpa: Allocator) ![]u8 {
         if (env_bin.len > 0) {
             const resolved = resolveRelative(io, gpa, env_bin) catch env_bin;
             if (isExecutable(io, resolved)) return resolved;
+            // `catch env_bin` borrows, so only a fresh dupe may be freed.
+            if (resolved.ptr != env_bin.ptr) gpa.free(resolved);
         }
     } else |_| {}
     for ([_][]const u8{
@@ -1702,6 +1719,10 @@ pub fn mcpHelloWorldBin(io: Io, gpa: Allocator) ![]u8 {
     }) |c| {
         const resolved = try resolveRelative(io, gpa, c);
         if (isExecutable(io, resolved)) return resolved;
+        // A candidate that did not resolve is still an allocation. Dropping it
+        // here is what makes `boot` leak-free: without it every boot leaked one
+        // buffer per rejected candidate, and the test runner failed the suite.
+        gpa.free(resolved);
     }
     return error.BinaryNotFound;
 }
@@ -1715,6 +1736,8 @@ pub fn mcpHttpHelloWorldBin(io: Io, gpa: Allocator) ![]u8 {
         if (env_bin.len > 0) {
             const resolved = resolveRelative(io, gpa, env_bin) catch env_bin;
             if (isExecutable(io, resolved)) return resolved;
+            // `catch env_bin` borrows, so only a fresh dupe may be freed.
+            if (resolved.ptr != env_bin.ptr) gpa.free(resolved);
         }
     } else |_| {}
     for ([_][]const u8{
@@ -1723,6 +1746,10 @@ pub fn mcpHttpHelloWorldBin(io: Io, gpa: Allocator) ![]u8 {
     }) |c| {
         const resolved = try resolveRelative(io, gpa, c);
         if (isExecutable(io, resolved)) return resolved;
+        // A candidate that did not resolve is still an allocation. Dropping it
+        // here is what makes `boot` leak-free: without it every boot leaked one
+        // buffer per rejected candidate, and the test runner failed the suite.
+        gpa.free(resolved);
     }
     return error.BinaryNotFound;
 }

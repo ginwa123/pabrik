@@ -425,6 +425,12 @@ pub const systemPromptGetHandler = @import("system_prompt_get.zig").systemPrompt
 
 // Pabrik config handlers
 pub const pabrikConfigGetHandler = @import("pabrik_config_get.zig").pabrikConfigGetHandler;
+
+// models.dev catalog (Migration 106): the picker's data, the profile dialog's
+// one resolve call, and a manual refresh.
+pub const modelsCatalogHandler = @import("models_catalog.zig").modelsCatalogHandler;
+pub const modelsResolveHandler = @import("models_catalog.zig").modelsResolveHandler;
+pub const modelsRefreshHandler = @import("models_catalog.zig").modelsRefreshHandler;
 pub const pabrikConfigPutHandler = @import("pabrik_config_put.zig").pabrikConfigPutHandler;
 // Per-workspace config overlay (Migration 105).
 pub const workspaceConfigGetHandler = @import("workspace_config.zig").workspaceConfigGetHandler;

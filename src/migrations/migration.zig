@@ -118,6 +118,7 @@ const migration_102 = @import("migration_102.zig");
 const migration_103 = @import("migration_103.zig");
 const migration_104 = @import("migration_104.zig");
 const migration_105 = @import("migration_105.zig");
+const migration_106 = @import("migration_106.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -225,6 +226,7 @@ pub const Migration102CreateSkills = migration_102.Migration102CreateSkills;
 pub const Migration103CreateWorkspaceSecrets = migration_103.Migration103CreateWorkspaceSecrets;
 pub const Migration104AddSessionPinned = migration_104.Migration104AddSessionPinned;
 pub const Migration105CreateWorkspaceSettings = migration_105.Migration105CreateWorkspaceSettings;
+pub const Migration106CreateModelCatalog = migration_106.Migration106CreateModelCatalog;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -514,6 +516,7 @@ pub const allMigrations: []const Migration = &.{
     // a workspace is shared when `--auth` is on and this table holds API
     // keys - see `workspace_settings_store.zig` for the owner rule.
     .{ .version = Migration105CreateWorkspaceSettings.version, .name = Migration105CreateWorkspaceSettings.name, .up = Migration105CreateWorkspaceSettings.up },
+    .{ .version = Migration106CreateModelCatalog.version, .name = Migration106CreateModelCatalog.name, .up = Migration106CreateModelCatalog.up },
 };
 
 /// Register all migrations with a MigrationManager
@@ -11982,6 +11985,70 @@ test "Migration105 creates workspace_settings with exactly the five agreed colum
         if (std.mem.eql(u8, c, "owner")) saw_owner = true;
     }
     try testing.expect(saw_owner);
+}
+
+test "Migration106 creates the model catalog tables with the agreed columns" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try Migration106CreateModelCatalog.up(&ctx.db, alloc);
+
+    const provider_cols = try columnsOf(&ctx, "model_catalog_providers");
+    defer {
+        for (provider_cols) |c| alloc.free(c);
+        alloc.free(provider_cols);
+    }
+    try expectColumnsEqual(provider_cols, &[_][]const u8{ "id", "name", "base_url", "url_style", "env_json" });
+
+    const model_cols = try columnsOf(&ctx, "model_catalog_models");
+    defer {
+        for (model_cols) |c| alloc.free(c);
+        alloc.free(model_cols);
+    }
+    try expectColumnsEqual(model_cols, &[_][]const u8{
+        "provider_id",     "model_id",  "name",   "context_window", "output_tokens",
+        "reasoning",       "effort_json", "budget_min", "temperature", "cost_input",
+        "cost_output",
+    });
+
+    const meta_cols = try columnsOf(&ctx, "model_catalog_meta");
+    defer {
+        for (meta_cols) |c| alloc.free(c);
+        alloc.free(meta_cols);
+    }
+    try expectColumnsEqual(meta_cols, &[_][]const u8{
+        "id", "schema_version", "source", "fetched_at_ms", "provider_count", "model_count",
+    });
+}
+
+test "Migration106's text columns are NULLABLE so an empty base_url is representable" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try Migration106CreateModelCatalog.up(&ctx.db, alloc);
+
+    // THE LANDMINE THIS PINS: this backend binds an empty slice as SQL NULL, and
+    // 25 of 227 providers (anthropic among them) have no `api` URL. If
+    // `base_url` were NOT NULL, storing that provider would either fail the
+    // constraint or silently never match a `WHERE base_url = ?`. NULLABLE plus
+    // COALESCE on every read is the one shape that works in both directions.
+    for ([_][]const u8{ "base_url", "url_style", "name" }) |col| {
+        const sql = try std.fmt.allocPrint(
+            alloc,
+            "SELECT \"notnull\" FROM pragma_table_info('model_catalog_providers') WHERE name = '{s}'",
+            .{col},
+        );
+        defer alloc.free(sql);
+        var q = try ctx.db.query(alloc, sql, &.{});
+        defer q.deinit();
+        const row = (try q.next()) orelse return error.ColumnMissing;
+        defer row.deinit(alloc);
+        try testing.expectEqualStrings("0", row.values[0]);
+    }
 }
 
 test "Migration105's config_json is nullable, so clearing the overlay is representable" {

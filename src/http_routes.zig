@@ -264,6 +264,14 @@ fn registerConfigRoutes(authed: *Group) !void {
     try authed.put("/api/config/pabrik", ai_mod.http_handlers.pabrikConfigPutHandler);
     try authed.delete("/api/config/pabrik/profiles/:name", ai_mod.http_handlers.pabrikConfigProfileDeleteHandler);
 
+    // models.dev model catalog (Migration 106). All three are LITERALS under
+    // `/api/models/…` and no `/api/models/:param` pattern is registered before
+    // them — `matchRoute` walks registration order, so a literal after a
+    // wildcard would be captured by the wildcard.
+    try authed.get("/api/models/catalog", ai_mod.http_handlers.modelsCatalogHandler);
+    try authed.get("/api/models/resolve", ai_mod.http_handlers.modelsResolveHandler);
+    try authed.post("/api/models/refresh", ai_mod.http_handlers.modelsRefreshHandler);
+
     // OS notification test endpoint — fires a real OS notification so
     // the user can verify their system can display them.
     try authed.post("/api/notify/test", ai_mod.http_handlers.notifyTestHandler);

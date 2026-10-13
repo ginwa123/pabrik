@@ -141,6 +141,13 @@ pub const user_config_store = @import("modules/config/UserConfigStore.zig");
 /// `users.config_json` or the process-global `config.json`. See its header
 /// for the rule and the two entry points call sites use.
 pub const session_llm_config = @import("agentic_loop/session_llm_config.zig");
+/// models.dev's model catalog: the ONE owner of "what do we know about this
+/// model?" — context window, output cap, reasoning shape, price.
+pub const model_catalog = @import("agentic_loop/model_catalog.zig");
+/// The durable half of the catalog (Migration 106). One store, no file cache.
+pub const model_catalog_store = @import("models/model_catalog_store.zig");
+/// The network half: fetch models.dev, save the snapshot, swap the index.
+pub const model_catalog_refresh = @import("agentic_loop/model_catalog_refresh.zig");
 // Plan 2026-09-10-web-launch-toggle: random loopback port picker for
 // browser mode (`--port 0` resolution). Re-exported here so the exe
 // module (src/main.zig) reaches it via `pabrikcore.web_port` instead of
@@ -292,6 +299,7 @@ test {
     // Agent Mode helpers: impl + tests in one file. Importing these
     // makes their inline `test` blocks discoverable by `zig build test`.
     _ = @import("agentic_loop/agent_tools_allowed.zig");
+    _ = @import("agentic_loop/model_catalog.zig");
     _ = @import("agentic_loop/prompts_make_agent_knowledge.zig");
     _ = @import("agentic_loop/prompts_make_agent_system_prompt.zig");
     // Agent-Kanbans mirror (Migration 081): impl + tests in one file.
@@ -482,6 +490,7 @@ test {
     _ = @import("models/design_page.zig");
     _ = @import("models/design_page_element.zig");
     _ = @import("models/llm_history.zig");
+    _ = @import("models/model_catalog_store.zig");
     // `llm_history.model` is never empty — see the module header for the
     // NULL-collapse vs. ''-literal distinction this guard closes.
     _ = @import("agentic_loop/llm_history_model_guard.zig");

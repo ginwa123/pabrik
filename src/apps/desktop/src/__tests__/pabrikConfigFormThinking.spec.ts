@@ -10,8 +10,27 @@
 //  - Hidden fields preserve values (not nulled) on style switch.
 
 import { describe, it, expect } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, VueWrapper } from '@vue/test-utils'
 import LlmConfigForm from '../components/pabrik/LlmConfigForm.vue'
+
+/**
+ * Mount and open `Advanced`.
+ *
+ * Advanced is collapsed by default — that is the whole point of the redesign —
+ * so a spec that wants to touch a field behind it has to open it first. The
+ * helper is tolerant so it can be used for components that have no Advanced
+ * section at all.
+ */
+async function mountOpen(component: unknown, opts?: unknown) {
+  // `as never` keeps `mount`'s overload resolution from narrowing the SECOND
+  // argument to a VNode-props shape at every call site.
+  const w = mount(component as never, opts as never) as VueWrapper
+  const toggle = w.find('[data-testid=advanced-toggle]')
+  if (toggle.exists()) await toggle.trigger('click')
+  return w
+}
+
+
 
 const baseConfig = {
   model: 'm',
@@ -27,8 +46,8 @@ const baseConfig = {
 }
 
 describe('LlmConfigForm Thinking fields', () => {
-  it('hides budget + effort fields when thinking=off', () => {
-    const wrapper = mount(LlmConfigForm, {
+  it('hides budget + effort fields when thinking=off', async () => {
+    const wrapper = await mountOpen(LlmConfigForm, {
       props: { modelValue: { ...baseConfig, thinking: 'off' } },
     })
     expect(wrapper.find('[data-testid=thinking-budget-input]').exists()).toBe(false)
@@ -37,72 +56,72 @@ describe('LlmConfigForm Thinking fields', () => {
 
   // ─── Per-style gating (plan 2026-09-01) ───
 
-  it('anthropic + thinking=on: shows budget, hides effort', () => {
-    const wrapper = mount(LlmConfigForm, {
+  it('anthropic + thinking=on: shows budget, hides effort', async () => {
+    const wrapper = await mountOpen(LlmConfigForm, {
       props: { modelValue: { ...baseConfig, url_style: 'anthropic', thinking: 'on' } },
     })
     expect(wrapper.find('[data-testid=thinking-budget-input]').exists()).toBe(true)
     expect(wrapper.find('[data-testid=reasoning-effort-select]').exists()).toBe(false)
   })
 
-  it('anthropic + thinking=auto: shows budget, hides effort', () => {
-    const wrapper = mount(LlmConfigForm, {
+  it('anthropic + thinking=auto: shows budget, hides effort', async () => {
+    const wrapper = await mountOpen(LlmConfigForm, {
       props: { modelValue: { ...baseConfig, url_style: 'anthropic', thinking: 'auto' } },
     })
     expect(wrapper.find('[data-testid=thinking-budget-input]').exists()).toBe(true)
     expect(wrapper.find('[data-testid=reasoning-effort-select]').exists()).toBe(false)
   })
 
-  it('anthropic + thinking=off: hides both', () => {
-    const wrapper = mount(LlmConfigForm, {
+  it('anthropic + thinking=off: hides both', async () => {
+    const wrapper = await mountOpen(LlmConfigForm, {
       props: { modelValue: { ...baseConfig, url_style: 'anthropic', thinking: 'off' } },
     })
     expect(wrapper.find('[data-testid=thinking-budget-input]').exists()).toBe(false)
     expect(wrapper.find('[data-testid=reasoning-effort-select]').exists()).toBe(false)
   })
 
-  it('openai + thinking=on: hides budget, shows effort', () => {
-    const wrapper = mount(LlmConfigForm, {
+  it('openai + thinking=on: hides budget, shows effort', async () => {
+    const wrapper = await mountOpen(LlmConfigForm, {
       props: { modelValue: { ...baseConfig, url_style: 'openai', thinking: 'on' } },
     })
     expect(wrapper.find('[data-testid=thinking-budget-input]').exists()).toBe(false)
     expect(wrapper.find('[data-testid=reasoning-effort-select]').exists()).toBe(true)
   })
 
-  it('openai + thinking=auto: hides budget, shows effort', () => {
-    const wrapper = mount(LlmConfigForm, {
+  it('openai + thinking=auto: hides budget, shows effort', async () => {
+    const wrapper = await mountOpen(LlmConfigForm, {
       props: { modelValue: { ...baseConfig, url_style: 'openai', thinking: 'auto' } },
     })
     expect(wrapper.find('[data-testid=thinking-budget-input]').exists()).toBe(false)
     expect(wrapper.find('[data-testid=reasoning-effort-select]').exists()).toBe(true)
   })
 
-  it('openai + thinking=off: hides both', () => {
-    const wrapper = mount(LlmConfigForm, {
+  it('openai + thinking=off: hides both', async () => {
+    const wrapper = await mountOpen(LlmConfigForm, {
       props: { modelValue: { ...baseConfig, url_style: 'openai', thinking: 'off' } },
     })
     expect(wrapper.find('[data-testid=thinking-budget-input]').exists()).toBe(false)
     expect(wrapper.find('[data-testid=reasoning-effort-select]').exists()).toBe(false)
   })
 
-  it('openai-response + thinking=on: hides budget, shows effort', () => {
-    const wrapper = mount(LlmConfigForm, {
+  it('openai-response + thinking=on: hides budget, shows effort', async () => {
+    const wrapper = await mountOpen(LlmConfigForm, {
       props: { modelValue: { ...baseConfig, url_style: 'openai-response', thinking: 'on' } },
     })
     expect(wrapper.find('[data-testid=thinking-budget-input]').exists()).toBe(false)
     expect(wrapper.find('[data-testid=reasoning-effort-select]').exists()).toBe(true)
   })
 
-  it('openai-response + thinking=auto: hides budget, shows effort', () => {
-    const wrapper = mount(LlmConfigForm, {
+  it('openai-response + thinking=auto: hides budget, shows effort', async () => {
+    const wrapper = await mountOpen(LlmConfigForm, {
       props: { modelValue: { ...baseConfig, url_style: 'openai-response', thinking: 'auto' } },
     })
     expect(wrapper.find('[data-testid=thinking-budget-input]').exists()).toBe(false)
     expect(wrapper.find('[data-testid=reasoning-effort-select]').exists()).toBe(true)
   })
 
-  it('openai-response + thinking=off: hides both', () => {
-    const wrapper = mount(LlmConfigForm, {
+  it('openai-response + thinking=off: hides both', async () => {
+    const wrapper = await mountOpen(LlmConfigForm, {
       props: { modelValue: { ...baseConfig, url_style: 'openai-response', thinking: 'off' } },
     })
     expect(wrapper.find('[data-testid=thinking-budget-input]').exists()).toBe(false)
@@ -111,7 +130,7 @@ describe('LlmConfigForm Thinking fields', () => {
 
   it('preserves hidden field values on style switch (does not null)', async () => {
     // Start anthropic with a budget value, switch to openai — budget should be hidden but not nulled.
-    const wrapper = mount(LlmConfigForm, {
+    const wrapper = await mountOpen(LlmConfigForm, {
       props: { modelValue: { ...baseConfig, url_style: 'anthropic', thinking: 'on', thinking_budget_tokens: 4096, reasoning_effort: 'high' } },
     })
     expect(wrapper.find('[data-testid=thinking-budget-input]').exists()).toBe(true)
@@ -131,7 +150,7 @@ describe('LlmConfigForm Thinking fields', () => {
   })
 
   it('emits null when thinking_budget_tokens input is cleared (anthropic)', async () => {
-    const wrapper = mount(LlmConfigForm, {
+    const wrapper = await mountOpen(LlmConfigForm, {
       props: { modelValue: { ...baseConfig, url_style: 'anthropic', thinking_budget_tokens: 4096 } },
     })
     const input = wrapper.find('[data-testid=thinking-budget-input]')
@@ -141,7 +160,7 @@ describe('LlmConfigForm Thinking fields', () => {
   })
 
   it('emits clamped integer when thinking_budget_tokens input is below 1024 (anthropic)', async () => {
-    const wrapper = mount(LlmConfigForm, {
+    const wrapper = await mountOpen(LlmConfigForm, {
       props: { modelValue: { ...baseConfig, url_style: 'anthropic' } },
     })
     const input = wrapper.find('[data-testid=thinking-budget-input]')
@@ -152,7 +171,7 @@ describe('LlmConfigForm Thinking fields', () => {
   })
 
   it('emits null when reasoning_effort select is set to Auto (empty)', async () => {
-    const wrapper = mount(LlmConfigForm, {
+    const wrapper = await mountOpen(LlmConfigForm, {
       props: { modelValue: { ...baseConfig, url_style: 'openai', reasoning_effort: 'high' } },
     })
     const select = wrapper.find('[data-testid=reasoning-effort-select]')
@@ -163,7 +182,7 @@ describe('LlmConfigForm Thinking fields', () => {
 
   it('emits low/medium/high when reasoning_effort is changed', async () => {
     for (const v of ['low', 'medium', 'high'] as const) {
-      const wrapper = mount(LlmConfigForm, {
+      const wrapper = await mountOpen(LlmConfigForm, {
         props: { modelValue: { ...baseConfig, url_style: 'openai', reasoning_effort: null } },
       })
       const select = wrapper.find('[data-testid=reasoning-effort-select]')

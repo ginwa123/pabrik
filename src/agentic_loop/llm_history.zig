@@ -1,3 +1,4 @@
+const model_catalog = @import("model_catalog.zig");
 const std = @import("std");
 const testing = std.testing;
 const pabrikcore = @import("pabrikcore");
@@ -1223,7 +1224,10 @@ pub fn resolveMaxCapacityTotalTokens(
     profile: ?*const config_mod.LlmConfig.LlmProfile,
     model: []const u8,
 ) u32 {
-    return cfg.maxCapacityForModel(profile, null, cfg, model);
+    // The live catalog is what makes a non-MiniMax model resolve to its real
+    // window instead of the built-in 200k. `null` (no catalog yet) degrades to
+    // exactly the previous behaviour.
+    return cfg.maxCapacityForModelWith(profile, null, cfg, model, model_catalog.getSingleton());
 }
 
 /// Resolve the profile a session effectively runs under — the shared
