@@ -38,10 +38,24 @@
 # USAGE
 #   lint-no-catch-unreachable.sh          -> scan src/, exit 1 on any hit
 #   lint-no-catch-unreachable.sh --selftest -> run against fixtures
+#
+# REQUIRES `rg` (ripgrep) on PATH. The check is a hard failure, not a
+# skip: a lint that cannot run must never report the tree clean, because
+# "clean" is the one answer that lets a violation merge. This is not
+# hypothetical — the first version of this script had exactly that bug
+# (`2>/dev/null || true` swallowed "rg: command not found" into a pass)
+# and the selftest below is what caught it.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
+
+if ! command -v rg >/dev/null 2>&1; then
+  echo "x ripgrep (rg) not found on PATH -- cannot scan, so this is a" >&2
+  echo "  FAILURE, not a pass. Install ripgrep, or add it to the job" >&2
+  echo "  that runs this script." >&2
+  exit 1
+fi
 
 # ── The scan ───────────────────────────────────────────────────────────
 #
@@ -53,8 +67,20 @@ cd "$REPO_ROOT"
 # without it a legal `catch` / newline / `unreachable` split — which
 # `zig fmt` will happily produce on a long line — slips through.
 scan() {
-  local out
-  out="$(rg -U -n --no-heading 'catch[[:space:]]+unreachable\b' src/ 2>/dev/null || true)"
+  local out rc
+  # Capture rg's stderr instead of discarding it: "command not found",
+  # a permission error and a genuine no-match all look like an empty
+  # stdout, and only one of them means the tree is clean.
+  set +e
+  out="$(rg -U -n --no-heading 'catch[[:space:]]+unreachable\b' src/ 2>&1)"
+  rc=$?
+  set -e
+  # rg exits 0 = matches found, 1 = no matches, >=2 = rg itself failed.
+  if [ "$rc" -ge 2 ]; then
+    echo "x the scan could not run (rg exit $rc):" >&2
+    printf '%s\n' "$out" >&2
+    return 2
+  fi
   if [ -n "$out" ]; then
     printf '%s\n' "$out"
     return 1
@@ -83,7 +109,7 @@ selftest() {
     fi
   }
 
-  mkdir -p "$tmp/src"
+  mkdir -p "$tmp/src" "$tmp/emptybin"
 
   # 1. A clean file must pass.
   cat > "$tmp/src/clean.zig" <<'EOF'
@@ -140,12 +166,37 @@ EOF
   # 8. A newline between catch and unreachable must be caught.
   printf 'pub fn f() void {\n\t_ = g() catch\n\t    unreachable;\n}\n' > "$tmp/src/newline.zig"
 
+  # 9. THE REGRESSION GUARD. With no `rg` on PATH the scanner must FAIL,
+  #    not report the tree clean. The first version of this script had the
+  #    opposite behaviour — `2>/dev/null || true` turned
+  #    "rg: command not found" into "no matches" — and it passed CI on a
+  #    runner that ships no ripgrep. A lint that cannot run must never
+  #    answer "clean", because "clean" is the one answer that merges.
+  #
+  # Invoked via an absolute bash path, not `$0`: the shebang needs `env`
+  # on PATH, and a PATH with no rg has no `env` either, so `$0` would die
+  # with 127 before reaching the check we are actually testing.
+  local rc_norg bash_abs
+  bash_abs="$(command -v bash)"
+  set +e
+  PATH="$tmp/emptybin" "$bash_abs" "$0" >/dev/null 2>&1
+  rc_norg=$?
+  set -e
+
   echo "selftest: lint-no-catch-unreachable"
 
   # `set -e` would abort the whole selftest the first time a fixture
   # correctly fails to match, so every probe is wrapped in an `if`.
   probe() { # probe <file> -> prints 0 if the idiom is present, 1 if not
-    if rg -U -q 'catch[[:space:]]+unreachable\b' "$1" 2>/dev/null; then
+    local rc
+    set +e
+    rg -U -q 'catch[[:space:]]+unreachable\b' "$1" >/dev/null 2>&1
+    rc=$?
+    set -e
+    # >=2 means rg itself failed, which must NOT read as "no match".
+    if [ "$rc" -ge 2 ]; then
+      echo 2
+    elif [ "$rc" -eq 0 ]; then
       echo 0
     else
       echo 1
@@ -170,6 +221,7 @@ EOF
   check "unreachableFoo ok"            1 "$rc_boundary"
   check "tab-separated is caught"      0 "$rc_tab"
   check "newline-separated is caught"  0 "$rc_newline"
+  check "missing rg FAILS (not a pass)" 1 "$rc_norg"
 
   if [ "$failures" -ne 0 ]; then
     echo "selftest: $failures failure(s)"
@@ -185,13 +237,27 @@ case "${1:-}" in
     selftest
     ;;
   "")
-    if ! out="$(scan)"; then
+    # `scan` prints its hits on stdout and its diagnostics on stderr, so
+    # capture the two streams separately: a broken scan must not have its
+    # error text mistaken for a list of violations.
+    hits="$(mktemp)"
+    diag="$(mktemp)"
+    # shellcheck disable=SC2064  # expand the paths NOW, not at trap time
+    trap "rm -f '$hits' '$diag'" EXIT
+    scan >"$hits" 2>"$diag"
+    rc=$?
+    if [ "$rc" -eq 2 ]; then
+      cat "$diag" >&2
+      exit 1
+    fi
+    if [ "$rc" -eq 1 ]; then
       echo "x 'catch unreachable' is banned — see CODING_STANDARDS.md" >&2
       echo "  Replace each site with 'catch @panic(\"<what failed>\")'." >&2
       echo >&2
-      printf '%s\n' "$out" | while IFS= read -r hit; do
+      while IFS= read -r hit; do
+        [ -n "$hit" ] || continue
         echo "  $hit" >&2
-      done
+      done <"$hits"
       exit 1
     fi
     echo "ok no 'catch unreachable' under src/"

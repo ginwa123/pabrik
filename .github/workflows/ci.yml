@@ -217,16 +217,41 @@ jobs:
         shell: bash
         run: pnpm run lint:check
 
+      - name: Install ripgrep
+        # ubuntu-latest does NOT ship ripgrep, and the Zig coding-standards
+        # scan below is a ripgrep one-liner. The script fails closed when
+        # rg is absent (a lint that cannot run must never report the tree
+        # clean), so without this step the job is red for an environmental
+        # reason rather than a code one.
+        #
+        # The other jobs that need rg install it too — see the
+        # "install ripgrep" steps in ci-backend.yml and ci-functional.yml,
+        # which need it because src/modules/agent/tools/search.zig spawns
+        # `rg` at runtime.
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v rg >/dev/null 2>&1; then
+            echo "ok ripgrep already at $(command -v rg)"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq ripgrep
+          fi
+          command -v rg >/dev/null 2>&1 || { echo "x ripgrep still missing after install" >&2; exit 1; }
+          rg --version | head -1
+
       - name: Zig coding standards (no `catch unreachable`)
         # The second half of this job's gate, and the one .husky/pre-commit
-        # mirrors alongside the JS lint. It needs no toolchain install:
-        # the scan is a ripgrep one-liner, so it runs in ~50 ms and cannot
-        # fail for an environmental reason the way a build can.
+        # mirrors alongside the JS lint. The scan itself is ~50 ms; the
+        # cost of this step is dominated by the ripgrep install above.
         #
         # The selftest runs first for the same reason the `changes` job
         # runs its own: a scanner that has stopped matching is a silent
         # outage, and the only way to notice is to check it against known
-        # input on every invocation.
+        # input on every invocation. It earned its keep immediately — the
+        # first version of the script passed on a runner with no rg,
+        # because `2>/dev/null || true` turned "command not found" into
+        # "no matches".
         #
         # The rule and its rationale live in CODING_STANDARDS.md.
         shell: bash

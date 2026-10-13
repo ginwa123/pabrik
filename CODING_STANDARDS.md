@@ -127,12 +127,26 @@ scripts/lint-no-catch-unreachable.sh            # scan src/, exit 1 on any hit
 scripts/lint-no-catch-unreachable.sh --selftest # verify the scanner itself
 ```
 
-The `--selftest` mode runs the scanner against eight fixtures — a clean
+Requires `rg` (ripgrep) on PATH. If it is missing the script **fails** —
+it does not skip and it does not report the tree clean. A lint that
+cannot run must never answer "clean", because "clean" is the one answer
+that lets a violation merge.
+
+The `--selftest` mode runs the scanner against nine fixtures — a clean
 file, the banned idiom, a `switch` else, a bare `@panic`, a comment, a
-`unreachableFoo` near-miss, and tab- and newline-separated splits. It
-exists for the same reason `ci-change-filter.sh --selftest` does: a
-scanner that has quietly stopped matching is a silent outage, and the
-only way to notice is to check it against known input on every run.
+`unreachableFoo` near-miss, tab- and newline-separated splits, and a run
+under a PATH with no `rg` that must fail rather than pass. It exists for
+the same reason `ci-change-filter.sh --selftest` does: a scanner that has
+quietly stopped matching is a silent outage, and the only way to notice
+is to check it against known input on every run.
+
+That last fixture is not decorative. The first version of this script
+wrote `rg ... 2>/dev/null || true`, which turned `rg: command not found`
+into "no matches" — so it reported the tree clean on a runner that ships
+no ripgrep, and CI went green on a scan that had never run. The selftest
+caught it on the first CI run. When you add a lint, assume the tool it
+shells out to will one day be absent, and decide *then* what the answer
+should be.
 
 ---
 
@@ -151,10 +165,14 @@ should not have to remember it. Before adding one:
    a `--selftest`, wire it into the `lint` job of
    `.github/workflows/ci.yml`, and mirror it in `.husky/pre-commit`.
    `scripts/ci-change-filter.sh` is the template.
-4. **Land it with zero debt.** Convert every existing violation in the
+4. **Fail closed.** If the lint shells out to a tool, check the tool is
+   there and fail when it is not. Never let "I could not check" degrade
+   into "nothing to report" — that is the one failure mode that ships a
+   violation, and it is invisible in the green check.
+5. **Land it with zero debt.** Convert every existing violation in the
    same change. A rule that ships with a baseline allowlist is a rule
    nobody can tell is being followed, and the allowlist becomes a
    second, worse rule to maintain.
-5. **Say what is not banned.** Every rule here has an explicit
+6. **Say what is not banned.** Every rule here has an explicit
    "what is NOT banned" section, because a rule whose edge cases are
    undocumented gets bypassed the first time someone hits one.
