@@ -108,7 +108,6 @@ import ProgressiveTool from '../tool_outputs/ProgressiveTool.vue'
 import SubAgentPeekHost from '../pabrik/SubAgentPeekHost.vue'
 import ChatRightSidebar from './chat_right_sidebar/ChatRightSidebar.vue'
 import ChatAppBar from './ChatAppBar.vue'
-import WorkerElapsedChip from '../WorkerElapsedChip.vue'
 import CenterDiffSection from './chat_right_sidebar/CenterDiffSection.vue'
 import { copyTextToClipboard } from './chat_right_sidebar/DiffCommentBox.vue'
 import {
@@ -4839,15 +4838,6 @@ const compactSession = async () => {
         @close="emit('close')"
       >
         <template #extras>
-          <!-- How long this session's worker has been running. Sits in the
-               same extras slot the hosts project their SessionSlider into,
-               so the number is visible while typing without touching the
-               Stop button. -->
-          <WorkerElapsedChip
-            v-if="sessionId"
-            :session-id="sessionId"
-            test-id="chat-app-bar-elapsed"
-          />
           <slot name="app-bar-extras" />
         </template>
       </ChatAppBar>

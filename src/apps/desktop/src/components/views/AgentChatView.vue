@@ -24,7 +24,6 @@
 <script setup lang="ts">
 import ChatView from './ChatView.vue'
 import SessionSlider from '../SessionSlider.vue'
-import WorkerElapsedChip from '../WorkerElapsedChip.vue'
 
 interface Props {
   task: { id: string; name?: string; task_type?: string }
@@ -62,7 +61,6 @@ const emit = defineEmits<{ close: [] }>()
            pass the raw task id, so both resolve to task.id). -->
       <template #app-bar-extras>
         <SessionSlider :session-id="props.task.id" test-id="agent-chat-slider" />
-      <WorkerElapsedChip :session-id="props.task.id" test-id="agent-chat-elapsed-chip" />
       </template>
     </ChatView>
   </div>
