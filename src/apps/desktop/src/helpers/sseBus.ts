@@ -16,6 +16,7 @@ import type {
   BackgroundProcessEvent,
   SkillEvalEvent,
   GitFileStageEvent,
+  GitPrStateEvent,
 } from '../api'
 
 // NOTE: Plan's Chunk 1 spec imports `KanbanEvent` and `LlmChunkEvent`
@@ -59,6 +60,13 @@ type SseEventMap = {
   // between Staged / Changes / Untracked instead of re-fetching the whole
   // git-status list.
   gitFileStage: GitFileStageEvent
+  // Change-request state. The backend emits two granular names
+  // (`git_pr_state_merged` / `git_pr_state_closed`) that share the
+  // `GitPrStateEvent` payload — see src/agentic_loop/git_pr_state_events.zig.
+  // The bus routes both to this single channel; the consumer filters by `cwd`
+  // and invalidates the shared PR-status cache entry for `branch`, so the
+  // sidebar branch icon and the kanban card badge re-read after a merge.
+  gitPrState: GitPrStateEvent
 }
 
 type Listener<K extends keyof SseEventMap> = (event: SseEventMap[K]) => void
@@ -244,6 +252,7 @@ export function installSseBus(_app?: App, options?: SseBusInstallOptions): SseBu
     backgroundProcess: new Set<Listener<'backgroundProcess'>>(),
     skillEvals: new Set<Listener<'skillEvals'>>(),
     gitFileStage: new Set<Listener<'gitFileStage'>>(),
+    gitPrState: new Set<Listener<'gitPrState'>>(),
   }
 
   const state = shallowRef<SseState>('closed')
@@ -313,6 +322,11 @@ export function installSseBus(_app?: App, options?: SseBusInstallOptions): SseBu
         // SidebarDiffPanel.vue and moves ONE row instead of re-fetching
         // the whole git-status list.
         gitFileStage: (e) => forward('gitFileStage', e),
+        // Change-request state — same central-broadcast pattern: backend emits
+        // on "git_pr_state", frontend filters by `event.cwd` in the bridge that
+        // invalidates the shared PR-status cache (helpers/prStatusCache.ts), so
+        // a merge in ANOTHER tab still recolours this one's badges.
+        gitPrState: (e) => forward('gitPrState', e),
       },
       onError: (err) => {
         console.error('[sseBus] global SSE failed permanently:', err)

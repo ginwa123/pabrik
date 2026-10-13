@@ -198,6 +198,23 @@ pub fn closeUseCaseWithPrograms(
     return .{ .closed = closed, .provider = provider, .status = status };
 }
 
+/// Tell every client that this branch's change request moved, so the sidebar's
+/// RECENT icon and the kanban card badge re-read the forge instead of keeping
+/// the colour they cached before the close.
+///
+/// Never fails the caller — a confirmed close must not be reported as a failure
+/// because the UI could not be told about it. The board's own local invalidate
+/// is the path that cannot be lost; this one is what carries the news to a
+/// second tab (see agentic_loop/git_pr_state_events.zig).
+fn emitPrStateEvent(ctx: gserverz.HttpContext, cwd: []const u8, branch: []const u8, action: []const u8) void {
+    const di = pabrik_core.getSingleton() catch return;
+    pabrik_core.git_pr_state_events.emitGitPrStateEvent(ctx.allocator, di.event_bus, .{
+        .action = action,
+        .cwd = cwd,
+        .branch = branch,
+    });
+}
+
 /// POST /api/git/pr/close
 ///
 /// Body: `{ "path": "<repo>", "pr": "<n|url|branch>", "provider": "github" }`
@@ -248,6 +265,16 @@ pub fn gitPrCloseHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, r
             return res.jsonResponse(.{ .status_code = 502, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = msg }) });
         },
     };
+
+    // A close MOVED this branch's change request, and every badge reads a shared
+    // 60s cache that still holds the pre-close answer. Only for a CONFIRMED
+    // close: an exit-0 that left the change request open is not a move.
+    //
+    // Free of extra forge work: the status re-read above already carries
+    // `head_ref`, which is exactly the branch half of the frontend's cache key.
+    if (outcome.closed and outcome.status.head_ref.len > 0) {
+        emitPrStateEvent(ctx, parsed.path, outcome.status.head_ref, "closed");
+    }
 
     return res.jsonResponse(.{ .status_code = 200, .data = try http_response.makeGitPrCloseResponse(allocator, .{
         .closed = outcome.closed,
@@ -315,8 +342,8 @@ fn ghScript(fx: *Fixture, argv_file: []const u8, close_code: u8, close_stderr: [
         \\{s}
         \\JSONEOF
         \\
-    // Two `{s}` for the dump path (the program line, then the arguments), then
-    // the stderr text, the exit code and the status payload.
+        // Two `{s}` for the dump path (the program line, then the arguments), then
+        // the stderr text, the exit code and the status payload.
     , .{ argv_file, argv_file, close_stderr, close_code, view_json });
     defer fx.allocator.free(script);
     return fx.writeExec("gh", script);

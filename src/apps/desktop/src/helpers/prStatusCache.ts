@@ -21,8 +21,20 @@
  * and the card keeps its current dim look. Final failures go to
  * `console.warn` (devtools only) so the next grey-icon report comes
  * with evidence instead of silence.
+ *
+ * The TTL alone is the wrong answer for a state change the app itself
+ * caused: a merge from the PR tab changes the branch's PR on the forge,
+ * but the TTL still serves the pre-merge `open` to every mounted badge.
+ * `invalidatePrStatus` is that answer — and the badges that must re-read
+ * register a callback with `onPrStatusInvalidated` instead of watching
+ * (see that function for why).
  */
+import { Cause, Data, Effect } from 'effect'
 import { ApiError, getPrStatus } from '../api'
+import { describeCause } from './effectRuntime'
+// Type-only: the bus is passed in by the owner (App.vue), so this module never
+// reaches into the SSE singleton itself.
+import type { SseBus } from './sseBus'
 
 const TTL_MS = 60_000
 const MAX_RETRIES = 2
@@ -57,24 +69,122 @@ export function isPrConflictValue(mergeable: string, merge_state: string): boole
 
 const cache = new Map<string, CacheEntry>()
 const inflight = new Map<string, Promise<PrInfo>>()
+/**
+ * Per-key generation, bumped by `invalidatePrStatus`. A fetch captures the
+ * value it started under and refuses to write its answer if the generation
+ * moved — deleting the in-flight slot alone is not enough, because the pending
+ * promise's own continuation would put the now-stale answer straight back into
+ * the cache.
+ */
+const epoch = new Map<string, number>()
 
-/** Test-only escape hatch — clears both the TTL cache and in-flight map. */
+function bumpEpoch(k: string): void {
+  epoch.set(k, (epoch.get(k) ?? 0) + 1)
+}
+
+/** Test-only escape hatch — clears the TTL cache, in-flight map and epochs. */
 export function clearPrStatusCache(): void {
   cache.clear()
   inflight.clear()
+  epoch.clear()
 }
 
 /**
- * Drop one repo + branch entry so the next fetch re-asks the forge.
- * Called after a close from the board-level PR list: the badge would
- * otherwise keep its stale `open` color until the 60s TTL expires.
- * The in-flight slot is dropped too — a close that lands mid-fetch
- * must not let the stale answer populate the cache afterwards.
+ * The (cwd, branch) pair an invalidation dropped — exactly the pair a badge
+ * holds, so a consumer can skip work that is not about it.
  */
-export function invalidatePrStatus(cwd: string, branch: string, provider = ''): void {
-  const k = cacheKey(cwd, branch, provider)
-  cache.delete(k)
-  inflight.delete(k)
+export interface PrStatusInvalidation {
+  cwd: string
+  branch: string
+}
+
+const invalidationSubscribers = new Set<(change: PrStatusInvalidation) => void>()
+
+/**
+ * A registered badge threw while re-reading. Reported, never propagated: the
+ * invalidation may be running inside a merge that already succeeded.
+ */
+class PrStatusSubscriberError extends Data.TaggedError('PrStatusSubscriberError')<{
+  readonly reason: string
+}> {}
+
+/**
+ * Register `cb` to run whenever a cached answer is invalidated, with the
+ * (cwd, branch) it was for. Returns the unsubscribe handle — call it from
+ * `onUnmounted`.
+ *
+ * WHY A CALLBACK AND NOT A `watch`: `local/no-watch` bans reacting to change
+ * inside a component, and the signal here originates OUTSIDE it — a merge in
+ * another tab arrives on the SSE bus, and this tab's own merge happens in a
+ * sibling component (`MergeBox`). Neither has a handler in the badge that could
+ * "live where the change was made". A registered callback is the spelling this
+ * repo sanctions for that: the producer calls the consumer, instead of the
+ * consumer watching a value.
+ *
+ * Each badge filters on the pair, so one merge reloads exactly the badge whose
+ * branch it was.
+ */
+export function onPrStatusInvalidated(cb: (change: PrStatusInvalidation) => void): () => void {
+  invalidationSubscribers.add(cb)
+  return () => {
+    invalidationSubscribers.delete(cb)
+  }
+}
+
+/**
+ * Drop every cached answer for one repo + branch so the next fetch re-asks the
+ * forge, and tell the registered badges to re-read.
+ *
+ * Called after a merge (the PR tab's `MergeBox`, and the `git_pr_state` SSE
+ * event) and after a close from the board-level PR list: the badge would
+ * otherwise keep its stale `open` color until the 60s TTL expired AND
+ * something re-read it.
+ *
+ * PROVIDER-AGNOSTIC ON PURPOSE. The event is "this branch's change request
+ * changed state", which holds for whichever forge owns it — and the previous
+ * provider-scoped delete was a silent no-op in practice: the board's PR list
+ * passed the provider it had just learned (`github`), while every badge had
+ * asked with no provider at all, so the stale entry survived in exactly the
+ * case the call existed for. One re-asked forge call is the cheap direction
+ * to be wrong in; a badge that lies about a merge is not.
+ *
+ * Matching on the `cwd::branch::` prefix is unambiguous: a git ref name may
+ * not contain `:` (`git check-ref-format`), so `feature` can never match
+ * `feature/x`.
+ *
+ * The in-flight slot is dropped AND its epoch bumped — a mutation that lands
+ * mid-fetch must not let the stale answer populate the cache afterwards.
+ */
+export function invalidatePrStatus(cwd: string, branch: string): void {
+  if (!cwd || !branch) return
+  const prefix = `${cwd}::${branch}::`
+  const keys = new Set<string>()
+  for (const k of cache.keys()) if (k.startsWith(prefix)) keys.add(k)
+  for (const k of inflight.keys()) if (k.startsWith(prefix)) keys.add(k)
+  for (const k of epoch.keys()) if (k.startsWith(prefix)) keys.add(k)
+  for (const k of keys) {
+    cache.delete(k)
+    inflight.delete(k)
+    bumpEpoch(k)
+  }
+  for (const cb of invalidationSubscribers) {
+    // A buggy badge must not stop the other badges from re-reading, nor fail
+    // the merge that triggered the invalidation. Each notification is its own
+    // Effect whose failure is REPORTED rather than propagated — no `catch`,
+    // whose binding would be `unknown` (local/no-try-catch).
+    Effect.runSync(
+      Effect.try({
+        try: () => cb({ cwd, branch }),
+        catch: (cause) => new PrStatusSubscriberError({ reason: describeCause(Cause.fail(cause)) }),
+      }).pipe(
+        Effect.catchTag('PrStatusSubscriberError', (e) =>
+          Effect.sync(() => {
+            console.error('[pr-status] invalidation subscriber threw:', e.reason)
+          }),
+        ),
+      ),
+    )
+  }
 }
 
 /**
@@ -143,15 +253,21 @@ export function fetchPrInfoCached(cwd: string, branch: string, provider = ''): P
     })
   const ongoing = inflight.get(k)
   if (ongoing) return ongoing
+  // Captured before the request goes out: an `invalidatePrStatus` that lands
+  // while it is in flight moves the epoch, and the answer we are about to
+  // receive predates the mutation the caller made.
+  const myEpoch = epoch.get(k) ?? 0
   const p = fetchWithRetry(cwd, branch, provider).then(
     (info) => {
-      cache.set(k, {
-        status: info.status,
-        prUrl: info.prUrl,
-        mergeable: info.mergeable,
-        merge_state: info.merge_state,
-        at: Date.now(),
-      })
+      if ((epoch.get(k) ?? 0) === myEpoch) {
+        cache.set(k, {
+          status: info.status,
+          prUrl: info.prUrl,
+          mergeable: info.mergeable,
+          merge_state: info.merge_state,
+          at: Date.now(),
+        })
+      }
       inflight.delete(k)
       return info
     },
@@ -207,6 +323,29 @@ export function fetchPrConflictCached(
  * GitLab `/-/merge_requests/` URL is not mistaken for something else.
  */
 const PR_URL_MARKERS = ['/-/merge_requests/', '/pull/'] as const
+
+/**
+ * Wire the `git_pr_state` SSE channel (see
+ * src/agentic_loop/git_pr_state_events.zig) into this cache.
+ *
+ * Call ONCE, from `App.vue`, next to `installSseBus()`.
+ *
+ * Why the cache owns this and not each badge: a badge must not re-ask the
+ * forge on every render, and the event names exactly the pair the cache is
+ * keyed on (`cwd` + `branch`) — so a merge or close performed ANYWHERE (another
+ * tab, another machine, the forge's own web UI) lands on one
+ * `invalidatePrStatus` call, whose tick makes every mounted badge re-read.
+ *
+ * `MergeBox` also invalidates directly, for the merge THIS tab performed: that
+ * path needs no round-trip and does not depend on the stream being up.
+ *
+ * Returns the unsubscribe handle so the owner can drop it on teardown.
+ */
+export function subscribePrStatusEvents(bus: SseBus): () => void {
+  return bus.on('gitPrState', (event) => {
+    invalidatePrStatus(event.cwd, event.branch)
+  })
+}
 
 /** The path segment GitLab uses between the repo and the branch (GitHub has none). */
 const GITLAB_TREE_SEGMENT = '/-/tree/'

@@ -15,6 +15,7 @@ import {
   fetchPrStatusCached,
   fetchPrConflictCached,
   branchUrlFromPrUrl,
+  onPrStatusInvalidated,
 } from '../../helpers/prStatusCache'
 import { sessionEngineDb, toSessionRow } from '../../sync/SessionEngineDb'
 import { runSyncEffect, runSyncEffectOr, runSyncVoid } from '../../sync/runtime'
@@ -204,6 +205,25 @@ const burstChatPrStatus = () => {
     if (item.git_branch) void refreshChatPrStatus(item)
   }
 }
+
+// A merge or close ANYWHERE — this tab's MergeBox, or the `git_pr_state` SSE
+// event from another client — drops the shared cache entry and calls this back.
+// A mounted row cannot see a Map deletion, so without it the branch icon keeps
+// the colour it fetched before the merge until the row happens to remount.
+//
+// A subscription, not a `watch`: `local/no-watch` bans reacting to change inside
+// a component, and this signal comes from OUTSIDE it (the forge, via the
+// backend). The producer calls us instead.
+let unsubscribePrStatus: (() => void) | null = null
+onMounted(() => {
+  unsubscribePrStatus = onPrStatusInvalidated(() => {
+    burstChatPrStatus()
+  })
+})
+onUnmounted(() => {
+  unsubscribePrStatus?.()
+  unsubscribePrStatus = null
+})
 
 // Right-click action menu for a chat row. Position state + dismiss
 // wiring live in useContextMenu; the row payload lives here so the menu

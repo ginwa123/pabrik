@@ -29,12 +29,16 @@ import {
   type MergeMethod,
 } from '../helpers/mergeWording'
 import { forgeWording } from '../helpers/forgeWording'
+import { clearPrStatusCache, fetchPrStatusCached } from '../helpers/prStatusCache'
 
-const { mergePrMock } = vi.hoisted(() => ({ mergePrMock: vi.fn() }))
+const { mergePrMock, getPrStatusMock } = vi.hoisted(() => ({
+  mergePrMock: vi.fn(),
+  getPrStatusMock: vi.fn(),
+}))
 
 vi.mock('../api', async () => {
   const actual = await vi.importActual<typeof import('../api')>('../api')
-  return { ...actual, mergePr: mergePrMock }
+  return { ...actual, mergePr: mergePrMock, getPrStatus: getPrStatusMock }
 })
 
 const GH = forgeWording('github')
@@ -81,6 +85,10 @@ const state = (over: Partial<Record<string, unknown>> = {}) =>
 // bare global because that is what the app's own code reads (useChatRightSidebar.ts).
 beforeEach(() => {
   mergePrMock.mockReset()
+  getPrStatusMock.mockReset()
+  // The shared PR-status cache is module-level, and the merge test below
+  // primes it — reset so no test inherits another's entry.
+  clearPrStatusCache()
   if (typeof localStorage === 'undefined' || typeof localStorage.clear !== 'function') {
     const store: Record<string, string> = {}
     vi.stubGlobal('localStorage', {
@@ -303,6 +311,31 @@ describe('MergeBox', () => {
     // The owner is told, so it can re-read the status instead of waiting 30 s.
     expect(w.emitted('merged')).toBeTruthy()
     expect(w.find('[data-testid="pr-merge-pending"]').exists()).toBe(false)
+  })
+
+  it('drops the shared PR-status cache for the head branch, so the badges re-read', async () => {
+    // The bug this asserts against: the sidebar RECENT icon and the kanban card
+    // badge read the shared 60s cache, so after a merge from this box they kept
+    // the `open` green they had fetched before the click.
+    getPrStatusMock.mockResolvedValue({ status: 'open', state: 'OPEN' })
+    await expect(fetchPrStatusCached(props.cwd, 'worktree/add-a-button')).resolves.toBe('open')
+    expect(getPrStatusMock).toHaveBeenCalledTimes(1)
+
+    mergePrMock.mockResolvedValue({
+      success: true,
+      method: 'squash',
+      pending: false,
+      status: status({ status: 'merged', state: 'MERGED' }),
+    })
+    const w = mount(MergeBox, { props: { ...props, status: status() } })
+    await w.get('[data-testid="pr-merge-button"]').trigger('click')
+    await w.get('[data-testid="pr-merge-confirm"]').trigger('click')
+    await flushPromises()
+
+    // The next reader must ask the forge again — and see the merge.
+    getPrStatusMock.mockResolvedValue({ status: 'merged', state: 'MERGED' })
+    await expect(fetchPrStatusCached(props.cwd, 'worktree/add-a-button')).resolves.toBe('merged')
+    expect(getPrStatusMock).toHaveBeenCalledTimes(2)
   })
 
   it('exit 0 without a merge renders "not merged yet", never a success', async () => {
