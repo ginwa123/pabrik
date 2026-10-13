@@ -58,9 +58,12 @@ const cross_project_cwd_prompt_test = @import("cross_project_cwd_prompt_test.zig
 const default_workspace_provisioning_test = @import("default_workspace_provisioning_test.zig");
 const design_advanced_test = @import("design_advanced_test.zig");
 const design_lifecycle_test = @import("design_lifecycle_test.zig");
+const desktop_app_icon_test = @import("desktop_app_icon_test.zig");
 const desktop_webapp_404_test = @import("desktop_webapp_404_test.zig");
+const static_serve_concurrency_test = @import("static_serve_concurrency_test.zig");
 const desktop_webapp_stable_symlink_test = @import("desktop_webapp_stable_symlink_test.zig");
 const document_agent_tools_test = @import("document_agent_tools_test.zig");
+const fd_limit_reader_pool_test = @import("fd_limit_reader_pool_test.zig");
 const frontend_log_dedup_test = @import("frontend_log_dedup_test.zig");
 const git_commits_test = @import("git_commits_test.zig");
 const git_file_diffs_test = @import("git_file_diffs_test.zig");
@@ -71,6 +74,7 @@ const git_pr_checks_test = @import("git_pr_checks_test.zig");
 const git_pr_conflicts_test = @import("git_pr_conflicts_test.zig");
 const git_pr_diff_test = @import("git_pr_diff_test.zig");
 const git_pr_gitlab_test = @import("git_pr_gitlab_test.zig");
+const git_pr_list_close_test = @import("git_pr_list_close_test.zig");
 const git_pr_merge_test = @import("git_pr_merge_test.zig");
 const git_pr_status_branch_test = @import("git_pr_status_branch_test.zig");
 const git_pr_status_crash_test = @import("git_pr_status_crash_test.zig");
@@ -84,6 +88,7 @@ const hook_zig_fmt_test = @import("hook_zig_fmt_test.zig");
 const hooks_lua_test = @import("hooks_lua_test.zig");
 const http2_test = @import("http2_test.zig");
 const http2_tls_test = @import("http2_tls_test.zig");
+const install_browser_url_test = @import("install_browser_url_test.zig");
 const kanban_advanced_test = @import("kanban_advanced_test.zig");
 const kanban_column_run_all_agents_test = @import("kanban_column_run_all_agents_test.zig");
 const kanban_column_stop_all_agents_test = @import("kanban_column_stop_all_agents_test.zig");
@@ -99,6 +104,7 @@ const list_sub_agent_test = @import("list_sub_agent_test.zig");
 const llm_history_model_not_empty_test = @import("llm_history_model_not_empty_test.zig");
 const llm_stream_get_test = @import("llm_stream_get_test.zig");
 const llm_test_test = @import("llm_test_test.zig");
+const model_catalog_test = @import("model_catalog_test.zig");
 const mcp_http_test = @import("mcp_http_test.zig");
 const mcp_server_toggle_test = @import("mcp_server_toggle_test.zig");
 const mcp_stdio_hang_test = @import("mcp_stdio_hang_test.zig");
@@ -201,9 +207,12 @@ pub const suites = .{
     default_workspace_provisioning_test,
     design_advanced_test,
     design_lifecycle_test,
+    desktop_app_icon_test,
     desktop_webapp_404_test,
+    static_serve_concurrency_test,
     desktop_webapp_stable_symlink_test,
     document_agent_tools_test,
+    fd_limit_reader_pool_test,
     frontend_log_dedup_test,
     git_commits_test,
     git_file_diffs_test,
@@ -214,6 +223,7 @@ pub const suites = .{
     git_pr_conflicts_test,
     git_pr_diff_test,
     git_pr_gitlab_test,
+    git_pr_list_close_test,
     git_pr_merge_test,
     git_pr_status_branch_test,
     git_pr_status_crash_test,
@@ -227,6 +237,7 @@ pub const suites = .{
     hooks_lua_test,
     http2_test,
     http2_tls_test,
+    install_browser_url_test,
     kanban_advanced_test,
     kanban_column_run_all_agents_test,
     kanban_column_stop_all_agents_test,
@@ -242,6 +253,7 @@ pub const suites = .{
     llm_history_model_not_empty_test,
     llm_stream_get_test,
     llm_test_test,
+    model_catalog_test,
     mcp_http_test,
     mcp_server_toggle_test,
     mcp_stdio_hang_test,

@@ -19,6 +19,7 @@ import { useRouter } from 'vue-router'
 import { useWorkspacesStore } from '../../stores/workspaces'
 import { useSettingsSection } from '../../composables/useSettingsSection'
 import { WORKSPACE_AGENT_SECTIONS } from '../../helpers/configSource'
+import { resolveWorkspaceId } from '../../helpers/workspaceScope'
 import UiIcon from '../ui/UiIcon.vue'
 import type { UiIconName } from '../ui/icons'
 
@@ -111,13 +112,24 @@ const scopeLabel = computed(() =>
   props.scope === 'user' ? 'User — applies everywhere' : 'Workspace — this workspace only',
 )
 
-const workspaceName = computed(() => {
-  const found = workspacesStore.workspaces.find((w) => w.id === props.workspaceId)
-  return found?.name ?? props.workspaceId
-})
-
 const workspaceOptions = computed(() =>
   workspacesStore.workspaces.map((w) => ({ id: w.id, name: w.name })),
+)
+
+/**
+ * The workspace this settings surface is ABOUT: the one in the URL, else the
+ * one the app is actually in.
+ *
+ * `workspaceOptions[0]` is NOT that workspace. The list API sorts by
+ * `position DESC, created_at DESC` (`workspaces_list.zig`), so "first" is
+ * whichever workspace the user last moved to the top — not the one they came
+ * from. Switching the scope tab used to navigate there unconditionally
+ * (`workspaceOptions[0]?.id ?? props.workspaceId` — the `??` could never fall
+ * through, the list is never empty), which dropped the URL's workspace id and
+ * showed one workspace's Profiles while the user was working in another.
+ */
+const inScopeWorkspaceId = computed(() =>
+  resolveWorkspaceId(props.workspaceId, workspacesStore.activeWorkspace?.id),
 )
 
 function goUser(): void {
@@ -129,6 +141,15 @@ function goWorkspace(id: string): void {
   if (!id || !router) return
   if (props.scope === 'workspace' && id === props.workspaceId) return
   void router.push({ path: `/app/${id}/settings` })
+}
+
+/**
+ * The Workspace tab's target. The in-scope workspace wins; only a cold boot
+ * with neither a URL workspace nor an active one falls back to the first
+ * listed row, because the tab has to resolve to something.
+ */
+function goWorkspaceScope(): void {
+  goWorkspace(inScopeWorkspaceId.value || workspaceOptions.value[0]?.id || '')
 }
 
 function goBack(): void {
@@ -227,26 +248,14 @@ function notify(message: string, type: 'success' | 'error'): void {
                 ? 'background-color: var(--semantic-active-bg); color: var(--semantic-active-text);'
                 : 'color: var(--semantic-text-muted);'
             "
-            @click="goWorkspace(workspaceOptions[0]?.id ?? props.workspaceId)"
+            @click="goWorkspaceScope()"
           >
             Workspace
           </button>
         </div>
-        <!-- Workspace context comes from the URL (`/app/:workspaceId/settings`), so there is
-          no picker here: switching workspaces is the sidebar's job, not settings'. -->
-        <div
-          v-if="props.scope === 'workspace'"
-          data-testid="settings-workspace-name"
-          class="w-full mt-2 px-2 py-1.5 rounded-md text-dense truncate"
-          style="
-            background-color: var(--semantic-content-bg);
-            color: var(--semantic-text);
-            border: 1px solid var(--color-border);
-          "
-          :title="workspaceName"
-        >
-          {{ workspaceName }}
-        </div>
+        <!-- Workspace context is the URL (`/app/:workspaceId/settings`): no
+          label or picker here. Switching workspaces is the sidebar's job,
+          not settings'. -->
       </div>
 
       <!-- Settings Menu -->

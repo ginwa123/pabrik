@@ -378,3 +378,73 @@ test "workspace_config_masks_the_web_search_key" {
     defer r.deinit();
     try testing.expect(std.mem.indexOf(u8, r.body, SENTINEL) == null);
 }
+
+// ============================================================================
+// The profile picker's premise: a workspace-only profile is in the WORKSPACE
+// config and NOT in the user config
+// ============================================================================
+
+test "a profile added to a workspace overlay is absent from the user-scope config" {
+    // Why this is a wire fact and not a unit test: the two endpoints are the
+    // two possible sources for ChatView's profile picker, and the bug was
+    // asking the WRONG one. The picker read `/api/config/pabrik` (user scope,
+    // no overlay) and listed exactly the user set, so a profile that lives only
+    // in a workspace overlay — where Migration 105 puts per-workspace profiles
+    // — could never appear in ANY picker, not even in the workspace that owns
+    // it. A real instance had a `kilo` profile in one workspace's overlay and
+    // in no picker.
+    //
+    // The assertion therefore has to be the CONTRAST: the same profile is
+    // present in the workspace-scope response and absent from the user-scope
+    // one, with a positive control on each side so neither can pass vacuously.
+    var h = try boot();
+    defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
+    try putUserConfig(&h);
+
+    const id = try createWorkspace(&h, "Overlay Only Profile");
+    defer gpa.free(id);
+
+    const body =
+        \\{"profiles":{"kilo":{"model":"nvidia/nemotron-3-super-120b-a12b:free",
+        \\ "base_url":"https://api.kilo.ai/api/gateway/chat/completions",
+        \\ "api_key":"kilo-key-not-real"}}}
+    ;
+    {
+        const path = try wsPath(gpa, id, "");
+        defer gpa.free(path);
+        var r = try h.http(io, .PUT, path, .{ .json_body = body, .expect = &.{200} });
+        defer r.deinit();
+    }
+
+    // Workspace scope: the new profile AND the user's own, because the overlay
+    // is layered over the user config rather than swapped in. This is what the
+    // picker must offer.
+    {
+        var got = try getWorkspaceConfig(&h, id);
+        defer got.doc.deinit();
+        defer got.r.deinit();
+
+        const profiles = got.doc.object("profiles") orelse return error.NoProfiles;
+        try testing.expect(profiles.get("kilo") != null);
+        try testing.expectEqualStrings(
+            "nvidia/nemotron-3-super-120b-a12b:free",
+            profiles.get("kilo").?.object.get("model").?.string,
+        );
+        // Positive control for the user half of the merge.
+        try testing.expect(profiles.get("stub") != null);
+    }
+
+    // User scope: the picker's OLD source. The user's profiles are here (the
+    // positive control), and the overlay-only profile is not.
+    {
+        var r = try h.http(io, .GET, "/api/config/pabrik", .{ .expect = &.{200} });
+        defer r.deinit();
+        var doc = try r.json();
+        defer doc.deinit();
+
+        const profiles = doc.object("profiles") orelse return error.NoProfiles;
+        try testing.expect(profiles.get("stub") != null);
+        try testing.expect(profiles.get("extra") != null);
+        try testing.expect(profiles.get("kilo") == null);
+    }
+}

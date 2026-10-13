@@ -72,12 +72,31 @@ pub const MandatoryTimeoutMissing = error{MandatoryTimeoutMissing};
 /// (smaller steps, `background=true`, or the functional harness).
 pub const MandatoryTimeoutTooLarge = error{MandatoryTimeoutTooLarge};
 
-/// Reasonable upper bound for a single foreground command: 10 minutes.
-/// Covers the prompt's own guidance (a few seconds for ls/cat, 30–60 s
-/// for builds, 300+ s for long compilations) with headroom, while turning
-/// absurd values like 120000 (33 h) into an instant learnable error.
-/// Background mode is exempt (it detaches and ignores the timeout by design).
-pub const MAX_MANDATORY_TIMEOUT_SEC: u32 = 600;
+/// Returned by `execute_shell` when the caller omits `cwd`.
+///
+/// Without `cwd` the child inherits the SERVER process's working directory —
+/// for an agent session that is the project root, never the session's bound
+/// worktree. A `background=true` build launched that way compiles the wrong
+/// checkout, and a relative `zig-out` installs into it. Requiring the field
+/// turns that silent wrong-tree run into a learnable error.
+pub const MandatoryCwdMissing = error{MandatoryCwdMissing};
+
+/// Returned by `execute_shell` when `cwd` is not an absolute path.
+///
+/// A relative path is resolved against the server's working directory, which
+/// is the same wrong-tree bug spelled differently — and invisible, because
+/// the caller believes it named a location.
+pub const CwdNotAbsolute = error{CwdNotAbsolute};
+
+/// Upper bound for a single foreground command: 1 minute.
+///
+/// A foreground deadline longer than a minute is indistinguishable from a
+/// hung agent — the user watches a spinner while nothing reports progress —
+/// so anything longer is refused BEFORE a child is spawned and the caller is
+/// steered to `background=true` (which detaches and is exempt from this cap)
+/// or to splitting the work into smaller steps. It also turns absurd values
+/// like 120000 (33 h) into an instant, learnable error.
+pub const MAX_MANDATORY_TIMEOUT_SEC: u32 = 60;
 
 // POSIX `nanosleep(req, rem)` — declared as `extern "c"` so the call
 // doesn't go through Zig 0.16's Io runtime. We deliberately avoid
@@ -411,6 +430,23 @@ pub fn run_shell_command(
         return error.CommandForbidden;
     }
 
+    // --- Mandatory-cwd check (BOTH modes) ---
+    //
+    // Checked before the timeout guard so a call missing both fields is told
+    // about the more dangerous omission first — the one that runs work in the
+    // wrong directory.
+    //
+    // `cwd` used to be documented as mandatory while a missing value quietly
+    // fell back to `.inherit`, i.e. the SERVER's working directory. That is
+    // the silent wrong-tree bug: `background=true` ignored `cwd` outright, so
+    // a detached build compiled the main checkout (and installed into its
+    // `zig-out`) while the operator watched a worktree. Absolute-only for the
+    // same reason: a relative path resolves against the server's cwd, so it
+    // lands somewhere the caller never named.
+    const cwd = input.cwd orelse return error.MandatoryCwdMissing;
+    if (cwd.len == 0) return error.MandatoryCwdMissing;
+    if (!std.fs.path.isAbsolute(cwd)) return error.CwdNotAbsolute;
+
     // --- Mandatory-timeout check (foreground only) ---
     // The background path does not use the timeout (the process detaches
     // and runs forever), so we skip the check there. But the foreground
@@ -431,7 +467,7 @@ pub fn run_shell_command(
 
     // --- Background mode ---
     if (input.background) {
-        return try spawn_background(allocator, io, argv_prefix, command);
+        return try spawn_background(allocator, io, argv_prefix, command, cwd);
     }
 
     // --- Foreground mode ---
@@ -454,7 +490,7 @@ pub fn run_shell_command(
 
     var child = try std.process.spawn(io, .{
         .argv = argv,
-        .cwd = if (input.cwd) |cwd| .{ .path = cwd } else .inherit,
+        .cwd = .{ .path = cwd },
         .stdin = if (input.stdin_data != null) .pipe else .close,
         .stdout = .pipe,
         .stderr = .pipe,
@@ -820,6 +856,7 @@ fn spawn_background(
     io: std.Io,
     argv_prefix: []const []const u8,
     command: []const u8,
+    cwd: []const u8,
 ) !ShellOutput {
     const ts: i64 = @intCast(@divTrunc(std.Io.Timestamp.now(io, .real).nanoseconds, 1_000_000));
     const tmp_dir = try tempDirFor(allocator, builtin.os.tag);
@@ -837,7 +874,13 @@ fn spawn_background(
 
     var child = try std.process.spawn(io, .{
         .argv = argv,
-        .cwd = .inherit,
+        // The `nohup … &` idiom runs in the shell we spawn here, and the
+        // detached process inherits THAT shell's cwd — so honoring `cwd` on
+        // this spawn is what puts the background job in the caller's
+        // directory. Hardcoding `.inherit` here is the bug this replaces: the
+        // job silently ran in the server's cwd (the project root), so a
+        // detached `zig build` compiled the wrong checkout.
+        .cwd = .{ .path = cwd },
         .stdin = .close,
         .stdout = .pipe,
         .stderr = .ignore,
@@ -1083,7 +1126,7 @@ test "shell.execute_shell rejects mandatory_timeout above MAX_MANDATORY_TIMEOUT_
     // A huge deadline is the same as no deadline. The over-max guard
     // fires before any child is spawned, so these run on ALL platforms.
     // Boundary: MAX is accepted (validation passes), MAX+1 is rejected.
-    try testing.expectEqual(@as(u32, 600), shell.MAX_MANDATORY_TIMEOUT_SEC);
+    try testing.expectEqual(@as(u32, 60), shell.MAX_MANDATORY_TIMEOUT_SEC);
 
     const over_max = shell.execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
         .command = "echo should-never-run",
@@ -1103,7 +1146,7 @@ test "shell.execute_shell rejects mandatory_timeout above MAX_MANDATORY_TIMEOUT_
 
 test "shell.execute_shell accepts mandatory_timeout at exactly MAX_MANDATORY_TIMEOUT_SEC" {
     // Positive control: the boundary value itself must pass validation.
-    // Runs `true` (instant) so the 600 s deadline never matters.
+    // Runs `true` (instant) so the 60 s deadline never matters.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const out = try shell.execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
@@ -1117,6 +1160,137 @@ test "shell.execute_shell accepts mandatory_timeout at exactly MAX_MANDATORY_TIM
         testing.allocator.free(out.stderr);
     }
     try testing.expectEqual(@as(i32, 0), out.exit_code);
+}
+
+test "shell.execute_shell requires cwd in BOTH modes (MandatoryCwdMissing)" {
+    // `cwd` is not merely documented as required. Without it the child
+    // inherits the SERVER process's working directory — which is how a
+    // `background=true` build silently compiled the wrong checkout. The guard
+    // fires before any spawn, so this runs on ALL platforms.
+    try testing.expectError(
+        error.MandatoryCwdMissing,
+        shell.execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
+            .command = "echo should-never-run",
+            .cwd = null,
+            .mandatory_timeout = 5,
+        }),
+    );
+
+    // The empty string is the same omission, spelled by a caller that sent a
+    // blank field.
+    try testing.expectError(
+        error.MandatoryCwdMissing,
+        shell.execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
+            .command = "echo should-never-run",
+            .cwd = "",
+            .mandatory_timeout = 5,
+        }),
+    );
+
+    // Background too — this is the mode that made the bug invisible: it
+    // accepted `cwd`, discarded it, and still reported success.
+    try testing.expectError(
+        error.MandatoryCwdMissing,
+        shell.execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
+            .command = "echo should-never-run",
+            .cwd = null,
+            .background = true,
+        }),
+    );
+}
+
+test "shell.execute_shell rejects a relative cwd (CwdNotAbsolute)" {
+    // A relative path resolves against the server's cwd — the same
+    // wrong-directory bug, harder to notice because the caller believes it
+    // named a location.
+    try testing.expectError(
+        error.CwdNotAbsolute,
+        shell.execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
+            .command = "echo should-never-run",
+            .cwd = "src/modules",
+            .mandatory_timeout = 5,
+        }),
+    );
+}
+
+test "foreground: the child runs IN cwd, not in the harness's cwd" {
+    // Behavioural witness for the `cwd` contract: `pwd -P` must print the
+    // directory the caller named. Before the guard a missing `cwd` fell back
+    // to `.inherit` (the server/test-runner cwd = the repo root), so this
+    // compared equal to the wrong tree.
+    if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
+
+    const allocator = testing.allocator;
+    const io = std.testing.io;
+
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var dir_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const dir_len = try tmp.dir.realPath(io, &dir_buf);
+    const dir = dir_buf[0..dir_len];
+
+    const out = try shell.execute_shell(allocator, io, &.{ "bash", "-c" }, .{
+        .command = "pwd -P",
+        .cwd = dir,
+        .mandatory_timeout = 20,
+    });
+    defer {
+        allocator.free(out.command);
+        allocator.free(out.stdout);
+        allocator.free(out.stderr);
+    }
+
+    try testing.expectEqual(@as(i32, 0), out.exit_code);
+    try testing.expectEqualStrings(dir, std.mem.trimEnd(u8, out.stdout, "\n"));
+}
+
+test "background: the DETACHED process starts in cwd, not the server's" {
+    // The regression this pins: `spawn_background` hardcoded `.cwd = .inherit`
+    // and was never even handed `input.cwd`, so a detached command ran in the
+    // SERVER's working directory. A `background=true` build therefore compiled
+    // the main checkout (and installed into its `zig-out`) while the operator
+    // watched a worktree.
+    //
+    // The witness is a file the detached process creates: the process itself
+    // is gone by the time we look, so its working directory has to be observed
+    // through what it left behind. `tmp.dir` is scoped to the directory we
+    // named, so the marker existing at all PROVES it ran there.
+    if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
+
+    const allocator = testing.allocator;
+    const io = std.testing.io;
+
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var dir_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const dir_len = try tmp.dir.realPath(io, &dir_buf);
+    const dir = dir_buf[0..dir_len];
+
+    const out = try shell.execute_shell(allocator, io, &.{ "bash", "-c" }, .{
+        .command = "touch bg_cwd_probe_marker",
+        .cwd = dir,
+        .background = true,
+    });
+    defer {
+        allocator.free(out.command);
+        allocator.free(out.stdout);
+        allocator.free(out.stderr);
+    }
+    try testing.expectEqual(@as(i32, 0), out.exit_code);
+
+    // The detach is asynchronous, so poll rather than sleeping a fixed guess —
+    // a fixed sleep is the flaky half of this kind of test. The `else` names
+    // the failure: the marker never appeared under the cwd we passed.
+    var attempts: usize = 0;
+    while (attempts < 300) : (attempts += 1) {
+        const stat = tmp.dir.access(io, "bg_cwd_probe_marker", .{});
+        if (stat) |_| break else |err| switch (err) {
+            error.FileNotFound => pollSleep10ms(),
+            else => return err,
+        }
+    } else {
+        return error.DetachedProcessDidNotRunInCwd;
+    }
 }
 
 test "shell.execute_shell background mode is exempt from the max-timeout cap" {

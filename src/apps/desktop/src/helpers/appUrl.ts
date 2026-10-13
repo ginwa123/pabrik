@@ -18,7 +18,15 @@
  * Canonical form has NO trailing slash (the router accepts `/…/` and the
  * AppLayout rewrite strips it via `router.replace`).
  *
- * Unchanged: `/app/settings`, `/app/kanban/:itemId/settings`.
+ *   /app/settings                                  USER-scope settings
+ *                                                   (General only)
+ *   /app/{workspaceId}/settings                     WORKSPACE-scope settings
+ *                                                   (`?section=` picks the
+ *                                                   section)
+ *
+ * Both settings shapes carry their scope in the PATH, so a settings page can
+ * always tell which workspace it is about - the scope itself is not a query
+ * param. Unchanged: `/app/kanban/:itemId/settings`.
  * Legacy (rewritten once at boot to the shapes above, never emitted):
  * `/app/chat/:sid`, `/app/task/:tid`, and every `?view=…` query URL.
  *
@@ -127,6 +135,29 @@ export function buildAppUrl(input: AppUrlTarget): AppUrlLocation {
     if (chatTaskId) path += `/chat/${chatTaskId}`
   }
   return { path, query }
+}
+
+/**
+ * Where Settings lives, given the workspace in scope and a remembered section.
+ *
+ * The workspace rides in the PATH, so no settings page ever has to guess which
+ * workspace it is about. `/app/settings` - the user scope, General only, the
+ * one settings surface that genuinely is not about any workspace - is the
+ * answer only when nothing names a workspace at all.
+ *
+ * `section` is whatever the CALLER wants opened; the page itself ignores an id
+ * it does not render and falls back to its stored/default section, so a stale
+ * value cannot render the wrong tab.
+ */
+export function buildSettingsUrl(
+  workspaceId: string | null | undefined,
+  section?: string | null,
+): AppUrlLocation {
+  const id = (workspaceId ?? '').toString().trim()
+  if (!id) return { path: '/app/settings', query: {} }
+  const query: Record<string, string> = {}
+  if (section) query.section = section
+  return { path: `/app/${id}/settings`, query }
 }
 
 /**

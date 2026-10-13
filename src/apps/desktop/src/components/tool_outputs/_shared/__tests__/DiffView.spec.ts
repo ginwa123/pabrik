@@ -32,6 +32,17 @@ beforeEach(() => {
   localStorage.clear()
 })
 
+/** Class names anywhere inside `root` that force a text color with
+ * `!important` — the only form that beats `.tok-*` in the compiled CSS. */
+function importantTextTints(root: {
+  findAll: (s: string) => { classes: () => string[] }[]
+}): string[] {
+  return root
+    .findAll('*')
+    .flatMap((el) => el.classes())
+    .filter((c) => c.startsWith('!text-'))
+}
+
 describe('DiffView', () => {
   it('renders the diff header with default mode = split', () => {
     const wrapper = mount(DiffView, {
@@ -419,5 +430,64 @@ describe('DiffView', () => {
       .find((b) => b.text() === 'Unified')!
       .trigger('click')
     expect(wrapper.html()).toContain('tok-string')
+  })
+
+  it('states its own text colour on every pane, so plain tokens are readable', () => {
+    // Measured in a real browser: with the row tint gone, `.tok-plain`
+    // (color: inherit) resolved to the initial value — BLACK on the dark
+    // card. The pane must carry the base colour itself, not inherit blindly
+    // from whatever hosts the diff.
+    const wrapper = mount(DiffView, {
+      props: { before: 'const a = 1', after: 'const b = 2', filePath: 'demo.ts' },
+    })
+    const panes = wrapper.findAll('.overflow-x-auto')
+    expect(panes.length).toBeGreaterThan(0)
+    for (const pane of panes) {
+      expect(pane.classes()).toContain('text-[var(--semantic-text)]')
+    }
+  })
+
+  it('shows syntax tokens on CHANGED rows, not a monochrome red/green tint', () => {
+    const wrapper = mount(DiffView, {
+      props: {
+        before: 'const keep = 1\nconst gone = 2',
+        after: 'const keep = 1\nconst added = 3',
+        filePath: 'demo.ts',
+      },
+    })
+
+    const changed = wrapper.findAll('[data-changed="true"]')
+    expect(changed.length).toBeGreaterThan(0)
+    for (const row of changed) {
+      // Nothing inside a changed row may carry an `!important` text tint
+      // (`!text-red-500`): it wins over `.tok-*` in the compiled CSS and
+      // paints the whole line one color. The row BACKGROUND is what marks
+      // added/removed. (jsdom loads no stylesheet, so asserting the DOM
+      // class is the only honest witness here — and it is exactly the class
+      // whose removal makes the tokens visible in a browser.)
+      expect(importantTextTints(row)).toEqual([])
+      expect(row.findAll('.tok-keyword').length).toBeGreaterThan(0)
+    }
+  })
+
+  it('unified view: the +/− gutter sign keeps its direction color', async () => {
+    const wrapper = mount(DiffView, {
+      props: { before: 'const gone = 2', after: 'const added = 3', filePath: 'demo.ts' },
+    })
+    const unifiedBtn = wrapper.findAll('button').find((b) => b.text() === 'Unified')
+    expect(unifiedBtn).toBeTruthy()
+    await unifiedBtn!.trigger('click')
+
+    expect(wrapper.findAll('[data-kind="delete"] span.text-red-500').length).toBeGreaterThan(0)
+    expect(wrapper.findAll('[data-kind="insert"] span.text-green-500').length).toBeGreaterThan(0)
+
+    // The ROW carries the background tint only — an `!important` text tint
+    // here is what would hide every token.
+    for (const row of wrapper.findAll('[data-kind="delete"], [data-kind="insert"]')) {
+      expect(importantTextTints(row)).toEqual([])
+    }
+
+    // ...while the code itself is still split into colored tokens.
+    expect(wrapper.findAll('.tok-keyword').length).toBeGreaterThan(0)
   })
 })

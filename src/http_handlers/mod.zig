@@ -343,6 +343,13 @@ pub const gitPrMergeHandler = @import("git_pr_merge.zig").gitPrMergeHandler;
 /// failed one. Registered next to the status handler because the two
 /// share provider resolution (`git_pr_status.resolveProvider`).
 pub const gitPrChecksHandler = @import("git_pr_checks.zig").gitPrChecksHandler;
+/// GET /api/git/pr/list — the repo's change requests (the kanban board's PR
+/// list). Shares provider resolution with the status endpoint.
+pub const gitPrListHandler = @import("git_pr_list.zig").gitPrListHandler;
+/// POST /api/git/pr/close — close a PR/MR through the forge CLI. Mutating,
+/// so it is only ever reachable authenticated; the answer is a re-read of the
+/// forge's status, never the CLI's exit code.
+pub const gitPrCloseHandler = @import("git_pr_close.zig").gitPrCloseHandler;
 
 // Queue messages handlers
 pub const queueMessagesGetHandler = @import("queue_messages_get.zig").queueMessagesGetHandler;
@@ -418,6 +425,12 @@ pub const systemPromptGetHandler = @import("system_prompt_get.zig").systemPrompt
 
 // Pabrik config handlers
 pub const pabrikConfigGetHandler = @import("pabrik_config_get.zig").pabrikConfigGetHandler;
+
+// models.dev catalog (Migration 106): the picker's data, the profile dialog's
+// one resolve call, and a manual refresh.
+pub const modelsCatalogHandler = @import("models_catalog.zig").modelsCatalogHandler;
+pub const modelsResolveHandler = @import("models_catalog.zig").modelsResolveHandler;
+pub const modelsRefreshHandler = @import("models_catalog.zig").modelsRefreshHandler;
 pub const pabrikConfigPutHandler = @import("pabrik_config_put.zig").pabrikConfigPutHandler;
 // Per-workspace config overlay (Migration 105).
 pub const workspaceConfigGetHandler = @import("workspace_config.zig").workspaceConfigGetHandler;
@@ -578,13 +591,20 @@ pub fn notifyTestHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, r
 //
 // Probe bodies (minimal, non-streaming, no tools):
 //   - openai:          `{"model","messages":[{"role":"user","content":
-//                        "Reply with exactly: ok"}],"max_tokens":16,
+//                        "Reply with exactly: ok"}],"max_tokens":<budget>,
 //                        "temperature":0,"stream":false}`
 //   - openai-response: `{"model","input":"Reply with exactly: ok",
-//                        "max_output_tokens":16,"stream":false,
+//                        "max_output_tokens":<budget>,"stream":false,
 //                        "store":false}`
-//   - anthropic:       `{"model","max_tokens":16,"messages":[{"role":
+//   - anthropic:       `{"model","max_tokens":<budget>,"messages":[{"role":
 //                        "user","content":"Reply with exactly: ok"}]}`
+//
+// `<budget>` is `PROBE_MAX_OUTPUT_TOKENS`, retried once at
+// `PROBE_MAX_OUTPUT_TOKENS_RETRY` — see those constants. It is NOT a
+// handful of tokens: the output budget is shared with the model's hidden
+// REASONING tokens, so a tiny budget makes a working reasoning-model
+// profile look broken (the reply comes back `status: "incomplete"` with a
+// reasoning item and no text at all).
 //
 // Auth: `openai*` styles send `Authorization: Bearer <api_key>`;
 // `anthropic` sends `x-api-key: <api_key>` + `anthropic-version:
@@ -614,16 +634,37 @@ const claude_code = @import("../agentic_loop/claude_code.zig");
 
 /// Per-call deadline for the probe (libcurl has OS-level timeout
 /// support). Generous vs the MCP 10s probe because LLM inference —
-/// even for 16 tokens — routinely takes several seconds on a cold
-/// model, and a premature timeout would read as "your key is broken".
+/// even for a one-word answer — routinely takes several seconds on a
+/// cold model, and a premature timeout would read as "your key is broken".
 const TEST_LLM_TIMEOUT_MS: u32 = 15_000;
+
+/// Output budget for a probe.
+///
+/// All three wire styles spend this budget on the model's hidden REASONING
+/// tokens before any visible text exists, so it must be big enough to cover
+/// a short think. It used to be 16 — enough for a chat model's "ok", but a
+/// reasoning model spends all 16 thinking and answers with
+/// `status:"incomplete"` and no text item, which the probe reported as
+/// "LLM server response did not contain a reply" for a profile that works
+/// fine in a real chat turn (the chat path budgets thousands — see
+/// `Agent.buildJsonResponsesRequest`).
+const PROBE_MAX_OUTPUT_TOKENS: u32 = 2048;
+
+/// Budget for the single retry after the provider says the first probe ran
+/// out of output mid-reasoning.
+///
+/// Any finite budget can be eaten by a reasoning model, and the probe
+/// cannot know how much thinking a given model does, so the honest answer
+/// is "try once more with a lot more room, then explain what happened".
+/// Only the exhausted path pays for this second request.
+const PROBE_MAX_OUTPUT_TOKENS_RETRY: u32 = 8192;
 
 /// The probe prompt. Short + deterministic so the modal can show the
 /// reply verbatim as proof the model answered.
 const PROBE_PROMPT: []const u8 = "Reply with exactly: ok";
 
-/// Max reply bytes carried on the wire. The probe asks for 16 tokens;
-/// 200 bytes is plenty and keeps the modal payload small.
+/// Max reply bytes carried on the wire. The probe asks for a one-word
+/// answer; 200 bytes is plenty and keeps the modal payload small.
 const MAX_REPLY_LEN: usize = 200;
 
 /// Stable session id sent as `x-opencode-session` on every Test probe.
@@ -663,6 +704,11 @@ const LlmTestError = error{
     HttpError,
     JsonParseFailed,
     InvalidResponse,
+    /// The provider returned no visible text AND said it stopped because the
+    /// output budget ran out. Distinct from `InvalidResponse` so the probe
+    /// can retry with more room instead of reporting a missing reply, and so
+    /// a real truncation is never described as a broken key.
+    ReasoningBudgetExhausted,
     OutOfMemory,
 };
 
@@ -696,27 +742,35 @@ fn llmTestValidate(req: LlmTestRequest) LlmTestError!void {
         return LlmTestError.UnsupportedStyle;
 }
 
-/// Build the minimal probe body for the request's url_style. Caller
-/// owns the returned slice.
-fn llmTestBuildProbeBody(allocator: std.mem.Allocator, req: LlmTestRequest) LlmTestError![]u8 {
+/// Build the minimal probe body for the request's url_style, asking for
+/// `max_output_tokens` tokens. Caller owns the returned slice.
+///
+/// The budget is a PARAMETER because the use-case retries once with a
+/// bigger one when the provider reports the first probe ran out mid-reply;
+/// see `PROBE_MAX_OUTPUT_TOKENS`.
+fn llmTestBuildProbeBody(
+    allocator: std.mem.Allocator,
+    req: LlmTestRequest,
+    max_output_tokens: u32,
+) LlmTestError![]u8 {
     if (std.mem.eql(u8, req.url_style, "anthropic")) {
         return std.fmt.allocPrint(
             allocator,
-            "{{\"model\":{f},\"max_tokens\":16,\"messages\":[{{\"role\":\"user\",\"content\":\"{s}\"}}]}}",
-            .{ std.json.fmt(req.model, .{}), PROBE_PROMPT },
+            "{{\"model\":{f},\"max_tokens\":{d},\"messages\":[{{\"role\":\"user\",\"content\":\"{s}\"}}]}}",
+            .{ std.json.fmt(req.model, .{}), max_output_tokens, PROBE_PROMPT },
         ) catch return LlmTestError.OutOfMemory;
     }
     if (std.mem.eql(u8, req.url_style, "openai-response")) {
         return std.fmt.allocPrint(
             allocator,
-            "{{\"model\":{f},\"input\":\"{s}\",\"max_output_tokens\":16,\"stream\":false,\"store\":false}}",
-            .{ std.json.fmt(req.model, .{}), PROBE_PROMPT },
+            "{{\"model\":{f},\"input\":\"{s}\",\"max_output_tokens\":{d},\"stream\":false,\"store\":false}}",
+            .{ std.json.fmt(req.model, .{}), PROBE_PROMPT, max_output_tokens },
         ) catch return LlmTestError.OutOfMemory;
     }
     return std.fmt.allocPrint(
         allocator,
-        "{{\"model\":{f},\"messages\":[{{\"role\":\"user\",\"content\":\"{s}\"}}],\"max_tokens\":16,\"temperature\":0,\"stream\":false}}",
-        .{ std.json.fmt(req.model, .{}), PROBE_PROMPT },
+        "{{\"model\":{f},\"messages\":[{{\"role\":\"user\",\"content\":\"{s}\"}}],\"max_tokens\":{d},\"temperature\":0,\"stream\":false}}",
+        .{ std.json.fmt(req.model, .{}), PROBE_PROMPT, max_output_tokens },
     ) catch return LlmTestError.OutOfMemory;
 }
 
@@ -737,37 +791,68 @@ fn llmTestExtractReply(
         else => return LlmTestError.InvalidResponse,
     };
 
-    var reply: ?[]const u8 = null;
+    const reply = llmTestFindReplyText(root, url_style) orelse {
+        // No text anywhere in the body. If the provider ALSO said it stopped
+        // because the output budget ran out, the honest reading is not "there
+        // was no reply" but "the model never got to write one" — a reasoning
+        // model spends that budget on hidden reasoning first. The use-case
+        // retries with more room on this error; only if that also fails does
+        // the modal explain it.
+        if (llmTestBudgetExhausted(root, url_style)) return LlmTestError.ReasoningBudgetExhausted;
+        return LlmTestError.InvalidResponse;
+    };
+
+    const trimmed = std.mem.trim(u8, reply, " \t\r\n");
+    // A truncated reasoning-only reply can still carry an empty text block
+    // (`content: ""` on the chat-completions style), which is the same
+    // failure wearing different JSON.
+    if (trimmed.len == 0 and llmTestBudgetExhausted(root, url_style))
+        return LlmTestError.ReasoningBudgetExhausted;
+    const capped = trimmed[0..@min(trimmed.len, MAX_REPLY_LEN)];
+    return allocator.dupe(u8, capped) catch return LlmTestError.OutOfMemory;
+}
+
+/// The assistant reply text in a probe response, or null when the body
+/// carries none — a wrong url_style, an error envelope, or a reasoning-only
+/// response where the model never produced a text item.
+///
+///   anthropic:       `{"content": [{"type": "text", "text": "..."}]}`
+///   openai-response: `{"output": [{"type": "message", "content":
+///                     [{"type": "output_text", "text": "..."}]}]}`
+///   openai:          `{"choices": [{"message": {"content": "..."}}]}`
+fn llmTestFindReplyText(root: std.json.ObjectMap, url_style: []const u8) ?[]const u8 {
     if (std.mem.eql(u8, url_style, "anthropic")) {
-        // `{"content": [{"type": "text", "text": "..."}]}`
-        const content_v = root.get("content") orelse return LlmTestError.InvalidResponse;
+        const content_v = root.get("content") orelse return null;
         const blocks = switch (content_v) {
             .array => |a| a,
-            else => return LlmTestError.InvalidResponse,
+            else => return null,
         };
         for (blocks.items) |block| {
             const obj = switch (block) {
                 .object => |o| o,
                 else => continue,
             };
-            const t = obj.get("type") orelse continue;
-            if (!std.mem.eql(u8, t.string, "text")) continue;
-            const text_v = obj.get("text") orelse continue;
-            reply = switch (text_v) {
-                .string => |s| s,
+            const t = switch (obj.get("type") orelse continue) {
+                .string => |str| str,
                 else => continue,
             };
-            break;
+            if (!std.mem.eql(u8, t, "text")) continue;
+            const text_v = obj.get("text") orelse continue;
+            return switch (text_v) {
+                .string => |str| str,
+                else => continue,
+            };
         }
-    } else if (std.mem.eql(u8, url_style, "openai-response")) {
-        // `{"output": [{"type": "message", "content":
-        // [{"type": "output_text", "text": "..."}]}]}`
-        const output_v = root.get("output") orelse return LlmTestError.InvalidResponse;
+        return null;
+    }
+
+    if (std.mem.eql(u8, url_style, "openai-response")) {
+        const output_v = root.get("output") orelse return null;
         const items = switch (output_v) {
             .array => |a| a,
-            else => return LlmTestError.InvalidResponse,
+            else => return null,
         };
-        outer: for (items.items) |item| {
+        for (items.items) |item| {
             const obj = switch (item) {
                 .object => |o| o,
                 else => continue,
@@ -782,47 +867,100 @@ fn llmTestExtractReply(
                     .object => |o| o,
                     else => continue,
                 };
-                const t = pobj.get("type") orelse continue;
-                if (!std.mem.eql(u8, t.string, "output_text")) continue;
-                const text_v = pobj.get("text") orelse continue;
-                reply = switch (text_v) {
-                    .string => |s| s,
+                const t = switch (pobj.get("type") orelse continue) {
+                    .string => |str| str,
                     else => continue,
                 };
-                break :outer;
+                if (!std.mem.eql(u8, t, "output_text")) continue;
+                const text_v = pobj.get("text") orelse continue;
+                return switch (text_v) {
+                    .string => |str| str,
+                    else => continue,
+                };
             }
         }
-    } else {
-        // `{"choices": [{"message": {"content": "..."}}]}`
-        const choices_v = root.get("choices") orelse return LlmTestError.InvalidResponse;
-        const choices = switch (choices_v) {
-            .array => |a| a,
-            else => return LlmTestError.InvalidResponse,
-        };
-        if (choices.items.len == 0) return LlmTestError.InvalidResponse;
-        const first = switch (choices.items[0]) {
-            .object => |o| o,
-            else => return LlmTestError.InvalidResponse,
-        };
-        const msg_v = first.get("message") orelse return LlmTestError.InvalidResponse;
-        const msg = switch (msg_v) {
-            .object => |o| o,
-            else => return LlmTestError.InvalidResponse,
-        };
-        const content_v = msg.get("content") orelse return LlmTestError.InvalidResponse;
-        reply = switch (content_v) {
-            .string => |s| s,
-            else => return LlmTestError.InvalidResponse,
-        };
+        return null;
     }
 
-    const text = reply orelse return LlmTestError.InvalidResponse;
-    const trimmed = std.mem.trim(u8, text, " \t\r\n");
-    const capped = trimmed[0..@min(trimmed.len, MAX_REPLY_LEN)];
-    return allocator.dupe(u8, capped) catch return LlmTestError.OutOfMemory;
+    const choices_v = root.get("choices") orelse return null;
+    const choices = switch (choices_v) {
+        .array => |a| a,
+        else => return null,
+    };
+    if (choices.items.len == 0) return null;
+    const first = switch (choices.items[0]) {
+        .object => |o| o,
+        else => return null,
+    };
+    const msg_v = first.get("message") orelse return null;
+    const msg = switch (msg_v) {
+        .object => |o| o,
+        else => return null,
+    };
+    const content_v = msg.get("content") orelse return null;
+    return switch (content_v) {
+        .string => |str| str,
+        else => null,
+    };
 }
 
-// ─── Use-case (network) ─────────────────────────────────────────────────────
+/// True when the provider says it stopped because the output budget ran out,
+/// i.e. the model may have spent every allowed token on hidden reasoning
+/// before writing any visible text.
+///
+///   openai-response: `"status": "incomplete"` with
+///                    `"incomplete_details": {"reason": "max_output_tokens"}`.
+///                    An `incomplete` status with NO details at all counts
+///                    too — it is a truncation, and the signal that has to be
+///                    absent for us to stay silent is a DIFFERENT reason
+///                    (e.g. `content_filter`).
+///   anthropic:       `"stop_reason": "max_tokens"`
+///   openai:          `"choices": [{"finish_reason": "length"}]`
+fn llmTestBudgetExhausted(root: std.json.ObjectMap, url_style: []const u8) bool {
+    if (std.mem.eql(u8, url_style, "openai-response")) {
+        const status = switch (root.get("status") orelse return false) {
+            .string => |str| str,
+            else => return false,
+        };
+        if (!std.mem.eql(u8, status, "incomplete")) return false;
+        const details_v = root.get("incomplete_details") orelse return true;
+        const details = switch (details_v) {
+            .object => |o| o,
+            else => return true,
+        };
+        const reason = switch (details.get("reason") orelse return true) {
+            .string => |str| str,
+            else => return true,
+        };
+        return std.mem.eql(u8, reason, "max_output_tokens");
+    }
+
+    if (std.mem.eql(u8, url_style, "anthropic")) {
+        const stop = switch (root.get("stop_reason") orelse return false) {
+            .string => |str| str,
+            else => return false,
+        };
+        return std.mem.eql(u8, stop, "max_tokens");
+    }
+
+    const choices_v = root.get("choices") orelse return false;
+    const choices = switch (choices_v) {
+        .array => |a| a,
+        else => return false,
+    };
+    if (choices.items.len == 0) return false;
+    const first = switch (choices.items[0]) {
+        .object => |o| o,
+        else => return false,
+    };
+    const finish = switch (first.get("finish_reason") orelse return false) {
+        .string => |str| str,
+        else => return false,
+    };
+    return std.mem.eql(u8, finish, "length");
+}
+
+// ─── Use-case (network) ────────────────────────────────────────────────────
 
 /// Probe a Claude Code profile by running `<binary> --version`.
 ///
@@ -883,6 +1021,15 @@ fn llmTestProbeClaudeCode(
     return .{ .model = req.model, .reply = reply, .latency_ms = latency_ms };
 }
 
+
+/// Probe the candidate, retrying once with a bigger output budget when the
+/// provider reports the first attempt was cut off mid-reasoning.
+///
+/// The retry exists because no finite budget can be known to be enough: a
+/// reasoning model's hidden tokens come out of the same budget as its visible
+/// ones, and how many it wants is a property of the model, not of the
+/// profile. Only the exhausted path pays for the second request — a probe
+/// that already has a reply is unchanged.
 fn llmTestUseCase(
     allocator: std.mem.Allocator,
     logger: *loggermod.Logger,
@@ -903,7 +1050,48 @@ fn llmTestUseCase(
     var client = custom_http_client.Client.init(allocator);
     defer client.deinit();
 
-    const body = try llmTestBuildProbeBody(allocator, req);
+    return llmTestProbeOnce(
+        allocator,
+        logger,
+        &client,
+        req,
+        PROBE_MAX_OUTPUT_TOKENS,
+        out_err_detail,
+    ) catch |err| {
+        if (err != LlmTestError.ReasoningBudgetExhausted) return err;
+        logger.warnFmt(
+            "[llm_test] output budget exhausted by reasoning; retrying with {d} tokens",
+            .{PROBE_MAX_OUTPUT_TOKENS_RETRY},
+        );
+        // The first attempt left a body snippet in `out_err_detail`; it
+        // describes an attempt we are about to supersede, and the retry owns
+        // the outcome from here.
+        if (out_err_detail.*) |detail| {
+            allocator.free(detail);
+            out_err_detail.* = null;
+        }
+        return llmTestProbeOnce(
+            allocator,
+            logger,
+            &client,
+            req,
+            PROBE_MAX_OUTPUT_TOKENS_RETRY,
+            out_err_detail,
+        );
+    };
+}
+
+/// One probe: build the body at `max_output_tokens`, POST it, decode the
+/// reply. Owns nothing the caller must free except the outcome's reply.
+fn llmTestProbeOnce(
+    allocator: std.mem.Allocator,
+    logger: *loggermod.Logger,
+    client: *custom_http_client.Client,
+    req: LlmTestRequest,
+    max_output_tokens: u32,
+    out_err_detail: *?[]const u8,
+) LlmTestError!LlmTestOutcome {
+    const body = try llmTestBuildProbeBody(allocator, req, max_output_tokens);
     defer allocator.free(body);
 
     // Auth header buffer: only the Bearer/x-api-key value is owned;
@@ -937,7 +1125,7 @@ fn llmTestUseCase(
 
     const start_ns = helpers.monotonicTimestampNanos();
     const result = custom_http_client.post(
-        &client,
+        client,
         req.base_url,
         body,
         header_buf[0..header_count],
@@ -967,15 +1155,19 @@ fn llmTestUseCase(
     const reply = llmTestExtractReply(allocator, req.url_style, result.body) catch |err| {
         logger.warnFmt("[llm_test] reply parse failed: {s}", .{@errorName(err)});
         if (err == error.JsonParseFailed) return LlmTestError.JsonParseFailed;
-        // Include a body snippet so a wrong-style success (e.g. HTML
-        // login page from a bad base_url) is diagnosable.
+        // Include a body snippet: both a wrong-style success (an HTML login
+        // page from a bad base_url) and a reasoning-only truncation are
+        // diagnosable from the bytes the provider actually sent.
         const snippet_len: usize = @min(result.body.len, 200);
         out_err_detail.* = std.fmt.allocPrint(
             allocator,
-            "unparseable body: {s}",
-            .{result.body[0..snippet_len]},
+            "{s}: {s}",
+            .{
+                if (err == error.ReasoningBudgetExhausted) "body had no text" else "unparseable body",
+                result.body[0..snippet_len],
+            },
         ) catch null;
-        return LlmTestError.InvalidResponse;
+        return err;
     };
 
     return .{
@@ -1023,6 +1215,10 @@ pub fn llmTestHandler(
             error.HttpError => "LLM server returned an error status",
             error.JsonParseFailed => "LLM server response was not valid JSON",
             error.InvalidResponse => "LLM server response did not contain a reply",
+            // Not the same failure: the body WAS a valid reply, the model just
+            // never got to write any text because its hidden reasoning used up
+            // the whole output budget. "Your key is broken" would be a lie.
+            error.ReasoningBudgetExhausted => "model returned only reasoning and no reply text — the output budget ran out",
             error.OutOfMemory => "out of memory",
         };
         const details: []const u8 = err_detail orelse @errorName(err);
@@ -1124,7 +1320,7 @@ test "llm_test validate: claude-code in url_style is just an unknown style" {
 
 test "llm_test buildProbeBody: openai body carries model + probe prompt" {
     const req: LlmTestRequest = .{ .model = "MiniMax-M2.7", .base_url = "http://x", .url_style = "openai" };
-    const body = try llmTestBuildProbeBody(testing.allocator, req);
+    const body = try llmTestBuildProbeBody(testing.allocator, req, PROBE_MAX_OUTPUT_TOKENS);
     defer testing.allocator.free(body);
     try testing.expect(std.mem.indexOf(u8, body, "MiniMax-M2.7") != null);
     try testing.expect(std.mem.indexOf(u8, body, PROBE_PROMPT) != null);
@@ -1133,7 +1329,7 @@ test "llm_test buildProbeBody: openai body carries model + probe prompt" {
 
 test "llm_test buildProbeBody: openai-response body uses input + max_output_tokens" {
     const req: LlmTestRequest = .{ .model = "gpt-5", .base_url = "http://x", .url_style = "openai-response" };
-    const body = try llmTestBuildProbeBody(testing.allocator, req);
+    const body = try llmTestBuildProbeBody(testing.allocator, req, PROBE_MAX_OUTPUT_TOKENS);
     defer testing.allocator.free(body);
     try testing.expect(std.mem.indexOf(u8, body, "\"input\"") != null);
     try testing.expect(std.mem.indexOf(u8, body, "max_output_tokens") != null);
@@ -1141,10 +1337,119 @@ test "llm_test buildProbeBody: openai-response body uses input + max_output_toke
 
 test "llm_test buildProbeBody: anthropic body uses max_tokens + messages" {
     const req: LlmTestRequest = .{ .model = "claude-x", .base_url = "http://x", .url_style = "anthropic" };
-    const body = try llmTestBuildProbeBody(testing.allocator, req);
+    const body = try llmTestBuildProbeBody(testing.allocator, req, PROBE_MAX_OUTPUT_TOKENS);
     defer testing.allocator.free(body);
-    try testing.expect(std.mem.indexOf(u8, body, "\"max_tokens\":16") != null);
+    try testing.expect(std.mem.indexOf(u8, body, "\"max_tokens\"") != null);
     try testing.expect(std.mem.indexOf(u8, body, PROBE_PROMPT) != null);
+}
+
+// The budget is the fix for "Test says the profile is broken, the profile
+// works in a chat turn": the output budget is shared with the model's hidden
+// reasoning tokens, so a handful of them is spent thinking and the probe gets
+// back a reply with no text. `Agent.buildJsonResponsesRequest` budgets
+// thousands for the same model; a probe that budgets 16 is not asking the
+// same question. Assert it as a property, not as the literal.
+test "llm_test buildProbeBody: the requested budget leaves room for reasoning (all styles)" {
+    const styles = [_][]const u8{ "openai", "openai-response", "anthropic" };
+    const budgets = [_]u32{ PROBE_MAX_OUTPUT_TOKENS, PROBE_MAX_OUTPUT_TOKENS_RETRY };
+    for (styles) |style| {
+        for (budgets) |budget| {
+            const req: LlmTestRequest = .{ .model = "m", .base_url = "http://x", .url_style = style };
+            const body = try llmTestBuildProbeBody(testing.allocator, req, budget);
+            defer testing.allocator.free(body);
+
+            var parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, body, .{});
+            defer parsed.deinit();
+            const root = switch (parsed.value) {
+                .object => |o| o,
+                else => return error.TestUnexpectedResult,
+            };
+            const field = if (std.mem.eql(u8, style, "openai-response")) "max_output_tokens" else "max_tokens";
+            const value = switch (root.get(field) orelse return error.TestUnexpectedResult) {
+                .integer => |i| i,
+                else => return error.TestUnexpectedResult,
+            };
+            // 16 was the old value; anything the model could spend entirely on
+            // thinking reproduces the bug.
+            try testing.expect(value > 100);
+            try testing.expectEqual(@as(i64, @intCast(budget)), value);
+        }
+    }
+}
+
+// The retry only helps if it offers MORE room; a second identical probe is a
+// second wasted call.
+test "llm_test retry budget is bigger than the first probe's" {
+    try testing.expect(PROBE_MAX_OUTPUT_TOKENS_RETRY > PROBE_MAX_OUTPUT_TOKENS);
+}
+
+// Regression, in the unit layer: the exact body the Test button got back from
+// a Responses gateway whose model spent the whole 16-token budget thinking.
+// It is valid JSON and a valid response — just with no text in it — so it must
+// be reported as a budget exhaustion (which the use-case retries with more
+// room), never as `InvalidResponse` ("did not contain a reply").
+test "llm_test extractReply: reasoning-only truncation is a budget exhaustion, not a missing reply" {
+    const raw =
+        \\{"id":"resp_1","object":"response","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[{"id":"rs_1","type":"reasoning","summary":[]}]}
+    ;
+    try testing.expectError(
+        LlmTestError.ReasoningBudgetExhausted,
+        llmTestExtractReply(testing.allocator, "openai-response", raw),
+    );
+}
+
+// An `incomplete` response with no stated reason is still a truncation: the
+// signal we need to stay silent is a DIFFERENT reason, not an absent one.
+test "llm_test extractReply: incomplete with no reason is still a budget exhaustion" {
+    const raw =
+        \\{"id":"resp_1","object":"response","status":"incomplete","output":[{"id":"rs_1","type":"reasoning"}]}
+    ;
+    try testing.expectError(
+        LlmTestError.ReasoningBudgetExhausted,
+        llmTestExtractReply(testing.allocator, "openai-response", raw),
+    );
+}
+
+// A different incomplete reason (content filter) is NOT a budget problem, and
+// must not be retried as one.
+test "llm_test extractReply: incomplete from a content filter is not a budget exhaustion" {
+    const raw =
+        \\{"id":"resp_1","object":"response","status":"incomplete","incomplete_details":{"reason":"content_filter"},"output":[]}
+    ;
+    try testing.expectError(
+        LlmTestError.InvalidResponse,
+        llmTestExtractReply(testing.allocator, "openai-response", raw),
+    );
+}
+
+// The chat-completions and Anthropic spellings of the same thing.
+test "llm_test extractReply: truncated non-responses styles report a budget exhaustion" {
+    const chat =
+        \\{"id":"chatcmpl-1","choices":[{"message":{"role":"assistant","content":""},"finish_reason":"length"}]}
+    ;
+    try testing.expectError(
+        LlmTestError.ReasoningBudgetExhausted,
+        llmTestExtractReply(testing.allocator, "openai", chat),
+    );
+    const anthropic =
+        \\{"id":"msg_1","content":[],"stop_reason":"max_tokens"}
+    ;
+    try testing.expectError(
+        LlmTestError.ReasoningBudgetExhausted,
+        llmTestExtractReply(testing.allocator, "anthropic", anthropic),
+    );
+}
+
+// A plain "there is no reply in here" body is unchanged: an error envelope or
+// a wrong-style success still reads as `InvalidResponse`.
+test "llm_test extractReply: a body with no reply and no truncation stays InvalidResponse" {
+    const raw =
+        \\{"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}
+    ;
+    try testing.expectError(
+        LlmTestError.InvalidResponse,
+        llmTestExtractReply(testing.allocator, "openai-response", raw),
+    );
 }
 
 test "llm_test extractReply: parses openai choices content" {

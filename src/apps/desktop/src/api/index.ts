@@ -5321,6 +5321,76 @@ export async function getPrStatus(
   return await apiFetch<GitPrStatus>(`/git/pr/status?${params.toString()}`, { silent: true })
 }
 
+// PR/MR list for a repo (GET /api/git/pr/list via `gh pr list` /
+// `glab mr list`). Powers the board-level change-request list — one
+// call for the whole repo, not one per card.
+export interface GitPrListItem {
+  number: number
+  title: string
+  url: string
+  state: string
+  is_draft: boolean
+  head_ref: string
+  base_ref: string
+  author: string
+  updated_at: string
+}
+
+export interface GitPrListResponse {
+  provider: string
+  program: string
+  state: string
+  truncated: boolean
+  detail: string
+  changes: GitPrListItem[]
+}
+
+export async function listPrs(
+  cwd: string,
+  opts?: { provider?: string; state?: string; limit?: number },
+): Promise<GitPrListResponse> {
+  const params = new URLSearchParams({
+    path: cwd,
+  })
+  if (opts?.state) params.set('state', opts.state)
+  if (opts?.limit !== undefined) params.set('limit', String(opts.limit))
+  if (opts?.provider) params.set('provider', opts.provider)
+  // silent: true — the list view renders the forge's own error
+  // sentence inline (an error banner, not a toast), and the board
+  // button leaves its badge absent on failure.
+  return await apiFetch<GitPrListResponse>(`/git/pr/list?${params.toString()}`, { silent: true })
+}
+
+// Close a PR/MR (POST /api/git/pr/close). `closed: false` with a
+// `detail` is NOT an error status — the forge accepted the command
+// but the re-read still shows it open, so the UI must render the
+// forge's sentence rather than claim success.
+export interface GitPrCloseResponse {
+  closed: boolean
+  detail: string
+  provider: string
+  status: GitPrStatus
+}
+
+export async function closePr(
+  cwd: string,
+  pr: string,
+  opts?: { provider?: string },
+): Promise<GitPrCloseResponse> {
+  // silent: true — the list view renders both the `closed: false`
+  // detail and the 502 `{ error }` sentence inline next to the row.
+  return await apiFetch<GitPrCloseResponse>('/git/pr/close', {
+    method: 'POST',
+    silent: true,
+    timeoutMs: 90_000,
+    body: {
+      path: cwd,
+      pr,
+      provider: opts?.provider || undefined,
+    },
+  })
+}
+
 /**
  * Merge a PR/MR (POST /api/git/pr/merge).
  *
@@ -6739,4 +6809,112 @@ export async function deleteSecret(
     `/workspaces/${encodeURIComponent(workspaceId)}/secrets/${encodeURIComponent(secretId)}`,
     { method: 'DELETE' },
   )
+}
+
+// ─── models.dev catalog (Migration 106) ─────────────────────────────────
+//
+// The catalog is a machine-wide snapshot, cached in the DB and synced hourly in
+// the background. `resolveModel` is the one call the profile dialog makes: it
+// answers "what will this profile actually do", and — just as importantly —
+// WHERE the answer came from. `source: 'builtin'` means the number is pabrik's
+// 200k placeholder, not knowledge about the model.
+
+export type ModelCatalogState = 'fresh' | 'stale' | 'absent'
+
+export interface ModelCatalogEntry {
+  provider_id: string
+  provider_name: string
+  model_id: string
+  model_name: string
+  context_window: number | null
+  output_tokens: number | null
+  reasoning: string
+  temperature: boolean
+}
+
+export interface ModelCatalogResponse {
+  total: number
+  returned: number
+  catalog: ModelCatalogState
+  fetched_at_ms: number
+  models: ModelCatalogEntry[]
+}
+
+export interface ModelResolve {
+  model: string
+  catalog: ModelCatalogState
+  /** `catalog` = we know this model; `builtin` = pabrik's fallback guess. */
+  source: 'catalog' | 'builtin'
+  context_window: number
+  output_tokens?: number | null
+  provider_id?: string
+  provider_name?: string
+  model_name?: string
+  base_url?: string
+  url_style?: string
+  reasoning?: string
+  /** The model's own effort values, e.g. `low · high · max`. */
+  effort_values?: string[]
+  /** The subset of those pabrik can actually send. */
+  effort_values_sendable?: string[]
+  budget_min?: number | null
+  temperature?: boolean
+  cost?: { input: number; output: number } | null
+  fetched_at_ms?: number
+  /** Present only when the model could not be resolved. */
+  reason?: string
+}
+
+/** `GET /api/models/catalog` — the model picker's data. Filtered server-side. */
+export async function getModelCatalog(
+  q?: string,
+  provider?: string,
+  limit?: number,
+): Promise<ModelCatalogResponse> {
+  const params = new URLSearchParams()
+  if (q) params.set('q', q)
+  if (provider) params.set('provider', provider)
+  if (limit) params.set('limit', String(limit))
+  const qs = params.toString()
+  return await apiFetch<ModelCatalogResponse>(`/models/catalog${qs ? `?${qs}` : ''}`)
+}
+
+/** `GET /api/models/resolve` — what a (model, provider) pair resolves to. */
+export async function resolveModel(model: string, provider?: string): Promise<ModelResolve> {
+  const params = new URLSearchParams({ model })
+  if (provider) params.set('provider', provider)
+  return await apiFetch<ModelResolve>(`/models/resolve?${params.toString()}`)
+}
+
+/** `POST /api/models/refresh` — fetch models.dev now instead of waiting an hour. */
+export async function refreshModelCatalog(): Promise<{
+  ok: boolean
+  providers: number
+  models: number
+  fetched_at_ms: number
+  bytes_raw: number
+  bytes_trimmed: number
+}> {
+  return await apiFetch('/models/refresh', { method: 'POST' })
+}
+
+/**
+ * Best-effort `resolveModel`. The failure is a DISCRIMINATED RESULT, not a
+ * swallowed value: `{kind:'error', message}` is not something a caller can
+ * mistake for `context_window: 0`, which is exactly the bug the Effect-style
+ * rule exists to prevent. Mirrors `testLlmProfile`, which also never rejects.
+ */
+export type ModelResolveOutcome =
+  | { kind: 'ok'; value: ModelResolve }
+  | { kind: 'error'; message: string }
+
+export async function resolveModelOutcome(
+  model: string,
+  provider?: string,
+): Promise<ModelResolveOutcome> {
+  try {
+    return { kind: 'ok', value: await resolveModel(model, provider) }
+  } catch (err) {
+    return { kind: 'error', message: err instanceof Error ? err.message : String(err) }
+  }
 }

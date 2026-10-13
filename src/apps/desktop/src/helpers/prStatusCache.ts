@@ -65,6 +65,19 @@ export function clearPrStatusCache(): void {
 }
 
 /**
+ * Drop one repo + branch entry so the next fetch re-asks the forge.
+ * Called after a close from the board-level PR list: the badge would
+ * otherwise keep its stale `open` color until the 60s TTL expires.
+ * The in-flight slot is dropped too — a close that lands mid-fetch
+ * must not let the stale answer populate the cache afterwards.
+ */
+export function invalidatePrStatus(cwd: string, branch: string, provider = ''): void {
+  const k = cacheKey(cwd, branch, provider)
+  cache.delete(k)
+  inflight.delete(k)
+}
+
+/**
  * Provider is part of the key because one repo directory can hold
  * branches pointing at different forges, and a GitLab answer must never
  * be served to a caller that asked for GitHub (the status vocabulary

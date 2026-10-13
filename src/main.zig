@@ -125,6 +125,71 @@ pub fn main(init: std.process.Init) !void {
         if (cli.static_dir) |dir_arg| allocator.free(dir_arg);
         std.log.info("--no-static-dir: API only, no static files at /.", .{});
     } else if (cli.static_dir) |dir_arg| ctxParent.static_dir_path = dir_arg;
+    // Installer layouts ship html/ beside the install root (install.sh
+    // extracts it next to the binaries, mirroring zig-out/bin/html;
+    // Windows keeps %LOCALAPPDATA%\pabrik\html): serve it without
+    // requiring --static-dir, so a bare `pabrik` opens the app instead
+    // of 404ing /. Explicit flags still win; --no-static-dir above
+    // already took the API-only branch.
+    if (ctxParent.static_dir_path == null) {
+        var candidates: std.ArrayList([]const u8) = .empty;
+        defer {
+            for (candidates.items) |c| allocator.free(c);
+            candidates.deinit(allocator);
+        }
+        const addCandidate = struct {
+            fn run(
+                list: *std.ArrayList([]const u8),
+                alloc: std.mem.Allocator,
+                parts: []const []const u8,
+            ) void {
+                const dir = std.fs.path.join(alloc, parts) catch return;
+                list.append(alloc, dir) catch alloc.free(dir);
+            }
+        }.run;
+        // Next-to-executable probe. The REAL exe path, not argv[0]: a
+        // user runs `pabrik` from PATH, where argv[0] is the bare name
+        // "pabrik" with no directory at all (argv[0] is only a fallback,
+        // and only when it carries a dir). `executablePathAlloc` is
+        // Linux /proc/self/exe, macOS _NSGetExecutablePath, Windows
+        // GetModuleFileName — so the shipped html/ sitting beside the
+        // installed binary is found on every platform.
+        var exe_dir: ?[]u8 = null;
+        defer if (exe_dir) |d| allocator.free(d);
+        if (std.process.executablePathAlloc(io, allocator)) |exe_path| {
+            defer allocator.free(exe_path);
+            if (std.fs.path.dirname(exe_path)) |d| {
+                exe_dir = allocator.dupe(u8, d) catch null;
+            }
+        } else |_| {}
+        if (exe_dir == null and argv_flat.items.len > 0) {
+            const argv0 = argv_flat.items[0];
+            if (std.mem.indexOfAny(u8, argv0, "/\\") != null) {
+                if (std.fs.path.dirname(argv0)) |d| exe_dir = allocator.dupe(u8, d) catch null;
+            }
+        }
+        if (exe_dir) |d| {
+            addCandidate(&candidates, allocator, &.{ d, "html" });
+        }
+        if (@import("builtin").os.tag == .windows) {
+            if (environment.get("LOCALAPPDATA")) |appdata| {
+                addCandidate(&candidates, allocator, &.{ appdata, "pabrik", "html" });
+            }
+        } else {
+            if (environment.get("XDG_DATA_HOME")) |xdg| {
+                addCandidate(&candidates, allocator, &.{ xdg, "pabrik", "html" });
+            } else if (environment.get("HOME")) |home| {
+                addCandidate(&candidates, allocator, &.{ home, ".local", "share", "pabrik", "html" });
+            }
+            // System installs (--system): absolute from the start.
+            addCandidate(&candidates, allocator, &.{ "/", "usr", "local", "share", "pabrik", "html" });
+            addCandidate(&candidates, allocator, &.{ "/", "usr", "share", "pabrik", "html" });
+        }
+        if (server_boot.findBundledWebapp(io, allocator, candidates.items)) |dir| {
+            ctxParent.static_dir_path = dir;
+            std.log.info("serving installed webapp from {s}", .{dir});
+        }
+    }
     ctxParent.auth_enabled = cli.auth_enabled;
     if (cli.auth_enabled) {
         std.log.info("--auth on: per-user LLM config comes from users.config_json; config.json is ignored.", .{});
@@ -136,6 +201,11 @@ pub fn main(init: std.process.Init) !void {
     // yet, so existing workspaces open with the sections that moved to
     // Workspace settings already populated. Idempotent + best-effort.
     server_boot.seedWorkspaceSettingsFromUserConfig(allocator, io, environment, dbSqlite, cli.auth_enabled);
+
+    // models.dev model catalog: read the cached snapshot from the DB (local,
+    // no network) and kick the detached hourly sync. This is what makes a
+    // non-MiniMax model resolve to its real context window instead of 200k.
+    server_boot.loadModelCatalog(allocator, dbSqlite);
 
     // Eager globals: call sites go through the singleton instead of
     // lazy-init on first MCP use; the defers free the arenas at shutdown.
@@ -169,14 +239,31 @@ pub fn main(init: std.process.Init) !void {
         std.log.info("web launch: browser mode on http://127.0.0.1:{d}/", .{port});
     }
 
-    const address = gserverz.Address.init("127.0.0.1", port) catch |err| switch (err) {
-        // A busy port is an operator error, not a crash: report + exit(1)
-        // instead of dying with SIGSEGV down the runtime error path.
-        error.BindFailed => {
-            std.log.err("cannot bind 127.0.0.1:{d} - address already in use (is another pabrik already running on this port?)", .{port});
-            std.process.exit(1);
-        },
-        else => return err,
+    const address = blk: {
+        const first = gserverz.Address.init("127.0.0.1", port) catch |err| switch (err) {
+            error.BindFailed => {
+                // An explicit --port is operator intent: fail loud so a
+                // typo'd flag never silently serves somewhere unexpected.
+                if (cli.port != null) {
+                    std.log.err("cannot bind 127.0.0.1:{d} - address already in use (is another pabrik already running on this port?)", .{port});
+                    std.process.exit(1);
+                }
+                // Default-port convenience, on every platform: the user
+                // asked for no port in particular (usually the 8081
+                // default), so a taken port picks a free one instead of
+                // dying. Second `pabrik` on any OS is the common case —
+                // a dev server or stale listener holding 8081 must not
+                // cost the user their session.
+                std.log.warn("port {d} is already in use - picking a free port instead", .{port});
+                port = pabrikcore.web_port.pickFreePort(io) catch |pick_err| {
+                    std.log.err("no free port available: {s}", .{@errorName(pick_err)});
+                    return pick_err;
+                };
+                break :blk try gserverz.Address.init("127.0.0.1", port);
+            },
+            else => return err,
+        };
+        break :blk first;
     };
     const gs = try gserverz.GinwaServer.init(allocator, io, address);
     defer gs.deinit();
@@ -220,6 +307,18 @@ pub fn main(init: std.process.Init) !void {
     ctxParent.server.sse_manager.on_disconnect = ai_mod.handleClientDisconnect;
 
     std.debug.print("Agent is ready to serve!\n", .{});
+    // The browser URL, on every boot path — not just web-launch mode.
+    // A bare `pabrik` (default port 8081, no --static-dir) used to print
+    // nothing but the line above, so users never learned where to point
+    // the browser. The /app entry is only advertised when a static dir
+    // is actually serving it; otherwise / is API-only (404) and the
+    // honest check is /health.
+    std.debug.print("Open in your browser: http://127.0.0.1:{d}/\n", .{port});
+    if (ctxParent.static_dir_path != null) {
+        std.debug.print("App: http://127.0.0.1:{d}/app\n", .{port});
+    } else {
+        std.debug.print("Health check: http://127.0.0.1:{d}/health\n", .{port});
+    }
 
     const boot_unix = std.Io.Clock.now(.real, io).toSeconds();
     _ = gs.cronjob_manager.register(

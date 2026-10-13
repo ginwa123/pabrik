@@ -421,7 +421,46 @@ jobs:
       shard_index: 2
       shard_total: 3
 
-  # ── 4. Android, beside the backends rather than under them ──────────
+  # ── 4. Install, one job per platform ───────────────────────────────
+  # Each job downloads the PREBUILT bins from the rolling `ci-latest`
+  # release with the installer scripts under test (install.sh /
+  # install.ps1 at this SHA — no build), then proves the installed
+  # binary serves the browser URL. See ci-install.yml for why the
+  # release bytes are not pinned to this SHA.
+  #
+  # Beside the backends, not under them: nothing here consumes a
+  # backend artifact, so all three start alongside the builds.
+  install-linux:
+    name: install (Linux X64)
+    needs: [changes, lint]
+    if: ${{ needs.lint.result == 'success' && needs.changes.outputs.heavy == 'true' && !cancelled() }}
+    uses: ./.github/workflows/ci-install.yml
+    with:
+      os: ubuntu-24.04
+      label: Linux X64
+      target_zig: x86_64-linux-gnu
+
+  install-macos:
+    name: install (macOS ARM64)
+    needs: [changes, lint]
+    if: ${{ needs.lint.result == 'success' && needs.changes.outputs.heavy == 'true' && !cancelled() }}
+    uses: ./.github/workflows/ci-install.yml
+    with:
+      os: macos-15
+      label: macOS ARM64
+      target_zig: aarch64-macos
+
+  install-windows:
+    name: install (Windows X64)
+    needs: [changes, lint]
+    if: ${{ needs.lint.result == 'success' && needs.changes.outputs.heavy == 'true' && !cancelled() }}
+    uses: ./.github/workflows/ci-install.yml
+    with:
+      os: windows-2022
+      label: Windows X64
+      target_zig: x86_64-windows-gnu
+
+  # ── 5. Android, beside the backends rather than under them ──────────
   # Both android jobs used to `needs: backend`, so a 30-minute Gradle
   # build and a 45-minute emulator suite sat idle behind a macOS compile
   # that neither consumes. Neither consumes any backend artifact, so both
@@ -903,6 +942,9 @@ jobs:
       - functional-windows-1
       - functional-windows-2
       - functional-windows-3
+      - install-linux
+      - install-macos
+      - install-windows
       - android-apk
       - android-test
     # `always()` is mandatory, not defensive. `ci-ok` IS the required
@@ -936,6 +978,9 @@ jobs:
             functional-windows-1=${{ needs.functional-windows-1.result }}
             functional-windows-2=${{ needs.functional-windows-2.result }}
             functional-windows-3=${{ needs.functional-windows-3.result }}
+            install-linux=${{ needs.install-linux.result }}
+            install-macos=${{ needs.install-macos.result }}
+            install-windows=${{ needs.install-windows.result }}
             android-apk=${{ needs.android-apk.result }}
             android-test=${{ needs.android-test.result }}
         run: |

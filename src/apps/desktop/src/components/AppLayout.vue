@@ -50,6 +50,7 @@ import { useDesignHandlers } from '../composables/useDesignHandlers'
 import { useCurrentMainView } from '../composables/useCurrentMainView'
 import {
   buildAppUrl,
+  buildSettingsUrl,
   buildTaskAppUrl,
   isAppPath,
   normalizeAppPath,
@@ -58,6 +59,8 @@ import {
 } from '../helpers/appUrl'
 import { openInNewTab } from '../helpers/openInNewTab'
 import { parseItemIdWithChat } from '../helpers/buildItemIdWithChat'
+import { isWorkspaceAgentSection } from '../helpers/configSource'
+import { resolveWorkspaceId } from '../helpers/workspaceScope'
 
 const router = useRouter()
 const route = useRoute()
@@ -887,26 +890,40 @@ const handleNavigate = (
       router.push({ path: '/app', query: sub })
     }
   } else if (view === 'settings') {
-    // Land directly on the last-open settings tab so the URL already
-    // carries `?section=` (the mount normalization in PabrikSettings
-    // would repair a clean push via replace, but pushing the stored tab
-    // avoids the clean-URL flash). Default tab stays clean.
+    // Settings opens on the workspace the user is IN, with that workspace in
+    // the PATH - the same URL contract every other view uses. Pushing the
+    // workspace-less `/app/settings` (user scope, General only) threw the
+    // workspace away, and the Workspace tab then had to guess one; it guessed
+    // `workspaces[0]`, which is whichever workspace sits at the top of the
+    // list, not the one the user came from.
+    //
+    // Land directly on the last-open section so the URL already carries
+    // `?section=` (the shell's mount normalization would repair a clean push
+    // via replace, but pushing the stored section avoids the clean-URL flash).
     let stored: string | null = null
     try {
       stored = localStorage.getItem('pabrik-settings-active-tab')
     } catch (e) {
-      // Storage unreadable (private mode): fall back to the clean URL.
-      // PabrikSettings mounts on General with a clean URL in that case,
-      // so the fallback cannot render a wrong tab, only the default.
+      // Storage unreadable (private mode): fall back to the clean URL, which
+      // renders the default section. The fallback cannot render a WRONG
+      // section, only the default.
       console.warn('[settings] stored tab unreadable, using default', e)
       stored = null
     }
-    const known = ['general', 'profiles', 'mcp', 'tools', 'evals']
-    if (stored && known.includes(stored) && stored !== 'general') {
-      router.push({ path: '/app/settings', query: { section: stored } })
-    } else {
-      router.push({ path: '/app/settings' })
-    }
+    // The stored key predates Migration 105: the sections it can name are
+    // workspace-scoped now, so it selects a section on the workspace page.
+    // Anything else (`general`, an unknown value) is dropped rather than sent
+    // as `?section=` to the workspace page.
+    const settingsWorkspaceId = resolveWorkspaceId(
+      route.params.workspaceId,
+      workspacesStore.activeWorkspace?.id,
+    )
+    router.push(
+      buildSettingsUrl(
+        settingsWorkspaceId,
+        stored && isWorkspaceAgentSection(stored) ? stored : null,
+      ),
+    )
   }
 }
 
@@ -3528,13 +3545,20 @@ defineExpose({
         @update-chat-id="handleUpdateChatId"
         @close="handleCloseTaskView"
       />
+      <!-- Standalone chat (sidebar-opened `chat-<id>` sessions, no task).
+           Renders the same shared ChatAppBar as the kanban / agent /
+           standard branches above, so the title / ◫ / ✕ sit in the
+           same place in every mode. `@close` reuses handleCloseTaskView,
+           which clears both the task and the chat. -->
       <ChatView
         v-else-if="activeChatId.startsWith('chat-')"
         :key="activeChatId"
         :chat-id="activeChatId"
         :chat-name="activeChatName"
         :cwd="effectiveChatCwd"
+        :show-header="true"
         @update-chat-id="handleUpdateChatId"
+        @close="handleCloseTaskView"
       />
       <Chats v-else-if="currentView === 'chat'" />
       <!--

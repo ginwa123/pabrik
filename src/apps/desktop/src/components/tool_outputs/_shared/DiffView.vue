@@ -162,7 +162,8 @@ const DiffSplitSide = defineComponent({
         return h(
           'div',
           {
-            class: 'overflow-x-auto text-dense leading-relaxed font-mono bg-[var(--semantic-card-bg)]',
+            class:
+              'overflow-x-auto text-dense leading-relaxed font-mono bg-[var(--semantic-card-bg)] text-[var(--semantic-text)]',
           },
           [
             h(
@@ -178,7 +179,8 @@ const DiffSplitSide = defineComponent({
       return h(
         'div',
         {
-          class: 'overflow-x-auto text-dense leading-relaxed font-mono bg-[var(--semantic-card-bg)]',
+          class:
+            'overflow-x-auto text-dense leading-relaxed font-mono bg-[var(--semantic-card-bg)] text-[var(--semantic-text)]',
         },
         [
           h(
@@ -217,17 +219,11 @@ function renderSplitRow(row: SplitRow, idx: number, side: 'before' | 'after', la
     }
   }
 
-  // Text color: red for deleted (before) lines, green for inserted
-  // (after) lines. Context (unchanged) lines and empty filler rows keep
-  // the default text color.
-  let textColorClass = ''
-  if (row.isChanged) {
-    if (isBefore && row.beforeText !== null) {
-      textColorClass = '!text-[rgb(248,81,73)]'
-    } else if (!isBefore && row.afterText !== null) {
-      textColorClass = '!text-[rgb(63,185,80)]'
-    }
-  }
+  // The text is deliberately NOT tinted per row. An `!important` red/green
+  // color here beats the `.tok-*` classes inside the spans and paints the
+  // whole line monochrome — a diff with no syntax color on exactly the
+  // lines that changed. Added/removed is carried by the row background
+  // (below) and, in unified view, by the colored +/- gutter sign.
 
   // Clickable gutter: clicking the line number emits jump-to-line so the
   // parent can open the code editor at that exact line.
@@ -296,7 +292,7 @@ function renderSplitRow(row: SplitRow, idx: number, side: 'before' | 'after', la
       h(
         'span',
         {
-          class: ['inline-block py-0.5 pr-2 whitespace-pre align-top', textColorClass],
+          class: 'inline-block py-0.5 pr-2 whitespace-pre align-top',
         },
         text == null ? '\u00a0' : renderHighlighted(text, language),
       ),
@@ -329,7 +325,8 @@ const DiffUnifiedSide = defineComponent({
         return h(
           'div',
           {
-            class: 'overflow-x-auto text-dense leading-relaxed font-mono bg-[var(--semantic-card-bg)]',
+            class:
+              'overflow-x-auto text-dense leading-relaxed font-mono bg-[var(--semantic-card-bg)] text-[var(--semantic-text)]',
           },
           [
             h(
@@ -345,7 +342,8 @@ const DiffUnifiedSide = defineComponent({
       return h(
         'div',
         {
-          class: 'overflow-x-auto text-dense leading-relaxed font-mono bg-[var(--semantic-card-bg)]',
+          class:
+            'overflow-x-auto text-dense leading-relaxed font-mono bg-[var(--semantic-card-bg)] text-[var(--semantic-text)]',
         },
         [
           h(
@@ -374,8 +372,12 @@ function renderUnifiedRow(row: UnifiedRow, idx: number, language: string) {
     )
   }
   let rowBgClass = ''
-  if (row.kind === 'delete') rowBgClass = '!bg-red-400/15 !text-red-500'
-  else if (row.kind === 'insert') rowBgClass = '!bg-green-400/15 !text-green-500'
+  if (row.kind === 'delete') rowBgClass = '!bg-red-400/15'
+  else if (row.kind === 'insert') rowBgClass = '!bg-green-400/15'
+  // ...but the +/- sign keeps its red/green: it is the only place in the
+  // unified view that names the direction once the text is syntax-colored.
+  const signColorClass =
+    row.kind === 'delete' ? 'text-red-500' : row.kind === 'insert' ? 'text-green-500' : ''
 
   // Unified view: prefer the after-line for click (that's the file's new
   // state). For delete-only rows there is no after-line; fall back to the
@@ -436,7 +438,10 @@ function renderUnifiedRow(row: UnifiedRow, idx: number, language: string) {
       h(
         'span',
         {
-          class: 'shrink-0 w-4 sticky left-20 z-10 mr-3 font-semibold text-center',
+          class: [
+            'shrink-0 w-4 sticky left-20 z-10 mr-3 font-semibold text-center',
+            signColorClass,
+          ],
           style: { background: 'var(--semantic-card-bg)' },
         },
         row.text.charAt(0),
@@ -530,34 +535,3 @@ void readMode
     <DiffUnifiedSide v-else :rows="unifiedRows" :language="effectiveLanguage" />
   </div>
 </template>
-
-<style scoped>
-/* Code token colors — mirrors the `pabrik-dark` monaco theme in
- * CodeEditor.vue so diff output matches the full editor. The row
- * red/green background stays the source of truth for removed/added;
- * these tints only color tokens *within* the row. Scoped to this
- * component; no light-palette hardcodes (dark transcript theme). */
-.tok-plain {
-  color: inherit;
-}
-.tok-keyword {
-  color: #8992a7;
-  font-weight: 600;
-}
-.tok-string {
-  color: #87a987;
-}
-.tok-comment {
-  color: #7a8382;
-  font-style: italic;
-}
-.tok-number {
-  color: #c4b28a;
-}
-.tok-function {
-  color: #8ea4a2;
-}
-.tok-type {
-  color: #8ba4b0;
-}
-</style>

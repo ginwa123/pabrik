@@ -237,6 +237,63 @@ test "execCommand: mandatory_timeout = 0 gets the same explanation as a missing 
     try testing.expect(std.mem.indexOf(u8, err_msg.?, "MandatoryTimeoutMissing") == null);
 }
 
+test "execCommand: a missing cwd explains the field, the wrong-tree risk and the fix" {
+    // `cwd` is required. Without it the shell inherits the SERVER's working
+    // directory, so the command acts on the wrong tree and the caller never
+    // learns that it did. The prose has to name the field, WHY the omission is
+    // dangerous, and the shape of the value to send.
+    if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
+
+    const allocator = testing.allocator;
+    const ctx = commandTestCtx(allocator, testing.io);
+    const tc = agent.ToolCall{
+        .id = "call-no-cwd",
+        .type = "function",
+        .function = .{
+            .name = "command",
+            .arguments = "{\"command\":\"ls -la\",\"mandatory_timeout\":30}",
+        },
+    };
+
+    var result = try execCommand(ctx, tc);
+    defer result.deinit(allocator);
+
+    const err_msg = try envelopeError(allocator, result.output);
+    defer if (err_msg) |m| allocator.free(m);
+    try testing.expect(err_msg != null);
+    try testing.expect(std.mem.indexOf(u8, err_msg.?, "cwd") != null);
+    try testing.expect(std.mem.indexOf(u8, err_msg.?, "required") != null);
+    // "the SERVER's working directory" is the fact that makes the omission
+    // dangerous — without it the correction reads as arbitrary pedantry.
+    try testing.expect(std.mem.indexOf(u8, err_msg.?, "SERVER") != null);
+    // The error NAME never leaks into the envelope; the model gets prose.
+    try testing.expect(std.mem.indexOf(u8, err_msg.?, "MandatoryCwdMissing") == null);
+}
+
+test "execCommand: a relative cwd is refused with the absolute-path rule" {
+    if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
+
+    const allocator = testing.allocator;
+    const ctx = commandTestCtx(allocator, testing.io);
+    const tc = agent.ToolCall{
+        .id = "call-relative-cwd",
+        .type = "function",
+        .function = .{
+            .name = "command",
+            .arguments = "{\"command\":\"ls\",\"cwd\":\"src/modules\",\"mandatory_timeout\":5}",
+        },
+    };
+
+    var result = try execCommand(ctx, tc);
+    defer result.deinit(allocator);
+
+    const err_msg = try envelopeError(allocator, result.output);
+    defer if (err_msg) |m| allocator.free(m);
+    try testing.expect(err_msg != null);
+    try testing.expect(std.mem.indexOf(u8, err_msg.?, "ABSOLUTE") != null);
+    try testing.expect(std.mem.indexOf(u8, err_msg.?, "CwdNotAbsolute") == null);
+}
+
 test "execCommand: a malformed-arguments failure names the offending field" {
     const allocator = testing.allocator;
     const ctx = commandTestCtx(allocator, testing.io);
@@ -280,7 +337,7 @@ test "execCommand: an over-max mandatory_timeout states the ceiling and the alte
     defer if (err_msg) |m| allocator.free(m);
     try testing.expect(err_msg != null);
     // The ceiling, and the way out that is not "retry the same call".
-    try testing.expect(std.mem.indexOf(u8, err_msg.?, "600") != null);
+    try testing.expect(std.mem.indexOf(u8, err_msg.?, "60 seconds or fewer") != null);
     try testing.expect(std.mem.indexOf(u8, err_msg.?, "background=true") != null);
     try testing.expect(std.mem.indexOf(u8, err_msg.?, "MandatoryTimeoutTooLarge") == null);
 }

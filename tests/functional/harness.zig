@@ -653,6 +653,25 @@ pub const Harness = struct {
         /// process env is never mutated; each pair is added to the copied
         /// `env_map` `boot` already builds.
         extra_env: []const [2][]const u8 = &.{},
+        /// Lower the CHILD's soft `RLIMIT_NOFILE` to this value before it
+        /// execs, without touching the hard limit.
+        ///
+        /// `std.process.spawn` has no rlimit knob, so the binary is booted
+        /// through `/bin/sh -c 'ulimit -S -n N; exec ...'` — the shell only
+        /// lowers the soft limit and then `exec`s, so the pid and the process
+        /// group are the binary's own. Used to reproduce macOS's default
+        /// (256), which collapses the SQLite reader pool's fd-derived ceiling
+        /// to a single reader.
+        ///
+        /// POSIX only; asking on Windows is an error, not a silent no-op.
+        no_file_limit: ?u64 = null,
+
+        /// Run BEFORE the child is spawned, with the tmpdir HOME already in
+        /// place. Lets a suite seed state the binary reads AT BOOT — a
+        /// pre-migrated database, for instance — which the file-copy hooks
+        /// cannot express. A general seam on purpose: the alternative is one
+        /// bespoke hook per suite.
+        pre_boot_setup: ?*const fn (io: Io, allocator: Allocator, temp_dir: []const u8) anyerror!void = null,
     };
 
     /// Boot a fresh `pabrik` binary against an isolated tmpdir HOME.
@@ -784,10 +803,27 @@ pub const Harness = struct {
 
         var argv: std.ArrayList([]const u8) = .empty;
         defer argv.deinit(gpa);
+        var ulimit_script: ?[]u8 = null;
+        defer if (ulimit_script) |script| gpa.free(script);
+        if (opts.no_file_limit) |limit| {
+            if (is_windows) return error.NoFileLimitUnsupported;
+            // `$0` is the binary, `$@` the args after it — `exec` replaces the
+            // shell, so the recorded pid keeps pointing at the server.
+            ulimit_script = try std.fmt.allocPrint(
+                gpa,
+                "ulimit -S -n {d} || exit 126; exec \"$0\" \"$@\"",
+                .{limit},
+            );
+            try argv.append(gpa, "/bin/sh");
+            try argv.append(gpa, "-c");
+            try argv.append(gpa, ulimit_script.?);
+        }
         try argv.append(gpa, bin_path);
         try argv.append(gpa, "--port");
         try argv.append(gpa, port_str);
         try argv.appendSlice(gpa, opts.extra_args);
+
+        if (opts.pre_boot_setup) |setup| try setup(io, gpa, temp_dir);
 
         var child = try std.process.spawn(io, .{
             .argv = argv.items,
@@ -1650,11 +1686,17 @@ pub fn resolvePabrikBin(io: Io, gpa: Allocator) ![]u8 {
         if (env_bin.len > 0) {
             const resolved = resolveRelative(io, gpa, env_bin) catch env_bin;
             if (isExecutable(io, resolved)) return resolved;
+            // `catch env_bin` borrows, so only a fresh dupe may be freed.
+            if (resolved.ptr != env_bin.ptr) gpa.free(resolved);
         }
     } else |_| {}
     for (BIN_CANDIDATES) |c| {
         const resolved = try resolveRelative(io, gpa, c);
         if (isExecutable(io, resolved)) return resolved;
+        // A candidate that did not resolve is still an allocation. Dropping it
+        // here is what makes `boot` leak-free: without it every boot leaked one
+        // buffer per rejected candidate, and the test runner failed the suite.
+        gpa.free(resolved);
     }
     return error.BinaryNotFound;
 }
@@ -1667,6 +1709,8 @@ pub fn mcpHelloWorldBin(io: Io, gpa: Allocator) ![]u8 {
         if (env_bin.len > 0) {
             const resolved = resolveRelative(io, gpa, env_bin) catch env_bin;
             if (isExecutable(io, resolved)) return resolved;
+            // `catch env_bin` borrows, so only a fresh dupe may be freed.
+            if (resolved.ptr != env_bin.ptr) gpa.free(resolved);
         }
     } else |_| {}
     for ([_][]const u8{
@@ -1675,6 +1719,10 @@ pub fn mcpHelloWorldBin(io: Io, gpa: Allocator) ![]u8 {
     }) |c| {
         const resolved = try resolveRelative(io, gpa, c);
         if (isExecutable(io, resolved)) return resolved;
+        // A candidate that did not resolve is still an allocation. Dropping it
+        // here is what makes `boot` leak-free: without it every boot leaked one
+        // buffer per rejected candidate, and the test runner failed the suite.
+        gpa.free(resolved);
     }
     return error.BinaryNotFound;
 }
@@ -1688,6 +1736,8 @@ pub fn mcpHttpHelloWorldBin(io: Io, gpa: Allocator) ![]u8 {
         if (env_bin.len > 0) {
             const resolved = resolveRelative(io, gpa, env_bin) catch env_bin;
             if (isExecutable(io, resolved)) return resolved;
+            // `catch env_bin` borrows, so only a fresh dupe may be freed.
+            if (resolved.ptr != env_bin.ptr) gpa.free(resolved);
         }
     } else |_| {}
     for ([_][]const u8{
@@ -1696,6 +1746,10 @@ pub fn mcpHttpHelloWorldBin(io: Io, gpa: Allocator) ![]u8 {
     }) |c| {
         const resolved = try resolveRelative(io, gpa, c);
         if (isExecutable(io, resolved)) return resolved;
+        // A candidate that did not resolve is still an allocation. Dropping it
+        // here is what makes `boot` leak-free: without it every boot leaked one
+        // buffer per rejected candidate, and the test runner failed the suite.
+        gpa.free(resolved);
     }
     return error.BinaryNotFound;
 }

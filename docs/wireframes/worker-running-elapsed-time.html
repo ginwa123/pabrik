@@ -325,7 +325,6 @@
           <div class="chat">
             <div class="chat-bar">
               <span class="t">Fix the auth redirect loop</span>
-              <span class="chip run" title="Worker started 4m 12s ago · last activity 3s ago">running 4m 12s</span>
               <span class="x">✕</span>
             </div>
             <div class="chat-body">
@@ -579,8 +578,8 @@
       </div>
 
       <div class="note">
-        <h3><span class="num">7</span> Composer: the Stop button gains a countdown</h3>
-        <p><code>FileInput.vue</code>'s Stop button is the only place a user can cancel a run. The wireframe puts <code>running 4m 12s</code> in the chat app bar's extras slot (the same slot <code>AgentChatView</code> already uses for its <code>SessionSlider</code>), so the number is visible while typing without touching the button itself.</p>
+        <h3><span class="num">7</span> Chat app bar: no chip here <span class="tag warn">REMOVED</span></h3>
+        <p>The app-bar copy of the chip is gone — the title strip is back to title · sidebar toggle · ✕. The elapsed time still rides on the sidebar rows, the kanban rows/cards and the task-detail dialog, which is where the worker's state is already stated; repeating it in the bar crowded the title and the two window controls.</p>
       </div>
 
       <div class="note">

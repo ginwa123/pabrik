@@ -25,9 +25,13 @@
 # ad-hoc signature (both best-effort) so a first double-click doesn't
 # bounce on Gatekeeper for locally-built binaries.
 #
+# App icon: packaging/macos/Pabrik.icns (the brand "P" mark, see
+# packaging/icons/README.md) is copied into Contents/Resources when
+# present, matching the CFBundleIconFile entry in Info.plist.
+# Missing icns is a warning, not a failure — the bundle still indexes
+# in Spotlight/Launchpad by name.
+#
 # Idempotent: re-running overwrites the previous bundle.
-# NOTE: no custom icon in v1 (only favicon.ico exists; .icns needs macOS
-# iconutil) — the bundle still indexes in Spotlight/Launchpad by name.
 
 set -euo pipefail
 
@@ -63,6 +67,11 @@ cp "${SRC_DIR}/pabrik-desktop" "${DEST_APP}/Contents/MacOS/pabrik-desktop"
 cp "${SRC_DIR}/pabrik"         "${DEST_APP}/Contents/MacOS/pabrik"
 chmod +x "${DEST_APP}/Contents/MacOS/pabrik-desktop" "${DEST_APP}/Contents/MacOS/pabrik"
 cp "${PLIST_SRC}" "${DEST_APP}/Contents/Info.plist"
+if [[ -f "${SCRIPT_DIR}/Pabrik.icns" ]]; then
+    cp "${SCRIPT_DIR}/Pabrik.icns" "${DEST_APP}/Contents/Resources/Pabrik.icns"
+else
+    echo "warning: Pabrik.icns missing next to script (app ships without a custom icon)" >&2
+fi
 
 # Gatekeeper friendliness for locally-built binaries (best-effort: missing
 # tools or hardened runtimes must not fail the install).
@@ -91,6 +100,9 @@ exec "${HERE}/pabrik-desktop" --browser "$@"
 SHIM
     chmod +x "${DEST_BROWSER_APP}/Contents/MacOS/pabrik-browser"
     cp "${PLIST_BROWSER_SRC}" "${DEST_BROWSER_APP}/Contents/Info.plist"
+    if [[ -f "${SCRIPT_DIR}/Pabrik.icns" ]]; then
+        cp "${SCRIPT_DIR}/Pabrik.icns" "${DEST_BROWSER_APP}/Contents/Resources/Pabrik.icns"
+    fi
     xattr -dr com.apple.quarantine "${DEST_BROWSER_APP}" 2>/dev/null || true
     codesign --force --deep -s - "${DEST_BROWSER_APP}" 2>/dev/null || true
     echo "Installed Pabrik Browser.app -> ${DEST_BROWSER_APP}"

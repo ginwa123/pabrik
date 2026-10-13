@@ -6,7 +6,8 @@ import DiffCommentBox, {
   type DiffCommentSavePayload,
   type SavedComment,
 } from './DiffCommentBox.vue'
-import { escapeDiffHtml, type ParsedDiffLine } from './parseUnifiedDiff'
+import type { ParsedDiffLine } from './parseUnifiedDiff'
+import { highlightLinesForFile } from '@/helpers/codeHighlight'
 import { pairSplitRows, splitRowIndexBySourceIndex, type SplitRow } from './pairSplitRows'
 import { fetchWholeFileDiff, type WholeFileDiff } from './wholeFileDiff'
 import SplitDiffTable from './SplitDiffTable.vue'
@@ -123,6 +124,17 @@ onUpdated(() => {
     syncDiffScope()
   }
 })
+
+// ── token colors ──────────────────────────────────────────────────────────
+// One entry per rendered row, computed once per diff instead of once per
+// render — the row red/green background still carries added/removed, the
+// token spans only color the code inside the row.
+const unifiedTokens = computed(() =>
+  highlightLinesForFile(
+    displayLines.value.map((line) => line.content),
+    props.path,
+  ),
+)
 
 // ── split render ──────────────────────────────────────────────────────────
 const splitRows = computed<SplitRow[]>(() => pairSplitRows(displayLines.value))
@@ -417,6 +429,7 @@ const openFile = () => emit('open', { path: props.path, line: firstAddLine.value
         v-if="mode === 'split'"
         class="flex-1 min-h-0 overflow-auto diff-wrap"
         :rows="splitRows"
+        :path="path"
         @comment="onSplitComment"
       >
         <template #threads="{ rowIndex }">
@@ -481,7 +494,12 @@ const openFile = () => emit('open', { path: props.path, line: firstAddLine.value
                   "
                 >
                   <span style="color: var(--color-green); font-weight: bold">+</span>
-                  <span v-html="escapeDiffHtml(line.content)"></span>
+                  <span
+                    v-for="(tok, tIdx) in unifiedTokens[idx]"
+                    :key="tIdx"
+                    :class="`tok-${tok.type}`"
+                    >{{ tok.text || '\u00a0' }}</span
+                  >
                 </td>
               </tr>
               <tr
@@ -508,7 +526,12 @@ const openFile = () => emit('open', { path: props.path, line: firstAddLine.value
                   "
                 >
                   <span style="color: var(--color-red); font-weight: bold">−</span>
-                  <span v-html="escapeDiffHtml(line.content)"></span>
+                  <span
+                    v-for="(tok, tIdx) in unifiedTokens[idx]"
+                    :key="tIdx"
+                    :class="`tok-${tok.type}`"
+                    >{{ tok.text || '\u00a0' }}</span
+                  >
                 </td>
               </tr>
               <tr v-else-if="line.type === 'context'">
@@ -524,9 +547,14 @@ const openFile = () => emit('open', { path: props.path, line: firstAddLine.value
                 >
                   {{ line.newLineNum || '' }}
                 </td>
-                <td class="px-2" style="color: var(--semantic-text-dim)">
-                  <span>&nbsp;</span>
-                  <span v-html="escapeDiffHtml(line.content)"></span>
+                <td class="px-2" style="color: var(--semantic-text)">
+                  <span style="color: var(--semantic-text-dim)">&nbsp;</span>
+                  <span
+                    v-for="(tok, tIdx) in unifiedTokens[idx]"
+                    :key="tIdx"
+                    :class="`tok-${tok.type}`"
+                    >{{ tok.text || '\u00a0' }}</span
+                  >
                 </td>
               </tr>
               <tr v-if="threadsAfter(idx).length > 0" data-testid="diff-comment-thread">

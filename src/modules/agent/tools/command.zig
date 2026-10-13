@@ -92,7 +92,7 @@ pub const command_result_to_json = shell.result_to_json;
 pub const command_tool_system_prompt =
     \\## Command Tool — Behavior
     \\Host picks the shell: `bash` on Linux/macOS, `pwsh` on Windows (silent `cmd.exe /c` fallback when pwsh is missing).
-    \\Do NOT prefix commands with a shell `timeout` utility — `mandatory_timeout` (required, max 600) is the only deadline. Bound output with `| head -n <N>` / `| tail -n <N>` (bash) or `| Select-Object -First <N>` (pwsh).
+    \\Do NOT prefix commands with a shell `timeout` utility — `mandatory_timeout` (required, max 60) is the only deadline. Bound output with `| head -n <N>` / `| tail -n <N>` (bash) or `| Select-Object -First <N>` (pwsh).
     \\Prefer `search` / `read_file` / `glob` over shell search; always set `cwd` explicitly; use `background=true` (returns PID + log path) for long-running processes — never start dev servers. Under cmd.exe: no `| head -n`, use cmd syntax (dir / where / type / %VAR% / && / double-quoted URLs).
     \\
 ;
@@ -106,8 +106,8 @@ pub const command_tool = AgentTool{
         \\Host picks the shell: `bash -c` on Linux/macOS, `pwsh -NoProfile -NonInteractive -Command` on Windows (silent `cmd.exe /c` fallback when pwsh is missing; background=true fails there instead of detaching).
         \\
         \\## Rules (enforced in code — violations return errors)
-        \\- `mandatory_timeout`: REQUIRED, the ONLY deadline (max 600). No shell `timeout` prefix — do not add one.
-        \\- `cwd`: always an explicit absolute path.
+        \\- `mandatory_timeout`: REQUIRED, the ONLY deadline (max 60). No shell `timeout` prefix — do not add one.
+        \\- `cwd`: REQUIRED absolute path — the directory the command runs in. Never omit it: without it the shell starts in the SERVER's directory, not your worktree, so the command silently acts on the wrong tree.
         \\- Bound output: `| head -n <N>` / `| tail -n <N>` (bash) or `| Select-Object -First <N>` (pwsh); under cmd.exe use max_lines / findstr / more.
         \\- Prefer `search` / `read_file` / `glob` over shell rg/grep/find; use `rg` over grep, `fd` over find, `tree` for directory structure.
         \\- No unbounded output, no destructive commands, no dev servers (`vite`, `http.server`, `nohup ... &`) — use `background=true` (PID + log path) or the functional harness instead.
@@ -133,26 +133,30 @@ pub const command_tool = AgentTool{
                 .{
                     .name = "cwd",
                     .type = "string",
-                    .description = "Absolute working directory. Always set explicitly.",
+                    .description =
+                    \\REQUIRED. Absolute working directory — the directory the command runs IN.
+                    \\Omitting it returns `MandatoryCwdMissing` and a relative path returns `CwdNotAbsolute`, because without an absolute `cwd` the shell inherits the SERVER's working directory instead of the one you are working in — the command then silently acts on the wrong tree (a `background=true` build compiled the wrong checkout that way). Send the full path, e.g. "/home/you/project".
+                    ,
                 },
                 .{
                     .name = "mandatory_timeout",
                     .type = "number",
                     .description =
-                    \\REQUIRED. Wall-clock seconds before the process is killed (SIGKILL / TerminateProcess). No default — omitted or 0 returns `MandatoryTimeoutMissing`; above 600 returns `MandatoryTimeoutTooLarge` (use `background=true` or split the command for longer work).
-                    \\It is the ONLY timeout — never prefix the command with a shell `timeout N`. Match the value to the job (seconds for ls/cat, 30–60 for builds, 300+ for long compilations).
+                    \\REQUIRED. Wall-clock seconds before the process is killed (SIGKILL / TerminateProcess). 1–60 only — no default (omitted or 0 returns `MandatoryTimeoutMissing`), and above 60 returns `MandatoryTimeoutTooLarge`.
+                    \\Match the value to the job: a few seconds for `ls` / `cat` / `git status`, up to 60 for a build or test run. Work that legitimately needs longer than a minute must NOT run in the foreground — pass `background=true` (returns a PID + log path), then poll the log.
+                    \\It is the ONLY timeout — never prefix the command with a shell `timeout N`.
                     ,
                 },
                 .{
                     .name = "max_output",
                     .type = "number",
                     .description =
-                        \\Maximum stdout+stderr bytes per stream. Default: 20480 (20 KiB).
-                        \\Output exceeding this limit is truncated at read-time
-                        \\to keep a single tool call from blowing up the LLM
-                        \\context window. Set this explicitly when you need more
-                        \\(e.g. when running `cat` on a large file or `head -n 1`
-                        \\of a minified file where each line can exceed 20 KiB).
+                    \\Maximum stdout+stderr bytes per stream. Default: 20480 (20 KiB).
+                    \\Output exceeding this limit is truncated at read-time
+                    \\to keep a single tool call from blowing up the LLM
+                    \\context window. Set this explicitly when you need more
+                    \\(e.g. when running `cat` on a large file or `head -n 1`
+                    \\of a minified file where each line can exceed 20 KiB).
                     ,
                 },
                 .{

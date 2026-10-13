@@ -88,7 +88,8 @@ describe('SettingsShell', () => {
       expect(wrapper.find(`[data-testid="settings-nav-${id}"]`).exists()).toBe(true)
     }
     // The workspace comes from the URL, so nav items carry no per-item workspace
-    // suffix — the static name label above the nav is the only place it shows.
+    // suffix — and no name box: the URL is the context, the Overview section
+    // shows name + ID.
     expect(wrapper.find('[data-testid="settings-nav-overview"]').text()).not.toContain('Acme')
     for (const id of ['overview', 'secrets', 'skills', 'memories', 'profiles', 'mcp', 'tools', 'evals']) {
       expect(wrapper.find(`[data-testid="settings-nav-${id}-workspace"]`).exists()).toBe(false)
@@ -102,12 +103,11 @@ describe('SettingsShell', () => {
     // No heading is rendered for the first group: the scope label above the
     // nav already says "Workspace — this workspace only".
     expect(wrapper.find('[data-testid="settings-nav-group-Workspace"]').exists()).toBe(false)
-    // No picker: the workspace is the URL (`/app/:workspaceId/settings`), so the
-    // shell shows it as a static label instead of a dropdown.
+    // No picker, no name box: the workspace is the URL
+    // (`/app/:workspaceId/settings`), so there is nothing to pick or label.
+    // Switching workspaces is the sidebar's job, not settings'.
     expect(wrapper.find('[data-testid="settings-workspace-picker"]').exists()).toBe(false)
-    const nameLabel = wrapper.find('[data-testid="settings-workspace-name"]')
-    expect(nameLabel.exists()).toBe(true)
-    expect(nameLabel.text()).toContain('Acme')
+    expect(wrapper.find('[data-testid="settings-workspace-name"]').exists()).toBe(false)
   })
 
   it('lists the workspace sections in order, under their group headings', async () => {
@@ -159,19 +159,39 @@ describe('SettingsShell', () => {
 
     await wrapper.find('[data-testid="settings-scope-workspace"]').trigger('click')
     await flushPromises()
+    // Nothing names a workspace here (no URL id, nothing active), so the tab
+    // falls back to the first listed row — the last resort, not the rule.
     expect(push).toHaveBeenCalledWith({ path: '/app/ws_1/settings' })
   })
 
-  it('workspace scope shows the route workspace as a static label, not a picker', async () => {
+  it('the Workspace tab opens the workspace in scope, not the first listed row', async () => {
+    // Regression: the tab used to navigate to `workspaceOptions[0]`
+    // unconditionally, and the list API sorts by `position DESC, created_at
+    // DESC` — so it left the user's workspace for whenever they had last moved
+    // to the top. The settings URL lost the workspace id, and one workspace's
+    // Profiles list (per-workspace config overlays, Migration 105) was shown
+    // while the user was working in another.
+    const router = await makeRouter('/app/settings')
+    const push = vi.spyOn(router, 'push')
+    useWorkspacesStore().activeWorkspaceId = 'ws_2'
+    wrapper = mountShell(router, { scope: 'user', workspaceId: '' })
+    await flushPromises()
+
+    await wrapper.find('[data-testid="settings-scope-workspace"]').trigger('click')
+    await flushPromises()
+    expect(push).toHaveBeenCalledWith({ path: '/app/ws_2/settings' })
+    expect(push).not.toHaveBeenCalledWith({ path: '/app/ws_1/settings' })
+  })
+
+  it('workspace scope shows no workspace box — the URL is the context', async () => {
     const router = await makeRouter('/app/ws_1/settings')
     wrapper = mountShell(router, { scope: 'workspace', workspaceId: 'ws_1' })
     await flushPromises()
 
-    // The URL is the workspace context — there is nothing to pick.
+    // The URL is the workspace context — there is nothing to pick and no
+    // name box to render. The Overview section already shows name + ID.
     expect(wrapper.find('[data-testid="settings-workspace-picker"]').exists()).toBe(false)
-    const nameLabel = wrapper.find('[data-testid="settings-workspace-name"]')
-    expect(nameLabel.exists()).toBe(true)
-    expect(nameLabel.text()).toContain('Acme')
+    expect(wrapper.find('[data-testid="settings-workspace-name"]').exists()).toBe(false)
   })
 
   it('back button goes back in history', async () => {

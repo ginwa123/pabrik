@@ -137,6 +137,61 @@ describe('GitCommits', () => {
     expect(wrapper.text()).toContain('new')
   })
 
+  it('colors the inline commit-file diff with syntax tokens', async () => {
+    const first = COMMITS.commits[0]!
+    getGitCommitDetailMock.mockResolvedValue({
+      ...first,
+      files: [{ status: 'M', path: 'src/main.zig' }],
+    })
+    getGitCommitFileDiffMock.mockResolvedValue({
+      sha: first.sha,
+      path: 'src/main.zig',
+      diff_content: [
+        'diff --git a/src/main.zig b/src/main.zig',
+        '@@ -1,2 +1,2 @@',
+        ' const kept = 1',
+        '-const gone = 2',
+        '+const added = 3',
+        '',
+      ].join('\n'),
+    })
+    const wrapper = mount(GitCommits, { props: { cwd: '/repo' } })
+    await flushPromises()
+    const commitRow = wrapper.findAll('button').find((b) => b.text().includes('prefetch older'))
+    await commitRow!.trigger('click')
+    await flushPromises()
+    const fileRow = wrapper.findAll('button').find((b) => b.text().includes('src/main.zig'))
+    await fileRow!.trigger('click')
+    await flushPromises()
+
+    // Only the diff lines carry tokens; the commit rows are plain text.
+    expect(wrapper.findAll('.tok-keyword').map((s) => s.text())).toEqual([
+      'const',
+      'const',
+      'const',
+    ])
+    // This surface never painted a +/- sign (the commit diff shows the
+    // lines themselves); the change direction comes from diffLineStyle.
+    expect(wrapper.text()).toContain('const added = 3')
+
+    // Every line states its own text colour: `.tok-plain` inherits, and the
+    // fallback must not be the initial black on the dark panel.
+    const lineStyles = wrapper
+      .findAll('div.px-2.whitespace-pre')
+      .map((d) => d.attributes('style') ?? '')
+    expect(lineStyles.length).toBeGreaterThan(0)
+    for (const style of lineStyles) expect(style).toContain('color:')
+
+    // A hunk header is diff METADATA — the row keeps its own hunk colour
+    // instead of having `.tok-number` painted over it.
+    const hunkRow = wrapper
+      .findAll('div.px-2.whitespace-pre')
+      .find((d) => (d.attributes('style') ?? '').includes('--color-aqua'))
+    expect(hunkRow).toBeTruthy()
+    expect(hunkRow!.text()).toContain('@@ -1,2 +1,2 @@')
+    expect(hunkRow!.findAll('.tok-number')).toHaveLength(0)
+  })
+
   it('emits commit-file-click instead of fetching when inline is off', async () => {
     const wrapper = mount(GitCommits, {
       props: { cwd: '/repo', inlineFileDiff: false },

@@ -897,12 +897,26 @@ jobs:
         run: |
           zig build check:desktop-cross --summary all
 
+      - name: Clean stale webapp html staging
+        # build.zig copies src/apps/desktop/dist → zig-out/bin/html with
+        # addInstallDirectory, which never deletes: every rebuild's hashed
+        # bundles (index-*.js) pile up next to the fresh ones (observed
+        # 51 MB of stale assets beside a 2 MB dist). Wipe the staging dir
+        # BEFORE the install steps below so the zip bundles exactly one
+        # dist. Safe when dist/ is absent (build skips the install, the
+        # Windows bundle gate still fails loudly as before). All three
+        # cells — `shell: bash` covers Windows via Git Bash.
+        shell: bash
+        run: rm -rf zig-out/bin/html
+
       - name: Install pabrik + pabrik-desktop (single zig invocation, non-Windows)
         # Linux + macOS run the merged `test pabrik-desktop` step that
         # this branch split off for Windows. Both binaries come out of a
         # single dep-graph walk, webapp rebuild included. The Windows cell
         # skips this step entirely (the `runner.os == 'Windows'` guard)
         # and uses the split webapp-dist + install pair below instead.
+        # -Doptimize=ReleaseFast: release exes are optimized for users;
+        # `zig build test` above stays on Debug (cimport/wchar.h).
         if: runner.os != 'Windows'
         shell: bash
         env:
@@ -911,7 +925,7 @@ jobs:
           # caches, or the cache is written and never read. Set per-step
           # because the `runner` context is unavailable at job level.
           npm_config_store_dir: ${{ runner.temp }}/pnpm-store
-        run: zig build pabrik-desktop --summary all
+        run: zig build pabrik-desktop --summary all -Doptimize=ReleaseFast
 
       - name: Build webapp dist (Windows)
         # Windows self-builds its shipped UI -- no Linux dependency, no cache.
@@ -983,11 +997,34 @@ jobs:
               export PATH="$(dirname "$local_pnpm_path"):$PATH"
             fi
           fi
+          # -Doptimize=ReleaseFast: release exes are optimized for users
+          # (verified 108 MB Debug → 38 MB ReleaseFast on Linux, boots +
+          # serves identically). Tests stay on Debug (see the Test step —
+          # ReleaseSafe trips the cimport/wchar.h issue on Windows, and
+          # release-mode needs all three cells to prove itself here).
           # -Drequire-real-webview: fail loudly instead of shipping the
           # no-op stub (whose webview_create() always returns NULL ->
           # WebviewCreateFailed even with the evergreen runtime installed).
           # The stub fallback exists for dev boxes; CI must never ship it.
-          zig build pabrik-desktop --summary all -Dno-webapp-rebuild -Drequire-real-webview
+          zig build pabrik-desktop --summary all -Dno-webapp-rebuild -Drequire-real-webview -Doptimize=ReleaseFast
+
+      - name: Strip release binaries (Linux/macOS)
+        # ReleaseFast still ships debug info (measured: 108 MB Debug →
+        # 27 MB stripped on the same binary) — strip it, users download
+        # the result. Windows skipped: MSVC debug info lives in separate
+        # PDBs that never ship, so the exes are already lean. Runs BEFORE
+        # the verify + smoke steps so they exercise the exact shipped
+        # bytes (a strip breakage fails here, not in users' hands).
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for bin in zig-out/bin/pabrik zig-out/bin/pabrik-desktop; do
+            if [[ -f "$bin" ]]; then
+              strip "$bin"
+              echo "stripped $bin ($(du -h "$bin" | cut -f1))"
+            fi
+          done
 
       - name: Verify desktop + service binaries (Linux)
         if: runner.os == 'Linux'
@@ -1247,6 +1284,19 @@ jobs:
           if [ "$staged" -eq 0 ]; then
             echo "✗ no binaries found in zig-out/bin — build step failed?" >&2
             exit 1
+          fi
+          # Shipped UI for installer layouts (Linux/macOS bare binaries
+          # have no other UI source; the Windows zip carries html/ too,
+          # but the tarball is ALSO staged there: it is the uniform
+          # presence signal every install job probes, and per-triple
+          # names keep the three cells from colliding on the release).
+          # Built from the JUST-CLEANED zig-out/bin/html (see the
+          # pre-clean step) with a top-level html/ dir, so install.sh
+          # extracts it straight into $BINDIR and the server's
+          # next-to-exe probe finds it.
+          if [ -f "zig-out/bin/html/index.html" ]; then
+            tar -czf "$stage/pabrik-html-$TARGET.tar.gz" -C zig-out/bin html
+            echo "→ staged $stage/pabrik-html-$TARGET.tar.gz"
           fi
 
       - name: Bundle macOS Pabrik.app into a zip

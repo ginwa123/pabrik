@@ -4,11 +4,8 @@ import * as api from '../../api'
 import UiIcon from '../ui/UiIcon.vue'
 import ListSkeleton from '../shell/ListSkeleton.vue'
 import type { UiIconName } from '../ui/icons'
-import {
-  escapeDiffHtml,
-  parseUnifiedDiff,
-  type ParsedDiffLine,
-} from '../views/chat_right_sidebar/parseUnifiedDiff'
+import { parseUnifiedDiff, type ParsedDiffLine } from '../views/chat_right_sidebar/parseUnifiedDiff'
+import { highlightLinesForFile, type Token } from '../../helpers/codeHighlight'
 
 const props = withDefaults(
   defineProps<{
@@ -200,11 +197,35 @@ const ensureFileDiff = async (commit: api.GitCommit, file: api.GitCommitFile, ke
   }
 }
 
+// The inline diff of the ONE open file (only one row's diff is open at a
+// time). Precomputed here so the render below never re-tokenizes per
+// render — `fileKey` is `<sha>::<path>`, so the path is the part after it.
+const openFileLines = computed(() =>
+  openFileKey.value ? (fileDiffCache.value[openFileKey.value] ?? []) : [],
+)
+const openFilePath = computed(() => openFileKey.value?.split('::').slice(1).join('::') ?? '')
+const openFileTokens = computed<Token[][]>(() => {
+  const lines = openFileLines.value
+  const tokens = highlightLinesForFile(
+    lines.map((line) => line.content),
+    openFilePath.value,
+  )
+  // A hunk header is diff metadata, not code — tokenizing it would paint its
+  // numbers over the row's hunk colour. Rendered plain, like every other
+  // unified surface in the app.
+  return lines.map((line, i) =>
+    line.type === 'hunk' ? [{ text: line.content, type: 'plain' }] : tokens[i]!,
+  )
+})
+
 const diffLineStyle = (line: ParsedDiffLine): Record<string, string> => {
-  if (line.type === 'add') return { backgroundColor: 'rgba(34, 197, 94, 0.12)' }
-  if (line.type === 'remove') return { backgroundColor: 'rgba(239, 68, 68, 0.12)' }
-  if (line.type === 'hunk') return { color: 'var(--color-aqua)' }
-  return {}
+  // The base colour is explicit: `.tok-plain` inherits, and the colour a diff
+  // line falls back to must not depend on whatever hosts this list.
+  const base = { color: 'var(--semantic-text)' }
+  if (line.type === 'add') return { ...base, backgroundColor: 'rgba(34, 197, 94, 0.12)' }
+  if (line.type === 'remove') return { ...base, backgroundColor: 'rgba(239, 68, 68, 0.12)' }
+  if (line.type === 'hunk') return { ...base, color: 'var(--color-aqua)' }
+  return base
 }
 
 // Reload on cwd change (prev-value guard on update — same reset+load the
@@ -430,12 +451,18 @@ defineExpose({ refresh })
                     No changes
                   </div>
                   <div
-                    v-for="line in fileDiffCache[fileKey(commit.sha, file.path)] ?? []"
+                    v-for="(line, lineIdx) in openFileLines"
                     :key="line.lineIndex"
                     class="px-2 whitespace-pre"
                     :style="diffLineStyle(line)"
-                    v-html="escapeDiffHtml(line.content)"
-                  />
+                  >
+                    <span
+                      v-for="(tok, tIdx) in openFileTokens[lineIdx]"
+                      :key="tIdx"
+                      :class="`tok-${tok.type}`"
+                      >{{ tok.text || '\u00a0' }}</span
+                    >
+                  </div>
                 </div>
               </template>
             </div>

@@ -1,4 +1,10 @@
-// DEPRECATED: use the unified `command` tool (src/modules/agent/tools/command.zig) instead — this file is a thin shim keeping the `"bash"` name: `bash_tool` reuses `command_tool`'s schema and `execute_bash` delegates to `command.execute_command`.
+// RETIRED: `bash` is no longer a tool name. The unified `command` tool
+// (src/modules/agent/tools/command.zig) replaced it on 2026-09-04, and the
+// name was BANNED from dispatch on 2026-10-12 (see
+// agentic_loop/tools_equipped.zig :: RETIRED_TOOL_NAMES) — a model that emits
+// `bash` is refused and told to call `command`. This module survives only so
+// `bash_tool` and `execute_bash` keep compiling for non-LLM callers; nothing
+// offers `bash` to the model.
 const std = @import("std");
 const command = @import("command.zig");
 const schemas = @import("schemas.zig");

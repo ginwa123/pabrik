@@ -119,6 +119,26 @@ export interface AnchorCompensationInput {
    * event with `deltaTop ≈ 0` — so `isAtBottom` survives the pass.
    */
   atBottomTarget?: geometry_px
+  /**
+   * The highest `scrollTop` the container can reach RIGHT NOW
+   * (`scrollHeight - clientHeight`). Omit it and the target is unbounded.
+   *
+   * The browser clamps a write past this SILENTLY, and a silently truncated
+   * compensation is a teleport rather than a no-op: the pass whose whole job is
+   * to hold the reader's view still leaves them short by the shortfall, and the
+   * NEXT pass measures that displaced position as the reader's own and
+   * compensates from there. Clamping here makes the truncation explicit
+   * (`clampedToMax`) so it can be logged and counted instead of inferred from a
+   * scroll position that "moved by itself".
+   *
+   * Read it AFTER the sizer has been applied for the model this pass built.
+   * Read before that, it describes the PREVIOUS model — `measureItems` mutates
+   * the model synchronously but Vue applies the sizer's `:style` on its next
+   * render, so a pass that grew the model would be clamped against a range the
+   * model no longer has. That spurious clamp is the 2026-10-12 report: a
+   * +22,235px compensation written as 138,880, clamped to 120,074, teleport.
+   */
+  maxScrollTop?: geometry_px
 }
 
 export interface AnchorCompensationResult {
@@ -131,6 +151,13 @@ export interface AnchorCompensationResult {
   newScrollTop: geometry_px
   /** True when the clamp at 0 bit (residual jump is unavoidable). */
   clamped: boolean
+  /**
+   * True when `maxScrollTop` cut the target down. The write is still made — as
+   * far as the container can go — but the view could NOT be held exactly, so a
+   * caller that sees this should treat the pass as lossy (the next one will
+   * re-derive the reader's position from wherever this left them).
+   */
+  clampedToMax: boolean
   /**
    * Which rule produced `newScrollTop`. `'bottom'` means the reader was at the
    * bottom and the pass targeted the bottom edge instead of the anchor; the
@@ -155,6 +182,9 @@ export interface AnchorCompensationResult {
  *     (estimator median movement) for unmeasured ones.
  *   - Result clamps at ≥ 0 (scrollTop can't go negative); `clamped`
  *     flags the residual-jump case.
+ *   - Result also clamps to `maxScrollTop` when it is supplied, because a write
+ *     past the reachable range is truncated by the browser anyway — silently.
+ *     `clampedToMax` reports it.
  *   - Negative / non-finite anchorIndex (empty or unmounted list) is
  *     a no-op.
  *   - A reader who was at the bottom is NOT anchored: they get the bottom
@@ -173,10 +203,26 @@ export function computeAnchorCompensation(
     !Number.isFinite(oldAnchorTop) ||
     !Number.isFinite(newAnchorTop)
   ) {
-    return { shiftPx: 0, newScrollTop: prevScrollTop, clamped: false, target: 'anchor' }
+    return {
+      shiftPx: 0,
+      newScrollTop: prevScrollTop,
+      clamped: false,
+      clampedToMax: false,
+      target: 'anchor',
+    }
   }
 
   const shiftPx = newAnchorTop - oldAnchorTop
+
+  // Bound a target to the range the container can actually reach (see
+  // `maxScrollTop`). A non-finite or negative bound is treated as 0, and an
+  // absent one as "unbounded" — the pre-2026-10-12 behaviour.
+  const cap =
+    typeof input.maxScrollTop === 'number' && Number.isFinite(input.maxScrollTop)
+      ? Math.max(0, input.maxScrollTop)
+      : null
+  const bound = (target: geometry_px): { target: geometry_px; clampedToMax: boolean } =>
+    cap !== null && target > cap ? { target: cap, clampedToMax: true } : { target, clampedToMax: false }
 
   // A reader at the bottom is re-targeted to the bottom edge rather than
   // compensated around the anchor — see `atBottomTarget` on the input type for
@@ -234,24 +280,33 @@ export function computeAnchorCompensation(
     Number.isFinite(atBottomTarget) &&
     atBottomTarget > prevScrollTop
   ) {
+    const bounded = bound(atBottomTarget)
     return {
       shiftPx,
-      newScrollTop: Math.max(0, atBottomTarget),
+      newScrollTop: Math.max(0, bounded.target),
       clamped: false,
+      clampedToMax: bounded.clampedToMax,
       target: 'bottom',
     }
   }
 
   if (shiftPx === 0) {
-    return { shiftPx: 0, newScrollTop: prevScrollTop, clamped: false, target: 'anchor' }
+    return {
+      shiftPx: 0,
+      newScrollTop: prevScrollTop,
+      clamped: false,
+      clampedToMax: false,
+      target: 'anchor',
+    }
   }
 
-  const raw = prevScrollTop + shiftPx
-  const clamped = raw < 0
+  const bounded = bound(prevScrollTop + shiftPx)
+  const clamped = bounded.target < 0
   return {
     shiftPx,
-    newScrollTop: Math.max(0, raw),
+    newScrollTop: Math.max(0, bounded.target),
     clamped,
+    clampedToMax: bounded.clampedToMax,
     target: 'anchor',
   }
 }

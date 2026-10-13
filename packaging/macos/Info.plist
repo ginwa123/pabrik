@@ -10,6 +10,8 @@
     <string>Pabrik</string>
     <key>CFBundleExecutable</key>
     <string>pabrik-desktop</string>
+    <key>CFBundleIconFile</key>
+    <string>Pabrik</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleVersion</key>

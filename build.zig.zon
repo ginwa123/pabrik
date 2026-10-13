@@ -8,6 +8,33 @@
         // Pinned by URL + hash; exposes a single `databases` module;
         // consumers `@import("databases")` to use it.
         .databases = .{
+            // 2b17251 = branch `fix/fd-headroom-scales-with-budget`
+            // (ruangsql#9): the reader pool's ceiling no longer collapses to 1
+            // when the process's soft `RLIMIT_NOFILE` is at or below
+            // `FD_HEADROOM`. The reserve is now `min(FD_HEADROOM, soft / 2)`,
+            // so macOS's default of 256 funds 64 readers instead of 1, while
+            // every budget at or above 512 keeps the ceiling it had.
+            //
+            // WHAT THAT COST BEFORE THIS PIN. macOS hands a process 256, which
+            // IS `FD_HEADROOM`, so the ceiling evaluated to 1 — the elastic
+            // pool could never open a second reader past its warm floor, and
+            // every read that found that one reader busy waited out the whole
+            // `reader_wait_ms` budget:
+            //
+            //   warning: sqlite: reader pool unavailable after waiting 5000ms
+            //            (PoolExhausted); serving this read on the write
+            //            connection
+            //
+            // Measured (isolated HOME, `ulimit -S -n 256`):
+            // `GET /api/llm/session` 5.001 s x4 with `fd_backstop=1`; the same
+            // request is sub-millisecond at 262+. The regression test for it is
+            // `tests/functional/fd_limit_reader_pool_test.zig`.
+            //
+            // This is a BRANCH SHA, not main: move it to the merge SHA once #9
+            // lands.
+            //
+            // PREVIOUS PIN, kept because both essays below still describe the
+            // trap that makes moving this pin dangerous —
             // 4667a64 = branch `fix/pool-wait-instead-of-hijack-writer`
             // (ruangsql#6), "a read waits for a reader instead of taking the
             // write connection", plus the idle reaper (8dbfd61) and "a
@@ -102,28 +129,52 @@
             // prints. Then `rm -rf zig-pkg && zig build` and confirm the
             // new symbol you rely on actually exists in the extracted
             // package.
-            .url = "git+https://github.com/ginwa123/ruangsql.git#4667a64326feb0153ee38138ec7f5bd4e65e3501",
-            .hash = "databases-0.0.0-vy-BCPJXBgDFSm8zatg9HPEaUtpl3vjAFRrlOpSzeXPh",
+            .url = "git+https://github.com/ginwa123/ruangsql.git#2b17251898b78eb879fb0b09dc1f2968ee0200ef",
+            .hash = "databases-0.0.0-vy-BCE1qBgCG8uwiEeCykTNb8j63ENIeS4VJAuAtnRXb",
         },
         // External web-framework library (pure-Zig HTTP server +
         // libcurl-backed HTTP client). Exposes a single `kabelweb` module
         // — consumers `@import("kabelweb")` and reach
         // `kabelweb.server` / `kabelweb.client`.
         //
-        // LOCAL DEV OVERRIDE: this is the sibling checkout so the SSE fixes
-        // developed in ../kabelweb are exercised here immediately (notably
-        // commit 7e97a09 — "keep SSE clients registered after the handler
-        // returns + real loop threads", which stops /api/events from
-        // delivering a single `connected` frame and then going silent).
+        // TLS + event-loop fixes, all upstream in kabelweb and all in this
+        // pin:
+        //   #7 fix(tls): restore blocking mode before the TLS handshake in
+        //      runTlsServe — without it every HTTPS client to a `--tls`
+        //      server died with `curl: (35) Send failure: Broken pipe`
+        //      (tests/functional/http2_tls_test.zig was gated on it).
+        //   #8 fix(event loop): keep fds the loop no longer owns out of the
+        //      poll set.
+        //   #9 fix(windows): one dead handle must not fail the whole WSAPoll.
+        //   #10 fix(tls): best-effort certificate revocation. A Windows build
+        //      links vcpkg's curl, and vcpkg builds that port with
+        //      -DCURL_USE_SCHANNEL=ON; schannel's revocation check is fatal
+        //      when the CRL/OCSP endpoint cannot be reached, so EVERY https
+        //      call died with CRYPT_E_REVOCATION_OFFLINE (0x80092013 ->
+        //      CURLE 35 -> Error.TlsError): `[llm_test] TlsError` /
+        //      `SendFailed` on the probe and `scanner.next failed after 0
+        //      chunk(s): TlsError` on the stream.
         //
-        // To restore the released/pinned dependency (CI, other machines),
-        // swap this back to:
-        //   .url = "git+https://github.com/ginwa123/kabelweb.git#<commit>",
-        //   .hash = "kabelweb-0.0.0-<hash>",
-        // after pushing the kabelweb commit you want to pin.
+        // 497a509 = the SQUASH-merge of #10 on kabelweb main, immediately
+        // after eaf2b583 (#9). It carries all four fixes and CI on kabelweb is
+        // green for it (all four jobs, windows-latest included).
+        //
+        // To move it again: bump the SHA, then re-derive the hash with
+        //   zig fetch "git+https://github.com/ginwa123/kabelweb.git#<sha>"
+        // and paste the `kabelweb-0.0.0-…` line it prints. Expect to
+        // `rm -rf zig-pkg` first: Zig keys the package cache by `.hash`, so a
+        // stale extract will happily satisfy a build after the URL moves.
+        //
+        // Two traps this pin has already walked into:
+        //   - Pin a commit ON main, never a PR branch head. #10 was
+        //     squash-merged, so its branch head (0b86e68) is NOT an ancestor
+        //     of main and stops resolving the moment that branch is deleted.
+        //   - Squash-merging the same tree keeps the SAME `.hash` — the hash
+        //     is over the file tree, not the commit — so only the `#<sha>`
+        //     moves. Do not "re-derive" the hash just because the SHA changed.
         .kabelweb = .{
-            .url = "git+https://github.com/ginwa123/kabelweb.git#bb21b2344841494ea2ec52f668ddcf9ed81a754e",
-            .hash = "kabelweb-0.0.0-vhZam0jzHADrWo3sAN3dUEnO2xvF0xNZXpAFGT-mcFdH",
+            .url = "git+https://github.com/ginwa123/kabelweb.git#497a509f778b02a7ab2694b5a6dc1b2a5d0e1c88",
+            .hash = "kabelweb-0.0.0-vhZam4BoHQAUm6MtkH6jf1qLfoBUoTCkE6qwgsFSgCpM",
         },
         // Cross-platform portable helpers (sleep, fileExists,
         // unixTimestampNanos, etc.) used by every module. Promoted

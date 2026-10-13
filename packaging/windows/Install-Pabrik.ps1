@@ -121,6 +121,11 @@ if (Test-Path (Join-Path $htmlSrc "index.html")) {
 # every Windows since 2000; IconLocation points at the exe itself
 # (no separate .ico shipped -- the exe carries the app icon).
 # Two entries: Pabrik (webview) + Pabrik Browser (--browser tab).
+# The Programs dir is created explicitly: it always exists on a real
+# profile, but a redirected APPDATA (CI scratch, roaming-profile edge
+# cases) may not have it, and CreateShortcut.Save() fails there with
+# DirectoryNotFoundException instead of creating it.
+New-Item -ItemType Directory -Force -Path $startMenuDir | Out-Null
 $shell = New-Object -ComObject WScript.Shell
 $lnk = $shell.CreateShortcut($startMenuLink)
 $lnk.TargetPath = Join-Path $binDir "pabrik-desktop.exe"

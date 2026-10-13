@@ -32,7 +32,33 @@ but expect them to break and change:
 
 ## Installation
 
-You need **Zig 0.16.0**. On Linux you also need the usual dev libraries:
+**Quick install** — prebuilt binaries from the latest green `main` build
+(rolling `ci-latest` release). Linux x86_64 and Apple Silicon macOS:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ginwa123/pabrik/main/install.sh | bash
+# or: wget -qO- https://raw.githubusercontent.com/ginwa123/pabrik/main/install.sh | bash
+```
+
+Windows (PowerShell, no admin):
+
+```powershell
+irm https://raw.githubusercontent.com/ginwa123/pabrik/main/install.ps1 | iex
+```
+
+What it does: installs `pabrik` + `pabrik-desktop` to `~/.local/bin`
+(Linux/macOS) or `%LOCALAPPDATA%\pabrik\bin` + a Start Menu shortcut
+(Windows), and adds the bindir to your PATH automatically
+(`~/.bashrc` / `~/.zshrc` on Linux/macOS, user PATH on Windows —
+new terminals pick it up; `PABRIK_NO_MODIFY_PATH=1` opts out).
+Re-running the installer updates an existing install in place (it says
+already-up-to-date when the binaries match, `Updated …` otherwise). Options: `bash install.sh --system` for `/usr/local/bin`,
+`--no-desktop` for the server only, `--version TAG` for a pinned release,
+`--uninstall` to remove. macOS GUI users can also grab `Pabrik-*.zip`
+(Pabrik.app) from the
+[ci-latest release](https://github.com/ginwa123/pabrik/releases/tag/ci-latest).
+
+**Build from source** — you need **Zig 0.16.0**. On Linux you also need the usual dev libraries:
 
 ```bash
 sudo apt-get install -y build-essential libssl-dev libsqlite3-dev pkg-config

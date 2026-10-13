@@ -7,10 +7,17 @@
  *  - highlightLine tokenizes keywords/strings/comments/numbers/functions/
  *    types per language, keeps `#`/`//` inside strings as strings, and
  *    passes plaintext through as a single plain token
+ *  - highlightLinesForFile (the render-site entry point) resolves the
+ *    language from the path ONCE and returns one token list per line
  */
 import { describe, expect, it } from 'vitest'
 
-import { detectLanguage, highlightLine } from './codeHighlight'
+import {
+  detectLanguage,
+  highlightLine,
+  highlightLines,
+  highlightLinesForFile,
+} from './codeHighlight'
 
 describe('detectLanguage', () => {
   it('maps common extensions', () => {
@@ -87,5 +94,78 @@ describe('highlightLine', () => {
   it('escapes nothing itself — returns raw text (Vue text nodes escape)', () => {
     const tokens = highlightLine('<script>alert(1)</script>', 'typescript')
     expect(tokens.map((t) => t.text).join('')).toBe('<script>alert(1)</script>')
+  })
+})
+
+describe('highlightLines', () => {
+  it('takes a resolved language id, not a path', () => {
+    expect(highlightLines(['const x = 1'], 'typescript')).toContainEqual([
+      { text: 'const', type: 'keyword' },
+      { text: ' ', type: 'plain' },
+      { text: 'x', type: 'plain' },
+      { text: ' = ', type: 'plain' },
+      { text: '1', type: 'number' },
+    ])
+  })
+
+  it('returns one token list per line, in order', () => {
+    const lines = ['def f():', '    return 1', '# done']
+    const tokens = highlightLines(lines, 'python')
+    expect(tokens).toHaveLength(lines.length)
+    for (const [i, line] of lines.entries()) {
+      expect(tokens[i]!.map((t) => t.text).join('')).toBe(line)
+    }
+    expect(tokens[2]).toEqual([{ text: '# done', type: 'comment' }])
+  })
+
+  it('is empty for an empty line list', () => {
+    expect(highlightLines([], 'typescript')).toEqual([])
+  })
+})
+
+describe('highlightLinesForFile', () => {
+  it('resolves the language from the path, not from the text', () => {
+    // Guard against the mix-up this API exists to prevent: a *language id*
+    // passed where a path is expected must NOT style the line (it has no
+    // extension), while the path does.
+    expect(highlightLines(['const x = 1'], 'typescript')).not.toEqual(
+      highlightLinesForFile(['const x = 1'], 'typescript'),
+    )
+    expect(highlightLinesForFile(['const x = 1'], 'a.ts')).toEqual(
+      highlightLines(['const x = 1'], 'typescript'),
+    )
+  })
+
+  it('tokenizes every line, resolving the language from the path once', () => {
+    const tokens = highlightLinesForFile(
+      ['const x = 1', '// done', 'function run() {}'],
+      'src/a.ts',
+    )
+    expect(tokens).toHaveLength(3)
+    expect(tokens[0]).toContainEqual({ text: 'const', type: 'keyword' })
+    expect(tokens[0]).toContainEqual({ text: '1', type: 'number' })
+    expect(tokens[1]).toEqual([{ text: '// done', type: 'comment' }])
+    expect(tokens[2]).toContainEqual({ text: 'function', type: 'keyword' })
+  })
+
+  it('keeps the result parallel to the input, one list per line, in order', () => {
+    const lines = ['a = 1', 'b = 2', 'c = 3']
+    const tokens = highlightLinesForFile(lines, 'x.py')
+    expect(tokens).toHaveLength(lines.length)
+    for (const [i, line] of lines.entries()) {
+      expect(tokens[i]!.map((t) => t.text).join('')).toBe(line)
+    }
+  })
+
+  it('falls back to plaintext for an unknown, empty or missing path', () => {
+    for (const path of ['notes.log', 'no-extension', '', null, undefined]) {
+      expect(highlightLinesForFile(['const x = 1'], path)).toEqual([
+        [{ text: 'const x = 1', type: 'plain' }],
+      ])
+    }
+  })
+
+  it('is empty for an empty line list (never a phantom row)', () => {
+    expect(highlightLinesForFile([], 'a.ts')).toEqual([])
   })
 })

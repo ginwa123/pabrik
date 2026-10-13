@@ -54,6 +54,7 @@ import {
   INITIAL_HISTORY_TIMEOUT_MS,
 } from '../../helpers/chatHistoryRetry'
 import { ChatHistoryError } from '../../api'
+import { resolveWorkspaceId } from '../../helpers/workspaceScope'
 import { tryUnwrapToolOutput, type UnwrappedToolOutput } from '@/helpers/unwrapToolOutput'
 import {
   isBackgroundCommandOutput,
@@ -107,7 +108,6 @@ import ProgressiveTool from '../tool_outputs/ProgressiveTool.vue'
 import SubAgentPeekHost from '../pabrik/SubAgentPeekHost.vue'
 import ChatRightSidebar from './chat_right_sidebar/ChatRightSidebar.vue'
 import ChatAppBar from './ChatAppBar.vue'
-import WorkerElapsedChip from '../WorkerElapsedChip.vue'
 import CenterDiffSection from './chat_right_sidebar/CenterDiffSection.vue'
 import { copyTextToClipboard } from './chat_right_sidebar/DiffCommentBox.vue'
 import {
@@ -154,11 +154,9 @@ const props = defineProps<{
   /**
    * When true, render the shared chat app bar (ChatAppBar.vue —
    * chat name + `◫` sidebar toggle + `✕` close) above the
-   * messages. Every task-chat host sets this so all three
-   * workspace-item modes (kanban / agent / standard folder-chat)
-   * get the identical bar; the standalone `chat-<id>` branch
-   * leaves it false so a bare chat still fills the viewport
-   * edge-to-edge.
+   * messages. Every chat host sets this so all modes (kanban /
+   * agent / standard folder-chat / standalone `chat-<id>`)
+   * get the identical bar.
    *
    * Defaults to `false` so older call sites that don't supply it
    * still compile — see the pabrik-frontend-task-literal-typing-rule
@@ -1243,8 +1241,13 @@ const onContentShift = (shift: { topSpacer: number; bottomSpacer: number; total:
     // sizer 22163 -> stick to 21007 -> sizer 21788 -> stick to 20632
     // -> sizer 20433 -> stick to 19277 -> sizer jumps back to 22163
     // (because at 19277 range no longer includes last item) -> gap.
-    // Also ignore tiny deltas (<50px) which are sub-pixel noise.
-    if (delta <= 0 || Math.abs(delta) < 50) {
+    // Ignore sub-threshold growth (<10px, BOTTOM_THRESHOLD): rounding /
+    // border noise that cannot change at-bottom state. Anything larger
+    // is real content the stick must follow — ignoring e.g. a 34px
+    // post-jump measure correction strands the reader above the newest
+    // message with the arrow hidden (standalone header layout,
+    // task_1791737106508_0).
+    if (delta <= 0 || delta < 10) {
       lastObservedScrollHeight = newScrollHeight
       return
     }
@@ -1434,9 +1437,27 @@ const showProfilePicker = ref(false)
 const isUpdatingProfile = ref(false)
 const profilePickerRef = ref<HTMLElement | null>(null)
 
+/**
+ * The workspace whose profiles the picker must list: the route's, else the one
+ * the app is in.
+ *
+ * The picker must offer what actually RUNS here, and a run uses the
+ * workspace's config overlay merged over the user config
+ * (`session_llm_config.mergedConfigTextFor`). `/api/config/pabrik` is the
+ * user-scope config - it carries no overlay - so a profile that lives only in
+ * a workspace overlay (Settings -> Workspace -> Profiles) was missing from
+ * this list, and a profile the overlay overrides showed the USER-level model
+ * and base_url. `kilo` was such a profile: present in the settings page of the
+ * workspace that owns it, absent from every New Chat picker.
+ */
+const profilePickerWorkspaceId = computed<string>(() =>
+  resolveWorkspaceId(route?.params?.workspaceId, workspacesStore.activeWorkspace?.id),
+)
+
 const loadProfiles = async () => {
   try {
-    const config = await api.getPabrikConfig()
+    const wsId = profilePickerWorkspaceId.value
+    const config = wsId ? await api.getWorkspaceConfig(wsId) : await api.getPabrikConfig()
     const profiles = (config.profiles ?? {}) as Record<
       string,
       { model?: string; base_url?: string }
@@ -4796,11 +4817,10 @@ const compactSession = async () => {
     <div :ref="setChatColumnEl" class="relative flex flex-col h-full flex-1 min-w-0 chat-column">
       <!--
         Chat app bar. Rendered only when the parent passed the
-        `showHeader` prop. Every task-chat host sets it (kanban
-        branch, AgentChatView, StandardTaskChatView) so all three
-        workspace-item modes get the identical bar; the standalone
-        `chat-<id>` branch leaves it false so a bare chat still
-        fills the viewport edge-to-edge. The markup itself lives in
+        `showHeader` prop. Every chat host sets it (kanban
+        branch, AgentChatView, StandardTaskChatView, standalone
+        `chat-<id>` branch) so all modes get the identical bar.
+        The markup itself lives in
         ChatAppBar.vue — the one app bar shared by every mode, so the
         title, the sidebar toggle and the ✕ cannot drift apart again.
         The `app-bar-extras` slot lets a host pin mode-specific bits
@@ -4818,15 +4838,6 @@ const compactSession = async () => {
         @close="emit('close')"
       >
         <template #extras>
-          <!-- How long this session's worker has been running. Sits in the
-               same extras slot the hosts project their SessionSlider into,
-               so the number is visible while typing without touching the
-               Stop button. -->
-          <WorkerElapsedChip
-            v-if="sessionId"
-            :session-id="sessionId"
-            test-id="chat-app-bar-elapsed"
-          />
           <slot name="app-bar-extras" />
         </template>
       </ChatAppBar>

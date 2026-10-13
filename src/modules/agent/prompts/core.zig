@@ -19,7 +19,7 @@ pub const PromptAutoFix =
 pub const SearchToolRule =
     \\## Search Tool Preference (MANDATORY)
     \\
-    \\To find text in the codebase, **always use the `search` tool**. Do NOT use `bash` with `rg`, `grep`, or `find`. The `search` tool returns structured XML with file paths + line numbers, auto-respects `.gitignore`, and avoids shell escaping hell for regex/quotes/backticks.
+    \\To find text in the codebase, **always use the `search` tool**. Do NOT run `rg`, `grep`, or `find` through the `command` tool. The `search` tool returns structured XML with file paths + line numbers, auto-respects `.gitignore`, and avoids shell escaping hell for regex/quotes/backticks.
     \\
     \\**Mapped equivalents:**
     \\- `rg -n "pattern" file.zig` → `search(pattern="pattern", path="/abs/file.zig")`
@@ -30,9 +30,9 @@ pub const SearchToolRule =
     \\- `rg -o "match"` → `search(..., only_matching: true)`
     \\- `rg ... | head -n 15` → `search(..., max_results: 15)`
     \\
-    \\**When `bash rg` IS allowed** (rare, opt-in): context lines (`rg -C N`, `-A N`, `-B N`), multiline regex (`-U`, `-z`), count-only (`-c`), piping into another command (`| wc -l`, `| xargs`), JSON output (`rg --json`).
+    \\**When a shell `rg` IS allowed** (rare, opt-in, run through `command`): context lines (`rg -C N`, `-A N`, `-B N`), multiline regex (`-U`, `-z`), count-only (`-c`), piping into another command (`| wc -l`, `| xargs`), JSON output (`rg --json`).
     \\
-    \\**Self-check:** before reaching for `bash rg`, ask "Is this a code/text search?" If yes, use `search`.
+    \\**Self-check:** before reaching for a shell `rg`, ask "Is this a code/text search?" If yes, use `search`.
 ;
 
 pub const ReadWorkspaceSessionToolRule =
@@ -47,7 +47,7 @@ pub const ReadWorkspaceSessionToolRule =
     \\- `query` + `session_id` → SEARCH-WITHIN one session.
     \\
     \\**Use filters, not broad queries:**
-    \\- `tool_name="bash"` — every bash invocation (combine with `query` for specific commands).
+    \\- `tool_name="command"` — every shell invocation (rows written before 2026-10-12 stored the tool as `bash`; combine with `query` for specific commands).
     \\- `parent_session_id="<sub_agent_session>"` — trace a sub-agent's full session.
     \\- `agent="main" | "planning" | "compaction"` — separate outputs when one session has multiple agents.
     \\- `role="tool"` — tool outputs only.
@@ -132,7 +132,7 @@ pub const ProgressiveToolRule =
     \\built-in tools you do not have enabled are held in a catalog that stays
     \\out of your context until you ask for them. The task in front of you may
     \\already have a purpose-built tool waiting in that catalog, and the only
-    \\way to find out is to search before you improvise with `bash`.
+    \\way to find out is to search before you improvise with a shell command.
     \\
     \\**The loop — three calls, in this order:**
     \\- `search_tool` — query the catalog of tools you do NOT currently have.
@@ -147,7 +147,7 @@ pub const ProgressiveToolRule =
     \\  result includes the schema so you can write the call correctly right away.
     \\
     \\**When to search — these are blocking, not advisory:**
-    \\- Before hand-rolling something with `bash` (curl, psql, jq, git plumbing) —
+    \\- Before hand-rolling something with a shell command (curl, psql, jq, git plumbing) —
     \\  a dedicated tool probably exists and is more reliable than your one-liner.
     \\- Before you tell the user (or yourself) "there's no tool for that" — you
     \\  can only claim that after searching.
@@ -339,6 +339,6 @@ pub const CrossProjectCwdRule =
     \\- Use the absolute `path` values listed below (e.g.
     \\  `read_file(path="/abs/other-project/src/foo.ts")`,
     \\  `search(pattern="...", path="/abs/other-project/src")`, `glob`, `list_directory`).
-    \\- Prefer read-only tools (`read_file`, `search`, `glob`) for discovery; use
-    \\  `bash` only when you need directory structure or a command those tools cannot do.
+    \\- Prefer read-only tools (`read_file`, `search`, `glob`, `list_directory`) for
+    \\  discovery; use `command` only when you need something those tools cannot do.
 ;

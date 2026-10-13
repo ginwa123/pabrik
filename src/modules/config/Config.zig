@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const json = std.json;
 const Io = std.Io;
 const LLMModels = @import("../agent/LLMModels.zig");
+const model_catalog = @import("../../agentic_loop/model_catalog.zig");
 const helpers = @import("helpers");
 const parse_thinking = @import("parse_thinking.zig");
 
@@ -2965,10 +2966,44 @@ pub const LlmConfig = struct {
         defaults: ?*const LlmConfig,
         model_name: []const u8,
     ) u32 {
+        // No catalog: the pre-models.dev cascade, byte for byte. Kept as its
+        // own entry point because callers that genuinely have no catalog (and
+        // every existing test) must not accidentally start consulting one.
+        return self.maxCapacityForModelWith(profile, sub_agent, defaults, model_name, null);
+    }
+
+    /// The cascade, with an explicit catalog in step 4:
+    ///   1. `sub_agent.max_capacity_tokens`
+    ///   2. `profile.max_capacity_tokens`
+    ///   3. `defaults.max_capacity_token_model`
+    ///   4. `catalog` — models.dev's `limit.context` for this model
+    ///   5. `LLMModels.getModelTokenCount` (the built-in 200k fallback)
+    ///
+    /// Step 4 is the whole point of the models.dev work. Before it, a model
+    /// that was not MiniMax-M2.7/M3 resolved to 200_000, so a 1M-window model
+    /// compacted at 80% of 200k = 160k tokens — five sixths of the window
+    /// thrown away, silently, because the built-in table did not know the model.
+    ///
+    /// The catalog is passed in rather than read from `model_catalog`'s holder
+    /// so this stays a pure function of its arguments: a test can pin the
+    /// cascade with an explicit catalog and no global state.
+    pub fn maxCapacityForModelWith(
+        self: *const LlmConfig,
+        profile: ?*const LlmProfile,
+        sub_agent: ?*const SubAgentConfig,
+        defaults: ?*const LlmConfig,
+        model_name: []const u8,
+        cat: ?*const model_catalog.Catalog,
+    ) u32 {
         _ = self;
         if (sub_agent) |sa| if (sa.max_capacity_tokens) |override| return override;
         if (profile) |p| if (p.max_capacity_tokens) |override| return override;
         if (defaults) |d| if (d.max_capacity_token_model) |override| return override;
+        if (cat) |c| {
+            if (c.lookup(null, model_name)) |facts| {
+                if (facts.context_window) |window| return window;
+            }
+        }
         return LLMModels.getModelTokenCount(model_name);
     }
 

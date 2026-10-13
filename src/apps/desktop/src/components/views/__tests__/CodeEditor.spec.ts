@@ -112,6 +112,35 @@ describe('CodeEditor.vue — renders the file (not a blank body)', () => {
     expect(wrapper.get('[data-testid="code-editor-language"]').text()).toBe('markdown')
   })
 
+  it('colors the Diff view rows, not just the code view', async () => {
+    const wrapper = mountViewer({
+      diffText: ['@@ -1,2 +1,2 @@', ' const kept = 1', '-const gone = 2', '+const added = 3'].join(
+        '\n',
+      ),
+    })
+
+    // The Code/Diff toggle only appears when a diff is available.
+    await wrapper.get('[data-testid="code-diff-toggle"]').trigger('click')
+
+    const diffView = wrapper.get('[data-testid="code-diff-view"]')
+    expect(diffView.findAll('.tok-keyword').map((s) => s.text())).toEqual([
+      'const',
+      'const',
+      'const',
+    ])
+    // The change sign stays glued to the code it marks.
+    expect(diffView.text()).toContain('+const added = 3')
+    expect(diffView.text()).toContain('-const gone = 2')
+
+    // A hunk header is diff METADATA: tokenizing `@@ -1,2 +1,2 @@` would
+    // paint its numbers `.tok-number` over the row's hunk colour, which no
+    // other unified surface does. It stays one plain span.
+    const hunkRow = diffView.get('.diff-row-hunk')
+    expect(hunkRow.text()).toContain('@@ -1,2 +1,2 @@')
+    expect(hunkRow.findAll('.tok-number')).toHaveLength(0)
+    expect(hunkRow.findAll('.tok-plain')).toHaveLength(1)
+  })
+
   it('marks the requested line (diff review "open at this line")', () => {
     const wrapper = mountViewer({ line: 3 })
 

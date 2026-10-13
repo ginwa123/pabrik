@@ -20,6 +20,18 @@
  *      for never-measured items → fewer wrong spacers → fewer compensation
  *      shifts → smoother scroll.
  *
+ *      A moving median is only safe while the reader is at the bottom, though:
+ *      the scroller multiplies it by the number of NEVER-rendered items, so
+ *      scrolling (which re-feeds the estimator from the new window) rescaled the
+ *      whole model by `unmeasuredCount x delta` and the anchor compensation
+ *      wrote that rescale into `scrollTop` — the "transcript jumps up and down
+ *      while SSE streams" report (task_1791776348154_5). `freeze()` locks the
+ *      estimate once its window is full; the tests below pin that it takes
+ *      effect, is idempotent, and is undone by `reset()`. The end-to-end
+ *      witness is tests/functional_ui/chatview_stream_scroll_stability_ui_test.py
+ *      (jsdom reports 0 for every offsetHeight, so the scroll-geometry class of
+ *      bug is not expressible here).
+ *
  * Both are pure (no DOM, no Vue) so they can be tested without mounting.
  */
 import { describe, it, expect } from 'vitest'
@@ -146,5 +158,70 @@ describe('AdaptiveItemHeightEstimator', () => {
     est.observe(102)
     // Median = 101 exactly.
     expect(est.estimate()).toBe(101)
+  })
+
+  // ── freeze() — the placeholder must stop moving under the reader ──────────
+
+  it('reports its sample count, capped at maxSamples', () => {
+    const est = new AdaptiveItemHeightEstimator({ seed: 64, maxSamples: 3 })
+    expect(est.sampleCount).toBe(0)
+    est.observe(100)
+    est.observe(200)
+    expect(est.sampleCount).toBe(2)
+    est.observe(300)
+    est.observe(400)
+    expect(est.sampleCount).toBe(3)
+  })
+
+  it('starts out unfrozen', () => {
+    const est = new AdaptiveItemHeightEstimator({ seed: 64 })
+    expect(est.isFrozen).toBe(false)
+  })
+
+  it('freeze() pins the current value against later observations', () => {
+    const est = new AdaptiveItemHeightEstimator({ seed: 64, maxSamples: 4 })
+    est.observe(200)
+    est.observe(200)
+    est.observe(200)
+    est.observe(200)
+    est.freeze()
+    expect(est.estimate()).toBe(200)
+
+    // A whole window of much SHORTER rows arrives — exactly what scrolling
+    // into a run of one-liners does. The placeholder must not follow: the
+    // scroller multiplies it by the never-rendered item count, so following
+    // would rescale the list and the anchor compensation would turn that
+    // rescale into a scrollTop write.
+    for (let i = 0; i < 8; i++) est.observe(40)
+    expect(est.estimate()).toBe(200)
+  })
+
+  it('freeze() keeps the FIRST frozen value when called twice', () => {
+    const est = new AdaptiveItemHeightEstimator({ seed: 64 })
+    est.observe(300)
+    est.freeze()
+    est.observe(500)
+    est.freeze() // a late caller must not reopen the window
+    expect(est.estimate()).toBe(300)
+  })
+
+  it('freeze() with no observations freezes the seed', () => {
+    // A chat shorter than the freeze threshold still freezes the moment the
+    // caller asks; there is simply nothing learned yet.
+    const est = new AdaptiveItemHeightEstimator({ seed: 64 })
+    est.freeze()
+    est.observe(900)
+    expect(est.estimate()).toBe(64)
+  })
+
+  it('reset() unfreezes, so a different list can learn its own profile', () => {
+    const est = new AdaptiveItemHeightEstimator({ seed: 64 })
+    est.observe(100)
+    est.freeze()
+    est.reset()
+    expect(est.isFrozen).toBe(false)
+    expect(est.estimate()).toBe(64)
+    est.observe(900)
+    expect(est.estimate()).toBe(900)
   })
 })

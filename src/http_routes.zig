@@ -264,6 +264,14 @@ fn registerConfigRoutes(authed: *Group) !void {
     try authed.put("/api/config/pabrik", ai_mod.http_handlers.pabrikConfigPutHandler);
     try authed.delete("/api/config/pabrik/profiles/:name", ai_mod.http_handlers.pabrikConfigProfileDeleteHandler);
 
+    // models.dev model catalog (Migration 106). All three are LITERALS under
+    // `/api/models/…` and no `/api/models/:param` pattern is registered before
+    // them — `matchRoute` walks registration order, so a literal after a
+    // wildcard would be captured by the wildcard.
+    try authed.get("/api/models/catalog", ai_mod.http_handlers.modelsCatalogHandler);
+    try authed.get("/api/models/resolve", ai_mod.http_handlers.modelsResolveHandler);
+    try authed.post("/api/models/refresh", ai_mod.http_handlers.modelsRefreshHandler);
+
     // OS notification test endpoint — fires a real OS notification so
     // the user can verify their system can display them.
     try authed.post("/api/notify/test", ai_mod.http_handlers.notifyTestHandler);
@@ -330,6 +338,12 @@ fn registerGitRoutes(authed: *Group) !void {
     // POST, and the only mutating forge endpoint: `gh pr merge` / `glab mr
     // merge` change a remote branch, so it is never reachable unauthenticated.
     try authed.post("/api/git/pr/merge", ai_mod.http_handlers.gitPrMergeHandler);
+    // Literal paths under `/api/git/pr/` (no `:param` sibling exists, so
+    // matchRoute cannot shadow them — the router walks registration order).
+    try authed.get("/api/git/pr/list", ai_mod.http_handlers.gitPrListHandler);
+    // The second mutating forge endpoint: `gh pr close` / `glab mr close`
+    // write to a remote, so it is never reachable unauthenticated.
+    try authed.post("/api/git/pr/close", ai_mod.http_handlers.gitPrCloseHandler);
 }
 
 fn registerFileRoutes(authed: *Group) !void {

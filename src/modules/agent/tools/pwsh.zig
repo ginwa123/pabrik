@@ -1,4 +1,10 @@
-// DEPRECATED: use the unified `command` tool (src/modules/agent/tools/command.zig) instead — this file is a thin shim keeping the `"pwsh"` name: `pwsh_tool` reuses `command_tool`'s schema and `execute_pwsh` delegates to `command.execute_command`.
+// RETIRED: `pwsh` is no longer a tool name. The unified `command` tool
+// (src/modules/agent/tools/command.zig) replaced it on 2026-09-04, and the
+// name was BANNED from dispatch on 2026-10-12 (see
+// agentic_loop/tools_equipped.zig :: RETIRED_TOOL_NAMES) — a model that emits
+// `pwsh` is refused and told to call `command`. This module survives only so
+// `pwsh_tool` and `execute_pwsh` keep compiling for non-LLM callers; nothing
+// offers `pwsh` to the model.
 const std = @import("std");
 const command = @import("command.zig");
 const schemas = @import("schemas.zig");
@@ -115,6 +121,8 @@ test "command-only registry: the model is offered exactly one shell tool, named 
     // command.execute_command) so old code still compiles — registering either
     // would show the model three shell tools again. UNIFIED_TOOL_REGISTRY is
     // the table this is read from, not the text of a wiring file.
+    // The names themselves were fully RETIRED on 2026-10-12 (no dispatch
+    // alias) — see the assertions at the end of this test.
     var command_entries: usize = 0;
     for (tools_equipped.UNIFIED_TOOL_REGISTRY()) |entry| {
         if (std.mem.eql(u8, entry.name, "bash") or std.mem.eql(u8, entry.name, "pwsh")) {
@@ -141,11 +149,15 @@ test "command-only registry: the model is offered exactly one shell tool, named 
         try testing.expect(!std.mem.eql(u8, t.function.name, "pwsh"));
     }
 
-    // Unregistered is not unreachable: a stale `bash` call the model was
-    // trained on still routes to `command` through the dispatch-only alias
-    // table. Removing the names must not come with removing this.
-    try testing.expectEqualStrings("command", tools_equipped.resolveToolAlias("bash").?);
-    try testing.expectEqualStrings("command", tools_equipped.resolveToolAlias("pwsh").?);
-    try testing.expect(tools_equipped.isDispatchableToolName("bash"));
-    try testing.expect(tools_equipped.isDispatchableToolName("pwsh"));
+    // Unregistered is not unreachable-by-accident: the names are RETIRED, so
+    // a stale `bash` call is refused outright AND the refusal names
+    // `command`. The old behavior — dispatch through an alias table so the
+    // call still ran — is exactly what kept the model emitting `bash`
+    // forever: the call worked, so nothing ever corrected it.
+    try testing.expectEqual(@as(?[]const u8, null), tools_equipped.resolveToolAlias("bash"));
+    try testing.expectEqual(@as(?[]const u8, null), tools_equipped.resolveToolAlias("pwsh"));
+    try testing.expect(!tools_equipped.isDispatchableToolName("bash"));
+    try testing.expect(!tools_equipped.isDispatchableToolName("pwsh"));
+    try testing.expectEqualStrings("command", tools_equipped.retiredToolSuggestion("bash").?);
+    try testing.expectEqualStrings("command", tools_equipped.retiredToolSuggestion("pwsh").?);
 }
