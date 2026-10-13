@@ -259,6 +259,9 @@ pub const LlmConfig = struct {
         /// Run the local `claude` CLI (subscription auth via `claude login`).
         /// `base_url` / `api_key` / `url_style` do not apply.
         pub const claude_code = "claude-code";
+        /// Run the local `opencode` CLI (agentic loop via `opencode run`).
+        /// `base_url` / `api_key` / `url_style` do not apply.
+        pub const opencode = "opencode";
     };
 
     /// Individual profile settings.
@@ -298,6 +301,14 @@ pub const LlmConfig = struct {
         /// Claude Code only: agentic turn ceiling passed as
         /// `--max-turns`. `null` = the CLI's own default.
         max_turns: ?u32 = null,
+        /// OpenCode only: which of the CLI's agents runs the turn
+        /// (`--agent`). `null` = the CLI's default agent.
+        opencode_agent: ?[]const u8 = null,
+        /// OpenCode only: whether to pass `--auto`. `null` = on (the
+        /// headless default); `false` = off. Stored as an optional so the
+        /// absent key costs no allocation and `freeProfilesMap` stays
+        /// balanced.
+        opencode_auto: ?bool = null,
         /// Per-profile sub-agents. Owned `[]SubAgentConfig` (default empty).
         /// Each entry's strings are allocated with the parent `LlmConfig.allocator`.
         sub_agents: SubAgentsList = &.{},
@@ -350,6 +361,12 @@ pub const LlmConfig = struct {
         /// Claude Code only: `--max-turns` override. `null` = inherit the
         /// parent profile.
         max_turns: ?u32 = null,
+        /// OpenCode only: `--agent` override. `null` = inherit the parent
+        /// profile.
+        opencode_agent: ?[]const u8 = null,
+        /// OpenCode only: `--auto` override. `null` = inherit the parent
+        /// profile.
+        opencode_auto: ?bool = null,
         /// Optional override for the context window (in tokens) for
         /// this sub-agent. `null` = inherit from the parent profile (or
         /// the built-in default if no profile).
@@ -423,6 +440,13 @@ pub const LlmConfig = struct {
         /// Claude Code only: resolved `--max-turns` (`null` = inherit).
         max_turns: ?u32,
 
+        /// OpenCode only: resolved `--agent` (`null` = inherit / CLI
+        /// default).
+        opencode_agent: ?[]const u8,
+
+        /// OpenCode only: resolved `--auto` (`null` = inherit).
+        opencode_auto: ?bool,
+
         /// Resolved `thinking` setting. `null` = "auto" — inherit
         /// from parent's value at run time.
         is_thinking: ?bool,
@@ -467,6 +491,10 @@ pub const LlmConfig = struct {
         config_dir: ?[]const u8 = null,
         /// Claude Code only: `--max-turns`. Null = CLI default.
         max_turns: ?u32 = null,
+        /// OpenCode only: `--agent`. Null = CLI default agent.
+        opencode_agent: ?[]const u8 = null,
+        /// OpenCode only: `--auto`. Null = on (the headless default).
+        opencode_auto: ?bool = null,
         /// Per-profile sub-agents (typed — defaults to absent). Each entry
         /// is parsed via the existing `SubAgentJson` struct, so unknown
         /// fields are silently ignored and missing fields fall back to
@@ -574,6 +602,10 @@ pub const LlmConfig = struct {
         config_dir: ?[]const u8 = null,
         /// Claude Code only: `--max-turns` override.
         max_turns: ?u32 = null,
+        /// OpenCode only: `--agent` override.
+        opencode_agent: ?[]const u8 = null,
+        /// OpenCode only: `--auto` override.
+        opencode_auto: ?bool = null,
         /// Optional per-sub-agent override for the context window (in tokens).
         max_capacity_tokens: ?u32 = null,
         /// Optional per-sub-agent override for the compaction threshold
@@ -1259,6 +1291,14 @@ pub const LlmConfig = struct {
             break :blk try alloc.dupe(u8, d);
         };
         errdefer if (config_dir) |d| alloc.free(d);
+        // OpenCode's `--agent` follows the same "empty stays absent" rule as
+        // `config_dir`, so an absent key costs no allocation.
+        const opencode_agent: ?[]const u8 = blk: {
+            const a = profile.opencode_agent orelse break :blk null;
+            if (a.len == 0) break :blk null;
+            break :blk try alloc.dupe(u8, a);
+        };
+        errdefer if (opencode_agent) |a| alloc.free(a);
 
         const profile_sub_agents = try parseSubAgentsJson(alloc, profile.sub_agents);
         errdefer freeSubAgentsList(profile_sub_agents, alloc);
@@ -1273,6 +1313,8 @@ pub const LlmConfig = struct {
             .backend = backend,
             .config_dir = config_dir,
             .max_turns = profile.max_turns,
+            .opencode_agent = opencode_agent,
+            .opencode_auto = profile.opencode_auto,
             .sub_agents = profile_sub_agents,
             // Per-profile compaction overrides — optional, parsed from JSON.
             .max_capacity_tokens = profile.max_capacity_tokens,
@@ -1300,6 +1342,7 @@ pub const LlmConfig = struct {
             // abort on a non-heap pointer. Only a non-empty value was duped.
             if (sa.backend.len > 0) allocator.free(sa.backend);
             if (sa.config_dir) |d| allocator.free(d);
+            if (sa.opencode_agent) |a| allocator.free(a);
             if (sa.reasoning_effort) |re| allocator.free(re);
         }
         if (slice.len > 0) allocator.free(slice);
@@ -1326,6 +1369,7 @@ pub const LlmConfig = struct {
                 allocator.free(sa.system_prompt);
                 if (sa.backend.len > 0) allocator.free(sa.backend);
                 if (sa.config_dir) |d| allocator.free(d);
+                if (sa.opencode_agent) |a| allocator.free(a);
             }
             list.deinit(allocator);
         }
@@ -1365,6 +1409,12 @@ pub const LlmConfig = struct {
                 break :blk try allocator.dupe(u8, d);
             };
             errdefer if (config_dir) |d| allocator.free(d);
+            const opencode_agent: ?[]const u8 = blk: {
+                const a = j.opencode_agent orelse break :blk null;
+                if (a.len == 0) break :blk null;
+                break :blk try allocator.dupe(u8, a);
+            };
+            errdefer if (opencode_agent) |a| allocator.free(a);
 
             try list.append(allocator, .{
                 .name = name,
@@ -1378,6 +1428,8 @@ pub const LlmConfig = struct {
                 .backend = backend,
                 .config_dir = config_dir,
                 .max_turns = j.max_turns,
+                .opencode_agent = opencode_agent,
+                .opencode_auto = j.opencode_auto,
                 // Per-sub-agent compaction overrides — optional, parsed from JSON.
                 .max_capacity_tokens = j.max_capacity_tokens,
                 .compaction_threshold_percent = j.compaction_threshold_percent,
@@ -1468,6 +1520,12 @@ pub const LlmConfig = struct {
                 break :blk try allocator.dupe(u8, d);
             };
             errdefer if (config_dir) |d| allocator.free(d);
+            const opencode_agent: ?[]const u8 = blk: {
+                const a = j.opencode_agent orelse break :blk null;
+                if (a.len == 0) break :blk null;
+                break :blk try allocator.dupe(u8, a);
+            };
+            errdefer if (opencode_agent) |a| allocator.free(a);
 
             try list.append(allocator, .{
                 .name = name,
@@ -1481,6 +1539,8 @@ pub const LlmConfig = struct {
                 .backend = backend,
                 .config_dir = config_dir,
                 .max_turns = j.max_turns,
+                .opencode_agent = opencode_agent,
+                .opencode_auto = j.opencode_auto,
                 // Model-thinking knobs — Anthropic budget + OpenAI effort.
                 // Range validation is the HTTP layer's job; this site
                 // just threads the JSON-parsed values through.
@@ -1509,6 +1569,8 @@ pub const LlmConfig = struct {
             .backend = if (sa.backend.len > 0) try allocator.dupe(u8, sa.backend) else "",
             .config_dir = if (sa.config_dir) |d| try allocator.dupe(u8, d) else null,
             .max_turns = sa.max_turns,
+            .opencode_agent = if (sa.opencode_agent) |a| try allocator.dupe(u8, a) else null,
+            .opencode_auto = sa.opencode_auto,
             .max_capacity_tokens = sa.max_capacity_tokens,
             .compaction_threshold_percent = sa.compaction_threshold_percent,
             .thinking_budget_tokens = sa.thinking_budget_tokens,
@@ -1536,6 +1598,7 @@ pub const LlmConfig = struct {
                     config.allocator.free(sa.url_style);
                     config.allocator.free(sa.api_key);
                     config.allocator.free(sa.system_prompt);
+                    if (sa.opencode_agent) |a| config.allocator.free(a);
                     if (sa.reasoning_effort) |re| config.allocator.free(re);
                 }
                 list.deinit(config.allocator);
@@ -1950,6 +2013,8 @@ pub const LlmConfig = struct {
                     .backend = entry.value_ptr.backend,
                     .config_dir = entry.value_ptr.config_dir,
                     .max_turns = entry.value_ptr.max_turns,
+                    .opencode_agent = entry.value_ptr.opencode_agent,
+                    .opencode_auto = entry.value_ptr.opencode_auto,
                     .sub_agents = null,
                 },
                 self.allocator,
@@ -2000,11 +2065,10 @@ pub const LlmConfig = struct {
 
     pub fn validate(self: *const LlmConfig) LoadError!void {
         // The TRANSPORT decides which fields are required. `base_url` and
-        // `api_key` are HTTP concepts; a Claude Code profile authenticates
-        // through the `claude` CLI's own `claude login` state, so demanding
-        // them would make a correct CLI-only config unloadable (and the
-        // warning below would tell the user to populate keys they must not
-        // set).
+        // `api_key` are HTTP concepts; a CLI profile (Claude Code, OpenCode)
+        // authenticates through the CLI's own login state, so demanding them
+        // would make a correct CLI-only config unloadable (and the warning
+        // below would tell the user to populate keys they must not set).
         const backend = self.effectiveBackend();
 
         if (self.model.len == 0) {
@@ -2012,6 +2076,7 @@ pub const LlmConfig = struct {
             return error.MissingRequiredField;
         }
         if (std.mem.eql(u8, backend, Backend.claude_code)) return;
+        if (std.mem.eql(u8, backend, Backend.opencode)) return;
         if (self.api_key.len == 0) {
             std.log.warn("Missing required field: api_key", .{});
             return error.MissingRequiredField;
@@ -2577,6 +2642,10 @@ pub const LlmConfig = struct {
         /// Claude Code only: `--max-turns` for this call. `null` = CLI
         /// default.
         max_turns: ?u32,
+        /// OpenCode only: `--agent` for this call. `null` = CLI default.
+        opencode_agent: ?[]const u8,
+        /// OpenCode only: `--auto` for this call. `null` = CLI default (on).
+        opencode_auto: ?bool,
         /// Raw resolved `thinking` string ("auto" when nothing set).
         thinking_str: []const u8,
         /// Derived: parseThinkingString(thinking_str) catch null.
@@ -2689,6 +2758,16 @@ pub const LlmConfig = struct {
             if (act) |p| if (p.max_turns) |n| break :blk n;
             break :blk null;
         };
+        const opencode_agent: ?[]const u8 = blk: {
+            if (sel) |p| if (p.opencode_agent) |a| break :blk a;
+            if (act) |p| if (p.opencode_agent) |a| break :blk a;
+            break :blk null;
+        };
+        const opencode_auto: ?bool = blk: {
+            if (sel) |p| if (p.opencode_auto) |b| break :blk b;
+            if (act) |p| if (p.opencode_auto) |b| break :blk b;
+            break :blk null;
+        };
 
         // Derived ONCE from the final string (pre-refactor:
         // workflow.zig:471 parseThinkingString catch null; :477 eql "auto").
@@ -2700,6 +2779,8 @@ pub const LlmConfig = struct {
             .backend = backend,
             .config_dir = config_dir,
             .max_turns = max_turns,
+            .opencode_agent = opencode_agent,
+            .opencode_auto = opencode_auto,
             .thinking_str = thinking_str,
             .is_thinking = parse_thinking.parseThinkingString(thinking_str) catch null,
             .thinking_adaptive = std.mem.eql(u8, thinking_str, "auto"),
@@ -2846,6 +2927,8 @@ pub const LlmConfig = struct {
             .backend = self.effectiveBackend(),
             .config_dir = if (act_profile) |p| p.config_dir else null,
             .max_turns = if (act_profile) |p| p.max_turns else null,
+            .opencode_agent = if (act_profile) |p| p.opencode_agent else null,
+            .opencode_auto = if (act_profile) |p| p.opencode_auto else null,
             .is_thinking = null,
             .temperature = null,
             .thinking_budget_tokens = null,
@@ -2930,6 +3013,14 @@ pub const LlmConfig = struct {
             .max_turns = if (sa.max_turns) |n| n else blk: {
                 const p = self.resolveSessionProfileCompat("") orelse break :blk null;
                 break :blk p.max_turns;
+            },
+            .opencode_agent = if (sa.opencode_agent) |a| a else blk: {
+                const p = self.resolveSessionProfileCompat("") orelse break :blk null;
+                break :blk p.opencode_agent;
+            },
+            .opencode_auto = if (sa.opencode_auto) |b| b else blk: {
+                const p = self.resolveSessionProfileCompat("") orelse break :blk null;
+                break :blk p.opencode_auto;
             },
             .is_thinking = resolved_thinking,
             .temperature = resolved_temperature,
@@ -4331,6 +4422,61 @@ test "model-thinking knobs: profile thinking_budget_tokens + reasoning_effort ro
     const p = cfg.getProfile("alpha").?;
     try std.testing.expectEqual(@as(?u32, 4096), p.thinking_budget_tokens);
     try std.testing.expectEqualStrings("high", p.reasoning_effort.?);
+}
+
+test "opencode knobs: profile opencode_agent + opencode_auto round-trip" {
+    // The OpenCode CLI knobs must survive the JSON parser rather than being
+    // silently dropped — the same storage-path guarantee the model-thinking
+    // knobs get above.
+    const allocator = std.testing.allocator;
+
+    const json_body =
+        \\{
+        \\  "api_key": "k", "model": "m", "base_url": "b",
+        \\  "profiles_models": {
+        \\    "alpha": {
+        \\      "model": "opencode-go/deepseek-flash", "base_url": "", "api_key": "",
+        \\      "thinking": "auto", "temperature": "auto", "url_style": "openai",
+        \\      "backend": "opencode",
+        \\      "opencode_agent": "build",
+        \\      "opencode_auto": false
+        \\    }
+        \\  }
+        \\}
+    ;
+
+    var cfg = try writeAndRead(allocator, std.testing.io, json_body);
+    defer cfg.deinit();
+
+    const p = cfg.getProfile("alpha").?;
+    try std.testing.expectEqualStrings("opencode", p.backend);
+    try std.testing.expectEqualStrings("build", p.opencode_agent.?);
+    try std.testing.expectEqual(@as(?bool, false), p.opencode_auto);
+}
+
+test "opencode knobs: profile fields default to null when omitted" {
+    // Backward compatibility — a config.json written before these fields
+    // existed must parse cleanly with both as null.
+    const allocator = std.testing.allocator;
+
+    const json_body =
+        \\{
+        \\  "api_key": "k", "model": "m", "base_url": "b",
+        \\  "profiles_models": {
+        \\    "alpha": {
+        \\      "model": "m", "base_url": "https://a", "api_key": "k",
+        \\      "thinking": "auto", "temperature": "auto", "url_style": "openai"
+        \\    }
+        \\  }
+        \\}
+    ;
+
+    var cfg = try writeAndRead(allocator, std.testing.io, json_body);
+    defer cfg.deinit();
+
+    const p = cfg.getProfile("alpha").?;
+    try std.testing.expectEqual(@as(?[]const u8, null), p.opencode_agent);
+    try std.testing.expectEqual(@as(?bool, null), p.opencode_auto);
 }
 
 test "model-thinking knobs: profile fields default to null when omitted" {

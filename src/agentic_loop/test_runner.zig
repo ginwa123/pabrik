@@ -150,4 +150,7 @@ test {
     // Claude Code CLI backend — Phase 1: style predicate, profile
     // validation, `claude -p` argv builder, stream-json line parser.
     _ = @import("claude_code.zig");
+    // OpenCode CLI backend — Phase 1: style predicate, profile validation,
+    // `opencode run` argv builder, `--format json` line parser.
+    _ = @import("opencode.zig");
 }

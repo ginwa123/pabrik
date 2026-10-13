@@ -1108,11 +1108,13 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             if (ov.api_key.len > 0) eff.api_key = ov.api_key;
             if (ov.url_style.len > 0) eff.url_style = ov.url_style;
             // Transport + its CLI knobs follow the same "non-empty wins"
-            // rule, so a Claude Code sub-agent overrides its HTTP parent
-            // (and vice versa) without touching the profile cascade.
+            // rule, so a CLI sub-agent overrides its HTTP parent (and vice
+            // versa) without touching the profile cascade.
             if (ov.backend.len > 0) eff.backend = ov.backend;
             if (ov.config_dir) |d| eff.config_dir = d;
             if (ov.max_turns) |n| eff.max_turns = n;
+            if (ov.opencode_agent) |a| eff.opencode_agent = a;
+            if (ov.opencode_auto) |b| eff.opencode_auto = b;
             if (ov.is_thinking) |t| {
                 isThinking = t;
                 // Mirror the override onto the session-state carrier
@@ -2438,13 +2440,17 @@ pub const SubAgentOverrides = struct {
     base_url: []const u8 = "",
     api_key: []const u8 = "",
     url_style: []const u8 = "",
-    /// Transport override — `"http"` | `"claude-code"`. Empty = keep the
-    /// parent's (see `ResolvedSubAgent.backend`).
+    /// Transport override — `"http"` | `"claude-code"` | `"opencode"`.
+    /// Empty = keep the parent's (see `ResolvedSubAgent.backend`).
     backend: []const u8 = "",
     /// Claude Code only: `CLAUDE_CONFIG_DIR` override. Null = parent's.
     config_dir: ?[]const u8 = null,
     /// Claude Code only: `--max-turns` override. Null = parent's.
     max_turns: ?u32 = null,
+    /// OpenCode only: `--agent` override. Null = parent's.
+    opencode_agent: ?[]const u8 = null,
+    /// OpenCode only: `--auto` override. Null = parent's.
+    opencode_auto: ?bool = null,
     is_thinking: ?bool = null,
     temperature: ?f32 = null,
     /// Anthropic-only override for `thinking.budget_tokens`. When

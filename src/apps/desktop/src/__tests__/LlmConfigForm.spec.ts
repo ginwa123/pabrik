@@ -29,12 +29,14 @@ const baseValue = {
   temperature: 'auto',
   url_style: 'openai',
   api_key: '',
-  // Transport discriminator + its Claude Code knobs. Absent `backend` reads
-  // as "http" (the backend's documented default), so these are optional in
-  // the form's type — but the specs set them so intent is explicit.
+  // Transport discriminator + its CLI knobs. Absent `backend` reads as
+  // "http" (the backend's documented default), so these are optional in the
+  // form's type — but the specs set them so intent is explicit.
   backend: 'http',
   config_dir: null as string | null,
   max_turns: null as number | null,
+  opencode_agent: null as string | null,
+  opencode_auto: null as boolean | null,
   // Plan 2026-07-07-compaction-inline: per-profile compaction overrides.
   max_capacity_tokens: null as number | null,
   compaction_threshold_percent: null as number | null,
@@ -289,13 +291,13 @@ describe('LlmConfigForm', () => {
  * hidden rather than shown-but-ignored.
  */
 describe('LlmConfigForm — backend gating', () => {
-  it('offers exactly http and claude-code as backends', async () => {
+  it('offers http, claude-code and opencode as backends', async () => {
     const wrapper = await mountOpen(LlmConfigForm, { props: { modelValue: { ...baseValue } } })
     const options = wrapper
       .find('[data-testid=backend-select]')
       .findAll('option')
       .map((o) => (o.element as HTMLOptionElement).value)
-    expect(options).toEqual(['http', 'claude-code'])
+    expect(options).toEqual(['http', 'claude-code', 'opencode'])
   })
 
   it('hides every HTTP control for claude-code and shows the CLI knobs', async () => {
@@ -328,7 +330,50 @@ describe('LlmConfigForm — backend gating', () => {
     const wrapper = await mountOpen(LlmConfigForm, { props: { modelValue: { ...baseValue } } })
     expect(wrapper.find('[data-testid=claude-config-dir-input]').exists()).toBe(false)
     expect(wrapper.find('[data-testid=claude-max-turns-input]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid=opencode-agent-input]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid=opencode-auto-select]').exists()).toBe(false)
     expect(wrapper.find('[data-testid=backend-select]').exists()).toBe(true)
+  })
+
+  it('hides every HTTP control for opencode and shows the OpenCode knobs', async () => {
+    const wrapper = await mountOpen(LlmConfigForm, {
+      props: { modelValue: { ...baseValue, backend: 'opencode', model: 'opencode-go/deepseek-flash' } },
+    })
+    // No endpoint, no credential, no body shape, no request-body knobs.
+    expect(wrapper.find('[data-testid=base-url-input]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid=api-key-input]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid=url-style-select]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid=thinking-select]').exists()).toBe(false)
+    // The OpenCode knobs replace them, and Claude Code's do NOT appear.
+    expect(wrapper.find('[data-testid=opencode-agent-input]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid=opencode-auto-select]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid=claude-config-dir-input]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid=claude-max-turns-input]').exists()).toBe(false)
+  })
+
+  it('opencode_agent emits a name and null when cleared', async () => {
+    const wrapper = await mountOpen(LlmConfigForm, {
+      props: { modelValue: { ...baseValue, backend: 'opencode' } },
+    })
+    await wrapper.find('[data-testid=opencode-agent-input]').setValue('build')
+    let emitted = wrapper.emitted('update:modelValue')?.at(-1)?.[0] as typeof baseValue
+    expect(emitted.opencode_agent).toBe('build')
+
+    await wrapper.find('[data-testid=opencode-agent-input]').setValue('')
+    emitted = wrapper.emitted('update:modelValue')?.at(-1)?.[0] as typeof baseValue
+    expect(emitted.opencode_agent).toBeNull()
+  })
+
+  it('opencode_auto defaults to on and emits false when switched off', async () => {
+    const wrapper = await mountOpen(LlmConfigForm, {
+      props: { modelValue: { ...baseValue, backend: 'opencode' } },
+    })
+    // Absent = on (the headless default), so the select reads "on".
+    expect((wrapper.find('[data-testid=opencode-auto-select]').element as HTMLSelectElement).value).toBe('on')
+
+    await wrapper.find('[data-testid=opencode-auto-select]').setValue('off')
+    const emitted = wrapper.emitted('update:modelValue')?.at(-1)?.[0] as typeof baseValue
+    expect(emitted.opencode_auto).toBe(false)
   })
 
   it('treats an ABSENT backend as http — the documented default', async () => {
