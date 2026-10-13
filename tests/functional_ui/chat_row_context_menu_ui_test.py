@@ -194,11 +194,31 @@ def _open_menu(page, session_id: str) -> None:
 
 
 def _rename_via_menu(page, session_id: str, new_name: str) -> None:
+    """Rename through the context menu and wait for the write to land.
+
+    Clicking save returns as soon as the click is dispatched — the PUT has
+    not necessarily left the browser yet. The handler then writes TWO rows
+    (``workspace_item_tasks.name``, then ``sessions.name`` via the
+    ``updateTaskName`` cascade) before it answers, so a caller that reads
+    either table right after the click can observe half a rename. That is
+    how ``test_rename_leaves_every_other_session_column_alone`` failed on
+    CI: the task row already read ``UI_SCOPE_RENAMED`` while the
+    ``sessions`` snapshot taken a moment earlier still read
+    ``UI_SCOPE_CHAT``. Gating on the response makes "renamed" mean the
+    server has finished rather than the click was dispatched.
+    """
     _open_menu(page, session_id)
     page.locator('[data-testid="chat-context-menu-rename"]').click()
     page.locator('[data-testid="rename-modal-input"]').wait_for(timeout=10000, state="visible")
     page.locator('[data-testid="rename-modal-input"]').fill(new_name)
-    page.locator('[data-testid="rename-modal-save"]').click()
+    with page.expect_response(
+        lambda r: r.request.method == "PUT" and "/api/workspaces/tasks/" in r.url
+    ) as renamed:
+        page.locator('[data-testid="rename-modal-save"]').click()
+    assert renamed.value.status == 200, (
+        f"rename PUT answered {renamed.value.status} — the tables cannot have "
+        "been updated, so every assertion after this point is meaningless"
+    )
 
 
 def _wait_for_unattended(
