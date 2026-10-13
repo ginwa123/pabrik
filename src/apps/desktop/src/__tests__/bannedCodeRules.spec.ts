@@ -28,6 +28,7 @@ type RuleName =
   | 'local/no-watch-feedback-loop'
   | 'local/no-derived-state-watch'
   | 'local/no-silent-fallback-catch'
+  | 'local/no-try-catch'
 
 const ALL_RULES: RuleName[] = [
   'local/no-watch',
@@ -36,6 +37,7 @@ const ALL_RULES: RuleName[] = [
   'local/no-watch-feedback-loop',
   'local/no-derived-state-watch',
   'local/no-silent-fallback-catch',
+  'local/no-try-catch',
 ]
 
 /**
@@ -77,6 +79,7 @@ const ONLY_WATCH_EFFECT: RuleName[] = ['local/no-watch-effect']
 const ONLY_ARRAY_SOURCE: RuleName[] = ['local/no-watch-array-source']
 const ONLY_NO_WATCH: RuleName[] = ['local/no-watch']
 const ONLY_CATCH: RuleName[] = ['local/no-silent-fallback-catch']
+const ONLY_TRY_CATCH: RuleName[] = ['local/no-try-catch']
 
 describe('local/no-derived-state-watch', () => {
   it('flags a watch that only assigns a value computed from its source', () => {
@@ -438,11 +441,14 @@ describe('local/no-silent-fallback-catch', () => {
 })
 
 describe('the rules compose without false positives on real shapes', () => {
-  it('a realistic component using computed + side-effect watch + logged catch trips ONLY the blanket ban', () => {
-    // Under the blanket ban this previously-clean shape reports exactly one
-    // hit — `local/no-watch` — and nothing else. That pins the policy
-    // change: the targeted rules still see no derived state, no loop, no
-    // silent catch here; only the backstop fires.
+  it('a realistic component using computed + side-effect watch + logged catch trips ONLY the blanket bans', () => {
+    // Under the blanket bans this previously-clean shape reports exactly two
+    // hits — `local/no-watch` and `local/no-try-catch` — and nothing else.
+    // That pins the policy change: the targeted rules still see no derived
+    // state, no loop, no silent catch here; only the backstops fire. The
+    // `catch` logs AND writes a rendered error ref, so
+    // `no-silent-fallback-catch` correctly stays quiet — the construct ban
+    // is what catches it.
     const code = `
       import { ref, watch, computed } from 'vue'
       export function useRows(props) {
@@ -466,6 +472,94 @@ describe('the rules compose without false positives on real shapes', () => {
         return { rows, error, busy, count }
       }
     `
-    expect(lint(code)).toEqual(['local/no-watch'])
+    expect(lint(code)).toEqual(['local/no-watch', 'local/no-try-catch'])
+  })
+})
+
+describe('local/no-try-catch', () => {
+  it('flags a try/catch around an await', () => {
+    // The dominant shape in the corpus: one `await` wrapped so the failure
+    // becomes `unknown` and the signature still claims success.
+    expect(
+      lint(`async function load() { try { return await fetchRows() } catch (e) { return [] } }`, ONLY_TRY_CATCH),
+    ).toEqual(['local/no-try-catch'])
+  })
+
+  it('flags a catch with no binding', () => {
+    // `catch {` is the same construct — the binding is not what is banned.
+    expect(lint(`try { go() } catch { return null }`, ONLY_TRY_CATCH)).toEqual([
+      'local/no-try-catch',
+    ])
+  })
+
+  it('flags a catch that only logs', () => {
+    // Logging is better than silence, but the caller still cannot see the
+    // failure and the signature still claims success. That is the point of
+    // banning the construct rather than the silent-fallback shape.
+    expect(lint(`try { go() } catch (e) { console.error(e) }`, ONLY_TRY_CATCH)).toEqual([
+      'local/no-try-catch',
+    ])
+  })
+
+  it('flags a catch that rethrows', () => {
+    // oxlint's `no-useless-catch` already rejects this shape; the ban is
+    // about the construct, so it fires here too.
+    expect(lint(`try { go() } catch (e) { throw e }`, ONLY_TRY_CATCH)).toEqual([
+      'local/no-try-catch',
+    ])
+  })
+
+  it('flags a nested catch independently of its outer try', () => {
+    // Two handlers, two reports — the baseline count is per-site, so a
+    // nested pair must not collapse into one.
+    expect(
+      lint(
+        `try { try { go() } catch (e) { log(e) } } catch (e) { log(e) }`,
+        ONLY_TRY_CATCH,
+      ),
+    ).toEqual(['local/no-try-catch', 'local/no-try-catch'])
+  })
+
+  it('allows try/finally with no handler', () => {
+    // AGENTS.md sanctions `finally` for releasing a resource, and that is
+    // not handling a failure — there is no error channel to widen. 57 such
+    // blocks exist today.
+    expect(
+      lint(`try { return await open() } finally { release() }`, ONLY_TRY_CATCH),
+    ).toEqual([])
+  })
+
+  it('allows a bare try/finally that only clears a ref', () => {
+    expect(lint(`try { go() } finally { busy.value = false }`, ONLY_TRY_CATCH)).toEqual([])
+  })
+
+  it('allows promise.catch(fn)', () => {
+    // Deliberately out of scope: 10 of the 30 sites are fire-and-forget
+    // `router.replace(...)` navigations and 3 are best-effort `res.text()`
+    // reads, where the failure genuinely cannot reach the user. The
+    // dangerous subset is `local/no-silent-fallback-catch`'s job.
+    expect(
+      lint(`router.replace({ path }).catch(() => {})`, ONLY_TRY_CATCH),
+    ).toEqual([])
+  })
+
+  it('does not fire on a method literally named catch', () => {
+    // `Effect.catchTags` / `Effect.catchTag` are the REPLACEMENT, so a rule
+    // that matched the word would ban the fix.
+    expect(
+      lint(
+        `const p = getUser('42').pipe(Effect.catchTags({ NotFoundError: () => Effect.succeed(null) }))`,
+        ONLY_TRY_CATCH,
+      ),
+    ).toEqual([])
+  })
+
+  it('does not fire on the word catch in a string or comment', () => {
+    // The corpus has 606 regex matches for `try {` but only 537 AST nodes —
+    // the difference is fixtures and prose. A rule that matched text would
+    // have pinned those as debt.
+    expect(
+      lint(`const doc = 'try { go() } catch { return null }' // try/catch is banned`, ONLY_TRY_CATCH),
+    ).toEqual([])
   })
 })

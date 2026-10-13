@@ -78,6 +78,13 @@ export default defineConfigWithVueTs(
       'local/no-derived-state-watch': 'error',
       // 87 baselined sites.
       'local/no-silent-fallback-catch': 'error',
+      // 537 baselined sites (521 production + 13 in specs + 3 in a second
+      // <script> block) across 132 files. AGENTS.md has banned try/catch
+      // since PR #719; this is what makes it hold. `try { … } finally { … }`
+      // with no handler stays legal — see `eslint-rules/noTryCatch.ts` for
+      // the full scope decision, including why `promise.catch(fn)` is
+      // deliberately NOT banned here.
+      'local/no-try-catch': 'error',
       // `@ts-ignore` silences a whole file region with no obligation to
       // explain, and `@ts-nocheck` silences the entire file — both are at
       // zero occurrences here, so both are free to forbid outright.
