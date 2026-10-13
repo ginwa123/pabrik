@@ -16,8 +16,7 @@ vi.mock('marked', () => ({
 // the existing stripTags tests.
 vi.mock('../stripTags', () => ({
   isThinkingTags: (content: string): boolean => content.trim().startsWith('<think>'),
-  getThinkingTags: (content: string): string =>
-    `<details class="thinking">${content}</details>`,
+  getThinkingTags: (content: string): string => `<details class="thinking">${content}</details>`,
   stripThinkingTags: (content: string): string => content,
   isHtmlTags: (): boolean => false,
   getHtmlTags: (): string => '',
@@ -137,5 +136,83 @@ describe('renderResponse mcp_* summary', () => {
       '<success>false</success><error>boom</error><data></data></tool>'
     const out = renderResponse(envelope, 'tool', 'mcp_db_query')
     expect(out).toContain('boom')
+  })
+})
+
+/**
+ * The pill for a tool that has NO registered output card.
+ *
+ * `set_pull_request` was the reported case: the collapsed row read
+ * `set_pull_request ✓ {"session_id":"task_…","attached":true,"url":"https://…`
+ * — the first 80 characters of the envelope's `data`, which is a summary of
+ * nothing. The pill carries the name and status; the payload lives in the
+ * expanded body (see `toolPayloadPreview.spec.ts`).
+ */
+describe('renderResponse unregistered-tool fallback', () => {
+  beforeEach(() => {
+    _resetRenderResponseCache()
+  })
+
+  const ENVELOPE = JSON.stringify({
+    tool: 'set_pull_request',
+    parameters: { pr_url: 'https://github.com/ginwa123/pabrik/pull/922' },
+    success: true,
+    data: {
+      session_id: 'task_1791883461055_3',
+      attached: true,
+      url: 'https://github.com/ginwa123/pabrik/pull/922',
+    },
+    error: null,
+    v: 1,
+  })
+
+  it('never prints the payload of a tool it has no card for', () => {
+    // Control: the payload really does contain these strings, so the absence
+    // assertions below cannot pass vacuously.
+    expect(ENVELOPE).toContain('session_id')
+    expect(ENVELOPE).toContain('attached')
+
+    const out = renderResponse(ENVELOPE, 'tool', 'set_pull_request')
+    expect(out).toContain('set_pull_request')
+    expect(out).toContain('✓')
+    expect(out).not.toContain('session_id')
+    expect(out).not.toContain('attached')
+    expect(out).not.toContain('{')
+  })
+
+  it('caps a legacy non-JSON result instead of dumping the whole body', () => {
+    // Real shape for the legacy XML rows (`add_element` reaches 52 KB).
+    const huge = `<tool><name>add_element</name><data>${'x'.repeat(60_000)}</data></tool>`
+    const out = renderResponse(huge, 'tool', 'add_element')
+    expect(out).toContain('add_element')
+    expect(out.length).toBeLessThan(500)
+    expect(out).not.toContain('x'.repeat(200))
+  })
+
+  it('keeps the error sentence on failure — that IS the one-line summary', () => {
+    const failed = JSON.stringify({
+      tool: 'create_kanban_task',
+      parameters: {},
+      success: false,
+      data: null,
+      error: 'column "nope" does not exist on this board',
+      v: 1,
+    })
+    const out = renderResponse(failed, 'tool', 'create_kanban_task')
+    expect(out).toContain('create_kanban_task')
+    expect(out).toContain('✗')
+    expect(out).toContain('column "nope" does not exist on this board')
+  })
+
+  it('labels an empty tool result instead of rendering an invisible row', () => {
+    const out = renderResponse('', 'tool', 'list_secrets')
+    expect(out).toContain('list_secrets')
+    expect(out).not.toBe('')
+  })
+
+  it('still renders nothing for an empty assistant message', () => {
+    // The empty-content contract for assistant/user text is unchanged.
+    expect(renderResponse('', 'assistant')).toBe('')
+    expect(renderResponse('   \n ', 'user')).toBe('')
   })
 })

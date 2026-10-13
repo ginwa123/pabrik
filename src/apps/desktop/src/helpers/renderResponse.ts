@@ -61,6 +61,23 @@ const computeKey = (content: string, role: string, toolName: string | undefined)
   return `${role}|${toolName ?? ''}|${content.trim()}`
 }
 
+/**
+ * The inline pill for a tool whose result carries no summary of its own:
+ * the tool name, plus whether it worked. Shared by the empty-content path and
+ * the unregistered-tool fallback so the two cannot drift apart.
+ */
+const toolNamePill = (toolName: string, status?: 'ok' | 'failed', detail?: string): string => {
+  const name = escapeHtml(toolName)
+  if (status === 'failed') {
+    const message = escapeHtml((detail ?? 'unknown error').trim() || 'unknown error')
+    return `<span class="tool-inline">${name} → <span class="tool-inline-error">✗</span> ${message}</span>`
+  }
+  if (status === 'ok') {
+    return `<span class="tool-inline">${name} → <span class="tool-inline-success">✓</span></span>`
+  }
+  return `<span class="tool-inline">${name}</span>`
+}
+
 export const renderResponse = (
   content: string,
   role: string,
@@ -91,8 +108,14 @@ export const renderResponse = (
 
   const trimmed = content.trim()
   if (!trimmed) {
-    cache.set(key, '')
-    return ''
+    // A `tool` row can legitimately be empty — 403 such rows in the live DB,
+    // mostly a result that has not landed yet and a handful of tools that
+    // return nothing at all. A registered tool renders a "running…" card, but
+    // an UNREGISTERED one has only this pill, and `''` made the whole row
+    // invisible. The name is the least a reader can be shown.
+    const emptyTool = role === 'tool' && tool_name ? toolNamePill(tool_name) : ''
+    cache.set(key, emptyTool)
+    return emptyTool
   }
 
   let result: string
@@ -351,19 +374,25 @@ const renderTool = (content: string, tool_name: string | undefined): string => {
     return `<span class="tool-inline">${tool_name} → ${agentCount} agents (${succeeded} succeeded, ${failed} failed)</span>`
   }
 
-  // Fallback: render a concise summary from the <tool> envelope.
-  // If the content doesn't match the envelope (legacy), fall back to
-  // the raw text (existing behavior).
+  // Unregistered tool — no card claimed this name, so this pill is all the
+  // transcript shows until the reader expands the row (ChatView prints the
+  // payload there via `toolPayloadPreview`).
+  //
+  // The pill therefore must NOT carry the payload:
+  //   - it used to print the first 80 characters of `data`, which for
+  //     `set_pull_request` was a raw JSON blob
+  //     (`set_pull_request ✓ {"session_id":"task_…","attached":true,…`) with
+  //     no way to read the rest on one line;
+  //   - when the content was not a JSON envelope at all — legacy `<tool>` XML
+  //     rows, raw MCP passthrough — it printed the ENTIRE body with no cap.
+  //     An `add_element` row in the live DB is 52 KB, so a single collapsed
+  //     row carried the whole payload.
+  // Name + status is the honest one-line summary; the data is one click away.
   const unwrapped = tryUnwrapToolOutput(content)
   if (unwrapped === null) {
-    return `<span class="tool-inline">${tool_name || 'tool'} → ${escapeHtml(content)}</span>`
+    return toolNamePill(tool_name || 'tool')
   }
-  const statusIcon = unwrapped.success ? '✓' : '✗'
-  const statusClass = unwrapped.success ? 'tool-inline-success' : 'tool-inline-error'
-  const dataPreview =
-    typeof unwrapped.data === 'string' ? unwrapped.data : JSON.stringify(unwrapped.data ?? null)
-  const preview = unwrapped.success
-    ? dataPreview.slice(0, 80)
-    : (unwrapped.error ?? 'unknown error')
-  return `<span class="tool-inline">${tool_name || unwrapped.name} → <span class="${statusClass}">${statusIcon}</span> ${escapeHtml(preview)}${preview.length >= 80 ? '…' : ''}</span>`
+  return unwrapped.success
+    ? toolNamePill(tool_name || unwrapped.name, 'ok')
+    : toolNamePill(tool_name || unwrapped.name, 'failed', unwrapped.error ?? undefined)
 }
