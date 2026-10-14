@@ -221,6 +221,7 @@ const sendMessageWithFiles = async () => {
   draftBucket()?.clearDraft(draftKey.value)
   showFilePicker.value = false
   closeSkillPicker()
+  closeToolPicker()
   previewFiles.value.forEach((item) => {
     if (item.previewUrl.startsWith('blob:')) {
       URL.revokeObjectURL(item.previewUrl)
@@ -593,13 +594,14 @@ const detectAtTrigger = () => {
   }
 }
 
-// Debounced @-mention and /skill detection, driven by the textarea's
+// Debounced @-mention and /skill / /tool detection, driven by the textarea's
 // @input handler instead of a watcher — same 150 ms trailing run.
 function scheduleDetectAtTrigger(): void {
   if (fileDebounceTimer) clearTimeout(fileDebounceTimer)
   fileDebounceTimer = setTimeout(() => {
     detectAtTrigger()
     detectSlashTrigger()
+    detectToolTrigger()
   }, 150)
 }
 
@@ -778,6 +780,157 @@ const selectSkill = (skill: api.Skill) => {
   closeSkillPicker()
 }
 
+// ── /tool picker (mirrors the /skill picker above) ─────────────────────
+// Same two-trigger shape, same position rule, same dash requirement — the
+// only differences are the marker (`tool-`), the data source (the canonical
+// tool registry instead of the workspace skill list) and the icon.
+//
+// The registry is NOT workspace-scoped: `GET /api/agent-tools/registry`
+// serves the runtime's UNIFIED_TOOL_REGISTRY, the same list the Settings
+// checklist renders, so there is no per-workspace fetch and no workspace
+// gate. That is why the picker opens with no active workspace while the
+// `/skill-` picker does not.
+const TOOL_COMMAND_RE = /(^|\s)\/(t|to|too|tool)$/i
+const TOOL_TOKEN_RE = /(^|\s)\/tool-([\w.-]*)$/i
+const showToolPicker = ref(false)
+// True while the `/tool-` completion hint is showing. Separate from
+// `showToolPicker` for the same reason the skill pair is separate: the two
+// surfaces never render at once and the hint never fetches the registry.
+const showToolCommand = ref(false)
+// Lower-cased filter text after the `tool-` marker (empty = show all).
+const toolQuery = ref('')
+const toolList = ref<api.AgentRegistryEntry[]>([])
+const isLoadingTools = ref(false)
+const selectedToolIndex = ref(0)
+const toolPickerRef = ref<HTMLElement | null>(null)
+// A load failure renders in its own error row, never as an empty list.
+const toolError = ref<string | null>(null)
+// The registry is fetched once per mount — it is global, not per-workspace,
+// so there is no workspace key to compare against.
+const toolsLoaded = ref(false)
+
+const closeToolPicker = () => {
+  showToolPicker.value = false
+  showToolCommand.value = false
+  toolQuery.value = ''
+  selectedToolIndex.value = 0
+  toolError.value = null
+}
+
+const loadToolsOnce = async () => {
+  if (toolsLoaded.value) return
+  isLoadingTools.value = true
+  toolError.value = null
+  const result = await runSyncResult(
+    Effect.tryPromise({
+      try: () => api.getAgentToolsRegistry(),
+      catch: (e) =>
+        new SyncRemoteError({
+          op: 'tools.load',
+          reason: e instanceof Error ? e.message : String(e),
+        }),
+    }),
+    'tools.load',
+  )
+  isLoadingTools.value = false
+  if (result.ok) {
+    toolList.value = Array.isArray(result.value?.tools) ? result.value.tools : []
+    toolsLoaded.value = true
+  } else {
+    toolList.value = []
+    toolError.value = result.reason
+  }
+}
+
+const detectToolTrigger = () => {
+  const text = inputText.value
+  const pos = cursorPos.value
+  const textBeforeCursor = text.slice(0, pos)
+  const toolMatch = textBeforeCursor.match(TOOL_TOKEN_RE)
+  if (toolMatch) {
+    // Everything after the `tool-` marker is the filter query. Registry
+    // names are `[a-z0-9_]` (see UNIFIED_TOOL_REGISTRY), so the query
+    // alphabet is a superset — no separators to split.
+    toolQuery.value = (toolMatch[2] ?? '').toLowerCase()
+    if (!showToolPicker.value) {
+      showToolPicker.value = true
+      selectedToolIndex.value = 0
+      closeFilePicker()
+      closeSkillPicker()
+      void loadToolsOnce()
+    } else {
+      selectedToolIndex.value = 0
+    }
+    return
+  }
+  // Not the full token yet — is the user on the way there? A proper prefix
+  // of `tool-` (`/t`, `/to`, `/too`, `/tool`) offers the one completion
+  // that exists. No fetch happens here: the hint is a static string.
+  if (textBeforeCursor.match(TOOL_COMMAND_RE)) {
+    showToolCommand.value = true
+    closeFilePicker()
+    closeSkillPicker()
+    return
+  }
+  closeToolPicker()
+}
+
+// Enter/Tab on the `/tool-` hint: rewrite the typed prefix to the
+// canonical token so the picker's own trigger fires on the next
+// keystroke. The whitespace the regex consumed is preserved, and the
+// cursor lands right after the dash — exactly where the tool name goes.
+const acceptToolCommand = () => {
+  const text = inputText.value
+  const pos = cursorPos.value
+  const textBeforeCursor = text.slice(0, pos)
+  const textAfterCursor = text.slice(pos)
+  const match = textBeforeCursor.match(TOOL_COMMAND_RE)
+  if (!match || match.index === undefined) return
+  const slashPos = match.index + (match[1] ?? '').length
+  inputText.value = textBeforeCursor.slice(0, slashPos) + '/tool-' + textAfterCursor
+  showToolCommand.value = false
+  nextTick(() => {
+    const el = chatTextareaRef.value
+    if (!el) return
+    const caret = slashPos + '/tool-'.length
+    el.setSelectionRange(caret, caret)
+    cursorPos.value = caret
+    // Run the picker's own detection now rather than waiting for the
+    // next keystroke, so the list is already up when the user types
+    // the first letter of the tool name.
+    detectToolTrigger()
+  })
+}
+
+// Client-side substring filter over the cached registry. Matches the bare
+// name, the full `tool-<name>` token shown in the row, or the description
+// — so `/tool-read` narrows to `read_file` and `/TOOL-READ` behaves the
+// same (matching is case-insensitive).
+const filteredTools = computed(() => {
+  const q = toolQuery.value
+  if (q === '') return toolList.value
+  return toolList.value.filter((t) => {
+    const hay = `${t.name.toLowerCase()} tool-${t.name.toLowerCase()} ${t.description.toLowerCase()}`
+    return hay.includes(q)
+  })
+})
+
+const selectTool = (tool: api.AgentRegistryEntry) => {
+  const text = inputText.value
+  const pos = cursorPos.value
+  const textBeforeCursor = text.slice(0, pos)
+  const textAfterCursor = text.slice(pos)
+  const toolMatch = textBeforeCursor.match(TOOL_TOKEN_RE)
+  if (toolMatch && toolMatch.index !== undefined) {
+    // Replace the whole `/tool-<query>` span with the canonical token,
+    // keeping whatever preceded the trigger (start-of-line or the
+    // whitespace the regex consumed) untouched.
+    const slashPos = toolMatch.index + (toolMatch[1] ?? '').length
+    inputText.value = textBeforeCursor.slice(0, slashPos) + `/tool-${tool.name}` + textAfterCursor
+  }
+  closeToolPicker()
+}
+
 const selectFile = (file: FileEntry) => {
   const text = inputText.value
   const pos = cursorPos.value
@@ -798,6 +951,54 @@ const selectFile = (file: FileEntry) => {
 }
 
 const handleKeydown = (e: KeyboardEvent) => {
+  // The `/tool-` completion hint takes precedence — only one surface is
+  // ever open, and this one has exactly one row, so arrows are no-ops.
+  if (showToolCommand.value) {
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault()
+      e.stopPropagation()
+      acceptToolCommand()
+    } else if (e.key === 'Escape') {
+      e.stopPropagation()
+      closeToolPicker()
+    }
+    return
+  }
+
+  // Handle tool picker navigation (takes precedence — only one is open)
+  if (showToolPicker.value) {
+    const tools = filteredTools.value
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      e.stopPropagation()
+      selectedToolIndex.value = Math.min(selectedToolIndex.value + 1, tools.length - 1)
+      scrollToolSelectedIntoView()
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      e.stopPropagation()
+      selectedToolIndex.value = Math.max(selectedToolIndex.value - 1, 0)
+      scrollToolSelectedIntoView()
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      e.stopPropagation()
+      const selectedTool = tools[selectedToolIndex.value]
+      if (selectedTool) {
+        selectTool(selectedTool)
+      }
+    } else if (e.key === 'Escape') {
+      e.stopPropagation()
+      closeToolPicker()
+    } else if (e.key === 'Tab') {
+      e.preventDefault()
+      e.stopPropagation()
+      const selectedTool = tools[selectedToolIndex.value]
+      if (selectedTool) {
+        selectTool(selectedTool)
+      }
+    }
+    return
+  }
+
   // The `/skill-` completion hint takes precedence — only one surface is
   // ever open, and this one has exactly one row, so arrows are no-ops.
   if (showSkillCommand.value) {
@@ -923,6 +1124,18 @@ const scrollSkillSelectedIntoView = () => {
     if (!root) return
     const buttons = root.querySelectorAll('button')
     const selectedBtn = buttons[selectedSkillIndex.value]
+    if (selectedBtn) {
+      selectedBtn.scrollIntoView({ behavior: 'auto', block: 'nearest' })
+    }
+  }, 50)
+}
+
+const scrollToolSelectedIntoView = () => {
+  setTimeout(() => {
+    const root = toolPickerRef.value
+    if (!root) return
+    const buttons = root.querySelectorAll('button')
+    const selectedBtn = buttons[selectedToolIndex.value]
     if (selectedBtn) {
       selectedBtn.scrollIntoView({ behavior: 'auto', block: 'nearest' })
     }
@@ -1093,6 +1306,89 @@ const sendMessage = () => {
       </div>
     </div>
 
+    <!-- `/tool-` completion hint — the user typed a proper prefix of the
+      command (`/t`, `/to`, `/too`, `/tool`) but not the dash yet, so the
+      composer offers the one completion that exists. Enter or Tab
+      rewrites the token to `/tool-` and the picker below takes over.
+      Rendered instead of the picker, never alongside it. -->
+    <div
+      v-if="showToolCommand"
+      class="tool-command-suggestion mb-2 p-2 rounded-lg shadow-lg"
+      style="background-color: var(--semantic-card-bg); border: 1px solid var(--color-border)"
+      data-testid="tool-command-suggestion"
+    >
+      <button
+        type="button"
+        class="w-full text-left px-3 py-1.5 rounded text-body flex items-center gap-2 transition-colors file-item-selected"
+        style="background-color: var(--color-violet); color: var(--color-bg)"
+        data-testid="tool-command-suggestion-row"
+        @click="acceptToolCommand"
+      >
+        <UiIcon name="tools" size-class="w-3.5 h-3.5" />
+        <span class="truncate font-mono text-dense">/tool-</span>
+        <span class="ml-auto text-dense" style="opacity: 0.75">Tab</span>
+      </button>
+    </div>
+
+    <!-- Tool picker dropdown — stays open while the `/tool-` trigger is
+      active so an empty filter renders `No tools found` instead of
+      vanishing. -->
+    <div
+      v-if="showToolPicker"
+      ref="toolPickerRef"
+      class="tool-picker-list mb-2 p-2 rounded-lg shadow-lg max-h-72 overflow-y-auto"
+      style="background-color: var(--semantic-card-bg); border: 1px solid var(--color-border)"
+      tabindex="0"
+      data-testid="tool-picker-list"
+    >
+      <div v-if="isLoadingTools" class="p-4 text-center">
+        <div
+          class="w-6 h-6 border-2 rounded-full animate-spin mx-auto mb-2"
+          style="border-color: var(--color-violet); border-top-color: transparent"
+        ></div>
+        <p class="text-body" style="color: var(--semantic-text-dim)">Loading tools…</p>
+      </div>
+      <div
+        v-else-if="toolError"
+        class="p-2 text-body"
+        style="color: var(--semantic-text-dim)"
+        data-testid="tool-picker-error"
+      >
+        {{ toolError }}
+      </div>
+      <div
+        v-else-if="filteredTools.length === 0"
+        class="p-2 text-body"
+        style="color: var(--semantic-text-dim)"
+      >
+        No tools found
+      </div>
+      <div v-else>
+        <button
+          v-for="(tool, idx) in filteredTools"
+          :key="tool.name"
+          @click="selectTool(tool)"
+          class="w-full text-left px-3 py-1.5 rounded text-body flex items-center gap-2 transition-colors"
+          :class="idx === selectedToolIndex ? 'file-item-selected' : ''"
+          :style="
+            idx === selectedToolIndex
+              ? 'background-color: var(--color-violet); color: var(--color-bg);'
+              : 'color: var(--semantic-text);'
+          "
+          @mouseenter="selectedToolIndex = idx"
+          :data-tool-name="tool.name"
+        >
+          <UiIcon name="tools" size-class="w-3.5 h-3.5" />
+          <span class="flex flex-col items-start min-w-0">
+            <span class="truncate font-mono text-dense">/tool-{{ tool.name }}</span>
+            <span class="truncate text-dense" style="color: var(--semantic-text-dim)">{{
+              tool.description
+            }}</span>
+          </span>
+        </button>
+      </div>
+    </div>
+
     <!-- Image preview list -->
     <FilePreview v-model="previewFiles" max-height="120px" />
 
@@ -1187,7 +1483,7 @@ const sendMessage = () => {
       <textarea
         ref="chatTextareaRef"
         v-model="inputText"
-        placeholder="Type a message... (@ files, /skill- skills)"
+        placeholder="Type a message... (@ files, /skill- skills, /tool- tools)"
         :disabled="isInitializing"
         data-testid="chat-message-textarea"
         class="flex-1 px-4 py-3 rounded-xl text-body outline-none transition-all duration-200 resize-none"
@@ -1352,6 +1648,11 @@ const sendMessage = () => {
 /* The `/skill-` completion hint is a single-row dropdown, so it needs no
    scroll container — only the same outline suppression the picker gets. */
 .skill-command-suggestion {
+  outline: none;
+}
+
+/* Same for the `/tool-` hint. */
+.tool-command-suggestion {
   outline: none;
 }
 
