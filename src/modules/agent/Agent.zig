@@ -2184,6 +2184,11 @@ pub const Agent = struct {
         /// execution wiring lands in Phase 2, so streaming fails fast
         /// with this error plus an actionable `last_error_message`.
         ClaudeCodeNotWired,
+        /// Profile selects backend="opencode" (local CLI backend).
+        /// Phase 1 models the backend (config + validation + CLI argv);
+        /// execution wiring lands in Phase 2, so streaming fails fast
+        /// with this error plus an actionable `last_error_message`.
+        OpencodeNotWired,
         WriteFailed,
         OutOfMemory,
         Cancelled,
@@ -2923,6 +2928,25 @@ pub const Agent = struct {
             }
             self.log_fmt(.err, "[STREAM] claude-code backend not wired yet (model={s})", .{self.model});
             return error.ClaudeCodeNotWired;
+        }
+
+        // OpenCode profiles select the local CLI backend, not HTTP.
+        // Phase 1 fails fast here (before any URL/auth handling) so the
+        // user gets an actionable message instead of a confusing
+        // InvalidUri from the empty base_url. Phase 2 will dispatch to
+        // `agentic_loop/opencode.zig` execution from this point.
+        if (std.mem.eql(u8, self.backend, "opencode")) {
+            const detail = std.fmt.allocPrint(
+                self.allocator,
+                "profile uses backend=\"opencode\" (model=\"{s}\") but CLI execution is not wired yet (Phase 1: configuration only). Install the CLI (https://docs.opencode.dev/) and run `opencode login`, or set the profile's backend back to \"http\".",
+                .{self.model},
+            ) catch null;
+            if (detail) |d| {
+                if (self.last_error_message) |prev| self.allocator.free(prev);
+                self.last_error_message = d;
+            }
+            self.log_fmt(.err, "[STREAM] opencode backend not wired yet (model={s})", .{self.model});
+            return error.OpencodeNotWired;
         }
 
         // Reset per-call Anthropic parser scratch state. The Agent is reused
@@ -4117,6 +4141,20 @@ test "callStreaming with claude-code backend fails fast with actionable error" {
     const detail = a.last_error_message orelse return error.MissingDetail;
     try expectCallStreaming(std.mem.indexOf(u8, detail, "claude-code") != null);
     try expectCallStreaming(std.mem.indexOf(u8, detail, "claude login") != null);
+}
+
+test "callStreaming with opencode backend fails fast with actionable error" {
+    var a = Agent.init(testing_allocatorCallStreaming, std.testing.io);
+    defer a.deinit();
+    a.baseUrl = "";
+    a.model = "deepseek-flash";
+    a.apiKey = "";
+    a.backend = "opencode";
+    const result = a.callStreaming(makeCall(), null, noopCallback);
+    try expectErrorCallStreaming(error.OpencodeNotWired, result);
+    const detail = a.last_error_message orelse return error.MissingDetail;
+    try expectCallStreaming(std.mem.indexOf(u8, detail, "opencode") != null);
+    try expectCallStreaming(std.mem.indexOf(u8, detail, "opencode login") != null);
 }
 
 test "callStreaming ignores a claude-code UrlStyle when backend is http" {

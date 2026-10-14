@@ -4744,12 +4744,13 @@ export interface PabrikProfile {
   url_style?: string
   api_key?: string
   /**
-   * Which TRANSPORT runs this profile's calls: `"http"` (default) or
+   * Which TRANSPORT runs this profile's calls: `"http"` (default),
    * `"claude-code"` (the local `claude` CLI, subscription auth via
-   * `claude login`). Mirrors the backend's `LlmProfile.backend`.
+   * `claude login`), or `"opencode"` (the local `opencode` CLI, auth via
+   * `opencode login`). Mirrors the backend's `LlmProfile.backend`.
    *
    * Orthogonal to `url_style`, which keeps describing the HTTP wire
-   * format only — a claude-code profile never builds a request body, so
+   * format only — a CLI profile never builds a request body, so
    * `base_url` / `api_key` / `url_style` do not apply to it. Absent =
    * `"http"`, so existing configs need no migration.
    */
@@ -4819,8 +4820,8 @@ export interface SubAgent {
   api_key: string
   system_prompt: string
   /** Transport discriminator, mirroring `PabrikProfile.backend`.
-   *  `"http"` (default) | `"claude-code"`. Empty/absent = inherit the
-   *  parent profile's backend. */
+   *  `"http"` (default) | `"claude-code"` | `"opencode"`. Empty/absent =
+   *  inherit the parent profile's backend. */
   backend?: string
   /** Claude Code only: `CLAUDE_CONFIG_DIR` override. */
   config_dir?: string | null

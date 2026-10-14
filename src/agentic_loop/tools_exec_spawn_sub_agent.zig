@@ -191,11 +191,13 @@ fn resolveOverrides(ctx: ToolExecContext, an: []const u8) ai_workflow.SubAgentOv
         .api_key = resolved.api_key,
         .url_style = resolved.url_style,
         // Transport + its CLI knobs, threaded the same way — without these
-        // a Claude Code sub-agent would inherit backend="http" and POST to
-        // an empty base_url.
+        // a CLI sub-agent would inherit backend="http" and POST to an empty
+        // base_url.
         .backend = resolved.backend,
         .config_dir = resolved.config_dir,
         .max_turns = resolved.max_turns,
+        .opencode_agent = resolved.opencode_agent,
+        .opencode_auto = resolved.opencode_auto,
         .is_thinking = resolved.is_thinking,
         .temperature = resolved.temperature,
         // Model-thinking knobs (plan 2026-08-23-model-thinking), threaded from
