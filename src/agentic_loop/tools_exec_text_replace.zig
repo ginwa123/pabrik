@@ -410,7 +410,14 @@ test "execTextReplace: Windows path with raw backslashes is repaired, not reject
     // as a red Windows CI job ("`cwd` must be an ABSOLUTE path" for a plainly
     // absolute one). On POSIX the directory is named with a backslash instead,
     // so the same decode-then-re-expand path runs on every host.
-    const cwd_rel: []const u8 = if (builtin.os.tag == .windows) "" else "win\\cwd";
+    //
+    // The letter after the backslash matters: only a backslash followed by a
+    // LEGAL JSON escape (`\t`, `\n`, `\a`, `\b`, `\f`, `\r`, `\"`, `\\`)
+    // decodes to a control byte, and a control byte is the whole reason
+    // `reexpandPathControlChars` exists. `win\cwd` would prove nothing —
+    // `\c` is not a legal escape, so the repair simply escapes it and the
+    // decoded value is already correct.
+    const cwd_rel: []const u8 = if (builtin.os.tag == .windows) "" else "win\\tcwd";
     if (cwd_rel.len > 0) try tmp.dir.createDirPath(testing.io, cwd_rel);
     const cwd_abs = if (cwd_rel.len == 0)
         root
