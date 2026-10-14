@@ -269,18 +269,12 @@ const JsonTool = struct {
     function: JsonToolFunction,
 };
 
-const JsonThinkingConfig = struct {
-    type: []const u8 = "disabled",
-};
-
 const JsonStreamOptions = struct {
     include_usage: bool,
 };
 
 const JsonRequest = struct {
     model: []const u8,
-    enable_thinking: bool,
-    thinking: ?JsonThinkingConfig = null,
     messages: []const JsonMessage,
     temperature: f32,
     max_tokens: usize,
@@ -306,12 +300,6 @@ const JsonRequest = struct {
         try stringify.beginObject();
         try stringify.objectField("model");
         try stringify.write(self.model);
-        if (self.thinking) |th| {
-            try stringify.objectField("thinking");
-            try stringify.write(th);
-        }
-        try stringify.objectField("enable_thinking");
-        try stringify.write(self.enable_thinking);
         try stringify.objectField("messages");
         try stringify.write(self.messages);
         try stringify.objectField("temperature");
@@ -1889,8 +1877,6 @@ pub const Agent = struct {
 
         const json_request = JsonRequest{
             .model = self.model,
-            .enable_thinking = self.thinkingEnabled,
-            .thinking = if (!self.thinkingEnabled) .{} else null,
             .messages = json_messages,
             .temperature = params.temperature orelse self.temperature,
             .max_tokens = params.max_tokens orelse self.maxTokens,
@@ -2141,9 +2127,9 @@ pub const Agent = struct {
         if (self.reasoningEffort) |eff| {
             if (eff.len > 0) reasoning = .{ .effort = eff };
         }
-        // Do NOT auto-map `thinkingEnabled` → reasoning. Chat's
-        // `enable_thinking` is a separate flag; Responses `reasoning`
-        // should only be sent when the user explicitly set
+        // Do NOT auto-map `thinkingEnabled` → reasoning. The chat
+        // completions body has no thinking flag of its own; Responses
+        // `reasoning` should only be sent when the user explicitly set
         // `reasoning_effort`. Auto-sending `medium` for every
         // `thinking:auto` profile was making muse-spark not call tools.
 
@@ -5145,6 +5131,82 @@ test "buildJsonOpenAIRequest: each reasoning_effort value passes through verbati
 
 fn assistantMsgNoReasoningOpenaiReasoning(text: ?[]const u8) AgentMessage {
     return .{ .role = .assistant, .content = text };
+}
+
+// ============================================================================
+// Regression: the openai chat-completions body must NOT carry the
+// non-standard `thinking` / `enable_thinking` params.
+//
+// Symptom (task_1791915284771_3): a profile with Thinking = "Off" against
+// `https://opencode.ai/inference/go/v1/chat/completions` failed every turn
+// with
+//   {"error":{"param":"thinking","type":"invalid_request_error",
+//     "message":"Upstream request failed: [unsupported_parameter]
+//               Unrecognized request argument supplied: thinking."}}
+// and, after that was worked around, the same for `enable_thinking`.
+//
+// Root cause: `JsonRequest` emitted `thinking: {"type":"disabled"}` when
+// thinking was OFF and `enable_thinking: <bool>` unconditionally. Neither
+// is an OpenAI chat-completions parameter — they are vendor extensions
+// that strict gateways reject outright. The logic was also inverted
+// (thinking ON emitted neither field).
+//
+// Fix: drop both fields from the openai wire body. `reasoning_effort` is
+// the only thinking knob on this shape; Anthropic-style URLs go through
+// `buildJsonAnthropicRequest`, which owns its own `thinking` block.
+// ============================================================================
+
+test "buildJsonOpenAIRequest: thinking off emits NEITHER thinking NOR enable_thinking" {
+    var a = makeAgentOpenaiReasoning(.{ .thinkingEnabled = false });
+    const params = AgentCall{ .tools = emptyToolsOpenaiReasoning(), .messages = emptyMessagesOpenaiReasoning() };
+    const body = try a.buildJsonOpenAIRequest(params, true);
+    defer testing.allocator.free(body);
+
+    try testing.expect(std.mem.indexOf(u8, body, "thinking") == null);
+    try testing.expect(std.mem.indexOf(u8, body, "enable_thinking") == null);
+}
+
+test "buildJsonOpenAIRequest: thinking on emits NEITHER thinking NOR enable_thinking" {
+    // The positive control for the absence assertions above: the fields
+    // are gone for BOTH states, so this cannot pass vacuously.
+    var a = makeAgentOpenaiReasoning(.{ .thinkingEnabled = true });
+    const params = AgentCall{ .tools = emptyToolsOpenaiReasoning(), .messages = emptyMessagesOpenaiReasoning() };
+    const body = try a.buildJsonOpenAIRequest(params, true);
+    defer testing.allocator.free(body);
+
+    try testing.expect(std.mem.indexOf(u8, body, "thinking") == null);
+    try testing.expect(std.mem.indexOf(u8, body, "enable_thinking") == null);
+}
+
+test "buildJsonOpenAIRequest: reasoning_effort still round-trips after the thinking fields were dropped" {
+    // Proves the fix removed ONLY the two vendor params — the real
+    // thinking knob on this body shape is untouched.
+    var a = makeAgentOpenaiReasoning(.{ .thinkingEnabled = false, .reasoningEffort = "high" });
+    const params = AgentCall{ .tools = emptyToolsOpenaiReasoning(), .messages = emptyMessagesOpenaiReasoning() };
+    const body = try a.buildJsonOpenAIRequest(params, true);
+    defer testing.allocator.free(body);
+
+    try testing.expect(std.mem.indexOf(u8, body, "\"reasoning_effort\":\"high\"") != null);
+    try testing.expect(std.mem.indexOf(u8, body, "thinking") == null);
+    try testing.expect(std.mem.indexOf(u8, body, "enable_thinking") == null);
+}
+
+test "buildJsonOpenAIRequest: the body is still valid JSON with the core fields intact" {
+    // Guards against the removal having broken the object shape.
+    var a = makeAgentOpenaiReasoning(.{ .thinkingEnabled = false });
+    const params = AgentCall{ .tools = emptyToolsOpenaiReasoning(), .messages = emptyMessagesOpenaiReasoning() };
+    const body = try a.buildJsonOpenAIRequest(params, true);
+    defer testing.allocator.free(body);
+
+    const parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, body, .{});
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+    try testing.expect(obj.get("model") != null);
+    try testing.expect(obj.get("messages") != null);
+    try testing.expect(obj.get("temperature") != null);
+    try testing.expect(obj.get("max_tokens") != null);
+    try testing.expect(obj.get("thinking") == null);
+    try testing.expect(obj.get("enable_thinking") == null);
 }
 
 test "buildJsonOpenAIRequest: thinking on + assistant null reasoning emits empty reasoning_content" {
