@@ -10,6 +10,12 @@ import UiIcon from '../ui/UiIcon.vue'
  * The details item is opt-in via `showDetails` so sidebar rows
  * (WorkspaceItemTaskRow) keep the single chat item while kanban
  * cards (WorkspaceItemTaskCard) offer both.
+ *
+ * `showRename` / `showDelete` are the same opt-in pattern for the
+ * sidebar task row, whose pin / rename / delete hover buttons were
+ * migrated here. Every row is opt-in so the file / workspace-item /
+ * workspace-switcher hosts that share this menu never grow a row
+ * they cannot act on.
  */
 withDefaults(
   defineProps<{
@@ -53,6 +59,18 @@ withDefaults(
      * `showAddTask`: the row's `×` is hover-reveal only.
      */
     showDeleteItem?: boolean
+    /**
+     * Show "Rename task" for a sidebar task row. The row's pencil was
+     * one of three hover buttons migrated into this menu, so the menu
+     * is now the only route to the action.
+     */
+    showRename?: boolean
+    /**
+     * Show "Delete task" for a sidebar task row. Same migration as
+     * `showRename`; the host emits straight up and the confirmation
+     * stays owned by whoever performs the delete (Sidebar).
+     */
+    showDelete?: boolean
   }>(),
   { showChat: true, showRunAgent: false, isAgentRunning: false },
 )
@@ -67,6 +85,8 @@ const emit = defineEmits<{
   runAgent: []
   addTask: []
   deleteItem: []
+  rename: []
+  deleteTask: []
 }>()
 </script>
 
@@ -120,6 +140,45 @@ const emit = defineEmits<{
             d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"
           /></svg
         >{{ isPinned ? 'Unpin from top' : 'Pin to top' }}
+      </button>
+      <!-- Sidebar task-row actions. The row's pin / rename / delete
+           hover buttons were migrated here, so these two rows are the
+           only route to the actions. Rename sits directly under Pin
+           because both are the row's everyday edits; Delete is last in
+           red, matching the workspace-item row's "Delete project". -->
+      <button
+        v-if="showRename"
+        type="button"
+        role="menuitem"
+        data-testid="rename-task-menu-item"
+        class="block w-full text-left px-3 py-1.5 hover:opacity-80"
+        @click="emit('rename')"
+      >
+        <svg
+          class="mr-2 opacity-70 inline w-3.5 h-3.5"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          aria-hidden="true"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+          /></svg
+        >Rename task
+      </button>
+      <button
+        v-if="showDelete"
+        type="button"
+        role="menuitem"
+        data-testid="delete-task-menu-item"
+        class="block w-full text-left px-3 py-1.5 hover:opacity-80"
+        style="color: var(--color-red)"
+        @click="emit('deleteTask')"
+      >
+        <span aria-hidden="true" class="mr-2 opacity-70">&#120;</span>Delete task
       </button>
       <button
         v-if="showFile"

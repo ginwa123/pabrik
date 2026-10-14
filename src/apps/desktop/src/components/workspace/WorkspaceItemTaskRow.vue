@@ -7,10 +7,15 @@
   row layout — the legacy single-line flexbox that the sidebar has used
   since 2026-06-10.
 
-  Behavior (event payload, drop indicator, active
-  styling, pin toggle, hover buttons) is shared with
-  the card via the `useTaskActions` composable. See that file for the
-  contract.
+  Behavior (event payload, drop indicator, active styling) is shared
+  with the card via the `useTaskActions` composable. See that file for
+  the contract.
+
+  The three hover action buttons (pin / rename / delete) were migrated
+  into the row's right-click menu (<OpenInNewTabMenu>), the same change
+  <WorkspaceItemTaskCard> made to its own strip. The emitted payloads
+  are unchanged; only the trigger surface moved. The pin INDICATOR
+  stays — that is state, not an action.
 
   Public API:
     props:  task (Task), workspaceId (string), itemId (string),
@@ -21,14 +26,15 @@
     (Migration 084).
 
   Why a <div role="button"> instead of a <button> for the row?
-  The row contains nested interactive controls (pin / rename / delete),
-  and HTML forbids button-inside-button — Vue's compiler warns about it,
-  keyboard activation of a button with focusable descendants is
-  spec-undefined, and a screen reader folds the inner buttons' labels
-  into the outer button's accessible name. So the root is a div with
-  role="button" + tabindex=0 + an Enter/Space handler, and the inner
-  controls stay real <button>s for native focus rings and activation.
-  Same pattern as DesignPageRow.vue.
+  The row used to contain nested interactive controls (pin / rename /
+  delete), and HTML forbids button-inside-button — Vue's compiler warns
+  about it, keyboard activation of a button with focusable descendants
+  is spec-undefined, and a screen reader folds the inner buttons'
+  labels into the outer button's accessible name. The root is therefore
+  a div with role="button" + tabindex=0 + an Enter/Space handler, and
+  the same shape is kept now that the actions live in the menu: the
+  ContextMenu / Shift+F10 keys open it, so the row is still one
+  keyboard-operable unit. Same pattern as DesignPageRow.vue.
 -->
 <script setup lang="ts">
 // Extracted from WorkspaceItem.vue on 2026-06-10. This component owns
@@ -99,7 +105,7 @@ const emit = defineEmits<{
   openTaskInBackground: [payload: { workspaceId: string; itemId: string; taskId: string }]
   deleteTask: [workspaceId: string, itemId: string, taskId: string]
   renameTask: [workspaceId: string, itemId: string, taskId: string, currentName: string]
-  // (pinned-tasks feature): emitted by the pin/unpin button. Payload
+  // (pinned-tasks feature): emitted by the menu's Pin/Unpin row. Payload
   // carries the new is_pinned state so the store doesn't have to
   // re-read the task prop.
   pinTask: [workspaceId: string, itemId: string, taskId: string, isPinned: boolean]
@@ -107,33 +113,51 @@ const emit = defineEmits<{
 
 // Shared logic — event handlers, drop indicator.
 // See composables/useTaskActions.ts for the contract.
-const {
-  dropIndicatorBoxShadow,
-  handleSelectTask,
-  handleDeleteTask,
-  handleRenameTask,
-  handlePinToggle,
-} = useTaskActions(props, emit)
+// Only the two pieces the row still uses inline. The event-taking
+// handlers (delete / rename / pin) existed for the hover buttons and
+// are gone with them — the context menu emits the same payloads
+// directly (see `*FromMenu` below), because those handlers' only job
+// was `stopPropagation()` away from the row's @click and the teleported
+// menu never traverses the row.
+const { dropIndicatorBoxShadow, handleSelectTask } = useTaskActions(props, emit)
 
 // Right-click "Open in new tab" for this task. The menu position
 // lives in useContextMenu; the task ids come from props. The event
 // bubbles up (sidebar list or kanban board) where the host builds
 // the task chat URL and opens a real browser tab.
-const { menuPos, openAt, close: closeTaskMenu } = useContextMenu()
+const { menuPos, openAt, openAtPoint, close: closeTaskMenu } = useContextMenu()
 
 const onTaskContextMenu = (event: MouseEvent) => {
   openAt(event)
 }
 
-// Enter / Space activate the row. The root is a <div role="button"> rather
-// than a real <button> because the row contains nested interactive controls
-// (pin / rename / delete) and HTML forbids button-inside-button — see the
-// header comment. This restores the keyboard contract the native element
-// would have given us.
+// Enter / Space activate the row; ContextMenu / Shift+F10 open the action
+// menu. The root is a <div role="button"> rather than a real <button> — see
+// the header comment for why. This restores the keyboard contract the
+// native element would have given us, and the menu keys are what keep
+// rename / delete reachable now that the hover buttons are gone.
 const handleRowKeydown = (event: KeyboardEvent) => {
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault()
     handleSelectTask()
+    return
+  }
+  // ContextMenu / Shift+F10 open the action menu. Removing the hover
+  // buttons took away the only discoverable route to rename / delete,
+  // so the keyboard path is a hard requirement, not a nice-to-have —
+  // otherwise the change is an accessibility regression.
+  if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
+    event.preventDefault()
+    // Anchor at the row's centre — there is no cursor to follow on a
+    // keyboard gesture. Reuses the same viewport clamp as a real
+    // right-click so a row near the bottom-right corner doesn't push
+    // the menu off-screen.
+    const rect = (event.currentTarget as HTMLElement | null)?.getBoundingClientRect()
+    openAtPoint(
+      rect ? rect.left + rect.width / 2 : 0,
+      rect ? rect.top + rect.height / 2 : 0,
+      event.currentTarget as HTMLElement | null,
+    )
   }
 }
 
@@ -153,6 +177,28 @@ const openTaskMenuInBackground = () => {
 const pinTaskFromMenu = () => {
   closeTaskMenu()
   emit('pinTask', props.workspaceId, props.itemId, props.task.id, !props.task.is_pinned)
+}
+
+// Rename / delete from the menu. Same contract as `pinTaskFromMenu`
+// above: emit straight up with the identical payload the old hover
+// buttons produced. The `useTaskActions` handlers are deliberately NOT
+// called — they take a DOM event solely to `stopPropagation()` it away
+// from the row's @click, a defence the nested buttons needed. The menu
+// is Teleported to `body`, so its clicks never traverse the row and
+// there is nothing to stop; synthesising a MouseEvent to satisfy the
+// signature would be noise.
+//
+// The delete confirmation stays owned by whoever performs the delete
+// (Sidebar's ConfirmDialog) — the row contributes no dialog of its own,
+// so one "Delete task" can only ever open one confirm.
+const renameTaskFromMenu = () => {
+  closeTaskMenu()
+  emit('renameTask', props.workspaceId, props.itemId, props.task.id, props.task.name)
+}
+
+const deleteTaskFromMenu = () => {
+  closeTaskMenu()
+  emit('deleteTask', props.workspaceId, props.itemId, props.task.id)
 }
 
 // Right-click "Run agent" — starts a worker on this task's existing
@@ -329,59 +375,12 @@ const errorRetryLabel = computed(() =>
       </svg>
     </span>
     <span class="flex-1 truncate">{{ task.name }}</span>
-    <!-- Pin/unpin toggle (always visible). -->
-    <button
-      @click="handlePinToggle($event)"
-      class="shrink-0 w-6 h-6 flex items-center justify-center rounded opacity-60 hover:opacity-100 transition-opacity hover:bg-[#2e2d2a]"
-      :class="
-        task.is_pinned ? 'text-yellow-400' : 'text-[--semantic-text-dim] hover:text-yellow-400'
-      "
-      :title="task.is_pinned ? 'Unpin task' : 'Pin task'"
-      data-testid="task-pin-toggle"
-    >
-      <svg v-if="task.is_pinned" class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-        <path
-          d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"
-        />
-      </svg>
-      <svg v-else class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2"
-          d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"
-        />
-      </svg>
-    </button>
-    <button
-      @click="handleRenameTask($event)"
-      class="shrink-0 w-6 h-6 flex items-center justify-center rounded opacity-60 hover:opacity-100 transition-opacity hover:bg-[#2e2d2a] hover:text-blue-400"
-      style="color: var(--semantic-text-dim)"
-      title="Rename Task"
-    >
-      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2"
-          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-        />
-      </svg>
-    </button>
-    <button
-      @click="handleDeleteTask($event)"
-      class="shrink-0 w-6 h-6 flex items-center justify-center rounded opacity-60 hover:opacity-100 transition-opacity hover:bg-[#2e2d2a] hover:text-red-400"
-      style="color: var(--semantic-text-dim)"
-    >
-      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2"
-          d="M6 18L18 6M6 6l12 12"
-        />
-      </svg>
-    </button>
+    <!-- The three hover action buttons that used to live here
+         (pin / rename / delete) are gone: they ate ~72px of a ~200px
+         panel and truncated the task name. Every one of them now lives
+         in <OpenInNewTabMenu>, opened by right-click or the
+         ContextMenu key. The pin INDICATOR above stays — that is
+         state, not an action. -->
 
     <!-- How long this task has been running. Time pill is the only
          activity marker — the circle spinner was removed as redundant. -->
@@ -392,10 +391,14 @@ const errorRetryLabel = computed(() =>
       :y="menuPos.y"
       show-pin
       :is-pinned="task.is_pinned"
+      show-rename
+      show-delete
       show-run-agent
       :is-agent-running="isBusy"
       @open="openTaskMenuInBackground"
       @pin="pinTaskFromMenu"
+      @rename="renameTaskFromMenu"
+      @delete-task="deleteTaskFromMenu"
       @run-agent="runAgentFromMenu"
     />
   </div>

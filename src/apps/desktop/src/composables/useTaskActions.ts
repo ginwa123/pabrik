@@ -7,10 +7,15 @@
  * .vue for the kanban card). The components now share this composable
  * for:
  *
- *   - The four event handlers (select / delete / rename /
- *     pin). The handlers emit the same payload shape the parent
+ *   - The event handlers (select / delete / rename / pin). The
+ *     handlers emit the same payload shape the parent
  *     (<WorkspaceItem> and <KanbanCard>) re-emits verbatim — see
  *     docs/plans/2026-07-01-change-task-to-card-kanban.md.
+ *     delete / rename / pin take a DOM event only so they can
+ *     `stopPropagation()` it away from the row's @click; hosts whose
+ *     actions moved into a Teleported context menu (the kanban card,
+ *     and the sidebar row since its hover buttons were migrated) emit
+ *     the same payloads directly instead and skip these.
  *   - The drop-indicator box-shadow so pinned-region drag visuals work
  *     in both views.
  *  (Per-task routine affordances were deleted in Migration 084 —
