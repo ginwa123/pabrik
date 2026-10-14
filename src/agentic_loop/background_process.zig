@@ -22,6 +22,10 @@ pub const ProcessInfo = struct {
     /// "background_persistence"`: a process the agent is deliberately NOT
     /// notified about, which it polls or stops itself.
     kind: []const u8,
+    /// How many bytes of the log `process read` has already returned
+    /// (migration 108). Without it every read would hand the model the same
+    /// head of the file again.
+    last_read_offset: i64 = 0,
 };
 
 /// The two `kind` values, as constants so no call site spells them inline.
@@ -42,13 +46,16 @@ pub fn freeProcessInfos(allocator: std.mem.Allocator, infos: []ProcessInfo) void
 /// Release each entry's strings but NOT the slice — for the partially-built
 /// list an `errdefer` sees, where the slice belongs to the ArrayList.
 pub fn freeProcessInfoStrings(allocator: std.mem.Allocator, infos: []ProcessInfo) void {
-    for (infos) |p| {
-        allocator.free(p.session_id);
-        allocator.free(p.command);
-        allocator.free(p.log_path);
-        allocator.free(p.status);
-        allocator.free(p.kind);
-    }
+    for (infos) |p| freeProcessInfo(allocator, p);
+}
+
+/// One entry's strings — for the single-row reads (`getByPid`) that own no slice.
+pub fn freeProcessInfo(allocator: std.mem.Allocator, p: ProcessInfo) void {
+    allocator.free(p.session_id);
+    allocator.free(p.command);
+    allocator.free(p.log_path);
+    allocator.free(p.status);
+    allocator.free(p.kind);
 }
 
 const SqliteBackend = sqlite.SqliteBackend;
@@ -78,7 +85,7 @@ pub fn save(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []cons
 
 /// Get all background processes for a session
 pub fn getBySession(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []const u8) ![]ProcessInfo {
-    var rows = try db.query(allocator, "SELECT pid, command, log_path, started_at, status, COALESCE(kind, 'job') FROM session_background_process WHERE session_id = ?", &.{session_id});
+    var rows = try db.query(allocator, "SELECT pid, command, log_path, started_at, status, COALESCE(kind, 'job'), COALESCE(last_read_offset, 0) FROM session_background_process WHERE session_id = ?", &.{session_id});
     defer rows.deinit();
 
     var processes = std.ArrayList(ProcessInfo).empty;
@@ -105,6 +112,7 @@ pub fn getBySession(db: *SqliteBackend, allocator: std.mem.Allocator, session_id
             .started_at = started_at,
             .status = try allocator.dupe(u8, status),
             .kind = try allocator.dupe(u8, row.values[5]),
+            .last_read_offset = std.fmt.parseInt(i64, row.values[6], 10) catch 0,
         });
     }
 
@@ -138,7 +146,7 @@ pub fn delete(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []co
 /// what to do with each row.
 pub fn getServices(db: *SqliteBackend, allocator: std.mem.Allocator) ![]ProcessInfo {
     var rows = try db.query(allocator,
-        \\SELECT session_id, pid, command, log_path, started_at, status, COALESCE(kind, 'job')
+        \\SELECT session_id, pid, command, log_path, started_at, status, COALESCE(kind, 'job'), COALESCE(last_read_offset, 0)
         \\FROM session_background_process
         \\WHERE kind = 'service'
     , &[_][]const u8{});
@@ -169,10 +177,29 @@ pub fn getServices(db: *SqliteBackend, allocator: std.mem.Allocator) ![]ProcessI
             .started_at = started_at,
             .status = try allocator.dupe(u8, status),
             .kind = try allocator.dupe(u8, row.values[6]),
+            .last_read_offset = std.fmt.parseInt(i64, row.values[7], 10) catch 0,
         });
     }
 
     return processes.toOwnedSlice(allocator);
+}
+
+/// Is this pid alive — asked in the way that also REAPS.
+///
+/// `reap_pid_nohang` first, because for a child of this process `waitpid`
+/// answers the question AND collects the zombie in one call, and the fallback
+/// probe (`kill(pid, 0)`) returns SUCCESS for a zombie: without the reap a
+/// detached process that exited would be reported as running for ever.
+///
+/// `.not_our_child` is the honest answer for a row from before a restart, and
+/// for the `nohup` grandchild that `mode="background"` produces — there the
+/// signal probe is all that is available.
+pub fn isAlive(pid: u32) bool {
+    return switch (shell_tool.reap_pid_nohang(pid)) {
+        .exited => false,
+        .running => true,
+        .not_our_child => isProcessRunning(pid),
+    };
 }
 
 /// Check if a process with the given PID is still running
@@ -226,6 +253,176 @@ pub fn killServicesForShutdown(db: *SqliteBackend, io: std.Io, allocator: std.me
         try updateStatus(db, allocator, p.session_id, p.pid, "killed");
     }
     return killed;
+}
+
+/// One process row by pid, or null when this session has no such process.
+///
+/// Scoped by `session_id` on purpose: a pid alone would let a session read — or
+/// stop — a process belonging to a DIFFERENT session, and pids are small enough
+/// to guess. The session is resolved server-side from the tool's context, never
+/// from the model's arguments.
+pub fn getByPid(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []const u8, pid: u32) !?ProcessInfo {
+    const pid_str = try std.fmt.allocPrint(allocator, "{d}", .{pid});
+    defer allocator.free(pid_str);
+
+    var rows = try db.query(allocator,
+        \\SELECT pid, command, log_path, started_at, status, COALESCE(kind, 'job'), COALESCE(last_read_offset, 0)
+        \\FROM session_background_process
+        \\WHERE session_id = ? AND pid = ?
+    , &.{ session_id, pid_str });
+    defer rows.deinit();
+
+    const row = (try rows.next()) orelse return null;
+    defer row.deinit(allocator);
+
+    return ProcessInfo{
+        .session_id = try allocator.dupe(u8, session_id),
+        .pid = try std.fmt.parseInt(u32, row.values[0], 10),
+        .command = try allocator.dupe(u8, row.values[1]),
+        .log_path = try allocator.dupe(u8, row.values[2]),
+        .started_at = try std.fmt.parseInt(i64, row.values[3], 10),
+        .status = try allocator.dupe(u8, row.values[4]),
+        .kind = try allocator.dupe(u8, row.values[5]),
+        .last_read_offset = std.fmt.parseInt(i64, row.values[6], 10) catch 0,
+    };
+}
+
+/// Persist the read cursor. The caller passes the offset it actually RETURNED,
+/// so a failed persist can only cause a repeat (harmless) and never a gap — a
+/// silently skipped line is the failure that would matter.
+pub fn setLastReadOffset(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []const u8, pid: u32, offset: i64) !void {
+    const pid_str = try std.fmt.allocPrint(allocator, "{d}", .{pid});
+    defer allocator.free(pid_str);
+    const offset_str = try std.fmt.allocPrint(allocator, "{d}", .{offset});
+    defer allocator.free(offset_str);
+
+    try db.exec(allocator,
+        \\UPDATE session_background_process SET last_read_offset = ?
+        \\WHERE session_id = ? AND pid = ?
+    , &.{ offset_str, session_id, pid_str });
+}
+
+/// What one `process read` returns.
+pub const DeltaRead = struct {
+    /// Bytes after the stored cursor, NUL-stripped. Caller-owned.
+    bytes: []u8,
+    /// The cursor to persist, and to report back to the model.
+    next_offset: i64,
+    /// Full on-disk size.
+    total_bytes: i64,
+    /// The cap cut this read short — more is waiting past `next_offset`.
+    more_pending: bool,
+    /// NOTHING NEW. Distinct from a read that failed: this is an ANSWER ("it has
+    /// said nothing since you last looked"), and it is the answer that makes
+    /// polling cheap enough to be worth doing at all.
+    empty: bool,
+    /// The log file does not exist — a `nohup` job whose command never started
+    /// produces this, and it is not the same as "no output".
+    missing: bool,
+
+    pub fn free(self: DeltaRead, allocator: std.mem.Allocator) void {
+        allocator.free(self.bytes);
+    }
+};
+
+/// Read the part of `log_path` the caller has NOT been shown yet.
+///
+/// Positional (`pread`-style) from the stored offset, so it neither depends on a
+/// file handle's own cursor nor reads the head it exists to avoid. The file is
+/// being appended to by another process while this runs; a partial line at the
+/// end is returned now and its remainder next time, which is the honest
+/// behaviour for a stream — and the reason the cursor is a byte count rather
+/// than a line count.
+pub fn readDelta(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    db: *SqliteBackend,
+    session_id: []const u8,
+    pid: u32,
+    log_path: []const u8,
+    stored_offset: i64,
+    cap_bytes: usize,
+) !DeltaRead {
+    const stat = std.Io.Dir.cwd().statFile(io, log_path, .{}) catch |err| switch (err) {
+        error.FileNotFound => return .{
+            .bytes = try allocator.alloc(u8, 0),
+            .next_offset = stored_offset,
+            .total_bytes = 0,
+            .more_pending = false,
+            .empty = true,
+            .missing = true,
+        },
+        else => return err,
+    };
+    const total: i64 = @intCast(stat.size);
+
+    // Clamp: a TRUNCATED log (recreated, or re-opened with `>`) leaves a cursor
+    // past EOF, and without this the read would return nothing for ever — the
+    // model would conclude the process had gone silent.
+    const offset: i64 = if (stored_offset > total) 0 else @max(stored_offset, 0);
+
+    if (total <= offset) {
+        return .{
+            .bytes = try allocator.alloc(u8, 0),
+            .next_offset = total,
+            .total_bytes = total,
+            .more_pending = false,
+            .empty = true,
+            .missing = false,
+        };
+    }
+
+    const available: usize = @intCast(total - offset);
+    const to_read: usize = @min(available, cap_bytes);
+
+    const file = if (std.fs.path.isAbsolute(log_path))
+        try std.Io.Dir.openFileAbsolute(io, log_path, .{})
+    else
+        try std.Io.Dir.cwd().openFile(io, log_path, .{});
+    defer file.close(io);
+
+    const raw = try allocator.alloc(u8, to_read);
+    defer allocator.free(raw);
+    var filled: usize = 0;
+    while (filled < raw.len) {
+        // `readPositionalAll` takes a u64 offset; `offset` is clamped >= 0 above,
+        // so the widening is lossless.
+        const at: u64 = @intCast(offset + @as(i64, @intCast(filled)));
+        const n = try file.readPositionalAll(io, raw[filled..], at);
+        if (n == 0) break; // EOF: the file shrank under us.
+        filled += n;
+    }
+    const head = raw[0..filled];
+
+    // Compact out NUL bytes, for the same reason `readLogTruncated` does: a
+    // control byte inside a JSON string is not representable.
+    var kept: usize = 0;
+    for (head) |b| {
+        if (b != 0) kept += 1;
+    }
+    const out = try allocator.alloc(u8, kept);
+    var i: usize = 0;
+    for (head) |b| {
+        if (b == 0) continue;
+        out[i] = b;
+        i += 1;
+    }
+
+    const next_offset = offset + @as(i64, @intCast(filled));
+
+    // Persist BEFORE returning: the caller is handed the bytes and the offset
+    // together, so "what have I already shown you" is answered by the same read
+    // that produced them.
+    setLastReadOffset(db, allocator, session_id, pid, next_offset) catch {};
+
+    return .{
+        .bytes = out,
+        .next_offset = next_offset,
+        .total_bytes = total,
+        .more_pending = next_offset < total,
+        .empty = kept == 0,
+        .missing = false,
+    };
 }
 
 /// What one boot pass over the service rows did.
@@ -581,4 +778,214 @@ test "readLogTruncated handles an empty file" {
     try testing.expectEqual(@as(usize, 0), got.content.len);
     try testing.expectEqual(@as(usize, 0), got.total_bytes);
     try testing.expectEqual(false, got.truncated);
+}
+
+// ============================================================================
+// Tests — the read cursor, and the service-only sweep
+// ============================================================================
+//
+// These cover the `process` tool's `read` and `stop` half. The functional suite
+// proves the wire path (a scripted model calling `process list` and getting the
+// service back); these prove the semantics that a wire test cannot state
+// precisely — that a second read returns the DELTA and not the head again, and
+// that a cursor past EOF recovers instead of going silent for ever.
+
+const migration = @import("../migrations/migration.zig");
+
+const TestCtx = struct {
+    db: SqliteBackend,
+    threaded: std.Io.Threaded,
+
+    fn deinit(self: *TestCtx) void {
+        self.db.deinit();
+        self.threaded.deinit();
+    }
+};
+
+/// In-memory DB through the REAL migration chain — never a hand-rolled schema,
+/// so `kind` and `last_read_offset` are whatever production actually has.
+fn setupCtx() !TestCtx {
+    var threaded = std.Io.Threaded.init(testing.allocator, .{});
+    errdefer threaded.deinit();
+    const io = threaded.io();
+
+    var db: SqliteBackend = .{};
+    errdefer db.deinit();
+    try db.init(io, ":memory:");
+
+    var manager = migration.MigrationManager.init(testing.allocator, &db);
+    defer manager.deinit();
+    try migration.registerAllMigrations(&manager);
+    try manager.runMigrations();
+
+    return .{ .db = db, .threaded = threaded };
+}
+
+/// Write `data` to a fresh file and return its absolute path (caller frees).
+fn tmpLog(tmp: *testing.TmpDir, name: []const u8, data: []const u8, io: std.Io) ![]u8 {
+    try tmp.dir.writeFile(io, .{ .sub_path = name, .data = data });
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(io, &buf);
+    return std.fs.path.join(testing.allocator, &.{ buf[0..n], name });
+}
+
+test "readDelta returns the whole log once, then only what is new" {
+    var ctx = try setupCtx();
+    defer ctx.deinit();
+    const io = ctx.threaded.io();
+
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const log_path = try tmpLog(&tmp, "svc.log", "first line\n", io);
+    defer testing.allocator.free(log_path);
+
+    const pid: u32 = 4242;
+    try save(&ctx.db, testing.allocator, "s1", pid, "pnpm run dev", log_path, 1, KIND_SERVICE);
+
+    // First read: the stored cursor is 0, so everything is new.
+    const first = try readDelta(testing.allocator, io, &ctx.db, "s1", pid, log_path, 0, 4096);
+    defer first.free(testing.allocator);
+    try testing.expectEqualStrings("first line\n", first.bytes);
+    try testing.expect(!first.empty);
+    try testing.expect(!first.more_pending);
+    try testing.expect(!first.missing);
+
+    // NOTHING NEW is an answer, not an error — this is what makes polling a
+    // long-running service cheap.
+    const second = try readDelta(testing.allocator, io, &ctx.db, "s1", pid, log_path, first.next_offset, 4096);
+    defer second.free(testing.allocator);
+    try testing.expectEqualStrings("", second.bytes);
+    try testing.expect(second.empty);
+
+    // The process appends; the next read returns ONLY the new bytes — the whole
+    // point of the cursor.
+    {
+        const f = try tmp.dir.openFile(io, "svc.log", .{ .mode = .write_only });
+        defer f.close(io);
+        try f.writePositionalAll(io, "second line\n", "first line\n".len);
+    }
+    const third = try readDelta(testing.allocator, io, &ctx.db, "s1", pid, log_path, second.next_offset, 4096);
+    defer third.free(testing.allocator);
+    try testing.expectEqualStrings("second line\n", third.bytes);
+    try testing.expect(!third.empty);
+    try testing.expectEqual(@as(i64, 23), third.total_bytes);
+
+    // And the cursor was PERSISTED — the next caller sees the same position
+    // without having to pass it, which is what lets the tool be stateless.
+    var q = try ctx.db.query(testing.allocator, "SELECT last_read_offset FROM session_background_process WHERE session_id = ? AND pid = ?", &.{ "s1", "4242" });
+    defer q.deinit();
+    const row = (try q.next()) orelse return error.RowMissing;
+    defer row.deinit(testing.allocator);
+    try testing.expectEqualStrings("23", row.values[0]);
+}
+
+test "readDelta caps one read and says more is waiting" {
+    var ctx = try setupCtx();
+    defer ctx.deinit();
+    const io = ctx.threaded.io();
+
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const log_path = try tmpLog(&tmp, "big.log", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", io);
+    defer testing.allocator.free(log_path);
+
+    const pid: u32 = 7;
+    try save(&ctx.db, testing.allocator, "s2", pid, "build", log_path, 1, KIND_JOB);
+
+    const first = try readDelta(testing.allocator, io, &ctx.db, "s2", pid, log_path, 0, 10);
+    defer first.free(testing.allocator);
+    try testing.expectEqual(@as(usize, 10), first.bytes.len);
+    try testing.expect(first.more_pending);
+
+    // The next read continues from where it stopped rather than repeating.
+    const second = try readDelta(testing.allocator, io, &ctx.db, "s2", pid, log_path, first.next_offset, 10);
+    defer second.free(testing.allocator);
+    try testing.expectEqualStrings("AAAAAAAAAA", second.bytes);
+    try testing.expect(second.more_pending);
+}
+
+test "readDelta recovers from a cursor past EOF instead of going silent for ever" {
+    // A log can be TRUNCATED under a running cursor: the file is recreated, or
+    // opened with `>`. The stored offset is then past the end, and a naive
+    // `total - offset` would be negative and return nothing — for ever, with the
+    // model concluding the process had gone quiet.
+    var ctx = try setupCtx();
+    defer ctx.deinit();
+    const io = ctx.threaded.io();
+
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const log_path = try tmpLog(&tmp, "shrink.log", "short\n", io);
+    defer testing.allocator.free(log_path);
+
+    const pid: u32 = 11;
+    try save(&ctx.db, testing.allocator, "s3", pid, "watch", log_path, 1, KIND_SERVICE);
+
+    const read = try readDelta(testing.allocator, io, &ctx.db, "s3", pid, log_path, 9999, 4096);
+    defer read.free(testing.allocator);
+    // The clamp restarts from the beginning, so the file is re-reported.
+    try testing.expectEqualStrings("short\n", read.bytes);
+    try testing.expectEqual(@as(i64, 6), read.total_bytes);
+}
+
+test "readDelta reports a missing log as `missing`, not as empty output" {
+    // "The command never started" and "the command said nothing" need different
+    // responses from the model, so they must not arrive as the same value.
+    var ctx = try setupCtx();
+    defer ctx.deinit();
+    const io = ctx.threaded.io();
+
+    const pid: u32 = 12;
+    try save(&ctx.db, testing.allocator, "s4", pid, "gone", "/tmp/pabrik-process-never-created.log", 1, KIND_JOB);
+
+    const read = try readDelta(testing.allocator, io, &ctx.db, "s4", pid, "/tmp/pabrik-process-never-created.log", 0, 4096);
+    defer read.free(testing.allocator);
+    try testing.expect(read.missing);
+    try testing.expectEqual(@as(usize, 0), read.bytes.len);
+}
+
+test "getByPid refuses a pid that belongs to another session" {
+    // The pid is the model's argument, so it is untrusted input: without the
+    // session filter a session could read — or stop — another session's
+    // process, and pids are small enough to guess.
+    var ctx = try setupCtx();
+    defer ctx.deinit();
+
+    try save(&ctx.db, testing.allocator, "owner", 99, "pnpm run dev", "/tmp/x.log", 1, KIND_SERVICE);
+    // A second session that "knows" the pid.
+    try save(&ctx.db, testing.allocator, "intruder", 100, "other", "/tmp/y.log", 1, KIND_JOB);
+
+    try testing.expect((try getByPid(&ctx.db, testing.allocator, "owner", 99)) != null);
+    try testing.expect((try getByPid(&ctx.db, testing.allocator, "intruder", 99)) == null);
+
+    // The positive control for the line above: the intruder CAN see its own.
+    try testing.expect((try getByPid(&ctx.db, testing.allocator, "intruder", 100)) != null);
+}
+
+test "killServicesForShutdown touches services only, never a job" {
+    var ctx = try setupCtx();
+    defer ctx.deinit();
+    const io = ctx.threaded.io();
+
+    // Both PIDs are dead, so nothing is actually signalled and the test asserts
+    // the SELECTION — which is the part that decides whether a user's build is
+    // killed.
+    try save(&ctx.db, testing.allocator, "s_svc", 999_999_901, "pnpm run dev", "/tmp/a.log", 1, KIND_SERVICE);
+    try save(&ctx.db, testing.allocator, "s_job", 999_999_902, "zig build", "/tmp/b.log", 2, KIND_JOB);
+
+    _ = try killServicesForShutdown(&ctx.db, io, testing.allocator);
+
+    var svc = try ctx.db.query(testing.allocator, "SELECT status FROM session_background_process WHERE session_id = ?", &.{"s_svc"});
+    defer svc.deinit();
+    const svc_row = (try svc.next()) orelse return error.RowMissing;
+    defer svc_row.deinit(testing.allocator);
+    try testing.expectEqualStrings("killed", svc_row.values[0]);
+
+    // The JOB is untouched: `killServicesForShutdown` runs at shutdown and at
+    // boot, and a bounded build is not a service that outlived its owner.
+    var job = try ctx.db.query(testing.allocator, "SELECT status FROM session_background_process WHERE session_id = ?", &.{"s_job"});
+    defer job.deinit();
+    const job_row = (try job.next()) orelse return error.RowMissing;
+    defer job_row.deinit(testing.allocator);
+    try testing.expectEqualStrings("running", job_row.values[0]);
 }

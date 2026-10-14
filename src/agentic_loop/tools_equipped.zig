@@ -73,6 +73,11 @@ const spawn_sub_agent_tool = pabrikcore.spawn_sub_agent;
 const ask_user_mod = pabrikcore.ask_user;
 const kanban_create_task_tool = pabrikcore.create_kanban_task;
 const command_tool_mod = pabrikcore.command_tool;
+// `process` — the read/stop/list half of the detached `mode`s. A tool the model
+// cannot call is not a feature: `background_persistence` is silent by design, so
+// without this the only way to look at a dev server is a shell `tail`, and the
+// only way to stop one is a shell `kill` that does not reach its workers.
+const process_tool_mod = pabrikcore.process_tool;
 // Progressive tool search: search_tool / view_tool / use_tool. Pure tool data
 // lives in `pabrikcore.progressive_tools`; the catalog + renderers live in
 // `src/agentic_loop/progressive_catalog.zig`.
@@ -137,6 +142,7 @@ pub fn equips(allocator: std.mem.Allocator) []const AgentTool {
         // unless the config injection re-adds it.
         run_skill_eval_mod.run_skill_eval_tool,
         command_tool_mod.command_tool,
+        process_tool_mod.process_tool,
         read_file_mod.read_file_tool,
         write_file_mod.write_file_tool,
         text_replace_mod.text_replace_tool,
@@ -281,6 +287,7 @@ pub fn UNIFIED_TOOL_REGISTRY() []const ToolInfo {
 
         // === FILE OPERATIONS ===
         .{ .name = "command", .exec = tools.execCommand, .tool_def = command_tool_mod.command_tool },
+        .{ .name = "process", .exec = tools.execProcess, .tool_def = process_tool_mod.process_tool },
         .{ .name = "read_file", .exec = tools.execReadFile, .tool_def = read_file_mod.read_file_tool },
         .{ .name = "write_file", .exec = tools.execWriteFile, .tool_def = write_file_mod.write_file_tool },
         .{ .name = "text_replace", .exec = tools.execTextReplace, .tool_def = text_replace_mod.text_replace_tool },
@@ -372,6 +379,11 @@ pub fn UNIFIED_TOOL_REGISTRY() []const ToolInfo {
 pub const DEFAULT_AGENT_TOOLS: []const []const u8 = &.{
     // basic tools
     command_tool_mod.command_tool.function.name,
+    // Default-on, and it has to be: `mode="background_persistence"` is SILENT by
+    // contract, so an agent that can start a dev server but cannot read or stop
+    // it is strictly worse off than one that never started it. Read-only except
+    // for `stop`, which only ever touches a process THIS session started.
+    process_tool_mod.process_tool.function.name,
     read_file_mod.read_file_tool.function.name,
     write_file_mod.write_file_tool.function.name,
     text_replace_mod.text_replace_tool.function.name,

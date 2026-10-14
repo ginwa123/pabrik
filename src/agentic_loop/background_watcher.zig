@@ -30,13 +30,12 @@ const logger_mod = pabrikcore.loggermod;
 const event_bus_mod = pabrikcore.event_bus;
 const bg_proc = pabrikcore.ai_mod.background_process;
 const cleanup = pabrikcore.cleanup_stale_background_process;
-// NOTE: do NOT use `bg_proc.isProcessRunning` — `background_process.zig`
-// resolves it via `root_mod.helpers.process_status`, but root dropped the
-// `helpers` re-export (root.zig:637), so that decl no longer compiles when
-// referenced. Use the supported `@import("helpers")` route directly (same
-// as cleanup_stale_background_process.zig).
-const process_status = @import("helpers").process_status;
-const shell_tool = pabrikcore.shell_tool;
+// NOTE: neither `process_status` nor `shell_tool` is imported here any more —
+// this module asks `bg_proc.isAlive`, which owns the reap-then-probe liveness
+// question for every caller (the watcher, the boot sweep, the `process` tool).
+// `background_process.zig` reaches `helpers` through `@import("helpers")`
+// because `root.zig` dropped the `helpers` re-export; putting that decl back
+// would break the EXE build only (the sharded unit suite never compiles it).
 const migration = @import("../migrations/migration.zig");
 const testing = std.testing;
 
@@ -65,11 +64,9 @@ pub const service_reaper_max_iters: usize = std.math.maxInt(usize);
 /// for the `nohup` grandchild that `mode="background"` produces; there the
 /// signal probe is all that is available.
 fn stillRunning(pid: u32) bool {
-    return switch (shell_tool.reap_pid_nohang(pid)) {
-        .exited => false,
-        .running => true,
-        .not_our_child => process_status.isProcessRunning(@intCast(pid)),
-    };
+    // Delegates to the registry's single implementation so the watcher, the
+    // boot sweep and the `process` tool cannot drift on what "alive" means.
+    return bg_proc.isAlive(pid);
 }
 
 /// Testable core args — explicit handles (no singleton) so unit tests stay

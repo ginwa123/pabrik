@@ -66,9 +66,10 @@ const io = testing.io;
 const Io = std.Io;
 
 const SESSION_ID = "sess_command_is_stop_1";
-/// The `tool_call.id` the stub mints. Asserted back out of the DB: the row
-/// that carries it is the proof the batch was persisted before the break.
-const CALL_ID = "call_is_stop_probe";
+/// The `tool_call.id` the stub mints for its FIRST scripted round. Asserted
+/// back out of the DB: the row that carries it is the proof the batch was
+/// persisted before the break. Later rounds mint `call_round_<n>`.
+const CALL_ID = "call_round_1";
 
 /// Cap on the recorded request head — a runaway client must not grow the
 /// accumulation without bound. Mirrors the auto-name stub.
@@ -83,6 +84,18 @@ const MAX_HEAD_BYTES = 1 << 18;
 ///
 /// `is_stop` selects whether that tool call carries the parameter — the only
 /// difference between the guarded test and its positive control.
+/// One scripted assistant turn: the tool the stub calls and the RAW JSON it
+/// sends as arguments.
+///
+/// `args` may contain the literal `{PID}`, which the stub replaces with the most
+/// recent `"pid":<digits>` it saw in the incoming conversation. That is how a
+/// scripted model can act on a pid it could not know when the script was
+/// written — exactly as a real model reads it out of the previous tool result.
+pub const StubRound = struct {
+    tool: []const u8,
+    args: []const u8,
+};
+
 const Stub = struct {
     io: Io,
     port: u16,
@@ -92,20 +105,18 @@ const Stub = struct {
     mutex: Io.Mutex = .init,
     /// Absolute `cwd` handed to the tool. The server refuses a relative one.
     cwd: []const u8,
-    /// The shell command the stub asks for. Kept short (`sleep 1`) by the mode
-    /// tests so a detached process actually EXITS during the test.
-    command: []const u8,
-    /// Raw JSON fragment appended inside the tool call's arguments object, e.g.
-    /// `,"is_stop":true` or `,"mode":"background_persistence"`. Empty for the
-    /// argument set every pre-existing caller and transcript has.
-    extra_args: []const u8,
+    /// The scripted turn per agent round. Rounds past the end answer with a
+    /// plain `stop`, which is how every script terminates.
+    rounds: []const StubRound,
     agent_calls: usize = 0,
+    /// Most recent `"pid":<n>` seen in a request body — the model's view of
+    /// "which process am I looking at".
+    last_pid: ?u32 = null,
 
     fn start(
         stub: *Stub,
         cwd: []const u8,
-        command: []const u8,
-        extra_args: []const u8,
+        rounds: []const StubRound,
     ) !void {
         stub.* = .{
             .io = io,
@@ -113,8 +124,7 @@ const Stub = struct {
             .server = undefined,
             .thread = undefined,
             .cwd = cwd,
-            .command = command,
-            .extra_args = extra_args,
+            .rounds = rounds,
         };
         stub.port = try harness.findFreePortRandom(gpa);
         const addr: Io.net.IpAddress = .{ .ip4 = .loopback(stub.port) };
@@ -208,8 +218,18 @@ fn handleRequest(stub: *Stub, stream: Io.net.Stream) !void {
         const round_index = stub.agent_calls;
         stub.mutex.unlock(stub.io);
 
-        if (round_index == 1) {
-            payload = try commandToolCallSse(stub, CALL_ID);
+        stub.mutex.lockUncancelable(stub.io);
+        stub.last_pid = lastPidInBody(body) orelse stub.last_pid;
+        const seen_pid = stub.last_pid;
+        stub.mutex.unlock(stub.io);
+
+        if (round_index <= stub.rounds.len) {
+            const round = stub.rounds[round_index - 1];
+            const args = try substitutePid(gpa, round.args, seen_pid);
+            defer gpa.free(args);
+            const call_id = try std.fmt.allocPrint(gpa, "call_round_{d}", .{round_index});
+            defer gpa.free(call_id);
+            payload = try toolCallSse(.{ .tool = round.tool, .args = args }, call_id);
         } else {
             payload = try textSse("done");
         }
@@ -244,34 +264,65 @@ fn textSse(text: []const u8) ![]u8 {
     );
 }
 
-/// One `command` tool-call round-trip, `finish_reason: "tool_calls"`.
+/// Build a `command` round with `cwd` filled in and `extra` appended verbatim,
+/// so a test states exactly which parameters it exercises — and, just as
+/// importantly, which it OMITS.
+pub fn commandRound(allocator: std.mem.Allocator, cwd: []const u8, command: []const u8, extra: []const u8) !StubRound {
+    var args_buf: Io.Writer.Allocating = .init(allocator);
+    defer args_buf.deinit();
+    const w = &args_buf.writer;
+    try w.writeAll("{\"command\":");
+    try writeJsonString(w, command);
+    try w.writeAll(",\"cwd\":");
+    try writeJsonString(w, cwd);
+    try w.writeAll(",\"timeout\":30");
+    try w.writeAll(extra);
+    try w.writeAll("}");
+    return .{ .tool = "command", .args = try args_buf.toOwnedSlice() };
+}
+
+/// The most recent `"pid":<digits>` anywhere in the request body.
+///
+/// Taking the LAST one is deliberate: this body is the whole conversation, so
+/// the newest tool result is the one the scripted "model" should be reading —
+/// which is exactly what it would do.
+fn lastPidInBody(body: []const u8) ?u32 {
+    const needle = "\"pid\":";
+    var found: ?u32 = null;
+    var i: usize = 0;
+    while (std.mem.indexOfPos(u8, body, i, needle)) |at| {
+        const start = at + needle.len;
+        var end = start;
+        while (end < body.len and body[end] >= '0' and body[end] <= '9') end += 1;
+        if (end > start) found = std.fmt.parseInt(u32, body[start..end], 10) catch found;
+        i = end;
+    }
+    return found;
+}
+
+/// Replace `{PID}` with `pid`, or copy when the script has no placeholder.
+fn substitutePid(allocator: std.mem.Allocator, args: []const u8, pid: ?u32) ![]u8 {
+    const at = std.mem.indexOf(u8, args, "{PID}") orelse return allocator.dupe(u8, args);
+    const pid_text = try std.fmt.allocPrint(allocator, "{d}", .{pid orelse 0});
+    defer allocator.free(pid_text);
+    return std.fmt.allocPrint(allocator, "{s}{s}{s}", .{ args[0..at], pid_text, args[at + "{PID}".len ..] });
+}
+
+/// One tool-call round-trip, `finish_reason: "tool_calls"`.
 ///
 /// The assistant message carries prose as well: an `is_stop` turn normally has
 /// none, which is exactly why the parameter's description tells the model to
 /// put its final answer here. Asserting the row keeps that guidance honest.
-fn commandToolCallSse(stub: *const Stub, call_id: []const u8) ![]u8 {
-    var args_buf: Io.Writer.Allocating = .init(gpa);
-    defer args_buf.deinit();
-    const w = &args_buf.writer;
-    try w.writeAll("{\"command\":");
-    try writeJsonString(w, stub.command);
-    try w.writeAll(",\"cwd\":");
-    try writeJsonString(w, stub.cwd);
-    try w.writeAll(",\"timeout\":30");
-    // Verbatim, so each test controls exactly which of the new parameters it
-    // exercises — and, just as importantly, which it OMITS.
-    try w.writeAll(stub.extra_args);
-    try w.writeAll("}");
-
-    const args_json = try jsonStringEscape(gpa, args_buf.written());
+fn toolCallSse(round: StubRound, call_id: []const u8) ![]u8 {
+    const args_json = try jsonStringEscape(gpa, round.args);
     defer gpa.free(args_json);
 
     return std.fmt.allocPrint(
         gpa,
-        "data: {{\"id\":\"chatcmpl-stub-tool\",\"object\":\"chat.completion.chunk\",\"model\":\"stub-model\",\"choices\":[{{\"index\":0,\"delta\":{{\"role\":\"assistant\",\"content\":\"stopping after this call\",\"tool_calls\":[{{\"index\":0,\"id\":\"{s}\",\"type\":\"function\",\"function\":{{\"name\":\"command\",\"arguments\":\"{s}\"}}}}]}},\"finish_reason\":null}}]}}\n\n" ++
+        "data: {{\"id\":\"chatcmpl-stub-tool\",\"object\":\"chat.completion.chunk\",\"model\":\"stub-model\",\"choices\":[{{\"index\":0,\"delta\":{{\"role\":\"assistant\",\"content\":\"calling {s}\",\"tool_calls\":[{{\"index\":0,\"id\":\"{s}\",\"type\":\"function\",\"function\":{{\"name\":\"{s}\",\"arguments\":\"{s}\"}}}}]}},\"finish_reason\":null}}]}}\n\n" ++
             "data: {{\"id\":\"chatcmpl-stub-tool\",\"object\":\"chat.completion.chunk\",\"model\":\"stub-model\",\"choices\":[{{\"index\":0,\"delta\":{{}},\"finish_reason\":\"tool_calls\"}}]}}\n\n" ++
             "data: [DONE]\n\n",
-        .{ call_id, args_json },
+        .{ round.tool, call_id, round.tool, args_json },
     );
 }
 
@@ -548,7 +599,12 @@ test "is_stop ends the turn after one model call, with the batch persisted" {
     };
 
     var stub: Stub = undefined;
-    try stub.start(h.temp_dir, "echo is-stop-probe", ",\"is_stop\":true");
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const script = [_]StubRound{
+        try commandRound(arena.allocator(), h.temp_dir, "echo is-stop-probe", ",\"is_stop\":true"),
+    };
+    try stub.start(h.temp_dir, &script);
     defer stub.deinit();
 
     const profile = "is-stop-stub";
@@ -614,7 +670,13 @@ test "without is_stop the loop calls the model again (positive control)" {
     };
 
     var stub: Stub = undefined;
-    try stub.start(h.temp_dir, "echo is-stop-probe", ""); // `is_stop` omitted entirely
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const script = [_]StubRound{
+        // `is_stop` omitted entirely — the pre-existing argument set.
+        try commandRound(arena.allocator(), h.temp_dir, "echo is-stop-probe", ""),
+    };
+    try stub.start(h.temp_dir, &script);
     defer stub.deinit();
 
     const profile = "no-is-stop-stub";
@@ -668,11 +730,17 @@ test "background_persistence queues NOTHING when the service exits" {
     // `sleep 1`, not a dev server: the process has to EXIT inside the test for
     // "no message was queued" to mean anything. A never-exiting server would
     // satisfy the assertion trivially and prove nothing.
-    try stub.start(
-        h.temp_dir,
-        "sleep 1",
-        ",\"mode\":\"background_persistence\",\"is_stop\":true",
-    );
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const script = [_]StubRound{
+        try commandRound(
+            arena.allocator(),
+            h.temp_dir,
+            "sleep 1",
+            ",\"mode\":\"background_persistence\",\"is_stop\":true",
+        ),
+    };
+    try stub.start(h.temp_dir, &script);
     defer stub.deinit();
 
     const profile = "persistence-stub";
@@ -756,11 +824,17 @@ test "background DOES queue the completion — the control for the test above" {
     };
 
     var stub: Stub = undefined;
-    try stub.start(
-        h.temp_dir,
-        "sleep 1",
-        ",\"mode\":\"background\",\"is_stop\":true",
-    );
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const script = [_]StubRound{
+        try commandRound(
+            arena.allocator(),
+            h.temp_dir,
+            "sleep 1",
+            ",\"mode\":\"background\",\"is_stop\":true",
+        ),
+    };
+    try stub.start(h.temp_dir, &script);
     defer stub.deinit();
 
     const profile = "background-stub";
@@ -795,4 +869,119 @@ test "background DOES queue the completion — the control for the test above" {
         );
         return error.TestUnexpectedResult;
     }
+}
+
+// ============================================================================
+// `process` — what the agent can see of what it started
+// ============================================================================
+//
+// `background_persistence` is SILENT by contract, so this tool is the only way
+// the agent can find out what it started. The script therefore runs the two
+// halves a wire test can pin: `command` starts a service, then `process` asks.
+//
+// The assertions read the PERSISTED tool result — the exact payload the model
+// was handed. `service-marker` is the service's own command text, so it can only
+// be in the payload if `list` resolved THIS session's row; the refusal prose is
+// the failure mode that would otherwise look like an empty answer.
+//
+// `read` and `stop` are covered at the unit level in `background_process.zig`
+// (the delta cursor, the EOF clamp, the missing log, the cross-session refusal,
+// the service-only sweep). Driving them through a scripted pid placeholder
+// here would mostly be testing the stub.
+
+/// Every `process` tool result this session persisted, concatenated.
+fn processToolRows(db_path: []const u8) ![]u8 {
+    return sqlRun(db_path,
+        \\SELECT COALESCE(group_concat(response_content, ' --ROW-- '), '') AS blob
+        \\FROM llm_history
+        \\WHERE session_id = 'sess_command_is_stop_1' AND tool_name = 'process';
+    );
+}
+
+/// True when the `sqlite3 -json` output carries no blob at all. `-json` prints
+/// an empty result set as `[{"blob":""}]`, NOT as an empty string — so the
+/// emptiness test has to look inside the envelope, which is the mistake that
+/// made an earlier version of this test pass its own guard and then assert on
+/// nothing.
+fn blobIsEmpty(json_out: []const u8) bool {
+    const t = std.mem.trim(u8, json_out, " \t\r\n");
+    return t.len == 0 or std.mem.indexOf(u8, t, "\"blob\":\"\"") != null;
+}
+
+test "process: the agent can see a service it started" {
+    try harness.requirePabrikBin(io, gpa);
+    try requireSqlite3Cli();
+
+    var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
+    defer h.deinit(io) catch |err| {
+        std.debug.print("teardown: {s}\n", .{@errorName(err)});
+    };
+
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    const script = [_]StubRound{
+        // Start a SERVICE. No `is_stop`: the turn must continue so the next
+        // round runs.
+        try commandRound(
+            a,
+            h.temp_dir,
+            "sh -c 'echo service-marker; sleep 30'",
+            ",\"mode\":\"background_persistence\"",
+        ),
+        // Ask what is running.
+        .{ .tool = "process", .args = "{\"action\":\"list\"}" },
+    };
+
+    var stub: Stub = undefined;
+    try stub.start(h.temp_dir, &script);
+    defer stub.deinit();
+
+    const profile = "process-stub";
+    try useStubProfile(&h, stub.port, profile);
+    try sendTurn(&h, "start the service, then show me what is running", profile);
+
+    const db_path = try dbPath(&h);
+    defer gpa.free(db_path);
+
+    // Wait for the RESULT, not for the turn. The result is the claim; whether
+    // the turn has ended is a different question with several legitimate
+    // answers (a queued message, a wake).
+    var rows = try processToolRows(db_path);
+    defer gpa.free(rows);
+    const deadline = nowMs() + 60_000;
+    while (nowMs() < deadline and blobIsEmpty(rows)) {
+        sleepMs(250);
+        gpa.free(rows);
+        rows = try processToolRows(db_path);
+    }
+    if (blobIsEmpty(rows)) {
+        std.debug.print("`process` produced no tool result (model_calls={d})\n", .{stub.agentCallCount()});
+        return error.TestUnexpectedResult;
+    }
+
+    // The service's own command text travelled through `list` — this session's
+    // row, read back by the tool. Nothing else could put it in the payload.
+    if (std.mem.indexOf(u8, rows, "service-marker") == null) {
+        std.debug.print("`process list` did not report the service this session started. rows:\n{s}\n", .{rows});
+        return error.TestUnexpectedResult;
+    }
+    // ...and `kind` is on the wire, which is what tells the model it will never
+    // be notified about this one.
+    if (std.mem.indexOf(u8, rows, "service") == null) {
+        std.debug.print("`process list` did not report the kind. rows:\n{s}\n", .{rows});
+        return error.TestUnexpectedResult;
+    }
+    // The refusal path did not fire: the tool found a process it owns, so the
+    // session scoping is not hiding this session's own rows.
+    if (std.mem.indexOf(u8, rows, "is not a process this session started") != null) {
+        std.debug.print("`process` refused its own session's process\n", .{});
+        return error.TestUnexpectedResult;
+    }
+
+    // The DB half of the same claim.
+    var row = (try newestBackgroundRow(db_path)) orelse return error.TestUnexpectedResult;
+    defer row.deinit();
+    try testing.expectEqualStrings("service", row.kind);
 }

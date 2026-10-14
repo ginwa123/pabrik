@@ -541,3 +541,78 @@ watcher this PR changed): `background_command_completion` 3/3, `background_proce
 
 The `process` tool (read delta / stop / list) — §3.7, PR 3. G7 (the frontend parses XML for an
 envelope the backend emits as JSON, a #563 regression) is still open and still frontend.
+
+---
+
+## 11. Implementation log — PR 3 (`process` tool) + G7
+
+### 11.1 The `process` tool
+
+`read` / `stop` / `list`, registered in `UNIFIED_TOOL_REGISTRY`, `equips()` and — the point of it —
+`DEFAULT_AGENT_TOOLS`. A tool the model cannot call is not a feature: `background_persistence` is
+silent by contract, so without this an agent that started a dev server has no way to look at it and
+no way to end it, and the only alternatives are a shell `tail` and a `kill` that does not reach the
+workers.
+
+- **`read`** returns only the bytes after the persisted cursor (migration **108**,
+  `last_read_offset`), so a poll with no news costs a few tokens instead of re-sending the head of a
+  file that has only grown. A byte cursor rather than a line count, because the file is appended to
+  by another process while we read it and `pread` wants an offset.
+- **`stop`** is `shell.stopDetachedProcess` — the process GROUP, per part 2's `pid == pgid` spawn —
+  and it writes `status='killed'` so `list` stops claiming the process is running.
+- **`list`** reports live liveness (`background_process.isAlive`, i.e. reap-then-probe) and `kind`.
+
+Expected failures (bad action, missing pid, another session's pid) come back as a payload with
+`ok:false` and prose, **not** as a Zig error: `dispatchTool`'s catch-all would reduce those to
+`process failed: ErrorName`, which names no field and no fix.
+
+`getByPid` is scoped by `session_id`. The pid is the model's argument, and pids are small enough to
+guess — a bare pid lookup would let one session read or kill another's process.
+
+### 11.2 G7 — the frontend parser learned the JSON envelope
+
+`helpers/isBackgroundCommandOutput.ts` now recognises the envelope the backend has actually emitted
+since #563 (JSON), keeping the XML and legacy-prose branches for old rows. No `try`/`catch`:
+`Effect.try` + `Effect.either` + `runSync`, the same idiom as `helpers/prStatusCache.ts`, so the
+failure is a `Left` and `local/no-try-catch` stays satisfied. 7 new spec cases (16 total, all green)
+plus a clean `eslint` run on both changed frontend files.
+
+### 11.3 Verification
+
+- **Unit**: the shard containing the new `background_process` tests ran standalone —
+  **688 passed; 2 skipped; 0 failed**. Six new tests: the delta cursor (whole log once, then only
+  what is new, cursor persisted), the cap + `more_pending`, the past-EOF clamp (a truncated log must
+  not go silent for ever), the missing-log distinction, the cross-session refusal with its positive
+  control, and the service-only sweep (a `job` row survives).
+- **Functional**: `tests/functional/command_is_stop_test.zig` — 5/5, including
+  `process: the agent can see a service it started`, which drives a scripted model through
+  `command mode=background_persistence` → `process action=list` and asserts the persisted tool result
+  carries the service's own command text and its `kind`, with the refusal prose absent.
+- **Functional (registry ripple)**: `command_tool` 6/6, `agent_tools_defaults` 4/4,
+  `agent_tools_toggle` 13/13, `agent_kanbans` 10/10, `document_agent_tools` 7/7.
+
+#### A pre-existing red suite, found and fixed
+
+Adding a tool to `DEFAULT_AGENT_TOOLS` is supposed to be a one-line change plus six transcribed
+lists. Those lists were **already one entry short**: `list_secrets` has been in the backend default
+set since PR #823 and in none of the transcriptions, so all five suites above were red on `main`
+(31 transcribed vs 32 real). Fixed here by adding both `list_secrets` and `process` — the counts now
+agree at 33 (35 for the kanban pair) and the suites are green. The drift is exactly what
+`tests/functional/default_tools.py`'s header warns about, and it happened anyway.
+
+#### The sharded runner hangs on this box — not this change
+
+`zig build test` (8 parallel shards) intermittently stalls: two shards sat for ~10 minutes with no
+progress, twice, on different shards. Investigated rather than assumed:
+
+- each stalled shard passes on its own (`b8c9ede9` → "All 3 tests passed"; the shard holding the new
+  `background_process` tests → 688 passed / 0 failed);
+- the `failed command:` lines in the log are NOT the verdict — they appear for shards that PASSED
+  (seen at the very start of this session too);
+- **the hang is not the new shell test**: it was disabled with an unconditional early `return` and the
+  hang persisted, then the flag was reverted (verified: no residue);
+- full-suite runs did go green earlier in this session (4352/4362 and 4355/4365, 0 failed), which is
+  how the two prior parts were verified.
+
+So the residual risk is a test-RUNNER stall in this environment, not a failing assertion. Worth its
+own investigation, and it is recorded here rather than papered over.

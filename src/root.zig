@@ -68,6 +68,10 @@ pub const command_tool = @import("modules/agent/tools/command.zig");
 /// STOP a detached service with a tree kill, and that lives next to the spawn
 /// whose `.pgid = 0` is what makes `pid == pgid` true.
 pub const shell_tool = @import("modules/agent/tools/shell.zig");
+/// `process` — read/stop/list the detached processes this session started.
+/// The read half is what a `background_persistence` service needs, since that
+/// mode deliberately never notifies.
+pub const process_tool = @import("modules/agent/tools/process.zig");
 pub const tool_models = @import("modules/agent/tools/schemas.zig");
 pub const tools = @import("modules/agent/tools/tools.zig");
 pub const change_agent = @import("modules/agent/tools/change_agent.zig");

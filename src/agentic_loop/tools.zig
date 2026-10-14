@@ -57,6 +57,9 @@ pub const execSearch = @import("tools_exec_search.zig").execSearch;
 pub const execBash = @import("tools_exec_bash.zig").execBash;
 pub const execPwsh = @import("tools_exec_pwsh.zig").execPwsh;
 pub const execCommand = @import("tools_exec_command.zig").execCommand;
+/// `process` — read the delta of a detached process's log, stop it (tree
+/// included), or list what this session started.
+pub const execProcess = @import("tools_exec_process.zig").execProcess;
 // 2026-08-14 — list_directory agent tool (Task 5 of ban-absolute-paths plan).
 pub const execListDirectory = @import("tools_exec_list_directory.zig").execListDirectory;
 pub const execSpawnSubAgent = @import("tools_exec_spawn_sub_agent.zig").execSpawnSubAgent;
