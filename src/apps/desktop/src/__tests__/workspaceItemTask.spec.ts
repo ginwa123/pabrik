@@ -205,80 +205,114 @@ describe('WorkspaceItemTaskRow per-task row', () => {
     expect(wrapper.emitted('selectTask')).toBeUndefined()
   })
 
-  it('emits renameTask with (workspaceId, itemId, taskId, currentName) when the pencil is clicked', async () => {
+  // ─── Right-click action menu ────────────────────────────────────────────
+  //
+  // The row's three hover buttons (pin / rename / delete) were migrated
+  // into <OpenInNewTabMenu>. Every action must still fire with the SAME
+  // emitted payload, or the change silently removed functionality.
+  //
+  // The menu is Teleported to `body`, so its rows are queried from the
+  // document rather than through the wrapper — and because it never
+  // traverses the row, picking a row cannot also fire the row's @click.
+  // That is what the old stopPropagation guards protected against, so
+  // the "does NOT emit selectTask" assertions below are the behaviour
+  // those guards used to provide, now asserted on the outcome.
+
+  const openRowMenu = async (wrapper: ReturnType<typeof mountTask>['wrapper']) => {
+    await wrapper.find('[data-task-row]').trigger('contextmenu', { clientX: 40, clientY: 80 })
+    await nextTick()
+  }
+
+  const menuItem = (testid: string) =>
+    document.body.querySelector(`[data-testid="${testid}"]`) as HTMLButtonElement | null
+
+  const clickMenuItem = async (testid: string) => {
+    const el = menuItem(testid)
+    if (!el) throw new Error(`menu item ${testid} not found`)
+    el.click()
+    await nextTick()
+  }
+
+  it('emits renameTask with (workspaceId, itemId, taskId, currentName) from the menu', async () => {
     const { wrapper } = mountTask({
       workspaceId: 'ws_xyz',
       itemId: 'item_xyz',
     })
-    const renameBtn = wrapper.find('button[title="Rename Task"]')
-    expect(renameBtn.exists()).toBe(true)
-    await renameBtn.trigger('click')
+    await openRowMenu(wrapper)
+    await clickMenuItem('rename-task-menu-item')
+
     const emitted = wrapper.emitted('renameTask')
     expect(emitted).toBeDefined()
     expect(emitted!).toHaveLength(1)
     expect(emitted![0]).toEqual(['ws_xyz', 'item_xyz', 'task_alpha', 'Alpha task'])
+
+    wrapper.unmount()
   })
 
-  it('emits deleteTask with (workspaceId, itemId, taskId) when the trash icon is clicked', async () => {
+  it('emits deleteTask with (workspaceId, itemId, taskId) from the menu', async () => {
     const { wrapper } = mountTask({
       workspaceId: 'ws_xyz',
       itemId: 'item_xyz',
     })
-    // The delete button has no title; select via the hover color class.
-    const deleteBtn = wrapper.find('button.hover\\:text-red-400')
-    expect(deleteBtn.exists()).toBe(true)
-    await deleteBtn.trigger('click')
+    await openRowMenu(wrapper)
+    await clickMenuItem('delete-task-menu-item')
+
     const emitted = wrapper.emitted('deleteTask')
     expect(emitted).toBeDefined()
     expect(emitted!).toHaveLength(1)
     expect(emitted![0]).toEqual(['ws_xyz', 'item_xyz', 'task_alpha'])
+
+    wrapper.unmount()
   })
 
-  it('does NOT emit selectTask when the rename button is clicked (stopPropagation guard)', async () => {
+  it('emits pinTask with the INVERTED value from the menu', async () => {
     const { wrapper } = mountTask()
-    const renameBtn = wrapper.find('button[title="Rename Task"]')
-    await renameBtn.trigger('click')
-    // The pencil lives inside the row <button @click="...">. Without
-    // event.stopPropagation in handleRenameTask, the click would
-    // bubble and selectTask would fire as a side-effect — confusing UX.
+    await openRowMenu(wrapper)
+    await clickMenuItem('open-new-tab-pin-item')
+
+    expect(wrapper.emitted('pinTask')?.[0]).toEqual(['ws_1', 'item_1', 'task_alpha', true])
+
+    wrapper.unmount()
+  })
+
+  it('does NOT emit selectTask when a menu row is picked', async () => {
+    // The old inline buttons needed event.stopPropagation so the click
+    // did not bubble to the row's @click. The teleported menu never
+    // traverses the row, so this asserts the outcome survived rather
+    // than relying on a guard that no longer has anything to guard.
+    const { wrapper } = mountTask()
+    // Each pick closes the menu, so reopen between the two.
+    await openRowMenu(wrapper)
+    await clickMenuItem('rename-task-menu-item')
+    await openRowMenu(wrapper)
+    await clickMenuItem('delete-task-menu-item')
+
     expect(wrapper.emitted('selectTask')).toBeUndefined()
+
+    wrapper.unmount()
   })
 
-  it('does NOT emit selectTask when the delete button is clicked (stopPropagation guard)', async () => {
+  it('renders NO hover action buttons in the row', async () => {
+    // The buttons ate ~72px of a ~200px panel and truncated the task
+    // name. A regression that re-adds one costs that width back.
     const { wrapper } = mountTask()
-    const deleteBtn = wrapper.find('button.hover\\:text-red-400')
-    await deleteBtn.trigger('click')
-    expect(wrapper.emitted('selectTask')).toBeUndefined()
+    expect(wrapper.find('[data-testid="task-pin-toggle"]').exists()).toBe(false)
+    expect(wrapper.find('button[title="Rename Task"]').exists()).toBe(false)
+    // The row root is a <div role="button">, so any <button> left in the
+    // row would be a re-added action.
+    expect(wrapper.findAll('button')).toHaveLength(0)
+
+    wrapper.unmount()
   })
 
-  it('keeps rename and delete buttons always visible (opacity-60 quiet state)', async () => {
-    const { wrapper } = mountTask()
-    // V2 sidebar UX: actions are always visible, quiet until hover.
-    const renameBtn = wrapper.find('button[title="Rename Task"]')
-    const deleteBtn = wrapper.find('button.hover\\:text-red-400')
-    expect(renameBtn.classes()).toContain('opacity-60')
-    expect(deleteBtn.classes()).toContain('opacity-60')
-    expect(renameBtn.classes()).not.toContain('opacity-0')
-    expect(deleteBtn.classes()).not.toContain('opacity-0')
-  })
+  it('keeps the pin INDICATOR (state, not an action) when pinned', async () => {
+    const { wrapper } = mountTask({ task: { ...baseTask, is_pinned: true } as typeof baseTask })
+    await nextTick()
+    expect(wrapper.find('[data-testid="task-pin-indicator"]').exists()).toBe(true)
+    // The pin toggle is gone; the indicator is not.
+    expect(wrapper.find('[data-testid="task-pin-toggle"]').exists()).toBe(false)
 
-  it('renders the row plus the pin/rename/delete action buttons (3 buttons total)', async () => {
-    // The row root is a <div role="button"> (not a <button>) because the
-    // action buttons are nested inside it and HTML forbids
-    // button-inside-button. So the count here is the three INNER buttons;
-    // the row itself is asserted separately by its data attribute.
-    //
-    // Updated for the pinned-tasks feature (plan:
-    // docs/superpowers/plans/2026-06-20-pinned-workspace-item-tasks.md).
-    // The pin/unpin toggle button slots in between the row and the
-    // rename button.
-    const { wrapper } = mountTask()
-    expect(wrapper.find('[data-task-row]').exists()).toBe(true)
-    expect(wrapper.find('[data-task-row]').element.tagName).toBe('DIV')
-    expect(wrapper.find('[data-task-row]').attributes('role')).toBe('button')
-    expect(wrapper.find('[data-task-row]').attributes('tabindex')).toBe('0')
-    const allButtons = wrapper.findAll('button')
-    expect(allButtons.length).toBe(3)
+    wrapper.unmount()
   })
 
   it('emits the four renameTask args in the documented order', async () => {
@@ -292,12 +326,51 @@ describe('WorkspaceItemTaskRow per-task row', () => {
       workspaceId: 'ws_order',
       itemId: 'item_order',
     })
-    const renameBtn = wrapper.find('button[title="Rename Task"]')
-    await renameBtn.trigger('click')
+    await openRowMenu(wrapper)
+    await clickMenuItem('rename-task-menu-item')
     const args = wrapper.emitted('renameTask')![0]! as [string, string, string, string]
     expect(args[0]).toBe('ws_order') // workspaceId
     expect(args[1]).toBe('item_order') // itemId
     expect(args[2]).toBe('task_alpha') // taskId
     expect(args[3]).toBe('Alpha task') // currentName
+
+    wrapper.unmount()
+  })
+
+  it('opens the action menu from the ContextMenu key, anchored at the row', async () => {
+    // Removing the hover buttons removed the only discoverable route to
+    // rename / delete, so the keyboard path is a hard requirement —
+    // without it the change is an accessibility regression.
+    const { wrapper } = mountTask()
+    await wrapper.find('[data-task-row]').trigger('keydown', { key: 'ContextMenu' })
+    await nextTick()
+
+    expect(menuItem('open-new-tab-menu')).toBeTruthy()
+    // Enter/Space must still open the chat, not the menu.
+    expect(wrapper.emitted('selectTask')).toBeUndefined()
+
+    wrapper.unmount()
+  })
+
+  it('opens the action menu from Shift+F10', async () => {
+    const { wrapper } = mountTask()
+    await wrapper.find('[data-task-row]').trigger('keydown', { key: 'F10', shiftKey: true })
+    await nextTick()
+
+    expect(menuItem('open-new-tab-menu')).toBeTruthy()
+
+    wrapper.unmount()
+  })
+
+  it('closes the menu on Escape', async () => {
+    const { wrapper } = mountTask()
+    await openRowMenu(wrapper)
+    expect(menuItem('open-new-tab-menu')).toBeTruthy()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await nextTick()
+    expect(menuItem('open-new-tab-menu')).toBeNull()
+
+    wrapper.unmount()
   })
 })

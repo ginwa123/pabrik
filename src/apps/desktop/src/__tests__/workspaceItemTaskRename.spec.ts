@@ -1,9 +1,18 @@
 /**
- * Component tests for the rename-task pencil button on the task row
- * in WorkspaceItem.vue. Covers the button's presence on hover, the
- * emit signature, and the critical stopPropagation guard that
- * prevents the click from bubbling up to the parent row's
- * selectTask handler.
+ * Component tests for the rename-task action on the task row in
+ * WorkspaceItem.vue.
+ *
+ * The action used to be a hover pencil button on the row; it now lives
+ * in the row's right-click menu (<OpenInNewTabMenu>), the same
+ * migration <WorkspaceItemTaskCard> made. These tests mount
+ * <WorkspaceItem> — the real parent chain — so they cover the
+ * integration: the row opens its menu, the menu row emits, and
+ * WorkspaceItem re-emits renameTask up to ProjectsList unchanged.
+ *
+ * The old stopPropagation guard is gone with the button: the menu is
+ * Teleported to `body`, so its clicks never traverse the row and
+ * cannot fire the row's selectTask. The "does NOT emit selectTask"
+ * test below asserts that outcome directly.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
@@ -56,65 +65,80 @@ describe('WorkspaceItem task rename button', () => {
     // Pinia is torn down by the next beforeEach.
   })
 
-  it('emits renameTask with workspaceId, itemId, taskId, currentName when the pencil is clicked', async () => {
+  // The menu is Teleported to `body`, so its rows are queried from the
+  // document rather than through the wrapper.
+  const menuItem = (testid: string) =>
+    document.body.querySelector(`[data-testid="${testid}"]`) as HTMLButtonElement | null
+
+  const openRowMenu = async (wrapper: ReturnType<typeof mountWorkspaceItem>['wrapper']) => {
+    await wrapper.find('[data-task-row]').trigger('contextmenu', { clientX: 40, clientY: 80 })
+    await nextTick()
+  }
+
+  it('emits renameTask with workspaceId, itemId, taskId, currentName from the menu', async () => {
     const { wrapper } = mountWorkspaceItem()
     expandItem()
     await nextTick()
+    await openRowMenu(wrapper)
 
-    const renameBtn = wrapper.find('button[title="Rename Task"]')
-    expect(renameBtn.exists()).toBe(true)
-
-    await renameBtn.trigger('click')
+    const item = menuItem('rename-task-menu-item')
+    expect(item).toBeTruthy()
+    item!.click()
+    await nextTick()
 
     const emitted = wrapper.emitted('renameTask')
     expect(emitted).toBeDefined()
     // Single emission, with the four documented args in order.
     expect(emitted!).toHaveLength(1)
     expect(emitted![0]).toEqual(['ws_1', 'item_1', 'task_alpha', 'Alpha task'])
+
+    wrapper.unmount()
   })
 
-  it('does NOT emit selectTask when the pencil is clicked (stopPropagation guard)', async () => {
+  it('does NOT emit selectTask when the rename row is picked', async () => {
+    // The pencil used to sit inside the row's @click, so it needed
+    // event.stopPropagation or the click bubbled and selected the task
+    // as a side-effect. The teleported menu never traverses the row, so
+    // this asserts the outcome survived rather than the guard.
     const { wrapper } = mountWorkspaceItem()
     expandItem()
     await nextTick()
+    await openRowMenu(wrapper)
+    menuItem('rename-task-menu-item')!.click()
+    await nextTick()
 
-    const renameBtn = wrapper.find('button[title="Rename Task"]')
-    await renameBtn.trigger('click')
-
-    // The pencil lives inside the row <button @click="handleSelectTask(...)">.
-    // Without event.stopPropagation in handleRenameTask, the click would
-    // bubble and selectTask would fire as a side-effect — confusing UX.
     expect(wrapper.emitted('selectTask')).toBeUndefined()
+
+    wrapper.unmount()
   })
 
-  it('keeps the pencil always visible (no hover needed, opacity-60 quiet state)', async () => {
+  it('offers rename and delete in the menu, so neither action is stranded', async () => {
+    // Regression guard: the pencil was inserted *before* the existing
+    // delete button. A future refactor that drops one of the two menu
+    // rows would silently break that feature — the row has no other
+    // route to it.
+    const { wrapper } = mountWorkspaceItem()
+    expandItem()
+    await nextTick()
+    await openRowMenu(wrapper)
+
+    expect(menuItem('rename-task-menu-item')).toBeTruthy()
+    expect(menuItem('delete-task-menu-item')).toBeTruthy()
+
+    wrapper.unmount()
+  })
+
+  it('renders NO hover action buttons on the task row', async () => {
     const { wrapper } = mountWorkspaceItem()
     expandItem()
     await nextTick()
 
-    const renameBtn = wrapper.find('button[title="Rename Task"]')
-    expect(renameBtn.exists()).toBe(true)
-    // V2 sidebar UX: actions are always visible (quiet opacity-60
-    // until hover). They must never carry opacity-0 again.
-    expect(renameBtn.classes()).toContain('opacity-60')
-    expect(renameBtn.classes()).not.toContain('opacity-0')
-  })
+    expect(wrapper.find('[data-testid="task-pin-toggle"]').exists()).toBe(false)
+    expect(wrapper.find('button[title="Rename Task"]').exists()).toBe(false)
+    // The row root is a <div role="button">, so any <button> inside it
+    // would be a re-added action.
+    expect(wrapper.find('[data-task-row]').findAll('button')).toHaveLength(0)
 
-  it('still renders a delete button alongside the rename button', async () => {
-    // Regression guard: the rename button was inserted *before* the
-    // existing delete button. A future refactor that drops the
-    // delete button would silently break the delete feature.
-    const { wrapper } = mountWorkspaceItem()
-    expandItem()
-    await nextTick()
-
-    expect(wrapper.find('button[title="Rename Task"]').exists()).toBe(true)
-    // The delete button has no title, but it's the only other w-4
-    // h-4 button with a hover:text-red-400 class. Use a more robust
-    // selector: find all task-row buttons and assert the count.
-    const allButtons = wrapper.findAll('button')
-    // The row itself is a <button>, plus the rename and delete
-    // buttons = 3 total inside the task list.
-    expect(allButtons.length).toBeGreaterThanOrEqual(3)
+    wrapper.unmount()
   })
 })
