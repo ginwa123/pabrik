@@ -50,6 +50,20 @@ export default defineConfigWithVueTs(
     files: ['src/**/*.{vue,ts}'],
     plugins: { local: localBannedCode },
     rules: {
+      // A comment block may span at most three lines — the Vue/TS half of
+      // CODING_STANDARDS.md §4, whose Zig half is `zginlint/max-comment-lines`.
+      // Same ceiling, same semantics: a blank line or a code line ends a
+      // block, a trailing comment never starts one, and a `/* … */` counts
+      // by the lines it spans. HTML comments in `<template>` and CSS
+      // comments in `<style>` are out of scope — see the rule file for why
+      // each is a documented gap rather than a silent one.
+      //
+      // 3,822 pre-existing blocks across 733 files, so this rides the same
+      // per-file ratchet as the bans below: regenerate with
+      // `pnpm run lint:banned-baseline` only after fixing debt, never to
+      // silence a new violation. `docs/comment-length-policy.md` is the
+      // working companion.
+      'local/max-comment-lines': 'error',
       // Zero occurrences today. `watchEffect` tracks its dependencies
       // implicitly, so a later refactor can silently change when it re-runs —
       // it is the Vue spelling of the useEffect anti-pattern.
