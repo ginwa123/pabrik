@@ -1101,28 +1101,38 @@ pub fn BuildBackgroundProcessPrompt(
 
     // Get all background processes for this session
     const processes = try background_process.getBySession(db, allocator, session_id);
-    defer {
-        for (processes) |p| {
-            allocator.free(p.command);
-            allocator.free(p.log_path);
-            allocator.free(p.status);
-        }
-        allocator.free(processes);
-    }
+    // One helper instead of an inline loop: this block used to free three
+    // fields by hand, so adding a fourth to `ProcessInfo` (the `kind` column,
+    // migration 107) turned it into a leak that fails the whole suite.
+    defer background_process.freeProcessInfos(allocator, processes);
 
     if (processes.len == 0) {
         return allocator.dupe(u8, "");
     }
 
-    try processesBuilder.appendSlice(allocator, "## Running Background Processes\n\n");
-    try processesBuilder.appendSlice(allocator, "The following background processes are running for this session:\n\n");
+    try processesBuilder.appendSlice(allocator, "## Background Processes For This Session\n\n");
+    // `kind` is the load-bearing part of this block now. `service` means the
+    // agent will NEVER be told this process exited — it has to look, and it
+    // has to stop it when it is done. Without that distinction the model sees
+    // a dev server and a build in the same list and cannot tell which one it
+    // owes a follow-up to.
+    try processesBuilder.appendSlice(allocator,
+        \\`job` = a bounded command; you WILL be messaged when it exits.
+        \\`service` (mode="background_persistence") = SILENT — no message, ever. Read its log
+        \\(`tail -n 50 <log path>`) when you need to know something, and stop it yourself
+        \\(it dies only if you kill it, or when pabrik shuts down). Status is the stored value
+        \\and can lag; the log is the truth.
+        \\
+    );
 
     for (processes) |p| {
         try processesBuilder.appendSlice(allocator, "- **PID: ");
         const pid_str = try std.fmt.allocPrint(allocator, "{}", .{p.pid});
         defer allocator.free(pid_str);
         try processesBuilder.appendSlice(allocator, pid_str);
-        try processesBuilder.appendSlice(allocator, "** | Status: ");
+        try processesBuilder.appendSlice(allocator, "** | ");
+        try processesBuilder.appendSlice(allocator, p.kind);
+        try processesBuilder.appendSlice(allocator, " | Status: ");
         try processesBuilder.appendSlice(allocator, p.status);
         try processesBuilder.appendSlice(allocator, " | Command: `");
         try processesBuilder.appendSlice(allocator, p.command);

@@ -368,9 +368,17 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
     var dead: std.ArrayListUnmanaged(DeadPair) = .empty;
     defer dead.deinit(a);
 
+    // `kind = 'job'` is not an optimization — it is the OTHER HALF of
+    // `mode="background_persistence"`'s contract. The immediate watcher is not
+    // scheduled for a service, so this cron is the only remaining thing that
+    // could notify one; without the filter it would queue "your dev server
+    // exited" a month later, which is exactly the message the mode exists to
+    // suppress. A row whose `kind` is NULL or anything else matches NOTHING and
+    // would leak, so the column is NOT NULL DEFAULT 'job' (migration 107).
     const select_sql =
         \\SELECT session_id, pid, command, log_path
         \\FROM session_background_process
+        \\WHERE kind = 'job'
     ;
 
     var rows = try db.query(a, select_sql, &.{});

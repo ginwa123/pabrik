@@ -2648,16 +2648,16 @@ test "secrets: the shell echo case is scrubbed too (shell.zig puts the command i
     // is the leak that survives when redaction is applied anywhere other than
     // immediately before persistence.
     //
-    // `mandatory_timeout` and `cwd` are BOTH required by `execute_command`;
+    // `timeout` and `cwd` are BOTH required by `execute_command`;
     // without either the tool returns an error envelope and never runs a shell,
     // which would leave the leak one layer short and the test below passing for
     // the wrong reason.
-    // 60 also sits at exactly shell.zig's MAX_MANDATORY_TIMEOUT_SEC, so an
+    // 60 also sits at exactly shell.zig's MAX_TIMEOUT_SEC, so an
     // over-max deadline would short the leak the same way — the minted value
     // must stay at or under one minute.
     const args = try std.fmt.allocPrint(
         allocator,
-        "{{\"command\":\"echo {{{{SECRETS:TOK}}}}\",\"cwd\":\"/tmp\",\"mandatory_timeout\":60}}",
+        "{{\"command\":\"echo {{{{SECRETS:TOK}}}}\",\"cwd\":\"/tmp\",\"timeout\":60}}",
         .{},
     );
     const tc = agent.ToolCall{ .id = "call_secrets_shell", .function = .{ .name = "command", .arguments = args } };

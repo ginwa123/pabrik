@@ -84,7 +84,7 @@ test "pwsh_tool schema: tool name is 'pwsh'" {
     try testing.expectEqualStrings("pwsh", pwsh.pwsh_tool.function.name);
 }
 
-test "pwsh_tool schema: required fields match bash (command, cwd, mandatory_timeout)" {
+test "pwsh_tool schema: required fields match bash (command, cwd, timeout)" {
     // The wire contract mirrors bash: same three required fields.
     const params = pwsh.pwsh_tool.function.parameters;
     try testing.expectEqualStrings("object", params.type);
@@ -96,7 +96,7 @@ test "pwsh_tool schema: required fields match bash (command, cwd, mandatory_time
     for (params.properties) |prop| {
         if (std.mem.eql(u8, prop.name, "command")) found_command = true;
         if (std.mem.eql(u8, prop.name, "cwd")) found_cwd = true;
-        if (std.mem.eql(u8, prop.name, "mandatory_timeout")) found_mt = true;
+        if (std.mem.eql(u8, prop.name, "timeout")) found_mt = true;
     }
     try testing.expect(found_command);
     try testing.expect(found_cwd);

@@ -36,7 +36,7 @@ pub const RunResult = struct {
 ///
 /// Argument parsing uses `tools_exec_bash_args.parseShellArgs` (lenient:
 /// recovers LLM-hallucinated XML fragments like
-/// `mandatory_timeout: "5</mandatory_timeout>"` → 5, surfaces structured
+/// `timeout: "5</timeout>"` → 5, surfaces structured
 /// InvalidField info on real coercion failures).
 pub fn runWithContext(
     allocator: std.mem.Allocator,
@@ -70,12 +70,15 @@ pub fn runWithContext(
         if (input.stdin_data) |s| allocator.free(s);
     }
 
-    const is_background = input.background;
+    // The RESOLVED mode: `background=true` and `mode="background"` are the same
+    // thing by the time they get here (the parser folds them).
+    const mode = pabrikcore.shell_tool.resolvedMode(input);
 
     const command_output = try command_tool_mod.execute_command(allocator, io, input);
 
-    // If background mode and DB is available, save the process info
-    if (is_background and db != null and session_id != null) {
+    // Record a detached process so it can be listed, read, and stopped later.
+    // `kind` decides whether it is ever NOTIFIED about — see migration 107.
+    if (mode.isDetached() and db != null and session_id != null) {
         const db_ptr = db.?;
         const sess_id = session_id.?;
 
@@ -107,7 +110,7 @@ pub fn runWithContext(
                         // Save to database
                         const ts = std.Io.Clock.now(.real, io);
                         const started_at: i64 = ts.toSeconds();
-                        background_process.save(db_ptr, allocator, sess_id, pid, input.command, log_path, started_at) catch {
+                        background_process.save(db_ptr, allocator, sess_id, pid, input.command, log_path, started_at, mode.kindFor()) catch {
                             // Log error but don't fail the tool execution
                         };
                         // Immediate watcher: poll the PID every 2s and queue
@@ -118,7 +121,25 @@ pub fn runWithContext(
                         // Dupes into di.allocator (process lifetime) inside.
                         if (pabrikcore.getSingleton() catch null) |di| {
                             background_process_events.emitCreated(allocator, di.event_bus, sess_id, pid, input.command);
-                            background_watcher.spawnCompletionWatcher(di, sess_id, pid, input.command, log_path);
+                            // The two detached modes differ in ONE obligation:
+                            // whether the agent is told when the process exits.
+                            //
+                            //   `background`             -> the watcher queues the log and wakes.
+                            //   `background_persistence` -> the reaper only collects the corpse
+                            //                               and marks the row `exited`. Not
+                            //                               scheduling ANY watcher here is the
+                            //                               first of the two places that make
+                            //                               this mode silent; the cron's
+                            //                               `kind = 'job'` filter is the second.
+                            //
+                            // The reaper is not optional housekeeping: `isProcessRunning`
+                            // probes with `kill(pid, 0)`, which succeeds for a ZOMBIE, so an
+                            // unreaped native child would read as running for ever.
+                            if (mode == .background) {
+                                background_watcher.spawnCompletionWatcher(di, sess_id, pid, input.command, log_path);
+                            } else {
+                                background_watcher.spawnServiceReaper(di, sess_id, pid, input.command, log_path);
+                            }
                         }
                     }
                 }
@@ -138,7 +159,7 @@ pub fn execCommand(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     // execReadFile / execWriteFile / etc.
     //
     // The message goes through `error_explain.explain` rather than a bare
-    // `@errorName`. `command failed: MandatoryTimeoutMissing` names no
+    // `@errorName`. `command failed: TimeoutMissing` names no
     // field, no value and no fix, so the model retries the identical call
     // — the reported bug was four identical retries and then the stream
     // dying. The explanation names the field, the constraint and what to
@@ -209,7 +230,7 @@ fn envelopeError(allocator: std.mem.Allocator, output: []const u8) !?[]const u8 
     return try allocator.dupe(u8, err_value.string);
 }
 
-test "execCommand: a missing mandatory_timeout explains the field and the fix" {
+test "execCommand: a missing timeout explains the field and the fix" {
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const allocator = testing.allocator;
@@ -229,12 +250,12 @@ test "execCommand: a missing mandatory_timeout explains the field and the fix" {
     const err_msg = try envelopeError(allocator, result.output);
     defer if (err_msg) |m| allocator.free(m);
     try testing.expect(err_msg != null);
-    try testing.expect(std.mem.indexOf(u8, err_msg.?, "mandatory_timeout") != null);
+    try testing.expect(std.mem.indexOf(u8, err_msg.?, "timeout") != null);
     try testing.expect(std.mem.indexOf(u8, err_msg.?, "required") != null);
-    try testing.expect(std.mem.indexOf(u8, err_msg.?, "MandatoryTimeoutMissing") == null);
+    try testing.expect(std.mem.indexOf(u8, err_msg.?, "TimeoutMissing") == null);
 }
 
-test "execCommand: mandatory_timeout = 0 gets the same explanation as a missing one" {
+test "execCommand: timeout = 0 gets the same explanation as a missing one" {
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const allocator = testing.allocator;
@@ -244,7 +265,7 @@ test "execCommand: mandatory_timeout = 0 gets the same explanation as a missing 
         .type = "function",
         .function = .{
             .name = "command",
-            .arguments = "{\"command\":\"ls\",\"cwd\":\"/tmp\",\"mandatory_timeout\":0}",
+            .arguments = "{\"command\":\"ls\",\"cwd\":\"/tmp\",\"timeout\":0}",
         },
     };
 
@@ -254,8 +275,8 @@ test "execCommand: mandatory_timeout = 0 gets the same explanation as a missing 
     const err_msg = try envelopeError(allocator, result.output);
     defer if (err_msg) |m| allocator.free(m);
     try testing.expect(err_msg != null);
-    try testing.expect(std.mem.indexOf(u8, err_msg.?, "mandatory_timeout") != null);
-    try testing.expect(std.mem.indexOf(u8, err_msg.?, "MandatoryTimeoutMissing") == null);
+    try testing.expect(std.mem.indexOf(u8, err_msg.?, "timeout") != null);
+    try testing.expect(std.mem.indexOf(u8, err_msg.?, "TimeoutMissing") == null);
 }
 
 test "execCommand: a missing cwd explains the field, the wrong-tree risk and the fix" {
@@ -272,7 +293,7 @@ test "execCommand: a missing cwd explains the field, the wrong-tree risk and the
         .type = "function",
         .function = .{
             .name = "command",
-            .arguments = "{\"command\":\"ls -la\",\"mandatory_timeout\":30}",
+            .arguments = "{\"command\":\"ls -la\",\"timeout\":30}",
         },
     };
 
@@ -301,7 +322,7 @@ test "execCommand: a relative cwd is refused with the absolute-path rule" {
         .type = "function",
         .function = .{
             .name = "command",
-            .arguments = "{\"command\":\"ls\",\"cwd\":\"src/modules\",\"mandatory_timeout\":5}",
+            .arguments = "{\"command\":\"ls\",\"cwd\":\"src/modules\",\"timeout\":5}",
         },
     };
 
@@ -323,7 +344,7 @@ test "execCommand: a malformed-arguments failure names the offending field" {
         .type = "function",
         .function = .{
             .name = "command",
-            .arguments = "{\"command\":\"ls\",\"mandatory_timeout\":\"not-a-number\"}",
+            .arguments = "{\"command\":\"ls\",\"timeout\":\"not-a-number\"}",
         },
     };
 
@@ -333,11 +354,11 @@ test "execCommand: a malformed-arguments failure names the offending field" {
     const err_msg = try envelopeError(allocator, result.output);
     defer if (err_msg) |m| allocator.free(m);
     try testing.expect(err_msg != null);
-    try testing.expect(std.mem.indexOf(u8, err_msg.?, "mandatory_timeout") != null);
+    try testing.expect(std.mem.indexOf(u8, err_msg.?, "timeout") != null);
     try testing.expect(std.mem.indexOf(u8, err_msg.?, "not-a-number") != null);
 }
 
-test "execCommand: an over-max mandatory_timeout states the ceiling and the alternative" {
+test "execCommand: an over-max timeout states the ceiling and the alternative" {
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const allocator = testing.allocator;
@@ -347,7 +368,7 @@ test "execCommand: an over-max mandatory_timeout states the ceiling and the alte
         .type = "function",
         .function = .{
             .name = "command",
-            .arguments = "{\"command\":\"ls\",\"cwd\":\"/tmp\",\"mandatory_timeout\":99999}",
+            .arguments = "{\"command\":\"ls\",\"cwd\":\"/tmp\",\"timeout\":99999}",
         },
     };
 
@@ -360,7 +381,7 @@ test "execCommand: an over-max mandatory_timeout states the ceiling and the alte
     // The ceiling, and the way out that is not "retry the same call".
     try testing.expect(std.mem.indexOf(u8, err_msg.?, "60 seconds or fewer") != null);
     try testing.expect(std.mem.indexOf(u8, err_msg.?, "background=true") != null);
-    try testing.expect(std.mem.indexOf(u8, err_msg.?, "MandatoryTimeoutTooLarge") == null);
+    try testing.expect(std.mem.indexOf(u8, err_msg.?, "TimeoutTooLarge") == null);
 }
 
 test "execCommand: a well-formed call is not refused by the argument validator" {
@@ -387,7 +408,7 @@ test "execCommand: a well-formed call is not refused by the argument validator" 
         .type = "function",
         .function = .{
             .name = "command",
-            .arguments = "{\"command\":\"echo hi\",\"cwd\":\"/no/such/dir/pabrik-test\",\"mandatory_timeout\":5}",
+            .arguments = "{\"command\":\"echo hi\",\"cwd\":\"/no/such/dir/pabrik-test\",\"timeout\":5}",
         },
     };
 
@@ -398,7 +419,7 @@ test "execCommand: a well-formed call is not refused by the argument validator" 
     defer if (err_msg) |m| allocator.free(m);
     try testing.expect(err_msg != null);
     // Not the argument-validation messages the four tests above assert on.
-    try testing.expect(std.mem.indexOf(u8, err_msg.?, "mandatory_timeout") == null);
+    try testing.expect(std.mem.indexOf(u8, err_msg.?, "timeout") == null);
     try testing.expect(std.mem.indexOf(u8, err_msg.?, "not-a-number") == null);
     // And not a bare Zig error name either — whatever the shell layer
     // reported, it arrived as a sentence.

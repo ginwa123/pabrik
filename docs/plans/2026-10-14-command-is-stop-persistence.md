@@ -117,7 +117,7 @@ useful, it gives a sub-agent an explicit bound), and it **kills nothing**.
 | | `foreground` | `background` | `background_persistence` |
 |---|---|---|---|
 | detaches | no | yes | yes |
-| `mandatory_timeout` | **required, 1–60** | ignored | ignored |
+| `timeout` | **required, 1–60** | ignored | ignored |
 | written to `session_background_process` | no | yes (`kind='job'`) | yes (`kind='service'`) |
 | **queue message on exit** | n/a (result returned inline) | **yes** | **never** |
 | immediate watcher scheduled | no | yes | no |
@@ -234,8 +234,8 @@ re-design.
 You asked what is best. **A `process` tool with `read` / `stop` / `list`, shipped as PR 3**, and
 here is the reasoning rather than a preference:
 
-1. **`command` is the wrong shape for a read.** `command`, `cwd` and `mandatory_timeout` are all
-   *required* (`command.zig`, `.required = &.{ "command", "cwd", "mandatory_timeout" }`). Reading a
+1. **`command` is the wrong shape for a read.** `command`, `cwd` and `timeout` are all
+   *required* (`command.zig`, `.required = &.{ "command", "cwd", "timeout" }`). Reading a
    log would mean inventing a dummy command and a dummy deadline on every poll. Making them
    conditionally required is exactly the kind of schema the lenient parser exists to paper over.
 2. **A delta read is not a nicety, it is the token cost.** A dev server's log grows continuously.
@@ -295,7 +295,7 @@ batch on the way out.
 
 **PR 2 — `mode`** (§3)
 - T2.1 schema + parser + `background` alias; `shell.zig` validation switches to
-  `mode == .foreground` for `MandatoryTimeoutMissing` / `MandatoryTimeoutTooLarge`.
+  `mode == .foreground` for `TimeoutMissing` / `TimeoutTooLarge`.
 - T2.2 migration 107 + `kind`; `background_persistence` skips `spawnCompletionWatcher`; the cron's
   SELECT adds `AND kind = 'job'`. Test: a `kind='service'` row with a dead PID is **not** notified
   **and** a `kind='job'` control row **is** — a negative assertion needs the positive control.
@@ -397,3 +397,147 @@ behaviour being overridden.
 PR 2 (`mode` + migration 107 `kind` + native detached spawn + tree kill + dies-with-pabrik) and
 PR 3 (the `process` tool) — §3 and §5. `mode` is deliberately absent from PR 1 so the loop-control
 change can be reviewed on its own.
+
+---
+
+## 10. Implementation log — PR 2 (`mode`, persistence, and the `timeout` rename)
+
+### 10.1 `mode`
+
+`RunMode = foreground | background | background_persistence` on `ShellInput`, plus
+`resolvedMode()` folding the legacy `background: bool`. `shell.zig` branches on the RESOLVED mode, so
+the boolean and the new spelling cannot diverge:
+the `TimeoutMissing` / `TimeoutTooLarge` guard is `!mode.isDetached()`, and `background` keeps the
+`nohup` detach while `background_persistence` gets the native spawn.
+
+`parseShellArgs` resolves the pair and **rejects one input**: `background: true` with an explicit
+`mode: "foreground"`. Both readings are defensible — a blocking call the caller wanted detached, or
+a detached dev server the caller wanted blocked — so neither may win silently. The error names
+`background` and the correction. Any other combination folds, so a call site can add `mode` while
+still passing the boolean.
+
+### 10.2 `kind` (migration 107) — why the "no queue" promise needs a column
+
+`background_persistence` is defined by a NEGATIVE, and two independent actors notify on exit:
+
+| actor | change |
+|---|---|
+| `background_watcher` | `spawnServiceReaper` (a sibling of `spawnCompletionWatcher`) is scheduled instead, with `notify = false`: it reaps the child, marks the row `exited`, emits the list-change event, and **writes no queue message and wakes nobody**. |
+| the 1-minute cron | its SELECT is now `... WHERE kind = 'job'`. |
+
+Without the second one, a dev server that finally exits a month later would queue "your build
+finished"-shaped noise — the exact message the mode exists to suppress. `kind` is
+`NOT NULL DEFAULT 'job'` because every pre-107 row genuinely IS a job, and because a NULL would
+match neither filter and leak silently.
+
+### 10.3 The native spawn, and the reaper that must come with it
+
+`spawn_detached_native` (POSIX at least) uses `.pgid = 0` + `StdIo.file` for stdout/stderr, giving
+`pid == pgid` — so `kill(-pid)` is a tree kill. A unit test asserts exactly that
+(`getpgid(pid) == pid`, and `!=` our own group) plus that the child's output lands in the log file,
+which is the whole reason to drop the `nohup` string.
+
+**The reaper is not housekeeping.** `isProcessRunning` probes with `kill(pid, 0)`, and a ZOMBIE
+answers that probe with SUCCESS — so an unreaped native child reads as running for ever. Hence
+`stillRunning()` in the watcher, which tries `waitpid(WNOHANG)` first and only falls back to the
+signal probe on `ECHILD`. My own first version of the shell test asserted
+`!isProcessRunning(pid)` after the kill and **failed on an already-dead process**; the test now
+asserts via `reap_pid_nohang`, which is the same lesson the production code encodes.
+
+`stopPlan(os_tag)` stays pure data, so `taskkill /T /F` is assertable from Linux.
+
+### 10.4 "Dies with pabrik" — and the one deviation
+
+Clean shutdown: the SIGINT/SIGTERM block in `main.zig` calls `killServicesForShutdown` before
+`process.exit(0)`. Leftovers: `sweepServicesOnBoot` kills every live `kind='service'` row at boot and
+marks it `orphaned` (kept, not deleted — the popup computes liveness live, so the row is how a human
+sees that a previous pabrik left a dev server behind).
+
+**Deviation from §3.3:** `PR_SET_PDEATHSIG` is NOT set. `std.process.SpawnOptions` has no such field
+(and no pre-exec hook) in Zig 0.16 — verified against `/usr/lib/zig/std/process.zig:361-403` — and
+the flag has to be set by the child before it execs, so it is unreachable from a plain `spawn`
+without putting a shell wrapper back, which is what that function exists to remove. A `kill -9` of
+pabrik therefore leaves the service until the next boot, and the code says so.
+
+Also stated rather than hidden: two pabrik instances sharing one `$HOME` share the DB, so the second
+to boot would kill the first's services. A single `$HOME` is one pabrik identity.
+
+### 10.5 G8 (T2.6)
+
+`killAllForSession` → **`killServicesForShutdown`**, scoped to `kind='service'` and called from
+exactly two places (shutdown, boot sweep) — renamed because `killAllFor**Session**` invites the
+cancel-path misuse the user ruled out. `pollAndUpdateStatus` and `getRunning` are **deleted** (the
+cron already does liveness + log + wake, better, and two liveness sources can disagree).
+
+`ProcessInfo` gained `kind`, so the three inline free loops became leaks; they are now
+`freeProcessInfos` / `freeProcessInfoStrings`.
+
+### 10.6 The prompt
+
+The agent's session prompt now lists each process with its `kind` and an explanation of what
+`service` costs it ("you WILL be messaged" vs "SILENT — no message, ever; read its log, and stop it
+yourself"), and the `command` schema documents all three modes. G5's blanket "no dev servers" ban is
+gone, replaced by "pick the mode deliberately", with the two failure modes named: a server in
+`foreground` blocks then dies, and a server in `background` notifies you only when it dies.
+
+### 10.7 The rename — `mandatory_timeout` → `timeout`
+
+Applied across ~200 references in 12 files, including the error names (`TimeoutMissing`,
+`TimeoutTooLarge`) and the constant (`MAX_TIMEOUT_SEC`).
+
+Two consequences, both handled rather than assumed away:
+
+1. **`mandatory_timeout` is still accepted** (`TIMEOUT_ALIASES`, `timeout` first). It is written into
+   every transcript from before the rename; without the alias, replaying such a conversation would
+   produce a `TimeoutMissing` the model cannot explain, because the argument it sent was valid when
+   it sent it. A bad value under the alias is reported under the alias, so the model is not sent
+   looking for a field it never sent.
+2. **The name now collides with the shell `timeout` UTILITY the tool forbids.** The
+   `command` property description says so explicitly ("This is a FIELD, not a command prefix … the
+   shell `timeout` utility does nothing useful here"), and a new test asserts that wording is on the
+   PROPERTY (where the model reads it while filling the field) and not merely somewhere in the
+   description.
+
+The old `command tool grew a timeout param — mandatory_timeout is the only deadline` test could not
+survive literally, since the field is now called `timeout`. It was rewritten to assert the
+INVARIANT: exactly ONE property whose name mentions a timeout, and it is in `.required`. A second
+`timeout_ms`/`timeout_seconds` sibling is precisely how a model starts believing it can bound one
+command two ways.
+
+### 10.8 Verification
+
+**Unit** — `zig build test --summary all`: **26/26 steps succeeded; 4352/4362 tests passed
+(10 skipped); 0 failed** (+18 over the PR 1 baseline). Deliberate-failure control run again on the
+newest and most load-bearing assertion (the watcher's silence contract): the build went red naming
+`agentic_loop.background_watcher.test.watchAndNotify: notify=false writes NO queue message and marks
+the row exited`, then reverted.
+
+**The exe build caught what the unit suite could not.** `zig build install:linux` failed on
+`background_process.zig:4` — `root has no member named 'helpers'`, a latent error in pre-existing
+code that only surfaced because `main.zig` now imports that file, which the sharded unit suite
+never forced. Routed through `@import("helpers")`, the same fix `background_watcher.zig` documents.
+Worth remembering: **green unit tests do not prove the exe compiles.**
+
+**Functional** — `tests/functional/command_is_stop_test.zig`, all 5 pass:
+
+| test | asserts |
+|---|---|
+| `is_stop ends the turn after one model call, with the batch persisted` | (PR 1) |
+| `without is_stop the loop calls the model again (positive control)` | (PR 1) |
+| `background_persistence queues NOTHING when the service exits` | row `kind='service'`; the row reaches `exited` (so the process really ran and the reaper really ran); the stub sees **exactly 1** model call; no queue row mentions the pid |
+| `background DOES queue the completion — the control` | row `kind='job'`; the stub sees a **second** model call — the wake |
+
+The pair needed a second iteration to be honest. The first version asserted the presence/absence of
+the **queue row**, and the control failed: the completion path inserts the row and then starts a run
+that DRAINS it, so "no row" is also what a correctly-notified session looks like milliseconds later.
+The assertion now watches the **wake** — a model call the `is_stop` turn did not make — which is the
+observable consequence of "the agent was told" and is not a race.
+
+**No regressions in the pre-existing background suites** (they exercise the cron filter and the
+watcher this PR changed): `background_command_completion` 3/3, `background_process_sse` 3/3,
+`background_processes_api` 8/8, `cleanup_stale` 1/1.
+
+### 10.9 Not in this PR
+
+The `process` tool (read delta / stop / list) — §3.7, PR 3. G7 (the frontend parses XML for an
+envelope the backend emits as JSON, a #563 regression) is still open and still frontend.

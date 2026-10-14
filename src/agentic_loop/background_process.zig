@@ -1,7 +1,14 @@
 const std = @import("std");
 const root_mod = @import("pabrikcore");
 const sqlite = root_mod.sqlite;
-const process_status = root_mod.helpers.process_status;
+// NOTE: NOT `root_mod.helpers.process_status`. `root.zig` dropped the
+// `helpers` re-export, so that decl does not compile when the EXE build
+// references it — and this file was only ever reached from the sharded unit
+// suite until `main.zig` began importing it (for the boot sweep), which is
+// when the latent error surfaced. `@import("helpers")` is the supported route,
+// the same one `background_watcher.zig` takes for the same reason.
+const process_status = @import("helpers").process_status;
+const shell_tool = root_mod.shell_tool;
 const testing = std.testing;
 
 pub const ProcessInfo = struct {
@@ -11,36 +18,72 @@ pub const ProcessInfo = struct {
     log_path: []const u8,
     started_at: i64,
     status: []const u8,
+    /// `job` | `service` (migration 107). `service` is `mode =
+    /// "background_persistence"`: a process the agent is deliberately NOT
+    /// notified about, which it polls or stops itself.
+    kind: []const u8,
 };
+
+/// The two `kind` values, as constants so no call site spells them inline.
+pub const KIND_JOB = "job";
+pub const KIND_SERVICE = "service";
+
+/// Release a `ProcessInfo` slice and every string in it.
+///
+/// One helper rather than the five inline free loops this used to have: adding
+/// a column to `ProcessInfo` silently turned every one of them into a leak,
+/// and a leak fails the whole suite (see the `leaked N allocations` line), not
+/// just this file's tests. A new field now costs one line, here.
+pub fn freeProcessInfos(allocator: std.mem.Allocator, infos: []ProcessInfo) void {
+    freeProcessInfoStrings(allocator, infos);
+    allocator.free(infos);
+}
+
+/// Release each entry's strings but NOT the slice — for the partially-built
+/// list an `errdefer` sees, where the slice belongs to the ArrayList.
+pub fn freeProcessInfoStrings(allocator: std.mem.Allocator, infos: []ProcessInfo) void {
+    for (infos) |p| {
+        allocator.free(p.session_id);
+        allocator.free(p.command);
+        allocator.free(p.log_path);
+        allocator.free(p.status);
+        allocator.free(p.kind);
+    }
+}
 
 const SqliteBackend = sqlite.SqliteBackend;
 
-/// Save a new background process to the database
-pub fn save(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []const u8, pid: u32, command: []const u8, log_path: []const u8, started_at: i64) !void {
+/// Save a new background process to the database.
+///
+/// `kind` is `KIND_JOB` or `KIND_SERVICE` — see migration 107. An EMPTY
+/// `kind` is coerced to `KIND_JOB` rather than bound as-is, because this
+/// backend binds an empty slice as SQL NULL and the column is NOT NULL: a
+/// NULL there would match neither `kind = 'job'` nor `kind = 'service'`, so
+/// the row would drop out of the cron AND the service sweep at once and leak
+/// with nothing to notice it.
+pub fn save(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []const u8, pid: u32, command: []const u8, log_path: []const u8, started_at: i64, kind: []const u8) !void {
     const pid_str = try std.fmt.allocPrint(allocator, "{}", .{pid});
     defer allocator.free(pid_str);
 
     const started_at_str = try std.fmt.allocPrint(allocator, "{}", .{started_at});
     defer allocator.free(started_at_str);
 
+    const kind_value: []const u8 = if (kind.len == 0) KIND_JOB else kind;
+
     try db.exec(allocator,
-        \\INSERT OR REPLACE INTO session_background_process (session_id, pid, command, log_path, started_at, status)
-        \\VALUES (?, ?, ?, ?, ?, 'running')
-    , &.{ session_id, pid_str, command, log_path, started_at_str });
+        \\INSERT OR REPLACE INTO session_background_process (session_id, pid, command, log_path, started_at, status, kind)
+        \\VALUES (?, ?, ?, ?, ?, 'running', ?)
+    , &.{ session_id, pid_str, command, log_path, started_at_str, kind_value });
 }
 
 /// Get all background processes for a session
 pub fn getBySession(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []const u8) ![]ProcessInfo {
-    var rows = try db.query(allocator, "SELECT pid, command, log_path, started_at, status FROM session_background_process WHERE session_id = ?", &.{session_id});
+    var rows = try db.query(allocator, "SELECT pid, command, log_path, started_at, status, COALESCE(kind, 'job') FROM session_background_process WHERE session_id = ?", &.{session_id});
     defer rows.deinit();
 
     var processes = std.ArrayList(ProcessInfo).empty;
     errdefer {
-        for (processes.items) |p| {
-            allocator.free(p.command);
-            allocator.free(p.log_path);
-            allocator.free(p.status);
-        }
+        freeProcessInfoStrings(allocator, processes.items);
         processes.deinit(allocator);
     }
 
@@ -61,6 +104,7 @@ pub fn getBySession(db: *SqliteBackend, allocator: std.mem.Allocator, session_id
             .log_path = try allocator.dupe(u8, log_path),
             .started_at = started_at,
             .status = try allocator.dupe(u8, status),
+            .kind = try allocator.dupe(u8, row.values[5]),
         });
     }
 
@@ -85,19 +129,24 @@ pub fn delete(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []co
     try db.exec(allocator, "DELETE FROM session_background_process WHERE session_id = ? AND pid = ?", &.{ session_id, pid_str });
 }
 
-/// Get all running background processes
-pub fn getRunning(db: *SqliteBackend, allocator: std.mem.Allocator) ![]ProcessInfo {
-    var rows = try db.query(allocator, "SELECT session_id, pid, command, log_path, started_at, status FROM session_background_process WHERE status = 'running'", &[_][]const u8{});
+/// Every `kind='service'` row, with `session_id` — the rows that
+/// `mode="background_persistence"` created.
+///
+/// Selected by KIND, not by `status`: the stored status drifts (a `kill -9`
+/// leaves it at 'running' because the defer that would have updated it never
+/// ran), so the only trustworthy liveness signal is the OS. Callers decide
+/// what to do with each row.
+pub fn getServices(db: *SqliteBackend, allocator: std.mem.Allocator) ![]ProcessInfo {
+    var rows = try db.query(allocator,
+        \\SELECT session_id, pid, command, log_path, started_at, status, COALESCE(kind, 'job')
+        \\FROM session_background_process
+        \\WHERE kind = 'service'
+    , &[_][]const u8{});
     defer rows.deinit();
 
     var processes = std.ArrayList(ProcessInfo).empty;
     errdefer {
-        for (processes.items) |p| {
-            allocator.free(p.session_id);
-            allocator.free(p.command);
-            allocator.free(p.log_path);
-            allocator.free(p.status);
-        }
+        freeProcessInfoStrings(allocator, processes.items);
         processes.deinit(allocator);
     }
 
@@ -119,6 +168,7 @@ pub fn getRunning(db: *SqliteBackend, allocator: std.mem.Allocator) ![]ProcessIn
             .log_path = try allocator.dupe(u8, log_path),
             .started_at = started_at,
             .status = try allocator.dupe(u8, status),
+            .kind = try allocator.dupe(u8, row.values[6]),
         });
     }
 
@@ -146,55 +196,97 @@ pub fn killProcess(pid: u32) bool {
     return process_status.killProcess(@intCast(pid));
 }
 
-/// Kill all background processes for a session
-/// This is called when a session is cancelled
-pub fn killAllForSession(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []const u8) !void {
-    const processes = try getBySession(db, allocator, session_id);
-    defer {
-        for (processes) |p| {
-            allocator.free(p.command);
-            allocator.free(p.log_path);
-            allocator.free(p.status);
-        }
-        allocator.free(processes);
-    }
+/// Stop every live `kind='service'` process, TREE included.
+///
+/// Called from exactly two places, and deliberately NOT from the cancel path:
+///
+///   1. pabrik's own clean shutdown (SIGINT / SIGTERM), so a dev server the
+///      agent started does not outlive the service that owns it.
+///   2. the boot sweep, which covers the `kill -9` case no handler can catch.
+///
+/// A user pressing Stop on a chat must NOT reach here: `background_persistence`
+/// means "stays up for the life of the session", and taking someone's dev
+/// server down because they stopped a conversation is the opposite of what
+/// they asked for. That is also why this is NOT named `killAllForSession` —
+/// the old name invited exactly that misuse.
+///
+/// Returns how many rows were signalled.
+pub fn killServicesForShutdown(db: *SqliteBackend, io: std.Io, allocator: std.mem.Allocator) !usize {
+    const services = try getServices(db, allocator);
+    defer freeProcessInfos(allocator, services);
 
-    for (processes) |p| {
-        if (killProcess(p.pid)) {
-            // Update status to killed
-            try updateStatus(db, allocator, session_id, p.pid, "killed");
-        }
+    var killed: usize = 0;
+    for (services) |p| {
+        // The process GROUP, not the PID: a service that forked (vite →
+        // esbuild) survives a single-PID kill and keeps its port. `pid ==
+        // pgid` because the spawn used `.pgid = 0`; a `job` row from before
+        // migration 107 has no such guarantee, which is one more reason this
+        // walk is scoped to `kind='service'`.
+        if (shell_tool.stopDetachedProcess(allocator, io, p.pid)) killed += 1;
+        try updateStatus(db, allocator, p.session_id, p.pid, "killed");
     }
+    return killed;
 }
 
-/// Poll all running processes and update their status
-/// Returns the number of processes that changed status
-pub fn pollAndUpdateStatus(db: *SqliteBackend, allocator: std.mem.Allocator) !u32 {
-    var changed: u32 = 0;
+/// What one boot pass over the service rows did.
+pub const ServiceSweepResult = struct {
+    checked: usize = 0,
+    killed: usize = 0,
+    marked_orphaned: usize = 0,
+};
 
-    const processes = try getRunning(db, allocator);
-    defer {
-        for (processes) |p| {
-            allocator.free(p.session_id);
-            allocator.free(p.command);
-            allocator.free(p.log_path);
-            allocator.free(p.status);
+/// Boot pass over every `kind='service'` row.
+///
+/// A service must not outlive the pabrik that owns it — that is the mode's
+/// contract, and `killServicesForShutdown` carries it for a clean
+/// SIGINT/SIGTERM exit. This covers the OTHER exit: `kill -9`, a panic, a power
+/// cut. No handler runs, so the child is still out there holding its port, and
+/// nothing in the DB will ever notice. So on boot, a live service row is
+/// definitionally a leftover: kill it (tree included) and mark it `orphaned`.
+///
+/// `orphaned` rather than `killed` or a DELETE: the row is the only record
+/// that this process ever existed, and the popup computes liveness LIVE, so
+/// keeping it is what lets a human see "your dev server was left running by a
+/// previous pabrik". Deleting it would erase the evidence.
+///
+/// KNOWN LIMITATION, stated rather than hidden. Rows live in the session DB,
+/// so two pabrik instances sharing one `$HOME` share this table — and the
+/// second to boot would kill the first's services. That is accepted because a
+/// single `$HOME` is one pabrik identity (its config, its port choice and its
+/// DB are all per-HOME), and distinguishing the instances would need an
+/// owner/instance column this feature does not have. The alternative — never
+/// cleaning up — is the behaviour the mode was asked to replace.
+///
+/// Also note what this does NOT do: it does not re-arm completion watchers for
+/// `kind='job'` rows. The per-minute cron is their documented fallback and
+/// already notifies any dead job PID, so re-arming would be a second path to
+/// the same message. A job left running across a restart therefore keeps
+/// running (it was never claimed to die with pabrik) and is still reported when
+/// it finishes.
+pub fn sweepServicesOnBoot(db: *SqliteBackend, io: std.Io, allocator: std.mem.Allocator) !ServiceSweepResult {
+    const services = try getServices(db, allocator);
+    defer freeProcessInfos(allocator, services);
+
+    var result: ServiceSweepResult = .{ .checked = services.len };
+    for (services) |p| {
+        // `reap_pid_nohang` FIRST: a service we spawned in a PREVIOUS pabrik
+        // process is not our child any more, so this answers `.not_our_child`
+        // and the signal probe below decides. It matters within one process
+        // too: a zombie answers `kill(pid, 0)` with success, so the probe
+        // alone would call a corpse alive.
+        const alive = switch (shell_tool.reap_pid_nohang(p.pid)) {
+            .exited => false,
+            .running => true,
+            .not_our_child => isProcessRunning(p.pid),
+        };
+
+        if (alive) {
+            if (shell_tool.stopDetachedProcess(allocator, io, p.pid)) result.killed += 1;
         }
-        allocator.free(processes);
+        try updateStatus(db, allocator, p.session_id, p.pid, "orphaned");
+        result.marked_orphaned += 1;
     }
-
-    for (processes) |p| {
-        const is_running = isProcessRunning(p.pid);
-
-        if (!is_running) {
-            // Process has exited - check the log file for exit status or assume completed
-            // For now, we'll mark as 'completed' since we can't easily get exit code
-            try updateStatus(db, allocator, p.session_id, p.pid, "completed");
-            changed += 1;
-        }
-    }
-
-    return changed;
+    return result;
 }
 
 // ─── Background completion message helpers (Task 1) ─────────────────────────

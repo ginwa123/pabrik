@@ -18,8 +18,8 @@ pub const CommandForbidden = error{
     CommandForbidden,
 };
 
-/// Returned by `execute_bash` when the caller omits `mandatory_timeout`.
-pub const MandatoryTimeoutMissing = error{MandatoryTimeoutMissing};
+/// Returned by `execute_bash` when the caller omits `timeout`.
+pub const TimeoutMissing = error{TimeoutMissing};
 
 /// Wall-clock grace period after SIGKILL during which we wait for the
 /// kernel to reap the bash process group. (Moved to shell.zig.)
@@ -66,7 +66,7 @@ test "bash_tool: foreground echo command runs on host OS" {
         .cwd = if (builtin.os.tag == .linux) "/" else "/tmp",
         .max_output = 1024,
         .max_lines = 10,
-        .mandatory_timeout = 5,
+        .timeout = 5,
     });
     defer {
         allocator.free(result.command);
@@ -95,7 +95,7 @@ test "bash_tool: large output is truncated by byte count" {
         .cwd = "/tmp",
         .max_output = 256,
         .max_lines = 999_999,
-        .mandatory_timeout = 5,
+        .timeout = 5,
     });
     defer {
         allocator.free(result.command);
@@ -152,7 +152,7 @@ test "bash_tool: many long lines (head -n 30) byte-truncated to max_output" {
         // Disable line-cap interference so we are testing the byte path
         // in isolation (mirrors the single-line test above).
         .max_lines = 999_999,
-        .mandatory_timeout = 5,
+        .timeout = 5,
     });
     defer {
         allocator.free(result.command);
@@ -205,7 +205,7 @@ test "bash_tool: default max_output is the safety cap, not 1 MiB" {
     //
     // Contract verified by this test:
     //   - Constructing BashInput{} (no max_output field) and parsing
-    //     `{"command": "...", "cwd": "...", "mandatory_timeout": 5}`
+    //     `{"command": "...", "cwd": "...", "timeout": 5}`
     //     produces max_output == 20 * 1024, not 1024 * 1024.
     //   - When the LLM omits max_output, the reader caps the output to
     //     ≤ 20 KiB even though head -n 30 returns 30 long lines.
@@ -218,7 +218,7 @@ test "bash_tool: default max_output is the safety cap, not 1 MiB" {
     //    that omits max_output — std.json.parseFromSlice fills it in.
     {
         const args_json =
-            \\{"command":"echo hi","cwd":"/tmp","mandatory_timeout":5}
+            \\{"command":"echo hi","cwd":"/tmp","timeout":5}
         ;
         const parsed = try std.json.parseFromSlice(
             BashInput,
@@ -251,7 +251,7 @@ test "bash_tool: default max_output is the safety cap, not 1 MiB" {
             // must take effect. We also raise max_lines so the line cap
             // doesn't fire first (we want the BYTE cap under test).
             .max_lines = 999_999,
-            .mandatory_timeout = 5,
+            .timeout = 5,
         });
         defer {
             allocator.free(result.command);
@@ -293,7 +293,7 @@ test "bash_tool: timeout fires on long-running command" {
     const result = try execute_bash(allocator, io, .{
         .command = "sleep 5",
         .cwd = "/tmp",
-        .mandatory_timeout = 1,
+        .timeout = 1,
     });
     defer {
         allocator.free(result.command);
@@ -316,7 +316,7 @@ test "bash_tool: timeout kills subshell descendants (no pipe-leak hang)" {
     // Without the fix this test hangs until the Zig test runner's
     // per-test timeout kills it; with the fix it returns in ~1 s with
     // timeout == true. We bound the wait with an overall deadline
-    // matching `mandatory_timeout * 4` so a regression surfaces as a
+    // matching `timeout * 4` so a regression surfaces as a
     // test failure rather than a process hang.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
@@ -329,7 +329,7 @@ test "bash_tool: timeout kills subshell descendants (no pipe-leak hang)" {
     const result = try execute_bash(allocator, io, .{
         .command = "( sleep 5 ) | cat",
         .cwd = "/tmp",
-        .mandatory_timeout = 1,
+        .timeout = 1,
     });
     defer {
         allocator.free(result.command);
@@ -363,7 +363,7 @@ test "bash_tool: timeout kills descendants across all common subshell shapes" {
         // The exact shape the AI hit in production (session-1783866771666):
         // outer `timeout` + nested `bash -c` + subshell-in-pipe. If the
         // process-group kill is incomplete this hangs for the full
-        // mandatory_timeout duration and the reader-thread join never
+        // timeout duration and the reader-thread join never
         // returns.
         "timeout 3 bash -c '( sleep 10 ) | head -n 5'",
     };
@@ -372,7 +372,7 @@ test "bash_tool: timeout kills descendants across all common subshell shapes" {
         const result = try execute_bash(allocator, io, .{
             .command = cmd,
             .cwd = "/tmp",
-            .mandatory_timeout = 3,
+            .timeout = 3,
         });
         defer {
             allocator.free(result.command);
@@ -393,7 +393,7 @@ test "bash_tool: timeout kills descendants across all common subshell shapes" {
     }
 }
 
-test "bash_tool: missing mandatory_timeout returns MandatoryTimeoutMissing" {
+test "bash_tool: missing timeout returns TimeoutMissing" {
     // Runs on ALL platforms (no shell required) — the validation fires before
     // we ever spawn a child.
     const allocator = testing.allocator;
@@ -402,12 +402,12 @@ test "bash_tool: missing mandatory_timeout returns MandatoryTimeoutMissing" {
     const result = execute_bash(allocator, io, .{
         .command = "echo should-never-run",
         .cwd = "/tmp",
-        // mandatory_timeout intentionally omitted → null
+        // timeout intentionally omitted → null
     });
-    try testing.expectError(error.MandatoryTimeoutMissing, result);
+    try testing.expectError(error.TimeoutMissing, result);
 }
 
-test "bash_tool: mandatory_timeout = 0 returns MandatoryTimeoutMissing" {
+test "bash_tool: timeout = 0 returns TimeoutMissing" {
     // Zero is not a meaningful deadline; treat it the same as missing.
     const allocator = testing.allocator;
     const io = std.testing.io;
@@ -415,14 +415,14 @@ test "bash_tool: mandatory_timeout = 0 returns MandatoryTimeoutMissing" {
     const result = execute_bash(allocator, io, .{
         .command = "echo should-never-run",
         .cwd = "/tmp",
-        .mandatory_timeout = 0,
+        .timeout = 0,
     });
-    try testing.expectError(error.MandatoryTimeoutMissing, result);
+    try testing.expectError(error.TimeoutMissing, result);
 }
 
-test "bash_tool: background mode ignores missing mandatory_timeout" {
+test "bash_tool: background mode ignores missing timeout" {
     // Background runs detach via nohup and have no deadline enforced by this
-    // tool, so omitting mandatory_timeout must NOT return MandatoryTimeoutMissing.
+    // tool, so omitting timeout must NOT return TimeoutMissing.
     // We don't actually verify the detached process behavior (CI is too flaky
     // for that) — we only verify that the validation gate lets it through.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
@@ -434,9 +434,9 @@ test "bash_tool: background mode ignores missing mandatory_timeout" {
         .command = "true",
         .cwd = "/tmp",
         .background = true,
-        // mandatory_timeout intentionally null
+        // timeout intentionally null
     });
-    // Only MandatoryTimeoutMissing is a contract violation. Any other
+    // Only TimeoutMissing is a contract violation. Any other
     // error means the background path is broken for unrelated reasons;
     // surface it as a test failure rather than masking it.
     if (result) |r| {
@@ -444,7 +444,7 @@ test "bash_tool: background mode ignores missing mandatory_timeout" {
         defer allocator.free(r.stdout);
         defer allocator.free(r.stderr);
     } else |err| {
-        try testing.expect(err != error.MandatoryTimeoutMissing);
+        try testing.expect(err != error.TimeoutMissing);
     }
 }
 
@@ -513,7 +513,7 @@ fn countOpenFds() !usize {
         // $PPID = bash's parent PID = the test process.
         .command = "ls -1 /proc/$PPID/fd 2>/dev/null | wc -l",
         .cwd = "/tmp",
-        .mandatory_timeout = 5,
+        .timeout = 5,
     });
     defer {
         allocator.free(result.command);
@@ -542,7 +542,7 @@ test "bash_tool: returns within bounded wall-clock time even when child hangs" {
     const result = try execute_bash(allocator, io, .{
         .command = "sleep 30", // longer than the 1s timeout
         .cwd = "/tmp",
-        .mandatory_timeout = 1,
+        .timeout = 1,
     });
     defer {
         allocator.free(result.command);
@@ -582,7 +582,7 @@ test "bash_tool: pipe-FD-holding subshell does not hang (force-kill cleanup work
     const result = try execute_bash(allocator, io, .{
         .command = "tail -f /dev/null",
         .cwd = "/tmp",
-        .mandatory_timeout = 1,
+        .timeout = 1,
         .max_output = 256,
         .max_lines = 10,
     });
@@ -621,7 +621,7 @@ test "bash_tool: subshell holding pipe FD open after parent death" {
         // `( sleep 60 )` — bare subshell group, holds pipe FD
         .command = "( sleep 60 )",
         .cwd = "/tmp",
-        .mandatory_timeout = 1,
+        .timeout = 1,
     });
     defer {
         allocator.free(result.command);
@@ -651,7 +651,7 @@ test "bash_tool: complex pipeline with multiple descendants is killed cleanly" {
     const result = try execute_bash(allocator, io, .{
         .command = "sleep 30 | sleep 30 | sleep 30",
         .cwd = "/tmp",
-        .mandatory_timeout = 1,
+        .timeout = 1,
     });
     defer {
         allocator.free(result.command);
@@ -669,7 +669,7 @@ test "bash_tool: complex pipeline with multiple descendants is killed cleanly" {
 test "bash_tool: long-running inner command killed by outer bash timeout" {
     // The exact shape from production failure (session-1783866771666):
     // `timeout 30 bash -c 'sleep 60'`. The outer `timeout` would kill
-    // at 30s, but our mandatory_timeout=1s should fire first. After
+    // at 30s, but our timeout=1s should fire first. After
     // the kill, the inner bash should be reaped within the grace period.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
@@ -681,7 +681,7 @@ test "bash_tool: long-running inner command killed by outer bash timeout" {
     const result = try execute_bash(allocator, io, .{
         .command = "timeout 30 bash -c 'sleep 60'",
         .cwd = "/tmp",
-        .mandatory_timeout = 1,
+        .timeout = 1,
     });
     defer {
         allocator.free(result.command);
@@ -710,7 +710,7 @@ test "bash_tool: no FD leak after single call" {
     const result = try execute_bash(allocator, io, .{
         .command = "echo hello",
         .cwd = "/tmp",
-        .mandatory_timeout = 5,
+        .timeout = 5,
     });
     defer {
         allocator.free(result.command);
@@ -747,7 +747,7 @@ test "bash_tool: no FD leak after timeout-forced kill" {
     const result = try execute_bash(allocator, io, .{
         .command = "sleep 10",
         .cwd = "/tmp",
-        .mandatory_timeout = 1,
+        .timeout = 1,
     });
     defer {
         allocator.free(result.command);
@@ -783,7 +783,7 @@ test "bash_tool: no FD accumulation across 20 sequential calls" {
         const result = try execute_bash(allocator, io, .{
             .command = if (i % 2 == 0) "echo hello" else "sleep 0.3", // alternates success/timeout
             .cwd = "/tmp",
-            .mandatory_timeout = 1,
+            .timeout = 1,
         });
         allocator.free(result.command);
         allocator.free(result.stdout);
@@ -822,7 +822,7 @@ test "bash_tool: 100 sequential calls do not grow the open-fd count" {
         const result = try execute_bash(allocator, io, .{
             .command = "echo hello",
             .cwd = "/tmp",
-            .mandatory_timeout = 5,
+            .timeout = 5,
         });
         allocator.free(result.command);
         allocator.free(result.stdout);
@@ -849,7 +849,7 @@ test "bash_tool: no memory leak after single call" {
     const result = try execute_bash(allocator, io, .{
         .command = "echo hello",
         .cwd = "/tmp",
-        .mandatory_timeout = 5,
+        .timeout = 5,
     });
     defer {
         allocator.free(result.command);
@@ -871,7 +871,7 @@ test "bash_tool: no memory leak after timeout-forced kill" {
     const result = try execute_bash(allocator, io, .{
         .command = "sleep 10",
         .cwd = "/tmp",
-        .mandatory_timeout = 1,
+        .timeout = 1,
     });
     defer {
         allocator.free(result.command);
@@ -895,7 +895,7 @@ test "bash_tool: output is captured even when command is killed by timeout" {
         // Write a marker before sleeping — that marker must be in stdout
         .command = "echo 'PARTIAL-OUTPUT-BEFORE-TIMEOUT'; sleep 10",
         .cwd = "/tmp",
-        .mandatory_timeout = 1,
+        .timeout = 1,
     });
     defer {
         allocator.free(result.command);
@@ -954,7 +954,7 @@ test "bash_tool: stdin_data command completes cleanly" {
     const result = try execute_bash(allocator, io, .{
         .command = "cat",
         .cwd = "/tmp",
-        .mandatory_timeout = 5,
+        .timeout = 5,
         .stdin_data = "hello via stdin\n",
     });
     defer {
@@ -992,7 +992,7 @@ test "bash_tool: command that produces lots of output is truncated without hangi
     const result = try execute_bash(allocator, io, .{
         .command = "yes hello | head -n 100000",
         .cwd = "/tmp",
-        .mandatory_timeout = 3,
+        .timeout = 3,
         .max_output = 1024, // tight byte limit to force truncation
         .max_lines = 50, // tight line limit
     });
@@ -1022,7 +1022,7 @@ test "bash_tool: very short timeout (1 second) does not deadlock" {
     const result = try execute_bash(allocator, io, .{
         .command = "sleep 5",
         .cwd = "/tmp",
-        .mandatory_timeout = 1,
+        .timeout = 1,
     });
     defer {
         allocator.free(result.command);
@@ -1049,7 +1049,7 @@ test "bash_tool: command exits normally before timeout fires" {
     const result = try execute_bash(allocator, io, .{
         .command = "echo happy-path",
         .cwd = "/tmp",
-        .mandatory_timeout = 5,
+        .timeout = 5,
     });
     defer {
         allocator.free(result.command);
@@ -1079,7 +1079,7 @@ test "bash_tool: nested bash -c with stuck sleep is killed cleanly" {
     const result = try execute_bash(allocator, io, .{
         .command = "bash -c 'sleep 60'",
         .cwd = "/tmp",
-        .mandatory_timeout = 1,
+        .timeout = 1,
     });
     defer {
         allocator.free(result.command);
@@ -1105,7 +1105,7 @@ test "bash_tool: exit code is set even when force-killed" {
     const result = try execute_bash(allocator, io, .{
         .command = "sleep 10",
         .cwd = "/tmp",
-        .mandatory_timeout = 1,
+        .timeout = 1,
     });
     defer {
         allocator.free(result.command);

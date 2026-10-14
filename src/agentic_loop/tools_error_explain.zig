@@ -5,7 +5,7 @@
 //! Every `tools_exec_*.zig` adapter used to render a failure as
 //! `<tool> failed: <@errorName>`. That string is written for a Zig
 //! programmer, not for the model that has to repair its own next tool
-//! call. `command failed: MandatoryTimeoutMissing` names no field, no
+//! call. `command failed: TimeoutMissing` names no field, no
 //! value and no fix, so the model retries the identical call — the
 //! screenshot in the task shows four identical retries and then the
 //! whole stream dying.
@@ -19,11 +19,11 @@
 //!
 //! Three things, in this order:
 //!
-//!   1. WHAT was wrong, in the model's vocabulary ("the `mandatory_timeout`
+//!   1. WHAT was wrong, in the model's vocabulary ("the `timeout`
 //!      field is required").
 //!   2. WHY it is required / what the constraint is ("it is the only
 //!      deadline; there is no default").
-//!   3. WHAT TO SEND instead ("add \"mandatory_timeout\": 30").
+//!   3. WHAT TO SEND instead ("add \"timeout\": 30").
 //!
 //! A message that only names the Zig error fails all three. A message
 //! that only says "invalid input" fails the third.
@@ -65,13 +65,13 @@ const FALLBACK_ADVICE =
 pub fn explain(allocator: std.mem.Allocator, err: anyerror, context: ?[]const u8) ![]u8 {
     return switch (err) {
         // ── command / shell ────────────────────────────────────────────
-        error.MandatoryTimeoutMissing => try allocator.dupe(
+        error.TimeoutMissing => try allocator.dupe(
             u8,
-            "`mandatory_timeout` is required and has no default. It is the only deadline for a foreground command — add \"mandatory_timeout\": <seconds> (1–60) to the arguments. Use `background=true` instead for a long-running process that must not be killed.",
+            "`timeout` is required and has no default. It is the only deadline for a foreground command — add \"timeout\": <seconds> (1–60) to the arguments. Use `background=true` instead for a long-running process that must not be killed.",
         ),
-        error.MandatoryTimeoutTooLarge => try allocator.dupe(
+        error.TimeoutTooLarge => try allocator.dupe(
             u8,
-            "`mandatory_timeout` must be 60 seconds or fewer — one minute is the ceiling for a foreground command. Split the work into smaller steps, or pass `background=true` for a process that outlives the call.",
+            "`timeout` must be 60 seconds or fewer — one minute is the ceiling for a foreground command. Split the work into smaller steps, or pass `background=true` for a process that outlives the call.",
         ),
         error.MandatoryCwdMissing => try allocator.dupe(
             u8,
@@ -776,21 +776,21 @@ fn fallback(allocator: std.mem.Allocator, err: anyerror) ![]u8 {
 
 const testing = std.testing;
 
-test "explain: MandatoryTimeoutMissing names the field and the fix" {
+test "explain: TimeoutMissing names the field and the fix" {
     // The reported bug. The message must name the field, say why it is
     // required, and show what to send — none of which the bare
-    // `MandatoryTimeoutMissing` does.
-    const msg = try explain(testing.allocator, error.MandatoryTimeoutMissing, null);
+    // `TimeoutMissing` does.
+    const msg = try explain(testing.allocator, error.TimeoutMissing, null);
     defer testing.allocator.free(msg);
-    try testing.expect(std.mem.indexOf(u8, msg, "mandatory_timeout") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "timeout") != null);
     try testing.expect(std.mem.indexOf(u8, msg, "required") != null);
-    try testing.expect(std.mem.indexOf(u8, msg, "\"mandatory_timeout\"") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "\"timeout\"") != null);
     // It must not be the bare error name.
-    try testing.expect(!std.mem.eql(u8, msg, "MandatoryTimeoutMissing"));
+    try testing.expect(!std.mem.eql(u8, msg, "TimeoutMissing"));
 }
 
-test "explain: MandatoryTimeoutTooLarge states the ceiling and the alternative" {
-    const msg = try explain(testing.allocator, error.MandatoryTimeoutTooLarge, null);
+test "explain: TimeoutTooLarge states the ceiling and the alternative" {
+    const msg = try explain(testing.allocator, error.TimeoutTooLarge, null);
     defer testing.allocator.free(msg);
     try testing.expect(std.mem.indexOf(u8, msg, "60 seconds or fewer") != null);
     try testing.expect(std.mem.indexOf(u8, msg, "background=true") != null);
@@ -827,8 +827,8 @@ test "explain: every mapped error produces a non-empty, non-bare message" {
     // The ask_user precedent: walk the errors this module claims to
     // explain and prove none of them falls through to a bare name.
     const errs = [_]anyerror{
-        error.MandatoryTimeoutMissing,
-        error.MandatoryTimeoutTooLarge,
+        error.TimeoutMissing,
+        error.TimeoutTooLarge,
         error.CommandForbidden,
         error.TooManyArgvPrefix,
         error.SyntaxError,
@@ -898,7 +898,7 @@ test "explain: no message leaks a raw Zig type name or a null pointer" {
     // A message that says `?[]const u8` or `(null)` is a bug the model
     // cannot act on. Sweep a representative set.
     const errs = [_]anyerror{
-        error.MandatoryTimeoutMissing,
+        error.TimeoutMissing,
         error.FileNotFound,
         error.SyntaxError,
         error.NotFound,

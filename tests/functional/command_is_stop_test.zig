@@ -92,15 +92,20 @@ const Stub = struct {
     mutex: Io.Mutex = .init,
     /// Absolute `cwd` handed to the tool. The server refuses a relative one.
     cwd: []const u8,
-    /// `"true"` / `"false"` for the `is_stop` field, or `null` to omit it
-    /// entirely (the shape every pre-existing caller and transcript has).
-    is_stop_literal: ?[]const u8,
+    /// The shell command the stub asks for. Kept short (`sleep 1`) by the mode
+    /// tests so a detached process actually EXITS during the test.
+    command: []const u8,
+    /// Raw JSON fragment appended inside the tool call's arguments object, e.g.
+    /// `,"is_stop":true` or `,"mode":"background_persistence"`. Empty for the
+    /// argument set every pre-existing caller and transcript has.
+    extra_args: []const u8,
     agent_calls: usize = 0,
 
     fn start(
         stub: *Stub,
         cwd: []const u8,
-        is_stop_literal: ?[]const u8,
+        command: []const u8,
+        extra_args: []const u8,
     ) !void {
         stub.* = .{
             .io = io,
@@ -108,7 +113,8 @@ const Stub = struct {
             .server = undefined,
             .thread = undefined,
             .cwd = cwd,
-            .is_stop_literal = is_stop_literal,
+            .command = command,
+            .extra_args = extra_args,
         };
         stub.port = try harness.findFreePortRandom(gpa);
         const addr: Io.net.IpAddress = .{ .ip4 = .loopback(stub.port) };
@@ -247,13 +253,14 @@ fn commandToolCallSse(stub: *const Stub, call_id: []const u8) ![]u8 {
     var args_buf: Io.Writer.Allocating = .init(gpa);
     defer args_buf.deinit();
     const w = &args_buf.writer;
-    try w.writeAll("{\"command\":\"echo is-stop-probe\",\"cwd\":");
+    try w.writeAll("{\"command\":");
+    try writeJsonString(w, stub.command);
+    try w.writeAll(",\"cwd\":");
     try writeJsonString(w, stub.cwd);
-    try w.writeAll(",\"mandatory_timeout\":30");
-    if (stub.is_stop_literal) |lit| {
-        try w.writeAll(",\"is_stop\":");
-        try w.writeAll(lit);
-    }
+    try w.writeAll(",\"timeout\":30");
+    // Verbatim, so each test controls exactly which of the new parameters it
+    // exercises — and, just as importantly, which it OMITS.
+    try w.writeAll(stub.extra_args);
     try w.writeAll("}");
 
     const args_json = try jsonStringEscape(gpa, args_buf.written());
@@ -460,6 +467,73 @@ fn waitForTurnEnd(h: *Harness, db_path: []const u8, timeout_ms: i64) !void {
     return error.TestUnexpectedResult;
 }
 
+
+// ============================================================================
+// `mode` — the silence contract, over the wire
+// ============================================================================
+
+/// `{pid, kind, status}` for the newest `session_background_process` row of the
+/// session, or null when the run recorded none.
+const BgRow = struct {
+    pid: u32,
+    kind: []u8,
+    status: []u8,
+
+    fn deinit(self: *BgRow) void {
+        gpa.free(self.kind);
+        gpa.free(self.status);
+    }
+};
+
+fn newestBackgroundRow(db_path: []const u8) !?BgRow {
+    const out = try sqlRun(db_path,
+        \\SELECT pid, kind, status FROM session_background_process
+        \\WHERE session_id = 'sess_command_is_stop_1'
+        \\ORDER BY started_at DESC LIMIT 1;
+    );
+    defer gpa.free(out);
+    const trimmed = std.mem.trim(u8, out, " \t\r\n");
+    if (trimmed.len == 0 or std.mem.eql(u8, trimmed, "[]")) return null;
+
+    const parsed = try std.json.parseFromSlice(std.json.Value, gpa, trimmed, .{});
+    defer parsed.deinit();
+    const rows = switch (parsed.value) {
+        .array => |a| a,
+        else => return error.TestUnexpectedResult,
+    };
+    if (rows.items.len == 0) return null;
+    const row = switch (rows.items[0]) {
+        .object => |o| o,
+        else => return error.TestUnexpectedResult,
+    };
+    const pid_v = row.get("pid") orelse return error.TestUnexpectedResult;
+    const kind_v = row.get("kind") orelse return error.TestUnexpectedResult;
+    const status_v = row.get("status") orelse return error.TestUnexpectedResult;
+    return BgRow{
+        .pid = switch (pid_v) {
+            .integer => |i| @intCast(i),
+            .string => |str| try std.fmt.parseInt(u32, str, 10),
+            else => return error.TestUnexpectedResult,
+        },
+        .kind = try gpa.dupe(u8, kind_v.string),
+        .status = try gpa.dupe(u8, status_v.string),
+    };
+}
+
+/// How many queue rows mention this PID. The completion envelope carries
+/// `"pid":<n>`, which makes "was the agent told?" answerable without depending
+/// on how the drain leaves the table behind.
+fn queuedMentions(db_path: []const u8, pid: u32) !i64 {
+    const sql = try std.fmt.allocPrint(
+        gpa,
+        "SELECT COUNT(*) AS n FROM session_queue_messages WHERE session_id = 'sess_command_is_stop_1' " ++
+            "AND message LIKE '%\"pid\":{d}%';",
+        .{pid},
+    );
+    defer gpa.free(sql);
+    return scalarCount(db_path, sql);
+}
+
 // ============================================================================
 // Tests
 // ============================================================================
@@ -474,7 +548,7 @@ test "is_stop ends the turn after one model call, with the batch persisted" {
     };
 
     var stub: Stub = undefined;
-    try stub.start(h.temp_dir, "true");
+    try stub.start(h.temp_dir, "echo is-stop-probe", ",\"is_stop\":true");
     defer stub.deinit();
 
     const profile = "is-stop-stub";
@@ -540,7 +614,7 @@ test "without is_stop the loop calls the model again (positive control)" {
     };
 
     var stub: Stub = undefined;
-    try stub.start(h.temp_dir, null); // `is_stop` omitted entirely
+    try stub.start(h.temp_dir, "echo is-stop-probe", ""); // `is_stop` omitted entirely
     defer stub.deinit();
 
     const profile = "no-is-stop-stub";
@@ -574,4 +648,151 @@ test "without is_stop the loop calls the model again (positive control)" {
             "' AND role = 'tool' AND tool_call_id = '" ++ CALL_ID ++ "';",
     );
     try testing.expectEqual(@as(i64, 1), tool_rows);
+}
+
+test "background_persistence queues NOTHING when the service exits" {
+    // THE contract of the third mode: the process detaches, runs, exits — and
+    // the agent is never told. It is enforced in two places (no watcher
+    // notification, and the cron's `kind = 'job'` filter); this watches the
+    // outer one from outside the process, which is the only vantage point from
+    // which both are visible at once.
+    try harness.requirePabrikBin(io, gpa);
+    try requireSqlite3Cli();
+
+    var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
+    defer h.deinit(io) catch |err| {
+        std.debug.print("teardown: {s}\n", .{@errorName(err)});
+    };
+
+    var stub: Stub = undefined;
+    // `sleep 1`, not a dev server: the process has to EXIT inside the test for
+    // "no message was queued" to mean anything. A never-exiting server would
+    // satisfy the assertion trivially and prove nothing.
+    try stub.start(
+        h.temp_dir,
+        "sleep 1",
+        ",\"mode\":\"background_persistence\",\"is_stop\":true",
+    );
+    defer stub.deinit();
+
+    const profile = "persistence-stub";
+    try useStubProfile(&h, stub.port, profile);
+    try sendTurn(&h, "start the dev server and stop", profile);
+
+    const db_path = try dbPath(&h);
+    defer gpa.free(db_path);
+    try waitForTurnEnd(&h, db_path, 60_000);
+
+    var row = (try newestBackgroundRow(db_path)) orelse {
+        std.debug.print("no session_background_process row: the detached process was never recorded\n", .{});
+        return error.TestUnexpectedResult;
+    };
+    defer row.deinit();
+
+    // The mode reached the DB as a kind. `service` is what the cron filters on.
+    try testing.expectEqualStrings("service", row.kind);
+
+    // Wait for the process to exit AND for the reaper to notice — the row
+    // flipping to `exited` IS that notice. It doubles as the proof that the run
+    // really finished: without it, "no queue message" would equally describe a
+    // process still running, or a reaper that never started.
+    var exited = false;
+    const exit_deadline = nowMs() + 30_000;
+    while (nowMs() < exit_deadline) {
+        var fresh = (try newestBackgroundRow(db_path)) orelse break;
+        defer fresh.deinit();
+        if (std.mem.eql(u8, fresh.status, "exited")) {
+            exited = true;
+            break;
+        }
+        sleepMs(200);
+    }
+    if (!exited) {
+        std.debug.print("the service row never reached status='exited' — the reaper did not run\n", .{});
+        return error.TestUnexpectedResult;
+    }
+
+    // Give the NOTIFY path every chance to fire before declaring it silent: the
+    // watcher polls on a 2 s clock, so a regression lands well inside this
+    // window.
+    sleepMs(6000);
+
+    // THE assertion, and it is deliberately about the WAKE rather than about
+    // the queue row. The completion path inserts a queue message and then
+    // starts a new run, and that run DRAINS the row almost immediately — so
+    // "no row is present" is also what a correctly-notified session looks like
+    // a moment later, and asserting on the row alone would be vacuous.
+    //
+    // A second model call is not: it is the observable consequence of "the
+    // agent was told", and it is exactly what a service must NOT produce.
+    const calls = stub.agentCallCount();
+    if (calls != 1) {
+        std.debug.print(
+            "background_persistence woke the agent ({d} model calls, expected 1) — the service must be silent\n",
+            .{calls},
+        );
+        return error.TestUnexpectedResult;
+    }
+
+    // Corroboration, and honest about its limit: it holds only because nothing
+    // was woken to drain a row.
+    const mentions = try queuedMentions(db_path, row.pid);
+    if (mentions != 0) {
+        std.debug.print("background_persistence queued {d} message(s) for pid {d} — it must be silent\n", .{ mentions, row.pid });
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "background DOES queue the completion — the control for the test above" {
+    // The same run with the other detached mode. Without this, "no queue
+    // message" would also be satisfied by an execution path that never reaches
+    // the notification code at all.
+    try harness.requirePabrikBin(io, gpa);
+    try requireSqlite3Cli();
+
+    var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
+    defer h.deinit(io) catch |err| {
+        std.debug.print("teardown: {s}\n", .{@errorName(err)});
+    };
+
+    var stub: Stub = undefined;
+    try stub.start(
+        h.temp_dir,
+        "sleep 1",
+        ",\"mode\":\"background\",\"is_stop\":true",
+    );
+    defer stub.deinit();
+
+    const profile = "background-stub";
+    try useStubProfile(&h, stub.port, profile);
+    try sendTurn(&h, "run the job and stop", profile);
+
+    const db_path = try dbPath(&h);
+    defer gpa.free(db_path);
+    try waitForTurnEnd(&h, db_path, 60_000);
+
+    var row = (try newestBackgroundRow(db_path)) orelse return error.TestUnexpectedResult;
+    defer row.deinit();
+    try testing.expectEqualStrings("job", row.kind);
+
+    // This is the positive control: the SAME machinery must TALK here. The
+    // observable is the wake — a model call that the is_stop turn did not make.
+    // It is watched instead of the queue row because the wake drains that row
+    // as part of its own execution, which makes the row a race and the call
+    // count a fact.
+    //
+    // The watcher polls every 2 s, so allow it a few ticks.
+    const deadline = nowMs() + 30_000;
+    var calls = stub.agentCallCount();
+    while (nowMs() < deadline and calls < 2) {
+        sleepMs(250);
+        calls = stub.agentCallCount();
+    }
+    if (calls < 2) {
+        std.debug.print(
+            "background mode never woke the agent for pid {d} ({d} model calls) — the control failed, so the silence test proved nothing\n",
+            .{ row.pid, calls },
+        );
+        return error.TestUnexpectedResult;
+    }
 }

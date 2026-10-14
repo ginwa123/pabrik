@@ -54,7 +54,7 @@ pub const COMMAND_CMD_PREFIX: []const []const u8 = &.{
 /// Run a shell command on the host-appropriate shell: `pwsh` on Windows
 /// (with a `cmd.exe` retry when pwsh is missing), `bash` everywhere else.
 /// Same semantics as the old `execute_bash` / `execute_pwsh`: mandatory
-/// timeout (returns `error.MandatoryTimeoutMissing` if null), byte + line
+/// timeout (returns `error.TimeoutMissing` if null), byte + line
 /// truncation, foreground / background dispatch, URL-encoding (skipped
 /// under cmd — see shell.run_shell_command).
 pub fn execute_command(
@@ -92,8 +92,8 @@ pub const command_result_to_json = shell.result_to_json;
 pub const command_tool_system_prompt =
     \\## Command Tool — Behavior
     \\Host picks the shell: `bash` on Linux/macOS, `pwsh` on Windows (silent `cmd.exe /c` fallback when pwsh is missing).
-    \\Do NOT prefix commands with a shell `timeout` utility — `mandatory_timeout` (required, max 60) is the only deadline. Bound output with `| head -n <N>` / `| tail -n <N>` (bash) or `| Select-Object -First <N>` (pwsh).
-    \\Prefer `search` / `read_file` / `glob` over shell search; always set `cwd` explicitly; use `background=true` (returns PID + log path) for long-running processes — never start dev servers. Under cmd.exe: no `| head -n`, use cmd syntax (dir / where / type / %VAR% / && / double-quoted URLs).
+    \\Do NOT prefix commands with a shell `timeout` utility — `timeout` (required, max 60) is the only deadline. Bound output with `| head -n <N>` / `| tail -n <N>` (bash) or `| Select-Object -First <N>` (pwsh).
+    \\Pick `mode` deliberately — it is the difference between blocking your turn and not: `foreground` (default, returns the output inline), `background` (detaches AND queues you a message when it exits — use it for a long build, a test run, a migration), `background_persistence` (detaches and stays SILENT — use it for a dev server or a long-lived watcher, then read its log yourself). Never start a dev server in `foreground` or `background`: a server does not exit, so the only thing `background` would ever queue you is its death, and `foreground` would block until the deadline kills it. Under cmd.exe: no `| head -n`, use cmd syntax (dir / where / type / %VAR% / && / double-quoted URLs).
     \\Set `is_stop=true` to end YOUR turn after this call: the command still runs and any `background=true` process keeps running, but the loop returns to the user instead of calling the model again. Put your final answer in the message content — a `tool_calls` turn normally carries none, so without it the turn ends on a bare tool card.
     \\
 ;
@@ -107,11 +107,11 @@ pub const command_tool = AgentTool{
         \\Host picks the shell: `bash -c` on Linux/macOS, `pwsh -NoProfile -NonInteractive -Command` on Windows (silent `cmd.exe /c` fallback when pwsh is missing; background=true fails there instead of detaching).
         \\
         \\## Rules (enforced in code — violations return errors)
-        \\- `mandatory_timeout`: REQUIRED, the ONLY deadline (max 60). No shell `timeout` prefix — do not add one.
+        \\- `timeout`: REQUIRED, the ONLY deadline (max 60). No shell `timeout` prefix — do not add one.
         \\- `cwd`: REQUIRED absolute path — the directory the command runs in. Never omit it: without it the shell starts in the SERVER's directory, not your worktree, so the command silently acts on the wrong tree.
         \\- Bound output: `| head -n <N>` / `| tail -n <N>` (bash) or `| Select-Object -First <N>` (pwsh); under cmd.exe use max_lines / findstr / more.
         \\- Prefer `search` / `read_file` / `glob` over shell rg/grep/find; use `rg` over grep, `fd` over find, `tree` for directory structure.
-        \\- No unbounded output, no destructive commands, no dev servers (`vite`, `http.server`, `nohup ... &`) — use `background=true` (PID + log path) or the functional harness instead.
+        \\- No unbounded output, no destructive commands. Long work goes in `mode`: `background` when you need to be told it finished (build, test, migration), `background_persistence` when it does not finish (dev server, watcher) and you will read its log yourself. A server in any other mode is a mistake: `foreground` blocks and then kills it, and `background` would queue you its death rather than its output.
         \\- Web fetch: use the `agent-browser` CLI.
         \\- End your turn: pass `is_stop=true`. It ends YOUR turn after this batch (`background` processes keep running) and is NOT a cancel — nothing is killed. Put your final answer in the message content, because a `tool_calls` turn normally has none.
         \\
@@ -119,7 +119,7 @@ pub const command_tool = AgentTool{
         \\Install pwsh via `winget install Microsoft.PowerShell` (Windows) or brew/snap (macOS/Linux); missing binary fails with `FileNotFound` at spawn (Windows retries under cmd.exe). Under cmd.exe: double-quote URLs, `%NAME%` env vars, `&&` chaining, `dir` / `where` / `type`.
         \\
         \\## Lenient types
-        \\Numbers (`mandatory_timeout`, `max_output`, `max_lines`) accept JSON numbers or numeric strings; a stray trailing `</fieldname>` is auto-stripped. Booleans accept JSON bool or `"true"` / `"false"`. Real mismatches return an `invalid field` error naming the field so you can self-correct.
+        \\Numbers (`timeout`, `max_output`, `max_lines`) accept JSON numbers or numeric strings; a stray trailing `</fieldname>` is auto-stripped. Booleans accept JSON bool or `"true"` / `"false"`. Real mismatches return an `invalid field` error naming the field so you can self-correct.
         ,
         .parameters = .{
             .type = "object",
@@ -128,7 +128,7 @@ pub const command_tool = AgentTool{
                     .name = "command",
                     .type = "string",
                     .description =
-                    \\Command to execute. Do NOT prefix it with a shell `timeout N` — mandatory_timeout is the deadline.
+                    \\Command to execute. Do NOT prefix it with a shell `timeout N` — timeout is the deadline.
                     \\Bound output (`| head -n 50`, `| Select-Object -First 30`); prefer `rg` / `fd` over grep/find.
                     ,
                 },
@@ -141,12 +141,12 @@ pub const command_tool = AgentTool{
                     ,
                 },
                 .{
-                    .name = "mandatory_timeout",
+                    .name = "timeout",
                     .type = "number",
                     .description =
-                    \\REQUIRED. Wall-clock seconds before the process is killed (SIGKILL / TerminateProcess). 1–60 only — no default (omitted or 0 returns `MandatoryTimeoutMissing`), and above 60 returns `MandatoryTimeoutTooLarge`.
-                    \\Match the value to the job: a few seconds for `ls` / `cat` / `git status`, up to 60 for a build or test run. Work that legitimately needs longer than a minute must NOT run in the foreground — pass `background=true` (returns a PID + log path), then poll the log.
-                    \\It is the ONLY timeout — never prefix the command with a shell `timeout N`.
+                    \\REQUIRED. Wall-clock seconds before the process is killed (SIGKILL / TerminateProcess). 1–60 only — no default (omitted or 0 returns `TimeoutMissing`), and above 60 returns `TimeoutTooLarge`.
+                    \\This is a FIELD, not a command prefix. The shell `timeout` utility does nothing useful here: putting it inside `command` (as in `timeout <N> ls`) is wrong twice over — it is not the deadline this field is, and the field already does the job. Send the seconds here.
+                    \\Match the value to the job: a few seconds for `ls` / `cat` / `git status`, up to 60 for a build or test run. Work that legitimately needs longer than a minute must NOT run in the foreground — pass a detached `mode` (returns a PID + log path), then read the log.
                     ,
                 },
                 .{
@@ -167,16 +167,38 @@ pub const command_tool = AgentTool{
                     .description = "Optional stdin input for the command.",
                 },
                 .{
+                    .name = "mode",
+                    .type = "string",
+                    .description =
+                    \\How this command relates to your turn. Default: "foreground".
+                    \\  "foreground"              — runs now, output comes back inline. REQUIRES
+                    \\                              timeout (1-60). For ls, cat, git status,
+                    \\                              rg — and any build that finishes inside a minute.
+                    \\  "background"              — detaches, and a message is QUEUED to you the
+                    \\                              moment it exits. For bounded work you must be told
+                    \\                              about: a long build, a test run, a migration.
+                    \\                              timeout is ignored. Returns PID + log path.
+                    \\  "background_persistence"  — detaches and stays SILENT: no message, ever. For a
+                    \\                              dev server (`pnpm run dev`, `vite`) or a watcher that
+                    \\                              runs until you or the user stop it. Read its output with
+                    \\                              a separate foreground `tail -n 50 <log path>` call.
+                    \\                              timeout is ignored. Returns PID + log path.
+                    \\Choosing wrong is expensive: a server in "foreground" blocks until the deadline
+                    \\kills it, and a server in "background" notifies you only when it dies — the one
+                    \\event you never wanted. A bounded job in "background_persistence" means you are
+                    \\never told it finished; you would have to poll.
+                    ,
+                },
+                .{
                     .name = "background",
                     .type = "boolean",
                     .description =
-                    \\Run command in background using nohup.
-                    \\Returns PID and log path in stdout.
-                    \\Example stdout: "PID: 12345\nLog: /tmp/bg_1234567890.log"
-                    \\Use PID to check status (ps -p <PID>) or kill (kill <PID>).
-                    \\Note: when background=true the mandatory_timeout field is
-                    \\ignored (the detached process has no deadline enforced by
-                    \\this tool — the caller is responsible for killing it later).
+                    \\LEGACY alias for mode="background" (true) / mode="foreground" (false).
+                    \\Prefer `mode`: it can also express "detach and stay silent", which this
+                    \\boolean cannot. Passing this together with mode="foreground" is rejected —
+                    \\say one thing or the other.
+                    \\Note: when detached, the timeout field is ignored (the process
+                    \\outlives the call — you are responsible for stopping it).
                     ,
                 },
                 .{
@@ -210,7 +232,7 @@ pub const command_tool = AgentTool{
                     ,
                 },
             },
-            .required = &.{ "command", "cwd", "mandatory_timeout" },
+            .required = &.{ "command", "cwd", "timeout" },
         },
         .system_prompt = command_tool_system_prompt,
     },
@@ -228,7 +250,7 @@ const command = @import("command.zig");
 test "command_tool schema: no `timeout` prefix rule in the LLM-facing text" {
     // The tool description and system prompt used to instruct the model to
     // write `timeout <seconds> <cmd>`. That rule is gone — the only deadline
-    // is the `mandatory_timeout` field, enforced in shell.execute_shell.
+    // is the `timeout` field, enforced in shell.execute_shell.
     // The negative "do NOT prefix" wording is still allowed; what must not
     // come back is a rule that tells the model to START with one.
     const desc = command.command_tool.function.description;
@@ -265,54 +287,94 @@ test "command_tool schema: no `timeout` prefix rule in the LLM-facing text" {
     }
 }
 
-test "command_tool schema: mandatory_timeout stays required and is the only timeout param" {
-    // Param audit: `mandatory_timeout` is still in `.required`, and the
-    // prompt-text removal did not leave a stray `timeout` sibling behind.
+test "command_tool schema: exactly ONE deadline param, and it is required" {
+    // This test used to read "a `timeout` param must NOT exist" — it was the
+    // guard against the tool growing a second way to bound a command. The
+    // FIELD IS NOW CALLED `timeout`, so the literal assertion had to change;
+    // what it must keep asserting is the INVARIANT, which is unchanged:
+    //
+    //   * exactly one property is a deadline;
+    //   * it is required (no silent 30 s default — the bug that made the
+    //     original field mandatory in the first place);
+    //   * the shell `timeout` UTILITY is still forbidden inside `command`,
+    //     which is the confusion this name creates and the next test pins.
+    //
+    // A second property whose name merely mentions a timeout (`timeout_ms`,
+    // `timeout_seconds`) is exactly how a model starts believing it can bound
+    // one command two ways, so the count is the assertion.
     const params = command.command_tool.function.parameters;
 
-    var found_mt = false;
-    var forbidden_param: ?[]const u8 = null;
+    var deadline_count: usize = 0;
+    var found: []const u8 = "";
     for (params.properties) |prop| {
-        if (std.mem.eql(u8, prop.name, "mandatory_timeout")) found_mt = true;
-        if (std.mem.eql(u8, prop.name, "timeout")) forbidden_param = prop.name;
+        if (std.mem.indexOf(u8, prop.name, "timeout") != null) {
+            deadline_count += 1;
+            found = prop.name;
+        }
     }
-    if (forbidden_param != null) {
+    if (deadline_count != 1) {
         std.debug.print(
-            "\n!! command tool grew a `timeout` param ({s}) — mandatory_timeout is the only deadline\n",
-            .{forbidden_param.?},
+            "\n!! command tool has {d} timeout-ish params (last: {s}) — exactly one deadline is allowed\n",
+            .{ deadline_count, found },
         );
         return error.StrayTimeoutParam;
     }
-    try testing.expect(found_mt);
+    try testing.expectEqualStrings("timeout", found);
 
     var required_mt = false;
     for (params.required) |name| {
-        if (std.mem.eql(u8, name, "mandatory_timeout")) required_mt = true;
+        if (std.mem.eql(u8, name, "timeout")) required_mt = true;
     }
     try testing.expect(required_mt);
 }
 
-test "command.execute_command still enforces mandatory_timeout at runtime" {
+test "command_tool schema: the field named `timeout` is NOT the shell timeout utility" {
+    // The rename put the model's word for the FIELD and its word for the
+    // banned UTILITY on the same string. Without an explicit note, `timeout`
+    // reading as "the thing I can prefix" is the natural mistake — and the
+    // tool text is where it has to be pre-empted.
+    // The warning belongs on the PROPERTY (that is the text the model reads
+    // when deciding what to put in the field), so this asserts where it
+    // actually has to be — asserting it on the top-level description would pass
+    // on a tool whose field-level help says nothing.
+    var timeout_desc: ?[]const u8 = null;
+    for (command.command_tool.function.parameters.properties) |prop| {
+        if (std.mem.eql(u8, prop.name, "timeout")) timeout_desc = prop.description;
+    }
+    try testing.expect(timeout_desc != null);
+    try testing.expect(std.mem.indexOf(u8, timeout_desc.?, "FIELD, not a command prefix") != null);
+    try testing.expect(std.mem.indexOf(u8, timeout_desc.?, "shell `timeout` utility") != null);
+
+    // ...and the tool-level prose still names the utility as forbidden, so a
+    // model that reads only the Rules block sees it too.
+    try testing.expect(std.mem.indexOf(u8, command.command_tool.function.description, "shell `timeout`") != null);
+
+    // ...and the utility is still not RECOMMENDED anywhere, which is what the
+    // banned-substring test above enforces.
+    try testing.expect(std.mem.indexOf(u8, command.command_tool_system_prompt, "Do NOT prefix commands") != null);
+}
+
+test "command.execute_command still enforces timeout at runtime" {
     // The prompt-text change is cosmetic; the CODE enforcement is the
-    // contract. A call with mandatory_timeout = null must still fail with
-    // MandatoryTimeoutMissing (and 0 must too) — otherwise removing the
+    // contract. A call with timeout = null must still fail with
+    // TimeoutMissing (and 0 must too) — otherwise removing the
     // `timeout N` prefix rule would silently leave commands unbounded.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     try testing.expectError(
-        error.MandatoryTimeoutMissing,
+        error.TimeoutMissing,
         command.execute_command(testing.allocator, std.testing.io, .{
             .command = "echo hi",
             .cwd = "/tmp",
-            .mandatory_timeout = null,
+            .timeout = null,
         }),
     );
     try testing.expectError(
-        error.MandatoryTimeoutMissing,
+        error.TimeoutMissing,
         command.execute_command(testing.allocator, std.testing.io, .{
             .command = "echo hi",
             .cwd = "/tmp",
-            .mandatory_timeout = 0,
+            .timeout = 0,
         }),
     );
 }
@@ -321,7 +383,7 @@ test "command_tool schema: tool name is 'command'" {
     try testing.expectEqualStrings("command", command.command_tool.function.name);
 }
 
-test "command_tool schema: required fields are (command, cwd, mandatory_timeout)" {
+test "command_tool schema: required fields are (command, cwd, timeout)" {
     const params = command.command_tool.function.parameters;
     try testing.expectEqualStrings("object", params.type);
     try testing.expectEqual(@as(usize, 3), params.required.len);
@@ -332,7 +394,7 @@ test "command_tool schema: required fields are (command, cwd, mandatory_timeout)
     for (params.properties) |prop| {
         if (std.mem.eql(u8, prop.name, "command")) found_command = true;
         if (std.mem.eql(u8, prop.name, "cwd")) found_cwd = true;
-        if (std.mem.eql(u8, prop.name, "mandatory_timeout")) found_mt = true;
+        if (std.mem.eql(u8, prop.name, "timeout")) found_mt = true;
     }
     try testing.expect(found_command);
     try testing.expect(found_cwd);
@@ -390,7 +452,7 @@ test "CommandInput is the same type as ShellInput (alias liveness check)" {
     try testing.expectEqualStrings(@typeName(@TypeOf(command_input)), @typeName(@TypeOf(shell_input)));
 
     const json =
-        \\{"command":"x","cwd":"/tmp","mandatory_timeout":3,"max_output":10,
+        \\{"command":"x","cwd":"/tmp","timeout":3,"max_output":10,
         \\"stdin_data":"y","background":true,"max_lines":20,"do_encoding":true}
     ;
     const a = try std.json.parseFromSlice(@TypeOf(command_input), testing.allocator, json, .{});
@@ -398,7 +460,7 @@ test "CommandInput is the same type as ShellInput (alias liveness check)" {
     const b = try std.json.parseFromSlice(@TypeOf(shell_input), testing.allocator, json, .{});
     defer b.deinit();
     try testing.expectEqualStrings(a.value.command, b.value.command);
-    try testing.expect(a.value.mandatory_timeout.? == b.value.mandatory_timeout.?);
+    try testing.expect(a.value.timeout.? == b.value.timeout.?);
 }
 
 test "command argv prefixes have the expected shape" {
@@ -424,7 +486,7 @@ test "command.execute_command runs on the host shell (bash off-Windows)" {
     const out = try command.execute_command(testing.allocator, std.testing.io, .{
         .command = "echo hello-command",
         .cwd = "/tmp",
-        .mandatory_timeout = 5,
+        .timeout = 5,
     });
     defer {
         testing.allocator.free(out.command);
