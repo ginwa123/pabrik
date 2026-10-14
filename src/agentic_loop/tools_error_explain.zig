@@ -81,6 +81,10 @@ pub fn explain(allocator: std.mem.Allocator, err: anyerror, context: ?[]const u8
             u8,
             "`cwd` must be an ABSOLUTE path. A relative path is resolved against the server's working directory rather than where you are working, so it silently lands somewhere else. Send the full path — it starts with `/`, or a drive letter like `C:\\`.",
         ),
+        error.CwdInvalid => try allocator.dupe(
+            u8,
+            "`cwd` contains a character that cannot appear in a path (a control byte, a NUL, or a Windows reserved device name). The usual cause on Windows is a path written with single backslashes — inside the JSON string `C:\\Users\\me` must be written `C:\\\\Users\\\\me`, or the decoder turns `\\U` / `\\A` into a control character and the path arrives mangled.",
+        ),
         error.CommandForbidden => try allocator.dupe(
             u8,
             "This command matches a forbidden pattern (it would produce unbounded output or is otherwise unsafe). Rewrite it so its output is bounded — pipe through `| head -n <N>` / `| tail -n <N>` (bash) or `| Select-Object -First <N>` (pwsh).",

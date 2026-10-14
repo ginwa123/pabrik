@@ -106,16 +106,6 @@ pub fn execTextReplace(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult
     };
     defer parsed.deinit();
 
-    // `cwd` is REQUIRED on every path-taking tool: it is the directory this
-    // call works in, and the base a relative `path` resolves against. See
-    // helpers/path_validate.zig for the one implementation of that rule.
-    path_validate.validateCwd(parsed.value.cwd) catch |err| {
-        const err_msg = try error_explain.explain(ctx.allocator, err, null);
-        defer ctx.allocator.free(err_msg);
-        const output = try wrapToolOutput(ctx.allocator, "text_replace", tc.function.arguments, false, err_msg, "");
-        return ToolExecResult{ .output = output, .output_allocated = true };
-    };
-
     // The repair cannot leave a legal escape alone, so `…\.config\pabrik`
     // decodes to a real newline in the middle of the path. No path contains
     // a control byte, and a raw one is illegal inside a JSON string, so the
@@ -129,10 +119,30 @@ pub fn execTextReplace(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult
         break :blk fixed;
     } else parsed.value.path;
 
-    // Same rule as every other path-taking tool: the model's `cwd` is the base
-    // this call works in, so a relative `path` is resolved BEFORE any file is
-    // touched (an unresolved relative path would land in the server's cwd).
-    const path_abs = try path_validate.resolveAgainstCwd(ctx.allocator, parsed.value.cwd, path);
+    // `cwd` is a path as well, so it needs the SAME re-expansion the block
+    // above gives `path`. The repair cannot tell a separator from an escape:
+    // a Windows `C:\Users\me\AppData` decoded `\U` / `\A` into control bytes,
+    // and `validateCwd` then rejected the control character — so the model was
+    // told its plainly-absolute path "must be an ABSOLUTE path" (caught by the
+    // raw-backslash test below, on Windows CI).
+    var owned_cwd: ?[]u8 = null;
+    defer if (owned_cwd) |c| ctx.allocator.free(c);
+    const cwd = if (try args_repair.reexpandPathControlChars(ctx.allocator, parsed.value.cwd)) |fixed| blk: {
+        owned_cwd = fixed;
+        break :blk fixed;
+    } else parsed.value.cwd;
+
+    // Same rule as every other path-taking tool: `cwd` is REQUIRED (the
+    // directory this call works in — see helpers/path_validate.zig) and a
+    // relative `path` is resolved against it BEFORE any file is touched (an
+    // unresolved relative path would land in the server's cwd).
+    path_validate.validateCwd(cwd) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "text_replace", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    const path_abs = try path_validate.resolveAgainstCwd(ctx.allocator, cwd, path);
     defer ctx.allocator.free(path_abs);
 
     var tr_result = text_replace_mod.executeTextReplace(
@@ -158,6 +168,24 @@ pub fn execTextReplace(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult
     const inner = try text_replace_mod.toJSONSuccess(ctx.allocator, tr_result, path_abs);
     const output = try wrapToolOutput(ctx.allocator, "text_replace", tc.function.arguments, true, null, inner);
     return ToolExecResult{ .output = output, .output_allocated = true };
+}
+
+test "execTextReplace: a missing cwd is refused with an actionable message" {
+    // `cwd` is required, and the refusal is the only thing that teaches the
+    // model the field exists — so the message must NAME it. Runs on every
+    // platform (no Windows path involved), unlike the raw-backslash test
+    // below.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    const env = try runTr(a, "{\"path\":\"/tmp/x.go\",\"old_str\":\"a\",\"new_str\":\"b\"}");
+    try testing.expect(!env.object.get("success").?.bool);
+    const msg = env.object.get("error").?.string;
+    try testing.expect(std.mem.indexOf(u8, msg, "cwd") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "required") != null);
+    // The raw Zig error name never reaches the model.
+    try testing.expect(std.mem.indexOf(u8, msg, "MandatoryCwdMissing") == null);
 }
 
 // ---------------------------------------------------------------------------
@@ -376,12 +404,25 @@ test "execTextReplace: Windows path with raw backslashes is repaired, not reject
     // file is still found.
     const target_path = try std.fmt.allocPrint(a, "{s}/{s}", .{ root, file_name });
 
+    // `cwd` must be exercised on BOTH hosts, not just Windows. A Windows
+    // tmpdir path is already full of backslashes, so the re-expansion ran
+    // there and nowhere else — which is how the missing call first showed up
+    // as a red Windows CI job ("`cwd` must be an ABSOLUTE path" for a plainly
+    // absolute one). On POSIX the directory is named with a backslash instead,
+    // so the same decode-then-re-expand path runs on every host.
+    const cwd_rel: []const u8 = if (builtin.os.tag == .windows) "" else "win\\cwd";
+    if (cwd_rel.len > 0) try tmp.dir.createDirPath(testing.io, cwd_rel);
+    const cwd_abs = if (cwd_rel.len == 0)
+        root
+    else
+        try std.fmt.allocPrint(a, "{s}/{s}", .{ root, cwd_rel });
+
     // The arguments a model writes when it pastes the path verbatim: every
     // separator is a single `\`, which is what RFC 8259 §7 rejects.
     const args = try std.fmt.allocPrint(
         a,
         "{{\"path\":\"{s}\",\"cwd\":\"{s}\",\"old_str\":\"Hello\",\"new_str\":\"Goodbye\"}}",
-        .{ target_path, root },
+        .{ target_path, cwd_abs },
     );
     try testing.expect(std.mem.indexOf(u8, args, "\\") != null);
 

@@ -52,15 +52,20 @@ fn isReservedDosName(seg: []const u8) bool {
 /// (`error.MandatoryCwdMissing` / `error.CwdNotAbsolute`), because
 /// `tools_error_explain` already renders both as a sentence the model can act
 /// on. One rule, one message, nine tools.
-pub const CwdError = error{ MandatoryCwdMissing, CwdNotAbsolute };
+pub const CwdError = error{ MandatoryCwdMissing, CwdNotAbsolute, CwdInvalid };
 
 pub fn validateCwd(cwd: []const u8) CwdError!void {
     if (cwd.len == 0) return error.MandatoryCwdMissing;
+    // Absolute-ness is checked BEFORE the name shape: on Windows
+    // `invalidPathReason` also rejects a relative-looking name, and reporting
+    // that as "contains an invalid character" would send the model looking for
+    // the wrong problem.
     if (!std.fs.path.isAbsolute(cwd)) return error.CwdNotAbsolute;
     // A `cwd` reaches `std.fs` / `spawn` exactly like `path` does, so it needs
-    // the same Windows NT-status guard. A name that fails it is not a usable
-    // absolute directory, which is what `CwdNotAbsolute` tells the model.
-    if (invalidPathReason(cwd) != null) return error.CwdNotAbsolute;
+    // the same Windows NT-status guard. A control byte or a reserved device
+    // name is a distinct failure from "not absolute", and gets its own error
+    // so the message can name the real cause.
+    if (invalidPathReason(cwd) != null) return error.CwdInvalid;
 }
 
 /// Resolve a model-supplied path against the `cwd` the same call supplied.
