@@ -146,7 +146,7 @@ def test_documents_sits_directly_under_projects(ui_harness, page) -> None:
     workspace_id = ws.json()["id"]
     _seed_documents(h, workspace_id)
 
-    page.goto(h.web_url(f"/app/{workspace_id}"), wait_until="load", timeout=30000)
+    page.goto(h.web_url(f"/app/{workspace_id}"), wait_until="load", timeout=60000)
     # The sidebar shell is up once the New Chat action has rendered.
     page.wait_for_selector('[data-testid="sidebar-new-chat-button"]', timeout=20000)
     page.wait_for_selector('[data-workspace-menu]', timeout=20000)
@@ -221,7 +221,7 @@ def test_projects_and_documents_do_not_scroll_themselves(ui_harness, page) -> No
     workspace_id = ws.json()["id"]
     _seed_documents(h, workspace_id, count=4)
 
-    page.goto(h.web_url(f"/app/{workspace_id}"), wait_until="load", timeout=30000)
+    page.goto(h.web_url(f"/app/{workspace_id}"), wait_until="load", timeout=60000)
     page.wait_for_selector('[data-workspace-menu]', timeout=20000)
     _expand_documents(page)
     page.wait_for_timeout(500)

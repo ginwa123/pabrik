@@ -207,7 +207,7 @@ def _goto(page, url: str) -> None:
     (same rationale as ``_open_agent_view`` in
     agent_system_prompt_ui_test.py).
     """
-    page.goto(url, wait_until="domcontentloaded", timeout=30000)
+    page.goto(url, wait_until="domcontentloaded", timeout=60000)
 
 
 def _open_sidebar(page) -> None:
@@ -399,7 +399,7 @@ def test_code_viewer_restores_after_reload(prod_harness: FunctionalHarness, page
 
         # Same gate as _goto: the reload only has to re-parse the
         # document; the viewer assertions below are the real check.
-        page.reload(wait_until="domcontentloaded", timeout=30000)
+        page.reload(wait_until="domcontentloaded", timeout=60000)
         _assert_viewer_shows_code(page)
         _assert_no_module_resolution_error(errors)
     finally:

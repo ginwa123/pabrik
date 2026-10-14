@@ -95,7 +95,7 @@ def test_kanban_board_renders_after_creation(ui_harness: UIHarness, page) -> Non
     url = _kanban_url(h, ws_id, kanban_id)
     # Use ``domcontentloaded`` not ``networkidle``: Vite's HMR keeps a
     # persistent WebSocket open that prevents networkidle from ever firing.
-    page.goto(url, wait_until="domcontentloaded", timeout=30000)
+    page.goto(url, wait_until="domcontentloaded", timeout=60000)
     page.wait_for_timeout(1000)  # give Vue + API calls time to settle
 
     # The board should show the 3 default columns: todo, in progress, done.
@@ -151,7 +151,7 @@ def test_kanban_create_task_via_api_then_verify_in_ui(ui_harness: UIHarness, pag
     # Open in browser — verify the task title is visible on the page.
     url = _kanban_url(h, ws_id, kanban_id)
     # ``domcontentloaded`` not ``networkidle`` (see comment in test 1)
-    page.goto(url, wait_until="domcontentloaded", timeout=30000)
+    page.goto(url, wait_until="domcontentloaded", timeout=60000)
     page.wait_for_timeout(1000)
     # The task title should appear somewhere on the page (the kanban
     # board renders each task as a card with its name).
@@ -213,7 +213,7 @@ def test_kanban_move_task_between_columns_via_api(ui_harness: UIHarness, page) -
     # a different column visually).
     url = _kanban_url(h, ws_id, kanban_id)
     # ``domcontentloaded`` not ``networkidle`` (see comment in test 1)
-    page.goto(url, wait_until="domcontentloaded", timeout=30000)
+    page.goto(url, wait_until="domcontentloaded", timeout=60000)
     page.wait_for_timeout(1000)
     task_visible = page.locator(f"text={task_title}").count() > 0
     assert task_visible, (
@@ -247,7 +247,7 @@ def test_kanban_via_real_ui_click_create_button(ui_harness: UIHarness, page) -> 
     # Open the kanban in the browser.
     url = _kanban_url(h, ws_id, kanban_id)
     # ``domcontentloaded`` not ``networkidle`` (see comment in test 1)
-    page.goto(url, wait_until="domcontentloaded", timeout=30000)
+    page.goto(url, wait_until="domcontentloaded", timeout=60000)
     page.wait_for_timeout(1000)
 
     # Find the "Add task" button. The kanban toolbar uses

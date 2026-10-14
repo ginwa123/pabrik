@@ -21,6 +21,10 @@
 #    shards per platform (nine jobs) drops the wall clock to roughly the
 #    longest shard. The partition itself is in tests/conftest.py +
 #    tests/func_shard.py; this file only passes shard_index/shard_total.
+#    Each cell hands its shard to the build as `-Dfunc-shards` /
+#    `-Dfunc-shard-index` (see ci-functional.yml); build.zig validates the
+#    pair and sets the PABRIK_FUNC_SHARD_* variables the selector reads, so
+#    the shard travels as a build input rather than as an inherited env var.
 #
 # 3. A CHEAP GATE FIRST. `changes` classifies the diff in ~15 s and
 #    `lint` runs oxlint + eslint in ~3 min, before any 20-50 minute job

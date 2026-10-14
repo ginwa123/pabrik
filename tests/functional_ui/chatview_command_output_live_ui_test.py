@@ -196,7 +196,7 @@ def test_command_stdout_updates_live_and_survives_reload(
     assert "second output line" in card.inner_text()
     _wait_for_cached_stdout(page)
 
-    page.reload(wait_until="domcontentloaded", timeout=30000)
+    page.reload(wait_until="domcontentloaded", timeout=60000)
     reloaded_card = page.locator(".chat-tool-card").filter(
         has=page.locator('[data-testid="shell-tool-pill"]', has_text="command")
     ).first

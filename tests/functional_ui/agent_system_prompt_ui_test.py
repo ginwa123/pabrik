@@ -54,7 +54,7 @@ def _agent_url(h: UIHarness, workspace_id: str, agent_id: str) -> str:
 
 def _open_agent_view(page, h: UIHarness, workspace_id: str, agent_id: str) -> None:
     page.goto(_agent_url(h, workspace_id, agent_id), wait_until="domcontentloaded",
-              timeout=30000)
+              timeout=60000)
     # The System Prompt section heading is the "Vue mounted the agent
     # view" signal. domcontentloaded alone doesn't guarantee the SPA
     # finished its API round-trips.

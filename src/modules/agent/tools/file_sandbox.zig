@@ -661,13 +661,33 @@ test "resolveSessionRoot: a relative cwd is refused, never handed to realPath" {
     try testing.expectError(error.NoWorkingDirectory, resolveSessionRoot(testing.allocator, &ctx.db, "task_d"));
 }
 
-test "resolveSessionRoot: a Windows cwd on a posix host is refused" {
-    if (builtin.os.tag == .windows) return error.SkipZigTest;
+test "resolveSessionRoot: a Windows cwd is judged by the native path style" {
+    // One body, every host. `resolveSessionRoot` reads the host's own
+    // grammar (`nativeStyle()`) and hands the result to
+    // `realPathFileAbsolute`, whose `isAbsolute` assert is a process abort
+    // rather than an error — so a root the native grammar rejects has to be
+    // refused here, and one it accepts has to come back unchanged.
+    //
+    // The switch is over `PathStyle`, the enum the SUT itself switches on,
+    // so there is no "some other host" arm that could pass vacuously: a
+    // third style would not compile until someone wrote its expectation
+    // down. A `builtin.os.tag == .windows` early return would have been the
+    // other shape — green on the host it did not name, having checked
+    // nothing there.
     var ctx = try setupDb();
     defer ctx.deinit();
     try seedSession(&ctx.db, "task_e", "C:\\Users\\gilang\\project", "");
 
-    try testing.expectError(error.NoWorkingDirectory, resolveSessionRoot(testing.allocator, &ctx.db, "task_e"));
+    switch (nativeStyle()) {
+        .windows => {
+            const root = try resolveSessionRoot(testing.allocator, &ctx.db, "task_e");
+            defer testing.allocator.free(root);
+            try testing.expectEqualStrings("C:\\Users\\gilang\\project", root);
+        },
+        .posix => {
+            try testing.expectError(error.NoWorkingDirectory, resolveSessionRoot(testing.allocator, &ctx.db, "task_e"));
+        },
+    }
 }
 
 test "resolveSessionRoot: the resolved root is absolute for the native style" {

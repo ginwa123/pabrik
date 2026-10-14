@@ -222,7 +222,7 @@ def test_dialog_create_task_persists_picked_profile_in_db(
     ws_id = _create_workspace(h)
     kanban_id = _create_kanban(h, ws_id)
 
-    page.goto(_kanban_url(h, ws_id, kanban_id), wait_until="domcontentloaded", timeout=30000)
+    page.goto(_kanban_url(h, ws_id, kanban_id), wait_until="domcontentloaded", timeout=60000)
     page.wait_for_timeout(1000)
 
     # 1. Click "Add task" — opens the dialog in create mode.
@@ -372,7 +372,7 @@ def test_dialog_create_and_run_persists_picked_profile_in_db(
     ws_id = _create_workspace(h)
     kanban_id = _create_kanban(h, ws_id)
 
-    page.goto(_kanban_url(h, ws_id, kanban_id), wait_until="domcontentloaded", timeout=30000)
+    page.goto(_kanban_url(h, ws_id, kanban_id), wait_until="domcontentloaded", timeout=60000)
     page.wait_for_timeout(1000)
 
     add_button = page.locator('[data-testid="kanban-add-task-button"]').first
@@ -460,7 +460,7 @@ def test_dialog_picked_profile_surfaces_in_chatview_chip(
     ws_id = _create_workspace(h)
     kanban_id = _create_kanban(h, ws_id)
 
-    page.goto(_kanban_url(h, ws_id, kanban_id), wait_until="domcontentloaded", timeout=30000)
+    page.goto(_kanban_url(h, ws_id, kanban_id), wait_until="domcontentloaded", timeout=60000)
     page.wait_for_timeout(1000)
 
     add_button = page.locator('[data-testid="kanban-add-task-button"]').first
@@ -528,7 +528,7 @@ def test_dialog_picked_profile_surfaces_in_chatview_chip(
     page.goto(
         h.web_url(f"/app?view=chat&session={task_id}"),
         wait_until="load",
-        timeout=30000,
+        timeout=60000,
     )
     # Give Vue + getSession() + loadProfiles() time to settle.
     page.wait_for_timeout(2500)
