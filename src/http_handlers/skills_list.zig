@@ -76,6 +76,7 @@ fn useCase(
 const SkillSummary = struct {
     name: []const u8,
     description: []const u8,
+    is_can_auto_improve: bool,
 };
 
 const SkillListResponse = struct {
@@ -114,7 +115,11 @@ pub fn skillsListHandler(
     const summaries = try allocator.alloc(SkillSummary, output.skills.len);
     defer allocator.free(summaries);
     for (output.skills, 0..) |row, i| {
-        summaries[i] = .{ .name = row.name, .description = row.description };
+        summaries[i] = .{
+            .name = row.name,
+            .description = row.description,
+            .is_can_auto_improve = row.is_can_auto_improve,
+        };
     }
 
     const data = try std.json.Stringify.valueAlloc(
@@ -231,6 +236,35 @@ test "useCase: an empty description round-trips as empty, not as a missing field
     defer skills_store.freeSkillRows(alloc, output.skills);
     try testing.expectEqual(@as(usize, 1), output.skills.len);
     try testing.expectEqualStrings("", output.skills[0].description);
+}
+
+test "useCase: the auto-improve lock travels with each list row" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try seed(&ctx, "ws_1", "alpha", "first skill");
+    const pinned = try skills_store.upsertSkill(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .name = "beta",
+        .description = "second skill",
+        .content = "body of beta",
+        .is_can_auto_improve = false,
+    });
+    defer skills_store.freeSkillRow(alloc, pinned);
+
+    // The list is the only surface that knows about every skill, so a row
+    // that dropped the flag would render every skill as unlocked and the
+    // checkbox would lie about what the agent may touch.
+    const output = try useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1" });
+    defer skills_store.freeSkillRows(alloc, output.skills);
+
+    try testing.expectEqual(@as(usize, 2), output.skills.len);
+    try testing.expectEqualStrings("alpha", output.skills[0].name);
+    try testing.expect(output.skills[0].is_can_auto_improve);
+    try testing.expectEqualStrings("beta", output.skills[1].name);
+    try testing.expect(!output.skills[1].is_can_auto_improve);
 }
 // Registration ORDER is load-bearing: `matchRoute` returns on the first hit,
 // so the collection route must precede `:skill_name`. That is asserted

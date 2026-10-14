@@ -44,6 +44,7 @@ pub const MAX_SEARCH_LIMIT: usize = 200;
 pub const SkillRow = struct {
     name: []const u8,
     description: []const u8,
+    is_can_auto_improve: bool = true,
 };
 
 /// Project the store's rows into the borrowed shape the matcher wants.
@@ -65,7 +66,11 @@ pub fn collectRows(
     errdefer out.deinit(allocator);
 
     for (rows) |row| {
-        try out.append(allocator, .{ .name = row.name, .description = row.description });
+        try out.append(allocator, .{
+            .name = row.name,
+            .description = row.description,
+            .is_can_auto_improve = row.is_can_auto_improve,
+        });
     }
 
     return out.toOwnedSlice(allocator);
@@ -211,6 +216,7 @@ pub fn pageSlice(rows: []const SkillRow, offset: usize, limit: usize) []const Sk
 const SkillRowJson = struct {
     name: []const u8,
     description: []const u8,
+    is_can_auto_improve: bool,
 };
 
 fn modeStr(mode: QueryMode) []const u8 {
@@ -238,6 +244,7 @@ pub fn renderSearchResult(
         rows[i] = .{
             .name = row.name,
             .description = row.description,
+            .is_can_auto_improve = row.is_can_auto_improve,
         };
     }
 
@@ -301,6 +308,7 @@ const RenderedSearch = struct {
 const RenderedRow = struct {
     name: []const u8,
     description: []const u8,
+    is_can_auto_improve: bool = true,
 };
 
 fn parseRendered(alloc: std.mem.Allocator, out: []const u8) !std.json.Parsed(RenderedSearch) {
@@ -574,4 +582,31 @@ test "collectRows projects one workspace's rows and matches over them" {
     });
     defer alloc.free(out);
     try testing.expect(std.mem.indexOf(u8, out, "must-never-leak-in") == null);
+}
+
+test "renderSearchResult carries each row's auto-improve lock" {
+    const alloc = testing.allocator;
+    const rows = [_]SkillRow{
+        .{ .name = "open", .description = "the agent may evolve this", .is_can_auto_improve = true },
+        .{ .name = "pinned", .description = "the human locked this", .is_can_auto_improve = false },
+    };
+
+    const out = try renderSearchResult(alloc, &rows, .{
+        .total = rows.len,
+        .offset = 0,
+        .limit = 40,
+        .query = "",
+        .mode = .all,
+        .warning = "",
+    });
+    defer alloc.free(out);
+
+    var parsed = try parseRendered(alloc, out);
+    defer parsed.deinit();
+
+    // Without this the model learns a skill is locked only by being
+    // refused, which costs a round trip per attempt.
+    try testing.expectEqual(@as(usize, 2), parsed.value.skills.len);
+    try testing.expect(parsed.value.skills[0].is_can_auto_improve);
+    try testing.expect(!parsed.value.skills[1].is_can_auto_improve);
 }

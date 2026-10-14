@@ -23,6 +23,7 @@
 import { computed, onMounted, onUpdated, ref } from 'vue'
 import { Effect } from 'effect'
 import UiIcon from '../ui/UiIcon.vue'
+import SkillAutoImproveToggle from '../ui/SkillAutoImproveToggle.vue'
 import { getSkillDetail, deleteSkill, updateSkill, type SkillDetail } from '../../api'
 import { useWorkspacesStore } from '../../stores/workspaces'
 import { SyncRemoteError } from '../../sync/SyncError'
@@ -206,6 +207,19 @@ const handleSave = async () => {
   skillDetail.value = result.value.skill
   isEditing.value = false
   emit('skillSaved', detail.name)
+}
+
+const handleAutoImproveChanged = (isCanAutoImprove: boolean) => {
+  const detail = skillDetail.value
+  if (!detail) return
+  detail.is_can_auto_improve = isCanAutoImprove
+  // The list row owns its own copy of the flag, so the left pane has to
+  // re-read or the two halves disagree about who may edit this skill.
+  emit('skillSaved', detail.name)
+}
+
+const handleToggleError = (message: string) => {
+  emit('error', message)
 }
 
 const handleDelete = async () => {
@@ -392,6 +406,17 @@ const handleDelete = async () => {
           <span class="font-medium">{{ assetCount }}</span>
           bundled file{{ assetCount === 1 ? '' : 's' }}
         </p>
+        <!-- Shown in read AND edit mode: it is a property of the skill, not
+             one of the two fields the form edits. -->
+        <SkillAutoImproveToggle
+          v-if="workspaceId"
+          class="mt-2"
+          :workspace-id="workspaceId"
+          :skill-name="skillDetail.name"
+          :checked="skillDetail.is_can_auto_improve"
+          @changed="handleAutoImproveChanged"
+          @error="handleToggleError"
+        />
       </div>
 
       <!-- Content -->

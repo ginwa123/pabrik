@@ -158,6 +158,7 @@ const handleSkillError = (message: string) => {
             :selected-skill-name="selectedSkillName"
             :workspace-id="props.workspaceId"
             @select-skill="handleSelectSkill"
+            @error="handleSkillError"
           />
         </div>
       </div>

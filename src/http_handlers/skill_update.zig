@@ -31,6 +31,7 @@ const UpdateSkillBody = struct {
     name: ?[]const u8 = null,
     description: ?[]const u8 = null,
     content: ?[]const u8 = null,
+    is_can_auto_improve: ?bool = null,
 };
 
 pub const SkillUpdateError = error{
@@ -83,16 +84,17 @@ fn useCase(
         if (!std.mem.eql(u8, current.name, name)) return error.NotFound;
     }
 
-    // A PATCH with neither field keeps the stored row, and the cheapest
-    // way to keep a skill is not to write it: no UPDATE means the row is
-    // returned as-is and `updated_at` does not advance either.
-    if (input.body.description == null and input.body.content == null) {
+    // A PATCH with no field keeps the stored row, and the cheapest way to
+    // keep a skill is not to write it: no UPDATE means the row is returned
+    // as-is and `updated_at` does not advance either.
+    if (input.body.description == null and input.body.content == null and input.body.is_can_auto_improve == null) {
         return .{ .skill = try readRow(allocator, db, input.workspace_id, input.skill_name) };
     }
 
     const row = skills_store.updateSkill(allocator, db, input.workspace_id, input.skill_name, .{
         .description = input.body.description,
         .content = input.body.content,
+        .is_can_auto_improve = input.body.is_can_auto_improve,
     }) catch |err| switch (err) {
         error.WorkspaceIdNameRequired => return error.WorkspaceIdRequired,
         error.NotFound => return error.NotFound,
@@ -204,6 +206,7 @@ pub fn skillUpdateHandler(
             // the description must come back with the body it did not
             // touch, or the caller would render a blank instruction set.
             .asset_count = 0,
+            .is_can_auto_improve = output.skill.is_can_auto_improve,
         }),
     }, .{});
     return res.jsonResponse(.{ .status_code = 200, .data = data });
@@ -482,4 +485,64 @@ test "useCase: store failures are 500 DB errors" {
     try testing.expectEqualStrings("DB error", messageFor(error.UpdateFailed));
     try testing.expectEqual(@as(u16, 500), statusFor(error.QueryFailed));
     try testing.expectEqual(@as(u16, 413), statusFor(error.ContentTooLarge));
+}
+
+test "useCase: a flag-only patch toggles the lock and keeps the body" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+    try seed(&ctx, "ws_1", "pdf", "a description", "the body that must survive");
+
+    // The checkbox in the Skills panel sends exactly this: one field, and
+    // a skill whose other fields are identical. Without the flag in the
+    // store's no-op comparison the server would answer 409 to it.
+    const locked = try useCase(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .skill_name = "pdf",
+        .body = .{ .is_can_auto_improve = false },
+    });
+    defer skills_store.freeSkillRow(alloc, locked.skill);
+
+    try testing.expect(!locked.skill.is_can_auto_improve);
+    try testing.expectEqualStrings("a description", locked.skill.description);
+    try testing.expectEqualStrings("the body that must survive", locked.skill.content);
+
+    const unlocked = try useCase(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .skill_name = "pdf",
+        .body = .{ .is_can_auto_improve = true },
+    });
+    defer skills_store.freeSkillRow(alloc, unlocked.skill);
+    try testing.expect(unlocked.skill.is_can_auto_improve);
+    try testing.expectEqualStrings("the body that must survive", unlocked.skill.content);
+}
+
+test "useCase: the human editor still edits a LOCKED skill" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const created = try skills_store.upsertSkill(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .name = "pinned",
+        .description = "a description",
+        .content = "old body",
+        .is_can_auto_improve = false,
+    });
+    defer skills_store.freeSkillRow(alloc, created);
+
+    // The flag blocks the AGENT tools, not the human. This route is the
+    // only way to correct a skill the agent is no longer allowed to touch,
+    // so refusing here would leave a pinned skill unfixable.
+    const output = try useCase(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .skill_name = "pinned",
+        .body = .{ .content = "human-edited body" },
+    });
+    defer skills_store.freeSkillRow(alloc, output.skill);
+
+    try testing.expectEqualStrings("human-edited body", output.skill.content);
+    try testing.expect(!output.skill.is_can_auto_improve);
 }

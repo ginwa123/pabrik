@@ -47,6 +47,7 @@ pub const SkillDetailRow = struct {
     description: []const u8,
     content: []const u8,
     asset_count: usize,
+    is_can_auto_improve: bool,
 };
 
 pub const SkillDetailOutput = struct {
@@ -214,6 +215,7 @@ pub fn skillDetailHandler(
             .description = row.description,
             .content = row.content,
             .asset_count = output.asset_count,
+            .is_can_auto_improve = row.is_can_auto_improve,
         },
         .error_message = "",
     }, .{});
@@ -312,6 +314,30 @@ test "useCase: a bundle reports its companion count without shipping the bodies"
     defer skills_store.freeSkillRow(alloc, row);
 
     try testing.expectEqual(@as(usize, 2), output.asset_count);
+}
+
+test "useCase: a locked skill reports its lock on the detail read" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const pinned = try skills_store.upsertSkill(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .name = "pdf",
+        .description = "Work with PDFs",
+        .content = BUNDLED_BODY,
+        .is_can_auto_improve = false,
+    });
+    defer skills_store.freeSkillRow(alloc, pinned);
+
+    const output = try useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1", .skill_name = "pdf" });
+    const row = output.skill orelse return error.ExpectedSkill;
+    defer skills_store.freeSkillRow(alloc, row);
+
+    // The detail pane owns the checkbox, so the flag has to be on this
+    // read or the toggle would always render as checked.
+    try testing.expect(!row.is_can_auto_improve);
 }
 
 test "useCase: another workspace's skill name is NotFound, not forbidden" {

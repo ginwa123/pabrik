@@ -121,6 +121,7 @@ const migration_105 = @import("migration_105.zig");
 const migration_106 = @import("migration_106.zig");
 const migration_107 = @import("migration_107.zig");
 const migration_108 = @import("migration_108.zig");
+const migration_109 = @import("migration_109.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -231,6 +232,7 @@ pub const Migration105CreateWorkspaceSettings = migration_105.Migration105Create
 pub const Migration106CreateModelCatalog = migration_106.Migration106CreateModelCatalog;
 pub const Migration107AddBackgroundProcessKind = migration_107.Migration107AddBackgroundProcessKind;
 pub const Migration108AddBackgroundProcessReadOffset = migration_108.Migration108AddBackgroundProcessReadOffset;
+pub const Migration109AddSkillCanAutoImprove = migration_109.Migration109AddSkillCanAutoImprove;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -530,6 +532,7 @@ pub const allMigrations: []const Migration = &.{
     // process's log the agent has already been shown, so a poll returns only
     // what is new. See migration_108.zig.
     .{ .version = Migration108AddBackgroundProcessReadOffset.version, .name = Migration108AddBackgroundProcessReadOffset.name, .up = Migration108AddBackgroundProcessReadOffset.up },
+    .{ .version = Migration109AddSkillCanAutoImprove.version, .name = Migration109AddSkillCanAutoImprove.name, .up = Migration109AddSkillCanAutoImprove.up },
 };
 
 /// Register all migrations with a MigrationManager
@@ -11642,7 +11645,7 @@ test "Migration102 creates skills with the expected columns" {
         alloc.free(cols);
     }
     try expectColumnsEqual(cols, &[_][]const u8{
-        "id", "workspace_id", "name", "description", "content", "created_at", "updated_at",
+        "id", "workspace_id", "name", "description", "content", "created_at", "updated_at", "is_can_auto_improve",
     });
 }
 test "Migration102 creates skill_assets with the expected columns" {
@@ -11790,6 +11793,120 @@ test "Migration102 is registered in allMigrations" {
         if (m.version == Migration102CreateSkills.version) return;
     }
     return error.Migration102NotRegistered;
+}
+
+// ============================================================================
+// Migration 109 tests
+// ============================================================================
+
+/// The `skills` table exactly as Migration 102 shipped it, before 109. A
+/// pre-109 database has this and no `is_can_auto_improve`.
+fn createLegacySkillsTable(ctx: *TestCtx) !void {
+    const alloc = testing.allocator;
+    try ctx.db.exec(alloc,
+        \\CREATE TABLE skills (
+        \\    id TEXT PRIMARY KEY,
+        \\    workspace_id TEXT NOT NULL,
+        \\    name TEXT NOT NULL,
+        \\    description TEXT NOT NULL DEFAULT '',
+        \\    content TEXT NOT NULL DEFAULT '',
+        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\    UNIQUE (workspace_id, name)
+        \\)
+    , &.{});
+}
+
+fn autoImproveFlagOf(ctx: *TestCtx, id: []const u8) ![]const u8 {
+    const alloc = testing.allocator;
+    var q = try ctx.db.query(
+        alloc,
+        "SELECT is_can_auto_improve FROM skills WHERE id = ?",
+        &[_][]const u8{id},
+    );
+    defer q.deinit();
+    const row = (try q.next()) orelse return error.NoRows;
+    defer row.deinit(alloc);
+    return alloc.dupe(u8, row.values[0]);
+}
+
+test "Migration109 adds the auto-improve column to a legacy skills table, defaulting to 1" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try createLegacySkillsTable(&ctx);
+    try ctx.db.exec(alloc,
+        \\INSERT INTO skills (id, workspace_id, name, content) VALUES ('sk_legacy', 'ws_a', 'pdf', 'body')
+    , &.{});
+
+    try Migration109AddSkillCanAutoImprove.up(&ctx.db, alloc);
+
+    const cols = try columnsOf(&ctx, "skills");
+    defer {
+        for (cols) |c| alloc.free(c);
+        alloc.free(cols);
+    }
+    try expectColumnsEqual(cols, &[_][]const u8{
+        "id", "workspace_id", "name", "description", "content", "created_at", "updated_at", "is_can_auto_improve",
+    });
+
+    // A skill that existed before the column may be auto-improved: the
+    // default has to be the permissive one, or every installed skill would
+    // silently freeze the moment this migration ran.
+    const flag = try autoImproveFlagOf(&ctx, "sk_legacy");
+    defer alloc.free(flag);
+    try testing.expectEqualStrings("1", flag);
+}
+
+test "Migration109 replaying does not reset a skill that was already locked" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try createLegacySkillsTable(&ctx);
+    try ctx.db.exec(alloc,
+        \\INSERT INTO skills (id, workspace_id, name, content) VALUES ('sk_locked', 'ws_a', 'pdf', 'body')
+    , &.{});
+    try Migration109AddSkillCanAutoImprove.up(&ctx.db, alloc);
+
+    try ctx.db.exec(alloc, "UPDATE skills SET is_can_auto_improve = 0 WHERE id = 'sk_locked'", &.{});
+    try Migration109AddSkillCanAutoImprove.up(&ctx.db, alloc);
+
+    // `addColumnIfMissing` must not re-declare the column, because a second
+    // ADD COLUMN is how a human's lock would be thrown away on every boot.
+    const flag = try autoImproveFlagOf(&ctx, "sk_locked");
+    defer alloc.free(flag);
+    try testing.expectEqualStrings("0", flag);
+}
+
+test "Migration109 is a no-op on a table Migration102 already built with the column" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try Migration102CreateSkills.up(&ctx.db, alloc);
+    try Migration109AddSkillCanAutoImprove.up(&ctx.db, alloc);
+
+    const cols = try columnsOf(&ctx, "skills");
+    defer {
+        for (cols) |c| alloc.free(c);
+        alloc.free(cols);
+    }
+    // A fresh database runs BOTH, so the column must appear exactly once.
+    try expectColumnsEqual(cols, &[_][]const u8{
+        "id", "workspace_id", "name", "description", "content", "created_at", "updated_at", "is_can_auto_improve",
+    });
+}
+
+test "Migration109 is registered in allMigrations" {
+    for (allMigrations) |m| {
+        if (m.version == Migration109AddSkillCanAutoImprove.version) return;
+    }
+    return error.Migration109NotRegistered;
 }
 
 

@@ -3187,6 +3187,8 @@ export async function moveDesignElementToPage(
 export interface Skill {
   name: string
   description: string
+  /** False = the human pinned this skill: every agent write tool refuses it. */
+  is_can_auto_improve: boolean
 }
 
 export interface SkillDetail {
@@ -3200,6 +3202,8 @@ export interface SkillDetail {
    * row. Zero for a plain single-file skill.
    */
   asset_count: number
+  /** False = the human pinned this skill: every agent write tool refuses it. */
+  is_can_auto_improve: boolean
 }
 
 export interface SkillListResponse {
@@ -3254,7 +3258,7 @@ export interface SkillCreateResponse {
  */
 export async function createSkill(
   workspaceId: string,
-  input: { name: string; description?: string; content?: string },
+  input: { name: string; description?: string; content?: string; is_can_auto_improve?: boolean },
 ): Promise<SkillCreateResponse> {
   return await apiFetch<SkillCreateResponse>(
     `/workspaces/${encodeURIComponent(workspaceId)}/skills`,
@@ -3281,7 +3285,7 @@ export interface SkillUpdateResponse {
 export async function updateSkill(
   workspaceId: string,
   skillName: string,
-  input: { description?: string; content?: string },
+  input: { description?: string; content?: string; is_can_auto_improve?: boolean },
 ): Promise<SkillUpdateResponse> {
   return await apiFetch<SkillUpdateResponse>(
     `/workspaces/${encodeURIComponent(workspaceId)}/skills/${encodeURIComponent(skillName)}`,

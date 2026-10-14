@@ -151,6 +151,8 @@ pub const SkillWriteToolRule =
     \\
     \\**Close the loop — a skill nobody verifies rots.** `run_skill_eval` is what surfaces a skill that no longer holds; fixing it is an `edit_skill`, not an argument: correct the path, the command, the fact, and record the failure mode under Pitfalls.
     \\
+    \\**A skill can be LOCKED.** A skill whose `is_can_auto_improve` flag is off is pinned by the human: `edit_skill`, `remove_skill`, and an `add_skill` that would replace that same name all refuse it and write nothing. Do not retry the call — ask the human to make the change, or to turn auto-improve back on for that skill in the workspace's Skills settings.
+    \\
     \\**Self-check:** did this task teach something a future session would otherwise have to rediscover — and did you write it down before answering? If yes and no, `add_skill` now.
 ;
 

@@ -11,6 +11,7 @@
 import { computed, onMounted, onUpdated, ref } from 'vue'
 import UiIcon from '../ui/UiIcon.vue'
 import ListSkeleton from '../shell/ListSkeleton.vue'
+import SkillAutoImproveToggle from '../ui/SkillAutoImproveToggle.vue'
 import { Effect } from 'effect'
 import { getSkills, type Skill } from '../../api'
 import { useWorkspacesStore } from '../../stores/workspaces'
@@ -40,6 +41,7 @@ const error = ref<string | null>(null)
 
 const emit = defineEmits<{
   selectSkill: [skillName: string]
+  error: [message: string]
 }>()
 
 const fail = (reason: unknown) => (reason instanceof Error ? reason.message : String(reason))
@@ -75,6 +77,10 @@ const loadSkills = async () => {
 
 const openSkillDetail = (skill: Skill) => {
   emit('selectSkill', skill.name)
+}
+
+const reportError = (message: string) => {
+  emit('error', message)
 }
 
 // Reload when the resolved workspace changes: mount covers the initial
@@ -139,6 +145,7 @@ defineExpose({
             : 'background-color: var(--semantic-content-bg); border: 1px solid var(--color-border);'
         "
         @click="openSkillDetail(skill)"
+        :data-skill-name="skill.name"
       >
         <div class="flex items-start gap-3">
           <UiIcon name="brain" class="w-5 h-5 mt-0.5" />
@@ -149,6 +156,15 @@ defineExpose({
             <p class="text-dense mt-1 line-clamp-2" style="color: var(--semantic-text-muted)">
               {{ skill.description }}
             </p>
+            <SkillAutoImproveToggle
+              v-if="workspaceId"
+              class="mt-2"
+              :workspace-id="workspaceId"
+              :skill-name="skill.name"
+              :checked="skill.is_can_auto_improve"
+              @changed="loadSkills"
+              @error="reportError"
+            />
           </div>
         </div>
       </div>

@@ -65,6 +65,7 @@ pub const SkillRow = struct {
     content: []const u8,
     created_at: []const u8,
     updated_at: []const u8,
+    is_can_auto_improve: bool,
 };
 
 /// One row in `skill_assets`: a companion file of a bundled skill, stored
@@ -92,6 +93,7 @@ pub const UpsertSkillArgs = struct {
     name: []const u8,
     description: []const u8 = "",
     content: []const u8 = "",
+    is_can_auto_improve: ?bool = null,
 };
 
 /// Patch shape. Every field optional; an absent field keeps its current
@@ -99,6 +101,7 @@ pub const UpsertSkillArgs = struct {
 pub const UpdateSkillArgs = struct {
     description: ?[]const u8 = null,
     content: ?[]const u8 = null,
+    is_can_auto_improve: ?bool = null,
 };
 
 pub const ListSkillsError = error{
@@ -159,7 +162,7 @@ pub const ReplaceAssetsError = error{
 /// where it typed a string.
 const SELECT_COLUMNS =
     "SELECT id, workspace_id, name, COALESCE(description, ''), COALESCE(content, ''), " ++
-    "COALESCE(created_at, ''), COALESCE(updated_at, '') " ++
+    "COALESCE(created_at, ''), COALESCE(updated_at, ''), COALESCE(is_can_auto_improve, 1) " ++
     "FROM skills";
 
 const SELECT_ASSET_COLUMNS =
@@ -177,6 +180,7 @@ fn rowFromValues(allocator: std.mem.Allocator, values: []const []const u8) !Skil
         .content = try allocator.dupe(u8, values[4]),
         .created_at = try allocator.dupe(u8, values[5]),
         .updated_at = try allocator.dupe(u8, values[6]),
+        .is_can_auto_improve = !std.mem.eql(u8, values[7], "0"),
     };
 }
 
@@ -281,19 +285,25 @@ pub fn upsertSkill(
     const skill_id = try std.fmt.allocPrint(allocator, "sk_{d}", .{helpers.unixTimestampNanos()});
     defer allocator.free(skill_id);
 
+    // A skill that carries no opinion is auto-improvable. Only an explicit
+    // `false` locks it, and the ON CONFLICT clause below deliberately does
+    // NOT write this column: the importer re-runs on every start-up, so a
+    // re-import that reset the flag would throw away the human's lock.
+    const is_can_auto_improve: []const u8 = if (args.is_can_auto_improve orelse true) "1" else "0";
+
     // COALESCE(NULLIF(?, ''), '') on every NOT NULL text column:
     // `SqliteBackend.exec` binds a zero-length slice as SQL NULL, which
     // would violate the constraint outright. An empty description is a
     // legitimate skill state — a model routinely writes the body first and
     // the one-line description second — so it has to round-trip as "".
     db.exec(allocator,
-        \\INSERT INTO skills (id, workspace_id, name, description, content, created_at, updated_at)
-        \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        \\INSERT INTO skills (id, workspace_id, name, description, content, is_can_auto_improve, created_at, updated_at)
+        \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         \\ON CONFLICT (workspace_id, name) DO UPDATE SET
         \\    description = COALESCE(NULLIF(excluded.description, ''), ''),
         \\    content = COALESCE(NULLIF(excluded.content, ''), ''),
         \\    updated_at = CURRENT_TIMESTAMP
-    , &[_][]const u8{ skill_id, args.workspace_id, args.name, args.description, args.content }) catch
+    , &[_][]const u8{ skill_id, args.workspace_id, args.name, args.description, args.content, is_can_auto_improve }) catch
         return error.WriteFailed;
 
     return getSkillByName(allocator, db, args.workspace_id, args.name) catch |err| switch (err) {
@@ -328,14 +338,16 @@ pub fn updateSkill(
 
     const description = patch.description orelse existing.description;
     const content = patch.content orelse existing.content;
+    const is_can_auto_improve = patch.is_can_auto_improve orelse existing.is_can_auto_improve;
     if (std.mem.eql(u8, description, existing.description) and
-        std.mem.eql(u8, content, existing.content)) return error.NothingToChange;
+        std.mem.eql(u8, content, existing.content) and
+        is_can_auto_improve == existing.is_can_auto_improve) return error.NothingToChange;
 
     db.exec(allocator,
         \\UPDATE skills
-        \\SET description = COALESCE(NULLIF(?, ''), ''), content = COALESCE(NULLIF(?, ''), ''), updated_at = CURRENT_TIMESTAMP
+        \\SET description = COALESCE(NULLIF(?, ''), ''), content = COALESCE(NULLIF(?, ''), ''), is_can_auto_improve = ?, updated_at = CURRENT_TIMESTAMP
         \\WHERE workspace_id = ? AND name = ?
-    , &[_][]const u8{ description, content, workspace_id, name }) catch
+    , &[_][]const u8{ description, content, if (is_can_auto_improve) "1" else "0", workspace_id, name }) catch
         return error.UpdateFailed;
 
     return getSkillByName(allocator, db, workspace_id, name) catch
@@ -851,4 +863,148 @@ test "skills_store isValidSkillName rejects anything that could escape a directo
     try testing.expect(!isValidSkillName(".hidden"));
     try testing.expect(!isValidSkillName("trailing."));
     try testing.expect(!isValidSkillName("has space"));
+}
+
+test "skills_store defaults a new skill to auto-improvable and stores an explicit lock" {
+    const alloc = testing.allocator;
+    var ctx = try setupStoreDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    // No opinion from the caller means "the agent may evolve this", which is
+    // the state every skill already installed had before the column existed.
+    const open = try upsertSkill(alloc, &ctx.db, .{
+        .workspace_id = "ws_a",
+        .name = "open",
+        .content = "body",
+    });
+    defer freeSkillRow(alloc, open);
+    try testing.expect(open.is_can_auto_improve);
+
+    const locked = try upsertSkill(alloc, &ctx.db, .{
+        .workspace_id = "ws_a",
+        .name = "locked",
+        .content = "body",
+        .is_can_auto_improve = false,
+    });
+    defer freeSkillRow(alloc, locked);
+    try testing.expect(!locked.is_can_auto_improve);
+
+    const read_back = try getSkillByName(alloc, &ctx.db, "ws_a", "locked");
+    defer freeSkillRow(alloc, read_back);
+    try testing.expect(!read_back.is_can_auto_improve);
+}
+
+test "skills_store re-upsert never resets a skill's auto-improve lock" {
+    const alloc = testing.allocator;
+    var ctx = try setupStoreDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const created = try upsertSkill(alloc, &ctx.db, .{
+        .workspace_id = "ws_a",
+        .name = "pdf",
+        .content = "old body",
+    });
+    defer freeSkillRow(alloc, created);
+
+    const locked = try updateSkill(alloc, &ctx.db, "ws_a", "pdf", .{ .is_can_auto_improve = false });
+    defer freeSkillRow(alloc, locked);
+    try testing.expect(!locked.is_can_auto_improve);
+
+    // The boot-time importer re-runs on every start-up through exactly this
+    // call. If the ON CONFLICT clause wrote the flag, a human's lock would
+    // be silently thrown away on the next restart.
+    const reimported = try upsertSkill(alloc, &ctx.db, .{
+        .workspace_id = "ws_a",
+        .name = "pdf",
+        .description = "re-imported",
+        .content = "new body",
+    });
+    defer freeSkillRow(alloc, reimported);
+    try testing.expect(!reimported.is_can_auto_improve);
+    try testing.expectEqualStrings("new body", reimported.content);
+    try testing.expectEqualStrings("re-imported", reimported.description);
+}
+
+test "skills_store updateSkill toggles the lock without touching the body" {
+    const alloc = testing.allocator;
+    var ctx = try setupStoreDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const created = try upsertSkill(alloc, &ctx.db, .{
+        .workspace_id = "ws_a",
+        .name = "pdf",
+        .description = "the description that must survive",
+        .content = "the body that must survive",
+    });
+    defer freeSkillRow(alloc, created);
+    try testing.expect(created.is_can_auto_improve);
+
+    const locked = try updateSkill(alloc, &ctx.db, "ws_a", "pdf", .{ .is_can_auto_improve = false });
+    defer freeSkillRow(alloc, locked);
+    try testing.expect(!locked.is_can_auto_improve);
+    try testing.expectEqualStrings("the description that must survive", locked.description);
+    try testing.expectEqualStrings("the body that must survive", locked.content);
+
+    const unlocked = try updateSkill(alloc, &ctx.db, "ws_a", "pdf", .{ .is_can_auto_improve = true });
+    defer freeSkillRow(alloc, unlocked);
+    try testing.expect(unlocked.is_can_auto_improve);
+    try testing.expectEqualStrings("the body that must survive", unlocked.content);
+}
+
+test "skills_store treats a flag-only patch as a change, not as NothingToChange" {
+    const alloc = testing.allocator;
+    var ctx = try setupStoreDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const created = try upsertSkill(alloc, &ctx.db, .{
+        .workspace_id = "ws_a",
+        .name = "pdf",
+        .description = "same",
+        .content = "same body",
+    });
+    defer freeSkillRow(alloc, created);
+
+    // Without the flag in the comparison this is the same row and the patch
+    // is refused as a no-op — the toggle in the UI would be a button whose
+    // only outcome is a 409.
+    const locked = try updateSkill(alloc, &ctx.db, "ws_a", "pdf", .{ .is_can_auto_improve = false });
+    defer freeSkillRow(alloc, locked);
+    try testing.expect(!locked.is_can_auto_improve);
+    try testing.expectEqualStrings("same", locked.description);
+    try testing.expectEqualStrings("same body", locked.content);
+}
+
+test "skills_store lists the lock state per row, not per workspace" {
+    const alloc = testing.allocator;
+    var ctx = try setupStoreDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const open = try upsertSkill(alloc, &ctx.db, .{
+        .workspace_id = "ws_a",
+        .name = "alpha",
+        .content = "a",
+    });
+    defer freeSkillRow(alloc, open);
+    const to_lock = try upsertSkill(alloc, &ctx.db, .{
+        .workspace_id = "ws_a",
+        .name = "beta",
+        .content = "b",
+    });
+    defer freeSkillRow(alloc, to_lock);
+    const locked = try updateSkill(alloc, &ctx.db, "ws_a", "beta", .{ .is_can_auto_improve = false });
+    defer freeSkillRow(alloc, locked);
+
+    const rows = try listSkills(alloc, &ctx.db, "ws_a");
+    defer freeSkillRows(alloc, rows);
+
+    try testing.expectEqual(@as(usize, 2), rows.len);
+    try testing.expectEqualStrings("alpha", rows[0].name);
+    try testing.expect(rows[0].is_can_auto_improve);
+    try testing.expectEqualStrings("beta", rows[1].name);
+    try testing.expect(!rows[1].is_can_auto_improve);
 }

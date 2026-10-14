@@ -13,9 +13,10 @@
 //   | Route | Response |
 //   |---|---|
 //   | `GET /api/workspaces/:workspace_id/skills` | `{"skills": [{"name",
-//     "description"}]}` |
+//     "description", "is_can_auto_improve"}]}` |
 //   | `GET /api/workspaces/:workspace_id/skills/:skill_name` | `{"skill":
-//     {name, description, content, asset_count} | null, "error_message": ""}` |
+//     {name, description, content, asset_count, is_can_auto_improve} | null,
+//     "error_message": ""}` |
 //   | `DELETE /api/workspaces/:workspace_id/skills/:skill_name` | `{"success",
 //     "skill_name", "error_message": ""}` |
 //
@@ -573,13 +574,17 @@ test "skills_are_reachable_only_under_a_workspace" {
     }
 }
 
-// `{skills:[{name, description}]}` — no body, no path, no is_global.
+// `{skills:[{name, description, is_can_auto_improve}]}` — no body, no
+// path, no is_global.
 //
 // `is_global` described which of two directories a body was read from.
 // With one workspace-scoped table there is no such question, and a field
 // that is always `false` (or always `true`) is worse than an absent one:
 // a client would keep branching on it.
-test "list_returns_name_and_description_only" {
+//
+// `is_can_auto_improve` is not that: the list is where the Settings panel
+// renders one checkbox per skill, so the flag has to reach this route.
+test "list_returns_name_description_and_the_auto_improve_lock" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
     var h = try Harness.boot(io, gpa, .{});
@@ -613,10 +618,14 @@ test "list_returns_name_and_description_only" {
             return error.TestUnexpectedResult;
         };
         if (std.mem.eql(u8, want_name, "pdf")) {
-            // `rows["pdf"] == {"name": "pdf", "description": "Work with PDFs."}`
-            try expectExactKeys(row, &.{ "name", "description" }, "pdf row");
+            // `rows["pdf"] == {"name": "pdf", "description": "Work with PDFs.",
+            // "is_can_auto_improve": true}`
+            try expectExactKeys(row, &.{ "name", "description", "is_can_auto_improve" }, "pdf row");
             try expectStr(row, "name", "pdf", "pdf row");
             try expectStr(row, "description", "Work with PDFs.", "pdf row");
+            // A row seeded straight into SQL takes the column default, so a
+            // skill that predates the flag reads as auto-improvable.
+            try expectTrue(row, "is_can_auto_improve", "pdf row");
         }
         // The list row carries no body: a workspace can hold dozens of
         // skills and the sidebar only renders a picker.

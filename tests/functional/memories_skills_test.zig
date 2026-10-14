@@ -891,7 +891,7 @@ test "skill_list_is_workspace_scoped" {
         std.debug.print("listed skill description = [{s}], expected [Does a thing.]\n", .{desc});
         return error.TestUnexpectedResult;
     }
-    try expectKeysExactly(entry.keys, &.{ "name", "description" }, "listed skill");
+    try expectKeysExactly(entry.keys, &.{ "name", "description", "is_can_auto_improve" }, "listed skill");
 }
 
 // The workspace_id in the URL is the isolation boundary.
