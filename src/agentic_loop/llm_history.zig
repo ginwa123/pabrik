@@ -74,6 +74,11 @@ pub const SessionInfo = struct {
     /// Migration 104 - position inside the pinned region. MAX+1 on pin,
     /// 0 when unpinned.
     pinned_position: i64 = 0,
+    /// 1 when the AI finished a turn and no human has touched the
+    /// session since. Same CASE predicate the kanban card derives
+    /// (`listWorkspaceItemTasksWithCursor` index 13) so the sidebar
+    /// and the board agree on "awaiting your review".
+    needs_human_review: bool = false,
 
     pub fn deinit(self: *const SessionInfo, allocator: std.mem.Allocator) void {
         allocator.free(self.session_id);
@@ -417,7 +422,8 @@ pub fn getSessionListWithCursor(
         \\COALESCE(s.git_worktree_cwd, ''),
         \\COALESCE((SELECT t.workspace_item_id FROM workspace_item_tasks t WHERE t.id = s.id LIMIT 1), ''),
         \\COALESCE(s.is_pinned, 0),
-        \\COALESCE(s.pinned_position, 0)
+        \\COALESCE(s.pinned_position, 0),
+        \\CASE WHEN COALESCE(s.last_finish_reason, '') = 'stop' AND (s.last_human_touched_at_nano IS NULL OR s.last_human_touched_at_nano = '' OR s.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000) THEN 1 ELSE 0 END
         \\FROM sessions s
         \\LEFT JOIN llm_history h ON s.id = h.session_id
         \\WHERE {s}
@@ -466,6 +472,8 @@ pub fn getSessionListWithCursor(
             // row.values[14] = pinned_position.
             .is_pinned = std.mem.eql(u8, row.values[13], "1"),
             .pinned_position = std.fmt.parseInt(i64, row.values[14], 10) catch 0,
+            // row.values[15] = needs_human_review (CASE derived).
+            .needs_human_review = std.mem.eql(u8, row.values[15], "1"),
         };
         try sessions.append(allocator, session);
         row.deinit(allocator);
@@ -541,6 +549,7 @@ pub const SessionInfoJson = struct {
     /// Migration 104 - position inside the pinned region. MAX+1 on pin
     /// (lands at bottom), 0 when unpinned. COALESCE'd to 0.
     pinned_position: i64 = 0,
+    needs_human_review: bool = false,
 };
 
 /// Build JSON response for a list of sessions with cursor pagination
@@ -582,6 +591,7 @@ pub fn buildSessionListJson(
             // Migration 104 - pinned sessions for PINNED section.
             .is_pinned = sess.is_pinned,
             .pinned_position = sess.pinned_position,
+            .needs_human_review = sess.needs_human_review,
         });
     }
 
@@ -8764,6 +8774,114 @@ test "getSessionListWithCursor returns empty string for NULL last_human_touched_
 
 try testing.expectEqual(@as(usize, 1), result.sessions.len);
     try testing.expectEqualStrings("", result.sessions[0].last_human_touched_at);
+}
+
+test "getSessionListWithCursor derives needs_human_review for the sidebar status badge" {
+    const alloc = testing.allocator;
+    var threaded = std.Io.Threaded.init(alloc, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+    var db: sqlite.SqliteBackend = .{};
+    defer db.deinit();
+    try db.init(io, ":memory:");
+
+    try db.exec(alloc,
+        \\CREATE TABLE sessions (
+        \\    id TEXT PRIMARY KEY,
+        \\    name TEXT NOT NULL,
+        \\    status TEXT NOT NULL DEFAULT 'active',
+        \\    cwd TEXT NOT NULL DEFAULT '',
+        \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        \\    selected_profile_model TEXT,
+        \\    is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
+        \\    last_finish_reason TEXT,
+        \\    last_human_touched_at_nano INTEGER,
+        \\    git_worktree_cwd TEXT,
+        \\    is_pinned INTEGER NOT NULL DEFAULT 0,
+        \\    pinned_position INTEGER NOT NULL DEFAULT 0
+        \\)
+    , &.{});
+    try db.exec(alloc,
+        \\CREATE TABLE llm_history (id TEXT PRIMARY KEY, session_id TEXT, agent TEXT)
+    , &.{});
+    try db.exec(alloc,
+        \\CREATE TABLE workspace_item_tasks (
+        \\    id TEXT PRIMARY KEY,
+        \\    name TEXT NOT NULL,
+        \\    workspace_item_id TEXT NOT NULL
+        \\)
+    , &.{});
+
+    // Row 1: AI finished, human never touched -> awaiting review.
+    // updated_at is pinned so the strftime comparison is deterministic.
+    try db.exec(alloc,
+        \\INSERT INTO sessions (id, name, cwd, updated_at, last_finish_reason)
+        \\VALUES ('sess_await', 'Awaiting', '', '2026-08-29 10:00:00', 'stop')
+    , &.{});
+    // Row 2: AI finished, human touched AFTER -> reviewed.
+    // 2026-08-29 12:00:00 UTC = 1788014400 epoch seconds.
+    try db.exec(alloc,
+        \\INSERT INTO sessions (id, name, cwd, updated_at, last_finish_reason, last_human_touched_at_nano)
+        \\VALUES ('sess_reviewed', 'Reviewed', '', '2026-08-29 10:00:00', 'stop', '1788014400000')
+    , &.{});
+    // Row 3: mid-turn (tool_calls) -> no badge at all.
+    try db.exec(alloc,
+        \\INSERT INTO sessions (id, name, cwd, updated_at, last_finish_reason)
+        \\VALUES ('sess_midturn', 'Mid turn', '', '2026-08-29 10:00:00', 'tool_calls')
+    , &.{});
+
+    const result = getSessionListWithCursor(
+        alloc, &db, null, null, null, null, auth_common.system_user_id, 10, null, .created_at, .desc,
+    ) catch return error.QueryFailed;
+    defer {
+        for (result.sessions) |s| s.deinit(alloc);
+        alloc.free(result.sessions);
+    }
+
+    try testing.expectEqual(@as(usize, 3), result.sessions.len);
+    var awaiting = false;
+    var reviewed = false;
+    var midturn = false;
+    for (result.sessions) |s| {
+        if (std.mem.eql(u8, s.session_id, "sess_await")) {
+            awaiting = s.needs_human_review;
+        } else if (std.mem.eql(u8, s.session_id, "sess_reviewed")) {
+            reviewed = s.needs_human_review;
+        } else if (std.mem.eql(u8, s.session_id, "sess_midturn")) {
+            midturn = s.needs_human_review;
+        }
+    }
+    try testing.expect(awaiting);
+    try testing.expect(!reviewed);
+    try testing.expect(!midturn);
+}
+
+test "buildSessionListJson emits needs_human_review for the sidebar status badge" {
+    const alloc = testing.allocator;
+
+    const sess = SessionInfo{
+        .session_id = try alloc.dupe(u8, "sess_badge"),
+        .session_name = try alloc.dupe(u8, "Badge chat"),
+        .status = try alloc.dupe(u8, "active"),
+        .cwd = try alloc.dupe(u8, "/tmp"),
+        .created_at = try alloc.dupe(u8, "2026-08-29 10:00:00"),
+        .updated_at = try alloc.dupe(u8, "2026-08-29 10:00:00"),
+        .agent = try alloc.dupe(u8, "Agent"),
+        .selected_profile_model = try alloc.dupe(u8, ""),
+        .is_auto_retry_until_stop = try alloc.dupe(u8, "0"),
+        .last_finish_reason = try alloc.dupe(u8, "stop"),
+        .last_human_touched_at = try alloc.dupe(u8, ""),
+        .git_worktree_cwd = try alloc.dupe(u8, ""),
+        .git_branch = try alloc.dupe(u8, ""),
+        .needs_human_review = true,
+    };
+    defer sess.deinit(alloc);
+
+    const json = try buildSessionListJson(alloc, &[_]SessionInfo{sess}, 1, false, null);
+    defer alloc.free(json);
+
+    try testing.expect(std.mem.indexOf(u8, json, "\"needs_human_review\":true") != null);
 }
 
 test "getSessionListWithCursor pages on the sort field's column, not created_at" {
