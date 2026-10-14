@@ -4183,7 +4183,7 @@ pub fn build(b: *std.Build) void {
     // Normalize Windows mixed separators (runner.temp is C:\...\ _temp + "/pabrik-ci-venv" → "C:\...\ _temp/pabrik-ci-venv").
     // Use forward slashes internally; Python on Windows handles both.
     const venv_dir = blk: {
-        const dup = b.allocator.dupe(u8, venv_dir_raw) catch unreachable;
+        const dup = b.allocator.dupe(u8, venv_dir_raw) catch @panic("build.zig: dupe of PABRIK_FUNC_VENV_DIR failed");
         for (dup) |*c| {
             if (c.* == '\\') c.* = '/';
         }
@@ -4191,9 +4191,9 @@ pub fn build(b: *std.Build) void {
     };
     const is_windows_host = b.graph.host.result.os.tag == .windows;
     const venv_bin = if (is_windows_host)
-        std.fmt.allocPrint(b.allocator, "{s}/Scripts", .{venv_dir}) catch unreachable
+        std.fmt.allocPrint(b.allocator, "{s}/Scripts", .{venv_dir}) catch @panic("build.zig: allocPrint of the venv Scripts dir failed")
     else
-        std.fmt.allocPrint(b.allocator, "{s}/bin", .{venv_dir}) catch unreachable;
+        std.fmt.allocPrint(b.allocator, "{s}/bin", .{venv_dir}) catch @panic("build.zig: allocPrint of the venv bin dir failed");
     // On Windows, `python` is the canonical exe; `python3` is often a shim.
     const default_python = if (is_windows_host) "python" else "python3";
     const effective_python = if (std.mem.eql(u8, python_exe, "python3") and is_windows_host) default_python else python_exe;
@@ -4209,7 +4209,7 @@ pub fn build(b: *std.Build) void {
     // Everything is direct argv (no cmd.exe shell), so paths with
     // spaces work and there is no shell-quoting to get wrong.
     const venv_python_name = if (is_windows_host) "python.exe" else "python";
-    const venv_python_rel = std.fmt.allocPrint(b.allocator, "{s}/{s}", .{ venv_bin, venv_python_name }) catch unreachable;
+    const venv_python_rel = std.fmt.allocPrint(b.allocator, "{s}/{s}", .{ venv_bin, venv_python_name }) catch @panic("build.zig: allocPrint of the venv python path failed");
     const have_venv = blk: {
         _ = std.Io.Dir.cwd().statFile(b.graph.io, venv_python_rel, .{}) catch break :blk false;
         break :blk true;
@@ -4239,7 +4239,7 @@ pub fn build(b: *std.Build) void {
             outer: while (it.next()) |dir| {
                 if (dir.len == 0) continue;
                 for (probes) |name| {
-                    const cand = std.fmt.allocPrint(b.allocator, "{s}/{s}", .{ dir, name }) catch unreachable;
+                    const cand = std.fmt.allocPrint(b.allocator, "{s}/{s}", .{ dir, name }) catch @panic("build.zig: allocPrint of the python probe path failed");
                     // Absolute sub_path: the cwd handle is ignored.
                     const st = std.Io.Dir.cwd().statFile(b.graph.io, cand, .{}) catch continue;
                     if (st.size == 0) continue; // Microsoft Store stub
@@ -4250,9 +4250,9 @@ pub fn build(b: *std.Build) void {
             }
         }
         var argv: std.ArrayList([]const u8) = .empty;
-        argv.append(b.allocator, chosen orelse "python") catch unreachable;
-        argv.appendSlice(b.allocator, chosen_args) catch unreachable;
-        argv.appendSlice(b.allocator, &.{ "-m", "venv", "--clear", venv_dir }) catch unreachable;
+        argv.append(b.allocator, chosen orelse "python") catch @panic("build.zig: append of the venv interpreter failed");
+        argv.appendSlice(b.allocator, chosen_args) catch @panic("build.zig: appendSlice of the venv args failed");
+        argv.appendSlice(b.allocator, &.{ "-m", "venv", "--clear", venv_dir }) catch @panic("build.zig: appendSlice of the venv create args failed");
         break :blk b.addSystemCommand(argv.items);
     };
     install_venv.setCwd(b.path(""));

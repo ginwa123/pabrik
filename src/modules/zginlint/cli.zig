@@ -4,8 +4,7 @@
 
 const std = @import("std");
 const baseline = @import("baseline.zig");
-const diagnostic = @import("diagnostic.zig");
-const max_comment_lines_rule = @import("rules/max_comment_lines.zig");
+const options_mod = @import("options.zig");
 const zginlint = @import("zginlint.zig");
 
 pub const exit_clean: u8 = 0;
@@ -13,15 +12,16 @@ pub const exit_findings: u8 = 1;
 pub const exit_usage: u8 = 2;
 
 pub const usage =
-    \\zginlint — a linter for Zig source. Rules: zginlint/max-comment-lines.
+    \\zginlint — a linter for Zig source.
+    \\Rules: zginlint/max-comment-lines, zginlint/no-catch-unreachable.
     \\
     \\usage: zginlint [options] <path>...
     \\
     \\  <path> is a .zig file, or a directory walked for .zig files.
     \\
     \\options:
-    \\  --max-comment-lines <n>   Ceiling on the lines of one comment block,
-    \\                            reported at the block's first line.
+    \\  --max-comment-lines <n>   Ceiling on the lines of one comment block
+    \\                            (zginlint/max-comment-lines, default 3).
     \\  --baseline <file>         Fail on any file above its pinned ceiling.
     \\  --update-baseline <file>  Write today's counts as the new ceilings.
     \\  -h, --help                Print this text.
@@ -31,11 +31,15 @@ pub const usage =
 ;
 
 pub const Args = struct {
-    max_comment_lines: u32 = max_comment_lines_rule.default_max_lines,
+    max_comment_lines: u32 = options_mod.defaults.max_comment_lines,
     baseline_path: ?[]const u8 = null,
     update_baseline_path: ?[]const u8 = null,
     /// Owned slice of entries borrowed from argv.
     paths: []const []const u8 = &.{},
+
+    pub fn options(self: *const Args) options_mod.Options {
+        return .{ .max_comment_lines = self.max_comment_lines };
+    }
 
     pub fn deinit(self: *Args, allocator: std.mem.Allocator) void {
         allocator.free(self.paths);
@@ -137,7 +141,7 @@ fn lint(
     stdout: *std.Io.Writer,
     stderr: *std.Io.Writer,
 ) !u8 {
-    const options: zginlint.Options = .{ .max_comment_lines = args.max_comment_lines };
+    const options = args.options();
     const reports = zginlint.lintPaths(allocator, io, args.paths, options) catch |err| {
         try stderr.print("zginlint: could not lint the given paths: {s}\n", .{@errorName(err)});
         return exit_usage;
@@ -145,20 +149,21 @@ fn lint(
     defer zginlint.deinitFindings(allocator, reports);
 
     const counts = try countsFor(allocator, reports);
-    defer allocator.free(counts);
+    defer deinitCounts(allocator, counts);
 
     if (args.update_baseline_path) |path| {
-        return pin(allocator, io, args, counts, path, stdout, stderr);
+        return pin(allocator, io, args, options, counts, path, stdout, stderr);
     }
     if (args.baseline_path) |path| {
         return check(allocator, io, args, reports, counts, path, stdout, stderr);
     }
 
-    for (reports) |report| try writeFindings(allocator, stdout, report.path, report.diagnostics);
-    try stdout.print(
-        "zginlint: {d} finding(s) in {d} file(s) — {s}, max {d} line(s) per comment block\n",
-        .{ totalFor(counts), reports.len, max_comment_lines_rule.id, args.max_comment_lines },
-    );
+    for (reports) |report| try writeFindings(stdout, report.path, report.diagnostics);
+    try stdout.print("zginlint: {d} finding(s) in {d} file(s)", .{ totalFor(counts), reports.len });
+    for (counts) |rule_counts| {
+        try stdout.print(" — {s}: {d}", .{ rule_counts.rule_id, totalOfFiles(rule_counts.files) });
+    }
+    try stdout.writeAll("\n");
     return if (reports.len == 0) exit_clean else exit_findings;
 }
 
@@ -166,18 +171,22 @@ fn pin(
     allocator: std.mem.Allocator,
     io: std.Io,
     args: Args,
-    counts: []const baseline.FileCount,
+    options: options_mod.Options,
+    counts: []const baseline.RuleCounts,
     path: []const u8,
     stdout: *std.Io.Writer,
     stderr: *std.Io.Writer,
 ) !u8 {
-    baseline.save(allocator, io, path, args.max_comment_lines, args.paths, counts) catch |err| {
+    const prints = try zginlint.fingerprints(allocator, options);
+    defer zginlint.deinitFingerprints(allocator, prints);
+
+    baseline.save(allocator, io, path, args.paths, counts, prints) catch |err| {
         try stderr.print("zginlint: cannot write the baseline {s}: {s}\n", .{ path, @errorName(err) });
         return exit_usage;
     };
     try stdout.print(
         "zginlint: pinned {d} file(s), {d} finding(s) into {s}\n",
-        .{ counts.len, totalFor(counts), path },
+        .{ fileCount(counts), totalFor(counts), path },
     );
     return exit_clean;
 }
@@ -187,7 +196,7 @@ fn check(
     io: std.Io,
     args: Args,
     reports: []const zginlint.FileFindings,
-    counts: []const baseline.FileCount,
+    counts: []const baseline.RuleCounts,
     path: []const u8,
     stdout: *std.Io.Writer,
     stderr: *std.Io.Writer,
@@ -198,13 +207,6 @@ fn check(
     };
     defer pinned.deinit(allocator);
 
-    if (pinned.max_comment_lines != args.max_comment_lines) {
-        try stderr.print(
-            "zginlint: {s} was pinned with max {d} line(s) and this run uses {d} — re-pin it\n",
-            .{ path, pinned.max_comment_lines, args.max_comment_lines },
-        );
-        return exit_usage;
-    }
     if (!pinned.pinnedOver(args.paths)) {
         try stderr.print(
             "zginlint: {s} was pinned over a different path set — re-pin it with --update-baseline\n",
@@ -212,56 +214,87 @@ fn check(
         );
         return exit_usage;
     }
+    if (try mismatchedFingerprint(allocator, args.options(), &pinned, stderr)) return exit_usage;
 
     var comparison = try baseline.compare(allocator, counts, &pinned);
     defer comparison.deinit(allocator);
 
-    try writeRegressed(allocator, stdout, reports, comparison.regressions);
-    for (comparison.shrinks) |shrink| {
-        try stderr.print(
-            "zginlint: note {s} is down to {d} (pinned {d}) — re-pin with --update-baseline\n",
-            .{ shrink.path, shrink.count, shrink.allowed },
-        );
+    try writeRegressed(stdout, reports, comparison.rules);
+    for (comparison.rules) |rule| {
+        for (rule.shrinks) |shrink| {
+            try stderr.print(
+                "zginlint: note {s} is down to {d} (pinned {d}) for {s} — re-pin with --update-baseline\n",
+                .{ shrink.path, shrink.count, shrink.allowed, rule.rule_id },
+            );
+        }
     }
     if (!comparison.clean()) {
-        try stderr.print(
-            "zginlint: {d} file(s) above their pinned ceiling in {s}\n",
-            .{ comparison.regressions.len, path },
-        );
+        for (comparison.rules) |rule| {
+            if (rule.regressions.len == 0) continue;
+            try stderr.print(
+                "zginlint: {s}: {d} file(s) above their pinned ceiling in {s}\n",
+                .{ rule.rule_id, rule.regressions.len, path },
+            );
+        }
         return exit_findings;
     }
     try stdout.print(
         "zginlint: within the pinned ceilings in {s} ({d} finding(s), {d} pinned)\n",
-        .{ path, comparison.total_count, comparison.total_allowed },
+        .{ path, comparison.totalCount(), comparison.totalAllowed() },
     );
     return exit_clean;
 }
 
-fn writeFindings(
+/// Report a rule whose pinned options differ from this run's, and answer
+/// whether there was one. A pin is only comparable under the options it was
+/// measured with, so a mismatch is refused rather than compared.
+fn mismatchedFingerprint(
     allocator: std.mem.Allocator,
+    options: options_mod.Options,
+    pinned: *const baseline.Baseline,
+    stderr: *std.Io.Writer,
+) !bool {
+    const prints = try zginlint.fingerprints(allocator, options);
+    defer zginlint.deinitFingerprints(allocator, prints);
+
+    for (prints) |print| {
+        const was = pinned.fingerprintFor(print.rule_id) orelse continue;
+        if (std.mem.eql(u8, was, print.text)) continue;
+        try stderr.print(
+            "zginlint: {s} was pinned with options \"{s}\" and this run has \"{s}\" — re-pin it\n",
+            .{ print.rule_id, was, print.text },
+        );
+        return true;
+    }
+    return false;
+}
+
+fn writeFindings(
     writer: *std.Io.Writer,
     path: []const u8,
     diagnostics: []const zginlint.Diagnostic,
 ) !void {
     for (diagnostics) |item| {
-        const message = try diagnostic.message(allocator, item);
-        defer allocator.free(message);
         try writer.print("{s}:{d}:{d}: error {s} ({s})\n", .{
-            path, item.line, item.column, message, item.rule_id,
+            path, item.line, item.column, item.message, item.rule_id,
         });
     }
 }
 
 fn writeRegressed(
-    allocator: std.mem.Allocator,
     writer: *std.Io.Writer,
     reports: []const zginlint.FileFindings,
-    regressions: []const baseline.Regression,
+    rules: []const baseline.RuleComparison,
 ) !void {
-    for (regressions) |regression| {
-        for (reports) |report| {
-            if (!std.mem.eql(u8, report.path, regression.path)) continue;
-            try writeFindings(allocator, writer, report.path, report.diagnostics);
+    for (rules) |rule| {
+        for (rule.regressions) |regression| {
+            for (reports) |report| {
+                if (!std.mem.eql(u8, report.path, regression.path)) continue;
+                for (report.diagnostics) |item| {
+                    if (!std.mem.eql(u8, item.rule_id, rule.rule_id)) continue;
+                    try writeFindings(writer, report.path, &.{item});
+                }
+            }
         }
     }
 }
@@ -269,17 +302,58 @@ fn writeRegressed(
 fn countsFor(
     allocator: std.mem.Allocator,
     reports: []const zginlint.FileFindings,
-) ![]baseline.FileCount {
-    const counts = try allocator.alloc(baseline.FileCount, reports.len);
-    for (reports, counts) |report, *count| {
-        count.* = .{ .path = report.path, .count = @intCast(report.diagnostics.len) };
+) ![]baseline.RuleCounts {
+    const counts = try allocator.alloc(baseline.RuleCounts, zginlint.rules.len);
+    var done: usize = 0;
+    errdefer deinitCounts(allocator, counts[0..done]);
+    for (zginlint.rules, 0..) |declaration, index| {
+        counts[index] = .{
+            .rule_id = declaration.id,
+            .files = try fileCountsFor(allocator, reports, declaration.id),
+        };
+        done = index + 1;
     }
     return counts;
 }
 
-fn totalFor(counts: []const baseline.FileCount) u32 {
+fn fileCountsFor(
+    allocator: std.mem.Allocator,
+    reports: []const zginlint.FileFindings,
+    rule_id: []const u8,
+) ![]baseline.FileCount {
+    var files: std.ArrayList(baseline.FileCount) = .empty;
+    errdefer files.deinit(allocator);
+    for (reports) |report| {
+        var count: u32 = 0;
+        for (report.diagnostics) |item| {
+            if (std.mem.eql(u8, item.rule_id, rule_id)) count += 1;
+        }
+        if (count == 0) continue;
+        try files.append(allocator, .{ .path = report.path, .count = count });
+    }
+    return files.toOwnedSlice(allocator);
+}
+
+fn deinitCounts(allocator: std.mem.Allocator, counts: []baseline.RuleCounts) void {
+    for (counts) |rule_counts| allocator.free(rule_counts.files);
+    allocator.free(counts);
+}
+
+fn totalFor(counts: []const baseline.RuleCounts) u32 {
     var total: u32 = 0;
-    for (counts) |count| total += count.count;
+    for (counts) |rule_counts| total += totalOfFiles(rule_counts.files);
+    return total;
+}
+
+fn totalOfFiles(files: []const baseline.FileCount) u32 {
+    var total: u32 = 0;
+    for (files) |file| total += file.count;
+    return total;
+}
+
+fn fileCount(counts: []const baseline.RuleCounts) usize {
+    var total: usize = 0;
+    for (counts) |rule_counts| total += rule_counts.files.len;
     return total;
 }
 
@@ -315,6 +389,16 @@ fn runCli(argv: []const []const u8, out_buffer: []u8, err_buffer: []u8) !Result 
     return .{ .code = code, .out = out.buffered(), .err = err.buffered() };
 }
 
+/// A source that trips both rules, built so this file carries no literal
+/// copy of the banned token pair.
+fn bothRulesSource(allocator: std.mem.Allocator) ![]u8 {
+    return std.fmt.allocPrint(
+        allocator,
+        "// one\n// two\n// three\n// four\nconst x = g() catch{s}unreachable;\n",
+        .{" "},
+    );
+}
+
 fn fixtureTree(tmp: *testing.TmpDir) !void {
     try tmp.dir.createDirPath(testing.io, "nested");
     try tmp.dir.writeFile(testing.io, .{
@@ -342,6 +426,7 @@ test "cli: --help prints usage and exits clean" {
     const result = try runCli(&.{"--help"}, &out_buffer, &err_buffer);
     try testing.expectEqual(@as(u8, 0), result.code);
     try testing.expect(std.mem.indexOf(u8, result.out, "usage: zginlint") != null);
+    try testing.expect(std.mem.indexOf(u8, result.out, "zginlint/no-catch-unreachable") != null);
 }
 
 test "cli: an unknown option is a usage error naming it" {
@@ -410,6 +495,26 @@ test "cli: a tree with a long block reports it and exits 1" {
         "nested/long.zig:1:1: error Comment block has 4 lines; max is 3 (zginlint/max-comment-lines)",
     ) != null);
     try testing.expect(std.mem.indexOf(u8, result.out, "1 finding(s) in 1 file(s)") != null);
+}
+
+test "cli: both rules report on one file" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const source = try bothRulesSource(testing.allocator);
+    defer testing.allocator.free(source);
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "both.zig", .data = source });
+    var path_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const root = try rootOf(&tmp, &path_buffer);
+
+    var out_buffer: [8192]u8 = undefined;
+    var err_buffer: [1024]u8 = undefined;
+    const result = try runCli(&.{root}, &out_buffer, &err_buffer);
+
+    try testing.expectEqual(@as(u8, 1), result.code);
+    try testing.expect(std.mem.indexOf(u8, result.out, "both.zig:1:1: error Comment block has 4 lines") != null);
+    try testing.expect(std.mem.indexOf(u8, result.out, "both.zig:5:15: error") != null);
+    try testing.expect(std.mem.indexOf(u8, result.out, "zginlint/max-comment-lines: 1") != null);
+    try testing.expect(std.mem.indexOf(u8, result.out, "zginlint/no-catch-unreachable: 1") != null);
 }
 
 test "cli: a clean tree exits 0" {
@@ -492,6 +597,30 @@ test "cli: a long block added after pinning is a regression" {
     try testing.expectEqual(@as(u8, 1), checked.code);
     try testing.expect(std.mem.indexOf(u8, checked.out, "added.zig:1:1: error") != null);
     try testing.expect(std.mem.indexOf(u8, checked.err, "1 file(s) above their pinned ceiling") != null);
+    try testing.expect(std.mem.indexOf(u8, checked.err, "zginlint/max-comment-lines") != null);
+}
+
+test "cli: a site added after pinning is a regression for the second rule" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try fixtureTree(&tmp);
+    var path_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const root = try rootOf(&tmp, &path_buffer);
+    const pin_path = try pinPathOf(&tmp, testing.allocator);
+    defer testing.allocator.free(pin_path);
+
+    var out_buffer: [8192]u8 = undefined;
+    var err_buffer: [4096]u8 = undefined;
+    _ = try runCli(&.{ "--update-baseline", pin_path, root }, &out_buffer, &err_buffer);
+
+    const source = try std.fmt.allocPrint(testing.allocator, "const x = g() catch{s}unreachable;\n", .{" "});
+    defer testing.allocator.free(source);
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "site.zig", .data = source });
+    const checked = try runCli(&.{ "--baseline", pin_path, root }, &out_buffer, &err_buffer);
+
+    try testing.expectEqual(@as(u8, 1), checked.code);
+    try testing.expect(std.mem.indexOf(u8, checked.out, "site.zig:1:15: error") != null);
+    try testing.expect(std.mem.indexOf(u8, checked.err, "zginlint/no-catch-unreachable: 1 file(s) above") != null);
 }
 
 test "cli: a block fixed after pinning is a re-pin notice, not a failure" {
@@ -536,7 +665,8 @@ test "cli: a baseline pinned with another ceiling is refused" {
 
     const checked = try runCli(&.{ "--baseline", pin_path, root }, &out_buffer, &err_buffer);
     try testing.expectEqual(@as(u8, 2), checked.code);
-    try testing.expect(std.mem.indexOf(u8, checked.err, "was pinned with max 2 line(s)") != null);
+    try testing.expect(std.mem.indexOf(u8, checked.err, "max=2") != null);
+    try testing.expect(std.mem.indexOf(u8, checked.err, "max=3") != null);
 }
 
 test "cli: a baseline pinned over another path set is refused" {

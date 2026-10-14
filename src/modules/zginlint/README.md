@@ -24,7 +24,9 @@ contract: `0` clean or within the pinned ceilings, `1` findings, `2` a
 usage or I/O error — a path the tool could not read never reads as "the
 tree is clean".
 
-## The rule: `zginlint/max-comment-lines`
+## The rules
+
+### `zginlint/max-comment-lines`
 
 A comment block may not exceed **3 lines** (`--max-comment-lines N`).
 
@@ -39,43 +41,68 @@ A comment block may not exceed **3 lines** (`--max-comment-lines N`).
 - A trailing comment after code (`const x = 1; // note`) is not a block and
   is never counted.
 - Comment markers inside a string or char literal, and inside a multi-line
-  string (`\\ ...`) are text, not comments.
+  string fenced with `\\`, are text, not comments.
 - Block comments nest, and `/* ... */` counts by the lines it spans.
+
+### `zginlint/no-catch-unreachable`
+
+The banned error-handling pair — the same rule as
+`scripts/lint-no-catch-unreachable.sh`, and the reason
+`CODING_STANDARDS.md` §1 exists: it panics with no usable message in
+Debug/ReleaseSafe and is **undefined behaviour** in ReleaseFast.
+
+- The finding is reported at the `catch`, with the column that starts it.
+- The scan is over **raw bytes**, exactly like the ripgrep lint it mirrors,
+  so a commented-out site counts (§1 asks for that) and so does one inside
+  a string literal. There is no token-level exemption to argue about.
+- One or more whitespace bytes are allowed between the two words, newlines
+  included, so a wrapped `catch` / `unreachable` pair is still caught.
+- A word boundary is required after it, so `somethingUnreachable` is not a
+  hit; `catch @panic("...")` is the sanctioned form and is not one either.
+- It takes no options, and its fingerprint is `-`.
 
 ## The baseline ratchet
 
 The tree already contains thousands of long comment blocks (see
 `CODING_STANDARDS.md` §4), so the gate does not ask for zero — it asks for
-**no worse than pinned**. `zginlint-baseline.json` records a ceiling per
-file, and `zig build zginlint:check` fails when:
+**no worse than pinned**. `zginlint-baseline.json` records, per rule, a
+ceiling for every file that has findings, plus the path set and the options
+the counts were measured with. `zig build zginlint:check` fails when:
 
 - a file's count is above its pinned ceiling, or
 - a file with findings is not pinned at all (a new file cannot sneak in).
 
 A count that fell is printed as a `note ... re-pin with --update-baseline`
-and passes, so the ceiling can only ever be tightened. The pin also records
-the path arguments it was taken over and the ceiling it was measured with;
-a check that disagrees with either is refused (`exit 2`) rather than
-compared against the wrong numbers.
+and passes, so a ceiling can only ever be tightened. A rule with **no pin
+entry** has a ceiling of zero, which is how `no-catch-unreachable` ships:
+the tree had 20 sites in `tests/`, `tools/` and `build.zig` when the rule
+landed, and they were converted rather than pinned.
 
-`zig build zginlint:pin` regenerates the file from today's counts, sorted
-by path. Re-pin only to tighten, and in the same change that tightened it.
+A check whose path set, or whose options fingerprint for any rule, differs
+from the pin's is **refused** (`exit 2`) rather than compared against the
+wrong numbers. `zig build zginlint:pin` regenerates the file from today's
+counts, sorted by path and keyed by rule. Re-pin only to tighten, and in
+the same change that tightened it.
 
 ## Layout
 
 | file | what it owns |
 |---|---|
 | `comment_scan.zig` | the lexer: source bytes in, comment lines and blocks out |
-| `rules/max_comment_lines.zig` | the one rule; a rule reads source and appends diagnostics |
-| `diagnostic.zig` | a finding and its one-line message |
-| `zginlint.zig` | the engine: `lintSource`, the tree walk, the report ordering |
-| `baseline.zig` | the pin file's format and the ratchet comparison |
+| `rules/max_comment_lines.zig` | the comment-block ceiling |
+| `rules/no_catch_unreachable.zig` | the banned error-handling pair |
+| `diagnostic.zig` | a finding and the message its rule wrote |
+| `rule.zig` | what a rule is: id, options fingerprint, check |
+| `options.zig` | the options every rule is read with |
+| `zginlint.zig` | the engine: the rule list, `lintSource`, the tree walk, the ordering |
+| `baseline.zig` | the pin's format and the ratchet comparison |
 | `cli.zig` | argv parsing, the report, the exit codes |
 | `main.zig` | the thin exe entry point |
 | `test_root.zig` | the test root `zig build test:zginlint` runs |
 
-Adding a rule: put it in `rules/`, append to the source in
-`zginlint.zig lintSource`, and add its path to `test_root.zig`.
+Adding a rule: put it in `rules/`, give it a field in `options.zig` if it
+needs one, add its declaration to `zginlint.rules`, and add its path to
+`test_root.zig`.
 
 ## Where it runs
 

@@ -6,13 +6,19 @@ const std = @import("std");
 const comment_scan = @import("comment_scan.zig");
 const diagnostic = @import("diagnostic.zig");
 const io_util = @import("io_util.zig");
-const max_comment_lines_rule = @import("rules/max_comment_lines.zig");
+const options_mod = @import("options.zig");
+const rule = @import("rule.zig");
+const max_comment_lines = @import("rules/max_comment_lines.zig");
+const no_catch_unreachable = @import("rules/no_catch_unreachable.zig");
 
 pub const Diagnostic = diagnostic.Diagnostic;
-pub const diagnosticMessage = diagnostic.message;
-pub const Options = struct {
-    /// Ceiling on the lines one comment block may span.
-    max_comment_lines: u32 = max_comment_lines_rule.default_max_lines,
+pub const Options = options_mod.Options;
+pub const defaults = options_mod.defaults;
+
+/// Every rule this linter runs, in report order.
+pub const rules = [_]rule.Rule{
+    max_comment_lines.declaration,
+    no_catch_unreachable.declaration,
 };
 
 /// Every diagnostic a single file produced, with the path it came from.
@@ -23,7 +29,7 @@ pub const FileFindings = struct {
 
     pub fn deinit(self: *FileFindings, allocator: std.mem.Allocator) void {
         allocator.free(self.path);
-        allocator.free(self.diagnostics);
+        diagnostic.deinitAll(allocator, self.diagnostics);
         self.* = .{ .path = &.{}, .diagnostics = &.{} };
     }
 };
@@ -34,17 +40,47 @@ pub fn deinitFindings(allocator: std.mem.Allocator, reports: []FileFindings) voi
     allocator.free(reports);
 }
 
-/// Lint source text. Diagnostics come back in source order.
+/// Lint source text with every rule. Diagnostics come back in source order,
+/// whatever order the rules ran in.
 pub fn lintSource(allocator: std.mem.Allocator, source: []const u8, options: Options) ![]Diagnostic {
     var found: std.ArrayList(Diagnostic) = .empty;
-    errdefer found.deinit(allocator);
-    try max_comment_lines_rule.check(
-        allocator,
-        source,
-        .{ .max_lines = options.max_comment_lines },
-        &found,
-    );
+    errdefer {
+        for (found.items) |*item| item.deinit(allocator);
+        found.deinit(allocator);
+    }
+    for (rules) |declaration| try declaration.check(allocator, source, options, &found);
+    std.mem.sort(Diagnostic, found.items, {}, byPosition);
     return found.toOwnedSlice(allocator);
+}
+
+/// A rule's options as a string, with the rule it belongs to.
+pub const Fingerprint = struct {
+    rule_id: []const u8,
+    text: []const u8,
+};
+
+/// The options every rule was read with, for a pin to record and a check to
+/// compare. Owned by `deinitFingerprints`.
+pub fn fingerprints(allocator: std.mem.Allocator, options: Options) ![]Fingerprint {
+    const prints = try allocator.alloc(Fingerprint, rules.len);
+    var done: usize = 0;
+    errdefer {
+        for (prints[0..done]) |item| allocator.free(item.text);
+        allocator.free(prints);
+    }
+    for (rules, 0..) |declaration, index| {
+        prints[index] = .{
+            .rule_id = declaration.id,
+            .text = try declaration.fingerprint(allocator, options),
+        };
+        done = index + 1;
+    }
+    return prints;
+}
+
+pub fn deinitFingerprints(allocator: std.mem.Allocator, prints: []Fingerprint) void {
+    for (prints) |item| allocator.free(item.text);
+    allocator.free(prints);
 }
 
 /// Lint every `.zig` file under `paths`, sorted by path so a run is
@@ -201,6 +237,12 @@ fn byPath(_: void, left: FileFindings, right: FileFindings) bool {
     return std.mem.lessThan(u8, left.path, right.path);
 }
 
+fn byPosition(_: void, left: Diagnostic, right: Diagnostic) bool {
+    if (left.line != right.line) return left.line < right.line;
+    if (left.column != right.column) return left.column < right.column;
+    return std.mem.lessThan(u8, left.rule_id, right.rule_id);
+}
+
 const testing = std.testing;
 
 fn writeFixtureTree(dir: std.Io.Dir) !void {
@@ -223,9 +265,14 @@ fn rootOf(tmp: *testing.TmpDir, buffer: []u8) ![]const u8 {
     return buffer[0..try tmp.dir.realPath(testing.io, buffer)];
 }
 
+fn freeDiagnostics(diagnostics: []Diagnostic) void {
+    for (diagnostics) |*item| item.deinit(testing.allocator);
+    testing.allocator.free(diagnostics);
+}
+
 test "zginlint: lintSource reports the long block of a source string" {
     const found = try lintSource(testing.allocator, "// a\n// b\n// c\n// d\n", .{});
-    defer testing.allocator.free(found);
+    defer freeDiagnostics(found);
     try testing.expectEqual(@as(usize, 1), found.len);
     try testing.expectEqual(@as(u32, 1), found[0].line);
 }
@@ -291,9 +338,30 @@ test "zginlint: a single file path lints that file" {
 
 test "zginlint: the ceiling reaches the rule through Options" {
     const found = try lintSource(testing.allocator, "// a\n// b\n", .{ .max_comment_lines = 1 });
-    defer testing.allocator.free(found);
+    defer freeDiagnostics(found);
     try testing.expectEqual(@as(usize, 1), found.len);
-    try testing.expectEqual(@as(u32, 1), found[0].max_lines);
+    try testing.expect(std.mem.indexOf(u8, found[0].message, "max is 1") != null);
+}
+
+test "zginlint: every rule runs on the same source" {
+    const source = "// one\n// two\n// three\n// four\nconst x = g() catch" ++ " " ++ "unreachable;\n";
+    const found = try lintSource(testing.allocator, source, .{});
+    defer freeDiagnostics(found);
+
+    try testing.expectEqual(@as(usize, 2), found.len);
+    try testing.expectEqualStrings("zginlint/max-comment-lines", found[0].rule_id);
+    try testing.expectEqualStrings("zginlint/no-catch-unreachable", found[1].rule_id);
+}
+
+test "zginlint: diagnostics come back in source order, not rule order" {
+    const source = "const x = g() catch" ++ " " ++ "unreachable;\n// a\n// b\n// c\n// d\n";
+    const found = try lintSource(testing.allocator, source, .{});
+    defer freeDiagnostics(found);
+
+    try testing.expectEqual(@as(usize, 2), found.len);
+    try testing.expectEqualStrings("zginlint/no-catch-unreachable", found[0].rule_id);
+    try testing.expectEqual(@as(u32, 1), found[0].line);
+    try testing.expectEqual(@as(u32, 2), found[1].line);
 }
 
 test "zginlint: a missing path is an error, not an empty report" {
@@ -312,6 +380,17 @@ test "zginlint: a build directory is not descended into" {
     const reports = try lintPaths(testing.allocator, testing.io, &.{root}, .{});
     defer deinitFindings(testing.allocator, reports);
     try testing.expectEqual(@as(usize, 0), reports.len);
+}
+
+test "zginlint: fingerprints cover every rule and carry their options" {
+    const prints = try fingerprints(testing.allocator, .{ .max_comment_lines = 2 });
+    defer deinitFingerprints(testing.allocator, prints);
+
+    try testing.expectEqual(rules.len, prints.len);
+    try testing.expectEqualStrings("zginlint/max-comment-lines", prints[0].rule_id);
+    try testing.expectEqualStrings("max=2", prints[0].text);
+    try testing.expectEqualStrings("zginlint/no-catch-unreachable", prints[1].rule_id);
+    try testing.expectEqualStrings(rule.no_options, prints[1].text);
 }
 
 test "zginlint: comment_scan is reachable from the library root" {

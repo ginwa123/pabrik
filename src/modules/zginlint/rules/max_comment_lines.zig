@@ -4,33 +4,41 @@
 
 const std = @import("std");
 const comment_scan = @import("../comment_scan.zig");
-const diagnostic = @import("../diagnostic.zig");
+const rule = @import("../rule.zig");
 
 pub const id = "zginlint/max-comment-lines";
 
-/// Three lines, in the shape of ESLint's `max-len`: one number, one rule.
-pub const default_max_lines: u32 = 3;
-
-pub const Options = struct {
-    max_lines: u32 = default_max_lines,
+pub const declaration = rule.Rule{
+    .id = id,
+    .fingerprint = fingerprint,
+    .check = check,
 };
 
-/// Append one diagnostic per comment block longer than `options.max_lines`.
+pub fn fingerprint(allocator: std.mem.Allocator, options: rule.Options) ![]u8 {
+    return std.fmt.allocPrint(allocator, "max={d}", .{options.max_comment_lines});
+}
+
+/// Append one diagnostic per comment block longer than the ceiling.
 pub fn check(
     allocator: std.mem.Allocator,
     source: []const u8,
-    options: Options,
-    out: *std.ArrayList(diagnostic.Diagnostic),
-) !void {
+    options: rule.Options,
+    out: *std.ArrayList(rule.Diagnostic),
+) anyerror!void {
     const blocks = try comment_scan.commentBlocks(allocator, source);
     defer allocator.free(blocks);
     for (blocks) |block| {
-        if (block.line_count <= options.max_lines) continue;
+        if (block.line_count <= options.max_comment_lines) continue;
+        const message = try std.fmt.allocPrint(
+            allocator,
+            "Comment block has {d} lines; max is {d}",
+            .{ block.line_count, options.max_comment_lines },
+        );
+        errdefer allocator.free(message);
         try out.append(allocator, .{
             .rule_id = id,
             .line = block.first_line,
-            .lines_in_block = block.line_count,
-            .max_lines = options.max_lines,
+            .message = message,
         });
     }
 }
@@ -38,8 +46,11 @@ pub fn check(
 const testing = std.testing;
 
 fn expectReportedLines(expected: []const u32, source: []const u8) !void {
-    var found: std.ArrayList(diagnostic.Diagnostic) = .empty;
-    defer found.deinit(testing.allocator);
+    var found: std.ArrayList(rule.Diagnostic) = .empty;
+    defer {
+        for (found.items) |*item| item.deinit(testing.allocator);
+        found.deinit(testing.allocator);
+    }
     try check(testing.allocator, source, .{}, &found);
     try testing.expectEqual(expected.len, found.items.len);
     for (expected, found.items) |line, got| try testing.expectEqual(line, got.line);
@@ -62,12 +73,14 @@ test "max-comment-lines: a long block comment is one finding, not one per line" 
 }
 
 test "max-comment-lines: the ceiling is configurable" {
-    var found: std.ArrayList(diagnostic.Diagnostic) = .empty;
-    defer found.deinit(testing.allocator);
-    try check(testing.allocator, "// one\n// two\n", .{ .max_lines = 1 }, &found);
+    var found: std.ArrayList(rule.Diagnostic) = .empty;
+    defer {
+        for (found.items) |*item| item.deinit(testing.allocator);
+        found.deinit(testing.allocator);
+    }
+    try check(testing.allocator, "// one\n// two\n", .{ .max_comment_lines = 1 }, &found);
     try testing.expectEqual(@as(usize, 1), found.items.len);
-    try testing.expectEqual(@as(u32, 2), found.items[0].lines_in_block);
-    try testing.expectEqual(@as(u32, 1), found.items[0].max_lines);
+    try testing.expectEqualStrings("Comment block has 2 lines; max is 1", found.items[0].message);
 }
 
 test "max-comment-lines: a trailing comment after code is not a block" {
@@ -82,9 +95,18 @@ test "max-comment-lines: a multi-line string literal is not a comment block" {
 }
 
 test "max-comment-lines: a diagnostic names its rule" {
-    var found: std.ArrayList(diagnostic.Diagnostic) = .empty;
-    defer found.deinit(testing.allocator);
+    var found: std.ArrayList(rule.Diagnostic) = .empty;
+    defer {
+        for (found.items) |*item| item.deinit(testing.allocator);
+        found.deinit(testing.allocator);
+    }
     try check(testing.allocator, "// one\n// two\n// three\n// four\n", .{}, &found);
     try testing.expectEqualStrings("zginlint/max-comment-lines", found.items[0].rule_id);
     try testing.expectEqual(@as(u32, 1), found.items[0].column);
+}
+
+test "max-comment-lines: the fingerprint carries the ceiling" {
+    const text = try fingerprint(testing.allocator, .{ .max_comment_lines = 5 });
+    defer testing.allocator.free(text);
+    try testing.expectEqualStrings("max=5", text);
 }

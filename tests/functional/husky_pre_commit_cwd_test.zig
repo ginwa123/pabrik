@@ -109,8 +109,9 @@ const DESKTOP_REL = "src/apps/desktop";
 const ZIG_LINT_REL = "scripts/lint-no-catch-unreachable.sh";
 
 /// The Zig scan's success line, which appears in the hook's stdout only if
-/// the step actually ran.
-const ZIG_SCAN_OK_LINE = "no 'catch unreachable'";
+/// the step actually ran. Assembled from two pieces because the linter scans
+/// raw bytes and would flag the literal pair here.
+const ZIG_SCAN_OK_LINE = "no 'catch" ++ " unreachable'";
 
 /// What `zig build zginlint:check` prints when the tree is pinned.
 const ZGINLINT_OK_LINE = "within the pinned ceilings";

@@ -125,7 +125,7 @@ pub fn main(init: std.process.Init) !void {
             switch (b) {
                 0...8, 11, 12, 14...31 => {
                     var esc: [4]u8 = undefined;
-                    _ = std.fmt.bufPrint(&esc, "\\x{x:0>2}", .{b}) catch unreachable;
+                    _ = std.fmt.bufPrint(&esc, "\\x{x:0>2}", .{b}) catch @panic("codegen: bufPrint of the hex escape failed");
                     try out_buf.appendSlice(allocator, &esc);
                 },
                 32...33, 35...91, 93...126 => try out_buf.append(allocator, b),
@@ -135,7 +135,7 @@ pub fn main(init: std.process.Init) !void {
                 },
                 else => {
                     var esc: [4]u8 = undefined;
-                    _ = std.fmt.bufPrint(&esc, "\\x{x:0>2}", .{b}) catch unreachable;
+                    _ = std.fmt.bufPrint(&esc, "\\x{x:0>2}", .{b}) catch @panic("codegen: bufPrint of the hex escape failed");
                     try out_buf.appendSlice(allocator, &esc);
                 },
             }

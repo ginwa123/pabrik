@@ -15,7 +15,10 @@ contain.
 **Banned.** The lint is `scripts/lint-no-catch-unreachable.sh`, wired
 into the `lint` job of `.github/workflows/ci.yml` and mirrored by
 `.husky/pre-commit`. It scans every `.zig` file under `src/` and fails
-the build on any hit.
+the build on any hit. The same rule also runs as `zginlint`'s
+`zginlint/no-catch-unreachable` (§4) over `src`, `tests`, `tools` and
+`build.zig` — the wider of the two scopes, and how the 20 sites outside
+`src/` were found and converted when that rule landed.
 
 ```zig
 // WRONG — banned in every build mode.
@@ -430,8 +433,8 @@ Measured 2026-10-15 over `src`, `tests`, `tools` and `build.zig`:
 **6,545 findings in 728 files** — 728 of the 847 hand-written Zig files in
 the tree, with `src/migrations/migration.zig` at 214 blocks and
 `src/agentic_loop/llm_history.zig` at 193. The linter's own module is at
-**zero**: those seven files are not in the baseline, so any block over
-three lines in them fails the gate immediately.
+**zero**: none of its files is in the baseline, so a block over three
+lines in one of them fails the gate immediately.
 
 Why not convert them in this change: the conversion is 728 files, and it
 is not mechanical. Each block has to be shortened, moved into a `///` doc
