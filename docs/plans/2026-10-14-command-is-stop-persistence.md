@@ -3,7 +3,8 @@
 - **Task**: `task_1791972455755_8` — "add new parameter to ai agent command"
 - **Worktree**: `~/.config/pabrik/.worktrees/add-new-parameter-to-ai-agent-command-1791972429011`
 - **Branch**: `worktree/add-new-parameter-to-ai-agent-command-1791972429011` (base `main`)
-- **Status**: **Revision 2** — incorporates the user's answers of 2026-10-14 (§1.1). PLAN only, no code yet.
+- **Status**: **Revision 3 — DECIDED, ready to implement.** All four open decisions are closed (§1.3).
+  No code yet; PR 1 (`is_stop`) starts on approval.
 
 ---
 
@@ -35,7 +36,20 @@
 | D6 | **Backend first** — no frontend work in this PR. | ✅ |
 | D2 | `mode` lives **on `command`** (the user's own framing). | ✅ |
 | D3 | No wake ⇒ no `persistence_watcher`, no `watch` action, no debounce/rate-limit. | ✅ simplified |
-| D4 | Stop mechanism (tree kill vs single-PID) — **not answered**; §4.4 recommends and flags it. | ⬜ |
+| D4 | Stop mechanism — **native detached spawn + tree kill**. | ✅ |
+| D7 | Read ergonomics — **a `process` tool with a delta read**, as its own later PR. | ✅ §3.7 |
+| D8 | Cancel semantics — **the Stop button stops nothing**. | ✅ §3.5 |
+| D9 | G8 dead helpers — **adopt `killAllForSession`, delete `pollAndUpdateStatus`**. | ✅ §3.6 |
+
+### 1.3 The four answers (verbatim)
+
+> 1. i choose recommended,
+> 2. what the best for you ?
+> 3. not dont stop,
+> 4. okey
+
+Decoded: **(1)** tree kill. **(2)** my call — a `process` delta read, §3.7. **(3)** "don't stop" —
+the Stop button must **not** stop the processes, §3.5. **(4)** adopt/delete as recommended, §3.6.
 
 **The single biggest simplification from Revision 1**: dropping the wake removes the whole
 `persistence_watcher` (settle window, flush threshold, per-process wake cap, spend risk) — that was
@@ -132,110 +146,192 @@ because two independent actors both notify on exit:
 
 So `kind` is not cosmetic (G4) — it is the only thing that makes category 3's contract hold.
 
-### 3.3 "Dies with pabrik" (D5)
+### 3.3 "Dies with pabrik" (D5) — native detached spawn (decided)
 
-Three pieces, in order of reliability:
+The command is spawned **by pabrik itself**, not by a shell:
 
-- **Clean shutdown**: `main.zig:274-276` installs SIGINT/SIGTERM handlers, and the signal path runs
-  the post-listen block at `main.zig:346-356` before `std.process.exit(0)`. Kill every live
-  `kind='service'` row **there** (before the exit).
-- **Hard kill (`kill -9`)**: no handler runs, so the boot sweep handles it (§3.4).
-- **Linux-only belt-and-braces**: `prctl(PR_SET_PDEATHSIG, SIGKILL)` in the child, so a `kill -9`
-  of pabrik takes the service down without waiting for a restart. macOS has no equivalent —
-  document, do not pretend.
+```zig
+std.process.spawn(io, .{
+    .argv = argv,                       // argv_prefix ++ [command] — no `nohup`, no `cmd &`
+    .cwd  = .{ .path = cwd },
+    .stdin  = .close,
+    .stdout = .{ .file = log_file },    // StdIo.file — verified present in Zig 0.16
+    .stderr = .{ .file = log_file },    // (std/process.zig:408, StdIo.file: File)
+    .pgid = if (comptime builtin.os.tag == .windows) null else @as(?std.posix.pid_t, 0),
+});
+```
 
-### 3.4 Boot: kill leftovers
+Why this beats the `nohup`/`Start-Process` string it replaces:
 
-On boot, for every `status='running'` row: if the PID is alive and `kind='service'`, **kill it**
-(D5) and mark `orphaned`; if dead, mark `orphaned`. The same pass re-arms completion watchers for
-`kind='job'` rows, whose watcher thread did not survive the restart.
+- **`pid == pgid`.** `.pgid = 0` makes the child its own process-group leader, so
+  `kill(-pid)` reaches vite *and* esbuild *and* anything else it forked. The `nohup cmd &`
+  idiom gives a PID whose group is the *spawning shell's*, which is why `kill(-pgid)` was never
+  usable there (G3).
+- **No shell wrapper, no quoting.** `backgroundSpec`, `tempDirFor` and `quotePwsh` exist only to
+  build a shell string and its log path; a direct spawn deletes all three from this path.
+- **No reader threads.** The child writes straight into the log file, so the whole
+  `Reader` / `settleReader` / `abandoned_reader_count` machinery (written for the foreground
+  deadline problem) is not involved.
+- **A real exit code.** The reaper is `shell.wait_pid_bounded` — already used by the foreground
+  path — so the completion message can carry the actual status instead of inferring it from
+  liveness.
+
+D5 in three pieces, in order of reliability:
+
+- **Clean shutdown**: the SIGINT/SIGTERM path runs the post-listen block at `main.zig:346-356`
+  before `std.process.exit(0)`. Kill every live `kind='service'` row **there**.
+- **Hard kill (`kill -9`)**: no handler can run, so the boot sweep (§3.4) is the answer.
+- **Linux belt-and-braces**: `prctl(PR_SET_PDEATHSIG, SIGKILL)` in the child, so even a `kill -9`
+  of pabrik takes the service down immediately. **macOS has no equivalent** — do not pretend it
+  does; the boot sweep is the fallback there.
+
+Windows: no process groups and no Job Objects here, so `stopPlan(.windows)` is
+`taskkill /T /F /PID`. Keep the plan **pure data** — `stopPlan(os_tag) []StopKill`, mirroring
+`timeoutKillPlan` (`shell.zig`) — so the Windows arm is assertable from a Linux runner, which
+`CODING_STANDARDS.md` §2 requires.
+
+`mode='job'` (category 2) keeps the existing `nohup` path until the new spawn has a functional
+test on Linux **and** a CI cell on macOS/Windows. Two implementations may look wasteful; a
+regression in the mode every existing `background=true` caller depends on would be worse.
+
+### 3.4 Boot: kill leftovers, re-arm jobs
+
+One pass over `status='running'` rows:
+
+| row | PID alive? | action |
+|---|---|---|
+| `kind='service'` | yes | **kill it** (D5 — it outlived pabrik), mark `orphaned` |
+| `kind='service'` | no | mark `orphaned` |
+| `kind='job'` | yes | re-arm `spawnCompletionWatcher` — the watcher thread did not survive the restart |
+| `kind='job'` | no | notify + delete (the cron's job, so just let the cron do it) |
+
+### 3.5 The Stop button stops nothing (D8)
+
+The user's answer is `not dont stop`. So:
+
+- **Cancel / Stop** (`isWorkerCancelled`) does **not** kill background or persistent processes.
+  This also preserves today's behaviour exactly — see G8 in §4: nothing kills them today.
+- **`is_stop`** kills nothing either (§2).
+- The **only** two killers are pabrik's own shutdown (§3.3) and the boot sweep (§3.4).
+
+Consequence worth stating in the PR: a dev server started for a task stays up after the user hits
+Stop, and stays up across turns. That is the point of `background_persistence`, but it means the
+agent must be told to `stop` it when it is done, or the port stays held. If you later want
+"Stop also kills `kind='job'`", it is one condition behind the existing `kind` column — not a
+re-design.
+
+### 3.6 G8 — adopt one, delete the other (D9)
+
+`background_process.zig` today:
+
+| helper | disposition | why |
+|---|---|---|
+| `killAllForSession` (:151) | **adopt, rescoped** | The shutdown + boot sweep need exactly this walk, but scoped to `kind='service'` and **never** called from cancel (D8). Rename so the scope is in the name (`killServicesForShutdown`) — `killAllFor**Session**` invites the cancel-path misuse the user just ruled out. |
+| `pollAndUpdateStatus` (:172) | **delete** | Superseded by the cron's notify-then-delete, which additionally *queues the log* and wakes the session. Keeping a liveness-only variant means two liveness sources that can disagree — `background_processes_list.zig` already computes `running` live precisely because the stored `status` drifts. |
+
+### 3.7 Reading output (D7) — my recommendation: a `process` tool, as its own PR
+
+You asked what is best. **A `process` tool with `read` / `stop` / `list`, shipped as PR 3**, and
+here is the reasoning rather than a preference:
+
+1. **`command` is the wrong shape for a read.** `command`, `cwd` and `mandatory_timeout` are all
+   *required* (`command.zig`, `.required = &.{ "command", "cwd", "mandatory_timeout" }`). Reading a
+   log would mean inventing a dummy command and a dummy deadline on every poll. Making them
+   conditionally required is exactly the kind of schema the lenient parser exists to paper over.
+2. **A delta read is not a nicety, it is the token cost.** A dev server's log grows continuously.
+   `tail -n 50` after 500 lines of HMR output returns 50 lines of the same repeated noise — and you
+   pay for those tokens again on *every* poll. A delta read returns "no new output" (single-digit
+   tokens) for the eight polls out of ten where nothing happened. That is the difference between a
+   usable loop and one the agent avoids because it is expensive.
+3. **`list` removes the memory problem.** With `tail`, the agent must keep `pid` and `log_path` in
+   context across turns — and compaction drops exactly that kind of detail. `process list` turns
+   "remember a path" into "ask what I am running", which is robust to compaction by construction.
+4. **The mechanism is already there.** `ToolExecContext` carries `db` + `session_id`, so the tool
+   reads `session_background_process` directly: `last_read_offset` advances per read, and there is
+   no new state, no new table, and no new event.
+
+And the staging matters: **PR 3 is not a blocker.** After PR 2, `mode="background_persistence"` is
+already *usable* — the start result carries the PID and log path, `command` + `tail` reads it, and
+`command` + `kill -- -<pid>` stops the whole tree (which is what PR 2's spawn makes possible). PR 3
+is the ergonomics that make it cheap enough that an agent will actually do it.
+
+**PR staging (this is the answer to "backend first")**
+
+| PR | contents | independently useful? |
+|---|---|---|
+| **PR 1** | `is_stop` (§2) | yes — the exit you asked for, on its own |
+| **PR 2** | `mode` + migration 107 `kind` + native spawn + tree kill + dies-with-pabrik (§3) | yes — mode 3 works, `tail`/`kill` read it |
+| **PR 3** | the `process` tool (§3.7) | yes — makes mode 3 cheap to poll |
 
 ---
 
-## 4. Gaps (Revision 1 list, updated)
+## 4. Gaps
 
-| id | gap | status after the answers |
+| id | gap | status |
 |---|---|---|
-| G1 | No read surface for a running process — the agent must `command` + `tail <log_path>` and carry the path across turns. | **Now the whole story**: with no wake, polling is the only way to see a dev server's output. |
-| G2 | No output-driven wake. | **Out of scope** — the user defined `background_persistence` as silent. |
-| G3 | `kill <pid>` does not kill the tree (recorded PID is the *shell's* child; `pnpm run dev` forks again). Foreground already fixed it (`.pgid = 0` + `kill(-pgid)`); the background path never did. | **Open, and now more important** — for a dev server, `stop` means "free the port", which a single-PID kill does not do. |
-| G4 | The row carries no lifecycle state. | **Required**: `kind` is what enforces "no queue" (§3.2). |
-| G5 | The prompt **forbids dev servers** (`command.zig:113`, `command.zig:96`). | Must be lifted for `mode="background_persistence"`. |
-| G6 | PID reuse → a stale row reads as alive. | Low priority; cheap hardening. |
-| G7 | **Live bug**: backend completion envelope is JSON, frontend helper parses XML-only. | **Deferred** — it is frontend, and the user said backend first. It affects `mode="background"`, so flag it in the PR body. |
-| **G8** | **NEW: `background_process.killAllForSession` and `.pollAndUpdateStatus` have ZERO callers.** Nothing kills background processes today — not on session cancel, not at shutdown. | D5 has no existing hook to lean on; §3.3/§3.4 are new code, not a wiring fix. |
+| G1 | No read surface for a running process. | **Answered by D7** → PR 3. Usable, but clumsy, before that. |
+| G2 | No output-driven wake. | **Out of scope** — `background_persistence` is silent by definition. |
+| G3 | `kill <pid>` does not kill the tree. | **Fixed by PR 2** (§3.3). |
+| G4 | The row carries no lifecycle state. | **Fixed by PR 2** — `kind` is what enforces "no queue" (§3.2). |
+| G5 | The prompt **forbids dev servers** (`command.zig:113`, `command.zig:96`). | PR 2 — lift it for `mode="background_persistence"`. |
+| G6 | PID reuse → a stale row reads as alive. | Deferred; low priority. Cheap hardening: compare `started_at` too. |
+| G7 | **Live bug**: backend completion envelope is JSON, frontend helper parses XML-only (regression from #563). | **Deferred** — frontend, and the user said backend first. Affects `mode="background"`, so it is named in the PR 2 body. |
+| G8 | `killAllForSession` / `pollAndUpdateStatus` have ZERO callers — nothing kills background processes today. | **Resolved by D9** (§3.6). |
 
-Evidence for G8: `grep -rn "killAllForSession" src/` → only the definition
+Evidence for G8: `grep -rn "killAllForSession" src/` returns only the definition
 (`background_process.zig:151`); same for `pollAndUpdateStatus` (`:172`).
 
 ---
 
-## 5. Task breakdown (backend first)
+## 5. Task list
 
-**T1 — `is_stop`** (R1) — the smallest useful PR, and independent of the rest.
-§2.2 steps 1–6 minus `mode`. Functional test: drive a session whose scripted model emits a
-`command` call with `is_stop:true`; assert (a) no further LLM call is issued, (b) the worker row is
-gone, (c) the tool-result row exists with a matching `tool_call_id`, (d) a
+**PR 1 — `is_stop`** (§2.2 steps 1–6, minus `mode`)
+Functional test: drive a session whose scripted model emits a `command` call with
+`is_stop: true`, and assert (a) no further LLM call is issued, (b) the worker row is gone,
+(c) the tool-result row exists with a matching `tool_call_id`, and (d) a
 `mode="background_persistence"` command started in the same call **is still alive after the loop
-exits** — that last one is the user's exact sentence, and the guard against someone "helpfully"
-killing the batch on the way out.
+exits** — (d) is the user's exact sentence and the guard against someone "helpfully" killing the
+batch on the way out.
 
-**T2 — `mode`** (R2) — schema + parser + `background` alias + `shell.zig` validation switch
-(`mode == .foreground` replaces `!input.background` in the `MandatoryTimeoutMissing` /
-`MandatoryTimeoutTooLarge` guards at `shell.zig:1232-1244`). Migration not needed yet.
+**PR 2 — `mode`** (§3)
+- T2.1 schema + parser + `background` alias; `shell.zig` validation switches to
+  `mode == .foreground` for `MandatoryTimeoutMissing` / `MandatoryTimeoutTooLarge`.
+- T2.2 migration 107 + `kind`; `background_persistence` skips `spawnCompletionWatcher`; the cron's
+  SELECT adds `AND kind = 'job'`. Test: a `kind='service'` row with a dead PID is **not** notified
+  **and** a `kind='job'` control row **is** — a negative assertion needs the positive control.
+- T2.3 native detached spawn + `stopPlan(os_tag)` + `wait_pid_bounded` reaping. Test: `stop` on
+  `bash -c 'sleep 300 & wait'` kills the **grandchild** — the direct guard for G3.
+- T2.4 shutdown hook + boot sweep + `PR_SET_PDEATHSIG`. Test: start a service process, stop pabrik,
+  assert the PID is gone **and** a `kind='job'` control row is **not** killed.
+- T2.5 prompt text: `mode` descriptions, lift G5's ban, note `stdbuf -oL` on Linux.
+- T2.6 G8 disposition (§3.6).
 
-**T3 — migration 107 + `kind`** (R2a/R2b)
-```sql
-ALTER TABLE session_background_process ADD COLUMN kind TEXT NOT NULL DEFAULT 'job';
-```
-`save` gains `kind`; `background_persistence` skips `spawnCompletionWatcher`; the cron's SELECT
-adds `AND kind = 'job'`. Test: `kind='service'` row with a dead PID is **not** notified by the cron
-(and the `kind='job'` control row IS) — a negative assertion needs that positive control.
-
-**T4 — the correct kill (G3)** — the one genuinely risky item.
-Recommended: reuse the **foreground** spawn pipeline's semantics (`.pgid = 0`, `shell.zig:1215`)
-for a native detached spawn with stdout/stderr redirected to the log file, so recorded `pid ==
-pgid` and `kill(-pid)` reaches vite + esbuild. Keep the OS plan **pure data**
-(`stopPlan(os_tag) []StopKill`, mirroring `timeoutKillPlan`) so the Windows arm is assertable from
-a Linux runner — required by `CODING_STANDARDS.md` §2. `stopPlan(.windows)` = `taskkill /T /F`.
-Fallback if you want the smaller diff: keep `nohup` and ship single-PID `kill`, documented as
-best-effort — but then "stop the dev server" will often leave the port held.
-
-**T5 — dies with pabrik (D5)** — clean shutdown hook (`main.zig:346-356`) + boot sweep
-(§3.4) + Linux `PR_SET_PDEATHSIG`. Test: start a service mode process, signal pabrik to stop,
-assert the PID is gone — and a `kind='job'` control row is **not** killed.
-
-**T6 — revive the lifecycle helpers (G8)** — decide whether `pollAndUpdateStatus` /
-`killAllForSession` are adopted or deleted. Dead code that looks like the safety net is worse than
-no code.
-
-**T7 — prompt text** — `mode` / `is_stop` descriptions, the "put your final answer in `content`
-when you pass `is_stop`" contract, lift G5's ban (a dev server is
-`mode="background_persistence"`), and say protected output may need `stdbuf -oL` on Linux.
-
-**Deferred / separate PRs**: the `process` read-offset tool (G1 ergonomics), the wake-on-output
-feature (R3), G7 (frontend envelope), UI (D6 = backend first).
+**PR 3 — the `process` tool** (§3.7): `read` / `stop` / `list`, delta + `last_read_offset`.
 
 ---
 
-## 6. Open decisions
+## 6. Decisions — all closed
 
-1. **T4 kill mechanism** — native detached spawn + tree kill (**recommended**; correctly frees the
-   port, bigger diff, touches the path `background=true` shares) **or** single-PID kill as a
-   Phase-1 stopgap?
-2. **G1 read ergonomics** — is `command` + `tail <log_path>` good enough for now (zero new
-   surface), or do you want a `process read` that returns only the delta? With the wake dropped,
-   this is the only thing standing between the agent and a usable dev-server loop.
-3. **Cancel semantics** — the session Stop button should kill every process including
-   `background_persistence` (**recommended**), while `is_stop` kills nothing. Confirm?
-4. **G8** — adopt `killAllForSession` / `pollAndUpdateStatus` in this work, or delete them?
+| # | decision | answer |
+|---|---|---|
+| 1 | Kill mechanism | native detached spawn + tree kill (§3.3) |
+| 2 | Read ergonomics | `process` tool with a delta read, as PR 3 (§3.7) |
+| 3 | Cancel | the Stop button stops nothing (§3.5) |
+| 4 | G8 | adopt `killAllForSession` (rescoped), delete `pollAndUpdateStatus` (§3.6) |
+
+Remaining at implementation time, not requiring a decision now: the concrete `PR_SET_PDEATHSIG`
+call shape on Linux, and whether the `process` tool needs its own card in the desktop UI (D6 was
+backend-first, so: no).
+
+---
 
 ## 7. Risks
 
 | risk | mitigation |
 |---|---|
-| A "persistent" process that actually *should* notify (e.g. `pnpm run migrate`) is started in mode 3 and the agent never learns it failed. | T3's `kind` skip must be **mode-derived**, never inferred from the command string; the cron test pins both directions. |
-| Tree kill changes the path `background=true` is built on. | T4 lands behind `kind='service'`; `kind='job'` keeps `nohup` until the new path has a functional test on Linux **and** a CI cell on macOS/Windows. |
-| D5 kills a process the user wanted to keep across a restart. | That is the requested behaviour; the popup keeps listing `orphaned` rows so it is visible rather than silent. |
+| A process that *should* notify (e.g. `pnpm run migrate`) is started in mode 3 and the agent never learns it failed. | `kind` is **mode-derived**, never inferred from the command string; the cron test pins both directions. The `mode` description must say plainly what mode 3 gives up. |
+| The native spawn regresses the path every existing `background=true` caller depends on. | `kind='job'` keeps `nohup` until the new path passes on Linux **and** a macOS/Windows CI cell. |
+| D5 kills a process the user wanted kept across a restart. | Requested behaviour. `orphaned` rows stay visible in the popup, so it is legible rather than silent. |
+| A dev server is left holding a port after the user hits Stop (by design, D8). | The `mode` description tells the agent to `stop` when done; the popup lists it so a human can. |
 | `handle_tool` signature change ripples. | Exactly one caller — verified (`workflow.zig:1676`). |
 | Buffered stdout: `pnpm run dev` under a redirect may print nothing until flush. | Document `stdbuf -oL`; the persistence functional test uses a genuinely line-buffered command so the test does not encode the assumption. |
