@@ -39,6 +39,21 @@ pub const FORMAT_MARKDOWN = "markdown";
 /// surfaces it as a tool error; the HTTP handler as 413.
 pub const MAX_CONTENT_BYTES: usize = 4 << 20; // 4 MiB
 
+/// Process-local monotonic counter for `document_id` generation.
+///
+/// The wall clock alone is not a source of uniqueness here. On Windows
+/// `helpers.unixTimestampNanos` reads `GetSystemTimeAsFileTime`, which is
+/// quantised to the system clock tick, so two documents created inside
+/// one tick produced the SAME `doc_<nanos>` id and the second INSERT died
+/// on `UNIQUE constraint failed: documents.id` — 500 to the client. Same
+/// failure shape (and same remedy) as the workspace_id collision recorded
+/// in `workspace_provisioning.zig`.
+var document_id_counter: std.atomic.Value(u64) = .init(0);
+
+fn documentIdSeq() u64 {
+    return document_id_counter.fetchAdd(1, .monotonic);
+}
+
 /// One row in `documents`. All string fields are allocator-owned and must
 /// be freed by the caller.
 pub const DocumentRow = struct {
@@ -280,10 +295,24 @@ pub fn createDocument(
     if (title.len == 0) return error.TitleRequired;
     if (args.content.len > MAX_CONTENT_BYTES) return error.ContentTooLarge;
 
-    // Same id shape as workspace_items: a nanosecond wall-clock string
-    // with a table prefix. `helpers.unixTimestampNanos` is cross-platform
-    // (std.c.clock_gettime does not compile on Windows in Zig 0.16).
-    const document_id = try std.fmt.allocPrint(allocator, "doc_{d}", .{helpers.unixTimestampNanos()});
+    // `doc_<nanos>_<pid>_<seq>` — the workspace_id scheme from
+    // `workspace_provisioning.zig`, for the same reason.
+    //
+    // `helpers.unixTimestampNanos` is cross-platform (std.c.clock_gettime
+    // does not compile on Windows in Zig 0.16) and keeps ids roughly in
+    // creation order. What makes them UNIQUE, though, is the pid plus the
+    // per-process counter, not the timestamp: on Windows the timestamp is
+    // tick-quantised, which is exactly how `doc_<nanos>` alone collided —
+    // see `document_id_counter`.
+    const document_id = try std.fmt.allocPrint(
+        allocator,
+        "doc_{d}_{d}_{d}",
+        .{
+            helpers.unixTimestampNanos(),
+            helpers.process.getCurrentProcessId(),
+            documentIdSeq(),
+        },
+    );
     defer allocator.free(document_id);
 
     const format = if (args.format.len == 0) FORMAT_MARKDOWN else args.format;

@@ -78,12 +78,24 @@ cd "$REPO_ROOT"
 
 # ── The ceilings ───────────────────────────────────────────────────────
 #
-# Measured, not guessed: these are the `(... N skipped)` counts from the
-# green run cited above (windows: 94 at the time, minus the three
-# Windows-only gates this change converted -- task_create x2 and
-# browser x1 -- so 91). Lowering one is always safe and is the point of
-# the notice below; raising one needs a reviewer to see it in a diff that
-# also says which test got a new platform gate.
+# Measured, not guessed: these are the `(... N skipped)` counts from a
+# real run of the cell they describe -- the green run cited above for
+# linux/macos (windows: 94 at the time), and a windows `zig build test`
+# for the current windows figure.
+#
+# Do NOT re-derive one by subtraction. The first version of this comment
+# did ("94 minus the three gates #932 converted -- task_create x2 and
+# browser x1 -- so 91") and was wrong by one: `browser.zig` lives in
+# `src/apps/desktop_app/`, which `zig build test` never compiles -- its
+# tests belong to the separate `test:desktop-app` step -- so removing
+# that gate could not move this number. Windows measured 92, not 91, and
+# the cell stayed red on main (run 38440666553, headSha 83378de9) until
+# the `file_sandbox.zig` posix-host Windows-path test was converted to a
+# host table in its place, which is where the 91 comes from.
+#
+# Lowering one is always safe and is the point of the notice below;
+# raising one needs a reviewer to see it in a diff that also says which
+# test got a new platform gate.
 baseline_for() {
   case "$1" in
     linux)   echo "${PABRIK_ZIG_TEST_SKIPS_LINUX:-10}" ;;

@@ -232,7 +232,7 @@ fn findMsvcInclude(b: *std.Build) MsvcIncludePaths {
         fillWindowsSdkIncludes(b, &result);
         return result;
     }
-    result.c_stddef = b.fmt("{s}/include", .{vc_root});        // MSVC C++ stdlib (cstddef, etc.)
+    result.c_stddef = b.fmt("{s}/include", .{vc_root}); // MSVC C++ stdlib (cstddef, etc.)
     result.msvc_include = result.c_stddef;
     fillWindowsSdkIncludes(b, &result);
     return result;
@@ -311,8 +311,10 @@ fn stagePrunedMsvcrt(b: *std.Build, msvc_lib_root: []const u8, stage_dir: []cons
     // members with no other provider (else `undefined symbol`).
     const prune_members = [_][]const u8{
         "guard_support.obj",
-        "dyn_tls_init.obj",     "dyn_tls_dtor.obj",
-        "tlsdtor.obj",          "tlsdyn.obj",
+        "dyn_tls_init.obj",
+        "dyn_tls_dtor.obj",
+        "tlsdtor.obj",
+        "tlsdyn.obj",
         "tlssup.obj",
     };
     var ar_argv: [4 + prune_members.len][]const u8 = undefined;
@@ -328,7 +330,8 @@ fn stagePrunedMsvcrt(b: *std.Build, msvc_lib_root: []const u8, stage_dir: []cons
 /// for the config-time MSVC runtime-lib staging copy). Size-only
 /// comparison: cheap, no hashing, and exact for these
 /// never-edited-in-place import libs.
-fn staleOrMissing(b: *std.Build, src_path: []const u8, dst_path: []const u8) bool {    const src_stat = std.Io.Dir.cwd().statFile(b.graph.io, src_path, .{}) catch return true;
+fn staleOrMissing(b: *std.Build, src_path: []const u8, dst_path: []const u8) bool {
+    const src_stat = std.Io.Dir.cwd().statFile(b.graph.io, src_path, .{}) catch return true;
     const dst_stat = std.Io.Dir.cwd().statFile(b.graph.io, dst_path, .{}) catch return true;
     return src_stat.size != dst_stat.size;
 }
@@ -798,6 +801,46 @@ fn countNamesContaining(all_names: []const []const u8, needle: []const u8, index
         if (std.mem.indexOf(u8, all_names[name_index], needle) != null) hits += 1;
     }
     return hits;
+}
+
+/// One pytest invocation for a Python functional suite, optionally pinned
+/// to a single shard.
+///
+/// `$PABRIK_BIN` is always set to `pabrik_bin` — the artifact `zig build`'s
+/// default install just produced. It is the resolver's first choice in both
+/// conftests, so this is what makes every run exercise THAT binary; without
+/// it, a name search whose first candidate is the stale bare `pabrik[.exe]`
+/// wins instead (see the comment on `host_binary_name` for the session that
+/// lost an hour to exactly that).
+///
+/// `index == null` means "do not touch the sharding environment at all".
+/// That is the unsplit run, and it is also how the CI matrix works: the
+/// job exports `PABRIK_FUNC_SHARD_*` on the step, `zig build` inherits the
+/// environment, and `b.addSystemCommand` forwards it to the pytest child.
+/// Passing `-Dfunc-shards=N` instead SETS both variables on the child, so a
+///   build-driven shard cannot be half-configured by a stale variable left
+/// in the caller's shell — the two values that must agree (`TOTAL` and
+/// `INDEX`) are written together, from one place.
+///
+/// The selector that reads them lives in `tests/func_shard.py` and slices
+/// the collected items with `index % total == index`; nothing about the
+/// split is reimplemented here.
+fn addPythonSuiteRun(
+    b: *std.Build,
+    argv: []const []const u8,
+    pabrik_bin: []const u8,
+    shard_total: u32,
+    index: ?u32,
+) *std.Build.Step.Run {
+    const run = b.addSystemCommand(argv);
+    run.setCwd(b.path(""));
+    const env_map = run.getEnvMap();
+    env_map.put("PABRIK_BIN", pabrik_bin) catch @panic("OOM");
+    if (index) |i| {
+        env_map.put("PABRIK_FUNC_SHARD_TOTAL", b.fmt("{d}", .{shard_total})) catch @panic("OOM");
+        env_map.put("PABRIK_FUNC_SHARD_INDEX", b.fmt("{d}", .{i})) catch @panic("OOM");
+    }
+    return run;
 }
 
 /// Report an unrecoverable build-configuration problem and stop.
@@ -1299,14 +1342,14 @@ fn linkVendoredLua(b: *std.Build, module: *std.Build.Module) void {
     module.addCSourceFiles(.{
         .root = b.path("vendor/lua"),
         .files = &.{
-            "lapi.c",     "lauxlib.c", "lbaselib.c", "lcode.c",
-            "lcorolib.c", "lctype.c",  "ldblib.c",   "ldebug.c",
-            "ldo.c",      "ldump.c",   "lfunc.c",    "lgc.c",
-            "linit.c",    "liolib.c",  "llex.c",     "lmathlib.c",
-            "lmem.c",     "loadlib.c", "lobject.c",  "lopcodes.c",
-            "loslib.c",   "lparser.c", "lstate.c",   "lstring.c",
-            "lstrlib.c",  "ltable.c",  "ltablib.c",  "ltm.c",
-            "lundump.c",  "lutf8lib.c", "lvm.c",     "lzio.c",
+            "lapi.c",     "lauxlib.c",  "lbaselib.c", "lcode.c",
+            "lcorolib.c", "lctype.c",   "ldblib.c",   "ldebug.c",
+            "ldo.c",      "ldump.c",    "lfunc.c",    "lgc.c",
+            "linit.c",    "liolib.c",   "llex.c",     "lmathlib.c",
+            "lmem.c",     "loadlib.c",  "lobject.c",  "lopcodes.c",
+            "loslib.c",   "lparser.c",  "lstate.c",   "lstring.c",
+            "lstrlib.c",  "ltable.c",   "ltablib.c",  "ltm.c",
+            "lundump.c",  "lutf8lib.c", "lvm.c",      "lzio.c",
         },
         .flags = &.{ "-std=c99", "-O2" },
     });
@@ -1637,53 +1680,55 @@ pub fn build(b: *std.Build) void {
     // a target the curl bootstrap script never builds. Override with
     // `-Dtarget=x86_64-linux-gnu.2.38` (etc.) to explicitly cross-compile
     // from a macOS/Windows host.
-    const target = b.standardTargetOptions(.{ .default_target = switch (b.graph.host.result.os.tag) {
-        .linux => .{
-            .cpu_arch = b.graph.host.result.cpu.arch,
-            .os_tag = .linux,
-            .abi = .gnu,
-            .glibc_version = .{ .major = 2, .minor = 38, .patch = 0 },
-        },
-        .windows => blk: {
-            // === Why default to x86_64-windows-gnu on Windows ===
-            //
-            // The CI's self-hosted Windows runner installs all native deps
-            // (libcurl, libssl, libcrypto, libpq, sqlite3) via
-            //     vcpkg install --recurse ...:x64-windows
-            // (see .github/workflows/ci.yml:560). vcpkg emits artefacts as
-            // x64 — `libcurl.lib`/`libssl.lib`/etc. live at
-            // `C:\vcpkg\installed\x64-windows\...`. The kabelweb
-            // and databases packages wire those exact paths into the link
-            // line.
-            //
-            // On ARM64 Windows (Snapdragon X dev machines) Zig's stock
-            // host-following default would produce target = aarch64-windows-
-            // gnu, which can't link x64 vcpkg artefacts — every Compile
-            // step would fail with "file not found" for the .lib files
-            // (and the vendored curl target_subdir is hardcoded
-            // "windows-amd64" anyway, so vendored archives don't exist for
-            // the aarch64 path either).
-            //
-            // Pinning Windows to x86_64-windows-gnu aligns dev boxes with
-            // the CI's binary layout, so `zig build` Just Works on both
-            // X64 and ARM64 Windows hosts when vcpkg x64 is present.
-            //
-            // To target aarch64-windows-gnu natively, install the matching
-            // vcpkg triplet first:
-            //     vcpkg install ... --triplet=arm64-windows
-            // then pass `-Dtarget=aarch64-windows-gnu`.
-            break :blk .{
-                .cpu_arch = .x86_64,
-                .os_tag = .windows,
+    const target = b.standardTargetOptions(.{
+        .default_target = switch (b.graph.host.result.os.tag) {
+            .linux => .{
+                .cpu_arch = b.graph.host.result.cpu.arch,
+                .os_tag = .linux,
                 .abi = .gnu,
-            };
+                .glibc_version = .{ .major = 2, .minor = 38, .patch = 0 },
+            },
+            .windows => blk: {
+                // === Why default to x86_64-windows-gnu on Windows ===
+                //
+                // The CI's self-hosted Windows runner installs all native deps
+                // (libcurl, libssl, libcrypto, libpq, sqlite3) via
+                //     vcpkg install --recurse ...:x64-windows
+                // (see .github/workflows/ci.yml:560). vcpkg emits artefacts as
+                // x64 — `libcurl.lib`/`libssl.lib`/etc. live at
+                // `C:\vcpkg\installed\x64-windows\...`. The kabelweb
+                // and databases packages wire those exact paths into the link
+                // line.
+                //
+                // On ARM64 Windows (Snapdragon X dev machines) Zig's stock
+                // host-following default would produce target = aarch64-windows-
+                // gnu, which can't link x64 vcpkg artefacts — every Compile
+                // step would fail with "file not found" for the .lib files
+                // (and the vendored curl target_subdir is hardcoded
+                // "windows-amd64" anyway, so vendored archives don't exist for
+                // the aarch64 path either).
+                //
+                // Pinning Windows to x86_64-windows-gnu aligns dev boxes with
+                // the CI's binary layout, so `zig build` Just Works on both
+                // X64 and ARM64 Windows hosts when vcpkg x64 is present.
+                //
+                // To target aarch64-windows-gnu natively, install the matching
+                // vcpkg triplet first:
+                //     vcpkg install ... --triplet=arm64-windows
+                // then pass `-Dtarget=aarch64-windows-gnu`.
+                break :blk .{
+                    .cpu_arch = .x86_64,
+                    .os_tag = .windows,
+                    .abi = .gnu,
+                };
+            },
+            else => .{
+                .cpu_arch = b.graph.host.result.cpu.arch,
+                .os_tag = b.graph.host.result.os.tag,
+                .abi = b.graph.host.result.abi,
+            },
         },
-        else => .{
-            .cpu_arch = b.graph.host.result.cpu.arch,
-            .os_tag = b.graph.host.result.os.tag,
-            .abi = b.graph.host.result.abi,
-        },
-    } });
+    });
     const optimize = b.standardOptimizeOption(.{});
 
     // CLI flag: `--no-webapp-rebuild` / `-Dno-webapp-rebuild` skips the
@@ -1779,7 +1824,7 @@ pub fn build(b: *std.Build) void {
     const databases_dep = b.dependency("databases", .{
         .target = target,
         .optimize = optimize,
-        .@"db_used" = db_used,
+        .db_used = db_used,
     });
     const databases_mod = databases_dep.module("databases");
     mod.addImport("databases", databases_mod);
@@ -2015,8 +2060,7 @@ pub fn build(b: *std.Build) void {
     // addIncludePath here — the module graph handles it.
     // If we ended up on the Windows / cross-compile branch, depend on
     // the auto-fetch step so a fresh checkout Just Works.
-    if (target.result.os.tag == .windows) {
-    }
+    if (target.result.os.tag == .windows) {}
     // === mcp-hello-world: TypeScript test MCP server ===
     // Self-test target for the MCP stdio transport. Built from
     // src/apps/mcp_hello_world/index.ts (TypeScript + @modelcontextprotocol/sdk
@@ -2085,7 +2129,7 @@ pub fn build(b: *std.Build) void {
         \\# <repo-root>/src/apps/mcp_hello_world/dist/index.js. From
         \\# zig-out/bin, `..` is zig-out, `../..` is the repo root.
         \\exec node "$SCRIPT_DIR/../../src/apps/mcp_hello_world/dist/index.js" "$@"
-    ;
+        ;
     const wrapper_cache_name = "mcp-hello-world-wrapper.sh";
     const mcp_wrapper_write = b.addWriteFiles();
     const wrapper_lazy_path = mcp_wrapper_write.add(wrapper_cache_name, wrapper_body);
@@ -2177,7 +2221,7 @@ pub fn build(b: *std.Build) void {
         \\# zig-out/bin/mcp-http-hello-world -> zig-out/bin/. We need to
         \\# reach <repo-root>/src/apps/mcp_http_hello_world/dist/index.js.
         \\exec node "$SCRIPT_DIR/../../src/apps/mcp_http_hello_world/dist/index.js" "$@"
-    ;
+        ;
     const http_wrapper_cache_name = "mcp-http-hello-world-wrapper.sh";
     const mcp_http_wrapper_write = b.addWriteFiles();
     const http_wrapper_lazy_path = mcp_http_wrapper_write.add(http_wrapper_cache_name, http_wrapper_body);
@@ -2245,7 +2289,7 @@ pub fn build(b: *std.Build) void {
     // node + pnpm must be on PATH so the developer (or CI) can invoke
     // vue-tsc via Node's real CJS loader. We fail fast with a clear
     // error rather than letting vue-tsc's cryptic TS2307 noise leak out.
-const check_webapp_node = b.addSystemCommand(switch (b.graph.host.result.os.tag) {
+    const check_webapp_node = b.addSystemCommand(switch (b.graph.host.result.os.tag) {
         // Windows: `sh` isn't on PATH (Git for Windows ships it under
         // C:\Program Files\Git\bin\, not auto-added). Use cmd.exe with the
         // equivalent `where` lookup + a label + goto for the same
@@ -2566,11 +2610,16 @@ const check_webapp_node = b.addSystemCommand(switch (b.graph.host.result.os.tag)
             // C++ stdlib to fight over).
             var cflags: [32][]const u8 = undefined;
             var cn: usize = 0;
-            cflags[cn] = "-std=c++11"; cn += 1;
-            cflags[cn] = "-DWEBVIEW_STATIC"; cn += 1;
-            cflags[cn] = "-DWEBVIEW_GTK"; cn += 1;
-            cflags[cn] = "-Ivendor/webview"; cn += 1;
-            cflags[cn] = "-nostdlibinc"; cn += 1;
+            cflags[cn] = "-std=c++11";
+            cn += 1;
+            cflags[cn] = "-DWEBVIEW_STATIC";
+            cn += 1;
+            cflags[cn] = "-DWEBVIEW_GTK";
+            cn += 1;
+            cflags[cn] = "-Ivendor/webview";
+            cn += 1;
+            cflags[cn] = "-nostdlibinc";
+            cn += 1;
             // System C headers MUST come via -isystem (not -I) so they
             // sort AFTER the C++ stdlib headers — with plain
             // -I/usr/include, clang's <cerrno> wrapper finds glibc's
@@ -2640,9 +2689,18 @@ const check_webapp_node = b.addSystemCommand(switch (b.graph.host.result.os.tag)
                 // directory + its target-specific c++config.h. Both
                 // paths go via -isystem so they sort AFTER glibc's
                 // <math.h>/<cwchar.h> in the search order.
-                if (cn < cflags.len) { cflags[cn] = b.fmt("-isystem{s}", .{cxx}); cn += 1; }
-                if (cn < cflags.len) { cflags[cn] = b.fmt("-isystem{s}/x86_64-pc-linux-gnu", .{cxx}); cn += 1; }
-                if (cn < cflags.len) { cflags[cn] = b.fmt("-isystem{s}/backward", .{cxx}); cn += 1; }
+                if (cn < cflags.len) {
+                    cflags[cn] = b.fmt("-isystem{s}", .{cxx});
+                    cn += 1;
+                }
+                if (cn < cflags.len) {
+                    cflags[cn] = b.fmt("-isystem{s}/x86_64-pc-linux-gnu", .{cxx});
+                    cn += 1;
+                }
+                if (cn < cflags.len) {
+                    cflags[cn] = b.fmt("-isystem{s}/backward", .{cxx});
+                    cn += 1;
+                }
             } else {
                 std.log.warn(
                     "pabrik-desktop: no /usr/include/c++/* found — falling back to zig's bundled libc++. " ++
@@ -2761,234 +2819,234 @@ const check_webapp_node = b.addSystemCommand(switch (b.graph.host.result.os.tag)
                 std.process.exit(1);
             }
             if (use_real_webview) {
-            // Compile vendor/webview/webview.cc with the REAL cl.exe
-            // (MSVC), not `zig cc`.
-            //
-            // Why not clang: MSVC 14.44 headers + COM + MS C++ ABI cannot
-            // be satisfied by clang-on-windows-gnu, verified through a
-            // full round of attempts (2026-09-05, see git history):
-            // mingw `yvals.h` shadowing (`-nostdinc` + `-I` ordering
-            // fixes that) → `__int64` needs `-fms-extensions` →
-            // UCRT/winnt arch gates need `_M_X64`/`_M_AMD64`/`_AMD64_` →
-            // COM `DECLSPEC_UUID` needs `_MSC_VER`, which `zig cc`
-            // cannot express (`-D_MSC_VER=` dies with bogus
-            // `FileNotFound`; `-fms-compatibility-version` ignored;
-            // `-include` header works) → Itanium ABI object references
-            // `__cxa_*`/`__gxx_personality_seh0`, unsatisfiable since
-            // msvcprt.lib is MS-mangled → `-mabi=ms` is silently
-            // IGNORED by `zig cc` (proven via strings on the output) →
-            // `-fms-compatibility` flips the ABI but kills the
-            // `char16_t`/`char32_t` keywords with no recourse.
-            // cl.exe is installed alongside the detected MSVC (same box
-            // that provides the headers) and needs no vcvars env for a
-            // `/c` compile — explicit `/I` covers everything. Only the
-            // `extern "C"` boundary crosses into the gnu-ABI exe (x64
-            // has no leading-underscore decoration), so the MSVC-compiled
-            // object links cleanly. `/MD` (DLL runtime) keeps one shared
-            // heap with the rest of the exe; `/Z7` embeds debug info in
-            // the obj (no mspdb server needed).
-            const ver_root = msvcVersionRoot(b) orelse unreachable; // gate above guarantees this
-            const cl_exe = b.fmt("{s}/bin/Hostx64/x64/cl.exe", .{ver_root});
-            const cpp_src = "vendor/webview/webview.cc";
-            const msvc_include = findMsvcInclude(b);
-            // Skip dirs that failed to resolve (same rationale as
-            // before: a bare `/I ""` is a confusing no-op).
-            const candidate_dirs = [_][]const u8{
-                msvc_include.c_stddef,
-                msvc_include.msvc_include,
-                msvc_include.ucrt_include,
-                msvc_include.um_include,
-                msvc_include.shared_include,
-                msvc_include.winrt_include,
-            };
-            var cpp_args: [32][]const u8 = undefined;
-            var n: usize = 0;
-            cpp_args[n] = cl_exe;
-            n += 1;
-            cpp_args[n] = "/nologo";
-            n += 1;
-            cpp_args[n] = "/c";
-            n += 1;
-            cpp_args[n] = "/std:c++17";
-            n += 1;
-            cpp_args[n] = "/EHsc";
-            n += 1;
-            cpp_args[n] = "/MD";
-            n += 1;
-            cpp_args[n] = "/Z7";
-            n += 1;
-            // No Control Flow Guard in this TU (`/guard:cf-`; cl.exe
-            // enables it by default since VS2022). CFG-instrumented code
-            // references the `__guard_*_icall_fptr` dispatch tables,
-            // which would pull vcruntime.lib's table object into a link
-            // where mingw's startup objects already define them
-            // (`duplicate symbol`). The TU's indirect calls go through
-            // WebView2 COM vtables resolved at runtime anyway; the rest
-            // of the exe keeps its own guard posture unchanged.
-            cpp_args[n] = "/guard:cf-";
-            n += 1;
-            cpp_args[n] = "/DWEBVIEW_STATIC";
-            n += 1;
-            cpp_args[n] = "/Ivendor/webview";
-            n += 1;
-            // WebView2.h + EventToken.h (NuGet-staged). webview.h pulls
-            // `"WebView2.h"` as a quoted include.
-            cpp_args[n] = "/Isrc/apps/desktop_app/platform/windows";
-            n += 1;
-            for (candidate_dirs) |dir| {
-                if (dir.len == 0) continue;
-                cpp_args[n] = "/I";
+                // Compile vendor/webview/webview.cc with the REAL cl.exe
+                // (MSVC), not `zig cc`.
+                //
+                // Why not clang: MSVC 14.44 headers + COM + MS C++ ABI cannot
+                // be satisfied by clang-on-windows-gnu, verified through a
+                // full round of attempts (2026-09-05, see git history):
+                // mingw `yvals.h` shadowing (`-nostdinc` + `-I` ordering
+                // fixes that) → `__int64` needs `-fms-extensions` →
+                // UCRT/winnt arch gates need `_M_X64`/`_M_AMD64`/`_AMD64_` →
+                // COM `DECLSPEC_UUID` needs `_MSC_VER`, which `zig cc`
+                // cannot express (`-D_MSC_VER=` dies with bogus
+                // `FileNotFound`; `-fms-compatibility-version` ignored;
+                // `-include` header works) → Itanium ABI object references
+                // `__cxa_*`/`__gxx_personality_seh0`, unsatisfiable since
+                // msvcprt.lib is MS-mangled → `-mabi=ms` is silently
+                // IGNORED by `zig cc` (proven via strings on the output) →
+                // `-fms-compatibility` flips the ABI but kills the
+                // `char16_t`/`char32_t` keywords with no recourse.
+                // cl.exe is installed alongside the detected MSVC (same box
+                // that provides the headers) and needs no vcvars env for a
+                // `/c` compile — explicit `/I` covers everything. Only the
+                // `extern "C"` boundary crosses into the gnu-ABI exe (x64
+                // has no leading-underscore decoration), so the MSVC-compiled
+                // object links cleanly. `/MD` (DLL runtime) keeps one shared
+                // heap with the rest of the exe; `/Z7` embeds debug info in
+                // the obj (no mspdb server needed).
+                const ver_root = msvcVersionRoot(b) orelse unreachable; // gate above guarantees this
+                const cl_exe = b.fmt("{s}/bin/Hostx64/x64/cl.exe", .{ver_root});
+                const cpp_src = "vendor/webview/webview.cc";
+                const msvc_include = findMsvcInclude(b);
+                // Skip dirs that failed to resolve (same rationale as
+                // before: a bare `/I ""` is a confusing no-op).
+                const candidate_dirs = [_][]const u8{
+                    msvc_include.c_stddef,
+                    msvc_include.msvc_include,
+                    msvc_include.ucrt_include,
+                    msvc_include.um_include,
+                    msvc_include.shared_include,
+                    msvc_include.winrt_include,
+                };
+                var cpp_args: [32][]const u8 = undefined;
+                var n: usize = 0;
+                cpp_args[n] = cl_exe;
                 n += 1;
-                cpp_args[n] = dir;
+                cpp_args[n] = "/nologo";
                 n += 1;
-            }
-            // NOTE: cl.exe only accepts the GLUED form (`/Fopath`, no
-            // space — the separate form warns D9027 `source file
-            // ignored` and emits nothing where addOutputFileArg
-            // expects it). The tree path is gitignored
-            // (`vendor/webview/webview.obj`) and the step re-runs
-            // whenever argv changes, so no stale-object hazard.
-            cpp_args[n] = "/Fovendor/webview/webview.obj";
-            n += 1;
-            cpp_args[n] = cpp_src;
-            n += 1;
-            const cpp_compile = b.addSystemCommand(cpp_args[0..n]);
-            cpp_compile.setCwd(b.path(""));
-            desktop_exe.step.dependOn(&cpp_compile.step);
-            desktop_exe.root_module.addObjectFile(.{ .cwd_relative = "vendor/webview/webview.obj" });
-            // Win32 / COM / WebView2 link deps (same as the old shim used).
-            desktop_exe.root_module.linkSystemLibrary("ole32", .{});
-            desktop_exe.root_module.linkSystemLibrary("user32", .{});
-            // Zig's MinGW (gnu) link line doesn't auto-pull kernel32.dll /
-            // ws2_32.dll for raw `extern "kernel32"` / `extern "ws2_32"`
-            // decls in Zig code. Add them explicitly so the Win32 externs
-            // in extraction.zig / subprocess.zig resolve at link time.
-            desktop_exe.root_module.linkSystemLibrary("kernel32", .{});
-            desktop_exe.root_module.linkSystemLibrary("ws2_32", .{});
-            // WebView2Loader.lib lives next to pabrik_webview.cpp in the
-            // old layout; webview.h includes <WebView2.h> from
-            // src/apps/desktop_app/platform/windows/ (NuGet-staged
-            // location). Add that dir to the include + library search
-            // paths so the compile finds the header and LLD finds the
-            // import library.
-            desktop_exe.root_module.addIncludePath(.{
-                .cwd_relative = "src/apps/desktop_app/platform/windows",
-            });
-            desktop_exe.root_module.addLibraryPath(.{
-                .cwd_relative = "src/apps/desktop_app/platform/windows",
-            });
-            // WebView2Loader.lib back in place: the bisection proved it
-            // innocent (same 2 duplicates without it — the CFG-table
-            // references come from msvcprt.lib's own members).
-            desktop_exe.root_module.linkSystemLibrary("WebView2Loader", .{});            // Link deps for the real webview object. `#pragma
-            // comment(lib, ...)` directives embedded in the TU (MSVC
-            // headers auto-link the C++ runtime; webview.h links ole32 /
-            // shell32 / shlwapi / version / advapi32 / user32) name libs
-            // lld must resolve: `msvcprt` (DLL C++ runtime — see -D_DLL),
-            // `uuid`, `shlwapi`, `version` (ole32/shell32/user32/advapi32
-            // already resolve via zig's mingw libs). MSVC's `lib/x64`
-            // provides msvcprt; the SDK's `Lib/<ver>/um/x64` provides
-            // uuid/shlwapi/version. Without these the link fails with
-            // `lld-link: could not open 'lib<name>.a'`.
-            // MSVC C++ runtime libs WITHOUT the shadowing hazard below.
-            // `msvcprt.lib` + `vcruntime.lib` are COPIED from the MSVC
-            // install into the NuGet staging dir (already on the search
-            // path for WebView2Loader) instead of adding MSVC's
-            // `lib/x64` to the search paths. Reason: that dir also
-            // contains `msvcrt.lib`, and lld resolves the name `msvcrt`
-            // to MSVC's copy INSTEAD OF mingw's `libmsvcrt.a` — MSVC's
-            // copy drags in `guard_support.obj` whose CFG dispatch
-            // tables (`__guard_*_icall_fptr`) collide with mingw's
-            // `mingw_cfguard_support.obj` (`duplicate symbol`; lld names
-            // both). The two copied libs have no mingw counterparts, so
-            // no shadowing is possible. Copy-if-missing-or-stale at
-            // config time (few MB, one-time cost).
-            {
-                const runtime_libs = [_][]const u8{ "msvcprt.lib", "vcruntime.lib", "oldnames.lib" };
-                const msvc_lib_root = b.fmt("{s}/lib/x64", .{ver_root});
-                const stage_dir = "src/apps/desktop_app/platform/windows";
-                for (runtime_libs) |lib_name| {
-                    const src_path = b.fmt("{s}/{s}", .{ msvc_lib_root, lib_name });
-                    const dst_path = b.fmt("{s}/{s}", .{ stage_dir, lib_name });
-                    if (staleOrMissing(b, src_path, dst_path)) {
-                        const bytes = std.Io.Dir.cwd().readFileAlloc(
-                            b.graph.io,
-                            src_path,
-                            b.allocator,
-                            .unlimited,
-                        ) catch break;
-                        defer b.allocator.free(bytes);
-                        std.Io.Dir.cwd().writeFile(
-                            b.graph.io,
-                            .{ .sub_path = dst_path, .data = bytes },
-                        ) catch break;
-                    }
+                cpp_args[n] = "/c";
+                n += 1;
+                cpp_args[n] = "/std:c++17";
+                n += 1;
+                cpp_args[n] = "/EHsc";
+                n += 1;
+                cpp_args[n] = "/MD";
+                n += 1;
+                cpp_args[n] = "/Z7";
+                n += 1;
+                // No Control Flow Guard in this TU (`/guard:cf-`; cl.exe
+                // enables it by default since VS2022). CFG-instrumented code
+                // references the `__guard_*_icall_fptr` dispatch tables,
+                // which would pull vcruntime.lib's table object into a link
+                // where mingw's startup objects already define them
+                // (`duplicate symbol`). The TU's indirect calls go through
+                // WebView2 COM vtables resolved at runtime anyway; the rest
+                // of the exe keeps its own guard posture unchanged.
+                cpp_args[n] = "/guard:cf-";
+                n += 1;
+                cpp_args[n] = "/DWEBVIEW_STATIC";
+                n += 1;
+                cpp_args[n] = "/Ivendor/webview";
+                n += 1;
+                // WebView2.h + EventToken.h (NuGet-staged). webview.h pulls
+                // `"WebView2.h"` as a quoted include.
+                cpp_args[n] = "/Isrc/apps/desktop_app/platform/windows";
+                n += 1;
+                for (candidate_dirs) |dir| {
+                    if (dir.len == 0) continue;
+                    cpp_args[n] = "/I";
+                    n += 1;
+                    cpp_args[n] = dir;
+                    n += 1;
                 }
-                // `msvcrt.lib`: PRUNE the CFG-table + TLS startup members
-                // that collide with mingw's (`duplicate symbol` with a
-                // full copy). Everything else in the archive (C-runtime
-                // imports used by msvcprt members) stays. Always re-copy
-                // fresh first (8 MB, milliseconds) so the prune list
-                // below applies to a known-good baseline — `ar d` on an
-                // already-absent member would fail the configure. Prune list is
-                // evidence-driven: guard_support.obj (proven dup, lld
-                // names it) + the TLS-init family (dup set from the
-                // full-lib link). Cookie members stay: no dup evidence
-                // (they resolve via mingw today).
-                // Best-effort: any IO failure skips staging (the link
-                // will then fail loudly on the missing lib).
-                stagePrunedMsvcrt(b, msvc_lib_root, stage_dir);
-            }
-            // The exact libs `-luuid -lshlwapi -lversion` below need. Probing
-            // the FILES (not just the `um/x64` dir) is what skips the
-            // `wdf0.26100.0` decoy, whose um/x64 exists but is empty.
-            // See newestSubdirWith's doc comment.
-            const kit_lib_root = newestSubdirWith(
-                b,
-                "C:/Program Files (x86)/Windows Kits/10/Lib",
-                &.{ "um/x64/uuid.lib", "um/x64/shlwapi.lib", "um/x64/version.lib" },
-            ) orelse newestSubdirWith(
-                b,
-                "C:/Program Files/Windows Kits/10/Lib",
-                &.{ "um/x64/uuid.lib", "um/x64/shlwapi.lib", "um/x64/version.lib" },
-            );
-            if (kit_lib_root) |kl| {
-                desktop_exe.root_module.addLibraryPath(.{
-                    .cwd_relative = b.fmt("{s}/um/x64", .{kl}),
+                // NOTE: cl.exe only accepts the GLUED form (`/Fopath`, no
+                // space — the separate form warns D9027 `source file
+                // ignored` and emits nothing where addOutputFileArg
+                // expects it). The tree path is gitignored
+                // (`vendor/webview/webview.obj`) and the step re-runs
+                // whenever argv changes, so no stale-object hazard.
+                cpp_args[n] = "/Fovendor/webview/webview.obj";
+                n += 1;
+                cpp_args[n] = cpp_src;
+                n += 1;
+                const cpp_compile = b.addSystemCommand(cpp_args[0..n]);
+                cpp_compile.setCwd(b.path(""));
+                desktop_exe.step.dependOn(&cpp_compile.step);
+                desktop_exe.root_module.addObjectFile(.{ .cwd_relative = "vendor/webview/webview.obj" });
+                // Win32 / COM / WebView2 link deps (same as the old shim used).
+                desktop_exe.root_module.linkSystemLibrary("ole32", .{});
+                desktop_exe.root_module.linkSystemLibrary("user32", .{});
+                // Zig's MinGW (gnu) link line doesn't auto-pull kernel32.dll /
+                // ws2_32.dll for raw `extern "kernel32"` / `extern "ws2_32"`
+                // decls in Zig code. Add them explicitly so the Win32 externs
+                // in extraction.zig / subprocess.zig resolve at link time.
+                desktop_exe.root_module.linkSystemLibrary("kernel32", .{});
+                desktop_exe.root_module.linkSystemLibrary("ws2_32", .{});
+                // WebView2Loader.lib lives next to pabrik_webview.cpp in the
+                // old layout; webview.h includes <WebView2.h> from
+                // src/apps/desktop_app/platform/windows/ (NuGet-staged
+                // location). Add that dir to the include + library search
+                // paths so the compile finds the header and LLD finds the
+                // import library.
+                desktop_exe.root_module.addIncludePath(.{
+                    .cwd_relative = "src/apps/desktop_app/platform/windows",
                 });
-                // ucrt.lib lives in its own leaf (Lib/<ver>/ucrt/x64),
-                // NOT under um/ — without this dir the link fails with
-                // `unable to find dynamic system library 'ucrt'`.
                 desktop_exe.root_module.addLibraryPath(.{
-                    .cwd_relative = b.fmt("{s}/ucrt/x64", .{kl}),
+                    .cwd_relative = "src/apps/desktop_app/platform/windows",
                 });
-            }
-            desktop_exe.root_module.linkSystemLibrary("msvcprt", .{});
-            desktop_exe.root_module.linkSystemLibrary("uuid", .{});
-            desktop_exe.root_module.linkSystemLibrary("shlwapi", .{});
-            desktop_exe.root_module.linkSystemLibrary("version", .{});
-            // vcruntime: sole provider of `__CxxFrameHandler4` +
-            // `__security_cookie` for the cl.exe object. DLL import —
-            // no static-CRT heap risk.
-            desktop_exe.root_module.linkSystemLibrary("vcruntime", .{});
-            // Guard-table stubs (5 CFG/XFG symbols nothing else defines
-            // — see guard_tables_stub.c). Plain C, no includes: compiles
-            // through the normal Zig CC path, no MSVC involvement.
-            desktop_exe.root_module.addCSourceFile(.{
-                .file = b.path("src/apps/desktop_app/platform/windows/guard_tables_stub.c"),
-                .flags = &.{},
-            });            // The import lib only records the dependency — at RUNTIME the
-            // Windows loader resolves WebView2Loader.dll via the standard
-            // search order (exe dir first). Install the NuGet-staged copy
-            // next to the exe so a fresh `zig-out/bin/pabrik-desktop.exe`
-            // starts without requiring the DLL on PATH. Wired into
-            // `desktop_install` after the switch (it doesn't exist yet
-            // here).
-            const wv2_dll_install = b.addInstallBinFile(
-                b.path("src/apps/desktop_app/platform/windows/WebView2Loader.dll"),
-                "WebView2Loader.dll",
-            );
-            webview2_dll_install_step = &wv2_dll_install.step;
+                // WebView2Loader.lib back in place: the bisection proved it
+                // innocent (same 2 duplicates without it — the CFG-table
+                // references come from msvcprt.lib's own members).
+                desktop_exe.root_module.linkSystemLibrary("WebView2Loader", .{}); // Link deps for the real webview object. `#pragma
+                // comment(lib, ...)` directives embedded in the TU (MSVC
+                // headers auto-link the C++ runtime; webview.h links ole32 /
+                // shell32 / shlwapi / version / advapi32 / user32) name libs
+                // lld must resolve: `msvcprt` (DLL C++ runtime — see -D_DLL),
+                // `uuid`, `shlwapi`, `version` (ole32/shell32/user32/advapi32
+                // already resolve via zig's mingw libs). MSVC's `lib/x64`
+                // provides msvcprt; the SDK's `Lib/<ver>/um/x64` provides
+                // uuid/shlwapi/version. Without these the link fails with
+                // `lld-link: could not open 'lib<name>.a'`.
+                // MSVC C++ runtime libs WITHOUT the shadowing hazard below.
+                // `msvcprt.lib` + `vcruntime.lib` are COPIED from the MSVC
+                // install into the NuGet staging dir (already on the search
+                // path for WebView2Loader) instead of adding MSVC's
+                // `lib/x64` to the search paths. Reason: that dir also
+                // contains `msvcrt.lib`, and lld resolves the name `msvcrt`
+                // to MSVC's copy INSTEAD OF mingw's `libmsvcrt.a` — MSVC's
+                // copy drags in `guard_support.obj` whose CFG dispatch
+                // tables (`__guard_*_icall_fptr`) collide with mingw's
+                // `mingw_cfguard_support.obj` (`duplicate symbol`; lld names
+                // both). The two copied libs have no mingw counterparts, so
+                // no shadowing is possible. Copy-if-missing-or-stale at
+                // config time (few MB, one-time cost).
+                {
+                    const runtime_libs = [_][]const u8{ "msvcprt.lib", "vcruntime.lib", "oldnames.lib" };
+                    const msvc_lib_root = b.fmt("{s}/lib/x64", .{ver_root});
+                    const stage_dir = "src/apps/desktop_app/platform/windows";
+                    for (runtime_libs) |lib_name| {
+                        const src_path = b.fmt("{s}/{s}", .{ msvc_lib_root, lib_name });
+                        const dst_path = b.fmt("{s}/{s}", .{ stage_dir, lib_name });
+                        if (staleOrMissing(b, src_path, dst_path)) {
+                            const bytes = std.Io.Dir.cwd().readFileAlloc(
+                                b.graph.io,
+                                src_path,
+                                b.allocator,
+                                .unlimited,
+                            ) catch break;
+                            defer b.allocator.free(bytes);
+                            std.Io.Dir.cwd().writeFile(
+                                b.graph.io,
+                                .{ .sub_path = dst_path, .data = bytes },
+                            ) catch break;
+                        }
+                    }
+                    // `msvcrt.lib`: PRUNE the CFG-table + TLS startup members
+                    // that collide with mingw's (`duplicate symbol` with a
+                    // full copy). Everything else in the archive (C-runtime
+                    // imports used by msvcprt members) stays. Always re-copy
+                    // fresh first (8 MB, milliseconds) so the prune list
+                    // below applies to a known-good baseline — `ar d` on an
+                    // already-absent member would fail the configure. Prune list is
+                    // evidence-driven: guard_support.obj (proven dup, lld
+                    // names it) + the TLS-init family (dup set from the
+                    // full-lib link). Cookie members stay: no dup evidence
+                    // (they resolve via mingw today).
+                    // Best-effort: any IO failure skips staging (the link
+                    // will then fail loudly on the missing lib).
+                    stagePrunedMsvcrt(b, msvc_lib_root, stage_dir);
+                }
+                // The exact libs `-luuid -lshlwapi -lversion` below need. Probing
+                // the FILES (not just the `um/x64` dir) is what skips the
+                // `wdf0.26100.0` decoy, whose um/x64 exists but is empty.
+                // See newestSubdirWith's doc comment.
+                const kit_lib_root = newestSubdirWith(
+                    b,
+                    "C:/Program Files (x86)/Windows Kits/10/Lib",
+                    &.{ "um/x64/uuid.lib", "um/x64/shlwapi.lib", "um/x64/version.lib" },
+                ) orelse newestSubdirWith(
+                    b,
+                    "C:/Program Files/Windows Kits/10/Lib",
+                    &.{ "um/x64/uuid.lib", "um/x64/shlwapi.lib", "um/x64/version.lib" },
+                );
+                if (kit_lib_root) |kl| {
+                    desktop_exe.root_module.addLibraryPath(.{
+                        .cwd_relative = b.fmt("{s}/um/x64", .{kl}),
+                    });
+                    // ucrt.lib lives in its own leaf (Lib/<ver>/ucrt/x64),
+                    // NOT under um/ — without this dir the link fails with
+                    // `unable to find dynamic system library 'ucrt'`.
+                    desktop_exe.root_module.addLibraryPath(.{
+                        .cwd_relative = b.fmt("{s}/ucrt/x64", .{kl}),
+                    });
+                }
+                desktop_exe.root_module.linkSystemLibrary("msvcprt", .{});
+                desktop_exe.root_module.linkSystemLibrary("uuid", .{});
+                desktop_exe.root_module.linkSystemLibrary("shlwapi", .{});
+                desktop_exe.root_module.linkSystemLibrary("version", .{});
+                // vcruntime: sole provider of `__CxxFrameHandler4` +
+                // `__security_cookie` for the cl.exe object. DLL import —
+                // no static-CRT heap risk.
+                desktop_exe.root_module.linkSystemLibrary("vcruntime", .{});
+                // Guard-table stubs (5 CFG/XFG symbols nothing else defines
+                // — see guard_tables_stub.c). Plain C, no includes: compiles
+                // through the normal Zig CC path, no MSVC involvement.
+                desktop_exe.root_module.addCSourceFile(.{
+                    .file = b.path("src/apps/desktop_app/platform/windows/guard_tables_stub.c"),
+                    .flags = &.{},
+                }); // The import lib only records the dependency — at RUNTIME the
+                // Windows loader resolves WebView2Loader.dll via the standard
+                // search order (exe dir first). Install the NuGet-staged copy
+                // next to the exe so a fresh `zig-out/bin/pabrik-desktop.exe`
+                // starts without requiring the DLL on PATH. Wired into
+                // `desktop_install` after the switch (it doesn't exist yet
+                // here).
+                const wv2_dll_install = b.addInstallBinFile(
+                    b.path("src/apps/desktop_app/platform/windows/WebView2Loader.dll"),
+                    "WebView2Loader.dll",
+                );
+                webview2_dll_install_step = &wv2_dll_install.step;
             } else {
                 // === Dev-box fallback: no MSVC + WebView2 ===
                 //
@@ -3854,20 +3912,20 @@ const check_webapp_node = b.addSystemCommand(switch (b.graph.host.result.os.tag)
     copy_pabrik_svc.step.dependOn(b.getInstallStep());
     linux_app_step.dependOn(&copy_pabrik_svc.step);
     const install_desktop_file = b.addSystemCommand(&.{
-        "/bin/sh", "-c",
+        "/bin/sh",                                                                                                                                                                                                                                                                                                                  "-c",
         "mkdir -p /usr/share/applications && cp packaging/linux/pabrik.desktop /usr/share/applications/pabrik.desktop && chmod 644 /usr/share/applications/pabrik.desktop && cp packaging/linux/pabrik-browser.desktop /usr/share/applications/pabrik-browser.desktop && chmod 644 /usr/share/applications/pabrik-browser.desktop",
     });
     install_desktop_file.step.dependOn(&copy_desktop_bin.step);
     install_desktop_file.step.dependOn(&copy_pabrik_svc.step);
     linux_app_step.dependOn(&install_desktop_file.step);
     const install_desktop_icon = b.addSystemCommand(&.{
-        "/bin/sh", "-c",
+        "/bin/sh",                                                                                                                                                                                                                                                                                                                                                                                         "-c",
         "for s in 16 32 48 64 128 256 512; do mkdir -p /usr/share/icons/hicolor/${s}x${s}/apps && cp packaging/icons/pabrik-${s}.png /usr/share/icons/hicolor/${s}x${s}/apps/pabrik.png && chmod 644 /usr/share/icons/hicolor/${s}x${s}/apps/pabrik.png; done; mkdir -p /usr/share/pixmaps && cp packaging/icons/pabrik-256.png /usr/share/pixmaps/pabrik.png && chmod 644 /usr/share/pixmaps/pabrik.png",
     });
     install_desktop_icon.step.dependOn(&install_desktop_file.step);
     linux_app_step.dependOn(&install_desktop_icon.step);
     const refresh_desktop_db = b.addSystemCommand(&.{
-        "/bin/sh", "-c",
+        "/bin/sh",                                                                                                                                              "-c",
         "update-desktop-database /usr/share/applications || true; gtk-update-icon-cache -f -t /usr/share/icons/hicolor || true; pkill -x qs-glauncher || true",
     });
     refresh_desktop_db.step.dependOn(&install_desktop_icon.step);
@@ -3893,9 +3951,8 @@ const check_webapp_node = b.addSystemCommand(switch (b.graph.host.result.os.tag)
     windows_app_step.dependOn(&desktop_install.step);
     windows_app_step.dependOn(b.getInstallStep());
     const run_windows_app_install = b.addSystemCommand(&.{
-        "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
-        "-File", "packaging/windows/Install-Pabrik.ps1",
-        "-SourceDir", "zig-out/bin",
+        "powershell", "-NoProfile",                           "-ExecutionPolicy", "Bypass",
+        "-File",      "packaging/windows/Install-Pabrik.ps1", "-SourceDir",       "zig-out/bin",
     });
     run_windows_app_install.step.dependOn(&desktop_install.step);
     run_windows_app_install.step.dependOn(b.getInstallStep());
@@ -3948,8 +4005,7 @@ const check_webapp_node = b.addSystemCommand(switch (b.graph.host.result.os.tag)
     // libcurl is linked via kabelweb_mod's transitive deps.
     dev_exe.root_module.link_libc = true;
     linkPlatformDeps(b, dev_exe, target);
-    if (target.result.os.tag == .windows) {
-    }
+    if (target.result.os.tag == .windows) {}
     const install_dev = b.addInstallArtifact(dev_exe, .{});
     dev_linux_system_step.dependOn(&install_dev.step);
     const copy_dev_to_system = b.addSystemCommand(&.{
@@ -3975,6 +4031,87 @@ const check_webapp_node = b.addSystemCommand(switch (b.graph.host.result.os.tag)
     // `pip install pytest` as the manual fallback).
     // =====================================================================
     const python_exe = b.option([]const u8, "python", "Path to python3 binary (default: 'python3')") orelse "python3";
+
+    // The artifact `zig build`'s DEFAULT install step writes for this host —
+    // the binary the functional suites must exercise.
+    //
+    // Declared here (rather than next to the success banner that also uses
+    // it) because the test steps below pin `$PABRIK_BIN` to it, and Zig has
+    // no forward references.
+    //
+    // Why pin it at all: both conftests resolve the binary by NAME, and the
+    // bare `zig-out/bin/pabrik[.exe]` sits AHEAD of the host-specific
+    // `pabrikcore-<host>` in that candidate list. The bare name is written
+    // by a manual `install:linux:system` / `install:windows` run that these
+    // steps do NOT depend on, so it can be arbitrarily old — and a stale
+    // one silently shadows the build the test step just performed. Not
+    // hypothetical: a session on this repo rebuilt the service binary to
+    // fix a documents-insert bug, watched the suite keep failing the same
+    // way, and only then found the harness had been running a six-hour-old
+    // `pabrik.exe` the whole time. `$PABRIK_BIN` is the resolver's first
+    // choice, so setting it turns "the tests run the binary the build
+    // produced" into a property instead of a coincidence.
+    const host_binary_name = switch (b.graph.host.result.os.tag) {
+        .linux => "pabrikcore-linux-x86_64",
+        .macos => if (b.graph.host.result.cpu.arch == .aarch64)
+            "pabrikcore-macos-aarch64"
+        else
+            "pabrikcore-macos-x86_64",
+        .windows => "pabrikcore-windows-x86_64.exe",
+        else => "pabrikcore-unknown",
+    };
+    const func_pabrik_bin = b.getInstallPath(.bin, host_binary_name);
+
+    // ── Splitting the Python suites across N disjoint shards ───────────
+    //
+    // The shard CONTRACT (the two env vars, and "item index % total ==
+    // index") lives in tests/func_shard.py + tests/conftest.py and is not
+    // touched here. What `-Dfunc-shards=N` adds is a way to drive it from
+    // the build, so one developer machine can run the UI suite in N
+    // pieces instead of the ~65 minutes it takes as a single pytest
+    // process (121 UI tests, each booting a pabrik + a Vite dev server +
+    // headless Chromium, measured at 24-33 s apiece on Windows):
+    //
+    //   zig build functional-test-ui -Dfunc-shards=4
+    //       the base step depends on all four, and zig runs independent
+    //       steps concurrently
+    //   zig build functional-test-ui:shard:2 -Dfunc-shards=4
+    //       exactly one slice, in its own shell — the preferred shape on a
+    //       small machine, because harness.py's port picker releases its
+    //       probe socket and only then hands the number to the pabrik
+    //       child, so two pytest processes drawing at the same instant can
+    //       collide (the reason the CI job deliberately avoids `-n auto`).
+    //       Separate shells stagger the draws.
+    //
+    // Default 1 keeps today's behaviour exactly: one unsplit pytest
+    // process, and any PABRIK_FUNC_SHARD_* already in the environment is
+    // still inherited — which is what the CI matrix relies on.
+    const python_shards: u32 = b.option(
+        u32,
+        "func-shards",
+        "Split each Python functional suite into N disjoint shards (default 1 = no split)",
+    ) orelse 1;
+    if (python_shards == 0) fatalConfig("-Dfunc-shards must be >= 1 (got 0)", .{});
+    const python_shard_only: ?u32 = b.option(
+        u32,
+        "func-shard-index",
+        "Run ONLY this 0-based shard of the Python suites (needs -Dfunc-shards=N; ignored when N is 1)",
+    );
+    if (python_shard_only) |i| {
+        if (i >= python_shards) fatalConfig(
+            "-Dfunc-shard-index={d} is out of range for -Dfunc-shards={d}",
+            .{ i, python_shards },
+        );
+    }
+    const python_shard_indices: []const ?u32 = if (python_shards == 1)
+        &[_]?u32{null}
+    else if (python_shard_only) |i|
+        &[_]?u32{i}
+    else blk: {
+        const all = b.allocator.alloc(?u32, python_shards) catch @panic("OOM");
+        for (all, 0..) |*slot, i| slot.* = @intCast(i);
+        break :blk all;
+    };
     // Venv location override (2026-08-25): CI relocates the venv OUTSIDE
     // the workspace via PABRIK_FUNC_VENV_DIR because self-hosted runners
     // `git clean` the workspace between runs — a workspace-relative
@@ -4088,26 +4225,37 @@ const check_webapp_node = b.addSystemCommand(switch (b.graph.host.result.os.tag)
     python_probe.setCwd(b.path(""));
 
     const python_venv_exe = if (is_windows_host) "python.exe" else "python";
-    const run_functional = b.addSystemCommand(&.{
+    const argv_functional = [_][]const u8{
         b.fmt("{s}/{s}", .{ venv_bin, python_venv_exe }), "-m", "pytest", "tests/functional/", "-v", "--tb=short",
-    });
-    run_functional.setCwd(b.path(""));
-    run_functional.step.dependOn(&install_requirements.step);
-    run_functional.step.dependOn(&python_probe.step);
-    // Depend on the top-level `install` step (copies binary to
-    // zig-out/bin/pabrik) rather than `install:linux:system` which
-    // additionally tries to `cp` to /usr/local/bin/pabrik and fails
-    // on systems without write perms to /usr/local.
-    run_functional.step.dependOn(b.getInstallStep());
-    // Depend on the mcp-http-hello-world build step so the HTTP
-    // test server is at zig-out/bin/mcp-http-hello-world when the
-    // functional tests run. Without this, mcp_http_test.py fails
-    // to spawn the binary. (The mcp-hello-world stdio fixture is
-    // already in the default install via line ~1116.)
-    run_functional.step.dependOn(mcp_http_hello_world_step);
-
+    };
     const functional_test_step = b.step("functional-test", "Run functional tests against a real pabrik with isolated tmpdir data");
-    functional_test_step.dependOn(&run_functional.step);
+    for (python_shard_indices) |maybe_shard| {
+        const run_functional = addPythonSuiteRun(b, &argv_functional, func_pabrik_bin, python_shards, maybe_shard);
+        run_functional.step.dependOn(&install_requirements.step);
+        run_functional.step.dependOn(&python_probe.step);
+        // Depend on the top-level `install` step (copies binary to
+        // zig-out/bin/pabrik) rather than `install:linux:system` which
+        // additionally tries to `cp` to /usr/local/bin/pabrik and fails
+        // on systems without write perms to /usr/local.
+        run_functional.step.dependOn(b.getInstallStep());
+        // Depend on the mcp-http-hello-world build step so the HTTP
+        // test server is at zig-out/bin/mcp-http-hello-world when the
+        // functional tests run. Without this, mcp_http_test.py fails
+        // to spawn the binary. (The mcp-hello-world stdio fixture is
+        // already in the default install via line ~1116.)
+        run_functional.step.dependOn(mcp_http_hello_world_step);
+        functional_test_step.dependOn(&run_functional.step);
+        // Per-shard step, mirroring `test:shard:<i>`: it is how a shard is
+        // reproduced in isolation, and it is the race-free way to run all
+        // N at once (one shell each, so the port pickers never draw
+        // simultaneously).
+        if (maybe_shard) |shard_index| {
+            _ = b.step(
+                b.fmt("functional-test:shard:{d}", .{shard_index}),
+                b.fmt("Run shard {d}/{d} of the API functional suite (tests/functional/)", .{ shard_index + 1, python_shards }),
+            ).dependOn(&run_functional.step);
+        }
+    }
 
     // =====================================================================
     // Functional tests (Zig) — tests/functional/, its OWN package.
@@ -4194,17 +4342,24 @@ const check_webapp_node = b.addSystemCommand(switch (b.graph.host.result.os.tag)
     install_playwright_browsers.setCwd(b.path(""));
     install_playwright_browsers.step.dependOn(&install_ui_requirements.step);
 
-    const run_functional_ui = b.addSystemCommand(&.{
+    const argv_functional_ui = [_][]const u8{
         b.fmt("{s}/{s}", .{ venv_bin, python_venv_exe }), "-m", "pytest", "tests/functional_ui/", "-v", "--tb=short",
-    });
-    run_functional_ui.setCwd(b.path(""));
-    run_functional_ui.step.dependOn(&install_playwright_browsers.step);
-    run_functional_ui.step.dependOn(&python_probe.step);
-    // Depend on the same binary install as the API suite.
-    run_functional_ui.step.dependOn(b.getInstallStep());
-
+    };
     const functional_test_ui_step = b.step("functional-test-ui", "Run UI functional tests (Playwright Python) against pabrik + Vite dev server");
-    functional_test_ui_step.dependOn(&run_functional_ui.step);
+    for (python_shard_indices) |maybe_shard| {
+        const run_functional_ui = addPythonSuiteRun(b, &argv_functional_ui, func_pabrik_bin, python_shards, maybe_shard);
+        run_functional_ui.step.dependOn(&install_playwright_browsers.step);
+        run_functional_ui.step.dependOn(&python_probe.step);
+        // Depend on the same binary install as the API suite.
+        run_functional_ui.step.dependOn(b.getInstallStep());
+        functional_test_ui_step.dependOn(&run_functional_ui.step);
+        if (maybe_shard) |shard_index| {
+            _ = b.step(
+                b.fmt("functional-test-ui:shard:{d}", .{shard_index}),
+                b.fmt("Run shard {d}/{d} of the Playwright UI functional suite (tests/functional_ui/)", .{ shard_index + 1, python_shards }),
+            ).dependOn(&run_functional_ui.step);
+        }
+    }
 
     // =====================================================================
     // functional-test-all — BOTH suites in ONE pytest invocation.
@@ -4237,7 +4392,7 @@ const check_webapp_node = b.addSystemCommand(switch (b.graph.host.result.os.tag)
     // developer iterating on one suite still wants to run just that one,
     // and a split step is cheaper than a 730-test run while you work.
     // =====================================================================
-    const run_functional_all = b.addSystemCommand(&.{
+    const argv_functional_all = [_][]const u8{
         b.fmt("{s}/{s}", .{ venv_bin, python_venv_exe }),
         "-m",
         "pytest",
@@ -4245,20 +4400,27 @@ const check_webapp_node = b.addSystemCommand(switch (b.graph.host.result.os.tag)
         "tests/functional_ui/",
         "-v",
         "--tb=short",
-    });
-    run_functional_all.setCwd(b.path(""));
-    // install_playwright_browsers -> install_ui_requirements -> install_venv,
-    // so this one edge covers the venv, both requirements files AND the
-    // browser download.
-    run_functional_all.step.dependOn(&install_playwright_browsers.step);
-    run_functional_all.step.dependOn(&python_probe.step);
-    run_functional_all.step.dependOn(b.getInstallStep());
-    // Same reason as run_functional: mcp_http_test.py spawns this sibling
-    // binary, and without the dep the suite fails on a missing file.
-    run_functional_all.step.dependOn(mcp_http_hello_world_step);
-
+    };
     const functional_test_all_step = b.step("functional-test-all", "Run BOTH functional suites (API + Playwright UI) in one pytest invocation");
-    functional_test_all_step.dependOn(&run_functional_all.step);
+    for (python_shard_indices) |maybe_shard| {
+        const run_functional_all = addPythonSuiteRun(b, &argv_functional_all, func_pabrik_bin, python_shards, maybe_shard);
+        // install_playwright_browsers -> install_ui_requirements -> install_venv,
+        // so this one edge covers the venv, both requirements files AND the
+        // browser download.
+        run_functional_all.step.dependOn(&install_playwright_browsers.step);
+        run_functional_all.step.dependOn(&python_probe.step);
+        run_functional_all.step.dependOn(b.getInstallStep());
+        // Same reason as run_functional: mcp_http_test.py spawns this sibling
+        // binary, and without the dep the suite fails on a missing file.
+        run_functional_all.step.dependOn(mcp_http_hello_world_step);
+        functional_test_all_step.dependOn(&run_functional_all.step);
+        if (maybe_shard) |shard_index| {
+            _ = b.step(
+                b.fmt("functional-test-all:shard:{d}", .{shard_index}),
+                b.fmt("Run shard {d}/{d} of BOTH functional suites (API + Playwright UI)", .{ shard_index + 1, python_shards }),
+            ).dependOn(&run_functional_all.step);
+        }
+    }
 
     // =====================================================================
     // End-of-build success/failure banner
@@ -4296,15 +4458,8 @@ const check_webapp_node = b.addSystemCommand(switch (b.graph.host.result.os.tag)
     // on a Windows host should produce `pabrikcore-windows-x86_64.exe`,
     // etc. Cross-compile artifacts remain available via explicit
     // `zig build install:<target>` (linux / macos / macos-arm / windows).
-    const host_binary_name = switch (b.graph.host.result.os.tag) {
-        .linux => "pabrikcore-linux-x86_64",
-        .macos => if (b.graph.host.result.cpu.arch == .aarch64)
-            "pabrikcore-macos-aarch64"
-        else
-            "pabrikcore-macos-x86_64",
-        .windows => "pabrikcore-windows-x86_64.exe",
-        else => "pabrikcore-unknown",
-    };
+    // `host_binary_name` is NOT defined here: the functional-test steps
+    // above pin `$PABRIK_BIN` to it, so it has to be in scope by then.
     const desktop_binary_name = switch (b.graph.host.result.os.tag) {
         .windows => "pabrik-desktop.exe",
         else => "pabrik-desktop",

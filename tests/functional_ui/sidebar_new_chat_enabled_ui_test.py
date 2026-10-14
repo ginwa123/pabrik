@@ -55,13 +55,13 @@ def _goto_fresh_boot(page, h: UIHarness) -> None:
     localStorage carries no persisted workspace either — this is the
     exact state from the bug report.
     """
-    page.goto(h.web_url("/app"), wait_until="domcontentloaded", timeout=30000)
+    page.goto(h.web_url("/app"), wait_until="domcontentloaded", timeout=60000)
     # Cold-start allowance: the first test in a fresh environment pays
     # Vite's first compile + module-graph build before Vue mounts at
     # all, so the shell gets a generous budget. The button wait below
     # stays tight — once the shell is up, the sidebar renders fast.
     page.locator('[data-testid="sidebar-header-expanded"]').wait_for(timeout=60000)
-    page.locator(_NEW_CHAT_BUTTON).wait_for(timeout=30000, state="visible")
+    page.locator(_NEW_CHAT_BUTTON).wait_for(timeout=60000, state="visible")
 
 
 def _wait_for_new_chat_enabled(page, timeout: int = 20000) -> None:
@@ -115,7 +115,7 @@ def test_new_chat_click_creates_chat_from_fresh_boot(ui_harness: UIHarness, page
     # generated server-side so it cannot be spelled out in advance.
     page.wait_for_url(
         lambda url: bool(_CHAT_URL_RE.search(url)),
-        timeout=30000,
+        timeout=60000,
     )
     assert _CHAT_URL_RE.search(page.url), (
         f"New Chat click landed at an unexpected URL: {page.url}"

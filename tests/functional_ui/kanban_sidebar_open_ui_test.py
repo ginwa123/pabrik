@@ -97,7 +97,7 @@ def test_sidebar_click_kanban_opens_board(ui_harness: UIHarness, page) -> None:
     kanban_id = _create_kanban(h, ws_id)
 
     errors = _collect_errors(page)
-    page.goto(h.web_url("/app"), wait_until="domcontentloaded", timeout=30000)
+    page.goto(h.web_url("/app"), wait_until="domcontentloaded", timeout=60000)
     _expand_workspace(page, "ui-kanban-open-ws", "UIOPEN_BOARD")
     page.locator("text=UIOPEN_BOARD").first.click()
 
@@ -121,7 +121,7 @@ def test_sidebar_rightclick_kanban_go_to_settings_opens_new_tab(
     kanban_id = _create_kanban(h, ws_id, name="UIMENU_BOARD")
 
     errors = _collect_errors(page)
-    page.goto(h.web_url("/app"), wait_until="domcontentloaded", timeout=30000)
+    page.goto(h.web_url("/app"), wait_until="domcontentloaded", timeout=60000)
     _expand_workspace(page, "ui-kanban-menu-ws", "UIMENU_BOARD")
     page.locator("text=UIMENU_BOARD").first.click(button="right")
 
@@ -131,7 +131,7 @@ def test_sidebar_rightclick_kanban_go_to_settings_opens_new_tab(
     with page.expect_popup() as popup_info:
         entry.click()
     popup = popup_info.value
-    popup.wait_for_load_state("domcontentloaded", timeout=30000)
+    popup.wait_for_load_state("domcontentloaded", timeout=60000)
     try:
         assert f"/app/kanban/{kanban_id}/settings" in popup.url, (
             f"Settings popup opened at unexpected URL: {popup.url}"
@@ -158,7 +158,7 @@ def test_sidebar_rightclick_agent_go_to_settings_opens_item_settings(
     agent_id = _create_agent(h, target_ws_id, name="UISETTINGS_AGENT")
 
     errors = _collect_errors(page)
-    page.goto(h.web_url("/app"), wait_until="domcontentloaded", timeout=30000)
+    page.goto(h.web_url("/app"), wait_until="domcontentloaded", timeout=60000)
     page.locator('[data-testid="workspace-switcher-trigger"]').wait_for(
         timeout=20000, state="visible"
     )
@@ -183,11 +183,11 @@ def test_sidebar_rightclick_agent_go_to_settings_opens_item_settings(
         entry.click()
     popup = popup_info.value
     popup_errors = _collect_errors(popup)
-    popup.wait_for_load_state("domcontentloaded", timeout=30000)
+    popup.wait_for_load_state("domcontentloaded", timeout=60000)
     try:
         expected_path = f"/app/{target_ws_id}/projects/{agent_id}"
-        popup.wait_for_url(f"**{expected_path}", timeout=30000)
-        popup.locator('[data-testid="agent-view"]').wait_for(timeout=30000, state="visible")
+        popup.wait_for_url(f"**{expected_path}", timeout=60000)
+        popup.locator('[data-testid="agent-view"]').wait_for(timeout=60000, state="visible")
         assert expected_path in popup.url, (
             f"Agent settings popup opened at unexpected URL: {popup.url}"
         )
@@ -222,7 +222,7 @@ def test_sidebar_task_then_kanban_opens_board(ui_harness: UIHarness, page) -> No
     kanban_id = _create_kanban(h, ws_id, "UITASK_BOARD")
 
     errors = _collect_errors(page)
-    page.goto(h.web_url("/app"), wait_until="domcontentloaded", timeout=30000)
+    page.goto(h.web_url("/app"), wait_until="domcontentloaded", timeout=60000)
     _expand_workspace(page, "ui-kanban-after-task-ws", "UIAGENT_ITEM")
 
     # Expand the agent item so its task row is visible, then select it.

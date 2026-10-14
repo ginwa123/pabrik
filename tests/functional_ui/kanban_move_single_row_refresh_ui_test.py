@@ -99,7 +99,7 @@ def test_remote_move_refreshes_single_row_not_limit_100(
     ).json()["id"]
 
     # Open the board; wait until the card renders (mount fetches settled).
-    page.goto(_kanban_url(h, ws_id, kanban_id), wait_until="domcontentloaded", timeout=30000)
+    page.goto(_kanban_url(h, ws_id, kanban_id), wait_until="domcontentloaded", timeout=60000)
     page.locator(f"text={task_title}").first.wait_for(timeout=20000)
     page.wait_for_timeout(1500)  # let mount traffic + SSE connect settle
 

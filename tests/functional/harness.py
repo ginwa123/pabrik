@@ -311,6 +311,10 @@ class FunctionalHarness:
     orig_home: str
     log_path: Path
     pid: int | None = None
+    # The Popen `boot()` spawned, kept so `_wait_dead` can poll it:
+    # `Popen.poll()` is the only portable NON-BLOCKING liveness probe (see
+    # `_wait_dead`). None only for a hand-constructed harness.
+    proc: subprocess.Popen | None = dataclasses.field(default=None, repr=False)
     dry_run: bool = False
     _stopped: bool = dataclasses.field(default=False, repr=False)
     # Windows original env snapshot (USERPROFILE/APPDATA/LOCALAPPDATA) — empty on POSIX.
@@ -546,6 +550,7 @@ class FunctionalHarness:
             orig_home=orig_home,
             log_path=log_path,
             pid=proc.pid,
+            proc=proc,
             dry_run=os.environ.get("PABRIK_FUNCTIONAL_DRY_RUN") == "1",
             orig_userprofile=orig_userprofile,
             orig_appdata=orig_appdata,
@@ -812,26 +817,42 @@ class FunctionalHarness:
           - ``(pid, status)``     — child has exited and we JUST reaped it
           - raises ``OSError`` (ECHILD) — child doesn't exist (no zombie either)
 
-        On Windows, ``os.waitpid`` is unavailable; we fall back to
-        ``os.kill(pid, 0)``. The Windows backend doesn't have zombie
-        processes (CreateProcess+wait semantics differ), so the
-        heuristic is sufficient there.
+        ``Popen.poll()`` is preferred and is the only branch that cannot
+        block: it is ``WaitForSingleObject(handle, 0)`` on Windows and
+        ``waitpid(WNOHANG)`` on POSIX, and it reaps the child on both.
+        Windows DOES have ``os.waitpid`` but does NOT have ``os.WNOHANG``,
+        so the old ``wnohang = 0`` fallback turned this loop into a
+        blocking wait — which hung the entire test process in
+        ``_stop_binary``'s first ``_wait_dead`` whenever the child did not
+        exit on the graceful path. The remaining branches are kept for a
+        harness with no ``proc`` (``waitpid`` only where WNOHANG exists,
+        otherwise a ``kill(pid, 0)`` probe).
         """
         assert self.pid is not None
         has_waitpid = hasattr(os, "waitpid")
-        # WNOHANG may not exist on some platforms; fall back to 0
-        # (blocking) but we cap the loop with `timeout` so it's not
-        # actually blocking.
-        try:
-            wnohang = os.WNOHANG
-        except AttributeError:
-            wnohang = 0
+        # `os.WNOHANG` does NOT exist on Windows, and the old fallback of
+        # `wnohang = 0` ("blocking, but the loop deadline caps it") is
+        # WRONG: the deadline is only checked BEFORE the call, so a
+        # blocking `os.waitpid(pid, 0)` on a child that never exits hangs
+        # the whole test process inside `_stop_binary`'s FIRST
+        # `_wait_dead`, and the SIGTERM/SIGKILL fallbacks below it are
+        # never reached. Treat "no WNOHANG" as "waitpid cannot poll here".
+        has_waitpid = hasattr(os, "waitpid") and hasattr(os, "WNOHANG")
+        wnohang = os.WNOHANG if has_waitpid else 0
         t0 = time.monotonic()
         deadline = time.monotonic() + timeout
         polls = 0
         while time.monotonic() < deadline:
             polls += 1
-            if has_waitpid:
+            # `Popen.poll()` FIRST — the only probe here that is
+            # non-blocking on every platform (WaitForSingleObject(0) on
+            # Windows, waitpid(WNOHANG) on POSIX) and the only one that
+            # cannot hang the caller, because it also reaps the child.
+            # `self.proc` is the Popen `boot()` spawned.
+            if self.proc is not None:
+                if self.proc.poll() is not None:
+                    return True
+            elif has_waitpid:
                 try:
                     wpid, _status = os.waitpid(self.pid, wnohang)
                 except ChildProcessError:
@@ -961,18 +982,35 @@ def _find_free_port_sequential(start: int) -> int:
 
 
 def port_is_free_with_reuse(port: int) -> bool:
-    """Return True iff ``port`` can be bound on 127.0.0.1 with SO_REUSEADDR.
+    """Return True iff ``port`` can be bound on 127.0.0.1, EXCLUSIVELY.
 
     Used as the atomic-free primitive by both the random picker and
-    the sequential scan. SO_REUSEADDR lets the probe bind TIME_WAIT
-    ports; the subsequent pabrik/vite listener sets the same flag so
-    it can also bind the port despite lingering server-side TIME_WAITs.
+    the sequential scan.
+
+    POSIX: ``SO_REUSEADDR`` lets the probe bind a TIME_WAIT port; the
+    subsequent pabrik/vite listener sets the same flag so it can also
+    bind the port despite lingering server-side TIME_WAITs.
+
+    WINDOWS: ``SO_REUSEADDR`` does NOT mean that there, and treating it as
+    if it did makes this probe LIE. On Windows it lets a second socket
+    bind an address another socket is actively LISTENing on, so the probe
+    answers True for a port that is already serving. The picker then hands
+    that port to vite, `--strictPort` makes vite exit instead of sliding to
+    the next port, and the test dies with a boot error that reads like
+    flakiness — a stale leaked dev server (or anything else on the box) is
+    enough. Windows therefore sets ``SO_EXCLUSIVEADDRUSE`` — the documented
+    "this address is mine alone" — and takes a plain bind, which fails
+    exactly when the port is taken. A genuine TIME_WAIT port is then
+    reported busy: a false negative that only costs the picker another draw.
 
     Public so the ``UIHarness`` can share it without duplicating the
-    SO_REUSEADDR + bind() dance.
+    bind() dance.
     """
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if os.name == "nt":
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        else:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             s.bind(("127.0.0.1", port))
             return True
