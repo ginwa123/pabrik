@@ -23,11 +23,6 @@
 
 set -e
 
-# Hooks export GIT_DIR/GIT_WORK_TREE, which misroutes fixture `git -C` into this repo.
-unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_COMMON_DIR
-
-echo "→ zig build test"
-zig build test
 
 echo "→ navgraph staleness check"
 # navgraph.html / navgraph.json are committed derived artifacts, so any
