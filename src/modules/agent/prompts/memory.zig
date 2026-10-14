@@ -31,7 +31,7 @@ pub const MemoryPrompt =
     \\* ☐ Used proper tools (read_file vs a shell `cat` via `command`)?
     \\* ☐ Researched unknown APIs instead of guessing?
     \\* ☐ Spawned sub-agents for parallel work?
-    \\* ☐ Delegated specialized work via change_agent?
+    \\* ☐ Passed an absolute `cwd` on every file/folder tool call?
     \\3. 📝 KNOWLEDGE CAPTURE — What did I learn?
     \\4. 🔄 IMPROVEMENT — What would I do differently?
     \\

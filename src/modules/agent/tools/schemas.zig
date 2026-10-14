@@ -30,6 +30,11 @@ pub const ReadFileInput = struct {
     path: []const u8,
     offset: ?usize = null,
     limit: ?usize = null,
+    /// REQUIRED on the wire. Absolute directory this call works in; a
+    /// relative `path` resolves against it. Empty by default so the struct
+    /// stays constructible in tests that do not exercise the `cwd` rule —
+    /// `path_validate.validateCwd` rejects the empty value at exec time.
+    cwd: []const u8 = "",
 };
 
 // =============================================================================

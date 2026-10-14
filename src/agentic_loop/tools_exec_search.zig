@@ -8,6 +8,7 @@ const agent = pabrikcore.agent;
 const search_tool_mod = pabrikcore.search_tool;
 const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("tools_error_explain.zig");
+const path_validate = @import("helpers").path_validate;
 
 /// Parse the model-provided JSON and normalize zero-valued optional head/tail
 /// placeholders. Some providers emit every optional numeric field and use 0
@@ -51,7 +52,27 @@ pub fn execSearch(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     };
     defer parsed.deinit();
 
-    var search_result = search_tool_mod.executeSearch(ctx.allocator, ctx.io, ctx.cwd, parsed.value) catch |err| {
+    // `cwd` is REQUIRED on every path-taking tool: it is the directory this
+    // call works in, and it is ALSO the directory ripgrep is spawned in (see
+    // `executeSearch`'s `cwd` argument) — the two used to be able to disagree,
+    // which made an absolute `path` and a stale inherited cwd contradict each
+    // other and surface as a bare "could not access search path".
+    const cwd = parsed.value.cwd orelse "";
+    path_validate.validateCwd(cwd) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "search", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    const path_abs = try path_validate.resolveAgainstCwd(ctx.allocator, cwd, parsed.value.path);
+    defer ctx.allocator.free(path_abs);
+
+    // rg receives the RESOLVED path, so its own cwd cannot reinterpret it.
+    var input = parsed.value;
+    input.path = path_abs;
+    input.cwd = cwd;
+
+    var search_result = search_tool_mod.executeSearch(ctx.allocator, ctx.io, cwd, input) catch |err| {
         // Map domain errors to LLM-friendly messages. A normal stdout
         // max_output overflow no longer appears here: executeSearch returns
         // a successful SearchResult with output_truncated metadata instead.
@@ -70,7 +91,19 @@ pub fn execSearch(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
                 error.InvalidHeadTail => break :blk "head/tail must be > 0 — omit the flag (or use max_results) instead of passing 0, which would look like a no-match",
                 error.GlobContainsNulByte => break :blk "the glob filter contained a NUL (0x00) byte — globs must be valid UTF-8 with no embedded NULs",
                 error.RegexParseError => break :blk "search pattern is not a valid regex — check for unmatched parentheses, unescaped metacharacters, or an invalid character class",
-                error.PathError => break :blk "could not access search path — verify the path exists, is readable, and that cwd is set correctly",
+                error.PathError => {
+                    // Naming the path AND the cwd it was resolved against is
+                    // the whole fix for the failure this branch used to
+                    // report: a bare "could not access search path" named
+                    // neither, so the model could not tell which of the two
+                    // was wrong. Owned here so the `defer` above frees it.
+                    owned_err_msg = try std.fmt.allocPrint(
+                        ctx.allocator,
+                        "could not access search path \"{s}\" from cwd \"{s}\" — verify both exist and are readable. `cwd` is the directory ripgrep runs in; `path` is resolved against it.",
+                        .{ path_abs, cwd },
+                    );
+                    break :blk owned_err_msg.?;
+                },
                 error.Timeout => break :blk "search timed out (30s default) — narrow your search path, use a more specific pattern, or pass a larger timeout_ms",
                 error.RgNotFound => break :blk "ripgrep (rg) is not installed or not on PATH — install it first, then retry the search",
                 else => {},
@@ -146,6 +179,9 @@ test "TDD: execSearch accepts head=100 with tail=0 and returns a successful matc
     const args_json = try std.json.Stringify.valueAlloc(allocator, .{
         .pattern = "Open chat in new tab",
         .path = ".",
+        // `cwd` is required: the directory this call works in, and the base
+        // `path` (here ".") resolves against.
+        .cwd = tmpdir_path,
         .max_results = 100,
         .head = 100,
         .tail = 0,
@@ -227,6 +263,7 @@ test "execSearch returns success for an oversized stdout search with a truncatio
     const args_json = try std.json.Stringify.valueAlloc(allocator, .{
         .pattern = "FOUND_MARKER",
         .path = ".",
+        .cwd = tmpdir_path,
         .max_output = 1,
         .group_by_file = true,
         .literal = true,

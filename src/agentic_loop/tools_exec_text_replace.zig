@@ -8,30 +8,14 @@ const agent = pabrikcore.agent;
 const text_replace_mod = pabrikcore.text_replace_tool;
 const wrapToolOutput = tools.wrapToolOutput;
 const args_repair = @import("tools_args_repair.zig");
+const error_explain = @import("tools_error_explain.zig");
+const path_validate = @import("helpers").path_validate;
 const testing = std.testing;
-
-/// Escape a string for inclusion as a JSON string literal value (between
-/// the quotes — caller supplies the surrounding `"..."` template).
-/// Escapes `\` → `\\` and `"` → `\"` (RFC 8259 §7). Other characters
-/// (including control codes / non-ASCII) are passed through verbatim;
-/// the test fixtures only contain ASCII so we don't bother with
-/// `\u00XX` sequences here. Caller must `deinit` the returned slice.
-fn jsonEscapeInto(allocator: std.mem.Allocator, input: []const u8) !std.ArrayList(u8) {
-    var out: std.ArrayList(u8) = .empty;
-    errdefer out.deinit(allocator);
-    for (input) |c| {
-        if (c == '\\' or c == '"') {
-            try out.append(allocator, '\\');
-        }
-        try out.append(allocator, c);
-    }
-    return out;
-}
 
 /// The tool's contract, in the words we want the model to read back when it
 /// gets the arguments wrong. Kept next to the parse site so adding a field
 /// to `TextReplaceInput` and adding it here stay the same edit.
-const required_field_help = "text_replace takes exactly three fields: `path`, `old_str`, `new_str`.";
+const required_field_help = "text_replace takes exactly four fields: `path`, `old_str`, `new_str`, `cwd`.";
 
 /// Build the tool-facing message for arguments that did not decode into
 /// `TextReplaceInput`.
@@ -58,7 +42,7 @@ fn describeArgsFailure(allocator: std.mem.Allocator, args: []const u8, err: anye
     // call out the near-miss keys models actually send (`new_string`,
     // `old_string`, `file_path`) instead of silently ignoring them —
     // `ignore_unknown_fields = true` means those keys vanish without a word.
-    const required = [_][]const u8{ "path", "old_str", "new_str" };
+    const required = [_][]const u8{ "path", "old_str", "new_str", "cwd" };
     const near_misses = [_][]const u8{ "new_string", "old_string", "file_path", "filepath", "path_str" };
 
     var missing: std.ArrayList(u8) = .empty;
@@ -135,29 +119,73 @@ pub fn execTextReplace(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult
         break :blk fixed;
     } else parsed.value.path;
 
+    // `cwd` is a path as well, so it needs the SAME re-expansion the block
+    // above gives `path`. The repair cannot tell a separator from an escape:
+    // a Windows `C:\Users\me\AppData` decoded `\U` / `\A` into control bytes,
+    // and `validateCwd` then rejected the control character — so the model was
+    // told its plainly-absolute path "must be an ABSOLUTE path" (caught by the
+    // raw-backslash test below, on Windows CI).
+    var owned_cwd: ?[]u8 = null;
+    defer if (owned_cwd) |c| ctx.allocator.free(c);
+    const cwd = if (try args_repair.reexpandPathControlChars(ctx.allocator, parsed.value.cwd)) |fixed| blk: {
+        owned_cwd = fixed;
+        break :blk fixed;
+    } else parsed.value.cwd;
+
+    // Same rule as every other path-taking tool: `cwd` is REQUIRED (the
+    // directory this call works in — see helpers/path_validate.zig) and a
+    // relative `path` is resolved against it BEFORE any file is touched (an
+    // unresolved relative path would land in the server's cwd).
+    path_validate.validateCwd(cwd) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "text_replace", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    const path_abs = try path_validate.resolveAgainstCwd(ctx.allocator, cwd, path);
+    defer ctx.allocator.free(path_abs);
+
     var tr_result = text_replace_mod.executeTextReplace(
         ctx.allocator,
         ctx.io,
-        path,
+        path_abs,
         parsed.value.old_str,
         parsed.value.new_str,
     ) catch |err| {
         const inner = try text_replace_mod.toJSONError(
             ctx.allocator,
             err,
-            path,
+            path_abs,
             parsed.value.old_str,
         );
-        const err_msg = try text_replace_mod.errorMessageFor(ctx.allocator, err, path);
+        const err_msg = try text_replace_mod.errorMessageFor(ctx.allocator, err, path_abs);
         const output = try wrapToolOutput(ctx.allocator, "text_replace", tc.function.arguments, false, err_msg, inner);
         return ToolExecResult{ .output = output, .output_allocated = true };
     };
 
     defer tr_result.deinit(ctx.allocator);
 
-    const inner = try text_replace_mod.toJSONSuccess(ctx.allocator, tr_result, path);
+    const inner = try text_replace_mod.toJSONSuccess(ctx.allocator, tr_result, path_abs);
     const output = try wrapToolOutput(ctx.allocator, "text_replace", tc.function.arguments, true, null, inner);
     return ToolExecResult{ .output = output, .output_allocated = true };
+}
+
+test "execTextReplace: a missing cwd is refused with an actionable message" {
+    // `cwd` is required, and the refusal is the only thing that teaches the
+    // model the field exists — so the message must NAME it. Runs on every
+    // platform (no Windows path involved), unlike the raw-backslash test
+    // below.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    const env = try runTr(a, "{\"path\":\"/tmp/x.go\",\"old_str\":\"a\",\"new_str\":\"b\"}");
+    try testing.expect(!env.object.get("success").?.bool);
+    const msg = env.object.get("error").?.string;
+    try testing.expect(std.mem.indexOf(u8, msg, "cwd") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "required") != null);
+    // The raw Zig error name never reaches the model.
+    try testing.expect(std.mem.indexOf(u8, msg, "MandatoryCwdMissing") == null);
 }
 
 // ---------------------------------------------------------------------------
@@ -205,6 +233,22 @@ fn expectTextReplaceSuccess(output: []const u8, expected_path: []const u8) !void
     try testing.expectEqualStrings(expected_path, obj.get("data").?.object.get("path").?.string);
 }
 
+/// Args JSON for one `text_replace` call.
+///
+/// Built with `std.json.Stringify` rather than a hand-formatted string so a
+/// Windows `C:\...` target is escaped for us (a raw backslash is invalid
+/// JSON). `cwd` is required by the tool — the directory the call works in —
+/// and these tests care only about the write-back contract, so it points at
+/// the target's own directory.
+fn trArgs(a: std.mem.Allocator, target_path: []const u8, old_str: []const u8, new_str: []const u8) ![]u8 {
+    return std.json.Stringify.valueAlloc(a, .{
+        .path = target_path,
+        .old_str = old_str,
+        .new_str = new_str,
+        .cwd = std.fs.path.dirname(target_path) orelse target_path,
+    }, .{});
+}
+
 fn readAllTr(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
     return std.Io.Dir.cwd().readFileAlloc(testing.io, path, allocator, .limited(4 << 20));
 }
@@ -239,18 +283,9 @@ test "execTextReplace: writes back the full modified file (truncates + overwrite
 
     // Build args: replace the marker with a SHORTER string. If createFile
     // appended instead of truncating, the trailing junk would still be
-    // visible AFTER the new short content. Escape the path for JSON
-    // (Windows JSON-parse fix — `\` in `realPath()` would otherwise
-    // produce malformed `{"path":"C:\..."}` and reject by
-    // `std.json.parseFromSlice`).
+    // visible AFTER the new short content.
     {
-        var escaped = try jsonEscapeInto(a, target_path);
-        defer escaped.deinit(a);
-        const args = try std.fmt.allocPrint(
-            a,
-            "{{\"path\":\"{s}\",\"old_str\":\"<<<REPLACE_ME>>>\",\"new_str\":\"[OK]\"}}",
-            .{escaped.items},
-        );
+        const args = try trArgs(a, target_path, "<<<REPLACE_ME>>>", "[OK]");
         const tc = agent.ToolCall{
             .id = "call_tr_ow1",
             .type = "function",
@@ -296,15 +331,8 @@ test "execTextReplace: existing file with matching content is modified in place"
         try std.Io.File.writeStreamingAll(f, testing.io, "Hello World\n");
     }
 
-    // Escape `\` and `"` in the path (Windows JSON-parse fix).
     {
-        var escaped = try jsonEscapeInto(a, target_path);
-        defer escaped.deinit(a);
-        const args2 = try std.fmt.allocPrint(
-            a,
-            "{{\"path\":\"{s}\",\"old_str\":\"Hello\",\"new_str\":\"Goodbye\"}}",
-            .{escaped.items},
-        );
+        const args2 = try trArgs(a, target_path, "Hello", "Goodbye");
         const tc = agent.ToolCall{
             .id = "call_tr_match",
             .type = "function",
@@ -376,12 +404,32 @@ test "execTextReplace: Windows path with raw backslashes is repaired, not reject
     // file is still found.
     const target_path = try std.fmt.allocPrint(a, "{s}/{s}", .{ root, file_name });
 
+    // `cwd` must be exercised on BOTH hosts, not just Windows. A Windows
+    // tmpdir path is already full of backslashes, so the re-expansion ran
+    // there and nowhere else — which is how the missing call first showed up
+    // as a red Windows CI job ("`cwd` must be an ABSOLUTE path" for a plainly
+    // absolute one). On POSIX the directory is named with a backslash instead,
+    // so the same decode-then-re-expand path runs on every host.
+    //
+    // The letter after the backslash matters: only a backslash followed by a
+    // LEGAL JSON escape (`\t`, `\n`, `\a`, `\b`, `\f`, `\r`, `\"`, `\\`)
+    // decodes to a control byte, and a control byte is the whole reason
+    // `reexpandPathControlChars` exists. `win\cwd` would prove nothing —
+    // `\c` is not a legal escape, so the repair simply escapes it and the
+    // decoded value is already correct.
+    const cwd_rel: []const u8 = if (builtin.os.tag == .windows) "" else "win\\tcwd";
+    if (cwd_rel.len > 0) try tmp.dir.createDirPath(testing.io, cwd_rel);
+    const cwd_abs = if (cwd_rel.len == 0)
+        root
+    else
+        try std.fmt.allocPrint(a, "{s}/{s}", .{ root, cwd_rel });
+
     // The arguments a model writes when it pastes the path verbatim: every
     // separator is a single `\`, which is what RFC 8259 §7 rejects.
     const args = try std.fmt.allocPrint(
         a,
-        "{{\"path\":\"{s}\",\"old_str\":\"Hello\",\"new_str\":\"Goodbye\"}}",
-        .{target_path},
+        "{{\"path\":\"{s}\",\"cwd\":\"{s}\",\"old_str\":\"Hello\",\"new_str\":\"Goodbye\"}}",
+        .{ target_path, cwd_abs },
     );
     try testing.expect(std.mem.indexOf(u8, args, "\\") != null);
 

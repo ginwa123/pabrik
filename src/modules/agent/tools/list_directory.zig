@@ -184,6 +184,7 @@ pub fn toJSON(allocator: std.mem.Allocator, entries: []const Entry, dir_path: []
 pub const list_directory_tool_system_prompt =
     \\## List Directory Tool — Behavior
     \\Use `list_directory` to list first-level entries in a directory (like `ls`).
+    \\- `cwd` is REQUIRED: the absolute directory this call works in. `path` is the directory to list, absolute or relative to `cwd` (default: `cwd` itself).
     \\- Respects `.gitignore`. Set `hidden=true` to include dotfiles.
     \\- Use to explore project structure before diving into files.
     \\
@@ -205,9 +206,10 @@ pub const list_directory_tool = AgentTool{
         \\Each entry is an object {name, path, is_directory, is_symlink}
         \\inside `entries`, with `path` and `count` alongside.
         \\
-        \\`path` may be relative — it is resolved against the session's
-        \\current working directory — or absolute, in which case it is
-        \\used as-is. Every entry's `path` is absolute.
+        \\`cwd` is REQUIRED and must be absolute: it is the directory this
+        \\call works in. `path` may be relative — it is resolved against
+        \\`cwd` — or absolute, in which case it is used as-is. Every
+        \\entry's `path` is absolute.
         ,
         .parameters = .{
             .type = "object",
@@ -215,7 +217,12 @@ pub const list_directory_tool = AgentTool{
                 .{
                     .name = "path",
                     .type = "string",
-                    .description = "Directory to list. Relative paths resolve against the session's cwd; absolute paths are used as-is. Default: \".\" (the session's cwd).",
+                    .description = "Directory to list. Absolute, or relative to `cwd`. Default: `cwd` itself.",
+                },
+                .{
+                    .name = "cwd",
+                    .type = "string",
+                    .description = "REQUIRED. Absolute path to the directory this call works in. A relative `path` resolves against it; an absolute `path` is used as-is. Pass the tree you are actually editing (your worktree root, NOT the server's directory).",
                 },
                 .{
                     .name = "hidden",
@@ -228,7 +235,7 @@ pub const list_directory_tool = AgentTool{
                     .description = "Respect .gitignore (entries ignored by git are filtered out). Default: true. Set false to list gitignored paths (build/, .zig-cache/, .git/, etc.).",
                 },
             },
-            .required = &.{},
+            .required = &.{"cwd"},
         },
         .system_prompt = list_directory_tool_system_prompt,
     },
@@ -502,41 +509,61 @@ test "toJSON: empty list produces empty entries array" {
 test "list_directory_tool schema: name is list_directory, parameters object with 3 properties" {
     const params = list_directory.list_directory_tool.function.parameters;
     try testing.expectEqualStrings("object", params.type);
-    try testing.expectEqual(@as(usize, 3), params.properties.len);
+    try testing.expectEqual(@as(usize, 4), params.properties.len);
 
     var found_path = false;
     var found_hidden = false;
     var found_ignore = false;
+    var found_cwd = false;
     for (params.properties) |prop| {
         if (std.mem.eql(u8, prop.name, "path")) found_path = true;
         if (std.mem.eql(u8, prop.name, "hidden")) found_hidden = true;
         if (std.mem.eql(u8, prop.name, "respect_ignore_files")) found_ignore = true;
+        if (std.mem.eql(u8, prop.name, "cwd")) found_cwd = true;
     }
     try testing.expect(found_path);
     try testing.expect(found_hidden);
     try testing.expect(found_ignore);
+    try testing.expect(found_cwd);
 
-    // All properties are optional (path defaults to ".").
-    try testing.expectEqual(@as(usize, 0), params.required.len);
+    // `cwd` is the ONLY required field: `path` still defaults to the call's
+    // cwd, but the model must state which directory it is working in.
+    try testing.expectEqual(@as(usize, 1), params.required.len);
+    try testing.expectEqualStrings("cwd", params.required[0]);
 }
 
-test "list_directory_tool description documents relative + absolute path handling" {
+test "list_directory_tool description documents the cwd + path contract" {
+    // The DESCRIPTION is the product here: it is the only text the model
+    // reads before choosing arguments, so its promises are the contract the
+    // exec wrapper implements (helpers/path_validate.zig's validateCwd +
+    // resolveAgainstCwd). A `path` promise with no `cwd` requirement would
+    // describe a rule the tool no longer has.
     const desc = list_directory.list_directory_tool.function.description;
-    // Static-contract grep — guards the path contract the exec wrapper
-    // implements (resolveAgainstCwd in tools_exec_list_directory.zig).
-    // If the description stops promising relative support, the resolver
-    // stops being load-bearing; if it claims anything is rejected, that
-    // contradicts the "absolute paths are used as-is" branch.
-    try testing.expect(std.mem.indexOf(u8, desc, "resolved against the session's") != null);
+    try testing.expect(std.mem.indexOf(u8, desc, "`cwd` is REQUIRED") != null);
+    try testing.expect(std.mem.indexOf(u8, desc, "resolved against") != null);
     try testing.expect(std.mem.indexOf(u8, desc, "used as-is") != null);
     try testing.expect(std.mem.indexOf(u8, desc, "rejected") == null);
 
-    // The `path` parameter description carries the same contract.
-    var found_path_param = false;
+    var found_path = false;
+    var found_cwd = false;
     for (list_directory.list_directory_tool.function.parameters.properties) |prop| {
-        if (!std.mem.eql(u8, prop.name, "path")) continue;
-        found_path_param = true;
-        try testing.expect(std.mem.indexOf(u8, prop.description, "resolve against the session's cwd") != null);
+        if (std.mem.eql(u8, prop.name, "path")) {
+            found_path = true;
+            try testing.expect(std.mem.indexOf(u8, prop.description, "relative to `cwd`") != null);
+        }
+        if (std.mem.eql(u8, prop.name, "cwd")) {
+            found_cwd = true;
+            try testing.expect(std.mem.indexOf(u8, prop.description, "REQUIRED") != null);
+        }
     }
-    try testing.expect(found_path_param);
+    try testing.expect(found_path);
+    try testing.expect(found_cwd);
+
+    // The schema must actually require it — a described-but-optional `cwd`
+    // would let the model omit the one argument the resolution depends on.
+    var required_cwd = false;
+    for (list_directory.list_directory_tool.function.parameters.required) |name| {
+        if (std.mem.eql(u8, name, "cwd")) required_cwd = true;
+    }
+    try testing.expect(required_cwd);
 }

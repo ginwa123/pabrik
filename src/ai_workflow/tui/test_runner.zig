@@ -1,4 +1,3 @@
-
 test {
     _ = @import("routines/model.zig");
     _ = @import("routines/cron.zig");
@@ -15,38 +14,38 @@ test {
     // tests into the test binary. Same discovery workaround as the
     // handlers below.
     _ = @import("../../http_handlers/auth_common.zig");
-_ = @import("../../http_handlers/pabrik_config_put.zig");
-_ = @import("../../http_handlers/design_elements_reorder.zig");
-_ = @import("../../http_handlers/design_elements_ungroup.zig");
+    _ = @import("../../http_handlers/pabrik_config_put.zig");
+    _ = @import("../../http_handlers/design_elements_reorder.zig");
+    _ = @import("../../http_handlers/design_elements_ungroup.zig");
     // Static-contract tests for the model-thinking PUT validation
     // (plan 2026-08-23-model-thinking). Source-grep pattern locks
     // in the new validation paths + LoadError variants.
     // Static-contract tests for config-simplify (plan
     // 2026-08-24-config-simplify-remove-defaults): PUT handler must not
     // persist top-level LLM defaults.
-_ = @import("../../http_handlers/pabrik_config_get.zig");
-_ = @import("../../http_handlers/pabrik_config_profile_delete.zig");
-_ = @import("../../http_handlers/unified_events_sse.zig");
-_ = @import("../../http_handlers/task_update.zig");
-_ = @import("../../http_handlers/task_delete.zig");
-_ = @import("../../http_handlers/tasks_list.zig");
-_ = @import("../../http_handlers/tasks_get.zig");
-_ = @import("../../http_handlers/tasks_media.zig");
-_ = @import("../../http_handlers/stream_get.zig");
-_ = @import("../../http_handlers/subagent_progress_get.zig");
-    _ = @import("../../http_handlers/background_processes_list.zig");     // session bg-process list GET (bg-completion endpoints)
-    _ = @import("../../http_handlers/background_process_log_get.zig");    // session bg-process log-tail GET (bg-completion endpoints)
-    _ = @import("../../http_handlers/terminal_session.zig");              // right-sidebar terminal PTY registry
-    _ = @import("../../http_handlers/terminal_create.zig");               // terminal session POST
-    _ = @import("../../http_handlers/terminal_input.zig");                // terminal input POST
-    _ = @import("../../http_handlers/terminal_output.zig");               // terminal output GET
-    _ = @import("../../http_handlers/terminal_resize.zig");               // terminal resize POST
-    _ = @import("../../http_handlers/terminal_delete.zig");               // terminal session DELETE
-    _ = @import("../../http_handlers/terminal_ws.zig");                   // terminal duplex WS (framing + control JSON)
+    _ = @import("../../http_handlers/pabrik_config_get.zig");
+    _ = @import("../../http_handlers/pabrik_config_profile_delete.zig");
+    _ = @import("../../http_handlers/unified_events_sse.zig");
+    _ = @import("../../http_handlers/task_update.zig");
+    _ = @import("../../http_handlers/task_delete.zig");
+    _ = @import("../../http_handlers/tasks_list.zig");
+    _ = @import("../../http_handlers/tasks_get.zig");
+    _ = @import("../../http_handlers/tasks_media.zig");
+    _ = @import("../../http_handlers/stream_get.zig");
+    _ = @import("../../http_handlers/subagent_progress_get.zig");
+    _ = @import("../../http_handlers/background_processes_list.zig"); // session bg-process list GET (bg-completion endpoints)
+    _ = @import("../../http_handlers/background_process_log_get.zig"); // session bg-process log-tail GET (bg-completion endpoints)
+    _ = @import("../../http_handlers/terminal_session.zig"); // right-sidebar terminal PTY registry
+    _ = @import("../../http_handlers/terminal_create.zig"); // terminal session POST
+    _ = @import("../../http_handlers/terminal_input.zig"); // terminal input POST
+    _ = @import("../../http_handlers/terminal_output.zig"); // terminal output GET
+    _ = @import("../../http_handlers/terminal_resize.zig"); // terminal resize POST
+    _ = @import("../../http_handlers/terminal_delete.zig"); // terminal session DELETE
+    _ = @import("../../http_handlers/terminal_ws.zig"); // terminal duplex WS (framing + control JSON)
     // NOTE: task_create_routines_test.zig deleted with the per-task
     // `routines` table (Migration 084, plan 2026-09-10-workspace-items-routines).
-_ = @import("../../http_handlers/task_create.zig");
-    _ = @import("../../http_handlers/tags_validation.zig");                  // Migration 067 tags validation helper (Task 7) — inline tests in the source file
+    _ = @import("../../http_handlers/task_create.zig");
+    _ = @import("../../http_handlers/tags_validation.zig"); // Migration 067 tags validation helper (Task 7) — inline tests in the source file
     // NOTE: task_update_routines_test.zig + routines_run_test.zig deleted
     // with the per-task `routines` table (Migration 084, plan
     // 2026-09-10-workspace-items-routines).
@@ -76,16 +75,16 @@ _ = @import("../../http_handlers/task_create.zig");
     _ = @import("../../http_handlers/documents_get.zig");
     _ = @import("../../http_handlers/documents_update.zig");
     _ = @import("../../http_handlers/documents_delete.zig");
-_ = @import("../../http_handlers/memories_detail.zig");
-_ = @import("../../http_handlers/memories_create.zig");
-_ = @import("../../http_handlers/memories_update.zig");
-_ = @import("../../http_handlers/memories_delete.zig");
-_ = @import("../../http_handlers/memories_list.zig");
-_ = @import("../../http_handlers/local_memories_detail.zig");
-_ = @import("../../http_handlers/local_memories_create.zig");
-_ = @import("../../http_handlers/local_memories_update.zig");
-_ = @import("../../http_handlers/local_memories_delete.zig");
-_ = @import("../../http_handlers/local_memories_list.zig");
+    _ = @import("../../http_handlers/memories_detail.zig");
+    _ = @import("../../http_handlers/memories_create.zig");
+    _ = @import("../../http_handlers/memories_update.zig");
+    _ = @import("../../http_handlers/memories_delete.zig");
+    _ = @import("../../http_handlers/memories_list.zig");
+    _ = @import("../../http_handlers/local_memories_detail.zig");
+    _ = @import("../../http_handlers/local_memories_create.zig");
+    _ = @import("../../http_handlers/local_memories_update.zig");
+    _ = @import("../../http_handlers/local_memories_delete.zig");
+    _ = @import("../../http_handlers/local_memories_list.zig");
     // The MCP-probe (PR #373), LLM-probe and OS-notify-probe HTTP handlers
     // now live at the bottom of http_handlers/mod.zig together with their
     // static-contract test blocks (the former mcp_test.zig / llm_test.zig /
@@ -96,9 +95,9 @@ _ = @import("../../http_handlers/local_memories_list.zig");
     // 2026-09-10-web-launch-toggle): handler + buildWebUrl unit tests +
     // static contracts live in the single file.
     _ = @import("../../http_handlers/web_status.zig");
-_ = @import("../../http_handlers/frontend_log_post.zig");
-_ = @import("../../http_handlers/frontend_log_get.zig");
-_ = @import("../../http_handlers/system_folder.zig");
+    _ = @import("../../http_handlers/frontend_log_post.zig");
+    _ = @import("../../http_handlers/frontend_log_get.zig");
+    _ = @import("../../http_handlers/system_folder.zig");
     // _ = @import("llm_history_is_input_output_test.zig"); // phase 5: inlined into agentic_loop/llm_history.zig
     // _ = @import("llm_history_compacted_messages_test.zig"); // phase 5
     // _ = @import("llm_history_search_messages_fts_test.zig"); // phase 5
@@ -107,9 +106,9 @@ _ = @import("../../http_handlers/system_folder.zig");
     // _ = @import("llm_history_description_test.zig"); // phase 5
     // _ = @import("llm_history_notification_test.zig"); // phase 5
     // _ = @import("llm_history_tool_call_loading_test.zig"); // phase 5
-_ = @import("../../http_handlers/workspaces_reorder.zig");
-_ = @import("../../http_handlers/workspace_items_reorder.zig");
-_ = @import("../../http_handlers/task_pin.zig");
+    _ = @import("../../http_handlers/workspaces_reorder.zig");
+    _ = @import("../../http_handlers/workspace_items_reorder.zig");
+    _ = @import("../../http_handlers/task_pin.zig");
     // design_model.zig + design_model_*_test.zig files were moved into
     // agentic_loop/ in Phase 6. Registered in agentic_loop/test_runner.zig.
     // Inline tests for `updateElementsBatch` live at the bottom of design_model.zig.
@@ -119,14 +118,14 @@ _ = @import("../../http_handlers/task_pin.zig");
     // `zig build test` actually runs the inline test blocks.
     _ = @import("../../http_handlers/design_elements_update.zig");
     _ = @import("../../http_handlers/design_elements_reparent.zig");
-_ = @import("../../http_handlers/tasks_reorder_pinned.zig");
-_ = @import("../../http_handlers/git_worktree_info.zig");
-_ = @import("../../http_handlers/git_branches_list.zig");
-_ = @import("../../http_handlers/git_commits.zig");
-_ = @import("../../http_handlers/git_commit.zig");
-_ = @import("../../http_handlers/git_pr_create.zig");
-_ = @import("../../http_handlers/git_status.zig");
-_ = @import("../../http_handlers/workspace_items_create_kanban.zig");
+    _ = @import("../../http_handlers/tasks_reorder_pinned.zig");
+    _ = @import("../../http_handlers/git_worktree_info.zig");
+    _ = @import("../../http_handlers/git_branches_list.zig");
+    _ = @import("../../http_handlers/git_commits.zig");
+    _ = @import("../../http_handlers/git_commit.zig");
+    _ = @import("../../http_handlers/git_pr_create.zig");
+    _ = @import("../../http_handlers/git_status.zig");
+    _ = @import("../../http_handlers/workspace_items_create_kanban.zig");
     // Agent Mode HTTP handlers (Tasks 4-8 of plan 2026-08-15-agent-mode)
     // now follow the "split handler + useCase, keep both in one file"
     // pattern. The production .zig file holds:
@@ -185,10 +184,10 @@ _ = @import("../../http_handlers/workspace_items_create_kanban.zig");
     _ = @import("../../http_handlers/agent_routine_tools_list.zig"); // GET /agent-routines/:id/tools
     _ = @import("../../http_handlers/agent_routine_tools_create.zig"); // POST /agent-routines/:id/tools
     _ = @import("../../http_handlers/agent_routine_tools_delete.zig"); // DELETE /agent-routines/:id/tools/:tool_name
-_ = @import("../../http_handlers/workspace_items_create.zig");
-_ = @import("../../http_handlers/kanban_columns_list.zig");
-_ = @import("../../http_handlers/kanban_columns_create.zig");
-_ = @import("../../http_handlers/kanban_tasks_create.zig");
+    _ = @import("../../http_handlers/workspace_items_create.zig");
+    _ = @import("../../http_handlers/kanban_columns_list.zig");
+    _ = @import("../../http_handlers/kanban_columns_create.zig");
+    _ = @import("../../http_handlers/kanban_tasks_create.zig");
     // NEW (2026-09-02-kanban-task-session-name-bind, task 1787671636395_1):
     // session_create.zig now has inline static-contract tests for the
     // resolveNameFromTask helper + the useCase call site. Importing
@@ -210,34 +209,34 @@ _ = @import("../../http_handlers/kanban_tasks_create.zig");
     // NEW (2026-08-29-chat-sidebar-last-human-touched, Task 4):
     // session_update.zig stamps sessions.last_human_touched_at_nano when
     // the user edits a field. The static-contract test guards the call site.
-_ = @import("../../http_handlers/session_update.zig");
+    _ = @import("../../http_handlers/session_update.zig");
     // NEW (yellow stale-dot fix): session_mark_touched.zig has inline
     // static-contract tests for the stamp call + SSE emit + route
     // registration. Importing the file surfaces them to zig build test
     // (mirrors session_create.zig above).
     _ = @import("../../http_handlers/session_mark_touched.zig");
-_ = @import("../../http_handlers/kanban_columns_update.zig");
-_ = @import("../../http_handlers/kanban_columns_delete.zig");
+    _ = @import("../../http_handlers/kanban_columns_update.zig");
+    _ = @import("../../http_handlers/kanban_columns_delete.zig");
     _ = @import("../../http_handlers/kanban_tags_list.zig"); // 2026-07-30-kanban-task-tags-autocomplete — inline useCase tests
-_ = @import("../../http_handlers/design_pages_list.zig");
-_ = @import("../../http_handlers/design_pages_create.zig");
-_ = @import("../../http_handlers/design_items_create.zig");
-_ = @import("../../http_handlers/design_pages_get.zig");
-_ = @import("../../http_handlers/design_pages_update.zig");
-_ = @import("../../http_handlers/design_pages_delete.zig");
-_ = @import("../../http_handlers/design_elements_create.zig");
-_ = @import("../../http_handlers/design_elements_delete.zig");
-_ = @import("../../http_handlers/design_elements_group.zig");
-_ = @import("../../http_handlers/design_elements_html_get.zig");
-_ = @import("../../http_handlers/design_elements_html_update.zig");
-_ = @import("../../http_handlers/design_elements_geometry_update.zig");
+    _ = @import("../../http_handlers/design_pages_list.zig");
+    _ = @import("../../http_handlers/design_pages_create.zig");
+    _ = @import("../../http_handlers/design_items_create.zig");
+    _ = @import("../../http_handlers/design_pages_get.zig");
+    _ = @import("../../http_handlers/design_pages_update.zig");
+    _ = @import("../../http_handlers/design_pages_delete.zig");
+    _ = @import("../../http_handlers/design_elements_create.zig");
+    _ = @import("../../http_handlers/design_elements_delete.zig");
+    _ = @import("../../http_handlers/design_elements_group.zig");
+    _ = @import("../../http_handlers/design_elements_html_get.zig");
+    _ = @import("../../http_handlers/design_elements_html_update.zig");
+    _ = @import("../../http_handlers/design_elements_geometry_update.zig");
     // NEW (2026-08-06) — translate endpoint replaces /geometry for moves.
     // Behavioural tests for `POST /translate` (cascade to descendants for
     // groups). See docs/superpowers/plans/2026-08-06-split-move-resize.md.
-_ = @import("../../http_handlers/design_elements_translate.zig");
+    _ = @import("../../http_handlers/design_elements_translate.zig");
     // NEW (2026-08-06) — resize endpoint replaces /geometry for resizes.
     // Behavioural tests for `POST /resize` (no cascade, per-element only).
-_ = @import("../../http_handlers/design_elements_resize.zig");
+    _ = @import("../../http_handlers/design_elements_resize.zig");
     // Inline tests for the geometry-batch handler `useCase` live at the
     // bottom of design_elements_geometry_batch.zig — registered here so
     // zig build test actually runs them.
@@ -252,12 +251,12 @@ _ = @import("../../http_handlers/design_elements_resize.zig");
     // zig build test actually runs them. See
     // docs/superpowers/plans/2026-08-06-move-element-to-page.md (Chunk 2).
     _ = @import("../../http_handlers/design_elements_move_to_page.zig");
-_ = @import("../../http_handlers/kanban_copy_spec.zig");
-_ = @import("../../http_handlers/tasks_move.zig");
-_ = @import("../../http_handlers/system_prompt_get.zig");
+    _ = @import("../../http_handlers/kanban_copy_spec.zig");
+    _ = @import("../../http_handlers/tasks_move.zig");
+    _ = @import("../../http_handlers/system_prompt_get.zig");
     // _ = @import("session_helpers_test.zig"); // DISABLED - requires std.Io which needs Init
     // _ = @import("session_table_test.zig"); // DISABLED - requires std.Io which needs Init
-_ = @import("../../http_handlers/session_messages_get.zig");
+    _ = @import("../../http_handlers/session_messages_get.zig");
     // _ = @import("transform_llm_history_to_agent_messages_test.zig"); // DISABLED - pre-existing type mismatch (TUIHistory vs LLMHistory) on main
     // save_memory + load_memory tools (Task 3 + 4 of
     // docs/superpowers/plans/2026-08-06-save-load-memory-fts5.md).
@@ -281,7 +280,6 @@ _ = @import("../../http_handlers/session_messages_get.zig");
     _ = @import("../../modules/agent/tools/write_file.zig");
     _ = @import("../../modules/agent/tools/move_element_to_page.zig");
     _ = @import("../../modules/agent/tools/group_design_elements.zig");
-    _ = @import("../../modules/agent/tools/change_agent.zig");
     _ = @import("../../modules/agent/tools/kanban_move_task.zig");
     _ = @import("../../modules/agent/tools/list_directory.zig");
     _ = @import("../../modules/agent/tools/generate_image.zig");

@@ -11,6 +11,11 @@ pub const TextReplaceInput = struct {
     path: []const u8,
     old_str: []const u8,
     new_str: []const u8,
+    /// REQUIRED on the wire. Absolute directory this call works in; a
+    /// relative `path` resolves against it. Empty by default so the struct
+    /// stays constructible in tests that do not exercise the `cwd` rule —
+    /// `path_validate.validateCwd` rejects the empty value at exec time.
+    cwd: []const u8 = "",
 };
 
 pub const TextReplaceError = error{
@@ -536,6 +541,7 @@ pub fn toJSONErrorDetailed(allocator: std.mem.Allocator, err_msg: []const u8, pa
 pub const text_replace_tool_system_prompt =
     \\## Text Replace Tool — Behavior
     \\Use `text_replace` for surgical single-occurrence edits.
+    \\- `cwd` is REQUIRED: the absolute directory this call works in. A relative `path` resolves against it; an absolute `path` is used as-is.
     \\- Read the file first to confirm the exact `old_str` (must match exactly once).
     \\- Provide `new_str` as the replacement; empty string deletes.
     \\- For multi-line changes, ensure context is unique.
@@ -549,16 +555,18 @@ pub const text_replace_tool: AgentTool = .{
         .description =
         \\Replace a string in a file. old_str must match exactly once;
         \\expand context if ambiguous. new_str can be empty to delete.
+        \\`cwd` is REQUIRED and must be an absolute path: it is the directory this call works in, and a relative `path` resolves against it.
         \\Read the file first to confirm current content.
         ,
         .parameters = .{
             .type = "object",
             .properties = &.{
-                .{ .name = "path", .type = "string", .description = "Absolute path to the file." },
+                .{ .name = "path", .type = "string", .description = "Path to the file. Absolute, or relative to `cwd`." },
                 .{ .name = "old_str", .type = "string", .description = "Exact text to replace (must appear exactly once)." },
                 .{ .name = "new_str", .type = "string", .description = "Replacement text, or empty string to delete." },
+                .{ .name = "cwd", .type = "string", .description = "REQUIRED. Absolute path to the directory this call works in. A relative `path` resolves against it; an absolute `path` is used as-is. Pass the tree you are actually editing (your worktree root, NOT the server's directory)." },
             },
-            .required = &.{ "path", "old_str", "new_str" },
+            .required = &.{ "path", "old_str", "new_str", "cwd" },
         },
     },
 };

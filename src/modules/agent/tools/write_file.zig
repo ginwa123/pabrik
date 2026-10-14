@@ -11,6 +11,11 @@ pub const WriteFileInput = struct {
     path: []const u8,
     content: []const u8,
     create_with_dir: bool = false,
+    /// REQUIRED on the wire. Absolute directory this call works in; a
+    /// relative `path` resolves against it. Empty by default so the struct
+    /// stays constructible in tests that do not exercise the `cwd` rule —
+    /// `path_validate.validateCwd` rejects the empty value at exec time.
+    cwd: []const u8 = "",
 };
 
 pub const WriteFileResult = struct {
@@ -137,7 +142,8 @@ pub fn toJSONError(allocator: std.mem.Allocator, err: anyerror, path: []const u8
 pub const write_file_tool_system_prompt =
     \\## Write File Tool — Behavior
     \\Use `write_file` to create or overwrite a file.
-    \\- Provide absolute `path` and full `content`. Set `create_with_dir=true` to auto-create parent directories.
+    \\- `cwd` is REQUIRED: the absolute directory this call works in. A relative `path` resolves against it; an absolute `path` is used as-is.
+    \\- Provide `path` and full `content`. Set `create_with_dir=true` to auto-create parent directories.
     \\- For partial edits, prefer `text_replace` over rewriting the whole file.
     \\
 ;
@@ -148,6 +154,7 @@ pub const write_file_tool = AgentTool{
         .name = "write_file",
         .description =
         \\Write content to a new file. Creates file if it doesn't exist, overwrites if it does.
+        \\`cwd` is REQUIRED and must be an absolute path: it is the directory this call works in, and a relative `path` resolves against it.
         \\For partial file updates, use text_replace tool instead.
         \\Set create_with_dir to true to automatically create parent directories.
         \\return {"file_write": <path>, "error": null}
@@ -158,7 +165,7 @@ pub const write_file_tool = AgentTool{
                 .{
                     .name = "path",
                     .type = "string",
-                    .description = "Absolute path to the file.",
+                    .description = "Path to the file. Absolute, or relative to `cwd`.",
                 },
                 .{
                     .name = "content",
@@ -166,12 +173,18 @@ pub const write_file_tool = AgentTool{
                     .description = "Content to write.",
                 },
                 .{
+                    .name = "cwd",
+                    .type = "string",
+                    .description = "REQUIRED. Absolute path to the directory this call works in. A relative `path` resolves against it; an absolute `path` is used as-is. Pass the tree you are actually editing (your worktree root, NOT the server's directory).",
+                },
+
+                .{
                     .name = "create_with_dir",
                     .type = "boolean",
                     .description = "If true, automatically create parent directories if they don't exist. Default: false.",
                 },
             },
-            .required = &.{ "path", "content" },
+            .required = &.{ "path", "content", "cwd" },
         },
         .system_prompt = write_file_tool_system_prompt,
     },

@@ -9,6 +9,7 @@ const llm_history = pabrikcore.llm_history;
 const set_git_worktree_mod = pabrikcore.set_git_worktree;
 const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("tools_error_explain.zig");
+const path_validate = @import("helpers").path_validate;
 
 pub fn execSetGitWorktree(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     const parsed = std.json.parseFromSlice(
@@ -24,6 +25,17 @@ pub fn execSetGitWorktree(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecRes
     };
     defer parsed.deinit();
 
+    // `cwd` is REQUIRED and names the REPOSITORY the worktree is created
+    // from. It replaces the session cwd this call used to borrow: the model
+    // now states which repo it is branching, instead of inheriting whichever
+    // one the session happened to be bound to.
+    path_validate.validateCwd(parsed.value.cwd) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "set_git_worktree", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+
     // executeSetGitWorktreeToString returns JSON (![]const u8) — errors are
     // also encoded as {"created":false,"error":"..."} on success paths.
     // We must catch the error union separately.
@@ -31,7 +43,7 @@ pub fn execSetGitWorktree(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecRes
         ctx.allocator,
         ctx.io,
         ctx.db,
-        ctx.cwd,
+        parsed.value.cwd,
         ctx.session_id,
         parsed.value,
     ) catch |err| {

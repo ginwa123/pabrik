@@ -66,14 +66,13 @@ test {
     // docs/superpowers/plans/2026-08-14-flatten-tui-into-agentic-loop.md.
     // Migration 073 — session_activity wiring + recordSessionActivity.
 
-
     // 2026-08-14 — list_directory agent tool tests (Task 5 of the same plan).
     _ = @import("tools/create_kanban_task.zig");
     _ = @import("tools/skill_tools.zig");
     _ = @import("tools/set_design_page.zig");
     _ = @import("tools/update_plan.zig");
     _ = @import("tools/read_workspace_session.zig");
-_ = @import("tools/document.zig"); // add_document / edit_document (Migration 098)
+    _ = @import("tools/document.zig"); // add_document / edit_document (Migration 098)
     _ = @import("tools/glob.zig");
     _ = @import("tools/memory.zig");
     _ = @import("tools/kanban_list.zig");
@@ -84,7 +83,6 @@ _ = @import("tools/document.zig"); // add_document / edit_document (Migration 09
     _ = @import("tools/progressive_tools.zig");
     _ = @import("tools/move_element_to_page.zig");
     _ = @import("tools/group_design_elements.zig");
-    _ = @import("tools/change_agent.zig");
     _ = @import("tools/kanban_move_task.zig");
     _ = @import("tools/list_directory.zig");
     _ = @import("tools/generate_image.zig");

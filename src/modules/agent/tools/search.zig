@@ -1481,7 +1481,7 @@ pub const search_tool = AgentTool{
                 .{
                     .name = "path",
                     .type = "string",
-                    .description = "File or directory to search in.",
+                    .description = "File or directory to search in. Absolute, or relative to `cwd`.",
                 },
                 .{
                     .name = "max_results",
@@ -1511,7 +1511,7 @@ pub const search_tool = AgentTool{
                 .{
                     .name = "cwd",
                     .type = "string",
-                    .description = "Current working directory, default is cwd projects selected",
+                    .description = "REQUIRED. Absolute path to the directory this call works in. A relative `path` resolves against it; an absolute `path` is used as-is. Pass the tree you are actually editing (your worktree root, NOT the server's directory).",
                 },
                 .{
                     .name = "respect_ignore_files",
@@ -1554,7 +1554,7 @@ pub const search_tool = AgentTool{
                     .description = "Deadline for one search in milliseconds. Default: 30000 (30s), clamped to 1h. On timeout the search is killed and you get a Timeout error — narrow your path or pattern and retry.",
                 },
             },
-            .required = &.{ "pattern", "path" },
+            .required = &.{ "pattern", "path", "cwd" },
         },
         .system_prompt = search_tool_system_prompt,
     },

@@ -20,6 +20,12 @@ pub const SetGitWorktreeInput = struct {
     /// match `[A-Za-z0-9._-]{1,100}` (so the auto-derived branch name
     /// `worktree/<basename>` is legal).
     path: []const u8 = "",
+    /// REQUIRED. Absolute path to the REPOSITORY the worktree is created
+    /// from — the directory `git worktree add` runs in. It is the call's
+    /// working directory, so it is required even though the value is not a
+    /// "target" path: without it the tool would pick the repository from the
+    /// session, which is exactly the guess this parameter removes.
+    cwd: []const u8 = "",
     /// Optional branch name override. Defaults to `worktree/<basename(path)>`.
     /// Rarely needed — the default is consistent and predictable.
     branch: []const u8 = "",
@@ -81,6 +87,11 @@ pub const set_git_worktree_tool = AgentTool{
                     .description = "Absolute path to the worktree directory. Canonical root is `$HOME/.config/pabrik/.worktrees/<task-slug>` (e.g. '/home/you/.config/pabrik/.worktrees/fix-login'). Must be absolute, contain no '..' segments, no null bytes, be ≤ 4096 chars, and the parent directory must already exist. The basename must match [A-Za-z0-9._-]{1,100} (so the auto-derived branch name is legal). Expand a leading `~/` to `$HOME` before calling.",
                 },
                 .{
+                    .name = "cwd",
+                    .type = "string",
+                    .description = "REQUIRED. Absolute path to the repository the worktree is created from — the directory `git worktree add` runs in. Ignored when clear=true.",
+                },
+                .{
                     .name = "branch",
                     .type = "string",
                     .description = "Optional branch name override. Defaults to 'worktree/<basename(path)>'. Rarely needed.",
@@ -96,7 +107,7 @@ pub const set_git_worktree_tool = AgentTool{
                     .description = "If true, remove the worktree directory and clear the binding. 'path' is ignored when clear=true. Default: false.",
                 },
             },
-            .required = &.{},
+            .required = &.{"cwd"},
         },
         .system_prompt = set_git_worktree_tool_system_prompt,
     },

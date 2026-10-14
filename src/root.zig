@@ -65,7 +65,6 @@ pub const pwsh_tool = @import("modules/agent/tools/pwsh.zig");
 pub const command_tool = @import("modules/agent/tools/command.zig");
 pub const tool_models = @import("modules/agent/tools/schemas.zig");
 pub const tools = @import("modules/agent/tools/tools.zig");
-pub const change_agent = @import("modules/agent/tools/change_agent.zig");
 
 pub const skill_tools = @import("modules/agent/tools/skill_tools.zig");
 pub const use_skill_tool = skill_tools;
@@ -86,8 +85,6 @@ pub const list_secrets = @import("modules/agent/tools/list_secrets.zig");
 /// module resolves its own workspace from the calling session, so the
 /// tool schema deliberately carries no `workspace_id` parameter.
 pub const document_tool = @import("modules/agent/tools/document.zig");
-pub const agents = @import("modules/agent/tools/agents.zig");
-pub const list_agents = @import("modules/agent/tools/list_agents.zig");
 
 // `modules/http/HttpClient.zig` was removed — the project uses the
 // libcurl-backed client inside the `kabelweb` package (imported via
@@ -107,7 +104,6 @@ pub const git_pr_state_events = @import("agentic_loop/git_pr_state_events.zig");
 pub const skill_evals_drift = @import("agentic_loop/skill_evals_drift.zig");
 pub const add_skill = skill_tools;
 pub const edit_skill = skill_tools;
-pub const remove_agent = @import("modules/agent/tools/remove_agent.zig");
 pub const set_git_worktree = @import("modules/agent/tools/set_git_worktree.zig");
 pub const set_pull_request = @import("modules/agent/tools/set_pull_request.zig");
 pub const status_pull_request = @import("modules/agent/tools/status_pull_request.zig");

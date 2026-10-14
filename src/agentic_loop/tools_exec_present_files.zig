@@ -9,6 +9,7 @@ const present_files_mod = pabrikcore.ai_mod.present_files;
 const file_sandbox = pabrikcore.ai_mod.file_sandbox;
 const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("tools_error_explain.zig");
+const path_validate = @import("helpers").path_validate;
 
 pub fn execPresentFiles(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     const parsed = std.json.parseFromSlice(
@@ -23,6 +24,33 @@ pub fn execPresentFiles(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResul
         return ToolExecResult{ .output = output, .output_allocated = true };
     };
     defer parsed.deinit();
+
+    // `cwd` is REQUIRED on every path-taking tool (see
+    // helpers/path_validate.validateCwd).
+    path_validate.validateCwd(parsed.value.cwd) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "present_files", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+
+    // Resolve every entry against the call's `cwd` BEFORE the sandbox check:
+    // the download endpoint is handed absolute paths, and an unresolved
+    // relative one would be rejected there as "not absolute".
+    var resolved_paths: std.ArrayList([]u8) = .empty;
+    defer {
+        for (resolved_paths.items) |p| ctx.allocator.free(p);
+        resolved_paths.deinit(ctx.allocator);
+    }
+    const files_abs = try ctx.allocator.alloc(present_files_mod.PresentFileRef, parsed.value.files.len);
+    defer ctx.allocator.free(files_abs);
+    for (parsed.value.files, 0..) |entry, i| {
+        const abs = try path_validate.resolveAgainstCwd(ctx.allocator, parsed.value.cwd, entry.path);
+        try resolved_paths.append(ctx.allocator, abs);
+        files_abs[i] = .{ .path = abs, .label = entry.label, .caption = entry.caption };
+    }
+    var input = parsed.value;
+    input.files = files_abs;
 
     // The sandbox root, resolved through the SAME helper the download
     // endpoint uses (`git_worktree_cwd ?? cwd`). Passing something else
@@ -53,7 +81,7 @@ pub fn execPresentFiles(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResul
     const inner = present_files_mod.executePresentFilesToString(
         ctx.allocator,
         ctx.io,
-        parsed.value,
+        input,
         root,
     ) catch |err| {
         const err_msg = try error_explain.explain(ctx.allocator, err, null);
@@ -235,8 +263,12 @@ fn runPresentFiles(allocator: std.mem.Allocator, env: *ExecEnv, path: []const u8
 /// would emit `C:\Users\…` unescaped, which is not valid JSON on Windows and
 /// would make these tests pass on Linux and fail on the Windows CI.
 fn runPresentFilesWith(allocator: std.mem.Allocator, ctx: *ToolExecContext, path: []const u8) ![]const u8 {
+    // `cwd` is required by the tool. These tests pass absolute paths, so the
+    // only thing that matters is that it is absolute — the file's own
+    // directory is the honest value.
     const args = try std.json.Stringify.valueAlloc(allocator, .{
         .files = &[_]present_files_mod.PresentFileRef{.{ .path = path }},
+        .cwd = std.fs.path.dirname(path) orelse "/",
     }, .{});
     defer allocator.free(args);
     const result = try execPresentFiles(ctx.*, .{ .id = "tc_1", .function = .{ .name = "present_files", .arguments = args } });

@@ -5756,9 +5756,28 @@ export interface AgentToolRow {
   created_at: string
 }
 
+/** One parameter of a registry entry's schema. */
+export interface AgentRegistryParameter {
+  name: string
+  /** JSON Schema type, e.g. 'string' | 'array' | 'number' | 'boolean'. */
+  type: string
+  /**
+   * True when the JSON schema lists it in `required`. A REQUIRED `cwd` is
+   * what stops a path-taking tool from silently acting on the server's
+   * working directory instead of the one the agent is editing.
+   */
+  required: boolean
+}
+
 export interface AgentRegistryEntry {
   name: string
   description: string
+  /**
+   * The tool's full parameter list, in declaration order. Optional on the
+   * type only so older mocks in specs keep compiling; the backend always
+   * sends it (`GET /api/agent-tools/registry`).
+   */
+  parameters?: AgentRegistryParameter[]
 }
 
 /**
