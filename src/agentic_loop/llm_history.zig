@@ -74,10 +74,8 @@ pub const SessionInfo = struct {
     /// Migration 104 - position inside the pinned region. MAX+1 on pin,
     /// 0 when unpinned.
     pinned_position: i64 = 0,
-    /// 1 when the AI finished a turn and no human has touched the
-    /// session since. Same CASE predicate the kanban card derives
-    /// (`listWorkspaceItemTasksWithCursor` index 13) so the sidebar
-    /// and the board agree on "awaiting your review".
+    /// 1 when the AI finished a turn and no human has touched the session
+    /// since. Same CASE predicate as the kanban card's index 13.
     needs_human_review: bool = false,
 
     pub fn deinit(self: *const SessionInfo, allocator: std.mem.Allocator) void {
