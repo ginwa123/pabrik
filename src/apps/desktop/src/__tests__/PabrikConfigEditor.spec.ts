@@ -680,6 +680,45 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     expect(savedConfig.tools).toEqual(['command', 'glob', 'set_git_worktree'])
   })
 
+  it('mounts the save bar ABOVE the scrollable content, not below it', async () => {
+    // The bar used to be the last child of the editor, so the only
+    // save/reset controls sat below a section the user has to scroll
+    // through. It is now the first thing after the Form/JSON toggle, which
+    // is what keeps the actions reachable from any scroll position.
+    //
+    // Asserted on DOM ORDER, not on a class: the bar is a `shrink-0` flex
+    // item OUTSIDE the `flex-1 overflow-y-auto` region, so `sticky` is a
+    // no-op there and the placement is decided purely by where it is
+    // mounted. A class assertion would pass on a bar still at the bottom.
+    mockGet.mockResolvedValueOnce({
+      notify_on_complete: false,
+      notify_on_error: false,
+      retry_delay_ms: 0,
+      web_launch_enabled: false,
+    })
+    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
+    await flushPromises()
+
+    // Make a real edit so the bar renders at all.
+    await wrapper.find('[data-testid="toggle-notify-on-error"]').setValue(true)
+    await flushPromises()
+
+    const bar = wrapper.find('[data-testid="save-bar"]')
+    expect(bar.exists()).toBe(true)
+
+    const content = wrapper.find('.overflow-y-auto')
+    expect(content.exists()).toBe(true)
+
+    // DOCUMENT_POSITION_FOLLOWING (4) on `content` relative to `bar` means
+    // the scrolling region comes AFTER the bar in the document.
+    const contentVsBar = bar.element.compareDocumentPosition(content.element)
+    expect(contentVsBar & 4).toBe(4)
+
+    // And the bar is NOT inside the scrolling region — that is what makes it
+    // stay put while the section scrolls under it.
+    expect(bar.element.closest('.overflow-y-auto')).toBeNull()
+  })
+
   it('omits tools from the PUT body while the checklist is untouched (null = no change)', async () => {
     mockGet.mockResolvedValueOnce({
       notify_on_complete: false,

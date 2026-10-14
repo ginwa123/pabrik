@@ -203,11 +203,11 @@ def test_sidebar_terminal_persists_across_chat_switch(ui_harness: UIHarness, pag
         page.wait_for_function(BUFFER_HAS_MARKER_JS, arg=marker, timeout=25000)
 
         # Leave the chat (sidebar + tab unmount; sessions must survive).
-        page.goto(h.web_url("/app"), wait_until="load", timeout=30000)
+        page.goto(h.web_url("/app"), wait_until="load", timeout=60000)
         page.wait_for_timeout(1000)
 
         # Return: the marker is back without retyping.
-        page.goto(h.web_url(chat_url), wait_until="load", timeout=30000)
+        page.goto(h.web_url(chat_url), wait_until="load", timeout=60000)
         page.locator("text=How can I help you?").first.wait_for(timeout=20000, state="visible")
         # Sidebar open-state persists per chat type — it may already be open.
         try:

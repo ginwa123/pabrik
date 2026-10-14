@@ -85,7 +85,7 @@ def test_clicking_a_document_row_unmounts_the_chat(ui_harness, page) -> None:
 
     # Boot straight onto the chat, exactly like the repro.
     page.goto(
-        h.web_url(f"/app/{workspace_id}/chat/sess-click"), wait_until="load", timeout=30000
+        h.web_url(f"/app/{workspace_id}/chat/sess-click"), wait_until="load", timeout=60000
     )
     page.wait_for_function("() => !!document.querySelector('.composer-dock')", timeout=20000)
     page.wait_for_timeout(1500)

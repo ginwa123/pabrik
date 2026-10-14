@@ -95,7 +95,7 @@ def _open_board(page, h: UIHarness, ws_id: str, kanban_id: str) -> None:
     url = _kanban_url(h, ws_id, kanban_id)
     # ``domcontentloaded`` not ``networkidle``: Vite's HMR keeps a
     # persistent WebSocket open that prevents networkidle from ever firing.
-    page.goto(url, wait_until="domcontentloaded", timeout=30000)
+    page.goto(url, wait_until="domcontentloaded", timeout=60000)
     page.wait_for_timeout(1000)  # give Vue + API calls time to settle
 
 

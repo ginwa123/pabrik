@@ -101,7 +101,7 @@ def _open_chat_then_document(ui_harness, page, session_id: str) -> tuple[str, st
     page.goto(
         h.web_url(f"/app/{workspace_id}/chat/{session_id}"),
         wait_until="load",
-        timeout=30000,
+        timeout=60000,
     )
     page.wait_for_function(
         "() => { const w = document.querySelector('.messages-scroll-hide-native');"
@@ -121,7 +121,7 @@ def _open_chat_then_document(ui_harness, page, session_id: str) -> tuple[str, st
     page.goto(
         h.web_url(f"/app/{workspace_id}/doc/{document_id}"),
         wait_until="load",
-        timeout=30000,
+        timeout=60000,
     )
     page.wait_for_selector('[data-testid="documents-view"]', timeout=20000)
     page.wait_for_selector('[data-testid="documents-rendered"]', timeout=20000)

@@ -96,22 +96,77 @@ def test_is_safe_tmp_rejects_empty_path() -> None:
 
 
 def test_allowed_tmp_prefixes_match_realpath_on_this_os() -> None:
-    """The allowed prefixes must match ``realpath`` output on the current OS.
+    """The allowed prefixes must cover ``realpath`` output on the current OS.
 
     On macOS: prefixes are like ``/tmp/`` and ``/var/folders/``.
     On Linux: prefixes are like ``/tmp/``.
     On Windows: prefixes are like ``C:\\Users\\u\\AppData\\Local\\Temp\\``.
+
+    Both sides are compared in the harness's canonical form
+    (``harness._canonical`` = ``normcase(realpath(...))``), because the RAW
+    strings legitimately disagree on Windows — and a raw ``startswith`` is
+    not a weaker version of this assertion, it is a different and false
+    one. A ``windows-2022`` runner's ``%TEMP%`` is the 8.3 SHORT form
+    (``C:\\Users\\RUNNER~1\\AppData\\Local\\Temp``), which is what
+    ``tempfile.gettempdir()`` — and so ``ALLOWED_TMP_PREFIXES`` — returns
+    verbatim, while ``os.path.realpath`` of a directory under it comes back
+    LONG (``C:\\Users\\runneradmin\\...``). So
+    ``realpath(td).startswith(prefix)`` was False on every Windows run even
+    though the harness deletes the tempdir correctly: ``is_safe_tmp``
+    canonicalises BOTH sides before comparing. ``_canonical``'s docstring
+    records the 548 windows-2022 test errors that shape already cost.
     """
+    from harness import _canonical
+
     with tempfile.TemporaryDirectory(prefix=REQUIRED_TMP_SUBSTR) as td:
-        real = os.path.realpath(td)
+        real = _canonical(td)
         matched = any(
-            real.startswith(prefix) for prefix in ALLOWED_TMP_PREFIXES
+            real.startswith(_canonical(prefix)) for prefix in ALLOWED_TMP_PREFIXES
         )
         assert matched, (
-            f"realpath({td!r}) = {real!r} did not match any of "
-            f"ALLOWED_TMP_PREFIXES = {ALLOWED_TMP_PREFIXES!r} on {sys.platform}.\n"
+            f"canonical(realpath({td!r})) = {real!r} did not match any "
+            f"canonicalised entry of ALLOWED_TMP_PREFIXES = "
+            f"{ALLOWED_TMP_PREFIXES!r} on {sys.platform}.\n"
             f"This means the harness would leak the tempdir on "
             f"teardown instead of cleaning it up."
+        )
+
+
+def test_is_safe_tmp_canonicalises_the_allow_list_entry(monkeypatch) -> None:
+    """An allow-list entry is compared in its canonical form, not raw.
+
+    The ``windows-2022`` 8.3 SHORT-name case, reproduced on every host. On
+    that runner ``tempfile.gettempdir()`` returns
+    ``C:\\Users\\RUNNER~1\\AppData\\Local\\Temp`` — which is what the
+    allow-list holds verbatim — while ``realpath`` of a directory under it
+    returns ``C:\\Users\\runneradmin\\...``, so a RAW
+    ``real.startswith(prefix)`` is False for the harness's OWN tempdir.
+
+    The divergence here is a redundant ``..`` segment instead of a short
+    name, because ``realpath`` collapses both and a ``..`` needs no symlink
+    privilege on Windows. That matters: with a short name the property is
+    only observable on the one host that spells its ``%TEMP%`` that way,
+    and the sibling test above can only fail there. This one fails on
+    Linux and macOS too if ``is_safe_tmp`` ever stops canonicalising the
+    prefix side — which is the half that actually broke.
+    """
+    import harness
+
+    sep = "\\" if os.name == "nt" else "/"
+    with tempfile.TemporaryDirectory(prefix=REQUIRED_TMP_SUBSTR) as td:
+        os.makedirs(os.path.join(td, "sub"))
+        # The same directory as ``td``, spelled non-canonically.
+        non_canonical = f"{td}{sep}sub{sep}..{sep}"
+        assert not harness._canonical(td).startswith(non_canonical), (
+            "the fixture did not produce a non-canonical spelling — this "
+            "test would pass vacuously"
+        )
+        monkeypatch.setattr(harness, "ALLOWED_TMP_PREFIXES", (non_canonical,))
+        assert harness.is_safe_tmp(td, "/this/home/does/not/exist") is True, (
+            f"is_safe_tmp rejected {td!r} when the allow-list spells the same "
+            f"directory as {non_canonical!r}. A raw prefix comparison is "
+            f"False there, and on a windows-2022 runner that is every "
+            f"harness tempdir — so teardown would refuse to delete it."
         )
 
 

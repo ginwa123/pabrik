@@ -450,6 +450,15 @@ class UIHarness:
         Mirrors the backend's teardown pattern but uses shorter timeouts
         (vite doesn't have a graceful shutdown endpoint — it's fine to
         be aggressive here).
+
+        ``_reap_port_listener`` runs unconditionally at the end, on every
+        platform's teardown path. Waiting for ``vite_proc`` to exit is a
+        necessary but NOT sufficient condition: the pid Popen returned is
+        a launcher, and a launcher that exits while the dev server it
+        started keeps running is exactly the leak that made this suite
+        unbootable on Windows (see ``_reap_port_listener``). The port
+        being free is the postcondition callers actually depend on, so it
+        is asserted rather than inferred.
         """
         if self.vite_proc is None or self.vite_killed:
             return
@@ -459,14 +468,63 @@ class UIHarness:
             self._signal_vite_group(signal.SIGTERM)
         except Exception:
             pass
-        if self._wait_vite_dead(5.0):
+        if not self._wait_vite_dead(5.0):
+            # Last resort — SIGKILL.
+            try:
+                self._signal_vite_group(signal.SIGKILL)
+            except Exception:
+                pass
+            self._wait_vite_dead(1.0)  # best-effort final wait
+        self._reap_port_listener(self.vite_port)
+
+    def _reap_port_listener(self, port: int) -> None:
+        """Kill whatever is still LISTENING on ``port`` (Windows only).
+
+        Why this exists, concretely. ``_signal_vite_group`` signals the
+        pid ``subprocess.Popen`` returned for ``pnpm run dev``, which on
+        Windows is the ``pnpm.cmd`` / ``cmd.exe`` launcher — not the
+        ``node`` process that actually binds the vite port. When the
+        launcher has already handed off, or ``taskkill /T`` cannot walk
+        from it to the live child, the signal kills nothing that matters
+        and the dev server survives teardown. Measured on this repo: a
+        4-test run left 4-5 ``node.exe`` processes (≈500 MB each) still
+        listening on the harness's 20000-31999 range although every
+        harness tmpdir had been rmtree'd, and the accumulated leak
+        exhausted a 6 GB host — the suite wedged on the fifth test with
+        pytest alive, vite alive and the backend dead. Resolving the pid
+        from the listening socket is the one handle that cannot be stale,
+        and it is also the invariant the caller wants: nothing left bound
+        to our port.
+
+        POSIX is untouched — ``_signal_vite_group`` there signals the real
+        process group with ``killpg`` and does reap the tree.
+        """
+        if os.name != "nt":
             return
-        # Last resort — SIGKILL.
         try:
-            self._signal_vite_group(signal.SIGKILL)
+            listing = subprocess.run(
+                ["netstat", "-ano", "-p", "TCP"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=10,
+            ).stdout
         except Exception:
-            pass
-        self._wait_vite_dead(1.0)  # best-effort final wait
+            return
+        for line in listing.splitlines():
+            parts = line.split()
+            # `  TCP    127.0.0.1:22470    0.0.0.0:0    LISTENING    2272`
+            if len(parts) < 5 or parts[0] != "TCP" or parts[3] != "LISTENING":
+                continue
+            if not parts[1].endswith(f":{port}"):
+                continue
+            with contextlib.suppress(Exception):
+                subprocess.run(
+                    ["taskkill", "/PID", parts[4], "/T", "/F"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=10,
+                )
 
     def _wait_vite_dead(self, timeout: float) -> bool:
         """Return True iff the vite process exited within ``timeout`` seconds."""

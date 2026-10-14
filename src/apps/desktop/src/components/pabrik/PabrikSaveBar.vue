@@ -14,16 +14,16 @@ const emit = defineEmits<{
 <template>
   <Transition
     enter-active-class="transition-all duration-180 ease-out"
-    enter-from-class="translate-y-2 opacity-0"
+    enter-from-class="-translate-y-2 opacity-0"
     enter-to-class="translate-y-0 opacity-100"
     leave-active-class="transition-all duration-150 ease-in"
     leave-from-class="translate-y-0 opacity-100"
-    leave-to-class="translate-y-2 opacity-0"
+    leave-to-class="-translate-y-2 opacity-0"
   >
     <div
       v-if="dirty"
       data-testid="save-bar"
-      class="sticky bottom-0 left-0 right-0 flex items-center justify-between gap-4 px-4 h-12 border-t backdrop-blur-sm"
+      class="sticky top-0 left-0 right-0 flex items-center justify-between gap-4 px-4 h-12 border-b backdrop-blur-sm"
       style="background-color: rgba(24, 22, 22, 0.92); border-color: var(--color-border);"
     >
       <div class="flex items-center gap-2 text-dense font-mono" style="color: var(--semantic-text-muted);">

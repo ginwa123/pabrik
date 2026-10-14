@@ -35,7 +35,10 @@ confirms the assertions fail for the right reason rather than silently).
 
 from __future__ import annotations
 
+import contextlib
 import sqlite3
+import time
+from typing import Iterator
 
 from harness import harness_path
 from ui_harness import UIHarness
@@ -100,8 +103,30 @@ def _create_chat(h: UIHarness, ws_name: str, agent_name: str, chat_name: str) ->
 # ─── Direct DB reads — the assertions that matter are about the two tables ──
 
 
-def _db(h: UIHarness) -> sqlite3.Connection:
-    return sqlite3.connect(str(h.temp_dir / ".config" / "pabrik" / "agent.db"))
+@contextlib.contextmanager
+def _db(h: UIHarness) -> Iterator[sqlite3.Connection]:
+    """A connection to the harness's agent.db that is CLOSED on exit.
+
+    `with sqlite3.connect(...) as conn` is NOT a closing block — sqlite3's
+    context manager only commits or rolls back the transaction — so every
+    read in this module used to leave the file handle open. Linux and
+    macOS unlink an open file happily and never noticed; on Windows the
+    harness's teardown rmtree then dies with
+
+        PermissionError: [WinError 32] The process cannot access the file
+        because it is being used by another process: ...\\agent.db
+
+    which pytest reports as the test PASSING and then ERRORING. That is
+    what this module did for all eight of its tests. Closing the handle is
+    the teardown's precondition; the commit-on-exit behaviour is kept
+    explicitly so nothing else about the helper changes.
+    """
+    conn = sqlite3.connect(str(h.temp_dir / ".config" / "pabrik" / "agent.db"))
+    try:
+        yield conn
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _task_name(h: UIHarness, task_id: str) -> str:
@@ -119,6 +144,36 @@ def _session_row(h: UIHarness, session_id: str) -> sqlite3.Row:
         row = conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
     assert row is not None, f"session {session_id} not found"
     return row
+
+
+def _wait_for_row_names(
+    h: UIHarness, task_id: str, expected: str, timeout_s: float = 10.0
+) -> tuple[str, str]:
+    """Poll BOTH rename targets until they read ``expected``.
+
+    The rename is one UI action but two writes — ``sessions.name`` and the
+    ``workspace_item_tasks.name`` half of the cascade — and the sidebar
+    repaint that the test waits on is driven by the SSE broadcast that summarises
+    them. Reading the tables the instant the sidebar shows the new text can
+    therefore land between the two statements and report a half-applied
+    rename; CI run 38436976454, shard 1/3 hit exactly that
+    (``assert 'UI_MENU_ORIGINAL' == 'UI_MENU_RENAMED'``, with the sidebar
+    already repainted).
+
+    Returns ``(task_name, session_name)`` as last observed, so the caller
+    keeps its own assertions and error messages: a rename that never lands
+    still fails, just after this budget rather than instantly.
+    """
+    deadline = time.monotonic() + timeout_s
+    task_name = _task_name(h, task_id)
+    session_name = _session_row(h, task_id)["name"]
+    while time.monotonic() < deadline and (
+        task_name != expected or session_name != expected
+    ):
+        time.sleep(0.2)
+        task_name = _task_name(h, task_id)
+        session_name = _session_row(h, task_id)["name"]
+    return task_name, session_name
 
 
 def _seed_running_worker(h: UIHarness, session_id: str) -> None:
@@ -177,7 +232,7 @@ def _print_errors(errors: list[str]) -> None:
 
 def _boot_app(h: UIHarness, page, session_id: str, ws_name: str) -> None:
     """Open /app and wait for the chat row in the RECENT list."""
-    page.goto(h.web_url("/app"), wait_until="domcontentloaded", timeout=30000)
+    page.goto(h.web_url("/app"), wait_until="domcontentloaded", timeout=60000)
     page.locator(f"text={ws_name}").first.wait_for(timeout=20000, state="visible")
     row = page.locator(f'[data-testid="chat-row-{session_id}"]')
     try:
@@ -278,11 +333,23 @@ def test_rename_chat_updates_task_and_session_names(ui_harness: UIHarness, page)
 
         # The half that breaks silently: the task list still shows the old
         # name, so the kanban board and the sidebar disagree.
-        assert _task_name(h, task_id) == "UI_MENU_RENAMED", (
+        #
+        # Polled, not read once. The sidebar text above is driven by the SSE
+        # broadcast; the two rows it summarises are written by separate
+        # statements (`sessions` then the `workspace_item_tasks` half of the
+        # rename cascade), so reading the tables the instant the sidebar
+        # updates races the tail of the cascade and reports a half-applied
+        # rename. That is exactly what CI run 38436976454, shard 1/3 saw:
+        # `assert 'UI_MENU_ORIGINAL' == 'UI_MENU_RENAMED'` while the sidebar
+        # had already repainted. The assertion is unchanged — a rename that
+        # never reaches the task row still fails, after the same budget the
+        # sidebar text is given.
+        task_name, session_name = _wait_for_row_names(h, task_id, "UI_MENU_RENAMED")
+        assert task_name == "UI_MENU_RENAMED", (
             "workspace_item_tasks.name was not updated — the kanban board would "
             "still show the old name"
         )
-        assert _session_row(h, task_id)["name"] == "UI_MENU_RENAMED", (
+        assert session_name == "UI_MENU_RENAMED", (
             "sessions.name was not updated — the chat header would still show "
             "the old name"
         )
