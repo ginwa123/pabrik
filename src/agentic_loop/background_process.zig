@@ -95,6 +95,12 @@ pub fn getBySession(db: *SqliteBackend, allocator: std.mem.Allocator, session_id
     }
 
     while (try rows.next()) |row| {
+        // The reader hands back a buffer of its own (`readRowPacked`); the
+        // caller owns it. Production hid this for a long time because the
+        // allocator there is a per-request ARENA, which reclaims the whole
+        // thing at the end of the turn — but it is a leak per row, per call,
+        // and CI's DebugAllocator says so the moment a test exercises it.
+        defer row.deinit(allocator);
         const pid_str = row.values[0];
         const command = row.values[1];
         const log_path = row.values[2];
@@ -105,7 +111,13 @@ pub fn getBySession(db: *SqliteBackend, allocator: std.mem.Allocator, session_id
         const started_at = try std.fmt.parseInt(i64, started_at_str, 10);
 
         try processes.append(allocator, .{
-            .session_id = session_id,
+            // DUPED, like every other field. It used to borrow the caller's
+            // slice — which was survivable only while the free loops freed
+            // `command`/`log_path`/`status` and nothing else. `freeProcessInfo`
+            // frees ALL of them, so a borrowed `session_id` became an invalid
+            // free the moment it was introduced. One rule for every field:
+            // whoever returns a `ProcessInfo` owns everything in it.
+            .session_id = try allocator.dupe(u8, session_id),
             .pid = pid,
             .command = try allocator.dupe(u8, command),
             .log_path = try allocator.dupe(u8, log_path),
@@ -159,6 +171,7 @@ pub fn getServices(db: *SqliteBackend, allocator: std.mem.Allocator) ![]ProcessI
     }
 
     while (try rows.next()) |row| {
+        defer row.deinit(allocator);
         const session_id = row.values[0];
         const pid_str = row.values[1];
         const command = row.values[2];
@@ -955,11 +968,18 @@ test "getByPid refuses a pid that belongs to another session" {
     // A second session that "knows" the pid.
     try save(&ctx.db, testing.allocator, "intruder", 100, "other", "/tmp/y.log", 1, KIND_JOB);
 
-    try testing.expect((try getByPid(&ctx.db, testing.allocator, "owner", 99)) != null);
+    // Every non-null answer owns its strings — free them, or the DebugAllocator
+    // reports this test as a leak (which is how CI caught it).
+    if (try getByPid(&ctx.db, testing.allocator, "owner", 99)) |owned| {
+        freeProcessInfo(testing.allocator, owned);
+    } else return error.TestUnexpectedResult;
+
     try testing.expect((try getByPid(&ctx.db, testing.allocator, "intruder", 99)) == null);
 
     // The positive control for the line above: the intruder CAN see its own.
-    try testing.expect((try getByPid(&ctx.db, testing.allocator, "intruder", 100)) != null);
+    if (try getByPid(&ctx.db, testing.allocator, "intruder", 100)) |owned| {
+        freeProcessInfo(testing.allocator, owned);
+    } else return error.TestUnexpectedResult;
 }
 
 test "killServicesForShutdown touches services only, never a job" {
