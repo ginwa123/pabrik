@@ -267,10 +267,6 @@
           "count": 7
         },
         {
-          "path": "src/agentic_loop/skills_store.zig",
-          "count": 13
-        },
-        {
           "path": "src/agentic_loop/slash_skill_expand.zig",
           "count": 9
         },

@@ -430,11 +430,12 @@ the code that is already here**, and it is the second deliberate exception
 to §3's "land it with zero debt".
 
 Measured 2026-10-15 over `src`, `tests`, `tools` and `build.zig`:
-**6,545 findings in 728 files** — 728 of the 847 hand-written Zig files in
+**6,532 findings in 727 files** — 727 of the 847 hand-written Zig files in
 the tree, with `src/migrations/migration.zig` at 214 blocks and
 `src/agentic_loop/llm_history.zig` at 193. The linter's own module is at
-**zero**: none of its files is in the baseline, so a block over three
-lines in one of them fails the gate immediately.
+**zero** (as is `src/agentic_loop/skills_store.zig`, converted in the same
+PR that added this section): those files are not in the baseline, so a
+block over three lines in one of them fails the gate immediately.
 
 Why not convert them in this change: the conversion is 728 files, and it
 is not mechanical. Each block has to be shortened, moved into a `///` doc
