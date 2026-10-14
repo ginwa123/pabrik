@@ -108,6 +108,12 @@ fn registerSessionRoutes(authed: *Group) !void {
     //
     // // try authed.get("/api/session/stream", http_handlers.sessionStreamHandler, ctxParent);
     try authed.get("/api/session/:session_id/messages", ai_mod.http_handlers.sessionMessagesHandler);
+    // Token usage + cache hit rate, derived from `llm_history` (the
+    // `sessions` table stores no token column). Tail `usage` differs from
+    // every sibling (`messages`, `touched`, `stream`), and the longer
+    // `:session_id/...` paths are registered after the collection route
+    // above — no `matchRoute` shadowing either way.
+    try authed.get("/api/session/:session_id/usage", ai_mod.http_handlers.sessionUsageHandler);
     // try authed.get("/api/session/exists/:session_id", http_handlers.sessionExistHandler, ctxParent);
     // try authed.get("/api/session/latest", http_handlers.sessionLatestHandler, ctxParent);
     // try authed.post("/api/session/:session_id/cancel", http_handlers.sessionCancelHandler, ctxParent);
@@ -152,6 +158,11 @@ fn registerWorkerRoutes(authed: *Group) !void {
     // pattern, regardless of registration order.
     try authed.get("/api/llm/session/:session_id", ai_mod.http_handlers.sessionGetHandler);
     try authed.get("/api/llm/session/:session_id/messages", ai_mod.http_handlers.sessionMessagesHandler);
+    // Token usage + cache hit rate (same handler as the `/api/session/`
+    // alias above). Sits with its `/messages` sibling; the `usage` tail is
+    // distinct from every other `:session_id/...` route, so neither this nor
+    // a sibling can be shadowed.
+    try authed.get("/api/llm/session/:session_id/usage", ai_mod.http_handlers.sessionUsageHandler);
     try authed.get("/api/llm/session/:session_id/queue_messages", ai_mod.http_handlers.queueMessagesGetHandler);
     // Session background-process endpoints (bg-completion): list + log
     // tail for `command background=true` rows. Registered next to
@@ -1090,4 +1101,48 @@ test "route table: POST /api/llm/session/reorder_pinned wins over :session_id/pi
     };
     try testing.expect(pin.handler == ai_mod.http_handlers.sessionPinHandler);
     try testing.expectEqualStrings("sess_1", pin.params.get("session_id").?);
+}
+
+test "route table: GET session usage resolves on both prefixes and shadows no sibling" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var router = try buildRouteTable(a);
+
+    // Both prefixes the desktop app may use land on the usage handler, with
+    // the id intact. `:session_id` matches exactly one segment, so the
+    // `usage` tail can neither be captured by `/messages` nor capture it.
+    const expectations = [_][]const u8{
+        "/api/session/sess_1/usage",
+        "/api/llm/session/sess_1/usage",
+    };
+    for (expectations) |path| {
+        const hit = (try resolve(a, &router, "GET", path)) orelse {
+            std.debug.print("\n!! no route matches GET {s} !!\n", .{path});
+            return error.UsageRouteNotRegistered;
+        };
+        try testing.expect(hit.handler == ai_mod.http_handlers.sessionUsageHandler);
+        try testing.expectEqualStrings("sess_1", hit.params.get("session_id").?);
+    }
+
+    // The `messages` sibling keeps its own handler on both prefixes — the
+    // new route must not have taken over the prefix.
+    const siblings = [_][]const u8{
+        "/api/session/sess_1/messages",
+        "/api/llm/session/sess_1/messages",
+    };
+    for (siblings) |path| {
+        const hit = (try resolve(a, &router, "GET", path)) orelse {
+            std.debug.print("\n!! no route matches GET {s} !!\n", .{path});
+            return error.MessagesRouteNotRegistered;
+        };
+        try testing.expect(hit.handler == ai_mod.http_handlers.sessionMessagesHandler);
+    }
+
+    // And the detail route is untouched: `usage` must not have made the
+    // bare `:session_id` pattern stop matching a single-segment path.
+    const detail = (try resolve(a, &router, "GET", "/api/llm/session/sess_1")) orelse {
+        return error.SessionDetailRouteNotRegistered;
+    };
+    try testing.expect(detail.handler == ai_mod.http_handlers.sessionGetHandler);
 }

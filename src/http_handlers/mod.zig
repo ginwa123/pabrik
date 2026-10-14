@@ -33,6 +33,10 @@ pub const sessionListHandler = @import("session_list.zig").sessionListHandler;
 // GET /api/llm/session/:session_id — single-session detail incl.
 // workspace_id (workspace-scoped sessions plan).
 pub const sessionGetHandler = @import("session_get.zig").sessionGetHandler;
+// GET /api/llm/session/:session_id/usage — token usage + cache hit rate,
+// derived from one aggregate over `llm_history` (the `sessions` table
+// stores no token column).
+pub const sessionUsageHandler = @import("session_usage_get.zig").sessionUsageHandler;
 pub const sessionStopHandler = @import("session_stop.zig").sessionStopHandler;
 // POST /api/llm/session/:session_id/answer — resolve a pending `ask_user`
 // question (Migration 087), rewrite its tool-result row and resume the run.
