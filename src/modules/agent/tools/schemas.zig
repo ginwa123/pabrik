@@ -9,6 +9,11 @@ const std = @import("std");
 // Keep the schema ergonomic by aliasing here.
 pub const BashInput = @import("shell.zig").ShellInput;
 pub const BashOutput = @import("shell.zig").ShellOutput;
+/// The 3-way run mode (`foreground` | `background` | `background_persistence`).
+/// Re-exported so the argument parser — which reaches the shell types through
+/// this module — does not need its own `@import("shell.zig")`, which would put
+/// that file in two modules.
+pub const RunMode = @import("shell.zig").RunMode;
 pub const CommandInput = @import("command.zig").CommandInput;
 pub const CommandOutput = @import("command.zig").CommandOutput;
 

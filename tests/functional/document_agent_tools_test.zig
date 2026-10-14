@@ -67,7 +67,7 @@ const SEARCH_DOCUMENTS = "search_documents";
 // Expected tool list — mirrors tests/functional/default_tools.py
 // ============================================================================
 
-/// Mirrors `DEFAULT_AGENT_TOOLS` — 31 names, sorted ASC, matching the
+/// Mirrors `DEFAULT_AGENT_TOOLS` — 33 names, sorted ASC, matching the
 /// wire order of `GET /api/agents/:agent_id/tools`.
 ///
 /// `delete_document` is deliberately ABSENT: it is irreversible, so it
@@ -83,10 +83,12 @@ const DEFAULT_AGENT_TOOLS = [_][]const u8{
     "get_plan",
     "glob",
     "list_directory",
+    "list_secrets",
     "list_sub_agent",
     "list_web_search_providers",
     "load_memory",
     "present_files",
+    "process",
     "read_file",
     "read_workspace_session",
     "remove_file",
@@ -121,10 +123,12 @@ const AGENT_TOOLS_WITH_DELETE = [_][]const u8{
     "get_plan",
     "glob",
     "list_directory",
+    "list_secrets",
     "list_sub_agent",
     "list_web_search_providers",
     "load_memory",
     "present_files",
+    "process",
     "read_file",
     "read_workspace_session",
     "remove_file",

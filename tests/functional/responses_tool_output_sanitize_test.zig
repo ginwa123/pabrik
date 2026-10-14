@@ -410,7 +410,7 @@ fn dbPath(temp_dir: []const u8) ![]u8 {
 /// / `": "` separators), because that string is what the backend parses
 /// into the `function_call` replay item.
 const TOOL_CALLS_JSON =
-    \\[{"id": "call_01a06fb93f1878c19cd31a8ad82456e3", "type": "function", "function": {"name": "bash", "arguments": "{\"command\": \"timeout 10 ls -R /tmp | head -n 5\", \"cwd\": \"/tmp\", \"mandatory_timeout\": 15.0}"}}]
+    \\[{"id": "call_01a06fb93f1878c19cd31a8ad82456e3", "type": "function", "function": {"name": "bash", "arguments": "{\"command\": \"timeout 10 ls -R /tmp | head -n 5\", \"cwd\": \"/tmp\", \"timeout\": 15.0}"}}]
 ;
 
 /// Insert the assistant tool_calls row + the ELF-poisoned tool row for

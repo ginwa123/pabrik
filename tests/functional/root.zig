@@ -124,6 +124,7 @@ const progressive_tool_search_test = @import("progressive_tool_search_test.zig")
 const read_file_raw_content_test = @import("read_file_raw_content_test.zig");
 const responses_tool_output_sanitize_test = @import("responses_tool_output_sanitize_test.zig");
 const server_port_bind_test = @import("server_port_bind_test.zig");
+const command_is_stop_test = @import("command_is_stop_test.zig");
 const session_auto_name_retry_test = @import("session_auto_name_retry_test.zig");
 const session_created_sse_test = @import("session_created_sse_test.zig");
 const session_detail_metadata_test = @import("session_detail_metadata_test.zig");
@@ -279,6 +280,7 @@ pub const suites = .{
     read_file_raw_content_test,
     responses_tool_output_sanitize_test,
     server_port_bind_test,
+    command_is_stop_test,
     session_auto_name_retry_test,
     session_created_sse_test,
     session_detail_metadata_test,

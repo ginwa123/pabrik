@@ -63,6 +63,15 @@ pub const database = @import("databases").database;
 pub const bash_tool = @import("modules/agent/tools/bash.zig");
 pub const pwsh_tool = @import("modules/agent/tools/pwsh.zig");
 pub const command_tool = @import("modules/agent/tools/command.zig");
+/// The shell-exec core: `ShellInput` / `RunMode`, the detached spawn, and the
+/// process-group kill. Exported because the background-process registry has to
+/// STOP a detached service with a tree kill, and that lives next to the spawn
+/// whose `.pgid = 0` is what makes `pid == pgid` true.
+pub const shell_tool = @import("modules/agent/tools/shell.zig");
+/// `process` — read/stop/list the detached processes this session started.
+/// The read half is what a `background_persistence` service needs, since that
+/// mode deliberately never notifies.
+pub const process_tool = @import("modules/agent/tools/process.zig");
 pub const tool_models = @import("modules/agent/tools/schemas.zig");
 pub const tools = @import("modules/agent/tools/tools.zig");
 

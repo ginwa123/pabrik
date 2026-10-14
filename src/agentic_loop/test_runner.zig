@@ -104,7 +104,7 @@ test {
 
     // task_1787855066467_8 — bash/pwsh lenient JSON argument parser.
     // Recover LLM XML-fragment hallucinations like
-    // `mandatory_timeout: "5</mandatory_timeout>"` into the integer 5,
+    // `timeout: "5</timeout>"` into the integer 5,
     // or surface the offending field + value + expected type when
     // coercion fails.
     _ = @import("tools_exec_bash_args.zig");

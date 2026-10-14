@@ -1,35 +1,41 @@
 /**
  * isBackgroundCommandOutput — detect + parse the session-queue envelope the
- * stale-background-process cron inserts when a background `command` finishes.
+ * background-process watcher/cron inserts when a detached `command` finishes.
  *
- * Current wire shape (built by `buildCompletionMessage` in
- * `src/ai_workflow/tui/agentic_loop/background_process.zig`, delivered as a
- * `session_queue_messages` row with role `user`):
+ * THREE shapes are recognised, and they are tried newest-first:
  *
- *   <background_command>
- *   <pid>{pid}</pid>
- *   <command>{xml-escaped command}</command>
- *   <stdout>{xml-escaped log tail, or (empty output)}</stdout>
- *   <truncated>false</truncated>
- *   </background_command>
+ *   1. JSON — what the backend emits TODAY, built by `buildCompletionMessage`
+ *      in `src/agentic_loop/background_process.zig`:
  *
- * (Truncated logs additionally carry `<total_bytes>` + `<log_path>`.)
+ *        {"pid":1234,"command":"sleep 10","stdout":"hello\nworld",
+ *         "truncated":false,"total_bytes":null,"log_path":null}
  *
- * Legacy rows (pre-XML) used a prose envelope — `This is an output from
- * background command (pid …, command \`…\`):` + a 3–5 double-quote fence —
- * and are still parsed via the fallback path so old history renders as a
- * card too.
+ *      `total_bytes` + `log_path` are non-null only when the log was capped.
+ *
+ *   2. XML `<background_command>…</background_command>` — what the same
+ *      function emitted BEFORE the XML→JSON migration (#563 changed the
+ *      backend and left this file behind), so a row queued back then still
+ *      renders as a card instead of a raw bubble.
+ *
+ *   3. Legacy prose — `This is an output from background command (pid …,
+ *      command \`…\`):` + a 3–5 double-quote fence.
+ *
+ * Shape 1 was MISSING until this change: the parser knew only 2 and 3, so every
+ * completion queued since #563 fell through to `false` and rendered as raw JSON
+ * in a user bubble. The backend's test asserted the JSON while this file's spec
+ * asserted the XML — green on both sides of the break.
  *
  * Returns:
  *   - parseBackgroundCommandOutput: `{ pid, command, body, truncated,
  *     logPath }` or `null` for ordinary text / foreground `<command>` XML.
- *   - isBackgroundCommandOutput: `true` iff the content holds a
- *     `<background_command>` block or the legacy prose prefix.
+ *   - isBackgroundCommandOutput: `true` iff the content holds the JSON
+ *     envelope, a `<background_command>` block, or the legacy prose prefix.
  *   - backgroundToShellXml: re-emits the parsed fields as the 8-tag shell
  *     envelope so the existing shell card renderer displays it unchanged.
  *
  * Pure functions; safe to call inside `computed`.
  */
+import { Effect, Either, Data } from 'effect'
 import {
   extractBool,
   extractTag,
@@ -48,8 +54,72 @@ export interface ParsedBackgroundCommandOutput {
   logPath: string | null
 }
 
-/** Current XML envelope — non-greedy so a body containing tags can't overrun. */
+/** XML envelope — non-greedy so a body containing tags can't overrun. */
 const BACKGROUND_XML_RE = /<background_command>([\s\S]*?)<\/background_command>/
+
+/**
+ * A candidate JSON envelope: an object whose first key is `pid`.
+ *
+ * Cheap and deliberately narrow. It keeps `JSON.parse` off the hot path of
+ * ordinary chat history, and lets the predicate answer without parsing, so a
+ * user message that merely contains `{` is not misdetected.
+ *
+ * It is not a validity check: a message that starts like ours still has to
+ * survive `shapeFromJson`, which returns null if it is something else.
+ */
+const JSON_ENVELOPE_RE = /^\s*\{\s*"pid"\s*:/
+
+/**
+ * Failure of the JSON branch. A tagged error so the failure channel has a type
+ * instead of `unknown` — `local/no-try-catch` bans the `try`/`catch` spelling,
+ * and an `Effect` keeps the failure in the signature (same reasoning as
+ * `sync/SyncError.ts`).
+ */
+class BackgroundEnvelopeJsonError extends Data.TaggedError('BackgroundEnvelopeJsonError')<{
+  reason: string
+}> {}
+
+/**
+ * Parse the JSON envelope without a `try`/`catch`.
+ *
+ * `Effect.try` moves a throw into the error channel and `Effect.either` turns it
+ * into a VALUE, so `runSync` here cannot throw: the failure is a `Left`, which
+ * is `null` to the caller. Same idiom as `helpers/prStatusCache.ts`.
+ */
+function parseJsonEnvelope(content: string): ParsedBackgroundCommandOutput | null {
+  const outcome = Effect.runSync(
+    Effect.either(
+      Effect.try({
+        try: () => JSON.parse(content) as unknown,
+        catch: () => new BackgroundEnvelopeJsonError({ reason: 'not valid JSON' }),
+      }),
+    ),
+  )
+  if (Either.isLeft(outcome)) return null
+  return shapeFromJson(outcome.right)
+}
+
+/**
+ * Map a parsed value onto the card's fields, or `null` when it is not our
+ * envelope after all. The wire names are the BACKEND's (`stdout`); `body` is the
+ * card's name for the same thing.
+ */
+function shapeFromJson(value: unknown): ParsedBackgroundCommandOutput | null {
+  if (typeof value !== 'object' || value === null) return null
+  const obj = value as Record<string, unknown>
+  // `pid` is the discriminator: a JSON object without it is some other row.
+  if (typeof obj.pid !== 'number' && typeof obj.pid !== 'string') return null
+  if (typeof obj.command !== 'string' || typeof obj.stdout !== 'string') return null
+  return {
+    pid: String(obj.pid),
+    command: obj.command,
+    body: obj.stdout.trim(),
+    truncated: obj.truncated === true,
+    logPath: typeof obj.log_path === 'string' ? obj.log_path : null,
+  }
+}
+
+
 
 /** Legacy prose prefix emitted by the pre-XML `buildCompletionMessage`. */
 const LEGACY_PREFIX = 'This is an output from background command (pid '
@@ -73,11 +143,21 @@ function escapeXml(s: string): string {
 }
 
 export function isBackgroundCommandOutput(content: string): boolean {
+  if (JSON_ENVELOPE_RE.test(content)) return true
   if (BACKGROUND_XML_RE.test(content)) return true
   return content.startsWith(LEGACY_PREFIX)
 }
 
 export function parseBackgroundCommandOutput(content: string): ParsedBackgroundCommandOutput | null {
+  // Newest shape first. A no-op for the older two (the regex does not match),
+  // and for anything that is not a JSON envelope.
+  if (JSON_ENVELOPE_RE.test(content)) {
+    const fromJson = parseJsonEnvelope(content)
+    // `null` means "looked like ours, was not" — fall through rather than
+    // returning, so the older shapes still get their attempt.
+    if (fromJson !== null) return fromJson
+  }
+
   const xml = content.match(BACKGROUND_XML_RE)
   if (xml) {
     const inner = xml[1] ?? ''

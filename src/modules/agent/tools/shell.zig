@@ -39,16 +39,111 @@ const sanitizeControlChars = helpers.sanitize_control_chars;
 
 /// Canonical wire schema. Per-shell wrappers (bash.zig, pwsh.zig) re-export
 /// this as `BashInput` / `PwshInput` so the JSON contract is identical.
+/// How the command relates to the caller's turn.
+///
+/// The three categories the product asks for, in the order a user meets them:
+///
+///   * `foreground`      — the call blocks, the result is returned inline, and
+///                         a `timeout` is REQUIRED (1–600 s).
+///   * `background`      — the command detaches and a QUEUE MESSAGE is written
+///                         when it exits. For a long build, test run or
+///                         migration — bounded work whose outcome the agent
+///                         needs. Consumed by `background_watcher` and the
+///                         per-minute cron.
+///   * `background_persistence` — the command detaches and NO queue message is
+///                         ever written. For a dev server or a watcher that
+///                         runs for the life of the session. The agent polls
+///                         it when it wants to know something, and the only
+///                         thing that ends it is an explicit stop or pabrik
+///                         itself shutting down.
+///
+/// `background` (the boolean) is the LEGACY spelling of `background`; the
+/// parser resolves it, and `resolvedMode` keeps direct constructors working.
+pub const RunMode = enum {
+    foreground,
+    background,
+    background_persistence,
+
+    pub fn isDetached(self: RunMode) bool {
+        return self != .foreground;
+    }
+
+    /// Wire spelling. `background` is the value the parser accepts; the enum
+    /// field is `background_persistence` so a `switch` cannot confuse the two.
+    pub fn fromWire(w: []const u8) ?RunMode {
+        if (std.mem.eql(u8, w, "foreground")) return .foreground;
+        if (std.mem.eql(u8, w, "background")) return .background;
+        if (std.mem.eql(u8, w, "background_persistence")) return .background_persistence;
+        return null;
+    }
+
+    pub fn toWire(self: RunMode) []const u8 {
+        return switch (self) {
+            .foreground => "foreground",
+            .background => "background",
+            .background_persistence => "background_persistence",
+        };
+    }
+
+    /// The kind column value a detached command of this mode is recorded
+    /// under. `service` is what makes "no queue message" enforceable in TWO
+    /// places (the watcher is not scheduled, and the cron skips the row) —
+    /// see `session_background_process.kind`.
+    pub fn kindFor(self: RunMode) []const u8 {
+        return switch (self) {
+            .foreground => "job",
+            .background => "job",
+            .background_persistence => "service",
+        };
+    }
+};
+
 pub const ShellInput = struct {
     command: []const u8,
-    mandatory_timeout: ?u32 = null,
+    timeout: ?u32 = null,
     cwd: ?[]const u8 = null,
     max_output: ?usize = 20 * 1024,
     stdin_data: ?[]const u8 = null,
+    /// LEGACY alias for `mode == .background`. The parser resolves the two into
+    /// `mode` (and rejects a contradiction), but this stays because an
+    /// in-tree constructor, a test or a transcript written before `mode`
+    /// existed sets only this. `resolvedMode` is the single reader.
     background: bool = false,
+    /// See `RunMode`. Additive: everything that does not set it keeps
+    /// running in the foreground, which is the behaviour it had.
+    mode: RunMode = .foreground,
     max_lines: ?usize = 1000,
     do_encoding: bool = false,
+    /// ASK THE AGENTIC LOOP TO END THIS TURN after the current tool batch.
+    ///
+    /// Not a shell concern, and `shell.zig` never reads it — the field rides
+    /// in this struct only because `ShellInput` is the parsed-arguments type
+    /// for the `command` tool (the retired `bash` / `pwsh` shims alias it).
+    /// `tools_exec_command` copies it onto `ToolExecResult.stop_loop`, which
+    /// `handle_tool` returns to the workflow loop.
+    ///
+    /// Nothing is killed: a detached command started by the same call keeps
+    /// running. See `docs/plans/2026-10-14-command-is-stop-persistence.md`.
+    is_stop: bool = false,
 };
+
+/// The mode a spawn should actually use, after folding in the legacy
+/// `background` alias.
+///
+/// `mode` wins whenever it says anything other than `foreground`: a caller
+/// that sets `.mode = .background_persistence` and leaves `background` at its
+/// false default gets what it asked for. `background = true` only promotes a
+/// defaulted `.foreground` — which is the pre-`mode` behaviour, preserved for
+/// the direct constructors and tests that still rely on it.
+///
+/// The `background=true` + explicit `mode="foreground"` CONTRADICTION is NOT
+/// resolved here: nothing can, since this function cannot tell an explicit
+/// `foreground` from a defaulted one. `parseShellArgs` catches it on the
+/// LLM-facing path and returns a structured error naming both fields.
+pub fn resolvedMode(input: ShellInput) RunMode {
+    if (input.background and input.mode == .foreground) return .background;
+    return input.mode;
+}
 
 pub const ShellOutput = struct {
     command: []const u8,
@@ -61,16 +156,16 @@ pub const ShellOutput = struct {
     stderr_lines: usize = 0,
 };
 
-/// Returned by `execute_shell` when the caller omits `mandatory_timeout`.
+/// Returned by `execute_shell` when the caller omits `timeout`.
 /// Same semantics as the bash.zig version; shell-neutral.
-pub const MandatoryTimeoutMissing = error{MandatoryTimeoutMissing};
+pub const TimeoutMissing = error{TimeoutMissing};
 
-/// Returned by `execute_shell` when the caller passes a `mandatory_timeout`
-/// above `MAX_MANDATORY_TIMEOUT_SEC`. A huge deadline is the same as no
+/// Returned by `execute_shell` when the caller passes a `timeout`
+/// above `MAX_TIMEOUT_SEC`. A huge deadline is the same as no
 /// deadline — it lets a runaway command hang the agent until the outer
 /// harness gives up. Reject explicitly so the caller splits the work
 /// (smaller steps, `background=true`, or the functional harness).
-pub const MandatoryTimeoutTooLarge = error{MandatoryTimeoutTooLarge};
+pub const TimeoutTooLarge = error{TimeoutTooLarge};
 
 /// Returned by `execute_shell` when the caller omits `cwd`.
 ///
@@ -88,15 +183,21 @@ pub const MandatoryCwdMissing = error{MandatoryCwdMissing};
 /// the caller believes it named a location.
 pub const CwdNotAbsolute = error{CwdNotAbsolute};
 
-/// Upper bound for a single foreground command: 1 minute.
+/// Upper bound for a single foreground command: 10 minutes.
 ///
-/// A foreground deadline longer than a minute is indistinguishable from a
-/// hung agent — the user watches a spinner while nothing reports progress —
-/// so anything longer is refused BEFORE a child is spawned and the caller is
-/// steered to `background=true` (which detaches and is exempt from this cap)
-/// or to splitting the work into smaller steps. It also turns absurd values
-/// like 120000 (33 h) into an instant, learnable error.
-pub const MAX_MANDATORY_TIMEOUT_SEC: u32 = 60;
+/// This is the ceiling, not the expected value: the schema asks for a few
+/// seconds for `ls`, and a caller that reaches for ten minutes is usually
+/// about to block a turn for ten minutes. The cap exists to refuse exactly
+/// that BEFORE a child is spawned — the caller is steered to a detached
+/// `mode` (which outlives the call and is exempt from this cap) or to
+/// splitting the work. It also turns absurd values like 120000 (33 h) into an
+/// instant, learnable error.
+///
+/// It was 60 s. Ten minutes covers a real build or test run without the agent
+/// having to detach and poll for it — at the cost that a genuinely hung
+/// command now holds the turn for ten minutes instead of one. The ceiling is
+/// still far below "no deadline", which is the property that matters.
+pub const MAX_TIMEOUT_SEC: u32 = 600;
 
 // POSIX `nanosleep(req, rem)` — declared as `extern "c"` so the call
 // doesn't go through Zig 0.16's Io runtime. We deliberately avoid
@@ -783,25 +884,42 @@ pub fn run_shell_command(
     if (!std.fs.path.isAbsolute(cwd)) return error.CwdNotAbsolute;
 
     // --- Mandatory-timeout check (foreground only) ---
-    // The background path does not use the timeout (the process detaches
-    // and runs forever), so we skip the check there. But the foreground
+    // Neither detached mode uses the timeout (the process outlives the call
+    // by definition), so the check is skipped for both. But the foreground
     // path MUST have an explicit deadline — the previous design defaulted
     // to 30 s which silently masked runaway commands.
-    if (!input.background and input.mandatory_timeout == null) {
-        return error.MandatoryTimeoutMissing;
+    //
+    // Keyed on the RESOLVED mode, so `background=true` and
+    // `mode="background"` take exactly the same branch.
+    const mode = resolvedMode(input);
+    if (!mode.isDetached() and input.timeout == null) {
+        return error.TimeoutMissing;
     }
-    if (input.mandatory_timeout) |t| {
-        if (t == 0) return error.MandatoryTimeoutMissing;
-        // Foreground only: the background path detaches and ignores the
-        // timeout by design, so an over-max deadline there is harmless.
-        // In foreground a huge deadline is the same as no deadline.
-        if (!input.background and t > MAX_MANDATORY_TIMEOUT_SEC) {
-            return error.MandatoryTimeoutTooLarge;
+    if (input.timeout) |t| {
+        if (t == 0) return error.TimeoutMissing;
+        // Foreground only: a detached call ignores the timeout by design, so
+        // an over-max deadline there is harmless. In foreground a huge
+        // deadline is the same as no deadline.
+        if (!mode.isDetached() and t > MAX_TIMEOUT_SEC) {
+            return error.TimeoutTooLarge;
         }
     }
 
-    // --- Background mode ---
-    if (input.background) {
+    // --- Detached modes ---
+    //
+    // Two different detach mechanisms, deliberately, for one release:
+    //   * `background`      keeps the `nohup` shell idiom it has always used,
+    //                       so the path every existing caller and test
+    //                       depends on cannot regress while the new one is
+    //                       proven.
+    //   * `background_persistence` gets the native spawn (`.pgid = 0` +
+    //                       stdout/stderr straight to the log file), which is
+    //                       what makes `pid == pgid` — and therefore a tree
+    //                       kill that actually frees the port.
+    if (mode == .background_persistence) {
+        return try spawn_detached_native(allocator, io, argv_prefix, command, cwd);
+    }
+    if (mode == .background) {
         return try spawn_background(allocator, io, argv_prefix, command, cwd);
     }
 
@@ -812,7 +930,7 @@ pub fn run_shell_command(
     // through the JSON schema (e.g. tests, internal callers).
     const max_output = input.max_output orelse 20 * 1024;
     const max_lines = input.max_lines orelse 1000;
-    const timeout_sec = input.mandatory_timeout.?;
+    const timeout_sec = input.timeout.?;
 
     // Build the full argv: argv_prefix ++ [command]
     var argv_buf: [16][]const u8 = undefined;
@@ -1010,8 +1128,7 @@ pub fn backgroundSpec(
     command: []const u8,
     unique: i64,
 ) !BackgroundSpec {
-    const sep: u8 = if (os_tag == .windows) '\\' else '/';
-    const log_path = try std.fmt.allocPrint(allocator, "{s}{c}bg_{d}.log", .{ tmp_dir, sep, unique });
+    const log_path = try detachedLogPath(allocator, os_tag, tmp_dir, unique);
 
     const bg_command = switch (os_tag) {
         .windows => blk: {
@@ -1163,6 +1280,240 @@ fn spawn_background(
     };
 }
 
+/// Log path for a detached command. ONE construction, shared by the `nohup`
+/// path and the native one, so both mechanisms log to the same place and
+/// nothing downstream can tell which started the process.
+pub fn detachedLogPath(
+    allocator: std.mem.Allocator,
+    os_tag: OsTag,
+    tmp_dir: []const u8,
+    unique: i64,
+) ![]u8 {
+    const sep: u8 = if (os_tag == .windows) '\\' else '/';
+    return std.fmt.allocPrint(allocator, "{s}{c}bg_{d}.log", .{ tmp_dir, sep, unique });
+}
+
+/// Native detached spawn: no shell, and `pid == pgid`.
+///
+/// Why not the `nohup cmd & echo $!` idiom `spawn_background` uses:
+///
+///   * `$!` is the PID of the SHELL's child, not of the command, and that
+///     child's process group is the group WE were started in. So
+///     `kill(-pgid)` could never be used — it would signal our own group —
+///     and a single-PID kill orphans everything the command forked.
+///     `pnpm run dev` forks again (vite → esbuild), and the survivors keep
+///     the port: "stop the dev server" did not stop it.
+///   * It needs a shell string to be built and quoted per platform
+///     (`backgroundSpec`, `quotePwsh`). A direct spawn has no such string.
+///
+/// Spawning the command ourselves with `.pgid = 0` makes it a process-group
+/// leader, so `kill(-pid)` reaches the whole tree; redirecting stdout/stderr
+/// straight at the log FILE (no pipes) means no reader threads are involved —
+/// the `Reader` / `settleReader` machinery exists for the foreground deadline
+/// problem and has nothing to do here.
+///
+/// The child is OUR child, so it MUST be reaped — see `reap_pid_nohang`. A
+/// zombie answers `kill(pid, 0)` with SUCCESS, so an unreaped native child
+/// would report as "running" for the life of the process.
+///
+/// Note what is deliberately NOT done here: `PR_SET_PDEATHSIG`.
+/// `std.process.SpawnOptions` has no such field (and no pre-exec hook) in Zig
+/// 0.16 — verified against `/usr/lib/zig/std/process.zig:361-403` — and the
+/// flag has to be set by the CHILD before it execs, so it is unreachable from
+/// a plain `spawn` without putting a shell wrapper back, which is the thing
+/// this function exists to remove. "Dies with pabrik" is therefore carried by
+/// the shutdown hook (SIGINT/SIGTERM) plus the boot sweep for the `kill -9`
+/// case; see `killServicesForShutdown` / `reapOrKillServicesOnBoot`.
+fn spawn_detached_native(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    argv_prefix: []const []const u8,
+    command: []const u8,
+    cwd: []const u8,
+) !ShellOutput {
+    const ts: i64 = @intCast(@divTrunc(std.Io.Timestamp.now(io, .real).nanoseconds, 1_000_000));
+    const tmp_dir = try tempDirFor(allocator, builtin.os.tag);
+    defer allocator.free(tmp_dir);
+    const log_path = try detachedLogPath(allocator, builtin.os.tag, tmp_dir, ts);
+    defer allocator.free(log_path);
+
+    // Create/truncate the log, hand the descriptor to the child, then close OUR
+    // copy: the child holds its own dup, so nothing here keeps the file open
+    // for the process' lifetime.
+    var log_file = try std.Io.Dir.createFileAbsolute(io, log_path, .{ .truncate = true });
+    defer log_file.close(io);
+
+    var argv_buf: [16][]const u8 = undefined;
+    if (argv_prefix.len + 1 > argv_buf.len) return error.TooManyArgvPrefix;
+    @memcpy(argv_buf[0..argv_prefix.len], argv_prefix);
+    argv_buf[argv_prefix.len] = command;
+    const argv = argv_buf[0 .. argv_prefix.len + 1];
+
+    const child = try std.process.spawn(io, .{
+        .argv = argv,
+        // `cwd` is what puts the detached command in the caller's directory;
+        // `.inherit` here is the wrong-tree bug `spawn_background` was fixed
+        // for, and there is no reason to reintroduce it in the new path.
+        .cwd = .{ .path = cwd },
+        .stdin = .close,
+        .stdout = .{ .file = log_file },
+        .stderr = .{ .file = log_file },
+        // A new process group whose id equals the child's pid: this is what
+        // makes `kill(-pid)` a tree kill. Windows has no pgid.
+        .pgid = if (comptime builtin.os.tag == .windows) null else @as(?std.posix.pid_t, 0),
+    });
+
+    const pid = childPidForLog(child) orelse return error.SpawnedWithoutPid;
+
+    // NOT `child.wait` — the child outlives this call by design. The reaper in
+    // `background_watcher` collects it.
+    const stdout_msg = try std.fmt.allocPrint(allocator, "PID: {d}\nLog: {s}", .{ pid, log_path });
+    errdefer allocator.free(stdout_msg);
+
+    const stderr_msg = try allocator.dupe(u8, "No errors.");
+    errdefer allocator.free(stderr_msg);
+
+    const command_copy = if (command.len > 50) blk: {
+        const cmd = try allocator.alloc(u8, 53);
+        @memcpy(cmd[0..50], command[0..50]);
+        @memcpy(cmd[50..53], "...");
+        break :blk cmd;
+    } else try allocator.dupe(u8, command);
+    errdefer allocator.free(command_copy);
+
+    return ShellOutput{
+        .command = command_copy,
+        .stdout = stdout_msg,
+        .stderr = stderr_msg,
+        .exit_code = 0,
+        .truncated = false,
+        .timeout = false,
+        .stdout_lines = 0,
+        .stderr_lines = 0,
+    };
+}
+
+/// The numeric PID to report for a freshly spawned child, or null on a host
+/// where `Child.Id` is not an integer (Windows: a HANDLE, which is not
+/// meaningful to the caller and is what `background_watcher` re-resolves).
+fn childPidForLog(child: std.process.Child) ?u32 {
+    const id_opt = child.id orelse return null;
+    const T = @TypeOf(id_opt);
+    if (@typeInfo(T) != .int) return null;
+    return @intCast(id_opt);
+}
+
+/// Outcome of one non-blocking reap attempt on a PID we spawned.
+pub const ReapOutcome = union(enum) {
+    /// Reaped by this call. `code` is the exit status (negative = killed by
+    /// that signal, the bash `$?` convention).
+    exited: i32,
+    /// Still running.
+    running,
+    /// `ECHILD`: not (or no longer) our child, so `waitpid` cannot answer.
+    /// The caller must fall back to a signal probe. This is the normal answer
+    /// on Windows (no `waitpid`) and for a row that predates a restart.
+    not_our_child,
+};
+
+/// Non-blocking reap. Returns `.running`/`.exited` for a child of this
+/// process, `.not_our_child` otherwise.
+///
+/// This is not housekeeping: `process_status.isProcessRunning` probes with
+/// `kill(pid, 0)`, and a ZOMBIE answers that probe with SUCCESS. Without a
+/// reaper a native detached child that exited would read as "running"
+/// forever — the process list would lie and the boot sweep would try to kill
+/// a corpse.
+pub fn reap_pid_nohang(pid: u32) ReapOutcome {
+    if (comptime builtin.os.tag == .windows) return .not_our_child;
+    if (comptime builtin.os.tag != .linux and builtin.os.tag != .macos) return .not_our_child;
+
+    var status: c_int = 0;
+    const rc = std.c.waitpid(@intCast(pid), &status, std.c.W.NOHANG);
+    if (rc == @as(c_int, @intCast(pid))) {
+        return .{ .exited = switch (status_to_term(status)) {
+            .exited => |code| @as(i32, @intCast(code)),
+            .signal => |sig| -@as(i32, @intCast(@intFromEnum(sig))),
+            .stopped => |code| -@as(i32, @intCast(@intFromEnum(code))),
+            .unknown => -1,
+        } };
+    }
+    if (rc == 0) return .running;
+    const err = std.c.errno(rc);
+    if (err == .CHILD) return .not_our_child;
+    // Any other errno (EINVAL on a bad pid, EINTR) is not something this
+    // caller can act on — report "not ours" so the signal probe decides.
+    return .not_our_child;
+}
+
+/// How a stop reaches a detached process.
+///
+/// Pure DATA, with the OS tag as a PARAMETER rather than a read of
+/// `builtin.os.tag`, so the Windows arm is assertable from a Linux runner —
+/// the `timeoutKillPlan` precedent in this file, and what
+/// `CODING_STANDARDS.md` §2 requires of a platform-conditional path.
+pub const StopKill = enum {
+    /// `kill(-pid, SIGKILL)`: `spawn_detached_native` spawns with
+    /// `.pgid = 0`, so the child leads its own group and one syscall reaches
+    /// the command AND everything it forked.
+    process_group,
+    /// `taskkill /T /F /PID`: Windows has no process groups, so the tree walk
+    /// is taskkill's job.
+    taskkill_tree,
+};
+
+pub fn stopPlan(comptime os_tag: std.Target.Os.Tag) []const StopKill {
+    return switch (os_tag) {
+        .windows => &.{.taskkill_tree},
+        else => &.{.process_group},
+    };
+}
+
+/// Stop a process started by `spawn_detached_native`, tree included.
+///
+/// Returns true when the process was signalled or was already gone. Unlike
+/// `background_process.killProcess` (a single PID through
+/// `helpers.process_status`), this signals the whole process GROUP — which is
+/// the difference between freeing the port and orphaning vite + esbuild.
+pub fn stopDetachedProcess(allocator: std.mem.Allocator, io: std.Io, pid: u32) bool {
+    var signalled = false;
+    for (stopPlan(builtin.os.tag)) |kill| {
+        switch (kill) {
+            .process_group => {
+                if (comptime builtin.os.tag != .windows) {
+                    std.posix.kill(-@as(std.posix.pid_t, @intCast(pid)), .KILL) catch |err| switch (err) {
+                        // Already gone is the outcome we wanted.
+                        error.ProcessNotFound => {
+                            signalled = true;
+                            continue;
+                        },
+                        else => continue,
+                    };
+                    signalled = true;
+                }
+            },
+            .taskkill_tree => {
+                if (comptime builtin.os.tag == .windows) {
+                    const pid_str = std.fmt.allocPrint(allocator, "{d}", .{pid}) catch continue;
+                    defer allocator.free(pid_str);
+                    var child = std.process.spawn(io, .{
+                        .argv = &.{ "taskkill", "/T", "/F", "/PID", pid_str },
+                        .stdin = .close,
+                        .stdout = .ignore,
+                        .stderr = .ignore,
+                    }) catch continue;
+                    const term = child.wait(io) catch continue;
+                    signalled = switch (term) {
+                        .exited => |code| code == 0,
+                        else => false,
+                    };
+                }
+            },
+        }
+    }
+    return signalled;
+}
+
 /// JSON serialiser — same 8-field payload as the old `result_to_xml`
 /// (`command/stdout/stderr/exit_code/truncated/timeout/stdout_lines/
 /// stderr_lines`), now a JSON object.
@@ -1281,6 +1632,202 @@ pub fn encode_command_urls(allocator: std.mem.Allocator, command: []const u8) ![
 const testing = std.testing;
 const shell = @import("shell.zig");
 
+test "RunMode: wire spellings round-trip and an unknown value is rejected" {
+    // The three categories the product asks for. `fromWire` returning null is
+    // what lets the parser produce a structured error naming the field instead
+    // of coercing a typo into some default mode.
+    try testing.expectEqual(RunMode.foreground, RunMode.fromWire("foreground").?);
+    try testing.expectEqual(RunMode.background, RunMode.fromWire("background").?);
+    try testing.expectEqual(RunMode.background_persistence, RunMode.fromWire("background_persistence").?);
+    try testing.expect(RunMode.fromWire("persistent") == null);
+    try testing.expect(RunMode.fromWire("") == null);
+    try testing.expect(RunMode.fromWire("Background") == null); // case matters
+
+    for ([_]RunMode{ .foreground, .background, .background_persistence }) |m| {
+        try testing.expectEqual(m, RunMode.fromWire(m.toWire()).?);
+    }
+}
+
+test "RunMode: only foreground blocks, and only a service is silent" {
+    try testing.expect(!RunMode.foreground.isDetached());
+    try testing.expect(RunMode.background.isDetached());
+    try testing.expect(RunMode.background_persistence.isDetached());
+
+    // `kindFor` is what the cron filters on and what the popup shows. Getting
+    // it wrong is the difference between "told when the build finished" and
+    // "told a month later that the dev server died" — see migration 107.
+    try testing.expectEqualStrings("job", RunMode.foreground.kindFor());
+    try testing.expectEqualStrings("job", RunMode.background.kindFor());
+    try testing.expectEqualStrings("service", RunMode.background_persistence.kindFor());
+}
+
+test "resolvedMode: the legacy background boolean keeps working, and mode wins when it says something" {
+    // The pre-`mode` world, unchanged.
+    try testing.expectEqual(RunMode.background, resolvedMode(.{ .command = "x", .background = true }));
+    try testing.expectEqual(RunMode.foreground, resolvedMode(.{ .command = "x" }));
+
+    // A caller that sets only `mode` gets it.
+    try testing.expectEqual(
+        RunMode.background_persistence,
+        resolvedMode(.{ .command = "x", .mode = .background_persistence }),
+    );
+
+    // Both set and not contradicting: the explicit mode is the answer, so
+    // `mode` can be added to a call site that still carries `background`.
+    try testing.expectEqual(
+        RunMode.background_persistence,
+        resolvedMode(.{ .command = "x", .background = true, .mode = .background_persistence }),
+    );
+
+    // The CONTRADICTION is deliberately NOT resolved here — nothing can tell
+    // an explicit `foreground` from a defaulted one at this layer, so
+    // `parseShellArgs` rejects it before a ShellInput is ever built. This
+    // assertion documents which side this function lands on if that guard is
+    // ever bypassed: the legacy boolean, because that is what the field said.
+    try testing.expectEqual(
+        RunMode.background,
+        resolvedMode(.{ .command = "x", .background = true, .mode = .foreground }),
+    );
+}
+
+test "detachedLogPath: never the POSIX literal on Windows, and it is the shared shape" {
+    const win = try detachedLogPath(testing.allocator, .windows, "C:\\Temp", 42);
+    defer testing.allocator.free(win);
+    try testing.expectEqualStrings("C:\\Temp\\bg_42.log", win);
+
+    const nix = try detachedLogPath(testing.allocator, .linux, "/tmp", 42);
+    defer testing.allocator.free(nix);
+    try testing.expectEqualStrings("/tmp/bg_42.log", nix);
+}
+
+test "stopPlan: a stop reaches the whole tree on every platform" {
+    // Pure data with the OS tag as a parameter, so the Windows arm is
+    // assertable from a Linux runner — without that it could only ever be
+    // exercised on a Windows CI cell, which is how the `nohup`-on-Windows bug
+    // survived. Same pattern as `timeoutKillPlan` above.
+    try testing.expectEqualSlices(StopKill, &.{.process_group}, stopPlan(.linux));
+    try testing.expectEqualSlices(StopKill, &.{.process_group}, stopPlan(.macos));
+    try testing.expectEqualSlices(StopKill, &.{.taskkill_tree}, stopPlan(.windows));
+}
+
+test "spawn_detached_native: pid == pgid, the log is the child's own stdout, and the tree kill works" {
+    // The behavioural witness for the whole point of the native spawn. Three
+    // things have to hold at once, and none of them is visible from the
+    // `nohup cmd & echo $!` path this replaces:
+    //
+    //   1. the reported PID is the COMMAND's, not a shell wrapper's;
+    //   2. that PID is its own process-group leader, so `kill(-pid)` is a tree
+    //      kill (asserted directly via getpgid);
+    //   3. the child's stdout lands in the log file with no pipes and no
+    //      reader threads involved.
+    //
+    // `background_persistence` is also the mode that must NOT go through
+    // `spawn_background`, so a regression that rerouted it would fail (1) and
+    // (2) here.
+    if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
+
+    const allocator = testing.allocator;
+    const io = std.testing.io;
+
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var dir_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const dir_len = try tmp.dir.realPath(io, &dir_buf);
+    const dir = dir_buf[0..dir_len];
+
+    const out = try shell.execute_shell(allocator, io, &.{ "bash", "-c" }, .{
+        // A grandchild as well, so the tree kill has something to prove.
+        .command = "sh -c 'sleep 300 & ' ; echo detached-probe-marker; sleep 300",
+        .cwd = dir,
+        .mode = .background_persistence,
+    });
+    defer {
+        allocator.free(out.command);
+        allocator.free(out.stdout);
+        allocator.free(out.stderr);
+    }
+
+    // "PID: <n>\nLog: <path>". Parsed by locating the markers rather than by
+    // counting bytes: `readLogTruncated` and the completion path both consume
+    // this same string, and a one-byte slip here (a leading space) reads as
+    // "log file not found" everywhere downstream.
+    try testing.expect(std.mem.startsWith(u8, out.stdout, "PID: "));
+    const nl = std.mem.indexOfScalar(u8, out.stdout, '\n') orelse return error.NoNewline;
+    const pid = try std.fmt.parseInt(u32, out.stdout[5..nl], 10);
+    const log_at = std.mem.indexOf(u8, out.stdout, "Log: ") orelse return error.NoLogLine;
+    const log_path = std.mem.trim(u8, out.stdout[log_at + "Log: ".len ..], " \r\n");
+    try testing.expect(std.mem.endsWith(u8, log_path, ".log"));
+    defer _ = stopDetachedProcess(allocator, io, pid);
+
+    // (2) pid == pgid — the property `kill(-pid)` depends on.
+    // `std.posix` has no `getpgid` in Zig 0.16 (only `std.os.linux`'s raw
+    // syscall), so libc is called directly — the same approach this file
+    // already takes for `nanosleep` and the Win32 pair.
+    const pgid = getpgid(@intCast(pid));
+    if (pgid < 0) {
+        std.debug.print("getpgid({d}) failed\n", .{pid});
+        return error.TestUnexpectedResult;
+    }
+    try testing.expectEqual(@as(c_int, @intCast(pid)), pgid);
+
+    // (2b) a NEW group, not OUR group: if the child had inherited ours, the
+    // tree kill would signal the test runner itself.
+    const our_pgid = getpgid(0);
+    try testing.expect(our_pgid != pgid);
+
+    // (3) the output reached the log, with no pipes in the way.
+    var attempts: usize = 0;
+    var saw_marker = false;
+    while (attempts < 300) : (attempts += 1) {
+        const content = std.Io.Dir.cwd().readFileAlloc(io, log_path, allocator, .limited(4096)) catch "";
+        defer if (content.len > 0) allocator.free(content);
+        if (std.mem.indexOf(u8, content, "detached-probe-marker") != null) {
+            saw_marker = true;
+            break;
+        }
+        helpers.sleepMillis(10);
+    }
+    if (!saw_marker) return error.ChildOutputNeverReachedTheLog;
+
+    // (4) the stop really stops it — and this is where the zombie distinction
+    // bites, which is why the probe has to be the REAPER and not `kill(pid, 0)`.
+    //
+    // After SIGKILL the child is a ZOMBIE until someone waits on it, and a
+    // zombie answers `kill(pid, 0)` with SUCCESS. This test found that the hard
+    // way: asserting `!isProcessRunning(pid)` here FAILED on a process that was
+    // already dead. The same fact is why the service reaper exists — without
+    // it, a `background_persistence` process that exited would read as running
+    // for the life of the server.
+    try testing.expect(stopDetachedProcess(allocator, io, pid));
+    attempts = 0;
+    var reaped = false;
+    while (attempts < 300) : (attempts += 1) {
+        if (shell.reap_pid_nohang(pid) == .exited) {
+            reaped = true;
+            break;
+        }
+        helpers.sleepMillis(10);
+    }
+    try testing.expect(reaped);
+
+    // ...and once it IS reaped the signal probe finally agrees, so a caller
+    // that reaps first reads the truth either way.
+    try testing.expect(!processAliveForTest(pid));
+}
+
+/// POSIX `getpgid(2)`. Declared here rather than reached through `std`
+/// because Zig 0.16's `std.posix` does not expose it (only `std.os.linux`'s
+/// raw syscall, which has no macOS arm); libc is linked on every POSIX target
+/// this runs on. Used ONLY by the detached-spawn test above.
+extern "c" fn getpgid(pid: c_int) c_int;
+
+/// `kill(pid, 0)` probe used only by the detached-spawn test above.
+fn processAliveForTest(pid: u32) bool {
+    if (comptime builtin.os.tag == .windows) return false;
+    std.posix.kill(@intCast(pid), @enumFromInt(0)) catch return false;
+    return true;
+}
+
 test "shell.ShellInput JSON schema: same field set as BashInput (alias carries through)" {
     // shell.ShellInput is the canonical type; BashInput and PwshInput are
     // `pub const = ShellInput` aliases in their per-shell wrappers. The
@@ -1289,7 +1836,7 @@ test "shell.ShellInput JSON schema: same field set as BashInput (alias carries t
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const json_str =
-        \\{"command":"echo hi","cwd":"/tmp","mandatory_timeout":5}
+        \\{"command":"echo hi","cwd":"/tmp","timeout":5}
     ;
 
     const a = try std.json.parseFromSlice(
@@ -1301,7 +1848,7 @@ test "shell.ShellInput JSON schema: same field set as BashInput (alias carries t
     defer a.deinit();
     try testing.expectEqualStrings("echo hi", a.value.command);
     try testing.expectEqualStrings("/tmp", a.value.cwd.?);
-    try testing.expectEqual(@as(u32, 5), a.value.mandatory_timeout.?);
+    try testing.expectEqual(@as(u32, 5), a.value.timeout.?);
 }
 
 test "shell.ShellOutput has all 8 fields the bash JSON payload uses" {
@@ -1338,7 +1885,7 @@ test "shell.execute_shell runs bash happy path" {
     const out = try shell.execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
         .command = "true",
         .cwd = "/tmp",
-        .mandatory_timeout = 5,
+        .timeout = 5,
     });
     defer {
         testing.allocator.free(out.command);
@@ -1349,43 +1896,43 @@ test "shell.execute_shell runs bash happy path" {
     try testing.expectEqualStrings("true", out.command);
 }
 
-test "shell.execute_shell enforces mandatory_timeout (returns MandatoryTimeoutMissing when null)" {
+test "shell.execute_shell enforces timeout (returns TimeoutMissing when null)" {
     // Smoke check that the precondition guard at the top of
     // shell.execute_shell is wired up. The plan locks this contract via
-    // bash_test.zig's existing MandatoryTimeoutMissing test (kept unchanged).
+    // bash_test.zig's existing TimeoutMissing test (kept unchanged).
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const out = shell.execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
         .command = "sleep 60",
         .cwd = "/tmp",
-        .mandatory_timeout = null,
+        .timeout = null,
     });
-    try testing.expectError(error.MandatoryTimeoutMissing, out);
+    try testing.expectError(error.TimeoutMissing, out);
 }
 
-test "shell.execute_shell rejects mandatory_timeout above MAX_MANDATORY_TIMEOUT_SEC" {
+test "shell.execute_shell rejects timeout above MAX_TIMEOUT_SEC" {
     // A huge deadline is the same as no deadline. The over-max guard
     // fires before any child is spawned, so these run on ALL platforms.
     // Boundary: MAX is accepted (validation passes), MAX+1 is rejected.
-    try testing.expectEqual(@as(u32, 60), shell.MAX_MANDATORY_TIMEOUT_SEC);
+    try testing.expectEqual(@as(u32, 600), shell.MAX_TIMEOUT_SEC);
 
     const over_max = shell.execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
         .command = "echo should-never-run",
         .cwd = "/tmp",
-        .mandatory_timeout = shell.MAX_MANDATORY_TIMEOUT_SEC + 1,
+        .timeout = shell.MAX_TIMEOUT_SEC + 1,
     });
-    try testing.expectError(error.MandatoryTimeoutTooLarge, over_max);
+    try testing.expectError(error.TimeoutTooLarge, over_max);
 
     // The exact value from the user report that motivated the cap.
     const absurd = shell.execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
         .command = "echo should-never-run",
         .cwd = "/tmp",
-        .mandatory_timeout = 120000,
+        .timeout = 120000,
     });
-    try testing.expectError(error.MandatoryTimeoutTooLarge, absurd);
+    try testing.expectError(error.TimeoutTooLarge, absurd);
 }
 
-test "shell.execute_shell accepts mandatory_timeout at exactly MAX_MANDATORY_TIMEOUT_SEC" {
+test "shell.execute_shell accepts timeout at exactly MAX_TIMEOUT_SEC" {
     // Positive control: the boundary value itself must pass validation.
     // Runs `true` (instant) so the 60 s deadline never matters.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
@@ -1393,7 +1940,7 @@ test "shell.execute_shell accepts mandatory_timeout at exactly MAX_MANDATORY_TIM
     const out = try shell.execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
         .command = "true",
         .cwd = "/tmp",
-        .mandatory_timeout = shell.MAX_MANDATORY_TIMEOUT_SEC,
+        .timeout = shell.MAX_TIMEOUT_SEC,
     });
     defer {
         testing.allocator.free(out.command);
@@ -1428,7 +1975,7 @@ test "shell.execute_shell: a pipe holder that escapes the deadline kill cannot h
     const out = try shell.execute_shell(testing.allocator, io, &.{ "bash", "-c" }, .{
         .command = "setsid bash -c 'sleep 6; exec 1>&- 2>&-' &",
         .cwd = "/tmp",
-        .mandatory_timeout = 1,
+        .timeout = 1,
     });
     defer {
         testing.allocator.free(out.command);
@@ -1483,7 +2030,7 @@ test "shell.execute_shell requires cwd in BOTH modes (MandatoryCwdMissing)" {
         shell.execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
             .command = "echo should-never-run",
             .cwd = null,
-            .mandatory_timeout = 5,
+            .timeout = 5,
         }),
     );
 
@@ -1494,7 +2041,7 @@ test "shell.execute_shell requires cwd in BOTH modes (MandatoryCwdMissing)" {
         shell.execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
             .command = "echo should-never-run",
             .cwd = "",
-            .mandatory_timeout = 5,
+            .timeout = 5,
         }),
     );
 
@@ -1519,7 +2066,7 @@ test "shell.execute_shell rejects a relative cwd (CwdNotAbsolute)" {
         shell.execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
             .command = "echo should-never-run",
             .cwd = "src/modules",
-            .mandatory_timeout = 5,
+            .timeout = 5,
         }),
     );
 }
@@ -1543,7 +2090,7 @@ test "foreground: the child runs IN cwd, not in the harness's cwd" {
     const out = try shell.execute_shell(allocator, io, &.{ "bash", "-c" }, .{
         .command = "pwd -P",
         .cwd = dir,
-        .mandatory_timeout = 20,
+        .timeout = 20,
     });
     defer {
         allocator.free(out.command);
@@ -1606,21 +2153,21 @@ test "background: the DETACHED process starts in cwd, not the server's" {
 
 test "shell.execute_shell background mode is exempt from the max-timeout cap" {
     // Background detaches via nohup and ignores the timeout by design,
-    // so an over-max deadline there must NOT return MandatoryTimeoutTooLarge.
+    // so an over-max deadline there must NOT return TimeoutTooLarge.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const out = shell.execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
         .command = "true",
         .cwd = "/tmp",
         .background = true,
-        .mandatory_timeout = 120000,
+        .timeout = 120000,
     });
     if (out) |r| {
         testing.allocator.free(r.command);
         testing.allocator.free(r.stdout);
         testing.allocator.free(r.stderr);
     } else |err| {
-        try testing.expect(err != error.MandatoryTimeoutTooLarge);
+        try testing.expect(err != error.TimeoutTooLarge);
     }
 }
 
@@ -1648,7 +2195,7 @@ test "ShellInput is structurally identical to BashInput AND PwshInput (alias liv
     // Wire-schema round-trip: parse the same JSON string through all
     // three aliases and verify every field round-trips identically.
     const json =
-        \\{"command":"x","cwd":"/tmp","mandatory_timeout":3,"max_output":10,
+        \\{"command":"x","cwd":"/tmp","timeout":3,"max_output":10,
         \\"stdin_data":"y","background":true,"max_lines":20,"do_encoding":true}
     ;
 
@@ -1661,8 +2208,8 @@ test "ShellInput is structurally identical to BashInput AND PwshInput (alias liv
 
     try testing.expectEqualStrings(a.value.command, b.value.command);
     try testing.expectEqualStrings(b.value.command, c.value.command);
-    try testing.expect(a.value.mandatory_timeout.? == b.value.mandatory_timeout.?);
-    try testing.expect(b.value.mandatory_timeout.? == c.value.mandatory_timeout.?);
+    try testing.expect(a.value.timeout.? == b.value.timeout.?);
+    try testing.expect(b.value.timeout.? == c.value.timeout.?);
 }
 
 test "result_to_json sanitizes binary ELF stdout into valid JSON" {

@@ -1675,7 +1675,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                 // sub-agents stuck to the profile at run start.) The snapshot
                 // stays allocated for the run's lifetime as the fallback if
                 // a future iteration's re-read fails.
-                try handle_tool(allocator, io, db, logger, copy_session_id, copy_parent_session_id, eff.model, copy_cwd, loop_counter, res_dynamic_agent, &agent_temperature, &isThinking, config.api_key, config.base_url, config, environment, live_selected_profile_model, copy_allowed_tools, copy_is_sub_agent);
+                const tool_outcome = try handle_tool(allocator, io, db, logger, copy_session_id, copy_parent_session_id, eff.model, copy_cwd, loop_counter, res_dynamic_agent, &agent_temperature, &isThinking, config.api_key, config.base_url, config, environment, live_selected_profile_model, copy_allowed_tools, copy_is_sub_agent);
 
                 // `ask_user` ends the turn rather than parking the loop. The
                 // tool recorded a pending question and returned
@@ -1705,6 +1705,49 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                     };
                     logger.infoFmt(
                         "[CHECKPOINT] ask_user pending — ending the turn session_id={s} loop_counter={d}",
+                        .{ copy_session_id, loop_counter },
+                    );
+                    try deleteWorker(DeleteWorkerInput{
+                        .allocator = allocator,
+                        .db = db,
+                        .logger = logger,
+                        .session_id = copy_session_id,
+                        .event_bus = event_bus,
+                        .is_emit_sse = true,
+                    });
+                    break;
+                }
+
+                // `is_stop` on a tool call (`command is_stop=true`): the model
+                // asked to end THIS turn. Same exit as `finish_reason == .stop`
+                // above — deleteWorker + break — because as far as every reader
+                // is concerned the turn is over and nothing is pending.
+                //
+                // Reached only AFTER `handle_tool` dispatched and persisted the
+                // whole batch, so every tool_call_id has its role=tool row and
+                // the transcript stays valid for the next turn.
+                //
+                // Nothing is killed. A `background` / `background_persistence`
+                // command started in the same batch keeps running — that
+                // combination ("start the dev server, then stop looping") is
+                // the main reason this parameter exists.
+                if (tool_outcome.stop_loop) {
+                    // The provider's own finish_reason was `tool_calls` and was
+                    // persisted as such at the top of this iteration. Overwrite
+                    // it: `last_finish_reason` is read as "is anything still in
+                    // flight", and a tool batch that ended the turn is not.
+                    // `stop` (not a new enum value) because the semantics are
+                    // exactly the `.stop` arm's: turn over, nothing pending.
+                    // `awaiting_user` needed its own value because a RESUME is
+                    // pending; `is_stop` has no such obligation.
+                    llm_history.updateSessionLastFinishReason(allocator, db, copy_session_id, agent.FinishReason.stop.to_str()) catch |err| {
+                        logger.warnFmt(
+                            "[workflow] failed to persist last_finish_reason=stop after is_stop: {s}",
+                            .{@errorName(err)},
+                        );
+                    };
+                    logger.infoFmt(
+                        "[CHECKPOINT] is_stop — ending the turn session_id={s} loop_counter={d}",
                         .{ copy_session_id, loop_counter },
                     );
                     try deleteWorker(DeleteWorkerInput{

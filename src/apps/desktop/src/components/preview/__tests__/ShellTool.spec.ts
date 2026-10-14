@@ -42,7 +42,7 @@ const unknownToolEnvelope = JSON.stringify({
   parameters: {
     command: 'timeout 900 zig build web 2>&1 | head -60',
     cwd: '/home/ginwa/.config/pabrik/.worktrees/glinlandui-web',
-    mandatory_timeout: 950,
+    timeout: 950,
     max_lines: 70,
   },
   success: false,
@@ -121,7 +121,7 @@ describe('ShellTool.vue — in-progress placeholder (TDD: unknown bug)', () => {
   it('shows command from JSON :parameters when :content empty', () => {
     const wrapper = makeWrapper({
       content: emptyPlaceholder,
-      parameters: '{"command":"sleep 10","mandatory_timeout":30}',
+      parameters: '{"command":"sleep 10","timeout":30}',
     })
     const html = wrapper.html()
     expect(html).toContain('sleep 10')

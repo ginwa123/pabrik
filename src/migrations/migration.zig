@@ -119,6 +119,8 @@ const migration_103 = @import("migration_103.zig");
 const migration_104 = @import("migration_104.zig");
 const migration_105 = @import("migration_105.zig");
 const migration_106 = @import("migration_106.zig");
+const migration_107 = @import("migration_107.zig");
+const migration_108 = @import("migration_108.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -227,6 +229,8 @@ pub const Migration103CreateWorkspaceSecrets = migration_103.Migration103CreateW
 pub const Migration104AddSessionPinned = migration_104.Migration104AddSessionPinned;
 pub const Migration105CreateWorkspaceSettings = migration_105.Migration105CreateWorkspaceSettings;
 pub const Migration106CreateModelCatalog = migration_106.Migration106CreateModelCatalog;
+pub const Migration107AddBackgroundProcessKind = migration_107.Migration107AddBackgroundProcessKind;
+pub const Migration108AddBackgroundProcessReadOffset = migration_108.Migration108AddBackgroundProcessReadOffset;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -517,6 +521,15 @@ pub const allMigrations: []const Migration = &.{
     // keys - see `workspace_settings_store.zig` for the owner rule.
     .{ .version = Migration105CreateWorkspaceSettings.version, .name = Migration105CreateWorkspaceSettings.name, .up = Migration105CreateWorkspaceSettings.up },
     .{ .version = Migration106CreateModelCatalog.version, .name = Migration106CreateModelCatalog.name, .up = Migration106CreateModelCatalog.up },
+    // `kind` ('job' | 'service') is what makes `mode="background_persistence"`
+    // silent in BOTH places that can notify — the immediate watcher is not
+    // scheduled for a service, and the per-minute cron filters on this column.
+    // See `migration_107.zig`.
+    .{ .version = Migration107AddBackgroundProcessKind.version, .name = Migration107AddBackgroundProcessKind.name, .up = Migration107AddBackgroundProcessKind.up },
+    // The read cursor for the `process read` tool: how much of a detached
+    // process's log the agent has already been shown, so a poll returns only
+    // what is new. See migration_108.zig.
+    .{ .version = Migration108AddBackgroundProcessReadOffset.version, .name = Migration108AddBackgroundProcessReadOffset.name, .up = Migration108AddBackgroundProcessReadOffset.up },
 };
 
 /// Register all migrations with a MigrationManager

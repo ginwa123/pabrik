@@ -16,6 +16,7 @@ const static_files = pabrikcore.static_files;
 // directly (dual-module error — see root.zig).
 const cleanup_stale_worker = pabrikcore.cleanup_stale_worker;
 const cleanup_stale_background_process = pabrikcore.cleanup_stale_background_process;
+const background_process = pabrikcore.ai_mod.background_process;
 
 // Boot phases (extracted from this file): the exe module reaches them via
 // pabrikcore.* for the same dual-module reason as above.
@@ -202,6 +203,23 @@ pub fn main(init: std.process.Init) !void {
     // Workspace settings already populated. Idempotent + best-effort.
     server_boot.seedWorkspaceSettingsFromUserConfig(allocator, io, environment, dbSqlite, cli.auth_enabled);
 
+    // `mode="background_persistence"` services die with the pabrik that owns
+    // them. The clean path is the shutdown block far below; this is the
+    // `kill -9` / panic / power-cut path, where no handler ever ran and the
+    // child is still holding its port. A live service row at boot is therefore
+    // always a leftover. Best-effort: a failure here must not stop the server
+    // from starting.
+    if (background_process.sweepServicesOnBoot(dbSqlite, io, allocator)) |sweep| {
+        if (sweep.killed > 0 or sweep.marked_orphaned > 0) {
+            std.log.info(
+                "background services: swept {d} row(s) from a previous run, killed {d}",
+                .{ sweep.marked_orphaned, sweep.killed },
+            );
+        }
+    } else |err| {
+        std.log.warn("background service boot sweep failed: {s}", .{@errorName(err)});
+    }
+
     // models.dev model catalog: read the cached snapshot from the DB (local,
     // no network) and kick the detached hourly sync. This is what makes a
     // non-MiniMax model resolve to its real context window instead of 200k.
@@ -346,6 +364,23 @@ pub fn main(init: std.process.Init) !void {
     // can't log), so logging happens here.
     if (shutdown.isRequested()) {
         std.log.info("shutdown signal received — listener closed, flushing in-flight requests", .{});
+
+        // `mode="background_persistence"` processes belong to THIS service, so
+        // they go down with it — a dev server still holding its port after the
+        // user quit pabrik is not "persistent", it is a leak. Deliberately here
+        // and NOT on the worker-cancel path: stopping a chat must not take
+        // someone's dev server down (see `killServicesForShutdown`).
+        //
+        // Placed before the sleep so it runs even if the process is killed
+        // during the 50 ms grace below. Best-effort by design — we are already
+        // on the way out, and a failure to kill one process must not stop the
+        // exit that the signal asked for.
+        if (background_process.killServicesForShutdown(dbSqlite, io, allocator)) |killed| {
+            if (killed > 0) std.log.info("background services: stopped {d} on shutdown", .{killed});
+        } else |err| {
+            std.log.warn("background service shutdown kill failed: {s}", .{@errorName(err)});
+        }
+
         // Exit instead of unwinding: full unwind segfaults (defer teardowns
         // race draining Io worker threads) and the stops race
         // signal-interrupted workers. Nothing is freed afterwards so no

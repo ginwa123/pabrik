@@ -9,9 +9,9 @@
 //   * AGENT — POST /api/workspaces/:ws/items/agent →
 //     GET /api/agents/:id/tools (as of 2026-09-16 this includes
 //     `ask_user`, seeded for every agent mode) returns
-//     EXPECTED_DEFAULTS (31 tools, sorted ASC).
+//     EXPECTED_DEFAULTS (33 tools, sorted ASC).
 //   * KANBAN — POST /api/workspaces/:ws/items/kanban →
-//     GET /api/agent-kanbans/:id/tools returns the 31 agent defaults +
+//     GET /api/agent-kanbans/:id/tools returns the 33 agent defaults +
 //     2 kanban tools (kanban_list, kanban_move_task) — 33 total — and
 //     the bundle GET /api/workspaces/:ws/items/:id/agent_kanban is 200
 //     (configured, not 404 NotConfigured).
@@ -49,7 +49,7 @@ const io = testing.io;
 // Expected tool lists — mirrors tests/functional/default_tools.py
 // ============================================================================
 
-/// Mirrors `DEFAULT_AGENT_TOOLS` — 31 names, sorted ASC, matching the
+/// Mirrors `DEFAULT_AGENT_TOOLS` — 33 names, sorted ASC, matching the
 /// wire order of `GET /api/agents/:agent_id/tools`.
 ///
 /// `delete_document` is deliberately ABSENT: it is irreversible, so it is
@@ -65,10 +65,12 @@ const EXPECTED_DEFAULTS = [_][]const u8{
     "get_plan",
     "glob",
     "list_directory",
+    "list_secrets",
     "list_sub_agent",
     "list_web_search_providers",
     "load_memory",
     "present_files",
+    "process",
     "read_file",
     "read_workspace_session",
     "remove_file",
@@ -110,10 +112,12 @@ const EXPECTED_KANBAN_DEFAULTS = [_][]const u8{
     "kanban_list",
     "kanban_move_task",
     "list_directory",
+    "list_secrets",
     "list_sub_agent",
     "list_web_search_providers",
     "load_memory",
     "present_files",
+    "process",
     "read_file",
     "read_workspace_session",
     "remove_file",
@@ -151,8 +155,8 @@ fn isSorted(list: []const []const u8) bool {
 
 comptime {
     @setEvalBranchQuota(20_000);
-    if (EXPECTED_DEFAULTS.len != 31)
-        @compileError("EXPECTED_DEFAULTS must mirror default_tools.py's 31-name DEFAULT_AGENT_TOOLS");
+    if (EXPECTED_DEFAULTS.len != 33)
+        @compileError("EXPECTED_DEFAULTS must mirror default_tools.py's 33-name DEFAULT_AGENT_TOOLS");
     if (EXPECTED_KANBAN_DEFAULTS.len != EXPECTED_DEFAULTS.len + 2)
         @compileError("EXPECTED_KANBAN_DEFAULTS must be EXPECTED_DEFAULTS plus exactly the two kanban tools");
     if (!isSorted(&EXPECTED_DEFAULTS))

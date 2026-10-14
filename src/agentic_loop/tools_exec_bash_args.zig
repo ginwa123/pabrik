@@ -9,10 +9,10 @@ const tool_models = pabrikcore.tool_models;
 ///
 /// The bash + pwsh tools share `tool_models.BashInput` (aliased to
 /// `shell.ShellInput`). When the LLM emits tool-call arguments where a
-/// numeric field (`mandatory_timeout`, `max_output`, `max_lines`) is a
+/// numeric field (`timeout`, `max_output`, `max_lines`) is a
 /// JSON STRING instead of a JSON number — often because the LLM
-/// hallucinated an XML closing tag like `</mandatory_timeout>` into the
-/// value (a leak from a prior `<tool>…<mandatory_timeout>5</mandatory_timeout>…</tool>`
+/// hallucinated an XML closing tag like `</timeout>` into the
+/// value (a leak from a prior `<tool>…<timeout>5</timeout>…</tool>`
 /// envelope in its conversation history) — `std.json.parseFromSlice`
 /// refuses to coerce the string into `?u32` / `?usize` and returns
 /// `error.InvalidCharacter`. That error then bubbles up as a cryptic
@@ -53,16 +53,38 @@ const tool_models = pabrikcore.tool_models;
 /// Numeric fields on `ShellInput` whose values the LLM may have
 /// contaminated with stray XML closing tags. Order doesn't matter; the
 /// helper matches by key.
-pub const NUMERIC_U32_FIELDS = [_][]const u8{ "mandatory_timeout" };
+/// Accepted spellings for the deadline field, in precedence order.
+///
+/// `timeout` is the name. `mandatory_timeout` is its PRE-RENAME spelling and is
+/// still accepted, because it is written into every transcript from before the
+/// rename: without this, replaying such a conversation would surface a
+/// `TimeoutMissing` the model cannot possibly explain, since the argument it
+/// sent was valid when it sent it. `timeout` wins when both appear.
+pub const TIMEOUT_ALIASES: []const []const u8 = &.{ "timeout", "mandatory_timeout" };
+
+pub const NUMERIC_U32_FIELDS = TIMEOUT_ALIASES;
 pub const NUMERIC_USIZE_FIELDS = [_][]const u8{ "max_output", "max_lines" };
 
 /// Boolean fields on `ShellInput` whose values the LLM may have
 /// contaminated with stray XML closing tags.
-pub const BOOL_FIELDS = [_][]const u8{ "background", "do_encoding" };
+pub const BOOL_FIELDS = [_][]const u8{ "background", "do_encoding", "is_stop" };
 
 /// String fields on `ShellInput` whose values the LLM may have
 /// contaminated with stray XML closing tags.
 pub const STRING_FIELDS = [_][]const u8{ "command", "cwd", "stdin_data" };
+
+/// The three accepted `mode` spellings, in the order the schema lists them.
+/// Kept as a constant so the error message and the schema cannot disagree
+/// about what is legal.
+pub const MODE_VALUES: []const []const u8 = &.{
+    "foreground",
+    "background",
+    "background_persistence",
+};
+
+/// "foreground", "background" or "background_persistence" — the `expected`
+/// text for a bad `mode`, built once from `MODE_VALUES`.
+const MODE_EXPECTED = "one of \"foreground\", \"background\", \"background_persistence\"";
 
 /// Structured error info returned when the JSON parses but a single
 /// field has the wrong type or value. The caller surfaces the three
@@ -88,7 +110,7 @@ pub const Result = union(enum) {
 /// Render an `InvalidField` into a single line suitable for the
 /// `<error>` element of a tool envelope.
 ///
-/// Format: `invalid field 'mandatory_timeout': got JSON value "5</mandatory_timeout>", expected number (u32)`
+/// Format: `invalid field 'timeout': got JSON value "5</timeout>", expected number (u32)`
 pub fn formatInvalidField(allocator: std.mem.Allocator, info: InvalidField) ![]u8 {
     return try std.fmt.allocPrint(
         allocator,
@@ -168,15 +190,19 @@ pub fn parseShellArgs(
         } };
     }
 
-    // mandatory_timeout (?u32)
-    if (obj.get("mandatory_timeout")) |v| {
-        const n = coerceU32(allocator, v, "mandatory_timeout") orelse {
-            return returnFail(allocator, &out, v, "mandatory_timeout", "number (u32)");
+    // timeout (?u32) — or its pre-rename spelling, see `TIMEOUT_ALIASES`.
+    // The error names whichever spelling the caller actually used, so a model
+    // that sent `mandatory_timeout` is told about `mandatory_timeout`.
+    for (TIMEOUT_ALIASES) |field| {
+        const v = obj.get(field) orelse continue;
+        const n = coerceU32(allocator, v, field) orelse {
+            return returnFail(allocator, &out, v, field, "number (u32)");
         };
-        out.mandatory_timeout = n;
+        out.timeout = n;
+        break;
     }
     // else: leave as null. The execute_bash validator will return
-    // MandatoryTimeoutMissing if still null.
+    // TimeoutMissing if still null.
 
     // cwd (?string)
     if (obj.get("cwd")) |v| {
@@ -226,6 +252,63 @@ pub fn parseShellArgs(
         out.do_encoding = b;
     }
 
+    // is_stop (bool, default false) — loop control, not a shell option.
+    if (obj.get("is_stop")) |v| {
+        const b = coerceBool(allocator, v, "is_stop") orelse {
+            return returnFail(allocator, &out, v, "is_stop", "boolean (or \"true\"/\"false\")");
+        };
+        out.is_stop = b;
+    }
+
+    // ─── mode (string enum) + the legacy `background` boolean ───
+    //
+    // Resolved TOGETHER, because they are two spellings of one decision and
+    // the only input that cannot be resolved is `background=true` alongside an
+    // explicit `mode="foreground"`. Everything else folds:
+    //
+    //   mode absent             -> background ? .background : .foreground
+    //   background absent/false -> mode
+    //   background=true  + mode in {background, background_persistence} -> mode
+    //   background=true  + mode="foreground"                            -> ERROR
+    //
+    // The last row is a hard error rather than "mode wins": both readings are
+    // defensible, and picking one silently ends the command in a mode the
+    // caller did not ask for — a detached `pnpm run dev` when it wanted a
+    // blocking call, or the reverse.
+    var explicit_mode: ?tool_models.RunMode = null;
+    if (obj.get("mode")) |v| {
+        const raw = coerceString(allocator, v, "mode") orelse {
+            return returnFail(allocator, &out, v, "mode", MODE_EXPECTED);
+        };
+        // `coerceString` dups; the parsed enum owns nothing, so release now.
+        defer allocator.free(raw);
+        explicit_mode = tool_models.RunMode.fromWire(raw) orelse {
+            return returnFail(allocator, &out, v, "mode", MODE_EXPECTED);
+        };
+    }
+
+    if (explicit_mode) |m| {
+        if (out.background and m == .foreground) {
+            // Rendered as a `background` problem because that is the field
+            // whose value is wrong once `mode` is explicit. `expected` names
+            // the other field and the correction, so the model has enough to
+            // re-issue the call.
+            return returnFail(
+                allocator,
+                &out,
+                obj.get("background") orelse .{ .bool = out.background },
+                "background",
+                "false, when you also pass mode=\"foreground\" (or drop mode to mean background)",
+            );
+        }
+        // An explicit non-foreground mode keeps the legacy boolean's meaning
+        // for the benefit of anything reading `.background` directly.
+        out.mode = m;
+        out.background = m.isDetached();
+    } else if (out.background) {
+        out.mode = .background;
+    }
+
     return .{ .success = out };
 }
 
@@ -253,8 +336,8 @@ fn returnFail(
 /// original `s` if no cleanup is needed).
 ///
 /// Examples:
-///   `"5</mandatory_timeout>"` → `"5"`
-///   `"5</mandatory_timeout></mandatory_timeout>"` → `"5</mandatory_timeout>"`
+///   `"5</timeout>"` → `"5"`
+///   `"5</timeout></timeout>"` → `"5</timeout>"`
 ///     (only one strip — the rest is left for `parseInt` to fail on,
 ///     giving the LLM a chance to see the remaining garbage).
 ///   `"hello world"` → `"hello world"` (unchanged)
@@ -406,10 +489,10 @@ fn freeFailure(allocator: std.mem.Allocator, info: InvalidField) void {
     allocator.free(info.got);
 }
 
-test "parseShellArgs: recovers from LLM XML-fragment hallucination in mandatory_timeout" {
+test "parseShellArgs: recovers from LLM XML-fragment hallucination in timeout" {
     // The exact wire the user pasted.
     const args =
-        \\{"command":"echo b","cwd":"/tmp","mandatory_timeout":"5</mandatory_timeout>"}
+        \\{"command":"echo b","cwd":"/tmp","timeout":"5</timeout>"}
     ;
     const result = parseShellArgs(testing.allocator, args);
     switch (result) {
@@ -417,7 +500,7 @@ test "parseShellArgs: recovers from LLM XML-fragment hallucination in mandatory_
             defer freeInput(testing.allocator, input);
             try testing.expectEqualStrings("echo b", input.command);
             try testing.expectEqualStrings("/tmp", input.cwd.?);
-            try testing.expectEqual(@as(u32, 5), input.mandatory_timeout.?);
+            try testing.expectEqual(@as(u32, 5), input.timeout.?);
         },
         .failure => |info| {
             std.debug.print("unexpected failure: {s}\n", .{info.field});
@@ -426,44 +509,44 @@ test "parseShellArgs: recovers from LLM XML-fragment hallucination in mandatory_
     }
 }
 
-test "parseShellArgs: numeric string mandatory_timeout" {
-    const args = "{\"command\":\"ls\",\"mandatory_timeout\":\"30\"}";
+test "parseShellArgs: numeric string timeout" {
+    const args = "{\"command\":\"ls\",\"timeout\":\"30\"}";
     const result = parseShellArgs(testing.allocator, args);
     switch (result) {
         .success => |input| {
             defer freeInput(testing.allocator, input);
-            try testing.expectEqual(@as(u32, 30), input.mandatory_timeout.?);
+            try testing.expectEqual(@as(u32, 30), input.timeout.?);
         },
         .failure => return error.TestUnexpectedResult,
     }
 }
 
-test "parseShellArgs: real number mandatory_timeout" {
-    const args = "{\"command\":\"ls\",\"mandatory_timeout\":30}";
+test "parseShellArgs: real number timeout" {
+    const args = "{\"command\":\"ls\",\"timeout\":30}";
     const result = parseShellArgs(testing.allocator, args);
     switch (result) {
         .success => |input| {
             defer freeInput(testing.allocator, input);
-            try testing.expectEqual(@as(u32, 30), input.mandatory_timeout.?);
+            try testing.expectEqual(@as(u32, 30), input.timeout.?);
         },
         .failure => return error.TestUnexpectedResult,
     }
 }
 
-test "parseShellArgs: missing mandatory_timeout leaves null (validator fires later)" {
+test "parseShellArgs: missing timeout leaves null (validator fires later)" {
     const args = "{\"command\":\"ls\"}";
     const result = parseShellArgs(testing.allocator, args);
     switch (result) {
         .success => |input| {
             defer freeInput(testing.allocator, input);
-            try testing.expect(input.mandatory_timeout == null);
+            try testing.expect(input.timeout == null);
         },
         .failure => return error.TestUnexpectedResult,
     }
 }
 
 test "parseShellArgs: missing required command returns failure" {
-    const args = "{\"mandatory_timeout\":5}";
+    const args = "{\"timeout\":5}";
     const result = parseShellArgs(testing.allocator, args);
     try testing.expect(result == .failure);
     defer freeFailure(testing.allocator, result.failure);
@@ -471,12 +554,12 @@ test "parseShellArgs: missing required command returns failure" {
     try testing.expectEqualStrings("<missing>", result.failure.got);
 }
 
-test "parseShellArgs: truly garbage mandatory_timeout returns failure with rich info" {
-    const args = "{\"command\":\"ls\",\"mandatory_timeout\":\"abc\"}";
+test "parseShellArgs: truly garbage timeout returns failure with rich info" {
+    const args = "{\"command\":\"ls\",\"timeout\":\"abc\"}";
     const result = parseShellArgs(testing.allocator, args);
     try testing.expect(result == .failure);
     defer freeFailure(testing.allocator, result.failure);
-    try testing.expectEqualStrings("mandatory_timeout", result.failure.field);
+    try testing.expectEqualStrings("timeout", result.failure.field);
     try testing.expectEqualStrings("abc", result.failure.got);
     try testing.expectEqualStrings("number (u32)", result.failure.expected);
 }
@@ -485,7 +568,7 @@ test "parseShellArgs: failure message renders cleanly for the envelope" {
     // Use a value that's not a recoverable XML-fragment (no matching
     // close tag) so the parser genuinely fails. The envelope-rendering
     // helper surfaces the bad value verbatim.
-    const args = "{\"command\":\"ls\",\"mandatory_timeout\":\"not-a-number\"}";
+    const args = "{\"command\":\"ls\",\"timeout\":\"not-a-number\"}";
     const result = parseShellArgs(testing.allocator, args);
     switch (result) {
         .success => return error.TestUnexpectedResult,
@@ -493,7 +576,7 @@ test "parseShellArgs: failure message renders cleanly for the envelope" {
             defer freeFailure(testing.allocator, info);
             const msg = try formatInvalidField(testing.allocator, info);
             defer testing.allocator.free(msg);
-            try testing.expect(std.mem.indexOf(u8, msg, "mandatory_timeout") != null);
+            try testing.expect(std.mem.indexOf(u8, msg, "timeout") != null);
             try testing.expect(std.mem.indexOf(u8, msg, "not-a-number") != null);
             try testing.expect(std.mem.indexOf(u8, msg, "number (u32)") != null);
         },
@@ -521,6 +604,203 @@ test "parseShellArgs: bool from string 'false'" {
             try testing.expect(!input.background);
         },
         .failure => return error.TestUnexpectedResult,
+    }
+}
+
+test "parseShellArgs: is_stop defaults to false when absent" {
+    // Every existing caller (and every transcript written before this field
+    // existed) omits `is_stop`. Absent must mean "keep looping" — not
+    // "unset in a way that has to be guarded at each read site".
+    const args = "{\"command\":\"ls\",\"cwd\":\"/tmp\"}";
+    const result = parseShellArgs(testing.allocator, args);
+    switch (result) {
+        .success => |input| {
+            defer freeInput(testing.allocator, input);
+            try testing.expect(!input.is_stop);
+        },
+        .failure => return error.TestUnexpectedResult,
+    }
+}
+
+test "parseShellArgs: is_stop reads a JSON boolean" {
+    const args = "{\"command\":\"ls\",\"cwd\":\"/tmp\",\"is_stop\":true}";
+    const result = parseShellArgs(testing.allocator, args);
+    switch (result) {
+        .success => |input| {
+            defer freeInput(testing.allocator, input);
+            try testing.expect(input.is_stop);
+        },
+        .failure => return error.TestUnexpectedResult,
+    }
+}
+
+test "parseShellArgs: is_stop reads a string boolean" {
+    // The lenient path that exists for `background` must cover `is_stop`
+    // too: a model that learned the bool-as-string shape from an old
+    // transcript must not get an error it cannot act on.
+    const args = "{\"command\":\"ls\",\"cwd\":\"/tmp\",\"is_stop\":\"true\"}";
+    const result = parseShellArgs(testing.allocator, args);
+    switch (result) {
+        .success => |input| {
+            defer freeInput(testing.allocator, input);
+            try testing.expect(input.is_stop);
+        },
+        .failure => return error.TestUnexpectedResult,
+    }
+}
+
+test "parseShellArgs: a garbage is_stop names the field instead of guessing" {
+    // The dangerous alternative is coercing `"yes"`-ish input to true or
+    // false. Either guess ends the user's turn (or keeps it running) on a
+    // value the model never sent, so this must be a structured failure.
+    const args = "{\"command\":\"ls\",\"cwd\":\"/tmp\",\"is_stop\":\"maybe\"}";
+    const result = parseShellArgs(testing.allocator, args);
+    switch (result) {
+        .success => return error.TestUnexpectedResult,
+        .failure => |info| {
+            defer testing.allocator.free(info.got);
+            try testing.expectEqualStrings("is_stop", info.field);
+            try testing.expectEqualStrings("maybe", info.got);
+        },
+    }
+}
+
+test "parseShellArgs: is_stop is documented as a lenient bool field" {
+    // BOOL_FIELDS is what the header promises covers every boolean the LLM
+    // may contaminate with a stray XML close tag. A boolean added to the
+    // struct but not to this table silently loses that recovery.
+    var found = false;
+    for (BOOL_FIELDS) |name| {
+        if (std.mem.eql(u8, name, "is_stop")) found = true;
+    }
+    try testing.expect(found);
+}
+
+test "parseShellArgs: mode reads each of the three wire spellings" {
+    for (MODE_VALUES) |wire| {
+        const args = try std.fmt.allocPrint(
+            testing.allocator,
+            "{{\"command\":\"pnpm run dev\",\"cwd\":\"/w\",\"mode\":\"{s}\"}}",
+            .{wire},
+        );
+        defer testing.allocator.free(args);
+        switch (parseShellArgs(testing.allocator, args)) {
+            .success => |input| {
+                defer freeInput(testing.allocator, input);
+                try testing.expectEqualStrings(wire, input.mode.toWire());
+                try testing.expectEqual(input.mode.isDetached(), input.background);
+            },
+            .failure => return error.TestUnexpectedResult,
+        }
+    }
+}
+
+test "parseShellArgs: an unknown mode names the field instead of picking a default" {
+    // The dangerous alternative is falling back to `foreground`: the model
+    // asked for a detached dev server and would instead get a call that blocks
+    // for 60 s and then gets killed.
+    const args = "{\"command\":\"pnpm run dev\",\"cwd\":\"/w\",\"mode\":\"persistent\"}";
+    switch (parseShellArgs(testing.allocator, args)) {
+        .success => return error.TestUnexpectedResult,
+        .failure => |info| {
+            defer testing.allocator.free(info.got);
+            try testing.expectEqualStrings("mode", info.field);
+            try testing.expectEqualStrings("persistent", info.got);
+        },
+    }
+}
+
+test "parseShellArgs: background=true still means mode=background" {
+    // Every transcript written before `mode` existed uses this, and so does
+    // every in-tree caller. It has to keep meaning exactly what it meant.
+    const args = "{\"command\":\"zig build\",\"background\":true}";
+    switch (parseShellArgs(testing.allocator, args)) {
+        .success => |input| {
+            defer freeInput(testing.allocator, input);
+            try testing.expectEqual(tool_models.RunMode.background, input.mode);
+            try testing.expect(input.background);
+        },
+        .failure => return error.TestUnexpectedResult,
+    }
+}
+
+test "parseShellArgs: background=true with mode=foreground is rejected, not guessed" {
+    // Both readings are defensible, so neither may win silently: one ends in a
+    // detached `pnpm run dev` the caller wanted blocked, the other in a
+    // 60 s-murdered dev server. The error names `background` (the field that is
+    // wrong once `mode` is explicit) and the correction.
+    const args = "{\"command\":\"x\",\"background\":true,\"mode\":\"foreground\"}";
+    switch (parseShellArgs(testing.allocator, args)) {
+        .success => return error.TestUnexpectedResult,
+        .failure => |info| {
+            defer testing.allocator.free(info.got);
+            try testing.expectEqualStrings("background", info.field);
+            try testing.expectEqualStrings("true", info.got);
+            try testing.expect(std.mem.indexOf(u8, info.expected, "mode") != null);
+        },
+    }
+}
+
+test "parseShellArgs: background=true alongside a detached mode is not a contradiction" {
+    // Both fields say "detach", so the modern one simply wins. Rejecting this
+    // would break a caller that is adding `mode` to a call site that still
+    // passes the boolean.
+    const args = "{\"command\":\"pnpm run dev\",\"background\":true,\"mode\":\"background_persistence\"}";
+    switch (parseShellArgs(testing.allocator, args)) {
+        .success => |input| {
+            defer freeInput(testing.allocator, input);
+            try testing.expectEqual(tool_models.RunMode.background_persistence, input.mode);
+        },
+        .failure => return error.TestUnexpectedResult,
+    }
+}
+
+test "parseShellArgs: mode=foreground with background=false is just foreground" {
+    const args = "{\"command\":\"ls\",\"background\":false,\"mode\":\"foreground\"}";
+    switch (parseShellArgs(testing.allocator, args)) {
+        .success => |input| {
+            defer freeInput(testing.allocator, input);
+            try testing.expectEqual(tool_models.RunMode.foreground, input.mode);
+            try testing.expect(!input.background);
+        },
+        .failure => return error.TestUnexpectedResult,
+    }
+}
+
+test "parseShellArgs: the pre-rename `mandatory_timeout` spelling still parses" {
+    // Old transcripts carry it, and so does any cached tool schema. Dropping
+    // the spelling would turn a previously-valid turn into `TimeoutMissing`.
+    const args = "{\"command\":\"ls\",\"mandatory_timeout\":45}";
+    switch (parseShellArgs(testing.allocator, args)) {
+        .success => |input| {
+            defer freeInput(testing.allocator, input);
+            try testing.expectEqual(@as(u32, 45), input.timeout.?);
+        },
+        .failure => return error.TestUnexpectedResult,
+    }
+}
+
+test "parseShellArgs: `timeout` wins when both spellings are present" {
+    const args = "{\"command\":\"ls\",\"timeout\":7,\"mandatory_timeout\":45}";
+    switch (parseShellArgs(testing.allocator, args)) {
+        .success => |input| {
+            defer freeInput(testing.allocator, input);
+            try testing.expectEqual(@as(u32, 7), input.timeout.?);
+        },
+        .failure => return error.TestUnexpectedResult,
+    }
+}
+
+test "parseShellArgs: a bad alias value is reported under the name the caller used" {
+    // Naming it `timeout` when the caller wrote `mandatory_timeout` would send
+    // the model looking for a field it never sent.
+    const args = "{\"command\":\"ls\",\"mandatory_timeout\":\"soon\"}";
+    switch (parseShellArgs(testing.allocator, args)) {
+        .success => return error.TestUnexpectedResult,
+        .failure => |info| {
+            defer testing.allocator.free(info.got);
+            try testing.expectEqualStrings("mandatory_timeout", info.field);
+        },
     }
 }
 
@@ -624,39 +904,39 @@ test "parseShellArgs: do_encoding with stray XML fragment" {
 }
 
 test "parseShellArgs: complex XML fragment that resists parseInt returns rich failure" {
-    // Even after stripping `</mandatory_timeout>`, the value still
-    // contains `<mandatory_timeout>` opener — parseInt fails. The
+    // Even after stripping `</timeout>`, the value still
+    // contains `<timeout>` opener — parseInt fails. The
     // helper surfaces the ORIGINAL value (with the tag) so the LLM
     // sees the corruption, not a stripped cleaned value.
-    const args = "{\"command\":\"ls\",\"mandatory_timeout\":\"5<mandatory_timeout>5</mandatory_timeout>\"}";
+    const args = "{\"command\":\"ls\",\"timeout\":\"5<timeout>5</timeout>\"}";
     const result = parseShellArgs(testing.allocator, args);
     try testing.expect(result == .failure);
     defer freeFailure(testing.allocator, result.failure);
-    try testing.expectEqualStrings("mandatory_timeout", result.failure.field);
+    try testing.expectEqualStrings("timeout", result.failure.field);
     // The got value should still contain the original XML fragment.
-    try testing.expect(std.mem.indexOf(u8, result.failure.got, "</mandatory_timeout>") != null);
+    try testing.expect(std.mem.indexOf(u8, result.failure.got, "</timeout>") != null);
 }
 
 test "stripFieldCloseTag: only strips matching tag, leaves the rest" {
-    const got = try stripFieldCloseTag(testing.allocator, "5</mandatory_timeout>", "mandatory_timeout");
+    const got = try stripFieldCloseTag(testing.allocator, "5</timeout>", "timeout");
     defer testing.allocator.free(got);
     try testing.expectEqualStrings("5", got);
 }
 
 test "stripFieldCloseTag: leaves non-matching tag intact" {
-    const got = try stripFieldCloseTag(testing.allocator, "5</command>", "mandatory_timeout");
+    const got = try stripFieldCloseTag(testing.allocator, "5</command>", "timeout");
     defer testing.allocator.free(got);
     try testing.expectEqualStrings("5</command>", got);
 }
 
 test "stripFieldCloseTag: leaves short strings alone" {
-    const got = try stripFieldCloseTag(testing.allocator, "5", "mandatory_timeout");
+    const got = try stripFieldCloseTag(testing.allocator, "5", "timeout");
     defer testing.allocator.free(got);
     try testing.expectEqualStrings("5", got);
 }
 
 test "stripFieldCloseTag: leaves empty string alone" {
-    const got = try stripFieldCloseTag(testing.allocator, "", "mandatory_timeout");
+    const got = try stripFieldCloseTag(testing.allocator, "", "timeout");
     defer testing.allocator.free(got);
     try testing.expectEqualStrings("", got);
 }
