@@ -251,7 +251,7 @@ fn seenNames(s: *SseStream) []u8 {
     // `toOwnedSlice` can only fail with OutOfMemory, and a best-effort
     // DIAGNOSTIC string is the wrong place to propagate one — the caller
     // is already on the failure path.
-    return out.toOwnedSlice() catch unreachable;
+    return out.toOwnedSlice() catch @panic("toOwnedSlice of the rendered event list failed");
 }
 
 /// `POST /api/llm/session` with a queue_message — the exact wire body the

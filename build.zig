@@ -3746,6 +3746,65 @@ pub fn build(b: *std.Build) void {
     b.step("test:helpers:git_env_guard", "Run git_env_guard helper tests")
         .dependOn(&run_git_env_guard_tests.step);
 
+    // ── zginlint: the Zig linter (src/modules/zginlint/README.md) ────────
+    // A standalone, std-only module — deliberately NOT part of the
+    // pabrikcore module graph, so its tests compile without the app's
+    // dependency stack and CI can gate on it in its own job.
+    //
+    // It is also NOT attached to the default `install` step: the release
+    // zips stage the whole of zig-out/bin, and a linter does not belong in
+    // them. `zig build zginlint` installs it on demand.
+    const zginlint_target = b.graph.host;
+    const zginlint_exe = b.addExecutable(.{
+        .name = "zginlint",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/modules/zginlint/main.zig"),
+            .target = zginlint_target,
+            .optimize = optimize,
+        }),
+    });
+    const install_zginlint = b.addInstallArtifact(zginlint_exe, .{});
+    b.step("zginlint", "Build the zginlint CLI into zig-out/bin/zginlint")
+        .dependOn(&install_zginlint.step);
+
+    const zginlint_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/modules/zginlint/test_root.zig"),
+            .target = zginlint_target,
+            .optimize = optimize,
+        }),
+    });
+    const run_zginlint_tests = b.addRunArtifact(zginlint_tests);
+    test_step.dependOn(&run_zginlint_tests.step);
+    b.step("test:zginlint", "Run the zginlint unit tests")
+        .dependOn(&run_zginlint_tests.step);
+
+    // The tree paths and the pin file are the gate's whole definition,
+    // shared by the two steps below so a check and a re-pin can never
+    // disagree about what they cover (the pin records them, and a check
+    // over a different set is refused).
+    const zginlint_scope = [_][]const u8{ "src", "tests", "tools", "build.zig" };
+    const zginlint_pin_file = "zginlint-baseline.json";
+
+    // `has_side_effects` is load-bearing on both: a Run step is keyed by
+    // its binary and argv, NOT by the tree it reads, so without it the
+    // second run is "cached" and the gate silently skips the scan.
+    const zginlint_check = b.step("zginlint:check", "Enforce the zginlint rules on the tree (pinned ceilings)");
+    const run_zginlint_check = b.addRunArtifact(zginlint_exe);
+    run_zginlint_check.setCwd(b.path("."));
+    run_zginlint_check.addArgs(&.{ "--baseline", zginlint_pin_file });
+    run_zginlint_check.addArgs(&zginlint_scope);
+    run_zginlint_check.has_side_effects = true;
+    zginlint_check.dependOn(&run_zginlint_check.step);
+
+    const zginlint_pin = b.step("zginlint:pin", "Re-pin the zginlint baseline to today's counts");
+    const run_zginlint_pin = b.addRunArtifact(zginlint_exe);
+    run_zginlint_pin.setCwd(b.path("."));
+    run_zginlint_pin.addArgs(&.{ "--update-baseline", zginlint_pin_file });
+    run_zginlint_pin.addArgs(&zginlint_scope);
+    run_zginlint_pin.has_side_effects = true;
+    zginlint_pin.dependOn(&run_zginlint_pin.step);
+
     // kabelweb's own suites (server + client) run in the kabelweb
     // repo's CI (github.com/ginwa123/kabelweb), not here — it's an
     // external URL dependency, and a consumer build never runs a
@@ -4124,7 +4183,7 @@ pub fn build(b: *std.Build) void {
     // Normalize Windows mixed separators (runner.temp is C:\...\ _temp + "/pabrik-ci-venv" → "C:\...\ _temp/pabrik-ci-venv").
     // Use forward slashes internally; Python on Windows handles both.
     const venv_dir = blk: {
-        const dup = b.allocator.dupe(u8, venv_dir_raw) catch unreachable;
+        const dup = b.allocator.dupe(u8, venv_dir_raw) catch @panic("build.zig: dupe of PABRIK_FUNC_VENV_DIR failed");
         for (dup) |*c| {
             if (c.* == '\\') c.* = '/';
         }
@@ -4132,9 +4191,9 @@ pub fn build(b: *std.Build) void {
     };
     const is_windows_host = b.graph.host.result.os.tag == .windows;
     const venv_bin = if (is_windows_host)
-        std.fmt.allocPrint(b.allocator, "{s}/Scripts", .{venv_dir}) catch unreachable
+        std.fmt.allocPrint(b.allocator, "{s}/Scripts", .{venv_dir}) catch @panic("build.zig: allocPrint of the venv Scripts dir failed")
     else
-        std.fmt.allocPrint(b.allocator, "{s}/bin", .{venv_dir}) catch unreachable;
+        std.fmt.allocPrint(b.allocator, "{s}/bin", .{venv_dir}) catch @panic("build.zig: allocPrint of the venv bin dir failed");
     // On Windows, `python` is the canonical exe; `python3` is often a shim.
     const default_python = if (is_windows_host) "python" else "python3";
     const effective_python = if (std.mem.eql(u8, python_exe, "python3") and is_windows_host) default_python else python_exe;
@@ -4150,7 +4209,7 @@ pub fn build(b: *std.Build) void {
     // Everything is direct argv (no cmd.exe shell), so paths with
     // spaces work and there is no shell-quoting to get wrong.
     const venv_python_name = if (is_windows_host) "python.exe" else "python";
-    const venv_python_rel = std.fmt.allocPrint(b.allocator, "{s}/{s}", .{ venv_bin, venv_python_name }) catch unreachable;
+    const venv_python_rel = std.fmt.allocPrint(b.allocator, "{s}/{s}", .{ venv_bin, venv_python_name }) catch @panic("build.zig: allocPrint of the venv python path failed");
     const have_venv = blk: {
         _ = std.Io.Dir.cwd().statFile(b.graph.io, venv_python_rel, .{}) catch break :blk false;
         break :blk true;
@@ -4180,7 +4239,7 @@ pub fn build(b: *std.Build) void {
             outer: while (it.next()) |dir| {
                 if (dir.len == 0) continue;
                 for (probes) |name| {
-                    const cand = std.fmt.allocPrint(b.allocator, "{s}/{s}", .{ dir, name }) catch unreachable;
+                    const cand = std.fmt.allocPrint(b.allocator, "{s}/{s}", .{ dir, name }) catch @panic("build.zig: allocPrint of the python probe path failed");
                     // Absolute sub_path: the cwd handle is ignored.
                     const st = std.Io.Dir.cwd().statFile(b.graph.io, cand, .{}) catch continue;
                     if (st.size == 0) continue; // Microsoft Store stub
@@ -4191,9 +4250,9 @@ pub fn build(b: *std.Build) void {
             }
         }
         var argv: std.ArrayList([]const u8) = .empty;
-        argv.append(b.allocator, chosen orelse "python") catch unreachable;
-        argv.appendSlice(b.allocator, chosen_args) catch unreachable;
-        argv.appendSlice(b.allocator, &.{ "-m", "venv", "--clear", venv_dir }) catch unreachable;
+        argv.append(b.allocator, chosen orelse "python") catch @panic("build.zig: append of the venv interpreter failed");
+        argv.appendSlice(b.allocator, chosen_args) catch @panic("build.zig: appendSlice of the venv args failed");
+        argv.appendSlice(b.allocator, &.{ "-m", "venv", "--clear", venv_dir }) catch @panic("build.zig: appendSlice of the venv create args failed");
         break :blk b.addSystemCommand(argv.items);
     };
     install_venv.setCwd(b.path(""));

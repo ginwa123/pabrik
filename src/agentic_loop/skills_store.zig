@@ -1,36 +1,6 @@
-//! Storage layer for workspace-scoped skills.
-//!
-//! Two tables (Migration 101's `skills` and `skill_assets`) and ONE rule
-//! that every function here obeys: `workspace_id` is a function parameter
-//! that appears in the `WHERE` clause, never a value the caller can choose
-//! to omit. That is the whole isolation story — a skill in workspace A is
-//! unreadable, uneditable and undeletable from workspace B, and the guard
-//! is in SQL rather than in a caller-side check somebody can forget.
-//!
-//! This replaces the two FILESYSTEM tiers (`~/.config/pabrik/skills/` and
-//! `<cwd>/.pabrik/skills/`) that used to decide skill resolution by walking
-//! directories. There is deliberately no `is_global` column and no `cwd`
-//! column here: with a single workspace-scoped table, "which directory did
-//! this come from?" has no answer to give. A skill wanted in two workspaces
-//! is two rows.
-//!
-//! Shared by the HTTP handlers (`src/http_handlers/skills_*.zig`) and the
-//! `search_skills` / `use_skill` / `add_skill` / `edit_skill` /
-//! `remove_skill` agent tools (`src/modules/agent/tools/skill_tools.zig`).
-//! Both must agree on the scope rule, so both call these functions instead
-//! of each writing its own SQL — a second hand-written
-//! `SELECT ... FROM skills` is exactly how a scope check drifts out of sync
-//! with its siblings.
-//!
-//! The agent tools resolve `workspace_id` SERVER-SIDE from `ctx.session_id`
-//! via `workspace_scope.resolveWorkspaceId` and pass it in here as a plain
-//! argument. It is deliberately absent from the tool schema, so
-//! `ignore_unknown_fields` parsing cannot be used to smuggle a foreign
-//! workspace id past the guard.
-//!
-//! Ownership: every string in a returned `SkillRow` / `SkillAssetRow` is
-//! allocator-owned. Free a single row with `freeSkillRow` /
-//! `freeSkillAssetRow`, a slice with `freeSkillRows` / `freeSkillAssetRows`.
+//! Workspace-scoped skill storage (Migration 101): `skills` and
+//! `skill_assets`, shared by the HTTP handlers and the agent tools. ONE rule:
+//! `workspace_id` is a parameter in every `WHERE`, so isolation is SQL-side.
 
 const std = @import("std");
 const sqlite = @import("pabrikcore").sqlite;
@@ -50,10 +20,9 @@ pub const MAX_CONTENT_BYTES: usize = 2 << 20; // 2 MiB
 /// magnitude of headroom while still bounding a single INSERT.
 pub const MAX_ASSET_BYTES: usize = 2 << 20; // 2 MiB
 
-/// A skill name is a single directory-safe token: letters, digits, dot,
-/// dash, underscore. Reused by the agent tools' path-traversal guard, and
-/// asserted here because the UNIQUE key and the URL path segment both
-/// depend on a name never carrying a `/`.
+/// Max bytes of a skill name, which is a directory-safe token: letters,
+/// digits, dot, dash, underscore, no leading or trailing dot. `use_skill`
+/// joins the name onto a materialisation dir, so `..` must not escape it.
 pub const MAX_NAME_BYTES: usize = 128;
 
 /// One row in `skills`. All string fields are allocator-owned.
@@ -156,10 +125,9 @@ pub const ReplaceAssetsError = error{
     OutOfMemory,
 };
 
-/// The SELECT list, shared by every read so no call site can accidentally
-/// return a different shape. `COALESCE` guards a row written before a
-/// column existed and flattens SQL NULL so the JS side never sees a null
-/// where it typed a string.
+/// The SELECT list, shared by every read so no call site can return a
+/// different shape. `COALESCE` flattens SQL NULL and guards a row written
+/// before a column existed, so the JS side never sees a null string.
 const SELECT_COLUMNS =
     "SELECT id, workspace_id, name, COALESCE(description, ''), COALESCE(content, ''), " ++
     "COALESCE(created_at, ''), COALESCE(updated_at, ''), COALESCE(is_can_auto_improve, 1) " ++
@@ -195,12 +163,8 @@ fn assetFromValues(allocator: std.mem.Allocator, values: []const []const u8) !Sk
 }
 
 /// True when `name` is a legal skill name: 1..MAX_NAME_BYTES of
-/// `[A-Za-z0-9._-]`, with no leading or trailing dot.
-///
-/// The dot rule is the load-bearing one. `name` is joined onto a
-/// materialisation directory by `use_skill`, so `..` would escape it —
-/// exactly what the old `remove_skill` guard existed to stop when it built
-/// `<skills_dir>/<name>` and called `deleteTree` on the result.
+/// `[A-Za-z0-9._-]`, with no leading or trailing dot — the dot rule is the
+/// load-bearing one, because `name` is joined onto a materialisation dir.
 pub fn isValidSkillName(name: []const u8) bool {
     if (name.len == 0 or name.len > MAX_NAME_BYTES) return false;
     if (name[0] == '.' or name[name.len - 1] == '.') return false;
@@ -210,10 +174,8 @@ pub fn isValidSkillName(name: []const u8) bool {
     return true;
 }
 
-/// Every skill in one workspace, ordered by name.
-///
-/// Ordering by `name` rides the `UNIQUE (workspace_id, name)` index — SQLite
-/// scans that index in key order — so the listing needs no second index.
+/// Every skill in one workspace, ordered by name — which rides the
+/// `UNIQUE (workspace_id, name)` index, so the listing needs no second index.
 pub fn listSkills(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -240,12 +202,9 @@ pub fn listSkills(
     return list.toOwnedSlice(allocator);
 }
 
-/// One skill by name, scoped to `workspace_id`.
-///
-/// A skill that exists but belongs to another workspace is reported as
-/// `error.NotFound`, NOT as a distinct "wrong workspace" error: telling a
-/// caller that a name exists but is foreign leaks the existence of another
-/// workspace's row, which is the exact thing the scoping exists to hide.
+/// One skill by name, scoped to `workspace_id`. A name that belongs to
+/// another workspace reports `error.NotFound`, not a distinct "wrong
+/// workspace" error: saying it exists would leak a foreign row.
 pub fn getSkillByName(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -266,13 +225,9 @@ pub fn getSkillByName(
     return rowFromValues(allocator, r.values) catch return error.OutOfMemory;
 }
 
-/// Insert a skill, or replace the one already holding that name in this
-/// workspace. Returns the stored row, so the caller learns the canonical id
-/// it must hang assets off.
-///
-/// The `ON CONFLICT` clause deliberately does NOT touch `id`: a skill's id
-/// is the foreign key every `skill_assets` row points at, and re-issuing
-/// one on every import would orphan the companions.
+/// Insert a skill, or replace the one already holding that name here.
+/// Returns the stored row so the caller learns the canonical id its assets
+/// hang off; `ON CONFLICT` leaves `id` alone, or they would orphan.
 pub fn upsertSkill(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -285,17 +240,14 @@ pub fn upsertSkill(
     const skill_id = try std.fmt.allocPrint(allocator, "sk_{d}", .{helpers.unixTimestampNanos()});
     defer allocator.free(skill_id);
 
-    // A skill that carries no opinion is auto-improvable. Only an explicit
-    // `false` locks it, and the ON CONFLICT clause below deliberately does
-    // NOT write this column: the importer re-runs on every start-up, so a
-    // re-import that reset the flag would throw away the human's lock.
+    // No opinion means auto-improvable; only an explicit `false` locks it.
+    // The importer re-runs on every start-up, so the ON CONFLICT clause
+    // below leaves this column alone — a reset would drop the human's lock.
     const is_can_auto_improve: []const u8 = if (args.is_can_auto_improve orelse true) "1" else "0";
 
-    // COALESCE(NULLIF(?, ''), '') on every NOT NULL text column:
-    // `SqliteBackend.exec` binds a zero-length slice as SQL NULL, which
-    // would violate the constraint outright. An empty description is a
-    // legitimate skill state — a model routinely writes the body first and
-    // the one-line description second — so it has to round-trip as "".
+    // COALESCE(NULLIF(?, ''), '') on every NOT NULL text column: `exec`
+    // binds a zero-length slice as SQL NULL, and an empty description is a
+    // legitimate state that has to round-trip as "" rather than fail.
     db.exec(allocator,
         \\INSERT INTO skills (id, workspace_id, name, description, content, is_can_auto_improve, created_at, updated_at)
         \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
@@ -355,13 +307,8 @@ pub fn updateSkill(
 }
 
 /// Delete a skill AND its companion assets. Scoped like every other read: a
-/// foreign name reports `error.NotFound` and deletes nothing.
-///
-/// The asset DELETE is explicit rather than a CASCADE because
-/// `PRAGMA foreign_keys` is off project-wide (Migration 093's header) — a
-/// declared FK is documentation, not behaviour. Orphaned asset rows would
-/// then linger forever and a re-import of the same name would collide with
-/// them on `UNIQUE (skill_id, rel_path)`.
+/// foreign name reports `error.NotFound` and deletes nothing. The asset
+/// DELETE is explicit because `PRAGMA foreign_keys` is off project-wide.
 pub fn deleteSkill(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -370,10 +317,9 @@ pub fn deleteSkill(
 ) DeleteSkillError!void {
     if (workspace_id.len == 0 or name.len == 0) return error.WorkspaceIdNameRequired;
 
-    // Resolve the id FIRST so the asset delete is scoped to THIS skill. A
-    // `DELETE FROM skill_assets WHERE skill_id IN (SELECT ... FROM skills
-    // WHERE name = ?)` with an unqualified name would clear another
-    // workspace's companions.
+    // Resolve the id FIRST so the asset delete is scoped to THIS skill: a
+    // subquery on an unqualified name would clear another workspace's
+    // companions.
     const row = getSkillByName(allocator, db, workspace_id, name) catch |err| switch (err) {
         error.NotFound, error.WorkspaceIdNameRequired => return error.NotFound,
         error.QueryFailed, error.OutOfMemory => return error.DeleteFailed,
@@ -424,13 +370,9 @@ pub fn listAssets(
     return list.toOwnedSlice(allocator);
 }
 
-/// Replace a skill's whole companion set in one transaction.
-///
-/// Replace, not merge: the caller (the importer, or `add_skill`) is handing
-/// over the complete directory as it exists NOW, so a file removed from disk
-/// must disappear from the database too. A merge would leave a companion
-/// row alive after its file was deleted — a body that still references a
-/// script that can no longer be materialised.
+/// Replace a skill's whole companion set in one transaction. Replace, not
+/// merge: the caller hands over the directory as it is now, so a companion
+/// whose file is gone must lose its row rather than linger half-written.
 pub fn replaceAssets(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -468,10 +410,9 @@ pub fn replaceAssets(
         );
         defer allocator.free(asset_id);
 
-        // OR REPLACE rather than OR IGNORE: `replaceAssets` already deleted
-        // every row for this skill, so a collision here can only be a
-        // duplicate rel_path inside ONE batch — where the last writer is
-        // the right answer, and the alternative is failing the import.
+        // OR REPLACE, not OR IGNORE: every row for this skill was just
+        // deleted, so a collision can only be a duplicate `rel_path` inside
+        // ONE batch, where the last writer is the right answer.
         tx.exec(allocator,
             \\INSERT OR REPLACE INTO skill_assets (id, skill_id, rel_path, content, created_at)
             \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), CURRENT_TIMESTAMP)
@@ -514,22 +455,10 @@ pub fn freeSkillAssetRows(allocator: std.mem.Allocator, rows: []SkillAssetRow) v
 // ============================================================================
 // skills_store — inline tests
 // ============================================================================
-//
+
 // The migration's own tests pin the SCHEMA; these pin the BEHAVIOUR the
-// tools and handlers depend on, against the real Migration 101 tables (the
-// DDL is imported, not re-typed, so a schema change that the store does not
-// match fails here rather than in production).
-//
-// Each case answers one question:
-//
-//   1. Does a body round-trip, including an EMPTY description — the
-//      `COALESCE(NULLIF(?, ''), '')` trap in its purest form?
-//   2. Is `workspace_id` really the isolation boundary in both directions?
-//   3. Does a re-import update in place, keeping the id every asset hangs
-//      off?
-//   4. Does a partial patch preserve the field it does not mention?
-//   5. Does deleting a skill take its companions with it?
-//   6. Does `replaceAssets` actually replace?
+// tools and handlers depend on, against the real Migration 101 tables — an
+// empty description, both isolation directions, re-import, patch, delete.
 
 const testing = std.testing;
 

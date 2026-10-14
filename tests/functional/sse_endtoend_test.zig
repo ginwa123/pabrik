@@ -383,7 +383,7 @@ fn seenNames(s: *SseStream) []u8 {
     return out.toOwnedSlice() catch |err| {
         out.deinit();
         std.debug.print("could not render the seen-events list: {s}\n", .{@errorName(err)});
-        return gpa.dupe(u8, "<unavailable>") catch unreachable;
+        return gpa.dupe(u8, "<unavailable>") catch @panic("dupe of the <unavailable> literal failed");
     };
 }
 
@@ -391,8 +391,8 @@ fn seenNames(s: *SseStream) []u8 {
 fn readerReason(s: *SseStream) []u8 {
     s.mutex.lockUncancelable(io);
     defer s.mutex.unlock(io);
-    const m = s.read_error orelse return gpa.dupe(u8, "") catch unreachable;
-    return gpa.dupe(u8, m) catch unreachable;
+    const m = s.read_error orelse return gpa.dupe(u8, "") catch @panic("dupe of the empty SSE read_error failed");
+    return gpa.dupe(u8, m) catch @panic("dupe of the SSE read_error failed");
 }
 
 /// `_create_workspace` — create a fresh workspace, return its OWNED id.

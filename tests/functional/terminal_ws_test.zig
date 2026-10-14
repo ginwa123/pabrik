@@ -588,7 +588,7 @@ fn escapeForMessage(gpa_: std.mem.Allocator, s: []const u8) []u8 {
     }
     return out.toOwnedSlice() catch blk: {
         out.deinit();
-        break :blk gpa_.dupe(u8, "<unavailable>") catch unreachable;
+        break :blk gpa_.dupe(u8, "<unavailable>") catch @panic("dupe of the <unavailable> literal failed");
     };
 }
 

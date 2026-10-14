@@ -271,7 +271,7 @@ fn seenNames(s: *SseStream) []u8 {
     return out.toOwnedSlice() catch |err| {
         out.deinit();
         std.debug.print("could not render the seen-events list: {s}\n", .{@errorName(err)});
-        return gpa.dupe(u8, "<unavailable>") catch unreachable;
+        return gpa.dupe(u8, "<unavailable>") catch @panic("dupe of the <unavailable> literal failed");
     };
 }
 

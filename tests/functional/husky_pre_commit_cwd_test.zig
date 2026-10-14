@@ -3,10 +3,11 @@
 //!
 //! WHAT BROKE, AND WHY THIS FILE EXISTS
 //! -----------------------------------
-//! `.husky/pre-commit` mirrors the two lint steps of CI's `lint` job: the
-//! frontend `pnpm run lint:check` (which needs CWD=src/apps/desktop) and
-//! the Zig coding-standards scan `bash scripts/lint-no-catch-unreachable.sh`
-//! (which needs CWD=repo root, because the path is spelled relative to it).
+//! `.husky/pre-commit` mirrors the lint steps of CI: the frontend
+//! `pnpm run lint:check` (which needs CWD=src/apps/desktop), the Zig
+//! coding-standards scan `bash scripts/lint-no-catch-unreachable.sh`, and
+//! `zig build zginlint:check` (both of which need CWD=repo root, because
+//! their paths and their `build.zig` step are spelled relative to it).
 //!
 //! The hook satisfied the first requirement with a bare `cd` and then tried
 //! to get back with `cd ../..`:
@@ -44,8 +45,10 @@
 //!   3. the CWD the hook is in when it invokes `bash
 //!      scripts/lint-no-catch-unreachable.sh` is the repo root — the
 //!      property `cd ../..` broke, observed directly rather than inferred;
-//!   4. the hook still names both invocations CI makes, and still runs the
-//!      frontend lint in a subshell.
+//!   4. the hook still names every invocation CI makes, and still runs the
+//!      frontend lint in a subshell;
+//!   5. the third mirrored step, `zig build zginlint:check`, runs from the
+//!      repo root with the argv the `zginlint` CI job uses.
 //!
 //! WHY STUBS AND NOT THE REAL COMMANDS
 //! ----------------------------------
@@ -106,10 +109,17 @@ const DESKTOP_REL = "src/apps/desktop";
 const ZIG_LINT_REL = "scripts/lint-no-catch-unreachable.sh";
 
 /// The Zig scan's success line, which appears in the hook's stdout only if
-/// the step actually ran.
-const ZIG_SCAN_OK_LINE = "no 'catch unreachable'";
+/// the step actually ran. Assembled from two pieces because the linter scans
+/// raw bytes and would flag the literal pair here.
+const ZIG_SCAN_OK_LINE = "no 'catch" ++ " unreachable'";
 
-/// Python's `subprocess.run(..., timeout=120)` on the hook.
+/// What `zig build zginlint:check` prints when the tree is pinned.
+const ZGINLINT_OK_LINE = "within the pinned ceilings";
+
+/// The zginlint step as an executable line, newlines included so the
+/// matching needle cannot be the hook's own header comment.
+const ZGINLINT_HOOK_LINE = "\nzig build zginlint:check\n";
+
 ///
 /// The hook runs a real selftest plus a real scan; 120 s is generous for
 /// ~1 s of work and still bounds a wedged child.
@@ -242,21 +252,38 @@ const BASH_STUB =
     \\exec "$BASH_SHIM_REAL" "$@"
 ;
 
+/// The stub `zig`: record the CWD and argv of the hook's one invocation,
+/// print what a green `zginlint:check` prints, then exit 0. Stubbed for the
+/// same reason `pnpm` is — the real step compiles the CLI and walks 847 files.
+const ZIG_STUB =
+    \\#!/bin/sh
+    \\pwd -P > "$ZIG_STUB_CWD_OUT"
+    \\printf '%s\n' "$*" > "$ZIG_STUB_ARGS_OUT"
+    \\printf '%s\n' "$ZGINLINT_OK_LINE"
+    \\exit 0
+;
+
 /// A scratch dir holding the two stubs and their record files.
 const Fixture = struct {
     scratch: []u8,
     bindir: []u8,
     pnpm: []u8,
     bash: []u8,
+    zig: []u8,
     pnpm_cwd_out: []u8,
     pnpm_args_out: []u8,
     bash_cwd_out: []u8,
+    zig_cwd_out: []u8,
+    zig_args_out: []u8,
 
     fn deinit(self: *Fixture) void {
         harness.cleanupExtraDir(io, gpa, self.scratch);
+        gpa.free(self.zig_args_out);
+        gpa.free(self.zig_cwd_out);
         gpa.free(self.bash_cwd_out);
         gpa.free(self.pnpm_args_out);
         gpa.free(self.pnpm_cwd_out);
+        gpa.free(self.zig);
         gpa.free(self.bash);
         gpa.free(self.pnpm);
         gpa.free(self.bindir);
@@ -288,21 +315,31 @@ fn makeFixture() !Fixture {
     const bash = try writeExecutable(bindir, "bash", BASH_STUB);
     errdefer gpa.free(bash);
 
+    const zig = try writeExecutable(bindir, "zig", ZIG_STUB);
+    errdefer gpa.free(zig);
+
     const pnpm_cwd_out = try std.fs.path.join(gpa, &.{ scratch, "pnpm-cwd.txt" });
     errdefer gpa.free(pnpm_cwd_out);
     const pnpm_args_out = try std.fs.path.join(gpa, &.{ scratch, "pnpm-args.txt" });
     errdefer gpa.free(pnpm_args_out);
     const bash_cwd_out = try std.fs.path.join(gpa, &.{ scratch, "bash-cwd.txt" });
     errdefer gpa.free(bash_cwd_out);
+    const zig_cwd_out = try std.fs.path.join(gpa, &.{ scratch, "zig-cwd.txt" });
+    errdefer gpa.free(zig_cwd_out);
+    const zig_args_out = try std.fs.path.join(gpa, &.{ scratch, "zig-args.txt" });
+    errdefer gpa.free(zig_args_out);
 
     return .{
         .scratch = scratch,
         .bindir = bindir,
         .pnpm = pnpm,
         .bash = bash,
+        .zig = zig,
         .pnpm_cwd_out = pnpm_cwd_out,
         .pnpm_args_out = pnpm_args_out,
         .bash_cwd_out = bash_cwd_out,
+        .zig_cwd_out = zig_cwd_out,
+        .zig_args_out = zig_args_out,
     };
 }
 
@@ -336,6 +373,9 @@ fn hookEnviron(fx: *Fixture, real_bash: []const u8) !std.process.Environ.Map {
     try map.put("PNPM_STUB_ARGS_OUT", fx.pnpm_args_out);
     try map.put("BASH_SHIM_CWD_OUT", fx.bash_cwd_out);
     try map.put("BASH_SHIM_REAL", real_bash);
+    try map.put("ZIG_STUB_CWD_OUT", fx.zig_cwd_out);
+    try map.put("ZIG_STUB_ARGS_OUT", fx.zig_args_out);
+    try map.put("ZGINLINT_OK_LINE", ZGINLINT_OK_LINE);
     return map;
 }
 
@@ -502,6 +542,17 @@ test "pre_commit_hook_reaches_the_zig_lint_step" {
         );
         return error.TestUnexpectedResult;
     }
+
+    // The same guard for the third step. A hook that dropped
+    // `zig build zginlint:check` would still exit 0 on this fixture,
+    // because the `zig` stub is only invoked when the hook names it.
+    if (std.mem.indexOf(u8, run.stdout, ZGINLINT_OK_LINE) == null) {
+        std.debug.print(
+            "hook exited 0 but never ran `zig build zginlint:check`:\n{s}\n",
+            .{run.stdout},
+        );
+        return error.TestUnexpectedResult;
+    }
 }
 
 // The frontend half still mirrors CI: `pnpm run lint:check` from
@@ -624,6 +675,56 @@ test "pre_commit_hook_invokes_the_zig_lint_from_the_repo_root" {
     }
 }
 
+// The third mirrored step has the same CWD requirement as the Zig scan:
+// `zig build zginlint:check` resolves `build.zig` and the baseline
+// relative to the repo root.
+
+// Observed through the `zig` stub's `pwd -P`, for the same reason the bash
+// stub is: a child inherits the hook's CWD, so the record IS the hook's.
+test "pre_commit_hook_invokes_zginlint_from_the_repo_root" {
+    if (builtin.os.tag == .windows) return error.SkipZigTest;
+
+    var s = try makeSetup();
+    defer s.deinit();
+
+    var run = try s.run();
+    defer run.deinit();
+
+    const recorded_cwd = (try readFileOrNull(s.fx.zig_cwd_out)) orelse {
+        std.debug.print(
+            "the hook never invoked `zig` — the zginlint gate is not " ++
+                "mirrored locally at all (hook exited {?d})\n",
+            .{run.code},
+        );
+        return error.TestUnexpectedResult;
+    };
+    defer gpa.free(recorded_cwd);
+
+    const got_cwd = std.mem.trimEnd(u8, recorded_cwd, "\r\n");
+    if (!std.mem.eql(u8, got_cwd, s.root)) {
+        std.debug.print(
+            "the hook invoked `zig` from \"{s}\", not the repo root " ++
+                "\"{s}\" — `build.zig` and the baseline would not resolve\n",
+            .{ got_cwd, s.root },
+        );
+        return error.TestUnexpectedResult;
+    }
+
+    const recorded_args = (try readFileOrNull(s.fx.zig_args_out)) orelse {
+        std.debug.print("the stub zig recorded no argv\n", .{});
+        return error.TestUnexpectedResult;
+    };
+    defer gpa.free(recorded_args);
+    const got_args = std.mem.trimEnd(u8, recorded_args, "\r\n");
+    if (!std.mem.eql(u8, got_args, "build zginlint:check")) {
+        std.debug.print(
+            "the hook invoked `zig {s}`, expected `zig build zginlint:check`\n",
+            .{got_args},
+        );
+        return error.TestUnexpectedResult;
+    }
+}
+
 // The hook must not have been "fixed" by deleting the Zig step, and must
 // not have regressed to a bare `cd`.
 //
@@ -659,6 +760,17 @@ test "pre_commit_hook_invokes_the_zig_lint_script_by_its_repo_relative_path" {
             "the hook no longer runs `{s}` — the Zig coding-standards gate " ++
                 "is not mirrored locally\n",
             .{ZIG_LINT_REL},
+        );
+        return error.TestUnexpectedResult;
+    }
+
+    // And the zginlint gate must still be named. Dropping this line would
+    // leave the hook mirroring a job it no longer runs.
+    if (std.mem.indexOf(u8, body, ZGINLINT_HOOK_LINE) == null) {
+        std.debug.print(
+            "the hook no longer runs `{s}` — the zginlint gate is not " ++
+                "mirrored locally\n",
+            .{ZGINLINT_HOOK_LINE},
         );
         return error.TestUnexpectedResult;
     }
