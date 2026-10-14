@@ -13,10 +13,7 @@ pub const Migration096CreateSessionSkillEvents = struct {
 
     pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
         // `event` is 'loaded' | 'listed' | 'created' | 'edited' | 'removed';
-        // `source` is the tool name that produced the row. Both are free text,
-        // so every write site wraps them in COALESCE(?, '') — a bare empty
-        // bind lands as SQL NULL and would violate NOT NULL (the Migration 079
-        // `content` failure mode).
+        // `source` is the tool name that produced the row.
         try db.exec(allocator,
             \\CREATE TABLE IF NOT EXISTS session_skill_events (
             \\    id TEXT PRIMARY KEY,

@@ -1,9 +1,5 @@
-//! `events` command — tail the SSE event stream at /api/events.
-//!
-//! This is the one CLI command that produces streaming output
-//! (server-sent events). Other commands buffer a single response
-//! and print it; `events` reads chunks forever and prints each one
-//! until the user hits Ctrl-C.
+//! `events` command — tail the SSE event stream at /api/events. This is the
+//! one CLI command that produces streaming output (server-sent events).
 
 const std = @import("std");
 const config = @import("../config.zig");
@@ -43,11 +39,9 @@ pub fn run(args: Args, cfg: config.Config, io: std.Io) @import("root.zig").Dispa
     return .ok;
 }
 
-// ===== Tests merged from events_test.zig (2026-09-29 flatten) =====
-// Tests for src/commands/events.zig (GET /api/events SSE).
-//
-// Real tests land when the command itself lands. This stub keeps
-// the test discovery in root.zig happy so the build doesn't break.
+// ===== Tests merged from events_test.zig (2026-09-29 flatten) ===== Tests
+// for src/commands/events.zig (GET /api/events SSE). Real tests land when the
+// command itself lands.
 
 const testing = std.testing;
 

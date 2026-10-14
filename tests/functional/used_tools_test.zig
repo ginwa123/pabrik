@@ -1,44 +1,5 @@
-// Wire tests for the `used_tools` agent tool.
-//
-// Zig port of `tests/functional/used_tools_test.py` (same test names,
-// same order). Python's three `TestUsedTools*` classes flatten into
-// three-prefixed test blocks here — Zig has no test class, so the class
-// name is dropped and the method name kept verbatim:
-//
-//   TestUsedToolsRegistry::test_registry_exposes_used_tools_with_description
-//   TestUsedToolsSeeded::test_fresh_agent_allowlist_contains_used_tools
-//   TestUsedToolsSeeded::test_fresh_kanban_allowlist_contains_used_tools
-//   TestUsedToolsLifecycle::test_disable_and_reenable_round_trip
-//
-// `used_tools` (`src/modules/agent/tools/used_tools.zig`,
-// `src/agentic_loop/tools_exec_used_tools.zig`) is the read-only
-// introspection tool that lists the tools currently equipped for the
-// calling session ("what tools do I have").
-//
-// Covers (all modes — agent, kanban, design, plain chat):
-//   * REGISTRY — GET /api/agent-tools/registry exposes `used_tools`
-//     with a non-empty description (single source of truth:
-//     `tools_equipped.UNIFIED_TOOL_REGISTRY()`).
-//   * AGENT SEED — a fresh agent's allowlist contains `used_tools`
-//     (backend DEFAULT_AGENT_TOOLS).
-//   * KANBAN SEED — a fresh kanban board's allowlist contains
-//     `used_tools` (DEFAULT_AGENT_TOOLS legacy path).
-//   * LIFECYCLE — DELETE removes it, re-POST restores it (round-trip),
-//     proving it is a first-class registry tool, not a phantom.
-//
-// The exec adapter's session-aware listing (allowlist filter +
-// sub-agent strip + progressive rows) is covered by the Zig unit
-// tests in `tools_exec_used_tools.zig`, which run in-memory without
-// an LLM. These functional tests guard the HTTP-visible wiring:
-// registry exposure + per-mode seeding.
-//
-// Run: PABRIK_BIN=... zig build test --summary all   (from tests/functional/)
-//
-// PATHS: the Python original passed a literal `"/tmp/used-tools-test"`
-// as the agent's `path`. The server validates that with
-// `std.fs.path.isAbsolute`, which is FALSE for a leading-slash path on
-// Windows, so this port derives it from `h.temp_dir` — see
-// `harness.harnessPath`.
+// Wire tests for the `used_tools` agent tool. Zig port of
+// `tests/functional/used_tools_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -51,12 +12,9 @@ const io = testing.io;
 // Helpers
 // ============================================================================
 
-/// An owned copy of a wire `tools` string array.
-///
-/// Python compared `"used_tools" in tools` against the live list and
-/// printed it in the failure message. A `harness.Json` cannot outlive its
-/// `Response` (unescaped strings are slices of the body buffer), so the
-/// names are duped out here.
+/// An owned copy of a wire `tools` string array. Python compared
+/// `"used_tools" in tools` against the live list and printed it in the
+/// failure message.
 const ToolNames = struct {
     items: [][]u8,
 
@@ -183,13 +141,6 @@ fn toolNames(h: *Harness, path: []const u8) !ToolNames {
 }
 
 // UNIFIED_TOOL_REGISTRY → GET /api/agent-tools/registry.
-//
-// Python's `_registry` helper carried the fixture sanity check ("registry
-// returned 0 tools — fixture broken?") and the test then built
-// `{t["name"]: t}`. One GET serves both here: the `Json` stays alive for
-// the whole block (the `Response` outlives it — `defer doc.deinit()` is
-// registered AFTER `defer r.deinit()`, so LIFO destroys the document
-// first), so the name search and the description read share one payload.
 test "registry_exposes_used_tools_with_description" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});

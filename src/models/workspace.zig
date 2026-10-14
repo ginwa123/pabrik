@@ -1,11 +1,4 @@
-//! Data model for the `workspaces` entity table.
-//!
-//! One row per workspace. A workspace owns 0..N `workspace_items`
-//! (kanbans, designs, folders) and is the top-level container in the
-//! sidebar tree.
-//!
-//! Schema: Migration 020 (`create_workspaces`) + Migration 022
-//! (`add_position_to_workspaces`).
+//! Data model for the `workspaces` entity table. One row per workspace.
 
 const std = @import("std");
 
@@ -61,11 +54,6 @@ pub fn clone(self: *const Self, allocator: std.mem.Allocator) !Self {
 // ===== Tests merged from models_test.zig (2026-09-29 flatten) =====
 
 // Sanity tests for the `src/models/` entity models.
-//
-// Verifies that every model file compiles, that `init` populates the
-// struct as expected, that `deinit` releases its strings, and that
-// external callers can read the struct's fields directly (matching
-// the file-level struct pattern requested by the user).
 
 const testing = std.testing;
 

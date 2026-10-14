@@ -1,13 +1,4 @@
 //! Terminal control: raw mode, alt-screen, size query, key reading.
-//!
-//! All state transitions are explicit and reversible:
-//!   - `enterRawMode()` returns a `RawMode` token; pass it to
-//!     `leaveRawMode()` to restore exactly what was saved.
-//!   - `enterAltScreen()` / `leaveAltScreen()` emit the VT100
-//!     alternate-buffer sequences.
-//!
-//! Non-tty stdin (pipes, CI logs) is detected up-front by `isTty()`
-//! so callers can bail with a friendly message instead of crashing.
 
 const std = @import("std");
 const key_mod = @import("key.zig");
@@ -39,16 +30,7 @@ pub fn enterRawMode() !RawMode {
     raw.iflag.IXON = false; // don't intercept Ctrl-S/Ctrl-Q flow control
     raw.iflag.ICRNL = false; // don't map CR -> NL
     // VMIN=0/VTIME=1 — "return as soon as a byte is available; otherwise wait
-    // at most 0.1 s and return 0". The event loop waits in poll() (which
-    // supplies the real timeout) and then reads ONCE with `readVec`, so the
-    // VTIME fallback only ever fires if poll's readiness was stale — in which
-    // case a 0.1 s wait is harmless. It must NOT be VMIN=1/VTIME=0 (block
-    // forever): a single stale readiness would freeze the whole UI.
-    //
-    // Note the historical confusion: this mode was blamed for a ~100 ms
-    // keystroke latency floor, but the real culprit was `readSliceShort`,
-    // which loops until its destination buffer is completely full and so kept
-    // reading past the keystroke until VTIME expired (measured 108 ms).
+    // at most 0.1 s and return 0".
     raw.cc[@intFromEnum(std.posix.V.MIN)] = 0;
     raw.cc[@intFromEnum(std.posix.V.TIME)] = 1;
     try std.posix.tcsetattr(fd, .FLUSH, raw);
@@ -73,10 +55,9 @@ pub fn size() Size {
     return .{ .width = 80, .height = 24 };
 }
 
-// --- ioctl plumbing ---------------------------------------------------------
-// Zig 0.16 exposes no portable posix.ioctl; use the libc varargs extern on
-// every platform that has one (Linux/macOS/BSD). Windows is out of scope for
-// v1 (the CLI package already documents Windows as link-only).
+// --- ioctl plumbing
+// --------------------------------------------------------- Zig 0.16 exposes
+// no portable posix.ioctl; use the libc varargs extern on every platform that
 
 fn ioctlWinsize(fd: std.posix.fd_t, ws: *std.posix.winsize) bool {
     const TIOCGWINSZ: c_int = switch (@import("builtin").os.tag) {

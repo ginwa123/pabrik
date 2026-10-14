@@ -189,10 +189,8 @@ fn parseSubAgentsFromValue(
         const instruction = try allocator.dupe(u8, instr_val.string);
         errdefer allocator.free(instruction);
 
-        // Parse REQUIRED "tools" field — explicit allowlist, no omit, no "all", no empty.
-        // Explorer-code sub-agents list read-only tools (read_file, glob,
-        // search); writer sub-agents must also list set_git_worktree plus
-        // the write tools so they can isolate in their own worktree.
+        // Parse REQUIRED "tools" field — explicit allowlist, no omit, no
+        // "all", no empty.
         const tools_val = agent_obj.get("tools") orelse {
             return error.MissingSubAgentTools;
         };
@@ -217,12 +215,7 @@ fn parseSubAgentsFromValue(
                 return error.AllToolsNotAllowed;
             }
             // Main-agent-only tools are a hard parse error, NOT a silent
-            // downstream strip. Two reasons: (1) `ask_user` would leave the
-            // sub-agent's question unanswered forever — a sub-agent run has
-            // no answer surface, so the child would return nothing useful;
-            // (2) `spawn_sub_agent` would recurse. Rejecting here tells the
-            // model exactly what to fix, instead of letting it believe the
-            // child has a tool it will never receive.
+            // downstream strip.
             if (main_agent_only.isMainAgentOnly(trimmed)) {
                 return error.MainAgentOnlyToolNotAllowed;
             }
@@ -257,13 +250,9 @@ fn parseSubAgentsFromValue(
             }
         }
 
-        // Parse required "agent_name" field — name of a sub-agent
-        // from `LlmConfig.sub_agents` to apply as an overlay on the
-        // orchestrator's defaults. Also used as the sub-agent's label
-        // in the result XML. Must be a non-empty string. Length is
-        // capped at 256 chars as a parse-time guard against
-        // absurdly long input. Resolution (and "not found" detection)
-        // is deferred to `LlmConfig.resolveSubAgent` at spawn time.
+        // Parse required "agent_name" field — name of a sub-agent from
+        // `LlmConfig.sub_agents` to apply as an overlay on the orchestrator's
+        // defaults.
         const an_val = agent_obj.get("agent_name") orelse {
             return error.MissingSubAgentAgentName;
         };
@@ -359,11 +348,6 @@ test "parse_sub_agents - invalid inherited_context mode returns InvalidInherited
 // -------------------------------------------------------------------------
 // parse_sub_agents — agent_name (REQUIRED, label + config-driven selection)
 // -------------------------------------------------------------------------
-//
-// Tests the required `agent_name` field. It serves two purposes:
-//   1. The label that appears in the result XML's <agent name="..."> tag.
-//   2. The name looked up in LlmConfig.sub_agents to apply as an
-//      overlay on the orchestrator's defaults.
 
 test "parse_sub_agents - agent_name is parsed into SubAgentInput" {
     const alloc = std.testing.allocator;
@@ -439,10 +423,6 @@ test "parse_sub_agents - multiple sub_agents each carry their own agent_name" {
 // -------------------------------------------------------------------------
 // parse_sub_agents — tools (REQUIRED, explicit allowlist, no "all")
 // -------------------------------------------------------------------------
-//
-// `tools` is required per sub-agent: the parent must list exactly which
-// tools the child may use. Omitting it, passing an empty array, or
-// passing "all" is a parse error — there is no omit-means-all fallback.
 
 test "parse_sub_agents - missing tools returns MissingSubAgentTools" {
     const alloc = std.testing.allocator;
@@ -490,13 +470,7 @@ test "parse_sub_agents - explicit tools are parsed into SubAgentInput" {
 
 // -------------------------------------------------------------------------
 // parse_sub_agents — main-agent-only tools (ask_user / spawn_sub_agent)
-// -------------------------------------------------------------------------
-//
-// A sub-agent run has no answer surface, so an `ask_user` in its tool list
-// would leave the question unanswered forever and the child would return
-// nothing useful. `spawn_sub_agent` would recurse. Both are hard parse
-// errors — rejected here rather than silently stripped downstream, so the
-// model learns what to fix instead of believing the child has the tool.
+// ------------------------------------------------------------------------- A
 
 test "parse_sub_agents - tools containing ask_user returns MainAgentOnlyToolNotAllowed" {
     const alloc = std.testing.allocator;
@@ -575,11 +549,6 @@ test "spawn_sub_agent system prompt teaches the main-agent-only rule" {
 // -------------------------------------------------------------------------
 // Tool description + system prompt — required-tools + worktree wording
 // -------------------------------------------------------------------------
-//
-// The model only learns the REQUIRED-tools rule and the explorer-shares /
-// writer-isolates worktree rule from this text (the registry route exposes
-// the description; the system prompt rides every spawn-capable turn), so
-// lock the load-bearing sentences, not just keywords.
 
 test "spawn_sub_agent description teaches REQUIRED explicit tools" {
     const desc = spawn.spawn_sub_agent_tool.function.description;

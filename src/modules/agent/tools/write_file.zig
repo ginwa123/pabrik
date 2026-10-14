@@ -12,9 +12,7 @@ pub const WriteFileInput = struct {
     content: []const u8,
     create_with_dir: bool = false,
     /// REQUIRED on the wire. Absolute directory this call works in; a
-    /// relative `path` resolves against it. Empty by default so the struct
-    /// stays constructible in tests that do not exercise the `cwd` rule —
-    /// `path_validate.validateCwd` rejects the empty value at exec time.
+    /// relative `path` resolves against it.
     cwd: []const u8 = "",
 };
 
@@ -27,35 +25,12 @@ pub const WriteFileResult = struct {
 };
 
 /// Parent directory to create for `path`, or null when there is nothing to
-/// create.
-///
-/// This replaces a hand-rolled "index of the last separator" scan. That
-/// scan was separator-aware but not *root*-aware: for `C:\notes.txt` it
-/// cut at index 2 and produced `"C:"`, which is a DRIVE-RELATIVE name and
-/// not a directory, so `createDirPath` failed on a file that was plainly
-/// writable. On POSIX the same input shape is `/notes.txt`, where the index
-/// is 0 and the old `> 0` guard skipped the call entirely — which is why
-/// the bug only ever appeared on Windows.
-///
-/// `std.fs.path.dirname` is the one answer that is correct on every
-/// platform: it knows about volumes, UNC shares, and both separators, and
-/// it returns null when the parent is a root that already exists.
+/// create. This replaces a hand-rolled "index of the last separator" scan.
 pub fn parentDirToCreate(path: []const u8) ?[]const u8 {
     return std.fs.path.dirname(path);
 }
 
 /// Create `dir_path`, unless it is already there.
-///
-/// `createDirPath` reports an EXISTING directory as an error, and on Windows
-/// that includes a drive root: `create_with_dir = true` for a file sitting
-/// directly in `C:\` walks into `createDirPath(io, "C:\\")` and dies, even
-/// though there is provably nothing to create. Probing first makes every
-/// platform agree on the "already there" case, and turns the common
-/// already-exists path into a single stat instead of a walk plus a failed
-/// create.
-///
-/// Any error other than "not there" is still surfaced: a permission problem
-/// on an existing parent should not be silently reinterpreted as "create it".
 fn ensureDir(io: std.Io, dir_path: []const u8) !void {
     if (std.Io.Dir.cwd().access(io, dir_path, .{})) |_| {
         return;
@@ -202,18 +177,9 @@ fn deleteDir(path: []const u8) void {
     std.Io.Dir.cwd().deleteDir(testing.io, path) catch {};
 }
 
-// Best-effort cleanup for a test's full directory tree. Deletes the
-// leaf file, then each parent directory in DEEPEST-FIRST order so each
-// rmdir sees an empty directory.
-//
-// Why no `openDir().iterate()` walk: the Zig 0.16 Io runtime is flaky
-// when iterating from the cwd Dir handle after a createDir/createDirPath
-// syscall (it can return BADF). Since the test is the SOLE creator of
-// the tree, the caller spells the parent list out and we avoid the
-// iteration. The list is a runtime slice, not a comptime literal,
-// because each entry is now a slice of its own `absPath` buffer.
-// All errors are swallowed — the goal is "leave no residue", not
-// "assert cleanup succeeded".
+// Best-effort cleanup for a test's full directory tree. Deletes the leaf
+// file, then each parent directory in DEEPEST-FIRST order so each rmdir sees
+// an empty directory.
 fn deleteTestTree(parents_deep_first: []const []const u8, leaf_file: []const u8) void {
     deleteFile(leaf_file);
     for (parents_deep_first) |dir| {
@@ -642,16 +608,8 @@ test "writeFile - large content (1 MiB) written completely" {
 }
 
 // ===========================================================================
-// Section 5b: Large content — overwrite semantics + edge cases (added 2026-08-15)
-//
-// These tests pin the write_file contract on LARGE payloads (multi-MiB,
-// multi-byte UTF-8, binary with NULs, overwriting existing files of
-// different sizes). The base `writeFile` function uses
-// `writeStreamingAll`, which is allowed to chunk internally — these
-// tests verify the byte stream is preserved end-to-end regardless of
-// chunk boundaries, and that overwrite-mode (truncate) is honoured even
-// when the file size delta is huge.
-// ===========================================================================
+// Section 5b: Large content — overwrite semantics + edge cases (added
+// 2026-08-15) These tests pin the write_file contract on LARGE payloads
 
 /// Fill a buffer with a deterministic repeating pattern (NOT a single
 /// byte). Lets tests detect "buffer got the wrong prefix / wrong
@@ -705,12 +663,9 @@ fn readFileContentsLarge(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
 }
 
 test "writeFile - large content OVERWRITES smaller existing file (truncate)" {
-    // Pre-seed with 1 MiB of a unique 8-byte sentinel pattern (the
-    // "dead beef cafe babe f0 0d fa ce" magic), then overwrite with 5 MiB
-    // of LCG pattern data. The 8-byte sentinel is astronomically
-    // unlikely to appear in random LCG output (~2^-64 chance per
-    // 8-byte window), so detecting it in the final file proves
-    // append-mode corruption.
+    // Pre-seed with 1 MiB of a unique 8-byte sentinel pattern (the "dead beef
+    // cafe babe f0 0d fa ce" magic), then overwrite with 5 MiB of LCG pattern
+    // data.
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const path = try absPath(&path_buf, "test_wf_large_overwrite.bin");
     defer deleteFile(path);
@@ -837,11 +792,7 @@ test "writeFile - large content with multi-byte UTF-8 (byte count preserved)" {
 }
 
 test "writeFile - large content with embedded NUL bytes (binary stream preserved)" {
-    // 2 MiB of every 5th byte being NUL. The writeFile path must NOT
-    // treat content as a C string — `writeStreamingAll` takes a slice
-    // with explicit length, so this should "just work", but pinning
-    // the contract catches a future refactor that switches to
-    // null-terminated string APIs (writeC, file.write(... \0), etc.).
+    // 2 MiB of every 5th byte being NUL.
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const path = try absPath(&path_buf, "test_wf_large_nul.bin");
     defer deleteFile(path);
@@ -918,11 +869,8 @@ test "writeFile - large content with mixed line endings (\\n + \\r\\n + \\r)" {
 }
 
 test "writeFile - large content overwrite preserves file size exactly (no padding)" {
-    // Pre-seed with 2 MiB of 'A', overwrite with 2 MiB of 'B'. The file
-    // MUST stay at exactly 2 MiB — neither shrunk nor grew. Catches a
-    // hypothetical regression where the truncate happens but then the
-    // write extends past the original size due to an off-by-one in the
-    // truncate+write path.
+    // Pre-seed with 2 MiB of 'A', overwrite with 2 MiB of 'B'. The file MUST
+    // stay at exactly 2 MiB — neither shrunk nor grew.
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const path = try absPath(&path_buf, "test_wf_large_same_size.bin");
     defer deleteFile(path);
@@ -1039,11 +987,7 @@ test "writeFile - path with directory containing spaces" {
 }
 
 test "writeFile - a .. segment is refused on Windows and resolved by the OS on POSIX" {
-    // POSIX resolves `a/../a/inside.txt` like any other path. Windows does
-    // NOT get that far: `invalidPathReason` rejects every path containing a
-    // `..` segment, because it is a root escape that the NT layer would
-    // resolve against a different volume than the caller meant. So the two
-    // platforms are asserting two different contracts, and both are correct.
+    // POSIX resolves `a/../a/inside.txt` like any other path.
     var dir_buf: [std.fs.max_path_bytes]u8 = undefined;
     const dir = try absPath(&dir_buf, "test_wf_dotdot_target");
     var inside_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -1108,10 +1052,8 @@ test "writeFileResult.deinit frees the path (no leak)" {
         .content = "deinit me",
     });
 
-    // Capture the path's pointer before deinit so we can verify it's
-    // been freed afterwards. After deinit, reading from that pointer
-    // would be use-after-free — we can't safely assert anything here
-    // other than that deinit() doesn't crash.
+    // Capture the path's pointer before deinit so we can verify it's been
+    // freed afterwards.
     result.deinit(testing.allocator);
 }
 
@@ -1435,27 +1377,12 @@ test "writeFile - two consecutive calls return independent path allocations" {
 
 // ─── Parent-directory resolution ─────────────────────────────────────────
 // The bug this pins: the previous "index of the last separator" scan cut
-// `C:\notes.txt` at index 2 and handed `"C:"` — a drive-RELATIVE name, not
-// a directory — to `createDirPath`, which then failed on a file that was
-// perfectly writable. On POSIX the equivalent path is `/notes.txt`, whose
-// separator index is 0, so the old `> 0` guard skipped the call and the bug
-// was invisible off Windows.
-// The hand-rolled scan and `std.fs.path.dirname` AGREE on POSIX, so there
-// is no Linux-observable behaviour change here — this test is a guard that
-// documents the agreement rather than a regression test. The regression
-// itself is Windows-only and lives in the two Windows-gated tests below,
-// plus the static contract that `write_file` no longer hand-rolls dirname.
+// `C:\notes.txt` at index 2 and handed `"C:"` — a drive-RELATIVE name, not a
 test "parentDirToCreate: nested paths resolve normally (guard, not a regression test)" {
     // True on every platform: std.fs.path.dirname treats both separators
     // as separators, so a `/`-joined path has the same parent on Windows.
     try std.testing.expectEqualStrings("/a/b", parentDirToCreate("/a/b/c.txt").?);
-    // POSIX-only, and the difference IS the point. On a POSIX host
-    // `D:/notes.txt` has parent `D:` — the correct POSIX answer, and
-    // exactly what the old hand-rolled scan produced, which is why the
-    // drive-root bug never reproduced off Windows. On Windows the same
-    // input is `D:/`, because a drive root keeps its separator. So this
-    // line is POSIX-only by construction, and asserting the POSIX value
-    // on Windows would be asserting the bug back into existence.
+    // POSIX-only, and the difference IS the point.
     if (@import("builtin").os.tag == .windows) return;
     try std.testing.expectEqualStrings("D:", parentDirToCreate("D:/notes.txt").?);
 }
@@ -1470,8 +1397,7 @@ test "parentDirToCreate: normal nested paths are unchanged" {
 
 // Windows-only: the drive-root case can only be observed on a host whose
 // `std.fs.path.dirname` understands volumes, so the value is asserted here
-// and the `[Windows]` CI cell is what runs it. On POSIX the same input
-// legitimately has no parent.
+// and the `[Windows]` CI cell is what runs it.
 test "parentDirToCreate: a drive-root file resolves to the drive root on Windows" {
     if (@import("builtin").os.tag != .windows) return error.SkipZigTest;
     try std.testing.expectEqualStrings("C:\\", parentDirToCreate("C:\\notes.txt").?);
@@ -1487,21 +1413,12 @@ test "writeFile: create_with_dir succeeds for a file in the drive root on Window
     // Whether a drive ROOT is writable is a property of the machine, not of
     // this code, and a GitHub-hosted Windows runner says no: `C:\`'s DACL
     // grants Authenticated Users "Create folders" but not "Create files", so
-    // the write below dies with AccessDenied and says nothing at all about
-    // the bug under test. Probe with the same call shape first and skip with
-    // the reason, rather than reporting a red that a maintainer has to
-    // reverse-engineer from a return trace.
-    //
-    // The parent-dir logic is still pinned on this platform even when this
-    // skips: the tests above assert `parentDirToCreate` directly with no
-    // I/O at all.
     const probe = "C:\\pabrik_wf_probe.txt";
     std.Io.Dir.cwd().deleteFile(std.testing.io, probe) catch {};
     if (std.Io.Dir.cwd().createFile(std.testing.io, probe, .{})) |probe_file| {
         // `std.Io.File.close(value, io)` — the exact form the helpers above
         // already use, rather than a method call, so this compiles on the one
         // platform that ever sees it without me having a Windows compiler to
-        // check the signature against.
         std.Io.File.close(probe_file, std.testing.io);
     } else |err| {
         std.debug.print("skipping: drive root is not writable ({s})\n", .{@errorName(err)});

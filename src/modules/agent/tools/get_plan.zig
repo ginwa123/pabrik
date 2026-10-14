@@ -1,33 +1,5 @@
-//! Agent-callable tool: `get_plan` — fetch the agent's current task plan
-//! for the current session as markdown.
-//!
-//! Plan: docs/superpowers/plans/2026-08-19-session-plan-agent-tool.md
-//! Task: task_1787073929852_8 (Task 3 of 9)
-//!
-//! Wire shape:
-//!   input:  {} (no params — session_id is implicit per D3)
-//!   output: {"plan":"...markdown..."} (when a plan is set)
-//!   or:     {"empty":true} (when no plan set, per D6)
-//!
-//! The actual read lives in `session_plan.getPlan`. This file is a
-//! thin JSON wrapper around it (mirrors the `memory.zig` load_memory pattern —
-//! thin wrapper around `agent_memories.loadMemoriesByFts`).
-//!
-//! Plain JSON strings carry the plan content; the raw `<`, `>`, `&`
-//! inside user-written markdown need no envelope-level escaping.
-//!
-//! Design choices:
-//!   - `session_id` is NOT in the input (D3 — implicit from
-//!     `ToolExecContext.session_id` in the exec adapter). The pure-fn
-//!     API takes `session_id` as an explicit parameter so this file
-//!     stays testable in isolation (mirrors `executeUpdatePlan`).
-//!   - No `session_id` echo in the success payload (mirrors
-//!     `load_memory`'s omission — the LLM already knows which session
-//!     it's operating on; echoing wastes context).
-//!   - JSON string encoding preserves the user's markdown with only
-//!     JSON string escaping; the agent sees its own plan back without
-//!     substitutions that would complicate regex/checklist matching
-//!     in the LLM.
+//! Agent-callable tool: `get_plan` — fetch the agent's current task plan for
+//! the current session as markdown.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -43,10 +15,7 @@ const session_plan = @import("../../../agentic_loop/session_plan.zig");
 /// Input for `get_plan`. Empty struct — no params, session_id is implicit.
 pub const GetPlanInput = struct {};
 
-/// Top-level tool definition for the LLM. The description is the
-/// agent's primary signal for WHEN to call this tool — it explicitly
-/// mentions the `<empty/>` absent signal so the agent knows to use
-/// `update_plan` to lay out a plan when it sees the empty result.
+/// Top-level tool definition for the LLM.
 pub const get_plan_tool_system_prompt =
     \\## Get Plan Tool — Behavior
     \\Use `get_plan` to read the current session plan.
@@ -75,13 +44,8 @@ pub const get_plan_tool = AgentTool{
     },
 };
 
-/// Execute get_plan. Returns a JSON string for the LLM.
-///
-/// Caller owns the returned slice and must free it with `allocator.free()`.
-///
-/// `session_id` is passed explicitly (NOT via `ToolExecContext`) so this
-/// pure fn is testable in isolation. The exec adapter in Task 4 will pull
-/// `session_id` from `ctx.session_id` and forward it here.
+/// Execute get_plan. Returns a JSON string for the LLM. Caller owns the
+/// returned slice and must free it with `allocator.free()`.
 pub fn executeGetPlan(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -219,11 +183,9 @@ test "executeGetPlan: JSON preserves raw special chars verbatim (no XML escape)"
     try testing.expectEqualStrings("Note: <hello> & 'world'", parsed.value.object.get("plan").?.string);
 }
 
-// ─── Test 4: `]]>` inside the body round-trips through JSON ─────────────────
-//
-// The literal `]]>` sequence needed CDATA splitting under the old XML
-// envelope. JSON strings have no such hazard — the content round-trips
-// byte-for-byte with no transformation.
+// ─── Test 4: `]]>` inside the body round-trips through JSON
+// ───────────────── The literal `]]>` sequence needed CDATA splitting under
+// the old XML envelope.
 
 test "executeGetPlan: ]]> inside plan body round-trips verbatim" {
     const alloc = testing.allocator;

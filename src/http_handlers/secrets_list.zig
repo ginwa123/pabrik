@@ -1,19 +1,6 @@
-//! `GET /api/workspaces/:workspace_id/secrets`.
-//!
-//! Returns `{secrets, count}` for one workspace, ordered by name.
-//!
-//! NO VALUE APPEARS IN THIS RESPONSE — not masked, not hinted, not
-//! truncated. A secret's value lives in POST/PATCH request bodies and
-//! stops there, so the browser cannot read back what it wrote. That is the
-//! accepted cost of never holding a live credential in a DOM, and "it
-//! crossed the network and we chose not to render it" is not a guarantee —
-//! it is one XSS away from a leak (Design Decision 9,
-//! docs/superpowers/plans/2026-10-02-workspace-secrets.md).
-//!
-//! Scoping: `workspace_id` is a path param that lands in the query's
-//! `WHERE` clause inside `secrets_store.listSecrets`. There is no
-//! "all secrets" mode, so no code path here can return another
-//! workspace's rows.
+//! `GET /api/workspaces/:workspace_id/secrets`. Returns `{secrets, count}`
+//! for one workspace, ordered by name. NO VALUE APPEARS IN THIS RESPONSE —
+//! not masked, not hinted, not truncated.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -52,9 +39,7 @@ fn useCase(
         error.QueryFailed => return error.QueryFailed,
         error.OutOfMemory => return error.OutOfMemory,
         // The rest of the store's shared error set belongs to the write
-        // paths, which `listSecrets` cannot reach. Naming them keeps this
-        // switch exhaustive, so a variant added to `SecretsError` breaks the
-        // build here rather than reaching the client unmapped.
+        // paths, which `listSecrets` cannot reach.
         error.IdsRequired,
         error.NameRequired,
         error.ValueRequired,
@@ -69,18 +54,9 @@ fn useCase(
     return .{ .secrets = rows };
 }
 
-// =====================================================================
-// Error mapping
-// =====================================================================
-//
-// Two exhaustive switches, one for the status and one for the message, so a
-// variant added to `SecretsListError` fails the build here rather than
-// surfacing as an unhandled error at runtime.
-//
-// They are functions rather than inline blocks inside the handler for one
-// reason: `useCase` returns the error, never the HTTP answer, so a
-// 400-where-a-500-belongs mistake is invisible to every useCase test
-// unless the mapping is itself callable.
+// ===================================================================== Error
+// mapping
+// ===================================================================== Two
 
 fn statusFor(err: SecretsListError) u16 {
     return switch (err) {

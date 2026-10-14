@@ -1,21 +1,6 @@
-//! `PATCH /api/agents/:agent_id/system_prompt/:prompt_id`.
-//!
-//! Updates title and/or content of an existing system-prompt entry.
-//! Body: `{title?, content?}` (both optional; at least one required).
-//!
-//! Layered as:
-//!   - `useCase` — validate ids + body → build dynamic UPDATE SQL
-//!     (Zig 0.16 dropped std.io.fixedBufferStream, so we use
-//!     `ArrayList.appendSlice` for the static SQL fragments) →
-//!     UPDATE → SELECT refetch → return typed SystemPrompt.
-//!   - `agentSystemPromptUpdateHandler` — thin orchestrator over
-//!     `useCase`: parses path/body, delegates, maps outcome to HTTP.
-//!
-//! Memory: the per-request arena reaps all allocations at request
-//! end, so neither layer needs explicit `free`s.
-//!
-//! Plan: docs/superpowers/plans/2026-08-21-agent-system-prompt.md
-//! Task: task_1787408958280_1
+//! `PATCH /api/agents/:agent_id/system_prompt/:prompt_id`. Updates title
+//! and/or content of an existing system-prompt entry. Body: `{title?,
+//! content?}` (both optional; at least one required).
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -34,11 +19,7 @@ const UpdateSystemPromptBody = struct {
 /// Subset of the system-prompt row returned by the use-case.
 pub const SystemPrompt = agent_db.SystemPromptRow;
 
-/// Domain-level error set for `useCase`. The handler maps each
-/// variant to an HTTP status code + message via two exhaustive
-/// switches (intentional — adding a new variant fails to compile in
-/// the handler until both switches are updated, keeping status
-/// codes in lockstep with the error set).
+/// Domain-level error set for `useCase`.
 pub const SystemPromptUpdateError = error{
     /// `agent_id` or `prompt_id` path param was missing or empty.
     IdsRequired,
@@ -76,10 +57,7 @@ pub const SystemPromptUpdateOutput = struct {
 
 /// Update an existing system-prompt row. Validates that at least one of
 /// `title` / `content` is provided, then UPDATE-with-dynamic-SQL the
-/// requested fields and SELECT-refetch the row. The use-case is
-/// transport-agnostic: it works for both the per-request arena
-/// (production HTTP handler) and `testing.allocator` (unit tests
-/// below) — all allocations go through the passed-in allocator.
+/// requested fields and SELECT-refetch the row.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -167,15 +145,8 @@ pub fn agentSystemPromptUpdateHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-//
-// impl + tests in one file (project convention for Agent Mode).
-// Behavioural tests cover the use-case:
-//
-//   1. Validation: empty ids OR neither field → respective errors
-//   2. Happy path: updates title AND content
-//   3. title-only update keeps content
-//   4. PATCH with empty-string content is legal (COALESCE → '',
-//      NOT NULL — regression for empty-slice-binds-as-NULL)
+// impl + tests in one file (project convention for Agent Mode). Behavioural
+// tests cover the use-case: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;

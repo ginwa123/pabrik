@@ -1,23 +1,4 @@
 //! SSE push for background processes (`command background=true` rows).
-//!
-//! Replaces the frontend 5s `GET background_processes` poll
-//! (`BackgroundCommandsPopup.vue` LIST_POLL_MS) with server push:
-//!   - `background_process_created`   — emitted right after `save` in
-//!     `tools_exec_command.zig` (new row appears).
-//!   - `background_process_completed` — emitted right after a successful
-//!     notify in `notifySingleBackgroundCompletion`
-//!     (`cleanup_stale_background_process.zig`, shared by the immediate
-//!     `background_watcher` thread and the per-minute cron fallback).
-//!
-//! Both emit on the central `background_process` routing key. The unified
-//! SSE endpoint fans it out to `?channels=background_process` clients;
-//! the frontend filters by `data.session_id` JS-side (same as `queue` /
-//! `llm` — no per-session routing server-side).
-//!
-//! Payload (JSON in `data`): `{ action, session_id, pid, command }`.
-//! `action` is `created` | `completed`. The frontend treats both
-//! uniformly (re-fetch the list); the discriminator exists for logging
-//! and future granular handling.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");

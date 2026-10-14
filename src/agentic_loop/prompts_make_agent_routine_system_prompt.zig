@@ -1,29 +1,12 @@
-//! Builds the `## Routine System Prompt` system-prompt section for
-//! sessions bound to a routine workspace-item WITH an `agent_routines`
-//! row (Migration 081).
-//!
-//! Mirrors `prompts_make_agent_system_prompt.zig` but reads from the
-//! `agent_routine_system_prompt` table (keyed by routine_id) and only
-//! fires when:
-//!   - the session's workspace_item is of type 'routine', AND
-//!   - an `agent_routines` row exists for it (opt-in config)
-//!
-//! Unconfigured routines are completely unaffected — returns "".
-//!
-//! Plan: Routine mode task_1789505553300_1 (option A, mirror agent_routine_*)
-//! Task: task_1789505553300_1
+//! Builds the `## Routine System Prompt` system-prompt section for sessions
+//! bound to a routine workspace-item WITH an `agent_routines` row (Migration
+//! 081).
 
 const std = @import("std");
 const sqlite = @import("pabrikcore").sqlite;
 const agent_routine_db = @import("../models/agent_routine.db.zig");
 
-/// Resolve the workspace_item_id for a session. Two paths (in order):
-///   1. Normal chats: the session is a workspace_item_tasks row (covers
-///      chats opened under a routine item).
-///   2. Routine fires: the session id IS the routine id — fire.zig sets
-///      sid = routine.id and bypasses workspace_item_tasks entirely, so
-///      resolve straight through workspace_routines.
-/// Returns "" when neither path hits.
+/// Resolve the workspace_item_id for a session. Two paths (in order): 1.
 fn resolveWorkspaceItemId(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,

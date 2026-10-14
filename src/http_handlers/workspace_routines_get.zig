@@ -1,17 +1,5 @@
-//! `GET /api/workspaces/:workspace_id/items/:item_id/routine`.
-//!
-//! Returns `{routine}` for the routine bound to this workspace_item.
-//! Mirrors `agents_get.zig` but v1 has no child collections (no
-//! knowledge / tools / system_prompt — those are v2 scope), so the
-//! use-case is a single validated row load.
-//!
-//! Returns 400 when the workspace_item's `item_type` is not
-//! `'routine'`, 404 when the workspace_item doesn't exist or has no
-//! routine row yet (`NotConfigured` — the frontend treats it as an
-//! empty state, same convention as `agent_kanbans_get.zig`).
-//!
-//! Plan: docs/superpowers/plans/2026-09-10-workspace-items-routines.md
-//! Task: task_1789032258828_0.
+//! `GET /api/workspaces/:workspace_id/items/:item_id/routine`. Returns
+//! `{routine}` for the routine bound to this workspace_item.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");

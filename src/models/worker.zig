@@ -1,12 +1,5 @@
-//! Data model for the `worker` entity table.
-//!
-//! One row per active agent worker (one per session that's currently
-//! running). The scheduler / monitor queries this table to surface
-//! "Active Workers" in the system prompt and the sidebar status
-//! indicator.
-//!
-//! Schema: Migration 010 (`create_worker_table`) + Migration 015
-//! (`add_worker_extra_fields`).
+//! Data model for the `worker` entity table. One row per active agent worker
+//! (one per session that's currently running).
 
 const std = @import("std");
 
@@ -81,11 +74,6 @@ pub fn clone(self: *const Self, allocator: std.mem.Allocator) !Self {
 // ===== Tests merged from models_test.zig (2026-09-29 flatten) =====
 
 // Sanity tests for the `src/models/` entity models.
-//
-// Verifies that every model file compiles, that `init` populates the
-// struct as expected, that `deinit` releases its strings, and that
-// external callers can read the struct's fields directly (matching
-// the file-level struct pattern requested by the user).
 
 const testing = std.testing;
 

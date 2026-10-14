@@ -1,31 +1,6 @@
-//! Render the "## Current Plan" markdown block for the LLM's system
-//! prompt. Reads the session's `session_plan` row (Migration 076) and
-//! emits a fenced markdown block plus the timestamp footer. Returns
-//! `""` (a 0-byte heap-owned slice) when no plan exists for the
-//! session, so the caller can omit the section silently — matching
-//! `makeKanbanContext`'s empty-case behaviour.
-//!
-//! Block shape (omitted when no row exists, when `session_id` is
-//! empty, or when the DB lookup fails):
-//!
-//! ```markdown
-//! ## Current Plan
-//!
-//! This session has an active task plan. **You MUST keep it in sync**
-//! by calling the `update_plan` tool after completing each checklist
-//! item (flip `- [ ]` → `- [x]`). The plan is automatically re-injected
-//! into your system prompt on every iteration, so you always see the
-//! current state.
-//!
-//! ```markdown
-//! <full plan body, raw>
-//! ```
-//!
-//! _Last updated: <iso timestamp>_
-//! ```
-//!
-//! Plan: docs/superpowers/plans/2026-08-19-session-plan-agent-tool.md
-//! Task 5 of 9
+//! Render the "## Current Plan" markdown block for the LLM's system prompt.
+//! Reads the session's `session_plan` row (Migration 076) and emits a fenced
+//! markdown block plus the timestamp footer.
 
 const std = @import("std");
 const testing = std.testing;
@@ -35,17 +10,7 @@ const session_plan = pabrikcore.session_plan;
 const migration = @import("../migrations/migration.zig");
 const update_plan_mod = @import("../modules/agent/tools/update_plan.zig");
 
-/// Build a "## Current Plan" section for the system prompt. Reads
-/// `session_plan` for the current `session_id` and renders the
-/// markdown inside a labelled block, with explicit instructions for
-/// the agent to call `update_plan` after every checklist item.
-///
-/// Returns `""` (a 0-byte heap-owned slice) when:
-///   - `session_id.len == 0`
-///   - no row exists in `session_plan` for this session
-///   - the DB lookup fails (logged via `std.log.warn`)
-/// so the caller can omit the section silently — matches the
-/// `makeKanbanContext` / `makeDesignContext` pattern.
+/// Build a "## Current Plan" section for the system prompt.
 pub fn makePlanContext(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -77,11 +42,8 @@ pub fn makePlanContext(
         \\
     );
 
-    // Wrap the raw plan body in a markdown fence so the agent's parser
-    // treats it as a code block rather than as top-level instructions.
-    // The plan content may contain backticks / bold / headings — the
-    // fence prevents any plan content from hijacking the outer
-    // prompt's structure.
+    // Wrap the raw plan body in a markdown fence so the agent's parser treats
+    // it as a code block rather than as top-level instructions.
     try out.appendSlice(allocator, "```markdown\n");
     try out.appendSlice(allocator, plan_row.plan_md);
     // Ensure the plan body ends with a newline so the closing fence
@@ -197,14 +159,6 @@ test "makePlanContext: plan survives DB read across calls (UPSERT consistency)" 
     try testing.expect(std.mem.indexOf(u8, got1, "v2 content") == null);
 
     // Overwrite with v2 (UPSERT — must NOT leave v1 + v2 lying around).
-    // Pin a later `updated_at` so the timestamp differs from v1
-    // (SQLite CURRENT_TIMESTAMP has 1-sec resolution; sleep one
-    // second so the floor advances).
-    // std.c.nanosleep — std.Thread.sleep doesn't exist in Zig 0.16.
-    // Use the portable test_sleep helper — std.c.timespec is broken
-    // on Windows in Zig 0.16 (sec field is `void`), and std.c.nanosleep
-    // doesn't exist in msvcrt/ucrt either. The Win32 `Sleep` is the
-    // portable cross-platform alternative (see test_sleep.zig).
     const test_sleep = @import("test_sleep.zig");
     test_sleep.sleep(1, 0);
     {

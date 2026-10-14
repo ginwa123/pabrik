@@ -1,56 +1,5 @@
-//! `ensureDefaultProject` — the one implementation of this invariant:
-//!
-//!   Every workspace has a default project. If we look for one and don't
-//!   find it, we create it before doing anything else.
-//!
-//! A "default project" is a `workspace_items` row of `item_type = 'agent'`
-//! whose `path` is the **server user's home directory**, plus the matching
-//! 1-1 `agents` sibling row and a seeded tool allowlist — i.e. exactly what
-//! `workspace_items_create_agent.zig` would have produced, so a default is
-//! as usable as a hand-made agent.
-//!
-//! Why `agent` and why `$HOME`:
-//!
-//!   * `agent` is the only `item_type` whose "add a chat" action skips the
-//!     task-type picker on BOTH clients (`Sidebar.vue::handleAddTask` and
-//!     `createTaskStartDecision` in `CreateTaskFlow.kt`). Any other type
-//!     would make "New Chat" a two-step flow on at least one platform.
-//!
-//!   * `$HOME` in `path` is the whole trick. `session_create.zig::
-//!     resolveCwdFromTaskOrItem` resolves a session's cwd as
-//!     `task.cwd → workspace_items.path → createSandbox(...)`. Neither
-//!     client sends a `cwd`, so setting `path = $HOME` here makes every chat
-//!     created in this project run with the home directory as its cwd — with
-//!     no new request field, no new resolution step, and no change to the
-//!     chat route's arity on either client.
-//!
-//! ## Why the home directory is resolved HERE and never by a client
-//!
-//! A browser does not know the server user's home, and the Android app has
-//! no endpoint that returns it. So `path` is resolved server-side via
-//! `SystemFolder.getHomeDirectory`, which already implements the
-//! `HOME → USERPROFILE → HOMEDRIVE+HOMEPATH` chain.
-//!
-//! An empty or non-absolute home is a **hard error**, not a silent `""`.
-//! `db_path.zig:36-43` spells out why that matters: downstream `*Absolute`
-//! filesystem calls ABORT the process on a relative path. And a default
-//! stored with `path = ''` would fall through to `createSandbox`, so the
-//! agent would silently run in a temp directory instead of where the user
-//! asked. A visible 500 beats either.
-//!
-//! ## Idempotence, and why it is not optional
-//!
-//! Three callers race for this: the items **list** read (on every sidebar
-//! load), `POST /api/workspaces`, and the "New Chat" tap itself. So:
-//!
-//!   * the read is a single indexed lookup (the `idx_workspace_items_default_lookup`
-//!     index from Migration 094), and the common case is found — no writes;
-//!   * the create is guarded by the partial UNIQUE index on
-//!     `(workspace_id) WHERE is_default = 1`, so a concurrent second insert
-//!     fails at the database, and the loser re-reads the winner's row
-//!     instead of erroring.
-//!
-//! Plan: docs/plans/2026-09-27-sidebar-new-chat-default-project.md
+//! `ensureDefaultProject` — the one implementation of this invariant: Every
+//! workspace has a default project.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -77,17 +26,7 @@ pub const EnsureDefaultProjectError = error{
 };
 
 pub const DefaultProject = struct {
-    /// Heap-allocated and owned by the caller. Everything in this struct
-    /// Every string field is **heap-duplicated from `allocator`** and owned by
-    /// the caller, so [DefaultProject.deinit] can free all four unconditionally.
-    ///
-    /// This is not a stylistic preference. An earlier revision assigned
-    /// `.name = DEFAULT_PROJECT_NAME` (a comptime constant in rodata) on the
-    /// create path while the read path duped it — and `deinit` freed both. Freeing
-    /// a string the allocator never handed out is undefined behaviour: it corrupts
-    /// the allocator's free-list, and the clobbered memory later reads back as
-    /// `0xAA` poison, which reached the UI as a project literally named
-    /// `[ 170, 170, 170, … ]`. Uniform ownership is what makes the free sound.
+    /// Heap-allocated and owned by the caller.
     id: []const u8,
     workspace_id: []const u8,
     name: []const u8,
@@ -134,10 +73,7 @@ pub fn ensureDefaultProject(
     // the inline tests use testing.allocator, which leak-detects.
     errdefer allocator.free(item_id);
 
-    // `tx` so the 3 INSERTs are atomic. A crash between the workspace_items
-    // row and the agents sibling row would otherwise leave a workspace item
-    // that is item_type='agent' with no agent behind it — breaking the 1-1
-    // invariant the agent UI depends on.
+    // `tx` so the 3 INSERTs are atomic.
     var tx = db.begin() catch return error.DatabaseError;
     defer tx.commitOrRollback() catch {};
     errdefer tx.rollback() catch {};
@@ -154,12 +90,7 @@ pub fn ensureDefaultProject(
         \\  1, datetime('now'), datetime('now'))
     , &[_][]const u8{ item_id, workspace_id, DEFAULT_PROJECT_NAME, home, workspace_id }) catch |err| switch (err) {
         // The partial UNIQUE index rejected us: another caller created the
-        // default between our read and our write. That is the race working
-        // as designed, so roll back and return the winner's row rather than
-        // surfacing an error to whoever called us. Note that
-        // `SqliteBackend.exec` reports a constraint violation as
-        // `error.ExecuteFailed` — the "UNIQUE constraint failed" text only
-        // reaches the log, so the error name is the only signal available.
+        // default between our read and our write.
         error.ExecuteFailed => {
             tx.rollback() catch {};
             if (readDefault(allocator, db, workspace_id)) |winner| {
@@ -188,13 +119,7 @@ pub fn ensureDefaultProject(
     return DefaultProject{
         .id = item_id,
         .workspace_id = try allocator.dupe(u8, workspace_id),
-        // DUPE, not the constant. `deinit` frees every field, and freeing the
-        // comptime string `DEFAULT_PROJECT_NAME` — which lives in rodata and was
-        // never handed out by this allocator — corrupts the free-list. The
-        // clobbered memory then surfaces as `0xAA` bytes in an unrelated
-        // string, which is how a project ended up named
-        // `[ 170, 170, 170, … ]`. The read path below already duped, so this
-        // makes the two paths agree.
+        // DUPE, not the constant.
         .name = try allocator.dupe(u8, DEFAULT_PROJECT_NAME),
         .path = try allocator.dupe(u8, home),
         .position = readPosition(allocator, db, item_id),
@@ -202,32 +127,13 @@ pub fn ensureDefaultProject(
     };
 }
 
-/// Is this a name a person could have typed?
-///
-/// The rule is deliberately narrow, because a false positive here **destroys a
-/// user's rename**. So it rejects only what memory corruption can actually
-/// produce, and nothing else:
-///
-///   * empty — a NULL or clobbered name;
-///   * invalid UTF-8 — the 0xAA poison bytes this feature really did emit are a
-///     run of continuation bytes, which is not valid UTF-8 by construction;
-///   * any C0/C1 control character — poison that happened to land on
-///     codepoints that *are* valid would still be caught here.
-///
-/// Everything else is accepted, deliberately including non-ASCII and
-/// punctuation-only names: "café", "проект", and "." are all names someone
-/// chose, and an earlier ASCII-only version of this check would have silently
-/// rewritten all three.
+/// Is this a name a person could have typed? The rule is deliberately narrow,
+/// because a false positive here **destroys a user's rename**.
 fn nameLooksUsable(name: []const u8) bool {
     if (name.len == 0) return false;
     if (!std.unicode.utf8ValidateSlice(name)) return false;
 
-    // Iterate CODEPOINTS, not bytes. UTF-8 continuation bytes occupy
-    // 0x80..0xBF, so testing raw bytes against the C1 range (0x80..0x9F)
-    // rejects perfectly good non-ASCII names — "проект" has a 0x80
-    // continuation byte in its second character. Only C0 controls and DEL
-    // (0x00..0x1F, 0x7F) are safe to test as bytes, because they can never
-    // appear inside a multi-byte sequence.
+    // Iterate CODEPOINTS, not bytes.
     var view = std.unicode.Utf8View.init(name) catch return false;
     var it = view.iterator();
     while (it.nextCodepoint()) |cp| {
@@ -242,12 +148,6 @@ fn nameLooksUsable(name: []const u8) bool {
 }
 
 /// Repair a default project whose stored `name` is garbage, in place.
-///
-/// The allocator bug that produced such names is fixed, but any row already
-/// written before the fix is still sitting in the user's database, and this
-/// endpoint reads on every sidebar load — so it is the cheapest place to heal.
-/// The rewrite is a single indexed UPDATE by primary key, it only fires on a name
-/// no human would have typed, and a user rename is left alone.
 fn repairGarbageName(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -355,10 +255,7 @@ fn readPosition(
     return std.fmt.parseInt(i64, row.values[0], 10) catch 0;
 }
 
-/// True when a workspace row exists. Used to gate the list-side ensure:
-/// `useCaseList` returns `[]` for an unknown workspace rather than 404, so
-/// there is no existence check to lean on, and an ungated ensure would
-/// create an ORPHAN workspace_items row for a workspace that never existed.
+/// True when a workspace row exists.
 pub fn workspaceExists(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -373,17 +270,7 @@ pub fn workspaceExists(
 
 // =====================================================================
 // Handler — POST /api/workspaces/:workspace_id/default-project
-// =====================================================================
-//
-// The cold-start fallback. `GET .../items` (Step 4) already ensures the
-// default on the normal path, so most clients never reach this. It exists
-// for the one case the list cannot cover: the app was open when Migration
-// 094 ran, so its loaded list predates the `is_default` column and a New
-// Chat tap would otherwise be a no-op until a manual refetch.
-//
-// Deliberately takes NO body: this is a command ("give me the default"),
-// not a resource creation, and a body would tempt a name/path override
-// that the invariant forbids anyway.
+// ===================================================================== The
 
 const DefaultProjectResponse = struct {
     item: http_response.WorkspaceItemGetResponse,
@@ -512,11 +399,7 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
-    // Migration 094's shape: is_default NOT NULL DEFAULT 0 plus BOTH
-    // indexes. The partial unique index is not optional here — the race
-    // guard in ensureDefaultProject is only meaningful if the database
-    // rejects a second default, so a test that omitted it would be testing
-    // a different system than production runs.
+    // Migration 094's shape: is_default NOT NULL DEFAULT 0 plus BOTH indexes.
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
         \\  id TEXT PRIMARY KEY,
@@ -567,13 +450,8 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
     return .{ .db = db, .threaded = threaded, .env = env, .home = "/home/tester" };
 }
 
-/// Run a `SELECT COUNT(*)` whose WHERE clause needs the item id(s) interpolated.
-/// `template` is a comptime fmt string; pass one `{{s}}` argument per `{{s}}`
-/// placeholder. Ids here are generated by the code under test, never user
-/// input, so interpolation is safe and keeps the assertions readable.
-///
-/// comptime because Zig 0.16 requires a compile-time format string for both
-/// `bufPrint` and `allocPrint` — a runtime template cannot be formatted at all.
+/// Run a `SELECT COUNT(*)` whose WHERE clause needs the item id(s)
+/// interpolated.
 fn countWhereFmt(
     db: *sqlite.SqliteBackend,
     alloc: std.mem.Allocator,
@@ -729,10 +607,8 @@ test "ensureDefaultProject honours the partial unique index under a simulated ra
     const first = try ensureDefaultProject(alloc, &ctx.db, "ws_1", &ctx.env, null);
     defer first.deinit(alloc);
 
-    // Simulate the loser of a race: force the fast path to miss, then try
-    // to insert a second default the way the create branch would. The
-    // database must refuse it — this is the guarantee the whole
-    // ExecuteFailed catch block exists to rely on.
+    // Simulate the loser of a race: force the fast path to miss, then try to
+    // insert a second default the way the create branch would.
     try testing.expectError(
         error.ExecuteFailed,
         ctx.db.exec(alloc,
@@ -766,9 +642,6 @@ test "useCaseGet serializes the project and reports whether it created it" {
     try testing.expect(std.mem.indexOf(u8, second, "\"created\":false") != null);
 
     // Both must report the SAME id — the envelope, not just the service.
-    // Mirrors DefaultProjectResponse exactly, `position` included: the parser
-    // is strict about unknown fields, so a View that omits one fails on the
-    // very response it is meant to check.
     const View = struct {
         item: http_response.WorkspaceItemGetResponse,
         created: bool,
@@ -792,19 +665,14 @@ test "workspaceExists distinguishes a real workspace from an invented one" {
     try testing.expect(workspaceExists(alloc, &ctx.db, "ws_real"));
     // This is the orphan guard. useCaseList returns [] for an unknown
     // workspace rather than 404, so without this probe a list read of
-    // "ws_ghost" would create a default for a workspace that never
-    // existed.
+    // "ws_ghost" would create a default for a workspace that never existed.
     try testing.expect(!workspaceExists(alloc, &ctx.db, "ws_ghost"));
     try testing.expect(!workspaceExists(alloc, &ctx.db, ""));
 }
 
-// ─── The corrupted-name repair ───────────────────────────────────────────
-//
-// A build with the bad free wrote default projects whose `name` came back as
-// 0xAA poison bytes, which the UI rendered as `[ 170, 170, … ]`. Fixing the
-// allocator stops new damage but leaves those rows in the user's database, so
-// the read path heals them. These tests pin both halves of the rule: garbage is
-// repaired, and a name a person typed is left alone.
+// ─── The corrupted-name repair ─────────────────────────────────────────── A
+// build with the bad free wrote default projects whose `name` came back as
+// 0xAA poison bytes, which the UI rendered as `[ 170, 170, … ]`.
 
 test "nameLooksUsable rejects poison bytes and blanks, accepts real names" {
     // The exact shape the bug produced: 0xAA repeated.
@@ -886,12 +754,6 @@ test "a user rename of the default project is never clobbered" {
         .{p.id}));
 }
 
-// ===== Tests merged from workspace_items_default_test.zig (2026-09-29 flatten) =====
-//
-// The default-project ROUTE contract is not asserted here: `matchRoute`
-// walks the shared table in registration order, so "is the literal
-// reachable" is a property of the registered table, not of this file.
-// `http_routes.zig` builds the real table and asserts that
-// `POST /api/workspaces/ws_1/default-project` resolves to
-// `workspaceDefaultProjectHandler` with no stray params, and that no
-// `POST /api/workspaces/:workspace_id/:param` route exists at all.
+// ===== Tests merged from workspace_items_default_test.zig (2026-09-29
+// flatten) ===== The default-project ROUTE contract is not asserted here:
+// `matchRoute` walks the shared table in registration order, so "is the

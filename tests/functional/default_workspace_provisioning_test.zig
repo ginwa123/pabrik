@@ -1,41 +1,6 @@
-// Functional tests for automatic per-user workspace provisioning.
-//
-// Zig port of `tests/functional/default_workspace_provisioning_test.py`
-// (same test names, same order).
-//
-// Boots a REAL pabrik binary + REAL SQLite via the harness (never a live
-// dev server, never port 8081). Replays the EXACT wire flow a brand-new
-// account takes: `create-admin` -> `POST /api/auth/login` ->
-// `GET /api/workspaces`.
-//
-// The user-visible contract being protected: a user who has never created
-// anything lands on a workspace named "Default" with a project in it,
-// rather than on "No workspace selected" behind a "+ New workspace"
-// button.
-//
-// Covers:
-//   * PROVISION — first login gives exactly one workspace named "Default".
-//   * WITH-PROJECT — it already carries a default project (home as its path).
-//   * IDEMPOTENT — logging in again, and after creating a second workspace,
-//     adds nothing.
-//   * PER-USER — a second admin gets their OWN Default, not the first user's.
-//   * REAL-ID — the login response really is a usable workspace id.
-//
-// THE PYTHON `_raw()` HELPER BECAME `rawWithCookie` HERE, but the harness
-// `Harness.http` client already does exactly what `_raw` did — it just
-// ALSO asserts the status by default. Every call site below checks the
-// status itself (`assert status == 200`), so they pass
-// `.assert_status = false` and read `r.status` themselves, exactly as
-// auth_test.zig does.
-//
-// THE DB IS READ WITH THE `sqlite3` CLI, NOT THE STDLIB MODULE. Python
-// used `sqlite3.connect(f"file:{p}?mode=ro", uri=True)`; this package
-// links no SQLite and must stay portable to a runner with no `libsqlite3`
-// dev package, so the port spawns the `sqlite3` COMMAND-LINE tool and
-// reads its `-json` output — the same idiom
-// `llm_history_model_not_empty_test.zig` and `session_skills_live_test.zig`
-// already use. The two DB assertions (`users`, `workspace_members` rows
-// the API filters out) SKIP when the CLI is absent rather than fail.
+// Functional tests for automatic per-user workspace provisioning. Zig port of
+// `tests/functional/default_workspace_provisioning_test.py` (same test names,
+// same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -74,12 +39,8 @@ fn bootAuth() !Harness {
     return Harness.boot(io, gpa, .{ .extra_args = &.{"--auth"} });
 }
 
-/// Run `pabrik create-admin` against the harness HOME.
-///
-/// `runPabrikCommand` prepends the resolved binary itself, so `argv`
-/// starts at the SUBCOMMAND. Passing the binary here as well would make
-/// the subcommand dispatch miss (it matches argv[1]) and boot a SERVER,
-/// which then tries to bind the default port.
+/// Run `pabrik create-admin` against the harness HOME. `runPabrikCommand`
+/// prepends the resolved binary itself, so `argv` starts at the SUBCOMMAND.
 fn createAdmin(home: []const u8, email: []const u8, password: []const u8, force: bool) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
@@ -117,10 +78,7 @@ fn login(h: *Harness, email: []const u8, password: []const u8) ![]u8 {
         return error.TestUnexpectedResult;
     }
     // `set_cookie.split("pabrik_session=", 1)[1].split(";", 1)[0].strip()`:
-    // the token is the text BETWEEN the name and the next `;`. The
-    // harness's `afterFirst` returns the text AFTER a delimiter, which
-    // here would be the attribute list (`Path=/; HttpOnly`) — wrong tool
-    // for this direction, hence the manual split.
+    // the token is the text BETWEEN the name and the next `;`.
     var attrs = std.mem.splitSequence(u8, set_cookie, ";");
     const first_attr = attrs.next() orelse return error.TestUnexpectedResult;
     const token = std.mem.trim(u8, harness.afterFirst(first_attr, "pabrik_session=") orelse
@@ -134,11 +92,6 @@ fn cookieHeader(token: []const u8) ![]u8 {
 }
 
 /// One row of `GET /api/workspaces`, with the strings COPIED.
-///
-/// Python just held the parsed dict; a Zig `harness.Json` borrows its
-/// `Response` body, so a struct handed back from a helper has to own its
-/// bytes or the caller reads freed memory the moment the `Response` is
-/// deinit'd.
 const WorkspaceRow = struct {
     id: []u8,
     name: []u8,
@@ -156,12 +109,6 @@ fn freeRows(rows: []WorkspaceRow) void {
 }
 
 /// The string at `key` of a JSON object, or a named failure.
-///
-/// Kept as one function because the natural inline spelling —
-/// `gpa.dupe(u8, switch (o.get("id") orelse return ...) { ... })` — does
-/// not compile: `dupe` returns an error union, so the `switch` needs a
-/// `try` around it, and nesting `try` inside an argument list is what
-/// makes this read as a single expression.
 fn strField(o: std.json.ObjectMap, key: []const u8) ![]const u8 {
     return switch (o.get(key) orelse {
         std.debug.print("missing `{s}` in a JSON object\n", .{key});
@@ -233,11 +180,8 @@ fn exitCode(term: std.process.Child.Term) ?u8 {
     };
 }
 
-/// Skip unless a `sqlite3` CLI is present and speaks `-json`.
-///
-/// `-json` landed in SQLite 3.33 (2020). Probing it once, up front, is
-/// what lets every LATER non-zero exit be read as a real SQL failure
-/// instead of "this build of sqlite3 has no such flag".
+/// Skip unless a `sqlite3` CLI is present and speaks `-json`. `-json` landed
+/// in SQLite 3.33 (2020).
 fn requireSqlite3Cli() !void {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-json", ":memory:", "SELECT 1 AS probe;" },
@@ -281,9 +225,8 @@ fn sqlLit(s: []const u8) ![]u8 {
 }
 
 /// Run one statement against `db_path`, return the CLI's stdout (owned).
-///
-/// `.timeout 5000` is the `busy_timeout` the server's WAL connection
-/// needs; a bare CLI invocation would otherwise fail with SQLITE_BUSY.
+/// `.timeout 5000` is the `busy_timeout` the server's WAL connection needs; a
+/// bare CLI invocation would otherwise fail with SQLITE_BUSY.
 fn sqliteRun(db_path: []const u8, sql: []const u8) ![]u8 {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-cmd", ".timeout 5000", "-json", db_path, sql },

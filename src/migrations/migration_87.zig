@@ -83,9 +83,6 @@ pub const Migration087CreateAgentRoutines = struct {
             &[_][]const u8{});
 
         // Backfill parent rows for routines predating this migration.
-        // Guarded by a sqlite_master check so the migration also runs on
-        // databases where workspace_items does not exist yet (unit-test
-        // :memory: DBs that only exercise the new tables).
         {
             var q = try db.query(allocator,
                 "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'workspace_items'",

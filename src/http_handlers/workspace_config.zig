@@ -1,31 +1,4 @@
 //! The per-workspace config overlay over HTTP.
-//!
-//!   * `GET /api/workspaces/:workspace_id/config` - the EFFECTIVE config (user
-//!     config with this workspace's overlay merged over it), so the settings
-//!     page shows what actually runs here rather than a sparse diff.
-//!   * `PUT /api/workspaces/:workspace_id/config` - replace the overlay with
-//!     the workspace-scoped slice of the request body. An empty slice records
-//!     an explicit "inherit"; it does not store an empty object.
-//!
-//! There is deliberately no reset/copy route. Every workspace is seeded from
-//! the user config at boot (`server_boot.seedWorkspaceSettingsFromUserConfig`)
-//! and the seeding is the migration, so a per-workspace "copy the user
-//! settings in" or "reset to inherited" control had nothing left to do.
-//! `PUT {}` still expresses "inherit" for anything that needs it.
-//!
-//! ## What this file deliberately does NOT do
-//!
-//! It never touches the process-global `LlmConfig` singleton. That pointer is
-//! one config for the whole process, and there is one overlay per workspace -
-//! swapping it here would make whichever workspace saved last win for every
-//! other one. `session_llm_config.mergedConfigTextFor` reads the overlay per
-//! session instead.
-//!
-//! There is no `DELETE .../config/profiles/:name` route. The user-scope
-//! version exists because deleting a profile there has to live-reload the
-//! singleton; a workspace overlay needs no reload, and the settings page
-//! already PUTs the whole config after removing the row. A second route would
-//! only add a route-order hazard for nothing.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -54,10 +27,6 @@ pub const WorkspaceConfigError = error{
 
 /// The effective config TEXT: `base` with `overlay` merged over it. Owned by
 /// the caller.
-///
-/// `base_json` is null when there is no user-level config to layer over (a
-/// fresh install, or a user who never saved settings); the overlay then stands
-/// alone, which is the honest answer rather than an error.
 pub fn effectiveConfig(
     allocator: std.mem.Allocator,
     base_json: ?[]const u8,
@@ -71,12 +40,6 @@ pub fn effectiveConfig(
 }
 
 /// The overlay the PUT body should store: its workspace-scoped slice.
-///
-/// The body is a FULL config on the wire (the same one `PUT /api/config/pabrik`
-/// takes), but only the keys that moved to workspace scope may be stored - see
-/// `workspace_config.WORKSPACE_SCOPED_KEYS`. `NothingScoped` is refused rather
-/// than stored as `{}`, because "I saved and everything vanished" is exactly
-/// the silent-data-loss shape this check exists to prevent.
 pub fn overlayFromPutBody(
     allocator: std.mem.Allocator,
     body: []const u8,
@@ -117,13 +80,9 @@ fn messageFor(err: WorkspaceConfigError) []const u8 {
 // Handler plumbing
 // =====================================================================
 
-/// The `owner` half of the overlay key.
-///
-///   * `--auth` OFF -> `FILE_MODE_OWNER` (`""`), one overlay per workspace.
-///   * `--auth` ON  -> the request's user, exactly like `users.config_json`.
-///     A workspace is shared between users and the overlay holds API keys, so
-///     keying it on the workspace alone would leak one user's profiles to
-///     every other member.
+/// The `owner` half of the overlay key. * `--auth` OFF -> `FILE_MODE_OWNER`
+/// (`""`), one overlay per workspace. * `--auth` ON -> the request's user,
+/// exactly like `users.config_json`.
 fn ownerForRequest(
     allocator: std.mem.Allocator,
     di: *pabrikcore.App,
@@ -331,11 +290,9 @@ test "effectiveConfig: no base at all still applies the overlay" {
 }
 
 test "overlayFromPutBody keeps only the workspace-scoped keys" {
-    // An arena, because `overlayFromPutBody` runs the same
-    // `parseConfigInput` the HTTP handler does - and that parser is
-    // `parseFromSliceLeaky` on purpose, since the handler gives it the request
-    // arena. Under `testing.allocator` every one of its allocations would be
-    // reported as a leak.
+    // An arena, because `overlayFromPutBody` runs the same `parseConfigInput`
+    // the HTTP handler does - and that parser is `parseFromSliceLeaky` on
+    // purpose, since the handler gives it the request arena.
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
     const alloc = arena_state.allocator();
@@ -386,9 +343,7 @@ test "statusFor/messageFor map every variant (a new one breaks this switch)" {
 test "the GET response masks the web_search key, like the user-scope GET" {
     // An ARENA, exactly like the equivalent test in `pabrik_config_get.zig`:
     // `maskProviders` builds a whole masked copy of the providers map and the
-    // response builder serialises it, and neither hands ownership back. That is
-    // correct in production - the request arena owns them - so the test has to
-    // provide one instead of counting their allocations as leaks.
+    // response builder serialises it, and neither hands ownership back.
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
     const alloc = arena_state.allocator();

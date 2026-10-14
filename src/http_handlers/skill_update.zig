@@ -1,22 +1,5 @@
-//! `PATCH /api/workspaces/:workspace_id/skills/:skill_name`.
-//!
-//! Edits one workspace-scoped skill. This is the HTTP half of what the
-//! `edit_skill` agent tool already does — the tool exists so a MODEL can
-//! revise a skill, and this route exists so the human in the Settings →
-//! Skills panel can. Both go through `skills_store.updateSkill`, so the
-//! two cannot disagree about what an edit is.
-//!
-//! The name is a PATH PARAM and is immutable. A rename would silently
-//! break every `use_skill({ name })` call, every `skill_eval` verdict
-//! keyed on the name, and every prompt that spells it — and no rename can
-//! be undone from the UI. A `name` in the body is therefore not an
-//! instruction: it is a claim about which row is being addressed, and a
-//! claim that does not match is the same answer as a row that is not
-//! there (see `useCase`).
-//!
-//! Wire shape: `{ "skill": { name, description, content, asset_count } }`,
-//! the same projection `skill_detail.zig` returns, so a caller that just
-//! saved an edit can render the result without a second GET.
+//! `PATCH /api/workspaces/:workspace_id/skills/:skill_name`. Edits one
+//! workspace-scoped skill.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -69,14 +52,9 @@ fn useCase(
     if (input.workspace_id.len == 0) return error.WorkspaceIdRequired;
     if (input.skill_name.len == 0) return error.SkillNameRequired;
 
-    // A `name` in the body is a claim about which row is being addressed,
-    // not a rename instruction: renaming would silently break every
-    // `use_skill({ name })` call and every `skill_eval` verdict keyed on
-    // the name. A claim that does not match the stored name gets the same
-    // answer as a row that is not there, so a rename attempt cannot be
-    // told apart from a cross-workspace probe — one more thing this
-    // endpoint does not disclose. Checked BEFORE the write so a refused
-    // rename leaves the stored body untouched.
+    // A `name` in the body is a claim about which row is being addressed, not
+    // a rename instruction: renaming would silently break every `use_skill({
+    // name })` call and every `skill_eval` verdict keyed on the name.
     if (input.body.name) |name| {
         if (!skills_store.isValidSkillName(name)) return error.InvalidName;
         const current = try readRow(allocator, db, input.workspace_id, input.skill_name);
@@ -121,13 +99,9 @@ fn readRow(
     };
 }
 
-// =====================================================================
-// Error mapping
-// =====================================================================
-//
-// Two exhaustive switches, one for the status and one for the message, so a
-// variant added to `SkillUpdateError` fails the build here rather than
-// surfacing as an unhandled error at runtime.
+// ===================================================================== Error
+// mapping
+// ===================================================================== Two
 
 fn statusFor(err: SkillUpdateError) u16 {
     return switch (err) {
@@ -383,7 +357,6 @@ test "useCase: a rename is refused, and the body is left as it was" {
     // A rename would break every `use_skill({ name })` call and every
     // `skill_eval` verdict keyed on the name, so the answer is "no such
     // skill" rather than a quiet half-applied edit — and the same answer a
-    // foreign workspace gets.
     try testing.expectError(
         error.NotFound,
         useCase(alloc, &ctx.db, .{

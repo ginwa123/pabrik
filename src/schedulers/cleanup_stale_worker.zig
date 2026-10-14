@@ -1,14 +1,8 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
-// Route `delete_worker` through `pabrikcore` (the
-// `root` module) instead of @import'ing it directly. The exe
-// module compiles `main.zig` which imports `cleanup_stale_worker.zig`;
-// if we reach into `src/agentic_loop/` directly, those
-// files end up in TWO modules (root via root.zig → mod.zig AND main
-// via cleanup_stale_worker.zig) and Zig's "file exists in two modules"
-// error fires. The exe module already has `pabrikcore` as an import
-// (per build.zig), so route through it.
+// Route `delete_worker` through `pabrikcore` (the `root` module) instead of
+// @import'ing it directly.
 const delete_worker_mod = pabrikcore.ai_mod.delete_worker;
 const event_bus_mod = pabrikcore.event_bus;
 const logger_mod = pabrikcore.loggermod;
@@ -32,16 +26,8 @@ pub const CleanupResult = struct {
     deleted_count: usize = 0,
 };
 
-/// Delete every worker row whose `last_activity_nano` is older than
-/// `now_unix - threshold_seconds` (or NULL). Reuses `deleteWorker` so
-/// the SSE `action="deleted"` event fires and the UI updates.
-/// The worker row is the single source of truth for "is this session
-/// running" (see `is_worker_running.zig`), so deleting the row is the
-/// whole cleanup — there is no in-memory registry to clear.
-///
-/// Per-row isolation: if one row's `deleteWorker` fails, log via
-/// `logger.?errFmt` and continue to the next row — the cron tick
-/// must NOT abort the whole batch on a single bad row.
+/// Delete every worker row whose `last_activity_nano` is older than `now_unix
+/// - threshold_seconds` (or NULL).
 pub fn cleanupStaleWorkers(input: CleanupStaleWorkerInput) anyerror!CleanupResult {
     const allocator = input.allocator;
     const db = input.db;
@@ -67,10 +53,7 @@ pub fn cleanupStaleWorkers(input: CleanupStaleWorkerInput) anyerror!CleanupResul
         const id = row.values[0];
         result.stale_count += 1;
 
-        // Delete the worker row + emit the SSE `action="deleted"`
-        // event. `deleteWorker` uses `id` as the primary key, which
-        // matches the worker.id column (== session_id in practice
-        // — see update_worker.zig:503).
+        // Delete the worker row + emit the SSE `action="deleted"` event.
         delete_worker_mod.deleteWorker(.{
             .allocator = allocator,
             .db = db,
@@ -94,12 +77,7 @@ pub fn cleanupStaleWorkers(input: CleanupStaleWorkerInput) anyerror!CleanupResul
     return result;
 }
 
-/// Cron callback. Signature is fixed by
-/// `cronjob_manager.register` (`kabelweb repo src/server/cronjob_manager.zig:87`):
-/// `*const fn (ctx: ?*anyopaque, now_unix: i64) void`.
-///
-/// Returns `void` (not `!void`) — DB errors are caught and logged
-/// inside, never propagated. The cron thread MUST NOT panic.
+/// Cron callback.
 pub fn handle(ctx: ?*anyopaque, now_unix: i64) void {
     _ = ctx;
 
@@ -131,12 +109,8 @@ pub fn handle(ctx: ?*anyopaque, now_unix: i64) void {
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────
-//
 // Tests are intentionally INLINE in this file (no separate _test.zig),
-// matching the project's existing convention for files that have both
-// impl + tests (delete_worker.zig, update_worker.zig, is_worker_running.zig).
-// The file is aggregated into the test module graph via
-// src/schedulers/test_runner.zig → src/root.zig:612.
+// matching the project's existing convention for files that have both impl +
 
 const TestCtx = struct {
     db: sqlite.SqliteBackend,
@@ -373,17 +347,9 @@ test "cleanupStaleWorkers keeps a fresh worker row" {
 // ─── Failure-tolerance test ─────────────────────────────────────────────
 
 test "cleanupStaleWorkers returns the DB error when the worker table itself is missing" {
-    // Simulate the "table does not exist" failure path by creating
-    // a DB with NO worker table and confirming the helper propagates
-    // the error rather than panicking. The cron wrapper (handle)
-    // is responsible for catching + logging — the helper just
-    // surfaces the error.
-    //
-    // Uses an arena (not std.testing.allocator) so the
-    // allocPrint'd cutoff_str from the production code path doesn't
-    // trigger a leak in the testing allocator — per the review
-    // feedback, the production code intentionally omits the
-    // per-allocation `defer free` (the caller's arena frees it).
+    // Simulate the "table does not exist" failure path by creating a DB with
+    // NO worker table and confirming the helper propagates the error rather
+    // than panicking.
     const alloc = testing.allocator;
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
@@ -406,9 +372,8 @@ test "cleanupStaleWorkers returns the DB error when the worker table itself is m
         .now_unix = 1_000_000,
     });
 
-    // We don't pin the specific SqliteBackend Error variant here —
-    // the SqliteBackend maps missing-table to PrepareFailed
-    // (Sqlite.zig:568) which the helper propagates verbatim. The
-    // cron wrapper (handle) is responsible for catching + logging.
+    // We don't pin the specific SqliteBackend Error variant here — the
+    // SqliteBackend maps missing-table to PrepareFailed (Sqlite.zig:568)
+    // which the helper propagates verbatim.
     try testing.expectError(error.PrepareFailed, result);
 }

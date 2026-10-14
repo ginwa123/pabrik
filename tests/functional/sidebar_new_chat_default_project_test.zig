@@ -1,57 +1,5 @@
-// Functional tests for the per-workspace default project and the New Chat flow.
-//
-// Zig port of `tests/functional/sidebar_new_chat_default_project_test.py`
-// (same test names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional tests for the per-workspace default project and the New Chat flow.
-//
-//   Plan: docs/plans/2026-09-27-sidebar-new-chat-default-project.md
-//   Task: task_1790528102260_4
-//
-//   The invariant under test is:
-//
-//       Every workspace has a default project. If we look for one and don't find
-//       it, we create it before doing anything else.
-//
-//   The default is a ``workspace_items`` row of ``item_type='agent'`` whose
-//   ``path`` is the server user's home directory, and it is where the "New Chat"
-//   action in the desktop sidebar and the Android drawer creates its chat.
-//
-//   Why a functional test and not a unit test
-//   -----------------------------------------
-//   Because the whole feature is defined by *where the home directory lands*.
-//   ``harness.py`` boots the binary with ``HOME`` pointed at an isolated tmpdir,
-//   which is the only way to assert two things that no unit test can reach:
-//
-//     * the default project's ``path`` really is that HOME, and
-//     * a chat created inside it really resolves its cwd to that HOME and NOT to
-//       a ``/tmp`` sandbox — which is the silent failure mode, because
-//       ``session_create.zig`` falls back to ``createSandbox`` whenever the path
-//       chain comes up empty, and the agent would then run somewhere the user
-//       never asked for.
-//
-//   The second test that cannot be a unit test is the orphan guard: the items
-//   list *writes*, so an unknown workspace id must create nothing. See
-//   ``test_reading_an_unknown_workspace_creates_nothing``.
-//   """
-//
-// BOOTS A REAL PABRIK BINARY + REAL SQLITE via the harness (never a live
-// dev server, never port 8081).
-//
-// THE DB IS WRITTEN WITH THE `sqlite3` CLI, NOT THE STDLIB MODULE. Python
-// opened `sqlite3.connect(...)` and ran `UPDATE workspace_items SET name = ?`
-// to reproduce the allocator-poison row. This package links no SQLite and
-// must stay portable to a runner with no `libsqlite3` dev package, so the
-// port spawns the `sqlite3` COMMAND-LINE tool — the same idiom
-// `default_workspace_provisioning_test.zig` uses — and that test SKIPS when
-// the CLI is absent rather than failing.
-//
-// The corrupt value is written as `CAST(x'aaa…' AS BLOB)`, which is what
-// Python's `b"\xaa" * 8` bound parameter produced: sqlite3 stores a `bytes`
-// value as a BLOB, and a TEXT-affinity column does NOT convert a BLOB back,
-// so the read path sees invalid UTF-8 and repairs it.
+// Functional tests for the per-workspace default project and the New Chat
+// flow.
 
 const std = @import("std");
 const testing = std.testing;
@@ -82,10 +30,6 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
 }
 
 /// One `workspace_items` row, with its strings COPIED.
-///
-/// A Zig `harness.Json` borrows its `Response` body, so anything a helper
-/// hands back has to own its bytes or the caller reads freed memory the
-/// moment the `Response` is deinit'd.
 const ItemRow = struct {
     id: []u8,
     name: []u8,
@@ -241,10 +185,9 @@ fn requireSqlite3Cli() !void {
     }
 }
 
-/// Run one statement against `db_path`.
-///
-/// `.timeout 5000` is the `busy_timeout` the server's WAL connection
-/// needs; a bare CLI invocation would otherwise fail with SQLITE_BUSY.
+/// Run one statement against `db_path`. `.timeout 5000` is the `busy_timeout`
+/// the server's WAL connection needs; a bare CLI invocation would otherwise
+/// fail with SQLITE_BUSY.
 fn sqliteRun(db_path: []const u8, sql: []const u8) ![]u8 {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-cmd", ".timeout 5000", db_path, sql },
@@ -282,13 +225,6 @@ fn sqlLit(s: []const u8) ![]u8 {
 }
 
 /// The agent DB inside the isolated tmpdir HOME.
-///
-/// Python used `Path(harness.temp_dir).rglob("agent.db")` — the harness
-/// shadows `XDG_CONFIG_HOME` to `<temp>/.config`, so the Linux layout is
-/// `<temp>/.config/pabrik/agent.db`. The known per-platform locations are
-/// probed first (cheap, and correct on the CI matrix); the recursive walk
-/// is the fallback so an unexpected layout still finds the file rather
-/// than failing with "expected an agent.db under the harness HOME".
 fn findAgentDb(root: []const u8) ![]u8 {
     const candidates = [_][]const []const u8{
         &.{ ".config", "pabrik", "agent.db" },
@@ -353,11 +289,9 @@ fn storedItemName(db: []const u8, item_id: []const u8) ![]u8 {
 // The invariant
 // ============================================================================
 
-// POST /api/workspaces creates the default eagerly.
-//
-// Not required for the invariant (the list read would heal it) but it is
-// what makes the Projects section show the default on first paint instead
-// of only after a refetch.
+// POST /api/workspaces creates the default eagerly. Not required for the
+// invariant (the list read would heal it) but it is what makes the Projects
+// section show the default on first paint instead of only after a refetch.
 test "a_new_workspace_already_has_a_default_project" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -386,12 +320,8 @@ test "a_new_workspace_already_has_a_default_project" {
     }
 }
 
-// The invariant, asserted over the wire: a miss creates, a hit returns.
-//
-// Two calls must yield one row and the same id. The endpoint is the
-// cold-start fallback both clients use, so a non-idempotent one would
-// duplicate the project every time an app that was open during the
-// upgrade clicked New Chat.
+// The invariant, asserted over the wire: a miss creates, a hit returns. Two
+// calls must yield one row and the same id.
 test "the_default_project_endpoint_is_idempotent" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -452,12 +382,9 @@ test "the_default_project_endpoint_is_idempotent" {
     }
 }
 
-// D12: the LIST read creates the default when the lookup misses.
-//
-// This is the enforcement point — both clients already call this
-// endpoint, so neither needs a "does the default exist?" branch. A
-// workspace whose default was deleted (or which predates Migration 094)
-// must come back with one.
+// D12: the LIST read creates the default when the lookup misses. This is the
+// enforcement point — both clients already call this endpoint, so neither
+// needs a "does the default exist?" branch.
 test "reading_the_items_list_heals_a_workspace_with_no_default" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -469,15 +396,8 @@ test "reading_the_items_list_heals_a_workspace_with_no_default" {
     const ws_id = try createWorkspace(&h, "default-ws");
     defer gpa.free(ws_id);
 
-    // Delete every item, which removes the default too. The workspace
-    // itself stays, so this is exactly the "miss" the invariant has to
-    // heal.
-    //
-    // Note there is deliberately NO read between the deletes and the
-    // assertion below: a list read is itself the healing act, so
-    // checking the "precondition" with a read would repair the workspace
-    // and then assert that the workspace was already healthy. The
-    // deletes ARE the miss.
+    // Delete every item, which removes the default too. The workspace itself
+    // stays, so this is exactly the "miss" the invariant has to heal.
     {
         const rows = try listItems(&h, ws_id);
         defer freeItems(rows);
@@ -497,12 +417,8 @@ test "reading_the_items_list_heals_a_workspace_with_no_default" {
     }
 }
 
-// The orphan guard — the one way a write-on-read goes wrong.
-//
-// `useCaseList` does NOT 404 for an unknown workspace; it returns `[]`.
-// So there was no existence check to lean on, and an ungated ensure would
-// create a `workspace_items` row for a workspace that never existed — an
-// orphan that nothing ever displays and nothing ever cleans up.
+// The orphan guard — the one way a write-on-read goes wrong. `useCaseList`
+// does NOT 404 for an unknown workspace; it returns `[]`.
 test "reading_an_unknown_workspace_creates_nothing" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -546,10 +462,7 @@ test "reading_an_unknown_workspace_creates_nothing" {
     var after = try h.http(io, .GET, "/api/workspaces", .{ .expect = &.{200} });
     defer after.deinit();
 
-    // Python compared the PARSED lists. Comparing the raw bodies is the
-    // same assertion with a stronger witness: any change to the JSON —
-    // a new key, a different order — turns the byte comparison red,
-    // where a hand-written field-by-field walk would quietly ignore it.
+    // Python compared the PARSED lists.
     if (!std.mem.eql(u8, before.body, after.body)) {
         std.debug.print(
             "reading an unknown workspace must not invent a workspace;\nbefore={s}\nafter ={s}\n",
@@ -559,10 +472,9 @@ test "reading_an_unknown_workspace_creates_nothing" {
     }
 }
 
-// Both clients' fast path is a local find over this response.
-//
-// The field has to be on EVERY row, not just the default's, or a client
-// cannot distinguish "ordinary project" from "a default it has not seen".
+// Both clients' fast path is a local find over this response. The field has
+// to be on EVERY row, not just the default's, or a client cannot distinguish
+// "ordinary project" from "a default it has not seen".
 test "every_item_reports_is_default_so_clients_can_find_it" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -574,12 +486,7 @@ test "every_item_reports_is_default_so_clients_can_find_it" {
     const ws_id = try createWorkspace(&h, "default-ws");
     defer gpa.free(ws_id);
 
-    // Python sent a literal "/tmp/helper". Rule: a path that goes INTO a
-    // JSON body must be derived from `h.temp_dir`, because the server
-    // validates it with `std.fs.path.isAbsolute`, which is
-    // platform-relative — a literal is correct on ubuntu and a 400 on
-    // windows-2022. The assertion under test is the `is_default` field,
-    // not the path's spelling.
+    // Python sent a literal "/tmp/helper".
     const helper_path = try harness.harnessPath(gpa, h.temp_dir, &.{"helper"});
     defer gpa.free(helper_path);
 
@@ -620,13 +527,8 @@ test "every_item_reports_is_default_so_clients_can_find_it" {
 // The point of the whole thing: the chat runs in $HOME
 // ============================================================================
 
-// A New Chat inside the default project runs with $HOME as its cwd.
-//
-// This is the assertion the feature exists for. The fallback chain in
-// `session_create.zig` is `task.cwd -> workspace_items.path ->
-// createSandbox(...)`, so a default project stored with an empty or wrong
-// `path` does not error — it silently puts the agent in a temp sandbox.
-// Only a harness with a controlled HOME can tell those apart.
+// A New Chat inside the default project runs with $HOME as its cwd. This is
+// the assertion the feature exists for.
 test "a_chat_in_the_default_project_resolves_its_cwd_to_home" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -675,11 +577,8 @@ test "a_chat_in_the_default_project_resolves_its_cwd_to_home" {
     };
     defer gpa.free(task_id);
 
-    // The session create, with cwd_session deliberately empty so the
-    // server has to resolve it from the project's path. Its response body
-    // carries only {id, name, status} — no cwd — so the resolved value is
-    // read back from the session list, which is where the chat UI reads
-    // it too.
+    // The session create, with cwd_session deliberately empty so the server
+    // has to resolve it from the project's path.
     {
         const body = try std.fmt.allocPrint(
             gpa,
@@ -734,11 +633,9 @@ test "a_chat_in_the_default_project_resolves_its_cwd_to_home" {
         return error.TestUnexpectedResult;
     }
 
-    // Stated explicitly because it is the failure that looks like
-    // success: a sandbox path is a perfectly valid absolute path, so
-    // nothing above would complain. `createSandbox` builds
-    // <dataDir>/apps/<sanitized session id>, so THAT shape is the marker
-    // — not "/tmp", which the harness's own HOME legitimately sits under.
+    // Stated explicitly because it is the failure that looks like success: a
+    // sandbox path is a perfectly valid absolute path, so nothing above would
+    // complain.
     const sandbox_suffix = try std.fmt.allocPrint(gpa, ".local/share/pabrik/data/apps/{s}", .{task_id});
     defer gpa.free(sandbox_suffix);
     if (std.mem.endsWith(u8, cwd, sandbox_suffix)) {
@@ -747,17 +644,9 @@ test "a_chat_in_the_default_project_resolves_its_cwd_to_home" {
     }
 }
 
-// A default project whose name was corrupted by the old build heals
-// itself.
-//
-// The allocator bug wrote 0xAA poison bytes into the name, which the
-// sidebar rendered as `[ 170, 170, … ]`. Fixing the bug stops new
-// damage, but the rows are already in the user's database — so the read
-// path rewrites any name that is empty, not valid UTF-8, or full of
-// control characters.
-//
-// Corrupting the row directly through SQLite is the only way to reproduce
-// the pre-fix state: a clean binary will never write a bad name again.
+// A default project whose name was corrupted by the old build heals itself.
+// The allocator bug wrote 0xAA poison bytes into the name, which the sidebar
+// rendered as `[ 170, 170, … ]`.
 test "a_corrupted_default_name_is_repaired_over_the_wire" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -797,12 +686,7 @@ test "a_corrupted_default_name_is_repaired_over_the_wire" {
         defer gpa.free(out);
     }
 
-    // POSITIVE CONTROL. Without this, a `sqlite3` invocation that
-    // silently matched zero rows would leave the name at "Project
-    // Default", and every assertion below would pass against a workspace
-    // that was never corrupted — the test would guard nothing. Read the
-    // row back over a channel that does NOT go through the repair, and
-    // prove the poison is really in the table first.
+    // POSITIVE CONTROL.
     {
         const stored = try storedItemName(db, default_id);
         defer gpa.free(stored);

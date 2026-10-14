@@ -1,29 +1,5 @@
-// Functional wire test: the `worker` table is the single source of truth
-// for "is this session running".
-//
-// A follow-up `POST /api/llm/session` for a session that already has a
-// `worker` row must QUEUE the message (`session_queue_messages`) and must
-// NOT start a second run: the worker row is left untouched (no heartbeat
-// upsert) and no `llm_history` rows appear.
-//
-// Why this file exists: `workflow.zig`'s gate used to be
-// `isWorkerRunning AND active_loops.contains(...)` — two sources of truth
-// that disagreed after a crash (stale row, empty in-memory map), so a
-// second message either queued behind a dead worker forever or, with only
-// the row present, started a duplicate run. The gate is now the worker
-// row alone; this test pins the wire-visible half of that contract.
-//
-// Method: seed a FRESH worker row directly (simulating a live loop —
-// `last_activity_nano` 100s old, well inside the 600s stale threshold so
-// the cron cannot reap it mid-test), POST the exact body the composer
-// sends, then assert over the DB via the `sqlite3` CLI idiom
-// `ask_user_test.zig` established (this package links no SQLite, so
-// every assertion crosses the process boundary).
-//
-// The `last_activity_nano`-unchanged assertion is the sharp one: the old
-// code path ran `touchCheckpointWorkers` (an upsert) before its first LLM
-// call, so a duplicate run would stamp the row within milliseconds. An
-// untouched row proves no run started.
+// Functional wire test: the `worker` table is the single source of truth for
+// "is this session running".
 
 const std = @import("std");
 const testing = std.testing;

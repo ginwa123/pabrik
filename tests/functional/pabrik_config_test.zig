@@ -1,56 +1,5 @@
-// Functional tests for pabrik config (Tier 1.7).
-//
-// Zig port of `tests/functional/pabrik_config_test.py`
-// (same test names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional tests for pylint config (Tier 1.7).
-//
-//   Exercises the pylint config HTTP surface:
-//
-//     - GET  /api/config/pabrik                  (returns stub profile on disk)
-//     - PUT  /api/config/pabrik                  (round-trip + missing-fields 400)
-//     - DELETE /api/config/pabrik/profiles/:name (removes from list + 404 unknown
-//                                               + doesn't touch other profiles)
-//
-//   The harness boots pylint with `stub_llm_profile=True` which pre-installs
-//   a `stub` profile at `<temp_dir>/.config/pabrik/config.json` (see
-//   `harness.py:_write_stub_llm_profile`). That stub profile is what
-//   GET/PUT/DELETE operate on.
-//
-//   Each test boots a fresh pylint (function-scoped fixture).
-//   """
-//
-// ─── WHY THE `config_harness` FIXTURE HAS NO macOS COPY STEP ───────────────
-// Python's fixture booted with `stub_llm_profile=True` and then, on Darwin,
-// copied `<HOME>/.config/pabrik/config.json` to
-// `<HOME>/Library/Application Support/pabrik/config.json`, because the harness
-// only wrote the Linux-shaped path while `getDefaultConfigDir` reads the
-// macOS one.
-//
-// The Zig harness's `writeStubLlmProfile` already writes the SAME payload to
-// ALL THREE platform paths (`.config/pabrik`, `AppData/Roaming/pabrik`,
-// `Library/Application Support/pabrik`), so whichever branch
-// `Config.zig:getDefaultConfigDir` takes, the stub profile is where the
-// server looks. The copy step has no reason to exist here — see the `dirs`
-// array in `harness.zig`.
-//
-// ─── WHY `BootOptions.stub_llm_profile` IS THE RIGHT PREBOOT ────────────────
-// `Harness.boot` allocates the tempdir INTERNALLY, so a suite cannot seed an
-// arbitrary `config.json` before the binary starts — there is no "seed the
-// file first" seam. `stub_llm_profile` is the one pre-boot seeding the
-// harness exposes, and for this file it is exactly right: the tests operate on
-// a profile installed on disk before boot. (A suite needing a bespoke
-// pre-boot payload would need a `BootOptions.config_json` field — the same
-// TODO `web_search_config_test.zig` records.)
-//
-// ─── MALFORMED JSON GOES OUT AS `json_body`, NOT A PRIVATE CLIENT ─────────
-// Test 3 sent `{not json}` through `urllib.request` because Python's helper
-// took a dict. The Zig harness takes `json_body` as an opaque byte slice and
-// sends it verbatim with `Content-Type: application/json`, so the same bytes
-// go on the wire with no second HTTP client — and the STATUS is read with
-// `.assert_status = false` because the status is the assertion.
+// Functional tests for pabrik config (Tier 1.7). Zig port of
+// `tests/functional/pabrik_config_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -90,11 +39,6 @@ fn deleteProfile(h: *Harness, name: []const u8, expect: []const u16) !harness.Re
 }
 
 /// The `profiles` map out of a config GET body, or a named failure.
-///
-/// Python did `r.get("profiles") or {}` at every call site, which is a
-/// NULL-tolerance the assertions then relied on ("`stub` in profiles" fails
-/// with a useful message either way). Folding the `or {}` in here keeps each
-/// test one line shorter and the failure message identical.
 fn profilesMap(doc: *const harness.Json) !std.json.ObjectMap {
     const v = doc.get("profiles") orelse return .{};
     return switch (v) {
@@ -134,13 +78,9 @@ fn strField(o: std.json.ObjectMap, key: []const u8) ![]const u8 {
     };
 }
 
-/// Is `active_profile` explicitly JSON `null` on this response?
-///
-/// Python: `after.get("active_profile") is None`, which is true for BOTH an
-/// absent key and a `null` value. `doc.get` returns `null` (the optional) for
-/// absent and the `.null` Value variant for an explicit null, so both spellings
-/// are accepted here — they are indistinguishable to the frontend, which is
-/// exactly why Python collapsed them.
+/// Is `active_profile` explicitly JSON `null` on this response? Python:
+/// `after.get("active_profile") is None`, which is true for BOTH an absent
+/// key and a `null` value.
 fn activeProfileIsAbsent(doc: *const harness.Json) bool {
     const v = doc.get("active_profile") orelse return true;
     return v == .null;
@@ -222,12 +162,8 @@ test "put_pabrik_config_round_trips_a_new_profile" {
 // Test 3: a malformed JSON body is a 400 naming the problem
 // ============================================================================
 
-// PUT with `{not json}` → 400 'Invalid JSON input'.
-//
-// Python reached for `urllib.request` here because its helper took a dict.
-// The Zig harness's `json_body` is an opaque slice, so the same bytes go on
-// the wire through the normal client — and the status is asserted here rather
-// than by the harness, because the status IS the thing under test.
+// PUT with `{not json}` → 400 'Invalid JSON input'. Python reached for
+// `urllib.request` here because its helper took a dict.
 test "put_pabrik_config_rejects_invalid_json" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -260,8 +196,6 @@ test "put_pabrik_config_rejects_invalid_json" {
 // PUT `{}` → 200; an empty body has all fields defaulted, which means the
 // existing on-disk config is read first and the empty PUT's defaulted fields
 // (api_endpoint='', model='', etc.) are applied as 'no change' (the apply
-// block only updates when len > 0). The `stub` profile (installed by the
-// harness) survives.
 test "put_pabrik_config_empty_body_preserves_existing" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -290,10 +224,6 @@ test "put_pabrik_config_empty_body_preserves_existing" {
 
 // DELETE /api/config/pabrik/profiles/stub → 200; GET no longer contains the
 // `stub` profile.
-//
-// The 200 response body is `{success, profile_name,
-// active_profile_was_cleared, error_message?}` per
-// `pabrik_config_profile_delete.zig`.
 test "delete_profile_removes_it_from_list" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -332,10 +262,9 @@ test "delete_profile_removes_it_from_list" {
 // Test 6: DELETE of an unknown profile is a 404 with a message
 // ============================================================================
 
-// DELETE /api/config/pabrik/profiles/no-such-profile → 404.
-//
-// The handler returns `{success: false, profile_name, error_message}` with
-// HTTP 404 when the profile is not found.
+// DELETE /api/config/pabrik/profiles/no-such-profile → 404. The handler
+// returns `{success: false, profile_name, error_message}` with HTTP 404 when
+// the profile is not found.
 test "delete_profile_404_for_unknown_name" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -367,10 +296,9 @@ test "delete_profile_404_for_unknown_name" {
 // Test 7: deleting one profile leaves the others alone
 // ============================================================================
 
-// PUT {profiles: {A: {...}, B: {...}}}, DELETE A → B survives.
-//
-// Tests that DELETE is scoped to a single name and the rest of the
-// profiles_models map is preserved.
+// PUT {profiles: {A: {...}, B: {...}}}, DELETE A → B survives. Tests that
+// DELETE is scoped to a single name and the rest of the profiles_models map
+// is preserved.
 test "delete_one_profile_does_not_touch_others" {
     try harness.requirePabrikBin(io, gpa);
 

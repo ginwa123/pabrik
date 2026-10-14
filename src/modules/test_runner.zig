@@ -1,9 +1,4 @@
 // Test discovery for the `src/modules/` tree.
-//
-// Every implementation file in this directory carries its own test blocks
-// inline (merged from the former `*_test.zig` siblings), so importing the
-// IMPLEMENTATION is what makes those tests discoverable — a `pub const`
-// re-export of the module elsewhere does not pull them into the test binary.
 
 test {
     _ = @import("static_files.zig");

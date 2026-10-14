@@ -1,10 +1,5 @@
-//! Thin re-export surface for the `tui` module (mounted as `pabrikcore.ai_mod.*`).
-//!
-//! As of 2026-09-11, the agent loop lives at `src/agentic_loop/` and the
-//! HTTP handlers at `src/http_handlers/` (both flattened from
-//! `src/ai_workflow/tui/`).
-//! This `mod.zig` re-exports it so existing call sites (`pabrikcore.ai_mod.*`)
-//! keep working unchanged.
+//! Thin re-export surface for the `tui` module (mounted as
+//! `pabrikcore.ai_mod.*`).
 
 pub const pabrikcore = @import("pabrikcore");
 pub const models = @import("../../agentic_loop/models.zig");
@@ -24,9 +19,6 @@ pub const delete_worker = @import("../../agentic_loop/delete_worker.zig");
 // Background-command completion queue (bg-completion Task 1+2) — pure log
 // helpers + completion envelope, consumed by the
 // schedulers/cleanup_stale_background_process.zig cron via
-// `pabrikcore.ai_mod.background_process` (same routing pattern as
-// delete_worker above: never @import the file directly from the
-// scheduler, or the exe module ends up owning it twice).
 pub const background_process = @import("../../agentic_loop/background_process.zig");
 pub const background_process_events = @import("../../agentic_loop/background_process_events.zig");
 pub const routines = @import("routines/mod.zig");

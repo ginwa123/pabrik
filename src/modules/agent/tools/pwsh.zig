@@ -1,10 +1,4 @@
-// RETIRED: `pwsh` is no longer a tool name. The unified `command` tool
-// (src/modules/agent/tools/command.zig) replaced it on 2026-09-04, and the
-// name was BANNED from dispatch on 2026-10-12 (see
-// agentic_loop/tools_equipped.zig :: RETIRED_TOOL_NAMES) — a model that emits
-// `pwsh` is refused and told to call `command`. This module survives only so
-// `pwsh_tool` and `execute_pwsh` keep compiling for non-LLM callers; nothing
-// offers `pwsh` to the model.
+// RETIRED: `pwsh` is no longer a tool name.
 const std = @import("std");
 const command = @import("command.zig");
 const schemas = @import("schemas.zig");
@@ -42,20 +36,9 @@ pub const pwsh_tool = AgentTool{
     },
 };
 
-// pwsh_test.zig — pwsh tool behavioural tests (Task 3 of 2026-08-14-pwsh-tool.md).
-//
-// pwsh is the LLM-facing PowerShell Core shell tool. The wire schema is
-// identical to bash (ShellInput / ShellOutput aliases per D2 in the plan).
-// These tests assert the behavioural parity:
-//
-//   1. `pwsh_tool` schema name + required fields match bash
-//   2. `pwsh_available()` returns false when pwsh isn't on $PATH (test skip)
-//   3. `parsePwsh` returns the same typed struct as `parseBash` (Task 7.2)
-//
-// We don't import a real `pwsh` executable on most CI runners, so the
-// happy-path `execute_pwsh("Write-Output hello-pwsh")` test SKIPS via
-// `if (!pwsh_available()) return;` — same pattern as bash.zig skipping
-// the Windows path on macOS / Linux.
+// pwsh_test.zig — pwsh tool behavioural tests (Task 3 of
+// 2026-08-14-pwsh-tool.md). pwsh is the LLM-facing PowerShell Core shell
+// tool.
 const builtin = @import("builtin");
 const testing = std.testing;
 const pwsh = @import("pwsh.zig");
@@ -64,10 +47,8 @@ const pwsh = @import("pwsh.zig");
 /// Equivalent to the bash.zig `if builtin.os.tag != .linux and builtin.os.tag != .macos` skip —
 /// but pwsh's availability check is per-machine, not per-OS.
 fn pwsh_available() bool {
-    // Zig 0.16 std.process API: `std.process.run(gpa, io, options)`.
-    // The .argv-based run signature is `RunOptions { argv, ... }`.
-    // We probe `pwsh -NoProfile -NonInteractive -Command "$PSVersionTable…"`
-    // which returns immediately on any working pwsh install.
+    // Zig 0.16 std.process API: `std.process.run(gpa, io, options)`. The
+    // .argv-based run signature is `RunOptions { argv, ... }`.
     var child = std.process.spawn(std.testing.io, .{
         .argv = &.{ "pwsh", "-NoProfile", "-NonInteractive", "-Command", "$PSVersionTable.PSVersion.ToString()" },
         .stdin = .ignore,
@@ -117,12 +98,6 @@ test "command-only registry: the model is offered exactly one shell tool, named 
     const tools_equipped = @import("../../../agentic_loop/tools_equipped.zig");
 
     // Post-unify contract (2026-09-04): the tool surface is ONE shell tool.
-    // `bash`/`pwsh` survive only as unregistered shim modules (both delegate to
-    // command.execute_command) so old code still compiles — registering either
-    // would show the model three shell tools again. UNIFIED_TOOL_REGISTRY is
-    // the table this is read from, not the text of a wiring file.
-    // The names themselves were fully RETIRED on 2026-10-12 (no dispatch
-    // alias) — see the assertions at the end of this test.
     var command_entries: usize = 0;
     for (tools_equipped.UNIFIED_TOOL_REGISTRY()) |entry| {
         if (std.mem.eql(u8, entry.name, "bash") or std.mem.eql(u8, entry.name, "pwsh")) {
@@ -151,9 +126,7 @@ test "command-only registry: the model is offered exactly one shell tool, named 
 
     // Unregistered is not unreachable-by-accident: the names are RETIRED, so
     // a stale `bash` call is refused outright AND the refusal names
-    // `command`. The old behavior — dispatch through an alias table so the
-    // call still ran — is exactly what kept the model emitting `bash`
-    // forever: the call worked, so nothing ever corrected it.
+    // `command`.
     try testing.expectEqual(@as(?[]const u8, null), tools_equipped.resolveToolAlias("bash"));
     try testing.expectEqual(@as(?[]const u8, null), tools_equipped.resolveToolAlias("pwsh"));
     try testing.expect(!tools_equipped.isDispatchableToolName("bash"));

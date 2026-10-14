@@ -1,24 +1,5 @@
 //! `DELETE /api/local-memories/:name?cwd=...` — delete a local memory file.
-//!
 //! No body. On success: 200 with `{"success":true,"name":"..."}`.
-//! Idempotent: deleting a memory that does not exist still returns 200.
-//!
-//! Layered as:
-//!   - `useCase` — validates `:name`, resolves the local memories dir
-//!     (query `cwd` first, then io fallback), calls
-//!     `deleteLocalMemoryFile`, and returns a heap-owned `name` slice.
-//!   - `localMemoryDeleteHandler` — thin orchestrator: parses `:name`
-//!     + `?cwd=` query, calls `useCase`, maps errors to status codes,
-//!     builds the JSON response.
-//!
-//! Preserves the static-contract assertions in `local_memories_crud_test.zig`:
-//!   - `get_local_memories_path_for_dir` + `get_local_memories_path_from_io`
-//!     substring checks
-//!   - `params.get("name")` + `400` substring checks
-//!   - `isValidMemoryName` validation
-//!   - `deleteLocalMemoryFile` + `200` (idempotent success) substring checks
-//!   - `std.json.Stringify.valueAlloc` substring check
-//!   - `500` + `no cwd available` substring checks
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -27,12 +8,6 @@ const memories_mod = pabrikcore.memories;
 const http_response = @import("http_response.zig");
 
 /// Response shape for `DELETE /api/local-memories/:name`.
-///
-/// Idempotent: `deleteLocalMemoryFile` returns true when the file
-/// is deleted OR was already missing (matches the
-/// `deleteMemoryFile` global helper's contract). The handler
-/// therefore always returns 200 with `success=true` on a valid
-/// name.
 pub const DeleteLocalMemoryResponse = struct {
     success: bool = true,
     name: []const u8,
@@ -64,10 +39,9 @@ pub const LocalMemoryDeleteInput = struct {
     cwd: []const u8,
 };
 
-/// Output of the delete use-case. `name` is HEAP-OWNED by the
-/// use-case (the path param is borrowed; duping it lets the
-/// handler hand the response to the JSON serializer without keeping
-/// the request alive).
+/// Output of the delete use-case. `name` is HEAP-OWNED by the use-case (the
+/// path param is borrowed; duping it lets the handler hand the response to
+/// the JSON serializer without keeping the request alive).
 pub const LocalMemoryDeleteOutput = struct {
     name: []u8,
 };
@@ -76,14 +50,8 @@ pub const LocalMemoryDeleteOutput = struct {
 // Use case
 // =====================================================================
 
-/// Delete a local memory file (idempotent).
-///
-/// Steps:
-///   1. Validate `name` (non-empty + `isValidMemoryName`).
-///   2. Resolve the local memories dir (query `cwd` → io fallback).
-///   3. `deleteLocalMemoryFile` to delete (or no-op if missing).
-///   4. Duplicate `name` so the handler can return it in the
-///      response.
+/// Delete a local memory file (idempotent). Steps: 1. Validate `name`
+/// (non-empty + `isValidMemoryName`). 2.
 fn useCase(
     allocator: std.mem.Allocator,
     io: std.Io,

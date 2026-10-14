@@ -1,41 +1,5 @@
-// Functional wire tests for POST /api/git/file/diffs (batch endpoint).
-//
-// Zig port of `tests/functional/git_file_diffs_test.py` (same test names).
-//
-// Replaces the SidebarDiffPanel N+1 fan-out (one GET /file/diff per file,
-// 20 parallel git spawns starving the Io pool) with a single POST that runs
-// at most 2 git processes server-side.
-//
-// Fixture repo — committed.txt is committed then modified in the worktree
-// (unstaged); staged.txt is committed, modified and `git add`ed (staged);
-// new.txt is untracked.
-//
-// WHERE THE FIXTURE LIVES, AND WHY IT IS NOT THE HARNESS'S TEMPDIR:
-//
-// pytest used `tmp_path`, a SIBLING of the harness tempdir. Two hazards
-// make the obvious Zig equivalents wrong:
-//
-//   1. `std.testing.tmpDir` allocates under `<cwd>/.zig-cache/tmp/`, which
-//      for this package is INSIDE the git worktree. `git symbolic-ref`
-//      walks UP, so a repo created there resolves to the WORKTREE's own
-//      branch — any assertion about branches then passes for the wrong
-//      reason.
-//   2. A `pabrik-func-` directory is deleted by `reapOrphanTestPids`, which
-//      runs on EVERY harness boot and removes any tmp entry with that
-//      prefix whose `.harness.pid` names a dead process. A fixture there
-//      is reaped by the NEXT test's boot, mid-suite. The symptom is
-//      spectacularly misleading: the server returns three well-formed rows
-//      with EMPTY `diff_content`, because `git -C <deleted>` exits
-//      non-zero and the handler swallows spawn failures with `else |_| {}`.
-//
-// `harness.makeScratchDir` therefore allocates under `pabrik-fix-` —
-// still under the OS temp root (so `isSafeTmp` gates the delete), but
-// invisible to the reaper.
-//
-// One more ordering rule, learned the hard way: `cleanupExtraDir` DELETES
-// the fixture. It belongs on a `defer`, never called eagerly — a fixture
-// removed before the request reads it produces the same empty-diff
-// symptom as hazard 2, from a completely different cause.
+// Functional wire tests for POST /api/git/file/diffs (batch endpoint). Zig
+// port of `tests/functional/git_file_diffs_test.py` (same test names).
 
 const std = @import("std");
 const testing = std.testing;
@@ -47,9 +11,6 @@ const io = testing.io;
 
 /// Run `git` with a fixed identity so the fixture never depends on the
 /// machine's global git config (which CI does not set).
-///
-/// Python's `_git` used `check=True`, which raises on non-zero exit; the
-/// Zig equivalent is to return an error, which the caller propagates.
 fn git(cwd: []const u8, args: []const []const u8) !void {
     var full: std.ArrayList([]const u8) = .empty;
     defer full.deinit(gpa);
@@ -75,9 +36,7 @@ fn git(cwd: []const u8, args: []const []const u8) !void {
 }
 
 /// Run `git` and return its stdout, for use as an ORACLE the handler is
-/// checked against. Distinct from `git` above, which only asserts rc=0 and
-/// throws the output away — comparing a handler against another handler only
-/// proves they agree, whereas this compares it against git itself.
+/// checked against.
 fn gitCapture(cwd: []const u8, args: []const []const u8) ![]u8 {
     var full: std.ArrayList([]const u8) = .empty;
     defer full.deinit(gpa);
@@ -154,15 +113,7 @@ test "batch_returns_all_three_groups" {
     var scratch: []u8 = undefined;
     var repo: []u8 = undefined;
     try bootWithRepo(&h, &scratch, &repo);
-    // DEFER ORDER IS LIFO AND LOADS-BEARING HERE. Each `defer` below
-    // READS a buffer that the one after it must still own:
-    //
-    //   free(scratch)   must run AFTER cleanupExtraDir(scratch)
-    //   free(repo)      must run AFTER the http calls that read repo
-    //
-    // Registering a free before its reader segfaults inside isSafeTmp
-    // with a dangling pointer, which is exactly what happened the first
-    // time this file was written.
+    // DEFER ORDER IS LIFO AND LOADS-BEARING HERE.
     defer gpa.free(scratch);
     defer harness.cleanupExtraDir(io, gpa, scratch);
     defer gpa.free(repo);
@@ -228,24 +179,14 @@ test "batch_matches_git_diff_output" {
     var scratch: []u8 = undefined;
     var repo: []u8 = undefined;
     try bootWithRepo(&h, &scratch, &repo);
-    // DEFER ORDER IS LIFO AND LOADS-BEARING HERE. Each `defer` below
-    // READS a buffer that the one after it must still own:
-    //
-    //   free(scratch)   must run AFTER cleanupExtraDir(scratch)
-    //   free(repo)      must run AFTER the http calls that read repo
-    //
-    // Registering a free before its reader segfaults inside isSafeTmp
-    // with a dangling pointer, which is exactly what happened the first
-    // time this file was written.
+    // DEFER ORDER IS LIFO AND LOADS-BEARING HERE.
     defer gpa.free(scratch);
     defer harness.cleanupExtraDir(io, gpa, scratch);
     defer gpa.free(repo);
     defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
 
     // There is no per-file endpoint to compare against any more — it is
-    // deleted. So compare LIST mode against `git diff` ITSELF: that is a
-    // stronger oracle than the old handler-vs-handler comparison, which only
-    // proved two of our own handlers agreed.
+    // deleted.
     const git_out = try gitCapture(repo, &.{ "diff", "--", "committed.txt" });
     defer gpa.free(git_out);
 
@@ -279,15 +220,7 @@ test "batch_validation" {
     var scratch: []u8 = undefined;
     var repo: []u8 = undefined;
     try bootWithRepo(&h, &scratch, &repo);
-    // DEFER ORDER IS LIFO AND LOADS-BEARING HERE. Each `defer` below
-    // READS a buffer that the one after it must still own:
-    //
-    //   free(scratch)   must run AFTER cleanupExtraDir(scratch)
-    //   free(repo)      must run AFTER the http calls that read repo
-    //
-    // Registering a free before its reader segfaults inside isSafeTmp
-    // with a dangling pointer, which is exactly what happened the first
-    // time this file was written.
+    // DEFER ORDER IS LIFO AND LOADS-BEARING HERE.
     defer gpa.free(scratch);
     defer harness.cleanupExtraDir(io, gpa, scratch);
     defer gpa.free(repo);

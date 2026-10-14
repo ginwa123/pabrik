@@ -1,37 +1,5 @@
-// Functional wire tests for GET /api/git/pr/status.
-//
-// Zig port of `tests/functional/git_pr_status_test.py` (same test names,
-// same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional wire tests for GET /api/git/pr/status.
-//
-//   Exercises the endpoint the `pabrikcli pr-status` command calls
-//   (`gh pr view` wrapper returning open/merged/closed):
-//
-//     1. Missing path → 400 (route is registered, validator runs).
-//     2. Unknown provider → 400 (strict validator).
-//     3. gitlab provider → no longer rejected up front; it reaches the glab
-//        path (see `git_pr_gitlab_test.py` for the full GitLab coverage).
-//     4. Non-repo path → 404 (not shadowing, real handler answer).
-//     5. Happy path via a fake `gh` on PATH → 200 with normalized status.
-//   """
-//
-// WHERE THE FIXTURE LIVES: `harness.makeScratchDir`, never
-// `std.testing.tmpDir` and never the harness's own tempdir. The
-// `pabrik-func-` namespace is what `reapOrphanTestPids` deletes on every
-// boot, and `<cwd>/.zig-cache/tmp/` is INSIDE the git worktree — where
-// `git symbolic-ref` walks UP and the fixture repo resolves to the
-// worktree's branch. See `git_commits_test.zig` for the long form.
-//
-// HOW THE FAKE `gh` REACHES THE SERVER: PATH. The backend spawns `gh`
-// by bare name (`Programs.gh = "gh"`), and the only injection seam
-// (`useCaseWithPrograms`) is unit-test-only, invisible over HTTP. The
-// Python original used `monkeypatch.setenv("PATH", ...)` before booting
-// the server; the Zig harness copies `std.testing.environ` into the child
-// env, so `PathShadow` below is the same trick — prepend the bindir,
-// boot, restore.
+// Functional wire tests for GET /api/git/pr/status. Zig port of
+// `tests/functional/git_pr_status_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -53,10 +21,9 @@ const Scratch = struct {
         return .{ .root = try harness.makeScratchDir(gpa) };
     }
 
-    /// LIFO note: `cleanupExtraDir` READS `root`, so the free is
-    /// registered first — a defer that freed the slice before the
-    /// cleaner read it is a use-after-free that happens to read as a
-    /// plausible path.
+    /// LIFO note: `cleanupExtraDir` READS `root`, so the free is registered
+    /// first — a defer that freed the slice before the cleaner read it is a
+    /// use-after-free that happens to read as a plausible path.
     fn deinit(self: *Scratch) void {
         harness.cleanupExtraDir(io, gpa, self.root);
         gpa.free(self.root);
@@ -67,12 +34,8 @@ const Scratch = struct {
     }
 };
 
-/// Python's `_git`: `git` in `cwd` with the fixture identity baked in,
-/// so the fixture never depends on the machine's global git config.
-///
-/// `-c commit.gpgsign=false` is an addition, not a port artifact: it
-/// stops a developer's global signing config from failing the commit on
-/// a box that has one.
+/// Python's `_git`: `git` in `cwd` with the fixture identity baked in, so the
+/// fixture never depends on the machine's global git config.
 fn git(cwd: []const u8, args: []const []const u8) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
@@ -129,16 +92,14 @@ fn writeExecScript(path: []const u8, contents: []const u8) !void {
     defer f.close(io);
     try f.writeStreamingAll(io, contents);
     // `setFilePermissions(..., .executable_file, ...)` is the portable
-    // spelling of Python's `chmod(st_mode | stat.S_IEXEC)` and also
-    // makes the file READABLE, which OR-ing the exec bit into a fresh
-    // file's mode does not guarantee.
+    // spelling of Python's `chmod(st_mode | stat.S_IEXEC)` and also makes the
+    // file READABLE, which OR-ing the exec bit into a fresh file's mode does
     try std.Io.Dir.cwd().setFilePermissions(io, path, .executable_file, .{});
 }
 
-/// Put an executable `gh` stub in its OWN bindir inside `s`, so
-/// prepending that directory to PATH cannot shadow another command the
-/// server needs (`git` in particular — the repo gate runs it).
-/// Returns the bindir so the caller can install the PATH shadow.
+/// Put an executable `gh` stub in its OWN bindir inside `s`, so prepending
+/// that directory to PATH cannot shadow another command the server needs
+/// (`git` in particular — the repo gate runs it).
 fn installFakeGh(s: *Scratch, dir_name: []const u8, body: []const u8) ![]u8 {
     const bindir = try s.path(&.{dir_name});
     errdefer gpa.free(bindir);
@@ -153,19 +114,13 @@ fn installFakeGh(s: *Scratch, dir_name: []const u8, body: []const u8) ![]u8 {
 
 /// Prepend `prefix` to `PATH` in `std.testing.environ` — the exact block
 /// `Harness.boot` copies into the child env.
-///
-/// Scoped by `restore`: the shadow must not outlive the test, or every
-/// later suite in the same process would spawn the fake `gh`.
 const PathShadow = struct {
     gpa: std.mem.Allocator,
     saved: std.process.Environ,
     entries: [:null]const ?[*:0]const u8,
 
     fn install(alloc: std.mem.Allocator, prefix: []const u8) !PathShadow {
-        // `Environ`'s block is a raw `KEY=VALUE` slice on POSIX. On
-        // Windows it is a PEB pointer read through `GlobalBlock`, which
-        // Zig offers no way to shadow — and the fixture `gh` is a
-        // `/bin/sh` script anyway, so this suite is POSIX-only.
+        // `Environ`'s block is a raw `KEY=VALUE` slice on POSIX.
         if (comptime @import("builtin").os.tag != .windows) {
             const saved = std.testing.environ;
             const orig = saved.block.slice;
@@ -294,11 +249,7 @@ test "unknown_provider_is_400" {
 }
 
 // 3. `provider=gitlab` reaches the glab path instead of a hard 400.
-//
-// `provider=gitlab` used to be a hard 400 before any lookup. Now it
-// reaches the glab path. On a box with no `glab` installed the honest
-// answer is 422 naming glab — what must NOT happen is a 400 blaming
-// GitHub, which is what a GitLab user used to get.
+// `provider=gitlab` used to be a hard 400 before any lookup.
 test "gitlab_provider_is_not_rejected_up_front" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -333,39 +284,6 @@ test "gitlab_provider_is_not_rejected_up_front" {
 
     if (message.len > 0) {
         // Whichever way it failed, the message must be about GitLab.
-        //
-        // HOST-DEPENDENT, AND THE PYTHON ORIGINAL IS TOO — this branch
-        // is red on any box that HAS `glab` installed, and it is ported
-        // verbatim rather than relaxed to hide that. The two reachable
-        // messages are:
-        //
-        //   * no `glab` on PATH → 422 `"glab CLI not found on PATH
-        //     (install glab for gitlab status)"` (git_pr_status.zig, the
-        //     `error.CliMissing` arm) — contains "glab" and "gitlab".
-        //   * `glab` present → it RUNS, and on a fixture repo with no
-        //     remote it fails, so the handler takes `error.FetchFailed`
-        //     and returns 502 `"failed to fetch merge request status:
-        //     <glab's own stderr>"`. `glab`'s stderr is `ERROR  No git
-        //     remotes found.` — the forge noun is there ("merge
-        //     request"), but neither literal the Python asserted on is.
-        //
-        // So on a machine with `glab` installed, the message names NEITHER
-        // literal the Python asserted on, and the test goes red — the
-        // Python original fails here with exactly the same body (verified
-        // by running it).
-        //
-        // The regression this test actually guards — that a GitLab request
-        // is not rejected up front with a GitHub-flavoured error — is
-        // asserted ABOVE and passes either way. The remaining assertion is
-        // host-dependent by construction: it can only hold on a box
-        // WITHOUT `glab`, where the handler takes the `error.CliMissing`
-        // arm and names the CLI itself.
-        //
-        // So probe for `glab` and SKIP when it is present, rather than
-        // reporting a server regression that does not exist. Widening the
-        // assertion to accept "merge request" would be the alternative,
-        // and is worse: it changes the contract this test was written to
-        // pin, to accommodate one developer's machine.
         if (hasGlabOnPath()) {
             std.debug.print(
                 "skipping: `glab` is installed, so the handler takes the " ++
@@ -430,12 +348,6 @@ test "non_repo_path_is_404" {
 }
 
 // 5. A fake `gh` on PATH proves the 200 wire shape end-to-end.
-//
-// The harness boots the server with the parent's PATH, so prepending a
-// bindir with an executable `gh` stub makes the backend's
-// `gh pr view --json ...` spawn return canned JSON without network. The
-// server must boot AFTER the PATH patch, which is why the shadow is
-// installed before `Harness.boot`.
 test "happy_path_via_fake_gh" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -476,10 +388,6 @@ test "happy_path_via_fake_gh" {
 }
 
 // 6. An OPEN PR's `gh` payload carries `"mergedAt":null,"closedAt":null`.
-//
-// The backend struct used to declare those as non-optional strings, so
-// JSON parsing failed and every open PR (e.g. #584) returned HTTP 502
-// "failed to fetch PR status". Nulls must surface as empty strings.
 test "open_pr_with_null_dates_is_200" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -523,12 +431,6 @@ test "open_pr_with_null_dates_is_200" {
 }
 
 // 7. A failing `gh` must surface its stderr in the 502 body.
-//
-// The handler used to swallow `gh` stderr and return only the generic
-// "failed to fetch PR status (check PR number/URL, provider, and gh
-// auth)" hint, so DevTools never showed WHY it failed (expired auth,
-// bad PR number, rate limit). The 502 `error` must now carry the real
-// `gh` stderr after the prefix.
 test "fetch_failure_surfaces_gh_stderr" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -582,11 +484,8 @@ test "fetch_failure_surfaces_gh_stderr" {
 // Assertion helpers
 // ============================================================================
 
-/// Is a `glab` binary resolvable on PATH?
-///
-/// Probed with `std.process.run` so it is the same PATH the server's own
-/// `execLookPath` will see. See the call site for why the answer decides
-/// whether this assertion is meaningful at all.
+/// Is a `glab` binary resolvable on PATH? Probed with `std.process.run` so it
+/// is the same PATH the server's own `execLookPath` will see.
 fn hasGlabOnPath() bool {
     var child = std.process.spawn(io, .{
         .argv = &.{ "sh", "-c", "command -v glab >/dev/null 2>&1" },

@@ -1,27 +1,5 @@
-//! `ask_user` state + the answer round-trip.
-//!
-//! ## Why this module exists
-//!
-//! The `ask_user` tool does NOT block the agentic loop. It writes one row
-//! here and returns a `"status":"pending"` payload immediately; the
-//! workflow then BREAKS the turn (see the `.tool_calls` arm in
-//! `workflow.zig`). The human answers later, on their own schedule, and
-//! `POST /api/llm/session/:id/answer` (see `http_handlers/ask_user_answer.zig`)
-//! does three things in a load-bearing order:
-//!
-//!   1. mark this row `answered` / `skipped` / `abandoned`;
-//!   2. **rewrite the tool-result `llm_history` row in place** so the model
-//!      reads the answer as a normal tool result;
-//!   3. start a fresh run so the conversation resumes.
-//!
-//! Step 2 MUST precede step 3. `handle_tool`'s Phase-1 rows are written with
-//! `is_feed_to_llm = 1`, so a run that starts first would hand the model
-//! `"status":"pending"` and it might guess. If step 2 fails the caller
-//! must leave the row `pending` and return an error, so a Retry is safe —
-//! never emit the run anyway.
-//!
-//! There is deliberately no `expires_at` / timeout: nothing is held open, so
-//! a question may wait indefinitely for the same cost.
+//! `ask_user` state + the answer round-trip. The `ask_user` tool does NOT
+//! block the agentic loop.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -61,9 +39,7 @@ pub const PendingQuestion = struct {
 };
 
 /// `q_<nanoseconds>` — same shape as the other row ids in this codebase
-/// (`at_<nanos>`, `sess_<nanos>`). Uniqueness is additionally guaranteed by
-/// the UNIQUE(tool_call_id) index, which is the invariant that actually
-/// matters (one question per tool call).
+/// (`at_<nanos>`, `sess_<nanos>`).
 pub fn newQuestionId(allocator: std.mem.Allocator, io: std.Io) ![]u8 {
     return std.fmt.allocPrint(allocator, "q_{d}", .{std.Io.Timestamp.now(io, .real).nanoseconds});
 }
@@ -92,10 +68,6 @@ pub const InsertQuestionInput = struct {
 };
 
 /// Insert the pending row and return its id (caller-owned).
-///
-/// `INSERT OR IGNORE` + the UNIQUE(tool_call_id) index make a re-exec
-/// idempotent: if this tool call already has a question (a retry after a
-/// transient failure), the existing row wins and its id comes back.
 pub fn insertPendingQuestion(input: InsertQuestionInput) ![]u8 {
     const allocator = input.allocator;
     const id_owned: ?[]u8 = if (input.id) |given| try allocator.dupe(u8, given) else null;
@@ -185,12 +157,8 @@ pub fn getPendingQuestionByToolCall(
     return null;
 }
 
-/// Move a question to a terminal (or back to pending) status.
-///
-/// `answer` is stored only when non-null and non-empty. An empty slice binds
-/// as SQL NULL in this backend anyway (Migration 079's trap), and validation
-/// upstream already rejects a blank answer — so passing `""` here would be a
-/// silent no-op, which is why the parameter is optional rather than a slice.
+/// Move a question to a terminal (or back to pending) status. `answer` is
+/// stored only when non-null and non-empty.
 pub fn markQuestionStatus(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -224,10 +192,6 @@ pub fn markQuestionStatus(
 }
 
 /// Resolve every still-pending question for a session as `abandoned`.
-///
-/// Used by the `session_create` guard: the human sent a different message
-/// instead of answering, so the question is settled (the model is told not to
-/// guess) and their message can run. Returns how many rows changed.
 pub fn markAbandonedForSession(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -269,11 +233,9 @@ pub fn markAbandonedForSession(
     return changed;
 }
 
-/// The hot-path predicate: is this session waiting on the human?
-///
-/// Called at the top of every agentic-loop iteration and before every
-/// user-initiated run. `SELECT 1 … LIMIT 1` on the indexed
-/// (session_id, status) pair — the same shape as `hasQueuedMessages`.
+/// The hot-path predicate: is this session waiting on the human? Called at
+/// the top of every agentic-loop iteration and before every user-initiated
+/// run.
 pub fn hasPendingQuestion(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -292,14 +254,6 @@ pub fn hasPendingQuestion(
 /// Settle every pending question for a session as `abandoned`, rewriting each
 /// question's tool-result row so the model reads "the human moved on" instead
 /// of `<status>pending</status>`.
-///
-/// This is what the `session_create` guard calls: the human sent a message
-/// instead of answering. Returns how many questions were settled.
-///
-/// Every write here is best-effort in spirit but error-propagating in
-/// practice: a failure leaves that question pending, and the workflow's
-/// iteration-top guard then refuses to run — so the failure mode is "the
-/// message appears to do nothing", never "the model saw `pending` and guessed".
 pub fn abandonPendingQuestions(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -354,7 +308,6 @@ pub fn listRecentQuestions(
     // `SqliteBackend` binds every argument as TEXT, so a bare `?` next to an
     // INTEGER expression has no column affinity on either side — and SQLite
     // orders INTEGER before TEXT, making `resolved_at >= '1789…'` always
-    // false. CAST restores the numeric comparison.
     const sql = SELECT_COLUMNS ++
         " WHERE session_id = ? AND (status = 'pending' OR COALESCE(resolved_at, 0) >= CAST(? AS INTEGER)) ORDER BY created_at ASC";
     var rows = try db.query(allocator, sql, &.{ session_id, cutoff });
@@ -426,16 +379,6 @@ fn extractParametersJson(allocator: std.mem.Allocator, content: []const u8) ![]u
 /// Step 2 of the answer round-trip: overwrite the tool-result row in place
 /// with the resolved envelope and push the row's SSE update so an open
 /// `ChatView` flips the card without a reload.
-///
-/// The `parameters` of the row being replaced are preserved as a JSON
-/// string: the arguments of a tool call never change, and the frontend's
-/// envelope parser REQUIRES the field (a rewrite without it renders no card
-/// state at all).
-///
-/// The SSE emit is best-effort (logged, never propagated): a failed card
-/// refresh must not roll back a valid answer or block the resume. The
-/// UPDATE itself IS fatal — see the module doc: the resume must not start
-/// while the model would still read `pending`.
 pub fn rewriteToolResultRow(input: RewriteToolResultInput) !void {
     const allocator = input.allocator;
 
@@ -458,11 +401,6 @@ pub fn rewriteToolResultRow(input: RewriteToolResultInput) !void {
 }
 
 /// Emit the `llm_full` frame for one `llm_history` row.
-///
-/// Mirrors `handle_tool.zig`'s private `sendSSEForMessageById`: the wire
-/// `tool_call_id` is the ORIGINAL LLM id, not the row id — using the row id
-/// here broke `spawn_sub_agent` live progress once already (2026-09-01 fix),
-/// and the card keys its own state off `tool_call_id`.
 fn emitRowById(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -531,10 +469,7 @@ pub const SessionRunFields = struct {
     cwd: []const u8,
     selected_profile_model: []const u8,
     is_auto_retry_until_stop: []const u8,
-    /// Owning user id (`COALESCE(user_id, '')`). Passed through to
-    /// `emit_run_agent` so the worker's session upsert keeps the row
-    /// owned under `--auth`; empty means shared bucket (auth off or
-    /// legacy ownerless row).
+    /// Owning user id (`COALESCE(user_id, '')`).
     user_id: []const u8,
 
     pub fn deinit(self: *const SessionRunFields, allocator: std.mem.Allocator) void {
@@ -580,15 +515,6 @@ pub fn loadSessionRunFields(
 }
 
 /// Step 3 of the answer round-trip: resume the conversation.
-///
-/// `skip_initial_queue_message = true` is the established "start a run on an
-/// existing session without queueing a user message" flag
-/// (`start_agent.zig`, `wakeSessionForCompletion`) — exactly what a resume
-/// is. `emit_run_agent` dupes every string synchronously, so the caller's
-/// arena-backed fields are safe.
-///
-/// Guarded by `isWorkerRunning`: a double-click on Send answer must not start
-/// two runs. Returns false when a run was already in flight.
 pub fn resumeSession(
     di: *pabrikcore.App,
     allocator: std.mem.Allocator,

@@ -13,8 +13,7 @@ pub const Rule = struct {
     /// ESLint-shaped id, e.g. `zginlint/max-comment-lines`.
     id: []const u8,
     /// The options this rule was read with, as a short string (`max=3`, or
-    /// `-` for a rule with none). A pin records it and refuses a check whose
-    /// fingerprint differs, so a pin can never be compared under other rules.
+    /// `-` for a rule with none).
     fingerprint: *const fn (allocator: std.mem.Allocator, options: Options) anyerror![]u8,
     /// Append one diagnostic per finding in `source`.
     check: *const fn (

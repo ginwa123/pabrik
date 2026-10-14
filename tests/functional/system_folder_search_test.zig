@@ -1,34 +1,6 @@
-// Functional wire tests for GET /api/system/folder?action=search.
-//
-// Zig port of `tests/functional/system_folder_search_test.py` (same
-// test names, same order).
-//
-// Task 4 of docs/superpowers/plans/2026-09-08-chatview-search-files-perf.md.
-//
-// Verifies the backend recursive search endpoint over the real HTTP wire
-// using the functional harness (fresh tmpdir HOME, free port excl 8081):
-//
-//   1. q=comp&limit=50 returns <=50, contains the components path,
-//      excludes node_modules paths.
-//   2. Empty q returns <=50 (top-N, not the whole tree).
-//   3. limit=5000 clamps to <=200 (hard cap).
-//   4. action=list single-level contract unchanged (regression guard).
-//   5. Perf: search on the 300-file fixture completes <5s; actual ms logged.
-//
-// Fixture cwd (under a `makeScratchDir` tmpdir, NOT the harness HOME):
-//   <cwd>/node_modules/big/      (skip-listed)
-//   <cwd>/zig-out/               (skip-listed)
-//   <cwd>/src/components/        (Button.vue, Modal.vue, ... — matches q=comp)
-//   <cwd>/gen/file_000.txt ... file_299.txt  (300 generated files)
-//
-// WHERE THE FIXTURE LIVES: `harness.makeScratchDir`, NOT
-// `std.testing.tmpDir`. The latter allocates under
-// `<cwd>/.zig-cache/tmp/`, which is inside the git worktree, and a
-// `pabrik-func-` directory would be deleted by `reapOrphanTestPids` on
-// the NEXT boot — a fixture there silently vanishes mid-suite and the
-// search returns an empty tree, which every cap/limit assertion below
-// would happily pass for the wrong reason. `pabrik-fix-` is invisible to
-// the reaper and still gated by `isSafeTmp` on delete.
+// Functional wire tests for GET /api/system/folder?action=search. Zig port of
+// `tests/functional/system_folder_search_test.py` (same test names, same
+// order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -62,10 +34,7 @@ fn buildSearchFixture(scratch: []const u8) ![]u8 {
     errdefer gpa.free(cwd);
     try std.Io.Dir.cwd().createDirPath(io, cwd);
 
-    // Skip-listed dirs (must never appear in search results). The names
-    // deliberately match the search term (`comp_shim_00.js`) so a
-    // regression that dropped the skip-list trips the "no node_modules
-    // path" assertion instead of hiding behind an unrelated name.
+    // Skip-listed dirs (must never appear in search results).
     const node_modules_big = try std.fs.path.join(gpa, &.{ cwd, "node_modules", "big" });
     defer gpa.free(node_modules_big);
     try std.Io.Dir.cwd().createDirPath(io, node_modules_big);
@@ -125,12 +94,9 @@ fn buildSearchFixture(scratch: []const u8) ![]u8 {
     return cwd;
 }
 
-/// The owned outcome of one search request.
-///
-/// `doc`'s arena holds every string the `entries` array borrows, so a
-/// `Search` MUST stay alive for as long as a caller reads `entries`.
-/// Returning the bare array would hand back a dangling pointer the
-/// moment `doc.deinit()` ran inside the helper.
+/// The owned outcome of one search request. `doc`'s arena holds every string
+/// the `entries` array borrows, so a `Search` MUST stay alive for as long as
+/// a caller reads `entries`.
 const Search = struct {
     resp: harness.Response,
     doc: harness.Json,
@@ -141,11 +107,6 @@ const Search = struct {
     }
 
     /// The `entries` array, or a hard failure.
-    ///
-    /// Python `_search` asserted the key was present, so an absent key
-    /// must fail loudly rather than default to an empty array — a
-    /// default would satisfy every `<= N` assertion below for the
-    /// wrong reason.
     fn entries(self: *Search) !std.json.Array {
         return self.doc.array("entries") orelse {
             std.debug.print("search response missing 'entries': {s}\n", .{self.resp.body});
@@ -155,11 +116,6 @@ const Search = struct {
 };
 
 /// `GET /api/system/folder?action=search&path=<cwd>&q=<q>&limit=<limit>`.
-///
-/// `limit` is a STRING on purpose: Python's helper took an `int` and
-/// `urlencode` rendered it, and every call site here passes a literal
-/// ("50" / "5000"), so a string keeps the wire bytes identical without
-/// a `std.fmt` round-trip per call.
 fn search(h: *Harness, cwd: []const u8, q: []const u8, limit: []const u8) !Search {
     var r = try h.http(io, .GET, "/api/system/folder", .{
         .params = &.{
@@ -230,10 +186,9 @@ fn hasName(entries: std.json.Array, name: []const u8) bool {
     return false;
 }
 
-/// Boot a harness plus the search fixture, cleaned up on the way out.
-///
-/// The fixture is built BEFORE the harness so that a failure in either
-/// step can unwind the other's allocation without an `undefined` defer.
+/// Boot a harness plus the search fixture, cleaned up on the way out. The
+/// fixture is built BEFORE the harness so that a failure in either step can
+/// unwind the other's allocation without an `undefined` defer.
 fn bootWithFixture(h: *Harness, scratch: *[]u8, cwd: *[]u8) !void {
     try harness.requirePabrikBin(io, gpa);
     scratch.* = try harness.makeScratchDir(gpa);

@@ -84,8 +84,5 @@ pub const ToolAdapter = struct {
     }
 };
 
-// The former mcp_tools_test.zig was already gone before the 2026-09-29
-// test flatten, leaving this registrar pointing at a file that cannot be
-// resolved. Nothing imports this module, so the block was a latent
-// compile error rather than a working registration; drop it rather than
-// keep a dead reference.
+// The former mcp_tools_test.zig was already gone before the 2026-09-29 test
+// flatten, leaving this registrar pointing at a file that cannot be resolved.

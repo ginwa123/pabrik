@@ -1,30 +1,6 @@
-//
-// Functional tests for the bulk `stop_all_agents` column endpoint.
-//
-// Mirror of `kanban_column_run_all_agents_test.zig` with the direction
-// flipped: run-all starts idle workers, stop-all cancels running ones.
-//
-// Wire under test:
-//   POST /api/workspaces/:ws/items/:item/kanban/columns/:col/stop_all_agents
-//     -> 200 {"success":true,"column_id":...,"stopped":[...],"skipped":[...],"failed":[...]}
-//     -> 404 {"error":"column not found"} for unknown columns.
-//
-// The tests replay the exact frontend flow against a real binary
-// (fresh binary, isolated tmpdir HOME, harness auto-picks a port != 8081):
-//
-//   1. seed workspace -> kanban item -> first column with 3 tasks.
-//   2. start_agent on task-1 first (-> 200 triggered, so task-1 owns a worker).
-//   3. POST stop_all_agents -> 200 with a stopped/skipped split covering all 3
-//      (task-1 lands in `stopped` while its worker is in-flight; if the worker
-//      already drained it may land in `skipped` — either way it must be
-//      covered by the union of the three lists).
-//   4. re-POST stop_all_agents -> still 200 (safe / idempotent envelope;
-//      second time every worker is already cancelled, so all 3 land in
-//      `stopped` or `skipped` — the union gate is the hard assertion).
-//   5. unknown column -> 404.
-//   6. GET .../tasks/:task_id single route still works (route-order guard:
-//      the new POST literal was registered in the columns family, never under
-//      /tasks/:task_id, so neither the single GET nor the list GET is shadowed).
+// Functional tests for the bulk `stop_all_agents` column endpoint. Mirror of
+// `kanban_column_run_all_agents_test.zig` with the direction flipped: run-all
+// starts idle workers, stop-all cancels running ones.
 
 const std = @import("std");
 const testing = std.testing;

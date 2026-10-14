@@ -1,33 +1,6 @@
 //! `add_document` / `edit_document` / `delete_document` / `search_documents`
 //! — the agent tools that let a model read and write its own workspace's
 //! document store (Migration 098).
-//!
-//! SCOPE, and why it is not a parameter
-//! ────────────────────────────────────
-//! There is deliberately NO `workspace_id` in ANY input struct or tool
-//! schema. A model-supplied workspace id would be a spoofing
-//! vector: the LLM would be choosing which isolation boundary it lands
-//! inside. Instead `caller_session_id` arrives as a plain function
-//! parameter from the exec wrapper (`ctx.session_id`), and
-//! `workspace_scope.resolveWorkspaceId` maps it to a workspace. The same
-//! resolver `read_workspace_session` uses, so "which workspace am I?" has
-//! exactly one answer in the codebase.
-//!
-//! The exec wrapper parses JSON with `ignore_unknown_fields = true`, so
-//! a model that hallucinates `"workspace_id": "ws_other"` has it silently
-//! dropped rather than honoured. `static contract: document tools never
-//! accept a workspace_id` below asserts the field stays out of the struct.
-//!
-//! Fail-closed resolution
-//! ──────────────────────
-//! A session with no resolvable workspace gets a readable tool error, not
-//! a fallback. Guessing a workspace — or defaulting to "the first one" —
-//! would turn an unresolvable session into a cross-workspace write.
-//!
-//! Result shape: every function returns an inner JSON string. Success
-//! carries the stored row; failure carries `{"error": "..."}`, which the
-//! exec wrapper re-probes and flips to `success=false` so the model sees a
-//! failure rather than a successful wrapper around an error body.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -48,10 +21,6 @@ const migration = @import("../../../migrations/migration.zig");
 // =====================================================================
 
 /// Args for `add_document`.
-///
-/// Every field has a default because the exec wrapper parses with
-/// `ignore_unknown_fields = true` and the model routinely omits optional
-/// arguments. `workspace_id` is absent BY DESIGN — see the file header.
 pub const AddDocumentInput = struct {
     title: []const u8 = "",
     content: []const u8 = "",
@@ -61,45 +30,24 @@ pub const AddDocumentInput = struct {
 };
 
 /// Args for `edit_document`.
-///
-/// `document_id` identifies the row; at least one of `title` / `content`
-/// must be supplied or the call is a no-op the model would read as a
-/// silent success. `title: null` (absent) keeps the current title;
-/// `content: ""` genuinely clears the body.
 pub const EditDocumentInput = struct {
     document_id: []const u8 = "",
     title: ?[]const u8 = null,
     content: ?[]const u8 = null,
 };
 
-/// Args for `delete_document`.
-///
-/// Deliberately ONE field. There is no `force`, no `confirm`, no
-/// "delete everything matching this title" — every extra knob on an
-/// irreversible call is a knob the model can fill in wrongly, and a
-/// bulk-delete that got the query wrong is unrecoverable. The model
-/// deletes one id it found with `search_documents`; that is the whole
-/// contract.
+/// Args for `delete_document`. Deliberately ONE field.
 pub const DeleteDocumentInput = struct {
     document_id: []const u8 = "",
 };
 
 /// Args for `search_documents`.
-///
-/// Field-for-field `search_skills`'s input, plus `include_content`, so the
-/// model learns ONE search contract across `search_tool`, `search_skills`
-/// and this tool instead of three. `query` is a regex unless `literal` is
-/// set; `limit`/`offset` page the matches.
 pub const SearchDocumentsInput = struct {
     query: ?[]const u8 = null,
     literal: ?bool = null,
     limit: ?i64 = null,
     offset: ?i64 = null,
-    /// Opt-in full bodies. Off by default: a search that returned every
-    /// matching body would put megabytes of markdown into the context
-    /// window for what should be a list. Turn it on when the next action
-    /// is `edit_document`, which replaces the WHOLE body and therefore
-    /// needs the current one first.
+    /// Opt-in full bodies.
     include_content: ?bool = null,
 };
 
@@ -285,13 +233,8 @@ pub const DocumentToolError = struct {
     @"error": []const u8,
 };
 
-/// Success payload for `delete_document`.
-///
-/// The DELETED title is echoed, not the body. The body is gone — returning
-/// it would be pointless — and a delete that reports only an id leaves the
-/// model (and the human reading the transcript) unable to tell which document
-/// was removed. `id` + `title` is the minimum that makes the action legible
-/// after the fact.
+/// Success payload for `delete_document`. The DELETED title is echoed, not
+/// the body.
 pub const DeleteDocumentSuccess = struct {
     id: []const u8,
     title: []const u8,
@@ -317,17 +260,7 @@ fn errorJSON(allocator: std.mem.Allocator, msg: []const u8) ![]u8 {
     }, .{});
 }
 
-/// Resolve the calling session's workspace. Returns an OWNED id the caller
-/// must free, or null when the scope cannot be established — an empty
-/// caller session id, a session with no workspace, or a resolver failure.
-///
-/// Why `?[]u8` and not a `union(enum) { ok: []u8, err: []u8 }` carrying a
-/// pre-rendered message: the union's payload borrows from a temporary
-/// that dies at the end of the `switch` expression that destructures it.
-/// That is a use-after-free, and it does not look like one — it
-/// segfaults deep inside `std.mem.eql` on the first string comparison.
-/// Keeping the render in the caller means no borrow ever crosses this
-/// function's return.
+/// Resolve the calling session's workspace.
 fn resolveScope(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -340,10 +273,7 @@ fn resolveScope(
     return workspace_scope.resolveWorkspaceId(allocator, db, caller_session_id) catch null;
 }
 
-/// The tool-level refusal for an unresolvable scope. Two messages, not
-/// one: "you have no session" and "your session has no workspace" need
-/// different user actions, and collapsing them sends the model (and the
-/// human reading its transcript) down the wrong path.
+/// The tool-level refusal for an unresolvable scope.
 fn scopeErrorJSON(allocator: std.mem.Allocator, caller_session_id: []const u8) ![]u8 {
     if (caller_session_id.len == 0) {
         return errorJSON(
@@ -422,10 +352,9 @@ pub fn executeEditDocument(
     }) catch |err| {
         const msg = switch (err) {
             error.IdsRequired => "workspace_id and document_id required",
-            // One message for "no such id", "another workspace's
-            // id" and "you blanked the title" — the first two must
-            // be indistinguishable or the tool becomes an oracle
-            // for other workspaces' row ids.
+            // One message for "no such id", "another workspace's id" and "you
+            // blanked the title" — the first two must be indistinguishable or
+            // the tool becomes an oracle for other workspaces' row ids.
             error.NotFound => "No document with that id in your workspace. It may not exist, or it may belong to another workspace.",
             error.ContentTooLarge => "content exceeds the 4 MiB per-document cap",
             error.UpdateFailed => "Could not save the document (database error).",
@@ -440,12 +369,6 @@ pub fn executeEditDocument(
 
 /// Execute `delete_document`. Returns an inner JSON string the exec wrapper
 /// embeds. Caller owns the returned slice and must free it.
-///
-/// The title is read BEFORE the delete so the success payload can name what
-/// was removed. It is read through the SAME workspace-scoped `getDocument`
-/// the edit path uses, so a foreign id fails at the read with the identical
-/// `NotFound` the delete itself would raise — the tool never becomes a way
-/// to learn that another workspace's document exists.
 pub fn executeDeleteDocument(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -497,10 +420,8 @@ const TestCtx = struct {
     threaded: std.Io.Threaded,
 };
 
-/// Two workspaces, one session each, so a cross-workspace leak has
-/// somewhere to show up. Built by hand rather than by running every
-/// migration: this is the only place the test needs three small tables,
-/// and a full migration run adds ~4s per test.
+/// Two workspaces, one session each, so a cross-workspace leak has somewhere
+/// to show up.
 fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
@@ -539,13 +460,9 @@ fn setupDb() !TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
-/// Owned, deinit-able view of a tool result.
-///
-/// `std.json.parseFromSlice` allocates every string into an arena owned by
-/// the `Parsed` value, and `deinit` frees that arena. Returning a struct
-/// full of those slices AFTER `deinit` hands back dangling pointers — it
-/// does not look like it, it segfaults deep inside `std.mem.eql`. So the
-/// fields are duped into the caller's allocator and `deinit` frees them.
+/// Owned, deinit-able view of a tool result. `std.json.parseFromSlice`
+/// allocates every string into an arena owned by the `Parsed` value, and
+/// `deinit` frees that arena.
 const Parsed = struct {
     allocator: std.mem.Allocator,
     id: []const u8 = "",
@@ -928,10 +845,7 @@ test "delete_document: workspace B cannot delete workspace A's document, and the
 
 test "schema contract: no tool the model sees takes a workspace_id" {
     // The whole isolation argument rests on the model never being able to
-    // choose its own workspace. If a future edit adds `workspace_id` to a
-    // parameter list, the exec wrapper's `ignore_unknown_fields` would
-    // start honouring a spoofed value and this file's fail-closed
-    // resolver would be bypassed.
+    // choose its own workspace.
     for ([_]AgentTool{ add_document_tool, edit_document_tool, delete_document_tool, search_documents_tool }) |tool| {
         for (tool.function.parameters.properties) |prop| {
             try testing.expect(!std.mem.eql(u8, prop.name, "workspace_id"));
@@ -943,11 +857,8 @@ test "schema contract: no tool the model sees takes a workspace_id" {
 }
 
 test "schema contract: no input struct has a workspace_id slot to fill" {
-    // Belt to the schema braces: even if the schema is left clean, a
-    // struct field would be a slot for `ignore_unknown_fields` to fill.
-    // The field counts are the guard — `AddDocumentInput` is exactly
-    // {title, content, format} and `EditDocumentInput` is exactly
-    // {document_id, title, content}.
+    // Belt to the schema braces: even if the schema is left clean, a struct
+    // field would be a slot for `ignore_unknown_fields` to fill.
     inline for (.{ AddDocumentInput, EditDocumentInput }) |T| {
         const fields = @typeInfo(T).@"struct".fields;
         try testing.expectEqual(@as(usize, 3), fields.len);
@@ -972,10 +883,7 @@ test "schema contract: no input struct has a workspace_id slot to fill" {
 
 test "schema contract: all four tools ship a behavioral system prompt" {
     // The aggregator in prompts_build_messages_for_agent_prompt.zig reads
-    // `system_prompt` straight off the schema. An empty one means the
-    // model sees the JSON contract but none of the behavioral rules
-    // (whole-body replace, omitted-vs-empty, no guessing ids) that stop
-    // it from making a destructive call.
+    // `system_prompt` straight off the schema.
     try testing.expect(add_document_tool.function.system_prompt.len > 0);
     try testing.expect(edit_document_tool.function.system_prompt.len > 0);
     try testing.expect(delete_document_tool.function.system_prompt.len > 0);
@@ -988,9 +896,7 @@ test "schema contract: all four tools ship a behavioral system prompt" {
 
 test "schema contract: no prompt tells the model a search tool does not exist" {
     // The `edit_document` prompt once said "There is no list/search tool in
-    // v1" — and `search_documents` now exists. A prompt that contradicts the
-    // live tool set is worse than a missing prompt: the model reads it and
-    // declines to look, so nothing anywhere reports an error.
+    // v1" — and `search_documents` now exists.
     try testing.expect(std.mem.indexOf(u8, edit_document_tool.function.system_prompt, "no list/search tool") == null);
     try testing.expect(std.mem.indexOf(u8, edit_document_tool.function.system_prompt, "search_documents") != null);
 }

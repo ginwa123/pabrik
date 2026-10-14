@@ -1,24 +1,6 @@
 //! `file_sandbox` — ONE rule for "may this file be shown to the browser?".
-//!
-//! Two callers must agree, and they used to disagree:
-//!
-//!   1. `present_files` (agent tool, `present_files.zig`) — builds the card.
-//!   2. `GET /api/files/download` (`http_handlers/files_download.zig`) —
-//!      serves the bytes the card's preview / download link fetches.
-//!
-//! Before this module the tool accepted any absolute path while the handler
-//! 403'd anything that did not canonicalize inside the session working
-//! directory, so the tool could emit a card whose every fetch failed with
-//! `{"error":"Path escapes the session working directory"}` (reproduced on
-//! Windows with an agent-written report under `C:\Users\<user>\Downloads\`).
-//! Both sides now import these helpers, so a card the tool accepts is a card
-//! the endpoint serves.
-//!
-//! Path style is an explicit `PathStyle` parameter, never `builtin.os.tag`
-//! read inside a function: a native-only branch would be dead code that CI on
-//! Linux never analyses, and the Windows half of this module is exactly where
-//! the bug lived. Call sites pass `nativeStyle()`, tests pass `.windows` on any
-//! host. Plan: docs/plans/2026-09-29-present-files-sandbox-parity.md
+//! Two callers must agree, and they used to disagree: 1. `present_files`
+//! (agent tool, `present_files.zig`) — builds the card. 2.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -29,10 +11,7 @@ const testing = std.testing;
 
 // ─── Implementation ─────────────────────────────────────────────────────
 
-/// Which path grammar the two compared paths are written in. Passed in
-/// explicitly (call sites use `nativeStyle()`) rather than read from
-/// `builtin.os.tag` inside the helpers, so the Windows rules are analysed
-/// and unit-tested by the Linux/macOS CI that has the most runs.
+/// Which path grammar the two compared paths are written in.
 pub const PathStyle = enum { posix, windows };
 
 pub fn nativeStyle() PathStyle {
@@ -46,24 +25,8 @@ fn isSep(c: u8, style: PathStyle) bool {
     };
 }
 
-/// Drop the Win32 "extended-length" prefix that
-/// `GetFinalPathNameByHandle` (i.e. `realPathFileAbsolute`) returns, so a
-/// canonicalized path compares equal to the same path as the session row
-/// spells it: `\\?\C:\work` ≡ `C:\work`, `\\?\UNC\srv\share` ≡ `\\srv\share`.
-/// Strip the leading path-form markers so two spellings of the same Windows
-/// location compare equal:
-///
-///   `\\?\C:\work`       → `C:\work`
-///   `\\?\UNC\srv\share` → `srv\share`
-///   `\\srv\share`       → `srv\share`   (windows style only)
-///
-/// A plain `\\` is stripped only under the windows style — on posix a
-/// leading backslash is an ordinary filename character.
-///
-/// `realPathFileAbsolute` returns the `\\?\` form on Windows (it is
-/// `GetFinalPathNameByHandle` output) while the session row spells the
-/// directory the plain way, so the two sides of the containment check
-/// routinely differ by exactly this prefix.
+/// Drop the Win32 "extended-length" prefix that `GetFinalPathNameByHandle`
+/// (i.e.
 fn stripLeadingMarkers(path: []const u8, style: PathStyle) []const u8 {
     if (std.mem.startsWith(u8, path, "\\\\?\\UNC\\")) return path["\\\\?\\UNC\\".len..];
     if (std.mem.startsWith(u8, path, "\\\\?\\")) return path["\\\\?\\".len..];
@@ -97,13 +60,6 @@ fn prefixMatches(a: []const u8, b: []const u8, style: PathStyle) bool {
 }
 
 /// True when `resolved` is `root` itself or lives under it.
-///
-/// Two rules beyond a byte prefix, both of which have bitten this codebase:
-///   * the next character after the root must be a separator, so `/tmp/abc`
-///     never matches `/tmp/abcd/secret.txt`;
-///   * on Windows the comparison is case-insensitive (paths are), because
-///     the root comes from the DB and the target from the filesystem
-///     canonicalizer, and the two disagree on the on-disk casing.
 pub fn isInsideRoot(root: []const u8, resolved: []const u8, style: PathStyle) bool {
     const r = trimTrailingSeparators(stripLeadingMarkers(root, style), style);
     if (r.len == 0) return false;
@@ -135,10 +91,7 @@ pub fn hasParentSegment(path: []const u8) bool {
 }
 
 /// `std.fs.path.isAbsolute` for an explicit style, so the Windows rules are
-/// reachable from a posix test run. Note the drive-relative form `C:x` is
-/// NOT absolute — it resolves against the process's per-drive current
-/// directory, and passing it to `realPathFileAbsolute` (whose assert aborts
-/// the process) is exactly what must never happen.
+/// reachable from a posix test run.
 pub fn isAbsoluteFor(path: []const u8, style: PathStyle) bool {
     return switch (style) {
         .posix => std.fs.path.isAbsolutePosix(path),
@@ -163,14 +116,6 @@ pub const ResolveError = error{
 };
 
 /// Canonicalize `path` and return it only if it lands inside `root`.
-///
-/// Order matters and is pinned by the tests below: shape errors (`..`,
-/// non-absolute) are reported BEFORE any filesystem call, then the target is
-/// canonicalized, then the root — so a missing file and a missing root stay
-/// distinguishable, and a symlink pointing outside the root is caught
-/// (canonical-vs-canonical is the only comparison that sees through it).
-///
-/// Returns an owned `[]u8` the caller frees.
 pub fn resolveInsideRoot(
     io: std.Io,
     allocator: std.mem.Allocator,
@@ -199,14 +144,7 @@ pub const SessionRootError = error{
 };
 
 /// Resolve the session's sandbox root: `git_worktree_cwd` when set, else
-/// `cwd`. Shared by the download handler and the `present_files` tool so
-/// the two agree on what "inside the session working directory" means — the
-/// disagreement is what produced cards that 403 on every fetch.
-///
-/// Returns an owned dupe the caller frees. Unknown session →
-/// `SessionNotFound` (the handler maps it to 404); neither column set, or a
-/// non-absolute value → `NoWorkingDirectory` (403 — fail closed rather than
-/// serving unconstrained).
+/// `cwd`.
 pub fn resolveSessionRoot(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -228,19 +166,13 @@ pub fn resolveSessionRoot(
     const root = if (worktree_cwd.len > 0) worktree_cwd else cwd;
     if (root.len == 0) return error.NoWorkingDirectory;
     // `root` is later handed to `std.Io.Dir.realPathFileAbsoluteAlloc`, which
-    // asserts `path.isAbsolute(...)`. That assertion ABORTS the whole process
-    // (Debug/ReleaseSafe) rather than returning an error, and `sessions.cwd` is
-    // NOT validated as absolute at every write path (e.g. a session created
-    // with a relative `cwd_session`) — so refuse a non-absolute root here.
+    // asserts `path.isAbsolute(...)`.
     if (!isAbsoluteFor(root, nativeStyle())) return error.NoWorkingDirectory;
     return allocator.dupe(u8, root) catch return error.OutOfMemory;
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-//
-// Written before the implementation. The FS-touching cases use
-// `std.testing.tmpDir` (not a hardcoded `/tmp/...`, which is not absolute on
-// Windows) plus `realPath`, so the same test runs on every CI OS.
+// Written before the implementation.
 
 /// Two sibling temp dirs, each with its realpath, plus a scratch file
 /// writer. Used to express "inside" vs "outside" without assuming a
@@ -596,10 +528,8 @@ fn setupDb() !TestDb {
     var db: sqlite.SqliteBackend = .{};
     errdefer db.deinit();
     try db.init(io, ":memory:");
-    // Column nullability matches production (Migration 046): both columns
-    // are nullable, which is why the resolver COALESCEs them. Seeding `""`
-    // through `db.exec` binds SQL NULL, so these tests also cover the
-    // unbound-worktree shape a real row has.
+    // Column nullability matches production (Migration 046): both columns are
+    // nullable, which is why the resolver COALESCEs them.
     try db.exec(alloc,
         \\CREATE TABLE sessions (
         \\  id TEXT PRIMARY KEY,
@@ -662,18 +592,7 @@ test "resolveSessionRoot: a relative cwd is refused, never handed to realPath" {
 }
 
 test "resolveSessionRoot: a Windows cwd is judged by the native path style" {
-    // One body, every host. `resolveSessionRoot` reads the host's own
-    // grammar (`nativeStyle()`) and hands the result to
-    // `realPathFileAbsolute`, whose `isAbsolute` assert is a process abort
-    // rather than an error — so a root the native grammar rejects has to be
-    // refused here, and one it accepts has to come back unchanged.
-    //
-    // The switch is over `PathStyle`, the enum the SUT itself switches on,
-    // so there is no "some other host" arm that could pass vacuously: a
-    // third style would not compile until someone wrote its expectation
-    // down. A `builtin.os.tag == .windows` early return would have been the
-    // other shape — green on the host it did not name, having checked
-    // nothing there.
+    // One body, every host.
     var ctx = try setupDb();
     defer ctx.deinit();
     try seedSession(&ctx.db, "task_e", "C:\\Users\\gilang\\project", "");

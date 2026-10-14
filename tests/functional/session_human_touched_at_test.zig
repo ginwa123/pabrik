@@ -1,50 +1,6 @@
 // Functional tests for Migration 082 — `sessions.last_human_touched_at_nano`.
-//
-// Zig port of `tests/functional/session_human_touched_at_test.py`
-// (same test names, same order).
-//
-// The chat-side human-touched stamp, from the HTTP wire + direct DB
-// inspection. Five cases:
-//
-//   1. PUT session_update stamps `last_human_touched_at_nano` (the
-//      column is populated post-PUT).
-//   2. The GET /api/llm/session list response includes the wire field
-//      `last_human_touched_at` as a SQLite datetime UTC string
-//      (SELECT-layer conversion via strftime()).
-//   3. A legacy session (created before Migration 082 ran, OR
-//      inserted via raw SQL bypassing the migration) returns
-//      `last_human_touched_at: ""` and the SELECT falls back to
-//      `updated_at` on the frontend.
-//   4. GET /api/llm/session (list) includes the new field for every
-//      session.
-//   5. Subsequent PUTs overwrite the stamp (most-recent-wins).
-//
-// Plan: docs/superpowers/plans/2026-08-29-chat-sidebar-last-human-touched.md
-// Task 9.
-//
-// ── PORTING NOTES ───────────────────────────────────────────────────────
-// * `_create_session_via_update` — `session_update.zig` auto-creates the
-//   row via `ensureSessionExists` then UPDATEs it, which is how the
-//   Python helper spun up a session row without invoking
-//   `/api/llm/session` (that route needs a real LLM).
-//
-// * `_select_human_touched` — the Python helper opened
-//   `<temp_dir>/.config/pabrik/agent.db` with the STDLIB `sqlite3`
-//   module (`mode=ro`). This package declares NO dependency on
-//   `pabrikcore` and links no SQLite, deliberately, so a functional
-//   suite can never "pass" without crossing the wire. The port spawns
-//   the `sqlite3` COMMAND-LINE tool and reads its `-json` output — the
-//   idiom `default_workspace_provisioning_test.zig` already uses. Tests
-//   1, 3 and 5 SKIP when the CLI is absent rather than fail; the two
-//   wire-only tests (2 and 4) need no DB access at all.
-//
-// * `sqlite3 -json` prints ZERO BYTES for an empty result set, not `[]`;
-//   `parseSqliteJson` shims that, which matters here because test 1 and
-//   test 5 both distinguish "no row" from "NULL column".
-//
-// * `_find_session_in_list` returns a borrowed `std.json.Value`, so its
-//   callers keep the enclosing `Response` and `Json` alive — a `Json`
-//   can never be returned out of a helper.
+// Zig port of `tests/functional/session_human_touched_at_test.py` (same test
+// names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -63,10 +19,9 @@ fn nowMs() i64 {
     return std.Io.Timestamp.now(io, .awake).toMilliseconds();
 }
 
-/// `PUT /api/llm/session/:session_id {"name": ...}`.
-///
-/// Auto-creates the row, which is exactly the "spin up a session without
-/// invoking /api/llm/session" the Python helper documented.
+/// `PUT /api/llm/session/:session_id {"name": ...}`. Auto-creates the row,
+/// which is exactly the "spin up a session without invoking /api/llm/session"
+/// the Python helper documented.
 fn putSession(h: *Harness, sid: []const u8, name: []const u8) !void {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}", .{sid});
     defer gpa.free(path);
@@ -77,10 +32,9 @@ fn putSession(h: *Harness, sid: []const u8, name: []const u8) !void {
     defer r.deinit();
 }
 
-/// The single `sessions[]` entry whose `session_id == id`.
-///
-/// Borrows from `doc`, so the caller must keep the `Response` it was
-/// parsed from alive for the duration of the borrow.
+/// The single `sessions[]` entry whose `session_id == id`. Borrows from
+/// `doc`, so the caller must keep the `Response` it was parsed from alive for
+/// the duration of the borrow.
 fn findSessionInList(doc: *const harness.Json, id: []const u8) !std.json.Value {
     const sessions = doc.array("sessions") orelse {
         std.debug.print("session list has no `sessions` array\n", .{});
@@ -145,11 +99,8 @@ fn exitCode(term: std.process.Child.Term) ?u8 {
     };
 }
 
-/// Skip unless a `sqlite3` CLI is present and speaks `-json`.
-///
-/// `-json` landed in SQLite 3.33 (2020). Probing it once, up front, is
-/// what lets every LATER non-zero exit be read as a real SQL failure
-/// instead of "this build of sqlite3 has no such flag".
+/// Skip unless a `sqlite3` CLI is present and speaks `-json`. `-json` landed
+/// in SQLite 3.33 (2020).
 fn requireSqlite3Cli() !void {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-json", ":memory:", "SELECT 1 AS probe;" },
@@ -198,9 +149,8 @@ fn dbPath(temp_dir: []const u8) ![]u8 {
 }
 
 /// Run one statement against `db_path`, return the CLI's stdout (owned).
-///
-/// `.timeout 5000` is the `busy_timeout` the server's WAL connection
-/// needs; a bare CLI invocation would otherwise fail with SQLITE_BUSY.
+/// `.timeout 5000` is the `busy_timeout` the server's WAL connection needs; a
+/// bare CLI invocation would otherwise fail with SQLITE_BUSY.
 fn sqliteRun(db_path: []const u8, sql: []const u8) ![]u8 {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-cmd", ".timeout 5000", "-json", db_path, sql },
@@ -243,14 +193,9 @@ fn insertNullStampRow(temp_dir: []const u8, sid: []const u8, name: []const u8) !
     defer gpa.free(out);
 }
 
-/// The RAW column, bypassing the SELECT-layer conversion: null when the
-/// row is missing, null when the column is NULL (pre-Migration-082 or
-/// never touched).
-///
-/// Python returned `str(val)`, i.e. the unix-ms integer rendered as a
-/// decimal string; the caller compared with `.isdigit()` and `int()`.
-/// Here the value is the integer itself and the digit-count assertion
-/// is done by rendering it, which keeps the same two properties.
+/// The RAW column, bypassing the SELECT-layer conversion: null when the row
+/// is missing, null when the column is NULL (pre-Migration-082 or never
+/// touched).
 fn selectHumanTouched(temp_dir: []const u8, sid: []const u8) !?i64 {
     const db = try dbPath(temp_dir);
     defer gpa.free(db);
@@ -354,9 +299,7 @@ test "put_session_stamps_last_human_touched_at_nano" {
 
 // GET /api/llm/session (the list endpoint - pabrik has no single-GET
 // `/api/llm/session/:id` route) returns last_human_touched_at in the
-// SELECT-layer-converted wire shape: SQLite datetime UTC
-// ('YYYY-MM-DD HH:MM:SS'), NOT raw unix-ms. The frontend's
-// `formatRelativeTime` helper only parses the datetime shape.
+// SELECT-layer-converted wire shape: SQLite datetime UTC ('YYYY-MM-DD
 test "get_session_returns_last_human_touched_as_sqlite_datetime" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -414,13 +357,9 @@ test "get_session_returns_last_human_touched_as_sqlite_datetime" {
 // Test 3: legacy NULL rows return empty string on the wire
 // ============================================================================
 
-// A legacy row (column is NULL because the row existed before Migration
-// 082 ran, or was created via raw SQL bypassing the migration) returns
+// A legacy row (column is NULL because the row existed before Migration 082
+// ran, or was created via raw SQL bypassing the migration) returns
 // `last_human_touched_at: ""` on the wire.
-//
-// The frontend `ChatsList.vue` treats empty string as a defined
-// fallback to `updated_at` (the same `?? updated_at` shape, just a
-// string-coerce check on the field).
 test "get_session_returns_empty_when_last_human_touched_never_stamped" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();

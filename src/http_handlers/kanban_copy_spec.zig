@@ -1,25 +1,5 @@
-//! `POST /api/workspaces/:workspace_id/items/:item_id/kanban/copy_spec_from/:source_item_id`.
-//!
-//! Copies the source kanban's column structure (names + descriptions,
-//! preserving order) to the target kanban. Tasks are NOT copied.
-//!
-//! Body: `{mode: "replace" | "append"}`. Defaults to "replace"
-//! when omitted (preserves backwards compat with callers that don't
-//! pass the field).
-//!
-//! Returns 200 with `{columns, count}` (same envelope as
-//! `GET /kanban/columns`) on success. On failure:
-//!   - 400 missing/malformed body, missing path params, invalid mode,
-//!     self-copy (item_id == source_item_id)
-//!   - 404 source or target kanban item not found (or wrong item_type)
-//!   - 500 DB failure
-//!
-//! Layered as `useCase` (validate → resolve ids → call model helper →
-//! emit SSE events → return columns) and a thin handler that maps
-//! outcome + errors to status codes.
-//!
-//! Plan: docs/superpowers/plans/2026-07-04-copy-kanban-spec.md
-//!   (Chunk 2, Task 2.1)
+//! `POST
+//! /api/workspaces/:workspace_id/items/:item_id/kanban/copy_spec_from/:source_item_id`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -35,10 +15,8 @@ const CopySpecBody = struct {
     mode: ?[]const u8 = null,
 };
 
-/// Domain error set for the copy-spec flow. The handler maps each
-/// variant to an HTTP status code + user-facing message via two
-/// exhaustive switches. Adding a new variant fails to compile in
-/// the handler until both switches are updated.
+/// Domain error set for the copy-spec flow. The handler maps each variant to
+/// an HTTP status code + user-facing message via two exhaustive switches.
 pub const CopySpecError = error{
     WorkspaceIdRequired,
     ItemIdRequired,
@@ -63,26 +41,7 @@ pub const CopySpecResult = []const u8;
 // Use case
 // =====================================================================
 
-/// Copy the source kanban's column spec to the target kanban.
-///
-/// Steps:
-///   1. Validate that workspace_id, item_id, source_item_id are non-empty
-///      and item_id != source_item_id (no self-copy).
-///   2. Confirm both items exist in the workspace_items table with
-///      item_type='kanban' (404 otherwise).
-///   3. Snapshot the target's existing column ids (used for SSE
-///      emits after the model's destructive delete + insert pass).
-///   4. Call `replaceColumnsWith` or `appendColumnsFrom` per `mode`.
-///   5. Emit per-column SSE events: `action="deleted"` for each
-///      pre-existing target column (Replace mode only — Append
-///      doesn't delete), `action="created"` for each newly inserted
-///      column (both modes).
-///   6. Re-read the target's column list via `listColumns` and
-///      return the wire-format envelope.
-///
-/// The SSE emissions are fire-and-forget (logged + swallowed on
-/// failure so the HTTP 200 still succeeds) — same pattern as every
-/// other kanban mutation endpoint.
+/// Copy the source kanban's column spec to the target kanban. Steps: 1.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -102,12 +61,8 @@ fn useCase(
         return error.InvalidMode;
     }
 
-    // Step 2: confirm both items are kanbans in the DB. Return 404
-    // if either is missing or is the wrong type. We re-use the
-    // getWorkspaceItem helper from llm_history for the check; the
-    // returned WorkspaceItemInfo is heap-owned and MUST be freed
-    // (the per-request arena does NOT auto-free dupes the model
-    // hands back). Use a deferred free to handle every return path.
+    // Step 2: confirm both items are kanbans in the DB. Return 404 if either
+    // is missing or is the wrong type.
     const target_opt = llm_history.getWorkspaceItem(allocator, db, input.item_id)
         catch return error.DatabaseError;
     defer if (target_opt) |t| {
@@ -158,10 +113,9 @@ fn useCase(
         ) catch return error.DatabaseError;
     }
 
-    // Step 5: SSE emits — fire-and-forget. Replace mode: emit one
-    // `deleted` event per pre-existing column, then one `created`
-    // event per newly inserted column. Append mode: only
-    // `created` events.
+    // Step 5: SSE emits — fire-and-forget. Replace mode: emit one `deleted`
+    // event per pre-existing column, then one `created` event per newly
+    // inserted column. Append mode: only `created` events.
     for (pre_existing_ids.items) |col_id| {
         on_event_sent_kanban.onEventSendKanbanColumn(allocator, .{
             .action = "deleted",

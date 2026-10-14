@@ -1,26 +1,5 @@
 //! The process-wide `App` singleton — the one object every other part of the
 //! code reaches through.
-//!
-//! `App` carries the process-lifetime state that has no better owner: the
-//! long-lived allocator, the `Io`, the open `Db`, the live `LlmConfig`
-//! holder, the logger, the environment, the active-loop table, the event bus,
-//! the Ginwa server, the SSE client registry, the MCP registries and the
-//! fetch-once MCP tools cache. `main.zig` builds one instance and installs it
-//! with `setSingleton`; everything else resolves it with `getSingleton()`.
-//!
-//! ## Why it is not in `root.zig`
-//!
-//! `root.zig` is the module barrel: one `pub const X = @import(...)` per
-//! subsystem, and nothing else. The singleton used to be declared *above*
-//! that barrel, so the file's own header ("By convention, root.zig is the
-//! root source file when making a library") described a file whose largest
-//! single feature was a struct plus ~250 lines of registry helpers. Anything
-//! reading this module to answer "what does the app own?" had to read past
-//! ~700 lines of implementation to reach the export table.
-//!
-//! `root.zig` re-exports `App` and every singleton helper under its original
-//! name, so `@import("nalarcore").App` and `@import("nalarcore").getSingleton()`
-//! — the forms used everywhere in `src/` — are unaffected by the move.
 
 const std = @import("std");
 const database = @import("databases").database;
@@ -47,28 +26,14 @@ pub fn setSingleton(ctx: *App) !void {
 /// Holds the live `LlmConfig` pointer plus the previously-installed one so
 /// that in-flight workflows (which captured the old `*const LlmConfig` into a
 /// local) keep dereferencing valid memory until the next swap — or until
-/// shutdown if no further swap happens.
-///
-/// The hot-path read (`getLlmConfig`) is a single aligned pointer load and
-/// is therefore atomic on all supported platforms. The mutex only protects
-/// the swap-and-promote sequence inside `setLlmConfig`.
 pub const LlmConfigHolder = struct {
     current: *config.LlmConfig,
     previous: ?*const config.LlmConfig = null,
     lock: std.Io.Mutex = .init,
 };
 
-/// Input to `App.emit_run_agent`.
-///
-/// The string fields are PASSED-THROUGH — `emit_run_agent` does not dupe
-/// them. Callers can pass borrowed slices if those slices outlive the
-/// synchronous `emit_run_agent` call (which they almost always do — most
-/// call sites use literals or stable config strings).
-///
-/// If a caller has borrowed slices that will be freed before the
-/// concurrent task runs, they MUST dup into a long-lived allocator first
-/// (see `useCase` in `session_create.zig` for the safe pattern that dups
-/// via `di.allocator`).
+/// Input to `App.emit_run_agent`. The string fields are PASSED-THROUGH —
+/// `emit_run_agent` does not dupe them.
 pub const EmitRunAgentInput = struct {
     session_id: []const u8,
     session_name: []const u8,
@@ -80,31 +45,14 @@ pub const EmitRunAgentInput = struct {
     video_urls: []const u8 = "",
     selected_profile_model: []const u8,
     is_auto_retry_until_stop: []const u8,
-    // NEW (plan: 2026-08-18-kanban-task-detail-start-agent). When
-    // true, the worker skips the initial insertQueueMessage call —
-    // used by the start_agent endpoint to trigger a worker on an
-    // existing session without queueing a new user message. Default
-    // `false` preserves the existing create-session behaviour.
+    // NEW (plan: 2026-08-18-kanban-task-detail-start-agent).
     skip_initial_queue_message: bool = false,
-    /// Owning user id for the session row this run creates (plan
-    /// 2026-09-25, W1). The background worker has NO HTTP request, so the
-    /// owner must ride along from the enqueuing request — otherwise the
-    /// concurrent `insert_worker` task INSERTs an ownerless row and emits
-    /// `session_created` before the handler's stamp commits, and the SSE
-    /// fan-out (correctly) treats that row as shared and delivers it to
-    /// every user. Empty means "no identity" (auth off, or a caller with no
-    /// request context) and the row stays in the shared bucket.
+    /// Owning user id for the session row this run creates (plan 2026-09-25,
+    /// W1).
     user_id: []const u8 = "",
 };
 
-/// The application singleton. One instance per process, built by `main.zig`
-/// and installed with `setSingleton`; reached from anywhere else through
-/// `getSingleton()` (`pabrikcore.getSingleton()`).
-///
-/// `group_emit_session_create` and `group_bg_watchers` have no defaults —
-/// they are `std.Io.Group`s, so the struct cannot be copied after `init`.
-/// Everything else defaults so a partial literal still compiles (that is
-/// what the unit tests build).
+/// The application singleton.
 pub const App = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -119,20 +67,6 @@ pub const App = struct {
     session_map_lock: std.Io.Mutex = .init,
 
     /// SSE client_id -> owning user id, for per-user event filtering.
-    ///
-    /// The event bus fans out by *family routing key* (`sessions`, `workers`,
-    /// `llm`, …), so without this map every connected client receives every
-    /// user's events. `unified_events_sse.forwardToClients` consults it to
-    /// drop an event whose `session_id` the client's owner cannot see.
-    ///
-    /// Keyed by the 16-byte client id (the same key `session_to_client_ids`
-    /// stores in its value lists), value is an owned copy of the owner id.
-    /// Populated at SSE connect, removed in `handleClientDisconnect` — which
-    /// the SseManager calls on EVERY removal path (explicit shutdown, peer
-    /// HUP, heartbeat/broadcast write failure, stale sweep).
-    ///
-    /// An absent entry means "owner unknown" and the fan-out delivers, so
-    /// auth-off (no identity) stays byte-identical.
     client_owners: std.StringHashMapUnmanaged([]const u8) = .empty,
     client_owners_lock: std.Io.Mutex = .init,
 
@@ -140,9 +74,7 @@ pub const App = struct {
     on_disconnect_lock: std.Io.Mutex = .init,
     group_emit_session_create: std.Io.Group,
     /// Fire-and-forget group for background-command completion watchers
-    /// (background_watcher.zig). Same lifecycle as
-    /// `group_emit_session_create`: process-lifetime, never awaited or
-    /// cancelled. Field default keeps existing struct literals compiling.
+    /// (background_watcher.zig).
     group_bg_watchers: std.Io.Group = .init,
 
     static_dir_path: ?[]const u8 = null,
@@ -152,51 +84,21 @@ pub const App = struct {
     /// When true, API + static + ws/sse require a valid `pabrik_session` cookie.
     auth_enabled: bool = false,
 
-    /// Process-global MCP stdio registry, cached here so every call site
-    /// goes through the singleton struct (`di.mcp_stdio_registry`) instead
-    /// of calling `StdioRegistry.global(allocator)` with its own allocator
-    /// choice. Eagerly set in main.zig after `setSingleton`; lazily filled
-    /// by `mcpStdioRegistry()` on first use when main didn't (unit tests).
-    /// Nullable + default null so existing struct literals keep compiling.
+    /// Process-global MCP stdio registry, cached here so every call site goes
+    /// through the singleton struct (`di.mcp_stdio_registry`) instead of
+    /// calling `StdioRegistry.global(allocator)` with its own allocator
     mcp_stdio_registry: ?*mcp_stdio.StdioRegistry = null,
     mcp_http_registry: ?*mcp_http.HttpRegistry = null,
 
     /// Fetch-once MCP tools cache (plan: mcp-fetch-once-cache).
-    /// First workflow run fetches via `buildMCPToolsRun` and publishes
-    /// here; every later run (new session, queued message, retry) reads
-    /// the snapshot instead of doing `tools/list` I/O again.
-    /// `mcp_tools_init=false` means never-fetched-or-cleared → the next
-    /// workflow run must fetch. Mutation sites (PUT /api/config/pabrik,
-    /// add_mcp_server) only `clearMcpToolsCache()` — the next workflow
-    /// run pays the one fetch. Guarded by a spinlock (Zig 0.16 has no
-    /// `std.Thread.Mutex`); helpers are io-free so workflow + HTTP
-    /// handlers can call them without threading `io` through.
     mcp_tools_cache: ?[]tool_models.AgentTool = null,
     mcp_tools_init: bool = false,
     mcp_tools_lock: std.atomic.Mutex = .unlocked,
 
     /// Schedule an async session-create task on the Io group.
-    ///
-    /// Lifetime contract: the string fields of `obj` are duped into
-    /// `self.allocator` (long-lived) **synchronously**, before the
-    /// concurrent task is scheduled. The concurrent task then consumes
-    /// the duped slices directly and frees them via `defer` when done.
-    /// This is the safe pattern: the source slices (typically borrowed
-    /// from `req.body` via `parseFromSliceLeaky` in the HTTP handler)
-    /// are freed when the handler returns, but our dupes live in
-    /// `self.allocator` which outlives the request arena. The earlier
-    /// implementation duped INSIDE the concurrent task, which was a
-    /// use-after-free because the source was already gone by then —
-    /// SEGV in `local.dupe(u8, qmsg)` at root.zig:101.
-    ///
-    /// Mirrors the `fireWorkspaceRoutine` pattern in `routines/fire.zig` which
-    /// has been working correctly since the async rewrite.
     pub fn emit_run_agent(self: *App, obj: EmitRunAgentInput) !void {
         // Heap-dupe each string synchronously into the long-lived
-        // `self.allocator`. Each dupe is owned by us and will be freed
-        // by the concurrent task once it has used them. `errdefer`
-        // chains unwind cleanly on mid-allocation failure — the caller
-        // still hasn't seen the concurrent() error.
+        // `self.allocator`.
         const owned_session_id = try self.allocator.dupe(u8, obj.session_id);
         errdefer self.allocator.free(owned_session_id);
         const owned_session_name = try self.allocator.dupe(u8, obj.session_name);
@@ -229,12 +131,6 @@ pub const App = struct {
         // NEW (plan 2026-08-29-chat-sidebar-last-human-touched, Task 3):
         // Stamp `sessions.last_human_touched_at_nano` BEFORE the concurrent
         // task spawns — this is the single funnel for every user-sends-a-
-        // message path (chat send button, kanban "create & run", kanban
-        // "Start agent", `+ Chat`). `session_create.useCase` calls into
-        // here (line 229) so this stamp covers BOTH create + send in one
-        // site, with no duplicate in the chat-create handler. The stamp
-        // is best-effort (log + continue on transient DB blip) so a stamp
-        // failure can't block message delivery. Plan D1.
         ai_mod.llm_history.updateSessionLastHumanTouchedAt(
             self.allocator,
             self.db,
@@ -265,10 +161,9 @@ pub const App = struct {
                     siqm: bool,
                     uid: []const u8,
                 ) void {
-                    // These slices are owned by the Io task lifetime —
-                    // they were duped synchronously by `emit_run_agent`
-                    // into `di_inner.allocator` (which lives forever).
-                    // Free them all on the way out, in reverse order.
+                    // These slices are owned by the Io task lifetime — they
+                    // were duped synchronously by `emit_run_agent` into
+                    // `di_inner.allocator` (which lives forever).
                     defer di_inner.allocator.free(uid);
                     defer di_inner.allocator.free(iaur);
                     defer di_inner.allocator.free(spm);
@@ -335,13 +230,7 @@ pub const App = struct {
         const copy_session_name = try allocator.dupe(u8, session_name);
         const copy_cwd = try allocator.dupe(u8, effective_cwd);
         const copy_profile = if (effective_profile.len > 0) try allocator.dupe(u8, effective_profile) else "";
-        // Owner stamped at INSERT time (plan 2026-09-25, W1). Stamping here —
-        // in the same task that INSERTs — closes the race where the handler's
-        // post-hoc UPDATE had not committed yet when this task emitted
-        // `session_created`: the row was briefly ownerless, so the SSE fan-out
-        // (correctly) treated it as shared and delivered it to every user.
-        // Empty `user_id` (auth off) leaves the column NULL, i.e. the shared
-        // legacy bucket.
+        // Owner stamped at INSERT time (plan 2026-09-25, W1).
         const copy_user_id = if (parsed.user_id.len > 0) try allocator.dupe(u8, parsed.user_id) else "";
         try self.db.exec(
             allocator,
@@ -350,23 +239,12 @@ pub const App = struct {
         );
 
         // `INSERT OR IGNORE` is a no-op when the row already exists — which
-        // is EVERY normal send into an existing chat. Read the change count
-        // immediately (per-connection state, and `exec` holds the mutex for
-        // the whole statement) so the `session_created` broadcast below only
-        // fires for a row that was actually inserted.
-        //
-        // Why it matters: the frontend's ChatsList treats `session_created`
-        // as "the list changed" and re-fetches page 1
-        // (`GET /llm/session?sort_by=updated_at&direction=desc`). Emitting it
-        // on every send made the sidebar refetch its whole list each time the
-        // user sent a message, for a row that was already there.
+        // is EVERY normal send into an existing chat.
         const session_row_inserted = self.db.changes() > 0;
 
-        // Claim an ownerless row when the INSERT OR IGNORE above no-opped
-        // on a pre-existing ownerless row (a handler that wrote the row
-        // without `user_id` before this task ran). Only claims ownerless
-        // rows, so a real owner is never overwritten. Best-effort: a
-        // transient failure here must not block the run.
+        // Claim an ownerless row when the INSERT OR IGNORE above no-opped on
+        // a pre-existing ownerless row (a handler that wrote the row without
+        // `user_id` before this task ran).
         if (parsed.user_id.len > 0) {
             self.db.exec(
                 allocator,
@@ -413,9 +291,6 @@ pub const App = struct {
 
     /// Publish a fresh fetch. Deep-dupes `tools` onto `self.allocator`
     /// (process lifetime), frees the previous cache, marks initialized.
-    /// `tools=null` (no servers / fetch failed) is a valid publish and
-    /// marks initialized ONLY when `mark_init=true` — workflow passes
-    /// `false` on error so the next run retries instead of poisoning.
     pub fn storeMcpToolsCache(self: *App, tools_in: ?[]tool_models.AgentTool, mark_init: bool) void {
         mcpToolsLock(&self.mcp_tools_lock);
         defer mcpToolsUnlock(&self.mcp_tools_lock);
@@ -446,21 +321,11 @@ pub const App = struct {
 };
 
 /// Hot-path read. Returns the currently-installed `LlmConfig` pointer.
-/// No lock needed — single-word aligned pointer load is atomic on all
-/// supported platforms; the lock only protects the swap-and-promote
-/// sequence in `setLlmConfig`.
 pub fn getLlmConfig(di: *App) *config.LlmConfig {
     return di.llm_config_holder.current;
 }
 
-/// Atomic install. The new pointer must remain valid for the lifetime of
-/// the install (typically: until the next call to `setLlmConfig`, or until
-/// `freeAllLlmConfigs` runs at shutdown).
-///
-/// The previously-current pointer is moved into the `previous` slot, and
-/// the *previous-previous* pointer (if any) is `deinit`-ed and the
-/// allocation freed before this returns. This caps the "pending free"
-/// window at exactly one stale `LlmConfig`.
+/// Atomic install.
 pub fn setLlmConfig(
     di: *App,
     new_ptr: *config.LlmConfig,
@@ -495,14 +360,6 @@ fn freeLlmConfig(allocator: std.mem.Allocator, ptr: *const config.LlmConfig) voi
 }
 
 /// Record the owning user id for an SSE client, for per-user event filtering.
-///
-/// Called once at SSE connect (`unified_events_sse.unifiedEventsStreamHandler`)
-/// with the owner resolved from the request cookie. The value is duped into
-/// the singleton allocator; a re-register for the same client replaces (and
-/// frees) the previous value, so a reconnect cannot leak.
-///
-/// `owner` may be the shared/system sentinel — the fan-out treats that as
-/// "sees everything", so storing it is harmless and keeps the map complete.
 pub fn registerClientOwner(client_id: [16]u8, owner: []const u8) void {
     const di = getSingleton() catch return;
     const allocator = di.allocator;
@@ -527,12 +384,9 @@ pub fn registerClientOwner(client_id: [16]u8, owner: []const u8) void {
     };
 }
 
-/// Look up the owning user id recorded for an SSE client.
-///
-/// Returns a BORROWED slice valid only while the caller holds no other
-/// registry mutation — the fan-out uses it immediately and never stores it.
-/// Null means "owner unknown" (auth off, or a client registered before this
-/// map existed), which the fan-out treats as "deliver".
+/// Look up the owning user id recorded for an SSE client. Returns a BORROWED
+/// slice valid only while the caller holds no other registry mutation — the
+/// fan-out uses it immediately and never stores it.
 pub fn getClientOwner(client_id: [16]u8) ?[]const u8 {
     const di = getSingleton() catch return null;
     const io = di.io;
@@ -608,15 +462,8 @@ pub fn unregisterSessionClient(session_id: []const u8, is_use_lock: bool) void {
     }
 }
 
-/// Remove ONE client_id from a routing key's list (disconnect path).
-/// Drops the map entry only when its list becomes empty. Unlike
-/// `unregisterSessionClient` (which removes ALL clients under the key),
-/// surviving connections sharing the key keep receiving broadcasts --
-/// a single flaky connection must never black out every other client.
-/// Callers must NOT unsubscribe the shared event_bus callback here: it is
-/// one static fn per key shared by all connections, and resubscribe on
-/// (re)connect is idempotent (first-wins), so leaving it registered is
-/// always safe -- forwardToClients early-returns on an empty list.
+/// Remove ONE client_id from a routing key's list (disconnect path). Drops
+/// the map entry only when its list becomes empty.
 pub fn unregisterSessionClientId(routing_key: []const u8, client_id: [16]u8, is_use_lock: bool) void {
     _ = is_use_lock;
     const di = getSingleton() catch return;
@@ -657,19 +504,9 @@ pub fn getClientIdForSession(session_id: []const u8, is_use_lock: bool) ?[16]u8 
     return null;
 }
 
-/// Get list of client_ids for a session
-/// Returns an owned copy that the caller MUST free with `allocator.free`.
-/// Returns null if the session has no registered clients (or does not exist).
-///
-/// IMPORTANT: This function used to return a borrowed slice (`list.items`)
-/// directly. That was a use‑after‑free waiting to happen — the slice's
-/// backing buffer is owned by the `session_to_client_ids` map entry, and
-/// the map's `unregisterSessionClient` / `fetchRemove` will `deinit` it
-/// the moment any concurrent caller (e.g. the SSE event loop on a
-/// POLL.HUP) decides to drop the session. The LLM streaming callback
-/// iterated that borrowed slice after `session_map_lock` had been
-/// released, hence the segfault. We now copy into a fresh buffer that
-/// survives lock release and any concurrent map mutation.
+/// Get list of client_ids for a session Returns an owned copy that the caller
+/// MUST free with `allocator.free`. Returns null if the session has no
+/// registered clients (or does not exist).
 pub fn getListClientsForSession(session_id: []const u8, allocator: std.mem.Allocator, is_use_lock: bool) !?[][16]u8 {
     _ = is_use_lock;
     const di = try getSingleton();
@@ -725,25 +562,11 @@ pub fn handleClientDisconnect(client_id: [16]u8) void {
         cb(client_id);
     }
 
-    // Drop the per-user event-filter entry for this client. The SseManager
-    // calls this on EVERY removal path (explicit shutdown, peer HUP,
-    // heartbeat/broadcast write failure, stale sweep), so the map cannot
-    // grow across reconnects.
+    // Drop the per-user event-filter entry for this client.
     unregisterClientOwner(client_id);
 
-    // Collect EVERY routing_key that contains this client_id, then
-    // unregister each one and drop its event_bus subscription.
-    //
-    // The previous implementation called `getSessionIdForClient`
-    // which returns the FIRST match — for clients connected via the
-    // unified SSE endpoint (`unified_events_sse.zig:248-250`), the
-    // same client_id is registered under N routing_keys (one per
-    // channel: llm, workers, sessions, kanban_column, kanban_task,
-    // queue). Unregistering only the first match left the other
-    // (N-1) routing_keys as orphans in `session_to_client_ids`,
-    // each holding an owned key + a non-empty ArrayList — a slow
-    // memory leak across reconnects. See the audit in
-    // docs/superpowers/plans/2026-07-01-fix-remaining-fd-leak-risks.md.
+    // Collect EVERY routing_key that contains this client_id, then unregister
+    // each one and drop its event_bus subscription.
     var routing_keys_to_drop: std.ArrayList([]const u8) = .empty;
     defer routing_keys_to_drop.deinit(di.allocator);
 
@@ -755,10 +578,8 @@ pub fn handleClientDisconnect(client_id: [16]u8) void {
             for (entry.value_ptr.items) |v| {
                 if (std.mem.eql(u8, &v, &client_id)) {
                     // Each routing_key's map entry owns its key string
-                    // (registered via `registerSessionClient` → result.key_ptr.*
-                    // = owned_key). Dupe it here so the unregister loop
-                    // can pass a stable pointer; `unregisterSessionClient`
-                    // owns the key and frees it.
+                    // (registered via `registerSessionClient` →
+                    // result.key_ptr.* = owned_key).
                     if (di.allocator.dupe(u8, entry.key_ptr.*)) |duped| {
                         routing_keys_to_drop.append(di.allocator, duped) catch continue;
                     } else |_| {
@@ -779,18 +600,6 @@ pub fn handleClientDisconnect(client_id: [16]u8) void {
 
 /// Process-global MCP stdio registry accessor (lives beside `App` so every
 /// call site shares one `long_lived` allocator choice).
-///
-/// Picks the DI allocator (process lifetime, via `getSingleton`) when the
-/// server is up, else falls back to the caller-provided allocator (unit
-/// tests / pre-singleton startup). Replaces the repeated two-liner:
-/// `const long_lived = if (getSingleton()) |di| di.allocator else |_| alloc;`
-/// `const reg = mcp_stdio.StdioRegistry.global(long_lived);`
-///
-/// Prefers the cached `di.mcp_stdio_registry` (eagerly set in main.zig) so
-/// every call site goes through the singleton struct; lazily fills the
-/// cache when main didn't (unit tests). The lazy fill is benign under
-/// concurrency: `global()` itself is mutex-protected and every thread
-/// computes the same pointer value.
 pub fn mcpStdioRegistry(fallback: std.mem.Allocator) *mcp_stdio.StdioRegistry {
     if (getSingleton()) |di| {
         if (di.mcp_stdio_registry) |cached| return cached;

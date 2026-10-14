@@ -1,14 +1,6 @@
-//! `generate_image` — an agent tool that calls the OpenAI Images API
-//! (`POST /v1/images/generations`) to generate images from a text prompt
-//! using DALL-E 2 / DALL-E 3 / gpt-image-1.
-//!
-//! The generated image is saved to `<cwd>/generated_images/img_<ts>_<idx>.png`
-//! and the absolute path is returned in a JSON payload. The agent then
-//! calls `present_files` with `files=[{path=<path>}]` to display the
-//! image inline in the chat.
-//!
-//! Plan: docs/superpowers/plans/2026-08-14-generate-image-tool.md
-//! API:  https://developers.openai.com/api/reference/resources/images/methods/generate
+//! `generate_image` — an agent tool that calls the OpenAI Images API (`POST
+//! /v1/images/generations`) to generate images from a text prompt using
+//! DALL-E 2 / DALL-E 3 / gpt-image-1.
 
 const std = @import("std");
 const custom_http_client = @import("kabelweb").client;
@@ -18,36 +10,10 @@ const ToolProperty = schemas.ToolProperty;
 
 /// Maximum response body size — 4 MiB covers a single DALL-E 3 b64_json
 /// payload (1-3 MiB PNG → 1.3-4 MiB base64). 4 MiB also covers a 10-image
-/// DALL-E 2 multi-image response comfortably. Exceeding this cap surfaces
-/// `error.ResponseTooLarge` to the LLM so it can retry with a smaller
-/// `n` or `size` (the LLM knows what it asked for).
+/// DALL-E 2 multi-image response comfortably.
 pub const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 
-/// Input structure for the `generate_image` tool. Mirrors the OpenAI
-/// Images API request body (POST /v1/images/generations) — every field
-/// here corresponds 1:1 to a JSON field the API accepts, with `null`
-/// meaning "use OpenAI's default for this parameter".
-///
-/// Defaults applied at the `buildJsonRequestBody` step (NOT in the
-/// struct, so the wire shape stays an accurate mirror of what the LLM
-/// sent):
-///   - `model`           → "dall-e-3"
-///   - `n`               → 1
-///   - `size`            → "1024x1024"
-///   - `response_format` → "b64_json"
-///
-/// Fields the LLM can pass (all optional except `prompt`):
-///   - `model`           — "dall-e-2" | "dall-e-3" | "gpt-image-1"
-///   - `n`               — 1..10 (DALL-E 3 / gpt-image-1 only accept n=1)
-///   - `size`            — model-dependent (see `validateModelSize`)
-///   - `quality`         — "standard" | "hd" (DALL-E 3 only)
-///   - `style`           — "vivid" | "natural" (DALL-E 3 only)
-///   - `response_format` — "url" | "b64_json" (we always save to disk
-///                         regardless of format; "url" is only useful if
-///                         the caller wants the URL too, which we don't
-///                         currently expose)
-///   - `user`            — end-user identifier forwarded to OpenAI for
-///                         abuse detection
+/// Input structure for the `generate_image` tool.
 pub const GenerateImageInput = struct {
     /// REQUIRED. Description of the image to generate.
     prompt: []const u8,
@@ -70,11 +36,8 @@ pub const GenerateImageInput = struct {
     user: ?[]const u8 = null,
 };
 
-/// One decoded image record from OpenAI's response. Exactly one of
-/// `b64_json` / `url` is non-null (depends on `response_format`); the
-/// other is null. `revised_prompt` is non-null for DALL-E 3 / gpt-image-1
-/// (OpenAI silently rewrites the prompt for safety + clarity) and null
-/// for DALL-E 2 (which doesn't rewrite).
+/// One decoded image record from OpenAI's response. Exactly one of `b64_json`
+/// / `url` is non-null (depends on `response_format`); the other is null.
 pub const ImageRecord = struct {
     b64_json: ?[]const u8 = null,
     url: ?[]const u8 = null,
@@ -82,9 +45,7 @@ pub const ImageRecord = struct {
 };
 
 /// One saved image ready to be referenced by `<image>` element in the
-/// envelope. Path is absolute; `bytes` is the on-disk file size; `mime`
-/// is the image MIME type (always `image/png` for now since OpenAI
-/// returns PNG, but the field is here for future flexibility).
+/// envelope.
 pub const SavedImage = struct {
     path: []const u8,
     bytes: u64,
@@ -94,11 +55,6 @@ pub const SavedImage = struct {
 // ─── Tool definition ──────────────────────────────────────────────────────
 
 /// Top-level tool definition exposed to the LLM.
-///
-/// Description is intentionally verbose — it must explain (1) that the
-/// tool saves the image to disk and returns a path, (2) that the LLM
-/// should call `present_files` next, and (3) that the active profile's
-/// API key is used (no separate key needed).
 pub const generate_image_tool_system_prompt =
     \\## Generate Image Tool — Behavior
     \\Use `generate_image` to generate an image via OpenAI Images API (DALL-E 2/3, gpt-image-1).
@@ -153,13 +109,9 @@ const MODEL_SIZE_TABLE = [_]ModelSizes{
     .{ .model = "gpt-image-1", .sizes = &.{ "1024x1024", "1536x1026", "1024x1536" } },
 };
 
-/// Validate that `size` is one of the sizes allowed for `model`.
-/// Returns `null` on success, or an owned error message string on
-/// failure (caller wraps it in the JSON error payload via `toJSONError`).
-///
-/// Errors are intentionally verbose — they tell the LLM (a) what the
-/// offending input was and (b) what the allowed set is, so it can
-/// self-correct without trial-and-error round trips.
+/// Validate that `size` is one of the sizes allowed for `model`. Returns
+/// `null` on success, or an owned error message string on failure (caller
+/// wraps it in the JSON error payload via `toJSONError`).
 pub fn validateModelSize(allocator: std.mem.Allocator, model: []const u8, size: []const u8) !?[]u8 {
     for (MODEL_SIZE_TABLE) |entry| {
         if (std.mem.eql(u8, model, entry.model)) {
@@ -193,10 +145,7 @@ pub fn validateModelSize(allocator: std.mem.Allocator, model: []const u8, size: 
 
 // ─── JSON request body builder ───────────────────────────────────────────
 
-/// Build the JSON request body for `POST /v1/images/generations`. Uses
-/// `null`-skipping so we never emit `"field":null` in the JSON — OpenAI
-/// returns 400 on some null fields (notably `n` when omitted-then-null
-/// in some SDKs). Pure-data — no I/O, no HTTP, easy to test.
+/// Build the JSON request body for `POST /v1/images/generations`.
 pub fn buildJsonRequestBody(allocator: std.mem.Allocator, input: GenerateImageInput) ![]u8 {
     var json: std.ArrayList(u8) = .empty;
     errdefer json.deinit(allocator);
@@ -264,15 +213,8 @@ pub fn buildJsonRequestBody(allocator: std.mem.Allocator, input: GenerateImageIn
 
 // ─── JSON response parser ────────────────────────────────────────────────
 
-/// Parse an OpenAI Images API response body. Returns one `ImageRecord`
-/// per image in the `data` array. Caller owns the returned slice AND
-/// every non-null `b64_json` / `url` / `revised_prompt` slice inside.
-///
-/// Errors:
-///   - `error.InvalidJson` — body is not valid JSON or has the wrong shape
-///   - `error.OpenAiError` — body is the OpenAI error envelope
-///                            (`{"error":{"message":"..."}}`)
-///   - `error.NoImagesReturned` — `data` array is missing or empty
+/// Parse an OpenAI Images API response body. Returns one `ImageRecord` per
+/// image in the `data` array.
 pub fn parseImageResponse(allocator: std.mem.Allocator, body: []const u8) ![]ImageRecord {
     var parsed = std.json.parseFromSlice(std.json.Value, allocator, body, .{}) catch {
         return error.InvalidJson;
@@ -328,11 +270,8 @@ pub fn parseImageResponse(allocator: std.mem.Allocator, body: []const u8) ![]Ima
 // ─── Save image to disk ──────────────────────────────────────────────────
 
 /// Decode `b64_payload` (base64) and write the raw bytes to
-/// `<cwd>/generated_images/img_<unix_ms>_<index>.<ext>`. Returns the
-/// absolute path. Creates the `generated_images/` subdirectory if missing.
-///
-/// `mime` drives the file extension (always `image/png` from OpenAI,
-/// but the parameter exists for future flexibility).
+/// `<cwd>/generated_images/img_<unix_ms>_<index>.<ext>`. Returns the absolute
+/// path.
 pub fn saveImageToDisk(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -472,22 +411,9 @@ pub fn toJSONError(allocator: std.mem.Allocator, error_msg: []const u8) ![]u8 {
 
 // ─── HTTP execution ──────────────────────────────────────────────────────
 
-/// Execute the `generate_image` tool end-to-end:
-///   1. Validate `prompt` (non-empty)
-///   2. Apply defaults for `model`, `n`, `size`, `response_format`
-///   3. Validate `model` + `size` compatibility
-///   4. Build the JSON request body
-///   5. POST `<base_url>/images/generations` with `Authorization: Bearer <api_key>`
-///   6. Parse the JSON response
-///   7. Save each image to `<cwd>/generated_images/img_<ts>_<idx>.png`
-///   8. Build and return the JSON success payload
-///
-/// On any error (validation, HTTP, parse, save-to-disk), returns an
-/// JSON error payload via `toJSONError`. The LLM sees the failure as
-/// `<generate_image><error>...</error></generate_image>` — same wire
-/// shape as a success result, just with `<error>` instead of `<status>`.
-///
-/// Caller owns the returned slice (freed via `allocator.free`).
+/// Execute the `generate_image` tool end-to-end: 1. Validate `prompt`
+/// (non-empty) 2. Apply defaults for `model`, `n`, `size`, `response_format`
+/// 3.
 pub fn execute_generate_image(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -593,11 +519,7 @@ pub fn execute_generate_image(
 
     // 8. Check the status code
     if (response.status_code >= 400) {
-        // Try to surface OpenAI's actual error message. Their error
-        // envelope is `{"error":{"message":"...", ...}}`. parseImageResponse
-        // returns `error.OpenAiError` for that shape — we use it as a
-        // uniform "extract the message" path, then read the raw body for
-        // the `message` string.
+        // Try to surface OpenAI's actual error message.
         var msg_buf: std.ArrayList(u8) = .empty;
         defer msg_buf.deinit(allocator);
         try msg_buf.print(allocator, "HTTP {d}", .{response.status_code});
@@ -639,10 +561,9 @@ pub fn execute_generate_image(
         allocator.free(images);
     }
 
-    // 10. Save each image to disk and collect SavedImage records.
-    //     If a save fails, abort and return the error envelope (the
-    //     user explicitly asked for the image; partial results are
-    //     worse than a clean failure).
+    // 10. Save each image to disk and collect SavedImage records. If a save
+    // fails, abort and return the error envelope (the user explicitly asked
+    // for the image; partial results are worse than a clean failure).
     var saved = try allocator.alloc(SavedImage, images.len);
     errdefer {
         for (saved[0..images.len]) |s| allocator.free(@constCast(s.path));
@@ -702,9 +623,8 @@ pub fn execute_generate_image(
     };
 
     // saved[].path was allocated by std.fs.path.join in saveImageToDisk —
-    // ownership transfers to the envelope? No, the envelope only
-    // references the path strings as slices. We have to free them now
-    // that we're done.
+    // ownership transfers to the envelope? No, the envelope only references
+    // the path strings as slices. We have to free them now that we're done.
     for (saved) |s| allocator.free(@constCast(s.path));
     allocator.free(saved);
 
@@ -737,10 +657,9 @@ const generate_image = @import("generate_image.zig");
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
-/// Open a fresh `std.Io.Threaded` runtime for tests that need an Io
-/// (the save-to-disk helper needs it for `std.Io.Clock.now` and
-/// `std.Io.Dir.createFile`). Mirrors the helper in
-/// `kanban_list.zig` and the `fireWorkspaceRoutine` tests in `routines/fire.zig`.
+/// Open a fresh `std.Io.Threaded` runtime for tests that need an Io (the
+/// save-to-disk helper needs it for `std.Io.Clock.now` and
+/// `std.Io.Dir.createFile`).
 fn setupIo() std.Io.Threaded {
     const threaded = std.Io.Threaded.init(testing.allocator, .{});
     return threaded;

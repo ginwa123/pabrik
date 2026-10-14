@@ -6,11 +6,9 @@ const testing = std.testing;
 
 pub fn isSessionKanban(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8) !bool {
     var is_kanban: bool = false;
-    // Filter on `wit.id` (the canonical session id for kanban /
-    // routine tasks per Migration 052's `task.id == session.id`
-    // convention), not on `session_id` — that column was dropped
-    // by Migration 052 and would return "no such column" against
-    // post-migration production data.
+    // Filter on `wit.id` (the canonical session id for kanban / routine tasks
+    // per Migration 052's `task.id == session.id` convention), not on
+    // `session_id` — that column was dropped by Migration 052 and would
     const sql =
         \\
         \\SELECT 1 FROM workspace_item_tasks wit
@@ -44,10 +42,9 @@ fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
     return .{ .db = db, .threaded = threaded };
 }
 
-/// Lay down the two tables `isTaskKanban` joins on. No
-/// `session_id` column — the schema matches post-Migration 052
-/// production. The function filters on `wit.id` which doubles as
-/// the session id for kanban / routine tasks.
+/// Lay down the two tables `isTaskKanban` joins on. No `session_id` column —
+/// the schema matches post-Migration 052 production. The function filters on
+/// `wit.id` which doubles as the session id for kanban / routine tasks.
 fn seedSchema(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend) !void {
     try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)", &.{});
     try db.exec(alloc,
@@ -137,11 +134,8 @@ test "isTaskKanban returns false when kanban items exist but no tasks" {
 }
 
 // ─── Test: mixed kanban + chat in the same DB ─────────────────────────────
-//
-// Regression guard for the JOIN semantics: a session_id bound to a
-// non-kanban task must NOT be reported as a kanban even when other
-// kanban tasks exist in the same DB. The JOIN + WHERE filter has to
-// match BOTH the task id AND the item_type.
+// Regression guard for the JOIN semantics: a session_id bound to a non-kanban
+// task must NOT be reported as a kanban even when other kanban tasks exist in
 
 test "isTaskKanban returns false for a session_id bound to a non-kanban task" {
     const alloc = testing.allocator;

@@ -1,39 +1,6 @@
-//! `POST /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/resize`.
-//!
+//! `POST
+//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/resize`.
 //! Resize a single element (set absolute x/y/width/height/rotation).
-//! Replaces the older "PATCH .../geometry" endpoint, which conflated
-//! move with resize.
-//!
-//! ## Cascade behavior
-//!
-//! None. Resize is per-element by Figma convention — resizing a
-//! group changes ONLY the group's bounding box; the children keep
-//! their own positions and sizes. (To translate a whole group, use
-//! `/translate` or `/move-batch`.)
-//!
-//! ## Body
-//!
-//! `{ "x"?: <int>, "y"?: <int>, "width"?: <int>, "height"?: <int>,
-//!   "rotation"?: <float> }` — at least one field is required.
-//! A fully-empty body is a client bug (no-op UPDATE) and is
-//! rejected with 400.
-//!
-//! ## Response
-//!
-//! Single `DesignElement` (post-update). Mirrors the existing
-//! `/geometry` endpoint's response shape for back-compat with any
-//! caller that already parses a single element.
-//!
-//! ## Errors
-//!
-//!   - 400 missing `:element_id` path param
-//!   - 400 invalid JSON body
-//!   - 400 no geometry fields provided (no-op)
-//!   - 404 `:element_id` not found
-//!   - 500 DB failure
-//!
-//! Plan: docs/superpowers/plans/2026-08-06-split-move-resize.md
-//!   (Task 1.2: split /geometry into /translate + /resize)
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -187,11 +154,8 @@ fn makeErrorJson(allocator: std.mem.Allocator, message: []const u8) ![]u8 {
     );
 }
 
-// ===== Tests merged from design_elements_resize_test.zig (2026-09-11 flatten) =====
-// Behavioural tests for the `POST .../resize` handler.
-// 
-// Plan: docs/superpowers/plans/2026-08-06-split-move-resize.md
-//   (Task 1.2: split /geometry into /translate + /resize)
+// ===== Tests merged from design_elements_resize_test.zig (2026-09-11
+// flatten) ===== Behavioural tests for the `POST .../resize` handler.
 
 const http_handlers = @import("mod.zig");
 const migration = @import("../migrations/migration.zig");
@@ -216,9 +180,7 @@ fn teardownResizeCtx(ctx: *TestCtx) void {
 }
 
 /// Open a fresh in-memory DB and walk every migration in
-/// `src/migrations/migration.zig` so the schema matches production
-/// exactly. We then seed one design item + page and return the
-/// handles — tests insert their own elements from there.
+/// `src/migrations/migration.zig` so the schema matches production exactly.
 fn setupResizeCtx() !TestCtx {
     var threaded = std.Io.Threaded.init(testing_alloc, .{});
     errdefer threaded.deinit();

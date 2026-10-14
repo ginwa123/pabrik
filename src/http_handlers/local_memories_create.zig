@@ -1,27 +1,6 @@
-//! `POST /api/local-memories` — create a local memory file.
-//!
-//! Body: `{"name":"foo.md","content":"...","cwd":"/abs/path"}`.
-//! On success: 201 with `{"memory":{name,title,path,size}}`.
-//!
-//! Layered as:
-//!   - `useCase` — parses the body, validates the name, resolves the
-//!     local memories dir (body `cwd` first, then io fallback), runs
-//!     the duplicate check, writes the file, re-lists to derive
-//!     metadata, and returns a heap-owned `MemoryInfo`.
-//!   - `localMemoryCreateHandler` — thin orchestrator: parses the
-//!     HTTP body, calls `useCase`, maps errors to status codes,
-//!     builds the JSON response.
-//!
-//! Preserves the static-contract assertions in `local_memories_crud_test.zig`:
-//!   - `get_local_memories_path_for_dir` + `get_local_memories_path_from_io`
-//!     substring checks
-//!   - `parsed.cwd` substring check (per-call cwd in body)
-//!   - `isValidMemoryName` validation
-//!   - `localMemoryExists` + `409` + `writeLocalMemoryFile` + `201`
-//!     substring checks
-//!   - `parseFromSliceLeaky` + `Invalid JSON body` substring checks
-//!   - `std.json.Stringify.valueAlloc` substring check
-//!   - `500` + `no cwd available` substring checks
+//! `POST /api/local-memories` — create a local memory file. Body:
+//! `{"name":"foo.md","content":"...","cwd":"/abs/path"}`. On success: 201
+//! with `{"memory":{name,title,path,size}}`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -30,12 +9,6 @@ const memories_mod = pabrikcore.memories;
 const http_response = @import("http_response.zig");
 
 /// JSON request body for `POST /api/local-memories`.
-///
-/// `cwd` is optional in the body — when omitted, the handler falls
-/// back to the pabrik server's own CWD via `io.realPath` (matches
-/// the skill-detail handler's behavior). `name` and `content` are
-/// required. `name` must end in `.md`, with no path separators or
-/// `..` segments (see `memories.isValidMemoryName`).
 const CreateLocalMemoryBody = struct {
     name: []const u8,
     content: []const u8,
@@ -84,16 +57,8 @@ pub const LocalMemoryCreateOutput = struct {
 // Use case
 // =====================================================================
 
-/// Create a local memory file.
-///
-/// Steps:
-///   1. Validate `name` (non-empty + `isValidMemoryName`).
-///   2. Resolve the local memories dir (body `cwd` → io fallback).
-///   3. 409 on duplicate (via `localMemoryExists`).
-///   4. `writeLocalMemoryFile` to create the file.
-///   5. Re-list via `listMemoriesInDir` to derive `title/path/size`.
-///   6. Locate the entry by name. Missing → 500 (consistency).
-///   7. Duplicate the matched slices for the response.
+/// Create a local memory file. Steps: 1. Validate `name` (non-empty +
+/// `isValidMemoryName`). 2.
 fn useCase(
     allocator: std.mem.Allocator,
     io: std.Io,

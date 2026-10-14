@@ -1,88 +1,5 @@
 //! The pre-commit hook's Zig lint step is reachable from the CWD the hook
 //! actually runs in.
-//!
-//! WHAT BROKE, AND WHY THIS FILE EXISTS
-//! -----------------------------------
-//! `.husky/pre-commit` mirrors the lint steps of CI: the frontend
-//! `pnpm run lint:check` (which needs CWD=src/apps/desktop), the Zig
-//! coding-standards scan `bash scripts/lint-no-catch-unreachable.sh`, and
-//! `zig build zginlint:check` (both of which need CWD=repo root, because
-//! their paths and their `build.zig` step are spelled relative to it).
-//!
-//! The hook satisfied the first requirement with a bare `cd` and then tried
-//! to get back with `cd ../..`:
-//!
-//!     cd src/apps/desktop || exit 1
-//!     pnpm run lint:check
-//!     cd ../..                       # <-- lands in src/, not the root
-//!     bash scripts/lint-no-catch-unreachable.sh --selftest
-//!
-//! `src/apps/desktop` is THREE levels below the root, so `../..` from there
-//! is `src/`. The Zig step then died with
-//!
-//!     bash: scripts/lint-no-catch-unreachable.sh: No such file or directory
-//!     husky - pre-commit script failed (code 127)
-//!
-//! which is what a developer saw on a commit whose frontend lint had just
-//! passed. The hook's own comment claimed "The Zig half needs no cd: the
-//! lint script resolves the repo root from its own location" — true of the
-//! SCRIPT, but the hook had already moved, so the relative path it invoked
-//! never resolved. `.husky/pre-push` already used the correct form
-//! (`(cd src/apps/desktop && pnpm run build)`); pre-commit did not.
-//!
-//! The fix is the subshell: the frontend lint runs in `( ... )`, so the
-//! parent's CWD never moves and the Zig step's relative path resolves.
-//!
-//! WHAT THESE TESTS ASSERT
-//! -----------------------
-//! They run the REAL hook file through a real `sh`, with stub `pnpm` and
-//! `bash` executables first on PATH, and assert:
-//!
-//!   1. the hook exits 0 and the Zig scan's success line is in its stdout
-//!      (the step RAN, and it was not deleted);
-//!   2. the stub `pnpm` was invoked with CWD=src/apps/desktop and the
-//!      argument `run lint:check` — the frontend half still mirrors CI;
-//!   3. the CWD the hook is in when it invokes `bash
-//!      scripts/lint-no-catch-unreachable.sh` is the repo root — the
-//!      property `cd ../..` broke, observed directly rather than inferred;
-//!   4. the hook still names every invocation CI makes, and still runs the
-//!      frontend lint in a subshell;
-//!   5. the third mirrored step, `zig build zginlint:check`, runs from the
-//!      repo root with the argv the `zginlint` CI job uses.
-//!
-//! WHY STUBS AND NOT THE REAL COMMANDS
-//! ----------------------------------
-//! `pnpm run lint:check` is a ~90 s, 895-file oxlint+eslint pass. This
-//! suite is about the hook's CWD discipline, not about the linter, and a
-//! test costing 90 s to say "the hook cd'd correctly" would be skipped by
-//! everyone. The `pnpm` stub records the two facts under test (CWD + argv)
-//! and exits 0.
-//!
-//! The `bash` stub is different: it RECORDS and then `exec`s the real
-//! bash, so the Zig lint step still runs for real (~50 ms scan plus a
-//! 9-fixture selftest). That is deliberate — the Zig step is the subject,
-//! and a stubbed-out scan would let a hook that never invokes it pass.
-//!
-//! WHY THE `bash` STUB IS THE RIGHT OBSERVATION POINT: the stub `pnpm`
-//! records the CWD of the hook's CHILD, which is the subshell — correctly
-//! inside `src/apps/desktop`. That is the frontend half working, not the
-//! Zig half. What decides whether `scripts/...` resolves is the CWD of the
-//! hook ITSELF at the moment it spawns `bash`, and a child inherits
-//! exactly that. So the `bash` stub's `pwd -P` is the observation that
-//! catches the bug.
-//!
-//! WHY `rg` GATES ONE TEST: the Zig lint step fails closed when `rg` is
-//! absent (by design — a lint that cannot run must never report the tree
-//! clean), so on a machine with no ripgrep the hook exits 1 for an
-//! environmental reason. That test skips with a printed reason; the CWD
-//! tests do not need `rg` and do not skip.
-//!
-//! PLATFORM: the hook is `#!/usr/bin/env sh` and both stubs are `/bin/sh`
-//! scripts, so this suite is POSIX-only. On Windows the hook is not what a
-//! developer's `git commit` runs (husky's `_/h` shells out to `sh -e`, and
-//! the repo's Windows cells use `shell: bash` = Git Bash). The skip is a
-//! statement about the platform, not about the test: there is no Windows
-//! CWD discipline to get wrong here, because there is no Windows hook.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -94,12 +11,6 @@ const io = testing.io;
 const Io = std.Io;
 
 /// The hook under test, relative to the repo root.
-///
-/// Relative, not absolute: the hook is invoked with the repo root as CWD
-/// (that is what husky does — `core.hooksPath` is `.husky/_`, and git runs
-/// hooks from the worktree root), and the whole point of the test is that
-/// the hook's CWD is the root. Handing it an absolute path would hide a
-/// CWD bug in the invocation instead of exposing it.
 const HOOK_REL = ".husky/pre-commit";
 
 /// The frontend lint step's required CWD, relative to the repo root.
@@ -126,11 +37,8 @@ const ZGINLINT_HOOK_LINE = "\nzig build zginlint:check\n";
 const HOOK_TIMEOUT_MS: i64 = 120_000;
 
 /// `subprocess.run(timeout=<ms>)` as `std.process.RunOptions.timeout`.
-///
 /// `Io.Timeout.duration` is a `Clock.Duration` — a (raw duration, clock)
 /// PAIR, not a bare duration — and its constructors live on the RAW half.
-/// `.awake` is monotonic: an NTP step during a run must not extend or
-/// collapse the budget.
 fn timeoutMs(ms: i64) Io.Timeout {
     return .{ .duration = .{
         .raw = .{ .nanoseconds = @as(i96, ms) * std.time.ns_per_ms },
@@ -139,10 +47,6 @@ fn timeoutMs(ms: i64) Io.Timeout {
 }
 
 /// Exit code of a finished child, or null if a signal stopped it.
-///
-/// `Child.Term` is a tagged union, NOT an optional: `.exited` is a `u8`
-/// field, so `res.term.exited orelse ...` does not compile and a bare
-/// `res.term.exited != 0` would read the wrong field on a signalled run.
 fn exitCode(term: std.process.Child.Term) ?u8 {
     return switch (term) {
         .exited => |c| c,
@@ -151,11 +55,6 @@ fn exitCode(term: std.process.Child.Term) ?u8 {
 }
 
 /// Absolute path of a repo-root-relative file. Owned.
-///
-/// `realPathFile` rather than cwd-relative concatenation: the hook is
-/// spawned with an explicit CWD, so anything handed to it has to already
-/// be absolute. It also fails loudly on a missing file, which is what
-/// `assert HOOK.exists()` did in the Python original.
 fn repoFileAbs(rel: []const u8) ![]u8 {
     var buf: [std.fs.max_path_bytes]u8 = undefined;
     const n = Io.Dir.cwd().realPathFile(io, rel, &buf) catch |err| switch (err) {
@@ -176,10 +75,7 @@ fn repoRootAbs() ![]u8 {
 }
 
 /// Write `contents` to `<dir>/<name>`, make it executable, return its path.
-///
-/// Owned by the caller. Mirrors `writeExecutableScript` in
-/// `mcp_test_test.zig`: the stub has to be executable, and on POSIX that
-/// is a `chmod` the caller must not forget.
+/// Owned by the caller.
 fn writeExecutable(dir: []const u8, name: []const u8, contents: []const u8) ![]u8 {
     const path = try std.fs.path.join(gpa, &.{ dir, name });
     errdefer gpa.free(path);
@@ -198,10 +94,6 @@ fn readFile(path: []const u8) ![]u8 {
 }
 
 /// Read a whole file, or null when it does not exist. Owned when non-null.
-///
-/// The record files are written by the stubs, so "the stub never ran" and
-/// "the stub ran and wrote nothing" are different failures and the caller
-/// needs to tell them apart.
 fn readFileOrNull(path: []const u8) !?[]u8 {
     return Io.Dir.cwd().readFileAlloc(io, path, gpa, .limited(1 << 20)) catch |err| switch (err) {
         error.FileNotFound => null,
@@ -211,14 +103,6 @@ fn readFileOrNull(path: []const u8) !?[]u8 {
 
 /// The stub `pnpm`: record the CWD it was invoked from and the argv it got,
 /// then exit 0 so the hook proceeds to the Zig step.
-///
-/// `pwd -P` (physical) rather than `pwd`: the assertion is about which
-/// DIRECTORY the hook is in, and a logical `pwd` would echo whatever
-/// `$PWD` the parent exported — which is exactly the value a `cd ../..`
-/// bug leaves stale. `-P` asks the kernel.
-///
-/// The two records go to two files so a partial write cannot interleave
-/// them into one unparseable line.
 const PNPM_STUB =
     \\#!/bin/sh
     \\pwd -P > "$PNPM_STUB_CWD_OUT"
@@ -227,21 +111,8 @@ const PNPM_STUB =
 ;
 
 /// The stub `bash`: record the CWD of every invocation of the Zig lint
-/// script, then hand off to the REAL bash so the step still runs.
-///
-/// The `case` filter matters. The lint script's own `--selftest` re-invokes
-/// itself through `command -v bash`, which on a PATH with this stub first
-/// resolves to the stub — so without the filter the record would also
-/// capture that nested call. Filtering on the script name keeps the record
-/// to the invocations the HOOK makes, which is what the assertion is about.
-///
-/// `exec` rather than a subshell call: the stub must not add a process to
-/// the tree, or the hook's `set -e` would see the stub's exit status
-/// instead of the real bash's.
-///
-/// `$BASH_SHIM_REAL` is an ABSOLUTE path resolved before the stub dir was
-/// prepended to PATH — a bare `exec bash` would find the stub again and
-/// recurse until the process limit.
+/// script, then hand off to the REAL bash so the step still runs. The `case`
+/// filter matters.
 const BASH_STUB =
     \\#!/bin/sh
     \\case "$*" in
@@ -292,13 +163,6 @@ const Fixture = struct {
 };
 
 /// Build the stub fixture.
-///
-/// A `makeScratchDir` fixture, NOT `std.testing.tmpDir`: the latter lands
-/// in `<cwd>/.zig-cache/tmp/`, inside the git worktree, and a stray
-/// executable there is both a `git status` nuisance and a path the hook
-/// could theoretically resolve. The scratch dir is under the OS temp root
-/// and carries the `pabrik-fix-` marker, so `cleanupExtraDir` gates its
-/// delete.
 fn makeFixture() !Fixture {
     const scratch = try harness.makeScratchDir(gpa);
     errdefer gpa.free(scratch);
@@ -345,16 +209,6 @@ fn makeFixture() !Fixture {
 
 /// The environment the hook runs under: the parent's, with the stub bindir
 /// FIRST on PATH and the record paths exported.
-///
-/// The stub bindir must precede everything else, or a real `pnpm` on the
-/// developer's PATH wins and the test records nothing. `PATH` is rebuilt
-/// from the ambient one rather than replaced, because the hook also needs
-/// `dirname`, `mktemp`, `rg` and a real `bash` from it.
-///
-/// `std.process.run`'s `.environ_map` REPLACES the child environment, so
-/// every variable the parent has must be copied in — dropping `HOME` or
-/// `XDG_*` would change the hook's behaviour for reasons unrelated to the
-/// CWD under test.
 fn hookEnviron(fx: *Fixture, real_bash: []const u8) !std.process.Environ.Map {
     var map = try std.process.Environ.createMap(std.testing.environ, gpa);
     errdefer map.deinit();
@@ -379,10 +233,9 @@ fn hookEnviron(fx: *Fixture, real_bash: []const u8) !std.process.Environ.Map {
     return map;
 }
 
-/// Run the real hook from the repo root with the stubs on PATH.
-///
-/// Returns the child's exit code plus its captured streams; the caller
-/// owns the two buffers and must free them.
+/// Run the real hook from the repo root with the stubs on PATH. Returns the
+/// child's exit code plus its captured streams; the caller owns the two
+/// buffers and must free them.
 const HookRun = struct {
     code: ?u8,
     stdout: []u8,
@@ -414,10 +267,6 @@ fn runHook(hook_abs: []const u8, root: []const u8, fx: *Fixture, real_bash: []co
 }
 
 /// Absolute path of the real `bash`, resolved on the AMBIENT PATH.
-///
-/// Probed with `std.process.run`, which inherits the real process
-/// environment — NOT the stub bindir — so the answer is the system bash
-/// and not the stub this suite is about to install. Owned.
 fn realBashAbs() ![]u8 {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sh", "-c", "command -v bash" },
@@ -443,12 +292,6 @@ fn realBashAbs() ![]u8 {
 }
 
 /// Is `rg` resolvable on the AMBIENT PATH?
-///
-/// The Zig lint step fails closed when `rg` is absent (by design — a lint
-/// that cannot run must never report the tree clean), so on a machine with
-/// no ripgrep the hook exits 1 for an environmental reason. Probing with
-/// `std.process.run` inherits the real environment, so the answer is about
-/// the machine, not about the stub bindir.
 fn hasRipgrep() bool {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sh", "-c", "command -v rg >/dev/null 2>&1" },
@@ -463,10 +306,6 @@ fn hasRipgrep() bool {
 
 /// Everything a test needs to run the hook once: the hook's absolute path,
 /// the repo root, the real bash, and the stub fixture.
-///
-/// One setup helper so the four tests cannot drift apart in what they
-/// install — a test that forgot the `bash` stub would silently stop
-/// observing the CWD and still pass.
 const Setup = struct {
     hook: []u8,
     root: []u8,
@@ -502,9 +341,7 @@ fn makeSetup() !Setup {
 // ============================================================================
 
 // The headline regression: the hook exits 0 and the Zig scan's success line
-// is in its stdout, which means the step RAN. Pre-fix it exited 127 with
-// `bash: scripts/lint-no-catch-unreachable.sh: No such file or directory`,
-// because `cd ../..` had left the hook in `src/`.
+// is in its stdout, which means the step RAN.
 test "pre_commit_hook_reaches_the_zig_lint_step" {
     if (builtin.os.tag == .windows) return error.SkipZigTest;
     if (!hasRipgrep()) {
@@ -531,10 +368,7 @@ test "pre_commit_hook_reaches_the_zig_lint_step" {
         return error.TestUnexpectedResult;
     }
 
-    // The Zig step's own success line is in the hook's stdout. Asserting it
-    // (rather than only the exit code) distinguishes "the scan ran and
-    // found nothing" from "the hook skipped the step entirely" — a hook
-    // that had deleted the Zig lines would also exit 0.
+    // The Zig step's own success line is in the hook's stdout.
     if (std.mem.indexOf(u8, run.stdout, ZIG_SCAN_OK_LINE) == null) {
         std.debug.print(
             "hook exited 0 but never ran the Zig scan:\n{s}\n",
@@ -609,15 +443,6 @@ test "pre_commit_hook_runs_the_frontend_lint_from_the_desktop_dir" {
 // The property `cd ../..` broke, asserted directly rather than through the
 // exit code: when the hook invokes the Zig lint script, its own CWD is the
 // repo root.
-//
-// HOW THIS OBSERVES IT: the `bash` stub records `pwd -P` for every
-// invocation of `scripts/lint-no-catch-unreachable.sh` and then execs the
-// real bash. A child inherits its parent's CWD, so the recorded value IS
-// the hook's CWD at that moment. Pre-fix it was `src/`; the assertion is
-// that it is the root.
-//
-// This is the test that catches the bug on its own: it needs neither `rg`
-// nor a passing scan, and it does not care what the hook's exit code was.
 test "pre_commit_hook_invokes_the_zig_lint_from_the_repo_root" {
     if (builtin.os.tag == .windows) return error.SkipZigTest;
 
@@ -725,15 +550,8 @@ test "pre_commit_hook_invokes_zginlint_from_the_repo_root" {
     }
 }
 
-// The hook must not have been "fixed" by deleting the Zig step, and must
-// not have regressed to a bare `cd`.
-//
-// A hook that drops the two `bash scripts/lint-no-catch-unreachable.sh`
-// lines exits 0 on every commit and mirrors nothing — the exact failure
-// mode PR #398 left behind ("the CI job was deleted, which left this hook
-// mirroring nothing"). And a hook that went back to a bare
-// `cd src/apps/desktop` would pass the exit-code test only by accident of
-// where it happened to land.
+// The hook must not have been "fixed" by deleting the Zig step, and must not
+// have regressed to a bare `cd`.
 test "pre_commit_hook_invokes_the_zig_lint_script_by_its_repo_relative_path" {
     if (builtin.os.tag == .windows) return error.SkipZigTest;
 

@@ -8,21 +8,13 @@ test {
     // registered here so zig build test actually runs them.
     _ = @import("../../agentic_loop/workflow.zig");
     // Per-request owner resolution for per-user isolation (W0): the
-    // `resolveRequestUserId` resolver + `ownerVisibilityClause`. Its inline
-    // tests were dormant before this — the `pub const authMiddleware`
-    // re-export in http_handlers/mod.zig alone doesn't pull the file's
-    // tests into the test binary. Same discovery workaround as the
-    // handlers below.
+    // `resolveRequestUserId` resolver + `ownerVisibilityClause`.
     _ = @import("../../http_handlers/auth_common.zig");
     _ = @import("../../http_handlers/pabrik_config_put.zig");
     _ = @import("../../http_handlers/design_elements_reorder.zig");
     _ = @import("../../http_handlers/design_elements_ungroup.zig");
-    // Static-contract tests for the model-thinking PUT validation
-    // (plan 2026-08-23-model-thinking). Source-grep pattern locks
-    // in the new validation paths + LoadError variants.
-    // Static-contract tests for config-simplify (plan
-    // 2026-08-24-config-simplify-remove-defaults): PUT handler must not
-    // persist top-level LLM defaults.
+    // Static-contract tests for the model-thinking PUT validation (plan
+    // 2026-08-23-model-thinking).
     _ = @import("../../http_handlers/pabrik_config_get.zig");
     _ = @import("../../http_handlers/pabrik_config_profile_delete.zig");
     _ = @import("../../http_handlers/unified_events_sse.zig");
@@ -49,11 +41,6 @@ test {
     // NOTE: task_update_routines_test.zig + routines_run_test.zig deleted
     // with the per-task `routines` table (Migration 084, plan
     // 2026-09-10-workspace-items-routines).
-    // NEW (plan: 2026-08-18-kanban-task-detail-start-agent). The
-    // start_agent handler + useCase live in a single file; the
-    // static-contract tests are inline at the bottom. Importing
-    // the file (vs. the deleted start_agent_test.zig) ensures the
-    // tests get discovered + run.
     _ = @import("../../http_handlers/start_agent.zig");
     // Bulk run-all-agents (plan: 2026-09-09-run-all-agents-by-column,
     // Option C): handler + useCase + inline tests live in a single file,
@@ -66,10 +53,7 @@ test {
     _ = @import("../../http_handlers/workspace_items_create_routine.zig");
     _ = @import("../../http_handlers/workspace_routines_get.zig");
     _ = @import("../../http_handlers/workspace_routines_update.zig");
-    // Workspace-scoped documents (Migration 098). Same rule as the routine
-    // handlers above: an impl file's inline tests stay dormant until the
-    // file is imported from a test runner, and the `pub const` re-export
-    // in http_handlers/mod.zig does not pull them in.
+    // Workspace-scoped documents (Migration 098).
     _ = @import("../../http_handlers/documents_list.zig");
     _ = @import("../../http_handlers/documents_create.zig");
     _ = @import("../../http_handlers/documents_get.zig");
@@ -88,8 +72,6 @@ test {
     // The MCP-probe (PR #373), LLM-probe and OS-notify-probe HTTP handlers
     // now live at the bottom of http_handlers/mod.zig together with their
     // static-contract test blocks (the former mcp_test.zig / llm_test.zig /
-    // notify_test.zig). One import surfaces all three; listing them
-    // separately would be three registrations of a single file.
     _ = @import("../../http_handlers/mod.zig");
     // Browser-mode (web launch) status endpoint (plan
     // 2026-09-10-web-launch-toggle): handler + buildWebUrl unit tests +
@@ -98,14 +80,9 @@ test {
     _ = @import("../../http_handlers/frontend_log_post.zig");
     _ = @import("../../http_handlers/frontend_log_get.zig");
     _ = @import("../../http_handlers/system_folder.zig");
-    // _ = @import("llm_history_is_input_output_test.zig"); // phase 5: inlined into agentic_loop/llm_history.zig
-    // _ = @import("llm_history_compacted_messages_test.zig"); // phase 5
-    // _ = @import("llm_history_search_messages_fts_test.zig"); // phase 5
-    // _ = @import("llm_history_search_fts_query_safety_test.zig"); // phase 5
-    // _ = @import("llm_history_worker_info_test.zig"); // phase 5
-    // _ = @import("llm_history_description_test.zig"); // phase 5
-    // _ = @import("llm_history_notification_test.zig"); // phase 5
-    // _ = @import("llm_history_tool_call_loading_test.zig"); // phase 5
+    // _ = @import("llm_history_is_input_output_test.zig"); // phase 5:
+    // inlined into agentic_loop/llm_history.zig _ =
+    // @import("llm_history_compacted_messages_test.zig"); // phase 5 _ =
     _ = @import("../../http_handlers/workspaces_reorder.zig");
     _ = @import("../../http_handlers/workspace_items_reorder.zig");
     _ = @import("../../http_handlers/task_pin.zig");
@@ -126,20 +103,8 @@ test {
     _ = @import("../../http_handlers/git_pr_create.zig");
     _ = @import("../../http_handlers/git_status.zig");
     _ = @import("../../http_handlers/workspace_items_create_kanban.zig");
-    // Agent Mode HTTP handlers (Tasks 4-8 of plan 2026-08-15-agent-mode)
-    // now follow the "split handler + useCase, keep both in one file"
-    // pattern. The production .zig file holds:
-    //   - the HTTP request body / domain input/output structs + error set
-    //   - the `useCase` function (transport-agnostic business logic)
-    //   - the thin `xxxHandler` function (HTTP orchestrator)
-    //   - inline `test "..."` blocks at the bottom exercising `useCase`
-    //     directly against an in-memory SQLite + Migration076
-    //
-    // The `zig build test` discovery happens via these explicit
-    // @import() lines — the test blocks are only enumerated when the
-    // file is reachable from the test root. The handler function is
-    // NOT tested directly (it would require faking the gserverz
-    // HTTP context — out of scope for these contract tests).
+    // Agent Mode HTTP handlers (Tasks 4-8 of plan 2026-08-15-agent-mode) now
+    // follow the "split handler + useCase, keep both in one file" pattern.
     _ = @import("../../http_handlers/workspace_items_create_agent.zig"); // POST /items/agent (Task 4)
     _ = @import("../../http_handlers/agents_get.zig"); // GET /items/:id/agent (Task 5)
     _ = @import("../../http_handlers/agents_update.zig"); // PATCH /items/:id/agent (Task 5)
@@ -190,13 +155,11 @@ test {
     _ = @import("../../http_handlers/kanban_tasks_create.zig");
     // NEW (2026-09-02-kanban-task-session-name-bind, task 1787671636395_1):
     // session_create.zig now has inline static-contract tests for the
-    // resolveNameFromTask helper + the useCase call site. Importing
-    // the file surfaces them to zig build test (mirrors start_agent.zig).
+    // resolveNameFromTask helper + the useCase call site.
     _ = @import("../../http_handlers/session_create.zig");
-    // Workspace-scoped sessions: workspace_id query param on the
-    // session list (in-memory SQLite useCase tests), the new session
-    // detail handler (workspace_id resolution + route contract), and
-    // items_count on GET /api/workspaces.
+    // Workspace-scoped sessions: workspace_id query param on the session list
+    // (in-memory SQLite useCase tests), the new session detail handler
+    // (workspace_id resolution + route contract), and items_count on GET
     _ = @import("../../http_handlers/session_list.zig");
     _ = @import("../../http_handlers/session_pin.zig");
     _ = @import("../../http_handlers/session_reorder_pinned.zig");
@@ -212,8 +175,7 @@ test {
     _ = @import("../../http_handlers/session_update.zig");
     // NEW (yellow stale-dot fix): session_mark_touched.zig has inline
     // static-contract tests for the stamp call + SSE emit + route
-    // registration. Importing the file surfaces them to zig build test
-    // (mirrors session_create.zig above).
+    // registration.
     _ = @import("../../http_handlers/session_mark_touched.zig");
     _ = @import("../../http_handlers/kanban_columns_update.zig");
     _ = @import("../../http_handlers/kanban_columns_delete.zig");
@@ -241,15 +203,13 @@ test {
     // bottom of design_elements_geometry_batch.zig — registered here so
     // zig build test actually runs them.
     _ = @import("../../http_handlers/design_elements_geometry_batch.zig");
-    // Inline tests for the move-batch handler `useCase` live at the
-    // bottom of design_elements_move_batch.zig — registered here so zig
-    // build test actually runs them. See
-    // docs/superpowers/plans/2026-08-06-move-element-with-descendants.md (Chunk 2).
+    // Inline tests for the move-batch handler `useCase` live at the bottom of
+    // design_elements_move_batch.zig — registered here so zig build test
+    // actually runs them.
     _ = @import("../../http_handlers/design_elements_move_batch.zig");
-    // Inline tests for the move-to-page handler `useCase` live at the
-    // bottom of design_elements_move_to_page.zig — registered here so
-    // zig build test actually runs them. See
-    // docs/superpowers/plans/2026-08-06-move-element-to-page.md (Chunk 2).
+    // Inline tests for the move-to-page handler `useCase` live at the bottom
+    // of design_elements_move_to_page.zig — registered here so zig build test
+    // actually runs them.
     _ = @import("../../http_handlers/design_elements_move_to_page.zig");
     _ = @import("../../http_handlers/kanban_copy_spec.zig");
     _ = @import("../../http_handlers/tasks_move.zig");
@@ -257,15 +217,9 @@ test {
     // _ = @import("session_helpers_test.zig"); // DISABLED - requires std.Io which needs Init
     // _ = @import("session_table_test.zig"); // DISABLED - requires std.Io which needs Init
     _ = @import("../../http_handlers/session_messages_get.zig");
-    // _ = @import("transform_llm_history_to_agent_messages_test.zig"); // DISABLED - pre-existing type mismatch (TUIHistory vs LLMHistory) on main
-    // save_memory + load_memory tools (Task 3 + 4 of
-    // docs/superpowers/plans/2026-08-06-save-load-memory-fts5.md).
-    // update_plan agent tool (Task 2 of
-    // docs/superpowers/plans/2026-08-19-session-plan-agent-tool.md).
-    // get_plan agent tool (Task 3 of
-    // docs/superpowers/plans/2026-08-19-session-plan-agent-tool.md).
-    // _ = @import("extract_base64_image_urls_test.zig"); // DISABLED - 9 failing tests (investigation shows std.testing.expectEqualStrings has a bug with literal strings)
-    // _ = @import("session_db_test.zig"); // DISABLED - pre-existing test errors (see session_db_test.zig for details)
+    // _ = @import("transform_llm_history_to_agent_messages_test.zig"); //
+    // DISABLED - pre-existing type mismatch (TUIHistory vs LLMHistory) on
+    // main save_memory + load_memory tools (Task 3 + 4 of
     _ = @import("../../agentic_loop/test_runner.zig");
     _ = @import("../../modules/agent/tools/create_kanban_task.zig");
     _ = @import("../../modules/agent/tools/skill_tools.zig");

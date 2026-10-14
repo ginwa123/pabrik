@@ -1,61 +1,15 @@
 //! Validation + joining helpers for `workspace_item_tasks.image_urls`
 //! (Migration 069 — kanban image urls column).
-//!
-//! Storage format
-//! ──────────────
-//! The `image_urls` column is a `||`-delimited string of base64 data
-//! URLs. The column is NOT NULL DEFAULT '' (the canonical "no images"
-//! sentinel). This mirrors the convention used by `llm_history
-//! .image_url` (the `||`-delimited string) — the same split-scalar
-//! join can be reused.
-//!
-//! Why `||` and not JSON
-//! ─────────────────────
-//! The user's instruction was "like column image_urls on llm_history"
-//! — the codebase already has the `||`-delimited convention for
-//! image URLs (see `llm_history.zig::saveMessage` line 1207-1221 where
-//! multiple URLs are joined with `||`). Following the same convention
-//! here means:
-//!   - No `json_valid` / `json_type` defensive checks needed (the
-//!     `tags` column has those for malformed-data reasons; a `||`
-//!     delimiter is unambiguous).
-//!   - The wire format is a single string end-to-end — the frontend
-//!     splits on `|` and filters empty segments, no JSON wrap, no
-//!     double-encoding. Round-trips are trivial to debug.
-//!   - SQLite `LIKE` filtering on the column is straightforward if
-//!     we ever need to search by URL prefix.
-//!
-//! Why validate at all
-//! ────────────────────
-//! The frontend reads each file via `FileReader.readAsDataURL` which
-//! always produces a `data:image/<mime>;base64,<payload>` URL. We
-//! validate the prefix on the server so a malicious client can't
-//! inject non-data URLs (e.g. `http://internal/...`) that would
-//! render as `<img>` sources pointing at private network resources.
-//!
-//! Permissive validation: anything that starts with `data:image/`
-//! followed by `;base64,` is accepted. The browser will refuse to
-//! render malformed base64, so we don't need to parse the payload.
 
 const std = @import("std");
 
 /// Cap on the total joined `image_urls` payload (10 MB). The frontend
-/// pre-downscales images via `<canvas>` to < 4 MB raw, so the typical
-/// base64 payload is 5-6 MB. The 10 MB cap is a safety net for the
-/// "user pastes 10+ images" case. Mirrors the POST attachment
-/// `MAX_UPLOAD_BYTES` from `task_attachment_post.zig`.
+/// pre-downscales images via `<canvas>` to < 4 MB raw, so the typical base64
+/// payload is 5-6 MB.
 pub const MAX_IMAGE_URLS_BYTES: usize = 10 * 1024 * 1024;
 
-/// Validate each URL in `joined` is a `data:image/<mime>;base64,...`
-/// URL and the total byte length is within `MAX_IMAGE_URLS_BYTES`.
-/// Returns the validated joined string on success (the slice is
-/// borrowed from the input — the caller doesn't need to free it).
-/// Returns `error.InvalidImageUrl` on the first malformed URL,
-/// `error.ImageUrlsTooLarge` when the total exceeds the cap.
-///
-/// The input is BORROWED — caller passes the value they received
-/// from the wire (POST body / PUT body). The handler aliases it
-/// into the SQL bind list without copying.
+/// Validate each URL in `joined` is a `data:image/<mime>;base64,...` URL and
+/// the total byte length is within `MAX_IMAGE_URLS_BYTES`.
 pub fn validateImageUrls(joined: []const u8) ![]const u8 {
     if (joined.len > MAX_IMAGE_URLS_BYTES) return error.ImageUrlsTooLarge;
     if (joined.len == 0) return joined; // empty = no images
@@ -69,10 +23,8 @@ pub fn validateImageUrls(joined: []const u8) ![]const u8 {
     return joined;
 }
 
-/// `data:image/<mime>;base64,<payload>` — the only shape the
-/// frontend's `FileReader.readAsDataURL` produces. Empty payloads
-/// (no chars after `;base64,`) are rejected — the caller must
-/// either provide a real base64 payload or omit the URL entirely.
+/// `data:image/<mime>;base64,<payload>` — the only shape the frontend's
+/// `FileReader.readAsDataURL` produces.
 fn isValidDataUrl(segment: []const u8) bool {
     const prefix = "data:image/";
     if (!std.mem.startsWith(u8, segment, prefix)) return false;
@@ -139,11 +91,8 @@ test "validateImageUrls tolerates empty segments between consecutive ||" {
 }
 
 test "validateImageUrls accepts payloads at the cap" {
-    // Boundary check: a payload that is exactly the cap is accepted
-    // (the check is `> cap`, not `>= cap`). We don't allocate the
-    // full 10 MB in a test — instead, just verify the cap constant
-    // is what we expect and the boundary predicate is correct.
-    // The runtime cap is exercised by the API integration tests.
+    // Boundary check: a payload that is exactly the cap is accepted (the
+    // check is `> cap`, not `>= cap`).
     try std.testing.expectEqual(@as(usize, 10 * 1024 * 1024), MAX_IMAGE_URLS_BYTES);
     // A small payload that's well under the cap validates.
     const ok = "data:image/png;base64,abc";

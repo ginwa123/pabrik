@@ -1,27 +1,5 @@
-// src/service/state_file.zig
-//
-// Reads and writes the pabrik service state file (state.json).
-//
-// The state file is the source of truth for `pabrik service` lifecycle
-// commands: `service start` writes the daemon's pid + port; `service stop`
-// reads it to send SIGTERM; `service status` reads it to report state.
-// The desktop's `attach.zig` also reads it to find a running pabrik.
-//
-// File format (JSON):
-//   {
-//     "pid": 12345,
-//     "port": 8081,
-//     "host": "127.0.0.1",
-//     "started_at": 1751558400,
-//     "version": "0.4.0",
-//     "static_dir": "/run/user/1000/pabrik-desktop-webapp-1234" | null
-//   }
-//
-// Writes use the standard "write to <path>.tmp, then rename" pattern for
-// atomicity — readers never see a half-written file. Reads return `null`
-// for missing files (the desktop interprets this as "no daemon running")
-// and silently treat unreadable / corrupt state as absent (stale-state
-// recovery is handled by `service start` before this read).
+// src/service/state_file.zig Reads and writes the pabrik service state file
+// (state.json).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -41,12 +19,8 @@ pub const StateFileError = error{
     OutOfMemory,
 };
 
-/// Read state.json from `path`. Returns `null` for missing files and
-/// silently treats parse / IO errors as absent (returns null). Caller is
-/// expected to check `pidAlive(state.pid)` before trusting the result.
-///
-/// Strings in the returned `State` are owned by the caller and must be
-/// freed individually (host, version, and any static_dir).
+/// Read state.json from `path`. Returns `null` for missing files and silently
+/// treats parse / IO errors as absent (returns null).
 pub fn readStateFile(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -63,11 +37,9 @@ pub fn readStateFile(
     };
     defer allocator.free(data);
 
-    // Parse into a generic Value tree inside a transient arena. The arena
-    // is deinit'd before we return — the strings we dupe below are
-    // independent of the parsed Value tree's memory. This avoids leaking
-    // the parser's internal allocations (which parseFromSliceLeaky
-    // routes to the passed allocator and never reclaims).
+    // Parse into a generic Value tree inside a transient arena. The arena is
+    // deinit'd before we return — the strings we dupe below are independent
+    // of the parsed Value tree's memory.
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const arena_alloc = arena.allocator();
@@ -112,29 +84,21 @@ fn parseState(allocator: std.mem.Allocator, v: std.json.Value) !State {
     };
 }
 
-/// Write state.json atomically. Serializes `state` via std.fmt, writes
-/// to <path>.tmp first, then rename(2)s over the destination. POSIX
-/// rename is atomic — readers see either the old or new file, never a
-/// half-written one.
+/// Write state.json atomically. Serializes `state` via std.fmt, writes to
+/// <path>.tmp first, then rename(2)s over the destination. POSIX rename is
+/// atomic — readers see either the old or new file, never a half-written one.
 pub fn writeStateFile(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
     state: State,
 ) !void {
-    // `path` is either the canonical default ($XDG_STATE_HOME / $HOME derived)
-    // or a caller-supplied `state_path`. The `renameAbsolute` below asserts both
-    // paths are absolute and ABORTS the process (Debug/ReleaseSafe) instead of
-    // returning an error, so enforce the contract up front. `defaultStatePath`
-    // also validates its environment bases — this guard also covers callers.
+    // `path` is either the canonical default ($XDG_STATE_HOME / $HOME
+    // derived) or a caller-supplied `state_path`.
     if (path.len == 0 or !std.fs.path.isAbsolute(path)) return error.PathNotAbsolute;
 
-    // 1. Serialize to a JSON string. static_dir's value is wrapped in
-    //    quotes via the `{s}` formatter for strings; null is a literal.
-    //    We track ownership via `sd_owned` so the defer cleanup only
-    //    frees when we actually allocated. (`"null"` is a literal
-    //    *const [N:0]u8 pointing at static read-only memory and MUST
-    //    NOT be passed to allocator.free.)
+    // 1. Serialize to a JSON string. static_dir's value is wrapped in quotes
+    // via the `{s}` formatter for strings; null is a literal.
     const sd_field: []const u8 = sd: {
         if (state.static_dir) |sd| {
             const owned = try std.fmt.allocPrint(allocator, "\"{s}\"", .{sd});
@@ -169,16 +133,8 @@ pub fn writeStateFile(
     path_buf[path.len + 4] = 0;
     const tmp_path: []const u8 = path_buf[0..path.len + 4];
 
-    // mkdir -p the parent directory of the state file (POSIX only;
-    // on Windows, %LOCALAPPDATA% always exists). This lets the daemon
-    // be the first pabrik process on a fresh $HOME — no manual `mkdir
-    // -p ~/.local/state/pabrik` required. We use the same
-    // componentIterator trick as daemon.zig: each yielded `.path` is the
-    // cumulative path-so-far.
-    //
-    // Use std.c.mkdirat (cross-platform libc wrapper) instead of
-    // std.os.linux.mkdirat (Linux syscall only — wrong on macOS where
-    // AT.FDCWD is -2 instead of -100).
+    // mkdir -p the parent directory of the state file (POSIX only; on
+    // Windows, %LOCALAPPDATA% always exists).
     if (builtin.os.tag != .windows) {
         if (std.fs.path.dirname(path)) |parent_dir| {
             var iter = std.fs.path.componentIterator(parent_dir);
@@ -208,21 +164,12 @@ pub const PathError = error{
 };
 
 /// Compute the canonical state.json path for the current platform:
-///   Linux/macOS: $XDG_STATE_HOME/pabrik/state.json, fallback to
-///                $HOME/.local/state/pabrik/state.json (creates parent dirs).
-///   Windows:     %LOCALAPPDATA%\pabrik\state.json.
-///
-/// Caller owns the returned slice. Returns `PathResolutionFailed` if
-/// neither XDG_STATE_HOME nor HOME is set (extremely unusual).
+/// Linux/macOS: $XDG_STATE_HOME/pabrik/state.json, fallback to
+/// $HOME/.local/state/pabrik/state.json (creates parent dirs).
 pub fn defaultStatePath(allocator: std.mem.Allocator) PathError![]u8 {
     // std.c.getenv returns `?[*:0]u8` (nullable NUL-terminated). For path
-    // joining we need a `[]const u8` slice; `std.mem.sliceTo` walks to
-    // the NUL terminator and returns a length-counted slice.
-    //
-    // Every base below must be ABSOLUTE: the product is passed to
-    // `renameAbsolute` in `writeStateFile`, which asserts `path.isAbsolute(...)`
-    // and ABORTS the whole process (Debug/ReleaseSafe) otherwise. A relative
-    // (or empty) XDG_STATE_HOME / HOME / LOCALAPPDATA used to reach that assert.
+    // joining we need a `[]const u8` slice; `std.mem.sliceTo` walks to the
+    // NUL terminator and returns a length-counted slice.
     if (builtin.os.tag == .windows) {
         const appdata_z = std.c.getenv("LOCALAPPDATA") orelse
             return error.PathResolutionFailed;
@@ -244,15 +191,7 @@ pub fn defaultStatePath(allocator: std.mem.Allocator) PathError![]u8 {
 
 // ===== Tests merged from state_file_test.zig (2026-09-29 flatten) =====
 
-// Tests for src/service/state_file.zig. Verifies:
-//   - readStateFile returns null when the file does not exist
-//   - writeStateFile + readStateFile round-trip a State value
-//   - defaultStatePath returns an XDG-aware path on Linux/macOS
-//
-// Zig 0.16 API notes (matching the production code in state_file.zig):
-//   * readStateFile takes an `io: std.Io` parameter because
-//     std.Io.Dir.cwd().readFileAlloc requires it in 0.16.
-//   * std.testing.tmpDir(.{}) returns a TmpDir with a .cleanup() method.
+// Tests for src/service/state_file.zig.
 
 const testing = std.testing;
 
@@ -278,10 +217,8 @@ test "writeStateFile rejects a relative path instead of aborting" {
     };
 
     // `writeStateFile` ends in `std.Io.Dir.renameAbsolute`, whose
-    // `assert(path.isAbsolute(...))` is `unreachable` in Debug/ReleaseSafe — it
-    // ABORTS the whole process instead of returning an error. A relative path
-    // (e.g. a relative $XDG_STATE_HOME / $HOME, now rejected in
-    // `defaultStatePath`, or any caller-supplied path) must yield a normal error.
+    // `assert(path.isAbsolute(...))` is `unreachable` in Debug/ReleaseSafe —
+    // it ABORTS the whole process instead of returning an error.
     const result = writeStateFile(allocator, testing.io, "relative/state.json", original);
     try testing.expectError(error.PathNotAbsolute, result);
 }

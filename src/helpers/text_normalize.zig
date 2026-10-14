@@ -1,112 +1,13 @@
 //! Cross-platform source-text normalization for static-contract tests.
-//!
-//! ## Why this file exists
-//!
-//! The `*_test.zig` files in `http_handlers/` and `tools/` are
-//! **static-contract tests**: they read the production source as
-//! bytes and grep for literal substrings (e.g. a function signature,
-//! a response struct field, etc.) to lock in the shape of the code.
-//!
-//! These needles are constructed as Zig string literals like
-//! `"pub fn classifyPath(\n    allocator: std.mem.Allocator,\n"`,
-//! where every `\n` is a single LF byte.
-//!
-//! On Windows, Git's default `core.autocrlf=true` checks out text
-//! files with CRLF line endings. So the source file actually has
-//! `\r\n` between every line, and the needle `"\n    allocator"`
-//! will NEVER match — even though the source clearly contains
-//! `"    allocator"` after a newline.
-//!
-//! ## Symptom of the bug
-//!
-//! On a fresh Windows checkout (CI runner, contributor's clone with
-//! autocrlf=true):
-//!
-//! ```
-//! error: 'src.ai_workflow.tui.http_handlers.git_status_test...
-//!     test.git_status.zig: not-a-git-repo branch returns 200, not 500'
-//!     failed:
-//!        !! could not find `is_git_repo = false` response literal
-//!        in src/http_handlers/git_status.zig !!
-//! ```
-//!
-//! The literal IS in the file — but only with CRLF endings, so the
-//! `"\n        };"` needle doesn't match.
-//!
-//! ## Fix
-//!
-//! The [`normalizeLineEndings`] helper replaces every `\r\n` with
-//! `\n` in the source bytes before the test does its `indexOf`
-//! matching. Tests call this in their `readSource` helper:
-//!
-//! ```zig
-//! fn readSource(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
-//!     const raw = try std.Io.Dir.cwd().readFileAlloc(
-//!         std.testing.io, path, allocator, .limited(256 * 1024),
-//!     );
-//!     return normalizeLineEndings(allocator, raw);
-//! }
-//! ```
-//!
-//! The returned buffer is always owned by the caller (allocated by
-//! the helper) and must be freed by the caller. The input buffer is
-//! not modified in place — pass `const`.
-//!
-//! ## Belt-and-suspenders
-//!
-//! This helper is the *runtime* fix. The *checkout-time* fix lives
-//! in `.gitattributes` (which forces LF for every text file). Both
-//! are needed:
-//!
-//!   - `.gitattributes` prevents the CRLF from appearing on fresh
-//!     checkouts, but a contributor's editor or an existing CI
-//!     cache can still produce CRLF.
-//!   - The normalize helper makes the test work regardless.
-//!
-//! ## Performance
-//!
-//! Allocates a fresh buffer (no in-place edit) because the input
-//! slice may have arbitrary contents (including no trailing NUL) and
-//! in-place would require making the buffer larger than the input.
-//! For 256 KB source files this is sub-millisecond.
-//!
-//! ## Where it's used
-//!
-//! Every static-contract test that does multi-line literal matching.
-//! Examples that MUST use this helper:
-//!
-//!   - the inline tests at the bottom of `src/http_handlers/git_status.zig`
-//!   - the inline tests in `src/modules/agent/tools/set_git_worktree.zig`
-//!   - the inline tests in `src/http_handlers/kanban_*.zig`
-//!   - any other static-contract test that uses `indexOf` on a multi-line
-//!     literal against source bytes.
-//!
-//! ## When this bites
-//!
-//! Adding a new static-contract test that uses a multi-line needle.
-//! The test passes on Linux/macOS (LF) and fails on Windows (CRLF)
-//! with a misleading "literal not found" diagnostic. The fix is
-//! one line: wrap the source bytes in `normalizeLineEndings` before
-//! matching.
-//!
-//! Single-line needles are unaffected by this bug — `\n` is never
-//! present in single-line literals.
 
 const std = @import("std");
 
 /// Replace every `\r\n` in `source` with `\n`. The returned buffer is
 /// heap-allocated and owned by the caller; `source` is read-only.
-///
-/// Always returns the same length or shorter (CRLF → LF shrinks by
-/// the number of `\r\n` pairs stripped; bare `\r` at EOF is preserved
-/// as-is). If `source` has no `\r` bytes at all, returns a fresh
-/// `dupe` (still owned by caller) so the caller's
-/// `defer allocator.free(...)` pattern works uniformly.
 pub fn normalizeLineEndings(allocator: std.mem.Allocator, source: []const u8) ![]u8 {
-    // Count the `\r\n` pairs so we know exactly how much to allocate.
-    // Bare `\r` (not followed by `\n`) is preserved — Mac Classic-era
-    // files use bare `\r` as a line ending and we should not corrupt
-    // them.
+    // Count the `\r\n` pairs so we know exactly how much to allocate. Bare
+    // `\r` (not followed by `\n`) is preserved — Mac Classic-era files use
+    // bare `\r` as a line ending and we should not corrupt them.
     var crlf_count: usize = 0;
     var i: usize = 0;
     while (i + 1 < source.len) {
@@ -153,18 +54,8 @@ pub fn normalizeLineEndings(allocator: std.mem.Allocator, source: []const u8) ![
 pub const merged_tests_marker = "// ===== Tests merged from";
 
 /// Slice a source file down to its IMPLEMENTATION half: everything before the
-/// first `merged_tests_marker`.
-///
-/// A static-contract test greps its own file's source for a needle. Before the
-/// tests moved inline that was safe, because the needles lived only in the
-/// impl. After the merge the test is physically inside the file it greps, so
-/// every "this must NOT appear" / "this must appear exactly once" assertion
-/// finds its own source and passes or fails for the wrong reason. Slicing at
-/// the marker restores "the impl, without its tests".
-///
-/// The returned buffer is heap-allocated and owned by the caller; `source` is
-/// read-only. A file with no marker comes back as a plain dupe, so callers can
-/// use this unconditionally on any source file.
+/// first `merged_tests_marker`. A static-contract test greps its own file's
+/// source for a needle.
 pub fn implementationOnly(allocator: std.mem.Allocator, source: []const u8) ![]u8 {
     const end = std.mem.indexOf(u8, source, merged_tests_marker) orelse source.len;
     return try allocator.dupe(u8, source[0..end]);

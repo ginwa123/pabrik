@@ -78,9 +78,8 @@ fn useCase(
     defer allocator.free(owner);
 
     // Per the project memory (pabrik-http-handler-thin-wrapper-pattern.md),
-    // the per-request arena allocator (`allocator`) is the per-request
-    // arena, so parseFromSliceLeaky is the correct API — its internal
-    // arena lifetime matches our handler's lifetime.
+    // the per-request arena allocator (`allocator`) is the per-request arena,
+    // so parseFromSliceLeaky is the correct API — its internal arena lifetime
     const parsed = std.json.parseFromSliceLeaky(std.json.Value, allocator, body, .{}) catch {
         return error.InvalidJson;
     };

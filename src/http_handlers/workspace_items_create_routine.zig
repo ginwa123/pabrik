@@ -1,26 +1,4 @@
 //! `POST /api/workspaces/:workspace_id/items/routine`.
-//!
-//! Creates a new workspace item of `item_type='routine'` and the
-//! matching 1:1 row in the `workspace_routines` sibling table, in a
-//! single BEGIN/COMMIT transaction. Mirrors
-//! `workspace_items_create_agent.zig` (same txn shape, same `{item,
-//! routine}` envelope) plus the schedule handling from the deleted
-//! per-task `task_create.zig` routine branch.
-//!
-//! Body: `{name, path, instruction?, schedule?, enabled?}` — `name`
-//! and `path` are required (a routine has a cwd like Agent/Kanban).
-//! `schedule` is a 5-field cron validated by `routines/cron.zig`
-//! (empty = manual-run only, no auto-fire). `instruction` is the
-//! agent prompt fired on each tick.
-//!
-//! Agent-config seeding: an `agent_routines` row is seeded in-txn (Migration
-//! 087) so the RoutineView Agent tab works immediately. No default tools
-//! are seeded — an empty allowlist means "all tools" (kanban D5
-//! semantics), preserving the original full-registry fire behaviour.
-//! Routine mode task_1789505553300_1 (option A, mirror agent_kanban_*).
-//!
-//! Plan: docs/superpowers/plans/2026-09-10-workspace-items-routines.md
-//! Task: task_1789032258828_0.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -144,11 +122,9 @@ fn useCase(
         &.{ item_id, input.workspace_id, trimmed_name, input.body.path, input.workspace_id },
     ) catch return error.DatabaseError;
 
-    // COALESCE(NULLIF(?, ''), '') guards the NOT NULL DEFAULT ''
-    // columns: SqliteBackend.exec binds empty slices as SQL NULL,
-    // which would violate the constraint (see memory
-    // `sqlite-backend-empty-slice-binds-as-null`). next_run_at is
-    // nullable so a plain `?` bind is correct ("" → NULL).
+    // COALESCE(NULLIF(?, ''), '') guards the NOT NULL DEFAULT '' columns:
+    // SqliteBackend.exec binds empty slices as SQL NULL, which would violate
+    // the constraint (see memory `sqlite-backend-empty-slice-binds-as-null`).
     const enabled_str: []const u8 = if (input.body.enabled) "1" else "0";
     tx.exec(allocator,
         \\INSERT INTO workspace_routines (id, workspace_item_id, description, instruction, schedule, enabled, next_run_at)
@@ -157,12 +133,9 @@ fn useCase(
         &.{ item_id, item_id, input.body.description, input.body.instruction, trimmed_schedule, enabled_str, next_run_at },
     ) catch return error.DatabaseError;
 
-    // Seed the agent_routines config row so the RoutineView Agent tab
-    // works immediately (mirrors the agent_kanbans seed in
-    // workspace_items_create_kanban.zig). No default tools are seeded:
-    // an empty allowlist means "all tools" (kanban D5 semantics),
-    // which preserves the pre-migration fire behaviour exactly.
-    // INSERT OR IGNORE keeps re-entry safe.
+    // Seed the agent_routines config row so the RoutineView Agent tab works
+    // immediately (mirrors the agent_kanbans seed in
+    // workspace_items_create_kanban.zig).
     tx.exec(allocator,
         "INSERT OR IGNORE INTO agent_routines (id, workspace_item_id) VALUES (?, ?)",
         &.{ item_id, item_id },

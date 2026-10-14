@@ -1,14 +1,5 @@
-//! `DELETE /api/workspaces/:workspace_id/documents/:document_id`.
-//!
-//! Removes one document. Scoped like every other read here: a foreign id
-//! reports 404 and deletes nothing, so a caller cannot use this endpoint
-//! to probe another workspace's row ids.
-//!
-//! Migration 098 declares `ON DELETE CASCADE` on `workspace_id`, but this
-//! project leaves `PRAGMA foreign_keys` OFF (see the Migration 072 tests
-//! and Migration 093's header), so the declared cascade is documentation
-//! only. The workspace delete path is responsible for issuing the child
-//! DELETE; see `workspaces_delete.zig`.
+//! `DELETE /api/workspaces/:workspace_id/documents/:document_id`. Removes one
+//! document.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");

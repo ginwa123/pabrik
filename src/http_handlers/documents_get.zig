@@ -1,10 +1,5 @@
-//! `GET /api/workspaces/:workspace_id/documents/:document_id`.
-//!
-//! Returns `{document}` for one document. The `workspace_id` path param is
-//! NOT decoration: it is part of the query's `WHERE` clause, so asking
-//! for another workspace's document id reports 404 rather than 403.
-//! That distinction matters — a 403 would confirm the id exists, which
-//! is itself a leak of the other workspace's row.
+//! `GET /api/workspaces/:workspace_id/documents/:document_id`. Returns
+//! `{document}` for one document.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");

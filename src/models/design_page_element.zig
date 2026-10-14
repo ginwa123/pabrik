@@ -1,13 +1,6 @@
-//! Data model for the `design_page_elements` entity table.
-//!
-//! One row per positioned element on a design page (rectangle,
-//! ellipse, text, image, frame, or group). The HTML body lives on
-//! disk at `file_path`; this row is the metadata side of that
-//! contract.
-//!
-//! Schema: Migration 056 (`design_page_elements` created) + 057
-//! (v6 element properties) + Migration 057 (add `parent_id` for
-//! grouped layers).
+//! Data model for the `design_page_elements` entity table. One row per
+//! positioned element on a design page (rectangle, ellipse, text, image,
+//! frame, or group).
 
 const std = @import("std");
 
@@ -156,11 +149,6 @@ pub fn clone(self: *const Self, allocator: std.mem.Allocator) !Self {
 // ===== Tests merged from models_test.zig (2026-09-29 flatten) =====
 
 // Sanity tests for the `src/models/` entity models.
-//
-// Verifies that every model file compiles, that `init` populates the
-// struct as expected, that `deinit` releases its strings, and that
-// external callers can read the struct's fields directly (matching
-// the file-level struct pattern requested by the user).
 
 const testing = std.testing;
 

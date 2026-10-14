@@ -1,64 +1,6 @@
-// Functional tests for the Agent Knowledge EDIT flow (PR #291).
-//
-// Zig port of `tests/functional/agent_knowledge_edit_test.py` (same
-// test names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional tests for the Agent Knowledge EDIT flow (PR #291).
-//
-//   Exercises the PATCH /api/agents/:agent_id/knowledge/:knowledge_id
-//   endpoint against a REAL pabrik binary + REAL SQLite, replaying the
-//   EXACT JSON bodies the frontend edit dialog sends.
-//
-//     Plan: docs/superpowers/plans/2026-08-22-agent-mode-ui-ux.md
-//     Lesson (2026-08-22): the first implementation passed unit tests but
-//     failed in real use because
-//       1. `file_path: ""` (text-mode save) hit `isAbsolute("") == false`
-//          → 400 "file_path must be absolute".
-//       2. `content: ""` (file-mode save) hit the SqliteBackend
-//          empty-slice-binds-as-NULL gotcha → 500 NOT NULL constraint.
-//     These tests replay both payloads end-to-end so neither regression
-//     can ship again.
-//
-//   Covers:
-//     * TEXT-MODE SAVE  — {label, content, file_path:""} → 200, row flips
-//       to content-backed (file_path cleared, content set).
-//     * FILE-MODE SAVE  — {label, file_path, content:""} → 200, row flips
-//       to file-backed (content cleared, NOT a 500).
-//     * ROUND-TRIP      — file→text→file→text switches keep the row
-//       consistent after every hop.
-//     * LABEL-ONLY      — {label} alone → 200, source fields untouched.
-//     * GUARD           — non-empty relative file_path still → 400.
-//     * ROUTE ORDER     — PATCH /knowledge/reorder reaches the REORDER
-//       handler (not shadowed by /knowledge/:knowledge_id).
-//   """
-//
-// THE PATH SEMANTICS ARE THE POINT OF THIS SUITE, so each case's exact
-// path shape is preserved rather than normalised:
-//
-//   * The agent item's `path` and every seeded `file_path` come from
-//     `harness.harnessPath(gpa, h.temp_dir, ...)` — NEVER a literal
-//     `/tmp/...`. The server validates with `std.fs.path.isAbsolute`,
-//     which is platform-relative, so a literal that is correct on
-//     ubuntu-24.04 fails at the HTTP door on windows-2022 and the test
-//     reports a server regression that does not exist.
-//   * `file_path: ""` in a PATCH body is NOT a path at all — it is the
-//     text-mode-save signal ("clear the column"), and it must reach the
-//     wire as a literal empty string. That is the whole regression this
-//     file was written for.
-//   * The GUARD case keeps its deliberately RELATIVE, non-empty
-//     `relative/path.md`, because the empty-string exemption must not
-//     weaken the absolute-path check. Writing that one through
-//     `harnessPath` would delete the test.
-//
-// PYTHON IDIOM THAT DID NOT SURVIVE THE PORT: `_add_inline_knowledge`
-// and `_patch` returned the already-parsed dict, and every caller read
-// fields off it. A `harness.Json` borrows the bytes of the `Response`
-// body it was parsed from, so a helper may NOT return one. These
-// helpers return OWNED values instead — an id string, the raw body —
-// and the tests that need several fields off one response parse it
-// locally.
+// Functional tests for the Agent Knowledge EDIT flow (PR #291). Zig port of
+// `tests/functional/agent_knowledge_edit_test.py` (same test names, same
+// order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -138,10 +80,6 @@ fn addInlineKnowledge(h: *Harness, agent_id: []const u8) ![]u8 {
 }
 
 /// Seed one FILE-BACKED knowledge row → its id. Owned.
-///
-/// The `file_path` is `<harness temp_dir>/agent-knowledge-edit-test/seed.md` —
-/// absolute, and deliberately a file that does not exist: the endpoint
-/// stores the string, it does not read the file.
 fn addFileKnowledge(h: *Harness, agent_id: []const u8) ![]u8 {
     const seed_path = try harness.harnessPath(gpa, h.temp_dir, &.{ "agent-knowledge-edit-test", "seed.md" });
     defer gpa.free(seed_path);
@@ -270,10 +208,8 @@ fn containsIgnoreCase(haystack: []const u8, needle_lower: []const u8) bool {
 // ============================================================================
 
 // The edit dialog's Text-mode save sends {label, content, file_path:""}.
-//
-// Regression: `isAbsolute("")` is false, so the old useCase rejected
-// this with 400 "file_path must be absolute". Empty string must mean
-// "clear the column" (switch to content-backed), not an error.
+// Regression: `isAbsolute("")` is false, so the old useCase rejected this
+// with 400 "file_path must be absolute".
 test "text_mode_save_clears_file_path_and_sets_content" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -328,10 +264,8 @@ test "text_mode_save_clears_file_path_and_sets_content" {
 // ============================================================================
 
 // The edit dialog's File-mode save sends {label, file_path, content:""}.
-//
-// Regression: SqliteBackend.exec binds empty slices as SQL NULL, so
-// `content: ""` violated the NOT NULL constraint → 500. Empty string
-// must land as '' (clear the column), not NULL.
+// Regression: SqliteBackend.exec binds empty slices as SQL NULL, so `content:
+// ""` violated the NOT NULL constraint → 500.
 test "file_mode_save_clears_content_and_sets_path" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -506,10 +440,6 @@ test "label_only_update_keeps_source_fields" {
 // ============================================================================
 
 // The empty-string exemption must not weaken the absolute-path guard.
-//
-// `relative/path.md` is deliberately NOT routed through `harnessPath`:
-// it is the one payload in this file that must stay relative, or the
-// test asserts nothing.
 test "relative_path_still_rejected" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -547,11 +477,7 @@ test "relative_path_still_rejected" {
 // Route-order: /knowledge/reorder must not be shadowed
 // ============================================================================
 
-// PATCH /api/agents/:id/knowledge/reorder must reach the REORDER
-// handler. The router matches in registration order, so if
-// /knowledge/:knowledge_id is registered first, this request would be
-// captured with knowledge_id="reorder" (pre-existing bug caught by
-// writing these tests).
+// PATCH /api/agents/:id/knowledge/reorder must reach the REORDER handler.
 test "reorder_route_not_shadowed_by_param_route" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -641,10 +567,6 @@ fn indexOfId(knowledge: std.json.Array, id: []const u8) ?usize {
 }
 
 /// Assert `key` of a document this helper has not parsed is `want`.
-///
-/// Used where the caller already owns the raw bytes but not a live
-/// `Json` — parsing here is cheaper than threading a `deinit` through
-/// the caller's scope for a single assertion.
 fn expectEqualStrOwned(raw: []const u8, key: []const u8, want: []const u8) !void {
     var doc = try parseJson(raw);
     defer doc.deinit();

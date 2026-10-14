@@ -3,10 +3,6 @@ const pabrikcore = @import("pabrikcore");
 const gserverz = pabrikcore.gserverz;
 
 /// Process-local monotonic counter for workspace_item id generation.
-/// Nanosecond-precision timestamps used previously COULD theoretically
-/// collide if the host clock had sub-ns request throughput (macOS
-/// fast-path under `test_add_twelve_tasks_across_four_columns`-style
-/// tight loops). The counter suffix guarantees uniqueness.
 var workspace_item_id_counter: std.atomic.Value(u64) = .init(0);
 
 pub const WorkspaceItemsCreateError = error{
@@ -16,12 +12,7 @@ pub const WorkspaceItemsCreateError = error{
     MissingName,
     NameNotString,
     /// The `name` field is present and a string but, after trimming
-    /// leading/trailing ASCII whitespace, is empty. Distinct from
-    /// `MissingName` (which fires when the field is absent or
-    /// `null`) so the frontend can show a specific error message
-    /// ("Name is required") instead of a generic 400. Also distinct
-    /// from `NameNotString` so a JSON type mismatch stays
-    /// diagnosable. Plan: docs/superpowers/plans/2026-07-10-empty-workspace-item-bug.md.
+    /// leading/trailing ASCII whitespace, is empty.
     EmptyName,
     MissingPath,
     PathNotString,
@@ -62,10 +53,9 @@ fn useCase(
 
     const name_val = root.get("name") orelse return error.MissingName;
     if (name_val != .string) return error.NameNotString;
-    // Trim leading/trailing ASCII whitespace and reject empty
-    // names. The trim returns a slice into the same backing JSON
-    // memory owned by the per-request arena, so no allocation
-    // needed. Plan: docs/superpowers/plans/2026-07-10-empty-workspace-item-bug.md.
+    // Trim leading/trailing ASCII whitespace and reject empty names. The trim
+    // returns a slice into the same backing JSON memory owned by the
+    // per-request arena, so no allocation needed.
     const trimmed_name = std.mem.trim(u8, name_val.string, " \t\n\r");
     if (trimmed_name.len == 0) return error.EmptyName;
     const name = trimmed_name;
@@ -83,16 +73,8 @@ fn useCase(
 
     const item_id = generateItemId(allocator, io) catch return error.OutOfMemory;
 
-    // Insert with timestamps, item_type, name, path, AND a fresh
-    // `position` value. The position is computed as
-    // `COALESCE(MAX(position), -1) + 1` scoped to the workspace —
-    // the COALESCE handles the empty-workspace case (no rows →
-    // MAX is NULL → -1 → position 0). The new item appears at the
-    // top of the expanded workspace (ORDER BY position DESC puts
-    // the highest position first). The drag-reorder endpoint can
-    // later reassign these values. `workspace_id` is bound twice
-    // in the args tuple: once for the column, once for the
-    // correlated subquery.
+    // Insert with timestamps, item_type, name, path, AND a fresh `position`
+    // value.
     sqlite_db.exec(allocator,
         "INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, COALESCE((SELECT MAX(position) FROM workspace_items WHERE workspace_id = ?), -1) + 1, datetime('now'), datetime('now'))",
         &[_][]const u8{ item_id, workspace_id, item_type, name, path, workspace_id },

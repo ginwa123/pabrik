@@ -53,10 +53,7 @@ pub fn execPresentFiles(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResul
     input.files = files_abs;
 
     // The sandbox root, resolved through the SAME helper the download
-    // endpoint uses (`git_worktree_cwd ?? cwd`). Passing something else
-    // would let the tool present a card the endpoint refuses to serve —
-    // the card renders and then every preview / download 403s with
-    // "Path escapes the session working directory".
+    // endpoint uses (`git_worktree_cwd ?? cwd`).
     const root = file_sandbox.resolveSessionRoot(ctx.allocator, ctx.db, ctx.session_id) catch |err| switch (err) {
         // No `sessions` row at all: a TUI / routine dispatch. It renders no
         // card (there is no session id to build the download URL from), so
@@ -73,11 +70,7 @@ pub fn execPresentFiles(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResul
     };
     defer if (root) |r| ctx.allocator.free(r);
 
-    // executePresentFilesToString returns a JSON string. Validation
-    // failures (missing file, relative path, file outside the session
-    // working directory, too many files) are encoded as
-    // {"status":null,"error":...} so the LLM sees a structured failure
-    // rather than a tool crash.
+    // executePresentFilesToString returns a JSON string.
     const inner = present_files_mod.executePresentFilesToString(
         ctx.allocator,
         ctx.io,
@@ -91,11 +84,9 @@ pub fn execPresentFiles(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResul
     };
     defer ctx.allocator.free(inner);
 
-    // Detect the {"status":null,"error":...} shape and surface it as a
-    // tool failure (so the LLM sees `success=false` rather than a
-    // successful wrapper around an error body). The inner object is
-    // still passed through as `data` so the LLM can read the full
-    // diagnostic.
+    // Detect the {"status":null,"error":...} shape and surface it as a tool
+    // failure (so the LLM sees `success=false` rather than a successful
+    // wrapper around an error body).
     const inner_failed: bool = blk: {
         const parsed_inner = std.json.parseFromSlice(std.json.Value, ctx.allocator, inner, .{}) catch break :blk true;
         defer parsed_inner.deinit();
@@ -107,9 +98,7 @@ pub fn execPresentFiles(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResul
     if (inner_failed) {
         // The message must be COPIED out of the parse tree: returning
         // `e.string` from a block that defers `parsed_inner.deinit()` hands
-        // `wrapToolOutput` a slice into freed memory. It survived only while
-        // nothing re-allocated the block — the first out-of-root file (this
-        // tool's new failure path) segfaulted inside `std.json`.
+        // `wrapToolOutput` a slice into freed memory.
         const err_msg: ?[]const u8 = blk: {
             const parsed_inner = std.json.parseFromSlice(std.json.Value, ctx.allocator, inner, .{}) catch break :blk null;
             defer parsed_inner.deinit();
@@ -127,13 +116,7 @@ pub fn execPresentFiles(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResul
     return ToolExecResult{ .output = output, .output_allocated = true };
 }
 // ─── Exec-layer tests ────────────────────────────────────────────────────
-//
-// The tool-level tests in `present_files.zig` prove the RULE. These prove
-// the exec layer feeds it the same root the download endpoint will use —
-// `git_worktree_cwd ?? cwd` from the `sessions` row — because that is the
-// half that was missing: the tool had no root at all, so a card for a file
-// outside the session working directory rendered and then 403'd on every
-// fetch (the reported Windows failure).
+// The tool-level tests in `present_files.zig` prove the RULE.
 
 const testing = std.testing;
 

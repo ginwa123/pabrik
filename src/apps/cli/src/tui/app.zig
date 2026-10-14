@@ -1,13 +1,4 @@
 //! App: the chat Model that plugs into `tui.Program`.
-//!
-//! State machine:
-//!   - idle → (Enter pressed) → sending → streaming → idle
-//!   - Ctrl-C at any point → quit
-//!
-//! Streaming is driven by TickMsg polls of GET /api/llm/session/:id/messages
-//! every 500 ms while a send is in flight. (The SSE channel exists but
-//! v1 keeps the loop single-threaded and poll-based; SSE is wired in
-//! transport.openEvents for a follow-up.)
 
 const std = @import("std");
 const tui = @import("root.zig");
@@ -48,20 +39,9 @@ pub const App = struct {
 
     session_id: ?[]u8 = null,
     is_streaming: bool = false,
-    /// IDs of messages already rendered from a prior poll. Used to
-    /// dedupe re-polls — the server returns the LAST N messages on
-    /// every poll, so we must NOT re-render rows we've already
-    /// shown. Replaces the previous `seen_count` counter (which
-    /// silently dropped rows when the response shrank).
-    ///
-    /// Uses `StringHashMapUnmanaged` with MANUAL key ownership —
-    /// Zig 0.16's `StringHashMap` family does NOT dupe keys (see
-    /// `std/hash_map.zig:68` "Key memory is managed by the
-    /// caller"). We `allocator.dupe` on insert and free each key
-    /// in `App.deinit`. Storing the borrowed `id` slice directly
-    /// would dangle when `parsed.deinit()` runs after the JSON poll
-    /// ends — the next `getOrPut` then segfaults comparing against
-    /// the freed memory.
+    /// IDs of messages already rendered from a prior poll. Used to dedupe
+    /// re-polls — the server returns the LAST N messages on every poll, so we
+    /// must NOT re-render rows we've already shown.
     seen_ids: std.StringHashMapUnmanaged(void) = .empty,
     /// Milliseconds accumulated since the last poll.
     since_poll_ms: u64 = 0,
@@ -106,10 +86,9 @@ pub const App = struct {
         self.http_client.deinit();
     }
 
-    /// Free a Cmd payload previously returned by `update`. The
-    /// executor must call this after consuming the command (mirrors
-    /// Bubble Tea's ownership: the model allocates, the runtime
-    /// frees).
+    /// Free a Cmd payload previously returned by `update`. The executor must
+    /// call this after consuming the command (mirrors Bubble Tea's ownership:
+    /// the model allocates, the runtime frees).
     pub fn freeCmd(self: *App, cmd: tui.Cmd) void {
         switch (cmd) {
             .send_msg => |payload| self.allocator.free(payload),
@@ -134,8 +113,7 @@ pub const App = struct {
     fn handleKey(self: *App, k: tui.Key) !tui.Cmd {
         // Scroll keys are intercepted BEFORE the input widget sees them,
         // otherwise arrow / page keys would route to input-history nav
-        // (Up/Down) or be dropped (PageUp/PageDown/wheel). Round-2
-        // added PgUp/PgDn + mouse wheel (Task 5).
+        // (Up/Down) or be dropped (PageUp/PageDown/wheel).
         switch (k) {
             .ctrl_c, .ctrl_d => return .none, // Program handles quit itself
             .page_up => {
@@ -164,13 +142,7 @@ pub const App = struct {
         if (submitted) {
             const hist = self.input.history.items;
             const msg_text = hist[hist.len - 1];
-            // NOTE: do NOT echo the user message into the viewport
-            // here. The next SSE/poll delivers the canonical row
-            // from the server's `llm_history` table, and `onMessages`
-            // renders it via the same renderMessage dispatcher. Echoing
-            // here would duplicate every user message (welcome + echo
-            // + SSE = two copies). The cost is a ≤500 ms blank between
-            // Enter and the first poll — accepted per the round-2 plan.
+            // NOTE: do NOT echo the user message into the viewport here.
             self.is_streaming = true;
             self.spinner.label = "thinking";
             // The executor (tui_main.execCmd) frees the duped payload.
@@ -196,30 +168,14 @@ pub const App = struct {
     pub fn onSendOk(self: *App, session_id: []const u8) !void {
         if (self.session_id == null) {
             self.session_id = try self.allocator.dupe(u8, session_id);
-            // The right slot is the session label. It used to be written
-            // exactly once in `init` (to "new session"), so a session created
-            // by this first send showed "new session" in the status bar for
-            // the rest of the run. The left slot keeps the app name — it was
-            // being overwritten with `"session {s}"` against a session id that
-            // already starts with "session-", rendering
-            // "session session-1789...".
+            // The right slot is the session label.
             self.status.setRight(session_id);
         }
     }
 
-    /// Called by the command executor after GET .../messages succeeds.
-    /// `body` is the raw JSON response; we render each new message
-    /// via `renderMessage` and append the styled `[]Line`s to the
-    /// viewport. Dedupe is by message id (not by array index), so
-    /// re-polls don't re-render the same rows.
-    ///
-    /// "Is this turn over?" is decided in the SAME pass, and only rows that
-    /// are NEW in this poll may end it. The poll returns the session's last
-    /// 100 messages, so it always contains the *previous* turn's completed
-    /// reply: scanning the whole array for any `finish_reason="stop"` (which
-    /// is what this used to do) found turn 1's stop on the very first poll of
-    /// turn 2, stopped polling, and the second answer never appeared — the
-    /// reported "next prompt response not shown in TUI".
+    /// Called by the command executor after GET .../messages succeeds. `body`
+    /// is the raw JSON response; we render each new message via
+    /// `renderMessage` and append the styled `[]Line`s to the viewport.
     pub fn onMessages(self: *App, body: []const u8) !void {
         var arena = std.heap.ArenaAllocator.init(self.allocator);
         defer arena.deinit();
@@ -239,12 +195,6 @@ pub const App = struct {
         // Whether an assistant row first seen in THIS poll finished. Set
         // while rendering below, applied after the loop so the decision can
         // never cut the render of the rows that arrived together with it.
-        //
-        // The previous-turn heuristic — "any assistant row with
-        // finish_reason=stop, else the last row being assistant" — is kept,
-        // but only for new rows: rows we have already rendered are history,
-        // including their stop. That is also what makes the 10k scrollback
-        // cap and `seen_ids` agree on what "new" means.
         var turn_finished = false;
 
         // Render every message we haven't seen yet.
@@ -253,19 +203,13 @@ pub const App = struct {
             const obj = item.object;
 
             const id = if (obj.get("id")) |c| (if (c == .string) c.string else "") else "";
-            // Backend always returns an id for stored rows; for legacy
-            // / synthetic messages without id we still render (no
-            // dedupe) so we don't drop them silently. The hashmap
-            // does NOT dupe keys (see the comment on `seen_ids`) —
-            // we must dupe the key ourselves before insert, otherwise
-            // it dangles the moment `parsed.deinit()` runs.
+            // Backend always returns an id for stored rows; for legacy /
+            // synthetic messages without id we still render (no dedupe) so we
+            // don't drop them silently.
             if (id.len > 0) {
                 const gop = try self.seen_ids.getOrPut(self.allocator, id);
                 if (gop.found_existing) continue;
-                // Replace the borrowed key with an owned copy. The
-                // unmanaged `getOrPut` wrote `key` (borrowed) into
-                // `gop.key_ptr.*` — overwrite with our dupe so it
-                // survives past this function's `defer parsed.deinit()`.
+                // Replace the borrowed key with an owned copy.
                 const owned = try self.allocator.dupe(u8, id);
                 gop.key_ptr.* = owned;
             }
@@ -276,9 +220,8 @@ pub const App = struct {
             const reasoning_content = if (obj.get("reasoning_content")) |c| (if (c == .string) c.string else "") else "";
 
             // Only rows new in this poll can end the turn (see above): the
-            // agent emits tool calls, so the last DB row of a finished turn is
-            // usually the tool result, not the assistant's final reply. The
-            // `finish_reason`-less fallback keeps old conversations working.
+            // agent emits tool calls, so the last DB row of a finished turn
+            // is usually the tool result, not the assistant's final reply.
             if (asciiEqIgnoreCase(role, "assistant")) {
                 if (obj.get("finish_reason")) |fr_val| {
                     if (fr_val == .string and std.mem.eql(u8, fr_val.string, "stop")) turn_finished = true;
@@ -287,10 +230,8 @@ pub const App = struct {
                 }
             }
 
-            // Skip messages with no renderable content AND no role
-            // (defensive — a row like {"id":"x"} shouldn't render as
-            // a blank line). Tool rows with `<tool>` envelopes ARE
-            // renderable even when content looks empty after parsing.
+            // Skip messages with no renderable content AND no role (defensive
+            // — a row like {"id":"x"} shouldn't render as a blank line).
             if (role.len == 0 and content.len == 0) continue;
 
             const msg_view = render_msg.MessageView{
@@ -428,11 +369,8 @@ test "App: onMessages ignores already-seen messages" {
 }
 
 test "App: onMessages flips is_streaming=false when assistant finish_reason=stop appears mid-array" {
-    // Round-3 regression: agent emits tool calls, so the LAST DB
-    // row is a tool result, not the assistant's final response.
-    // The old heuristic checked only `arr.items[len-1].role` and so
-    // never saw the assistant's `finish_reason=stop`, leaving the
-    // spinner running and locking the input widget.
+    // Round-3 regression: agent emits tool calls, so the LAST DB row is a
+    // tool result, not the assistant's final response.
     var app = try testApp();
     defer app.deinit();
     app.is_streaming = true;
@@ -451,9 +389,7 @@ test "App: onMessages flips is_streaming=false when assistant finish_reason=stop
 test "App: a previous turn's finish_reason=stop does not end the next turn" {
     // User-reported (2026-09-13): "next prompt response not showup in tui".
     // The poll returns the session's last 100 messages, so it contains the
-    // PREVIOUS turn's completed reply. The old code scanned the whole array
-    // for any `finish_reason="stop"`, found turn 1's, stopped polling on the
-    // first poll of turn 2, and the second answer never rendered.
+    // PREVIOUS turn's completed reply.
     var app = try testApp();
     defer app.deinit();
 
@@ -493,9 +429,7 @@ test "App: a previous turn's finish_reason=stop does not end the next turn" {
 
 test "App: turn 2 renders when the first poll of the turn predates the user row" {
     // The queued user row is inserted by the backend worker, so the first
-    // poll after Enter can return the previous snapshot unchanged. Polling
-    // must continue (pre-fix it stopped here, which is why the user's own
-    // second message was missing from the transcript too).
+    // poll after Enter can return the previous snapshot unchanged.
     var app = try testApp();
     defer app.deinit();
     const turn1 =
@@ -648,12 +582,8 @@ test "App: onMessages renders user prompt as > bold green" {
     try testing.expectEqual(@as(?tui.Color, .green), last.style.fg);
 }
 
-// User-reported regression test — the body shape from the screenshot
-// in the design spec. Before the fix: raw <tool> envelopes and raw
-// <think> blocks were appended verbatim. After: user prompt in
-// bold green, tool cards as ▶ name primary ✓ headers, and the
-// assistant reply rendered as plain text with the thinking block
-// stripped.
+// User-reported regression test — the body shape from the screenshot in the
+// design spec.
 test "App: handleKey + Enter does NOT immediately echo user message" {
     var app = try testApp();
     defer app.deinit();
@@ -787,9 +717,8 @@ test "App: init dupes cwd from Config" {
 }
 
 // ===== Tests merged from tdd_round2_test.zig (2026-09-29 flatten) =====
-// Section 3 of tdd_round2_test.zig: the `app.onMessages` regression
-// tests (role-detection robustness). The file's leading doc comment
-// lives in transport.zig, which carries section 1.
+// Section 3 of tdd_round2_test.zig: the `app.onMessages` regression tests
+// (role-detection robustness).
 
 // ============================================================================
 // 3. app.onMessages — role heuristic robustness

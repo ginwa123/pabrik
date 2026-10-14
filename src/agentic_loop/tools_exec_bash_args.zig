@@ -3,63 +3,13 @@ const pabrikcore = @import("pabrikcore");
 
 const tool_models = pabrikcore.tool_models;
 
-/// Lenient argument parser for the bash + pwsh tools.
-///
-/// ## Why this exists
-///
-/// The bash + pwsh tools share `tool_models.BashInput` (aliased to
-/// `shell.ShellInput`). When the LLM emits tool-call arguments where a
-/// numeric field (`timeout`, `max_output`, `max_lines`) is a
-/// JSON STRING instead of a JSON number — often because the LLM
-/// hallucinated an XML closing tag like `</timeout>` into the
-/// value (a leak from a prior `<tool>…<timeout>5</timeout>…</tool>`
-/// envelope in its conversation history) — `std.json.parseFromSlice`
-/// refuses to coerce the string into `?u32` / `?usize` and returns
-/// `error.InvalidCharacter`. That error then bubbles up as a cryptic
-/// `"bash failed: InvalidCharacter"` to `handle_tool.zig`, where the
-/// LLM has no idea what to fix on its next turn.
-///
-/// ## What this helper does
-///
-/// 1. Parses `arguments` as `std.json.Value` first (lenient — any
-///    well-formed JSON succeeds; the type check happens per-field below).
-/// 2. Walks the object tree. For each known numeric field, if the JSON
-///    value is a string:
-///      a) strips a single trailing `</fieldname>` substring if present
-///         (the LLM hallucination cleanup), then
-///      b) attempts `parseInt`. If it succeeds, uses the integer.
-///         If it fails, the helper returns `Result.failure` with the
-///         offending field + the verbatim value + the expected type.
-///    If the value is already a number, uses it directly.
-///    If the value is null or missing, falls back to the struct default.
-/// 3. For boolean fields, accepts JSON bool or the strings `"true"` /
-///    `"false"`. Other inputs → `Result.failure`.
-/// 4. For string fields, accepts JSON string. Other inputs → `Result.failure`.
-/// 5. Returns a tagged-union `Result`: on success, a typed
-///    `tool_models.BashInput` ready to pass to `execute_bash` /
-///    `execute_pwsh`. On failure, an `InvalidField` payload carrying
-///    the field name + bad value + expected type — the caller surfaces
-///    the three fields verbatim in the tool-error envelope so the LLM
-///    can self-correct on its next turn.
-///
-/// ## Why a tagged-union result (not error payloads)
-///
-/// Zig 0.16's error system can only carry error *names*, not arbitrary
-/// data. To give the caller a structured "field X, value Y, expected Z"
-/// for the error envelope, we use a tagged-union return type. The
-/// pattern is `switch (parseShellArgs(...)) { .success => |input| ...,
-/// .failure => |info| ... }`.
+/// Lenient argument parser for the bash + pwsh tools. ## Why this exists The
+/// bash + pwsh tools share `tool_models.BashInput` (aliased to
+/// `shell.ShellInput`).
 
-/// Numeric fields on `ShellInput` whose values the LLM may have
-/// contaminated with stray XML closing tags. Order doesn't matter; the
-/// helper matches by key.
-/// Accepted spellings for the deadline field, in precedence order.
-///
-/// `timeout` is the name. `mandatory_timeout` is its PRE-RENAME spelling and is
-/// still accepted, because it is written into every transcript from before the
-/// rename: without this, replaying such a conversation would surface a
-/// `TimeoutMissing` the model cannot possibly explain, since the argument it
-/// sent was valid when it sent it. `timeout` wins when both appear.
+/// Numeric fields on `ShellInput` whose values the LLM may have contaminated
+/// with stray XML closing tags. Order doesn't matter; the helper matches by
+/// key.
 pub const TIMEOUT_ALIASES: []const []const u8 = &.{ "timeout", "mandatory_timeout" };
 
 pub const NUMERIC_U32_FIELDS = TIMEOUT_ALIASES;
@@ -107,10 +57,9 @@ pub const Result = union(enum) {
     failure: InvalidField,
 };
 
-/// Render an `InvalidField` into a single line suitable for the
-/// `<error>` element of a tool envelope.
-///
-/// Format: `invalid field 'timeout': got JSON value "5</timeout>", expected number (u32)`
+/// Render an `InvalidField` into a single line suitable for the `<error>`
+/// element of a tool envelope. Format: `invalid field 'timeout': got JSON
+/// value "5</timeout>", expected number (u32)`
 pub fn formatInvalidField(allocator: std.mem.Allocator, info: InvalidField) ![]u8 {
     return try std.fmt.allocPrint(
         allocator,
@@ -119,15 +68,8 @@ pub fn formatInvalidField(allocator: std.mem.Allocator, info: InvalidField) ![]u
     );
 }
 
-/// Parse the JSON `arguments` string from a bash / pwsh tool call into
-/// a tagged-union result. The string is parsed as `std.json.Value`
-/// first (lenient), then coerced field-by-field. Numeric and boolean
-/// fields get field-aware XML-close-tag cleanup before coercion.
-///
-/// `arguments` is the raw `tc.function.arguments` slice — typically
-/// arena-allocated, ownership doesn't matter (we dup what we keep).
-/// The returned `success` BashInput has its slice fields allocated
-/// with `allocator`; the caller owns them.
+/// Parse the JSON `arguments` string from a bash / pwsh tool call into a
+/// tagged-union result.
 pub fn parseShellArgs(
     allocator: std.mem.Allocator,
     arguments: []const u8,
@@ -163,13 +105,6 @@ pub fn parseShellArgs(
     const obj = root.object;
 
     // 2. Coerce each field with field-aware cleanup + clear errors.
-    //
-    // Pattern: `try returnFail(field, v, expected)` is a small helper
-    // (below) that builds the InvalidField, frees any slices already
-    // duped into `out`, and returns the failure tagged-union variant.
-    // Zig's `errdefer` doesn't fire on `return .{ .failure = ... }`
-    // (that's a normal return, not an error), so we use an explicit
-    // helper that does the cleanup synchronously.
     var out: tool_models.BashInput = .{ .command = "" };
 
     // command (required string)
@@ -260,21 +195,9 @@ pub fn parseShellArgs(
         out.is_stop = b;
     }
 
-    // ─── mode (string enum) + the legacy `background` boolean ───
-    //
-    // Resolved TOGETHER, because they are two spellings of one decision and
-    // the only input that cannot be resolved is `background=true` alongside an
-    // explicit `mode="foreground"`. Everything else folds:
-    //
-    //   mode absent             -> background ? .background : .foreground
-    //   background absent/false -> mode
-    //   background=true  + mode in {background, background_persistence} -> mode
-    //   background=true  + mode="foreground"                            -> ERROR
-    //
-    // The last row is a hard error rather than "mode wins": both readings are
-    // defensible, and picking one silently ends the command in a mode the
-    // caller did not ask for — a detached `pnpm run dev` when it wanted a
-    // blocking call, or the reverse.
+    // ─── mode (string enum) + the legacy `background` boolean ─── Resolved
+    // TOGETHER, because they are two spellings of one decision and the only
+    // input that cannot be resolved is `background=true` alongside an
     var explicit_mode: ?tool_models.RunMode = null;
     if (obj.get("mode")) |v| {
         const raw = coerceString(allocator, v, "mode") orelse {
@@ -290,9 +213,7 @@ pub fn parseShellArgs(
     if (explicit_mode) |m| {
         if (out.background and m == .foreground) {
             // Rendered as a `background` problem because that is the field
-            // whose value is wrong once `mode` is explicit. `expected` names
-            // the other field and the correction, so the model has enough to
-            // re-issue the call.
+            // whose value is wrong once `mode` is explicit.
             return returnFail(
                 allocator,
                 &out,
@@ -331,17 +252,8 @@ fn returnFail(
     return .{ .failure = makeInvalidField(allocator, v, field, expected) };
 }
 
-/// Strip a single trailing `</fieldname>` substring from `s` IF `s`
-/// ends with `</fieldname>`. Returns a freshly allocated slice (or the
-/// original `s` if no cleanup is needed).
-///
-/// Examples:
-///   `"5</timeout>"` → `"5"`
-///   `"5</timeout></timeout>"` → `"5</timeout>"`
-///     (only one strip — the rest is left for `parseInt` to fail on,
-///     giving the LLM a chance to see the remaining garbage).
-///   `"hello world"` → `"hello world"` (unchanged)
-///   `"<a href=\"x\">"` → `"<a href=\"x\">"` (unchanged — different tag)
+/// Strip a single trailing `</fieldname>` substring from `s` IF `s` ends with
+/// `</fieldname>`.
 fn stripFieldCloseTag(allocator: std.mem.Allocator, s: []const u8, field: []const u8) ![]u8 {
     const close = "</";
     if (s.len < close.len + field.len + 1) return try allocator.dupe(u8, s);
@@ -358,10 +270,9 @@ fn stripFieldCloseTag(allocator: std.mem.Allocator, s: []const u8, field: []cons
     return try allocator.dupe(u8, s[0..start]);
 }
 
-/// Render a JSON value as a short display string suitable for error
-/// messages. For strings: the verbatim content. For numbers / bools:
-/// the JSON literal. For null: the literal "null". For arrays /
-/// objects: a placeholder.
+/// Render a JSON value as a short display string suitable for error messages.
+/// For strings: the verbatim content. For numbers / bools: the JSON literal.
+/// For null: the literal "null". For arrays / objects: a placeholder.
 fn jsonValueDisplay(allocator: std.mem.Allocator, v: std.json.Value) ![]u8 {
     return switch (v) {
         .string => |s| try allocator.dupe(u8, s),
@@ -391,9 +302,8 @@ fn coerceString(
     switch (v) {
         .string => |s| {
             // Field-aware XML-close-tag cleanup: strip a single trailing
-            // `</field>` from string fields too — the LLM may have
-            // polluted a string like `"echo a > /tmp/x</command>"` by
-            // accidentally closing the wrong element.
+            // `</field>` from string fields too — the LLM may have polluted a
+            // string like `"echo a > /tmp/x</command>"` by accidentally
             return stripFieldCloseTag(allocator, s, field) catch null;
         },
         else => return null,
@@ -725,10 +635,9 @@ test "parseShellArgs: background=true still means mode=background" {
 }
 
 test "parseShellArgs: background=true with mode=foreground is rejected, not guessed" {
-    // Both readings are defensible, so neither may win silently: one ends in a
-    // detached `pnpm run dev` the caller wanted blocked, the other in a
-    // 60 s-murdered dev server. The error names `background` (the field that is
-    // wrong once `mode` is explicit) and the correction.
+    // Both readings are defensible, so neither may win silently: one ends in
+    // a detached `pnpm run dev` the caller wanted blocked, the other in a 60
+    // s-murdered dev server.
     const args = "{\"command\":\"x\",\"background\":true,\"mode\":\"foreground\"}";
     switch (parseShellArgs(testing.allocator, args)) {
         .success => return error.TestUnexpectedResult,
@@ -904,10 +813,9 @@ test "parseShellArgs: do_encoding with stray XML fragment" {
 }
 
 test "parseShellArgs: complex XML fragment that resists parseInt returns rich failure" {
-    // Even after stripping `</timeout>`, the value still
-    // contains `<timeout>` opener — parseInt fails. The
-    // helper surfaces the ORIGINAL value (with the tag) so the LLM
-    // sees the corruption, not a stripped cleaned value.
+    // Even after stripping `</timeout>`, the value still contains `<timeout>`
+    // opener — parseInt fails. The helper surfaces the ORIGINAL value (with
+    // the tag) so the LLM sees the corruption, not a stripped cleaned value.
     const args = "{\"command\":\"ls\",\"timeout\":\"5<timeout>5</timeout>\"}";
     const result = parseShellArgs(testing.allocator, args);
     try testing.expect(result == .failure);

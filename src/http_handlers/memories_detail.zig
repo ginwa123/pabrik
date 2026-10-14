@@ -1,19 +1,5 @@
-//! `GET /api/memories/:name` — read a global memory file's content + metadata.
-//!
-//! Layered as:
-//!   - `useCase` — validates the `:name`, resolves the environment,
-//!     reads the file, re-lists to derive `title/path/size`, and
-//!     returns a heap-owned `MemoryDetailPayload`.
-//!   - `memoryDetailHandler` — thin orchestrator: parses `:name`
-//!     path param, calls `useCase`, maps errors to status codes,
-//!     builds the JSON response.
-//!
-//! Preserves the static-contract assertions in `memories_crud_test.zig`:
-//!   - `getSingleton` + `500` + `Missing environment` substring checks
-//!   - `params.get("name")` + `400` substring checks
-//!   - `readMemoryFile` + `listAllMemories` helper call substring checks
-//!   - `isValidMemoryName` validation substring check
-//!   - `std.json.Stringify.valueAlloc` + `content` field substring checks
+//! `GET /api/memories/:name` — read a global memory file's content +
+//! metadata.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -21,11 +7,9 @@ const gserverz = pabrikcore.gserverz;
 const memories_mod = pabrikcore.memories;
 const http_response = @import("http_response.zig");
 
-/// Response payload for `GET /api/memories/:name`.
-///
-/// `content` is JSON-escaped automatically by
-/// `std.json.Stringify.valueAlloc` — do not hand-roll JSON for the
-/// body, it can break on memories that contain `"` or backslash.
+/// Response payload for `GET /api/memories/:name`. `content` is JSON-escaped
+/// automatically by `std.json.Stringify.valueAlloc` — do not hand-roll JSON
+/// for the body, it can break on memories that contain `"` or backslash.
 pub const MemoryDetailPayload = struct {
     name: []const u8,
     title: []const u8,
@@ -58,12 +42,7 @@ pub const MemoryDetailInput = struct {
     name: []const u8,
 };
 
-/// Output of the detail use-case. The slice fields are HEAP-OWNED
-/// by the use-case (duplicated from `listAllMemories` +
-/// `readMemoryFile` so they survive the internal `freeMemoriesList`
-/// and `allocator.free(content)` defers). The handler is responsible
-/// for freeing them — typically a `defer` block in the handler does
-/// per-field `allocator.free(output.payload.content)` etc.
+/// Output of the detail use-case.
 pub const MemoryDetailOutput = struct {
     payload: MemoryDetailPayload,
 };
@@ -72,16 +51,8 @@ pub const MemoryDetailOutput = struct {
 // Use case
 // =====================================================================
 
-/// Read a global memory file's content and metadata.
-///
-/// Steps:
-///   1. Get the singleton + env.
-///   2. Validate `name` (non-empty + `isValidMemoryName`).
-///   3. Read the file via `readMemoryFile`. File not found → 404.
-///   4. Re-list via `listAllMemories` to derive `title/path/size`.
-///   5. Locate the entry by name. Missing → 404 (defensive).
-///   6. Duplicate the matched slices so the output survives internal
-///      `free` defers.
+/// Read a global memory file's content and metadata. Steps: 1. Get the
+/// singleton + env. 2.
 fn useCase(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -117,11 +88,8 @@ fn useCase(
         return error.NotFound;
     };
 
-    // Duplicate the matched slices + content so the output survives
-    // the `free` defers above. `errdefer` reverts each successful
-    // dupe if a later dupe fails (the partial state would otherwise
-    // leak — the dupes are on `allocator`, which may or may not be
-    // an arena).
+    // Duplicate the matched slices + content so the output survives the
+    // `free` defers above.
     var duped_name: ?[]u8 = null;
     var duped_title: ?[]u8 = null;
     var duped_path: ?[]u8 = null;

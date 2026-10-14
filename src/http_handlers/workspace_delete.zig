@@ -78,9 +78,7 @@ fn useCase(
     }
 
     // `begin`/`commit` return the full sqlite error set, which is far wider
-    // than this file's handler-facing set. Collapse it to DatabaseError here
-    // so the handler's status-code mapping below stays the single place
-    // that decides what a client sees.
+    // than this file's handler-facing set.
     var tx = sqlite_db.begin() catch {
         std.log.warn("workspaceDelete: BEGIN failed for {s}", .{id});
         return error.DatabaseError;
@@ -90,8 +88,7 @@ fn useCase(
 
     // Workspace first, still visibility-gated — a foreign id matches nothing
     // and the tx rolls back, so a foreign caller can never strip a real
-    // owner's members. Members second: `PRAGMA foreign_keys` is OFF, so
-    // there is no ON DELETE CASCADE to lean on and orphan rows would pile up.
+    // owner's members.
     tx.exec(
         allocator,
         "DELETE FROM workspaces WHERE id = ? AND " ++ comptime auth_common.workspaceVisibilityClause("workspaces"),
@@ -110,10 +107,9 @@ fn useCase(
         return error.DatabaseError;
     };
 
-    // `ON DELETE CASCADE` on `workspace_secrets` is documentation only —
-    // this project leaves `PRAGMA foreign_keys` off (Migration 072's tests),
-    // so the child rows have to go explicitly or a deleted workspace would
-    // leave every one of its credentials behind.
+    // `ON DELETE CASCADE` on `workspace_secrets` is documentation only — this
+    // project leaves `PRAGMA foreign_keys` off (Migration 072's tests), so
+    // the child rows have to go explicitly or a deleted workspace would leave
     tx.exec(
         allocator,
         "DELETE FROM workspace_secrets WHERE workspace_id = ?",
@@ -124,9 +120,7 @@ fn useCase(
     };
 
     // Same reason as the secrets above: `PRAGMA foreign_keys` is OFF, so
-    // Migration 105's `ON DELETE CASCADE` never fires. Without this the
-    // workspace's saved profiles - and the API keys inside them - would
-    // outlive the workspace and resurface if its id were ever reused.
+    // Migration 105's `ON DELETE CASCADE` never fires.
     tx.exec(
         allocator,
         "DELETE FROM workspace_settings WHERE workspace_id = ?",
@@ -146,13 +140,6 @@ fn useCase(
 // ============================================================================
 // useCase — membership cleanup
 // ============================================================================
-//
-// `useCase` is reachable ONLY from `workspaceDeleteHandler`, which only
-// `main.zig` calls. Zig analyses lazily, so the `mod_tests` build never
-// looked at it: when this use case grew a transaction whose `begin`/`commit`
-// return the full sqlite error set, `zig build test` stayed green and
-// `zig build` was the thing that failed. An inline test here is what closes
-// that gap — it forces compilation AND covers the new behaviour.
 
 const testing = std.testing;
 const sqlite = pabrikcore.sqlite;
@@ -202,10 +189,7 @@ fn setupDeleteDb() !DeleteCtx {
         \\  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         \\)
     , &.{});
-    // Mirrors Migration 105's `workspace_settings`. Same reason as the
-    // secrets table above: this fixture stays independent of the migration
-    // chain, and the delete path must be exercised against the table it
-    // actually writes to.
+    // Mirrors Migration 105's `workspace_settings`.
     try db.exec(alloc,
         \\CREATE TABLE workspace_settings (
         \\  owner TEXT NOT NULL DEFAULT '',
@@ -229,9 +213,7 @@ fn countRows(ctx: *DeleteCtx, sql: []const u8, params: []const []const u8) !u64 
 }
 
 /// A header bag with no Cookie, so `parseSessionToken` yields null and
-/// `resolveRequestUserId` resolves the sentinel. That is the "auth on, not
-/// logged in" path, and it is the cheapest way to reach a caller that is
-/// allowed to see everything without minting a real session token.
+/// `resolveRequestUserId` resolves the sentinel.
 const NoCookie = struct {
     pub fn get(_: @This(), _: []const u8) ?[]const u8 {
         return null;
@@ -261,9 +243,8 @@ test "workspaceDelete removes the membership rows, not just the workspace" {
     // credentials behind for a future workspace reusing the id.
     try testing.expectEqual(@as(u64, 0), try countRows(&ctx, "SELECT COUNT(*) FROM workspace_secrets WHERE workspace_id = 'ws_x'", &.{}));
     // The config-overlay cleanup (Migration 105) for the same reason, and
-    // with a sharper edge: an orphaned overlay holds PROFILES, which hold
-    // API keys, so a reused workspace id would come back pre-configured with
-    // a stranger's credentials.
+    // with a sharper edge: an orphaned overlay holds PROFILES, which hold API
+    // keys, so a reused workspace id would come back pre-configured with a
     try testing.expectEqual(@as(u64, 0), try countRows(&ctx, "SELECT COUNT(*) FROM workspace_settings WHERE workspace_id = 'ws_x'", &.{}));
 }
 

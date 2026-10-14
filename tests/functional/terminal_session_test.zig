@@ -1,42 +1,5 @@
-// Functional e2e for the right-sidebar terminal HTTP endpoints.
-//
-// Zig port of `tests/functional/terminal_session_test.py` (same test
-// names, same order).
-//
-// Covers the five REST endpoints backed by the in-memory PTY registry
-// (src/http_handlers/terminal_*.zig — forkpty, no WebSocket, no
-// migration, no kabelweb changes):
-//
-//   * POST   /api/terminal/sessions             {cwd, shell?, cols?, rows?}
-//     -> 201 { id, pid }
-//   * POST   /api/terminal/sessions/:id/input   {data}
-//     -> 200 { ok, bytes } (410 once the shell has exited)
-//   * GET    /api/terminal/sessions/:id/output?cursor=N
-//     -> 200 { data, cursor, exited, exit_code }
-//   * POST   /api/terminal/sessions/:id/resize  {cols, rows}
-//     -> 200 { ok, cols, rows }
-//   * DELETE /api/terminal/sessions/:id
-//     -> 200 { ok } (second delete is 404)
-//
-// Wire rule: sessions use the harness tempdir as cwd and /bin/sh as the
-// shell so the test is deterministic on any POSIX host. Output polling
-// replays the frontend's 300ms poll loop with a hard deadline.
-//
-// ── PORTING NOTES ───────────────────────────────────────────────────────
-// * `harness.harnessPath` replaces the literal `harness.temp_dir` and
-//   the literal `/tmp/pabrik-terminal-never-exists-9d2c41`: the server
-//   validates `cwd` with `std.fs.path.isAbsolute`, which is
-//   platform-relative, so a hardcoded POSIX literal that is correct on
-//   ubuntu-2022 fails at the HTTP door on windows-2022 and reads there
-//   as a server regression that does not exist.
-// * `harness.Json` BORROWS from the `Response` body it was parsed from,
-//   so every helper here returns OWNED bytes (`OutputPage`) rather than
-//   a `Json` — Python's dict-returning helpers got that for free.
-// * `time.sleep` is `Io.sleep(io, .fromMilliseconds(n), .awake)`, and
-//   `time.time()` deadlines are `Io.Timestamp.now(io, .awake)`.
-// * Every JSON body goes through `std.json.Stringify`, so the `data`
-//   field's trailing newline is escaped by the encoder instead of by a
-//   hand-written `\\n` in a string literal.
+// Functional e2e for the right-sidebar terminal HTTP endpoints. Zig port of
+// `tests/functional/terminal_session_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -45,10 +8,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// The shell every terminal in this suite runs. Python hardcoded
-/// `/bin/sh`; `PATH_ABSOLUTE` is not portable to Windows, and the file's
-/// contract is "deterministic on any POSIX host" — the PTY handlers
-/// themselves are covered for the platform gates by `platform_gates_test`.
+/// The shell every terminal in this suite runs.
 const SHELL = "/bin/sh";
 
 /// Monotonic milliseconds (`.awake`, not the wall clock — an NTP step
@@ -57,11 +17,9 @@ fn nowMs() i64 {
     return std.Io.Timestamp.now(io, .awake).toMilliseconds();
 }
 
-/// `"echo <marker>\n"` as an OWNED buffer.
-///
-/// Written with `allocPrint` rather than `"echo " ++ marker ++ "\n"`,
-/// which only compiles for comptime-known operands — and a marker is
-/// exactly the value a test wants to vary.
+/// `"echo <marker>\n"` as an OWNED buffer. Written with `allocPrint` rather
+/// than `"echo " ++ marker ++ "\n"`, which only compiles for comptime-known
+/// operands — and a marker is exactly the value a test wants to vary.
 fn echoLine(marker: []const u8) ![]u8 {
     return std.fmt.allocPrint(gpa, "echo {s}\n", .{marker});
 }
@@ -70,11 +28,8 @@ fn echoLine(marker: []const u8) ![]u8 {
 // Helpers
 // ============================================================================
 
-/// One `GET /api/terminal/sessions/<id>/output` answer, with every
-/// string COPIED so it can outlive the `Response` it came from.
-///
-/// `exit_code` is null when the field is absent or JSON `null` — the
-/// Python original read the same thing with `.get("exit_code")`.
+/// One `GET /api/terminal/sessions/<id>/output` answer, with every string
+/// COPIED so it can outlive the `Response` it came from.
 const OutputPage = struct {
     data: []u8,
     cursor: i64,
@@ -87,14 +42,9 @@ const OutputPage = struct {
     }
 };
 
-/// `POST /api/terminal/sessions` with the Python `_create` body:
-/// `{"shell": ...}` plus `"cwd"` only when `cwd` is non-null (so the
-/// no-cwd call really sends no `cwd` key at all, like Python's
-/// `if cwd is not None`).
-///
-/// `expect` is a parameter because the STATUS is the thing under test:
-/// 201 for a good spawn, 400 for a relative cwd or a bodiless request,
-/// 404 for a cwd that does not exist.
+/// `POST /api/terminal/sessions` with the Python `_create` body: `{"shell":
+/// ...}` plus `"cwd"` only when `cwd` is non-null (so the no-cwd call really
+/// sends no `cwd` key at all, like Python's `if cwd is not None`).
 fn createRaw(
     h: *Harness,
     cwd: ?[]const u8,
@@ -139,10 +89,8 @@ fn inputRaw(
     return h.http(io, .POST, path, .{ .json_body = body, .expect = expect });
 }
 
-/// `GET /api/terminal/sessions/<id>/output?cursor=N`.
-///
-/// The cursor goes through `.params`, which the harness
-/// PERCENT-ENCODES — never pre-encode it here.
+/// `GET /api/terminal/sessions/<id>/output?cursor=N`. The cursor goes through
+/// `.params`, which the harness PERCENT-ENCODES — never pre-encode it here.
 fn outputRaw(
     h: *Harness,
     sid: []const u8,
@@ -175,11 +123,8 @@ fn outputPage(h: *Harness, sid: []const u8, cursor: i64) !OutputPage {
     };
 }
 
-/// Poll output until `marker` appears (the frontend poll replay).
-///
-/// Returns the page that satisfied the marker (owned). On timeout the
-/// test FAILS with the accumulated transcript, exactly as Python raised
-/// `AssertionError(marker ... never appeared; last=... seen=...)`.
+/// Poll output until `marker` appears (the frontend poll replay). Returns the
+/// page that satisfied the marker (owned).
 fn pollFor(
     h: *Harness,
     sid: []const u8,
@@ -222,17 +167,9 @@ fn pollFor(
     return out;
 }
 
-/// Poll forward until the session stops producing output; return the
-/// cursor.
-///
-/// A PTY never really stops: after the marker round-trips, the shell
-/// redraws its prompt and re-emits the command echo. So a cursor read
-/// taken the instant the marker shows up can still be behind the
-/// server's ring buffer, and the NEXT read at that cursor correctly
-/// returns those not-yet-drained bytes — which looks exactly like a
-/// replay. Draining until two consecutive reads come back empty is what
-/// makes "no replay" a statement about the server rather than about how
-/// fast the test asked.
+/// Poll forward until the session stops producing output; return the cursor.
+/// A PTY never really stops: after the marker round-trips, the shell redraws
+/// its prompt and re-emits the command echo.
 fn settleCursor(
     h: *Harness,
     sid: []const u8,
@@ -331,11 +268,8 @@ test "create_input_output_round_trip" {
         defer page.deinit();
     }
 
-    // Let the prompt redraw drain, then hold the cursor fixed: a repeat
-    // read at a cursor the server has already served must come back
-    // empty. Reading from a cursor taken by a DIFFERENT request (the old
-    // `cursor=0` then `fresh["cursor"]` pair) is what raced — see
-    // `settleCursor`.
+    // Let the prompt redraw drain, then hold the cursor fixed: a repeat read
+    // at a cursor the server has already served must come back empty.
     const settled = try settleCursor(&h, sid, 2, 10_000);
     if (settled <= 0) {
         std.debug.print("session produced no output at all\n", .{});
@@ -515,16 +449,8 @@ test "unknown_session_is_404" {
     }
 }
 
-// A shell that exits cleanly reports exited + code 0, and further input
-// is 410 (not 500).
-//
-// Uses the default /bin/sh and asks it to exit rather than spawning
-// /bin/true as the "shell". /bin/true is not a shell and the PTY exec of
-// it exits 127 on the macOS runners (every _exit(127) path in childMain
-// is a chdir/exec failure), so the exit code this test asserts on was
-// never produced by /bin/true there. /bin/sh is what every other test in
-// this file already spawns successfully on all three platforms, and
-// `exit` gives the same deterministic exit-0 the assertion needs.
+// A shell that exits cleanly reports exited + code 0, and further input is
+// 410 (not 500).
 test "input_after_exit_is_410" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});

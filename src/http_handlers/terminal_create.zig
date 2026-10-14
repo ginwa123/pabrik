@@ -1,17 +1,4 @@
 //! `POST /api/terminal/sessions` — spawn a shell on a fresh PTY.
-//!
-//! Body: `{ cwd, shell?, cols?, rows? }` where `cwd` is an absolute
-//! directory path (empty falls back to the server process cwd — fresh
-//! standalone chats have no session cwd yet), `shell` an optional
-//! absolute shell path (`$SHELL` → `/bin/bash` → `/bin/sh` fallback
-//! when omitted/empty), and `cols`/`rows` the initial window size
-//! (default 80x24).
-//!
-//! Success: 201 `{ id, pid }`. `id` is the opaque session handle for
-//! every other terminal endpoint. Errors: 400 (bad cwd/shell/size),
-//! 404 (cwd not a directory), 429 (max 20 sessions live), 501
-//! (non-PTY OS). Idle sessions (>30min untouched, not busy) are
-//! reaped on the next create/read.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -68,9 +55,8 @@ pub fn terminalCreateHandler(
     const shell: ?[]const u8 = if (parsed.shell) |s| (if (s.len == 0) null else s) else null;
 
     // Owner for the new PTY session (plan 2026-09-25, W2.5). Server-derived
-    // from the `pabrik_session` cookie only — never a body/query/header field.
-    // Auth off (or no singleton) yields the shared sentinel, which
-    // `mayAccess` treats as "no identity" so every caller may attach.
+    // from the `pabrik_session` cookie only — never a body/query/header
+    // field.
     var owner_buf: [128]u8 = undefined;
     const owner: []const u8 = auth_common.resolveOwnerInto(&owner_buf, req.headers) orelse "";
 
@@ -113,7 +99,6 @@ pub fn terminalCreateHandler(
 // ---------------------------------------------------------------------
 // Inline tests (pure wire-shape checks; PTY spawn is covered by
 // terminal_session.zig's posix echo test + the functional harness).
-// ---------------------------------------------------------------------
 
 const testing = std.testing;
 

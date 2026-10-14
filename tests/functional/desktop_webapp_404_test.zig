@@ -1,56 +1,6 @@
-// Functional tests for the desktop `--static-dir` 404 bug.
-//
-// Zig port of `tests/functional/desktop_webapp_404_test.py` (same test
-// names, same order).
-//
-// Task: task_1789144501374_7 — "first time open desktop app work but,
-// after a while use and close and open again its 404".
-//
-// Reported symptoms were a blank window showing a bare `404 Not Found`
-// page.
-//
-// Root cause (reproduced live): the desktop extracted its embedded
-// webapp into a PER-PID temp dir, spawned a DETACHED pabrik with
-// `--static-dir <that dir>`, and then deleted the dir when the window
-// closed (`extraction.cleanup`). The daemon outlives the desktop by
-// design, so from then on it served nothing: `GET /health` was still 200
-// (an API route, independent of the static dir) while `GET /` was `404
-// Not Found`. The next desktop launch probed `/health`, saw 200,
-// attached to that daemon, and opened the webview onto the 404.
-//
-// These tests pin the wire behaviour that made the bug invisible to a
-// health-only check, using a real pabrik process against a real
-// --static-dir:
-//
-//   Test 1 — `--static-dir` serves the app; deleting the dir behind
-//           pabrik's back turns `GET /` into 404 while `/health` stays
-//           200 (this IS the bug), and restoring the dir makes `/`
-//           serve again.
-//   Test 2 — the fix's invariant: a PERSISTENT static dir survives a
-//            pabrik restart, so close-and-reopen keeps serving the app.
-//   Test 3 — a pabrik started with NO `--static-dir` has the same shape
-//            (health 200, `/` 404) — the shape the desktop must refuse to
-//            attach to.
-//
-// The desktop-side counterpart (never attach to a server that 404s `/`)
-// is locked down in `src/apps/desktop_app/attach_test.zig`; the
-// persistence of the webapp dir itself in
-// `src/apps/desktop_app/extraction_test.zig`.
-//
-// WHERE THE WEBAPP FIXTURE LIVES — `makeScratchDir`, NOT
-// `std.testing.tmpDir`:
-//
-// pytest used `tmp_path`. `std.testing.tmpDir` is not its equivalent:
-// it allocates under `<cwd>/.zig-cache/tmp/`, which for this package is
-// INSIDE the git worktree. `harness.makeScratchDir` allocates under
-// `<tmp>/pabrik-fix-…` instead — still under the OS temp root (so the
-// harness's `isSafeTmp` gate still governs the delete), but carrying a
-// prefix `reapOrphanTestPids` does NOT match, so the NEXT test's boot
-// cannot delete this fixture mid-test.
-//
-// LIFO note on the defers: `gpa.free(scratch)` is registered FIRST so
-// it runs LAST, after `cleanupExtraDir(scratch)` has finished reading
-// the slice.
+// Functional tests for the desktop `--static-dir` 404 bug. Zig port of
+// `tests/functional/desktop_webapp_404_test.py` (same test names, same
+// order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -71,13 +21,6 @@ fn writeFileAt(path: []const u8, contents: []const u8) !void {
 }
 
 /// Minimal stand-in for the extracted webapp dir.
-///
-/// `_make_webapp` in Python: create `assets/`, write `index.html`, the
-/// `.pabrik-webapp-complete` marker that always sits next to the
-/// assets, and `assets/app.js`. Called TWICE in Test 1 — once to build
-/// the fixture, once to restore it after the deliberate delete — which
-/// is why it must be idempotent about an existing directory
-/// (`createDirPath` on an existing dir is not an error).
 fn makeWebapp(root: []const u8) !void {
     const assets = try std.fs.path.join(gpa, &.{ root, "assets" });
     defer gpa.free(assets);
@@ -100,23 +43,18 @@ fn makeWebapp(root: []const u8) !void {
     }
 }
 
-/// True when `/` returns the SPA shell — the desktop's readiness test.
-///
-/// Python `h_serves_app`: `GET /` accepting `(200, 404)`, then
-/// `status == 200 and "<" in body`. The `expect` set must include 404
-/// because the assertion is "it answered at all, and the answer was the
-/// app", not "it answered 200".
+/// True when `/` returns the SPA shell — the desktop's readiness test. Python
+/// `h_serves_app`: `GET /` accepting `(200, 404)`, then `status == 200 and
+/// "<" in body`.
 fn servesApp(h: *Harness) !bool {
     var r = try h.http(io, .GET, "/", .{ .expect = &.{ 200, 404 } });
     defer r.deinit();
     return r.status == 200 and std.mem.indexOf(u8, r.text(), "<") != null;
 }
 
-// The bug, at the wire level.
-//
-// A daemon whose --static-dir was removed keeps answering /health with
-// 200 while answering / with 404. That asymmetry is why the old
-// health-only attach probe let the desktop open a 404 window.
+// The bug, at the wire level. A daemon whose --static-dir was removed keeps
+// answering /health with 200 while answering / with 404. That asymmetry is
+// why the old health-only attach probe let the desktop open a 404 window.
 test "static_dir_404s_when_the_dir_is_deleted_health_stays_200" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -202,11 +140,9 @@ test "static_dir_404s_when_the_dir_is_deleted_health_stays_200" {
     }
 }
 
-// The fix's invariant: reopening the app keeps serving it.
-//
-// Models two desktop launches against the same persistent webapp dir —
-// the dir is never deleted, so the second launch's webview gets the app
-// instead of `404 Not Found`.
+// The fix's invariant: reopening the app keeps serving it. Models two desktop
+// launches against the same persistent webapp dir — the dir is never deleted,
+// so the second launch's webview gets the app instead of `404 Not Found`.
 test "persistent_static_dir_survives_a_restart" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -256,10 +192,9 @@ test "persistent_static_dir_survives_a_restart" {
     }
 }
 
-// A pabrik with no --static-dir looks identical to the broken daemon.
-//
-// Nothing about `/health` distinguishes it, so an attach decision based
-// on health alone cannot tell a usable server from a useless one.
+// A pabrik with no --static-dir looks identical to the broken daemon. Nothing
+// about `/health` distinguishes it, so an attach decision based on health
+// alone cannot tell a usable server from a useless one.
 test "without_static_dir_health_is_200_but_root_is_404" {
     try harness.requirePabrikBin(io, gpa);
 

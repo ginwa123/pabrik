@@ -36,10 +36,7 @@ pub const Migration056UpgradeDesignPagesToFileModel = struct {
         // fresh DBs.
         try dropColumnIfExists(.{ .db = db }, allocator, "design_pages", "html");
 
-        // Ensure the 4 new position columns exist. On fresh DBs the
-        // CREATE TABLE above already declares them with the same
-        // defaults, so these are no-ops; on legacy DBs they're new
-        // columns being backfilled with sensible defaults.
+        // Ensure the 4 new position columns exist.
         try addColumnIfMissing(.{ .db = db }, allocator, "design_pages", "width", "width INTEGER NOT NULL DEFAULT 1440");
         try addColumnIfMissing(.{ .db = db }, allocator, "design_pages", "height", "height INTEGER NOT NULL DEFAULT 1024");
         try addColumnIfMissing(.{ .db = db }, allocator, "design_pages", "x", "x INTEGER NOT NULL DEFAULT 0");

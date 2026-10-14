@@ -24,19 +24,7 @@ pub const Migration103CreateWorkspaceSecrets = struct {
             \\)
         , &[_][]const u8{});
 
-        // Only ONE index, on purpose. `uq_workspace_secrets_name` is a
-        // UNIQUE index on `(workspace_id, name)`, and a unique index is an
-        // ordinary b-tree that SQLite will use for `WHERE workspace_id = ?`
-        // and for the `ORDER BY name` the list path carries. A second index
-        // on the same column pair would cost an extra write per INSERT and
-        // UPDATE for no additional lookup the first one cannot serve.
-        //
-        // One name per workspace, enforced in the database rather than only
-        // by the store's pre-check: two secrets called `GITHUB_TOKEN` in one
-        // workspace is a user mistake that deserves a clean 409, not a
-        // substitution that silently picks whichever row the planner finds
-        // first. Scoped to `workspace_id`, so a second workspace is free to
-        // reuse the same name.
+        // Only ONE index, on purpose.
         try db.exec(allocator,
             \\CREATE UNIQUE INDEX IF NOT EXISTS uq_workspace_secrets_name
             \\ON workspace_secrets(workspace_id, name)

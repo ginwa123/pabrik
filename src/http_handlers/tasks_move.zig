@@ -1,19 +1,6 @@
 //! `PATCH /api/workspaces/:workspace_id/items/:item_id/tasks/:task_id/move`.
-//!
-//! Move a task to a different kanban column (and/or reorder within
-//! its column).
-//!
-//! Body: `{column_id, position}` — both required. The frontend fires
-//! this from the drag-and-drop handler after a card is dropped on a
-//! different column (or a different slot within the same column).
-//!
-//! Response shape: `{"success": true, task_id, column_id, position}`.
-//!
-//! Layered as `useCase` (validate + move + emit SSE) and a thin
-//! handler that maps the outcome + errors to status codes / JSON.
-//!
-//! Plan: docs/superpowers/plans/2026-06-21-workspace-item-kanban.md
-//!   (Chunk 3, Task 3.7)
+//! Move a task to a different kanban column (and/or reorder within its
+//! column).
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -80,14 +67,8 @@ fn useCase(
         input.body.position,
     ) catch return error.MoveFailed;
 
-    // Emit SSE event so other connected clients refresh their
-    // kanban view. action="moved" matches the frontend's
-    // `KanbanTaskEvent` union variant. `moveTask` renumbers
-    // sibling positions in both source and destination columns —
-    // the frontend re-fetches the full column+task layout on
-    // every move, so a simple re-fetch keeps all boards in sync
-    // without patching in-place. The emit is fire-and-forget;
-    // failures are logged but do NOT fail the request.
+    // Emit SSE event so other connected clients refresh their kanban view.
+    // action="moved" matches the frontend's `KanbanTaskEvent` union variant.
     on_event_sent_kanban.onEventSendKanbanTask(allocator, .{
         .action = "moved",
         .workspace_id = input.workspace_id,
@@ -102,12 +83,9 @@ fn useCase(
         );
     };
 
-    // Chunk 5 of kanban-task-notification-icon: dragging a card to
-    // another column is the most visible "human touch" — stamp
-    // last_human_touched_at so the kanban card flips from the
-    // orange "awaiting review" dot to the green "reviewed" checkmark
-    // the moment the drop fires. Fire-and-forget: a failed stamp
-    // doesn't fail the move (the move is already committed).
+    // Chunk 5 of kanban-task-notification-icon: dragging a card to another
+    // column is the most visible "human touch" — stamp last_human_touched_at
+    // so the kanban card flips from the orange "awaiting review" dot to the
     pabrikcore.ai_mod.llm_history.updateTaskLastHumanTouchedAt(
         allocator,
         db,

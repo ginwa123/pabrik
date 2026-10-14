@@ -1,29 +1,5 @@
-//! Repair for tool-call `arguments` that a model emitted with RAW
-//! backslashes inside a JSON string literal.
-//!
-//! Windows is where this bites: an absolute path is the one string a tool
-//! call cannot avoid, and on Windows it is full of `\` separators. A model
-//! that writes `{"path":"C:\Users\me\a.go"}` instead of the RFC 8259
-//! `{"path":"C:\\Users\\me\\a.go"}` produces bytes that `std.json` rejects
-//! with `error.SyntaxError` (`\U` is not one of `"\/bfnrtu`). On Linux and
-//! macOS the same call carries `/` separators, there is nothing to escape,
-//! and the bug is invisible — which is why it reads as "Windows only".
-//!
-//! Two layers used to turn that into the much more confusing
-//! `error.MissingField`:
-//!
-//!   1. `parsing.zig` / `Agent.zig` dropped unparseable arguments and
-//!      substituted `{}` when rebuilding history. The executor then parsed
-//!      `{}` into `TextReplaceInput` and reported a missing `path`.
-//!   2. The executor's own parse failure was reported as a bare Zig error
-//!      name, so the model was told "MissingField" (send the field!) when
-//!      the real problem was "your JSON is malformed".
-//!
-//! `escapeRawBackslashes` fixes the bytes; callers stop substituting `{}`.
-//! Deliberately narrow: it only rewrites a backslash that JSON does not
-//! accept as an escape introducer. It does not guess about raw control
-//! characters, truncated arguments, markdown fences, or single quotes —
-//! those get an actionable error message instead of a silent rewrite.
+//! Repair for tool-call `arguments` that a model emitted with RAW backslashes
+//! inside a JSON string literal.
 const std = @import("std");
 const testing = std.testing;
 
@@ -43,16 +19,6 @@ fn isHexDigit(c: u8) bool {
 
 /// Rewrite every backslash inside a JSON string literal that does not
 /// introduce a legal escape into `\\`.
-///
-/// Returns a newly allocated copy whenever anything changed, `null` when
-/// `raw` contains no stray backslash (so the caller can keep its own
-/// pointer and skip the allocation). The result is NOT guaranteed to parse
-/// — the caller must re-parse and fall back to a real error message when it
-/// still does not.
-///
-/// This is a byte-level pass, not a parser: it tracks only "am I inside a
-/// string literal", which is all that is needed to decide whether a
-/// backslash is an escape or a literal separator.
 pub fn escapeRawBackslashes(allocator: std.mem.Allocator, raw: []const u8) !?[]u8 {
     var changed = false;
     // First pass: decide whether a rewrite is needed at all, so the common
@@ -185,22 +151,9 @@ fn escapeLetterForControl(c: u8) ?u8 {
     };
 }
 
-/// Re-expand control characters in a decoded file path back into the
-/// literal backslash + letter the model wrote.
-///
-/// `escapeRawBackslashes` only rewrites backslashes JSON rejects. It
-/// deliberately leaves `\n`, `\t`, `\r` and `\f` alone, because a
-/// multi-line `new_str` genuinely needs them. That leaves one hole: the
-/// reported path contains `.config\pabrik`, where `\n` is a legal escape
-/// but the model meant a separator. The arguments then parse, and the
-/// path silently becomes `…\.config<LF>alar` — a different file, with no
-/// error anywhere to explain it.
-///
-/// The reading is unambiguous in the other direction: a raw control byte
-/// is illegal inside a JSON string, so a control byte in a DECODED value
-/// can only have come from an escape sequence. And no real path contains
-/// one. So re-expanding recovers the path the model meant. Returns `null`
-/// when there is nothing to re-expand.
+/// Re-expand control characters in a decoded file path back into the literal
+/// backslash + letter the model wrote. `escapeRawBackslashes` only rewrites
+/// backslashes JSON rejects.
 pub fn reexpandPathControlChars(allocator: std.mem.Allocator, value: []const u8) !?[]u8 {
     const has_control = for (value) |c| {
         if (escapeLetterForControl(c) != null) break true;
@@ -232,9 +185,8 @@ fn parsesAsJson(raw: []const u8) bool {
 
 test "reported Windows path round-trips: raw backslashes in, real path out" {
     // The segment letters are load-bearing: `\n` and `\t` are LEGAL JSON
-    // escapes (so the repaired value decodes to an embedded newline + tab that
-    // step 2 must re-expand) while `\p`, `\o`, `\s` and `\c` are illegal. A path
-    // with no legal escape in it would make step 2 vacuous.
+    // escapes (so the repaired value decodes to an embedded newline + tab
+    // that step 2 must re-expand) while `\p`, `\o`, `\s` and `\c` are
     const raw =
         \\{"path":"C:\Users\gilang.trisetya\.config\pabrik\notes\src\test.go","old_str":"a","new_str":"b"}
     ;
@@ -256,16 +208,9 @@ test "reported Windows path round-trips: raw backslashes in, real path out" {
         try testing.expectEqualStrings("b", parsed.value.object.get("new_str").?.string);
     }
 
-    // Step 2 — `.config\pabrik\notes` decoded to a real newline + tab, because
-    // `\n` and `\t` are legal escapes the repair must not touch (a multi-line
-    // `new_str` needs them). Re-expanding them is what turns the parsed-but-
-    // corrupt path back into the path the model meant. Without this step the
-    // tool would look for a file whose name contains control characters and
-    // report "not found".
-    // legal escape the repair must not touch (a multi-line `new_str` needs
-    // it). Re-expanding it is what turns the parsed-but-corrupt path back
-    // into the path the model meant. Without this step the tool would look
-    // for a file whose name contains a newline and report "not found".
+    // Step 2 — `.config\pabrik\notes` decoded to a real newline + tab,
+    // because `\n` and `\t` are legal escapes the repair must not touch (a
+    // multi-line `new_str` needs them).
     {
         var parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, repaired, .{});
         defer parsed.deinit();
@@ -335,12 +280,7 @@ test "escapeRawBackslashes: lowercase \\users is repaired, not mistaken for a \\
 }
 
 test "escapeRawBackslashes: a Windows UNC path is repaired" {
-    // `\server\share\a.go` written fully raw. Documented limit: the UNC
-    // PREFIX is not recoverable here, because a leading `\\` is a LEGAL
-    // escape that decodes to a single backslash and the byte pass must not
-    // second-guess a legal escape. The illegal separators (`\s`, `\a`) are
-    // repaired, so the call parses and the model gets a real "file not
-    // found" naming the path it sent, instead of a SyntaxError.
+    // `\server\share\a.go` written fully raw.
     const raw =
         \\{"path":"\\server\share\a.go","old_str":"x","new_str":"y"}
     ;
@@ -385,9 +325,7 @@ test "repairToolCallArguments: repairable Windows arguments come back fixed" {
 
 test "repairToolCallArguments: unrepairable arguments return null instead of a fake {}" {
     // A truncated object (max_tokens cut mid-call) and a markdown fence are
-    // not backslash problems. Returning null is what lets the caller report
-    // the real error instead of silently substituting `{}` and blaming a
-    // missing field.
+    // not backslash problems.
     try testing.expect((try repairToolCallArguments(testing.allocator, "{\"path\":\"/tmp/a.go\",\"old_str\":")) == null);
     try testing.expect((try repairToolCallArguments(testing.allocator, "```json\n{\"path\":\"/tmp/a.go\"}\n```")) == null);
 }

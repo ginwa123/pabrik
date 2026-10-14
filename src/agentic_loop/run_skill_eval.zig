@@ -1,54 +1,5 @@
 //! The `run_skill_eval` agent tool: the one thing the agent has to do for
-//! Skill Evals to happen.
-//!
-//! ## Why this is one tool and not an orchestration the model performs
-//!
-//! The prompt rule tells the agent to call this. Everything else is code:
-//! which skills to evaluate (read from the ledger, so the agent cannot
-//! cherry-pick around the skill it had to work around), what the intrinsic
-//! verdict is (Tier 0, deterministic), where the result is stored, and what
-//! the summary says. The agent contributes exactly one decision — WHEN — and
-//! never the verdict, which is what keeps self-assessment bias out of a
-//! feature whose whole job is judging the agent's own choices.
-//!
-//! ## Zero parameters, on purpose
-//!
-//! The tool takes no arguments. That is not laziness: an argument naming the
-//! skills would be the cherry-picking hole, and a zero-parameter schema also
-//! keeps the wire surface to `properties: {}` — nothing to validate, nothing
-//! to get wrong.
-//!
-//! ## The body comes from the session's workspace
-//!
-//! A skill is a row in one workspace-scoped table, not a file in one of two
-//! directories. The body this eval hashes and analyses is read with
-//! `skills_store.getSkillByName(allocator, db, workspace_id, name)`, where
-//! `workspace_id` is resolved from `session_id` — the same row, behind the
-//! same guard, that `use_skill` materialised for the agent.
-//!
-//! That is why `skill_key` carries the workspace. Two workspaces may each
-//! hold a skill called `pdf` with different bodies, and `skill_eval_facts` is
-//! keyed on `(skill_key, content_hash, context_key)`: with a name-only key the
-//! second workspace's eval reused the first one's cached verdict, serving a
-//! judgement computed against text it never read.
-//!
-//! `args.cwd` still reaches `drift.analyse` — for the paths a body
-//! REFERENCES, not for where the body lives. See the comment at the call.
-//!
-//! ## Two tiers, one tool
-//!
-//! Tier 0 (`skill_evals_drift.zig`) is deterministic: it checks whether the
-//! paths a skill names still exist, and it runs on every eval. Tier 1
-//! (`skill_eval_judge.zig`) is the LLM judge: a fresh sub-agent per skill fills
-//! the SESSION-RELATIVE half — `relevance`, `used`, `helpfulness` — which is
-//! the only way to reach a `delete` verdict. Tier 0 structurally cannot:
-//! no amount of missing-path evidence proves a skill is worthless, because
-//! worth depends on the task.
-//!
-//! Tier 1 is OFF by default and gated on `RunArgs.judge_enabled`, because it
-//! spends tokens: one sub-agent per skill, up to `max_skills` of them. Tier 0
-//! is a complete, useful, zero-token eval on its own and is what runs unless a
-//! caller opts in.
+//! Skill Evals to happen. The prompt rule tells the agent to call this.
 
 const std = @import("std");
 const testing = std.testing;
@@ -68,9 +19,7 @@ const batch = @import("sub_agent_batch.zig");
 const migration = @import("../migrations/migration.zig");
 
 // A skill is a row in one workspace-scoped table (Migration 101), not a file
-// in one of two directories. The body is read through the same store and the
-// same workspace guard `use_skill` goes through, so this eval judges exactly
-// the text the agent was handed.
+// in one of two directories.
 const skills_store = @import("skills_store.zig");
 const workspace_scope = @import("workspace_scope.zig");
 
@@ -143,9 +92,7 @@ pub const RunArgs = struct {
     /// caller with no bus; the emit is then a no-op.
     event_bus: ?*pabrikcore.event_bus.EventBus = null,
     /// Tier 1: fan out one judge sub-agent per skill. Off by default because
-    /// it spends tokens — up to `max_skills` sub-agent runs per eval. The
-    /// deterministic half is a complete eval on its own, so nothing is lost
-    /// by leaving this off.
+    /// it spends tokens — up to `max_skills` sub-agent runs per eval.
     judge_enabled: bool = false,
     /// The judge reads code to check claims; it never writes. Kept to the
     /// read-only set so a judge cannot edit the very skill it is judging, and
@@ -182,20 +129,8 @@ fn freeJudgeCandidates(allocator: std.mem.Allocator, items: []JudgeCandidate) vo
 }
 
 /// Run the LLM judge tier over `candidates` and write the session-relative
-/// half back onto each result row.
-///
-/// Returns the number of rows a validated report reached. A judge that failed,
-/// wrote prose instead of JSON, or produced a report `validateReport` refused
-/// leaves the row's deterministic verdict exactly where it was and flips the
-/// status to `needs_human` — an unreadable report is an absence of evidence,
-/// and the deterministic half is evidence.
-///
-/// Every stored verdict comes from `skill_eval_judge.combineVerdict` over an
-/// already-validated report. There is no path from a raw `Report` to a write.
-///
-/// `!u32` rather than `u32` because building the per-row rationale allocates;
-/// the caller treats an out-of-memory as "the tier did not finish" and leaves
-/// the rows it already wrote alone, which is exactly what they say.
+/// half back onto each result row. Returns the number of rows a validated
+/// report reached.
 fn runJudgeTier(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -215,9 +150,7 @@ fn runJudgeTier(
     if (candidates.len == 0) return 0;
 
     // Emitted once, before the fan-out, so a listener can show that the
-    // session-relative half is being computed rather than sitting at 0. It
-    // carries the RUN id (not a result id) because a listener re-fetches by
-    // run, and a result id would find nothing.
+    // session-relative half is being computed rather than sitting at 0.
     skill_eval_events.emitSkillEvalEvent(allocator, args.event_bus, .{
         .action = "run_started",
         .run_id = run_id,
@@ -389,10 +322,7 @@ fn insertResult(
         rationale,
         content_at_use,
         // `sub_session_id` belongs to the LLM judge tier (it will name the
-        // sub-agent that produced the session-relative half). The transcript
-        // anchor for Tier 0 is the LEDGER's loop_index / llm_history_id, which
-        // is where it belongs — so this stays empty rather than holding a
-        // value the column does not mean.
+        // sub-agent that produced the session-relative half).
         "",
     });
 }
@@ -417,13 +347,7 @@ pub fn runEval(
     if (set.len == 0) return .{ .nothing_loaded = true };
 
     // Which workspace this SESSION belongs to, resolved once for the whole
-    // run. Skills are rows in one workspace-scoped table, so every body read
-    // below is a lookup by (workspace_id, name) and one query for the run
-    // beats one per skill.
-    //
-    // Fails closed: a session with no workspace leaves this null, and every
-    // skill then lands on the honest needs_human branch rather than being
-    // read out of SOME workspace that happens to own the name.
+    // run.
     const workspace_id = workspace_scope.resolveWorkspaceId(allocator, db, args.session_id) catch |err| blk: {
         if (logger) |l| l.warnFmt("skill eval: could not resolve a workspace for session '{s}': {s}", .{ args.session_id, @errorName(err) });
         break :blk null;
@@ -439,9 +363,8 @@ pub fn runEval(
     const run_id = try std.fmt.allocPrint(allocator, "skilleval_{d}", .{std.Io.Timestamp.now(io, .real).nanoseconds});
     errdefer allocator.free(run_id);
     // NOTE: ownership of `run_id` moves to `outcome` below. The `errdefer`
-    // above covers an early return; once the outcome exists it is the owner and
-    // the caller frees it via `deinit`. Duping it here as well leaked one
-    // allocation per run (caught by the testing allocator).
+    // above covers an early return; once the outcome exists it is the owner
+    // and the caller frees it via `deinit`.
 
     const claimed = skill_evals_db.claimRun(
         allocator,
@@ -470,10 +393,7 @@ pub fn runEval(
         return .{ .reused = true };
     }
 
-    // A run row now exists and holds the session's one-shot slot. If anything
-    // below fails, the row must not be left `running` — that would both show a
-    // permanently spinning run and, because the partial unique index still
-    // holds it, block every later eval for this session forever.
+    // A run row now exists and holds the session's one-shot slot.
     errdefer skill_evals_db.finishRun(allocator, db, run_id, "error", 0, "runEval failed mid-loop") catch {};
 
     var outcome = RunOutcome{ .run_id = run_id };
@@ -507,28 +427,19 @@ pub fn runEval(
         const result_id = try std.fmt.allocPrint(allocator, "{s}_r{d}", .{ run_id, ordinal });
         defer allocator.free(result_id);
 
-        // The identity of the question, in one string: the workspace that OWNS
-        // the skill, then its name. The workspace is load-bearing.
-        // `skill_eval_facts` is keyed on (skill_key, content_hash,
-        // context_key), and two workspaces may each hold a skill called `pdf`
-        // with different bodies — so a name-only key made the second
-        // workspace's eval read the FIRST one's cached fact and serve its
-        // verdict as if it had been computed on this body.
+        // The identity of the question, in one string: the workspace that
+        // OWNS the skill, then its name. The workspace is load-bearing.
         const skill_key = if (workspace_id) |w|
             try std.fmt.allocPrint(allocator, "{s}:{s}", .{ w, use.skill_name })
         else
             // No workspace means no row can be found for anything, so this
-            // run's results are all needs_human regardless. The key still has
-            // to be stable, and `<no-workspace>` is not a shape a workspace id
-            // can take, so these rows can never be confused with a real
-            // workspace's results for the same skill name.
+            // run's results are all needs_human regardless.
             try std.fmt.allocPrint(allocator, "<no-workspace>:{s}", .{use.skill_name});
         defer allocator.free(skill_key);
 
         // The current body is the row `use_skill` materialised for the agent,
         // read through the same store and the same workspace guard — so there
         // is no local-then-global walk left to disagree with, and no way to
-        // evaluate a body from a workspace this session does not belong to.
         var owned_row: ?skills_store.SkillRow = null;
         defer if (owned_row) |r| skills_store.freeSkillRow(allocator, r);
         var missing_reason: []const u8 = "";
@@ -566,8 +477,7 @@ pub fn runEval(
         }
         // Byte-exact, and deliberately so: this slice is hashed into the
         // identity of the question AND stored as the `content_at_use` a human
-        // reads to judge the verdict. No trimming, no frontmatter stripping,
-        // no newline normalisation anywhere on this path.
+        // reads to judge the verdict.
         const body = owned_row.?.content;
 
         var hash_buf: [64]u8 = undefined;
@@ -585,13 +495,7 @@ pub fn runEval(
         };
 
         // `args.cwd` still belongs here, and it is no longer about where the
-        // body LIVES — the body is a row and has no location. `analyse`
-        // resolves the paths the body REFERENCES ("read src/foo.zig") against
-        // a repo root, and a skill body is a set of claims about a codebase,
-        // which is still a directory. It is the SESSION's repo rather than the
-        // server process's for the reason it always was: judging against the
-        // process cwd reports every referenced path as missing whenever the
-        // server was started somewhere else.
+        // body LIVES — the body is a row and has no location.
         var analysis = try drift.analyse(allocator, io, args.cwd, body);
         defer analysis.deinit(allocator);
 
@@ -619,23 +523,14 @@ pub fn runEval(
                 if (skill_evals_db.readFact(allocator, db, skill_key, fact_key_hash, context_key) catch null) |fact| {
                     defer fact.deinit(allocator);
                     verdict = skill_evals_db.decideVerdict(fact.verdict, false);
-                    // Link the result to the fact it reused. Without this the
-                    // result row carries a verdict with no evidence: the LEFT
-                    // JOIN in `listResults` finds nothing, so the scores read 0
-                    // and `shared_fact` reports false for exactly the rows that
-                    // WERE shared. `fact.id` is freed by the `defer` above, so
-                    // it must be duped, not aliased.
+                    // Link the result to the fact it reused.
                     owned_fact_id = try allocator.dupe(u8, fact.id);
                     intrinsic_fact_id = owned_fact_id.?;
                 }
             },
             .held => {
-                // Someone else is computing the same question right now — or a
-                // crashed owner left a lease behind. Try to take over an
-                // EXPIRED lease; a live one is left alone so the work is not
-                // duplicated. Without this a single crash poisons the fact for
-                // that question forever, because the unique index blocks every
-                // later claim and nothing ever reclaims the row.
+                // Someone else is computing the same question right now — or
+                // a crashed owner left a lease behind.
                 const stolen = skill_evals_db.stealFact(
                     allocator,
                     db,
@@ -673,9 +568,7 @@ pub fn runEval(
         try insertResult(allocator, db, result_id, run_id, skill_key, use.skill_name, args.session_id, "done", verdict, intrinsic_fact_id, body_hash, body, rationale);
 
         // Everything the judge needs is in scope right here, so the candidate
-        // is captured now rather than re-derived later. `body` is still owned
-        // by this iteration, which is why the prompt is BUILT now and the body
-        // is not stored.
+        // is captured now rather than re-derived later.
         if (args.judge_enabled) {
             if (task_context.len == 0) {
                 task_context = skill_evals_db.sessionTaskContext(allocator, db, args.session_id, 4_000) catch
@@ -726,22 +619,17 @@ pub fn runEval(
 
     // Tier 1, after the deterministic half is on disk and before the run is
     // closed: the judge UPDATEs rows that already exist, so it has to run
-    // while the run is still open. A run that reaches here with no candidates
-    // (nothing was evaluated, or the tier is off) skips it entirely.
+    // while the run is still open.
     if (args.judge_enabled and candidates.items.len > 0) {
         // An out-of-memory part-way through is NOT a reason to fail the eval:
-        // the deterministic half is already stored and correct. Whatever rows
-        // the judge reached say `done`; the rest still say whatever Tier 0
-        // said, with their session-relative scores at 0.
+        // the deterministic half is already stored and correct.
         const judged = runJudgeTier(allocator, io, db, logger, args, run_id, candidates.items) catch |err| blk: {
             if (logger) |l| l.warnFmt("skill eval: judge tier did not finish: {s}", .{@errorName(err)});
             break :blk 0;
         };
         if (logger) |l| l.debugFmt("skill eval: {d} of {d} judge report(s) validated for run {s}", .{ judged, candidates.items.len, run_id });
         // The counts describe the deterministic pass, which is what the
-        // summary reports. A judge that was refused did not change a verdict,
-        // so folding it into `needs_human` here would double-count rows that
-        // are already counted.
+        // summary reports.
     }
 
     skill_evals_db.finishRun(allocator, db, run_id, "done", 0, "") catch |err| {
@@ -906,10 +794,7 @@ test "a skill this workspace does not have is an honest needs_human, not a guess
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // In the ledger, but this workspace holds no skill by that name. Nothing
-    // is unreadable any more — there is simply no row to read, and saying so
-    // is the difference between a finding a human can act on and one that
-    // sends them looking for a file that does not exist.
+    // In the ledger, but this workspace holds no skill by that name.
     try seedWorkspace(alloc, &ctx.db, "sess_1", "ws_a");
     try seedLoaded(alloc, &ctx.db, ctx.threaded.io(), "sess_1", "definitely-not-a-real-skill-xyz");
     const out = try runEval(alloc, ctx.threaded.io(), &ctx.db, null, .{
@@ -938,10 +823,9 @@ test "a skill this workspace does not have is an honest needs_human, not a guess
 }
 
 test "a session with no workspace says that, instead of blaming a body" {
-    // Two different problems, two different fixes: "no workspace" is a
-    // wiring problem the user can fix, "the file is gone" sends them hunting
-    // for a file that was never where they thought it was. Collapsing the two
-    // is the lie this asserts against.
+    // Two different problems, two different fixes: "no workspace" is a wiring
+    // problem the user can fix, "the file is gone" sends them hunting for a
+    // file that was never where they thought it was.
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -1010,11 +894,7 @@ test "an empty skill body is not evaluated as if it were a good one" {
 }
 
 test "the same skill name in two workspaces gets its own fact, not the other's verdict" {
-    // The regression this pins. `skill_key` used to be "global:<name>", and
-    // `skill_eval_facts` is keyed on (skill_key, content_hash, context_key):
-    // two workspaces each holding a skill called `pdf` with DIFFERENT bodies
-    // computed one fact key, so the second workspace's eval read the first
-    // one's cached verdict and reported it against a body it never read.
+    // The regression this pins.
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -1204,27 +1084,12 @@ test "max_skills = 0 evaluates nothing and does not crash" {
 }
 
 // ─── the publish / reuse paths ───────────────────────────────────────────
-//
-// These need a skill that actually EXISTS in the session's workspace,
-// because every test above names one that does not and therefore exits at the
-// "no body" branch. That branch is ~15% of runEval; the publish, reuse and
-// changed-body paths below are the rest, and they are where the fact cache
-// lives.
-//
-// Skills are rows now, so the fixtures are rows too: `seedSkillRow` writes
-// Migration 101's tables on the same in-memory database `setupDb` migrated,
-// which is the pattern `skills_store.zig` uses for its own fixtures. This is
-// a READ path in `runEval`, so seeding SQL directly is honest — the fixtures
-// do not depend on the store's write-side normalisation, so a bug there
-// surfaces in `skills_store`'s tests instead of being hidden by these.
+// These need a skill that actually EXISTS in the session's workspace, because
+// every test above names one that does not and therefore exits at the "no
 
 /// Give `session_id` a workspace through the exact task link a kanban task
 /// session has (`workspace_item_tasks.id` IS the session id) — the first
-/// branch of `workspace_scope.resolveWorkspaceId`. `setupDb` runs every
-/// migration, so these are the real tables and real columns; everything not
-/// named defaults. Calling it twice with the same `ws_id` and two session ids
-/// puts both sessions in ONE workspace, which is the case the fact cache is
-/// supposed to share across.
+/// branch of `workspace_scope.resolveWorkspaceId`.
 fn seedWorkspace(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8, ws_id: []const u8) !void {
     try db.exec(alloc,
         \\INSERT OR IGNORE INTO workspaces (id, name) VALUES (?, 'skill eval fixture')
@@ -1240,15 +1105,7 @@ fn seedWorkspace(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id
     , &.{ session_id, item_id });
 }
 
-/// One row in `skills`, which is now the whole of a skill. `body` is stored
-/// VERBATIM — frontmatter, indentation and trailing newline included — because
-/// the eval hashes the bytes and a normalising fixture would test a body no
-/// editor can produce.
-///
-/// The id is namespaced by workspace as well as by name, which is not
-/// decoration: the same skill name in two workspaces is TWO rows, and a
-/// fixture that minted both from the name alone would silently `OR REPLACE`
-/// the first one away.
+/// One row in `skills`, which is now the whole of a skill.
 fn seedSkillRow(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, ws_id: []const u8, name: []const u8, body: []const u8) !void {
     const id = try std.fmt.allocPrint(alloc, "sk_test_{s}_{s}", .{ ws_id, name });
     defer alloc.free(id);
@@ -1367,10 +1224,7 @@ test "a second session reuses the shared fact AND links the result to it" {
     defer frow.deinit(alloc);
     try testing.expectEqualStrings("1", frow.values[0]);
 
-    // BOTH results must carry the fact id. This is the assertion that catches
-    // the `.reusable` branch dropping it: without the link the LEFT JOIN finds
-    // nothing, the scores read 0, and `shared_fact` reports false for exactly
-    // the row that WAS shared.
+    // BOTH results must carry the fact id.
     var rq = try ctx.db.query(alloc,
         "SELECT COUNT(*) FROM skill_eval_results WHERE intrinsic_fact_id != ''", &.{});
     defer rq.deinit();
@@ -1508,10 +1362,7 @@ test "a run that fails mid-loop is finalized as error, not left running" {
 }
 
 test "judge_enabled with no live agent context still completes the deterministic half" {
-    // A unit test has no singleton, so no sub-agent can run. The point of the
-    // guard at the top of `runJudgeTier` is that this is a SKIP, not a crash
-    // and not a lost eval: the deterministic result is still written, still
-    // says what Tier 0 said, and the run still closes as `done`.
+    // A unit test has no singleton, so no sub-agent can run.
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -1573,11 +1424,8 @@ test "the judge tier is off unless a caller opts in" {
 }
 
 test "a result row stores the exact body its base_content_hash was computed from" {
-    // `content_at_use` existed in the schema from the start and had exactly one
-    // reference in the whole repo: the CREATE TABLE. So the eval could refuse a
-    // verdict as stale (the hash is persisted) and could never show what the
-    // body was. This asserts the two agree, which is what makes the staleness
-    // refusal explicable rather than mysterious.
+    // `content_at_use` existed in the schema from the start and had exactly
+    // one reference in the whole repo: the CREATE TABLE.
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();

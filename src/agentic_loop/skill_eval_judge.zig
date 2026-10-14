@@ -1,38 +1,5 @@
 //! The Skill Evals judge: a fresh sub-agent per skill, filling the
 //! SESSION-RELATIVE half of the rubric.
-//!
-//! ## What Tier 0 cannot do
-//!
-//! `skill_evals_drift.zig` checks whether the paths a skill names still exist.
-//! That is intrinsic — it depends only on the body and the code state — and it
-//! is structurally incapable of reaching `delete`, because no amount of
-//! missing-path evidence proves a skill is worthless. "Was this the right
-//! skill for this task, did the agent actually use it, did it help" needs the
-//! session, and the session is what a sub-agent gets a fresh read of.
-//!
-//! ## The trust boundary
-//!
-//! `parseReport` turns generated TEXT into a `Report` and nothing else. It
-//! does not decide whether that report may be believed. That is
-//! `skill_evals_db.validateReport`, and the caller MUST run every parsed
-//! report through it before storing anything. This module never writes to a
-//! database — it cannot, it has no handle — so the boundary cannot be bypassed
-//! from here even by accident.
-//!
-//! ## Unparseable means `needs_human`, never a guess
-//!
-//! `parseReport` returns null for anything it cannot read as a JSON object. A
-//! judge that said something fluent and wrong is the single most expensive
-//! failure this feature can have, so the only fallback is "a human looks at
-//! this". There is no partial credit, no default verdict, no "probably keep".
-//!
-//! ## A score that does not fit the rubric is made to FAIL validation
-//!
-//! The parser maps a score that is negative, fractional, or above 255 to the
-//! sentinel 255 rather than to 0. 0 is a valid (bad) score; 255 is not a score
-//! at all, so `validateReport` refuses the report. Clamping down to 0 would let
-//! a malformed report pass as a confidently-bad one, and clamping up to 3 would
-//! let it pass as a confidently-good one. Both would be a guess.
 
 const std = @import("std");
 const skill_evals_db = @import("skill_evals_db.zig");
@@ -73,12 +40,9 @@ fn clip(allocator: std.mem.Allocator, s: []const u8, max: usize) ![]u8 {
     return std.fmt.allocPrint(allocator, "{s}\n… [{d} more bytes omitted]", .{ s[0..max], s.len - max });
 }
 
-/// Build the instruction for one judge sub-agent.
-///
-/// The body is embedded verbatim (clipped) rather than described, because the
-/// judge's whole job is to read it. The output contract is spelled out as a
-/// literal template so the parser and the prompt cannot disagree about a field
-/// name — the JSON schema below IS the `Report` shape.
+/// Build the instruction for one judge sub-agent. The body is embedded
+/// verbatim (clipped) rather than described, because the judge's whole job is
+/// to read it.
 pub fn buildPrompt(allocator: std.mem.Allocator, ctx: JudgeContext) ![]u8 {
     const body = try clip(allocator, ctx.skill_body, 24_000);
     defer allocator.free(body);
@@ -165,11 +129,6 @@ pub fn buildPrompt(allocator: std.mem.Allocator, ctx: JudgeContext) ![]u8 {
 }
 
 /// A parsed report plus the memory backing every string in it.
-///
-/// An arena rather than a field-by-field free list: a `Report` has twelve
-/// fields and a findings array whose length only the JSON knows, so any manual
-/// ownership scheme would be a place to forget one. `deinit` is the only
-/// correct way to release it, and it cannot be half-done.
 pub const ParsedReport = struct {
     report: Report,
     arena: std.heap.ArenaAllocator,
@@ -261,11 +220,6 @@ fn firstFenceBody(trimmed: []const u8) ?[]const u8 {
 }
 
 /// Extract the JSON object from a judge's reply.
-///
-/// Tries the fenced block first (what the prompt asks for), then the whole
-/// trimmed text (a judge that ignored the fence), then the outermost brace
-/// span (a judge that wrapped it in a sentence). Returns null when none of
-/// them parses into an object — never a partially-filled report.
 fn extractJsonObject(allocator: std.mem.Allocator, text: []const u8) ?std.json.Parsed(std.json.Value) {
     const trimmed = std.mem.trim(u8, text, &std.ascii.whitespace);
     if (trimmed.len == 0) return null;
@@ -289,13 +243,8 @@ fn extractJsonObject(allocator: std.mem.Allocator, text: []const u8) ?std.json.P
 }
 
 /// Turn a judge's reply into a `Report`, or null when it cannot be read.
-///
 /// Returns null — never a defaulted report — when the text is not a JSON
-/// object. The caller records `needs_human`; it does not retry, guess, or fall
-/// back to a default verdict.
-///
-/// The returned report is NOT yet trustworthy. It must go through
-/// `skill_evals_db.validateReport` before anything is stored.
+/// object.
 pub fn parseReport(allocator: std.mem.Allocator, text: []const u8) !?ParsedReport {
     var arena = std.heap.ArenaAllocator.init(allocator);
     errdefer arena.deinit();
@@ -333,17 +282,8 @@ pub fn parseReport(allocator: std.mem.Allocator, text: []const u8) !?ParsedRepor
     };
 }
 
-/// Combine the deterministic verdict with a validated judge report.
-///
-/// The judge's verdict can only ever ESCALATE, and only in one direction. It
-/// may reach `delete` — which is the entire reason this tier exists and which
-/// Tier 0 structurally cannot do — but it may never soften a deterministic
-/// `update`/`rewrite`/`merge` into a `keep`. A confident-sounding judge must
-/// not be able to talk the system out of a fact it actually checked.
-///
-/// A report that did not validate is `needs_human` whatever it claimed, and
-/// the intrinsic verdict is kept: an unreadable report is an absence of
-/// evidence, and the deterministic half is evidence.
+/// Combine the deterministic verdict with a validated judge report. The
+/// judge's verdict can only ever ESCALATE, and only in one direction.
 pub fn combineVerdict(intrinsic: Verdict, validation: skill_evals_db.Validation) Verdict {
     if (validation.downgraded) return intrinsic;
     if (validation.verdict == .delete) return .delete;

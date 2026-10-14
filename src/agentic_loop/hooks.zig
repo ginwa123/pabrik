@@ -1,30 +1,4 @@
 //! Lua hooks: global + per-project single-file hooks.
-//!
-//! Two tiers, each an optional `register_hook.lua` whose `init(event, data)`
-//! runs around every tool call:
-//!   1. global:  `<config_dir>/hooks/register_hook.lua`
-//!   2. project: `<cwd>/.pabrik/hooks/register_hook.lua` (the tool call's cwd)
-//!
-//! The global hook runs first, then the project hook sees whatever the
-//! global hook left (modified args / replaced output chain forward). The
-//! first `deny` wins and stops the chain. A `mock` (pre) also stops the
-//! chain and skips the real tool.
-//!
-//!   event = "pre_tool_use"  with data { tool_name, arguments, session_id, cwd, model }
-//!   event = "post_tool_use" with data { tool_name, arguments, output, session_id, cwd, model }
-//!
-//! The hook returns nil (no-op) or a table: `{ deny = reason }`,
-//! `{ arguments = new_json }` (pre only, re-validated as JSON),
-//! `{ output = text }` (pre = mock without running the tool,
-//! post = replace the tool output).
-//!
-//! Everything fails open: missing file, missing `init`, Lua error, or a
-//! bad return shape logs a line and behaves as if no hook existed. Only
-//! an explicit `deny`/`arguments`/`output` table changes behavior.
-//!
-//! Lua is vendored (see `vendor/lua/README.vendor` + `build.zig`
-//! `linkVendoredLua`) and compiled for every target, so hooks work on
-//! Linux, macOS, and Windows with no system dependency.
 
 const std = @import("std");
 const pabrik = @import("pabrikcore");
@@ -115,10 +89,8 @@ pub fn resolveProjectHookFile(allocator: std.mem.Allocator, cwd: []const u8) !?[
     return full;
 }
 
-/// Run the pre-tool hooks: global first, then project (which sees the
-/// global hook's modifications). First `deny` or `mock` stops the chain.
-/// Always returns a result (never errors beyond OOM): any hook problem
-/// degrades to `.allow`.
+/// Run the pre-tool hooks: global first, then project (which sees the global
+/// hook's modifications). First `deny` or `mock` stops the chain.
 pub fn runPreHook(
     allocator: std.mem.Allocator,
     logger: *Logger,
@@ -633,12 +605,6 @@ fn emptyHomeEnv(allocator: std.mem.Allocator, tmp: *std.testing.TmpDir) !std.pro
 }
 
 /// Test helper: fake-HOME env map with the REAL global hooks dir populated.
-///
-/// Resolves the dir via getHooksDir (not a hardcoded suffix), so it is
-/// platform-correct: `~/.config` on Linux, `~/Library/...` on macOS,
-/// `%APPDATA%` on Windows. The caller passes the home tmpdir + its
-/// absolute path; the helper creates an `appdata` subdir backing
-/// %APPDATA% and puts both vars. Returns the env map (caller deinits).
 pub fn globalHookEnvForTest(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -787,9 +753,7 @@ test "hooks: empty cwd skips project tier" {
 
 test "hooks: long-bracket args with backslashes survive verbatim" {
     // Windows paths (`C:\...`) inside Lua short strings break on escape
-    // processing (`\U` is invalid). Long brackets ([[...]]) disable it,
-    // so JSON-escaped backslashes (`\\`) arrive intact for the tool arg
-    // parser. This runs everywhere; on Windows CI it guards the real path.
+    // processing (`\U` is invalid).
     const allocator = testing.allocator;
     var lg = testLogger(allocator);
     var tmp = testing.tmpDir(.{});

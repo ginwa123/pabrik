@@ -8,17 +8,9 @@ const tags_validation = @import("tags_validation.zig");
 const image_urls_validation = @import("image_urls_validation.zig");
 const video_urls_validation = @import("video_urls_validation.zig");
 
-/// PUT /api/workspaces/tasks/:task_id - Update task by ID only (no workspace/item needed).
-///
-/// Body: { name?, session_id?, description?, tags?, image_urls?, cwd? }.
-/// Standard fields keep the existing cascade paths.
-///
-/// NOTE: the routine fields (`schedule`, `initial_prompt`, `enabled`)
-/// were deleted with the per-task `routines` table (Migration 084,
-/// plan 2026-09-10-workspace-items-routines). Routines are now
-/// first-class workspace items — see `workspace_routines_update.zig`.
-/// Unknown body fields are ignored (`ignore_unknown_fields = true`),
-/// so old clients sending routine fields get a plain task update.
+/// PUT /api/workspaces/tasks/:task_id - Update task by ID only (no
+/// workspace/item needed). Body: { name?, session_id?, description?, tags?,
+/// image_urls?, cwd? }.
 pub fn tasksUpdateByIdHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     return updateTaskHandler(ctx, req, res);
 }
@@ -42,19 +34,14 @@ pub const TaskUpdateError = error{
     /// too long, or contains forbidden characters (only
     /// [a-zA-Z0-9_-] allowed). See tags_validation.zig.
     InvalidTags,
-    /// Per-task cwd validation (Migration 070 — kanban-cwd-session-
-    /// optional plan). Mirrors the same errors as the create
-    /// handler — 4 KiB cap, absolute-path requirement, no control
-    /// characters. Existence of the path is NOT validated (OS-
-    /// level concern surfaced by the agent's first cwd-using
-    /// tool call).
+    /// Per-task cwd validation (Migration 070 — kanban-cwd-session- optional
+    /// plan).
     CwdTooLong,
     CwdNotAbsolute,
     CwdContainsControlChar,
-    /// Image urls validation (Migration 069 — kanban image urls
-    /// column). Mirrors the create handler's errors — malformed
-    /// data URL prefix (400) or the 10 MB total cap (413).
-    /// Plan: docs/superpowers/plans/2026-08-24-kanban-task-image-urls-read-path.md
+    /// Image urls validation (Migration 069 — kanban image urls column).
+    /// Mirrors the create handler's errors — malformed data URL prefix (400)
+    /// or the 10 MB total cap (413).
     InvalidImageUrls,
     ImageUrlsTooLarge,
     /// Video urls validation (Migration 090). Same contract with
@@ -143,11 +130,9 @@ fn updateTaskHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: 
         });
     };
 
-    // Chunk 5 of kanban-task-notification-icon: every rename/edit/pin
-    // counts as a human touch — stamp last_human_touched_at so the
-    // kanban card flips from the orange "awaiting review" dot to the
-    // green "reviewed" checkmark. Fire-and-forget: a failed stamp
-    // doesn't fail the rename (the rename is already committed).
+    // Chunk 5 of kanban-task-notification-icon: every rename/edit/pin counts
+    // as a human touch — stamp last_human_touched_at so the kanban card flips
+    // from the orange "awaiting review" dot to the green "reviewed"
     ai_mod.llm_history.updateTaskLastHumanTouchedAt(
         allocator,
         sqlite_db,
@@ -171,19 +156,7 @@ fn useCase(allocator: std.mem.Allocator, input: TaskUpdateInput) TaskUpdateError
     const task_id = input.task_id;
 
     // Description branch. When `body.description` is present (non-null),
-    // overwrite the column with the new value. Empty string is the
-    // canonical "no description" sentinel and IS persisted (NOT
-    // skipped) — the user actively cleared the field, which the UI
-    // renders as the "Add a description…" placeholder. Null means
-    // "leave unchanged" (the caller didn't include the field in the
-    // PUT body). Migration 062 added the column.
-    //
-    // We use a dynamic SQL builder + parallel `bind_values` list
-    // (single `db.exec` call) per PR #101 review feedback. The
-    // empty-string case uses a SQL '' literal (NOT a `?` bind)
-    // because `SqliteBackend.exec` binds empty `[]const u8` slices
-    // as SQL NULL, which would fail the column's NOT NULL DEFAULT ''
-    // constraint — see memory `sqlite-backend-empty-slice-binds-as-null`.
+    // overwrite the column with the new value.
     if (input.body.description) |desc| {
         var sql_buf: std.ArrayList(u8) = .empty;
         defer sql_buf.deinit(allocator);
@@ -205,15 +178,6 @@ fn useCase(allocator: std.mem.Allocator, input: TaskUpdateInput) TaskUpdateError
     }
 
     // Tags branch (Migration 067 — kanban task tags feature).
-    // Same shape as description: present (non-null) means
-    // overwrite; empty string is the canonical "no tags"
-    // sentinel and IS persisted (user actively cleared the
-    // tags); null means "leave unchanged".
-    //
-    // The dynamic SQL builder pattern matches description above —
-    // the empty-string case uses a SQL '' literal to avoid the
-    // empty-slice-binds-as-NULL footgun. See memory
-    // `sqlite-backend-empty-slice-binds-as-null`.
     if (input.body.tags) |raw_tags| {
         // Validate + normalize. Returns a JSON-encoded array
         // string ('' when no tags). Borrowed from the per-request
@@ -243,22 +207,10 @@ fn useCase(allocator: std.mem.Allocator, input: TaskUpdateInput) TaskUpdateError
     }
 
     // Image urls branch (Migration 069 — kanban image urls column).
-    // Same shape as description + tags: present (non-null) means
-    // overwrite; empty string is the canonical "no images" sentinel
-    // and IS persisted (user actively removed the images); null
-    // means "leave unchanged".
-    //
-    // The dynamic SQL builder pattern matches description + tags
-    // above — the empty-string case uses a SQL '' literal to avoid
-    // the empty-slice-binds-as-NULL footgun. See memory
-    // `sqlite-backend-empty-slice-binds-as-null`.
-    // Plan: docs/superpowers/plans/2026-08-24-kanban-task-image-urls-read-path.md
     if (input.body.image_urls) |raw_urls| {
         // Validate. Returns the already-joined `||`-delimited string
-        // (borrowed from the per-request arena; arena reaps it on
-        // request teardown). Mirrors the create handler's mapping
-        // (task_create.zig) so a value accepted at create time is
-        // also accepted at update time.
+        // (borrowed from the per-request arena; arena reaps it on request
+        // teardown).
         const validated_urls = image_urls_validation.validateImageUrls(raw_urls) catch |err| return switch (err) {
             error.ImageUrlsTooLarge => error.ImageUrlsTooLarge,
             error.InvalidImageUrl => error.InvalidImageUrls,
@@ -311,16 +263,8 @@ fn useCase(allocator: std.mem.Allocator, input: TaskUpdateInput) TaskUpdateError
         input.db.exec(allocator, sql_buf.items, bind_values.items) catch return error.FailedToUpdateTask;
     }
 
-    // Per-task cwd branch (Migration 070 — kanban-cwd-session-
-    // optional plan). Same shape as description + tags: present
-    // (non-null) means overwrite; empty string is the canonical
-    // "no per-task cwd" sentinel and IS persisted (user actively
-    // cleared the cwd); null means "leave unchanged".
-    //
-    // Same validation as the create handler — absolute path,
-    // ≤ 4 KiB, no control characters. Existence is NOT checked
-    // here (OS-level concern surfaced by the agent's first
-    // cwd-using tool call).
+    // Per-task cwd branch (Migration 070 — kanban-cwd-session- optional
+    // plan).
     if (input.body.cwd) |raw_cwd| {
         // Reuse the create-handler validation. Mirrors the create
         // path exactly so a value that's accepted at create time
@@ -351,12 +295,7 @@ fn useCase(allocator: std.mem.Allocator, input: TaskUpdateInput) TaskUpdateError
     }
 
     // Conditional split: route name updates through the cascade
-    // (updateTaskName → updateSessionName → SSE broadcast). The
-    // legacy `session_id` body field is accepted for backward
-    // compatibility (older client builds may still send it) but
-    // is a no-op — `task.id` IS the session id per the
-    // `task.id == session_id` convention (Migration 052 dropped
-    // the redundant column).
+    // (updateTaskName → updateSessionName → SSE broadcast).
     if (input.body.name) |n| {
         llm_history.updateTaskName(allocator, input.db, task_id, n) catch {
             return error.FailedToUpdateTask;
@@ -366,20 +305,6 @@ fn useCase(allocator: std.mem.Allocator, input: TaskUpdateInput) TaskUpdateError
     return .{ .task_id = task_id };
 }
 
-// ===== Tests merged from task_update_test.zig (2026-09-11 flatten) =====
-//
-// The contracts this file used to assert were all text-shaped: "does the
-// source contain `llm_history.updateTaskName`", "is the `tasks` segment a
-// literal", "does this route text appear above that one". They now live
-// where the thing they describe is observable:
-//
-//   * Rename cascade (task row AND `sessions.name`, plus the SSE
-//     `session.updated` fan-out) is an end-to-end behaviour of
-//     `PUT /api/workspaces/tasks/:id` — see
-//     `tests/functional/` and `llm_history.updateTaskName`'s own tests.
-//   * Route resolution for the id-only task PUT is asserted where the
-//     table is built: `http_routes.zig` calls `registerAllOn` on a bare
-//     `Router` and requires `matchRoute("PUT", "/api/workspaces/tasks/task_1")`
-//     to select `tasksUpdateByIdHandler` with NO `workspace_id` in
-//     `req.params` — the half-matched `workspace_id="tasks"` leftover was
-//     the original rename-404 bug.
+// ===== Tests merged from task_update_test.zig (2026-09-11 flatten) ===== The
+// contracts this file used to assert were all text-shaped: "does the source
+// contain `llm_history.updateTaskName`", "is the `tasks` segment a literal",

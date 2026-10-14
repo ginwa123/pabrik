@@ -27,12 +27,4 @@ pub const status_pull_request_tool = status_pull_request.status_pull_request_too
 
 // Path validation: `helpers.path_validate.invalidPathReason` is the single
 // implementation, and every path-taking agent tool calls it before its first
-// `std.fs` call. That guard is load-bearing on Windows, where a malformed NT
-// name (`C:\foo*.txt`, `C:foo\bar`, a reserved device name) makes std's Io
-// backend call `ntstatusBug()` and panic, taking the process with it — which is
-// exactly why it cannot be observed from a Linux test.
-//
-// The validator's own case table (Windows-only names, NUL and control bytes,
-// empty) lives in the tests beside it, in `remove_file.zig`. A new
-// path-taking tool has to call the helper before its first `std.fs` call
-// because nothing else will notice when it does not.
+// `std.fs` call.

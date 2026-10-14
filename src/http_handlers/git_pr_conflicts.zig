@@ -7,44 +7,15 @@ const pr_provider = pabrik_core.pr_provider;
 const run_captured = @import("helpers").run_captured;
 
 // ── What this is for ──────────────────────────────────────────────────────
-//
 // The PR tab knows a PR is `mergeable=CONFLICTING` but nothing about *which*
 // files stop it merging, so the user gets a red badge and a link to the
-// forge's web editor. Neither forge can fill that gap:
-//
-//   • GitHub REST `GET /repos/{o}/{r}/pulls/{n}/files` lists every changed
-//     file, not the conflicting ones, and GraphQL's `PullRequest` type has no
-//     conflicting-files field either.
-//   • GitLab's `GET /projects/:id/merge_requests/:iid` exposes `changes` (the
-//     diff) and a `detailed_merge_status` string — again no file list.
-//
-// GitHub's own "Resolve conflicts" tab computes the list server-side with a
-// three-way merge. So do we: `git merge-tree` runs the same merge locally, on
-// refs the user already has, with no forge CLI, no network and no auth — and
-// it behaves identically for GitHub, self-hosted GitLab and the `generic`
-// provider.
-//
-// ## The output contract (verified on git 2.55.0)
-//
-//     $ git merge-tree -z --write-tree --name-only <base> <head>
-//     <tree-OID>\0<path>\0<path>\0\0<informational messages…>
-//     exit 0 → clean, exit 1 → conflicts, anything else → failure
-//
-// Records are NUL-separated, so a path containing a newline cannot desync the
-// parser. The conflicted-file section is terminated by an **empty record**;
-// everything after it is git's human-readable `Auto-merging …` chatter, which
-// [`parseConflictPaths`] stops at.
 
 /// Cap on the returned conflict list. A pathological history (two branches
 /// that both rewrote the whole tree) can produce thousands of paths; the
-/// payload is a UI list, not a report. `truncated` says so rather than
-/// silently dropping paths.
+/// payload is a UI list, not a report.
 pub const MAX_CONFLICT_FILES: usize = 500;
 
-/// Wall-clock budget per git invocation. `merge-tree` on a large repo is a
-/// few hundred milliseconds; anything past this is a wedged child, and
-/// `run_captured` kills the process group at the deadline so a worker-pool
-/// thread cannot be held hostage.
+/// Wall-clock budget per git invocation.
 pub const GIT_TIMEOUT_MS: u32 = 20_000;
 
 /// Per-stream capture cap. The conflicted-file section is bounded by
@@ -72,9 +43,8 @@ pub const ConflictPaths = struct {
 };
 
 /// Outcome of one git invocation: exit code + both streams. `stdout`/`stderr`
-/// stay owned by the caller.
-/// Free every buffer [`parseConflictPaths`] allocated. Each path is its own
-/// allocation, so the slice array alone is not enough to release the result.
+/// stay owned by the caller. Free every buffer [`parseConflictPaths`]
+/// allocated.
 pub fn deinitConflictPaths(allocator: std.mem.Allocator, parsed: ConflictPaths) void {
     for (parsed.files) |f| allocator.free(f);
     allocator.free(parsed.files);
@@ -96,13 +66,6 @@ const GitRun = struct {
 };
 
 /// Run one `git -C <path> …` and hand back its streams.
-///
-/// Every spawn goes through `helpers.run_captured`: hand-rolling the spawn +
-/// wait inside a handler SIGABRTs the whole server on an EBADF pipe close,
-/// deadlocks when git writes more than one pipe buffer to stderr, and has no
-/// deadline at all (see that module's header for the three production incidents
-/// it was extracted from). The static test at the bottom of this file greps for
-/// the hand-rolled form, so do not spell it out here or in any comment.
 fn runGit(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -149,18 +112,6 @@ fn refExists(allocator: std.mem.Allocator, io: std.Io, path: []const u8, ref: []
 }
 
 /// First candidate base ref that resolves, else `error.BaseRefNotFound`.
-///
-/// Interleaves remote-tracking and bare names (`origin/main`, `main`,
-/// `origin/master`, …) so the remote-tracking ref always wins when both
-/// exist: the forge merged against `origin/main`, and a local `main` can be
-/// arbitrarily far behind it.
-///
-/// No `git fetch` here on purpose. A panel that mutates refs, hits the network
-/// and can block on a credential prompt is worse than an answer computed from
-/// what the user already has — and when the ref really is missing the handler
-/// says "run `git fetch`" instead of guessing.
-///
-/// Returned slice is owned by the caller.
 fn resolveBaseRef(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -199,11 +150,7 @@ fn revParseShort(allocator: std.mem.Allocator, io: std.Io, path: []const u8, ref
 }
 
 /// Split `git merge-tree -z --write-tree --name-only` stdout into paths.
-///
-/// Record 0 is the resulting tree OID and is skipped. Paths run until the
-/// first empty record, which is the boundary before git's `Auto-merging …` /
-/// `CONFLICT (content): …` informational section — that section must never be
-/// rendered as if it were a file name.
+/// Record 0 is the resulting tree OID and is skipped.
 pub fn parseConflictPaths(allocator: std.mem.Allocator, stdout: []const u8) !ConflictPaths {
     var files = std.ArrayList([]const u8).empty;
     errdefer {
@@ -313,12 +260,9 @@ fn setDetail(allocator: std.mem.Allocator, slot: *?[]u8, msg: []const u8) void {
     slot.* = allocator.dupe(u8, trimmed[0..take]) catch null;
 }
 
-/// `GET /api/git/pr/conflicts?path=<cwd>&pr_url=<url>[&provider=][&base=][&head=]`
-///
+/// `GET
+/// /api/git/pr/conflicts?path=<cwd>&pr_url=<url>[&provider=][&base=][&head=]`
 /// Returns the paths a three-way merge of `<base>` into `<head>` refuses to
-/// resolve. An empty `conflicting_files` is a legitimate 200 answer ("your
-/// local merge of these two refs is clean") — the frontend tells it apart from
-/// a failure by the absence of an `error` field, never by an empty list alone.
 pub fn gitPrConflictsHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
     const io = ctx.io;
@@ -334,9 +278,7 @@ pub fn gitPrConflictsHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReques
         return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeGitStatusErrorResponse(allocator, "pr_url cannot be empty") });
     }
     // `pr_url` identifies the PR for the caller but the computation is purely
-    // local. Validating the provider anyway keeps the route contract uniform
-    // with its siblings, so a bad value fails loudly instead of being silently
-    // ignored.
+    // local.
     if (query.get("provider")) |pv| {
         if (pv.len > 0 and pr_provider.PrProvider.fromString(pv) == null) {
             return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeGitStatusErrorResponse(allocator, "provider must be \"github\", \"gitlab\", or \"generic\"") });
@@ -441,19 +383,6 @@ test "parseConflictPaths: empty stdout is clean, not an error" {
 // ===== Synthetic-repo integration tests =====
 
 /// A throwaway directory for fixture repos, OUTSIDE the pabrik repository.
-///
-/// `std.testing.tmpDir` puts its directory under `.zig-cache/tmp/`, which is
-/// *inside* this repo — and a linked worktree is the worst possible place to
-/// create a fixture git repo. When `git init` loses a race with the build
-/// runner pruning `.zig-cache/tmp`, the fixture directory has no `.git` of its
-/// own, so every `git -C <fixture>` walks UP into the enclosing worktree and
-/// the fixture's `checkout -b feature` / `add -A` / `commit` rewrite the
-/// *real* repository: its HEAD, its branches, and a junk commit holding the
-/// whole tree. That is not hypothetical — on 2026-10-03 three of these tests
-/// failed only inside the pre-push hook (which rebuilds, so pruning runs) and
-/// passed standalone, and the recovery was a manual HEAD/refs repair.
-///
-/// The OS temp dir is not pruned by `zig build`, so the walk-up finds nothing.
 const FixtureDir = struct {
     path: []const u8,
     dir: std.Io.Dir,
@@ -474,17 +403,9 @@ fn makeFixtureDir(allocator: std.mem.Allocator) !FixtureDir {
 }
 
 /// The body of [`makeFixtureDir`], with the temp root passed in rather than
-/// read from the environment. Split out so the regression test below can drive
-/// the REAL production path with a macOS-shaped root — `$TMPDIR` cannot be set
-/// for the running test binary, and a test that re-implements the logic instead
-/// of calling it proves nothing (the first draft of that test passed with the
-/// bug still in place).
+/// read from the environment.
 fn makeFixtureDirIn(allocator: std.mem.Allocator, raw_root: []const u8) !FixtureDir {
-    // macOS's $TMPDIR is `/var/folders/…/T/` — note the TRAILING SLASH. Naive
-    // concatenation then yields `…/T//pabrik-prconflicts-x`, while every later
-    // read of `path` (git's argv, `writeFixture`) and git's own
-    // `--show-toplevel` spell it `…/T/pabrik-prconflicts-x`. Strip the trailing
-    // separators so both sides agree on one spelling.
+    // macOS's $TMPDIR is `/var/folders/…/T/` — note the TRAILING SLASH.
     const root = std.mem.trimEnd(u8, raw_root, "/");
     if (root.len == 0) return error.NoTempRoot;
 
@@ -497,12 +418,7 @@ fn makeFixtureDirIn(allocator: std.mem.Allocator, raw_root: []const u8) !Fixture
 
     var dir = try std.Io.Dir.cwd().createDirPathOpen(testing.io, joined, .{});
 
-    // Canonicalise before anything else. `git rev-parse --show-toplevel`
-    // reports the RESOLVED path, and on macOS both `/tmp` and `$TMPDIR`
-    // (`/var/folders/…`) are symlinks into `/private/…`. Comparing that
-    // against the unresolved string made requireSelfContainedRepo fire on
-    // every macOS runner: the repo WAS self-contained, the two strings just
-    // named the same directory by different routes.
+    // Canonicalise before anything else.
     var real_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const real_len = dir.realPath(testing.io, &real_buf) catch {
         dir.close(testing.io);
@@ -522,17 +438,6 @@ fn makeFixtureDirIn(allocator: std.mem.Allocator, raw_root: []const u8) !Fixture
 }
 
 /// Fail loudly if `<path>` is not a self-contained git repository.
-///
-/// This is the guard that turns the corruption above from "three tests quietly
-/// fail for unrelated-looking reasons, and the repo needs manual repair" into
-/// "the fixture refuses to run". One spawn per fixture repo.
-/// Spell a path the way git spells it.
-///
-/// git reports `/` separators on EVERY platform, including Windows, where
-/// `Dir.realPath` hands back `D:\a\…`. Comparing those two strings directly
-/// fails on identical directories — which is what turned the Windows backend
-/// red on 2026-10-03 with a `FixtureInsideRealRepo` whose two printed paths
-/// were visibly the same directory. Caller frees.
 fn toGitSeparators(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
     const buf = try allocator.dupe(u8, path);
     for (buf) |*c| {
@@ -610,21 +515,13 @@ fn makeRepo(fx: *const FixtureDir) ![]const u8 {
 }
 
 test "fixture dir survives a symlinked temp root with a trailing slash (macOS shape)" {
-    // Regression guard, 2026-10-03. macOS failed every one of these tests with
-    // `FixtureInsideRealRepo` because $TMPDIR is BOTH a symlink into /private
-    // AND ends in a slash: the constructed path was `…/T//pabrik-prconflicts-x`
-    // while `git rev-parse --show-toplevel` answers `…/T/pabrik-prconflicts-x`.
-    // The repo was self-contained the whole time; only the two SPELLINGS of the
-    // same directory disagreed.
-    //
-    // Drives the REAL makeFixtureDirIn. The first draft re-implemented the path
-    // logic inline and therefore passed with the bug still in place, which is
-    // worse than no test at all.
+    // Regression guard, 2026-10-03. macOS failed every one of these tests
+    // with `FixtureInsideRealRepo` because $TMPDIR is BOTH a symlink into
+    // /private AND ends in a slash: the constructed path was
     const allocator = testing.allocator;
     // The bug this guards is macOS/Linux-shaped, and on Windows the symlink
     // creates but the mixed `\`+`/` path does not resolve the same way —
     // GitHub's runners also lack SeCreateSymbolicLinkPrivilege by default, so
-    // this cannot run there. Say so rather than fail on an unrelated path.
     if (builtin.os.tag == .windows) return error.SkipZigTest;
 
     var env = std.process.Environ.Map.init(allocator);
@@ -662,10 +559,7 @@ test "fixture dir survives a symlinked temp root with a trailing slash (macOS sh
 
 test "requireSelfContainedRepo accepts a path git spells with forward slashes" {
     // Regression guard, 2026-10-03 (Windows). git reports `/` separators on
-    // every platform; `Dir.realPath` returns `\` on Windows. Comparing the
-    // raw strings made the Windows backend fail on a directory that was
-    // obviously self-contained — the error even printed both paths and they
-    // were the same directory.
+    // every platform; `Dir.realPath` returns `\` on Windows.
     const want = try toGitSeparators(testing.allocator, "D:\\a\\b");
     defer testing.allocator.free(want);
     try testing.expectEqualStrings("D:/a/b", want);
@@ -682,9 +576,7 @@ test "useCase names the file both sides changed" {
     const path = try makeRepo(&fx);
 
     // main edits line 2 of shared.txt; feature edits the SAME line
-    // differently. Non-overlapping edits merge cleanly, so an earlier draft of
-    // this fixture (main changing line 2, feature appending a new line at the
-    // end) would have "passed" on a broken implementation.
+    // differently.
     try git(path, &.{ "checkout", "-q", "-b", "feature" });
     try writeFixture(&fx, "shared.txt", "a\nFEATURE\nc\n");
     try writeFixture(&fx, "feat.txt", "feature\n");
@@ -741,9 +633,7 @@ test "useCase honours an explicit base ref" {
     const path = try makeRepo(&fx);
 
     // `trunk` is the initial commit — an ancestor of feature, so merging it
-    // into feature is clean. The default ladder would have picked `main` and
-    // reported a conflict, so a zero-file result proves the override is
-    // actually used rather than the ladder quietly substituting something else.
+    // into feature is clean.
     try git(path, &.{ "branch", "trunk" });
     try git(path, &.{ "checkout", "-q", "-b", "feature" });
     try writeFixture(&fx, "shared.txt", "a\nFEATURE\nc\n");
@@ -774,11 +664,8 @@ test "useCase reports NotARepository for a directory that is not a work tree" {
     var fx = try makeFixtureDir(allocator);
     defer fx.deinit();
 
-    // The OS temp dir has no enclosing repository, so a bare directory here is
-    // genuinely not a work tree — the case the handler maps to 404. Under the
-    // old `.zig-cache/tmp` fixture this test needed a fake `.git` FILE to
-    // defeat the enclosing repo's walk-up; that workaround is what hid the
-    // corruption from every other test in this file.
+    // The OS temp dir has no enclosing repository, so a bare directory here
+    // is genuinely not a work tree — the case the handler maps to 404.
     var detail: ?[]u8 = null;
     defer if (detail) |d| allocator.free(d);
     try testing.expectError(

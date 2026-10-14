@@ -1,17 +1,4 @@
-//! HTTP client wrapper around kabelweb's client
-//! module.
-//!
-//! The thin shim exists to:
-//!   1. keep the call sites in `commands/*.zig` terse (one `getJson` /
-//!      `postJson` call instead of three lines of `client.{get,post}`
-//!   2. centralize the JSON header so commands don't all repeat
-//!      `Content-Type: application/json`
-//!   3. centralize status-code mapping (2xx → success, otherwise
-//!      → `Error.HttpRequestFailed` with the body preserved for
-//!      error printing)
-//!
-//! The underlying libcurl-backed transport is cross-platform
-//! (Linux/macOS/Windows) per `kabelweb repo docs-client-PABRIK.md`.
+//! HTTP client wrapper around kabelweb's client module.
 
 const std = @import("std");
 const custom_http_client = @import("kabelweb").client;
@@ -127,25 +114,8 @@ test "buildUrl: rejects path without leading slash" {
 
 const testing = std.testing;
 
-// ===== Tests merged from client_test.zig (2026-09-29 flatten) =====
-// Tests for src/client.zig (HTTP transport + JSON helpers).
-//
-// Brings up a tiny `std.Io.net.IpAddress.listen` server on a random
-// port and responds with a canned HTTP/1.1 frame. The libcurl-backed
-// client under test (`custom_http_client`) treats the loopback
-// connection exactly like any other host.
-//
-// Zig 0.16 API notes (mirrors the inline tests in
-// src/apps/desktop_app/subprocess.zig):
-//   * `std.Io.net.IpAddress.parseIp4(text, port)` replaces the old
-//     `std.net.Address.parseIp`.
-//   * `addr.listen(io, .{})` returns a `Server { socket: Socket }`.
-//   * `server.socket.address.getPort()` extracts the ephemeral port.
-//   * `server.accept(io)` returns a `Stream` (not a Connection).
-//   * `stream.socket.close(io)` to close the accepted connection.
-//   * `server.deinit(io)` to close the listener.
-//   * `std.Io.Threaded.init(allocator, .{}).io()` is the cross-
-//     platform runtime that powers `addr.listen` / `server.accept`.
+// ===== Tests merged from client_test.zig (2026-09-29 flatten) ===== Tests
+// for src/client.zig (HTTP transport + JSON helpers).
 
 /// Per-spawn context. Heap-allocated by `ClientTestEchoServer.start`, freed by
 /// `ClientTestEchoServer.stop` after the thread joins.
@@ -162,10 +132,9 @@ const ClientTestEchoServer = struct {
     ctx_ptr: *ClientTestServerCtx,
 
     fn start(allocator: std.mem.Allocator, raw_response: []const u8) !ClientTestEchoServer {
-        // Eagerly bring up the listener on the main thread so we can
-        // read back the kernel-assigned ephemeral port (port=0 in
-        // `parseIp4(..., 0)` means "OS picks"; the resolved port only
-        // lands in `server.socket.address` AFTER `listen()` runs).
+        // Eagerly bring up the listener on the main thread so we can read
+        // back the kernel-assigned ephemeral port (port=0 in `parseIp4(...,
+        // 0)` means "OS picks"; the resolved port only lands in
         var threaded = std.Io.Threaded.init(allocator, .{});
         defer threaded.deinit();
         const io = threaded.io();
@@ -202,10 +171,8 @@ const ClientTestEchoServer = struct {
 
         var buf: [4096]u8 = undefined;
         var reader = conn.reader(io, &buf);
-        // Drain the request: the test sends a small body (or no body
-        // at all for GETs). Any read error is fine; we just want to
-        // make sure the client's request has been consumed before we
-        // write the canned response.
+        // Drain the request: the test sends a small body (or no body at all
+        // for GETs).
         _ = reader.interface.discard(std.Io.Limit.limited(8 * 1024)) catch {};
 
         var writer = conn.writer(io, &.{});

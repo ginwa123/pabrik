@@ -1,21 +1,11 @@
 //! Parse the JSON tool envelope produced by
 //! `src/agentic_loop/tools_wrap_output.zig`.
-//!
-//! Mirrors the Vue frontend's `tryUnwrapToolOutput` helper (used by
-//! the desktop chatview) — extracts the fields the TUI needs to
-//! render a compact card.
-//!
-//! Unlike the old XML reader, the parsed struct OWNS its strings
-//! (JSON field lookup can't alias ranges the way tag slicing did),
-//! so callers must call `deinit` when done.
 
 const std = @import("std");
 const testing = std.testing;
 
-/// Parsed shape of the JSON tool envelope. All string slices are OWNED —
-/// call `deinit` to free them. `parameters` holds the canonical JSON of
-/// the parameters object; `data` holds the canonical JSON of the data
-/// object (or `""` when null/absent); `err_msg` is `""` when null/absent.
+/// Parsed shape of the JSON tool envelope. All string slices are OWNED — call
+/// `deinit` to free them.
 pub const ToolEnvelope = struct {
     name: []const u8,
     parameters: []const u8,
@@ -33,9 +23,6 @@ pub const ToolEnvelope = struct {
 
 /// Walk the JSON envelope and return a parsed struct, or `null` when the
 /// input is not a v1 envelope (missing keys, wrong types, unknown `v`).
-/// Legacy pre-migration rows fall through to `null` so the caller renders
-/// them raw — same fallback semantics as the desktop's
-/// `tryUnwrapToolOutput`.
 pub fn tryParseToolEnvelope(allocator: std.mem.Allocator, content: []const u8) ?ToolEnvelope {
     const trimmed = std.mem.trim(u8, content, &std.ascii.whitespace);
     const parsed = std.json.parseFromSlice(std.json.Value, allocator, trimmed, .{}) catch return null;
@@ -94,11 +81,8 @@ fn dataField(json_obj: []const u8, allocator: std.mem.Allocator, key: []const u8
     return val.string;
 }
 
-/// Pick the most informative primary field for the header line.
-/// Whitelist mirrors the desktop's ToolCardHeader logic. Unknown
-/// tools fall back to the empty string (NOT the tool name — the old
-/// fallback produced `▶ load_memory  load_memory  ✓` duplication).
-/// The returned slice is OWNED; free with `allocator.free`.
+/// Pick the most informative primary field for the header line. Whitelist
+/// mirrors the desktop's ToolCardHeader logic.
 pub fn toolEnvelopePrimary(allocator: std.mem.Allocator, env: ToolEnvelope) ![]u8 {
     if (env.name.len == 0) return try allocator.dupe(u8, "unknown");
 
@@ -128,13 +112,9 @@ pub fn toolEnvelopePrimary(allocator: std.mem.Allocator, env: ToolEnvelope) ![]u
         return try allocator.dupe(u8, stdout[0..limit]);
     }
 
-    // Fallback — empty string (NOT the tool name). The previous
-    // behaviour returned env.name, which produced tool cards like
-    // `▶ load_memory  load_memory  ✓` — the name appeared twice.
-    // Empty keeps the header line non-redundant. A future PR
-    // joins via tool_call_id to fetch the primary from the
-    // assistant row when we want something richer than the tool
-    // name itself.
+    // Fallback — empty string (NOT the tool name). The previous behaviour
+    // returned env.name, which produced tool cards like `▶ load_memory
+    // load_memory ✓` — the name appeared twice.
     return try allocator.dupe(u8, "");
 }
 
@@ -277,11 +257,9 @@ test "toolEnvelopePrimary: unknown tool returns empty (no duplicate)" {
         "{\"tool\":\"weird_thing\",\"parameters\":{},\"success\":true,\"data\":{},\"error\":null,\"v\":1}",
     ) orelse return error.UnexpectedNull;
     defer env.deinit(allocator);
-    // Round-2 fix: the fallback used to return env.name, which made
-    // tool cards render as `▶ load_memory  load_memory  ✓` (the
-    // name appeared twice). Empty keeps the header non-redundant;
-    // a future PR joins via tool_call_id to fetch the primary
-    // from the assistant row when needed.
+    // Round-2 fix: the fallback used to return env.name, which made tool
+    // cards render as `▶ load_memory load_memory ✓` (the name appeared
+    // twice).
     const primary = try toolEnvelopePrimary(allocator, env);
     defer allocator.free(primary);
     try testing.expectEqualStrings("", primary);

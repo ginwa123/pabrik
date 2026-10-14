@@ -1,17 +1,5 @@
-//! `POST /api/agents/:agent_id/tools`.
-//!
-//! Enables a tool for an agent. Body: `{tool_name}`. Validates the
-//! tool_name is in the canonical registry (400 if unknown). Maps
-//! SQLite UNIQUE violation to HTTP 409 (duplicate).
-//!
-//! Layered as:
-//!   - `useCase` — validate agent_id + body + tool registry →
-//!     INSERT (UNIQUE violation → DuplicateTool) → SELECT new row.
-//!   - `agentToolsCreateHandler` — thin orchestrator over
-//!     `useCase`: parses path/body, delegates, maps outcome to HTTP.
-//!
-//! Memory: the per-request arena reaps all allocations at request
-//! end, so neither layer needs explicit `free`s.
+//! `POST /api/agents/:agent_id/tools`. Enables a tool for an agent. Body:
+//! `{tool_name}`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -21,10 +9,9 @@ const tools_equipped = @import("../agentic_loop/tools_equipped.zig");
 const helpers = @import("helpers");
 const agent_db = @import("../models/agent.db.zig");
 
-/// HTTP request body for tool-create. Decoupled from the
-/// `ToolCreateInput` domain struct so the wire format can evolve
-/// independently (e.g. adding `?` optional fields) without touching
-/// the use-case.
+/// HTTP request body for tool-create. Decoupled from the `ToolCreateInput`
+/// domain struct so the wire format can evolve independently (e.g. adding `?`
+/// optional fields) without touching the use-case.
 const CreateToolBody = struct {
     tool_name: []const u8,
 };
@@ -32,11 +19,7 @@ const CreateToolBody = struct {
 /// Subset of the agent_tools row returned by the use-case.
 pub const ToolRow = agent_db.ToolRow;
 
-/// Domain-level error set for `useCase`. The handler maps each
-/// variant to an HTTP status code + message via two exhaustive
-/// switches (intentional — adding a new variant fails to compile in
-/// the handler until both switches are updated, keeping status
-/// codes in lockstep with the error set).
+/// Domain-level error set for `useCase`.
 pub const ToolCreateError = error{
     /// `agent_id` path param was missing or empty.
     AgentIdRequired,
@@ -85,13 +68,8 @@ fn isKnownTool(tool_name: []const u8) bool {
 // Use case
 // =====================================================================
 
-/// Enable a tool for the given agent. Validates the tool_name is
-/// in the canonical registry, then INSERTs with `enabled = 1`.
-/// The UNIQUE(agent_id, tool_name) constraint maps to
-/// `DuplicateTool`. The use-case is transport-agnostic: it works
-/// for both the per-request arena (production HTTP handler) and
-/// `testing.allocator` (unit tests below) — all allocations go
-/// through the passed-in allocator.
+/// Enable a tool for the given agent. Validates the tool_name is in the
+/// canonical registry, then INSERTs with `enabled = 1`.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -173,14 +151,8 @@ pub fn agentToolsCreateHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-//
-// impl + tests in one file (project convention for Agent Mode).
-// 4 behavioural tests cover the use-case:
-//
-//   1. Validation: empty agent_id OR tool_name → respective errors
-//   2. UnknownTool: tool_name not in canonical registry
-//   3. DuplicateTool: re-INSERTing the same (agent_id, tool_name)
-//   4. Happy path: row is inserted with enabled=1
+// impl + tests in one file (project convention for Agent Mode). 4 behavioural
+// tests cover the use-case: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;

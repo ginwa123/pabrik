@@ -1,19 +1,5 @@
-//! `DELETE /api/workspaces/:workspace_id/skills/:skill_name`.
-//!
-//! Removes one skill row and its companion assets, scoped to one
-//! workspace. The skill name is a PATH PARAM now — the old
-//! `DELETE /api/skills?name=…&is_global=…&cwd=…` took the three things
-//! that decided WHERE a skill lived as query parameters, and a body that
-//! exists in one place cannot be told apart from one that exists in
-//! another by query string alone.
-//!
-//! Wire shape: `{ "success", "skill_name", "error_message": "" }`.
-//! `deleted_from` is GONE — it named the directory the row was removed
-//! from, which is meaningless now that there is one store and no
-//! directory of record. The importer never deletes anything from disk, so
-//! a row removed here leaves the `SKILL.MD` on disk untouched; a later
-//! re-import of that directory would bring the name back. That is the
-//! deliberate consequence of a non-destructive migration.
+//! `DELETE /api/workspaces/:workspace_id/skills/:skill_name`. Removes one
+//! skill row and its companion assets, scoped to one workspace.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -53,12 +39,7 @@ fn useCase(
     if (input.workspace_id.len == 0 or input.skill_name.len == 0) {
         return error.IdsRequired;
     }
-    // Every store error is mapped by hand rather than propagated with
-    // `try`. `DeleteSkillError` names its guard `WorkspaceIdNameRequired`
-    // and this handler's guard is `IdsRequired`; letting `try` bridge the
-    // two would tie the wire contract to an internal name the store is
-    // free to rename, and the failure mode is a compile error in the exe
-    // build only — see the `comptime` note at the bottom of this file.
+    // Every store error is mapped by hand rather than propagated with `try`.
     skills_store.deleteSkill(allocator, db, input.workspace_id, input.skill_name) catch |err| switch (err) {
         error.NotFound => return error.NotFound,
         error.DeleteFailed => return error.DeleteFailed,
@@ -121,11 +102,8 @@ pub fn skillDeleteHandler(
 }
 
 // The `zig build test` module graph never CALLS this handler — the test
-// binary contains no HTTP server — so nothing else in that build analyses
-// its body, and an error-set mismatch between the handler and the store it
-// calls surfaces only when someone builds the exe. Taking the handler's
-// address forces the analysis into `zig build test`, which is the build
-// the gate runs.
+// binary contains no HTTP server — so nothing else in that build analyses its
+// body, and an error-set mismatch between the handler and the store it calls
 comptime {
     _ = &skillDeleteHandler;
 }

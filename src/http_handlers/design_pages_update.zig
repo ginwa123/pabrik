@@ -1,47 +1,6 @@
-//! `PATCH /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id`.
-//!
-//! Update an existing design page by id. UPDATE-only; does NOT
-//! insert — see `design_pages_create.zig` for the upsert path used
-//! by the agent's `set_design_page` tool.
-//!
-//! Body: `{width: number, height: number, name?: string}`.
-//!   - `width` and `height` are required and must validate against
-//!     `updateDesignPage`'s range (width 320-4096, height 240-4096).
-//!   - `name` is OPTIONAL — when present and non-empty, the page is
-//!     renamed (the new name replaces the existing row's name in
-//!     `design_pages`). When missing or null, the name is left
-//!     unchanged (back-compat with the pre-rename body shape).
-//!   - Empty-string `name` is rejected with 400 (matches the
-//!     `setDesignPage` guard — an empty page name would break the
-//!     on-disk folder derivation in design_io).
-//!
-//! Out-of-range width/height and empty name are rejected with 400
-//! so the frontend gets explicit feedback (no silent clamping).
-//!
-//! Response shape: `DesignPageResponse` for the post-update page.
-//! Built by `http_response.makeDesignPageResponse` and wrapped via
-//! `std.json.Stringify.valueAlloc`.
-//!
-//! Layered as:
-//!   - `useCase` — validates input, delegates to
-//!     `design_model.updateDesignPage`, returns the post-update
-//!     `DesignPage` (heap-owned, must be freed by the caller).
-//!   - `designPagesUpdateHandler` — thin orchestrator: parses the
-//!     HTTP request, resolves the singleton DB handle, delegates to
-//!     `useCase`, maps the use-case outcome to an HTTP response
-//!     (200 / 400 / 404 / 500).
-//!
-//! Errors:
-//!   - 400 missing `page_id` path param, invalid JSON body,
-//!     out-of-range width / height, empty `name`
-//!   - 404 page_id not found in `design_pages`
-//!   - 500 DB failure (update, fetch, or consistency violation)
-//!
-//! Plan: docs/superpowers/plans/2026-07-19-design-canvas-resize-and-zoom.md
-//!   (Chunk 1, Task 1.2)
-//!
-//! Plan: docs/superpowers/plans/2026-08-06-rename-design-pages.md
-//!   (Chunk 1 — extend the patch body with optional `name`)
+//! `PATCH
+//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id`.
+//! Update an existing design page by id.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -55,20 +14,14 @@ const design_model = @import("../agentic_loop/design_model.zig");
 const UpdatePageBody = struct {
     width: i64,
     height: i64,
-    // NEW (2026-08-06 — design page rename menu). Optional page name.
-    // JSON `null`/absent maps to Zig `null` → name preserved. Empty
-    // string is preserved as-is at the HTTP layer (use-case rejects
-    // it with BadPageName → mapped to 400).
+    // NEW (2026-08-06 — design page rename menu). Optional page name. JSON
+    // `null`/absent maps to Zig `null` → name preserved.
     name: ?[]const u8 = null,
 };
 
-/// Domain-level error set for `useCase`. The handler maps each
-/// variant to an HTTP status code + message via two exhaustive
-/// switches (one for status, one for the user-facing message).
-///
-/// Adding a new variant fails to compile in the handler until both
-/// switches are updated — that's intentional, to keep status codes
-/// in lockstep with the error set.
+/// Domain-level error set for `useCase`. The handler maps each variant to an
+/// HTTP status code + message via two exhaustive switches (one for status,
+/// one for the user-facing message).
 pub const DesignPageUpdateError = error{
     /// `:page_id` path param was missing or empty.
     PageIdRequired,
@@ -100,12 +53,7 @@ pub const UpdatePageInput = struct {
 
 /// Output of the update-page use-case.
 pub const UpdatePageOutput = struct {
-    /// The post-update page. The slice fields are HEAP-OWNED by the
-    /// use-case (duplicated out of the internal `listPages` result
-    /// so the output survives the useCase's internal `freePages`
-    /// defer). Caller MUST free the per-field slices (or pass the
-    /// whole struct to `design_model.freePages` wrapped in a
-    /// single-element array).
+    /// The post-update page.
     page: design_model.DesignPage,
 };
 
@@ -113,19 +61,7 @@ pub const UpdatePageOutput = struct {
 // Use case
 // =====================================================================
 
-/// Update an existing design page.
-///
-/// Steps:
-///   1. Validate `page_id` non-empty.
-///   2. Delegate to `design_model.updateDesignPage` (which validates
-///      the width/height range, optionally renames, and re-fetches
-///      the row).
-///   3. Return the heap-owned `DesignPage` for the response.
-///
-/// Allocator-agnostic: works for both the per-request arena
-/// (production HTTP handler) and a leak-tracker allocator (unit
-/// tests). All allocations are paired with `errdefer` / `defer` for
-/// non-arena safety.
+/// Update an existing design page. Steps: 1. Validate `page_id` non-empty. 2.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -197,11 +133,7 @@ pub fn designPagesUpdateHandler(
         .height = parsed.height,
         .name = parsed.name,
     }) catch |err| {
-        // 3. Map the use-case error to an HTTP response. Both
-        //    switches are exhaustive over the inferred error set —
-        //    adding a new `DesignPageUpdateError` variant will fail
-        //    to compile here (intentional, to keep status codes in
-        //    sync). No `else` prong needed.
+        // 3. Map the use-case error to an HTTP response.
         const status: u16 = switch (err) {
             error.PageIdRequired => 400,
             error.WidthOutOfRange => 400,

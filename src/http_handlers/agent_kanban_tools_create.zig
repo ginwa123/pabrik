@@ -1,17 +1,5 @@
-//! `POST /api/agent-kanbans/:kanban_id/tools`.
-//!
-//! Enables a tool for an agent-kanbans config. Body: `{tool_name}`.
-//! Validates the tool_name is in the canonical registry (400 if
-//! unknown). Maps SQLite UNIQUE violation to HTTP 409 (duplicate).
-//!
-//! Mirrors `agent_tools_create.zig` with substitutions:
-//! table `agent_kanban_tools`, parent col `kanban_id`, id prefix `akt_`.
-//!
-//! Memory: the per-request arena reaps all allocations at request end,
-//! so neither layer needs explicit `free`s.
-//!
-//! Plan: docs/superpowers/plans/2026-08-25-agent-kanbans-mirror.md
-//! Task: task_1787597624259_2
+//! `POST /api/agent-kanbans/:kanban_id/tools`. Enables a tool for an
+//! agent-kanbans config. Body: `{tool_name}`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -78,15 +66,8 @@ fn isKnownTool(tool_name: []const u8) bool {
 // Use case
 // =====================================================================
 
-/// Enable a tool for the given agent-kanbans config. Validates the
-/// tool_name is in the canonical registry, then INSERTs with
-/// `enabled = 1`. The UNIQUE(kanban_id, tool_name) constraint maps to
-/// `DuplicateTool`. Transport-agnostic.
-///
-/// Auto-seeds the `agent_kanbans` row (with empty description) when
-/// it doesn't exist yet — matches the agent world where enabling a
-/// tool auto-creates the parent config row. Keeps the frontend's
-/// unconfigured→configured flow to a single click.
+/// Enable a tool for the given agent-kanbans config. Validates the tool_name
+/// is in the canonical registry, then INSERTs with `enabled = 1`.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -183,13 +164,7 @@ pub fn agentKanbanToolsCreateHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-//
-// impl + tests in one file (project convention). Behavioural coverage:
-//
-//   1. Validation: empty kanban_id OR tool_name → respective errors
-//   2. UnknownTool: tool_name not in canonical registry
-//   3. DuplicateTool: re-INSERTing the same (kanban_id, tool_name)
-//   4. Happy path: row is inserted with enabled=1
+// impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;

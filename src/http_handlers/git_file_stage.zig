@@ -7,14 +7,6 @@ const GitStageResponse = http_response.GitStageResponse;
 
 /// Tell the UI one path moved into the index, so the Files tab can move ONE
 /// row instead of re-fetching the whole git-status list.
-///
-/// Emitted per path (not once per request) because the frontend's local
-/// update is per path: a batch stage of 5 files is 5 row moves, and one
-/// event carrying 5 paths would push the join logic back into the client.
-///
-/// Never fails the caller — a successful `git add` must not be reported as a
-/// failure because the UI could not be told about it. The frontend falls back
-/// to a manual refresh.
 fn emitStageEvent(ctx: gserverz.HttpContext, path_param: []const u8, file: []const u8, failed: bool) void {
     const di = pabrik_core.getSingleton() catch return;
     pabrik_core.git_file_stage_events.emitStaged(ctx.allocator, di.event_bus, path_param, file, failed);

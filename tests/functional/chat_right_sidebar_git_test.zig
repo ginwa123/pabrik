@@ -1,25 +1,6 @@
-// Functional wire tests for the ChatView-embedded git-diff sidebar.
-//
-// Zig port of `tests/functional/chat_right_sidebar_git_test.py` (same
-// test names, same order).
-//
-// The sidebar (SidebarDiffPanel.vue) talks to four REST endpoints and
-// this file proves the exact wire payloads it consumes:
-//
-//   1. GET /api/git/changes groups staged / modified / untracked files.
-//   2. POST /api/git/file/diffs (folder mode) returns unified diff_content
-//      for every dirty file in one response, each row tagged staged/not.
-//   3. POST /api/git/stage + GET /changes round-trips a file into staged.
-//   4. POST /api/git/unstage moves it back.
-//
-// Fixture repo (in a scratch tmpdir, NOT the harness HOME — the Python
-// original used pytest's `tmp_path`):
-//   <cwd>/committed.txt   (committed, then modified in worktree → unstaged)
-//   <cwd>/staged.txt      (committed, modified, `git add`ed → staged)
-//   <cwd>/new.txt         (untracked)
-//
-// Every test boots its own harness (the Python `harness` fixture) and
-// builds its own fixture repo (the Python `diff_cwd` fixture).
+// Functional wire tests for the ChatView-embedded git-diff sidebar. Zig port
+// of `tests/functional/chat_right_sidebar_git_test.py` (same test names, same
+// order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -30,15 +11,6 @@ const gpa = testing.allocator;
 const io = testing.io;
 
 // QUERY STRINGS RIDE IN `path`, NOT IN `HttpOptions.params`.
-//
-// `HttpOptions.params` is the obvious spelling and it is wrong today:
-// `harness.buildUrl` reassigns its `url` and then frees the NEW value,
-// so the previous allocation is orphaned (and a third parameter frees
-// the very pointer the function is about to return). Under
-// `testing.allocator` that turns every param-carrying request into a
-// leak failure. `Harness.http` appends `path` to `http://127.0.0.1:<port>`
-// verbatim, so a path carrying `?a=b&c=d` produces the identical
-// request line. The bug is in the helper, not the contract.
 
 /// A scratch directory to hold the fixture repo, mirroring pytest's
 /// `tmp_path`. Removed on the way out, whatever the test's outcome.
@@ -77,14 +49,6 @@ fn writeFileAt(path: []const u8, contents: []const u8) !void {
 }
 
 /// Run `git` with the fixture identity baked in, in `cwd`.
-///
-/// `-c user.email/-c user.name` is what makes `git commit` work without
-/// a global config; `-C` replaces the Python fixture's `cwd=` kwarg
-/// (Python's `subprocess.run(cwd=...)` has no Zig 1:1 that also
-/// survives a spawn failure, and `-C` is what the server itself uses).
-///
-/// A spawn failure skips the test — the endpoint under test needs a
-/// real `git` to do anything meaningful.
 fn git(cwd: []const u8, args: []const []const u8) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);

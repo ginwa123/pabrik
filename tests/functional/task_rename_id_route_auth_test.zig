@@ -1,44 +1,6 @@
-// Renaming a chat from the sidebar context menu — "Workspace not found".
-//
-// Zig port of `tests/functional/task_rename_id_route_auth_test.py`
-// (same test names, same order).
-//
-// Replays the EXACT wire the chat-row context menu sends (ChatsList.vue
-// `confirmRename` → `api.updateTaskSimple`):
-//
-//     PUT /api/workspaces/tasks/<task_id>   body {"name": "<new name>"}
-//
-// That path is id-only on purpose (task.id == session_id, Migration 052) so a
-// rename never has to carry a workspace/item scope. With `--auth` on it was
-// answering 404 `{"error": "Workspace not found"}` and the sidebar showed a
-// toast instead of renaming.
-//
-// Root cause: `matchRoute` (kabelweb router.zig) walks the route table in
-// REGISTRATION order and `matchPathWithParams` writes each `:param` into the
-// shared `req.params` map BEFORE it knows the route matches — a pattern that
-// fails part-way leaves its partial params behind. `PUT
-// /api/workspaces/:workspace_id/items/:item_id` (main.zig) was registered
-// before `PUT /api/workspaces/tasks/:task_id`, so a rename request first
-// matched `:workspace_id` = "tasks" and then fell through at the `items`
-// literal. auth_middleware's choke point read that stale `workspace_id`,
-// `canSeeWorkspace("tasks")` was false, and the request 404'd before the
-// handler ever ran.
-//
-// Covers:
-//   * ID-ONLY-RENAME — auth-on, PUT /api/workspaces/tasks/:id → 200 and BOTH
-//     `workspace_item_tasks.name` and `sessions.name` carry the new name.
-//   * NO-STRAY-PARAM — a rename must not be rejected as a workspace lookup;
-//     asserted on the exact 404 body so a regression names itself.
-//   * SCOPED-RENAME-STILL-GUARDED — the workspace-scoped PUT keeps working,
-//     and a foreign user's workspace id still 404s (isolation not weakened).
-//   * AUTH-OFF — same rename is 200 with no cookie (the common dev setup).
-//
-// PYTHON IDIOM THAT DID NOT SURVIVE THE PORT: `_raw` hand-rolled
-// `urllib.request` with an `HTTPError` catch so a non-2xx answer came back
-// as a `(status, headers, body)` triple instead of raising. The harness's
-// `Harness.http` has the same shape built in — `.assert_status = false`
-// returns whatever came back — so `rawHttp` below is a five-line wrapper
-// that adds the cookie header, NOT a private HTTP client.
+// Renaming a chat from the sidebar context menu — "Workspace not found". Zig
+// port of `tests/functional/task_rename_id_route_auth_test.py` (same test
+// names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -52,11 +14,6 @@ const io = testing.io;
 // ============================================================================
 
 /// Issue a request WITHOUT a status assertion — the caller asserts.
-///
-/// Python's `_raw` returned `(status, headers, body)` and every caller
-/// compared the status itself, so `Harness.http`'s `expect` is set to
-/// "anything" here. `assert_status = false` is the harness's own flag
-/// for this; nothing in this file reimplements the client.
 fn rawHttp(
     h: *Harness,
     method: harness.HttpMethod,
@@ -82,10 +39,6 @@ fn bootAuth() !Harness {
 }
 
 /// Run `pabrik create-admin` against the harness HOME.
-///
-/// `runPabrikCommand` prepends the resolved binary itself, so `argv`
-/// starts at the SUBCOMMAND — passing the binary again would make the
-/// subcommand dispatch miss and boot a SERVER instead.
 fn createAdmin(home: []const u8, email: []const u8, password: []const u8, force: bool) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
@@ -101,10 +54,8 @@ fn createAdmin(home: []const u8, email: []const u8, password: []const u8, force:
 }
 
 /// Log in and return the session token (Python `_login`).
-///
-/// `split("pabrik_session=", 1)[1].split(";", 1)[0].strip()`: the token
-/// is the text BETWEEN the name and the next `;`. `harness.afterFirst`
-/// returns the text AFTER a delimiter, so the split on `;` comes first.
+/// `split("pabrik_session=", 1)[1].split(";", 1)[0].strip()`: the token is
+/// the text BETWEEN the name and the next `;`.
 fn login(h: *Harness, email: []const u8, password: []const u8) ![]u8 {
     const body = try std.fmt.allocPrint(
         gpa,
@@ -155,9 +106,7 @@ const Seed = struct {
 };
 
 /// workspace → kanban item → task(+session). Mirrors the frontend's seed
-/// path. Also asserts `session.id == task.id` (Migration 052 dropped the
-/// redundant column), which is the invariant the whole id-only rename
-/// route rests on.
+/// path.
 fn seedWorkspaceItemTask(h: *Harness, cookie: []const u8, name: []const u8) !Seed {
     // Each id is duped INSIDE the block that owns the response it was
     // read from: a `harness.Json` aliases the response body, so an id
@@ -374,9 +323,7 @@ test "id_only_rename_works_with_auth_on" {
     }
 }
 
-// Pins the exact failure: a stale `workspace_id` param must not 404 a
-// rename.
-//
+// Pins the exact failure: a stale `workspace_id` param must not 404 a rename.
 // Asserted on the response BODY so a regression names itself instead of
 // reading as "some 404 happened".
 test "id_only_rename_is_not_a_workspace_lookup" {

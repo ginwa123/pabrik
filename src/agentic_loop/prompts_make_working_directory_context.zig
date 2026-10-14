@@ -5,15 +5,6 @@ const memory_files = [_][]const u8{ "PABRIK.md", "CLAUDE.md", "AGENTS.md" };
 
 /// Build a working-directory context by concatenating the contents of
 /// `PABRIK.md`, `CLAUDE.md`, and `AGENTS.md` in the given `cwd`.
-///
-/// Files that do not exist are **skipped silently** — this function
-/// never creates or force-creates a memory file. (Historically this
-/// helper would call `createFileAbsolute` on a `FileNotFound`, which
-/// polluted freshly-cloned repos with empty `AGENTS.md` / `CLAUDE.md`
-/// / `PABRIK.md` placeholders every time the agent started a session.)
-///
-/// Any I/O error other than `FileNotFound` is propagated. Returns an
-/// empty slice when none of the three files exist.
 pub fn makeWorkingDirectoryContext(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -57,13 +48,9 @@ pub fn makeWorkingDirectoryContext(
     return try result.toOwnedSlice(allocator);
 }
 
-// ─── Tests ───────────────────────────────────────────────────────────
-//
-// These tests are INLINE in the impl file (not a separate `*_test.zig`)
-// per the project's prevailing pattern — see `session_skills.zig`,
-// `handle_tool.zig`, `workflow_compact_message.zig` for prior art.
-// Tests that need complex DB setup or are shared across impl files
-// belong in their own `*_test.zig` (e.g. `retry_delay_ms_race_test.zig`).
+// ─── Tests ─────────────────────────────────────────────────────────── These
+// tests are INLINE in the impl file (not a separate `*_test.zig`) per the
+// project's prevailing pattern — see `session_skills.zig`, `handle_tool.zig`,
 
 const TestEnv = struct {
     tmp: std.testing.TmpDir,

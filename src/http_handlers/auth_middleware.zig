@@ -1,15 +1,6 @@
-//! Auth enforcement middleware for opt-in `--auth` mode.
-//!
-//! Wired via `router.group("/api")` + `use()` in main.zig (see the
-//! kabelweb `MiddlewareFn` / `MiddlewareChain` docs in
-//! `src/server/router.zig`). Short-circuits with 401 when the request
-//! has no valid `pabrik_session` cookie; otherwise calls `chain.next`.
-//!
-//! Gaps covered elsewhere (kabelweb `sse()`/`ws()` do not run
-//! middleware, static fallback bypasses the router):
-//!   - ws/sse handlers call `auth_common.lookupSession` directly.
-//!   - `staticDirHandler` in main.zig serves index.html for `/app/*`
-//!     when unauthenticated so the Vue router can show `/login`.
+//! Auth enforcement middleware for opt-in `--auth` mode. Wired via
+//! `router.group("/api")` + `use()` in main.zig (see the kabelweb
+//! `MiddlewareFn` / `MiddlewareChain` docs in `src/server/router.zig`).
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -62,26 +53,6 @@ pub fn authMiddleware(
     };
 
     // Per-user isolation choke point.
-    //
-    // Every route whose path carries a `:workspace_id` — the workspace's
-    // items plus their kanban/design/agent/routine children — must prove the
-    // caller can see that workspace before its handler runs. Enforcing it
-    // here (rather than in each handler) means a newly added child route
-    // cannot forget the check, and a handler that only knows a child id
-    // cannot act on another user's workspace by raw id.
-    //
-    // 404, never 403, so a foreign id is indistinguishable from a missing one.
-    //
-    // `req.params` is NOT exclusively the matched route's. kabelweb's
-    // `matchPathWithParams` writes each `:param` into that shared map as it
-    // walks a pattern and does NOT unwind when a later literal segment fails
-    // to match, and `matchRoute` tries routes in registration order. So a
-    // route registered BELOW a `:workspace_id` route inherits that route's
-    // half-matched param and this check 404s a request it has no scope for —
-    // that is exactly how `PUT /api/workspaces/tasks/:task_id` (which
-    // declares no workspace id) came to answer `Workspace not found` for
-    // every chat rename under --auth. Any route that does not declare a
-    // guard param must be registered above the first route that declares it.
     if (req.params.get("workspace_id")) |ws_id| {
         if (!auth_common.canSeeWorkspace(allocator, di.db, ws_id, sess.user_id)) {
             auth_common.freeSessionLookup(allocator, sess);
@@ -94,15 +65,7 @@ pub fn authMiddleware(
 
     // Same choke point for the `:session_id` routes (`/api/session/…` and
     // `/api/llm/session/…`): without it, any authenticated user could read or
-    // mutate any session by id — messages included. Both param spellings are
-    // covered because the stop route uses `:session`. The SSE/WS transports
-    // bypass middleware entirely and gate themselves (see the module doc).
-    //
-    // Missing rows pass through so lazy-create handlers (PUT update,
-    // POST touched with ensureSessionExists) can create the row: a brand-new
-    // chat navigates with the task id in the URL before any session row
-    // exists, and 404ing here produced the "Session not found" toasts on
-    // every New Chat open. Only an existing-but-foreign row 404s.
+    // mutate any session by id — messages included.
     if (req.params.get("session_id") orelse req.params.get("session")) |sid| {
         if (!auth_common.canSeeSession(allocator, di.db, sid, sess.user_id)) {
             if (auth_common.sessionExistsById(allocator, di.db, sid)) {

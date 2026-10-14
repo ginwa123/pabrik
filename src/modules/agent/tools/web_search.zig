@@ -1,31 +1,5 @@
 //! `web_search` — perform a real web search through a user-configured
 //! provider.
-//!
-//! Replaces a URL-browser shim that shelled out to `agent-browser snapshot`
-//! and was unreachable (its registry entry was commented out). The name now
-//! means what it says.
-//!
-//! ## Shape
-//!
-//! The agent sends `{provider, curl}`. It edits the provider's stored
-//! template (which `list_web_search_providers` handed it) and puts `{key}`
-//! wherever the credential goes. This module:
-//!
-//!   1. resolves the provider from config,
-//!   2. parses the curl (`web_search_curl` — no I/O, never sees a key),
-//!   3. checks the host pin (`web_search_request` — the security boundary),
-//!   4. substitutes the key,
-//!   5. performs the GET,
-//!   6. hands the provider's JSON through UNTYPED, with the key scrubbed
-//!      out of it first.
-//!
-//! ## Why the response is not parsed
-//!
-//! TinyFish returns `{results:[…]}`, Brave `{web:{results:[…]}}`, Serper
-//! `{organic:[…]}`, a self-hosted SearxNG a bare `[{…}]`. Normalising them
-//! is guesswork about a fifth shape, and a typed struct *silently discards*
-//! anything it does not name. Our envelope is typed and stable; everything
-//! under `response` belongs to the provider. See D13.
 
 const std = @import("std");
 const json = std.json;
@@ -97,10 +71,9 @@ pub const Resolved = struct {
 /// What the exhaustion envelope quotes about an alternative provider.
 pub const ProviderRef = struct { name: []const u8, url: []const u8 };
 
-/// Resolve `name` in `providers`.
-///
-/// Returns the entry plus the alternatives, so an exhaustion error can tell
-/// the model who else it could try without the caller re-resolving.
+/// Resolve `name` in `providers`. Returns the entry plus the alternatives, so
+/// an exhaustion error can tell the model who else it could try without the
+/// caller re-resolving.
 pub fn resolveProvider(
     allocator: std.mem.Allocator,
     providers: *const Providers,
@@ -130,11 +103,6 @@ pub const ExecuteError = error{
 };
 
 /// `scrubKey` — replace every occurrence of the credential in `body`.
-///
-/// Untyped passthrough opens a hole the typed design did not have: some
-/// providers **echo request detail in error bodies**, and when the key sits
-/// in a URL query the whole URL can come back in the payload. This is the
-/// one piece of inspection passthrough still requires.
 pub fn scrubKey(allocator: std.mem.Allocator, body: []const u8, key: ?[]const u8) ![]u8 {
     const k = key orelse return allocator.dupe(u8, body);
     if (k.len == 0) return allocator.dupe(u8, body);
@@ -197,11 +165,6 @@ pub fn classify(status: u16, body: []const u8) Classification {
 }
 
 /// A tiny JSON object writer.
-///
-/// Every envelope used to be assembled from independently-allocated field
-/// strings and then joined — which meant the caller could free the joined
-/// result while the fields leaked, and each field needed its own error
-/// handling. Building straight into one buffer removes both.
 const JsonBuf = struct {
     buf: std.ArrayList(u8) = .empty,
     alloc: std.mem.Allocator,
@@ -521,22 +484,7 @@ pub fn successEnvelope(alloc: std.mem.Allocator, provider: []const u8, status: u
 }
 
 /// Perform the search and return the JSON envelope to hand back to the model.
-///
-/// The order below IS the security boundary, and it is deliberate:
-///
-///   1. `validatePinnedUrl` — is the host the USER configured safe to
-///      credential at all? Checked on every call, not only at save time, so
-///      a hand-edited config cannot smuggle one in.
-///   2. `curlmod.parse`      — no key is in scope yet.
-///   3. `validateKeySite`   — does the template match this entry?
-///   4. `hostMatches`       — THE PIN. Nothing below runs for an unpinned
-///      host, and nothing above it has touched the credential.
-///   5. `substituteKey`     — only NOW does the key enter the request.
-///   6. GET, scrub, classify, envelope.
-/// No `io` parameter: `kabelweb`'s `Client.init` takes only an allocator and
-/// `perform` takes the request + options, so nothing here needs a handle.
-/// `generate_image` carries one because it writes files to disk; this does
-/// not, so it does not pretend to.
+/// The order below IS the security boundary, and it is deliberate: 1.
 pub fn executeWebSearch(
     allocator: std.mem.Allocator,
     resolved: Resolved,
@@ -708,12 +656,9 @@ pub fn truncateDescription(allocator: std.mem.Allocator, text: []const u8) ![]u8
     });
 }
 
-/// Render `list_web_search_providers`' payload from resolved providers.
-///
-/// The output contains `name`, `url`, `description` and `curl` — and never
-/// `key`, not even masked. That is safe by construction rather than by
-/// redaction: the template carries `{key}`, so there is nothing secret in
-/// what is emitted.
+/// Render `list_web_search_providers`' payload from resolved providers. The
+/// output contains `name`, `url`, `description` and `curl` — and never `key`,
+/// not even masked.
 pub fn renderProviderList(alloc: std.mem.Allocator, providers: *const Providers) ![]u8 {
     const rows = try collectAll(alloc, providers);
     defer alloc.free(rows);
@@ -1044,20 +989,17 @@ test "web_search: the tool schemas are exactly what the plan specifies" {
 }
 
 test "web_search: neither tool's static text leaks a provider or a key" {
-    // The schema ships to EVERY provider's LLM on every request. It must
-    // not enumerate the user's providers.
-    // No CONCRETE provider name: the schema ships to every provider's LLM, and
-    // naming one biases the model toward a name this user may not have.
+    // The schema ships to EVERY provider's LLM on every request. It must not
+    // enumerate the user's providers.
     try testing.expect(std.mem.indexOf(u8, web_search_tool.function.description, "tinyfish") == null);
     try testing.expect(std.mem.indexOf(u8, web_search_tool.function.description, "brave") == null);
     try testing.expect(std.mem.indexOf(u8, web_search_tool.function.description, "api_key") == null);
     try testing.expect(std.mem.indexOf(u8, list_web_search_providers_tool.function.description, "tinyfish") == null);
 }
 test "web_search: every error envelope carries a named flag" {
-    // The frontend classifies by flag, and a flagless envelope falls
-    // through to its residual `transport` label — which is wrong for
-    // anything that actually reached the provider. `keySiteEnvelope` was
-    // the one that had none.
+    // The frontend classifies by flag, and a flagless envelope falls through
+    // to its residual `transport` label — which is wrong for anything that
+    // actually reached the provider.
     const alloc = testing.allocator;
     var providers = try providersFor(alloc, tinyfish_providers);
     defer freeProviders(&providers, alloc);

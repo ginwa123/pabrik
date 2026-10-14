@@ -1,35 +1,6 @@
-// Wire-contract test for the native Android sidebar.
-//
-// Zig port of `tests/functional/android_sidebar_contract_test.py` (same
-// test names, same order).
-//
-// The Android client
-// (`src/apps/android_mobile/.../recents/RecentsApi.kt`) is the one
-// consumer of these two endpoints that is not in this repo's
-// TypeScript, so nothing else here would notice a rename of
-// `session_name` -> `title` or a switch of the timestamp format. Its
-// Kotlin unit tests pin the parser against fixtures, but a fixture only
-// proves the parser agrees with itself; this test pins the parser
-// against the server.
-//
-// Every assertion below corresponds to a field or query parameter the
-// Kotlin client depends on. If one of them changes here, the Android
-// sidebar silently renders empty, which is the failure mode this file
-// exists to prevent.
-//
-// SCOPE NOTE — PER-TEST HARNESS INSTEAD OF MODULE-SCOPE
-// The Python file used a `@pytest.fixture(scope="module")` harness: ONE
-// `pabrik` boot shared by all six tests. Zig has no module-scoped
-// fixture, and `Harness.boot` costs a process spawn, so each test boots
-// its own — the same shape every other ported suite uses.
-//
-// The one behavioural consequence is test 2
-// (`workspaces_list_omits_items_when_asked`), which in Python relied on
-// test 1 having created a workspace so its `for row in payload["workspaces"]`
-// loop had something to iterate. Here it creates its OWN workspace for
-// the same reason: a loop over an empty array asserts nothing, and an
-// assertion that cannot fail is the exact silent-regression class this
-// file exists to catch.
+// Wire-contract test for the native Android sidebar. Zig port of
+// `tests/functional/android_sidebar_contract_test.py` (same test names, same
+// order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -38,20 +9,10 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// The exact shape `RecentsApi.parseTimestampEpochMillis` accepts. If
-/// the server ever starts emitting unix millis here, or a local-time
-/// stamp, the Android client renders every "5m" label shifted by the
-/// device's UTC offset.
+/// The exact shape `RecentsApi.parseTimestampEpochMillis` accepts.
 const SQLITE_UTC = "____-__-__ __:__:__";
 
 /// True iff `value` matches `^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$`.
-///
-/// Hand-rolled rather than regex: the shape is a fixed 19-byte layout
-/// (four digit groups and five separators in known positions), so a
-/// character-class scan is both clearer and cheaper than building a
-/// regex per call site. The Python `re.compile(SQLITE_UTC).match(value)`
-/// was anchored with `^...$`, which is exactly what the length check
-/// plus the per-position class checks enforce here.
 fn isSqliteUtc(value: []const u8) bool {
     if (value.len != SQLITE_UTC.len) return false;
     for (value, 0..) |c, i| {
@@ -84,10 +45,6 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
 }
 
 /// The `workspaces` array from `GET /api/workspaces?is_include_items=false`.
-///
-/// Returns an OWNING `Json` because `harness.Json` borrows from the
-/// `Response` body; a bare `std.json.Value` would dangle the moment the
-/// response is freed. Callers `defer doc.deinit()`.
 fn workspacesNoItems(h: *Harness) !harness.Json {
     const params = [_]Harness.Param{.{ .name = "is_include_items", .value = "false" }};
     var r = try h.http(io, .GET, "/api/workspaces", .{ .params = &params, .expect = &.{200} });
@@ -102,10 +59,9 @@ fn workspacesNoItems(h: *Harness) !harness.Json {
     return doc;
 }
 
-// `is_include_items=false` must still carry id + name per row.
-//
-// The Android dropdown is a two-field view. If either is dropped, the
-// sidebar renders an unnamed, unselectable row.
+// `is_include_items=false` must still carry id + name per row. The Android
+// dropdown is a two-field view. If either is dropped, the sidebar renders an
+// unnamed, unselectable row.
 test "workspaces_list_keeps_the_fields_the_android_client_reads" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -161,9 +117,7 @@ test "workspaces_list_keeps_the_fields_the_android_client_reads" {
 }
 
 // `is_include_items=false` is an optimisation, not a licence to drop the
-// array.
-//
-// The Kotlin parser tolerates a missing `items` key, but the desktop
+// array. The Kotlin parser tolerates a missing `items` key, but the desktop
 // store does not — so the contract holds both ways.
 test "workspaces_list_omits_items_when_asked" {
     try harness.requirePabrikBin(io, gpa);
@@ -172,10 +126,8 @@ test "workspaces_list_omits_items_when_asked" {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
     };
 
-    // The Python file got its row from the previous test's
-    // module-scoped harness. A per-test boot has none, so create one
-    // here — otherwise the loop below iterates nothing and the test
-    // passes for the wrong reason. See the file header.
+    // The Python file got its row from the previous test's module-scoped
+    // harness.
     const created = try createWorkspace(&h, "Items-omitted workspace");
     defer gpa.free(created);
 
@@ -212,11 +164,9 @@ test "workspaces_list_omits_items_when_asked" {
     }
 }
 
-// The recents list must expose session_id, session_name and the two
-// stamps.
-//
-// `session_id` is the row key, `session_name` is the sidebar title, and
-// the timestamps drive the relative-time pill.
+// The recents list must expose session_id, session_name and the two stamps.
+// `session_id` is the row key, `session_name` is the sidebar title, and the
+// timestamps drive the relative-time pill.
 test "session_list_keeps_the_fields_the_android_client_reads" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -224,11 +174,8 @@ test "session_list_keeps_the_fields_the_android_client_reads" {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
     };
 
-    // One session so the per-row loop is not vacuous. The Python file
-    // relied on the module-scoped harness; a fresh boot has an empty
-    // list. `PUT /api/llm/session/:id` auto-creates the row without an
-    // LLM turn (session_update.ensureSessionExists), which is what the
-    // other ported session suites use for the same reason.
+    // One session so the per-row loop is not vacuous. The Python file relied
+    // on the module-scoped harness; a fresh boot has an empty list.
     {
         const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}", .{"sess_android_contract_001"});
         defer gpa.free(path);
@@ -288,10 +235,8 @@ test "session_list_keeps_the_fields_the_android_client_reads" {
             std.debug.print("`session_name` must be a string\n", .{});
             return error.TestUnexpectedResult;
         }
-        // Migration 082: the human-touched stamp is "" for legacy rows,
-        // never null — the client's `optString` fallback chain depends
-        // on that. So the assertion is "the key is present AND is not
-        // JSON null", not "it is non-empty".
+        // Migration 082: the human-touched stamp is "" for legacy rows, never
+        // null — the client's `optString` fallback chain depends on that.
         const touched = obj.get("last_human_touched_at") orelse {
             std.debug.print("session row has no `last_human_touched_at`\n", .{});
             return error.TestUnexpectedResult;
@@ -303,14 +248,9 @@ test "session_list_keeps_the_fields_the_android_client_reads" {
     }
 }
 
-// Timestamps must be `YYYY-MM-DD HH:MM:SS` UTC, not local time or
-// epoch.
-//
-// This is the single highest-risk assumption in the Android client: the
-// Kotlin parser builds a `LocalDateTime` and pins it to
-// `ZoneOffset.UTC`. A server-side switch to unix millis would still
-// "parse" (the parser accepts both shapes) but every label would be
-// wrong by the device's offset.
+// Timestamps must be `YYYY-MM-DD HH:MM:SS` UTC, not local time or epoch. This
+// is the single highest-risk assumption in the Android client: the Kotlin
+// parser builds a `LocalDateTime` and pins it to `ZoneOffset.UTC`.
 test "session_timestamps_are_sqlite_utc_strings" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -369,22 +309,16 @@ test "session_timestamps_are_sqlite_utc_strings" {
         }
     }
 
-    // Guard against the assertion loop silently passing on an empty
-    // list. The Python file made this conditional on the list being
-    // non-empty (`if payload["sessions"]: assert checked > 0`); here a
-    // session was created above, so `checked > 0` is unconditional and
-    // the test cannot pass vacuously.
+    // Guard against the assertion loop silently passing on an empty list.
     if (checked == 0) {
         std.debug.print("no timestamp was checked; the loop would be vacuous\n", .{});
         return error.TestUnexpectedResult;
     }
 }
 
-// A known workspace returns its sessions; an unknown one returns none.
-//
-// The Android client always sends a real `workspace_id`. It must never
-// fall back to the global list, so the fail-closed behaviour is
-// load-bearing.
+// A known workspace returns its sessions; an unknown one returns none. The
+// Android client always sends a real `workspace_id`. It must never fall back
+// to the global list, so the fail-closed behaviour is load-bearing.
 test "session_list_scopes_to_a_workspace_and_fails_closed" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -433,10 +367,9 @@ test "session_list_scopes_to_a_workspace_and_fails_closed" {
     }
 }
 
-// `/api/session` and `/api/llm/session` are the same handler.
-//
-// The Android client calls `/api/session`; the desktop store calls the
-// `/api/llm/session` alias. They must not drift apart.
+// `/api/session` and `/api/llm/session` are the same handler. The Android
+// client calls `/api/session`; the desktop store calls the `/api/llm/session`
+// alias. They must not drift apart.
 test "session_list_is_reachable_under_the_aliased_path" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});

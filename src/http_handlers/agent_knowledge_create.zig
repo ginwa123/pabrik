@@ -1,17 +1,5 @@
-//! `POST /api/agents/:agent_id/knowledge`.
-//!
-//! Adds a markdown knowledge file to an Agent. Body: `{file_path, label?, position?}`.
-//! `file_path` MUST be absolute (`std.fs.path.isAbsolute`) — relative
-//! paths return 400.
-//!
-//! Layered as:
-//!   - `useCase` — validate agent + absolute path → INSERT with
-//!     `position = MAX + 1` (COALESCE) → SELECT new row.
-//!   - `agentKnowledgeCreateHandler` — thin orchestrator over
-//!     `useCase`: parses path/body, delegates, maps outcome to HTTP.
-//!
-//! Memory: the per-request arena reaps all allocations at request
-//! end, so neither layer needs explicit `free`s.
+//! `POST /api/agents/:agent_id/knowledge`. Adds a markdown knowledge file to
+//! an Agent. Body: `{file_path, label?, position?}`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -20,10 +8,7 @@ const http_response = @import("http_response.zig");
 const helpers = @import("helpers");
 const agent_db = @import("../models/agent.db.zig");
 
-/// HTTP request body for knowledge-create. Decoupled from the
-/// `KnowledgeCreateInput` domain struct so the wire format can
-/// evolve independently (e.g. adding `?` optional fields) without
-/// touching the use-case.
+/// HTTP request body for knowledge-create.
 const CreateKnowledgeBody = struct {
     file_path: []const u8 = "",
     label: []const u8 = "",
@@ -35,11 +20,7 @@ const CreateKnowledgeBody = struct {
 /// Subset of the knowledge row returned by the use-case.
 pub const Knowledge = agent_db.KnowledgeRow;
 
-/// Domain-level error set for `useCase`. The handler maps each
-/// variant to an HTTP status code + message via two exhaustive
-/// switches (intentional — adding a new variant fails to compile in
-/// the handler until both switches are updated, keeping status
-/// codes in lockstep with the error set).
+/// Domain-level error set for `useCase`.
 pub const KnowledgeCreateError = error{
     /// `agent_id` path param was missing or empty.
     AgentIdRequired,
@@ -60,10 +41,9 @@ pub const KnowledgeCreateError = error{
     RefetchFailed,
     /// Refetched row vanished (should be impossible — surfaces as 500).
     RowVanished,
-    /// `std.fmt.allocPrint` failed on id generation. Unreachable
-    /// under arena allocator (test builds with `testing.allocator`
-    /// can hit it), but the type system requires the variant so
-    /// `try` propagates a typed error.
+    /// `std.fmt.allocPrint` failed on id generation. Unreachable under arena
+    /// allocator (test builds with `testing.allocator` can hit it), but the
+    /// type system requires the variant so `try` propagates a typed error.
     OutOfMemory,
 };
 
@@ -86,14 +66,7 @@ pub const KnowledgeCreateOutput = struct {
 // Use case
 // =====================================================================
 
-/// Create a knowledge row for the given agent. Validates that the
-/// agent exists + is of type `'agent'`, that the file_path is
-/// absolute, then INSERTs with `position = MAX(position) + 1`
-/// (COALESCE so the first row gets position 0, not -1 + 1). The
-/// use-case is transport-agnostic: it works for both the
-/// per-request arena (production HTTP handler) and
-/// `testing.allocator` (unit tests below) — all allocations go
-/// through the passed-in allocator.
+/// Create a knowledge row for the given agent.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -200,15 +173,8 @@ pub fn agentKnowledgeCreateHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-//
-// impl + tests in one file (project convention for Agent Mode).
-// 5 behavioural tests cover the use-case:
-//
-//   1. Validation: empty agent_id → AgentIdRequired
-//   2. Validation: empty file_path → FilePathRequired
-//   3. Validation: relative file_path → NotAbsolutePath
-//   4. AgentNotFound: workspace_item doesn't exist
-//   5. Happy path: first row gets position 0; COALESCE handles empty agents correctly
+// impl + tests in one file (project convention for Agent Mode). 5 behavioural
+// tests cover the use-case: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;

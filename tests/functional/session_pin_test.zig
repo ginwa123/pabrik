@@ -1,17 +1,5 @@
-// `POST /api/llm/session/:id/pin` + `POST /api/llm/session/reorder_pinned`
-// — pinned sessions for the PINNED section above RECENT (Migration 104).
-//
-// Replays the exact wire the sidebar sends on right-click:
-//   POST /api/llm/session/:session_id/pin  body {"is_pinned":true|false}
-//   POST /api/llm/session/reorder_pinned   body {"ordered_ids":[...]}
-//
-// Cases:
-//   1. `pin` answers 200 {success:true,is_pinned:true} and the list row
-//      carries `is_pinned:true` + `pinned_position >= 0`.
-//   2. `unpin` answers 200 and the list row reads `is_pinned:false`.
-//   3. `reorder_pinned` reorders: after POSTing [b,a], the list's pinned
-//      rows sort a-before-b by `pinned_position DESC` (frontend order).
-//   4. Pinning an unknown session 404s (fail-closed, no silent success).
+// `POST /api/llm/session/:id/pin` + `POST /api/llm/session/reorder_pinned` —
+// pinned sessions for the PINNED section above RECENT (Migration 104).
 
 const std = @import("std");
 const testing = std.testing;

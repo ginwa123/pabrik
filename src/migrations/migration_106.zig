@@ -3,41 +3,9 @@ const common = @import("common.zig");
 
 const SqliteBackend = common.SqliteBackend;
 
-/// Migration 106 - create the models.dev model catalog cache.
-///
-/// The catalog is 227 providers / 8,562 models of pure metadata: each model's
-/// context window, output cap, reasoning shape and price. Pabrik needs the
-/// context window server-side (it is what decides when a chat compacts), so the
-/// catalog has to be readable without a network round-trip — it is fetched in
-/// the background and read from here.
-///
-/// WHY THE DB AND NOT A JSON FILE
-///
-/// A file cache and a table are the same shape for a reader, but only one of
-/// them is queryable, transactional, and already backed up with the rest of the
-/// app's state. Keeping both would be two sources of truth for the same 8,562
-/// rows, and the first time they disagreed nobody would be able to say which
-/// one was lying. There is exactly one store.
-///
-/// THREE DELIBERATE CHOICES, EACH PINNED BY A TEST
-///
-///   1. Every TEXT column except the PRIMARY KEY parts is NULLABLE, and reads
-///      use `COALESCE(col, '')`. That is not sloppiness: this backend binds an
-///      EMPTY SLICE as SQL NULL, so `base_url = ''` (25 of 227 providers,
-///      `anthropic` among them, have no api URL) would either trip a NOT NULL
-///      constraint on insert or silently never match a `WHERE base_url = ?`.
-///      NULLABLE + COALESCE is the one shape that makes "no base url" both
-///      writable and readable.
-///
-///   2. `model_catalog_meta` is a single row (`CHECK (id = 1)`). It carries the
-///      freshness facts the UI shows ("via models.dev, synced 2h ago") and the
-///      schema version, so a catalog written by another pabrik build is
-///      DETECTED rather than mis-read. A missing meta row means "never synced",
-///      which is different from "synced zero models".
-///
-///   3. Models are keyed `(provider_id, model_id)`, not by model id alone.
-///      `deepseek-flash` is shipped by several providers with different
-///      endpoints, so a bare model id is not a key — it is a question.
+/// Migration 106 - create the models.dev model catalog cache. The catalog is
+/// 227 providers / 8,562 models of pure metadata: each model's context
+/// window, output cap, reasoning shape and price.
 pub const Migration106CreateModelCatalog = struct {
     pub const version: u32 = 106;
     pub const name = "create_model_catalog";

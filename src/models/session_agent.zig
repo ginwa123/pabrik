@@ -1,14 +1,6 @@
-//! Data model for the `session_agents` entity table.
-//!
-//! Maps each session to the sub-agent name it currently runs (one
-//! row per session; PRIMARY KEY on session_id). The default
-//! sub-agent is `"Agent"`; custom sub-agents are referenced by their
-//! `agent_name` from `LlmConfig.profiles[*].sub_agents`.
-//!
-//! Schema: Migration 009 (`add_session_agents`).
-//!
-//! Note: `updated_at` is stored as INTEGER (unix-seconds), distinct
-//! from the DATETIME convention used by most other tables.
+//! Data model for the `session_agents` entity table. Maps each session to the
+//! sub-agent name it currently runs (one row per session; PRIMARY KEY on
+//! session_id).
 
 const std = @import("std");
 
@@ -54,11 +46,6 @@ pub fn clone(self: *const Self, allocator: std.mem.Allocator) !Self {
 // ===== Tests merged from models_test.zig (2026-09-29 flatten) =====
 
 // Sanity tests for the `src/models/` entity models.
-//
-// Verifies that every model file compiles, that `init` populates the
-// struct as expected, that `deinit` releases its strings, and that
-// external callers can read the struct's fields directly (matching
-// the file-level struct pattern requested by the user).
 
 const testing = std.testing;
 

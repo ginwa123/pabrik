@@ -1,24 +1,6 @@
 //! GET /api/subagent/progress/:tool_call_id — live spawn-batch snapshot.
-//!
-//! 2026-09-04 spawn-subagent-refresh-persist (task_1788505292766_1):
-//! Progress events are SSE-ephemeral, so a page refresh mid-run wipes
-//! ChatView's `subAgentProgressMap` with no replay. This handler serves
-//! the backend's authoritative in-memory snapshot
-//! (`subagent_progress.zig` registry, mirrored on every emit) so
-//! `loadChatHistory` can rehydrate the map for placeholder rows.
-//!
-//! Wire shape: `{ tool_call_id: string, progress: [{ agent_name,
-//! status, agent_index, total_agents, subagent_session_id,
-//! elapsed_ms }] }`
-//! - progress=[] → unknown/cleared (completed, or server restarted).
-//!   The frontend falls back to Task 0's "starting…" copy.
-//! - `subagent_session_id` is "" when not yet known; the frontend
-//!   normalizes "" → undefined (same as the omitted wire field on the
-//!   live SSE path).
-//!
-//! NOTE: this is an in-memory read only — mid-run rows are NOT in
-//! llm_history yet (only the Phase 1 placeholder envelope is), so
-//! reading from the DB here would always return no rows.
+//! 2026-09-04 spawn-subagent-refresh-persist (task_1788505292766_1): Progress
+//! events are SSE-ephemeral, so a page refresh mid-run wipes ChatView's
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -40,11 +22,9 @@ pub fn subAgentProgressGetHandler(ctx: gserverz.HttpContext, req: gserverz.HttpR
 
     const rows = try subagent_progress.getSnapshot(allocator, tool_call_id);
 
-    // Build the JSON body manually — `data` must be a pre-serialized
-    // JSON string (see worker_get.zig / stream_get.zig pattern), not
-    // an anonymous struct. Strings go through std.json.fmt so
-    // LLM-supplied agent_names are always valid JSON strings.
-    // `body` is arena-owned (freed at request end — do NOT free here).
+    // Build the JSON body manually — `data` must be a pre-serialized JSON
+    // string (see worker_get.zig / stream_get.zig pattern), not an anonymous
+    // struct.
     var buf: std.ArrayList(u8) = .empty;
     try buf.print(allocator, "{{\"tool_call_id\":{f},\"progress\":[", .{std.json.fmt(tool_call_id, .{})});
     for (rows, 0..) |row, i| {

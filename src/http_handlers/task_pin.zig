@@ -1,20 +1,6 @@
 //! `POST /api/workspaces/:workspace_id/items/:item_id/tasks/:task_id/pin`.
-//!
-//! Body: `{ "is_pinned": true | false }`.
-//!
-//! Flips the `is_pinned` flag on the row. When pinning (true), the
-//! row's `pinned_position` is bumped to MAX(pinned_position WHERE
-//! is_pinned=1) + 1 so it lands at the BOTTOM of the pinned region.
-//! When unpinning (false), the row's `pinned_position` is reset to 0.
-//!
-//! Idempotent: pinning an already-pinned row is a no-op for the
-//! position bump (MAX still includes the row's own value, so the
-//! new position equals the current one). Unpinning an
-//! already-unpinned row is also a no-op.
-//!
-//! Layered as `useCase` (parse body + flip pin + return new position)
-//! and a thin handler that maps the outcome + errors to status
-//! codes / JSON.
+//! Body: `{ "is_pinned": true | false }`. Flips the `is_pinned` flag on the
+//! row.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -102,10 +88,7 @@ pub fn taskPinHandler(
         });
     }
 
-    // 3. Parse JSON and extract `is_pinned`. The body shape is
-    // `{ is_pinned: bool }` — we parse as a `std.json.Value` so we
-    // can validate the field type without a dedicated struct
-    // (the field is a single bool; a dedicated struct adds noise).
+    // 3. Parse JSON and extract `is_pinned`.
     const parsed = std.json.parseFromSliceLeaky(std.json.Value, allocator, body, .{}) catch {
         return res.jsonResponse(.{
             .status_code = 400,

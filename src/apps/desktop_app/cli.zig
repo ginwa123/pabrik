@@ -1,15 +1,6 @@
-// src/apps/desktop_app/cli.zig
-//
-// Command-line parser for pabrik-desktop. Parses --port, --pabrik-path,
-// --pabrik-url, --window-size, --title, --user-agent, --icon,
-// --smoke-test, --help / -h.
-// Returns a Config struct with all the parameters. The caller is responsible
-// for calling `cfg.deinit(allocator)` to free heap-allocated strings.
-//
-// The parser writes usage to stderr when --help is requested or when an
-// unknown argument is given, then returns an error from `CliError`. The caller
-// typically treats `error.ShowHelp` as a clean exit (don't print the error to
-// the user) and all other errors as "show the error to the user, then exit".
+// src/apps/desktop_app/cli.zig Command-line parser for pabrik-desktop. Parses
+// --port, --pabrik-path, --pabrik-url, --window-size, --title, --user-agent,
+// --icon, --smoke-test, --help / -h.
 
 const std = @import("std");
 
@@ -20,12 +11,8 @@ pub const Config = struct {
     /// Optional explicit path to the pabrik binary.
     /// Ignored when `pabrik_url` is set (connect mode).
     pabrik_path: ?[]const u8 = null,
-    /// If set, skip the spawn/healthcheck/asset-extraction path entirely
-    /// and just point the webview at this URL. Useful for dev workflows
-    /// where you already have a pabrik running and just want a window
-    /// wrapper (e.g. `--pabrik-url http://127.0.0.1:8081` to attach to a
-    /// pabrik you started by hand). `--port` and `--pabrik-path` are ignored
-    /// in this mode.
+    /// If set, skip the spawn/healthcheck/asset-extraction path entirely and
+    /// just point the webview at this URL.
     pabrik_url: ?[]const u8 = null,
     /// Decoupled-service mode (added in 2026-07): when no `pabrik` daemon
     /// is running, refuse to auto-spawn one and surface an actionable
@@ -37,10 +24,8 @@ pub const Config = struct {
     /// Window dimensions.
     window_width: u32 = 1280,
     window_height: u32 = 800,
-    /// Window title. The default value is a string literal — do NOT free
-    /// it. Heap-allocated titles (set via `--title`) MUST be freed by
-    /// deinit(). See deinit() for the (slightly leaky) edge case when
-    /// the user passes `--title "Pabrik"` (same as default).
+    /// Window title. The default value is a string literal — do NOT free it.
+    /// Heap-allocated titles (set via `--title`) MUST be freed by deinit().
     title: []const u8 = "Pabrik",
     /// Optional User-Agent override.
     user_agent: ?[]const u8 = null,
@@ -53,18 +38,7 @@ pub const Config = struct {
     /// workflow.
     enable_devtools: bool = false,
     /// Linux-only today (no-op on macOS/Windows): when true, force
-    /// `GDK_BACKEND=x11` before gtk_init. The default Wayland backend
-    /// silently falls back to software rendering on NVIDIA+Wayland
-    /// setups (the wl_drm / linux-dmabuf-feedback path is broken on
-    /// Hyprland + GeForce, so WebKitGTK never spawns its GPU process
-    /// and rasterizes every frame in the web-process JS thread → 99% CPU
-    /// core). XWayland is the workaround: NVIDIA's GL path under X11
-    /// is mature and lets WebKitGTK bring up its GPU process normally.
-    ///
-    /// Off by default so first-time users on the working path (AMD/
-    /// Intel + Wayland) are not affected. The user opts in with
-    /// `--x11` when they hit the symptom and are happy to pay the
-    /// XWayland translation cost.
+    /// `GDK_BACKEND=x11` before gtk_init.
     force_x11: bool = false,
     /// Browser-tab mode: open the resolved URL in the OS default
     /// browser (new tab) instead of a native webview window, then
@@ -74,11 +48,8 @@ pub const Config = struct {
     pub fn deinit(self: *const Config, allocator: std.mem.Allocator) void {
         if (self.pabrik_path) |p| allocator.free(p);
         if (self.pabrik_url) |u| allocator.free(u);
-        // title: free only if heap-allocated (i.e. user set --title with
-        // a value different from the default literal). If the user passed
-        // `--title "Pabrik"`, we treat the title as still the literal and
-        // skip the free — this is a small memory leak for that edge case
-        // (the user is unlikely to type the default). For v1 this is fine.
+        // title: free only if heap-allocated (i.e. user set --title with a
+        // value different from the default literal).
         if (!std.mem.eql(u8, self.title, "Pabrik")) allocator.free(self.title);
         if (self.user_agent) |ua| allocator.free(ua);
         if (self.icon_path) |ip| allocator.free(ip);
@@ -190,22 +161,13 @@ pub fn parse(allocator: std.mem.Allocator, args: []const []const u8) CliError!Co
             cfg.enable_devtools = true;
         } else if (std.mem.eql(u8, arg, "--x11")) {
             // Linux-only flag (no-op on macOS/Windows). Forces the GDK
-            // windowing backend to X11 so GDK/XWayland backs the WebKit
-            // web view instead of GDK/Wayland. The Wayland+NVIDIA path
-            // doesn't bring up WebKitGPUProcess today, which leaves the
-            // web-process main thread doing all rasterization in
-            // software (≈1 core pinned at 99%). XWayland's NVIDIA GL
-            // stack is mature and lets WebKitGPUProcess spawn
-            // normally. The opt-in keeps the AMD/Intel+Wayland happy
-            // path unchanged for users who don't need the workaround.
+            // windowing backend to X11 so GDK/XWayland backs the WebKit web
+            // view instead of GDK/Wayland.
             cfg.force_x11 = true;
         } else if (std.mem.eql(u8, arg, "--browser")) {
             cfg.browser = true;
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
-            // std.debug.print writes to stderr by default. Zig 0.16 removed
-            // std.fs.File.stderr() in favor of std.Io.File.stderr() which
-            // requires an Io handle; using std.debug.print avoids threading
-            // io through the parser for what is a startup-only path.
+            // std.debug.print writes to stderr by default.
             std.debug.print("{s}", .{usage});
             return error.ShowHelp;
         } else {
@@ -216,15 +178,8 @@ pub fn parse(allocator: std.mem.Allocator, args: []const []const u8) CliError!Co
     return cfg;
 }
 
-// ===== Tests merged from cli_test.zig (2026-09-29 flatten) =====
-// Tests for the CLI parser. Each test builds a small `args` array, calls
-// `parse`, and asserts on the returned Config. Memory: the test allocator
-// is `std.testing.allocator` which is a GeneralPurposeAllocator with leak
-// detection enabled in Debug mode — leaks will fail the test.
-//
-// The `&args` form is a Zig 0.16 idiom: a `*const [N][]const u8` is
-// implicitly coerced to `[]const []const u8` when passed to a function with
-// that parameter type. Both work the same way they did in Zig 0.15.
+// ===== Tests merged from cli_test.zig (2026-09-29 flatten) ===== Tests for
+// the CLI parser.
 
 const testing = std.testing;
 

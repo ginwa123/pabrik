@@ -1,22 +1,4 @@
 //! The models.dev catalog over HTTP.
-//!
-//! Three endpoints, and the split between them is the whole design:
-//!
-//!   GET  /api/models/catalog   the PICKER's data — filtered + paged server-side,
-//!                              because the catalog is 8,562 models and shipping
-//!                              all of it to open one dialog is not acceptable.
-//!   GET  /api/models/resolve   the ONE call the profile dialog makes. It answers
-//!                              "what will this profile actually do?" — window,
-//!                              output cap, body shape, reasoning, price, and
-//!                              WHERE THAT ANSWER CAME FROM.
-//!   POST /api/models/refresh   fetch models.dev now, instead of waiting for the
-//!                              hourly timer. The primary path is the timer; this
-//!                              exists for "I just changed providers".
-//!
-//! PROVENANCE IS NOT DECORATION. Every resolve response carries `source`
-//! (`catalog` | `builtin`) and `catalog` (`fresh` | `stale` | `absent`). A UI that
-//! shows `200000` without saying it is the built-in guess is worse than one that
-//! shows nothing, because it looks like knowledge.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");

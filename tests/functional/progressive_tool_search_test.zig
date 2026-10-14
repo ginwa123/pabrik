@@ -1,51 +1,5 @@
-// Functional tests for progressive tool search (`search_tool` /
-// `view_tool` / `use_tool`).
-//
-// Zig port of `tests/functional/progressive_tool_search_test.py`
-// (same test names, same order).
-//
-// PYTHON DOCSTRING, PRESERVED:
-//
-//   """Functional tests for progressive tool search (search_tool /
-//   view_tool / use_tool).
-//
-//   The feature keeps MCP tools and NOT-enabled built-in tools out of
-//   the LLM's tool list until the agent equips them with `use_tool`
-//   (recorded in `session_progressive_tool`), and the three meta-tools
-//   are **default-equipped in agent and kanban mode only** — the two
-//   modes whose creation path seeds `DEFAULT_AGENT_TOOLS`. Design and
-//   folder items seed no tool list, and a plain chat session has no
-//   workspace item at all, so none of them get the three.
-//
-//   These tests assert on what the real LLM request contained, via
-//   `[STREAM START] model=... | messages=N | tools=K`. The harness's
-//   stub profile points `base_url` at http://127.0.0.1:1 (a dead
-//   port), so there is no upstream to capture a body from.
-//
-//   Note on a dead end: `workflow.zig`'s `[CHECKPOINT] ...`
-//   `logger.infoFmt` lines do NOT reach the harness log, while the
-//   Agent's `[info] [STREAM ...]` lines do — so these tests
-//   deliberately key off the STREAM line.
-//
-//   Plan: docs/superpowers/plans/2026-09-12-progressive-tool-search.md
-//   """
-//
-// WHAT SURVIVED THE PORT, AND WHY THE FILE IS SO SHORT
-//
-// The Python module carried helpers for a wider set of tests than it
-// finally defined (`_create_workspace`, `_create_kanban`,
-// `_run_kanban_task`, `_create_kanban_task_idle`,
-// `_run_existing_session` — all driven by a stub LLM server that does
-// not exist here). Two `test_*` functions survive in the Python file
-// and therefore two test blocks exist below; the unused helpers are
-// NOT ported rather than left as dead code. The module-level
-// constants below are kept because they record the plan's numbers, but
-// the surviving tests do not read them.
-//
-// `stub_harness` (the Python fixture) becomes `bootStub()`: the
-// harness's own `stub_llm_profile = true` writes a `stub` profile
-// pointing at `http://127.0.0.1:1` BEFORE boot, which is the dead
-// upstream the docstring refers to.
+// Functional tests for progressive tool search (`search_tool` / `view_tool` /
+// `use_tool`).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -57,12 +11,8 @@ const gpa = testing.allocator;
 const io = testing.io;
 
 // `[STREAM START] model=stub-model | messages=2 | tools=5 | streaming=true`
-//
-// The Python module compiled this to a regex; the port scans for the
-// two literal markers instead. A compiled regex would add a stdlib
-// dependency to a suite whose only job is "does the log carry a
-// `tools=N` with N > 0", and the lazy `.*?` + `\b` in the pattern is
-// exactly the part that never fires on the real log lines.
+// The Python module compiled this to a regex; the port scans for the two
+// literal markers instead.
 const STREAM_MARKER = "[STREAM START]";
 const TOOLS_KEY = "tools=";
 
@@ -71,10 +21,6 @@ const TOOLS_KEY = "tools=";
 const PROGRESSIVE_TOOL_NAMES = [_][]const u8{ "search_tool", "view_tool", "use_tool" };
 
 // A fresh kanban item seeds DEFAULT_AGENT_TOOLS + DEFAULT_KANBAN_TOOLS.
-// The agent defaults list ALREADY contains search_tool/view_tool/use_tool,
-// so the three arrive through the seeded tool config — that seed is what
-// scopes the default to agent/kanban mode, and only these two creation
-// paths apply it.
 const AGENT_DEFAULTS: u32 = 25;
 const KANBAN_ONLY_DEFAULTS: u32 = 2;
 const KANBAN_SEEDED_TOOLS: u32 = AGENT_DEFAULTS + KANBAN_ONLY_DEFAULTS; // 27
@@ -102,10 +48,6 @@ fn nowMs() i64 {
 }
 
 /// The `N` in a `[STREAM START] ... tools=N` line, or `null`.
-///
-/// Scoped to ONE line: `tools=` is looked up in the text between the
-/// marker and the next newline, so a later `tools=` on another log line
-/// can never be paired with an earlier `[STREAM START]`.
 fn toolsValueOnStreamLine(line: []const u8) ?i64 {
     const at = std.mem.indexOf(u8, line, TOOLS_KEY) orelse return null;
     var i = at + TOOLS_KEY.len;
@@ -169,11 +111,6 @@ fn waitForToolCount(h: *Harness, timeout_s: f64) !i64 {
 }
 
 /// A plain (unbound) chat session — the `pabrik-tui` body shape.
-///
-/// `expect = {201, 500}`: with the stub profile the LLM call fails at
-/// runtime (dead upstream), which the server reports as 500 while the
-/// session row is still created. The test only cares that the workflow
-/// STARTED, because the assertion is on the log's STREAM line.
 fn queuePlainMessage(h: *Harness, session_id: []const u8, allowed_tools: []const u8) !void {
     const body = try std.fmt.allocPrint(gpa,
         \\{{"session_id":"{s}","queue_message":"hello from the progressive tool search test","cwd_session":"{s}","allowed_tools":"{s}","image_urls":"","selected_profile_model":"","is_auto_retry_until_stop":""}}
@@ -188,11 +125,6 @@ fn queuePlainMessage(h: *Harness, session_id: []const u8, allowed_tools: []const
 }
 
 /// Skip unless a `sqlite3` CLI is present and speaks `-json`.
-///
-/// This package links no SQLite and will not grow one (see
-/// `tests/functional/build.zig`'s header), so the seed row goes in
-/// through the command-line tool — the same idiom
-/// `background_command_completion_test.zig` uses.
 fn requireSqlite3Cli() !void {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-json", ":memory:", "SELECT 1 AS probe;" },
@@ -271,9 +203,6 @@ fn sqliteRun(db_path: []const u8, sql: []const u8) ![]u8 {
 }
 
 /// `sqlite3 -json` prints ZERO BYTES for an empty result set — not `[]`.
-/// `countEquipRows` always gets exactly one COUNT row, so this only
-/// matters as a guard against feeding a syntax error to the JSON parser
-/// and reporting it as a test failure.
 fn parseSqliteJson(out: []const u8) !std.json.Parsed(std.json.Value) {
     if (std.mem.trim(u8, out, " \t\r\n").len == 0) {
         return std.json.parseFromSlice(std.json.Value, gpa, "[]", .{});
@@ -346,10 +275,9 @@ fn countEquipRows(h: *Harness, session_id: []const u8) !u64 {
 // Tests
 // ============================================================================
 
-// A plain chat session has no workspace item, so `self_item_type` is ""
-// — not agent/kanban — and the three progressive tools must NOT be
-// injected. This is what scopes the default to the two modes the user
-// asked for.
+// A plain chat session has no workspace item, so `self_item_type` is "" — not
+// agent/kanban — and the three progressive tools must NOT be injected. This
+// is what scopes the default to the two modes the user asked for.
 test "unbound_chat_session_does_not_get_the_meta_tools" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -399,9 +327,7 @@ test "duplicate_equip_row_is_rejected_by_the_primary_key" {
 comptime {
     // Body-analysis barrier — see `harness.zig`'s note: an unreferenced
     // function body is never type-checked, so a stdlib rename inside one
-    // stays invisible until a caller appears. The plan's constants are
-    // referenced here too so their types are checked even though no
-    // surviving test reads them.
+    // stays invisible until a caller appears.
     _ = nowMs;
     _ = toolsValueOnStreamLine;
     _ = maxToolsInLog;

@@ -13,9 +13,8 @@ pub const Migration073AddSessionActivity = struct {
 
     pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
         // 1. Source table — append-only log, no UNIQUE constraint.
-        //    `description` is NOT NULL (callers must supply) but has
-        //    no DEFAULT — an empty description would defeat the
-        //    purpose of the log.
+        // `description` is NOT NULL (callers must supply) but has no DEFAULT
+        // — an empty description would defeat the purpose of the log.
         try db.exec(allocator,
             \\CREATE TABLE IF NOT EXISTS session_activity (
             \\    id TEXT PRIMARY KEY,

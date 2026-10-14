@@ -1,11 +1,8 @@
 const std = @import("std");
 
-/// Forge provider for an attached pull/merge request.
-///
-/// `github` covers github.com AND GitHub Enterprise (custom domains) —
-/// the tool caller passes the explicit override when host sniffing
-/// cannot tell. `gitlab` covers gitlab.com and self-hosted GitLab.
-/// `generic` is the pure-git fallback (no forge CLI needed).
+/// Forge provider for an attached pull/merge request. `github` covers
+/// github.com AND GitHub Enterprise (custom domains) — the tool caller passes
+/// the explicit override when host sniffing cannot tell.
 pub const PrProvider = enum {
     github,
     gitlab,
@@ -28,21 +25,14 @@ pub const PrProvider = enum {
 };
 
 /// Parsed PR reference. `number` is the pull number (GitHub) or MR iid
-/// (GitLab); null for `generic` (no number to parse). `repo_path` is
-/// `owner/repo` for GitHub, the full namespaced path for GitLab
-/// (subgroups included), and "" for generic. All slices borrow from
-/// the (normalized) input URL — the caller owns the lifetime.
+/// (GitLab); null for `generic` (no number to parse).
 pub const PrRef = struct {
     provider: PrProvider,
     repo_path: []const u8,
     number: ?[]const u8,
 };
 
-/// Normalize a PR/MR URL for persistence. Trims whitespace, strips
-/// embedded credentials (`https://user:token@host/...` → `https://host/...`
-/// so secrets never land in the DB or logs), drops trailing slashes
-/// and forge UI suffixes (`/files`, `/commits`, `/checks`, `/commits/...`),
-/// and drops a trailing `.git`. Returns an owned string.
+/// Normalize a PR/MR URL for persistence.
 pub fn normalizePrUrl(allocator: std.mem.Allocator, url: []const u8) ![]u8 {
     const trimmed: []const u8 = std.mem.trim(u8, url, " \t\r\n");
 
@@ -100,13 +90,7 @@ fn splitUrl(url: []const u8) ?struct { scheme: []const u8, host: []const u8, pat
     return .{ .scheme = url[0..scheme_end], .host = host, .path = path };
 }
 
-/// Auto-detect the provider from a (normalized) URL. Host sniffing
-/// first (`github`/`gitlab` substring covers github.com, ghe hosts
-/// with "github" in the name, gitlab.com, and self-hosted gitlab
-/// hosts), then path markers (`/pull/` → github, `/-/merge_requests/`
-/// or `/merge_requests/` → gitlab). Anything else is `generic` — the
-/// caller passes an explicit override for forges this misses (e.g.
-/// GitHub Enterprise on a custom domain without "github" in the host).
+/// Auto-detect the provider from a (normalized) URL.
 pub fn detectProvider(url: []const u8) PrProvider {
     const parts = splitUrl(url) orelse return .generic;
     // Lowercase the host into a stack buffer for substring matching.
@@ -142,34 +126,6 @@ fn providerFromHost(host: []const u8) PrProvider {
 }
 
 /// Detect the provider from a `git remote get-url` value.
-///
-/// A remote is not always an http(s) URL: the scp-like form
-/// `git@gitlab.com:group/repo.git` carries no `://`, so feeding it
-/// straight to `detectProvider` (which needs a scheme to split a host
-/// out) reports EVERY SSH remote as `generic` — and a GitLab repo cloned
-/// over SSH is the common case. So slice the host out of the scp-like
-/// form and hand THAT to `providerFromHost`.
-///
-/// ## Why the host is sliced, not rewritten into a URL
-///
-/// The first version of this function synthesised `https://<host>/<path>`
-/// with `bufPrint` into a stack array sized from `std.fs.max_path_bytes`.
-/// That is a 4 KB frame on Linux but `std.os.windows.PATH_MAX_WIDE * 3 + 1`
-/// — about **96 KB** — on Windows, and this runs on a worker thread
-/// handling an HTTP request. That overflows the stack and takes the whole
-/// server down (STATUS_STACK_OVERFLOW). Slicing needs no buffer at all.
-///
-/// (The array's exact type is spelled without brackets in this comment on
-/// purpose: a source guard test below greps for that literal, and a prose
-/// mention would make the guard match its own documentation.)
-///
-/// It also silently truncated on Linux: a remote longer than PATH_MAX made
-/// `bufPrint` fail, so the function returned `generic` and the request
-/// quietly fell back to `gh`.
-///
-/// A self-hosted GitLab on a host without "gitlab" in its name still lands
-/// on `generic`; the caller passes an explicit override for that (see
-/// `set_pull_request`'s `provider` input).
 pub fn detectProviderFromRemote(remote: []const u8) PrProvider {
     const trimmed = std.mem.trim(u8, remote, " \t\r\n");
     if (trimmed.len == 0) return .generic;
@@ -308,12 +264,7 @@ test "PrProvider fromString round-trips" {
 }
 
 test "detectProviderFromRemote survives a remote longer than PATH_MAX" {
-    // Two bugs in one test. On Linux the old `std.fs.max_path_bytes`
-    // buffer made bufPrint fail for a remote past PATH_MAX, so this
-    // returned `generic` and the request silently fell back to `gh`. On
-    // Windows that same buffer is ~96 KB and overflowed the worker
-    // thread's stack, killing the server. Slicing the host has neither
-    // failure mode.
+    // Two bugs in one test.
     const padding = "a" ** 8192;
     const cases = [_]struct { in: []const u8, out: PrProvider }{
         .{

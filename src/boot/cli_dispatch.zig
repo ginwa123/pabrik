@@ -1,8 +1,6 @@
 //! `pabrik service ...` and `pabrik create-admin ...` subcommand dispatch.
-//!
 //! Both peek at argv[1] and return false when it does not match, so `main`
-//! falls through to the regular server boot. Return true means handled
-//! (main must exit).
+//! falls through to the regular server boot.
 
 const std = @import("std");
 const helpers = @import("helpers");
@@ -133,9 +131,6 @@ pub fn dispatchServiceSubcommand(
 }
 
 /// `pabrik create-admin --email E [--password P] [--name N] [--force]`.
-/// Bootstraps the first admin for opt-in `--auth` mode: opens the same DB +
-/// runs migrations (works on fresh installs), refuses when an active admin
-/// exists unless `--force`. Returns true when handled (main should exit).
 pub fn dispatchCreateAdmin(
     allocator: std.mem.Allocator,
     io: std.Io,

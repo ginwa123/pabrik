@@ -1,19 +1,5 @@
 //! `GET /api/llm/session/:session_id/background_processes` — list all
 //! background processes (`command background=true` rows) for a session.
-//!
-//! Wire shape: `{ processes: [{ pid, command, log_path, started_at,
-//! status, running }], count }`.
-//!
-//! `running` is computed LIVE per row via
-//! `helpers.process_status.isProcessRunning` — the `status` column is
-//! deliberately NOT trusted (it can drift, e.g. a `kill -9` leaves it at
-//! `'running'` because the defer that updates it never ran; see
-//! `src/schedulers/cleanup_stale_background_process.zig`). Empty session
-//! returns `{ processes: [], count: 0 }` (200, not 404).
-//!
-//! Layered as `useCase` (DB query + live-ness + build JSON) and a thin
-//! handler that maps errors to status codes. Mirrors
-//! `queue_messages_get.zig`.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -24,10 +10,9 @@ const process_status = @import("helpers").process_status;
 pub const BackgroundProcessesListError = error{
     MissingSessionId,
     QueryFailed,
-    /// `allocator.dupe` returned no memory. In production the
-    /// per-request arena makes this unreachable but the type
-    /// system requires the variant so `try allocator.dupe`
-    /// propagates a typed error.
+    /// `allocator.dupe` returned no memory. In production the per-request
+    /// arena makes this unreachable but the type system requires the variant
+    /// so `try allocator.dupe` propagates a typed error.
     OutOfMemory,
 };
 
@@ -95,10 +80,9 @@ pub fn useCase(
     }
 
     const owned = try processes.toOwnedSlice(allocator);
-    // The JSON body deep-copies every slice, so the duped intermediates
-    // are freed here — they must NOT outlive the call (under
-    // testing.allocator they would report as leaks; under the
-    // per-request arena the frees are harmless no-ops).
+    // The JSON body deep-copies every slice, so the duped intermediates are
+    // freed here — they must NOT outlive the call (under testing.allocator
+    // they would report as leaks; under the per-request arena the frees are
     defer {
         for (owned) |p| {
             allocator.free(p.command);
@@ -166,10 +150,8 @@ pub fn backgroundProcessesListHandler(
 }
 
 // =====================================================================
-// Inline tests (project convention — useCase directly against an
-// in-memory DB walked through ALL migrations, never hand-rolled
-// CREATE TABLE bodies).
-// =====================================================================
+// Inline tests (project convention — useCase directly against an in-memory DB
+// walked through ALL migrations, never hand-rolled CREATE TABLE bodies).
 
 const testing = std.testing;
 const migration = @import("../migrations/migration.zig");

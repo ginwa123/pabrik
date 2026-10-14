@@ -1,15 +1,4 @@
 //! `send` command — POST /api/llm/session with a message.
-//!
-//! Body shape (from the user's curl example):
-//!   {
-//!     "session_id": "session-...",
-//!     "queue_message": "<the message>",
-//!     "allowed_tools": "all",
-//!     "cwd_session": "",
-//!     "image_urls": "",
-//!     "selected_profile_model": "",
-//!     "is_auto_retry_until_stop": ""
-//!   }
 
 const std = @import("std");
 const config = @import("../config.zig");
@@ -74,11 +63,9 @@ pub fn run(args: Args, cfg: config.Config, io: std.Io) @import("root.zig").Dispa
 const custom_http_client = @import("kabelweb").client;
 const client_typedef = custom_http_client;
 
-// ===== Tests merged from send_test.zig (2026-09-29 flatten) =====
-// Tests for src/commands/send.zig (POST /api/llm/session).
-//
-// Real tests land when the command itself lands. This stub keeps
-// the test discovery in root.zig happy so the build doesn't break.
+// ===== Tests merged from send_test.zig (2026-09-29 flatten) ===== Tests for
+// src/commands/send.zig (POST /api/llm/session). Real tests land when the
+// command itself lands.
 
 const testing = std.testing;
 

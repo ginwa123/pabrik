@@ -1,25 +1,5 @@
-//! `PATCH /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/html`.
-//!
-//! Update an element's HTML body atomically (rewrites the on-disk
-//! file via `design_io.atomicWriteFile`). Used by both the
-//! iframe's contenteditable (`onBlur` handler) and the Monaco
-//! editor in the properties panel.
-//!
-//! Body: `{html: string}` (the full HTML body — replaces whatever
-//! was there previously).
-//!
-//! Response shape: `DesignElementResponse` for the post-update
-//! element. Built by `http_response.makeDesignElementResponse` and
-//! wrapped via `std.json.Stringify.valueAlloc`.
-//!
-//! Errors:
-//!   - 400 missing `element_id` path param, invalid JSON body,
-//!     missing/empty `html` field
-//!   - 404 `element_id` not found
-//!   - 500 DB failure or file-write failure
-//!
-//! Plan: docs/superpowers/plans/2026-07-08-design-mode-redesign.md
-//!   (Chunk 3, Task 3.4)
+//! `PATCH
+//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/html`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");

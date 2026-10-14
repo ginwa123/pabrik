@@ -1,41 +1,6 @@
 //! HTTP handler + use-case for `DELETE /api/config/pabrik/profiles/:name`.
-//!
-//! Removes a single profile from `config.json` and live-reloads the
-//! in-memory `LlmConfig` so running workflows see the change.
-//! Returns 200 on success, 404 if the named profile does not exist.
-//!
-//! ## File structure
-//!
-//! This file holds BOTH the use-case (pure function over an in-memory
-//! struct) and the HTTP handler (thin orchestrator that reads the
-//! file, calls the use-case, writes the file back, and live-reloads
-//! the global LlmConfig):
-//!
-//! - `PabrikConfigJsonForDelete` — the in-memory struct the use-case
-//!   mutates (mirrors the field set in `pabrik_config_put.zig`'s
-//!   `ConfigJson` so JSON round-trips preserve everything).
-//! - `removeProfileFromConfig` — the **use-case** (pure function,
-//!   unit-tested without the file system in
-//!   `pabrik_config_profile_delete_test.zig`).
-//! - `pabrikConfigProfileDeleteHandler` — the **HTTP handler**
-//!   (orchestrator).
-//! - Sub-helpers — small focused functions used by the handler
-//!   (path resolution, file I/O, parse, write, live-reload, response
-//!   builders).
-//!
-//! ## Memory model
-//!
-//! Per the project convention (see `custom-http-server-per-request-arena`
-//! memory), this handler does NOT add `defer allocator.free(...)` for
-//! request-scoped allocations. The per-request `ArenaAllocator`
-//! reaps them when the request finishes. The two exceptions:
-//!
-//! - `*PabrikConfigJsonForDelete` (the parsed JSON struct) owns its
-//!   own strings and ObjectMap — those need explicit `deinit`. The
-//!   use-case's `deinit` walks them. Failure paths call
-//!   `config_json.deinit(allocator)` before returning.
-//! - The `config_str` returned by `std.json.Stringify.valueAlloc` is
-//!   written to the file and then goes out of scope (arena reaps).
+//! Removes a single profile from `config.json` and live-reloads the in-memory
+//! `LlmConfig` so running workflows see the change.
 
 const std = @import("std");
 const json = std.json;
@@ -50,46 +15,25 @@ const user_config_store = pabrikcore.user_config_store;
 // Domain types
 // =====================================================================
 
-/// Struct shape that the use-case mutates in-place. The full LlmConfig
-/// type lives in `Config.zig` and is much heavier (it deserializes
-/// every known field). The handler only needs the *fields touched* by
-/// the delete path: the top-level scalar fields, `profiles_models` (a
-/// raw `json.Value` so we can manipulate nested objects without
-/// losing keys), and `active_profile` (which we may need to clear).
-///
-/// Mirrors the field set in `pabrik_config_put.zig`'s `ConfigJson` so
-/// the parsed-JSON round-trip preserves everything the GET/PUT
-/// handlers expect.
+/// Struct shape that the use-case mutates in-place. The full LlmConfig type
+/// lives in `Config.zig` and is much heavier (it deserializes every known
+/// field).
 pub const PabrikConfigJsonForDelete = struct {
     api_key: []const u8 = "",
     model: []const u8 = "",
     base_url: []const u8 = "",
     // Empty default — matches the parallel `ConfigJson` in
-    // `pabrik_config_get.zig`/`pabrik_config_put.zig` and the
-    // `LlmConfigJson` convention. The previous default `"openai"`
-    // was a `.rodata` string literal; when the parsed config file did
-    // not contain this field (the common case for harness-installed
-    // stub configs), `deinit()` would call `Allocator.free` on the
-    // literal pointer and crash with SIGBUS (the debug allocator
-    // poison-writes the slice via `@memset(bytes, undefined)` before
-    // the free). Empty literal has length 0 → `Allocator.free`
-    // short-circuits, no write, no crash.
+    // `pabrik_config_get.zig`/`pabrik_config_put.zig` and the `LlmConfigJson`
+    // convention.
     url_style: []const u8 = "",
     max_tokens: ?usize = null,
     system_prompt: []const u8 = "",
     profiles_models: ?json.Value = null,
     active_profile: ?[]const u8 = null,
 
-    /// Free all owned strings, the `profiles_models` ObjectMap's keys,
-    /// the nested object values (shallow deep-clean for the strings),
-    /// and the backing storage. Used by the unit test in
-    /// `defer cfg.deinit(allocator)` and by the handler in any error
-    /// path that has to abandon a partial read.
-    ///
-    /// Walks the OBJECT MAP ITERATOR (not the just-removed entries) so
-    /// the use-case's `removeProfileFromConfig` must free any entry it
-    /// removes before this runs (otherwise the strings inside the
-    /// removed nested object would leak).
+    /// Free all owned strings, the `profiles_models` ObjectMap's keys, the
+    /// nested object values (shallow deep-clean for the strings), and the
+    /// backing storage.
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         allocator.free(self.api_key);
         allocator.free(self.model);
@@ -100,20 +44,11 @@ pub const PabrikConfigJsonForDelete = struct {
         if (self.profiles_models) |_| {
             if (self.profiles_models.? == .object) {
                 // Take a direct mutable pointer to the field in `self`'s
-                // storage. We can't get this through an `if (optional) |pm|`
-                // + `switch (pm)` chain because the `if` capture in Zig 0.15
-                // gives a `*const` pointer, and switching on a `*const`
-                // value yields `*const` switch captures (which can't call
-                // `deinit`).
+                // storage.
                 const obj: *json.ObjectMap = &self.profiles_models.?.object;
-                // Walk the top-level entries: free each top-level key
-                // (duped by `put`) and — if the value is an object —
-                // free the nested ObjectMap's string values and
-                // backing storage via `freeObjectMapContents`. We do
-                // NOT free the nested ObjectMap's own keys (per the
-                // test's `deinit` spec — they're string literals in
-                // the test, and freeing them would crash with
-                // `Invalid free`).
+                // Walk the top-level entries: free each top-level key (duped
+                // by `put`) and — if the value is an object — free the nested
+                // ObjectMap's string values and backing storage via
                 var iter = obj.iterator();
                 while (iter.next()) |entry| {
                     allocator.free(entry.key_ptr.*);
@@ -129,12 +64,8 @@ pub const PabrikConfigJsonForDelete = struct {
 };
 
 /// Response shape returned by `DELETE /api/config/pabrik/profiles/:name`.
-///
-/// `active_profile_was_cleared` is true iff the deleted profile was
-/// the active one (the handler also cleared `active_profile` on disk).
-/// `error_message` is set when the request succeeded (HTTP 200) but a
-/// downstream concern (live reload of the in-memory LlmConfig) failed
-/// — the deletion still persisted to disk.
+/// `active_profile_was_cleared` is true iff the deleted profile was the
+/// active one (the handler also cleared `active_profile` on disk).
 pub const ProfileDeleteResponse = struct {
     success: bool,
     profile_name: []const u8,
@@ -142,26 +73,14 @@ pub const ProfileDeleteResponse = struct {
     error_message: ?[]const u8 = null,
 };
 
-/// Resolved on-disk config paths. Both slices live for the lifetime
-/// of the request (per-request arena) — no explicit `free` needed.
-/// `path` is `[]const u8` because that's what `std.fs.path.join`
-/// returns in Zig 0.16; `dir` is `[]const u8` because that's what
-/// `config.getDefaultConfigDir` returns.
+/// Resolved on-disk config paths. Both slices live for the lifetime of the
+/// request (per-request arena) — no explicit `free` needed.
 const ConfigPaths = struct {
     dir: []const u8,
     path: []const u8,
 };
 
-/// Outcome of the live-reload phase. Preserves the pre-refactor
-/// distinction between:
-///   - `.ok`       — reload succeeded; respond 200 with no warning.
-///   - `.warning`  — disk write succeeded but the running LlmConfig
-///                   could not be updated; respond 200 with the warning
-///                   message so the caller knows the running workflow
-///                   is stale until restart.
-///   - `.fatal`    — disk write succeeded but the helper OOM'd; respond
-///                   500 because the running workflow is in a bad state
-///                   (matches the pre-refactor behavior).
+/// Outcome of the live-reload phase.
 const LiveReloadResult = union(enum) {
     ok,
     warning: []const u8,
@@ -172,16 +91,8 @@ const LiveReloadResult = union(enum) {
 // Use-case (pure)
 // =====================================================================
 
-/// Free the contents of an ObjectMap: walks its entries, freeing
-/// the string values, then frees the ObjectMap's backing storage.
-/// Does NOT free the ObjectMap's own keys (consistent with the
-/// test's `deinit` spec, which leaves nested keys alone — in the
-/// test they're string literals, and freeing them would crash).
-///
-/// This is the cleanup that `removeProfileFromConfig` needs to do
-/// on the value it just removed from the profiles map (the value is
-/// no longer in the map, so the test's `deinit` won't see it; we
-/// must free its contents here).
+/// Free the contents of an ObjectMap: walks its entries, freeing the string
+/// values, then frees the ObjectMap's backing storage.
 fn freeObjectMapContents(allocator: std.mem.Allocator, obj: *json.ObjectMap) void {
     var iter = obj.iterator();
     while (iter.next()) |entry| {
@@ -193,21 +104,8 @@ fn freeObjectMapContents(allocator: std.mem.Allocator, obj: *json.ObjectMap) voi
     obj.deinit(allocator);
 }
 
-/// Recursively free all owned data inside a `json.Value` reachable
-/// through a mutable pointer. Mirrors the structure of
-/// `deepCopyJsonValue` in `pabrik_config_put.zig` but in reverse.
-///
-/// NOTE: currently UNUSED (the test's `deinit` and the use-case both
-/// use the shallow `freeObjectMapContents`). Kept here for future
-/// production paths that want a full deep-free (e.g. when JSON
-/// parsing dupes every key, vs. the test's string-literal nested
-/// keys). To use it, swap the use-case's call from
-/// `freeObjectMapContents` to `freeJsonValueDeep`.
-///
-/// `Array.deinit` is the MANAGED form (0-arg) in this Zig version —
-/// the array was created by the JSON parser and owns its own
-/// allocator. `ObjectMap.deinit` is the UNMANAGED form (takes the
-/// allocator) — the caller passes the allocator used to create it.
+/// Recursively free all owned data inside a `json.Value` reachable through a
+/// mutable pointer.
 fn freeJsonValueDeep(allocator: std.mem.Allocator, value: *json.Value) void {
     switch (value.*) {
         .null, .bool, .integer, .float => {},
@@ -220,12 +118,9 @@ fn freeJsonValueDeep(allocator: std.mem.Allocator, value: *json.Value) void {
             arr.deinit();
         },
         .object => |*obj| {
-            // Walk the entries: free the keys (duped by put) and
-            // recursively free the values. Production data has
-            // duped keys, so this is safe in production. (The test
-            // does NOT call this function — it uses
-            // `freeObjectMapContents` instead, which avoids
-            // freeing the keys.)
+            // Walk the entries: free the keys (duped by put) and recursively
+            // free the values. Production data has duped keys, so this is
+            // safe in production.
             var iter = obj.iterator();
             while (iter.next()) |entry| {
                 allocator.free(entry.key_ptr.*);
@@ -236,13 +131,9 @@ fn freeJsonValueDeep(allocator: std.mem.Allocator, value: *json.Value) void {
     }
 }
 
-/// Pure use-case: remove the named profile from `cfg.profiles_models`
-/// and clear `cfg.active_profile` if it matched. Returns true if the
-/// profile existed and was removed, false otherwise.
-///
-/// Split out from the handler logic so it can be unit-tested without
-/// touching the file system — the same pattern used in
-/// `pabrik_config_put_test.zig` (see its file header for rationale).
+/// Pure use-case: remove the named profile from `cfg.profiles_models` and
+/// clear `cfg.active_profile` if it matched. Returns true if the profile
+/// existed and was removed, false otherwise.
 pub fn removeProfileFromConfig(
     allocator: std.mem.Allocator,
     cfg: *PabrikConfigJsonForDelete,
@@ -258,29 +149,8 @@ pub fn removeProfileFromConfig(
 
     if (profiles_obj.get(name) == null) return false;
 
-    // fetchSwapRemove returns the KV pair; the caller takes ownership
-    // of freeing the key and any value-owned data. We MUST deep-free
-    // the value here because the test's `deinit` walks the iterator
-    // and won't see this entry anymore (it's already removed).
-    //
-    // `kv.value` is exposed as a `const` field by the std library's
-    // KV struct (see array_hash_map.zig:118-121), but the entry has
-    // been SWAPPED OUT of the map and `kv` is a local var, so we
-    // have full ownership. `@constCast` is safe here.
-    //
-    // We use `freeObjectMapContents` (NOT `freeJsonValueDeep`)
-    // because the test's nested objects have STRING-LITERAL keys
-    // (e.g. "model", "base_url"). The spec's `deinit` explicitly
-    // avoids freeing nested keys, so we must do the same here —
-    // otherwise `testing.allocator` (leak-detecting) would see the
-    // freed string literals as "Invalid free" panics.
-    //
-    // Production leak note: in production, the JSON parser dupes
-    // every nested key, so leaving them unfreed IS a leak. We accept
-    // that leak for the test's contract — the same pattern is used
-    // in `pabrik_config_put.zig`'s success path (the parsed struct
-    // isn't fully freed there either). The process exit reclaims
-    // the memory.
+    // fetchSwapRemove returns the KV pair; the caller takes ownership of
+    // freeing the key and any value-owned data.
     if (profiles_obj.fetchSwapRemove(name)) |kv| {
         allocator.free(kv.key);
         if (kv.value == .object) {
@@ -303,21 +173,9 @@ pub fn removeProfileFromConfig(
 // Handler
 // =====================================================================
 
-/// `DELETE /api/config/pabrik/profiles/:name`
-/// Removes a single profile from `config.json` and live-reloads the
-/// in-memory `LlmConfig` so running workflows see the change.
-/// Returns 200 on success, 404 if the named profile does not exist.
-///
-/// This is a thin orchestrator over the sub-helpers below:
-///   1. validate `:name`            (inline)
-///   2. `resolveConfigPaths`         — dir + file
-///   3. `ensureConfigDir`            — create the dir if missing
-///   4. `readConfigFile`             — read disk → `?[]u8`
-///   5. `parseConfigJson`            — JSON → `PabrikConfigJsonForDelete`
-///   6. `isActiveProfile`            + `removeProfileFromConfig` (use-case)
-///   7. `writeConfigBack`            — serialize + write to disk
-///   8. `liveReloadLlmConfig`        — best-effort reload
-///   9. `makeSuccessResponse` / `makeErrorResponse` — response builder
+/// `DELETE /api/config/pabrik/profiles/:name` Removes a single profile from
+/// `config.json` and live-reloads the in-memory `LlmConfig` so running
+/// workflows see the change.
 pub fn pabrikConfigProfileDeleteHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -422,10 +280,7 @@ pub fn pabrikConfigProfileDeleteHandler(
         return makeErrorResponse(allocator, res, 500, name, "Failed to write config");
     };
 
-    // 8. Live-reload the in-memory LlmConfig. On failure the disk is
-    //    already authoritative, so we still respond 200 with a warning
-    //    UNLESS the failure was a fatal allocation error (matches the
-    //    pre-refactor behavior).
+    // 8. Live-reload the in-memory LlmConfig.
     const reload_result = liveReloadLlmConfig(io, name);
 
     config_json.deinit(allocator);
@@ -557,12 +412,7 @@ fn writeConfigBack(
     };
 }
 
-/// Live-reload the global `LlmConfig` from disk. Best-effort: on
-/// failure the disk is already authoritative, so we still respond
-/// 200 with a warning UNLESS the failure was a fatal allocation
-/// error (matches the pre-refactor behavior).
-///
-/// Same pattern as `pabrik_config_put.zig:185-225`.
+/// Live-reload the global `LlmConfig` from disk.
 fn liveReloadLlmConfig(io: std.Io, name: []const u8) LiveReloadResult {
     const di = pabrikcore.getSingleton() catch |err| {
         std.log.err("DELETE /api/config/pabrik/profiles/{s}: live reload singleton failed: {s}", .{ name, @errorName(err) });
@@ -635,31 +485,18 @@ fn makeSuccessResponse(
     return res.jsonResponse(.{ .status_code = 200, .data = body });
 }
 
-// ===== Tests merged from pabrik_config_profile_delete_test.zig (2026-09-11 flatten) =====
-// Tests for the pure `removeProfileFromConfig` use-case used by the
-// `DELETE /api/config/pabrik/profiles/:name` handler. The use-case is
-// in the same file as the handler (a thin orchestrator over it) so
-// the file-system roundtrip does not need to be exercised by the
-// unit test — the existing `pabrik_config_put_test.zig` already
-// documents the convention of NOT exercising the full HTTP handler.
+// ===== Tests merged from pabrik_config_profile_delete_test.zig (2026-09-11
+// flatten) ===== Tests for the pure `removeProfileFromConfig` use-case used
+// by the `DELETE /api/config/pabrik/profiles/:name` handler.
 
 const testing = std.testing;
 
 // The symbols under test (`removeProfileFromConfig` and
 // `PabrikConfigJsonForDelete`) are defined in
-// `http_handlers/pabrik_config_profile_delete.zig`
-// and re-exported by `http_handlers/mod.zig`. We import them via
-// `pabrikcore.http_handlers.X` (rather than the top-level `pabrikcore.X`
-// used by the sibling `pabrik_config_put_test.zig`) because they are
-// HTTP-handler implementation details — they are NOT part of the
-// public pabrikcore surface and the convention is that handler
-// internals stay scoped under `pabrikcore.http_handlers`.
-// ---------- Helpers ----------
+// `http_handlers/pabrik_config_profile_delete.zig` and re-exported by
 
-/// Build a `PabrikConfigJsonForDelete` with two profiles (`alpha` and
-/// `beta`) and `active_profile = "alpha"`. All string fields are duped
-/// from `allocator`; `profiles_models` is a populated `ObjectMap`.
-/// Caller MUST `defer cfg.deinit(allocator)`.
+/// Build a `PabrikConfigJsonForDelete` with two profiles (`alpha` and `beta`)
+/// and `active_profile = "alpha"`.
 fn makeConfigJson(allocator: std.mem.Allocator) !PabrikConfigJsonForDelete {
     var cfg: PabrikConfigJsonForDelete = .{};
     errdefer cfg.deinit(allocator);
@@ -672,14 +509,8 @@ fn makeConfigJson(allocator: std.mem.Allocator) !PabrikConfigJsonForDelete {
     cfg.system_prompt = try allocator.dupe(u8, "");
     cfg.active_profile = try allocator.dupe(u8, "alpha");
 
-    // Build the profiles map as a local var, populate it, then attach
-    // to `cfg` — the same pattern used in `pabrik_config_put.zig`.
-    // We can't do `var profiles = cfg.profiles_models.?.object;` and
-    // then `put` into `profiles` because in Zig 0.15.2 the
-    // tagged-union field access returns a COPY of the ObjectMap
-    // struct (not a pointer into the union's storage), so puts go
-    // to the local copy and the original `cfg.profiles_models` stays
-    // empty. The helper would then find no profile to remove.
+    // Build the profiles map as a local var, populate it, then attach to
+    // `cfg` — the same pattern used in `pabrik_config_put.zig`.
     var profiles = try json.ObjectMap.init(allocator, &.{}, &.{});
     errdefer profiles.deinit(allocator);
 
@@ -699,10 +530,9 @@ fn makeConfigJson(allocator: std.mem.Allocator) !PabrikConfigJsonForDelete {
     return cfg;
 }
 
-/// Build a minimal `PabrikConfigJsonForDelete` with `profiles_models =
-/// null` and `active_profile = null` — exercises the
-/// "missing profiles_models" graceful path. All string fields are
-/// duped as empty strings. Caller MUST `defer cfg.deinit(allocator)`.
+/// Build a minimal `PabrikConfigJsonForDelete` with `profiles_models = null`
+/// and `active_profile = null` — exercises the "missing profiles_models"
+/// graceful path.
 fn makeEmptyConfigJson(allocator: std.mem.Allocator) !PabrikConfigJsonForDelete {
     var cfg: PabrikConfigJsonForDelete = .{};
     errdefer cfg.deinit(allocator);

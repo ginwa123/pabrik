@@ -1,35 +1,5 @@
-// Functional contract: session metadata must NOT require the messages endpoint.
-//
-// Zig port of `tests/functional/session_detail_metadata_test.py`
-// (same order; test names drop the `test_` prefix).
-//
-// The fix points the frontend's `getSession()` at the lightweight
-// `GET /api/llm/session/:session_id` detail endpoint (sessions row only,
-// no message JOIN). This pins the wire contract:
-//
-//   1. `session_detail_returns_metadata_without_messages_payload` — the
-//      detail endpoint returns every metadata field `getSession()` reads
-//      with NO `messages` key, staying ~1 kB.
-//   2. `session_detail_works_with_zero_messages` — works for a
-//      zero-message session (the case where the old `messages?limit=1`
-//      JOIN yielded no rows and fired a duplicate fallback fetch).
-//   3. `old_limit1_path_carries_message_weight_detail_does_not` —
-//      reproduce the screenshot: `limit=1` drags the message weight,
-//      detail stays ~1 kB.
-//
-// ── WHY TEST 3 SEEDS VIA THE WIRE, NOT SQLITE ──────────────────────────
-// The Python test inserted its 200 kB ballast row with the stdlib
-// `sqlite3` module straight into `<temp_dir>/.config/pabrik/agent.db`.
-// This package deliberately has no SQLite driver (`tests/functional/
-// build.zig` declares no dependency and links no SQLite, so a suite can
-// never "pass" without crossing the wire), so the port seeds the SAME
-// weight through the product's own write path instead: `POST
-// /api/llm/session` with a 200 kB `queue_message`. The user message is
-// persisted as the session's oldest row, which is exactly what the old
-// `messages?limit=1` default sort returns — the property under test
-// ("the old path drags the full message, the new path is unaffected") is
-// unchanged, only the insert route differs. The test polls the messages
-// endpoint until the row appears so it never asserts on a race.
+// Functional contract: session metadata must NOT require the messages
+// endpoint.
 
 const std = @import("std");
 const testing = std.testing;
@@ -145,8 +115,6 @@ test "old_limit1_path_carries_message_weight_detail_does_not" {
     // The ballast POST below names `selected_profile_model: "stub"`: boot the
     // stub profile so the turn is accepted and the user row is stored (the
     // dispatch itself fails against the dead endpoint, which is fine — only
-    // the stored user row matters). Without it the unknown profile is
-    // rejected before anything is stored and the poll below never lands.
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
     defer h.deinit(io) catch |err| {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
@@ -154,10 +122,8 @@ test "old_limit1_path_carries_message_weight_detail_does_not" {
 
     try putSession(&h, "{\"name\":\"heavy-oldest-message\"}");
 
-    // Seed the ballast through the product's own write path: a 200 kB
-    // user message becomes the session's oldest row (see file header).
-    // The dispatch itself may fail (no live upstream); only the stored
-    // user row matters, so any status is accepted.
+    // Seed the ballast through the product's own write path: a 200 kB user
+    // message becomes the session's oldest row (see file header).
     {
         const ballast = try gpa.alloc(u8, 200_000);
         defer gpa.free(ballast);

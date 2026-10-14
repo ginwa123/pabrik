@@ -1,55 +1,5 @@
-// Functional tests for the skills/memories filesystem boundary
-// (plan 2026-09-25, W2.6).
-//
-// Zig port of `tests/functional/skills_memories_boundary_test.py` (same
-// test names, same order).
-//
-// Boots a REAL pabrik binary via the harness (never a live dev server,
-// never port 8081). Two authenticated admins share ONE server process and
-// ONE OS account, so this is the wire-level proof of what W2.6 can and
-// cannot scope.
-//
-// ── WHY THIS FILE ASSERTS A BOUNDARY RATHER THAN ISOLATION ────────────────
-// `/api/memories*` is **filesystem-scoped**, not DB rows:
-//
-//   * global memories live in `~/.config/pabrik/memories/` — one directory
-//     per OS account, shared by every browser user on the machine;
-//   * local memories live in `{cwd}/.pabrik/memories/` — and `cwd` is
-//     caller-supplied.
-//
-// There is no `user_id` column to filter on, so "scope them per user"
-// would mean inventing a per-user filesystem root — which is the
-// **deferred D9 boundary** (per-user OS uid/chroot or a workspace-root
-// allowlist), not a row-level predicate. The plan explicitly defers that
-// decision.
-//
-// A fake fix here would be worse than none: it would make the system
-// *look* isolated while the same bytes stay readable by path. So this
-// file pins the boundary as a documented, tested fact:
-//
-//   * GLOBAL-SHARED  — B's `GET /api/memories` sees the same global
-//                     entries as A's (the shared OS-account directory).
-//   * LOCAL-CWD      — the local list follows the caller-supplied `?cwd=`,
-//                     so B can point at A's workspace directory and read
-//                     its `.pabrik/` files. This is the D9 boundary,
-//                     asserted so a future change that closes it must
-//                     update this test.
-//   * AUTH-OFF       — without `--auth` the same endpoints still work.
-//
-// ── SKILLS LEFT THIS FILE ─────────────────────────────────────────────────
-// Skills used to sit here too, sharing both properties: a skill was a file
-// under `~/.config/pabrik/skills/`, so `/api/skills` merged two
-// directories on the way in and had no workspace to scope to. They are
-// rows in the workspace-scoped `skills` table now (Migration 101,
-// `/api/workspaces/:workspace_id/skills`), so there is no cross-user
-// directory to share and no D9 boundary left to assert for skills. What
-// replaced it here is the negative: the directory-tier route is GONE, for
-// every user and with or without auth. The workspace-level isolation
-// assertions live in `skills_sqlite_test.py`.
-//
-// Both users are created with `create-admin`, so the assertions here are
-// also the admin-vs-admin assertions: `admin` grants NO cross-user
-// visibility.
+// Functional tests for the skills/memories filesystem boundary (plan
+// 2026-09-25, W2.6).
 
 const std = @import("std");
 const testing = std.testing;
@@ -88,11 +38,6 @@ fn bootAuth() !Harness {
 }
 
 /// Run `pabrik create-admin` against the harness HOME.
-///
-/// `runPabrikCommand` prepends the resolved binary itself, so `argv`
-/// starts at the SUBCOMMAND — passing the binary again makes the
-/// subcommand dispatch miss and boots a SERVER instead, which then fails
-/// with a confusing error about the default port.
 fn createAdmin(home: []const u8, email: []const u8, password: []const u8, force: bool) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
@@ -143,10 +88,9 @@ fn cookieHeader(token: []const u8) ![]u8 {
     return std.fmt.allocPrint(gpa, "pabrik_session={s}", .{token});
 }
 
-/// Two admins on one server. Python's `_two_users`.
-///
-/// Returned BY VALUE so the caller owns the harness and must `deinit`
-/// it; a helper that only handed back tokens would leak the server.
+/// Two admins on one server. Python's `_two_users`. Returned BY VALUE so the
+/// caller owns the harness and must `deinit` it; a helper that only handed
+/// back tokens would leak the server.
 const TwoUsers = struct {
     h: Harness,
     tok_a: []u8,
@@ -217,18 +161,8 @@ fn expectStatus(r: *const harness.Response, accepted: []const u16, what: []const
 // tests
 // ============================================================================
 
-// GLOBAL-SHARED — the global dir is one per OS account, so both users
-// see the same entries. This is the D9 boundary, not a bug in the
-// row-level isolation: there is no `user_id` on a file. Asserted so the
-// boundary is visible and a future per-user filesystem root must update
-// this test.
-//
-// Skills are no longer in this file's boundary: they are workspace-scoped
-// rows, so there is no global directory left to share. What is asserted
-// instead is that the directory-tier route is gone for BOTH users — a
-// route that still answered would mean the migration left a filesystem
-// read path reachable, which is exactly the leak this table was built to
-// close.
+// GLOBAL-SHARED — the global dir is one per OS account, so both users see the
+// same entries.
 test "global_skills_and_memories_are_shared_across_users" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -281,18 +215,13 @@ test "global_skills_and_memories_are_shared_across_users" {
 }
 
 // LOCAL-CWD — `?cwd=` is caller-supplied, so B can read A's workspace
-// `.pabrik/` files. This is the D9 filesystem boundary in its sharpest
-// form: the local memories endpoint is a path-scoped file read, and the
-// path comes from the request. Asserted (not "fixed") because closing it
-// means a per-user filesystem root or a workspace-root allowlist — a
-// separate decision.
+// `.pabrik/` files.
 test "local_memories_follow_the_caller_supplied_cwd" {
     try harness.requirePabrikBin(io, gpa);
 
-    // pytest's `tmp_path` was a SIBLING of the harness tempdir, never a
-    // child of it — `makeScratchDir` gives the suite its own
-    // `pabrik-fix-` namespace that the orphan reaper (which only matches
-    // `pabrik-func-`) never touches mid-test.
+    // pytest's `tmp_path` was a SIBLING of the harness tempdir, never a child
+    // of it — `makeScratchDir` gives the suite its own `pabrik-fix-`
+    // namespace that the orphan reaper (which only matches `pabrik-func-`)
     const scratch = try harness.makeScratchDir(gpa);
     // DEFER ORDER IS LIFO: `free` is registered FIRST so it runs LAST —
     // `cleanupExtraDir` reads `scratch` to delete it.
@@ -343,9 +272,6 @@ test "local_memories_follow_the_caller_supplied_cwd" {
 }
 
 // AUTH-OFF — regression: without `--auth` the endpoints still answer.
-// The skills half is now a 404 on the old route plus a 200 on the
-// workspace-scoped one — "auth off" must not accidentally restore the
-// directory walk that the table replaced.
 test "skills_and_memories_auth_off_is_unchanged" {
     try harness.requirePabrikBin(io, gpa);
 

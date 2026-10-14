@@ -35,38 +35,18 @@ pub const SessionInfo = struct {
     /// the workflow observed for this session. Empty string until the
     /// first successful turn; never NULL at the API edge.
     last_finish_reason: []const u8,
-    /// Migration 082 - unix-ms of the last time a HUMAN (not the AI
-    /// agent) interacted with this session. Empty string when no human
-    /// touch yet - the frontend treats that as "fall back to updated_at".
-    /// Stamped by `llm_history.updateSessionLastHumanTouchedAt` from 3
-    /// sites: emit_run_agent (user sends a message), session_update
-    /// (user edits a field), workflow.zig::saveRetryAttemptMessage
-    /// (agent emits an error - "also when error too").
+    /// Migration 082 - unix-ms of the last time a HUMAN (not the AI agent)
+    /// interacted with this session.
     last_human_touched_at: []const u8,
     /// Bound git worktree path ("" = none). Mirrors
-    /// `sessions.git_worktree_cwd`; COALESCE'd to "" at the SELECT
-    /// boundary. The sidebar uses this as the effective cwd for the
-    /// PR-status lookup and as the tooltip for the branch badge.
+    /// `sessions.git_worktree_cwd`; COALESCE'd to "" at the SELECT boundary.
     git_worktree_cwd: []const u8,
-    /// Current git branch for the session's effective cwd
-    /// (worktree cwd when bound, else the session cwd). Computed
-    /// on-demand per request in `session_list.zig` via
-    /// `git -C <cwd> symbolic-ref --short HEAD` (same helper as the
-    /// kanban `tasks_list.zig` badge). "" = not a git repo /
-    /// detached HEAD — the sidebar omits the badge in that case.
+    /// Current git branch for the session's effective cwd (worktree cwd when
+    /// bound, else the session cwd).
     git_branch: []const u8,
-    /// The project this session belongs to (`workspace_item_tasks.workspace_item_id`,
-    /// "" when it belongs to none). Defaults so the literal sites that predate
-    /// it keep compiling — and because "not in a project" is the honest answer
-    /// for the majority of sessions, not an omission.
-    ///
-    /// Exists because `GET /api/session` scopes its list by workspace_id, which
-    /// the handler resolves down to a set of *task ids* and then throws the
-    /// project away. A client holding that list therefore cannot tell which
-    /// project a session came from, which is the one fact it needs to say "this
-    /// project has work in flight" without a second request per project. The
-    /// join is one indexed seek on `workspace_item_tasks.id` (its PRIMARY KEY)
-    /// per row, so it rides along with a query that already scans the row.
+    /// The project this session belongs to
+    /// (`workspace_item_tasks.workspace_item_id`, "" when it belongs to
+    /// none).
     workspace_item_id: []const u8 = "",
     /// Migration 104 - pinned sessions (PINNED section above RECENT).
     /// True when the user pinned this session via right-click menu.
@@ -108,12 +88,9 @@ pub fn enumFromString(comptime T: type, s: []const u8) !T {
 }
 pub const SessionSortDirection = enum { asc, desc };
 
-/// Sort field for the paginated workspace-item tasks endpoint
-/// (`GET /api/workspaces/:wid/items/:iid/tasks`). Mirrors
-/// `SessionSortField` (above) so the API surface is consistent.
-/// `name` is included for completeness even though the default UI
-/// sorts by `updated_at` — the user can sort by name later if they
-/// want an alphabetical fallback.
+/// Sort field for the paginated workspace-item tasks endpoint (`GET
+/// /api/workspaces/:wid/items/:iid/tasks`). Mirrors `SessionSortField`
+/// (above) so the API surface is consistent.
 pub const TaskSortField = enum { created_at, updated_at, name };
 
 /// Sort direction for workspace-item tasks. Asc/desc. Mirrors
@@ -181,13 +158,7 @@ pub fn getSessionList(
     _ = agent_type;
 
     // Rewritten to use idx_llm_history_created_session(created_at DESC,
-    // session_id) — see Migration 048. The inner subquery groups
-    // session_id + MAX(created_at) and applies LIMIT/OFFSET so the
-    // planner can walk the covering index in created_at DESC order and
-    // stop at LIMIT. The outer query LEFT JOINs sessions for cwd/name,
-    // and a correlated subquery picks the agent of the LATEST message
-    // in the session (fixes the original's loose-GROUP-BY agent
-    // semantics, which were implementation-defined).
+    // session_id) — see Migration 048.
     const sql =
         \\SELECT sub.session_id,
         \\       sub.created_at,
@@ -276,17 +247,9 @@ pub fn getSessionList(
     };
 }
 
-/// Get a list of sessions with cursor-based pagination
-/// Queries from sessions table with LEFT JOIN to llm_history
-///
-/// `workspace_ids` scopes the list to a workspace's sessions (as
-/// resolved by `workspace_scope.workspaceSessionIds`):
-///   - null   → no scope filter (global list, unchanged SQL/binds).
-///   - empty  → fail-closed: `1 = 0` in both queries, zero binds
-///     (never `IN ()` — a SQL syntax error — and never bind "").
-///   - non-empty → `s.id IN (?, ...)` with the ids passed as BIND
-///     params (never interpolated into SQL text). The count query
-///     carries the same predicate so `total` stays truthful.
+/// Get a list of sessions with cursor-based pagination Queries from sessions
+/// table with LEFT JOIN to llm_history `workspace_ids` scopes the list to a
+/// workspace's sessions (as resolved by
 pub fn getSessionListWithCursor(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -355,10 +318,7 @@ pub fn getSessionListWithCursor(
         // Cursor filtering is done via subquery below
     }
 
-    // Per-user scope (plan 2026-09-25, W2.3). Appended LAST so the two owner
-    // binds land after any `s.id IN (…)` binds — parameter order must match the
-    // order of `?` in where_clause, and BOTH the main and the count query bind
-    // `id_binds.items`, so `total` stays truthful under the same predicate.
+    // Per-user scope (plan 2026-09-25, W2.3).
     if (!auth_common.isSharedOwner(owner)) {
         try where_parts.append(allocator, auth_common.ownerVisibilityClause("s"));
         try id_binds.append(allocator, owner);
@@ -381,16 +341,7 @@ pub fn getSessionListWithCursor(
     };
     defer allocator.free(order_by);
 
-    // Build cursor filter. The resume key MUST be the same column the
-    // ORDER BY sorted on, because `next_cursor` is the last row's value
-    // *for that sort field* (see `session_list.zig`). This used to be
-    // hard-coded to `s.created_at`, which silently paginated the wrong
-    // window for every other sort: with `sort_by=updated_at` (what the
-    // sidebar and the web's ChatsList both send) page 1 ends at
-    // `updated_at = U` and page 2 then filtered `created_at < U`, so a
-    // long-lived session that was merely touched reappeared on every
-    // later page and anything created after U was skipped entirely.
-    // Keep the two switches in lockstep: change one, change both.
+    // Build cursor filter.
     const cursor_column = switch (sort_field) {
         .created_at => "s.created_at",
         .session_name => "COALESCE(s.name, '')",
@@ -471,11 +422,9 @@ pub fn getSessionListWithCursor(
         row.deinit(allocator);
     }
 
-    // Count query: the SAME filter as the main query (shared
-    // where_clause), aliased `s` so the `s.`-prefixed fragments apply
-    // verbatim, and WITHOUT the cursor — `total` is the full filtered
-    // size that the cursor paginates over. Binds mirror the main
-    // query (the bound ids appear only inside where_clause).
+    // Count query: the SAME filter as the main query (shared where_clause),
+    // aliased `s` so the `s.`-prefixed fragments apply verbatim, and WITHOUT
+    // the cursor — `total` is the full filtered size that the cursor
     const count_sql: []u8 = try std.fmt.allocPrint(allocator,
         "SELECT COUNT(*) FROM sessions s WHERE {s}", .{where_clause});
     defer allocator.free(count_sql);
@@ -516,10 +465,8 @@ pub const SessionInfoJson = struct {
     is_auto_retry_until_stop: []const u8 = "",
     /// Migration 063 — most recent finish_reason (Migration 063).
     last_finish_reason: []const u8 = "",
-    /// Migration 082 - unix-ms of the last human touch. Empty string
-    /// for legacy rows (frontend falls back to updated_at). Aliased from
-    /// the SQL column `last_human_touched_at_nano` at the SELECT layer
-    /// so the wire field is bare per Migration 075 project convention.
+    /// Migration 082 - unix-ms of the last human touch. Empty string for
+    /// legacy rows (frontend falls back to updated_at).
     last_human_touched_at: []const u8 = "",
     /// Bound git worktree path ("" = none). The sidebar shows the
     /// kanban-style branch badge when `git_branch` is non-empty and
@@ -533,10 +480,9 @@ pub const SessionInfoJson = struct {
     /// a client that has never heard of it ignores the field, and the web
     /// (`api/index.ts`) does not read it today.
     workspace_item_id: []const u8 = "",
-    /// Migration 104 - pinned sessions (PINNED section above RECENT).
-    /// True when the user pinned this session via right-click menu.
-    /// COALESCE'd to false at the SELECT boundary so legacy rows read
-    /// as unpinned.
+    /// Migration 104 - pinned sessions (PINNED section above RECENT). True
+    /// when the user pinned this session via right-click menu. COALESCE'd to
+    /// false at the SELECT boundary so legacy rows read as unpinned.
     is_pinned: bool = false,
     /// Migration 104 - position inside the pinned region. MAX+1 on pin
     /// (lands at bottom), 0 when unpinned. COALESCE'd to 0.
@@ -564,10 +510,7 @@ pub fn buildSessionListJson(
             .agent = sess.agent,
             .session_name = sess.session_name,
             .selected_profile_model = sess.selected_profile_model,
-            // Migration 063 — pass through. `SessionInfo` already
-            // populates both fields from `row.values[8..10]`; the JSON
-            // layer just needs to forward them so the API response
-            // carries them to the frontend.
+            // Migration 063 — pass through.
             .is_auto_retry_until_stop = sess.is_auto_retry_until_stop,
             .last_finish_reason = sess.last_finish_reason,
             // Migration 082 - forward the chat-side stamp value to the
@@ -682,13 +625,7 @@ pub const SessionMessage = struct {
     role: []const u8,
     content: []const u8,
     timestamp: []const u8,
-    /// Wire-format boolean. Emitted as JSON `true`/`false` by
-    /// `buildSessionMessagesJson` (manual format) and by
-    /// `makeSessionMessagesResponse` (via `std.json.Stringify.valueAlloc`).
-    /// Matches the SSE `SseEventLLMHistory.is_input` shape and the
-    /// TypeScript `is_input?: boolean` type. The DB column is
-    /// `INTEGER` (0/1); the SQL read site converts with `parseRowBool`.
-    /// See docs/plans/2026-07-01-is-input-output-bool-consistency.md.
+    /// Wire-format boolean.
     is_input: bool,
     is_output: bool,
     tool_name: []const u8,
@@ -737,10 +674,7 @@ pub const SessionMessageResponse = struct {
     next_cursor: ?[]const u8,
     cwd: ?[]const u8 = null,
     /// Session's bound git worktree path (NULL/empty when no worktree is
-    /// bound). Mirrors `sessions.git_worktree_cwd`. Added by Chunk 1 of
-    /// the git-worktree-cwd-pr plan so the frontend can render the
-    /// worktree's branch/path in the chat status bar from the moment
-    /// the chat loads (not just after the user re-fetches).
+    /// bound). Mirrors `sessions.git_worktree_cwd`.
     git_worktree_cwd: ?[]const u8 = null,
     /// Attached PR URL (NULL/empty when no PR is bound). Mirrors
     /// `sessions.pr_url`. Added for the set_pull_request tool so the
@@ -750,13 +684,7 @@ pub const SessionMessageResponse = struct {
     /// `sessions.pr_provider`.
     pr_provider: ?[]const u8 = null,
     /// Session's selected profile name (NULL/empty when no profile is
-    /// selected). Mirrors `sessions.selected_profile_model`. Added by
-    /// the 2026-08-07-profile-persist-read fix so the frontend can
-    /// render the chat's profile chip from the messages endpoint
-    /// response (not just after the user re-fetches). Bug: the chip
-    /// used to reset to "Default" on every page refresh because the
-    /// read endpoint never returned the field that PUT
-    /// `/api/llm/session/:id` writes.
+    /// selected). Mirrors `sessions.selected_profile_model`.
     selected_profile_model: ?[]const u8 = null,
     /// Migration 091 — resolved sub-agent name (e.g. "implementator").
     sub_agent_name: ?[]const u8 = null,
@@ -781,27 +709,17 @@ pub const SortSpec = union(enum) {
     role_desc: void,
 };
 
-/// Parse a SQLite INTEGER column value (returned by the SQL binder
-/// as a `[]const u8` slice) into a bool. Empty string is `false`
-/// (matches `COALESCE(col, 0)` semantics). Used for `is_input` /
-/// `is_output` which the SQL binder returns as `[]const u8` slices
-/// but the in-memory struct expects as `bool`.
+/// Parse a SQLite INTEGER column value (returned by the SQL binder as a
+/// `[]const u8` slice) into a bool. Empty string is `false` (matches
+/// `COALESCE(col, 0)` semantics).
 fn parseRowBool(s: []const u8) bool {
     if (s.len == 0) return false;
     return s[0] == '1';
 }
 
 /// Get messages for a session with cursor-based pagination and sorting
-///
-/// `profile` — the session's selected profile, resolved by the caller
-/// (HTTP handler) from `sessions.selected_profile_model` via
-/// `LlmConfig.getProfile`. Passed in (dependency injection) rather than
-/// resolved here so tests can supply a profile without touching the
-/// process-global singleton. It feeds the `max_capacity_total_tokens`
-/// cascade (`maxCapacityForModel` step 2) so a profile's
-/// `max_capacity_tokens` override is reflected in the chat footer's
-/// context-window readout. `null` → fall through to the Defaults-tab
-/// override → built-in per-model default (pre-2026-08-21 behavior).
+/// `profile` — the session's selected profile, resolved by the caller (HTTP
+/// handler) from `sessions.selected_profile_model` via
 pub fn getSessionMessagesSorted(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -846,16 +764,8 @@ pub fn getSessionMessagesSorted(
         , .{ cursor_cmp, order_part });
         argv = &.{ session_id, c, limit_str };
     } else {
-        // 2026-10-02-scrollback-order-key: the FIRST page (no cursor) must order
-        // by the MESSAGE's own timestamp, not `s.created_at`. `s.created_at` is
-        // the session's creation time — constant across every row of the
-        // session — so it never broke the tie and the real key became `h.id`,
-        // which is not monotonic with created_at_nano. The cursor branch above
-        // already filters and orders on `h.created_at_nano`; because this branch
-        // disagreed, `direction=desc&limit=1000` returned the WRONG window
-        // (skipping the newest rows, including ancient ones) and `next_cursor`
-        // — derived from `messages.items[limit-1]` — pointed into the middle of
-        // the session, so the next scroll-back page came back empty.
+        // 2026-10-02-scrollback-order-key: the FIRST page (no cursor) must
+        // order by the MESSAGE's own timestamp, not `s.created_at`.
         const order_part = switch (sort_spec) {
             .created_at_asc => " ORDER BY h.created_at_nano ASC, h.id ASC",
             .created_at_desc => " ORDER BY h.created_at_nano DESC, h.id DESC",
@@ -908,10 +818,9 @@ pub fn getSessionMessagesSorted(
             , .{ cursor_cmp, order_part });
             argv = &.{ session_id, c, limit_str };
         } else {
-            // 2026-10-02-scrollback-order-key: the first page must order by the
-            // Same 2026-10-02-scrollback-order-key fix as the primary branch
-            // above: the no-cursor fallback must order by `h.created_at_nano`
-            // to agree with the cursor filter and with `next_cursor`.
+            // 2026-10-02-scrollback-order-key: the first page must order by
+            // the Same 2026-10-02-scrollback-order-key fix as the primary
+            // branch above: the no-cursor fallback must order by
             const order_part = switch (sort_spec) {
                 .created_at_asc => " ORDER BY h.created_at_nano ASC, h.id ASC",
                 .created_at_desc => " ORDER BY h.created_at_nano DESC, h.id DESC",
@@ -957,13 +866,6 @@ pub fn getSessionMessagesSorted(
     while (try rows.next()) |row| {
         // Extract cwd + git_worktree_cwd + selected_profile_model from the
         // first row (same for all rows since we filter by session_id).
-        // Column indices match the SELECT list above: cwd at 9,
-        // git_worktree_cwd at 10, reasoning_content at 11,
-        // reasoning_id at 12, reasoning_encrypted_content at 13,
-        // diffview_before at 14, diffview_after at 15, image_url at 16,
-        // video_url at 17, tool_call_id at 18, tool_calls_json at 19,
-        // selected_profile_model at 20, pr_url at 21, pr_provider at 22,
-        // sub_agent_name at 23, parent_session_id at 24.
         if (cwd == null) {
             const cwd_val = row.values[9];
             if (cwd_val.len > 0) {
@@ -1069,15 +971,7 @@ pub fn getSessionMessagesSorted(
     else
         null;
 
-    // Return only limit messages if has_more. NOTE: the caller MUST
-    // `m.deinit(allocator)` for each entry to free the inner strings;
-    // the outer `items` slice itself is intentionally NOT freed here.
-    // Production callers (e.g. `sessionMessagesHandler`) run under a
-    // per-request arena allocator that reclaims everything at the end
-    // of the request. Tests that need to validate the cleanup contract
-    // should mirror the same pattern: free each message's inner state
-    // via `deinit` and accept that the outer buffer is reclaimed by
-    // the allocator's test harness (e.g. `std.heap.ArenaAllocator`).
+    // Return only limit messages if has_more.
     const result_messages = if (has_more) messages.items[0..limit] else messages.items;
 
     // Get total count of messages for this session
@@ -1100,23 +994,7 @@ pub fn getSessionMessagesSorted(
         .max_total_tokens = getMaxTotalTokensForSession(allocator, db, session_id) catch 0,
         .max_capacity_total_tokens = blk: {
             // Resolve the per-config override when the singleton is alive,
-            // otherwise fall back to the built-in per-model default. The
-            // override applies regardless of which model is being used —
-            // it's a global "treat this session as if the model had a
-            // context window of N tokens" knob.
-            //
-            // 2026-08-21-fix-ui-context-window: `profile` is the session's
-            // selected profile (resolved by the HTTP handler from
-            // `sessions.selected_profile_model`). Passing it into the
-            // cascade lets a profile's `max_capacity_tokens` override win —
-            // previously this call site hardcoded null, so the chat footer
-            // always showed the built-in per-model default even when the
-            // user had a profile with an explicit override selected.
-            //
-            // `maxCapacityForModel` never dereferences its receiver
-            // (`_ = self`), so a stack-allocated empty config is a valid
-            // receiver when the singleton is unavailable (unit tests) —
-            // the profile override still flows through the cascade.
+            // otherwise fall back to the built-in per-model default.
             const di_opt = pabrikcore.getSingleton() catch null;
             if (di_opt) |di| {
                 // The window a session renders with belongs to the session's
@@ -1144,13 +1022,7 @@ pub fn getSessionMessagesSorted(
     };
 }
 
-/// Read `sessions.selected_profile_model` for one session. Returns ""
-/// when the column is NULL, the session row is missing, or the query
-/// fails — callers treat "" as "no profile selected" and fall through
-/// the cascade (Defaults tab → built-in default). The returned slice is
-/// allocated in `allocator` (the per-request arena in production);
-/// mirrors the graceful-degrade contract of workflow.zig's
-/// `re_read_selected_profile_model`.
+/// Read `sessions.selected_profile_model` for one session.
 pub fn getSessionProfileName(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -1174,13 +1046,8 @@ pub fn getSessionProfileName(
     return "";
 }
 
-/// Attached-PR binding for one session, read straight from the
-/// `sessions` row. Same graceful-degrade contract as
-/// `getSessionProfileName`: "" when NULL/missing/query fails. Used by
-/// `sessionMessagesHandler` as the zero-message fallback — the JOIN in
-/// `getSessionMessagesSorted` yields no rows before the first message,
-/// so without this the panel would never see a PR bound to a fresh
-/// chat (same race the 2026-08-24 profile fix closed).
+/// Attached-PR binding for one session, read straight from the `sessions`
+/// row.
 pub const SessionPrFields = struct {
     pr_url: []const u8,
     pr_provider: []const u8,
@@ -1208,17 +1075,9 @@ pub fn getSessionPrFields(
     return .{ .pr_url = "", .pr_provider = "" };
 }
 
-/// Resolve the effective context window for a session view. Pure
-/// function over (config, profile, model) so tests can pin the cascade
-/// without the process-global singleton.
-///
-/// Cascade (`maxCapacityForModel`): profile.max_capacity_tokens →
-/// defaults.max_capacity_token_model → built-in per-model default.
-///
-/// 2026-08-21-fix-ui-context-window: extracted from the
-/// `max_capacity_total_tokens` blk in `getSessionMessagesSorted` — that
-/// call site previously hardcoded a null profile, so the chat footer
-/// ignored the selected profile's override entirely.
+/// Resolve the effective context window for a session view. Pure function
+/// over (config, profile, model) so tests can pin the cascade without the
+/// process-global singleton.
 pub fn resolveMaxCapacityTotalTokens(
     cfg: *const config_mod.LlmConfig,
     profile: ?*const config_mod.LlmConfig.LlmProfile,
@@ -1230,27 +1089,9 @@ pub fn resolveMaxCapacityTotalTokens(
     return cfg.maxCapacityForModelWith(profile, null, cfg, model, model_catalog.getSingleton());
 }
 
-/// Resolve the profile a session effectively runs under — the shared
-/// cascade used by BOTH the workflow loop (workflow.zig `iter_profile`)
-/// and the HTTP read paths (messages endpoint, manual compact). Order:
-///
-///   1. The session's explicit `selected_profile_model` (chat dropdown)
-///   2. The user's `config.active_profile` ("Set as active profile" in
-///      PabrikSettings) — this is what a "Default" chat uses when the
-///      user has designated a default profile
-///   3. `null` → top-level Defaults-tab / built-in per-model defaults
-///
-/// 2026-08-21 follow-up: the first cut of the fix only honored step 1,
-/// so a Default chat with active_profile=alpha showed 500k in the
-/// footer while the workflow compacted against alpha's 950k. This
-/// helper makes every consumer agree.
-///
-/// 2026-08-24 refactor: the cascade body moved to
-/// `LlmConfig.resolveSessionProfileCompat` (plan
-/// 2026-08-23-refactor-profile-resolution) so Config owns the whole
-/// cascade family. This wrapper keeps the 3 existing call sites
-/// (session_compact.zig, session_messages_get.zig, workflow.zig)
-/// stable.
+/// Resolve the profile a session effectively runs under — the shared cascade
+/// used by BOTH the workflow loop (workflow.zig `iter_profile`) and the HTTP
+/// read paths (messages endpoint, manual compact).
 pub fn resolveSessionProfile(
     cfg: *const config_mod.LlmConfig,
     selected_profile_model: []const u8,
@@ -1444,10 +1285,7 @@ pub fn buildSessionMessagesXml(
         const escaped_reasoning_content = try xmlEscape(allocator, msg.reasoning_content);
         defer allocator.free(escaped_reasoning_content);
 
-        // is_input / is_output as XML text content. Match the JSON wire
-        // format: emit "true" / "false" (not "1" / "0") so the LLM
-        // consumers (read_messages tool etc.) see the same shape on both
-        // the JSON and the XML paths.
+        // is_input / is_output as XML text content.
         const is_input_str = if (msg.is_input) "true" else "false";
         const is_output_str = if (msg.is_output) "true" else "false";
         const msg_xml = try std.fmt.allocPrint(allocator,
@@ -1512,10 +1350,7 @@ pub fn createSession(
 ) ![]const u8 {
     // Generate session ID
     var session_id_buf: [64]u8 = undefined;
-    // `std.time.timestamp` was removed in Zig 0.16. Use the cross-platform
-    // `helpers.unixTimestamp()` helper (POSIX gettimeofday / Win32
-    // GetSystemTimeAsFileTime, no `io: std.Io` required — this function
-    // doesn't take an io parameter).
+    // `std.time.timestamp` was removed in Zig 0.16.
     const session_id = try std.fmt.bufPrint(&session_id_buf, "kerjabot_{}", .{helpers.unixTimestamp()});
 
     // Insert into sessions table first (for JOIN queries)
@@ -1587,29 +1422,17 @@ pub fn saveMessage(
     db: *sqlite.SqliteBackend,
     input: SaveMessageInput,
 ) !void {
-    // Get the current timestamp ONCE (two separate `Timestamp.now` calls
-    // can return nanoseconds that differ by 1+, which would make `id`
-    // and `created_at` disagree). We use it for both fields.
-    //
-    // The `llm_history.created_at` column is documented as Unix
-    // microseconds since the epoch (see Migration 059 header), but the
-    // stdlib exposes `Timestamp.now(...).nanoseconds` (an i96, 19
-    // decimal digits for any post‑1970 timestamp). We divide by
-    // `std.time.ns_per_us` (1000) to convert nanoseconds → microseconds
-    // so the column matches its documented format.
+    // Get the current timestamp ONCE (two separate `Timestamp.now` calls can
+    // return nanoseconds that differ by 1+, which would make `id` and
+    // `created_at` disagree).
     const id = try std.fmt.allocPrint(allocator, "{}", .{std.Io.Timestamp.now(io, .real).nanoseconds});
     defer allocator.free(id);
     const created_at_nano = try std.fmt.allocPrint(allocator, "{}", .{std.Io.Timestamp.now(io, .real).nanoseconds});
     defer allocator.free(created_at_nano);
 
     // Compute `created_iso` (the UTC‑formatted ISO string for the
-    // `since`/`until` filter columns) IN APPLICATION CODE rather than
-    // via SQLite triggers. See Migration 059 header for why.
-    //
-    // `helpers.currentTimeIsoLocal` gets the current UTC time itself
-    // (no parameter) — semantically the same value `created_at_us`
-    // would produce (both come from the same `now_ns` source a few
-    // lines above), but the helper hides the conversion details.
+    // `since`/`until` filter columns) IN APPLICATION CODE rather than via
+    // SQLite triggers.
     const created_iso = try helpers.currentTimeIsoLocal(allocator, io);
     defer allocator.free(created_iso);
 
@@ -1649,10 +1472,8 @@ pub fn saveMessage(
         }
     }
 
-    // tool_calls_json holds ONLY the serialized tool_calls array (assistant message wire format).
-    // For tool result messages, the tool_call_id lives in the dedicated tool_call_id column —
-    // do NOT overload tool_calls_json with the id. That overload caused the 2013 bug where the
-    // transform could not tell a JSON array from a plain id string.
+    // tool_calls_json holds ONLY the serialized tool_calls array (assistant
+    // message wire format).
     var toolCallsJson: []const u8 = "";
     var toolCallsOwned: ?[]u8 = null;
     if (input.tool_calls) |tc| {
@@ -1921,15 +1742,7 @@ pub fn getMessages(
 // Compacted Messages Query (is_feed_to_llm = 0)
 // =============================================================================
 
-/// Filter on the `is_feed_to_llm` column. The `read_workspace_session`
-/// tool surfaces this as `live_only` / `compacted_only` (mutually
-/// exclusive flags translated to one of these enum values at the tool
-/// boundary).
-///
-/// `.all` = no filter (default).
-/// `.live_only` = restrict to `is_feed_to_llm = 1` (current live context).
-/// `.compacted_only` = restrict to `is_feed_to_llm = 0` (dropped from
-/// context by compaction).
+/// Filter on the `is_feed_to_llm` column.
 pub const FeedFilter = enum { all, live_only, compacted_only };
 
 /// Options for filtering `getCompactedMessages`.
@@ -1956,31 +1769,19 @@ pub const CompactedMessagesOptions = struct {
     /// exactly. Useful when one session has multiple agents (planning vs
     /// chat vs sub-agent).
     agent: ?[]const u8 = null,
-    /// Max number of rows to return. Defaults to 100 for safety — the
-    /// caller can request up to 1000 explicitly. The
-    /// `read_workspace_session` tool wraps this in its own user-facing
-    /// limit parameter.
+    /// Max number of rows to return. Defaults to 100 for safety — the caller
+    /// can request up to 1000 explicitly. The `read_workspace_session` tool
+    /// wraps this in its own user-facing limit parameter.
     limit: ?u32 = 100,
-    /// DEPRECATED alias for `feed_filter = .all`. When `true`, equivalent
-    /// to `feed_filter = .all`; when `false` (default), equivalent to
-    /// `feed_filter = .compacted_only`. The new `feed_filter` field takes
-    /// precedence when both are set. Kept for back-compat with the test
-    /// suite (`llm_history_search_messages_fts_test.zig` uses
-    /// `.{ .include_all = true }`).
+    /// DEPRECATED alias for `feed_filter = .all`. When `true`, equivalent to
+    /// `feed_filter = .all`; when `false` (default), equivalent to
+    /// `feed_filter = .compacted_only`.
     include_all: bool = false,
-    /// When non-null, restrict rows by their `is_feed_to_llm` value via
-    /// this enum. When null, `effectiveFeedFilter()` falls back to the
-    /// legacy `include_all` boolean. New callers should prefer
-    /// `feed_filter` over `include_all` for clarity.
+    /// When non-null, restrict rows by their `is_feed_to_llm` value via this
+    /// enum.
     feed_filter: ?FeedFilter = null,
     /// Sort direction for `created_at`. Default `.asc` (chronological
-    /// forward). `.desc` returns most-recent-first — useful for
-    /// `read_workspace_session` READ when the LLM wants to browse
-    /// the tail of a long session.
-    ///
-    /// Pagination with `.desc` works the same way as `.asc`: pass the
-    /// last-seen `created_at` as `since` (or `until` in the desc case)
-    /// and re-query.
+    /// forward).
     order: Order = .asc,
 
     /// Named enum so callers can reference it as
@@ -1990,8 +1791,6 @@ pub const CompactedMessagesOptions = struct {
 
     /// Resolve the effective feed filter, falling back to the legacy
     /// `include_all` boolean when `feed_filter` was not explicitly set.
-    /// This indirection lets new code use the enum while preserving
-    /// compatibility with the older boolean.
     pub fn effectiveFeedFilter(self: CompactedMessagesOptions) FeedFilter {
         if (self.feed_filter) |ff| return ff;
         return if (self.include_all) .all else .compacted_only;
@@ -1999,10 +1798,7 @@ pub const CompactedMessagesOptions = struct {
 };
 
 /// Lighter-weight return struct than `TUIHistory` — only the fields the
-/// `read_workspace_session` tool actually surfaces. Avoids the
-/// ~30-field TUIHistory struct, which has columns that don't exist
-/// in a minimal test schema (e.g. `diffview_before`) and would force
-/// every test to seed them.
+/// `read_workspace_session` tool actually surfaces.
 pub const CompactedMessage = struct {
     id: []const u8,
     session_id: []const u8,
@@ -2015,8 +1811,6 @@ pub const CompactedMessage = struct {
     created_at: []const u8,
     /// Total number of rows that matched the WHERE clause (before LIMIT).
     /// Surfaced via `COUNT(*) OVER ()` so it's computed in the same query.
-    /// Every row in the result carries the same value — the LLM uses it
-    /// to know whether more pages exist without re-querying.
     total_count: u32,
 
     pub fn deinit(self: *const CompactedMessage, allocator: std.mem.Allocator) void {
@@ -2040,10 +1834,7 @@ pub const SearchOptions = struct {
     /// Useful for "search within this conversation only".
     session_id: ?[]const u8 = null,
     /// When non-null and non-empty, only return hits whose
-    /// `llm_history.session_id` is in this list. Used for
-    /// workspace-scoped search: the caller resolves the workspace's
-    /// session set first, then restricts FTS to it. Combined with
-    /// `session_id` via AND when both are set.
+    /// `llm_history.session_id` is in this list.
     session_ids: ?[]const []const u8 = null,
     /// When non-null, exact-match filter on `llm_history.role` ("user", "assistant", "tool").
     role: ?[]const u8 = null,
@@ -2069,10 +1860,8 @@ pub const SearchOptions = struct {
     /// request up to 200 (the tool layer caps there). The FTS ranking
     /// does the rest of the filtering.
     limit: ?u32 = 20,
-    /// Skip the first N results. Used by `read_workspace_session` search
-    /// to walk forward through FTS results that exceed `limit`. Combined
-    /// with `total_count` on the result, the LLM can paginate until
-    /// `offset + hits.len >= total_count`.
+    /// Skip the first N results. Used by `read_workspace_session` search to
+    /// walk forward through FTS results that exceed `limit`.
     offset: ?u32 = null,
 };
 
@@ -2086,10 +1875,9 @@ pub const SearchHit = struct {
     tool_call_id: ?[]const u8,
     tool_name: ?[]const u8,
     created_at: []const u8,
-    /// Total number of rows that matched the WHERE clause (before LIMIT
-    /// and OFFSET). Surfaced via `COUNT(*) OVER ()` so it's computed in
-    /// the same query. Every row in the result carries the same value.
-    /// Used by the LLM to decide whether to paginate further.
+    /// Total number of rows that matched the WHERE clause (before LIMIT and
+    /// OFFSET). Surfaced via `COUNT(*) OVER ()` so it's computed in the same
+    /// query.
     total_count: u32,
 
     pub fn deinit(self: *const SearchHit, allocator: std.mem.Allocator) void {
@@ -2104,36 +1892,6 @@ pub const SearchHit = struct {
 };
 
 /// Return messages for the given session.
-///
-/// Default behavior (when `opts.include_all == false`): returns ONLY
-/// messages marked `is_feed_to_llm = 0` — the ones dropped from the
-/// live LLM context by compaction. This is the inverse of `getMessages`
-/// (line 1076).
-///
-/// With `opts.include_all == true`: returns ALL messages for the
-/// session regardless of `is_feed_to_llm`. Used by
-/// `read_workspace_session` READ to browse the full conversation history.
-///
-/// Filter semantics (identical regardless of `include_all`):
-/// - `message_ids`: when non-null, IN-clause filter (skipped if empty).
-/// - `role`: exact match on `llm_history.role`.
-/// - `since` / `until`: lexicographic comparison on the
-///   `created_iso` string (which is a regular TEXT column populated by
-///   INSERT/UPDATE triggers installed by Migration 059 — they compute
-///   `datetime(CAST(created_at AS REAL) / 1000000, 'unixepoch',
-///   'localtime')` — in `YYYY-MM-DD HH:MM:SS` format, so
-///   lex-sort = chrono-sort). NOTE: we filter on `created_iso`, NOT
-///   `created_at`, because `created_at` stores Unix microseconds as a
-///   TEXT string (e.g. `"1784119389936251112"`) and lex-comparing that
-///   against a user-supplied date string like `"2026-07-15 00:00:00"`
-///   silently returns 0 rows (since `'1' < '2'`). The column is
-///   indexable so the filter is O(log n). See the workspace history
-///   plan (`docs/plans/2026-09-15-workspace-scoped-chat-history.md`).
-/// - `limit`: clamps the row count (defaults to 100).
-///
-/// Returned slice's elements are heap-allocated via `allocator.dupe`;
-/// caller must call `result[i].deinit(allocator)` for each and
-/// `allocator.free(results)` to free the outer slice.
 pub fn getCompactedMessages(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -2142,11 +1900,8 @@ pub fn getCompactedMessages(
 ) ![]CompactedMessage {
     const effective_limit = opts.limit orelse 100;
 
-    // Build the WHERE clause incrementally. Each filter appends
-    // AND <clause> to the base `h.session_id = ?`.
-    // `is_feed_to_llm = 0` is appended UNLESS `opts.effectiveFeedFilter()`
-    // resolves to `.all` (`read_workspace_session` READ passes feed_filter
-    // = .all to browse the full conversation history).
+    // Build the WHERE clause incrementally. Each filter appends AND <clause>
+    // to the base `h.session_id = ?`.
     var sql: std.ArrayList(u8) = .empty;
     defer sql.deinit(allocator);
     try sql.appendSlice(allocator,
@@ -2255,19 +2010,6 @@ pub fn getCompactedMessages(
 }
 
 /// Look up messages by id alone, without a `session_id` filter.
-///
-/// Used by `read_workspace_session` SEARCH when `message_ids` is provided
-/// — the LLM is asking for specific ids (e.g. ones it learned about from
-/// a previous call) without scoping to a session. `getCompactedMessages`
-/// always appends a session_id WHERE clause, so a separate query path is
-/// needed. Callers must filter the result to their workspace scope
-/// themselves (the tool layer drops ids from other workspaces).
-///
-/// Returns the same `CompactedMessage` shape as `getCompactedMessages`.
-/// Caller owns the slice — free with `m.deinit(allocator)` per element
-/// and `allocator.free(results)` for the outer slice.
-///
-/// Returns an empty slice when `ids.len == 0` (no-op).
 pub fn getMessagesByIds(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -2331,79 +2073,14 @@ pub fn getMessagesByIds(
 }
 
 /// Full-text search over `llm_history.response_content` using SQLite FTS5.
-///
-/// Joins the `messages_fts` virtual table to `llm_history` and returns
-/// ranked hits with a 10-token snippet around each match. Ranking is
-/// FTS5's default BM25.
-///
-/// Filter semantics mirror `getCompactedMessages`:
-/// - `session_id`: exact match on `llm_history.session_id`
-/// - `role`: exact match on `llm_history.role`
-/// - `since`/`until`: lex-sort = chrono-sort on `created_at`
-/// - `limit`: clamps the row count (defaults to 20)
-///
-/// Caller owns the returned slice. Free with `hit[i].deinit(allocator)`
-/// for each hit and `allocator.free(hits)` for the outer slice.
-/// Sanitize a user-supplied FTS5 query string so it is always a valid
-/// FTS5 expression. Splits on whitespace + FTS5 operators, wraps each
-/// token in FTS5 phrase quotes (`"..."`) and joins the quoted tokens
-/// with ` OR ` (FTS5 OR operator) for natural recall.
-///
-/// **Why this exists.** Without sanitization, plain user input that
-/// happens to contain FTS5 operators fails with `SQLITE_ERROR` —
-/// the user's complaint in task_1785658329168 was specifically that
-/// `handle_tool.zig`, `AGENTS.md`, `SPEC.md`, `2026-08-06`, and
-/// `agentic_loop/handle_tool.zig:18` all returned the bare
-/// `FTS search failed: QueryFailed` with no hint about WHY:
-///   - `.` in `handle_tool.zig` is NEAR syntax: `fts5: syntax error near "."`
-///   - `-` in `2026-08-06` parses as binary NOT: `no such column: 08`
-///   - `:` in `agentic_loop/handle_tool.zig:18` parses as column filter
-///   - In fact, virtually every non-alphanumeric char is an FTS5
-///     operator: `.`, `+`, `-`, `*`, `^`, `:`, `(`, `)`, `"`, `/`,
-///     `@`, `#`, `$`, `%`, `&`, `~`, `\`, `{`, `}`, `[`, `]`, `|`,
-///     `<`, `>`, `=`, `,`, `;`, `!`, `?`. Trying to strip them all
-///     is a maintenance nightmare.
-///
-/// **Why OR (not phrase).** An earlier version of this function wrapped
-/// the whole query in FTS5 phrase syntax (`"..."`). That fixed the
-/// `handle_tool.zig` syntax crash but over-rotated: phrase syntax
-/// requires ALL tokens to be ADJACENT in the indexed text, so a
-/// natural-language query like `"preferred model"` only matched
-/// memories containing the literal substring "preferred model" —
-/// missing every memory that mentioned either word separately. The
-/// user's complaint in task_1787050039216_3 was that memories were
-/// "never found" by the agent. SQL evidence (live DB, 64 memories):
-///   - `preferred model`    phrase → 0 hits, OR → 13 hits
-///   - `CI frontend`        phrase → 0 hits, OR → 20 hits
-///   - `project ginwaaitoolbox` phrase → 2 hits, AND → 8 hits, OR → 15+
-///
-/// **The fix.** Split on whitespace + FTS5 operators, wrap each token
-/// in FTS5 phrase quotes (`"..."`) — phrase syntax is the ONE place
-/// where special chars are literal (not operators) — and join the
-/// quoted tokens with ` OR `. FTS5's default tokenizer (`porter
-/// unicode61 remove_diacritics 2`) handles the inner tokenization
-/// consistently, so `"handle_tool"` and `"zig"` (the two tokens split
-/// out of `handle_tool.zig`) match the same way the indexer parsed
-/// them at write time.
-///
-/// **Returns** an allocated slice. Empty `""` means "no usable tokens"
-/// (e.g. query was all operators / whitespace) — callers should bail
-/// early. Caller owns the returned slice; free with `allocator.free`.
+/// Joins the `messages_fts` virtual table to `llm_history` and returns ranked
+/// hits with a 10-token snippet around each match.
 pub fn escapeFtsQuery(allocator: std.mem.Allocator, query: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(allocator);
 
-    // Walk the query, splitting on whitespace OR FTS5 operator chars
-    // (every non-alphanumeric except `_`). Each "run" of safe chars
-    // becomes a single token; we wrap each token in `"..."` (FTS5
-    // phrase quotes) so any special chars inside the token are
-    // treated as literal. Multiple tokens are joined with ` OR `.
-    //
-    // We could strip the operator chars inside tokens (turning
-    // `handle_tool.zig` into two tokens after splitting on the dot).
-    // But wrapping in quotes is robust — the unicode61 tokenizer
-    // ignores dots inside quoted phrases as written, and the rest of
-    // the indexer/query parser normalizes them consistently.
+    // Walk the query, splitting on whitespace OR FTS5 operator chars (every
+    // non-alphanumeric except `_`).
     var first_token = true;
     var in_token = false;
     var i: usize = 0;
@@ -2527,8 +2204,6 @@ test "escapeFtsQuery: leading/trailing whitespace is harmless" {
 test "escapeFtsQuery: realistic multi-word recall query (regression for task_1787050039216_3)" {
     // The user's complaint: load_memory({query: "preferred model"}) returned
     // 0 hits because the query was wrapped in FTS5 phrase syntax.
-    // After the fix, the query is "preferred" OR "model" — OR semantics,
-    // natural recall.
     const alloc = testing.allocator;
     const out = try escapeFtsQuery(alloc, "preferred model");
     defer alloc.free(out);
@@ -2543,10 +2218,9 @@ pub fn searchMessagesFts(
 ) ![]SearchHit {
     const effective_limit = opts.limit orelse 20;
 
-    // Sanitize the user query so plain text with FTS5 operators
-    // (`.`, `-`, `:`) doesn't blow up the MATCH parser. See
-    // `escapeFtsQuery` for the full rationale and the exact
-    // transformation.
+    // Sanitize the user query so plain text with FTS5 operators (`.`, `-`,
+    // `:`) doesn't blow up the MATCH parser. See `escapeFtsQuery` for the
+    // full rationale and the exact transformation.
     const sanitized_query = try escapeFtsQuery(allocator, query);
     defer allocator.free(sanitized_query);
     // Empty after sanitization (query was all FTS5 operators) — bail
@@ -2555,11 +2229,9 @@ pub fn searchMessagesFts(
 
     var sql: std.ArrayList(u8) = .empty;
     defer sql.deinit(allocator);
-    // Wrap FTS5 access in a subquery so the COUNT(*) OVER () window
-    // function runs over the regular subquery result, not directly over
-    // the FTS5 virtual table. FTS5 virtual tables have restrictions on
-    // what SQL features they accept (notably window functions), but the
-    // outer query works fine.
+    // Wrap FTS5 access in a subquery so the COUNT(*) OVER () window function
+    // runs over the regular subquery result, not directly over the FTS5
+    // virtual table.
     try sql.appendSlice(allocator,
         \\SELECT
         \\    id, session_id, role, snippet, tool_call_id, tool_name, created_at,
@@ -2571,11 +2243,9 @@ pub fn searchMessagesFts(
         \\        snippet(messages_fts, 0, '[', ']', '...', 10) AS snippet,
         \\        h.tool_call_id AS tool_call_id,
         \\        h.tool_name AS tool_name,
-        // Prefer the populated `created_iso` string over the raw
-        // nanosecond epoch so the returned `created_at` is readable and
-        // matches the `YYYY-MM-DD HH:MM:SS` format `since`/`until` already
-        // accept. NULLIF falls back to the epoch only for legacy
-        // pre-migration rows whose `created_iso` is NULL or empty.
+        // Prefer the populated `created_iso` string over the raw nanosecond
+        // epoch so the returned `created_at` is readable and matches the
+        // `YYYY-MM-DD HH:MM:SS` format `since`/`until` already accept.
         \\        COALESCE(NULLIF(h.created_iso, ''), h.created_at_nano, '') AS created_at,
         \\        rank AS fts_rank
         \\    FROM messages_fts
@@ -2793,18 +2463,8 @@ pub fn getLatestMessage(
 }
 
 /// Fetch ONE llm_history row by its exact id (scoped to session_id).
-///
 /// 2026-08-23 B1 fix — handle_tool.zig used to emit tool-result SSE via
-/// `getLatestMessage` (ORDER BY created_at_nano DESC LIMIT 1), which
-/// returns the LAST-CREATED row in the session regardless of which tool
-/// just completed. With N parallel tool calls, completions 1..N-1 all
-/// emitted the same (wrong) row: empty content + the wrong tool_call_id.
-/// The frontend then showed stale "loading" cards and TOOLS-pill spam.
-///
-/// This lookup selects by the placeholder row's KNOWN id instead, so
-/// each completion emits ITS OWN row. Scoped by session_id because ids
-/// are nanosecond timestamps — the guard makes cross-session collisions
-/// impossible even if two sessions insert in the same nanosecond.
+/// `getLatestMessage` (ORDER BY created_at_nano DESC LIMIT 1), which returns
 pub fn getMessageById(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -3034,14 +2694,8 @@ pub const WorkerInfo = struct {
     working_directory: []const u8,
     last_activity: i64,
     last_activity_description: []const u8,
-    /// Bound git worktree path for this worker's session (empty
-    /// when no worktree is bound). Mirrors `sessions.git_worktree_cwd`.
-    /// Populated by `getActiveWorker` / `getWorkerBySessionId` via a
-    /// LEFT JOIN on `sessions`. Rendered into the system prompt's
-    /// `## Active Workers` section so LLM agents see the actual
-    /// working tree the other worker is operating in (not just the
-    /// session's nominal cwd). See plan: doc-less chunk of the
-    /// sprint 2 "git worktree cwd, worker" task.
+    /// Bound git worktree path for this worker's session (empty when no
+    /// worktree is bound). Mirrors `sessions.git_worktree_cwd`.
     git_worktree_cwd: []const u8,
 
     pub fn deinit(self: *const WorkerInfo, allocator: std.mem.Allocator) void {
@@ -3058,14 +2712,6 @@ pub const WorkerInfo = struct {
 };
 
 /// Get all active workers with their info.
-///
-/// Selects every `worker` row joined to its `sessions` row (if any)
-/// so callers can render the full agent-prompt "## Active Workers"
-/// block — including the bound git worktree path. The LEFT JOIN
-/// preserves workers whose session row has been deleted (a worker
-/// row may outlive its session), falling back to `''` for
-/// `git_worktree_cwd` (mirrors the COALESCE-on-NULL convention used
-/// for `cwd`, `name`, etc. throughout the codebase).
 pub fn getActiveWorker(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -3130,23 +2776,8 @@ pub fn updateWorkerActivityWithDescription(
     }) catch {};
 }
 
-/// Append a single row to the `session_activity` per-session log
-/// (Migration 073). Called by:
-///   - `workflow_compact_message.zig::buildCompactionEnvelope` after
-///     the envelope is built — every compaction event appends one row.
-///
-/// Failure mode: on INSERT error, propagate to the caller — the
-/// caller wraps the call in `catch |err| { logger.warnFmt(...) }`
-/// (matches the SSE `catch {}` pattern in
-/// `updateWorkerActivityWithDescription`). Best-effort is enforced at
-/// the call site, not here.
-///
-/// The TEXT `id` is generated from
-/// `std.Io.Timestamp.now(io, .real).nanoseconds` — same pattern as
-/// `llm_history.saveMessage` (line 1094) and
-/// `saveToolResultPlaceholder` (line 2448). Project-wide convention is
-/// TEXT ids (see Migration 001 llm_history.id, Migration 070
-/// agent_memories.id, Migration 072 kanban.workspace_item_task_id).
+/// Append a single row to the `session_activity` per-session log (Migration
+/// 073).
 pub fn recordSessionActivity(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -3242,14 +2873,9 @@ pub fn deleteQueuedMessagesBySessionId(
     try db.exec(allocator, sql, &.{session_id});
 }
 
-/// Get a worker by session_id
-///
-/// Returns `null` when no worker row matches `session_id` (e.g. when
-/// no LLM call has been issued yet for this session, or when the
-/// session/worker has been cancelled). Selects `git_worktree_cwd`
-/// from the matching `sessions` row so callers (e.g. `worker_get`
-/// HTTP handler) can show the bound worktree path; falls back to
-/// `''` when the worker row exists but its session row was deleted.
+/// Get a worker by session_id Returns `null` when no worker row matches
+/// `session_id` (e.g. when no LLM call has been issued yet for this session,
+/// or when the session/worker has been cancelled).
 pub fn getWorkerBySessionId(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -3285,18 +2911,9 @@ pub fn getWorkerBySessionId(
     return null;
 }
 
-/// Check if a task is currently running (a worker row exists for it).
-///
-/// The pabrik convention is `task.id == session.id`, so the worker
-/// table's `session_id` column holds the task's id. If a row exists,
-/// the task is currently being processed by a worker (its LLM call is
-/// in-flight or streaming). Tasks in this state cannot be deleted —
-/// use cases that delete a task should check this first and refuse.
-///
-/// The companion `isSessionRunning` checks the `worker.id` (primary
-/// key) column; this helper checks the `worker.session_id` foreign
-/// key. They are intentionally separate so callers that already have
-/// one or the other can pick the cheap query.
+/// Check if a task is currently running (a worker row exists for it). The
+/// pabrik convention is `task.id == session.id`, so the worker table's
+/// `session_id` column holds the task's id.
 pub fn isTaskRunning(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -3322,36 +2939,9 @@ pub fn cancelSession(
 
 // =============================================================================
 // Tool-call loading placeholder (Migration 068, plan:
-// docs/superpowers/plans/2026-08-06-tool-call-loading-placeholder.md)
-//
-// The OpenAI tool-call API requires every `tool_call_id` in an assistant
-// message's `tool_calls` array to have a matching `role=tool` row in the
-// next conversation payload, or the API rejects with "Invalid function
-// ID". When the agent crashes mid-execution (bash hangs, spawn_sub_agent
-// dies, pabrik process SIGKILL'd), the assistant message is in the DB but
-// the per-tool result rows aren't — every subsequent LLM call fails.
-//
-// The fix is a 3-phase INSERT pattern:
-//
-//   Phase 1 (sync): For each tool_call, INSERT a placeholder row with
-//                   `is_loading=1` and `is_feed_to_llm=1`. The empty
-//                   content satisfies the API contract by ID (the LLM
-//                   just sees "tool call X completed with empty content"
-//                   — acceptable as a "still running" sentinel).
-//   Phase 2 (sync): INSERT the assistant message declaring tool_calls.
-//   Phase 3 (async): For each tool_call, run the tool and UPDATE the
-//                   placeholder row in place (set content + is_loading=0).
-//
-// If the process crashes between Phase 1 and Phase 3, the placeholders
-// remain in the DB. On next startup, `resolveStaleLoadingToolResults`
-// replaces them with a synthetic "interrupted" message so the next LLM
-// call's API contract is satisfied and the LLM can decide what to do.
-// =============================================================================
+// docs/superpowers/plans/2026-08-06-tool-call-loading-placeholder.md) The
 
-/// Options for `saveToolResultPlaceholder`. All required fields are
-/// non-null — the placeholder is intentionally minimal (empty content,
-/// `is_loading=1`, `is_feed_to_llm=1`, `role=tool`) so callers can't
-/// forget any of the three-place contract.
+/// Options for `saveToolResultPlaceholder`.
 pub const SaveToolResultPlaceholderOptions = struct {
     session_id: []const u8,
     model: []const u8,
@@ -3371,26 +2961,8 @@ pub const UpdateToolResultOptions = struct {
     diffview_after: ?[]const u8,
 };
 
-/// INSERT a `role=tool` placeholder row with `is_loading=1`. Returns
-/// the new row's `id` (a nanosecond timestamp string, same shape as
-/// `saveMessage`). Caller OWNS the returned slice — must `free()`.
-///
-/// The row is created with:
-///   - `role = 'tool'`
-///   - `tool_call_id = opts.tool_call_id`
-///   - `tool_name = opts.tool_name`
-///   - `response_content = ''`
-///   - `is_loading = 1`
-///   - `is_feed_to_llm = 1`
-///   - `finish_reason = 'tool_calls'`
-///   - `created_at = created_iso = <current nanosecond timestamp>`
-///   - other fields populated to safe defaults
-///
-/// The partial UNIQUE INDEX on `tool_call_id`
-/// (`idx_llm_history_tool_call_id_loading`) rejects a duplicate
-/// `tool_call_id` at the DB level — returns `error.ExecuteFailed`.
-///
-/// Plan: docs/superpowers/plans/2026-08-06-tool-call-loading-placeholder.md
+/// INSERT a `role=tool` placeholder row with `is_loading=1`. Returns the new
+/// row's `id` (a nanosecond timestamp string, same shape as `saveMessage`).
 pub fn saveToolResultPlaceholder(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -3443,18 +3015,7 @@ pub fn saveToolResultPlaceholder(
     return try allocator.dupe(u8, id);
 }
 
-/// UPDATE a placeholder row in place by `tool_call_id`. Preserves
-/// `created_at` and `created_iso` (the placeholder's "started at"
-/// time — the LLM benefits from seeing the gap between the assistant
-/// message and the actual tool completion in the conversation
-/// timestamps).
-///
-/// If no row matches the `tool_call_id`, the UPDATE is a silent no-op
-/// (0 rows affected, returns Ok(())). This is intentional — callers
-/// shouldn't have to handle "the placeholder didn't exist because the
-/// agent finished fast" as a special case.
-///
-/// Plan: docs/superpowers/plans/2026-08-06-tool-call-loading-placeholder.md
+/// UPDATE a placeholder row in place by `tool_call_id`.
 pub fn updateToolResultById(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -3474,11 +3035,8 @@ pub fn updateToolResultById(
     ;
 
     // For diffview: an empty slice binds as NULL per project memory
-    // `sqlite-backend-empty-slice-binds-as-null` — so passing ''
-    // is indistinguishable from passing null. The COALESCE on the
-    // existing column leaves the value unchanged in both cases.
-    // Acceptable for v1 (text_replace always sets diffview; no other
-    // tool uses it).
+    // `sqlite-backend-empty-slice-binds-as-null` — so passing '' is
+    // indistinguishable from passing null.
     const sqlArgs = &.{
         opts.content,
         opts.diffview_before orelse "",
@@ -3491,32 +3049,13 @@ pub fn updateToolResultById(
 /// Replace every `is_loading=1` row in the session with a synthetic
 /// "<interrupted>...</interrupted>" message so the next LLM call's
 /// tool_call_id contract is satisfied after an agent crash.
-///
-/// Idempotent: a session with 0 stranded rows is a no-op (0 rows
-/// updated). Safe to call at the top of every worker loop before the
-/// first LLM call.
-///
-/// The synthetic content uses an XML envelope (`<interrupted>...</interrupted>`)
-/// so future rich-preview tools can detect + render it
-/// distinctly. The LLM sees plain text:
-///
-///     Tool execution was interrupted by server restart. Please
-///     retry this action.
-///
-/// …and the API contract is satisfied (every `tool_call_id` in the
-/// assistant message has a matching `role=tool` row).
-///
-/// Plan: docs/superpowers/plans/2026-08-06-tool-call-loading-placeholder.md
 pub fn resolveStaleLoadingToolResults(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
     session_id: []const u8,
 ) !void {
-    // The placeholder content is empty (Phase 1 inserts); replace
-    // it with the synthetic interrupted message. We KEEP
-    // `is_feed_to_llm=1` so the LLM actually sees the message —
-    // otherwise the conversation payload would have a tool_call_id
-    // with no matching tool result, triggering the original bug.
+    // The placeholder content is empty (Phase 1 inserts); replace it with the
+    // synthetic interrupted message.
     const sql =
         \\UPDATE llm_history SET
         \\    response_content = '<interrupted>Tool execution was interrupted by server restart. Please retry this action.</interrupted>',
@@ -3596,10 +3135,8 @@ pub const SessionTableInfo = struct {
     /// Migration 063 — most recent `finish_reason` the workflow observed
     /// for this session. Empty string before the first successful turn.
     last_finish_reason: []u8,
-    /// Migration 091 — resolved sub-agent name for sub-agent sessions
-    /// (e.g. "implementator"). Empty for main-agent sessions. Kept
-    /// alongside selected_profile_model (which stays as the parent
-    /// profile for model resolution) so DB inspection shows who ran.
+    /// Migration 091 — resolved sub-agent name for sub-agent sessions (e.g.
+    /// "implementator"). Empty for main-agent sessions.
     sub_agent_name: []u8,
     /// Migration 091 — parent session id for sub-agent sessions.
     parent_session_id: []u8,
@@ -3623,11 +3160,8 @@ pub const SessionTableInfo = struct {
 };
 
 /// Create a new session with status set to 'active'
-///
-/// `is_auto_retry_until_stop`: "1" enables unattended mode for this
-/// session (workflow keeps retrying past the 10-attempt TooManyRetries
-/// bail). Empty string OR anything other than "1" coerces to "0" via
-/// the SQL binding default (matches the NOT NULL DEFAULT 0 schema).
+/// `is_auto_retry_until_stop`: "1" enables unattended mode for this session
+/// (workflow keeps retrying past the 10-attempt TooManyRetries bail).
 pub fn create_session(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -3663,14 +3197,9 @@ pub fn create_session(
         .id = try allocator.dupe(u8, id),
         .name = try allocator.dupe(u8, name),
         .status = try allocator.dupe(u8, "active"),
-        // cwd is intentionally empty in create_session — the worker
-        // upserts the cwd on the first llm_history insert (see
-        // insert_llm_histories.zig:183). Pre-existing pattern; the
-        // previous version of this literal also initialized cwd = ""
-        // but the lazy-analysis of `zig build test` didn't catch the
-        // missing field. The install target (which compiled fine
-        // before) now flags it because the struct grew by 2 fields
-        // and the missing `.cwd` slipped past the original code path.
+        // cwd is intentionally empty in create_session — the worker upserts
+        // the cwd on the first llm_history insert (see
+        // insert_llm_histories.zig:183).
         .cwd = try allocator.dupe(u8, ""),
         .created_at = try allocator.dupe(u8, ""),
         .updated_at = try allocator.dupe(u8, ""),
@@ -3689,20 +3218,9 @@ pub fn create_session(
     };
 }
 
-/// Ensure a session row exists for `session_id`. If no row matches,
-/// INSERT a minimal row with sensible defaults (name='New Session',
+/// Ensure a session row exists for `session_id`. If no row matches, INSERT a
+/// minimal row with sensible defaults (name='New Session',
 /// is_auto_retry_until_stop='0', empty selected_profile_model).
-///
-/// Returns `true` iff a new row was created, `false` if one already
-/// existed. Used by `session_update.zig` (PUT /api/session/:id) to
-/// make the handler idempotent: the user can land here by changing
-/// the profile on a brand-new chat where the session_id is in the URL
-/// but the row hasn't been INSERTed yet (no message queued).
-/// Pre-creating with defaults lets the profile / name / flag updates
-/// succeed and be preserved for the first real LLM call.
-///
-/// Plan: docs/superpowers/plans/2026-08-06-set-active-profile-default.md
-/// (Bug: "session not found when change profile")
 pub fn ensureSessionExists(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -3873,15 +3391,7 @@ pub fn updateSessionName(
     }
 }
 
-/// Rename a workspace item task. The rename cascades to the linked
-/// session via `updateSessionName`, which itself emits a
-/// `session.updated` SSE event so subscribers (e.g. the ChatsList
-/// sidebar) see the new name in real time. The cascade target is
-/// the task's own id (per the `task.id == session_id` convention;
-/// the redundant `session_id` column was dropped in Migration 052).
-///
-/// This is the rename path used by `PUT /api/workspaces/tasks/:task_id`
-/// and `PUT /api/workspaces/:workspace_id/items/:item_id/tasks/:task_id`.
+/// Rename a workspace item task.
 pub fn updateTaskName(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -3901,23 +3411,12 @@ pub fn updateTaskName(
     // 3) The task IS the session id. Always cascade.
     const session_id = id;
 
-    // 4) Cascade the rename to the linked session. `updateSessionName`
-    // also re-reads the session row and broadcasts a `session.updated`
-    // SSE event with the new name, which is the ChatsList hook.
-    // A failure here is non-fatal — the task row is the source of
-    // truth for the sidebar, and the next rename will reconcile.
+    // 4) Cascade the rename to the linked session.
     updateSessionName(allocator, db, session_id, new_name) catch {};
 }
 
 /// Update the unattended-mode flag for an existing session (Migration 063).
-///
 /// `value` must be "1" or "0" — handler layer validates the input shape.
-/// Empty string is rejected here (treated as no-op) so a malformed PUT
-/// doesn't accidentally flip the flag. The schema's NOT NULL DEFAULT 0
-/// keeps existing rows consistent.
-///
-/// Broadcasts an "updated" SSE event so the ChatsList `🔁 unattended`
-/// badge updates live without a refetch.
 pub fn updateSessionAutoRetryUntilStop(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -3951,13 +3450,7 @@ pub fn updateSessionAutoRetryUntilStop(
 }
 
 /// Update the most-recent `finish_reason` cache for an existing session
-/// (Migration 063). Called by `workflow.zig` after every LLM call so a
-/// future workflow invocation (e.g., after a server restart) starts
-/// from the right state without re-querying `llm_history.finish_reason`.
-///
-/// No SSE broadcast — `last_finish_reason` is an internal cache, not a
-/// UI surface (the ChatView shows the live SSE-streamed reason; this
-/// column only backs the unattended-soft-bail logic in workflow.zig).
+/// (Migration 063).
 pub fn updateSessionLastFinishReason(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -3969,27 +3462,7 @@ pub fn updateSessionLastFinishReason(
     try db.exec(allocator, sql, &.{ finish_reason, id });
 }
 
-/// Stamp `last_human_touched_at = <unix_ms>` on a task. Called by
-/// every HTTP handler that mutates a task or its chat session on
-/// behalf of a human user (drag, rename, edit description, pin, send
-/// message, open chat). The kanban card query then compares against
-/// `sessions.updated_at` (denormalized by `updateSessionLastFinishReason`)
-/// to decide whether to show the "AI finished — awaiting review" dot
-/// or the "reviewed" checkmark.
-///
-/// Cheaper than per-action auditing — we just need a monotonic
-/// timestamp. Idempotent: a second call overwrites the first.
-///
-/// Schema: `workspace_item_tasks.last_human_touched_at INTEGER NULL`
-/// (Migration 065). We format the unix-ms integer to a string and
-/// bind via `?` per the project's SqliteBackend convention
-/// (`db.exec` only binds TEXT; see memory
-/// `sqlite-backend-exec-binds-text-only`).
-///
-/// The `now_unix_ms` arg lets callers override the stamp time (useful
-/// for tests). When null, we read the real current time via libc
-/// `gettimeofday` (Zig 0.16 removed `std.time.timestamp` per project
-/// memory `zig-0.16-stdlib-changes`).
+/// Stamp `last_human_touched_at = <unix_ms>` on a task.
 pub fn updateTaskLastHumanTouchedAt(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -4011,38 +3484,6 @@ pub fn updateTaskLastHumanTouchedAt(
 
 /// Stamp `sessions.last_human_touched_at_nano = <unix_ms>`. Sibling of
 /// `updateTaskLastHumanTouchedAt` (which targets `workspace_item_tasks`).
-/// Drives the chat sidebar's `last_human_touched_at` time pill — see
-/// `docs/superpowers/plans/2026-08-29-chat-sidebar-last-human-touched.md`.
-///
-/// Called by every HTTP handler / workflow site that mutates a chat on
-/// behalf of a human user:
-///   - `app.zig::emit_run_agent` — the single funnel for every
-///     "user sends a message" path (chat send, kanban "create & run",
-///     kanban "Start agent", `+ Chat`). Stamps before the workflow
-///     kicks off so even an immediate agent bail leaves the stamp in
-///     place.
-///   - `session_update.zig::useCase` — when the user renames the
-///     chat, switches its profile, or toggles unattended mode.
-///   - `workflow.zig::saveRetryAttemptMessage` — "also when error
-///     too": every retry-catch / unexpected finish_reason /
-///     TooManyRetries bail sites funnel through this helper, so a
-///     single call covers all error emits.
-///
-/// Schema: `sessions.last_human_touched_at_nano INTEGER NULL`
-/// (Migration 082). We format the unix-ms integer to a string and
-/// bind via `?` per the project's SqliteBackend convention
-/// (`db.exec` only binds TEXT; see memory
-/// `sqlite-backend-exec-binds-text-only`).
-///
-/// The `now_unix_ms` arg lets callers override the stamp time (useful
-/// for tests). When null, we read the real current time via libc
-/// `gettimeofday` (Zig 0.16 removed `std.time.timestamp` per project
-/// memory `zig-0.16-stdlib-changes`).
-///
-/// `session_id.len == 0` is a no-op (returns success without touching
-/// the DB) — matches the empty-slice-as-NULL rule and protects against
-/// accidentally binding `""` as SQL NULL when a handler has a stub
-/// session_id in tests.
 pub fn updateSessionLastHumanTouchedAt(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -4064,18 +3505,8 @@ pub fn updateSessionLastHumanTouchedAt(
 }
 
 /// Current Unix epoch time in milliseconds. Used by
-/// `updateTaskLastHumanTouchedAt` as the default timestamp; can also
-/// be called directly by handlers that need a unix-ms stamp.
-///
-/// Replaces Zig 0.16-removed `std.time.timestamp()`. We use libc
-/// `gettimeofday` directly — matches the pattern in
-/// `src/helpers/...` and avoids the Zig 0.16 `std.Io` runtime
-/// dependency for a one-shot monotonic stamp.
-///
-/// `extern "c"` MUST be at module scope in Zig 0.16 (per project
-/// memory `zig-language-quirks` §"extern c declarations — symbol
-/// name rules"). `c_long` is platform-sized — use the project's
-/// `Clong` alias pattern (LP64 vs LLP64).
+/// `updateTaskLastHumanTouchedAt` as the default timestamp; can also be
+/// called directly by handlers that need a unix-ms stamp.
 const builtin = @import("builtin");
 const Clong = if (@bitSizeOf(usize) == 64 and builtin.os.tag != .windows)
     i64
@@ -4085,25 +3516,6 @@ else
 extern "c" fn gettimeofday(tv: ?*PosixTimeval, tz: ?*anyopaque) c_int;
 
 /// `struct timeval { time_t tv_sec; suseconds_t tv_usec; }` (POSIX/UCRT).
-///
-/// CRITICAL: `suseconds_t` is platform-sized:
-///   - Linux:    `i64` (typedef of `long` on LP64) = 8 bytes
-///   - macOS:    `i32` (`__darwin_suseconds_t` = `__int32_t`) = 4 bytes
-///   - Windows:  `i32` (UCRT typedef) = 4 bytes
-///
-/// The previous shared `usec: Clong` field declared both fields as i64
-/// (8 bytes), which on macOS / Windows misread the 4-byte `tv_usec` plus
-/// 4 bytes of uninitialised stack padding as a single i64 — the high 32
-/// bits of `tv.usec` were whatever the stack happened to contain. With
-/// garbage in the high bits, `tv.usec / 1000` could be a huge or
-/// negative number, and `tv.sec * 1000 + tv.usec / 1000` could flip
-/// sign, producing negative or zero unix-ms. The downstream
-/// `.format("lowercase d")` on this stale value emitted strings like
-/// `"-8..."` or `"0"` — the COALESCE test asserts the first byte is a
-/// digit, fails on a `-` prefix.
-///
-/// Per-platform `Usect` below matches the actual C ABI for each OS so
-/// the read is byte-for-byte identical to the libc write.
 const Usect = switch (builtin.os.tag) {
     .linux => i64,
     .macos, .windows => i32,
@@ -4123,21 +3535,7 @@ pub fn unixMillisNow() i64 {
 
 test "unixMillisNow: returns positive value within sane range (catches macOS suseconds_t = i32 struct-layout fix)" {
     // On macOS ARM64, `suseconds_t` is `__int32_t` (4 bytes), not
-    // `__int64_t`. The previous shared `usec: Clong` (i64) read 8 bytes
-    // starting at offset 8 — the lower 4 bytes were the actual tv_usec
-    // value, but the upper 4 bytes were uninitialised stack padding
-    // (whatever happened to be at that memory location). With garbage
-    // in the high 32 bits, `tv.usec` could be a huge positive or
-    // negative number, and `tv.sec * 1000 + tv.usec / 1000` could
-    // overflow sign. Observed on CI run 31828424315: `last_human_touched_at`
-    // test failed because the formatted stamp was a negative number.
-    //
-    // The fix: declare `usec: Usect` matching the actual C ABI per OS
-    // (i64 on Linux, i32 on macOS / Windows). After the fix, this
-    // test passes on every supported platform.
-    //
-    // Sanity bounds: 2020-01-01 ≈ 1_577_836_800_000 ms.
-    //               2100-01-01 ≈ 4_102_444_800_000 ms.
+    // `__int64_t`.
     const ts = unixMillisNow();
     try std.testing.expect(ts > 1_577_836_800_000);
     try std.testing.expect(ts < 4_102_444_800_000);
@@ -4177,9 +3575,7 @@ pub fn updateSessionSelectedProfileModel(
 
 /// Migration 091 — stamp sub-agent identity onto a session row.
 /// sub_agent_name is the resolved sub-agent name (e.g. "implementator"),
-/// parent_session_id links back to the spawner. Both are nullable TEXT;
-/// empty binds as NULL via SqliteBackend and reads back as "".
-/// Only writes non-empty values so we never clobber with empty.
+/// parent_session_id links back to the spawner.
 pub fn updateSessionSubAgentInfo(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -4230,9 +3626,7 @@ pub fn updateSessionGitWorktreeCwd(
 }
 
 /// Update session attached-PR binding. Pass nulls (or empty strings) to
-/// clear. Mirrors updateSessionGitWorktreeCwd: persist, re-read, and
-/// broadcast a session.updated SSE event so subscribers see the new
-/// binding without a refetch.
+/// clear.
 pub fn updateSessionPrUrl(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -4418,11 +3812,7 @@ pub fn getSessionSkills(
 
 // =============================================================================
 // Session Progressive Tool Functions (progressive tool search, Migration 085)
-//
 // The agent enables tools for itself with `use_tool`; the record lives here.
-// Session-scoped by design so it can never overwrite the user's persistent
-// `agent_tools` / `agent_kanban_tools` configuration.
-// =============================================================================
 
 pub const ProgressiveToolInfo = struct {
     tool_name: []u8,
@@ -4456,18 +3846,8 @@ pub fn isProgressiveToolEquipped(
     return false;
 }
 
-/// Enable `tool_name` for `session_id`.
-///
-/// Returns `true` only when a row was actually INSERTed. A repeat call for
-/// the same (session_id, tool_name) is a silent no-op returning `false` —
-/// `INSERT OR IGNORE` + the PRIMARY KEY is the DB-level half of the
-/// "already equipped → do not insert" rule. `tool_load` in the tool result
-/// must be derived from this return value, never assumed.
-///
-/// `loaded_at_nano` uses the same `strftime('%s','now')` origin as
-/// `session_skills` (seconds, despite the column name). Reads order by
-/// `(loaded_at_nano, tool_name)` so the sequence is deterministic even when
-/// several tools are equipped within the same second.
+/// Enable `tool_name` for `session_id`. Returns `true` only when a row was
+/// actually INSERTed.
 pub fn saveProgressiveTool(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -4479,10 +3859,8 @@ pub fn saveProgressiveTool(
     if (session_id.len == 0 or tool_name.len == 0) return false;
 
     // COALESCE on server_name is REQUIRED, not cosmetic: SqliteBackend binds
-    // an empty `[]const u8` as SQL NULL, and `server_name` is NOT NULL — so
-    // a built-in (always passed with "") would violate the constraint and
-    // `INSERT OR IGNORE` would silently swallow the row. Same class of bug as
-    // Migration 079's `content` column.
+    // an empty `[]const u8` as SQL NULL, and `server_name` is NOT NULL — so a
+    // built-in (always passed with "") would violate the constraint and
     const sql = "INSERT OR IGNORE INTO session_progressive_tool (session_id, tool_name, server_name, loaded_at_nano) VALUES (?, ?, COALESCE(?, ''), strftime('%s', 'now'))";
     try db.exec(allocator, sql, &.{ session_id, tool_name, server_name });
 
@@ -4562,15 +3940,6 @@ pub const WorkspaceItemInfo = struct {
     created_at: ?[]u8 = null,
     updated_at: ?[]u8 = null,
     /// Migration 094 — 1 when this item is the workspace's default project.
-    /// The default is an `item_type = 'agent'` row whose `path` is the
-    /// server user's home directory, and the "New Chat" action in both the
-    /// desktop sidebar and the Android drawer creates its chat here.
-    ///
-    /// An INTEGER rather than a bool because the column is, and the
-    /// NOT NULL DEFAULT 0 keeps every pre-Migration-094 row at 0 without a
-    /// backfill. Only these two values are ever stored; the partial unique
-    /// index on (workspace_id) WHERE is_default = 1 is what guarantees no
-    /// workspace can have two.
     is_default: i64 = 0,
 
     pub fn deinit(self: WorkspaceItemInfo, allocator: std.mem.Allocator) void {
@@ -4643,13 +4012,7 @@ pub fn updateWorkspaceItem(
     try db.exec(allocator, sql, &.{ workspace_id, item_type, id });
 }
 
-/// Update only the `path` column of a workspace item. Used by
-/// the kanban "Set project root" banner to backfill the path on
-/// existing kanbans that were created before the path field
-/// existed on the create endpoint. Pass `null` to clear the
-/// path; pass a non-empty slice to set it. The empty-string
-/// coercion is handled at the caller (handlers map `""` → `null`
-/// to match the column's nullable contract).
+/// Update only the `path` column of a workspace item.
 pub fn updateWorkspaceItemPath(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -4665,32 +4028,7 @@ pub fn updateWorkspaceItemPath(
     }
 }
 
-/// Update only the `name` column of a workspace item. Used by the
-/// Kanban Settings dialog (and the KanbanView header pencil) to
-/// rename a workspace item — typically a kanban whose title the
-/// user wants to change (e.g. "kanban sprint 1" → "Sprint 12").
-///
-/// The pattern mirrors `updateWorkspaceItemPath` (single-column
-/// UPDATE + `updated_at = datetime('now')`). Both columns could
-/// theoretically be batched into a single UPDATE, but the rest of
-/// the project uses single-column setters (see `updateWorkspaceItem`
-/// above + `updateWorkspaceItemPath`) — keeping the same shape
-/// makes the model layer easy to reason about and matches the
-/// handler's per-field `if (presence)` branching.
-///
-/// Pass a non-null, non-empty slice to set the name. The handler
-/// layer rejects empty strings with a 400 BEFORE reaching this
-/// function; passing `""` here would write the empty string into
-/// the DB (the column has no `NOT NULL DEFAULT ''` constraint — it's
-/// nullable).
-///
-/// Why the column is nullable (instead of NOT NULL DEFAULT ''):
-/// earlier migration (`migration.zig:484`) added `name TEXT` without
-/// a NOT NULL constraint, so existing rows pre-migration retain
-/// `name = NULL`. The frontend renders `null` and `""` indistinguishably
-/// via `{{ item.name ?? '' }}` or `column.name ?? ''`. Changing this
-/// to NOT NULL DEFAULT '' is out of scope (would require a backfill
-/// migration on every row + every referenced field).
+/// Update only the `name` column of a workspace item.
 pub fn updateWorkspaceItemName(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -4711,16 +4049,8 @@ pub fn deleteWorkspaceItem(
     try db.exec(allocator, sql, &.{id});
 }
 
-/// List all workspace items by workspace_id.
-///
-/// Sorted by `wi.position DESC, wi.id ASC`. The `position` column is
-/// the drag-and-drop sort key (added by Migration 045). The `id ASC`
-/// tiebreaker makes the order deterministic when two items share a
-/// position (shouldn't happen post-reorder, but defense-in-depth).
-/// Uses the project's "always alias tables in SQL" convention
-/// (see ~/.config/pabrik/memories/) — the `wi` alias matches the
-/// short-single-letter pattern used elsewhere (`h` for
-/// `llm_history`, `s` for `sessions`, `t` for `workspace_item_tasks`).
+/// List all workspace items by workspace_id. Sorted by `wi.position DESC,
+/// wi.id ASC`.
 pub fn listWorkspaceItems(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -4755,12 +4085,8 @@ pub fn listWorkspaceItems(
     return try items.toOwnedSlice(allocator);
 }
 
-/// List ALL workspace items (for N+1 fix). Same sort as the
-/// per-workspace list: `wi.position DESC, wi.id ASC`. New items get
-/// position = MAX(position) + 1 (scoped by workspace_id) at insert
-/// time, so the per-workspace "newest at top" visual order is
-/// preserved here too. Uses the project's "always alias tables
-/// in SQL" convention — see `listWorkspaceItems` for details.
+/// List ALL workspace items (for N+1 fix). Same sort as the per-workspace
+/// list: `wi.position DESC, wi.id ASC`.
 pub fn listAllWorkspaceItems(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -4794,27 +4120,18 @@ pub fn listAllWorkspaceItems(
 }
 
 // =============================================================================
-// Workspace Context (used by prompts_build_messages_for_agent_prompt.zig to render
-// the `## Workspace Context` section of the system prompt — see
-// docs/plans/2026-06-19-workspace-siblings-in-prompt.md, Chunk 1)
-// =============================================================================
+// Workspace Context (used by prompts_build_messages_for_agent_prompt.zig to
+// render the `## Workspace Context` section of the system prompt — see
 
-/// Maximum number of sibling items returned per session. When a
-/// workspace has more items than this, the helper renders the
-/// first 20 (sorted with `is_self` first) and reports
-/// `truncated_items_count = total_item_count - MAX_SIBLING_ITEMS`.
-/// Centralized here as a `pub const` so the Chunk 2 renderer
-/// (`BuildWorkspaceContext` in `prompts_build_messages_for_agent_prompt.zig`)
-/// can reuse the same value to format the cap footer.
+/// Maximum number of sibling items returned per session.
 pub const MAX_SIBLING_ITEMS: u32 = 20;
 
 /// Maximum number of tasks listed under each sibling item.
 pub const MAX_TASKS_PER_ITEM: u32 = 5;
 
-/// Context for the "Workspace Context" dynamic prompt section.
-/// Returned by `getWorkspaceContext`; the tui layer's
-/// `BuildWorkspaceContext` consumes this struct and renders
-/// the markdown block.
+/// Context for the "Workspace Context" dynamic prompt section. Returned by
+/// `getWorkspaceContext`; the tui layer's `BuildWorkspaceContext` consumes
+/// this struct and renders the markdown block.
 pub const WorkspaceContext = struct {
     workspace_id: []u8,
     self_item_id: []u8, // task's own item id
@@ -4840,12 +4157,7 @@ pub const WorkspaceContext = struct {
             task_type: []u8,
         };
 
-        /// Free the per-item allocations. Mirrors the parent's
-        /// `WorkspaceContext.deinit` shape so callers that iterate
-        /// `siblings` and free each entry don't have to inline
-        /// the cleanup at every call site (see Pitfall 3 in the
-        /// plan — Zig 0.16 requires struct methods to be declared
-        /// inside the struct body).
+        /// Free the per-item allocations.
         pub fn deinit(self: SiblingItem, allocator: std.mem.Allocator) void {
             allocator.free(self.id);
             allocator.free(self.item_type);
@@ -4874,22 +4186,7 @@ pub const WorkspaceContext = struct {
     }
 };
 
-/// Look up the workspace context for a session. Returns `null`
-/// when the session is not bound to any `workspace_item_task`
-/// (the caller omits the section silently in that case — matches
-/// `appendSkillsListing` behavior).
-///
-/// Anchor: `workspace_item_tasks.id = ?` → task → item → workspace.
-/// (The `session_id` column was dropped in Migration 052; `id` IS
-/// the session id for kanban / routine tasks per the
-/// `task.id == session_id` convention.)
-/// Then enumerate `workspace_items WHERE workspace_id = ?` (capped at
-/// `MAX_SIBLING_ITEMS`, ordered with self first). For each item,
-/// enumerate its tasks (capped at `MAX_TASKS_PER_ITEM`).
-///
-/// SQL convention: all tables are aliased (`wi` for workspace_items,
-/// `t` for workspace_item_tasks) per the project's
-/// `pabrik-sql-alias-tables` memory rule.
+/// Look up the workspace context for a session.
 pub fn getWorkspaceContext(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -4898,18 +4195,6 @@ pub fn getWorkspaceContext(
     if (session_id.len == 0) return null;
 
     // 1. Anchor: find the task bound to this session.
-    //
-    // The `task.id == session_id` convention (see AppLayout.vue
-    // `:chat-id="activeTask.id"` and
-    // workspacesStore.subscribeToSessionEvents comment in
-    // workspaces.ts:1412) means the session_id we receive from the
-    // frontend IS the task's own id. We anchor on `t.id` directly.
-    // (Historically this query used `WHERE t.session_id = ?`, but
-    // that column was redundant with `t.id` and was being populated
-    // inconsistently — the frontend's createTask does not set it, so
-    // freshly-created kanban tasks had `session_id = NULL` and the
-    // `## Workspace Context` section was silently omitted from the
-    // system prompt. Migration 052 dropped the column.)
     const anchor_sql =
         \\SELECT t.id, t.workspace_item_id, wi.workspace_id, wi.path, wi.item_type
         \\FROM workspace_item_tasks t
@@ -4955,12 +4240,6 @@ pub fn getWorkspaceContext(
     count_row.deinit(allocator); // Pitfall 1 again
 
     // 3. Enumerate items (capped at MAX_SIBLING_ITEMS).
-    //
-    // Pitfall 2: SQLite's `LIMIT ?` doesn't bind an integer via the
-    // SqliteBackend's text-binding path. Inline the limit into the
-    // SQL string at build time. Mirrors the project's existing
-    // convention in `routines/model.zig` where index hints are
-    // also inlined (no parameterized LIMIT).
     const items_sql = try std.fmt.allocPrint(allocator,
         \\SELECT wi.id, wi.item_type, wi.name, wi.path,
         \\       (wi.id = ?) AS is_self
@@ -5096,9 +4375,6 @@ pub const WorkspaceItemTaskInfo = struct {
     name: []u8,
     workspace_item_id: []u8,
     /// Task type. 'standard' for legacy rows; 'memory' for memory files.
-    /// (The 'routine' value is legacy — Migration 084 normalizes those
-    /// rows to 'standard'.) Every constructor explicitly allocates this
-    /// so deinit can free it.
     task_type: []u8 = &.{},
     /// Free-form description (Migration 062). Empty string is the
     /// canonical "no description" sentinel — the column is NOT NULL
@@ -5110,108 +4386,58 @@ pub const WorkspaceItemTaskInfo = struct {
     /// surfaces pinned tasks first (in `pinned_position` order, DESC),
     /// then unpinned tasks in the existing sort order.
     is_pinned: bool = false,
-    /// Position within the pinned subset of a single workspace item.
-    /// Higher = higher in the pinned region. Only meaningful when
-    /// `is_pinned == true`. Mirrors the `position` columns on
-    /// `workspaces` and `workspace_items` (Migrations043/045).
+    /// Position within the pinned subset of a single workspace item. Higher =
+    /// higher in the pinned region. Only meaningful when `is_pinned == true`.
     pinned_position: i64 = 0,
-    /// Kanban column this task belongs to, when the parent workspace
-    /// item is a kanban. `null` for standard tasks and for tasks whose
-    /// parent is not a kanban. Mirrors `workspace_item_tasks.kanban_column_id`
-    /// (Migration 048). Owned by the lister; freed by `deinit`.
+    /// Kanban column this task belongs to, when the parent workspace item is
+    /// a kanban. `null` for standard tasks and for tasks whose parent is not
+    /// a kanban.
     kanban_column_id: ?[]u8 = null,
     /// Position within the kanban column (lower = higher in the column).
     /// `0` for non-kanban tasks. Mirrors `workspace_item_tasks.kanban_position`
     /// (Migration 048).
     kanban_position: i64 = 0,
-    /// Unattended-mode flag, joined from `sessions` for routine tasks
-    /// (where `task.id == session.id` per the project convention).
-    /// `'0'` for standard tasks that have no session row. The frontend's
-    /// KanbanTaskDetailDialog toggle reads this on dialog open to show
-    /// the current state. Owned by the lister; freed by `deinit`.
+    /// Unattended-mode flag, joined from `sessions` for routine tasks (where
+    /// `task.id == session.id` per the project convention). `'0'` for
+    /// standard tasks that have no session row.
     is_auto_retry_until_stop: []u8 = &.{},
 
     /// Last `finish_reason` reported by the workflow (joined from
-    /// `sessions`). Empty string when no session row exists for this
-    /// task (LEFT JOIN NULL → COALESCE ''). The kanban card UI reads
-    /// this to decide whether to show the "reviewed" green checkmark
-    /// when `needs_human_review` is false. Owned by the lister;
-    /// freed by `deinit`.
-    ///
-    /// Plan: docs/plans/2026-07-26-kanban-task-notification-icon.md
-    /// (Chunk 2 — backend reader).
+    /// `sessions`).
     last_finish_reason: []u8 = &.{},
 
-    /// Computed boolean for the kanban card "AI finished — awaiting
-    /// review" orange dot. SQL `CASE` produces 1 when:
-    ///   - `sessions.last_finish_reason == 'stop'` AND
-    ///   - either `tasks.last_human_touched_at IS NULL` or it's
-    ///     strictly older than the session's `updated_at` (in
-    ///     unix-ms — we multiply SQLite's seconds by 1000).
-    /// Otherwise 0. Frontend renders orange dot when true, green
-    /// checkmark when false (and finish_reason was 'stop'). Used by
-    /// every kanban-card query path.
+    /// Computed boolean for the kanban card "AI finished — awaiting review"
+    /// orange dot.
     needs_human_review: bool = false,
 
-    /// JSON-encoded array of tag strings (Migration 067 —
-    /// kanban task tags feature). Empty string is the canonical
-    /// "no tags" sentinel, matching the `description` column
-    /// (Migration 062) pattern. Owned by the lister; freed by
-    /// `deinit`. Plan:
-    /// docs/superpowers/plans/2026-07-28-kanban-task-tags.md
+    /// JSON-encoded array of tag strings (Migration 067 — kanban task tags
+    /// feature).
     tags: []u8 = &.{},
 
-    /// `||`-delimited base64 data URLs (Migration 069 — kanban
-    /// image urls column). Empty string is the canonical "no
-    /// images" sentinel, matching the `description` / `tags`
-    /// patterns from Migrations 062 / 067. The frontend parses
-    /// this with `s.split('|').filter(Boolean)` — no JSON wrap,
-    /// no double-encoding — so the value you see in the DB is
-    /// the value you see in the network tab. Owned by the lister;
-    /// freed by `deinit`. Plan:
-    /// docs/superpowers/plans/2026-08-06-kanban-image-urls-column.md
+    /// `||`-delimited base64 data URLs (Migration 069 — kanban image urls
+    /// column).
     image_urls: []u8 = &.{},
 
-    /// `||`-delimited base64 data URLs (Migration 090 — kanban
-    /// video urls column). Empty string is the canonical "no
-    /// videos" sentinel, matching the `image_urls` pattern.
-    /// Owned by the lister; freed by `deinit`.
+    /// `||`-delimited base64 data URLs (Migration 090 — kanban video urls
+    /// column). Empty string is the canonical "no videos" sentinel, matching
+    /// the `image_urls` pattern. Owned by the lister; freed by `deinit`.
     video_urls: []u8 = &.{},
 
-    /// Lightweight media-presence flags, derived in SQL via
-    /// `CASE WHEN <urls> != ''` (no stored columns, nothing to keep
-    /// in sync). List/get return only these instead of the full
-    /// base64 TEXT columns so board fetches stay small; the lazy
-    /// `GET .../tasks/:task_id/media` endpoint reads the TEXT
-    /// columns on demand.
+    /// Lightweight media-presence flags, derived in SQL via `CASE WHEN <urls>
+    /// != ''` (no stored columns, nothing to keep in sync).
     is_have_image: bool = false,
     is_have_video: bool = false,
 
-    /// Per-task cwd override (Migration 070). Each kanban task can
-    /// carry its own cwd path; the session_create handler reads
-    /// `task.cwd` before falling back to `workspace_items.path` and
-    /// the per-session sandbox. Empty string is the canonical "no
-    /// per-task cwd" sentinel — column is NOT NULL DEFAULT ''.
-    /// Owned by the lister; freed by `deinit`. Plan:
-    /// docs/superpowers/plans/2026-08-06-kanban-cwd-session-optional.md
+    /// Per-task cwd override (Migration 070).
     cwd: []u8 = &.{},
 
-    /// Joined from `sessions.git_worktree_cwd` (Migration 046).
-    /// Empty string when no session row exists or no worktree is
-    /// bound. Owned by the lister; freed by `deinit`. Used by
-    /// `tasks_list.zig::useCase` to compute `git_branch` per task
-    /// (preferred cwd for the `git rev-parse --abbrev-ref HEAD`
-    /// subprocess; falls back to `workspace_items.path` when empty).
-    /// Plan: docs/superpowers/plans/2026-08-06-kanban-task-git-branch.md
+    /// Joined from `sessions.git_worktree_cwd` (Migration 046). Empty string
+    /// when no session row exists or no worktree is bound. Owned by the
+    /// lister; freed by `deinit`.
     git_worktree_cwd: []u8 = &.{},
 
-    /// Computed `git rev-parse --abbrev-ref HEAD` output for the
-    /// task's cwd (`git_worktree_cwd` or the parent
-    /// `workspace_items.path`). Null when the cwd is empty, the
-    /// path is not a git repo, the HEAD is detached, or the
-    /// subprocess fails. The frontend uses this to render the
-    /// GitHub-style fork/branch badge in the kanban card meta row.
-    /// Owned by the lister; freed by `deinit`.
+    /// Computed `git rev-parse --abbrev-ref HEAD` output for the task's cwd
+    /// (`git_worktree_cwd` or the parent `workspace_items.path`).
     git_branch: ?[]u8 = null,
 
     pub fn deinit(self: WorkspaceItemTaskInfo, allocator: std.mem.Allocator) void {
@@ -5234,11 +4460,8 @@ pub const WorkspaceItemTaskInfo = struct {
     }
 };
 
-/// One distinct tag suggestion for a kanban's autocomplete dropdown
-/// (plan docs/superpowers/plans/2026-07-30-kanban-task-tags-autocomplete.md).
-/// Returned by `listKanbanDistinctTags` ordered by frequency DESC then
-/// recency DESC. The slice fields are heap-allocated from the passed
-/// allocator; the caller frees via `KanbanTagSuggestion.deinit`.
+/// One distinct tag suggestion for a kanban's autocomplete dropdown (plan
+/// docs/superpowers/plans/2026-07-30-kanban-task-tags-autocomplete.md).
 pub const KanbanTagSuggestion = struct {
     /// The tag value as it appeared in some task's tags JSON array.
     /// First-occurrence casing wins (matches tags_validation.zig).
@@ -5246,10 +4469,8 @@ pub const KanbanTagSuggestion = struct {
     /// Number of tasks on this kanban whose `tags` JSON array contains
     /// this value (after json_each expansion).
     count: u32,
-    /// `updated_at` of the MOST RECENT task that uses this tag, in
-    /// the same `YYYY-MM-DD HH:MM:SS` format the DB stores it in.
-    /// Used as the tie-breaker for sort order. null = no task has
-    /// this tag (shouldn't happen in normal flow).
+    /// `updated_at` of the MOST RECENT task that uses this tag, in the same
+    /// `YYYY-MM-DD HH:MM:SS` format the DB stores it in.
     last_used_at: ?[]u8,
 
     pub fn deinit(self: KanbanTagSuggestion, allocator: std.mem.Allocator) void {
@@ -5258,10 +4479,9 @@ pub const KanbanTagSuggestion = struct {
     }
 };
 
-/// Result of a single page of tag suggestions. The caller KNOWS the
-/// page size (`limit` arg) so it can detect `has_more` by comparing
-/// `tags.len >= limit`. We also return `has_more` directly so the
-/// HTTP handler doesn't need to know the limit it passed.
+/// Result of a single page of tag suggestions. The caller KNOWS the page size
+/// (`limit` arg) so it can detect `has_more` by comparing `tags.len >=
+/// limit`.
 pub const KanbanTagSuggestionsPage = struct {
     tags: []KanbanTagSuggestion,
     has_more: bool,
@@ -5281,24 +4501,12 @@ pub fn createWorkspaceItemTask(
     workspace_item_id: []const u8,
     task_type: []const u8,
     description: ?[]const u8,
-    /// JSON-encoded array of tag strings (Migration 067 —
-    /// kanban task tags feature). Null = no tags supplied;
-    /// empty slice = SQL '' literal (NOT NULL DEFAULT '') which
-    /// is stored as '' (the canonical "no tags" sentinel). The
-    /// caller is responsible for passing a VALIDATED+ENCODED
-    /// JSON array string — use `http_handlers.tags_validation
-    /// .validateAndNormalizeTags` to produce one. Plan:
-    /// docs/superpowers/plans/2026-07-28-kanban-task-tags.md
+    /// JSON-encoded array of tag strings (Migration 067 — kanban task tags
+    /// feature).
     tags: ?[]const u8,
     image_urls: ?[]const u8,
-    /// Per-task cwd override (Migration 070 — kanban-cwd-session-
-    /// optional plan, 2026-08-06). Null = no cwd supplied (column
-    /// omitted from INSERT, DEFAULT '' applies, row is cwd-less);
-    /// empty slice = SQL '' literal which stores '' (the canonical
-    /// "no per-task cwd" sentinel, matches the description /
-    /// tags / image_urls pattern); non-empty slice = absolute path
-    /// on disk that becomes the cwd for this task's chat sessions
-    /// (overrides the kanban-level path + the per-session sandbox).
+    /// Per-task cwd override (Migration 070 — kanban-cwd-session- optional
+    /// plan, 2026-08-06).
     cwd: ?[]const u8,
     /// `||`-delimited `data:video/...;base64,...` URLs (Migration 090).
     /// Same null/empty/literal contract as image_urls above.
@@ -5308,36 +4516,9 @@ pub fn createWorkspaceItemTask(
         return error.InvalidTaskType;
     }
 
-    // Note: this used to take a separate `session_id` parameter. The
-    // `task.id == session_id` convention made the column redundant
-    // (Migration 052 dropped it). Callers that need the session_id
-    // should use the task's own `id`.
-    //
-    // Migration 062 added `description TEXT NOT NULL DEFAULT ''` to
-    // `workspace_item_tasks`. We use a dynamic SQL builder + parallel
-    // `bind_values` list (single `db.exec` call) instead of three
-    // hardcoded branches — see PR #101 review feedback. Three
-    // cases for description:
-    //
-    //   - description == null  → omit the column entirely; DEFAULT ''
-    //     applies.
-    //   - description == ""   → SQL '' literal (NOT bound via `?`).
-    //     `SqliteBackend.exec` binds empty `[]const u8` slices as
-    //     SQL NULL, which would fail the NOT NULL constraint. The
-    //     SQL literal binds as the empty string, NOT NULL. See
-    //     memory `sqlite-backend-empty-slice-binds-as-null`.
-    //   - description == "x…"  → bind via `?` like normal.
-    //
-    // Migration 067 follows the EXACT same shape for `tags`: null
-    // omits the column, "" uses SQL '' literal, "x…" binds via `?`.
-    // The same SQL-builder pattern is reused rather than chaining
-    // another branch.
-    //
-    // The choice between "omit column" and "SQL '' literal" doesn't
-    // change the stored value — both produce '' in the row. The
-    // builder keeps the bind-safe path the only shape the call site
-    // can ever reach, regardless of how the caller expressed "no
-    // description" / "no tags" (null vs empty string).
+    // Note: this used to take a separate `session_id` parameter. The `task.id
+    // == session_id` convention made the column redundant (Migration 052
+    // dropped it).
     const returned_desc: []const u8 = description orelse "";
     const returned_tags: []const u8 = tags orelse "";
     const returned_image_urls: []const u8 = image_urls orelse "";
@@ -5368,11 +4549,9 @@ pub fn createWorkspaceItemTask(
             }
         }
 
-        // Migration 067 — same dynamic-SQL builder pattern for tags.
-        // Note: empty string MUST be a SQL '' literal — see the
-        // SqliteBackend.exec empty-slice-binds-as-NULL rule cited
-        // above. The validation helper (tags_validation.zig) only
-        // returns `''` when the caller supplied no tags.
+        // Migration 067 — same dynamic-SQL builder pattern for tags. Note:
+        // empty string MUST be a SQL '' literal — see the SqliteBackend.exec
+        // empty-slice-binds-as-NULL rule cited above.
         if (tags) |t| {
             if (t.len == 0) {
                 try cols_buf.appendSlice(allocator, ", tags");
@@ -5384,11 +4563,9 @@ pub fn createWorkspaceItemTask(
             }
         }
 
-        // Migration 069 — same dynamic-SQL builder pattern for
-        // image_urls. The `||`-delimited string is opaque to the DB
-        // (TEXT), so we just bind it as a single slice. Empty string
-        // is the canonical "no images" sentinel — SQL '' literal
-        // (NOT NULL DEFAULT '').
+        // Migration 069 — same dynamic-SQL builder pattern for image_urls.
+        // The `||`-delimited string is opaque to the DB (TEXT), so we just
+        // bind it as a single slice.
         if (image_urls) |u| {
             if (u.len == 0) {
                 try cols_buf.appendSlice(allocator, ", image_urls");
@@ -5412,15 +4589,8 @@ pub fn createWorkspaceItemTask(
             }
         }
 
-        // Migration 070 — same dynamic-SQL builder pattern for the
-        // per-task cwd override. The raw path string is opaque to
-        // the DB (TEXT), so we just bind it as a single slice.
-        // Empty string is the canonical "no per-task cwd" sentinel —
-        // SQL '' literal (NOT NULL DEFAULT ''). Same bind-safety
-        // caveat as description / tags / image_urls: empty slice
-        // binds as NULL via `?`, but the column is NOT NULL, so we
-        // must use the SQL '' literal branch for the empty-string
-        // case.
+        // Migration 070 — same dynamic-SQL builder pattern for the per-task
+        // cwd override.
         if (cwd) |c| {
             if (c.len == 0) {
                 try cols_buf.appendSlice(allocator, ", cwd");
@@ -5463,11 +4633,9 @@ pub fn createWorkspaceItemTask(
         // Media-flags change — flags mirror the TEXT columns above.
         .is_have_image = returned_image_urls.len > 0,
         .is_have_video = returned_video_urls.len > 0,
-        // Migration 070 — persist the per-task cwd we just
-        // INSERTed. dupe unconditionally so `deinit` can free
-        // consistently (the empty-string path also gets duped — a
-        // 0-byte allocation, freed via `free('cwd')` which is a
-        // no-op for length-0 slices per std.mem.Allocator).
+        // Migration 070 — persist the per-task cwd we just INSERTed. dupe
+        // unconditionally so `deinit` can free consistently (the empty-string
+        // path also gets duped — a 0-byte allocation, freed via `free('cwd')`
         .cwd = try allocator.dupe(u8, returned_cwd),
     };
 }
@@ -5478,18 +4646,9 @@ pub fn getWorkspaceItemTask(
     db: *sqlite.SqliteBackend,
     id: []const u8,
 ) !?WorkspaceItemTaskInfo {
-    // Column index map for `row.values[N]`:
-    //   0: id
-    //   1: name
-    //   2: workspace_item_id
-    //   3: description      (Migration 062 — added right after workspace_item_id)
-    //   4: created_at
-    //   5: updated_at
-    //   6: task_type        (Migration 044)
-    //   7: tags             (Migration 067 — JSON-encode array string)
-    //
-    // All subsequent column indices shift by one when a column is added.
-    // Update this comment block + the constructor below together.
+    // Column index map for `row.values[N]`: 0: id 1: name 2:
+    // workspace_item_id 3: description (Migration 062 — added right after
+    // workspace_item_id) 4: created_at 5: updated_at 6: task_type (Migration
     const sql = "SELECT id, name, workspace_item_id, description, created_at, updated_at, task_type, tags FROM workspace_item_tasks t WHERE t.id = ?";
 
     var rows = try db.query(allocator, sql, &.{id});
@@ -5500,10 +4659,9 @@ pub fn getWorkspaceItemTask(
             .id = try allocator.dupe(u8, row.values[0]),
             .name = try allocator.dupe(u8, row.values[1]),
             .workspace_item_id = try allocator.dupe(u8, row.values[2]),
-            // description is NOT NULL DEFAULT '' (Migration 062) so
-            // the row value is always present. dupe unconditionally
-            // (an empty slice still gets a fresh allocation so deinit
-            // can free it consistently with the other []u8 fields).
+            // description is NOT NULL DEFAULT '' (Migration 062) so the row
+            // value is always present. dupe unconditionally (an empty slice
+            // still gets a fresh allocation so deinit can free it
             .description = try allocator.dupe(u8, row.values[3]),
             .created_at = if (row.values[4].len > 0) try allocator.dupe(u8, row.values[4]) else null,
             .updated_at = if (row.values[5].len > 0) try allocator.dupe(u8, row.values[5]) else null,
@@ -5563,16 +4721,7 @@ pub fn deleteWorkspaceItemTask(
     try db.exec(allocator, sql, &.{id});
 }
 
-/// Set or clear the `is_pinned` flag for a single task. When
-/// `is_pinned` is true, the row's `pinned_position` is bumped to
-/// (MAX(pinned_position WHERE is_pinned=1) + 1) so a newly-pinned
-/// task appears at the bottom of the pinned region (the user can
-/// drag it to a different position afterwards). When `is_pinned`
-/// is false, the row's `pinned_position` is reset to 0 (the
-/// default; the value is irrelevant for unpinned rows).
-///
-/// Returns the new `pinned_position` so the caller can echo it
-/// back to the client.
+/// Set or clear the `is_pinned` flag for a single task.
 pub fn setTaskPinned(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -5580,10 +4729,9 @@ pub fn setTaskPinned(
     is_pinned: bool,
 ) !i64 {
     if (is_pinned) {
-        // Bump pinned_position to MAX+1 for the relevant
-        // workspace_item. The MAX subquery is correlated on
-        // workspace_item_id (derived from the row being pinned)
-        // so the position is scoped per item, not globally.
+        // Bump pinned_position to MAX+1 for the relevant workspace_item. The
+        // MAX subquery is correlated on workspace_item_id (derived from the
+        // row being pinned) so the position is scoped per item, not globally.
         var max_q = try db.query(
             allocator,
             "SELECT COALESCE(MAX(t.pinned_position), -1) FROM workspace_item_tasks t WHERE t.is_pinned = 1 AND t.workspace_item_id = (SELECT workspace_item_id FROM workspace_item_tasks WHERE id = ?)",
@@ -5603,10 +4751,9 @@ pub fn setTaskPinned(
             "UPDATE workspace_item_tasks SET is_pinned = 1, pinned_position = ?, updated_at = datetime('now') WHERE id = ?",
             &.{ new_pos_str, id },
         );
-        // Migration 104 - keep the linked session row in sync so the
-        // PINNED section above RECENT reflects kanban pins (same id
-        // convention, best-effort: a task with no session row only
-        // touches workspace_item_tasks).
+        // Migration 104 - keep the linked session row in sync so the PINNED
+        // section above RECENT reflects kanban pins (same id convention,
+        // best-effort: a task with no session row only touches
         db.exec(
             allocator,
             "UPDATE sessions SET is_pinned = 1, pinned_position = ?, updated_at = datetime('now') WHERE id = ?",
@@ -5629,16 +4776,6 @@ pub fn setTaskPinned(
 }
 
 /// Set or clear the `is_pinned` flag for a single session (Migration 104).
-/// Mirrors `setTaskPinned` but global (no workspace_item scope): new pins
-/// bump to MAX(pinned_position WHERE is_pinned=1)+1 so they land at the
-/// bottom of the PINNED section; unpins reset to 0.
-///
-/// Also syncs `workspace_item_tasks` when a task row shares the same id
-/// (task.id == session_id convention): pinning from recents keeps the
-/// kanban pin button in sync, and vice versa. The task sync is
-/// best-effort — a plain chat with no task row only touches `sessions`.
-///
-/// Returns the new `pinned_position` so the caller can echo it back.
 pub fn setSessionPinned(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -5699,12 +4836,8 @@ pub fn setSessionPinned(
 }
 
 /// Reorder the global pinned-sessions subset (Migration 104, drag-drop).
-/// `ordered_ids` is the full top-to-bottom display order of pinned
-/// session ids. Each row gets `pinned_position = count-1-i` so the first
-/// id sorts to the top with `ORDER BY pinned_position DESC`.
-///
-/// Defense in depth: every UPDATE is scoped by `is_pinned = 1`, so a
-/// stale or unpinned id is a silent no-op.
+/// `ordered_ids` is the full top-to-bottom display order of pinned session
+/// ids.
 pub fn reorderPinnedSessions(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -5727,20 +4860,7 @@ pub fn reorderPinnedSessions(
     }
 }
 
-/// Reorder the pinned subset of a single workspace item. The
-/// `ordered_ids` array is the full ordered list of pinned task
-/// IDs for that workspace item (top-to-bottom display order, the
-/// same convention as `workspaces_reorder` and
-/// `workspace_items_reorder`). Each row's `pinned_position` is
-/// set to `count - 1 - i` so the first id gets the highest
-/// position (sorted to the top with `ORDER BY pinned_position
-/// DESC`).
-///
-/// Defense in depth: the use case scopes every UPDATE by
-/// `workspace_item_id` (derived from the URL) AND `is_pinned = 1`,
-/// so a stale or out-of-range id is a silent no-op. A row that
-/// isn't currently pinned (e.g. accidentally included in the
-/// payload) is silently skipped too — the WHERE clause filters it.
+/// Reorder the pinned subset of a single workspace item.
 pub fn reorderPinnedTasks(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -5795,12 +4915,9 @@ pub fn listWorkspaceItemTasks(
     }
 
     while (try rows.next()) |row| {
-        // Row indices (post-Migration-061, post-Migration-084 which
-        // dropped the routines JOIN):
-        //   0: id, 1: name, 2: workspace_item_id, 3: description,
-        //   4: created_at, 5: updated_at, 6: task_type,
-        //   7: is_pinned, 8: pinned_position, 9: kanban_column_id,
-        //   10: kanban_position.
+        // Row indices (post-Migration-061, post-Migration-084 which dropped
+        // the routines JOIN): 0: id, 1: name, 2: workspace_item_id, 3:
+        // description, 4: created_at, 5: updated_at, 6: task_type, 7:
         const task_type = if (row.values[6].len > 0)
             try allocator.dupe(u8, row.values[6])
         else
@@ -5827,24 +4944,9 @@ pub fn listWorkspaceItemTasks(
     return try tasks.toOwnedSlice(allocator);
 }
 
-/// List workspace item tasks with cursor pagination. The `cursor` is
-/// the value of the `sort_field` for the last task from the previous
-/// page; pass null to fetch the first page. The `sort_field` /
-/// `sort_direction` controls the ORDER BY direction. The `id` column
-/// is used as a tiebreaker for stable pagination when many tasks share
-/// the same `updated_at` (e.g. all batch-renamed in one second).
-///
-/// Ordered by `sort_field sort_direction, id sort_direction` (newest
-/// first when sort_direction is `desc`). Returns at most `limit`
-/// tasks plus a `has_more` flag indicating whether at least one more
-/// task exists after this page.
-///
-/// Cursor filter: `(sort_field, id) < (cursor_value, last_id)` for DESC,
-/// or `>` for ASC. The last_id is encoded in the cursor as
-/// `"<sort_value>|<id>"` by the handler. Mirrors
-/// `getSessionListWithCursor` (above) for SQL building style.
-/// the LIKE pattern matches the user's literal characters instead of
-/// acting as a wildcard. Returns a fresh allocation (caller frees).
+/// List workspace item tasks with cursor pagination. The `cursor` is the
+/// value of the `sort_field` for the last task from the previous page; pass
+/// null to fetch the first page.
 fn escapeLikePattern(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(allocator);
@@ -5857,15 +4959,9 @@ fn escapeLikePattern(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     return try out.toOwnedSlice(allocator);
 }
 
-/// `q` is an optional case-insensitive substring filter applied at the
-/// SQL level against `name`, `description`, and `tags` (Migration 067
-/// JSON-encode text). When non-null AND non-empty, the WHERE clause
-/// gains `AND (LOWER(t.name) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(t.description, '')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(t.tags, '')) LIKE ? ESCAPE '\\')`.
-/// User-supplied `%`, `_`, and `\` in `q` are escaped to literal
-/// `\%`, `\_`, `\\` before binding — without the ESCAPE clause, a
-/// user typing `%` would match every row. Pagination advances through
-/// the filtered set, not the unfiltered set. Null / empty `q` → no
-/// filter (the original efficient WHERE on `workspace_item_id` only).
+/// `q` is an optional case-insensitive substring filter applied at the SQL
+/// level against `name`, `description`, and `tags` (Migration 067 JSON-encode
+/// text).
 pub fn getWorkspaceItemTaskById(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -5874,9 +4970,7 @@ pub fn getWorkspaceItemTaskById(
 ) !?WorkspaceItemTaskInfo {
     // SQL + row mapping mirror listWorkspaceItemTasksWithCursor (same
     // 18-column contract, indices 0-17) minus cursor/sort/pagination —
-    // replaced by `WHERE t.id = ? ... LIMIT 1`. Scoped by BOTH the
-    // parent item id and the task id so a task under a different item
-    // is never readable through this endpoint (404 at the handler).
+    // replaced by `WHERE t.id = ? ...
     const sql =
         \\SELECT t.id, t.name, t.workspace_item_id, t.description, t.created_at, t.updated_at, t.task_type, COALESCE(t.is_pinned, 0), COALESCE(t.pinned_position, 0), k.kanban_column_id, COALESCE(k.kanban_position, 0), COALESCE(s.is_auto_retry_until_stop, '0'), COALESCE(s.last_finish_reason, ''), CASE WHEN COALESCE(s.last_finish_reason, '') = 'stop' AND (t.last_human_touched_at_nano IS NULL OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000) THEN 1 ELSE 0 END, t.tags, COALESCE(s.git_worktree_cwd, ''), t.cwd, CASE WHEN COALESCE(t.image_urls, '') != '' THEN 1 ELSE 0 END, CASE WHEN COALESCE(t.video_urls, '') != '' THEN 1 ELSE 0 END FROM workspace_item_tasks t LEFT JOIN kanban k ON k.workspace_item_task_id = t.id LEFT JOIN sessions s ON s.id = t.id WHERE t.workspace_item_id = ? AND t.id = ? LIMIT 1
     ;
@@ -5885,11 +4979,9 @@ pub fn getWorkspaceItemTaskById(
     defer rows.deinit();
 
     if (try rows.next()) |row| {
-        // Row indices are identical to the lister (see its mapping
-        // block): 0-10 task/kanban fields, 11-12 session-joined
-        // fields, 13 needs_human_review, 14 tags, 15 worktree cwd,
-        // 16 per-task cwd, 17 image_urls. (Migration 084 dropped the
-        // routines JOIN — old indices 11-17 routine, 18-24 rest.)
+        // Row indices are identical to the lister (see its mapping block):
+        // 0-10 task/kanban fields, 11-12 session-joined fields, 13
+        // needs_human_review, 14 tags, 15 worktree cwd, 16 per-task cwd, 17
         const task_type = if (row.values[6].len > 0)
             try allocator.dupe(u8, row.values[6])
         else
@@ -5926,9 +5018,7 @@ pub fn getWorkspaceItemTaskById(
 
 /// Lazy media fetch for a single task (media-flags change). Returns the raw
 /// `||`-delimited `image_urls` / `video_urls` TEXT columns for one row,
-/// scoped by both parent item id and task id. List/get never select
-/// these columns; the frontend calls the media endpoint only when
-/// `is_have_image` / `is_have_video` is true.
+/// scoped by both parent item id and task id.
 pub const TaskMedia = struct {
     image_urls: []u8,
     video_urls: []u8,
@@ -5968,10 +5058,7 @@ pub fn listWorkspaceItemTasksWithCursor(
     sort_field: TaskSortField,
     sort_direction: TaskSortDirection,
     /// Per-column pagination filter (kanban-per-column-pagination,
-    /// 2026-08-06). When non-null, the SQL WHERE clause restricts to
-    /// `kanban_column_id = ?` (with `OR kanban_column_id IS NULL` to
-    /// preserve legacy rows that have no column assignment). When
-    /// null, no column filter is applied (full board-wide query).
+    /// 2026-08-06).
     column_id: ?[]const u8,
     q: ?[]const u8,
 ) !struct {
@@ -5984,14 +5071,9 @@ pub fn listWorkspaceItemTasksWithCursor(
     const limit_str = try std.fmt.allocPrint(allocator, "{d}", .{query_limit});
     defer allocator.free(limit_str);
 
-    // Build the ORDER BY column expression for the sort field. We
-    // hardcode the column name (not the value) into the SQL string
-    // — only the values are parameterized, so this is safe.
-    //
-    // Qualify with `t.` because the LEFT JOINs expose `id`,
-    // `created_at`, and `updated_at` from multiple tables, and
-    // SQLite rejects unqualified references as "ambiguous column
-    // name".
+    // Build the ORDER BY column expression for the sort field. We hardcode
+    // the column name (not the value) into the SQL string — only the values
+    // are parameterized, so this is safe.
     const sort_col = switch (sort_field) {
         .created_at => "t.created_at",
         .updated_at => "t.updated_at",
@@ -6008,14 +5090,8 @@ pub fn listWorkspaceItemTasksWithCursor(
     );
     defer allocator.free(order_by);
 
-    // Cursor: encoded as "<sort_value>|<id>" by the handler. Split it
-    // into the sort-field value (compared first) and the id (tiebreaker).
-    // When cursor is null, no WHERE clause is added.
-    //
-    // v1 limitation: the cursor applies only to the unpinned region.
-    // Pinned rows are always returned on page 1 (when cursor is null).
-    // Subsequent pages (cursor != null) restrict to is_pinned = 0 so
-    // pinned rows don't re-appear after the cursor boundary.
+    // Cursor: encoded as "<sort_value>|<id>" by the handler. Split it into
+    // the sort-field value (compared first) and the id (tiebreaker).
     const cursor_clause: []u8 = blk: {
         const c = cursor orelse break :blk try allocator.dupe(u8, "");
         const pipe_idx = std.mem.indexOfScalar(u8, c, '|') orelse
@@ -6035,14 +5111,8 @@ pub fn listWorkspaceItemTasksWithCursor(
     };
     defer allocator.free(cursor_clause);
 
-    // Optional q filter — case-insensitive substring match on
-    // name / description / tags. When `q` is null OR empty, q_clause
-    // is "" (no WHERE addition, keeps the original efficient query
-    // on `workspace_item_id` alone). Otherwise escape LIKE wildcards
-    // in the user input, wrap in `%…%`, and bind the pattern 3x
-    // (one per OR'd LIKE clause). The `ESCAPE '\'` clause makes the
-    // wildcards literal — a user typing `%` matches a literal `%`
-    // in the data, not every row.
+    // Optional q filter — case-insensitive substring match on name /
+    // description / tags.
     var q_pattern: ?[]u8 = null;
     defer if (q_pattern) |p| allocator.free(p);
     var q_clause: []u8 = try allocator.dupe(u8, "");
@@ -6061,14 +5131,9 @@ pub fn listWorkspaceItemTasksWithCursor(
     }
     defer allocator.free(q_clause);
 
-    // Optional column_id filter (per-column pagination, 2026-08-06).
-    // When `column_id` is null OR empty, column_id_clause is "" (no
-    // WHERE addition — matches the original behavior). Otherwise add
-    // `(t.kanban_column_id = ? OR t.kanban_column_id IS NULL)` so
-    // legacy rows that were created without a column assignment
-    // still match the user's request for a "column" (defensive —
-    // the kanban UI normally never shows NULL-column tasks, but the
-    // DB schema permits it per Migration 048).
+    // Optional column_id filter (per-column pagination, 2026-08-06). When
+    // `column_id` is null OR empty, column_id_clause is "" (no WHERE addition
+    // — matches the original behavior).
     var column_id_clause: []u8 = try allocator.dupe(u8, "");
     errdefer allocator.free(column_id_clause);
     if (column_id) |cid| {
@@ -6084,55 +5149,17 @@ pub fn listWorkspaceItemTasksWithCursor(
 
     const sql = try std.fmt.allocPrint(
         allocator,
-        // Auto-retry-until-stop: LEFT JOIN sessions on t.id =
-        // sessions.id (per the project convention task.id ==
-        // session.id; standard tasks that have
-        // no matching session row get NULL → COALESCE to '0').
-        // COALESCE(k.kanban_position, 0) ensures tasks not on any kanban
-        // column (no kanban row from the LEFT JOIN) still get '0'.
-        // The `k.kanban_position` column itself is NOT NULL DEFAULT 0
-        // in the new schema, but the LEFT JOIN can produce NULL when
-        // the task has no kanban row at all. s.is_auto_retry_until_stop
-        // appends as column 11 (Migration 084 dropped the routines
-        // JOIN — old routine columns 11-17 are gone).
-        //
-        // Kanban notification icon (Migration 065, plan:
-        // docs/plans/2026-07-26-kanban-task-notification-icon.md
-        // Chunk 2): appends 2 derived columns at indices 19 + 20:
-        //   19: COALESCE(s.last_finish_reason, '') — the AI's
-        //       most-recent finish_reason for this task's session,
-        //       or '' if no session row exists (LEFT JOIN NULL).
-        //   20: CASE … needs_human_review — 1 when the AI has
-        //       finished (last_finish_reason = 'stop') and the
-        //       human has not touched the task since
-        //       (last_human_touched_at IS NULL OR older than
-        //       sessions.updated_at, in unix-ms — we multiply
-        //       SQLite's strftime('%s', updated_at) by 1000).
-        //
-        // Kanban task tags (Migration 067): appends a single
-        // passthrough column at index 21:
-        //   21: t.tags — JSON-encode array string ('' when no tags).
-        //       NOT NULL DEFAULT '' so always present.
-        //
-        // Migration 069 read-path fix (plan:
-        // docs/superpowers/plans/2026-08-24-kanban-task-image-urls-read-path.md):
-        // appends a single passthrough column at index 17:
-        //   17: t.image_urls — ||-delimited base64 data URL string
-        //       ('' when no images). NOT NULL DEFAULT '' so always
-        //       present. The frontend splits on '|' via
-        //       normalizeTaskImageUrlsInPlace to render the detail
-        //       dialog gallery + board card thumbnails.
+        // Auto-retry-until-stop: LEFT JOIN sessions on t.id = sessions.id
+        // (per the project convention task.id == session.id; standard tasks
+        // that have no matching session row get NULL → COALESCE to '0').
         "SELECT t.id, t.name, t.workspace_item_id, t.description, t.created_at, t.updated_at, t.task_type, COALESCE(t.is_pinned, 0), COALESCE(t.pinned_position, 0), k.kanban_column_id, COALESCE(k.kanban_position, 0), COALESCE(s.is_auto_retry_until_stop, '0'), COALESCE(s.last_finish_reason, ''), CASE WHEN COALESCE(s.last_finish_reason, '') = 'stop' AND (t.last_human_touched_at_nano IS NULL OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000) THEN 1 ELSE 0 END, t.tags, COALESCE(s.git_worktree_cwd, ''), t.cwd, CASE WHEN COALESCE(t.image_urls, '') != '' THEN 1 ELSE 0 END, CASE WHEN COALESCE(t.video_urls, '') != '' THEN 1 ELSE 0 END FROM workspace_item_tasks t LEFT JOIN kanban k ON k.workspace_item_task_id = t.id LEFT JOIN sessions s ON s.id = t.id WHERE t.workspace_item_id = ?{s}{s}{s} {s} LIMIT {s}",
         .{ cursor_clause, column_id_clause, q_clause, order_by, limit_str },
     );
     defer allocator.free(sql);
 
-    // Build binds: always workspace_item_id; when column_id is set,
-    // append it once (one bind slot for the `?` in column_id_clause);
-    // when q is set, append the q_pattern 3 times (one per OR'd LIKE
-    // clause). SQLite reuses the same bind position when `?` is
-    // reused — so 3 binds means the pattern is compared against name,
-    // description, and tags.
+    // Build binds: always workspace_item_id; when column_id is set, append it
+    // once (one bind slot for the `?` in column_id_clause); when q is set,
+    // append the q_pattern 3 times (one per OR'd LIKE clause).
     var binds = std.ArrayList([]const u8).empty;
     defer binds.deinit(allocator);
     try binds.append(allocator, workspace_item_id);
@@ -6158,28 +5185,8 @@ pub fn listWorkspaceItemTasksWithCursor(
 
     while (try rows.next()) |row| {
         // Row indices (post-Migration-063-attended-toggle JOIN,
-        // post-Migration-065-notification-icon JOIN,
-        // post-Migration-067-tags,
+        // post-Migration-065-notification-icon JOIN, post-Migration-067-tags,
         // post-kanban-task-git-branch plan 2026-08-06,
-        // post-Migration-070-cwd,
-        // post-2026-08-24-kanban-task-image-urls-read-path,
-        // post-Migration-084-routines-JOIN-dropped):
-        //   0: id, 1: name, 2: workspace_item_id, 3: description,
-        //   4: created_at, 5: updated_at, 6: task_type,
-        //   7: is_pinned, 8: pinned_position, 9: kanban_column_id,
-        //   10: kanban_position,
-        //   11: is_auto_retry_until_stop (joined from sessions),
-        //   12: last_finish_reason (joined from sessions),
-        //   13: needs_human_review (CASE derived),
-        //   14: tags (Migration 067 — JSON-encode array string),
-        //   15: git_worktree_cwd (Migration 046 — joined from sessions).
-        //       COALESCE'd to '' when no session row exists.
-        //   16: cwd (Migration 070 — per-task cwd override). NOT NULL
-        //       DEFAULT '' so always present; empty string is the
-        //       "no per-task cwd" sentinel.
-        //   17: image_urls (Migration 069 — ||-delimited base64 data
-        //       URLs). NOT NULL DEFAULT '' so always present; empty
-        //       string is the "no images" sentinel.
         const task_type = if (row.values[6].len > 0)
             try allocator.dupe(u8, row.values[6])
         else
@@ -6216,18 +5223,11 @@ pub fn listWorkspaceItemTasksWithCursor(
             // to '' in the SQL when no session row exists. Empty string
             // is the canonical "no worktree" sentinel.
             .git_worktree_cwd = try allocator.dupe(u8, row.values[15]),
-            // Per-task cwd (Migration 070): index 16. NOT NULL
-            // DEFAULT '' so always present; empty string is the
-            // "no per-task cwd" sentinel that the session_create
-            // handler reads as "fall back to kanban-level path".
+            // Per-task cwd (Migration 070): index 16.
             .cwd = try allocator.dupe(u8, row.values[16]),
-            // Image urls (Migration 069 read-path fix): index 17.
-            // NOT NULL DEFAULT '' so always present; empty string is
-            // the "no images" sentinel. The frontend splits the
-            // ||-joined string into string[] via
-            // normalizeTaskImageUrlsInPlace (workspaces.ts) to render
-            // the detail dialog gallery + board card thumbnails.
-            // Plan: docs/superpowers/plans/2026-08-24-kanban-task-image-urls-read-path.md
+            // Image urls (Migration 069 read-path fix): index 17. NOT NULL
+            // DEFAULT '' so always present; empty string is the "no images"
+            // sentinel.
             .is_have_image = std.mem.eql(u8, row.values[17], "1"),
             // Video urls (Migration 090): index 18. Same contract.
             .is_have_video = std.mem.eql(u8, row.values[18], "1"),
@@ -6249,23 +5249,9 @@ pub fn listWorkspaceItemTasksWithCursor(
     };
 }
 
-/// Returns one page of distinct tags on tasks belonging to the
-/// given workspace item, ordered by frequency DESC then by
-/// most-recent usage DESC. Used by the kanban task detail dialog
-/// autocomplete dropdown. Pagination: caller passes `limit` (page
-/// size) and `offset` (rows to skip). Returns `has_more=true` when
-/// more rows exist past the requested page.
-///
-/// Defensive against malformed `tags` JSON: rows whose `tags` column
-/// is not a valid JSON array (legacy / corrupted rows) are skipped
-/// via `WHERE json_valid(tags) = 1 AND json_type(tags) = 'array'`.
-///
-/// Returns an empty page (not an error) when the kanban has no tags.
-///
-/// Implementation uses the `LIMIT N+1` trick to compute `has_more`
-/// in a single SQL query: we fetch `limit + 1` rows; if we got back
-/// `limit + 1` rows, there are more, so we trim to `limit` and set
-/// `has_more = true`.
+/// Returns one page of distinct tags on tasks belonging to the given
+/// workspace item, ordered by frequency DESC then by most-recent usage DESC.
+/// Used by the kanban task detail dialog autocomplete dropdown.
 pub fn listKanbanDistinctTags(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -6291,10 +5277,9 @@ pub fn listKanbanDistinctTags(
         if (offset_str.len > 0) allocator.free(offset_str);
     }
 
-    // json_each() expands the `tags` JSON array into a virtual table
-    // with one row per element. json_valid + json_type filter out
-    // malformed/non-array rows (legacy / corrupted). GROUP BY value
-    // counts per-tag usage. MAX(updated_at) is the recency tie-breaker.
+    // json_each() expands the `tags` JSON array into a virtual table with one
+    // row per element. json_valid + json_type filter out malformed/non-array
+    // rows (legacy / corrupted).
     var q = try db.query(allocator,
         \\SELECT je.value AS tag, COUNT(*) AS cnt, MAX(t.updated_at) AS last_used
         \\FROM workspace_item_tasks t, json_each(t.tags) je
@@ -6410,11 +5395,9 @@ pub fn updateWorkspaceUpdatedAt(allocator: std.mem.Allocator, db: *sqlite.Sqlite
     try db.exec(allocator, sql, &.{session_id});
 }
 
-// =====================================================================
-// Tests for listKanbanDistinctTags
-// Plan: docs/superpowers/plans/2026-07-30-kanban-task-tags-autocomplete.md
-// Behavioural tests; not static-contract / grep.
-// =====================================================================
+// ===================================================================== Tests
+// for listKanbanDistinctTags Plan:
+// docs/superpowers/plans/2026-07-30-kanban-task-tags-autocomplete.md
 
 fn setupDbWithTagsForKanban() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
@@ -6443,10 +5426,8 @@ fn setupDbWithTagsForKanban() !struct { db: sqlite.SqliteBackend, threaded: std.
 }
 
 fn insertKanbanTask(db: *sqlite.SqliteBackend, alloc: std.mem.Allocator, id: []const u8, item_id: []const u8, tags_json: []const u8) !void {
-    // SqliteBackend.exec binds empty `[]const u8` as SQL NULL — which
-    // would fail the NOT NULL constraint on `tags`. Match the
-    // production pattern (see createWorkspaceItemTask): use a SQL
-    // `''` literal when the value is the empty string.
+    // SqliteBackend.exec binds empty `[]const u8` as SQL NULL — which would
+    // fail the NOT NULL constraint on `tags`.
     if (tags_json.len == 0) {
         try db.exec(alloc, "INSERT INTO workspace_item_tasks (id, workspace_item_id, tags) VALUES (?, ?, '')", &.{ id, item_id });
     } else {
@@ -6614,22 +5595,8 @@ test "listKanbanDistinctTags skips rows with malformed tags JSON (defensive)" {
     try testing.expectEqualStrings("good", page.tags[0].name);
 }
 // ════════════════════════════════════════════════════════════════════════════
-// Inline behavioural tests for the kanban task search q-parameter
-// (plan: docs/superpowers/plans/2026-07-30-kanban-task-search.md)
-//
-// Per project convention (agentic_loop/README.md): tests for helpers in
-// `llm_history.zig` live INLINE in the same file, not in a separate
-// `_test.zig`. The previous `llm_history_search_test.zig` was merged
-// here in the same plan's Chunk 7 follow-up.
-//
-// Behavioural DB tests (not static-source grep). Catch regressions
-// like "removed the ESCAPE clause" or "stopped escaping user `%`"
-// that would let a user typing `%` match every row.
-//
-// Without these, the filter could silently regress to "matches all
-// rows" — invisible at compile time, invisible to vue-tsc, invisible
-// to manual smoke. The only way to verify is to run the SQL.
-// ════════════════════════════════════════════════════════════════════════════
+// Inline behavioural tests for the kanban task search q-parameter (plan:
+// docs/superpowers/plans/2026-07-30-kanban-task-search.md) Per project
 
 const TestCtx = struct {
     db: sqlite.SqliteBackend,
@@ -6641,10 +5608,7 @@ const TestCtx = struct {
 };
 
 /// Set up an in-memory SQLite DB with the minimum schema needed for
-/// `listWorkspaceItemTasksWithCursor` to run. The function LEFT JOINs
-/// `sessions` onto `workspace_item_tasks`; we need to
-/// create both (SQLite rejects JOINs onto missing tables).
-/// (Migration 084 dropped the `routines` JOIN — no routines table needed.)
+/// `listWorkspaceItemTasksWithCursor` to run.
 fn setupDb() !TestCtx {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
@@ -6712,11 +5676,7 @@ fn insertTask(
 }
 
 /// Per-column pagination helper (plan 2026-08-06-kanban-per-column-
-/// pagination.md, Task 3). Inserts a task with an explicit
-/// `kanban_column_id` (and optional `kanban_position` for predictable
-/// ordering). When `column_id` is null, the task is stored without a
-/// column assignment (legacy behaviour — the post-Migration-072 schema
-/// permits no kanban row, which the LEFT JOIN surfaces as NULL).
+/// pagination.md, Task 3).
 fn insertTaskInColumn(
     ctx: *TestCtx,
     alloc: std.mem.Allocator,
@@ -7140,11 +6100,7 @@ test "listWorkspaceItemTasksWithCursor with nonexistent q returns empty + has_mo
 }
 
 // ─── Contract 12: sort by name returns A→Z (asc) and Z→A (desc) ─────────
-//
-// Locks in the kanban-sort-by plan (2026-08-06). Pre-fix this contract
-// was untested — only `.updated_at` sorts were exercised. The kanban
-// sort dropdown relies on name asc/desc ordering; a regression here
-// would silently mis-order the board.
+// Locks in the kanban-sort-by plan (2026-08-06).
 
 test "listWorkspaceItemTasksWithCursor sorts by name asc and desc" {
     const alloc = testing.allocator;
@@ -7194,13 +6150,7 @@ test "listWorkspaceItemTasksWithCursor sorts by name asc and desc" {
 }
 
 // ─── Contract 13: sort by created_at returns oldest/newest first ────────
-//
-// Locks in the kanban-sort-by plan (2026-08-06). The created_at column
-// is NOT set by insertTask (it defaults to NULL), so this test must
-// explicitly UPDATE created_at to deterministic values per row. Sort
-// by created_at uses the same (sort_field, id) tuple pagination as
-// updated_at — locking in the SQL ORDER BY also locks the next_cursor
-// format used by the handler.
+// Locks in the kanban-sort-by plan (2026-08-06).
 
 test "listWorkspaceItemTasksWithCursor sorts by created_at asc and desc" {
     const alloc = testing.allocator;
@@ -7255,16 +6205,8 @@ test "listWorkspaceItemTasksWithCursor sorts by created_at asc and desc" {
     try testing.expectEqualStrings("task_old", desc.tasks[2].id);
 }
 // ════════════════════════════════════════════════════════════════════════════
-// Inline behavioural tests for the kanban per-column pagination filter
-// (plan: docs/superpowers/plans/2026-08-06-kanban-per-column-pagination.md,
-// Task 3).
-//
-// Each test inserts 3+ tasks split across 2 columns, then asserts the
-// column_id filter narrows the result to that column's tasks only
-// (plus NULL-column tasks, per the defensive WHERE clause). Catches
-// regressions like "removed the WHERE clause" or "stopped binding the
-// column_id parameter".
-// ════════════════════════════════════════════════════════════════════════════
+// Inline behavioural tests for the kanban per-column pagination filter (plan:
+// docs/superpowers/plans/2026-08-06-kanban-per-column-pagination.md, Task 3).
 
 test "listWorkspaceItemTasksWithCursor column_id=col_a returns only col_a tasks" {
     const alloc = testing.allocator;
@@ -7290,10 +6232,9 @@ test "listWorkspaceItemTasksWithCursor column_id=col_a returns only col_a tasks"
     defer freeTasks(alloc, result.tasks);
 
     try testing.expectEqual(@as(usize, 2), result.tasks.len);
-    // ORDER BY is_pinned DESC, ..., updated_at DESC, id DESC. The
-    // tiebreaker is `id DESC`, so the alphabetically-greater id
-    // comes first: task_a2 then task_a1. task_b1 is filtered out by
-    // the column_id WHERE clause.
+    // ORDER BY is_pinned DESC, ..., updated_at DESC, id DESC. The tiebreaker
+    // is `id DESC`, so the alphabetically-greater id comes first: task_a2
+    // then task_a1. task_b1 is filtered out by the column_id WHERE clause.
     try testing.expectEqualStrings("task_a2", result.tasks[0].id);
     try testing.expectEqualStrings("task_a1", result.tasks[1].id);
     try testing.expect(!result.has_more);
@@ -7362,11 +6303,9 @@ test "listWorkspaceItemTasksWithCursor column_id=col_a + cursor advances through
     try testing.expectEqualStrings("task_a2", page1.tasks[1].id);
     try testing.expect(page1.has_more);
 
-    // Construct the cursor from page1's last task id. The handler
-    // encodes the cursor as "<sort_value>|<id>" — for updated_at DESC
-    // the sort_value is the last task's updated_at. We use a simple
-    // form here (the cursor is opaque to this test — the production
-    // code reads it from the previous page's `next_cursor`).
+    // Construct the cursor from page1's last task id. The handler encodes the
+    // cursor as "<sort_value>|<id>" — for updated_at DESC the sort_value is
+    // the last task's updated_at.
     const cursor_str = try std.fmt.allocPrint(
         alloc,
         "{s}|{s}",
@@ -7512,11 +6451,8 @@ test "listWorkspaceItemTasksWithCursor column_id includes NULL-column legacy tas
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// getWorkspaceItemTaskById — single-task fetch for the kanban Task
-// details dialog (plan:
-// docs/superpowers/plans/2026-08-24-kanban-task-detail-single-fetch.md).
-// Replaces the frontend's list-refetch (limit=100) with one row.
-// ════════════════════════════════════════════════════════════════════════════
+// getWorkspaceItemTaskById — single-task fetch for the kanban Task details
+// dialog (plan:
 
 test "getWorkspaceItemTaskById returns the matching task" {
     const alloc = testing.allocator;
@@ -7760,12 +6696,8 @@ test "ensureSessionExists: idempoent — calling twice on a missing row creates 
 }
 
 test "ensureSessionExists + updateSessionSelectedProfileModel: preserves the profile when session is created on the fly" {
-    // This is the exact bug: PUT /api/session/:id 404'd when the
-    // user picked a profile on a brand-new chat. With
-    // ensureSessionExists called before the UPDATE, the helper
-    // auto-creates the row, then updateSessionSelectedProfileModel
-    // writes the profile. The next read sees the profile — the
-    // user's choice is preserved for the first real LLM call.
+    // This is the exact bug: PUT /api/session/:id 404'd when the user picked
+    // a profile on a brand-new chat.
     const alloc = testing.allocator;
     var ctx = try sessionUpdateSetupDb();
     defer ctx.db.deinit();
@@ -7816,11 +6748,9 @@ test "updateSessionSubAgentInfo: stamps sub-agent name and parent" {
 
 // ─── Test helpers ─────────────────────────────────────────────────────────
 
-/// Open a fresh in-memory sqlite DB with `llm_history` and `sessions`
-/// tables present (matching the production schema columns that
-/// `getSessionList` reads), plus the `idx_llm_history_created_session`
-/// index from Migration 048. This is the minimal state the rewritten
-/// query expects.
+/// Open a fresh in-memory sqlite DB with `llm_history` and `sessions` tables
+/// present (matching the production schema columns that `getSessionList`
+/// reads), plus the `idx_llm_history_created_session` index from Migration
 fn getSessionListSetupDb() !struct {
     db: sqlite.SqliteBackend,
     threaded: std.Io.Threaded,
@@ -7835,9 +6765,6 @@ fn getSessionListSetupDb() !struct {
     try db.init(io, ":memory:");
 
     // llm_history — only the columns the rewritten query reads.
-    // (session_id, created_at, agent are referenced; model is NOT NULL
-    //  per Migration 001 so we keep it for insert-time parity; the
-    //  `agent` column was added by Migration 006.)
     try db.exec(alloc,
         \\CREATE TABLE llm_history (
         \\    id TEXT PRIMARY KEY,
@@ -7892,10 +6819,7 @@ fn runAndCollect(
 
     while (try q.next()) |row| {
         defer row.deinit(alloc);
-        // For these tests each row is a single column (session_id or
-        // agent). Take a stable copy so the slice survives past
-        // row.deinit (per memory rule: row.values[i] is freed by
-        // row.deinit, so we dupe at append time).
+        // For these tests each row is a single column (session_id or agent).
         try collected.append(alloc, try alloc.dupe(u8, row.values[0]));
     }
 
@@ -8030,14 +6954,8 @@ test "getSessionList agent field is from the latest message in the session" {
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
 
-    // Two messages for the same session. The OLDER one is agent='A',
-    // the NEWER one is agent='B'. The rewritten query's correlated
-    // subquery picks the LATEST, so the returned agent must be 'B'.
-    //
-    // The original query relied on SQLite's loose GROUP BY, which
-    // picked an arbitrary h.agent for each session_id — implementation-
-    // defined and version-dependent. This test pins down the new,
-    // deterministic behavior.
+    // Two messages for the same session. The OLDER one is agent='A', the
+    // NEWER one is agent='B'.
     try ctx.db.exec(alloc,
         "INSERT INTO llm_history (id, session_id, model, agent, created_at_nano) " ++
             "VALUES ('h_old', 's1', 'm1', 'A', '2024-01-01 00:00:00')",
@@ -8093,16 +7011,7 @@ test "getSessionList inner subquery uses idx_llm_history_created_session (EXPLAI
         try ctx.db.exec(alloc, sql, &.{});
     }
 
-    // EXPLAIN QUERY PLAN returns one row per plan node. We ask the
-    // planner to plan the SAME inner subquery that getSessionList now
-    // uses; if a future SQLite version picks a different plan (e.g.
-    // falls back to a SCAN of llm_history), this assertion fails.
-    //
-    // Pattern: run the EXPLAIN, walk the rows, join row.values with
-    // ' ' (the column order is `id, parent, notused, detail`; the
-    // human-readable plan text is in `detail`, but joining all
-    // columns makes the assertion robust to plan-text formatting
-    // changes across SQLite versions).
+    // EXPLAIN QUERY PLAN returns one row per plan node.
     var q = try ctx.db.query(alloc,
         \\EXPLAIN QUERY PLAN
         \\SELECT h.session_id, MAX(h.created_at_nano)
@@ -8286,10 +7195,6 @@ test "updateTaskLastHumanTouchedAt stamps the unix-ms value on the task" {
         &.{});
 
     // Before stamp — column doesn't exist yet (Migration 065 not run).
-    // We don't strictly need the column to exist for the writer to
-    // succeed at the SQL layer (sqlite would store into nothing), but
-    // the realistic caller has run Migration 065 first. We simulate
-    // that by ALTER-ing the column in directly.
     try db.exec(alloc,
         "ALTER TABLE workspace_item_tasks ADD COLUMN last_human_touched_at_nano INTEGER",
         &.{});
@@ -8440,10 +7345,8 @@ test "updateSessionLastHumanTouchedAt is a no-op for unknown session_id" {
     , &.{});
     // No rows inserted.
 
-    // Stamping an unknown id must NOT raise — the UPDATE affects 0
-    // rows and returns success. Defensive against handler code paths
-    // where a session_id might not yet have a row (race with the
-    // INSERT in emit_run_agent).
+    // Stamping an unknown id must NOT raise — the UPDATE affects 0 rows and
+    // returns success.
     try updateSessionLastHumanTouchedAt(alloc, &db, "unknown_id", 12345);
 
     // Sanity: still zero rows.
@@ -8538,9 +7441,6 @@ test "updateSessionLastHumanTouchedAt skips empty session_id (no SQL bind)" {
     , &.{});
 
     // Empty session_id must be a no-op (no DB write attempted).
-    // Without this guard, `db.exec` would bind "" as SQL NULL — and
-    // since SQLite's WHERE id = NULL is always false, this would
-    // silently no-op anyway. But the guard is cheaper and clearer.
     try updateSessionLastHumanTouchedAt(alloc, &db, "", 999);
 
     // No row was affected. The session table is empty.
@@ -8573,11 +7473,8 @@ test "buildSessionListJson emits last_human_touched_at when the row has a value 
         .selected_profile_model = try alloc.dupe(u8, ""),
         .is_auto_retry_until_stop = try alloc.dupe(u8, "0"),
         .last_finish_reason = try alloc.dupe(u8, ""),
-                    // The mapper test injects the wire shape directly (NOT the
-            // raw unix-ms from the column). Production flows through
-            // getSessionListWithCursor whose SELECT casts via strftime()
-            // so SessionInfo.last_human_touched_at arrives here as a
-            // SQLite datetime string ('YYYY-MM-DD HH:MM:SS' UTC).
+                    // The mapper test injects the wire shape directly (NOT
+                    // the raw unix-ms from the column).
             .last_human_touched_at = try alloc.dupe(u8, "2026-08-29 10:00:00"),
             .git_worktree_cwd = try alloc.dupe(u8, ""),
             .git_branch = try alloc.dupe(u8, ""),
@@ -8589,24 +7486,7 @@ test "buildSessionListJson emits last_human_touched_at when the row has a value 
 
     // The wire field MUST be exactly `last_human_touched_at` (no `_nano`
     // suffix - per Migration 075 convention, SQL column keeps the suffix,
-    // wire field is bare). Migration 082 D3.
-        // The wire field MUST be exactly `last_human_touched_at` (no `_nano`
-    // suffix - per Migration 075 convention, SQL column keeps the suffix,
-    // wire field is bare). Migration 082 D3.
-    // NOTE: this test builds SessionInfo directly (not via the SELECT
-    // layer), so the value is passed through verbatim as unix-ms. The
-    // SELECT-layer conversion to SQLite datetime format is exercised by
-    // the SELECT test in migration_082_test.zig + by the functional
-    // harness. The wire field is what the SessionInfo mapper emits -
-    // frontend receives unix-ms and the SELECT conversion happens
-    // BEFORE SessionInfo construction in production.
-        // The wire field MUST be exactly `last_human_touched_at` (no `_nano`
-    // suffix - per Migration 075 convention, SQL column keeps the suffix,
-    // wire field is bare). Migration 082 D3. The SessionInfo mapper
-    // passes the field through verbatim - the SELECT layer is
-    // responsible for converting from unix-ms storage to SQLite
-    // datetime wire format (see migration_082_test.zig + the SELECT
-    // strftime() call in getSessionListWithCursor).
+    // wire field is bare).
     try testing.expect(std.mem.indexOf(u8, json, "\"last_human_touched_at\":\"2026-08-29 10:00:00\"") != null);
 }
 
@@ -8672,9 +7552,8 @@ test "getSessionListWithCursor converts unix-ms storage to SQLite datetime on th
         \\CREATE TABLE llm_history (id TEXT PRIMARY KEY, session_id TEXT, agent TEXT)
     , &.{});
     // The session-list SELECT correlated-subqueries this table for
-    // `workspace_item_id`, so a fixture that omits it fails at Prepare
-    // rather than at the assertion. Mirrors Migration 034's columns that
-    // the subquery reads.
+    // `workspace_item_id`, so a fixture that omits it fails at Prepare rather
+    // than at the assertion.
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
         \\    id TEXT PRIMARY KEY,
@@ -8738,9 +7617,8 @@ test "getSessionListWithCursor returns empty string for NULL last_human_touched_
         \\CREATE TABLE llm_history (id TEXT PRIMARY KEY, session_id TEXT, agent TEXT)
     , &.{});
     // The session-list SELECT correlated-subqueries this table for
-    // `workspace_item_id`, so a fixture that omits it fails at Prepare
-    // rather than at the assertion. Mirrors Migration 034's columns that
-    // the subquery reads.
+    // `workspace_item_id`, so a fixture that omits it fails at Prepare rather
+    // than at the assertion.
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
         \\    id TEXT PRIMARY KEY,
@@ -8796,9 +7674,8 @@ test "getSessionListWithCursor pages on the sort field's column, not created_at"
         \\CREATE TABLE llm_history (id TEXT PRIMARY KEY, session_id TEXT, agent TEXT)
     , &.{});
     // The session-list SELECT correlated-subqueries this table for
-    // `workspace_item_id`, so a fixture that omits it fails at Prepare
-    // rather than at the assertion. Mirrors Migration 034's columns that
-    // the subquery reads.
+    // `workspace_item_id`, so a fixture that omits it fails at Prepare rather
+    // than at the assertion.
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
         \\    id TEXT PRIMARY KEY,
@@ -8809,9 +7686,7 @@ test "getSessionListWithCursor pages on the sort field's column, not created_at"
 
     // `created_at` and `updated_at` are deliberately INVERTED: every row was
     // created in early 2026 and touched later, so the two columns disagree
-    // about ordering for every single row. A cursor filter hard-coded to
-    // `created_at` would re-serve the whole first page and never reach the
-    // third row — which is exactly the bug this locks in.
+    // about ordering for every single row.
     try db.exec(alloc,
         \\INSERT INTO sessions (id, name, cwd, created_at, updated_at) VALUES
         \\  ('s_a', 'A', '', '2026-01-01 00:00:00', '2026-09-20 00:00:00'),
@@ -8890,9 +7765,8 @@ test "getSessionListWithCursor keeps the created_at filter when sorting by creat
         \\CREATE TABLE llm_history (id TEXT PRIMARY KEY, session_id TEXT, agent TEXT)
     , &.{});
     // The session-list SELECT correlated-subqueries this table for
-    // `workspace_item_id`, so a fixture that omits it fails at Prepare
-    // rather than at the assertion. Mirrors Migration 034's columns that
-    // the subquery reads.
+    // `workspace_item_id`, so a fixture that omits it fails at Prepare rather
+    // than at the assertion.
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
         \\    id TEXT PRIMARY KEY,
@@ -8933,10 +7807,8 @@ test "getSessionListWithCursor keeps the created_at filter when sorting by creat
 }
 
 // ───────────────────────────────────────────────────────────────────────
-// Workspace-scoped list (plan: workspace-scoped chat sessions) — the
-// count query must honor the same `s.id IN (...)` predicate as the
-// main query, otherwise `total` (and therefore pagination) lies.
-// ───────────────────────────────────────────────────────────────────────
+// Workspace-scoped list (plan: workspace-scoped chat sessions) — the count
+// query must honor the same `s.id IN (...)` predicate as the main query,
 
 test "getSessionListWithCursor: workspace_ids bounds sessions AND total (count honors the filter)" {
     const alloc = testing.allocator;
@@ -8968,9 +7840,8 @@ test "getSessionListWithCursor: workspace_ids bounds sessions AND total (count h
         \\CREATE TABLE llm_history (id TEXT PRIMARY KEY, session_id TEXT, agent TEXT)
     , &.{});
     // The session-list SELECT correlated-subqueries this table for
-    // `workspace_item_id`, so a fixture that omits it fails at Prepare
-    // rather than at the assertion. Mirrors Migration 034's columns that
-    // the subquery reads.
+    // `workspace_item_id`, so a fixture that omits it fails at Prepare rather
+    // than at the assertion.
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
         \\    id TEXT PRIMARY KEY,
@@ -9029,9 +7900,8 @@ test "getSessionListWithCursor: workspace_ids bounds sessions AND total (count h
 }
 
 // ───────────────────────────────────────────────────────────────────────
-// Behavioural — the SQL predicate for needs_human_review works
-// end-to-end on a real in-memory DB.
-// ───────────────────────────────────────────────────────────────────────
+// Behavioural — the SQL predicate for needs_human_review works end-to-end on
+// a real in-memory DB.
 
 test "needs_human_review predicate returns 1 when finish_reason='stop' AND no human touch" {
     const alloc = testing.allocator;
@@ -9142,10 +8012,6 @@ test "needs_human_review predicate returns 0 when human touched AFTER the AI fin
         "VALUES ('task_reviewed', 'T', 'idle', 'stop', datetime('now', '-1 hour'))",
         &.{});
     // Human touched 10 seconds ago (clearly after the AI's finish).
-    // Fixed future timestamp — Zig 0.16 removed `std.time.timestamp()`
-    // per project memory; rather than reach for libc we use a known
-    // large unix-ms that's guaranteed-after the AI's "1 hour ago"
-    // timestamp above.
     const now_ms: i64 = 2_000_000_000_000; // year 2033 in unix-ms
     var t_buf: [32]u8 = undefined;
     const t_str = std.fmt.bufPrint(&t_buf, "{d}", .{now_ms}) catch @panic("bufPrint failed formatting the fixed fixture timestamp");
@@ -9293,12 +8159,8 @@ fn llmHistorySearchFtsQuerySafetySetupDb() !TestCtx {
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
-    // Walk every production migration so the schema (including
-    // `messages_fts` + its triggers) matches what production runs.
-    // Manual table/trigger setup drifts the moment a new FTS column
-    // or trigger lands in production and silently tests an outdated
-    // schema (reviewer note on PR #172: "when setup db, use from
-    // migrationsss module, migrations module will load all table").
+    // Walk every production migration so the schema (including `messages_fts`
+    // + its triggers) matches what production runs.
     var manager = migration.MigrationManager.init(alloc, &db);
     defer manager.deinit();
     try migration.registerAllMigrations(&manager);
@@ -9312,12 +8174,8 @@ fn teardown(ctx: *TestCtx) void {
     ctx.threaded.deinit();
 }
 
-/// Insert a row whose `response_content` contains all of the "needle"
-/// words in `needles` so we can prove the FTS5 query finds it.
-///
-/// Note: `model` is required because the production schema (after all
-/// 67 migrations) declares it NOT NULL. The value is irrelevant to the
-/// FTS5 query — only `response_content` is indexed.
+/// Insert a row whose `response_content` contains all of the "needle" words
+/// in `needles` so we can prove the FTS5 query finds it.
 fn insertRow(ctx: *TestCtx, id: []const u8, content: []const u8) !void {
     const alloc = testing.allocator;
     var sql_buf: [512]u8 = undefined;
@@ -9336,16 +8194,8 @@ fn freeHits(alloc: std.mem.Allocator, hits: []SearchHit) void {
 }
 
 // ─── Tests that prove the failing-queries bug ──────────────────────────
-//
-// Each test below reproduces a specific query the user ran that
-// returned "FTS search failed: QueryFailed". They are written against
-// the FIXED behavior — i.e. they expect searchMessagesFts to succeed
-// and return the matching row. They will FAIL on the unfixed code
-// because the queries either:
-//   1. trigger an FTS5 syntax error (returned as `QueryFailed`), or
-//   2. return 0 hits because the FTS5 query string is parsed as a
-//      single term that doesn't exist in the index.
-// The fix sanitizes the query so each piece becomes its own term.
+// Each test below reproduces a specific query the user ran that returned "FTS
+// search failed: QueryFailed".
 
 test "searchMessagesFts: dotted identifier handle_tool.zig returns the inserted row" {
     var ctx = try llmHistorySearchFtsQuerySafetySetupDb();
@@ -9690,21 +8540,8 @@ test "getCompactedMessages: include_all=true returns live AND compacted rows" {
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// Regression tests for the since/until bug
-// (historical note: fixed under the old global history search; the
-// `created_iso` semantics are unchanged).
-//
-// These exercise the filter on `created_iso` (the STORED generated column
-// added by Migration 059) instead of `created_at` (which stores Unix
-// microseconds — lex-comparing that against a date string silently
-// returns 0 rows because '1' < '2' in ASCII order).
-//
-// We seed with two known microsecond timestamps and compute the
-// expected `created_iso` via the SAME SQLite expression the migration
-// uses (`datetime(N / 1000000, 'unixepoch')`). This keeps
-// the test timezone-agnostic: both the seed and the filter go through
-// the same localtime conversion, so they agree regardless of TZ.
-// ────────────────────────────────────────────────────────────────────────
+// Regression tests for the since/until bug (historical note: fixed under the
+// old global history search; the `created_iso` semantics are unchanged).
 
 test "searchMessagesFts: filters by since using ISO date string (regression for since/until bug)" {
     var s = try llmHistorySearchMessagesFtsSetupDb();
@@ -9712,20 +8549,11 @@ test "searchMessagesFts: filters by since using ISO date string (regression for 
     const alloc = testing.allocator;
 
     // Seed: two messages at known microsecond timestamps.
-    // Pick values that are unambiguously different from each other and
-    // survive any timezone (we never assert the literal ISO string —
-    // only that the filter on it works).
     const old_micros: []const u8 = "1780000000000000"; // ~2026-05-29 17:33 UTC
     const new_micros: []const u8 = "1785000000000000"; // ~2026-06-23 12:40 UTC
 
     // Production code in `saveMessage` computes `created_iso` from
-    // `created_at` via libc `localtime_r` + `strftime`. The exact
-    // SQLite expression that matches that conversion is
-    // `datetime(<micros>/1000000, 'unixepoch')` — but
-    // our test schema uses `substr(micros, 1, 10)` (the migration's
-    // backfill expression) for consistency with the migration's
-    // idempotent backfill. This drops microsecond precision but is
-    // fine for `since`/`until` tests at minute granularity.
+    // `created_at` via libc `localtime_r` + `strftime`.
     try s.db.exec(alloc,
         "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
         "VALUES ('h_old','s1','user','old message',?,datetime(substr(?,1,10),'unixepoch'))", &.{ old_micros, old_micros });
@@ -9848,12 +8676,8 @@ test "searchMessagesFts: since AND until together produce a date range (regressi
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// created_at shape
-//
-// The `since`/`until` filters above take an ISO date string, so the
-// `created_at` we hand back has to be an ISO string too — returning the
-// raw nanosecond epoch made the tool accept one format and emit another.
-// ────────────────────────────────────────────────────────────────────────
+// created_at shape The `since`/`until` filters above take an ISO date string,
+// so the `created_at` we hand back has to be an ISO string too — returning
 
 test "searchMessagesFts: created_at is a readable ISO timestamp, not a nanosecond epoch" {
     var s = try llmHistorySearchMessagesFtsSetupDb();
@@ -9971,17 +8795,9 @@ fn llmHistoryCompactedMessagesSeedMessage(
 ) !void {
     const feed_str = if (is_feed == 1) "1" else "0";
 
-    // `created_at` is either:
-    //   - A microsecond timestamp string (e.g. "1785000000000000"), OR
-    //   - A pre-formatted ISO localtime string (e.g. "2025-01-01 00:01:00").
-    //
-    // For the microsecond case we compute the ISO via SQLite's
-    // `datetime(? / 1000000, 'unixepoch')` — the same expression
-    // Migration 059 used before moving the conversion to app code,
-    // and the same expression used by the since/until filter queries
-    // in this file (so the row's `created_iso` matches what the filter
-    // would generate from the same `created_at`). For the ISO case we
-    // reuse the string as-is.
+    // `created_at` is either: - A microsecond timestamp string (e.g.
+    // "1785000000000000"), OR - A pre-formatted ISO localtime string (e.g.
+    // "2025-01-01 00:01:00").
     var created_iso_buf: [20]u8 = undefined;
     const created_iso_len: usize = blk: {
         if (created_at.len >= 10 and std.mem.indexOfScalar(u8, created_at, '-') == null) {
@@ -10096,23 +8912,8 @@ test "getCompactedMessages: returns empty slice when session has no compacted me
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// Regression tests for the since/until bug
-// (historical note: fixed under the old global history search; the
-// `created_iso` semantics are unchanged).
-//
-// The bug: `created_at` stores Unix microseconds as TEXT (e.g.
-// `"1784119389936251112"`). The previous SQL did a lex comparison on
-// this column against user input like `"2026-07-15 00:00:00"`, which
-// silently returned 0 rows because `'1' < '2'` (so `'1784…' < '2026-…'`
-// always evaluated true, excluding every row).
-//
-// The fix: filter on `created_iso`, a STORED generated column produced
-// by `datetime(created_at / 1000000, 'unixepoch')` at
-// write time. These tests verify both halves of the fix:
-//   1. ISO date strings actually filter rows (no longer silently 0).
-//   2. Lex-correct ordering of the generated column preserves
-//      chronological filter semantics.
-// ────────────────────────────────────────────────────────────────────────
+// Regression tests for the since/until bug (historical note: fixed under the
+// old global history search; the `created_iso` semantics are unchanged).
 
 test "getCompactedMessages: filters by since using ISO date string (regression)" {
     var s = try llmHistoryCompactedMessagesSetupDb();
@@ -10220,20 +9021,8 @@ test "getCompactedMessages: since AND until together produce a date range (regre
 }
 
 test "saveMessage: writes a correct-year (2026-ish) created_iso from current time" {
-    // Regression check for the year-58,507 bug. Pre-fix `saveMessage`
-    // passed raw nanoseconds to the ISO conversion helper, producing
-    // year 58,507. Post-fix, saveMessage divides by `ns_per_us` (1000)
-    // before calling `currentTimeIsoLocal`, so the year is in the 2020s.
-    //
-    // We use the live `std.Io.Timestamp.now(...)` clock (same as
-    // saveMessage) and verify the resulting `created_iso` starts with
-    // "20" (year 2000-2099), NOT with "58".
-    //
-    // Uses a dedicated schema because the shared `llmHistoryCompactedMessagesSetupDb()` in this
-    // file only creates the columns needed by `getCompactedMessages`,
-    // not the full set required by `saveMessage`. We also need a
-    // `sessions` table because saveMessage runs `UPDATE sessions
-    // SET cwd = ?` at the end.
+    // Regression check for the year-58,507 bug. Pre-fix `saveMessage` passed
+    // raw nanoseconds to the ISO conversion helper, producing year 58,507.
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
@@ -10316,12 +9105,8 @@ test "saveMessage: writes a correct-year (2026-ish) created_iso from current tim
 }
 
 test "saveMessage: created_at column is stored as Unix microseconds (length <= 17)" {
-    // Regression check: saveMessage must store `created_at` as
-    // microseconds (16 digits for year 2026). Pre-fix code stored
-    // raw nanoseconds (19 digits), which doesn't match the
-    // documented `created_at DATETIME/TEXT` contract.
-    //
-    // Uses the same dedicated schema as the test above.
+    // Regression check: saveMessage must store `created_at` as microseconds
+    // (16 digits for year 2026).
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
@@ -10419,10 +9204,9 @@ fn llmHistoryToolCallLoadingSetupDb() !TestCtx {
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
-    // Walk every production migration (001 → 068) so the schema
-    // matches production. Manual schema setup drifts the moment a
-    // migration lands; see project memory
-    // `llm-history-test-use-migrations-module.md`.
+    // Walk every production migration (001 → 068) so the schema matches
+    // production. Manual schema setup drifts the moment a migration lands;
+    // see project memory `llm-history-test-use-migrations-module.md`.
     var manager = migration.MigrationManager.init(alloc, &db);
     defer manager.deinit();
     try migration.registerAllMigrations(&manager);
@@ -10494,10 +9278,8 @@ test "saveToolResultPlaceholder enforces the UNIQUE INDEX on tool_call_id" {
 }
 
 test "saveToolResultPlaceholder allows multiple empty tool_call_id rows (assistant message shape)" {
-    // The partial UNIQUE INDEX excludes empty-string tool_call_ids
-    // (`WHERE tool_call_id IS NOT NULL AND tool_call_id != ''`). So
-    // an unlimited number of rows with `tool_call_id = ''` (the
-    // assistant message shape) can coexist without conflict.
+    // The partial UNIQUE INDEX excludes empty-string tool_call_ids (`WHERE
+    // tool_call_id IS NOT NULL AND tool_call_id != ''`).
     var ctx = try llmHistoryToolCallLoadingSetupDb();
     defer llmHistoryToolCallLoadingTeardown(&ctx);
     try llmHistoryToolCallLoadingCreateSession(&ctx, "sess_1");
@@ -10575,10 +9357,7 @@ test "resolveStaleLoadingToolResults only touches the target session" {
     try llmHistoryToolCallLoadingCreateSession(&ctx, "sess_1");
     try llmHistoryToolCallLoadingCreateSession(&ctx, "sess_2");
 
-    // Insert a stranded placeholder in each session. Different
-    // tool_call_ids because the partial UNIQUE INDEX is global
-    // (not session-scoped) — two rows with the same tool_call_id
-    // across different sessions would still collide.
+    // Insert a stranded placeholder in each session.
     const opts1 = SaveToolResultPlaceholderOptions{
         .session_id = "sess_1",
         .model = "test-model",
@@ -10630,10 +9409,9 @@ test "resolveStaleLoadingToolResults only touches the target session" {
 // ════════════════════════════════════════════════════════════════════════════
 
 
-/// Open a fresh in-memory sqlite DB with the minimum schema needed
-/// for `getActiveWorker` + `getWorkerBySessionId` (the `worker` +
-/// `sessions` tables, the latter with `git_worktree_cwd` from
-/// Migration 046).
+/// Open a fresh in-memory sqlite DB with the minimum schema needed for
+/// `getActiveWorker` + `getWorkerBySessionId` (the `worker` + `sessions`
+/// tables, the latter with `git_worktree_cwd` from Migration 046).
 fn llmHistoryWorkerInfoSetupDb() !struct {
     db: sqlite.SqliteBackend,
     threaded: std.Io.Threaded,
@@ -10661,11 +9439,7 @@ fn llmHistoryWorkerInfoSetupDb() !struct {
         \\)
     , &.{});
 
-    // Worker table — the full canonical schema. We only read from
-    // these columns, but the schema matters because the production
-    // SQL references `working_directory`, `last_activity`, and
-    // `last_activity_description` directly (not via COALESCE on a
-    // potentially-NULL field).
+    // Worker table — the full canonical schema.
     try db.exec(alloc,
         \\CREATE TABLE worker (
         \\    id TEXT PRIMARY KEY,
@@ -10730,10 +9504,9 @@ test "getActiveWorker returns empty string when session row has NULL git_worktre
     }
 
     try testing.expectEqual(@as(usize, 1), workers.len);
-    // COALESCE(s.git_worktree_cwd, '') maps NULL → empty string so
-    // the prompt builder's `if (worker.git_worktree_cwd.len > 0)`
-    // guard works as designed (skips the "(git worktree: ...)"
-    // suffix when no worktree is bound).
+    // COALESCE(s.git_worktree_cwd, '') maps NULL → empty string so the prompt
+    // builder's `if (worker.git_worktree_cwd.len > 0)` guard works as
+    // designed (skips the "(git worktree: ...)" suffix when no worktree is
     try testing.expectEqualStrings("", workers[0].git_worktree_cwd);
 }
 
@@ -10988,7 +9761,6 @@ test "saveMessage: user envelope carries owner identity, assistant carries profi
     // Follow-up on the Option A envelopes: when the session has an owner
     // (`sessions.user_id -> users.name`) and a picked profile
     // (`sessions.selected_profile_model`), the persisted envelopes carry
-    // them. Auth-off sessions keep the legacy defaults (`""` + agent).
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();

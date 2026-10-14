@@ -1,43 +1,5 @@
-//! Agent-callable tool: `list_sub_agent` — list the subagents configured
-//! on the agent's current profile, with full specs.
-//!
-//! Wire shape:
-//!   input:  {} (no params — profile_name is implicit from
-//!           `ToolExecContext.selected_profile_model` in the exec adapter)
-//!   output: <list_sub_agent><profile>NAME</profile><count>N</count>
-//!           <sub_agents><sub_agent>...</sub_agent>...</sub_agents></list_sub_agent>
-//!   or:     <list_sub_agent><profile>NAME</profile><empty/></list_sub_agent>
-//!           (empty profile_name, unknown profile, or zero rows after
-//!           skipping empty sa.name entries)
-//!
-//! Per-row shape:
-//!   <sub_agent><name>..</name><model>..</model><url_style>..</url_style>
-//!   <thinking>..</thinking><temperature>..</temperature>
-//!   [<max_capacity_tokens>..</max_capacity_tokens>]
-//!   [<compaction_threshold_percent>..</compaction_threshold_percent>]
-//!   [<thinking_budget_tokens>..</thinking_budget_tokens>]
-//!   [<reasoning_effort>..</reasoning_effort>]
-//!   <system_prompt><![CDATA[FULL text]]></system_prompt></sub_agent>
-//!
-//! Rules (per plan):
-//!   - String fields (name/model/url_style/thinking/temperature) are
-//!     emitted verbatim even when empty.
-//!   - Numeric/optional tags are emitted ONLY when non-null (absent tag
-//!     means 'inherits the profile default').
-//!   - system_prompt is the FULL text in CDATA (never truncated), with
-//!     the `]]>` -> `]]><![CDATA[>` split (same pattern as
-//!     `get_plan.zig` / `enrichCompactionXml`).
-//!   - NEVER emit api_key/base_url tags or values (secrets stay off
-//!     the wire).
-//!   - Top-level `config.sub_agents` is DEPRECATED — never read it.
-//!     Only the profile's own `sub_agents` list is listed.
-//!
-//! Design choices (mirror `get_plan.zig`):
-//!   - `profile_name` is passed explicitly (NOT via `ToolExecContext`)
-//!     so this pure fn is testable in isolation. The exec adapter
-//!     pulls `ctx.selected_profile_model` and forwards it here.
-//!   - The `<profile>` echo is verbatim (even when empty/unknown) so
-//!     the LLM can correlate the result with the profile it asked about.
+//! Agent-callable tool: `list_sub_agent` — list the subagents configured on
+//! the agent's current profile, with full specs.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -48,10 +10,7 @@ const config_mod = pabrikcore.config;
 /// Input for `list_sub_agent`. Empty struct — no params, profile_name is implicit.
 pub const ListSubAgentInput = struct {};
 
-/// Top-level tool definition for the LLM. The description is the
-/// agent's primary signal for WHEN to call this tool — it explicitly
-/// names `spawn_sub_agent` / `agent_name` as the follow-up so the
-/// agent knows to call this first when unsure which sub-agent fits.
+/// Top-level tool definition for the LLM.
 pub const list_sub_agent_tool_system_prompt =
     \\## List Sub Agent Tool — Behavior
     \\Use `list_sub_agent` to list the subagents configured on your current profile.
@@ -77,18 +36,8 @@ pub const list_sub_agent_tool = AgentTool{
     },
 };
 
-/// Execute list_sub_agent. Returns a JSON string for the LLM.
-///
-/// Caller owns the returned slice and must free it with `allocator.free()`.
-///
-/// `profile_name` is passed explicitly (NOT via `ToolExecContext`) so
-/// this pure fn is testable in isolation. The exec adapter pulls
-/// `ctx.selected_profile_model` and forwards it here.
-///
-/// Empty `profile_name`, a `getProfile` miss, or zero rows (after
-/// skipping empty `sa.name` entries) all yield `{"profile":…,"count":0,
-/// "sub_agents":[]}` with `profile` echoed verbatim. Secrets
-/// (`api_key`, `base_url`) are never emitted.
+/// Execute list_sub_agent. Returns a JSON string for the LLM. Caller owns the
+/// returned slice and must free it with `allocator.free()`.
 pub fn executeListSubAgent(
     allocator: std.mem.Allocator,
     config: *const config_mod.LlmConfig,

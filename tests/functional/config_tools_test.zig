@@ -1,65 +1,5 @@
 // Functional tests for the config.json `tools` default checklist (plan
 // 2026-09-22-tools-menu-config-default-tools, decisions D2/D4).
-//
-// Zig port of `tests/functional/config_tools_test.py` (same test names,
-// same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional tests for the config.json `tools` default checklist (plan
-//   2026-09-22-tools-menu-config-default-tools, decisions D2/D4).
-//
-//   Verifies the wire round-trip of the top-level `tools` array through
-//   GET/PUT /api/config/pabrik with the EXACT frontend wire shapes:
-//
-//     1. GET returns `tools: null` when the on-disk key is absent.
-//     2. PUT of the whole config WITHOUT a `tools` key (a Settings save from
-//        another tab) does NOT erase `tools` from disk (the PUT-strip
-//        footgun — this is the test that catches a missing write-struct
-//        field).
-//     3. PUT with `"tools": [...]` persists and GET reflects it.
-//     4. PUT `"tools": []` persists as an explicit empty list (≠ null).
-//     5. PUT with an unknown tool name → 400 + a clear InvalidToolName
-//        message, disk untouched.
-//     6. PUT `"tools": null` preserves the existing value (the collapse of
-//        absent ≡ null on the wire).
-//
-//   Each test boots a fresh pabrik against an isolated tmpdir HOME via the
-//   shared preboot fixture pattern (config_simplify_test.py). Ports come
-//   from the harness's random picker (never 8081).
-//   """
-//
-// THE `preboot` FIXTURE IS INLINED HERE, AND IT INLINES THE SEED TIMING
-// GAP. `web_search_config_test.py` imported this fixture verbatim ("imported
-// rather than redefined: it is the platform-correct seeding path, and a
-// second copy would drift"), so this helper was load-bearing for a second
-// suite — which is exactly why the missing seam is written up below rather
-// than papered over.
-//
-// Python had a module-level `@pytest.fixture def preboot(cfg)` that
-// wrote config.json into a fresh tempdir layout and THEN spawned the
-// binary, re-implementing `FunctionalHarness.boot` steps 1-5 by hand
-// because there was no seam for "a config that already exists at boot".
-// Zig has no cross-file fixture import at all, so the whole fixture is
-// gone — but so is the ability it existed to provide: `Harness.boot`
-// ALLOCATES the tempdir internally, so there is no path to write into
-// before the binary starts. The only pre-boot seam the harness exposes is
-// `BootOptions.stub_llm_profile`.
-//
-// So every test below boots with `stub_llm_profile = true` and then
-// overwrites config.json with the real seed IMMEDIATELY, before the first
-// request. That is sound because BOTH handlers under test re-read the file
-// on every request (`pabrik_config_get.zig` opens `getDefaultConfigPath`
-// per call; `pabrik_config_put.zig` re-parses the existing file per
-// call) — nothing here is served from a boot-time cache.
-//
-// TODO(port): `BootOptions.config_json` — a pre-boot seed seam on
-// `Harness.boot` (write these bytes at the platform-correct config path
-// before step 7, the spawn). That is what would let this suite keep the
-// Python's "the server never saw any other config" guarantee instead of
-// the "overwritten immediately after boot" approximation above. Nothing
-// in the four suites being ported together needs it; the approximation
-// is exact for the assertions they make.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -73,31 +13,16 @@ const io = testing.io;
 // Fixtures / helpers
 // ============================================================================
 
-/// The single profile every seed carries.
-///
-/// Inlined from the Python module-level `PROFILE` dict, which existed so
-/// `_base_config(**extra)` could splat the same fields into both the
-/// on-disk seed and the PUT body.
+/// The single profile every seed carries. Inlined from the Python
+/// module-level `PROFILE` dict, which existed so `_base_config(**extra)`
+/// could splat the same fields into both the on-disk seed and the PUT body.
 const PROFILE_JSON =
     \\{"model":"tools-model","base_url":"https://tools.example.com","api_key":"tools-key","url_style":"openai"}
 ;
 
 /// Where `getDefaultConfigDir` (Config.zig) actually writes config.json.
-///
-/// Mirrors that function's platform switch:
-///
-///   * macOS   — `~/Library/Application Support/pabrik`. `XDG_CONFIG_HOME`
-///     is NOT consulted on this branch, so the harness's `<home>/.config`
-///     shadow is irrelevant.
-///   * Windows — `%APPDATA%/pabrik`, which the harness points at
-///     `<home>/AppData/Roaming`.
-///   * else    — `$XDG_CONFIG_HOME/pabrik` else `$HOME/.config/pabrik`;
-///     the harness points `XDG_CONFIG_HOME` at `<home>/.config`.
-///
-/// Derived from `home` alone rather than the ambient environment, so a
-/// CI runner's real `XDG_CONFIG_HOME` cannot make the assertion read a
-/// path the server never wrote. Python's `_platform_config_dir` probed
-/// `platform.system()` for the same reason.
+/// Mirrors that function's platform switch: * macOS — `~/Library/Application
+/// Support/pabrik`.
 fn platformConfigDir(home: []const u8) ![]u8 {
     return switch (builtin.os.tag) {
         .macos => harness.harnessPath(gpa, home, &.{ "Library", "Application Support", "pabrik" }),
@@ -126,9 +51,6 @@ fn writeSeedConfig(home: []const u8, contents: []const u8) !void {
 
 /// Boot a harness and seed `seed` into its config.json before the first
 /// request. Caller frees nothing — the harness owns the tempdir.
-///
-/// The seed is written AFTER boot; see the header note for why that is
-/// sound and what `BootOptions.config_json` would do about it.
 fn bootSeeded(seed: []const u8) !Harness {
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
     errdefer h.deinit(io) catch {};
@@ -136,12 +58,8 @@ fn bootSeeded(seed: []const u8) !Harness {
     return h;
 }
 
-/// The seeded on-disk config: a profile-only document so the PUT
-/// live-reload validates (backfill provides the credentials
-/// `validate()` requires).
-///
-/// `tools_json` is the RAW JSON text for the `tools` value, or null to
-/// omit the key — the Python `_base_config(**extra)` splat.
+/// The seeded on-disk config: a profile-only document so the PUT live-reload
+/// validates (backfill provides the credentials `validate()` requires).
 fn baseConfig(tools_json: ?[]const u8) ![]u8 {
     if (tools_json) |t| {
         return std.fmt.allocPrint(
@@ -172,12 +90,8 @@ fn toolsJson(names: []const []const u8) ![]u8 {
     return out.toOwnedSlice();
 }
 
-/// The EXACT whole-config shape `PabrikSettings.vue` sends on Save from
-/// any tab: profiles + operational settings, no top-level LLM defaults.
-///
-/// `tools` is the RAW JSON text for the value, or null to OMIT the key
-/// (the Python `tools_marker=...` Ellipsis sentinel, which is how
-/// "another tab's save" is spelled).
+/// The EXACT whole-config shape `PabrikSettings.vue` sends on Save from any
+/// tab: profiles + operational settings, no top-level LLM defaults.
 fn settingsBody(tools: ?[]const u8) ![]u8 {
     const tail = if (tools) |t| try std.fmt.allocPrint(gpa, ",\"tools\":{s}", .{t}) else try gpa.dupe(u8, "");
     defer gpa.free(tail);
@@ -192,10 +106,6 @@ fn settingsBody(tools: ?[]const u8) ![]u8 {
 }
 
 /// The on-disk `tools` value, as a parsed `json.Value`.
-///
-/// A `harness.Json` borrows its Response body, so this parses the FILE
-/// bytes directly (with `.alloc_always`, because the value has to outlive
-/// the caller holding the bytes).
 fn onDiskTools(home: []const u8) !std.json.Parsed(std.json.Value) {
     const path = try platformConfigPath(home);
     defer gpa.free(path);
@@ -205,10 +115,6 @@ fn onDiskTools(home: []const u8) !std.json.Parsed(std.json.Value) {
 }
 
 /// Does a JSON value equal the tool list `want`, in order?
-///
-/// Python's `== seeded` compares lists element-wise; an absent key or a
-/// JSON `null` compares unequal to any list, INCLUDING the empty one —
-/// which is what makes test (d) a real assertion rather than a tautology.
 fn toolsEqual(v: std.json.Value, want: []const []const u8) bool {
     const arr = switch (v) {
         .array => |a| a,
@@ -226,10 +132,6 @@ fn toolsEqual(v: std.json.Value, want: []const []const u8) bool {
 }
 
 /// Render a `json.Value` for a failure message. Owned.
-///
-/// Hand-written rather than `{f}`-formatted: `std.json.dynamic.Value` has
-/// no `format` member, and re-serializing through `Stringify` would print
-/// a SUCCESS value as `"command"` — which reads like a pass.
 fn describeTools(v: std.json.Value) ![]u8 {
     var out: std.Io.Writer.Allocating = .init(gpa);
     errdefer out.deinit();
@@ -440,11 +342,8 @@ test "put_empty_tools_array_persists" {
         defer r.deinit();
     }
 
-    // Python asserted three things here, and only the third is distinct:
-    // the key is present, it equals `[]`, and it is NOT null. The
-    // second implies the third in Zig's type system — an absent key and a
-    // JSON null are both `.null`/missing, and `expectWireTools` fails on
-    // both — so `[]` vs null is asserted by construction.
+    // Python asserted three things here, and only the third is distinct: the
+    // key is present, it equals `[]`, and it is NOT null.
     var r = try getConfig(&h);
     defer r.deinit();
     var doc = try r.json();

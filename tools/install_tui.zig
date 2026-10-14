@@ -1,22 +1,6 @@
-// tools/install_tui.zig
-//
-// Cross-platform installer for the `pabrik-tui` binary.
-//
-// Usage (invoked by `zig build install-tui`):
-//
-//     install_tui <source-path>
-//
-// Where <source-path> is the built binary (e.g. zig-out/bin/pabrik-tui).
-// The tool copies it to the per-user bin directory:
-//
-//   Linux:   $HOME/.local/bin/pabrik-tui
-//   macOS:   $HOME/.local/bin/pabrik-tui
-//   Windows: %LOCALAPPDATA%\pabrik\bin\pabrik-tui.exe
-//            fallback: %APPDATA%\pabrik\bin\pabrik-tui.exe
-//            fallback: %USERPROFILE%\.local\bin\pabrik-tui.exe
-//
-// The tool creates parent directories, copies the file, sets 0755 on Unix,
-// and prints a success message with the destination path.
+// tools/install_tui.zig Cross-platform installer for the `pabrik-tui` binary.
+// Usage (invoked by `zig build install-tui`): install_tui <source-path> Where
+// <source-path> is the built binary (e.g. zig-out/bin/pabrik-tui).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -97,11 +81,9 @@ fn resolveDestMacos(allocator: std.mem.Allocator, init: std.process.Init) ![]con
 }
 
 fn resolveDestWindows(allocator: std.mem.Allocator, init: std.process.Init) ![]const u8 {
-    // Priority:
-    //   1. %LOCALAPPDATA%\pabrik\bin\pabrik-tui.exe  (e.g. C:\Users\you\AppData\Local)
-    //   2. %APPDATA%\pabrik\bin\pabrik-tui.exe        (e.g. C:\Users\you\AppData\Roaming)
-    //   3. %USERPROFILE%\.local\bin\pabrik-tui.exe  (Git Bash fallback)
-    //   4. $HOME\.local\bin\pabrik-tui.exe           (MSYS fallback)
+    // Priority: 1. %LOCALAPPDATA%\pabrik\bin\pabrik-tui.exe (e.g.
+    // C:\Users\you\AppData\Local) 2. %APPDATA%\pabrik\bin\pabrik-tui.exe
+    // (e.g.
     if (getEnv(init, "LOCALAPPDATA")) |local_app_data| {
         return std.fs.path.join(allocator, &.{ local_app_data, "pabrik", "bin", "pabrik-tui.exe" });
     }

@@ -1,27 +1,5 @@
 //! Wire test: `GET /api/llm/session/:session_id/usage` reports the cache hit
 //! rate the provider actually reported.
-//!
-//! The `sessions` table stores no token column, so the endpoint DERIVES the
-//! rate from one aggregate over `llm_history`. That makes the whole chain
-//! load-bearing: the Anthropic SSE parser must fold `cache_read_input_tokens`
-//! into `prompt_tokens` and persist it, and the aggregate must divide the two
-//! sums. A unit test can only reach the aggregate; this suite drives a real
-//! turn against a stub upstream and reads the number back off the wire.
-//!
-//! THE STUB UPSTREAM
-//! -----------------
-//! Same shape as `anthropic_chat_headers_test.zig`: an in-process listener on
-//! a free loopback port that answers every POST with one Anthropic SSE
-//! transcript. The transcript reports `input_tokens: 100` and
-//! `cache_read_input_tokens: 900` on `message_start`, so every persisted row
-//! carries prompt=1000 / cache_read=900 — a 90% hit rate, and one whose ratio
-//! (9/10) holds no matter how many calls the turn makes (the auto-naming call
-//! goes through the same stub).
-//!
-//! `Server.accept` is a blocking `accept4(2)` and closing a listening socket
-//! does not wake a thread already blocked in it, so `stopStub` sets the stop
-//! flag and then makes ONE throwaway self-connect to unblock the loop — see
-//! the longer note in `anthropic_chat_headers_test.zig`.
 
 const std = @import("std");
 const testing = std.testing;
@@ -32,10 +10,7 @@ const io = testing.io;
 
 const Io = std.Io;
 
-/// The Anthropic SSE transcript the stub replays verbatim. The trailing blank
-/// line after `message_stop` matters: the parser consumes event/data pairs,
-/// and a truncated final event would make the assertions pass for a reason
-/// that is not the usage contract.
+/// The Anthropic SSE transcript the stub replays verbatim.
 const SSE_STREAM =
     "event: message_start\n" ++
     "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"type\":\"message\"," ++
@@ -115,11 +90,6 @@ fn serveStub(stub: *Stub) void {
 }
 
 /// Read one request, drain its body, reply with the SSE transcript.
-///
-/// The head and the body overlap in the socket buffer, so everything read is
-/// accumulated and only the `\r\n\r\n`-terminated prefix is treated as the
-/// head — the naive version discards already-buffered body bytes and then
-/// blocks in the drain waiting for bytes the client already sent.
 fn handleRequest(stub: *Stub, stream: Io.net.Stream) !void {
     var rbuf: [64 * 1024]u8 = undefined;
     var sr = stream.reader(stub.io, &rbuf);

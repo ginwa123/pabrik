@@ -1,14 +1,5 @@
 //! `GET /api/memories` — list all global memory files (markdown) in
 //! `$XDG_CONFIG_HOME/pabrik/memories/` or `~/.config/pabrik/memories/`.
-//!
-//! Returns JSON: `{"memories":[{"name":"...","title":"...","path":"...","size":N}]}`
-//! Empty list when no memories exist or the folder is missing — never throws.
-//!
-//! Layered as:
-//!   - `useCase` — resolves the singleton, looks up the environment,
-//!     and lists the memories.
-//!   - `memoriesListHandler` — thin orchestrator: delegates to `useCase`,
-//!     maps errors to status codes, builds the JSON response.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -17,10 +8,9 @@ const memories_mod = pabrikcore.memories;
 const list_memory_mod = pabrikcore.list_memory_tool;
 const http_response = @import("http_response.zig");
 
-/// Domain-level error set for `useCase`. The `getSingleton` call may
-/// fail when the singleton has not been initialised yet, and the
-/// environment may legitimately be missing on a server without a
-/// config dir.
+/// Domain-level error set for `useCase`. The `getSingleton` call may fail
+/// when the singleton has not been initialised yet, and the environment may
+/// legitimately be missing on a server without a config dir.
 pub const MemoriesListError = error{
     /// `pabrikcore.getSingleton()` failed (server has not been
     /// initialised yet). Maps to 500.
@@ -30,10 +20,6 @@ pub const MemoriesListError = error{
     /// "Missing environment" message preserved for the static contract.
     MissingEnvironment,
     /// `list_memory_mod.toJson` returned `error.OutOfMemory`. Maps to 500.
-    /// In production this is effectively unreachable (the
-    /// per-request arena reaps everything at request end) but the
-    /// type system requires the variant so the `try` on the call
-    /// propagates a typed error.
     OutOfMemory,
 };
 
@@ -53,14 +39,8 @@ pub const MemoriesListOutput = struct {
 // Use case
 // =====================================================================
 
-/// Resolve the environment and produce the memories list JSON.
-///
-/// Steps:
-///   1. Get the singleton (catches 500 on a server not yet ready).
-///   2. Read its environment (catches 500 on missing env).
-///   3. List memories and serialize to JSON.
-///   4. Return the heap-owned JSON body for the handler to wrap in
-///      a 200 response.
+/// Resolve the environment and produce the memories list JSON. Steps: 1. Get
+/// the singleton (catches 500 on a server not yet ready). 2.
 fn useCase(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -91,10 +71,9 @@ pub fn memoriesListHandler(
     const allocator = ctx.allocator;
 
     const outcome = useCase(allocator, ctx.io, .{}) catch |err| {
-        // Both switches are exhaustive over the inferred error set —
-        // adding a new `MemoriesListError` variant will fail to
-        // compile here (intentional, to keep status codes in sync).
-        // No `else` prong needed.
+        // Both switches are exhaustive over the inferred error set — adding a
+        // new `MemoriesListError` variant will fail to compile here
+        // (intentional, to keep status codes in sync).
         const status: u16 = switch (err) {
             error.ServerNotInitialized => 500,
             error.MissingEnvironment => 500,

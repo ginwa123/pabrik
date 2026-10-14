@@ -1,21 +1,5 @@
-//! src/modules/agent/tools/list_directory.zig
-//!
-//! Agent tool: list first-level entries in a directory (like `ls <path>`).
-//! Companion to `glob` (which finds files by pattern, recursive) —
-//! `list_directory` answers "what's in this folder?" with one level.
-//!
-//! PATH HANDLING: `execute_list_directory` takes an ABSOLUTE path only —
-//! it calls `std.Io.Dir.openDirAbsolute`, whose precondition is
-//! `assert(path.isAbsolute(...))`. In a Debug build that assert is
-//! `unreachable`, so a relative path aborts the process instead of
-//! returning an error.
-//!
-//! The LLM-facing `path` may be relative (the tool description promises it
-//! resolves against the session's cwd), so the `execListDirectory` wrapper
-//! in src/agentic_loop/tools_exec_list_directory.zig resolves it against
-//! `ctx.cwd` before calling in here. As defence in depth,
-//! `execute_list_directory` itself returns `error.PathNotAbsolute` for a
-//! relative path rather than reaching the asserting API.
+//! src/modules/agent/tools/list_directory.zig Agent tool: list first-level
+//! entries in a directory (like `ls <path>`).
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -42,18 +26,7 @@ pub fn freeEntries(allocator: std.mem.Allocator, entries: []Entry) void {
     allocator.free(entries);
 }
 
-/// `dir_path_abs` MUST be an absolute path. Relative LLM input is resolved
-/// against the session cwd by the exec wrapper before it gets here; the
-/// guard below keeps any other caller from triggering `openDirAbsolute`'s
-/// assertion (which panics and aborts the worker rather than erroring).
-///
-/// Behaviour:
-/// - Relative path → returns `error.PathNotAbsolute`
-/// - Non-existent / non-directory path → returns `error.PathNotFound`
-/// - Hidden entries (`.foo`) are skipped unless `hidden == true`
-/// - `respect_ignore_files == true` (default) → entries ignored by
-///   `git check-ignore` (when run from inside a git repo) are filtered
-/// - Results sorted: directories first, then files, alphabetically
+/// `dir_path_abs` MUST be an absolute path.
 pub fn execute_list_directory(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -64,10 +37,6 @@ pub fn execute_list_directory(
     // Defence in depth — `openDirAbsolute` below asserts
     // `path.isAbsolute(...)`, and that assert is `unreachable` in a Debug
     // build: it panics and aborts the whole worker (sig 6) instead of
-    // returning an error, which no `catch` up the stack can intercept.
-    // The exec wrapper resolves relative LLM input against the session cwd
-    // first, so this only fires for a direct caller passing a relative
-    // path; fail that caller cleanly.
     if (!std.fs.path.isAbsolute(dir_path_abs)) return error.PathNotAbsolute;
 
     var entries = std.ArrayList(Entry).empty;
@@ -145,10 +114,9 @@ pub fn execute_list_directory(
     return entries.toOwnedSlice(allocator);
 }
 
-/// JSON payload mirrors the old `<directory_listing>` envelope 1:1:
-/// `path`, `count`, and `entries` (one object per former `<file>` /
-/// `<directory>` tag with `name`, `path`, `is_directory`, `is_symlink`).
-/// `std.json` handles all escaping.
+/// JSON payload mirrors the old `<directory_listing>` envelope 1:1: `path`,
+/// `count`, and `entries` (one object per former `<file>` / `<directory>` tag
+/// with `name`, `path`, `is_directory`, `is_symlink`).
 pub const ListDirectoryEntryJSON = struct {
     name: []const u8,
     path: []const u8,
@@ -237,17 +205,9 @@ pub const list_directory_tool = AgentTool{
     },
 };
 
-// src/modules/agent/tools/list_directory_test.zig
-//
-// Tests for the list_directory agent tool: first-level directory
-// listing (ls-like). Companion to glob_test.zig (recursive pattern
-// matching).
-//
-// These tests are RUN IN-ISOLATION against `testing.tmpDir(.{})`
-// (Zig 0.16 stdlib helper). They do NOT touch ctx.cwd — they call
-// `execute_list_directory` directly with an absolute path resolved by
-// the test. The exec wrapper is tested in
-// src/agentic_loop/tools_exec_list_directory_test.zig.
+// src/modules/agent/tools/list_directory_test.zig Tests for the
+// list_directory agent tool: first-level directory listing (ls-like).
+// Companion to glob_test.zig (recursive pattern matching).
 
 const builtin = @import("builtin");
 const testing = std.testing;
@@ -362,7 +322,6 @@ test "execute_list_directory: returns PathNotFound for missing dir" {
     // An ABSOLUTE name under the cwd: a hardcoded `/tmp/...` would be
     // rooted-but-driveless on Windows, so `std.fs.path.isAbsolute` (which
     // dispatches to `isAbsoluteWindows` there) would reject it as
-    // `PathNotAbsolute` and the test would prove the wrong thing.
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const missing = try absPath(&path_buf, "this_path_definitely_does_not_exist_xyz_123");
 
@@ -532,8 +491,6 @@ test "list_directory_tool description documents the cwd + path contract" {
     // The DESCRIPTION is the product here: it is the only text the model
     // reads before choosing arguments, so its promises are the contract the
     // exec wrapper implements (helpers/path_validate.zig's validateCwd +
-    // resolveAgainstCwd). A `path` promise with no `cwd` requirement would
-    // describe a rule the tool no longer has.
     const desc = list_directory.list_directory_tool.function.description;
     try testing.expect(std.mem.indexOf(u8, desc, "`cwd` is REQUIRED") != null);
     try testing.expect(std.mem.indexOf(u8, desc, "resolved against") != null);

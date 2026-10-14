@@ -1,57 +1,6 @@
 //! Functional test for the `--static-dir` concurrency defect that kept
 //! `tests/functional_ui/code_editor_viewer_ui_test.py` red for a week.
-//!
-//! SYMPTOM. The UI suite is the only one that boots pabrik with
-//! `--static-dir`, so it is the only one that loads the production bundle
-//! from pabrik's own static handler. Intermittently, a `GET` for a bundle
-//! asset came back with ZERO bytes and a closed connection — the browser
-//! reported `net::ERR_EMPTY_RESPONSE`, the entry chunk never ran, the app
-//! never mounted, and whichever of the file's tests happened to be loading
-//! assets timed out waiting for `[data-testid="code-editor"]`. Three
-//! different tests in that one file failed this way across a week, on main
-//! and on branches.
-//!
-//! CAUSE (kabelweb `src/server/event_loop.zig`, pinned by `build.zig.zon`).
-//! Every static response is written RAW and its connection is closed right
-//! after it — `runStaticServe` owns the conn fd, flips it to BLOCKING,
-//! serves, and closes. The reactor's connection scan, however, indexed
-//! `conns.items` with the POLL ARRAY SLOT number, and the same tick already
-//! mutated `conns.items` before the scan (the listener drain appends, the
-//! completion drain removes). A removal shifts the tail down, so a POLLNVAL
-//! that belonged to a conn the static worker had just closed was applied to
-//! an UNRELATED connection: a brand-new conn was torn down before its
-//! request was answered -> zero bytes + close. The same mixup made the loop
-//! `recv` on an fd the worker had just made blocking, stalling the reactor
-//! for seconds.
-//!
-//! WHAT THIS PINS. The invariant a client depends on: a request that was
-//! actually sent ALWAYS gets a response. A closed-with-zero-bytes connection
-//! is the failure, and it needs concurrency (a hijacked handoff racing the
-//! accept of a fresh conn) to appear — hence the hammer below. The
-//! dependency's own unit-level guard is kabelweb's
-//! `event loop: a hijacked conn's closed fd never kills another connection`.
-//!
-//! THE OTHER HALF OF THE DEFECT — WHY THE PROCESS ITSELF MUST SURVIVE. The
-//! same mis-indexed close closes a descriptor that the static pool still
-//! owns, so the pool's own `close` lands on a RECYCLED descriptor number.
-//! Zig's `Io.Threaded` treats `EBADF` from `close` as
-//! `recoverableOsBugDetected()`, which in a Debug build is `unreachable`:
-//! it panics `reached unreachable code` and aborts the ENTIRE server —
-//! every running agent session with it. That is the crash pabrik's own
-//! reporter recorded twelve times in `$TMPDIR/agentic_coding.log`
-//! (`std/Io/Threaded.zig closeFd`, victim frames
-//! `src/modules/static_files.zig:279`, `:323` and
-//! `src/http_static/static_serve.zig:147`). A truncated asset is bad; a
-//! dead server is worse, and the zero-byte assertion cannot see it: a
-//! response can arrive intact and the process still die on a later close.
-//! So the hammer also asserts the child is STILL ALIVE and wrote NO crash
-//! report — the process-survival half of the same invariant.
-//!
-//! WHY IT IS NOT A `h.http(...)` LOOP. `Harness.http` speaks one request per
-//! call with its own connection management; the defect lives in the reactor's
-//! fd bookkeeping under parallel short-lived connections, so the client here
-//! opens a bare `Io.net` stream per request, exactly like the browser's
-//! per-asset connections do.
+//! SYMPTOM.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -97,12 +46,6 @@ fn writeFileAt(path: []const u8, contents: []const u8) !void {
 }
 
 /// Give the socket a receive deadline (Python's `s.settimeout(n)`).
-///
-/// The socket is then read with a raw `std.posix.read`, NOT through
-/// `Io.net`'s reader: a deadline turns a silent peer into `EAGAIN`, and
-/// `std.Io.Threaded.netReadPosix` panics outright on `EAGAIN` ("programmer bug
-/// caused syscall error: AGAIN"). That is the whole reason this suite is
-/// POSIX-only — a stalled reactor has to be an assertion, not a panic.
 fn armRecvDeadline(handle: std.posix.socket_t, seconds: i64) void {
     const tv = std.posix.timeval{ .sec = @intCast(seconds), .usec = 0 };
     std.posix.setsockopt(
@@ -114,10 +57,7 @@ fn armRecvDeadline(handle: std.posix.socket_t, seconds: i64) void {
 }
 
 /// The banner pabrik's crash reporter writes at the head of every report
-/// (`src/service/crash_handler.zig::emitCrashReport`). The report goes to
-/// the crash log file AND is mirrored to stderr, which the harness captures
-/// into `Harness.log_path` — so this banner is observable from the test even
-/// when the child died before it could answer another request.
+/// (`src/service/crash_handler.zig::emitCrashReport`).
 const CRASH_BANNER = "=== CRASH:";
 
 /// Count crash reports in captured child output. Pure — the positive
@@ -239,7 +179,6 @@ test "static_serve_answers_every_request_under_concurrency" {
     // Read the child's output BEFORE asserting on anything else: if the
     // server died, the crash report is the evidence and the failure has to
     // quote it (a dead server also makes every later request fail, which
-    // would otherwise surface as a confusing "served == 0").
     const child_log = try readChildLog(&h, gpa);
     defer gpa.free(child_log);
     const crashes = crashReportCount(child_log);

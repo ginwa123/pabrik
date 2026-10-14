@@ -1,34 +1,6 @@
 //! `ask_user` — an agent tool that stops the turn to ask the human a
-//! question, with 2–6 selectable options and/or a free-text answer.
-//!
-//! ## Why the turn ends instead of blocking
-//!
-//! The tool returns IMMEDIATELY with a `"status":"pending"` payload.
-//! `handle_tool` finishes its batch normally (Phase 1 has already given every
-//! tool call its own `role=tool` row, so the message chain stays valid), and
-//! the agentic loop then BREAKS instead of looping back — see
-//! `src/agentic_loop/workflow.zig` (the `.tool_calls` arm) and
-//! `ask_user_pending.zig`.
-//!
-//! Nothing is parked in memory and there is no timeout: the question is a
-//! persisted row, so it can wait a minute or a week for the same cost. When
-//! the human answers, `POST /api/llm/session/:id/answer` rewrites THIS tool's
-//! result row in place and starts a new run, which reads the answer as a
-//! normal tool result.
-//!
-//! ## The four exit statuses
-//!
-//! | status | who writes it | what the model should do |
-//! |---|---|---|
-//! | `answered` | the answer endpoint | continue with the answer |
-//! | `skipped` | the answer endpoint (`skip:true`) | do not guess; say what is blocked |
-//! | `abandoned` | the `session_create` guard (the human sent a message instead) | do not guess; re-ask once if still needed |
-//! | `unavailable` | this tool, immediately (sub-agent only) | decide yourself and state the assumption |
-//!
-//! Only *malformed input* becomes `success=false` + `<error>`; the four
-//! statuses above are successful calls with a degraded outcome. That mirrors
-//! the repo-wide contract (`tools_exec_create_kanban_task.zig`): `<error>`
-//! means "the call was invalid", never "the outcome was negative".
+//! question, with 2–6 selectable options and/or a free-text answer. The tool
+//! returns IMMEDIATELY with a `"status":"pending"` payload.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -52,10 +24,7 @@ pub const MAX_HEADER_CHARS = 40;
 pub const MIN_OPTIONS = 2;
 pub const MAX_OPTIONS = 6;
 
-/// The tool's arguments. Every field is optional at the struct level so the
-/// JSON parser can fill what the model provided; `question` is enforced
-/// non-blank by `validateAskUserInput`, which is what the schema's
-/// `required` list tells the model.
+/// The tool's arguments.
 pub const AskUserInput = struct {
     /// Required. The question, in the user's language. Markdown is allowed.
     question: []const u8 = "",
@@ -86,10 +55,6 @@ pub const ValidationError = error{
 };
 
 /// Reject the shapes that would render a broken or useless card.
-///
-/// Deliberately strict: the model gets a `success=false` envelope it can read
-/// and retry within the same run, which is far cheaper than a card the human
-/// cannot answer.
 pub fn validateAskUserInput(input: AskUserInput) ValidationError!void {
     if (std.mem.trim(u8, input.question, " \t\r\n").len == 0) return error.MissingQuestion;
     if (input.header.len > MAX_HEADER_CHARS) return error.HeaderTooLong;
@@ -123,9 +88,7 @@ pub fn validateAskUserInput(input: AskUserInput) ValidationError!void {
 }
 
 /// Every terminal (and transient) state the frontend's `AskUser.vue` card
-/// switches on. The strings are the wire contract — the card reads them out
-/// of the `"status"` field of the tool row's parsed `data` object, so a
-/// rename here is a frontend change too.
+/// switches on.
 pub const Status = enum {
     /// The human has been asked; the turn is ending.
     pending,
@@ -155,9 +118,8 @@ pub const Status = enum {
 pub fn instructionFor(status: Status) []const u8 {
     return switch (status) {
         // The turn is already over, so this is a safe-guard: it only reaches
-        // the model if something started a run between the ask and the
-        // answer (which the session_create guard + the iteration-top break
-        // exist to prevent).
+        // the model if something started a run between the ask and the answer
+        // (which the session_create guard + the iteration-top break exist to
         .pending => "The human has been asked and this turn is ending. Do not continue and do not guess — you will be resumed with their answer.",
         .answered => "",
         .skipped => "The human declined to answer. Do not guess. State what you are blocked on and stop this line of work.",
@@ -168,11 +130,7 @@ pub fn instructionFor(status: Status) []const u8 {
 
 /// The `data` payload of an `ask_user` tool result, serialised by
 /// `buildAskUserJson` via `std.json.Stringify.valueAlloc` (never
-/// string-concat). The keys are the wire contract — the card reads them out
-/// of the parsed `data` object, so a rename here is a frontend change too.
-///
-/// Omitted-when-empty XML tags of the old envelope are explicit nulls here;
-/// `options` is `[]` when the question has none.
+/// string-concat).
 pub const AskUserJson = struct {
     status: Status,
     question_id: []const u8 = "",
@@ -184,12 +142,7 @@ pub const AskUserJson = struct {
     /// multi-select). Only set for `answered`; null otherwise.
     answers_count: usize = 0,
 
-    // ── The question's shape. Carried in the payload itself ───────────────
-    //
-    // The card renders from THIS, not from the tool row's `parameters`
-    // object: the tool row has no `tool_calls_json` (that lives on the
-    // assistant row). Putting the shape here means the pending card renders
-    // identically live and after a reload, from one source.
+    // ── The question's shape.
     header: []const u8 = "",
     options: []const []const u8 = &.{},
     allow_free_text: ?bool = null,
@@ -197,13 +150,8 @@ pub const AskUserJson = struct {
     recommended: []const u8 = "",
 };
 
-/// Build the JSON `data` payload for an `ask_user` tool result.
-///
-/// Caller owns the returned slice. Serialised with `std.json.Stringify`, so
-/// arbitrary text (a literal `</ask_user>` in the question, `&` in an answer)
-/// is escaped by the serialiser and cannot break the payload — and control
-/// characters that would truncate SQLite TEXT are escaped too, which is why
-/// no separate sanitiser pass is needed for normal text.
+/// Build the JSON `data` payload for an `ask_user` tool result. Caller owns
+/// the returned slice.
 pub fn buildAskUserJson(allocator: std.mem.Allocator, json: AskUserJson) ![]u8 {
     const instruction = instructionFor(json.status);
     return std.json.Stringify.valueAlloc(allocator, .{
@@ -223,20 +171,6 @@ pub fn buildAskUserJson(allocator: std.mem.Allocator, json: AskUserJson) ![]u8 {
 
 /// Wrap a JSON `data` payload in the standard `<tool>…</tool>` shape every
 /// tool result uses.
-///
-/// `parameters_json` is the arguments object (already JSON), re-emitted
-/// verbatim. The tag is mandatory: the frontend's `unwrapToolOutput` throws
-/// when `name`, `parameters` or `success` is missing, so an envelope without
-/// it makes the card fall back to an empty "pending" render (it cannot read
-/// the resolved status at all). `handle_tool`'s Phase-1 placeholder always
-/// carries one, which is why `rewriteToolResultRow` rebuilds the parameters
-/// as a JSON string from the row it is replacing rather than from nothing.
-///
-/// `data_json` is deliberately NOT escaped: it is the tool-specific JSON
-/// body, and escaping it would make the frontend render raw text instead of
-/// a card.
-/// Human-readable reason for each validation failure — this text reaches the
-/// model (inside `<error>`) and is what it must act on to retry correctly.
 pub fn validationErrorMessage(err: anyerror) []const u8 {
     return switch (err) {
         error.MissingQuestion => "question is required and must not be blank",
@@ -251,21 +185,11 @@ pub fn validationErrorMessage(err: anyerror) []const u8 {
 }
 
 /// True when `tools` names a tool a sub-agent must never receive.
-///
-/// `ask_user` is main-agent-only: a sub-agent run has no answer surface, so
-/// the question would sit unanswered forever and the sub-agent would return
-/// nothing useful. `spawn_sub_agent` is excluded for the obvious recursion
-/// reason. Kept as one list so `spawn_sub_agent`'s parse-time validation and
-/// `tool_eligibility`'s strip can never disagree about membership.
 pub const MAIN_AGENT_ONLY_NAMES = [_][]const u8{
     "spawn_sub_agent",
     ASK_USER_TOOL_NAME,
-    // run_skill_eval drives an eval, and an eval reads the skill ledger and can
-    // spawn the judging sub-agents. A sub-agent must never be able to trigger
-    // one: eval-of-eval recursion has no bound, and this single list is the
-    // membership source used by spawn_sub_agent's parse-time validation, the
-    // tool_eligibility strip, AND the progressive-equip bypass — so the three
-    // can never disagree.
+    // run_skill_eval drives an eval, and an eval reads the skill ledger and
+    // can spawn the judging sub-agents.
     "run_skill_eval",
 };
 

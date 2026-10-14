@@ -12,12 +12,9 @@ pub const Migration044AddRoutines = struct {
     pub const name = "add_routines";
 
     pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
-        // Adds the `task_type` column to the existing
-        // workspace_item_tasks table (defaulting to 'standard' for
-        // backwards compatibility — every pre-existing task row is
-        // a standard chat) and the new `routines` table for
-        // cron-scheduled task execution. Plan:
-        // docs/superpowers/plans/2026-06-13-add-task-routines.md.
+        // Adds the `task_type` column to the existing workspace_item_tasks
+        // table (defaulting to 'standard' for backwards compatibility — every
+        // pre-existing task row is a standard chat) and the new `routines`
         try db.exec(allocator,
             "ALTER TABLE workspace_item_tasks ADD COLUMN task_type TEXT NOT NULL DEFAULT 'standard'",
             &[_][]const u8{},
@@ -48,9 +45,7 @@ pub const Migration044AddRoutines = struct {
         );
         // Refresh query-planner stats so the new index is picked on
         // pre-existing databases (mirrors the ANALYZE-after-CREATE-INDEX
-        // pattern used by Migrations 041/042/043). Without this, the
-        // Scheduler's per-second poll may not use the index until the
-        // table has been written to many times.
+        // pattern used by Migrations 041/042/043).
         try db.exec(allocator, "ANALYZE", &[_][]const u8{});
     }
 };

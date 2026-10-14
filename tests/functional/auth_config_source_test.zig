@@ -1,27 +1,6 @@
 // Functional test: WHICH config does a chat turn run on when `--auth` is on?
-//
-// Zig port of `tests/functional/auth_config_source_test.py`
-// (same order; test names drop the `test_` prefix).
-//
-// Method — both configs define a profile with the SAME name (`stub`), and
-// the two definitions point at DIFFERENT endpoints:
-//
-//   * `config.json`       -> profile "stub" -> `http://127.0.0.1:1` (never answers)
-//   * `users.config_json` -> profile "stub" -> a stub SSE server (records the request)
-//
-// The session's `selected_profile_model` is `stub`, so whichever endpoint
-// the turn lands on names the config that won.
-//
-// Cases (in the Python file's order):
-//   1. `auth_chat_turn_runs_on_the_users_config_not_config_json` — the turn
-//      must hit the per-user stub with the user's model + api_key.
-//   2. `auth_web_status_reports_the_users_web_launch_flag` —
-//      `GET /api/web/status` must report the CALLER's `web_launch_enabled`.
-//
-// The stub upstream is an `Io.net` server on a background thread, the same
-// shape `llm_test_test.zig` uses (out-parameter `start`, self-connect wake
-// on `deinit`, head+body accumulation, record-before-reply). The only
-// difference is the reply: `text/event-stream` SSE instead of JSON.
+// Zig port of `tests/functional/auth_config_source_test.py` (same order; test
+// names drop the `test_` prefix).
 
 const std = @import("std");
 const testing = std.testing;
@@ -287,9 +266,6 @@ fn login(h: *Harness, email: []const u8, password: []const u8) ![]u8 {
 // ============================================================================
 
 // A `--auth` chat turn must call the profile saved in `users.config_json`.
-// `config.json` (profile `stub` -> `http://127.0.0.1:1`) and the user's row
-// (profile `stub` -> the stub server) disagree on the endpoint; a hit on
-// the stub proves the per-user row won.
 test "auth_chat_turn_runs_on_the_users_config_not_config_json" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -437,9 +413,6 @@ test "auth_chat_turn_runs_on_the_users_config_not_config_json" {
 }
 
 // The request-scoped half: `web_launch_enabled` is per-user too.
-// `GET /api/web/status` goes through the request-scoped resolution (no
-// session row exists for it). config.json never sets the key, so the flag
-// can only flip to `true` if the caller's `users.config_json` was read.
 test "auth_web_status_reports_the_users_web_launch_flag" {
     try harness.requirePabrikBin(io, gpa);
 

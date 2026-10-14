@@ -1,45 +1,5 @@
-// Functional tests for task lifecycle (Tier 1.2).
-//
-// Zig port of `tests/functional/task_lifecycle_test.py` (same test
-// names, same order).
-//
-// Exercises the task-level HTTP surface that's NOT covered by
-// `workspace_lifecycle_test.zig` or `kanban_lifecycle_test.zig`:
-//
-//   - POST /api/workspaces/:ws/items/:item_id/kanban/tasks
-//     (mode discriminator: 'create' vs 'create_and_run')
-//   - PUT  /api/workspaces/tasks/:task_id  (no-workspace path)
-//   - PUT  /api/workspaces/:ws/items/:item_id/tasks/:task_id  (rename)
-//   - PUT  task body with routine fields (schedule / initial_prompt /
-//     enabled)
-//   - DELETE /api/workspaces/:ws/items/:item_id/tasks/:task_id  (+ 404)
-//   - PUT  /tasks/:task_id/touched  (stamps last_human_touched_at)
-//   - POST /tasks/reorder_pinned  (reorders only pinned subset)
-//   - POST /tasks/:task_id/run  (routine fire) + 404 / 409
-//   - POST /tasks/:task_id/start_agent  (LLM trigger) + 409
-//
-// Side-channel coverage (already shipped via workspace_items_test.py):
-//   - image_urls round-trip
-//   - tags array (incl. case-insensitive dedupe)
-//   - cwd validation (absolute-path / control-char rejection)
-//   - is_auto_retry_until_stop INSERT OR IGNORE side-effect
-//
-// Each test boots a fresh pabrik (function-scoped fixture).
-//
-// Two Python idioms did not survive the port verbatim, and both are
-// called out at their helpers below:
-//
-//   1. `_create_task` / `_list_tasks` returned a live PARSED document.
-//      A `harness.Json` borrows the bytes of the `Response` it was parsed
-//      from, so a helper may NOT hand one back after freeing that
-//      response. The helpers here re-parse with `.allocate =
-//      .alloc_always`, which copies every string into the parse arena, so
-//      the returned document is SELF-CONTAINED and the caller owns it.
-//   2. `_create_chat_item` sent `"path": "/tmp/task-lc"`. The server
-//      validates item paths with `std.fs.path.isAbsolute`, which is
-//      platform-relative — a literal `/tmp/...` is correct on Linux and
-//      rejected on Windows. Every path here is derived from the
-//      harness's own tempdir via `harness.harnessPath`.
+// Functional tests for task lifecycle (Tier 1.2). Zig port of
+// `tests/functional/task_lifecycle_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -110,12 +70,6 @@ fn expectNullOrAbsent(obj: std.json.ObjectMap, key: []const u8, ctx: []const u8)
 
 /// Python `assert "error" in body` followed by a substring assertion on
 /// `body["error"]`, case-insensitively: any ONE of `needles` must appear.
-///
-/// The body is BORROWED, not adopted: the caller's `defer r.deinit()`
-/// still owns `body`, so taking it here and freeing it in a second
-/// `deinit` would be a double free that reads as a harness bug. The
-/// parse uses `.alloc_always` so nothing in the tree aliases the
-/// borrowed bytes.
 fn expectErrorContains(body: []const u8, needles: []const []const u8, ctx: []const u8) !void {
     var doc: harness.Json = .{ .parsed = try std.json.parseFromSlice(
         std.json.Value,
@@ -167,9 +121,8 @@ fn parseOwned(bytes: []u8) !OwnedDoc {
 }
 
 /// Issue a request and hand back an owned, self-contained document.
-///
-/// `.alloc_always` is what makes this legal: no string in the returned
-/// tree borrows `r.body`, which is freed before the caller ever sees it.
+/// `.alloc_always` is what makes this legal: no string in the returned tree
+/// borrows `r.body`, which is freed before the caller ever sees it.
 fn requestDoc(h: *Harness, method: harness.HttpMethod, path: []const u8, opts: harness.Harness.HttpOptions) !OwnedDoc {
     var r = try h.http(io, method, path, opts);
     defer r.deinit();
@@ -201,10 +154,9 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// Python `_create_chat_item` → the new item's id. Owned.
-///
-/// The `path` is derived from the harness tempdir, never a literal
-/// `/tmp` (see the file header).
+/// Python `_create_chat_item` → the new item's id. Owned. The `path` is
+/// derived from the harness tempdir, never a literal `/tmp` (see the file
+/// header).
 fn createChatItem(h: *Harness, ws_id: []const u8, name: []const u8) ![]u8 {
     const path = try harness.harnessPath(gpa, h.temp_dir, &.{"task-lc"});
     defer gpa.free(path);
@@ -232,10 +184,6 @@ fn createChatItem(h: *Harness, ws_id: []const u8, name: []const u8) ![]u8 {
 }
 
 /// Python `_create_kanban_item` → the new kanban item's id. Owned.
-///
-/// The create endpoint returns a wrapped envelope `{item, columns}` so
-/// the frontend can destructure and render the board immediately; this
-/// unwraps it so callers see the flat item shape.
 fn createKanbanItem(h: *Harness, ws_id: []const u8, name: []const u8) ![]u8 {
     const body = try std.json.Stringify.valueAlloc(gpa, .{ .name = name }, .{});
     defer gpa.free(body);
@@ -265,10 +213,6 @@ fn createKanbanItem(h: *Harness, ws_id: []const u8, name: []const u8) ![]u8 {
 }
 
 /// The optional field set Python's `_create_task` built up key by key.
-///
-/// `emit_null_optional_fields = false` is what makes an unset optional
-/// OMITTED rather than `"task_type": null` — Python only added the key
-/// when the caller passed one.
 const TaskFields = struct {
     name: []const u8,
     task_type: ?[]const u8 = null,
@@ -398,16 +342,6 @@ fn pinTask(h: *Harness, ws_id: []const u8, item_id: []const u8, task_id: []const
 // ============================================================================
 
 // POST /kanban/tasks with mode='create' returns the wrapped envelope.
-//
-// The kanban-scoped endpoint differs from the generic
-// `/api/workspaces/:ws/items/:item_id/tasks` endpoint by accepting a
-// `mode` discriminator. mode='create' just makes the card;
-// mode='create_and_run' also creates a session row and emits
-// session_created SSE.
-//
-// The envelope's `task` field is a slim `TaskCreateResponse`:
-// `{id, name, description, completed}` (NOT the full `StandardResponse`
-// — see http_response.zig:99).
 test "kanban_tasks_endpoint_create_mode" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -467,10 +401,9 @@ test "kanban_tasks_endpoint_create_mode" {
 // Test 2: kanban /kanban/tasks endpoint — create_and_run mode
 // ============================================================================
 
-// mode='create_and_run' requires queue_message + creates a session row.
-//
-// The response carries `session: {id, name, status: 'send'}` — the
-// session_id == task_id per the project's convention.
+// mode='create_and_run' requires queue_message + creates a session row. The
+// response carries `session: {id, name, status: 'send'}` — the session_id ==
+// task_id per the project's convention.
 test "kanban_tasks_endpoint_create_and_run_returns_session" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -610,10 +543,8 @@ test "kanban_tasks_endpoint_rejects_unknown_mode" {
 // Test 5: /kanban/tasks on non-kanban parent returns 404
 // ============================================================================
 
-// POST /kanban/tasks against a chat parent returns 404.
-//
-// The handler validates the parent's item_type='kanban' before creating
-// the task.
+// POST /kanban/tasks against a chat parent returns 404. The handler validates
+// the parent's item_type='kanban' before creating the task.
 test "kanban_tasks_endpoint_rejects_non_kanban_parent" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -649,10 +580,9 @@ test "kanban_tasks_endpoint_rejects_non_kanban_parent" {
 // Test 6: PUT task renames + persists across GET
 // ============================================================================
 
-// PUT /tasks/:task_id {name: ...} → list shows the new name.
-//
-// task_update.zig returns `{success, id}`; the rename is verified by
-// re-fetching via the list endpoint.
+// PUT /tasks/:task_id {name: ...} → list shows the new name. task_update.zig
+// returns `{success, id}`; the rename is verified by re-fetching via the list
+// endpoint.
 test "put_task_rename_round_trips" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -708,9 +638,7 @@ test "put_task_rename_round_trips" {
 
 // PUT /api/workspaces/tasks/:task_id (without workspace_id/item_id path
 // params) also succeeds — same handler as the path-param variant.
-//
-// task_update.zig::tasksUpdateByIdHandler delegates to the same
-// useCase; this test pins both URL forms are accepted.
+// task_update.zig::tasksUpdateByIdHandler delegates to the same useCase; this
 test "put_task_by_id_path_also_works" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -753,24 +681,18 @@ test "put_task_by_id_path_also_works" {
 // ============================================================================
 // Test 8: DELETED (Migration 084) ==========================================
 // PUT task with routine fields no longer creates a routines row — the
-// per-task `routines` table is gone. Covered by
-// tests/functional/workspace_routines_test.zig::
-// put_task_with_routine_fields_is_plain_update.
 
 // ============================================================================
 // Test 9: DELETED (Migration 084) ==========================================
 // PUT task no longer validates cron — routine fields are ignored.
-// Covered by tests/functional/workspace_routines_test.zig::
-// patch_bad_cron_returns_400 (workspace-level validation).
 
 // ============================================================================
 // Test 10: DELETE task removes it from the list
 // ============================================================================
 
-// DELETE /tasks/:task_id → list no longer contains it.
-//
-// Response shape is `{id, success: true}` (the `WorkspaceItemResponse`
-// shape from http_response.zig).
+// DELETE /tasks/:task_id → list no longer contains it. Response shape is
+// `{id, success: true}` (the `WorkspaceItemResponse` shape from
+// http_response.zig).
 test "delete_task_removes_from_list" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -828,11 +750,6 @@ test "delete_task_removes_from_list" {
 // ============================================================================
 
 // DELETE /tasks/task_nope is idempotent + returns 200.
-//
-// The delete handler is idempotent: when the task row doesn't exist,
-// `deleteWorkspaceItemTask` is a no-op SQL DELETE (zero rows affected)
-// and the handler returns `{success: true, id: task_id}`. This is
-// documented behavior in task_delete.zig:160-164 (idempotent DELETE).
 test "delete_task_404_for_nonexistent" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -867,12 +784,9 @@ test "delete_task_404_for_nonexistent" {
 // Test 12: PUT /touched stamps the timestamp
 // ============================================================================
 
-// PUT /tasks/:task_id/touched returns 200 with {success, task_id}.
-//
-// The stamp itself is verified via DB observation: re-PUT after a short
-// delay should produce a NEW `last_human_touched_at` row. Since there's
-// no GET endpoint for the column, we just verify the response shape and
-// that re-PUT is idempotent.
+// PUT /tasks/:task_id/touched returns 200 with {success, task_id}. The stamp
+// itself is verified via DB observation: re-PUT after a short delay should
+// produce a NEW `last_human_touched_at` row.
 test "put_touched_stamps_human_touched_at" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -919,12 +833,8 @@ test "put_touched_stamps_human_touched_at" {
 // Test 13: POST /reorder_pinned reorders pinned subset
 // ============================================================================
 
-// POST /tasks/reorder_pinned with [t1, t2, t3] places t1 first in the
-// pinned block. Non-pinned tasks are unaffected.
-//
-// Pinning is done via the existing /tasks/:task_id/pin endpoint (covered
-// by kanban_lifecycle_test.zig). We pin 2 of 3 tasks, then reorder the
-// pinned ones.
+// POST /tasks/reorder_pinned with [t1, t2, t3] places t1 first in the pinned
+// block. Non-pinned tasks are unaffected.
 test "reorder_pinned_reorders_only_pinned_subset" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -984,26 +894,17 @@ test "reorder_pinned_reorders_only_pinned_subset" {
 // ============================================================================
 // Test 14: DELETED (Migration 084) ==========================================
 // POST /tasks/:id/run is gone (404 route, not a handler 404).
-// Covered by tests/functional/workspace_routines_test.zig::
-// old_per_task_run_endpoint_is_gone.
 
 // ============================================================================
 // Test 15: DELETED (Migration 084) ==========================================
 // Per-task routine creation is rejected with 400 RoutineTasksRemoved.
-// Covered by tests/functional/workspace_routines_test.zig::
-// create_task_with_routine_type_is_rejected.
 
 // ============================================================================
 // Test 16: /start_agent succeeds on existing task (no worker running)
 // ============================================================================
 
-// POST /tasks/:task_id/start_agent on an idle task → 200.
-//
-// Returns `{success, session_id, status: 'triggered'}`. The
-// start_agent.zig use-case is wired to skip queue-message inserts (the
-// `skip_initial_queue_message: true` flag), so the response alone
-// doesn't surface that — but the 200 + status='triggered' shape is the
-// contract.
+// POST /tasks/:task_id/start_agent on an idle task → 200. Returns `{success,
+// session_id, status: 'triggered'}`.
 test "start_agent_succeeds_on_idle_task" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -1072,11 +973,8 @@ test "start_agent_404_for_nonexistent_task" {
 // ============================================================================
 
 // POST /tasks with image_urls='data:image/png;base64,...' persists +
-// round-trips via the list endpoint.
-//
-// The `image_urls` field is the ||-joined wire format (Migration 069).
-// The handler validates the prefix and base64 shape, then stores the
-// string verbatim.
+// round-trips via the list endpoint. The `image_urls` field is the ||-joined
+// wire format (Migration 069).
 test "task_create_accepts_image_urls" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -1202,12 +1100,9 @@ test "task_create_rejects_relative_cwd" {
 // Test 21: is_auto_retry_until_stop="1" is persisted (no crash)
 // ============================================================================
 
-// POST /tasks with is_auto_retry_until_stop='1' returns 201.
-//
-// The handler inserts an `INSERT OR IGNORE INTO sessions` row keyed by
-// task.id (Migration 062 + the kanban-task-name-match plan). The INSERT
-// is fire-and-forget — a failure to insert logs a warning but the task
-// row is still returned with 201.
+// POST /tasks with is_auto_retry_until_stop='1' returns 201. The handler
+// inserts an `INSERT OR IGNORE INTO sessions` row keyed by task.id (Migration
+// 062 + the kanban-task-name-match plan).
 test "task_create_with_unattended_flag_does_not_crash" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});

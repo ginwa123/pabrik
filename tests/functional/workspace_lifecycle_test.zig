@@ -1,40 +1,6 @@
-// Functional tests for workspace lifecycle.
-//
-// Zig port of `tests/functional/workspace_lifecycle_test.py`
-// (same test names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional tests for workspace lifecycle.
-//
-//   Exercises the full HTTP surface for workspace CRUD, item creation,
-//   reorder, and cascade-delete. Boots a real pabrik binary against an
-//   isolated tmpdir HOME; each test gets a fresh binary, a fresh
-//   workspace, and a fresh set of items. The point of these tests is to
-//   exercise non-trivial data shapes — 7 items per workspace, 3
-//   workspaces for reorder, cascade-delete on a workspace with children
-//   — and to verify the wire from a real client perspective.
-//
-//   Plan: docs/superpowers/plans/2026-07-26-functional-tests-with-real-data.md (Chunk 3)
-//   """
-//
-// ─── WHY THE FIXTURE PATH IS A `makeScratchDir` SCRATCH DIR ────────────────
-// Python's `item_workspace_path` fixture was `tmp_path / "item"` — a
-// pytest-managed directory that is a SIBLING of the harness tempdir, never a
-// child of it. `harness.makeScratchDir` is the Zig equivalent for the reason
-// `std.testing.tmpDir` is NOT: the latter allocates under `<cwd>/.zig-cache/`,
-// which for this package is inside the git worktree. A design item's `path`
-// only has to be ABSOLUTE for the server (`std.fs.path.isAbsolute`), but
-// keeping the fixture out of the worktree means no fixture walk can trip over
-// the repo's own `.git`.
-//
-// ─── WHY `_list_items` RETURNS COUNTS, NOT ROWS ────────────────────────────
-// Python's `_list_items` returned the parsed list and every caller then
-// re-derived what it needed (`len(...)`, a filter over `is_default`, a set of
-// `item_type`s). A `harness.Json` borrows its `Response`'s body buffer, so a
-// helper may NOT hand one back — the body is freed with the response. The
-// port keeps ONE parse per call site and returns the DERIVED numbers the
-// assertions are actually about, which is both honest and cheaper.
+// Functional tests for workspace lifecycle. Zig port of
+// `tests/functional/workspace_lifecycle_test.py` (same test names, same
+// order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -48,12 +14,6 @@ const io = testing.io;
 // ============================================================================
 
 /// POST /api/workspaces → the new workspace's id. Owned.
-///
-/// Python's `_create_workspace` returned the whole parsed body because its
-/// three callers read `id` and `name` off it. Here the id is the only value
-/// that outlives the response, so it is the only value returned; the name is
-/// checked at the one call site (`test_create_workspace_returns_201_with_id`)
-/// that asserts on it.
 fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
     const body = try std.fmt.allocPrint(gpa, "{{\"name\":\"{s}\"}}", .{name});
     defer gpa.free(body);
@@ -124,10 +84,6 @@ fn createItem(h: *Harness, workspace_id: []const u8, name: []const u8, item_type
 
 /// What `GET /api/workspaces/:wid/items` yielded, reduced to the numbers and
 /// flags the assertions read.
-///
-/// EVERY string member is an OWNED copy: the values are read out of the
-/// parsed body, and `Response.deinit` frees that buffer, so a borrowed slice
-/// held past the parse would dangle.
 const ItemsSummary = struct {
     /// Every row, including the workspace's DEFAULT project.
     total: usize,
@@ -263,10 +219,6 @@ fn freeRows(rows: []WorkspaceRow) void {
 }
 
 /// GET /api/workspaces as owned rows. Python's `_list_workspaces`.
-///
-/// The `is_include_items` parameter is passed verbatim as a QUERY param — the
-/// harness percent-encodes it, so `"true"`/`"false"` go on the wire as
-/// written.
 fn listWorkspaces(h: *Harness, include_items: bool) ![]WorkspaceRow {
     const flag = if (include_items) "true" else "false";
     var r = try h.http(io, .GET, "/api/workspaces", .{
@@ -424,21 +376,6 @@ test "list_workspaces_returns_created" {
 // ============================================================================
 
 // POST with {"name": ""} returns 500 (a bug, should be 400).
-//
-// Documents the current API behavior:
-//   - `workspaces_create.zig` does NOT trim or reject empty names
-//     before calling `createWorkspace` (unlike
-//     `workspace_items_create.zig` which has an EmptyName error).
-//   - `db.exec` binds empty `[]const u8` as SQL NULL (per project
-//     memory `zig-sqlite-patterns.md`).
-//   - `workspaces.name` is `NOT NULL DEFAULT ''` (Migration 027),
-//     so the empty bind becomes NULL, violating the constraint.
-//   - The error propagates as `error.DatabaseError` → HTTP 500.
-//
-// This is a P1 bug: the user did something wrong (empty name) and
-// got a 500 instead of a 400. The fix is in the handler: reject
-// empty names before calling `createWorkspace`. The test is
-// pinned to 500 today; flip it to 400 once the handler is fixed.
 test "create_workspace_rejects_empty_name" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -543,17 +480,12 @@ test "update_workspace_name_round_trips" {
 // ============================================================================
 
 // 3 chat + 2 kanban + 2 design items; all 7 are listed back.
-//
-// The design items point at real subdirectories of the suite's scratch dir
-// (they require a path on disk; chat/kanban don't, but the same base path is
-// used for all 7 for consistency).
 test "create_seven_items_of_mixed_types" {
     try harness.requirePabrikBin(io, gpa);
 
     // pytest's `tmp_path` was a SIBLING of the harness tempdir, never a child
     // of it — `makeScratchDir` gives the suite its own `pabrik-fix-`
     // namespace that the orphan reaper (which only matches `pabrik-func-`)
-    // never touches mid-test.
     const scratch = try harness.makeScratchDir(gpa);
     // DEFER ORDER IS LIFO: `free` is registered FIRST so it runs LAST —
     // `cleanupExtraDir` reads `scratch` to delete it.
@@ -599,9 +531,7 @@ test "create_seven_items_of_mixed_types" {
     try testing.expectEqual(@as(usize, 7), created);
 
     // 8, not 7: Migration 094 gives every workspace a DEFAULT project (an
-    // `agent` item rooted at $HOME). This test is about the seven it created,
-    // so the default is excluded by FLAG rather than by trimming a list — a
-    // positional trim would keep passing if the default ever moved.
+    // `agent` item rooted at $HOME).
     var items = try listItems(&h, ws_id);
     defer items.deinit();
 
@@ -633,19 +563,6 @@ test "create_seven_items_of_mixed_types" {
 // ============================================================================
 
 // Delete behavior: the workspace is removed, items become orphans.
-//
-// Documents the CURRENT API behavior:
-//   - workspace_delete.zig does `DELETE FROM workspaces WHERE id = ?`
-//     without first cleaning up `workspace_items`.
-//   - Migration 028 declared `workspace_items.workspace_id TEXT NOT NULL`
-//     WITHOUT `REFERENCES workspaces(id) ON DELETE CASCADE` — so the
-//     FK is not enforced and the items survive the workspace delete.
-//   - The items endpoint queries by `workspace_id` and returns the
-//     orphan rows. (No JOIN against `workspaces` is performed.)
-//
-// This is a known design gap. If a future migration adds the
-// `ON DELETE CASCADE` (or the handler is updated to clean up
-// items), the test should be updated to assert the cascade.
 test "delete_workspace_orphans_items" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -726,7 +643,6 @@ test "delete_workspace_orphans_items" {
 // ============================================================================
 
 // Create 3 workspaces, reorder to [c, a, b], list comes back in that order.
-//
 // The reorder endpoint assigns positions such that `ORDER BY position DESC`
 // returns the input order. The first id in `ordered_ids` ends up at the top.
 test "reorder_workspaces_changes_position" {

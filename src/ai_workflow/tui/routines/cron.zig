@@ -1,25 +1,5 @@
 //! 5-field cron parser + `nextFireTime` (Task 1.3 of the Add Task Routines
 //! plan).
-//!
-//! Standard 5-field cron format: `minute hour day-of-month month day-of-week`.
-//! Each field supports `*`, `N`, `N-M`, `*/S`, `N-M/S`, and `a,b,c`
-//! (comma-separated). Day-of-week uses 0 = Sunday .. 6 = Saturday (matches
-//! what Zeller's congruence returns).
-//!
-//! Used by the Scheduler (Task 3.1) to validate a cron expression at insert
-//! time and to compute `next_run_at` from the current time. `nextFireTime`
-//! returns the strictly next minute (in unix nanoseconds) at which the
-//! expression would fire, or `error.InvalidCron` if no fire time exists
-//! in the next ~366 days (the search cap).
-//!
-//! The day-of-week vs day-of-month interaction uses **AND** semantics
-//! (both must match), not the traditional cron OR semantics. This matches
-//! what `nextFireTime("0 9 * * 1-5", sat_10am)` returns: the next Monday,
-//! not the same week. AND is what every modern vixie-cron implementation
-//! actually does in practice, and is what the plan's tests expect.
-//!
-//! Plan: docs/superpowers/plans/2026-06-13-add-task-routines.md (Task 1.3)
-//! Design: docs/plans/2026-06-13-add-task-routines-design.md
 
 const std = @import("std");
 
@@ -135,10 +115,7 @@ fn parseOnePart(part: []const u8, f: *Field, max: u8) Error!void {
 }
 
 /// Compute the next unix-nanos at which `expr` would fire, strictly after
-/// `after_unix_nanos`. Returns `error.InvalidCron` if no fire time exists
-/// within the search window (capped at 366 * 24 * 60 = 527,040 minutes,
-/// roughly one year — Feb 29-only expressions are reachable in 4 years
-/// via the cap, but anything rarer is rejected).
+/// `after_unix_nanos`.
 pub fn nextFireTime(expr: []const u8, after_unix_nanos: i128) Error!i128 {
     var e: Expression = undefined;
     try parse(expr, &e);
@@ -174,11 +151,7 @@ const BrokenDownTime = struct {
     minute: u6,
 };
 
-/// Decompose unix nanos into a UTC broken-down time. Uses the same
-/// `std.time.epoch` pattern as `src/modules/logger/Timing.zig` — the
-/// epoch.zig API only goes one direction (EpochSeconds -> broken-down)
-/// so we use it as-is and discard the seconds/nanoseconds component
-/// (cron never matches at sub-minute granularity).
+/// Decompose unix nanos into a UTC broken-down time.
 fn fromUnixNanos(ns: i128) BrokenDownTime {
     const secs: i64 = @intCast(@divTrunc(ns, std.time.ns_per_s));
     const epoch_seconds: std.time.epoch.EpochSeconds = .{ .secs = @intCast(secs) };
@@ -196,9 +169,6 @@ fn fromUnixNanos(ns: i128) BrokenDownTime {
 }
 
 /// Zeller's congruence: 0 = Sunday, 1 = Monday, ..., 6 = Saturday.
-/// Independent of `std.time.epoch` (which would need a separate
-/// weekday helper); this is a closed-form formula good for the full
-/// proleptic Gregorian calendar.
 fn dayOfWeek(year: i32, month: u4, day: u5) u8 {
     var m: i32 = month;
     var y: i32 = year;
@@ -219,40 +189,17 @@ fn dayOfWeek(year: i32, month: u4, day: u5) u8 {
     return @intCast(@mod(h_raw + 6, 7));
 }
 
-// ===== Tests merged from cron_test.zig (2026-09-29 flatten) =====
-// Behavioral tests for the 5-field cron parser + `nextFireTime` (Task 1.3
-// of the Add Task Routines plan).
-//
-// The parser handles the standard 5-field cron format:
-//     minute hour day-of-month month day-of-week
-//
-// Each field supports `*`, `N`, `N-M`, `*/S`, `N-M/S`, and `a,b,c`
-// (comma-separated). Day-of-week uses 0 = Sunday .. 6 = Saturday
-// (matches what Zeller's congruence returns).
-//
-// `nextFireTime(expr, after_unix_nanos)` returns the strictly next minute
-// at which the expression would fire. Used by the Scheduler (Task 3.1) to
-// populate `next_run_at` at insert time and after each fire.
-//
-// Plan: docs/superpowers/plans/2026-06-13-add-task-routines.md (Task 1.3)
-// Design: docs/plans/2026-06-13-add-task-routines-design.md
+// ===== Tests merged from cron_test.zig (2026-09-29 flatten) ===== Behavioral
+// tests for the 5-field cron parser + `nextFireTime` (Task 1.3 of the Add
+// Task Routines plan).
 
 const testing = std.testing;
 
 // ─── Time helper ──────────────────────────────────────────────────────────
 
 /// Compose a UTC unix-nanos value from broken-down date + time fields.
-/// Uses Howard Hinnant's `days_from_civil` (public domain) to compute
-/// days-since-1970-01-01, then multiplies by `ns_per_day` and adds the
-/// hour/minute component. This is the inverse of the same project's
-/// `src/modules/logger/Timing.zig` `timestampIso` (which uses
-/// `std.time.epoch` to go in the other direction).
 fn tsUtc(year: i32, month: u4, day: u5, hour: u5, minute: u6) i128 {
     // Howard Hinnant days_from_civil, adapted to Zig signed-int arithmetic.
-    // The algorithm treats the date as a shift of the civil-from-days
-    // function and works for the full proleptic Gregorian calendar
-    // (positive and negative years). Reference:
-    //   http://howardhinnant.github.io/date_algorithms.html#days_from_civil
     const y: i32 = if (month <= 2) year - 1 else year;
     // Note: the original C++ is `(y >= 0 ? y : y - 399) / 400` — the
     // division is part of the expression. Don't drop the `/ 400` or
@@ -270,10 +217,8 @@ fn tsUtc(year: i32, month: u4, day: u5, hour: u5, minute: u6) i128 {
 
 // ─── Tests ────────────────────────────────────────────────────────────────
 
-// Sanity check the time helper itself — if these are wrong, every other
-// test fails for a confusing reason. Verified against `date -u -d` and
-// `timegm(3)`: 2025-06-13 04:57 UTC = 1749790620 sec; 2024-02-29 00:00
-// UTC = 1709164800 sec.
+// Sanity check the time helper itself — if these are wrong, every other test
+// fails for a confusing reason.
 test "tsUtc: known unix seconds" {
     try testing.expectEqual(@as(i128, 1749790620) * std.time.ns_per_s, tsUtc(2025, 6, 13, 4, 57));
     try testing.expectEqual(@as(i128, 1749790680) * std.time.ns_per_s, tsUtc(2025, 6, 13, 4, 58));

@@ -15,8 +15,6 @@ pub const Migration086AddSessionPrUrl = struct {
         // Attached-PR binding for the ChatView right panel (set_pull_request
         // agent tool). pr_url holds the normalized PR/MR URL ("" = unset);
         // pr_provider holds the effective provider resolved at write time
-        // ("github" | "gitlab" | "generic") so reads stay deterministic on
-        // self-hosted forges where host-based detection would misroute.
         try addColumnIfMissing(.{ .db = db }, allocator, "sessions", "pr_url", "pr_url TEXT");
         try addColumnIfMissing(.{ .db = db }, allocator, "sessions", "pr_provider", "pr_provider TEXT");
     }

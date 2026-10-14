@@ -1,13 +1,5 @@
-//! `execListWebSearchProviders` — the discovery adapter.
-//!
-//! Trivial by design: resolve the providers for THIS session and render
-//! them. It takes no arguments and performs no network call, so it costs
-//! nothing until the model decides it needs to search.
-//!
-//! The output contains `name`, `url`, `description` and `curl` — never
-//! `key`, not even masked. That is safe by construction, not by redaction:
-//! the stored template carries the literal `{key}` placeholder, so there is
-//! nothing secret in what is emitted. See D14.
+//! `execListWebSearchProviders` — the discovery adapter. Trivial by design:
+//! resolve the providers for THIS session and render them.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -58,8 +50,7 @@ pub fn execListWebSearchProviders(ctx: ToolExecContext, tc: agent.ToolCall) !Too
 
     // `resolve` returned null, which means the DATABASE is not the authority
     // here (file mode, or a session with no owner) — not that the user has no
-    // providers. The singleton is the right answer in exactly those cases,
-    // and it outlives this call, so it can be borrowed without a copy.
+    // providers.
     if (ctx.config.web_search) |*singleton| return render(ctx, tc, singleton);
 
     const inner = web_search_mod.notConfiguredEnvelope(ctx.allocator) catch |err| {

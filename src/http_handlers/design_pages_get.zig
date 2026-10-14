@@ -1,21 +1,6 @@
 //! `GET /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id`.
-//!
-//! Fetch a single design page plus all of its elements (without the
-//! HTML bodies — those are fetched lazily via
-//! `GET .../elements/:eid/html`). Thin wrapper around
-//! `design_model.getPageWithElements`.
-//!
-//! Response shape: `{"page": DesignPageResponse, "elements":
-//! []DesignElementResponse}` (built by
-//! `http_response.makeDesignPageWithElementsResponse`).
-//!
-//! Errors:
-//!   - 400 missing `page_id` path param
-//!   - 404 page not found
-//!   - 500 DB failure
-//!
-//! Plan: docs/superpowers/plans/2026-07-08-design-mode-redesign.md
-//!   (Chunk 3, Task 3.2)
+//! Fetch a single design page plus all of its elements (without the HTML
+//! bodies — those are fetched lazily via `GET .../elements/:eid/html`).
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");

@@ -1,74 +1,4 @@
 //! Per-session `LlmConfig` resolution for opt-in `--auth` mode.
-//!
-//! Why this exists: under `--auth` each user's LLM config (profiles,
-//! `active_profile`, tools checklist, compaction knobs, MCP servers — the
-//! same JSON shape as `config.json`) lives in `users.config_json`
-//! (Migration 092) and `config.json` is documented as ignored. The
-//! *Settings* handlers honour that. The `LlmConfig` singleton does not:
-//! it is loaded from `config.json` once at boot and is never rewritten in
-//! auth mode — `pabrik_config_put.zig` returns early after persisting to
-//! the database, because one global pointer cannot serve per-user config
-//! (the user who saved last would win for everybody).
-//!
-//! So every runtime reader of `getLlmConfig(di)` kept describing the
-//! on-disk file. A `--auth` user's saved model / `api_key` / `base_url` /
-//! `url_style` / tools checklist were silently ignored and every chat ran
-//! on `config.json`'s `active_profile`: the Settings screen read the
-//! database (honest) while the turn read the singleton (wrong).
-//! `skill_evals_config.zig` documents the same trap for one feature and
-//! resolves it per session; this module does it for the whole `LlmConfig`.
-//!
-//! ## The workspace layer (Migration 105)
-//!
-//! A workspace may carry a SPARSE config overlay
-//! (`workspace_settings`, see `workspace_config.zig`). When it does, neither
-//! source alone is correct: `users.config_json` / `config.json` is only the
-//! BASE, and the workspace's keys win over it. `forSession` therefore merges
-//! the overlay over the base text and parses the result through the same
-//! `initFromJsonText` the on-disk path uses. A session with no overlay takes
-//! the pre-existing path unchanged.
-//!
-//! The session's workspace comes from `sessionWorkspace`:
-//! `sessions.workspace_id` when a writer has set it, else
-//! `workspace_scope.resolveWorkspaceId` (the task link, then the `cwd`
-//! heuristic). No INSERT populates that column, so the resolver is what
-//! actually finds the overlay for a real chat.
-//!
-//! `null` from either entry point means "the singleton is authoritative"
-//! and covers every case where the database is not: file mode (`--auth`
-//! off), no singleton, a session with no owner, a user who never saved
-//! settings, a corrupt row. All of them fall back to the previous
-//! behaviour, so the failure mode stays the pre-existing one.
-//!
-//! Callers own the lifetime: pass a run/request arena (production) or
-//! `deinit` both the config and its strings (tests). Do not mutate the
-//! returned config — one call resolves one config and others may share it.
-//!
-//! THE RULE (one module, one owner): this file is the only place that decides
-//! which `LlmConfig` a user-scoped read sees. Call sites use one of exactly
-//! three entry points and MUST NOT hand-roll `getLlmConfig(di)` for user-scoped
-//! data:
-//!
-//!   * `forSession` — anything that has a `sessions.id` (the workflow loop,
-//!     the message and compaction read paths, the context-window cascade,
-//!     the session-create profile snapshot).
-//!   * `forOwnerAndWorkspace` — a request-scoped handler that knows the
-//!     workspace but has no session row yet (`kanban_tasks_create`). Same
-//!     layering as `forSession`, minus the session.
-//!   * `auth_common.requestUserConfig` (`http_handlers`) — request-scoped
-//!     handlers that have a cookie but no session row AND no workspace id
-//!     (workspace/agent seeding, web status); it resolves the cookie to an
-//!     owner and calls `forOwner` here, so the rule still has one
-//!     implementation.
-//!
-//! Direct `getLlmConfig(di)` reads that legitimately stay outside:
-//! boot (`main.zig`) and the Settings handlers (they read/write
-//! `users.config_json` themselves). The two feature-specific narrow
-//! resolvers share this module's owner lookup and full-config parse:
-//! `skill_evals_config.zig` delegates to `forOwner` (its struct owns no
-//! memory, so the copy is free); `web_search_config.zig` reuses
-//! `sessionOwner` and keeps its narrow parse only because the providers map
-//! owns heap strings tied to the full config's lifetime.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -79,11 +9,6 @@ const workspace_scope = @import("workspace_scope.zig");
 
 /// The `LlmConfig` in force for `session_id`, or null when the process-global
 /// singleton should be read instead.
-///
-/// Requires `auth_enabled` and a session row carrying an owner — both are
-/// cheap reads on the caller's hot path, and both are what makes the
-/// database (not the file) the authority. The returned pointer is allocated
-/// with `allocator` (an arena in production) and borrows nothing else.
 pub fn forSession(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -120,27 +45,6 @@ pub fn forSession(
 
 /// The config TEXT a scoped read should parse, or `null` for "the singleton
 /// is authoritative".
-///
-/// Split out of `forSession` so the layering can be TESTED: `forSession` needs
-/// the process-global singleton, and there is no `clearSingleton`, so a test
-/// that installed one would leak into every other test in the binary. This
-/// function takes everything it needs as an argument.
-///
-/// Three cases, in the order they are decided:
-///
-///   1. **No overlay + `--auth` OFF** -> `null`. Unchanged behaviour: the
-///      config PUT swaps the singleton synchronously, so it already tracks
-///      the file, and reading config.json here would add a second source that
-///      can only disagree with it. It is also the cheap path - no file read
-///      per turn for the common case of a workspace that overrides nothing.
-///   2. **No overlay + `--auth` ON** -> the owner's `users.config_json`, which
-///      is what `forOwner` always returned. A user with no saved config gives
-///      `null` and the singleton again.
-///   3. **An overlay** -> base TEXT merged with the overlay. Neither source
-///      alone is right any more: in file mode the singleton describes
-///      `config.json`, which is now only the BASE for this session.
-///
-/// Caller owns the returned slice.
 pub fn mergedConfigTextFor(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -179,33 +83,8 @@ pub fn mergedConfigTextFor(
     return workspace_config.overlayJson(allocator, base orelse "", overlay.?) catch null;
 }
 
-/// The workspace this session belongs to, or `""` when it has none.
-///
-/// Two sources, in order:
-///
-///   1. `sessions.workspace_id` — an explicit binding, authoritative when a
-///      writer has set one, and one cheap read.
-///   2. `workspace_scope.resolveWorkspaceId` — the SAME rule the rest of the
-///      app answers "which workspace is this chat in" with: the task link
-///      (`workspace_item_tasks.id` IS the session id for kanban / routine
-///      tasks), then a longest-prefix `cwd` match against
-///      `workspace_items.path`, fail-closed to null.
-///
-/// Step 2 is what makes the workspace layer reachable at all. The column has
-/// existed for a while, but NOTHING writes it: every INSERT that creates a
-/// session row (`session_create`, `kanban_tasks_create`, `insert_worker`,
-/// `ensureSessionExists`) omits `workspace_id`, and no statement in the repo
-/// runs `UPDATE sessions SET workspace_id = ...`. Reading only the column
-/// therefore answered `""` for every real session, `mergedConfigTextFor` took
-/// its "no overlay" branch, and the workspace overlay (Settings -> Workspace:
-/// Active, Profiles, tools, MCP servers) was silently dead for every run —
-/// the settings screen read the overlay while the turn read
-/// `users.config_json`. A kanban chat in a workspace whose Active profile is
-/// `deepseek auto` still ran the user-level `killll`, and the model changed
-/// under the user mid-conversation.
-///
-/// Sibling of `sessionOwner`: same table, same single-source rule — do not
-/// hand-roll a second "which workspace" query.
+/// The workspace this session belongs to, or `""` when it has none. Two
+/// sources, in order: 1.
 pub fn sessionWorkspace(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -233,16 +112,6 @@ pub fn sessionWorkspace(
 
 /// The `LlmConfig` stored in `users.config_json` for `owner`, or null when
 /// that user has no saved config (or it cannot be used).
-///
-/// Split out from `forSession` so it can be tested — and called by the
-/// request-scoped handlers, which already resolved the owner from the
-/// session cookie — without the process-global singleton: there is no
-/// `clearSingleton`, so a test that installed one would leak into every
-/// other test in the binary.
-///
-/// No `auth_enabled` check on purpose: the caller owns that decision. A
-/// non-auth caller passing the shared/system sentinel gets null (that user
-/// has no row), which degrades to the singleton.
 pub fn forOwner(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -257,19 +126,6 @@ pub fn forOwner(
 
 /// The `LlmConfig` for an `(owner, workspace)` pair with no session row in
 /// play: the request-scoped sibling of `forSession`.
-///
-/// For a handler that already knows its workspace — `kanban_tasks_create`
-/// carries `:workspace_id` in the path — this is the layered answer a run in
-/// that workspace will get, so a value seeded into a brand-new task's session
-/// row agrees with what the turn later resolves. `forOwner` there made a new
-/// task in a workspace whose Active profile is `deepseek auto` start on the
-/// user-level `killll`, and `workflow.zig`'s non-empty profile write-back then
-/// made that sticky.
-///
-/// `null` means "nothing scoped to read" — no overlay in file mode, an
-/// anonymous caller in `--auth` mode, an unparseable result — and every caller
-/// falls back to `forOwner` / the singleton, i.e. to the pre-existing
-/// behaviour. Allocated with `allocator` (a request arena in production).
 pub fn forOwnerAndWorkspace(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -298,12 +154,8 @@ pub fn forOwnerAndWorkspace(
 }
 
 /// Parse one user's saved config into a heap `LlmConfig` owned by
-/// `allocator`, or null on any parse failure — a corrupt row degrades to
-/// the singleton rather than failing a chat turn.
-///
-/// The mapping is `LlmConfig.initFromJsonText`, the same one the on-disk
-/// path uses, so a stored row and a `config.json` with identical bytes
-/// produce identical configs (that is the whole point of the fix).
+/// `allocator`, or null on any parse failure — a corrupt row degrades to the
+/// singleton rather than failing a chat turn.
 pub fn fromJsonText(
     allocator: std.mem.Allocator,
     content: []const u8,
@@ -318,10 +170,6 @@ pub fn fromJsonText(
 }
 
 /// The owner of `session_id`, duped into `allocator`.
-///
-/// Shared helper for the narrow resolvers (`skill_evals_config.zig`,
-/// `web_search_config.zig`) so all three read the same row through the same
-/// query. Single source of truth for owner resolution — do not duplicate.
 pub fn sessionOwner(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -497,14 +345,8 @@ test "sessionOwner: owner is read from the session, absent owner is an error" {
 }
 
 // ─── The workspace layer (Migration 105) ───────────────────────────────────
-//
-// `mergedConfigTextFor` exists precisely so these can be written: `forSession`
-// needs the process-global singleton and there is no `clearSingleton`, so a
-// test that installed one would leak into every other test in the binary.
-//
-// The two assertions that matter most are the last two: an overlay must reach
-// the workspace it belongs to and NOTHING else - not another workspace, and
-// not another user in the same workspace.
+// `mergedConfigTextFor` exists precisely so these can be written:
+// `forSession` needs the process-global singleton and there is no
 
 const store = @import("workspace_settings_store.zig");
 
@@ -689,15 +531,8 @@ test "sessionWorkspace reads the row, and an unknown session is an error" {
 }
 
 // ─── Reachability of the workspace layer ───────────────────────────────────
-//
-// `forSession` is what makes the overlay apply to a real chat, and it can only
-// layer the overlay once it knows the workspace. Every INSERT that creates a
-// session row omits `workspace_id`, and no `UPDATE sessions SET workspace_id`
-// exists anywhere in the repo — so before the fallback in `sessionWorkspace`
-// the lookup answered "" for every session, `mergedConfigTextFor` always took
-// its "no overlay" branch, and the workspace layer was dead: the settings
-// screen showed the workspace's Active profile while every turn ran
-// `users.config_json`'s. These pin the seam that un-dies it.
+// `forSession` is what makes the overlay apply to a real chat, and it can
+// only layer the overlay once it knows the workspace.
 
 test "sessionWorkspace: an empty column resolves through the task link" {
     var ctx = try setupDb();

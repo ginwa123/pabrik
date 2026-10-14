@@ -5,12 +5,7 @@ const pabrik_core = @import("pabrikcore");
 const gserverz = pabrik_core.gserverz;
 const run_captured = @import("helpers").run_captured;
 
-/// Wall-clock budget per git invocation. `commit` + `rev-parse` on a
-/// normal repo are milliseconds; anything past this is a wedged child
-/// (e.g. an editor or credential prompt nobody can answer — both are
-/// disabled below via `--no-edit` semantics and a clean env), and
-/// `run_captured` kills the process group at the deadline so a
-/// worker-pool thread cannot be held hostage.
+/// Wall-clock budget per git invocation.
 pub const GIT_TIMEOUT_MS: u32 = 20_000;
 
 /// Per-stream capture cap. Commit output is a few lines; the cap only
@@ -43,10 +38,9 @@ pub fn useCase(
 
     if (std.mem.trim(u8, message, " \n\r\t").len == 0) return error.EmptyMessage;
 
-    // `message` travels as the VALUE of `-m`, never as a flag, so a
-    // message like `--help` commits literally instead of printing git
-    // usage (probed by the functional test). No shell is involved at
-    // any point — argv only.
+    // `message` travels as the VALUE of `-m`, never as a flag, so a message
+    // like `--help` commits literally instead of printing git usage (probed
+    // by the functional test). No shell is involved at any point — argv only.
     const commit_argv = [_][]const u8{ "git", "-C", path, "commit", "-m", message };
     var commit_res = run_captured.run(allocator, io, &commit_argv, .{
         .cwd = path,
@@ -117,12 +111,6 @@ pub fn useCase(
 }
 
 /// HTTP handler for `POST /api/git/commit/create?path=<repo>&message=<msg>`.
-///
-/// Commits the staged index (`git commit -m`) and answers the new HEAD
-/// SHA so the caller can refresh history without another round-trip.
-/// 400 on missing/empty params and on every git failure — the git
-/// message itself rides in `error` so the panel can show WHY instead
-/// of a canned string.
 pub fn gitCommitHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
     const io = ctx.io;
@@ -159,13 +147,9 @@ pub fn gitCommitHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, re
     return res.jsonResponse(.{ .status_code = 200, .data = try http_response.makeGitCommitCreateResponse(allocator, response) });
 }
 
-// ===== Synthetic-repo unit tests =====
-//
-// Same fixture discipline as git_pr_conflicts.zig: the repo lives in
-// the OS temp dir (never under `.zig-cache/tmp/`, which is inside this
-// repository — a `git init` there that loses a race with the build
-// runner's pruning walks UP and rewrites the real repo), and every
-// fixture asserts it is self-contained before any `add`/`commit` runs.
+// ===== Synthetic-repo unit tests ===== Same fixture discipline as
+// git_pr_conflicts.zig: the repo lives in the OS temp dir (never under
+// `.zig-cache/tmp/`, which is inside this repository — a `git init` there
 
 const FixtureDir = struct {
     path: []const u8,

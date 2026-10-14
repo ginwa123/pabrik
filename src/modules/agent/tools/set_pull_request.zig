@@ -10,16 +10,11 @@ const PrProvider = pr_provider.PrProvider;
 /// Input structure for set_pull_request tool (attach-only: binds an
 /// EXISTING pull/merge-request URL to the session; it never creates one).
 pub const SetPullRequestInput = struct {
-    /// Normalized PR/MR URL, e.g. `https://github.com/acme/app/pull/42`
-    /// or `https://gitlab.com/group/sub/repo/-/merge_requests/7`.
-    /// Required unless `clear=true`. Credentials in the URL are stripped
-    /// before persistence. Forge UI suffixes (`/files`, `/commits/...`)
-    /// are stripped by normalization.
+    /// Normalized PR/MR URL, e.g. `https://github.com/acme/app/pull/42` or
+    /// `https://gitlab.com/group/sub/repo/-/merge_requests/7`.
     pr_url: []const u8 = "",
-    /// Optional provider override: "github" | "gitlab" | "generic".
-    /// Empty (the default) = auto-detect from the URL. Pass an explicit
-    /// value for self-hosted forges whose host does not reveal the
-    /// provider (e.g. GitHub Enterprise on a custom domain).
+    /// Optional provider override: "github" | "gitlab" | "generic". Empty
+    /// (the default) = auto-detect from the URL.
     provider: []const u8 = "",
     /// Optional base ref for `generic`-provider diffs (e.g. "main").
     /// Ignored for github/gitlab (base comes from the forge). Falls
@@ -32,10 +27,8 @@ pub const SetPullRequestInput = struct {
     /// When true, unbind the session's PR (clears pr_url + pr_provider).
     /// All other fields are ignored when true.
     clear: bool = false,
-    /// When true (default), confirm the PR exists via the provider CLI
-    /// (`gh pr view` / `glab mr view`) before persisting. A missing CLI
-    /// degrades to persist-with-warning; a CLI-reported not-found/auth
-    /// failure is a hard error and nothing is persisted.
+    /// When true (default), confirm the PR exists via the provider CLI (`gh
+    /// pr view` / `glab mr view`) before persisting.
     verify: bool = true,
     /// The session_id this PR is bound to. The LLM does NOT supply
     /// this — the exec wrapper injects `ctx.session_id` at call time.
@@ -185,11 +178,8 @@ pub fn validateProviderOverride(provider: []const u8) ?[]const u8 {
 
 pub const VerifyOutcome = enum { verified, cli_missing, failed };
 
-/// Confirm the PR exists via the provider CLI. `generic` has no CLI —
-/// always `cli_missing` (persist with a "not verified" warning).
-/// A missing CLI binary is `cli_missing` (degraded persist); any other
-/// non-zero exit is `failed` (do not persist). `detail` is owned on
-/// `failed` (stderr, trimmed, 512-byte cap).
+/// Confirm the PR exists via the provider CLI. `generic` has no CLI — always
+/// `cli_missing` (persist with a "not verified" warning).
 pub fn verifyPr(
     allocator: std.mem.Allocator,
     io: std.Io,

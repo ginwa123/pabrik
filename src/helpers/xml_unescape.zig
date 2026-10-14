@@ -3,15 +3,11 @@ const std = @import("std");
 
 /// Decode XML entities produced by the backend's `xmlEscape` (its inverse).
 /// Mirrors the same entity set: `&lt;` → `<`, `&gt;` → `>`, `&quot;` → `"`,
-/// `&apos;` → `'`, `&amp;` → `&`. The order of replacements matters —
-/// `&amp;` MUST be replaced LAST, otherwise the other replacements would
-/// double-decode `&amp;`-prefixed entities (e.g. `&amp;quot;` would incorrectly
-/// become `"` instead of `&quot;`).
+/// `&apos;` → `'`, `&amp;` → `&`.
 pub fn xmlUnescape(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
-    // Fast path: if there are no `&` at all, no entity can be present — return
-    // a dupe so the caller's allocator invariant (always-allocated when
-    // diff_view_found is true) still holds. This avoids the 5 string scans
-    // for the common case (diff_view content rarely contains entities).
+    // Fast path: if there are no `&` at all, no entity can be present —
+    // return a dupe so the caller's allocator invariant (always-allocated
+    // when diff_view_found is true) still holds.
     if (std.mem.indexOfScalar(u8, s, '&') == null) {
         return try allocator.dupe(u8, s);
     }

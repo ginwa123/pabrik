@@ -28,11 +28,8 @@ const CommitsListResult = struct {
     commits: []const CommitEntry,
 };
 
-/// Parse the `%H%x1f%h%x1f%an%x1f%ae%x1f%at%x1f%s%x1f%b%x1e` output of
-/// `git log` into commit rows. Records split on `\x1e`, fields on
-/// `\x1f`. Pure — no IO. Malformed records (fewer than 7 fields, empty
-/// SHA) are skipped. Caller owns the returned slice (release names via
-/// `freeCommitEntries`).
+/// Parse the `%H%x1f%h%x1f%an%x1f%ae%x1f%at%x1f%s%x1f%b%x1e` output of `git
+/// log` into commit rows. Records split on `\x1e`, fields on `\x1f`.
 pub fn parseLogRecords(allocator: std.mem.Allocator, raw: []const u8) ![]CommitEntry {
     var out: std.ArrayList(CommitEntry) = .empty;
     errdefer {
@@ -200,11 +197,8 @@ fn listCommitsUseCase(
 }
 
 /// HTTP handler for `GET /api/git/commits?path=<repo>[&limit=100][&skip=0]`.
-///
 /// 200: `{ "is_git_repo": true, "branch": "main", "total_count": 300,
 /// "commits": [{ "sha": ..., "short_sha": "3bc0e389", "author": ... }] }`.
-/// Non-repo paths return 200 with `is_git_repo: false` (same convention
-/// as `git_changes.zig:150`). 400 on missing/invalid `path`.
 pub fn gitCommitsListHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
 
@@ -245,11 +239,9 @@ pub fn gitCommitsListHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReques
     return res.jsonResponse(.{ .status_code = 200, .data = try http_response.makeGitCommitsResponse(allocator, response) });
 }
 
-/// HTTP handler for `GET /api/git/commit?path=<repo>&sha=<sha>`.
-///
-/// 200: full message + author/date + touched files. 400 on
-/// missing/invalid `path`/`sha`; 404 when the path is not a repo or the
-/// SHA does not resolve.
+/// HTTP handler for `GET /api/git/commit?path=<repo>&sha=<sha>`. 200: full
+/// message + author/date + touched files. 400 on missing/invalid
+/// `path`/`sha`; 404 when the path is not a repo or the SHA does not resolve.
 pub fn gitCommitDetailHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
     const io = ctx.io;
@@ -317,10 +309,9 @@ pub fn gitCommitDetailHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
     return res.jsonResponse(.{ .status_code = 200, .data = try http_response.makeGitCommitDetailResponse(allocator, response) });
 }
 
-/// Validate a `file` query param for the commit file-diff endpoint. The
-/// value reaches git as an argv element after `--` (never a shell
-/// string), so this guards against flag injection and path escape.
-/// Returns null on success, or an error message. Pure.
+/// Validate a `file` query param for the commit file-diff endpoint. The value
+/// reaches git as an argv element after `--` (never a shell string), so this
+/// guards against flag injection and path escape.
 pub fn validateCommitFile(file: []const u8) ?[]const u8 {
     if (file.len == 0) return "file is required";
     if (file.len > 4096) return "file exceeds 4096 characters";
@@ -334,14 +325,9 @@ pub fn validateCommitFile(file: []const u8) ?[]const u8 {
     return null;
 }
 
-/// HTTP handler for `GET /api/git/commit/file?path=<repo>&sha=<sha>&file=<path>`.
-///
-/// 200: `{ "sha": ..., "path": ..., "diff_content": "<unified diff>" }`
-/// with the file's diff at that commit (`git diff <sha>^ <sha> -- <file>`,
-/// falling back to `git show` for root commits without a parent). 400 on
-/// missing/invalid params; 404 when the path is not a repo or the SHA
-/// does not resolve. Read-only — powers the clickable file rows in the
-/// commits view.
+/// HTTP handler for `GET
+/// /api/git/commit/file?path=<repo>&sha=<sha>&file=<path>`. 200: `{ "sha":
+/// ..., "path": ..., "diff_content": "<unified diff>" }` with the file's diff
 pub fn gitCommitFileDiffHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
     const io = ctx.io;

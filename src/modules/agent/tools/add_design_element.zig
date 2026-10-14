@@ -1,12 +1,4 @@
 //! LLM tool: `add_element` — creates a new element on a design page.
-//!
-//! Writes the element's HTML body to disk atomically (under
-//! `<workspace_item.path>/.pabrik/design/<page>/<element>.html`) and
-//! inserts the metadata row in `design_page_elements` with the 11 v6
-//! properties from Migration 057.
-//!
-//! Plan: docs/superpowers/plans/2026-07-08-design-mode-redesign.md (Chunk 4)
-//! Design: docs/plans/2026-07-08-design-mode-redesign-design.md §6.2
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -17,12 +9,8 @@ const design_model = pabrikcore.ai_mod.design_model;
 const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
 
-/// Input structure for `add_element` tool.
-///
-/// The agent passes `page_id` (from the `set_design_page` response),
-/// the element's `name`, `type`, and `html`. All other fields are
-/// optional with sensible defaults (rectangle at origin, 200×100, no
-/// fill, no rotation, full opacity).
+/// Input structure for `add_element` tool. The agent passes `page_id` (from
+/// the `set_design_page` response), the element's `name`, `type`, and `html`.
 pub const AddElementInput = struct {
     /// The page id (NOT the item_id). The LLM discovers page_ids
     /// via `set_design_page` (the response includes the page id).
@@ -31,19 +19,10 @@ pub const AddElementInput = struct {
     /// Must NOT contain '/' or null bytes (the v6 file-backed model
     /// stores the HTML body at `<page_dir>/<sanitized_name>.html`).
     name: []const u8 = "",
-    /// Element type — one of: rectangle, ellipse, text, image, frame,
-    /// group. Determines the rendering shape (rectangle = solid
-    /// fill box, ellipse = circle/ellipse, text = HTML text node,
-    /// image = raster image with image_url, frame = container that
-    /// clips its children, group = container that does not clip).
-    /// Wire format is the lowercase string; we parse to `ElementType`.
+    /// Element type — one of: rectangle, ellipse, text, image, frame, group.
     type: []const u8 = "rectangle",
     /// HTML body. Written to
     /// `<workspace_item.path>/.pabrik/design/<page>/<element>.html`.
-    /// Required (non-empty) — an empty html would create an
-    /// on-disk file with zero bytes that the LLM has to populate
-    /// via `update_element` later, so requiring it here forces the
-    /// LLM to think about the content up-front.
     html: []const u8 = "",
     /// X position in CSS pixels. Defaults to 0.
     x: ?i64 = null,
@@ -69,21 +48,15 @@ pub const AddElementInput = struct {
     text_style: []const u8 = "",
     /// Image URL (for `type='image'`). Defaults to "".
     image_url: []const u8 = "",
-    /// Optional FK to an existing `group` or `frame` on the SAME
-    /// page. When set, the new element nests under that container
-    /// instead of landing at top-level. See
-    /// `design_model.addElement` for the validation rules (parent
-    /// must exist, same page, type in {`group`, `frame`}).
-    /// Optional / null = top-level — same as the pre-2026-07-29
-    /// behaviour.
+    /// Optional FK to an existing `group` or `frame` on the SAME page. When
+    /// set, the new element nests under that container instead of landing at
+    /// top-level.
     parent_id: ?[]const u8 = null,
 };
 
-/// Top-level tool definition for the LLM.
-///
-/// The description enumerates the 6 valid types, lists the geometry
-/// defaults, and tells the LLM that `page_id` comes from a previous
-/// `set_design_page` call (NOT from Workspace Context).
+/// Top-level tool definition for the LLM. The description enumerates the 6
+/// valid types, lists the geometry defaults, and tells the LLM that `page_id`
+/// comes from a previous `set_design_page` call (NOT from Workspace Context).
 pub const add_design_element_tool_system_prompt =
     \\## Add Design Element Tool — Behavior
     \\Use `add_element` to create a new positioned element on a design page.
@@ -203,11 +176,9 @@ pub fn errorJSONOwned(allocator: std.mem.Allocator, error_msg: []u8) ![]u8 {
     return try errorJSON(allocator, error_msg);
 }
 
-/// Parse the `type` string into an `ElementType` enum. Returns the
-/// parsed enum on success, or `null` when the string is not one of
-/// the 6 valid types. The wire format is the lowercase string
-/// representation of the enum (`@tagName(ElementType.rectangle)` is
-/// `"rectangle"`).
+/// Parse the `type` string into an `ElementType` enum. Returns the parsed
+/// enum on success, or `null` when the string is not one of the 6 valid
+/// types.
 pub fn parseElementType(type_str: []const u8) ?design_model.ElementType {
     if (std.mem.eql(u8, type_str, "rectangle")) return .rectangle;
     if (std.mem.eql(u8, type_str, "ellipse")) return .ellipse;
@@ -243,11 +214,7 @@ pub const ElementJSON = struct {
     updated_at: []const u8,
 };
 
-/// Render the canonical element JSON response shape. Mirrors the old
-/// `<element ... />` attributes from design §6.2 — `html` is intentionally
-/// omitted (the LLM doesn't need the body, and it can be 5+ KB).
-/// Free-text fields are sanitized (NUL/C0 → U+FFFD) before serialization;
-/// `std.json` handles the remaining escaping natively.
+/// Render the canonical element JSON response shape.
 pub fn elementToJSON(
     allocator: std.mem.Allocator,
     elem: design_model.DesignElement,
@@ -311,9 +278,6 @@ fn validatePageIdShape(allocator: std.mem.Allocator, page_id: []const u8) !?[]u8
 }
 
 /// Validate `name` is non-empty and contains no illegal characters.
-/// The v6 file-backed model stores the HTML at
-/// `<item_path>/.pabrik/design/<page>/<sanitized_name>.html`, so `/`
-/// would escape the page directory.
 fn validateNameShape(allocator: std.mem.Allocator, name: []const u8) !?[]u8 {
     if (name.len == 0) {
         return try errorJSON(allocator, "name is required");
@@ -337,10 +301,9 @@ fn validateHtmlShape(allocator: std.mem.Allocator, html: []const u8) !?[]u8 {
     return null;
 }
 
-/// Validate `parent_id` (when provided) has the right shape — starts
-/// with `elem_`. The deeper validation (same page, type in
-/// {`group`, `frame`}) runs in `design_model.addElement` once the DB
-/// is consulted.
+/// Validate `parent_id` (when provided) has the right shape — starts with
+/// `elem_`. The deeper validation (same page, type in {`group`, `frame`})
+/// runs in `design_model.addElement` once the DB is consulted.
 fn validateParentIdShape(allocator: std.mem.Allocator, parent_id: []const u8) !?[]u8 {
     if (!std.mem.startsWith(u8, parent_id, "elem_")) {
         return try errorJSONOwned(allocator, try std.fmt.allocPrint(allocator,
@@ -351,12 +314,6 @@ fn validateParentIdShape(allocator: std.mem.Allocator, parent_id: []const u8) !?
 }
 
 /// Execute the `add_element` tool. Returns a JSON string for the LLM.
-///
-/// On success, the response is the element JSON object (same shape as
-/// `set_design_page`'s per-element entries).
-///
-/// On error (bad type, bad page_id, bad name, DB failure), the response
-/// is `{"error":...}`.
 pub fn executeAddElementToString(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -372,9 +329,8 @@ pub fn executeAddElementToString(
     }
 
     // 1. Parse the type string into the ElementType enum. Returns a
-    //    structured error when the type is not one of the 6 valid
-    //    values — the LLM is told all 6 in the description so it can
-    //    self-correct.
+    // structured error when the type is not one of the 6 valid values — the
+    // LLM is told all 6 in the description so it can self-correct.
     const elem_type = parseElementType(input.type) orelse {
         return try errorJSON(allocator, "type must be one of: rectangle, ellipse, text, image, frame, group");
     };
@@ -388,17 +344,8 @@ pub fn executeAddElementToString(
     const corner_radius = input.corner_radius orelse 0;
     const opacity = input.opacity orelse 1.0;
 
-    // 3. Call addElement (atomically writes the HTML to disk and
-    //    inserts the metadata row). Returns the new element_id.
-    //
-    // The `fill` column is `NOT NULL DEFAULT ''` in the v6 schema,
-    // but `SqliteBackend.exec` binds empty slices as SQL NULL (see
-    // project memory `sqlite-backend-empty-slice-binds-as-null`).
-    // That would trigger `NOT NULL constraint failed: fill`.
-    // Substitute the literal `"transparent"` (valid CSS color, conveys
-    // "no fill" to the renderer) when the user passed an empty
-    // string. The element JSON response still surfaces the original
-    // `input.fill` value via `getElement` (which reads back `''`).
+    // 3. Call addElement (atomically writes the HTML to disk and inserts the
+    // metadata row).
     const fill_for_db: []const u8 = if (input.fill.len == 0) "transparent" else input.fill;
     const element_id = design_model.addElement(allocator, db, io, .{
         .page_id = input.page_id,
@@ -671,10 +618,9 @@ fn setupDbWithPage() !struct {
     var tmp = testing.tmpDir(.{});
     var tmpdir_buf: [std.fs.max_path_bytes]u8 = undefined;
     const tmpdir_len = try tmp.dir.realPath(testing.io, &tmpdir_buf);
-    // Use the stack buffer directly (don't dupe — `db.exec` copies
-    // the slice internally). The `tmp` dir is reclaimed by the OS at
-    // process exit (acceptable for test-suite use, per
-    // design_model_test.zig's precedent).
+    // Use the stack buffer directly (don't dupe — `db.exec` copies the slice
+    // internally). The `tmp` dir is reclaimed by the OS at process exit
+    // (acceptable for test-suite use, per design_model_test.zig's precedent).
     const tmpdir_path: []const u8 = tmpdir_buf[0..tmpdir_len];
 
     const item_id_str = "item_design_1";

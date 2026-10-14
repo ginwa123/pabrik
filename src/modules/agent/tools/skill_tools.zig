@@ -1,46 +1,5 @@
 //! Skill agent tools: `search_skills` + `use_skill` + `remove_skill` +
 //! `add_skill` + `edit_skill`.
-//!
-//! Every one of them is now a thin, honest wrapper over
-//! `pabrikcore.skills_store` (Migration 101's `skills` / `skill_assets`
-//! tables). A skill used to be a FILE whose identity was a pathname, and
-//! every tool carried that shape: `is_global` chose a directory,
-//! `cwd`/`environment` chose another, `use_skill` took a `path` ending in
-//! `SKILL.MD`, and `search_skills` handed the path back. Three prompt
-//! rules existed only to tell the model "pass the path verbatim, never
-//! construct it from the name". All of it is gone. A skill is a row keyed
-//! by `(workspace_id, name)`; the only handle the model ever handles is a
-//! NAME.
-//!
-//! What is gone from the tool surface, and why
-//! ─────────────────────────────────────────────
-//!   `scope` / `is_global` — there is no longer a "global" tier. A skill
-//!     wanted in two workspaces is two rows, which is one mechanism
-//!     instead of a flag and a table that can disagree.
-//!   `cwd` — the workspace comes from the calling session, not from a
-//!     directory the model names.
-//!   `path` — nothing on this side is a file any more.
-//!   `session_id` on `remove_skill` — it was already unused; the real
-//!     session id arrives as a function parameter from the exec wrapper.
-//!
-//! Workspace scope, and why it is not a parameter
-//! ───────────────────────────────────────────────
-//! Deliberately absent from EVERY input struct and schema: the model
-//! resolves its workspace server-side from `caller_session_id` via
-//! `workspace_scope.resolveWorkspaceId`, exactly as `document.zig` does.
-//! A model-supplied `workspace_id` would be a spoofing vector — the LLM
-//! would be choosing which isolation boundary it writes inside. The exec
-//! wrapper parses with `ignore_unknown_fields`, so a hallucinated
-//! `"workspace_id": "ws_other"` is dropped rather than honoured; the
-//! static contract test at the bottom of this file fails the build if the
-//! field is ever added back.
-//!
-//! `search_skills`' executor lives in `tools_exec_skills.zig`, not here:
-//! its matching engine (`progressive_regex.zig`) is under
-//! `src/agentic_loop/`, and a `modules → agentic_loop` import closes a
-//! cycle through the `pabrikcore` root. This module exports
-//! `resolveWorkspaceScope` + `scopeErrorJSON` so the wrapper composes the
-//! same glue `document.zig`'s wrapper does.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -61,15 +20,7 @@ const migration = @import("../../../migrations/migration.zig");
 
 // ─── shared: workspace scope ────────────────────────────────────────────
 
-/// Resolve the calling session's workspace. Returns an OWNED id the caller
-/// must free, or null when the scope cannot be established — an empty
-/// caller session id, a session with no workspace, or a resolver failure.
-///
-/// Why `?[]u8` and not a union carrying a pre-rendered message: the
-/// union's payload would borrow from a temporary that dies at the end of
-/// the `switch` that destructures it, and that use-after-free does not
-/// look like one — it segfaults inside `std.mem.eql` on the first
-/// comparison. Rendering in the caller keeps the invariant.
+/// Resolve the calling session's workspace.
 pub fn resolveWorkspaceScope(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -82,21 +33,14 @@ pub fn resolveWorkspaceScope(
     return workspace_scope.resolveWorkspaceId(allocator, db, caller_session_id) catch null;
 }
 
-/// The tool-level refusal for an unresolvable scope. TWO messages, not
-/// one, mirroring `document.zig`'s `scopeErrorJSON`: "you have no
-/// session" and "your session has no workspace" need different user
-/// actions, and collapsing them sends the model (and the human reading
-/// its transcript) down the wrong path.
+/// The tool-level refusal for an unresolvable scope.
 pub const SCOPE_MISSING_SESSION =
     "Missing caller session — cannot resolve which workspace to read or write skills in.";
 pub const SCOPE_NO_WORKSPACE =
     "This session is not linked to any workspace, so there is nowhere to store a skill. " ++
     "Run from a workspace chat (a project task or a workspace-scoped chat).";
 
-/// The refusal payload. `{"skill_name": "", "content": "", "loaded":
-/// false, "asset_dir": null, "asset_count": 0, "error": "..."}` — the
-/// same not-found shape every one of these tools already used, so the
-/// model's parser does not need a per-tool branch.
+/// The refusal payload.
 pub fn scopeErrorJSON(
     allocator: std.mem.Allocator,
     tool_name: []const u8,
@@ -107,10 +51,7 @@ pub fn scopeErrorJSON(
 }
 
 /// One JSON `{"error": "..."}` payload with every per-tool field at its
-/// not-taken default. Built by hand rather than through five per-tool
-/// error structs so a refusal can never be missing a field its parser
-/// requires — `use_skill`'s parser defaults `loaded` to false, and a
-/// refusal that omitted it would read as a successful load.
+/// not-taken default.
 pub fn toolErrorJSON(
     allocator: std.mem.Allocator,
     tool_name: []const u8,
@@ -178,16 +119,8 @@ fn lockedSkillJSON(
 
 // ─── search_skills ───
 
-/// Input for `search_skills`. Every field is optional: no args returns
-/// the first page of every skill installed in the caller's workspace.
-/// `query` is a regex unless `literal` is set — the same matching-mode
-/// contract as the `search` and `search_tool` agent tools.
-/// `limit`/`offset` page the matches so a large skill library cannot
-/// flood the context window.
-///
-/// There is no `scope` and no `cwd`. The tier a skill lived in decided
-/// WHICH DIRECTORY it came from, and that is no longer a question the
-/// tool has to ask; the workspace does that now.
+/// Input for `search_skills`. Every field is optional: no args returns the
+/// first page of every skill installed in the caller's workspace.
 pub const SearchSkillsInput = struct {
     query: ?[]const u8 = null,
     literal: ?bool = null,
@@ -313,15 +246,8 @@ pub const use_skill_tool = AgentTool{
     },
 };
 
-/// Execute `use_skill`. Returns an inner JSON string the exec wrapper
-/// embeds. Caller owns the returned memory and must free it.
-///
-/// `io` is still a parameter even though the other four tools do not take
-/// one: materialising a bundle's companion files is a filesystem
-/// operation, and the materialised directory is the only path this tool
-/// ever emits. Every other input the old signature carried (`environment`,
-/// `cwd`, `is_global`, `path`) existed to find a file, and there is no
-/// file to find.
+/// Execute `use_skill`. Returns an inner JSON string the exec wrapper embeds.
+/// Caller owns the returned memory and must free it.
 pub fn execute_use_skill_to_string(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -331,10 +257,9 @@ pub fn execute_use_skill_to_string(
 ) ![]const u8 {
     const name = std.mem.trim(u8, input.name, " \t\n\r");
     if (name.len == 0) return try toolErrorJSON(allocator, "use_skill", "", USE_SKILL_MISSING_NAME);
-    // Not a path segment any more, but it IS the primary key of the row
-    // and the literal argument of every subsequent lookup, so an empty or
-    // malformed value is still worth naming rather than reporting as
-    // "not found".
+    // Not a path segment any more, but it IS the primary key of the row and
+    // the literal argument of every subsequent lookup, so an empty or
+    // malformed value is still worth naming rather than reporting as "not
     if (!skills_store.isValidSkillName(name)) {
         return try toolErrorJSON(allocator, "use_skill", "", USE_SKILL_MISSING_NAME);
     }
@@ -352,14 +277,10 @@ pub fn execute_use_skill_to_string(
     defer skills_store.freeSkillRow(allocator, row);
 
     // A bundle's body refers to its companions by relative path
-    // (`scripts/run_eval.py`), so those rows have to exist on disk before
-    // the model can follow them. A skill with no assets gets NO directory
-    // at all — `asset_dir: null`, not an empty one.
+    // (`scripts/run_eval.py`), so those rows have to exist on disk before the
+    // model can follow them.
     var asset_dir: ?[]const u8 = null;
-    // The STRING is ours to free once the payload has copied it. The
-    // directory it names is not: it is a per-load materialisation the
-    // model is told about, exactly as the plan describes, and reaping it
-    // is a separate job from handing it over.
+    // The STRING is ours to free once the payload has copied it.
     defer if (asset_dir) |d| allocator.free(d);
     var asset_count: usize = 0;
     const assets = try skills_store.listAssets(allocator, db, workspace_id, name);
@@ -395,24 +316,17 @@ pub fn execute_use_skill_to_string(
     }, .{});
 }
 
-/// The not-found payload: the truthful "there is no such skill here"
-/// shape, plus the names that DO exist in this workspace.
-///
-/// The list is the whole point. A refusal that only says "not found"
-/// costs the model a `search_skills` round trip and, worse, gives it
-/// nothing to correct itself from — the old path-shaped failure had the
-/// same problem and the tool never learned it.
+/// The not-found payload: the truthful "there is no such skill here" shape,
+/// plus the names that DO exist in this workspace. The list is the whole
+/// point.
 fn useSkillNotFound(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
     workspace_id: []const u8,
     name: []const u8,
 ) ![]const u8 {
-    // The names are BORROWED from the store rows, so the rows have to
-    // outlive the `Stringify` below. Scoping the `defer` to the `if` block
-    // freed them early and left `names.items` pointing at released memory
-    // — a use-after-free that reads as a SEGV inside the JSON writer, two
-    // frames away from the cause.
+    // The names are BORROWED from the store rows, so the rows have to outlive
+    // the `Stringify` below.
     var rows: ?[]skills_store.SkillRow = null;
     defer if (rows) |r| skills_store.freeSkillRows(allocator, r);
     var names: std.ArrayList([]const u8) = .empty;
@@ -443,11 +357,6 @@ fn useSkillNotFound(
 // ─── remove_skill ───
 
 /// Input for `remove_skill`.
-///
-/// `session_id` is GONE: it was already unused (the comment on the old
-/// field said so), and the only session that matters now arrives as
-/// `caller_session_id` from the exec wrapper — the one that resolves the
-/// workspace. `is_global` is gone with the tiers.
 pub const RemoveSkillInput = struct {
     skill_name: []const u8,
 };
@@ -500,10 +409,6 @@ pub const remove_skill_tool = AgentTool{
 
 /// Execute `remove_skill`. Returns an inner JSON string the exec wrapper
 /// embeds. Caller owns the returned memory and must free it.
-///
-/// No `deleteTree`: the row is the skill, and `skills_store.deleteSkill`
-/// takes the companions' rows with it. There is no directory to leave
-/// behind, and nothing on disk to clean up.
 pub fn execute_remove_skill_to_string(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -563,19 +468,8 @@ pub fn execute_remove_skill_to_string(
 }
 
 // ─── shared argument resolution ──────────────────────────────────────────
-//
 // `add_skill` / `edit_skill` are the only tools a model calls with
 // hand-written prose, and the two mistakes it makes most are both handled
-// here rather than at the parse site:
-//
-//   (a) omitting a required argument. That used to surface as
-//       `error.MissingField` — an error NAME that names no field — so
-//       the model had nothing to correct itself from and retried.
-//   (b) pasting YAML frontmatter into `content`, because every example of
-//       "the skill format" shows a `---` block. `buildSkillContent`
-//       ALWAYS prepends its own frontmatter, so (b) wrote the block
-//       twice: the model's copy became body text and every later
-//       `edit_skill` preserved the duplicate.
 
 /// A leading `---` … `---` frontmatter block split off `content`. Both
 /// slices point into the input; nothing is allocated.
@@ -589,12 +483,6 @@ const FrontmatterSplit = struct {
 };
 
 /// Split a leading YAML frontmatter block off `content`.
-///
-/// The closing fence must start a line and may be followed by `\r`, `\n`,
-/// both, or nothing at all (a model that trimmed the final newline is not
-/// a reason to write the block twice). A `---` inside the body is only
-/// reached when the block is unterminated, which is treated as no
-/// frontmatter rather than a guess.
 fn splitLeadingFrontmatter(content: []const u8) FrontmatterSplit {
     const none: FrontmatterSplit = .{ .frontmatter = "", .body = content };
     if (!std.mem.startsWith(u8, content, "---\n")) return none;
@@ -617,11 +505,9 @@ fn splitLeadingFrontmatter(content: []const u8) FrontmatterSplit {
     return none;
 }
 
-/// Read `key: value` out of a frontmatter block. Borrowed, trimmed, with
-/// one layer of matching quotes removed. Null when the key is absent or
-/// its value is empty. Deliberately not `skills.parseYamlFrontmatter` —
-/// that allocates and returns null unless BOTH `name` and `description`
-/// are present, and here each is wanted independently.
+/// Read `key: value` out of a frontmatter block. Borrowed, trimmed, with one
+/// layer of matching quotes removed. Null when the key is absent or its value
+/// is empty.
 fn frontmatterField(frontmatter: []const u8, key: []const u8) ?[]const u8 {
     var lines = std.mem.splitScalar(u8, frontmatter, '\n');
     while (lines.next()) |line| {
@@ -654,19 +540,8 @@ fn firstNonEmpty(args: []const ?[]const u8) ?[]const u8 {
 
 // ─── add_skill ───
 
-/// Input for `add_skill`.
-///
-/// Every field carries a default, which makes it optional to
-/// `std.json.parseFromSlice`. That is deliberate: with a non-defaulted
-/// `name`/`description`/`content`, a model that omitted `description`
-/// got `error.MissingField` back — an error name that names no field —
-/// and had nothing to correct itself from. Empty is now a value that
-/// reaches `executeAddSkillToString`, which reports WHICH argument is
-/// missing and what to send. A model may also omit `description` and put
-/// it in `content`'s frontmatter; that is lifted, not rejected.
-///
-/// `create_with_dir` is gone with the directories, and `is_global` with
-/// the tiers. There is exactly one place a skill can go.
+/// Input for `add_skill`. Every field carries a default, which makes it
+/// optional to `std.json.parseFromSlice`.
 pub const AddSkillInput = struct {
     /// Skill identifier. Required, but may be omitted when `content`
     /// opens with a `name:` frontmatter line.
@@ -724,10 +599,7 @@ pub const add_skill_tool = AgentTool{
     },
 };
 
-/// Actionable `add_skill` failures. Each names the argument that is wrong
-/// AND what to send, because a message the model cannot act on just
-/// produces the same call again — which is what `"Description cannot be
-/// empty"` did. Exposed for tests.
+/// Actionable `add_skill` failures.
 pub const ADD_SKILL_MISSING_NAME =
     "add_skill: `name` is required. Send the skill's name as its own argument — kebab-case, letters/digits/dots/dashes/underscores, no slashes or spaces (e.g. \"zig-move-code-static-contract-path-pins\"). It becomes the row's key AND the frontmatter `name:`. (A `name:` inside `content`'s frontmatter is read from there instead.)";
 pub const ADD_SKILL_MISSING_DESCRIPTION =
@@ -737,13 +609,7 @@ pub const ADD_SKILL_MISSING_CONTENT =
 pub const ADD_SKILL_BAD_NAME =
     "add_skill: `name` must be a single name — letters, digits, dots, dashes, underscores; no slashes, spaces, or leading/trailing dot. It is the skill's primary key, not a path. Got: '";
 
-/// JSON payload for `add_skill` results. Both `skill_name` and `name`
-/// carry the skill name: `skill_name` matches the tool schema, `name`
-/// matches the legacy tag name read by existing JSON parsers.
-///
-/// `created` is FALSE when the call replaced a skill that already held
-/// that name — the model refines a skill by re-adding it, and a `created:
-/// true` for that is a lie about what happened to the previous body.
+/// JSON payload for `add_skill` results.
 pub const AddSkillJSON = struct {
     skill_name: []const u8,
     name: []const u8,
@@ -768,11 +634,7 @@ pub fn executeAddSkillToString(
     input: AddSkillInput,
 ) ![]const u8 {
     // `SkillWriteToolRule` shows the skill format as a `---` frontmatter
-    // block, so models routinely paste one into `content`. Lift it out
-    // instead of storing it twice: `buildSkillContent` ALWAYS prepends
-    // its own frontmatter, so a frontmatter-carrying `content` used to
-    // produce a row with two blocks — and every later `edit_skill`
-    // preserved the duplicate.
+    // block, so models routinely paste one into `content`.
     const split = splitLeadingFrontmatter(input.content);
     const fm: ?[]const u8 = if (split.frontmatter.len != 0) split.frontmatter else null;
 
@@ -806,10 +668,7 @@ pub fn executeAddSkillToString(
         return try scopeErrorJSON(allocator, "add_skill", caller_session_id);
     defer allocator.free(workspace_id);
 
-    // `created` has to be read BEFORE the write. `upsertSkill` is
-    // create-or-replace, so afterwards there is no way left to tell the
-    // two apart — and the model needs to, because re-adding a name is how
-    // it refines a skill.
+    // `created` has to be read BEFORE the write.
     var replacing_locked = false;
     const existed = blk: {
         const existing = skills_store.getSkillByName(allocator, db, workspace_id, resolved_name) catch |err| switch (err) {
@@ -860,12 +719,6 @@ pub fn executeAddSkillToString(
 }
 
 /// Build skill content with YAML frontmatter.
-///
-/// UNCHANGED behaviour — the generated `---` block is byte-for-byte what
-/// `add_skill` has always written; only the DESTINATION moved (a row's
-/// `content` column instead of a file on disk). The block is stored in
-/// `content` so `use_skill` keeps returning exactly what the file used to
-/// contain, frontmatter and all.
 pub fn buildSkillContent(allocator: std.mem.Allocator, input: AddSkillInput) []const u8 {
     // Escape quotes in description for YAML string
     const escaped_desc = addSkillEscapeYamlString(allocator, input.description);
@@ -988,10 +841,7 @@ pub const EDIT_SKILL_BAD_NAME =
     "edit_skill: `skill_name` must be a single name — letters, digits, dots, dashes, underscores; no slashes, spaces, or leading/trailing dot. It is the skill's primary key, not a path. Got: '";
 pub const EDIT_SKILL_NOTHING_TO_CHANGE =
     "edit_skill: nothing to change — `description` and `content` were both omitted. Send a new `description` (the one line that decides whether this skill is ever found), a new `content` body, or both.";
-/// The store's `NothingToChange`, worded for the model. A patch whose
-/// result is byte-identical to what is already stored is NOT a success:
-/// reporting `updated: true` there teaches the model that an empty edit
-/// rewrites a skill, and it will keep sending one.
+/// The store's `NothingToChange`, worded for the model.
 pub const EDIT_SKILL_NO_CHANGE_EFFECT =
     "edit_skill: nothing to change — the new `description` and `content` are identical to what is already stored. Send text that actually differs.";
 
@@ -1069,11 +919,7 @@ pub fn executeEditSkillToString(
 
     const new_description = firstNonEmpty(&.{ input.description, lifted_description }) orelse existing.description;
 
-    // Only a supplied body triggers a frontmatter rebuild. Omitting
-    // `content` must leave the stored text alone: rebuilding it from
-    // `existing.content` (which ALREADY carries the generated
-    // frontmatter) is how a description-only edit used to double the
-    // block.
+    // Only a supplied body triggers a frontmatter rebuild.
     const patch: skills_store.UpdateSkillArgs = if (input.content) |_| blk: {
         const rebuilt = try buildEditSkillContent(allocator, name, new_description, split.body);
         break :blk .{ .description = new_description, .content = rebuilt };
@@ -1163,27 +1009,6 @@ fn editSkillEscapeYamlString(allocator: std.mem.Allocator, s: []const u8) ![]con
 // ============================================================================
 // skill_tools.zig — inline tests
 // ============================================================================
-//
-// The old suite was 51 tests, almost all of them building `/tmp` SKILL.MD
-// trees on disk and asserting which file appeared where. There is no disk
-// any more, so most of them were testing a destination that does not
-// exist. What replaces them asks the questions that are actually live:
-//
-//   * Does a skill written through `add_skill` read back through
-//     `use_skill`? (Round trip, including the EMPTY description the
-//     `COALESCE(NULLIF(?, ''), '')` bind trap used to swallow.)
-//   * Is `workspace_id` really the isolation boundary in both directions?
-//   * Does the workspace come from the SESSION, not from anything the
-//     model says?
-//   * Does a not-found refusal stay truthful (loaded: false, with the
-//     names that DO exist)?
-//   * Does `edit_skill` report an ineffective patch as a failure?
-//   * Does the frontmatter still get generated exactly once?
-//
-// Every row below is seeded through the STORE, never with raw SQL. A test
-// that INSERTs bypasses the `COALESCE(NULLIF(?, ''), '')` write path and
-// therefore passes while the real tool fails — that is the whole class of
-// bug the store's own fixture is written to avoid.
 
 const TestCtx = struct {
     db: sqlite.SqliteBackend,
@@ -1393,8 +1218,7 @@ test "add_skill - an empty description round-trips as \"\" (the COALESCE(NULLIF)
 
     // Seeded with no description at all: `SqliteBackend.exec` binds a
     // zero-length slice as SQL NULL, which used to violate NOT NULL and
-    // surface as a failed write. An empty description is a LEGAL skill
-    // state — a model writes the body first and the sentence second.
+    // surface as a failed write.
     try seedSkill(alloc, &ctx.db, "ws_1", "no-desc", "", "## Body\n");
 
     const used = try execute_use_skill_to_string(alloc, testing.io, &ctx.db, "s1", .{ .name = "no-desc" });
@@ -1618,10 +1442,9 @@ test "edit_skill - an ineffective patch is a TOOL ERROR, never a success with an
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Seeded with EXACTLY what `buildSkillContent` produces, because that
-    // is what the tool stores: seeding a bare body would make the patch
-    // below a real change (the regenerated frontmatter) and the test would
-    // be asserting the wrong thing.
+    // Seeded with EXACTLY what `buildSkillContent` produces, because that is
+    // what the tool stores: seeding a bare body would make the patch below a
+    // real change (the regenerated frontmatter) and the test would be
     try seedSkill(alloc, &ctx.db, "ws_1", "same", "same description", "---\nname: same\ndescription: \"same description\"\n---\nsame body\n");
 
     // Byte-identical to what is stored. Reporting `updated: true` teaches
@@ -1811,9 +1634,8 @@ test "every skill tool refuses an unresolvable workspace with the same message" 
     defer ctx.db.deinit();
 
     // One resolver, one pair of messages: `add_skill` reporting "could not
-    // build skills directory path" while `remove_skill` reported
-    // "Environment not available" is how two tools started disagreeing
-    // about whether the caller has a workspace at all.
+    // build skills directory path" while `remove_skill` reported "Environment
+    // not available" is how two tools started disagreeing about whether the
     const added = try executeAddSkillToString(alloc, &ctx.db, "s_orphan", .{
         .name = "x",
         .description = "d",
@@ -1836,14 +1658,9 @@ test "every skill tool refuses an unresolvable workspace with the same message" 
     try testing.expectEqualStrings(SCOPE_NO_WORKSPACE, b.value.@"error" orelse "");
 }
 
-// ─── schema contracts ───
-//
-// Asserted against the LIVE `AgentTool` constants the model receives and the
-// LIVE struct types the exec wrappers parse, not against this file's text.
-// The old versions read the file and scanned for `<field>:` — they failed on
-// a rename and stayed green through a field that actually came back. A tool
-// schema is a runtime value; so is a struct's field list. See the sibling
-// `schema contract:` tests in `document.zig`.
+// ─── schema contracts ─── Asserted against the LIVE `AgentTool` constants
+// the model receives and the LIVE struct types the exec wrappers parse, not
+// against this file's text.
 
 /// Every field that described a DIRECTORY TIER, plus the two that only
 /// ever named one. A skill is a row; none of these has anything to say
@@ -1915,10 +1732,7 @@ test "schema contract: no skill tool schema or payload carries a directory-shape
 
 test "schema contract: no skill input accepts a workspace_id" {
     // A model-supplied workspace id would be a spoofing vector — the LLM
-    // would be choosing which isolation boundary it writes inside. The
-    // exec wrapper parses with `ignore_unknown_fields`, so a hallucinated
-    // one is dropped on the floor; this fails if a REAL one ever lands and
-    // starts being honoured.
+    // would be choosing which isolation boundary it writes inside.
     for (skill_tool_schemas) |tool| {
         for (tool.function.parameters.properties) |prop| {
             if (std.mem.eql(u8, prop.name, "workspace_id")) {
@@ -1952,10 +1766,7 @@ test "schema contract: no skill input accepts a workspace_id" {
 }
 
 test "schema contract: use_skill is keyed by name, not by path" {
-    // The name IS the handle. If `UseSkillInput` ever grows a `path` again,
-    // the model has a second way to name a skill and only one of them is
-    // scoped — the prompt rules that used to police this ("ends in SKILL.MD;
-    // pass it verbatim") are gone with the paths.
+    // The name IS the handle.
     inline for (@typeInfo(UseSkillInput).@"struct".fields, 0..) |field, i| {
         _ = i;
         if (std.mem.eql(u8, field.name, "path")) {

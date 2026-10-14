@@ -1,23 +1,5 @@
-//! Pure tool-eligibility helpers shared by the agentic loop.
-//!
-//! Two independent policies decide which built-in tools a *thing* may have:
-//!
-//!   1. The per-agent / per-kanban allowlist (`agent_tools` /
-//!      `agent_kanban_tools`, CSV-joined into `allowed_tools`), plus the
-//!      sub-agent anti-recursion strip.
-//!   2. The workspace-item-type exclusion (kanban items must not carry
-//!      design tools and vice versa).
-//!
-//! Both used to live inline in `workflow.zig` and
-//! `prompts_build_messages_for_agent_prompt.zig`. They are extracted here
-//! because progressive tool search needs the *same* answer to "is this
-//! tool already enabled for this session?" — if the exec-side catalog
-//! recomputed it independently, the tools it offered could drift from the
-//! tools the LLM actually receives.
-//!
-//! This module is a leaf: it imports only `pabrikcore` + its std deps, so
-//! both `workflow.zig` and the `tools_exec_*` adapters can import it
-//! without an import cycle.
+//! Pure tool-eligibility helpers shared by the agentic loop. Two independent
+//! policies decide which built-in tools a *thing* may have: 1.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -72,19 +54,8 @@ fn nameInAny(name: []const u8, names: []const []const u8) bool {
 }
 
 /// Apply the agent/kanban allowlist + the sub-agent anti-recursion strip.
-///
-/// `allowed_tools` semantics:
-///   - `""` (empty) → NO filtering (every tool kept). Pre-existing wart,
-///     deliberately preserved so this extraction stayed behaviour-neutral.
-///     Producers that used to emit `""` meaning "zero tools" now emit the
-///     exact `none` sentinel instead (see `maybeOverrideAllowedToolsForAgent`).
-///   - `"none"` → ZERO tools (explicit-empty sentinel: config.json
-///     `tools: []` and agent sessions with zero enabled rows).
-///   - `"all"` → no filtering.
-///   - anything else → comma-separated name allowlist.
-///
-/// Returns a freshly allocated slice (caller-owned; the per-iteration arena
-/// in production). Never mutates `tools`.
+/// `allowed_tools` semantics: - `""` (empty) → NO filtering (every tool
+/// kept).
 pub fn allowlistFilter(
     allocator: std.mem.Allocator,
     tools: []const AgentTool,
@@ -92,10 +63,8 @@ pub fn allowlistFilter(
     is_sub_agent: bool,
 ) ![]AgentTool {
     // WHY: exact `none` is the explicit-empty sentinel and must mean ZERO
-    // tools — distinct from the pre-existing `""` wart above ("no filtering
-    // → keep everything"). Short-circuit BEFORE name matching and the
-    // sub-agent strip so the meaning can never drift (e.g. a future tool
-    // literally named "none", or a non-empty intersection with the strip).
+    // tools — distinct from the pre-existing `""` wart above ("no filtering →
+    // keep everything").
     if (std.mem.eql(u8, allowed_tools, "none")) {
         return try allocator.alloc(AgentTool, 0);
     }
@@ -125,9 +94,7 @@ pub fn allowlistFilter(
 
     // Main-agent-only tools must not reach a sub-agent. `ask_user` would sit
     // unanswered forever (a sub-agent run has no answer surface) and
-    // `spawn_sub_agent` would recurse. The list lives with the tool that made
-    // a second entry necessary, so this strip and `spawn_sub_agent`'s
-    // parse-time rejection can never disagree about membership.
+    // `spawn_sub_agent` would recurse.
     if (is_sub_agent) {
         var count: usize = 0;
         for (kept) |tool| {
@@ -142,16 +109,9 @@ pub fn allowlistFilter(
     return kept;
 }
 
-/// Strip the tools the given workspace-item type must not carry:
-///   - `design` → no kanban tools
-///   - `kanban` → no design tools
-///   - `folder` → neither
-///   - anything else (`agent`, `chat`, empty, unknown) → unchanged
-///
-/// Compacts in place and returns the surviving prefix, so `tools` must be a
-/// buffer the caller owns (as `filteringTools` already passes, and as
-/// `allowlistFilter` returns). When nothing is stripped the full slice comes
-/// back untouched.
+/// Strip the tools the given workspace-item type must not carry: - `design` →
+/// no kanban tools - `kanban` → no design tools - `folder` → neither -
+/// anything else (`agent`, `chat`, empty, unknown) → unchanged Compacts in
 pub fn itemTypeStrip(tools: []AgentTool, self_item_type: []const u8) []AgentTool {
     const strip_kanban = std.mem.eql(u8, self_item_type, "design") or
         std.mem.eql(u8, self_item_type, "folder");

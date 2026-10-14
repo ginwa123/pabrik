@@ -1,18 +1,5 @@
-//! Data model for the `session_queue_messages` entity table.
-//!
-//! Pending user messages queued behind a running session. While the
-//! agent is processing a turn, the user can keep typing — each
-//! queued message is INSERTed here and drained in FIFO order when
-//! the current turn completes.
-//!
-//! Schema: Migration 007 (`create_session_queue_messages`) +
-//! Migration 060 (`add_image_url_to_session_queue_messages`) +
-//! Migration 068 (`make_session_queue_messages_message_nullable`).
-//!
-//! IMPORTANT: this table has NO PRIMARY KEY. The `(id, session_id)`
-//! pair is logically unique but not enforced. INSERTs use the
-//! generated `id` from `queue.zig` and rely on the FIFO read order
-//! (`ORDER BY created_at ASC`).
+//! Data model for the `session_queue_messages` entity table. Pending user
+//! messages queued behind a running session.
 
 const std = @import("std");
 
@@ -72,11 +59,6 @@ pub fn clone(self: *const Self, allocator: std.mem.Allocator) !Self {
 // ===== Tests merged from models_test.zig (2026-09-29 flatten) =====
 
 // Sanity tests for the `src/models/` entity models.
-//
-// Verifies that every model file compiles, that `init` populates the
-// struct as expected, that `deinit` releases its strings, and that
-// external callers can read the struct's fields directly (matching
-// the file-level struct pattern requested by the user).
 
 const testing = std.testing;
 

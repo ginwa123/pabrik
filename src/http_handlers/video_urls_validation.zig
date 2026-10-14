@@ -1,41 +1,15 @@
 //! Validation + joining helpers for `workspace_item_tasks.video_urls`
 //! (Migration 090 — kanban video urls column).
-//!
-//! Storage format
-//! ──────────────
-//! The `video_urls` column is a `||`-delimited string of base64 data
-//! URLs. The column is NOT NULL DEFAULT '' (the canonical "no videos"
-//! sentinel). Mirrors the `image_urls` convention (Migration 069) and
-//! `llm_history.image_url` — same split-scalar join.
-//!
-//! Why `||` and not JSON: same reasons as image_urls — single string
-//! end-to-end, trivial round-trip debugging, no JSON wrap.
-//!
-//! Why validate at all: the frontend reads each file via
-//! `FileReader.readAsDataURL` which produces
-//! `data:video/<mime>;base64,<payload>`. We validate the prefix on the
-//! server so a malicious client can't inject non-data URLs (e.g.
-//! `http://internal/...`) that would render as `<video>` sources
-//! pointing at private network resources.
-//!
-//! Allowlist (locked 2026-09-18): mp4, webm, quicktime (mov), x-msvideo
-//! (avi), x-matroska (mkv). Phase 0 found providers document mp4/webm/mov
-//! natively; avi/mkv are accepted at the validation layer and rejected
-//! with a hard error at the Agent wire layer for unsupported models.
 
 const std = @import("std");
 
 /// Cap on the total joined `video_urls` payload (25 MB). Base64 inflates
-/// ~33%, so this fits roughly one 18 MB raw video or several smaller
-/// clips. Enforced client-side too (FileInput + Kanban editor reject
-/// files > 25 MB before readAsDataURL).
+/// ~33%, so this fits roughly one 18 MB raw video or several smaller clips.
 pub const MAX_VIDEO_URLS_BYTES: usize = 25 * 1024 * 1024;
 
-/// Validate each URL in `joined` is a `data:video/<mime>;base64,...`
-/// URL with an allowlisted mime, and the total byte length is within
-/// `MAX_VIDEO_URLS_BYTES`. Returns the validated joined string on
-/// success (borrowed slice). Returns `error.InvalidVideoUrl` on the
-/// first malformed URL, `error.VideoUrlsTooLarge` when over cap.
+/// Validate each URL in `joined` is a `data:video/<mime>;base64,...` URL with
+/// an allowlisted mime, and the total byte length is within
+/// `MAX_VIDEO_URLS_BYTES`.
 pub fn validateVideoUrls(joined: []const u8) ![]const u8 {
     if (joined.len > MAX_VIDEO_URLS_BYTES) return error.VideoUrlsTooLarge;
     if (joined.len == 0) return joined; // empty = no videos

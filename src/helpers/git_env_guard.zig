@@ -1,7 +1,6 @@
-//! Refuses fixture git when GIT_DIR/GIT_WORK_TREE-style vars are set.
-//! `git -C <fixture>` obeys those over `-C`, so under a git hook every
-//! fixture commit would land in the real repo. Test-only: production
-//! probes must keep inheriting the environment.
+//! Refuses fixture git when GIT_DIR/GIT_WORK_TREE-style vars are set. `git -C
+//! <fixture>` obeys those over `-C`, so under a git hook every fixture commit
+//! would land in the real repo.
 
 const std = @import("std");
 const builtin = @import("builtin");

@@ -1,20 +1,5 @@
-//! Builds the `## Agent Knowledge` system-prompt section for sessions
-//! bound to an Agent workspace-item.
-//!
-//! Reads every `agent_knowledge` row's markdown file from disk and
-//! concatenates them into a section appended after `## Workspace Context`.
-//! No content cap (per user "no need caps") — the full contents of every
-//! file are read. A 100 MiB per-file OOM safety prevents pathological
-//! inputs like `/dev/zero`.
-//!
-//! Behaviour:
-//!   - Empty for non-agent items (item_type != 'agent') → returns ""
-//!   - Empty for agents with no knowledge rows → returns ""
-//!   - Missing / unreadable file paths: log + skip, continue
-//!   - Files > 100 MiB: log + skip, continue
-//!
-//! Plan: docs/superpowers/plans/2026-08-15-agent-mode.md (Task 10)
-//! Spec: docs/superpowers/specs/2026-08-15-agent-mode-design.md (D5, D6)
+//! Builds the `## Agent Knowledge` system-prompt section for sessions bound
+//! to an Agent workspace-item.
 
 const std = @import("std");
 const sqlite = @import("pabrikcore").sqlite;
@@ -46,14 +31,6 @@ fn resolveWorkspaceItemId(
 
 /// Read a single file's full contents. Caller owns the returned slice.
 /// Returns `null` (logged + skipped by caller) on failure.
-///
-/// `file_path` comes from the `agent_knowledge.file_path` DB column. An empty
-/// or RELATIVE value is reachable (the create/update handlers accept
-/// `file_path = ""` and only validate non-empty values, and legacy rows may
-/// predate that validation), so the contract is enforced HERE:
-/// `std.Io.Dir.openFileAbsolute` asserts `path.isAbsolute(...)`, and a failed
-/// assertion ABORTS the whole process (Debug/ReleaseSafe) instead of returning
-/// an error — one bad knowledge row would kill the worker on every turn.
 fn readFileContents(
     io: std.Io,
     allocator: std.mem.Allocator,
@@ -275,12 +252,6 @@ var test_file_counter: std.atomic.Value(u64) = .init(0);
 
 /// Writes `contents` to a uniquely-named file inside `tmp` and returns its
 /// ABSOLUTE path (caller-owned: `alloc.free` it).
-///
-/// The path comes from `testing.tmpDir` (`.zig-cache/tmp/<random>/`) rather
-/// than a literal `/tmp/...`: on Windows `/tmp/x` resolves to `D:\tmp\x`,
-/// whose parent directory does not exist, so `createFileAbsolute` fails
-/// with `error.FileNotFound`. The knowledge reader asserts `isAbsolute`
-/// before `openFileAbsolute`, so the returned path must stay absolute.
 fn writeTestFile(tmp: *std.testing.TmpDir, allocator: std.mem.Allocator, io: std.Io, contents: []const u8) ![]u8 {
     const n = test_file_counter.fetchAdd(1, .seq_cst);
     var name_buf: [64]u8 = undefined;
@@ -402,14 +373,8 @@ test "makeAgentKnowledge: skips empty/relative file paths instead of aborting" {
     try insertSession(&ctx, "sess_1", "ws_item_1");
 
     // Two reachable bad states, both of which used to reach
-    // `openFileAbsolute`'s `assert(path.isAbsolute(...))` — an ABORT of the whole
-    // process (Debug/ReleaseSafe) — on EVERY turn, because this runs during prompt
-    // building:
-    //   * ""               — the create handler accepts an empty file_path (it only
-    //                        validates non-empty values) and leaves content empty
-    //                        too; PATCH can also clear file_path afterwards.
-    //   * "relative/x.md"  — representable in the DB (no CHECK constraint), e.g. a
-    //                        legacy row written before that validation landed.
+    // `openFileAbsolute`'s `assert(path.isAbsolute(...))` — an ABORT of the
+    // whole process (Debug/ReleaseSafe) — on EVERY turn, because this runs
     try insertKnowledge(&ctx, "know_empty", "ws_item_1", "", 0);
     try insertKnowledge(&ctx, "know_relative", "ws_item_1", "relative/knowledge.md", 1);
 

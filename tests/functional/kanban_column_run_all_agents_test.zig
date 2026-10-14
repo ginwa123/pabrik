@@ -1,43 +1,6 @@
-// Functional tests for the bulk `run_all_agents` column endpoint.
-//
-// Zig port of `tests/functional/kanban_column_run_all_agents_test.py`
-// (same test names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional tests for the bulk `run_all_agents` column endpoint.
-//
-//   Plan: docs/superpowers/plans/2026-09-09-run-all-agents-by-column.md
-//   (Task 5 regression).
-//
-//   Wire under test:
-//     POST /api/workspaces/:ws/items/:item/kanban/columns/:col/run_all_agents
-//       -> 200 {"success":true,"column_id":...,"started":[...],"skipped":[...],"failed":[...]}
-//       -> 404 {"error":"column not found"} for unknown columns.
-//
-//   The tests replay the exact frontend flow against a real binary
-//   (fresh binary, isolated tmpdir HOME, harness auto-picks a port != 8081):
-//
-//     1. seed workspace -> kanban item -> first column with 3 tasks.
-//     2. start_agent on task-1 first (-> 200 triggered, so task-1 owns a worker).
-//     3. POST run_all_agents -> 200 with a started/skipped split covering task-1
-//        (task-1 lands in `skipped` while its worker is in-flight; if the worker
-//        already drained it may land in `started` again — either way it must be
-//        covered by the union of the three lists).
-//     4. re-POST run_all_agents -> still 200 (safe / idempotent envelope).
-//     5. unknown column -> 404.
-//     6. GET .../tasks/:task_id single route still works (route-order guard:
-//        the new POST literal was registered in the columns family, never under
-//        /tasks/:task_id, so neither the single GET nor the list GET is shadowed).
-//   """
-//
-// ONE PYTHON IDIOM THAT DOES NOT SURVIVE THE PORT: `_start_agent` and
-// `_run_all_agents` returned the PARSED BODY, and the callers then read
-// keys off it. A `harness.Json` borrows from its `Response`'s body
-// buffer, so returning one from a helper would dangle the moment the
-// `Response` was deinit'd. Both helpers return the OWNING
-// `harness.Response` instead and each test parses it locally — same
-// ownership guarantee the Python dict gave.
+// Functional tests for the bulk `run_all_agents` column endpoint. Zig port of
+// `tests/functional/kanban_column_run_all_agents_test.py` (same test names,
+// same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -151,11 +114,6 @@ fn firstColumnId(h: *Harness, ws_id: []const u8, kanban_id: []const u8) ![]u8 {
 }
 
 /// `POST .../tasks` → the new task's id. Caller frees.
-///
-/// This is the GENERIC tasks route (`/items/:item_id/tasks`), not the
-/// kanban-flavoured one, and it answers with the task at the TOP LEVEL
-/// (no `{"task": ...}` envelope) — which is why the Python helper read
-/// `task["id"]` directly.
 fn createTask(
     h: *Harness,
     ws_id: []const u8,
@@ -190,10 +148,9 @@ fn createTask(
     return gpa.dupe(u8, id);
 }
 
-/// Seed workspace -> kanban -> first column with 3 tasks.
-///
-/// Mirrors `_seed_column_with_three_tasks`: returns the workspace, board,
-/// column and the three task ids, and asserts the ids are DISTINCT.
+/// Seed workspace -> kanban -> first column with 3 tasks. Mirrors
+/// `_seed_column_with_three_tasks`: returns the workspace, board, column and
+/// the three task ids, and asserts the ids are DISTINCT.
 fn seedColumnWithThreeTasks(h: *Harness) !Seed {
     const ws_id = try createWorkspace(h, "run-all-ws");
     errdefer gpa.free(ws_id);
@@ -357,11 +314,8 @@ test "start_agent_on_task1_first" {
 // ============================================================================
 
 // POST run_all_agents -> 200 with started/skipped/failed covering all 3.
-//
-// task-1 already owns a worker (started above), so it must land in
-// `skipped` while the worker is in-flight. If the worker already drained,
-// task-1 may land in `started` again — either way the union of the three
-// lists must equal exactly the 3 seeded ids.
+// task-1 already owns a worker (started above), so it must land in `skipped`
+// while the worker is in-flight.
 test "run_all_agents_started_skipped_split" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -495,11 +449,6 @@ test "run_all_agents_unknown_column_404" {
 // ============================================================================
 
 // GET .../tasks/:task_id still returns the single task (not the list).
-//
-// Guards the route-order rule: the new POST
-// .../kanban/columns/:column_id/run_all_agents lives in the columns family
-// (main.zig, after columns DELETE), never under /tasks/:task_id, so the
-// single-task GET + the list GET must both keep working.
 test "single_task_get_unshadowed" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -594,17 +543,6 @@ test "single_task_get_unshadowed" {
 // After `run_all_agents`, `GET /api/llm/session/:id` (and
 // `.../messages?limit=1`) must carry `selected_profile_model` as a JSON
 // string (or null/absent) — never a byte array like `[170, 170, ...]`.
-//
-// Root cause it guards: `startAgentUseCase` used to forward freed row
-// memory to the worker, and `workflow.zig` persisted the 0xAA poison to
-// `sessions.selected_profile_model`. `std.json` emits invalid-UTF-8
-// slices as arrays of numbers, so the frontend's profile picker
-// rendered `[170, 170, ...]` instead of the model name.
-//
-// Positive control: task-0 gets profile "900ribu" via PUT before the bulk
-// run, so the test proves the value survives (not just that the field is
-// absent). Every poll asserts the wire type; a single array observation
-// fails the test.
 test "run_all_agents_preserves_profile_string_wire" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -635,9 +573,7 @@ test "run_all_agents_preserves_profile_string_wire" {
     }
 
     // Poll the detail endpoint: workers persist asynchronously, so the
-    // corruption (if present) lands after the POST returns. Every
-    // observation must be string-or-null; at least one must show the
-    // pinned "900ribu" so the test cannot pass vacuously.
+    // corruption (if present) lands after the POST returns.
     var saw_pinned: bool = false;
     const deadline = std.Io.Timestamp.now(io, .awake).toMilliseconds() + 10_000;
     while (true) {

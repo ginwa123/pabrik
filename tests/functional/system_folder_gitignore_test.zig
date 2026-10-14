@@ -1,23 +1,6 @@
 // Functional wire tests for .gitignore filtering on GET /api/system/folder.
-//
-// Zig port of `tests/functional/system_folder_gitignore_test.py` (same
-// test names, same order).
-//
-// Regression guard for the macOS perf fix (worktree/fix-macos-folder-search):
-// `searchFiles` + `listDirectory` batch `git check-ignore` to ONE spawn
-// per directory (was: one spawn per entry). These tests prove the batched
-// form still respects real .gitignore rules over the HTTP wire:
-//
-//   1. action=search excludes gitignored files/dirs, keeps visible ones.
-//   2. action=list excludes gitignored entries (same batch helper).
-//
-// Fixture cwd (in a scratch tmpdir, NOT the harness HOME — the Python
-// original used pytest's `tmp_path`):
-//   <cwd>/.git/                 (git init — makes check-ignore evaluate rules)
-//   <cwd>/.gitignore            (*.log + ignored_dir/)
-//   <cwd>/visible.txt           (must surface)
-//   <cwd>/debug.log             (ignored via *.log — must NOT surface)
-//   <cwd>/ignored_dir/secret.txt (ignored via dir rule — must NOT surface)
+// Zig port of `tests/functional/system_folder_gitignore_test.py` (same test
+// names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -28,15 +11,6 @@ const gpa = testing.allocator;
 const io = testing.io;
 
 // QUERY STRINGS RIDE IN `path`, NOT IN `HttpOptions.params`.
-//
-// `HttpOptions.params` is the obvious spelling and it is wrong today:
-// `harness.buildUrl` reassigns its `url` and then frees the NEW value,
-// so the previous allocation is orphaned (and a third parameter frees
-// the very pointer the function is about to return). Under
-// `testing.allocator` that turns every param-carrying request into a
-// leak failure. `Harness.http` appends `path` to `http://127.0.0.1:<port>`
-// verbatim, so a path carrying `?a=b&c=d` produces the identical
-// request line. The bug is in the helper, not the contract.
 
 /// A scratch directory to hold the fixture repo, mirroring pytest's
 /// `tmp_path`. Removed on the way out, whatever the test's outcome.
@@ -74,11 +48,9 @@ fn writeFileAt(path: []const u8, contents: []const u8) !void {
     try f.writeStreamingAll(io, contents);
 }
 
-/// `git init --initial-branch=main --quiet <path>`.
-///
-/// `git init` is what makes `git check-ignore` evaluate rules at all:
-/// without a repository, git refuses the pathspec and the batched
-/// helper has nothing to report.
+/// `git init --initial-branch=main --quiet <path>`. `git init` is what makes
+/// `git check-ignore` evaluate rules at all: without a repository, git
+/// refuses the pathspec and the batched helper has nothing to report.
 fn gitInit(path: []const u8) !void {
     var argv: [5][]const u8 = .{ "git", "init", "--initial-branch=main", "--quiet", path };
     const res = std.process.run(gpa, io, .{ .argv = &argv }) catch |err| {
@@ -132,10 +104,8 @@ fn buildGitignoreRepo(s: *Scratch) ![]u8 {
     return cwd;
 }
 
-/// Does the entry array carry an entry named exactly `name`?
-///
-/// Python's `[e["name"] for e in r.json()["entries"]]` reduced to a
-/// membership test.
+/// Does the entry array carry an entry named exactly `name`? Python's
+/// `[e["name"] for e in r.json()["entries"]]` reduced to a membership test.
 fn entriesHaveName(entries: std.json.Array, name: []const u8) bool {
     for (entries.items) |v| {
         const o = switch (v) {

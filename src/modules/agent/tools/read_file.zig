@@ -47,13 +47,7 @@ pub fn readFile(
     const on_disk = try std.Io.Dir.cwd().readFileAlloc(io, path, allocator, std.Io.Limit.limited(std.math.maxInt(usize)));
     defer allocator.free(on_disk);
 
-    // Hand the model the LF form. `text_replace` normalizes the target file
-    // to LF BEFORE it searches for `old_str` (see its `had_crlf` branch), so
-    // returning the raw CRLF bytes here guarantees that anything the model
-    // copies out of this read fails to match on a Windows-authored file.
-    // The bytes on disk are untouched — this only changes what the model
-    // sees, and a bare `\r` (a Mac Classic line ending) is preserved by
-    // `normalizeLineEndings` rather than being silently eaten.
+    // Hand the model the LF form.
     const normalized = if (std.mem.indexOf(u8, on_disk, "\r\n") != null)
         try normalizeLineEndings(allocator, on_disk)
     else
@@ -180,9 +174,7 @@ pub const read_file_tool = AgentTool{
 };
 
 // ─── Raw-content contract tests ─────────────────────────────────────────
-// Content is raw (no per-line number prefixes). Positioning comes from
-// start_line/end_line/total_lines; absolute 1-indexed line numbers are
-// start_line + 1 + index.
+// Content is raw (no per-line number prefixes).
 
 test "read_file returns raw content without line-number prefixes" {
     var tmp = std.testing.tmpDir(.{});
@@ -221,12 +213,8 @@ test "read_file paginated slice is raw with correct start/end lines" {
 }
 
 // ─── CRLF contract ───────────────────────────────────────────────────────
-// `text_replace` normalizes the file to LF *before* it searches for
-// `old_str` (text_replace.zig: `had_crlf` → `normalizeLineEndings` →
-// `indexOf`). So the string the model copies out of `read_file` has to be
-// the LF form, or every exact-match edit against a Windows-authored file
-// fails with OldStrNotFound. That makes this a correctness contract
-// between the two tools, not a cosmetic one.
+// `text_replace` normalizes the file to LF *before* it searches for `old_str`
+// (text_replace.zig: `had_crlf` → `normalizeLineEndings` → `indexOf`).
 const text_replace = @import("text_replace.zig");
 
 fn writeTmp(allocator: std.mem.Allocator, tmp: *std.testing.TmpDir, name: []const u8, data: []const u8) ![]const u8 {
@@ -270,9 +258,7 @@ test "read_file CRLF paginated slice is LF and correctly bounded" {
 }
 
 // THE end-to-end contract: whatever read_file hands the model must be
-// directly usable as `old_str` by text_replace. Before the fix this failed
-// with OldStrNotFound on every CRLF file, because the model echoed the
-// '\r' it had been shown and text_replace searches LF-normalized content.
+// directly usable as `old_str` by text_replace.
 test "read_file output is directly usable as text_replace old_str (CRLF round trip)" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();

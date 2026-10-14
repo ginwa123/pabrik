@@ -1,9 +1,7 @@
 const std = @import("std");
 
-/// Extract all base64 video URLs from a message
-/// Looks for patterns like: data:video/mp4;base64,... or data:video/webm;base64,...
-/// Returns an array of all data URLs found (can be empty)
-/// Mirrors helpers/image.zig extractBase64ImageUrls — same base64 terminator rules.
+/// Extract all base64 video URLs from a message Looks for patterns like:
+/// data:video/mp4;base64,... or data:video/webm;base64,...
 pub fn extractBase64VideoUrls(message: []const u8, allocator: std.mem.Allocator) ![][]const u8 {
     const prefix = "data:video/";
     const base64_marker = ";base64,";

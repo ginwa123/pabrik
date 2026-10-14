@@ -8,11 +8,8 @@ const PrProvider = pr_provider.PrProvider;
 /// and so the GitLab builder below has an obvious sibling to read.
 pub const GH_JSON_FIELDS = "number,title,url,state,mergeable,mergeStateStatus,headRefName,baseRefName,createdAt,updatedAt,mergedAt,closedAt,author,additions,deletions,changedFiles,headRefOid";
 
-/// The command-line tool that owns a forge, plus the words its users
-/// expect to read. Every user-facing string and every argv in the git
-/// module is built from this one table, so `gh`/`glab` and PR/MR can
-/// never drift apart between call sites — the failure mode where a
-/// GitLab user is told to "check gh auth" for a `glab` failure.
+/// The command-line tool that owns a forge, plus the words its users expect
+/// to read.
 pub const Cli = struct {
     /// Program to spawn.
     program: []const u8,
@@ -63,19 +60,8 @@ pub fn hasCli(provider: PrProvider) bool {
 /// Upper bound on `viewArgv` output.
 pub const view_argv_max = 6;
 
-/// Build the read-only "show me this PR/MR" argv:
-/// `<prog> <pr|mr> view [<ref>] <provider flags>`.
-///
-/// `prog` is an explicit parameter, NOT `cli.program`, because it is
-/// the seam the test suite injects: a fixture script path has to be
-/// spawnable under the GitHub/GitLab *vocabulary* without being the
-/// real binary. Production passes `cliFor(provider).?.program`.
-///
-/// `ref` is "" for "the one for the current branch" (both CLIs resolve
-/// that from the repo), otherwise a number, IID, URL or branch name
-/// passed straight through. The two CLIs disagree on the JSON flag —
-/// `gh` wants `--json <field list>`, `glab` wants `--output json` and
-/// returns the whole object — so the flag pair is per-provider.
+/// Build the read-only "show me this PR/MR" argv: `<prog> <pr|mr> view
+/// [<ref>] <provider flags>`.
 pub fn viewArgv(storage: [][]const u8, provider: PrProvider, prog: []const u8, ref: []const u8) ?[]const []const u8 {
     const c = cliFor(provider) orelse return null;
     if (storage.len < view_argv_max) return null;
@@ -113,18 +99,9 @@ pub fn viewArgv(storage: [][]const u8, provider: PrProvider, prog: []const u8, r
 /// Upper bound on `createArgv` output.
 pub const create_argv_max = 12;
 
-/// Build the "open a new PR/MR" argv:
-/// `<prog> <pr|mr> create --base/--target-branch … --title …`.
-///
-/// `prog` is explicit for the same test-injection reason as `viewArgv`.
-/// `source_branch` is only consumed by the GitLab arm. `gh pr create`
-/// infers the head from the worktree's checked-out branch and adding
-/// `--head` there would change behaviour for every existing GitHub
-/// caller, so it stays exactly as it was. `glab` has no such
-/// inference — and, critically, without `--yes` it drops into an
-/// interactive confirm prompt, which in a non-tty child process blocks
-/// until the 60s timeout kills it. Both the source branch and `--yes`
-/// are mandatory on the GitLab arm for that reason.
+/// Build the "open a new PR/MR" argv: `<prog> <pr|mr> create
+/// --base/--target-branch … --title …`. `prog` is explicit for the same
+/// test-injection reason as `viewArgv`.
 pub fn createArgv(
     storage: [][]const u8,
     provider: PrProvider,
@@ -184,17 +161,7 @@ pub fn createArgv(
     return storage[0..n];
 }
 
-/// Which strategy a merge uses. Named after the three things a user picks
-/// between, not after the flags, because the flags differ per forge: GitHub
-/// spells all three out (`--merge` / `--squash` / `--rebase`) while GitLab's
-/// plain merge is the ABSENCE of a flag (`glab mr merge` with no strategy is
-/// a merge commit).
-///
-/// A method is mandatory at this layer for a load-bearing reason:
-/// `gh pr merge` with no strategy flag drops into an interactive prompt
-/// ("What merge method would you like to use?"), and a non-tty child cannot
-/// answer it, so the request would hang until the timeout killed it. Passing
-/// exactly one flag is what keeps the call non-interactive on GitHub.
+/// Which strategy a merge uses.
 pub const MergeMethod = enum {
     merge,
     squash,
@@ -235,10 +202,7 @@ pub const MergeMethod = enum {
     }
 };
 
-/// Everything a merge needs beyond the method itself. Every field is
-/// optional, and an empty one means "do not pass the flag" rather than
-/// "pass an empty value" — `gh --subject ""` is not the same request as no
-/// `--subject` at all.
+/// Everything a merge needs beyond the method itself.
 pub const MergeOptions = struct {
     /// Delete the source branch after merging. OFF by default in the UI:
     /// in this app the source branch is usually the session's own worktree
@@ -258,21 +222,9 @@ pub const MergeOptions = struct {
 /// flags. 18 is past every arm.
 pub const merge_argv_max = 18;
 
-/// Build the "merge this PR/MR" argv:
-/// `<prog> <pr|mr> merge [<ref>] <provider flags>`.
-///
-/// `prog` is explicit for the same test-injection reason as `viewArgv`.
-///
-/// Two GitLab flags are not optional and are appended unconditionally:
-///   - `-y/--yes` — without it `glab mr merge` blocks on a confirmation
-///     prompt that a non-tty child can never answer. This is the same trap
-///     `createArgv` documents above for `glab mr create`.
-///   - `--auto-merge=false` — `glab mr merge` defaults auto-merge to TRUE
-///     whenever a pipeline is running, which would turn "merge now" into
-///     "arm it and tell the user it worked". This app has no auto-merge
-///     feature, so the flag is forced off rather than merely omitted, which
-///     also means a future change to glab's default cannot reintroduce the
-///     lie.
+/// Build the "merge this PR/MR" argv: `<prog> <pr|mr> merge [<ref>] <provider
+/// flags>`. `prog` is explicit for the same test-injection reason as
+/// `viewArgv`.
 pub fn mergeArgv(
     storage: [][]const u8,
     provider: PrProvider,
@@ -357,22 +309,9 @@ pub fn mergeArgv(
 // ─── listArgv ────────────────────────────────────────────────────────────
 
 /// Fields requested from `gh pr list --json`.
-///
-/// Deliberately its own list rather than a reuse of `GH_JSON_FIELDS`:
-/// `gh pr list` is search-backed and validates field names against its own
-/// allow-list, which is narrower than `gh pr view`'s (the list command has
-/// no `additions`, no `mergedAt`, no `headRefOid`). Sharing one constant
-/// would fail whichever side it was trimmed for.
 pub const GH_LIST_JSON_FIELDS = "number,title,url,state,isDraft,headRefName,baseRefName,author,updatedAt";
 
 /// Which change requests a list asks for.
-///
-/// The value is handed to the forge's OWN notion of the state rather than
-/// translated into ours, because the two forges disagree: GitHub's `closed`
-/// includes merged PRs (which is exactly what its own "Closed" tab shows),
-/// while `glab`'s `--closed` does not — GitLab's UI has separate Merged and
-/// Closed tabs. Any translation between them would be a rule neither forge
-/// has.
 pub const ListState = enum {
     open,
     closed,
@@ -418,16 +357,8 @@ pub const ListState = enum {
 /// flag+value pairs, GitLab's state flag plus four pairs.
 pub const list_argv_max = 16;
 
-/// Build the "list the change requests" argv:
-/// `<prog> <pr|mr> list <state filter> <limit> <json flag>`.
-///
-/// `limit_buf` is where the decimal limit is rendered, and it is the
-/// CALLER's storage rather than a local: a local would hand argv a slice
-/// into a dead stack frame, so the spawn would read freed memory. (Same
-/// class of bug the `source_branch` lifetime comment in
-/// `git_pr_create.zig` documents.)
-///
-/// `prog` is explicit for the same test-injection reason as `viewArgv`.
+/// Build the "list the change requests" argv: `<prog> <pr|mr> list <state
+/// filter> <limit> <json flag>`.
 pub fn listArgv(
     storage: [][]const u8,
     limit_buf: []u8,
@@ -500,21 +431,8 @@ pub fn listArgv(
 /// Upper bound on `closeArgv` output (prog, noun, "close", ref).
 pub const close_argv_max = 4;
 
-/// Build the "close this PR/MR" argv: `<prog> <pr|mr> close <ref>`.
-///
-/// `ref` is REQUIRED here, unlike `viewArgv`. Both CLIs read a missing ref
-/// as "the one for the currently checked-out branch", and closing whatever
-/// happens to be checked out is not something a row in a list can mean.
-/// Refusing an empty ref is the difference between "close #893" and "close
-/// something".
-///
-/// Two flags are deliberately absent:
-///   - `--comment`: `gh pr close -c` has no `glab` counterpart, so a shared
-///     closing-comment field would silently do nothing for every GitLab
-///     user. A field that only works on one forge is worse than no field.
-///   - `--delete-branch` / `--remove-source-branch`: on a pabrik board the
-///     head branch is a live session worktree — a directory an agent may be
-///     standing in. The forge's own PR page still offers it.
+/// Build the "close this PR/MR" argv: `<prog> <pr|mr> close <ref>`. `ref` is
+/// REQUIRED here, unlike `viewArgv`.
 pub fn closeArgv(
     storage: [][]const u8,
     provider: PrProvider,
@@ -546,11 +464,9 @@ pub const GH_CHECKS_JSON_FIELDS = "bucket,name,state,link,workflow,startedAt,com
 /// Upper bound on `checksArgv` output.
 pub const checks_argv_max = 6;
 
-/// `<gh> pr checks [<ref>] --json <field list>`.
-///
-/// Null for every provider but GitHub: glab has no `mr checks` (its CI surface
-/// needs a pipeline id we do not have). The caller must turn that into "not
-/// supported", not into an empty list — which reads as "everything passed".
+/// `<gh> pr checks [<ref>] --json <field list>`. Null for every provider but
+/// GitHub: glab has no `mr checks` (its CI surface needs a pipeline id we do
+/// not have).
 pub fn checksArgv(storage: [][]const u8, provider: PrProvider, prog: []const u8, ref: []const u8) ?[]const []const u8 {
     switch (provider) {
         .github => {},
@@ -631,17 +547,6 @@ fn digitsAfter(link: []const u8, marker: []const u8) ?[]const u8 {
 }
 
 /// Pick the URL out of a forge CLI's stdout after a successful create.
-///
-/// The naive read — "stdout is the URL" — is what `gh pr create` looks
-/// like when it works, and it is wrong for `glab mr create`, which
-/// prefixes a `Creating merge request for <branch> on <host>…` banner
-/// before the link. Taking the whole blob would store that banner as
-/// `pr_url` and every later `set_pull_request` would reject it as an
-/// unparseable URL.
-///
-/// So: scan the lines bottom-up for the first one that parses as an
-/// http(s) URL, and only fall back to the last non-empty line when
-/// none does. Returns a slice borrowing from `stdout`.
 pub fn extractCreatedUrl(stdout: []const u8) []const u8 {
     var last_non_empty: []const u8 = "";
     var it = std.mem.splitBackwardsAny(u8, stdout, "\n");
@@ -872,10 +777,7 @@ test "mergeArgv: github carries the head guard, the message and delete-branch" {
 
 test "mergeArgv: a merge is never ARMED instead of performed" {
     // The regression this pins: `gh pr merge --auto` exits 0 with the PR
-    // still open. Auto-merge is not a feature of this app, so the flag must
-    // never appear — otherwise the endpoint would report "Merged" for a PR
-    // that is merely queued, which is the one failure a merge button cannot
-    // afford.
+    // still open.
     var buf: [merge_argv_max][]const u8 = undefined;
     const argv = mergeArgv(&buf, .github, "gh", "891", .squash, .{ .head_sha = "abc123" }).?;
     try std.testing.expect(!hasArg(argv, "--auto"));
@@ -883,14 +785,9 @@ test "mergeArgv: a merge is never ARMED instead of performed" {
 }
 
 test "mergeArgv: gitlab forces --yes and --auto-merge=false" {
-    // Both flags are load-bearing and neither is optional:
-    //  - without -y/--yes, `glab mr merge` blocks on a confirmation prompt
-    //    that a non-tty child can never answer (the same trap `createArgv`
-    //    documents for `glab mr create`);
-    //  - `glab mr merge` defaults auto-merge to TRUE whenever a pipeline is
-    //    running, and exits 0 having only ARMED the merge. The flag is
-    //    forced off rather than omitted so a future change to glab's own
-    //    default cannot silently reintroduce that lie.
+    // Both flags are load-bearing and neither is optional: - without
+    // -y/--yes, `glab mr merge` blocks on a confirmation prompt that a
+    // non-tty child can never answer (the same trap `createArgv` documents
     var buf: [merge_argv_max][]const u8 = undefined;
     try expectArgv(
         mergeArgv(&buf, .gitlab, "glab", "7", .squash, .{ .delete_branch = true, .head_sha = "4f21c9e" }),

@@ -1,42 +1,6 @@
 //! The `git_file_stage` SSE channel: the backend telling the UI that a file
-//! moved between the index and the worktree, so the Files tab can move ONE row
-//! instead of re-fetching the whole git-status list.
-//!
-//! ## Why this exists
-//!
-//! `POST /api/git/stage` and `POST /api/git/unstage` used to leave the client
-//! with no signal, so `SidebarDiffPanel.stageFile` / `unstageFile` answered
-//! with `await loadGitStatus()` — a full `git status --porcelain -uall` plus
-//! untracked-directory expansion, then a second folder-wide diff request. On a
-//! 40-file worktree that is two git spawns and a re-render of every row, for a
-//! change that moved exactly one path between two lists. The list visibly
-//! blanks and repopulates.
-//!
-//! Now the handler emits on ONE central routing key and the panel applies a
-//! surgical local update: the row moves between Staged / Changes / Untracked,
-//! and only that file's diff is re-primed.
-//!
-//! ## Why a central routing key, like `background_process`
-//!
-//! A stage event is not scoped to a session in a way the UI can use: the panel
-//! is bound to a worktree (`cwd`), and several sessions can share one worktree.
-//! So this emits on ONE central key and the frontend filters by `data.cwd`
-//! JS-side — the same shape `background_process_events.zig` uses, and for the
-//! same reason.
-//!
-//! ## The four registration places
-//!
-//! A named SSE event that is not registered in ALL of these is dropped by the
-//! browser's `EventSource` before `onEvent` ever fires, which is
-//! indistinguishable from a dead stream (the PR #215 / `session_unknown`
-//! class). They are:
-//!
-//!   1. the Zig event-type ladder (this file)
-//!   2. `additionalEventTypes` in `src/apps/desktop/src/api/index.ts`
-//!   3. an `onEvent` dispatch branch in the same file
-//!   4. `SseEventMap` in `helpers/sseBus.ts` + `UnifiedChannels` in `api/index.ts`
-//!
-//! Miss any one and the event silently vanishes.
+//! moved between the index and the worktree, so the Files tab can move ONE
+//! row instead of re-fetching the whole git-status list.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -66,12 +30,8 @@ pub const GitFileStageEventInput = struct {
     failed: bool = false,
 };
 
-/// Emit one file-stage lifecycle event.
-///
-/// No-op when `event_bus` is null (unit tests, and any caller that has no
-/// bus). Never fails the caller: a successful `git add` must not be reported
-/// as a failure because the UI could not be told about it. The event is
-/// bookkeeping, and the frontend falls back to a manual refresh.
+/// Emit one file-stage lifecycle event. No-op when `event_bus` is null (unit
+/// tests, and any caller that has no bus).
 pub fn emitGitFileStageEvent(
     allocator: std.mem.Allocator,
     event_bus: ?*event_bus_mod.EventBus,
@@ -86,11 +46,7 @@ pub fn emitGitFileStageEvent(
     };
     const data = std.json.Stringify.valueAlloc(allocator, payload, .{}) catch return;
 
-    // The granular wire name. An action not in this ladder falls through to
-    // `git_file_stage_unknown`, which the frontend deliberately does NOT
-    // register — so an unrecognised action cannot leak into the panel's
-    // row-move callback without an explicit contract. (Zig 0.16 cannot
-    // `switch` on `[]const u8`.)
+    // The granular wire name.
     const event_type_name: []const u8 = if (std.mem.eql(u8, input.action, "staged"))
         EventStaged
     else if (std.mem.eql(u8, input.action, "unstaged"))
@@ -100,11 +56,7 @@ pub fn emitGitFileStageEvent(
 
     bus.emit(SseEvent, RoutingKey, .{
         // The routing-key literal, not a session id: this channel is not
-        // session-scoped (see the module docstring). `forwardToClients`
-        // resolves the envelope id against the sessions table, finds no row,
-        // and falls back to the payload — which carries no `session_id`
-        // either, so the event is delivered to every subscriber. That is
-        // correct here: the cwd filter is the frontend's job.
+        // session-scoped (see the module docstring).
         .session_id = RoutingKey,
         .data = data,
         .event_type = event_type_name,

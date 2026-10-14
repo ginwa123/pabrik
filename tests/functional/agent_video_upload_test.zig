@@ -1,50 +1,6 @@
-// Functional tests for full video upload to LLM (Migration 090).
-//
-// Zig port of `tests/functional/agent_video_upload_test.py` (same test
-// names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional tests for full video upload to LLM (Migration 090).
-//
-//   Exercises the video_urls wire contract against a REAL pabrik
-//   binary + REAL SQLite, replaying the EXACT JSON bodies the frontend
-//   sends:
-//
-//     * TASK CREATE — POST kanban/tasks with video_urls -> 201, task
-//       echoes video_urls, row persists.
-//     * TASK UPDATE — PUT tasks/:id with video_urls -> 200; invalid mime
-//       -> 400; image mime in video_urls -> 400 (wrong column).
-//     * CHAT SEND — POST /api/llm/session with video_urls -> 201; the
-//       session messages read-back carries video_url.
-//     * SIZE CAP — oversize video_urls payload -> 413 (not 500).
-//     * EMPTY-STRING TRAP — video_urls:"" binds as SQL '' literal (not
-//       NULL) -> 200, no NOT NULL violation.
-//
-//   Small base64 stubs stand in for real video bytes — the backend
-//   never decodes media, it only validates the
-//   data:video/<mime>;base64 prefix, the allowlist, and the byte cap.
-//   """
-//
-// ON THE "BINARY BODIES" NOTE: nothing here is multipart and nothing
-// here is raw bytes on the wire. `video_urls` is a `data:` URL whose
-// base64 payload lives INSIDE a JSON string field, so every request in
-// this suite is an ordinary `application/json` POST built with
-// `std.json.Stringify` (or an `allocPrint` for the `||` join) and handed
-// to `Harness.http`'s `json_body`. The harness's default
-// `Content-Type: application/json` is therefore correct and no
-// `extra_headers` override is needed — the media bytes are base64 text
-// by construction.
-//
-// `create_kanban`'s `path` comes from `harness.harnessPath`, NOT the
-// Python literal `/tmp/video-test`: the server validates it with
-// `std.fs.path.isAbsolute`, which is platform-relative, so a literal
-// correct on ubuntu-24.04 would fail at the HTTP door on windows-2022.
-// Nothing about the path is what this suite tests.
-//
-// The `llm_harness` fixture (stub LLM profile) becomes `bootLlm()` — the
-// `stub_llm_profile` boot option, so the async worker drains the queue
-// and the user row lands in llm_history BEFORE the LLM call fires.
+// Functional tests for full video upload to LLM (Migration 090). Zig port of
+// `tests/functional/agent_video_upload_test.py` (same test names, same
+// order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -164,11 +120,6 @@ fn updateTaskBody(
 }
 
 /// `GET .../tasks/<task_id>` → the WHOLE `{"task": {...}}` body. Owned.
-///
-/// The Python helper returned `r.json()["task"]` — a sub-dict of a
-/// parsed body, which cannot outlive the parse in Zig — so this returns
-/// the raw envelope and each caller pulls `doc.object("task")` out of
-/// its own local parse.
 fn getTaskBody(h: *Harness, ws: []const u8, kb: []const u8, task_id: []const u8) ![]u8 {
     const path = try std.fmt.allocPrint(
         gpa,
@@ -182,13 +133,8 @@ fn getTaskBody(h: *Harness, ws: []const u8, kb: []const u8, task_id: []const u8)
     return gpa.dupe(u8, r.body);
 }
 
-/// `GET .../tasks/<task_id>/media` → the WHOLE media body, owned.
-///
-/// The lazy media payload (media-flags change). Task create/get
-/// responses deliberately carry only the `is_have_image` /
-/// `is_have_video` flags so board fetches stay small; the full
-/// `||`-delimited strings live behind this route
-/// (`src/http_handlers/tasks_media.zig`, registered at main.zig:790).
+/// `GET .../tasks/<task_id>/media` → the WHOLE media body, owned. The lazy
+/// media payload (media-flags change).
 fn getTaskMediaBody(h: *Harness, ws: []const u8, kb: []const u8, task_id: []const u8) ![]u8 {
     const path = try std.fmt.allocPrint(
         gpa,
@@ -244,14 +190,8 @@ fn sessionId(body: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// Poll session messages until a user row appears (async worker drain),
-/// then report whether any user row's `video_url` contains `needle`.
-///
-/// The Python helper returned `[m.get("video_url", "") for m in users]`
-/// and every caller immediately asked `any(needle in v)`. Folding the
-/// predicate in here keeps the poll's LIFETIME honest: the strings are
-/// borrowed from the parsed response, so returning them would hand the
-/// caller slices that die with the frame.
+/// Poll session messages until a user row appears (async worker drain), then
+/// report whether any user row's `video_url` contains `needle`.
 fn userMessageHasVideo(h: *Harness, session_id: []const u8, needle: []const u8, timeout_s: f64) !bool {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}/messages", .{session_id});
     defer gpa.free(path);
@@ -429,10 +369,9 @@ test "create_task_with_mp4_echoes_video_urls" {
             std.debug.print("expected task object, got: {s}\n", .{resp_raw});
             return error.TestUnexpectedResult;
         };
-        // The create response carries the flag, not the payload —
-        // asserting `task["video_urls"]` here is what broke when the
-        // media-flags change moved the full string to the lazy /media
-        // route.
+        // The create response carries the flag, not the payload — asserting
+        // `task["video_urls"]` here is what broke when the media-flags change
+        // moved the full string to the lazy /media route.
         try expectTrue(task, "is_have_video", "create response task");
         try expectKeyAbsent(task, "video_urls", "create response should stay flag-only");
     }
@@ -804,11 +743,8 @@ test "chat_send_direct_with_video_urls" {
     }
 }
 
-// Regression: session_create rejected bodies > 1 MB with 413.
-//
-// A real 1.8 MB mp4 base64-encodes to ~2.4 MB of JSON. The handler gate
-// is now 35 MB (25 MB video cap + base64 inflation); the 25 MB
-// video_urls_validation cap stays the user-facing limit.
+// Regression: session_create rejected bodies > 1 MB with 413. A real 1.8 MB
+// mp4 base64-encodes to ~2.4 MB of JSON.
 test "chat_send_with_2mb_video_body_is_accepted" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });

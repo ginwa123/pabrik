@@ -1,51 +1,6 @@
-// Functional e2e for session background-process HTTP endpoints.
-//
-// Zig port of `tests/functional/background_processes_api_test.py`
-// (same test names, same order).
-//
-// PYTHON DOCSTRING, PRESERVED:
-//
-//   """Functional e2e for session background-process HTTP endpoints.
-//
-//   Covers the two read-only endpoints added for the frontend pill/dialog
-//   (no new SSE event, no migration, no watcher/cron change):
-//
-//     * GET /api/llm/session/:session_id/background_processes
-//       -> 200 { processes: [{ pid, command, log_path, started_at,
-//                              status, running }], count }
-//     * GET /api/llm/session/:session_id/background_processes/:pid/log
-//       [?max_bytes=N]
-//       -> 200 { pid, log_path, total_bytes, truncated, content }
-//       (content is the TAIL — the last max_bytes of the file).
-//
-//   Setup pattern (replay-frontend-wire-payload rule): sessions are created
-//   via PUT /api/llm/session/:id {"name": ...} (session_update.zig
-//   auto-creates via ensureSessionExists — same helper as
-//   background_command_completion_test.py::_create_session, no LLM profile
-//   needed). Bg rows are inserted via direct sqlite3 into the isolated
-//   HOME's agent.db (Path(harness.temp_dir)/.config/pabrik/agent.db — WAL
-//   mode makes the concurrent open safe). The dead PID (999999999) can
-//   never be alive: it exceeds Linux's max PID so kill(pid, 0) returns
-//   ESRCH -> running == false. The live PID is the harness's own
-//   os.getpid() -> running == true.
-//
-//   Endpoints are synchronous — no polling needed.
-//   """
-//
-// ─── WHY THE SEED ROW GOES IN THROUGH THE `sqlite3` CLI ───────────────────
-// There is no HTTP route that creates a `session_background_process` row:
-// the only production writer is the `command` agent TOOL, which needs a
-// live LLM tool call, and this suite deliberately runs without one. The
-// Python opened `agent.db` with the stdlib `sqlite3` module; this
-// package links no SQLite and will not grow one (see
-// `tests/functional/build.zig`'s header), so the port spawns the `sqlite3`
-// COMMAND-LINE tool — the same idiom `background_command_completion_test.zig`
-// uses for the identical table. `.timeout 5000` is the CLI's spelling of
-// Python's `busy_timeout`.
-//
-// The log fixtures live INSIDE `h.temp_dir` (the harness's own HOME),
-// not in a scratch dir: they are per-test files the server reads back,
-// not a fixture tree that has to outlive a `Harness.boot`.
+// Functional e2e for session background-process HTTP endpoints. Zig port of
+// `tests/functional/background_processes_api_test.py` (same test names, same
+// order).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -168,10 +123,9 @@ fn createSession(h: *Harness, session_id: []const u8) !void {
     defer r.deinit();
 }
 
-/// Insert a `session_background_process` row WHILE the binary runs.
-///
-/// Schema mirrors migration 014: `(session_id, pid, command, log_path,
-/// started_at, status)` with composite PK `(session_id, pid)`.
+/// Insert a `session_background_process` row WHILE the binary runs. Schema
+/// mirrors migration 014: `(session_id, pid, command, log_path, started_at,
+/// status)` with composite PK `(session_id, pid)`.
 fn insertBgRow(
     h: *Harness,
     session_id: []const u8,
@@ -216,10 +170,8 @@ fn getListBody(h: *Harness, session_id: []const u8) ![]u8 {
     return gpa.dupe(u8, r.body);
 }
 
-/// `GET .../background_processes/:pid/log[?max_bytes=N]` → the whole
-/// body. Owned.
-///
-/// `max_bytes` goes through `.params`, NOT a hand-built query string:
+/// `GET .../background_processes/:pid/log[?max_bytes=N]` → the whole body.
+/// Owned. `max_bytes` goes through `.params`, NOT a hand-built query string:
 /// the harness percent-encodes both the name and the value.
 fn getLogBody(
     h: *Harness,
@@ -308,12 +260,6 @@ fn expectStr(obj: std.json.ObjectMap, key: []const u8, want: []const u8, ctx: []
 }
 
 /// The document's ROOT object, borrowed from `doc`.
-///
-/// The log endpoints answer with a flat object at the root
-/// (`{pid, log_path, total_bytes, truncated, content}`) with no wrapper
-/// key, so the field assertions read it directly — the same values
-/// `doc.str("x")` / `doc.int("x")` would look up inside that root, but
-/// the type-checking assertions take an `ObjectMap`.
 fn requireRootObject(doc: *const harness.Json, raw: []const u8) !std.json.ObjectMap {
     return switch (doc.value().*) {
         .object => |o| o,

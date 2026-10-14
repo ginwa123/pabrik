@@ -1,36 +1,6 @@
-//! Agent memory tools: `save_memory` + `load_memory` (append-only).
-//!
-//! Merged from `save_memory.zig` + `load_memory.zig`
-//! (2026-09-11 memory-merge refactor) — one file, two tools. The public
-//! surface: `SaveMemoryInput` / `save_memory_tool` / `executeSaveMemory`,
-//! `LoadMemoryInput` / `load_memory_tool` / `executeLoadMemory`, plus the
-//! shared `splitTagsString` helper.
-//!
-//! Append-only (2026-09-12): `save_memory` always inserts a new row with
-//! a fresh id — no update, no delete. (`delete_memory` was removed per
-//! user decision: "memory is always add, no need edit or delete".)
-//!
-//! Per-workspace scope (Migration 095)
-//! ─────────────────────────────────
-//! BOTH `executeSaveMemory` and `executeLoadMemory` take a `workspace_id`
-//! as an explicit parameter, and it is NOT part of the `*Input` structs —
-//! so it is not a tool field the model can populate. `tools_exec_memory.zig`
-//! resolves it from `ctx.session_id` via
-//! `workspace_scope.resolveWorkspaceId` and passes it down. Neither the
-//! tool descriptions nor the wire schema offer a way to name another
-//! workspace.
-//!
-//! Wire shapes (JSON, via std.json.Stringify.valueAlloc):
-//!   save:   input { content, tags? } →
-//!           {"id","created_at","updated_at","workspace_id"}
-//!           or {"error"}
-//!   load:   input { query?, id?, tags?, limit?=10, offset?=0,
-//!                   with_content?=false } →
-//!           {"query","limit","offset","with_content","count","total_count",
-//!            "workspace_id",
-//!            "results":[{"id","tags","created_at","updated_at","snippet",
-//                         "content","truncated"}]}
-//!           or {"error"}
+//! Agent memory tools: `save_memory` + `load_memory` (append-only). Merged
+//! from `save_memory.zig` + `load_memory.zig` (2026-09-11 memory-merge
+//! refactor) — one file, two tools.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -85,10 +55,8 @@ pub const SaveMemorySuccess = struct {
     id: []const u8,
     created_at: []const u8,
     updated_at: []const u8,
-    /// The workspace the note was filed under (Migration 095). Empty
-    /// means "this session had no workspace". Echoed so the agent can
-    /// see that a note it just wrote is NOT visible to other
-    /// workspaces — the echo is the only place that fact is observable.
+    /// The workspace the note was filed under (Migration 095). Empty means
+    /// "this session had no workspace".
     workspace_id: []const u8 = "",
 };
 
@@ -99,42 +67,8 @@ pub const MemoryError = struct {
 
 // ─── save_memory ───
 
-// Agent-callable tool: `save_memory` — append a short, structured note
-// that the agent can recall later via `load_memory`.
-//
-// Plan: docs/superpowers/plans/2026-08-06-save-load-memory-fts5.md (Task 3)
-// Task: task_1785958319567
-//
-// Wire shape:
-//   input:  { content: string, tags?: string }
-//   output: {"id":...,"created_at":...,"updated_at":...}
-//   or:     {"error":...}
-//
-// The actual INSERT lives in `agent_memories.saveMemory`.
-// This file is a thin XML wrapper around it (mirrors the
-// `kanban_list.zig` / `read_workspace_session.zig` pattern).
-//
-// Design choices:
-//   - Every call inserts a NEW row with a fresh `mem_<16-hex>` id
-//     (append-only — no update, no delete; a correction is just
-//     another row, and FTS5 ranking surfaces the relevant one).
-//     Both timestamps are `CURRENT_TIMESTAMP` at insert time.
-//   - Per-row size cap is 1 MiB (rejects overflow, doesn't truncate).
-//   - Tags is a SINGLE STRING on the wire (matches the schema
-//     `type: "string"`). Multiple tags are joined with `||`
-//     (the project convention — matches Migration 067 / 069).
-//     The parser ALSO accepts `|`, `,`, and space as separators
-//     for robustness — the LLM has tried all of these.
-//   - Empty string → empty `tags` array (canonical "no tags" sentinel).
-//
-// Why `tags` is a string, not an array:
-//   The LLM tool schema declares `tags: { type: "string" }`. The
-//   LLM faithfully sends a string. The previous struct shape
-//   (`tags: []const []const u8`) parsed as a JSON array, so
-//   every string-form failed with "UnexpectedToken" (user bug,
-//   session-1785986173692, 2026-08-06). The string form is also
-//   simpler to reason about and matches the documented contract
-//   "Joined with `||` in storage".
+// Agent-callable tool: `save_memory` — append a short, structured note that
+// the agent can recall later via `load_memory`.
 
 /// Input for `save_memory`. Append-only — no `id`: the id is always
 /// auto-generated (`mem_<16-hex>`). (Stale `id` fields in incoming JSON
@@ -142,17 +76,12 @@ pub const MemoryError = struct {
 pub const SaveMemoryInput = struct {
     /// The note body. 1 KiB – 1 MiB (validated by `agent_memories.saveMemory`).
     content: []const u8 = "",
-    /// Optional labels as a single string. Multiple tags separated
-    /// by `||` (preferred), `|`, `,`, or space. Empty string = no tags.
-    /// Split at the boundary into `[]const []const u8` before passing
-    /// to `agent_memories.saveMemory` (which joins with `||` for storage).
+    /// Optional labels as a single string. Multiple tags separated by `||`
+    /// (preferred), `|`, `,`, or space. Empty string = no tags.
     tags: []const u8 = "",
 };
 
-/// Top-level tool definition for the LLM. The description is the
-/// agent's primary signal for WHEN to use this tool — it explicitly
-/// tells the agent that memory entries are append-only, FTS5-indexed,
-/// global (cross-session / cross-workspace), and capped at 1 MiB.
+/// Top-level tool definition for the LLM.
 pub const save_memory_tool_system_prompt =
     \\## Save Memory Tool — Behavior
     \\Use `save_memory` to persist a fact across sessions (FTS5).
@@ -185,15 +114,8 @@ pub const save_memory_tool = AgentTool{
     },
 };
 
-/// Execute save_memory. Returns a JSON string for the LLM.
-///
-/// Caller owns the returned slice and must free it with `allocator.free()`.
-///
-/// `workspace_id` is supplied by the exec layer (resolved from
-/// `ctx.session_id`), NOT by the model — `SaveMemoryInput` has no such
-/// field on purpose, so there is no JSON a model can send that writes a
-/// note into someone else's workspace. `''` files the note in the
-/// "no workspace" bucket.
+/// Execute save_memory. Returns a JSON string for the LLM. Caller owns the
+/// returned slice and must free it with `allocator.free()`.
 pub fn executeSaveMemory(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -224,13 +146,6 @@ pub fn executeSaveMemory(
 }
 
 /// Split a tags wire string by `||` (preferred), `|`, `,`, and space.
-/// Returns an allocated array of `[]const u8` slices — caller owns the
-/// array and the slices (free the array with `allocator.free()`; the
-/// slices are views into the input string and don't need individual
-/// frees unless they were trimmed).
-///
-/// The bounds are loose: `"foo, ,bar"` yields `["foo", "bar"]` (empty
-/// segments skipped). Whitespace around tags is trimmed.
 pub fn splitTagsString(allocator: std.mem.Allocator, input: []const u8) ![]const []const u8 {
     // First pass: count tags (skip empty segments).
     var count: usize = 0;
@@ -297,48 +212,7 @@ fn saveErrorJSON(allocator: std.mem.Allocator, msg: []const u8) ![]u8 {
 // ─── load_memory ───
 
 // Agent-callable tool: `load_memory` — FTS5 phrase search over the
-// `agent_memories` store. Backs `save_memory` (the agent saves
-// notes on demand, then recalls them via this tool).
-//
-// Plan: docs/superpowers/plans/2026-08-06-save-load-memory-fts5.md (Task 4)
-// Task: task_1785958319567
-//
-// Wire shape:
-//   input:  { query?: string, id?: string, tags?: string[],
-//             limit?: number=10, offset?: number=0,
-//             with_content?: boolean=false }
-//           Either `query` or `id` must be non-empty (validated at
-//           runtime — the OpenAI schema DSL has no `oneOf` for primitive
-//           strings, so the validation lives in `executeLoadMemory`).
-//   output: {"query":...,"limit":...,"offset":...,"with_content":...,
-//            "count":N,"total_count":M,
-//            "results":[{"id":...,"tags":...,"created_at":...,"updated_at":...,
-//                        "snippet":"...[match]...",
-//                        "content":...,"truncated":...}]}
-//            ("content" is null unless with_content=true or by-id is used —
-//             by-id returns the full body, no 2 KiB cap)
-//   or:     {"error":...}
-//           Errors: "must supply either query or id" (both empty),
-//                   "not found: <id>" (id given but row missing),
-//                   FTS5 / DB errors.
-//
-// Context anti-bloat guarantees:
-//   - **Snippets by default** (10-token window with [match] markers).
-//     Never raw content unless with_content=true.
-//   - **`with_content=true` truncates at MAX_FULL_CONTENT_BYTES (2 KiB)**.
-//     Worst case: 50 rows × 2 KiB = 100 KiB. Comfortably fits the
-//     LLM context budget.
-//   - **limit default 10, max 50** (MAX_LIMIT). Caller's `limit`
-//     higher than MAX_LIMIT is capped silently.
-//
-// Why `tags` is a string, not an array:
-//   The LLM tool schema declares `tags: { type: "string" }`. The
-//   LLM faithfully sends a string. The previous struct shape
-//   (`tags: []const []const u8`) parsed as a JSON array, so
-//   every string-form failed with "UnexpectedToken" (user bug,
-//   session-1785986173692, 2026-08-06). Split on `||` (preferred),
-//   `|`, `,`, or space at the boundary before passing to the
-//   storage layer (which uses the array as individual LIKE patterns).
+// `agent_memories` store.
 
 /// Input for `load_memory`.
 pub const LoadMemoryInput = struct {
@@ -346,35 +220,23 @@ pub const LoadMemoryInput = struct {
     /// via `agent_memories.loadMemoriesByFts` (which calls
     /// `escapeFtsQuery` to strip FTS5 operators like `.`, `-`, `:`, `*`).
     query: []const u8 = "",
-    /// Look up a single memory by exact id. When non-empty, FTS5 is
-    /// skipped and `agent_memories.getMemoryById` does a single-row
-    /// SELECT that returns the FULL content (no MAX_FULL_CONTENT_BYTES
-    /// 2 KiB cap — only the storage layer's 1 MiB MAX_CONTENT_BYTES).
-    /// `tags` is ignored when `id` is set (only 1 row can match).
-    /// Either `query` or `id` must be non-empty — supplying both is OK
-    /// (the by-id path wins).
+    /// Look up a single memory by exact id.
     id: []const u8 = "",
-    /// Optional AND filter as a single string. Multiple tags separated
-    /// by `||` (preferred), `|`, `,`, or space. Empty string = no
-    /// filter. Split at the boundary into `[]const []const u8` before
-    /// passing to `agent_memories.loadMemoriesByFts`. Ignored when `id`
-    /// is set.
+    /// Optional AND filter as a single string. Multiple tags separated by
+    /// `||` (preferred), `|`, `,`, or space. Empty string = no filter.
     tags: []const u8 = "",
     /// Max rows to return. Default 10, hard cap MAX_LIMIT (50).
     limit: u32 = 10,
     /// Skip the first N rows. Default 0.
     offset: u32 = 0,
-    /// When true, include the full content of each FTS hit (truncated
-    /// to MAX_FULL_CONTENT_BYTES per row). When false (default),
-    /// only the snippet is included — protects the LLM context
-    /// budget. Ignored in the by-id path (content is always full).
+    /// When true, include the full content of each FTS hit (truncated to
+    /// MAX_FULL_CONTENT_BYTES per row).
     with_content: bool = false,
 };
 
-/// Hard cap on the per-row content when `with_content=true`. 2 KiB
-/// matches the snippet length used by workspace history search (16 KiB is too
-/// large for a memory-note preview; 2 KiB is enough to see context
-/// around the matched phrase).
+/// Hard cap on the per-row content when `with_content=true`. 2 KiB matches
+/// the snippet length used by workspace history search (16 KiB is too large
+/// for a memory-note preview; 2 KiB is enough to see context around the
 pub const MAX_FULL_CONTENT_BYTES: u32 = 2 * 1024;
 
 /// Hard cap on the result set size. Caller's `limit` is silently
@@ -482,33 +344,15 @@ pub const load_memory_tool = AgentTool{
                 .{ .name = "offset", .type = "number", .description = "Skip the first N results. Default 0. Use total_count to know when to stop." },
                 .{ .name = "with_content", .type = "boolean", .description = "Include each hit's full body (max 2 KiB per row) instead of the snippet alone. Default false. Ignored when `id` is set." },
             },
-            // `query` was previously the only required field. With the
-            // 2026-08-19 by-id addition, EITHER `query` OR `id` must be
-            // supplied — but the OpenAI tool-schema DSL has no `oneOf`
-            // for primitive strings, so the validation moves to
-            // `executeLoadMemory` (returns {"error"} when both are empty).
+            // `query` was previously the only required field.
             .required = &.{},
         },
         .system_prompt = load_memory_tool_system_prompt,
     },
 };
 
-/// Execute load_memory. Returns a JSON string for the LLM.
-///
-/// Caller owns the returned slice and must free it with `allocator.free()`.
-///
-/// `workspace_id` is supplied by the exec layer (resolved from
-/// `ctx.session_id`) and is a HARD filter on both branches: a hit owned
-/// by another workspace cannot be reached by FTS search OR by `id`, and
-/// a by-id miss is reported as `not found` rather than as a denial, so
-/// the tool never confirms that another workspace's note exists.
-///
-/// Branches on `input.id`:
-///   - When `id` is non-empty: bypass FTS5, call
-///     `agent_memories.getMemoryById`, return a single-row
-///     `"results"` response with the FULL content (no
-///     MAX_FULL_CONTENT_BYTES 2 KiB cap). Not-found → `{"error"}`.
-///   - When `id` is empty: run the existing FTS5 path.
+/// Execute load_memory. Returns a JSON string for the LLM. Caller owns the
+/// returned slice and must free it with `allocator.free()`.
 pub fn executeLoadMemory(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -566,10 +410,9 @@ pub fn executeLoadMemory(
         const cs = try allocator.alloc(?[]u8, hits.len);
         contents = cs;
         for (hits, 0..) |hit, i| {
-            // Scoped even though the hit came from an already-scoped
-            // search: this is the one read that returns raw content, so
-            // it must not become a way around the workspace filter if
-            // the caller's scope ever drifts.
+            // Scoped even though the hit came from an already-scoped search:
+            // this is the one read that returns raw content, so it must not
+            // become a way around the workspace filter if the caller's scope
             const row = agent_memories.getMemoryById(allocator, db, hit.id, workspace_id) catch |err| {
                 const msg = std.fmt.allocPrint(allocator, "getMemoryById failed: {s}", .{@errorName(err)}) catch "?";
                 defer allocator.free(msg);
@@ -589,14 +432,7 @@ pub fn executeLoadMemory(
     return loadSuccessJSON(allocator, hits, contents, input, effective_limit, workspace_id);
 }
 
-/// By-id branch of `executeLoadMemory`. Single-row SELECT against
-/// `agent_memories`, returns the same `"results"` shape as the FTS5
-/// path (one `<memory>` entry) so the LLM only learns one XML
-/// structure regardless of which branch ran.
-///
-/// The content is the FULL body — no MAX_FULL_CONTENT_BYTES 2 KiB cap.
-/// `saveMemory` rejects content > 1 MiB at write time (storage's
-/// MAX_CONTENT_BYTES), so the by-id response is bounded at 1 MiB.
+/// By-id branch of `executeLoadMemory`.
 fn executeById(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -711,16 +547,9 @@ fn loadSuccessJSON(
     }, .{});
 }
 
-/// Build the success payload for the by-id branch. Mirrors the FTS5
-/// shape (one hit wrapped in `results`) so the LLM sees the same JSON
-/// structure regardless of which branch ran.
-///
-/// Differences from the FTS5 path:
-///   - Includes `"id"` + `"by_id":true`.
-///   - The hit includes `"content"` with the FULL body
-///     (no MAX_FULL_CONTENT_BYTES cap; `"truncated":false` is hardcoded
-///     because `saveMemory` rejects content > 1 MiB at write time).
-///   - `"snippet"` is null — the by-id path is targeted, not a search hit.
+/// Build the success payload for the by-id branch. Mirrors the FTS5 shape
+/// (one hit wrapped in `results`) so the LLM sees the same JSON structure
+/// regardless of which branch ran.
 fn loadSuccessByIdJSON(
     allocator: std.mem.Allocator,
     row: agent_memories.MemoryRow,
@@ -788,12 +617,9 @@ test "save_memory_tool: parameters include content and tags (no id — append-on
     try testing.expect(!found_id);
 }
 
-// ─── workspace_id is NOT a model-suppliable field (Migration 095) ─────
-//
-// The backend resolves the workspace from `ctx.session_id`; the model
-// never names it. These three assertions exist so a future edit that adds
-// `workspace_id` to a tool schema fails the suite instead of quietly
-// re-opening the cross-workspace read.
+// ─── workspace_id is NOT a model-suppliable field (Migration 095) ───── The
+// backend resolves the workspace from `ctx.session_id`; the model never names
+// it.
 
 test "neither memory tool schema exposes a workspace_id parameter" {
     for (save_memory_tool.function.parameters.properties) |prop| {
@@ -823,10 +649,8 @@ test "neither *Input struct has a workspace_id field" {
     try testing.expect(save.content.len > 0);
     try testing.expect(load.query.len > 0);
 
-    // The resolved scope travels as a separate trailing argument, not on
-    // the struct. A struct-literal call site therefore CANNOT forget to
-    // set it — the compiler asks for it. Pinning the signature here makes
-    // that guarantee explicit rather than incidental.
+    // The resolved scope travels as a separate trailing argument, not on the
+    // struct.
     comptime {
         const SaveFn = *const fn (std.mem.Allocator, *sqlite.SqliteBackend, SaveMemoryInput, []const u8) anyerror![]const u8;
         const LoadFn = *const fn (std.mem.Allocator, *sqlite.SqliteBackend, LoadMemoryInput, []const u8) anyerror![]const u8;
@@ -997,15 +821,8 @@ test "save_memory_tool: round-trips tag list through storage" {
 }
 
 // -----------------------------------------------------------------------
-// REGRESSION: tags as a single STRING (the new wire format, 2026-08-06)
-//
-// The LLM tool schema declares `tags` as a string. The LLM faithfully
-// sends it as a string (e.g. "demo|tool-test|pabrik"). The parser
-// previously expected tags as `[]const []const u8` (JSON array), so
-// every string-form failed with "UnexpectedToken". The fix accepts
-// the string form: split on `||` at the boundary, pass array to
-// `agent_memories.saveMemory`.
-// -----------------------------------------------------------------------
+// REGRESSION: tags as a single STRING (the new wire format, 2026-08-06) The
+// LLM tool schema declares `tags` as a string.
 test "save_memory_tool: tags wire format is a string (parses without UnexpectedToken)" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
@@ -1452,10 +1269,7 @@ test "load_memory_tool: FTS5 query sanitization (dots, dashes, colons don't cras
     const out = try executeLoadMemory(alloc, &ctx.db, input, "");
     defer alloc.free(out);
 
-    // No "error" — the query didn't crash. The row should be found
-    // because FTS5's tokenizer splits `handle_tool.zig` (in the
-    // indexed content) on the dot, and the OR-joined query asks for
-    // either `handle_tool` OR `zig` — both present in the row.
+    // No "error" — the query didn't crash.
     try testing.expect(std.mem.indexOf(u8, out, "\"error\":") == null);
     try testing.expect(std.mem.indexOf(u8, out, "\"results\":") != null);
     const expected_id = try std.fmt.allocPrint(alloc, "\"id\":\"{s}\"", .{seeded_id});
@@ -1464,11 +1278,8 @@ test "load_memory_tool: FTS5 query sanitization (dots, dashes, colons don't cras
 }
 
 // --- Regression tests for the strict-search bug (task_1787050039216_3) ---
-//
 // Symptom: load_memory({query: "preferred model"}) returned 0 hits because
 // the query was wrapped in FTS5 phrase syntax, requiring "preferred" to be
-// ADJACENT to "model" in the indexed text. After the fix, multi-word queries
-// are joined with OR — natural recall semantics.
 
 test "load_memory_tool: multi-token query joins with OR (regression for strict-search bug)" {
     const alloc = testing.allocator;
@@ -1573,9 +1384,8 @@ test "load_memory_tool: hyphenated date query returns sanitized recall (no crash
     defer alloc.free(seeded_id);
 
     // The old phrase-wrap behavior turned this into "2026 08 06" (phrase).
-    // The new OR-join behavior turns it into "2026 OR 08 OR 06". Both
-    // find the row — but we just want to verify no crash and at least
-    // 1 hit.
+    // The new OR-join behavior turns it into "2026 OR 08 OR 06". Both find
+    // the row — but we just want to verify no crash and at least 1 hit.
     const input = LoadMemoryInput{
         .query = "2026-08-06",
         .tags = "",
@@ -1616,17 +1426,8 @@ test "load_memory_tool: empty-after-sanitize query returns empty results (no cra
 }
 
 // ─── by-id lookup (Task 1 of 2026-08-19-load-memory-by-id) ──────────────
-//
-// Adds an `id` parameter to `load_memory` so the LLM can fetch a
-// specific memory's FULL body (no 2 KiB cap) without running an FTS5
-// query. Wire contract:
-//   - When `id` is non-empty, FTS5 is skipped — `agent_memories.getMemoryById`
-//     does a single-row SELECT and returns the full content (up to 1 MiB).
-//   - When `id` is empty, the FTS5 path runs as before (no behaviour change).
-//   - When both `id` and `query` are empty → `{"error":"must supply either
-//     query or id"}`.
-//   - When `id` is non-empty but no row exists → `{"error":"not found: ..."}`.
-//   - `tags` is ignored when `id` is set (only 1 row can match anyway).
+// Adds an `id` parameter to `load_memory` so the LLM can fetch a specific
+// memory's FULL body (no 2 KiB cap) without running an FTS5 query.
 
 test "load_memory_tool: by-id lookup returns single row with full content" {
     const alloc = testing.allocator;

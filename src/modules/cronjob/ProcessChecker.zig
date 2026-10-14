@@ -23,8 +23,6 @@ pub const ProcessInfo = struct {
 pub fn checkProcessStatus(pid: i32) ProcessStatus {
     // Uses the cross-platform process_status.isProcessRunning helper
     // (kill(pid, 0) on POSIX, OpenProcess(QUERY_LIMITED) on Windows).
-    // On Windows, `std.posix.kill` is `@compileError`'d because
-    // `std.c.pid_t` is `*anyopaque` there.
     if (pid <= 0) return .unknown;
     if (process_status.isProcessRunning(pid)) {
         return .running;

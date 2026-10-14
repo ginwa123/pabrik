@@ -18,12 +18,9 @@ pub const DiffResult = struct {
     }
 };
 
-// ── LCS diff ──────────────────────────────────────────────────────────────────
-//
-// Works on any granularity: pass raw bytes, or split into lines first.
-//
-// For large files, prefer line-level diff (split on '\n' then pass slices).
-// For small files / short snippets, byte-level works fine.
+// ── LCS diff
+// ────────────────────────────────────────────────────────────────── Works on
+// any granularity: pass raw bytes, or split into lines first.
 
 pub fn diff(allocator: Allocator, before: []const u8, after: []const u8) !DiffResult {
     const n = before.len;
@@ -113,10 +110,9 @@ pub fn diff(allocator: Allocator, before: []const u8, after: []const u8) !DiffRe
     return .{ .chunks = slice };
 }
 
-// ── Line-level wrapper ────────────────────────────────────────────────────────
-//
-// If you want line-level granularity (like git diff), use this instead.
-// It diffs the line arrays, which is much faster on large files.
+// ── Line-level wrapper
+// ──────────────────────────────────────────────────────── If you want
+// line-level granularity (like git diff), use this instead.
 
 pub const LineDiff = struct {
     chunks: []LineChunk,
@@ -193,17 +189,9 @@ pub fn diffLines(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/// Split on line boundaries, dropping the `CR` of a CRLF pair.
-///
-/// A Windows-authored file arrives here as `one\r\ntwo\r\n`, and splitting
-/// on `\n` alone leaves every line ending in a stray `\r`. That byte then
-/// rides into the rendered diff, where it blanks the line in a terminal
-/// and makes a CRLF file diff as though every line had changed.
-///
-/// The returned lines stay BORROWED slices into `text` — narrowing the
-/// range by one byte is all that is needed, and copying would silently
-/// change the ownership contract for every existing caller. The original
-/// bytes are still reachable from `text`, so nothing is lost.
+/// Split on line boundaries, dropping the `CR` of a CRLF pair. A
+/// Windows-authored file arrives here as `one\r\ntwo\r\n`, and splitting on
+/// `\n` alone leaves every line ending in a stray `\r`.
 pub fn splitLines(allocator: Allocator, text: []const u8) ![][]const u8 {
     var list = std.ArrayList([]const u8).empty;
     var it = std.mem.splitScalar(u8, text, '\n');
@@ -535,9 +523,6 @@ test "line diff - multiline change" {
 // ── CRLF contract ─────────────────────────────────────────────────────────
 // Windows-authored files are CRLF, and every consumer of these lines (the
 // ANSI renderer, the hunk headers, the frontend's diff card) treats a
-// trailing `\r` as part of the line's text. Before the fix, `one\r\n` came
-// back as `"one\r"`, which renders as a blank line in a terminal and makes
-// a no-op change look like a change.
 test "splitLines - drops the CR of a CRLF pair" {
     const lines = try splitLines(std.testing.allocator, "one\r\ntwo\r\nthree\r\n");
     defer std.testing.allocator.free(lines);
@@ -555,10 +540,9 @@ test "splitLines - CRLF with no trailing newline" {
     try std.testing.expectEqualStrings("two", lines[1]);
 }
 
-// The property that actually matters: line-splitting is the ONLY
-// difference between the two, so once `\r` is gone a CRLF file must diff
-// exactly like its LF twin. Before the fix every line compared unequal
-// (the LF twin had no `\r`), so the diff reported every line as changed.
+// The property that actually matters: line-splitting is the ONLY difference
+// between the two, so once `\r` is gone a CRLF file must diff exactly like
+// its LF twin.
 test "splitLines - a CRLF file produces a byte-identical diff to its LF twin" {
     const Alloc = std.testing.allocator;
     const lf_before = try splitLines(Alloc, "a\nb\nc\n");

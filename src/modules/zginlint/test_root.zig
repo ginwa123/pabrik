@@ -11,6 +11,5 @@ test {
     _ = @import("rules/max_comment_lines.zig");
     _ = @import("rules/no_catch_unreachable.zig");
     _ = @import("zginlint.zig");
-    _ = @import("baseline.zig");
     _ = @import("cli.zig");
 }

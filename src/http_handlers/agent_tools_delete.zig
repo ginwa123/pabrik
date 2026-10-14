@@ -1,16 +1,5 @@
-//! `DELETE /api/agents/:agent_id/tools/:tool_name`.
-//! Removes a tool from the agent's allowlist. Returns `{ok: true}` on
-//! success, 404 if not found.
-//!
-//! Layered as:
-//!   - `useCase` — business logic (validate params → DELETE row).
-//!   - `agentToolsDeleteHandler` — thin orchestrator over `useCase`:
-//!     parses the path params, resolves the singleton DB handle,
-//!     delegates to `useCase`, maps the use-case outcome to an HTTP
-//!     response.
-//!
-//! Memory: the per-request arena reaps all allocations at request
-//! end, so neither layer needs explicit `free`s.
+//! `DELETE /api/agents/:agent_id/tools/:tool_name`. Removes a tool from the
+//! agent's allowlist. Returns `{ok: true}` on success, 404 if not found.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -18,11 +7,7 @@ const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const agent_db = @import("../models/agent.db.zig");
 
-/// Domain-level error set for `useCase`. The handler maps each
-/// variant to an HTTP status code + message via two exhaustive
-/// switches (intentional — adding a new variant fails to compile in
-/// the handler until both switches are updated, keeping status
-/// codes in lockstep with the error set).
+/// Domain-level error set for `useCase`.
 pub const ToolDeleteError = error{
     /// `agent_id` or `tool_name` path param was missing or empty.
     IdsRequired,
@@ -40,10 +25,7 @@ pub const ToolDeleteInput = struct {
 // Use case
 // =====================================================================
 
-/// Delete a tool row for the given agent. The use-case is
-/// transport-agnostic: it works for both the per-request arena
-/// (production HTTP handler) and `testing.allocator` (unit tests
-/// below) — all allocations go through the passed-in allocator.
+/// Delete a tool row for the given agent.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -100,15 +82,8 @@ pub fn agentToolsDeleteHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-//
-// impl + tests in one file (project convention for Agent Mode).
-// 4 behavioural tests cover the use-case:
-//
-//   1. Validation: empty agent_id OR tool_name → IdsRequired
-//   2. Happy path: a matching row is removed
-//   3. Scoped: DELETE matches by both tool_name AND agent_id (won't
-//      delete a tool row that belongs to a different agent)
-//   4. Non-matching: tool_name that doesn't exist is a no-op (no error)
+// impl + tests in one file (project convention for Agent Mode). 4 behavioural
+// tests cover the use-case: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;

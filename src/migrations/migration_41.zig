@@ -12,10 +12,9 @@ pub const Migration041AddPerformanceIndexes = struct {
     pub const name = "add_performance_indexes";
 
     pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
-        // Hot read paths in llm_history.zig + http_handlers/queue_messages_get.zig +
+        // Hot read paths in llm_history.zig +
+        // http_handlers/queue_messages_get.zig +
         // http_handlers/worker_list.zig + http_handlers/workspaces_list.zig.
-        // Compound indexes with explicit DESC match the query's ORDER BY direction
-        // so SQLite does a forward index scan with no sort step.
         try db.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_llm_history_session_created ON llm_history(session_id, created_at DESC)", &[_][]const u8{});
         try db.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_sessions_cwd_created ON sessions(cwd, created_at DESC)", &[_][]const u8{});
         try db.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON sessions(updated_at DESC)", &[_][]const u8{});

@@ -12,25 +12,11 @@ pub const Migration045AddPositionToWorkspaceItems = struct {
     pub const name = "add_position_to_workspace_items";
 
     pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
-        // Mirror of Migration043AddPositionToWorkspaces but scoped to
-        // a single workspace's items. The new `position` column is
-        // the sort key for the per-workspace item list (workspaces_list
-        // returns items via workspace_items_get.zig which currently
-        // does `ORDER BY created_at DESC`; we switch it to
-        // `ORDER BY position DESC`). New items get
-        // position = MAX(position) + 1 (top of the expanded workspace
-        // list, since items are rendered top-to-bottom in DESC order).
-        // The drag-and-drop reorder endpoint reassigns these values to
-        // reflect the user's chosen order.
+        // Mirror of Migration043AddPositionToWorkspaces but scoped to a
+        // single workspace's items.
         try db.exec(allocator, "ALTER TABLE workspace_items ADD COLUMN position INTEGER NOT NULL DEFAULT 0", &[_][]const u8{});
 
-        // Backfill. Per-workspace: the newest item gets the highest
-        // position (so it appears at the TOP of the expanded list with
-        // ORDER BY position DESC), the oldest gets position 0 (bottom).
-        // This preserves the pre-existing visual order on upgrade.
-        // The id tiebreaker (newer id > older id when timestamps tie) is
-        // important so the backfill is deterministic when two items
-        // share a created_at second.
+        // Backfill.
         try db.exec(allocator,
             \\UPDATE workspace_items
             \\SET position = (

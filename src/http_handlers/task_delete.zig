@@ -1,39 +1,5 @@
-//! HTTP handler + use-case for `DELETE /api/workspaces/:workspace_id/items/:item_id/tasks/:task_id`.
-//!
-//! ## File structure
-//!
-//! This file holds BOTH the use-case (pure function over the DB and Io)
-//! and the HTTP handler (thin orchestrator that validates the path
-//! param, calls the use-case, and maps the outcome to an HTTP response):
-//!
-//! - `TaskDeleteOutcome` — the tagged union returned by the use-case
-//!   (`deleted` / `running`). The handler maps each variant to a
-//!   specific HTTP status code.
-//! - `deleteTaskUseCase` — the **use-case** (pure-ish function; reads
-//!   from the DB, performs cleanup, deletes the task row). The
-//!   running-check is the new pre-flight validation: if the worker
-//!   table has a row with `session_id = task_id` (per the project's
-//!   `task.id == session.id` convention), the use-case refuses with
-//!   `.running` and the handler maps that to HTTP 409 Conflict.
-//! - `tasksDeleteHandler` — the **HTTP handler** (orchestrator).
-//! - Sub-helpers — small focused functions used by the handler
-//!   (response builders).
-//!
-//! ## Memory model
-//!
-//! Per the project convention (see `custom-http-server-per-request-arena`
-//! memory), this handler does NOT add `defer allocator.free(...)` for
-//! request-scoped allocations. The per-request `ArenaAllocator` reaps
-//! them when the request finishes.
-//!
-//! ## Why the running-check matters
-//!
-//! Without the pre-flight check, deleting a task whose LLM call is
-//! in-flight (streaming chunks via SSE, running tools, etc.) leaves the
-//! worker process holding a stale row reference and the frontend's
-//! chat view with a "task deleted" state while the worker is still
-//! writing messages. Refusing the delete with 409 lets the frontend
-//! prompt the user to stop the session first.
+//! HTTP handler + use-case for `DELETE
+//! /api/workspaces/:workspace_id/items/:item_id/tasks/:task_id`.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -47,17 +13,6 @@ const memories_mod = pabrikcore.memories;
 // =====================================================================
 
 /// Outcome of `deleteTaskUseCase`.
-///
-/// `.deleted` is the success outcome — the use-case either removed an
-/// existing task (with all cleanup) or found no task to remove
-/// (idempotent DELETE; matches the pre-refactor behavior).
-///
-/// `.running` means the task exists in `workspace_item_tasks` AND a
-/// worker row exists in `worker` with `session_id = task_id`. The
-/// handler maps this to 409 Conflict. The payload is the worker id
-/// (the primary key of the running worker) so the response can hint
-/// "task is currently running (worker_id=X). Stop it first." when
-/// useful for debugging.
 pub const TaskDeleteOutcome = union(enum) {
     deleted,
     running: []const u8,
@@ -67,26 +22,7 @@ pub const TaskDeleteOutcome = union(enum) {
 // Use-case (pure-ish)
 // =====================================================================
 
-/// Delete a workspace-item task. Returns `.deleted` on success
-/// (including the idempotent "task did not exist" case) or
-/// `.running { worker_id }` when a worker is currently processing
-/// the task.
-///
-/// Side effects on `.deleted`:
-///   - For memory tasks: the underlying .md file in
-///     `<workspace_item.path>/.pabrik/memories/<name>.md` is removed
-///     (idempotent — no-op if already missing).
-///   - The `workspace_item_tasks` row is removed last.
-///
-/// On `.running`: NO side effects. The task row is left untouched so
-/// the running worker can complete and the frontend can decide what
-/// to do (typically: call `POST /sessions/:id/stop` first, then retry).
-///
-/// Errors:
-///   - `error.OutOfMemory` — allocator failure (propagated up).
-///   - DB errors during cleanup propagate as `error{...}` from the
-///     underlying `db.exec`. The task row is left untouched when a
-///     cleanup step fails (no partial-delete).
+/// Delete a workspace-item task.
 pub fn deleteTaskUseCase(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -100,14 +36,7 @@ pub fn deleteTaskUseCase(
     if (task_opt) |task| {
         defer task.deinit(allocator);
 
-        // 2. Refuse if the task is currently running. The worker
-        //    table's `session_id` column holds the task id (the
-        //    project's `task.id == session.id` convention). A row
-        //    there means the LLM is streaming or a tool is running;
-        //    deleting now would orphan the worker's state.
-        //
-        //    We do this BEFORE any cleanup so a refused delete leaves
-        //    the task (and its .md file) exactly as it was.
+        // 2. Refuse if the task is currently running.
         if (ai_mod.llm_history.isTaskRunning(allocator, db, task_id)) {
             // Look up the running worker's id so the 409 response
             // can include it (helpful for debugging — the frontend
@@ -117,10 +46,7 @@ pub fn deleteTaskUseCase(
         }
 
         // 3a. Memory-task cleanup: delete the .md file from
-        //     `<workspace_item.path>/.pabrik/memories/<task_name>`. We
-        //     only attempt this if the parent workspace_item still
-        //     exists and has a path (otherwise the file is
-        //     unreachable anyway).
+        // `<workspace_item.path>/.pabrik/memories/<task_name>`.
         if (std.mem.eql(u8, task.task_type, "memory")) {
             const item_opt = ai_mod.workspace_item_tasks.getWorkspaceItem(allocator, db, task.workspace_item_id) catch null;
             if (item_opt) |item| {
@@ -128,11 +54,7 @@ pub fn deleteTaskUseCase(
                 if (item.path) |cwd| {
                     if (memories_mod.get_local_memories_path_for_dir(allocator, cwd)) |dir_path| {
                         defer allocator.free(dir_path);
-                        // The .md filename == task.name. The name
-                        // passes isValidMemoryName today (the
-                        // create handler validates it), but be
-                        // defensive — the helper returns false
-                        // safely on invalid input.
+                        // The .md filename == task.name.
                         _ = memories_mod.deleteLocalMemoryFile(allocator, io, dir_path, task.name);
                     }
                 }
@@ -157,10 +79,8 @@ pub fn deleteTaskUseCase(
     return .deleted;
 }
 
-/// Look up the running worker id for a task (the primary key of the
-/// row in `worker` whose `session_id = task_id`). Returns "" if no
-/// worker is found or on query failure (the caller treats "" as
-/// "running but unknown worker id" — the 409 message still surfaces).
+/// Look up the running worker id for a task (the primary key of the row in
+/// `worker` whose `session_id = task_id`).
 fn getRunningWorkerId(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -181,18 +101,9 @@ fn getRunningWorkerId(
 // Handler
 // =====================================================================
 
-/// `DELETE /api/workspaces/:workspace_id/items/:item_id/tasks/:task_id`.
-///
-/// Thin orchestrator over `deleteTaskUseCase`:
-///   1. validate `:task_id` path parameter (inline)
-///   2. resolve DB handle via `pabrikcore.getSingleton`
-///   3. `deleteTaskUseCase` (use-case)
-///   4. map outcome to HTTP response (200 / 409 / 500)
-///
-/// Returns:
-///   - 200 OK with `{success: true, id}` on `.deleted`
-///   - 409 Conflict with `{error: "Task is currently running…"}` on `.running`
-///   - 500 Internal Server Error on use-case failure
+/// `DELETE /api/workspaces/:workspace_id/items/:item_id/tasks/:task_id`. Thin
+/// orchestrator over `deleteTaskUseCase`: 1. validate `:task_id` path
+/// parameter (inline) 2. resolve DB handle via `pabrikcore.getSingleton` 3.
 pub fn tasksDeleteHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,

@@ -1,17 +1,6 @@
-//! `PATCH /api/agent-kanbans/:kanban_id/system_prompt/reorder`.
-//!
-//! Body: `{ordered_ids: string[]}`. Reorders the board's system-prompt
-//! rows to match the supplied order. `ordered_ids[0]` becomes position
-//! N-1 (highest), `ordered_ids[N-1]` becomes position 0 (lowest).
-//!
-//! Mirrors `agent_system_prompt_reorder.zig` with substitutions:
-//! table `agent_kanban_system_prompt`, parent col `kanban_id`.
-//!
-//! Memory: the per-request arena reaps all allocations at request end,
-//! so neither layer needs explicit `free`s.
-//!
-//! Plan: docs/superpowers/plans/2026-08-25-agent-kanbans-mirror.md
-//! Task: task_1787597624259_2
+//! `PATCH /api/agent-kanbans/:kanban_id/system_prompt/reorder`. Body:
+//! `{ordered_ids: string[]}`. Reorders the board's system-prompt rows to
+//! match the supplied order.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -47,10 +36,9 @@ pub const SystemPromptReorderInput = struct {
 // Use case
 // =====================================================================
 
-/// Reorder system-prompt rows for the given agent-kanbans config. All
-/// updates happen inside a single BEGIN/COMMIT — if any UPDATE fails
-/// the whole reorder rolls back. Using `len - 1 - i` ensures a 1-row
-/// ordering lands at position 0 (not position 1).
+/// Reorder system-prompt rows for the given agent-kanbans config. All updates
+/// happen inside a single BEGIN/COMMIT — if any UPDATE fails the whole
+/// reorder rolls back.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -123,12 +111,7 @@ pub fn agentKanbanSystemPromptReorderHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-//
-// impl + tests in one file (project convention). Behavioural coverage:
-//
-//   1. Validation: empty kanban_id OR ordered_ids → respective errors
-//   2. Position assignment: ordered_ids[0] gets the highest position
-//   3. 1-row ordering lands at position 0
+// impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;

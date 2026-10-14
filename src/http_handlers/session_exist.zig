@@ -1,7 +1,6 @@
-//! `GET /api/sessions/:session_id/exist` — check if a session exists.
-//!
-//! Layered as `useCase` (resolve singleton + read DB) and a thin
-//! handler that maps the result + errors to status codes / JSON.
+//! `GET /api/sessions/:session_id/exist` — check if a session exists. Layered
+//! as `useCase` (resolve singleton + read DB) and a thin handler that maps
+//! the result + errors to status codes / JSON.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -31,7 +30,6 @@ fn useCase(
     // `pabrikcore.ai_workflow` never existed (the agent loop is exposed as
     // `pabrikcore.ai_mod`), so this cast never type-checked — the handler is
     // unregistered (see the commented-out route in http_routes.zig), which is
-    // why the bad body is never analysed. Point it at the real singleton type.
     const ctxTui = @as(*pabrikcore.App, @ptrCast(@alignCast(server_ctx)));
     const sqlite_db = ctxTui.db;
     const exists = tui_check_session_exists.check_session_exists(allocator, sqlite_db, session_id);

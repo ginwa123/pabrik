@@ -12,11 +12,7 @@ pub const Migration057AddDesignElementProperties = struct {
     pub const name = "add_design_element_properties";
 
     pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
-        // Visual property columns. All 11 additions are purely
-        // additive — Migration 056's CREATE TABLE did NOT declare
-        // them, so for fresh-DB installs we add them here via
-        // addColumnIfMissing (which is a no-op on a DB that already
-        // has them, e.g. after a partial migration).
+        // Visual property columns.
         try addColumnIfMissing(.{ .db = db }, allocator, "design_page_elements", "type",
             "type TEXT NOT NULL DEFAULT 'rectangle'");
         try addColumnIfMissing(.{ .db = db }, allocator, "design_page_elements", "rotation",

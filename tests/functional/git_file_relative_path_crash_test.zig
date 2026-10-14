@@ -1,56 +1,5 @@
-// Wire test: a relative `path` query/body value no longer ABORTS the server in
-// the git file handlers.
-//
-// Zig port of `tests/functional/git_file_relative_path_crash_test.py`
-// (same test names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Wire test: a relative `path` query/body value no longer ABORTS the
-//   server in the git file handlers.
-//
-//   Crash class (remote-reachable)
-//   ==============================
-//   `GET /api/git/file/read?path=<relative>&file=<x>` joined the two query
-//   values and handed the result to `std.Io.Dir.openFileAbsolute`, whose
-//   precondition is `assert(path.isAbsolute(...))`. In a Debug build that
-//   assertion is `unreachable`, so instead of returning 400/404 the process
-//   called `std.process.abort()`:
-//
-//       /usr/lib/zig/std/Io/Dir.zig:486:11 in openFileAbsolute
-//           assert(path.isAbsolute(absolute_path));
-//       src/http_handlers/git_file_diff.zig:63 / :107 in gitFileReadHandler
-//       === CRASH: received signal ABRT (signal number 6) ===
-//
-//   A `catch |err| ...` clause does NOT protect these calls — the panic happens
-//   inside the callee before any error value can be returned — so the handlers
-//   now reject a non-absolute `path` (and an absolute `file`) with 400 BEFORE
-//   the join. The batch endpoint (`POST /api/git/file/diffs`) has the same
-//   guard on body.path, which `syntheticFallback` later feeds to the same API.
-//
-//   These are the exact query strings `src/apps/desktop/src/api/index.ts`
-//   builds (`/git/file/read?path=…&file=…`) and the exact POST body
-//   `SidebarDiffPanel.vue` sends, with the `path` downgraded from the
-//   frontend's absolute cwd to a relative one — the malicious/buggy-client
-//   case.
-//
-//   The per-file DIFF handler used to sit on the same guard and used to have
-//   its own test here. It is deleted; `file_diffs_batch_rejects_relative_
-//   body_path` covers the crash class for the endpoint that replaced it.
-//
-//   Why a wire test: the failure mode is SIGABRT of the whole process, which
-//   only a real round-trip can observe ("is this PID still answering
-//   /health?").
-//
-//   Run:
-//       PABRIK_BIN=<worktree>/zig-out/bin/pabrikcore-linux-x86_64 \\
-//         zig build test
-//   """
-//
-// The Python `harness` fixture was FUNCTION-scoped, so every test here boots
-// and tears down its own server — that is also the only honest witness for the
-// crash class: a SIGABRT that killed a shared server would take every later
-// test down with it and report them, not the offender.
+// Wire test: a relative `path` query/body value no longer ABORTS the server
+// in the git file handlers.
 
 const std = @import("std");
 const testing = std.testing;
@@ -69,10 +18,7 @@ const CRASH_MARKERS = [_][]const u8{
 };
 
 /// The frontend's cwd, downgraded to a relative path — the malicious/buggy
-/// client case. It must stay RELATIVE: `std.fs.path.isAbsolute` is
-/// platform-relative, so a "/tmp/..." literal is not absolute on windows and
-/// the handler would 400 for the OTHER reason, failing the assertion on a
-/// message that names a different bug.
+/// client case.
 const RELATIVE_PATH = "relative/repo";
 const FILE = "src/main.zig";
 
@@ -98,14 +44,6 @@ const Scratch = struct {
 
 /// The last `n` lines of the server log. Owned by the caller (free, or leak
 /// into a `defer if (len > 0)` as the call sites below do).
-///
-/// This duplicates `harness.Harness.tailLog` on purpose. That helper calls
-/// `std.mem.trimRight`, which Zig 0.16 does not have (it is `trimEnd` now), so
-/// the first suite to CALL it fails to compile with an error inside
-/// `harness.zig`. Function bodies are only analysed when referenced, which is
-/// why nothing else in the package has tripped it. The fix belongs in
-/// `harness.zig` — which this port does not own — so this file reads the log
-/// itself rather than blocking on it.
 fn logTail(h: *Harness, n: usize) ![]u8 {
     const data = std.Io.Dir.cwd().readFileAlloc(io, h.log_path, gpa, .limited(1 << 20)) catch |err| switch (err) {
         error.FileNotFound => return gpa.dupe(u8, ""),
@@ -124,12 +62,8 @@ fn logTail(h: *Harness, n: usize) ![]u8 {
     return std.mem.join(gpa, "\n", lines.items[start..]);
 }
 
-/// The server is STILL answering, and its log carries no crash marker.
-///
-/// This is the whole assertion. A 400 with the right message proves the guard
-/// fired; `health()` plus the marker scan proves the guard fired BEFORE the
-/// `openFileAbsolute` assertion rather than after it — which is the bug, since
-/// the panic is not catchable.
+/// The server is STILL answering, and its log carries no crash marker. This
+/// is the whole assertion.
 fn assertAlive(h: *Harness, what: []const u8) !void {
     const log_tail = logTail(h, 4000) catch "";
     defer if (log_tail.len > 0) gpa.free(log_tail);
@@ -227,18 +161,6 @@ test "file_diffs_batch_rejects_relative_body_path" {
 }
 
 // An absolute `file` escapes `path`; the sibling handler rejects it too.
-//
-// The absolute probe is BUILT (not hardcoded as `/etc/passwd`) because the
-// guard under test is "this `file` is absolute, so it escapes `path`", and
-// `/etc/passwd` is not absolute on Windows — the handler would reject it for
-// the OTHER reason ("path must be an absolute directory") and the assertion
-// below would fail on a message that names a different bug.
-//
-// Python's `os.path.join(str(tmp_path), os.pardir, "escaped.txt")` does NOT
-// normalise: it yields a literal `<tmp_path>/../escaped.txt`. That exact
-// spelling is reproduced with `std.fs.path.sep_str`, because `std.fs.path.join`
-// WOULD collapse the `..` and hand the handler a clean absolute path — which
-// is still absolute, but is no longer the string under test.
 test "file_read_rejects_absolute_file" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -279,10 +201,9 @@ test "file_read_rejects_absolute_file" {
     try assertAlive(&h, "GET /api/git/file/read with an absolute file");
 }
 
-// Positive control: the guard must not break the normal (absolute) call.
-//
-// If the 400s above were a blanket failure this test would not reach a real
-// file read. Reads a fixture under the scratch tmpdir and asserts its bytes.
+// Positive control: the guard must not break the normal (absolute) call. If
+// the 400s above were a blanket failure this test would not reach a real file
+// read. Reads a fixture under the scratch tmpdir and asserts its bytes.
 test "file_read_still_works_for_absolute_paths" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});

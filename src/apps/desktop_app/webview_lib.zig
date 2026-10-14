@@ -1,23 +1,5 @@
-// src/apps/desktop_app/webview_lib.zig
-//
-// Thin Zig binding for the vendored webview/webview library
-// (vendor/webview/webview.h, upstream 0.12.0).
-//
-// DESIGN: 1:1 with the library's C API — no wrapper logic, no env-var
-// pinning, no scheme handler, no GTK code. Everything the library does
-// by default is what ships. Notably the library itself:
-//   - applies the WebKit DMA-BUF/NVIDIA workaround when needed
-//     (apply_webkit_dmabuf_workaround in webview.h)
-//   - enables javascript_can_access_clipboard (paste images works)
-//   - enables developer extras when created with debug=true (--devtools)
-//   - owns the GTK window + main loop when created with window=null
-//
-// The library is compiled as C++ by build.zig (zig c++ on Linux,
-// clang++ for macos target, etc.) and linked into pabrik-desktop.
-//
-// Threading: webview_run() blocks the calling thread on the platform
-// main loop (GTK main loop on Linux). Call it from the main thread and
-// treat the process as done when it returns.
+// src/apps/desktop_app/webview_lib.zig Thin Zig binding for the vendored
+// webview/webview library (vendor/webview/webview.h, upstream 0.12.0).
 
 const std = @import("std");
 
@@ -79,13 +61,9 @@ pub extern "c" fn webview_bind(
 pub extern "c" fn webview_unbind(w: *Webview, name: [*:0]const u8) Error;
 pub extern "c" fn webview_return(w: *Webview, id: [*:0]const u8, status: c_int, result: [*:0]const u8) Error;
 
-/// High-level convenience: create a windowed webview, navigate, run the
-/// main loop until the window closes, then destroy. Mirrors the old
-/// webview.run() contract so main.zig stays simple.
-///
-/// `debug` maps to webview_create's debug param (developer extras).
-/// Returns error.WebviewCreateFailed when the library can't create the
-/// instance (missing WebKitGTK, display server unavailable, ...).
+/// High-level convenience: create a windowed webview, navigate, run the main
+/// loop until the window closes, then destroy. Mirrors the old webview.run()
+/// contract so main.zig stays simple.
 pub fn runWindow(
     title: [*:0]const u8,
     url: [*:0]const u8,
@@ -95,23 +73,12 @@ pub fn runWindow(
     force_x11: bool,
 ) !void {
     // Pin WebKitGTK hardware compositing before WebKit initialises
-    // (task_1787761084050_0). The vendored webview library only sets
-    // `WEBKIT_DISABLE_DMABUF_RENDERER=1` for the narrow NVIDIA + X11
-    // case (`apply_webkit_dmabuf_workaround` in vendor/webview/webview.h
-    // line 1673). The broader `WEBKIT_FORCE_COMPOSITING_MODE=1` is
-    // what tells WebKit to ALWAYS use its GPU compositor — without it,
-    // many drivers silently fall back to software compositing → slow
-    // scrolling. We pin it here, before webview_create, and respect
-    // any user override (`setEnvIfUnset` returns false and skips the
-    // call if the user already set the variable, so a "0" opt-out
-    // survives). See `setEnvIfUnset` below for the rationale.
+    // (task_1787761084050_0).
     _ = setEnvIfUnset("WEBKIT_FORCE_COMPOSITING_MODE", "1");
 
     // Idle-freeze fix (task_1788487031990_1): `--x11` was parsed into
-    // `cli.Config.force_x11` but never consumed, so Wayland users had
-    // no opt-out when the compositor stopped sending frame callbacks.
-    // Force XWayland before gtk_init (i.e. before webview_create).
-    // Respects existing user override via setEnvIfUnset.
+    // `cli.Config.force_x11` but never consumed, so Wayland users had no
+    // opt-out when the compositor stopped sending frame callbacks.
     if (force_x11) {
         _ = setEnvIfUnset("GDK_BACKEND", "x11");
     }
@@ -127,11 +94,7 @@ pub fn runWindow(
 }
 
 // ---------------------------------------------------------------------------
-// Static-contract tests: the binding must stay 1:1 with the vendored
-// header. These grep the vendored webview.h for the exact C signatures
-// we extern-declare, so an upstream upgrade that changes a signature
-// fails here instead of mis-linking at runtime.
-// ---------------------------------------------------------------------------
+// Static-contract tests: the binding must stay 1:1 with the vendored header.
 
 const testing = std.testing;
 
@@ -182,8 +145,7 @@ test "binding matches vendored webview.h C API signatures" {
 test "vendored webview.h has the NVIDIA dmabuf workaround built in" {
     // The whole reason for this swap: upstream applies the
     // WEBKIT_DISABLE_DMABUF_RENDERER workaround itself when the
-    // WebKit-version + X11 + NVIDIA conditions match. If a future
-    // vendored upgrade drops it, we want to know.
+    // WebKit-version + X11 + NVIDIA conditions match.
     const allocator = testing.allocator;
     const header = try readVendorHeader(allocator);
     defer allocator.free(header);
@@ -238,31 +200,9 @@ test "Error.succeeded mirrors WEBVIEW_SUCCEEDED semantics" {
 // ---------------------------------------------------------------------------
 // runWindow() must pin WebKitGTK env vars BEFORE webview_create
 // (task_1787761084050_0 / desktop scroll-perf cross-platform plan).
-//
-// The vendored webview/webview library only sets
-// `WEBKIT_DISABLE_DMABUF_RENDERER=1` for the narrow NVIDIA + X11 case
-// (vendor/webview/webview.h `apply_webkit_dmabuf_workaround`). The
-// broader `WEBKIT_FORCE_COMPOSITING_MODE=1` is what tells WebKit to
-// always use its GPU compositor (not just on NVIDIA+X11) — without it,
-// many drivers silently fall back to software compositing → slow
-// scrolling. We pin it ourselves, in `runWindow`, before the vendored
-// library runs, and we respect the user's override if they already
-// set it.
-// ---------------------------------------------------------------------------
 
-/// Idempotent env-var pin: set `key=value` in the process environment,
-/// but only if the variable is NOT already set. Returns `true` when
-/// the call actually wrote to the environment (i.e. the variable was
-/// unset), `false` when the user had already set it (their value is
-/// preserved unchanged).
-///
-/// Why "if unset" not "always overwrite": the user knows their driver
-/// better than we do. If they set `WEBKIT_FORCE_COMPOSITING_MODE=0`
-/// to opt out of compositing (e.g. for a bug investigation), we must
-/// not clobber that on launch.
-///
-/// `setenv` is POSIX (libc on Linux + macOS); Windows has no setenv
-/// in msvcrt — use a no-op there (env-var workaround is Linux-only).
+/// Idempotent env-var pin: set `key=value` in the process environment, but
+/// only if the variable is NOT already set.
 const builtin = @import("builtin");
 extern "c" fn unsetenv(name: [*:0]const u8) c_int;
 extern "c" fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;

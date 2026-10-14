@@ -1,40 +1,14 @@
 //! Returns the enabled tool names for the agent bound to a workspace_item.
-//!
 //! This is the **input** to the runtime tool filter wired into
-//! `workflow.zig:runAgenticMultiStepnew` (Task 12). The filter then
-//! takes the returned slice and:
-//!   - if non-empty: joins with `,` and passes as `allowed_tools` to
-//!     `WorkflowArgs.allowed_tools` (which `filterAndMergeTools` reads)
-//!   - if empty: passes the exact `none` sentinel (D3, plan
-//!     2026-09-22-tools-menu-config-default-tools), which
-//!     `tool_eligibility.allowlistFilter` treats as ZERO tools —
-//!     NOT `""`, which would mean "no filtering → all tools"
-//!
-//! Returns empty slice (NOT error) in 3 cases (spec D1 — secure-by-default):
-//!   - `workspace_item_id` doesn't exist in `workspace_items`
-//!   - `workspace_items.item_type` is not `'agent'`
-//!   - the agent has no rows in `agent_tools` (zero tools allowed)
-//!
-//! Callers MUST treat an empty slice as "no tools" — NOT as "all tools".
-//! This is the central UX choice of Agent Mode: a brand-new Agent
-//! without any enabled tools is a pure chat (no function calls).
-//!
-//! Plan: docs/superpowers/plans/2026-08-15-agent-mode.md (Task 3)
-//! Spec: docs/superpowers/specs/2026-08-15-agent-mode-design.md (D1, D2)
+//! `workflow.zig:runAgenticMultiStepnew` (Task 12).
 
 const std = @import("std");
 const sqlite = @import("pabrikcore").sqlite;
 const agent_db = @import("../models/agent.db.zig");
 
-/// Resolve the enabled tool names for the agent bound to
-/// `workspace_item_id`. Returns an owned slice of `[]const u8`; caller
-/// must `free` each element AND the slice header (via `free` loop).
-///
-/// Returns `&.{}` (zero-length slice) on any "not an agent" condition.
-/// Does NOT propagate "not found" as an error — the runtime filter
-/// treats both "not found" and "empty allowlist" the same way (zero
-/// tools). This avoids a class of bugs where a missing workspace_item
-/// breaks the chat instead of silently running with no tools.
+/// Resolve the enabled tool names for the agent bound to `workspace_item_id`.
+/// Returns an owned slice of `[]const u8`; caller must `free` each element
+/// AND the slice header (via `free` loop).
 pub fn agentToolsAllowed(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,

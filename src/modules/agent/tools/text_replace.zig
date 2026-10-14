@@ -12,9 +12,7 @@ pub const TextReplaceInput = struct {
     old_str: []const u8,
     new_str: []const u8,
     /// REQUIRED on the wire. Absolute directory this call works in; a
-    /// relative `path` resolves against it. Empty by default so the struct
-    /// stays constructible in tests that do not exercise the `cwd` rule —
-    /// `path_validate.validateCwd` rejects the empty value at exec time.
+    /// relative `path` resolves against it.
     cwd: []const u8 = "",
 };
 
@@ -175,27 +173,9 @@ pub fn lfToCrlf(allocator: std.mem.Allocator, content: []const u8) ![]u8 {
     return try result.toOwnedSlice(allocator);
 }
 
-/// Generate unified diff format showing the change with git merge conflict style
-/// Output includes both traditional unified diff AND split view with conflict markers:
-///
-/// ```diff
-/// --- a/(file)
-/// +++ b/(file)
-/// @@ -start,count +start,count @@
-///  context line
-/// -removed line
-/// +added line
-/// ```
-///
-/// And then the split view:
-///
-/// ```txt
-/// <<<<<<< BEFORE
-/// old content
-/// =======
-/// new content
-/// >>>>>>> AFTER
-/// ```
+/// Generate unified diff format showing the change with git merge conflict
+/// style Output includes both traditional unified diff AND split view with
+/// conflict markers: ```diff --- a/(file) +++ b/(file) @@ -start,count
 pub fn generateUnifiedDiff(
     allocator: std.mem.Allocator,
     raw: []const u8,
@@ -389,10 +369,9 @@ pub fn executeTextReplace(
     const diff_result = try generateUnifiedDiff(allocator, raw, first, old_str, new_str);
     errdefer allocator.free(diff_result.unified);
 
-    // Create diff view with before/after content showing ONLY the changed region
-    // (like git merge conflict: <<<<<<< BEFORE / ======= / >>>>>>> AFTER)
-    // before = just old_str (what was removed)
-    // after = just new_str (what was added)
+    // Create diff view with before/after content showing ONLY the changed
+    // region (like git merge conflict: <<<<<<< BEFORE / ======= / >>>>>>>
+    // AFTER) before = just old_str (what was removed) after = just new_str
     const before_content = try allocator.dupe(u8, old_str);
     errdefer allocator.free(before_content);
 
@@ -414,10 +393,9 @@ pub fn executeTextReplace(
 
     try content.appendSlice(allocator, raw[0..first]);
 
-    // If file had CRLF, decide whether to convert new_str:
-    // - If old_str ends with \n: old_str provides boundary \n, don't convert new_str
-    // - If old_str doesn't end with \n and new_str ends with \n: new_str provides boundary, convert it
-    // - If neither ends with \n: boundary comes from file content, don't convert new_str
+    // If file had CRLF, decide whether to convert new_str: - If old_str ends
+    // with \n: old_str provides boundary \n, don't convert new_str - If
+    // old_str doesn't end with \n and new_str ends with \n: new_str provides
     const old_str_ends_with_newline = old_str.len > 0 and old_str[old_str.len - 1] == '\n';
     const new_str_ends_with_newline = new_str.len > 0 and new_str[new_str.len - 1] == '\n';
 
@@ -471,11 +449,9 @@ pub fn executeTextReplace(
     return TextReplaceResult{ .ok = {}, .diff_view = diff_view };
 }
 
-/// JSON payloads mirror the old XML tags 1:1: `path` plus the
-/// `diff_view` children (`unified`, `before`, `after`, `lines_changed`).
-/// Tags omitted when empty become explicit nulls. `std.json` handles
-/// all escaping, so `<`, `&` and quotes in paths and diffs need no
-/// manual layer.
+/// JSON payloads mirror the old XML tags 1:1: `path` plus the `diff_view`
+/// children (`unified`, `before`, `after`, `lines_changed`). Tags omitted
+/// when empty become explicit nulls.
 pub const TextReplaceSuccessJSON = struct {
     path: []const u8,
     unified: ?[]const u8 = null,
@@ -492,10 +468,8 @@ pub const TextReplaceErrorJSON = struct {
     @"error": ?[]const u8 = null,
 };
 
-/// The actionable message for an execution failure (not an arguments
-/// failure — the exec wrapper builds that one itself). `pub` because the
-/// exec wrapper is what puts it in the envelope: the model reads it, so it
-/// must not be a bare Zig error name.
+/// The actionable message for an execution failure (not an arguments failure
+/// — the exec wrapper builds that one itself).
 pub fn errorMessageFor(allocator: std.mem.Allocator, err: anyerror, path: []const u8) ![]u8 {
     return switch (err) {
         error.OldStrNotFound => try allocator.dupe(u8, "Make sure the text exists exactly once in the file."),
@@ -1365,9 +1339,7 @@ test "normalizeLineEndings - returns new allocation when no CRLF (duped)" {
 
 test "generateUnifiedDiff - empty file content with single replacement" {
     // raw = "" means 1 "empty line" (the split loop appends one entry for the
-    // is_end branch). The replacement is at byte 0.
-    // old_str = "" → [""] (1 line, NO trailing empty because there's no \n)
-    // new_str = "new content\n" → ["new content", ""] (2 lines)
+    // is_end branch).
     const result = try text_replace.generateUnifiedDiff(
         std.testing.allocator,
         "",
@@ -1462,16 +1434,8 @@ test "generateUnifiedDiff - replacement at last line (1:1 line replacement)" {
 
 test "generateUnifiedDiff - replacement removes lines (2 old → 1 new)" {
     // Documenting the actual (suboptimal) behavior of the diff visualization
-    // when replacing 2 lines with 1 line:
-    //   - old_str_line_list = ["delete1", "delete2", ""] (3 entries: 2 lines + trailing empty)
-    //   - new_str_line_list = ["single_replacement", ""] (2 entries: 1 line + trailing empty)
-    // The diff hunk shows:
-    //   - " delete1" (context, in both ranges)
-    //   - " delete2" (context, in both ranges)
-    //   - "-" (removal of the trailing empty line, beyond new range)
-    // This is suboptimal (the 2 lines being replaced show as context rather than
-    // removals), but it's the actual behavior. Tests below document this so
-    // future refactors know to preserve or improve the behavior intentionally.
+    // when replacing 2 lines with 1 line: - old_str_line_list = ["delete1",
+    // "delete2", ""] (3 entries: 2 lines + trailing empty) -
     const raw = "keep1\ndelete1\ndelete2\nkeep2\n";
     const first = std.mem.indexOf(u8, raw, "delete1").?;
     const result = try text_replace.generateUnifiedDiff(
@@ -1504,13 +1468,7 @@ test "generateUnifiedDiff - replacement removes lines (2 old → 1 new)" {
 test "generateUnifiedDiff - replacement adds many lines (1 old → 6 new)" {
     // Documenting actual behavior: when new_str has more lines than old_str,
     // the diff shows the extra lines (those beyond old_str's range) with `+`
-    // prefix. The new_str = "TARGET\nextra1\nextra2\nextra3\nextra4\nextra5\n"
-    // has 7 lines (TARGET + 5 extras + trailing empty). The old_str = "TARGET\n"
-    // has 2 lines (TARGET + trailing empty). So lines 2..6 (extra1..extra5) are
-    // new additions but only those that fall within context_end are emitted.
-    // context_end = min(old_lines.items.len=4, max(old_end=3, new_end=8) + 3) = 4.
-    // So only i=3 → "+extra2" makes it into the hunk. The others appear only
-    // in the split view (<<<<<<< / ======= / >>>>>>>).
+    // prefix.
     const raw = "before\nTARGET\nafter\n";
     const first = std.mem.indexOf(u8, raw, "TARGET").?;
     const new_str = "TARGET\nextra1\nextra2\nextra3\nextra4\nextra5\n";
@@ -1563,9 +1521,7 @@ test "generateUnifiedDiff - new_str is single line with no trailing newline" {
 
 test "generateUnifiedDiff - old_str has no trailing newline (mid-line offset)" {
     // When old_str doesn't end with \n, the byte offset `first` may point to
-    // the middle of a line. The line-finding loop uses
-    // `char_count + line.len + 1 > first` which picks the line containing
-    // the byte. This test exercises that branch.
+    // the middle of a line.
     const raw = "alpha\nbeta\ngamma\n";
     const first = std.mem.indexOf(u8, raw, "beta").?; // points to 'b' (middle of beta)
     const result = try text_replace.generateUnifiedDiff(
@@ -1644,19 +1600,9 @@ test "generateUnifiedDiff - unicode content in old/new_str" {
 }
 
 test "generateUnifiedDiff - new_str shorter than old_str (3 old → 1 new)" {
-    // Documenting actual behavior with raw = "before\nold1\nold2\nold3\nafter\n":
-    //   old_lines = ["before", "old1", "old2", "old3", "after", ""] (6 entries)
-    //   line_idx = 1 (old1)
-    //   old_str_line_list = ["old1", "old2", "old3", ""] (4 entries)
-    //   new_str_line_list = ["new", ""] (2 entries)
-    //   old_end_line = 1+4 = 5, new_end_line = 1+2 = 3
-    //   context_end = min(6, max(5,3)+3) = 6
-    // For i=0: CONTEXT "before"
-    // For i=1: in both → CONTEXT "old1"
-    // For i=2: in both → CONTEXT "old2"
-    // For i=3: in old (3<5), NOT in new (3<3 false) → REMOVE "old3"
-    // For i=4: in old (4<5), NOT in new → REMOVE ""
-    // For i=5: not in either → CONTEXT ""
+    // Documenting actual behavior with raw =
+    // "before\nold1\nold2\nold3\nafter\n": old_lines = ["before", "old1",
+    // "old2", "old3", "after", ""] (6 entries) line_idx = 1 (old1)
     const raw = "before\nold1\nold2\nold3\nafter\n";
     const first = std.mem.indexOf(u8, raw, "old1").?;
     const result = try text_replace.generateUnifiedDiff(
@@ -1904,18 +1850,15 @@ test "executeTextReplace - file with no trailing newline" {
 
 test "executeTextReplace - empty file (zero-byte file)" {
     // Note: cannot use empty old_str with empty file — empty matches every
-    // byte position so the "uniqueness" check returns OldStrNotUnique. We use
-    // a non-empty old_str that doesn't appear, then verify the file-write
-    // path doesn't crash and the diff_view is populated correctly.
+    // byte position so the "uniqueness" check returns OldStrNotUnique.
     var test_path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const test_path = try absPath(&test_path_buf, "test_empty_file.txt");
     try createTestFile(test_path, "");
     defer deleteTestFile(test_path);
 
     // The empty file has no content to replace, so use a replacement that
-    // targets an empty region (position 0) with non-empty content.
-    // Actually: indexOf for "X" in "" returns null → OldStrNotFound. So
-    // verify that path here, since it exercises the zero-byte read+search.
+    // targets an empty region (position 0) with non-empty content. Actually:
+    // indexOf for "X" in "" returns null → OldStrNotFound.
     const result = text_replace.executeTextReplace(
         std.testing.allocator,
         std.testing.io,
@@ -2104,10 +2047,9 @@ test "executeTextReplace - large file (50 lines) succeeds" {
 }
 
 test "executeTextReplace - special XML chars in old_str (search works on raw bytes)" {
-    // JSON string escaping is applied to OUTPUT fields (in toJSONSuccess) only; the
-    // diff_view's `before`/`after` fields hold the RAW bytes from old_str /
-    // new_str. So old_str can contain literal '<' / '>' / '&' and still
-    // match the file, and the before field will contain them unescaped.
+    // JSON string escaping is applied to OUTPUT fields (in toJSONSuccess)
+    // only; the diff_view's `before`/`after` fields hold the RAW bytes from
+    // old_str / new_str.
     var test_path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const test_path = try absPath(&test_path_buf, "test_xml_chars_in_search.txt");
     try createTestFile(test_path, "before\nif (a < b && c > d)\nafter\n");

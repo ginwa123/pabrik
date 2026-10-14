@@ -1,17 +1,5 @@
-//! `PATCH /api/workspaces/:workspace_id/items/:item_id/agent_kanban`.
-//!
-//! Body: `{description}`. Updates the description of the agent-kanbans
-//! config bound to this kanban workspace_item. Returns 200 with the
-//! updated row, or 400/404 for validation errors (same as
-//! `agent_kanbans_get.zig`).
-//!
-//! Layered as:
-//!   - `useCase` — validate workspace_item is a kanban with an
-//!     `agent_kanbans` row → UPDATE description → SELECT updated row.
-//!   - `agentKanbansUpdateHandler` — thin orchestrator over `useCase`.
-//!
-//! Memory: the per-request arena reaps all allocations at request end,
-//! so neither layer needs explicit `free`s.
+//! `PATCH /api/workspaces/:workspace_id/items/:item_id/agent_kanban`. Body:
+//! `{description}`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -169,12 +157,7 @@ pub fn agentKanbansUpdateHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-//
-// impl + tests in one file (project convention). Behavioural coverage:
-//
-//   1. Validation: empty workspace_id OR item_id → IdsRequired
-//   2. ItemNotFound / NotAKanban paths
-//   3. Happy path: description updated + persisted
+// impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;

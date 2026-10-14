@@ -33,11 +33,8 @@ pub fn main(init: std.process.Init) !void {
 
     if (try cli_dispatch.dispatchServiceSubcommand(allocator, io, environment, init)) return;
     if (try cli_dispatch.dispatchCreateAdmin(allocator, io, environment, init)) return;
-    // Headless mode boots the whole backend and runs a turn WITHOUT binding
-    // a port. Ordered after the two utility subcommands and before the
-    // server boot: it is a complete alternative to serving, not a flag on
-    // it, so it must be able to return before `parseCliArgs` sees an argv
-    // it would reject (a `headless run` argv has no `--port`).
+    // Headless mode boots the whole backend and runs a turn WITHOUT binding a
+    // port.
     if (try headless_dispatch.dispatchHeadless(allocator, io, environment, init)) return;
 
     server_boot.ignoreSigpipe();
@@ -62,10 +59,8 @@ pub fn main(init: std.process.Init) !void {
         std.log.err("Failed to load config: {s}", .{@errorName(err)});
         return err;
     };
-    // Heap-moved for the holder swap below; freed via `freeAllLlmConfigs`
-    // at shutdown, so no defer here. Empty configs only warn — the server
-    // still boots for non-LLM endpoints (the PUT handler keeps rejecting
-    // empty api_keys on edit).
+    // Heap-moved for the holder swap below; freed via `freeAllLlmConfigs` at
+    // shutdown, so no defer here.
     if (llm_config.validate()) |_| {} else |err| {
         std.log.warn(
             "Config validation: {s}. LLM calls will fail until api_key/model/base_url are populated in ~/.config/pabrik/config.json.",
@@ -127,11 +122,8 @@ pub fn main(init: std.process.Init) !void {
         std.log.info("--no-static-dir: API only, no static files at /.", .{});
     } else if (cli.static_dir) |dir_arg| ctxParent.static_dir_path = dir_arg;
     // Installer layouts ship html/ beside the install root (install.sh
-    // extracts it next to the binaries, mirroring zig-out/bin/html;
-    // Windows keeps %LOCALAPPDATA%\pabrik\html): serve it without
-    // requiring --static-dir, so a bare `pabrik` opens the app instead
-    // of 404ing /. Explicit flags still win; --no-static-dir above
-    // already took the API-only branch.
+    // extracts it next to the binaries, mirroring zig-out/bin/html; Windows
+    // keeps %LOCALAPPDATA%\pabrik\html): serve it without requiring
     if (ctxParent.static_dir_path == null) {
         var candidates: std.ArrayList([]const u8) = .empty;
         defer {
@@ -148,13 +140,7 @@ pub fn main(init: std.process.Init) !void {
                 list.append(alloc, dir) catch alloc.free(dir);
             }
         }.run;
-        // Next-to-executable probe. The REAL exe path, not argv[0]: a
-        // user runs `pabrik` from PATH, where argv[0] is the bare name
-        // "pabrik" with no directory at all (argv[0] is only a fallback,
-        // and only when it carries a dir). `executablePathAlloc` is
-        // Linux /proc/self/exe, macOS _NSGetExecutablePath, Windows
-        // GetModuleFileName — so the shipped html/ sitting beside the
-        // installed binary is found on every platform.
+        // Next-to-executable probe.
         var exe_dir: ?[]u8 = null;
         defer if (exe_dir) |d| allocator.free(d);
         if (std.process.executablePathAlloc(io, allocator)) |exe_path| {
@@ -204,11 +190,7 @@ pub fn main(init: std.process.Init) !void {
     server_boot.seedWorkspaceSettingsFromUserConfig(allocator, io, environment, dbSqlite, cli.auth_enabled);
 
     // `mode="background_persistence"` services die with the pabrik that owns
-    // them. The clean path is the shutdown block far below; this is the
-    // `kill -9` / panic / power-cut path, where no handler ever ran and the
-    // child is still holding its port. A live service row at boot is therefore
-    // always a leftover. Best-effort: a failure here must not stop the server
-    // from starting.
+    // them.
     if (background_process.sweepServicesOnBoot(dbSqlite, io, allocator)) |sweep| {
         if (sweep.killed > 0 or sweep.marked_orphaned > 0) {
             std.log.info(
@@ -266,12 +248,9 @@ pub fn main(init: std.process.Init) !void {
                     std.log.err("cannot bind 127.0.0.1:{d} - address already in use (is another pabrik already running on this port?)", .{port});
                     std.process.exit(1);
                 }
-                // Default-port convenience, on every platform: the user
-                // asked for no port in particular (usually the 8081
-                // default), so a taken port picks a free one instead of
-                // dying. Second `pabrik` on any OS is the common case —
-                // a dev server or stale listener holding 8081 must not
-                // cost the user their session.
+                // Default-port convenience, on every platform: the user asked
+                // for no port in particular (usually the 8081 default), so a
+                // taken port picks a free one instead of dying.
                 std.log.warn("port {d} is already in use - picking a free port instead", .{port});
                 port = pabrikcore.web_port.pickFreePort(io) catch |pick_err| {
                     std.log.err("no free port available: {s}", .{@errorName(pick_err)});
@@ -326,11 +305,6 @@ pub fn main(init: std.process.Init) !void {
 
     std.debug.print("Agent is ready to serve!\n", .{});
     // The browser URL, on every boot path — not just web-launch mode.
-    // A bare `pabrik` (default port 8081, no --static-dir) used to print
-    // nothing but the line above, so users never learned where to point
-    // the browser. The /app entry is only advertised when a static dir
-    // is actually serving it; otherwise / is API-only (404) and the
-    // honest check is /health.
     std.debug.print("Open in your browser: http://127.0.0.1:{d}/\n", .{port});
     if (ctxParent.static_dir_path != null) {
         std.debug.print("App: http://127.0.0.1:{d}/app\n", .{port});
@@ -365,16 +339,9 @@ pub fn main(init: std.process.Init) !void {
     if (shutdown.isRequested()) {
         std.log.info("shutdown signal received — listener closed, flushing in-flight requests", .{});
 
-        // `mode="background_persistence"` processes belong to THIS service, so
-        // they go down with it — a dev server still holding its port after the
-        // user quit pabrik is not "persistent", it is a leak. Deliberately here
-        // and NOT on the worker-cancel path: stopping a chat must not take
-        // someone's dev server down (see `killServicesForShutdown`).
-        //
-        // Placed before the sleep so it runs even if the process is killed
-        // during the 50 ms grace below. Best-effort by design — we are already
-        // on the way out, and a failure to kill one process must not stop the
-        // exit that the signal asked for.
+        // `mode="background_persistence"` processes belong to THIS service,
+        // so they go down with it — a dev server still holding its port after
+        // the user quit pabrik is not "persistent", it is a leak.
         if (background_process.killServicesForShutdown(dbSqlite, io, allocator)) |killed| {
             if (killed > 0) std.log.info("background services: stopped {d} on shutdown", .{killed});
         } else |err| {
@@ -383,10 +350,7 @@ pub fn main(init: std.process.Init) !void {
 
         // Exit instead of unwinding: full unwind segfaults (defer teardowns
         // race draining Io worker threads) and the stops race
-        // signal-interrupted workers. Nothing is freed afterwards so no
-        // thread outlives its context; exit(0) reaps everything. WAL mode
-        // replays uncheckpointed frames on next boot. A second signal
-        // force-exits (130) straight from the handler.
+        // signal-interrupted workers.
         helpers.sleepMillis(50);
         std.process.exit(0);
     }

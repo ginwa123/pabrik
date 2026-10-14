@@ -1,27 +1,5 @@
 //! The `skill_evals` SSE channel: the backend telling the UI that an eval
 //! finished, so the Evals tab can refresh without polling.
-//!
-//! ## Why a central routing key, like `background_process`
-//!
-//! An eval is not scoped to the session that triggered it in a way the UI can
-//! use: the fact cache is shared across sessions, and the tab shows the whole
-//! table. So this emits on ONE central key and the frontend filters by
-//! `session_id` when it cares — the same shape `background_process_events.zig`
-//! uses, and for the same reason.
-//!
-//! ## The four registration places
-//!
-//! A named SSE event that is not registered in ALL of these is dropped by the
-//! browser's `EventSource` before `onEvent` ever fires, which is
-//! indistinguishable from a dead stream (the PR #215 / `session_unknown`
-//! class). They are:
-//!
-//!   1. the Zig event-type ladder (this file)
-//!   2. `additionalEventTypes` in `src/apps/desktop/src/api/index.ts`
-//!   3. an `onEvent` dispatch branch in the same file
-//!   4. `SseEventMap` in `helpers/sseBus.ts` + `UnifiedChannels` in `api/index.ts`
-//!
-//! Miss any one and the event silently vanishes.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -46,12 +24,8 @@ pub const SkillEvalEventInput = struct {
     result_id: []const u8 = "",
 };
 
-/// Emit one skill-eval lifecycle event.
-///
-/// No-op when `event_bus` is null (unit tests, and any caller that has no
-/// bus). Never fails the caller: an eval that completed must not be
-/// reported as failed because the UI could not be told about it. The
-/// event is bookkeeping, and the frontend falls back to a manual refresh.
+/// Emit one skill-eval lifecycle event. No-op when `event_bus` is null (unit
+/// tests, and any caller that has no bus).
 pub fn emitSkillEvalEvent(
     allocator: std.mem.Allocator,
     event_bus: ?*event_bus_mod.EventBus,
@@ -67,10 +41,7 @@ pub fn emitSkillEvalEvent(
     };
     const data = std.json.Stringify.valueAlloc(allocator, payload, .{}) catch return;
 
-    // The granular wire name. An action not in this ladder falls through to
-    // `skill_evals_unknown`, which the frontend deliberately does NOT register
-    // — so an unrecognised action cannot leak into the tab's refresh callback
-    // without an explicit contract. (Zig 0.16 cannot `switch` on `[]const u8`.)
+    // The granular wire name.
     const event_type_name: []const u8 = if (std.mem.eql(u8, input.action, "run_started"))
         "skill_evals_run_started"
     else if (std.mem.eql(u8, input.action, "run_finished"))

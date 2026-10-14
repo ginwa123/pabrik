@@ -1,39 +1,5 @@
-//! `fire.zig` — the per-fire work for a workspace routine.
-//!
-//! Retargeted from per-task routines (Migration 044) to
-//! `workspace_routines` (Migration 084). `fireWorkspaceRoutine(
-//! allocator, db, di, io, routine_id)` is called by the scheduler's
-//! `Scheduler.fireDueRoutines` for every due fire and by the manual
-//! `POST .../routines/:routine_id/run` endpoint. It:
-//!
-//!   1. Loads the routine by workspace-routine `id` and validates
-//!      it's enabled.
-//!   2. Atomically claims the row (`claimForRun`) so a second
-//!      concurrent fire is rejected.
-//!   3. Submits the LLM work to `di.group_emit_session_create.concurrent`
-//!      (mirrors `http_handlers/session_create.zig:161`). The callback
-//!      emits an `ai_workflow.RunParamsNew` event on the event bus —
-//!      the `CallbackAiWorkerFlow` subscription in `main.zig` picks it
-//!      up on a worker thread. The session id IS the routine id (the
-//!      workspace-level analogue of the old `task.id == session.id`
-//!      convention), so every fire appends to the same session chat.
-//!      The `queue_message` is `formatRoutineMessage(schedule,
-//!      instruction, next_run_at)` — the routine's `instruction`
-//!      wrapped with scheduling context so the LLM knows this is an
-//!      automated fire (not a user-typed message) and when to expect
-//!      the next one.
-//!   4. On success: `markSuccess` with a recomputed `next_run_at`
-//!      (NULL for manual-only routines). The LLM result is NOT
-//!      observed here — it's fire-and-forget. If the LLM fails, it
-//!      shows up as a chat-view error (the same path as a normal
-//!      user session).
-//!
-//! No new binary, no separate OS thread — all work happens on the
-//! main process's Io runtime via the existing
-//! `group_emit_session_create` group.
-//!
-//! Plan: docs/superpowers/plans/2026-09-10-workspace-items-routines.md (Task 3)
-//! Task: task_1789032258828_0.
+//! `fire.zig` — the per-fire work for a workspace routine. Retargeted from
+//! per-task routines (Migration 044) to `workspace_routines` (Migration 084).
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -43,11 +9,8 @@ const ai_workflow = pabrikcore.ai_mod.ai_workflow;
 const model = @import("model.zig");
 const cron = @import("cron.zig");
 
-/// Errors returned by `fireWorkspaceRoutine`. These are all SENTINELS —
-/// the fire pipeline does NOT propagate underlying errors (e.g.
-/// `error.RoutineNotFound`) to the caller. The scheduler maps them
-/// to "skip this id, try the next one"; HTTP handlers map them to
-/// status codes.
+/// Errors returned by `fireWorkspaceRoutine`. These are all SENTINELS — the
+/// fire pipeline does NOT propagate underlying errors (e.g.
 pub const FireError = error{
     /// No `workspace_routines` row for this id.
     NotARoutine,
@@ -57,37 +20,7 @@ pub const FireError = error{
     AlreadyRunning,
 };
 
-/// Fire a single workspace routine. Loads the routine, atomically
-/// claims the row, then submits the LLM work via
-/// `di.group_emit_session_create.concurrent(io, runFire, .{...})` —
-/// the same pattern as `http_handlers/session_create.zig:161`. The
-/// callback emits `ai_workflow.RunParamsNew` to the event bus;
-/// `CallbackAiWorkerFlow` picks it up on the Io runtime and runs the
-/// LLM in a worker thread.
-///
-/// The function returns as soon as the event is submitted (the
-/// `group_emit_session_create.concurrent` call is non-blocking). The
-/// routine row is marked `success` and `next_run_at` is advanced
-/// immediately — the LLM is fire-and-forget. A failed LLM call will
-/// surface as a chat-view error (the same path as a normal user
-/// session), not as a routine status change.
-///
-/// `di` must be the initialized `pabrikcore.App` singleton
-/// (the scheduler already has it from the start() call chain). The
-/// sub-allocated strings (`sid`/`qmsg`/...) are owned by the
-/// `runFire` callback and freed when it returns.
-///
-/// The return type is `anyerror!void` rather than a narrow
-/// `FireError!void` set: the helpers this function calls
-/// (`loadWorkspaceRoutineById`, `claimForRun`, `markSuccess`,
-/// `cron.nextFireTime`, the `dupe` family) each contribute their own
-/// error variants, and propagating them through a narrow set would
-/// expose internal implementation details. The three `FireError`
-/// variants (NotARoutine, Disabled, AlreadyRunning) are produced
-/// only at the controlled boundaries documented in the `FireError`
-/// declaration. The scheduler switches on those three explicitly
-/// and treats any other error as a generic fire failure (logged,
-/// skipped, polling continues).
+/// Fire a single workspace routine.
 pub fn fireWorkspaceRoutine(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -123,13 +56,8 @@ pub fn fireWorkspaceRoutine(
         next_sqlite = next_sqlite_owned.?;
     }
 
-    // 4) Heap-allocate strings for the concurrent task. The callback
-    //    owns these and frees them when done (mirrors
-    //    `session_create.zig:141-159`). Use `errdefer` chains so a
-    //    mid-allocation failure unwinds cleanly. The `qmsg` is
-    //    `formatRoutineMessage(...)` — a structured "automated
-    //    workspace-routine fire" header + schedule/next-fire bullets,
-    //    then a blank line, then the routine's `instruction` verbatim.
+    // 4) Heap-allocate strings for the concurrent task. The callback owns
+    // these and frees them when done (mirrors `session_create.zig:141-159`).
     const sid = try di.allocator.dupe(u8, routine.id);
     errdefer di.allocator.free(sid);
     const schedule_label = if (routine.schedule.len > 0) routine.schedule else "(manual)";
@@ -146,29 +74,22 @@ pub fn fireWorkspaceRoutine(
     const spm = try di.allocator.dupe(u8, "");
     errdefer di.allocator.free(spm);
 
-    // 5) Submit the LLM work to the Io group. The callback emits the
-    //    event; the Io runtime processes the event via
-    //    `CallbackAiWorkerFlow` in a worker thread. This call
-    //    returns immediately — the actual LLM call happens
-    //    asynchronously.
+    // 5) Submit the LLM work to the Io group. The callback emits the event;
+    // the Io runtime processes the event via `CallbackAiWorkerFlow` in a
+    // worker thread.
     try di.group_emit_session_create.concurrent(
         io,
         runFire,
         .{ di, sid, qmsg, cwd, bmsg, atools, iurls, spm },
     );
 
-    // 6) Mark success and advance next_run_at. The LLM is
-    //    fire-and-forget — we don't wait for it to complete before
-    //    marking success. We reuse the `next_sqlite` we computed
-    //    above; the defer above will free it once markSuccess
-    //    returns.
+    // 6) Mark success and advance next_run_at. The LLM is fire-and-forget —
+    // we don't wait for it to complete before marking success.
     try model.markSuccess(allocator, db, routine.id, next_sqlite);
 }
 
-/// Callback for `group_emit_session_create.concurrent`. Emits the LLM
-/// event to the event bus. The Io runtime processes the event in a
-/// worker thread; this callback returns immediately. Frees the
-/// heap-allocated string args on the way out.
+/// Callback for `group_emit_session_create.concurrent`. Emits the LLM event
+/// to the event bus.
 fn runFire(
     di: *pabrikcore.App,
     sid: []u8,
@@ -202,43 +123,8 @@ fn runFire(
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
-/// Format the user-style message that gets sent to the LLM when a
-/// routine fires. Wraps the routine's `instruction` with a
-/// structured metadata header so the LLM knows this is an automated
-/// fire (not a user-typed message) and when to expect the next one.
-///
-/// The format is:
-///
-///   This is an automated workspace-routine fire.
-///   - Schedule: <schedule>
-///   - Next fire: <next_run_at_sqlite>
-///
-///   <instruction>
-///
-/// where `<next_run_at_sqlite>` is an SQLite DATETIME literal
-/// (`YYYY-MM-DD HH:MM:SS`) — the FUTURE fire time (the time AFTER
-/// the current one). Empty for manual-only fires.
-///
-/// The format is designed to be LLM-friendly:
-///   - "automated workspace-routine fire" makes it explicit that this
-///     is NOT a user-typed message, so the LLM doesn't expect a
-///     conversational back-and-forth — and distinguishes it from the
-///     old per-task routine fires.
-///   - The metadata header is FIRST and the actual task is LAST, so
-///     the LLM reads the context-setting sentence before the task.
-///   - A blank line separates the metadata block from the task,
-///     giving the LLM a clear instruction boundary.
-///   - Bulleted key-value pairs (rather than a prose sentence) let
-///     the LLM extract schedule / next-fire without parsing.
-///   - No LLM-jargon words ("prompt", "instruction", "execute") that
-///     are ambiguous when used inside the prompt itself.
-///   - Easy to extend: adding fields like "Last status: success" or
-///     "Run #5" slots in as new bullets without breaking parsing.
-///
-/// Public for unit testing in `fire_test.zig` — the happy-path of
-/// `fireWorkspaceRoutine` requires a real `pabrikcore.App`
-/// singleton and a live `CallbackAiWorkerFlow` subscription (i.e. a
-/// real `pabrik` process), so the format is tested in isolation here.
+/// Format the user-style message that gets sent to the LLM when a routine
+/// fires.
 pub fn formatRoutineMessage(
     allocator: std.mem.Allocator,
     schedule: []const u8,
@@ -252,12 +138,8 @@ pub fn formatRoutineMessage(
         "{s}", .{ schedule, next_run_at_sqlite, instruction });
 }
 
-/// Convert unix nanos (i128) to a SQLite DATETIME literal
-/// `YYYY-MM-DD HH:MM:SS`. Public so `Scheduler.zig` can reuse the
-/// helper (the scheduler recomputes `next_run_at` for every enabled
-/// routine at startup, and lists due routines every tick — both
-/// paths need this formatter). Uses the same `std.time.epoch` helpers
-/// as `cron.zig`.
+/// Convert unix nanos (i128) to a SQLite DATETIME literal `YYYY-MM-DD
+/// HH:MM:SS`.
 pub fn formatSqliteDatetime(allocator: std.mem.Allocator, unix_nanos: i128) ![]u8 {
     const secs: i64 = @intCast(@divTrunc(unix_nanos, std.time.ns_per_s));
     const epoch_seconds: std.time.epoch.EpochSeconds = .{ .secs = @intCast(secs) };
@@ -274,37 +156,8 @@ pub fn formatSqliteDatetime(allocator: std.mem.Allocator, unix_nanos: i128) ![]u
     });
 }
 
-// ===== Tests merged from fire_test.zig (2026-09-29 flatten) =====
-// Behavioral tests for `fire.zig` (Task 3 of the
-// workspace-items-routines plan).
-//
-// `fireWorkspaceRoutine(allocator, db, di, io, routine_id)` is the
-// per-fire work done on the main process's Io runtime via
-// `di.group_emit_session_create.concurrent(io, ...)` (the same
-// pattern as `http_handlers/session_create.zig:161`). The three
-// behaviors under test:
-//
-//   1. **Atomic claim** — a second concurrent fire attempt against a
-//      row already in `running` state must return `AlreadyRunning`
-//      and must NOT submit an LLM event.
-//   2. **Not a routine** — an id with no `workspace_routines` row
-//      returns `NotARoutine` (no claim, no submit).
-//   3. **Disabled routine** — a routine with `enabled = false`
-//      returns `Disabled` (no claim, no submit).
-//
-// The happy-path test (the original "inserts 🔁 user-style message"
-// + "marks success and advances next_run_at") is gone: the new
-// implementation submits the LLM work to
-// `di.group_emit_session_create.concurrent` rather than calling
-// `saveMessage` directly, and the success-state side effect now
-// flows through the same group as the rest of the session-create
-// pipeline. Testing the full happy path would require a real
-// initialized `pabrikcore.App` singleton and a live
-// `CallbackAiWorkerFlow` subscription — i.e., a real `pabrik`
-// process. The runtime smoke test (manually firing a routine via
-// the desktop UI and watching it run) is the integration coverage.
-//
-// Plan: docs/superpowers/plans/2026-09-10-workspace-items-routines.md (Task 3)
+// ===== Tests merged from fire_test.zig (2026-09-29 flatten) ===== Behavioral
+// tests for `fire.zig` (Task 3 of the workspace-items-routines plan).
 
 const testing = std.testing;
 
@@ -373,11 +226,6 @@ test "fireWorkspaceRoutine rejects a second concurrent fire (atomic claim)" {
         .next_run_at = "2000-01-01 00:00:00",
     });
     // Pre-claim the row by setting last_status to 'running'.
-    // `claimForRun` (called inside `fireWorkspaceRoutine`) is an atomic
-    // UPDATE that excludes already-running rows, so it will return
-    // false and `fireWorkspaceRoutine` will return `AlreadyRunning`
-    // without doing any other work. The `di` parameter is never read
-    // on the `AlreadyRunning` path, so `undefined` is safe.
     try ctx.db.exec(alloc, "UPDATE workspace_routines SET last_status = 'running' WHERE id = 'item_1'", &.{});
 
     const err = fireWorkspaceRoutine(alloc, &ctx.db, undefined, ctx.threaded.io(), "item_1") catch |e| e;
@@ -469,10 +317,9 @@ test "formatRoutineMessage produces a structured metadata header followed by the
 }
 
 test "formatRoutineMessage preserves multi-line and special-char instruction verbatim" {
-    // The `{s}` format specifier embeds the slice bytes literally —
-    // the routine's `instruction` may contain newlines, colons,
-    // and other punctuation that the LLM needs to see unchanged.
-    // Verify the wrapper does not reinterpret or trim them.
+    // The `{s}` format specifier embeds the slice bytes literally — the
+    // routine's `instruction` may contain newlines, colons, and other
+    // punctuation that the LLM needs to see unchanged.
     const alloc = testing.allocator;
     const msg = try formatRoutineMessage(
         alloc,
@@ -487,12 +334,9 @@ test "formatRoutineMessage preserves multi-line and special-char instruction ver
 }
 
 test "formatRoutineMessage places metadata header first and instruction last" {
-    // The LLM-friendly property: meta header is the FIRST thing the
-    // LLM reads (sets context), the actual task is the LAST thing
-    // (clear instruction boundary), and they're separated by a blank
-    // line. These are the structural invariants that let the LLM
-    // parse the format reliably — if any of them regresses, the
-    // prompt becomes harder for the LLM to interpret.
+    // The LLM-friendly property: meta header is the FIRST thing the LLM reads
+    // (sets context), the actual task is the LAST thing (clear instruction
+    // boundary), and they're separated by a blank line.
     const alloc = testing.allocator;
     const msg = try formatRoutineMessage(
         alloc,

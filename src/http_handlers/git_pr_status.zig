@@ -13,12 +13,7 @@ pub const GH_JSON_FIELDS = pr_cli.GH_JSON_FIELDS;
 
 const PrStatusError = error{ NotARepository, CliMissing, NoAssociatedPr, FetchFailed };
 
-/// Raw shape of `gh pr view --json ...` output. All fields optional with
-/// defaults so a future `gh` version adding/removing a key does not break
-/// parsing — missing keys surface as empty strings / zeros.
-/// `mergedAt`/`closedAt` are `null` until the PR is merged/closed, so they
-/// must stay optional: parsing JSON null into `[]const u8` fails and every
-/// OPEN PR would 502 (see PR #584).
+/// Raw shape of `gh pr view --json ...` output.
 const GhPrView = struct {
     number: i64 = 0,
     title: []const u8 = "",
@@ -44,16 +39,8 @@ const GhPrView = struct {
     changedFiles: i64 = 0,
 };
 
-/// Normalize a forge state to the lowercase status the CLI prints.
-/// GitHub says OPEN/CLOSED/MERGED; GitLab says `opened`/`closed`/
-/// `merged`/`locked`. `opened` matters — without it every open GitLab MR
-/// would report status "opened" and the frontend's `status === 'open'`
-/// check would treat it as neither open nor merged nor closed.
-/// Unknown values pass through lowercased.
-///
-/// `pub` so `git_pr_list.zig` normalizes a row's state through the same
-/// table: a list row and the card badge for the same PR disagreeing about
-/// what "open" means is exactly the drift this function exists to stop.
+/// Normalize a forge state to the lowercase status the CLI prints. GitHub
+/// says OPEN/CLOSED/MERGED; GitLab says `opened`/`closed`/ `merged`/`locked`.
 pub fn normalizeStatus(state: []const u8) []const u8 {
     if (std.ascii.eqlIgnoreCase(state, "OPEN") or std.ascii.eqlIgnoreCase(state, "OPENED")) return "open";
     if (std.ascii.eqlIgnoreCase(state, "CLOSED")) return "closed";
@@ -65,12 +52,6 @@ pub fn normalizeStatus(state: []const u8) []const u8 {
 }
 
 /// `setFetchDetail` for a formatted message.
-///
-/// The `allocPrint` spelling is a leak: `setFetchDetail` COPIES the text into
-/// the request arena, so the temporary it was handed is never freed — and in a
-/// test the leak detector reports it as a failure. Format into a stack buffer
-/// instead. (`git_pr_create.zig` documents the same rule for its spawn-failure
-/// message; this makes it reusable rather than repeated.)
 pub fn setFetchDetailFmt(
     allocator: std.mem.Allocator,
     slot: *?[]u8,
@@ -82,17 +63,13 @@ pub fn setFetchDetailFmt(
     setFetchDetail(allocator, slot, msg);
 }
 
-/// Max bytes of `gh` stderr (or context) surfaced in the HTTP 502
-/// `error` field. `gh` failures are usually one line (`HTTP 401: ...`,
-/// `could not resolve to a Repository ...`), but auth hints can run a
-/// few lines — 500 bytes keeps the real cause without dumping pages.
+/// Max bytes of `gh` stderr (or context) surfaced in the HTTP 502 `error`
+/// field.
 const MAX_FETCH_DETAIL: usize = 500;
 
-/// Store a trimmed + capped copy of `msg` into `slot` (best-effort;
-/// leaves `slot` null on empty input or alloc failure so callers can
-/// fall back to the generic hint). Allocs from the request arena.
-/// `pub` so `git_pr_checks.zig` reuses it rather than growing a second,
-/// subtly different error-detail formatter.
+/// Store a trimmed + capped copy of `msg` into `slot` (best-effort; leaves
+/// `slot` null on empty input or alloc failure so callers can fall back to
+/// the generic hint).
 pub fn setFetchDetail(allocator: std.mem.Allocator, slot: *?[]u8, msg: []const u8) void {
     const trimmed = std.mem.trim(u8, msg, " \n\r\t");
     if (trimmed.len == 0) return;
@@ -123,10 +100,7 @@ pub const GH_PROGRAM: []const u8 = "gh";
 /// The `glab` binary. Same seam as `GH_PROGRAM`, GitLab side.
 pub const GLAB_PROGRAM: []const u8 = "glab";
 
-/// Wall-clock budget for one PR/MR view invocation. The forge CLIs are
-/// thin HTTP clients; anything slower than this is a hung network call
-/// or a credential prompt nobody can answer, and a wedged worker-pool
-/// thread is far more expensive to debug than a 502.
+/// Wall-clock budget for one PR/MR view invocation.
 pub const GH_TIMEOUT_MS: u32 = 20_000;
 
 /// Per-stream capture cap. A `pr view` payload is a few hundred
@@ -134,36 +108,8 @@ pub const GH_TIMEOUT_MS: u32 = 20_000;
 const GH_MAX_OUTPUT_BYTES: usize = 64 * 1024;
 
 /// Run `gh pr view` in `path` and return the raw stdout JSON (owned).
-/// `pr_arg` is "" for "current branch's PR", otherwise a number, URL,
-/// or branch name passed straight through to `gh`.
-/// On failure the real cause (`gh` stderr or context) is duped into
-/// `fetch_detail` so the handler can surface it instead of a generic
-/// "check PR number/URL, provider, and gh auth" message.
-///
-/// `prog` and `timeout_ms` are injected so the inline tests below can
-/// drive this against a fixture script with a short deadline, instead
-/// of requiring a real, authenticated GitHub CLI on PATH.
-///
-/// ## Why this goes through `helpers.run_captured` and not
-/// `std.process.spawn` + `Child.wait`
-///
-/// The hand-rolled version (spawn, drain stdout to EOF, drain stderr to
-/// EOF, `child.wait(io)`) had two process-killing failure modes:
-///
-/// 1. `Child.wait` runs `childCleanupPosix`, which `closeFd`s every
-///    pipe still attached to the `Child`. Zig 0.16's `closeFd` treats
-///    EBADF as `unreachable` in Debug builds, so one request could
-///    take the whole server down with
-///    `thread N panic: reached unreachable code` — the crash this
-///    function's inline tests below are named after.
-/// 2. Draining stdout before stderr deadlocks as soon as `gh` writes
-///    more than one pipe buffer (64 KiB on Linux) to stderr: `gh`
-///    blocks in `write(2)`, never closes stdout, and our read never
-///    sees EOF. The request hangs forever and leaks the worker thread.
-///
-/// `run_captured` detaches both pipes from the `Child` before anything
-/// else (so std's cleanup closes nothing), drains the two streams
-/// concurrently, and kills + reaps the child at the deadline.
+/// `pr_arg` is "" for "current branch's PR", otherwise a number, URL, or
+/// branch name passed straight through to `gh`.
 fn runView(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -176,10 +122,8 @@ fn runView(
 ) ![]u8 {
     const cli = pr_cli.cliFor(provider) orelse return error.CliMissing;
 
-    // `<gh> pr view [<pr>] --json <fields>` for GitHub,
-    // `<glab> mr view [<mr>] --output json` for GitLab. Built by
-    // `pr_cli` so the two shapes live next to each other instead of
-    // one hardcoded `gh` block plus a GitLab special case.
+    // `<gh> pr view [<pr>] --json <fields>` for GitHub, `<glab> mr view
+    // [<mr>] --output json` for GitLab.
     var argv_buf: [pr_cli.view_argv_max][]const u8 = undefined;
     const argv = pr_cli.viewArgv(&argv_buf, provider, prog, pr_arg) orelse return error.CliMissing;
 
@@ -212,10 +156,9 @@ fn runView(
             if (code != 0) {
                 const stderr_trimmed = std.mem.trim(u8, res.stderr, " \n\r");
                 const is_no_pr = isNotFoundStderr(stderr_trimmed, provider);
-                // Surface the real CLI stderr (auth failures, bad
-                // numbers, rate limits) instead of a generic hint.
-                // `is_no_pr` stays a 404; everything else becomes a
-                // 502 carrying this detail.
+                // Surface the real CLI stderr (auth failures, bad numbers,
+                // rate limits) instead of a generic hint. `is_no_pr` stays a
+                // 404; everything else becomes a 502 carrying this detail.
                 if (!is_no_pr) {
                     if (stderr_trimmed.len > 0) {
                         setFetchDetail(allocator, fetch_detail, stderr_trimmed);
@@ -238,14 +181,8 @@ fn runView(
     return allocator.dupe(u8, res.stdout);
 }
 
-/// Whether a non-zero-exit stderr means "that PR/MR does not exist"
-/// (404) rather than "the lookup blew up" (502).
-///
-/// The two CLIs word this differently, and `gh`'s phrasing has grown
-/// over releases, so both the provider-specific phrases and the generic
-/// ones are checked. An auth failure must NOT match here — it has to
-/// stay a 502 carrying the real stderr, otherwise a logged-out user
-/// gets a misleading 404 and never learns to run `gh auth login`.
+/// Whether a non-zero-exit stderr means "that PR/MR does not exist" (404)
+/// rather than "the lookup blew up" (502).
 fn isNotFoundStderr(stderr: []const u8, provider: pr_provider.PrProvider) bool {
     if (std.mem.indexOf(u8, stderr, "404") != null) return true;
     if (std.ascii.indexOfIgnoreCase(stderr, "not found") != null) return true;
@@ -300,10 +237,7 @@ fn useCase(
     return useCaseWithPrograms(allocator, io, .{}, path, pr_arg, provider_override, fetch_detail);
 }
 
-/// `useCase` with a single program injected for BOTH forges. This is the
-/// seam the pre-existing `gh` behavioural tests use; a test that only
-/// ever exercises GitHub does not care that `glab` would also be pointed
-/// at the fixture. New dual-forge tests should use `useCaseWithPrograms`.
+/// `useCase` with a single program injected for BOTH forges.
 fn useCaseWith(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -319,11 +253,6 @@ fn useCaseWith(
 /// `useCase` with both forge binaries injectable so the inline tests can
 /// drive the whole path against fixture scripts instead of real,
 /// authenticated GitHub/GitLab CLIs.
-///
-/// `pub` because `git_pr_merge.zig` re-reads the status through it after
-/// running `gh pr merge` / `glab mr merge`: the merge endpoint must answer
-/// with exactly the payload the 30 s poll returns, and a second copy of the
-/// status path is how the badge and the box would drift apart.
 pub fn useCaseWithPrograms(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -334,26 +263,6 @@ pub fn useCaseWithPrograms(
     fetch_detail: *?[]u8,
 ) !http_response.GitPrStatusResponse {
     // 1) Must be a git repo.
-    //
-    // KNOWN LIMITATION (pre-existing, not introduced here): git honours
-    // an ambient `GIT_DIR` / `GIT_WORK_TREE`, and then answers "yes,
-    // this is a repository" for ANY path —
-    //
-    //     $ git -C /tmp/empty rev-parse --git-dir; echo $?
-    //     128
-    //     $ GIT_DIR=/repo/.git git -C /tmp/empty rev-parse --git-dir; echo $?
-    //     /repo/.git
-    //     0
-    //
-    // git exports both to the hooks it runs, so a pabrik started from
-    // inside a git hook (or any wrapper that exports them) would skip
-    // this gate and try to run the forge CLI in a non-repository.
-    // `spawn` also hands the child the `Io.Threaded` CACHED environ, so
-    // the process cannot fix this for itself after startup. The fix is
-    // to pass an explicit `environ_map` to this probe; tracked as
-    // follow-up work. Test-side mitigations: the hook unsets GIT_*
-    // (.husky/pre-push) and fixtures refuse a dirty env
-    // (helpers/git_env_guard.zig).
     {
         const check = std.process.run(allocator, io, .{ .argv = &.{ "git", "-C", path, "rev-parse", "--git-dir" } }) catch return error.NotARepository;
         defer {
@@ -364,10 +273,8 @@ pub fn useCaseWithPrograms(
     }
 
     // 2) Resolve which forge to ask. Precedence, most explicit first:
-    //    explicit `provider` param > a URL-shaped `pr` arg > the
-    //    repository's own `origin` remote. The remote fallback is what
-    //    makes a GitLab repo work with no parameters at all, which is
-    //    the badge/refresh path the frontend calls without a provider.
+    // explicit `provider` param > a URL-shaped `pr` arg > the repository's
+    // own `origin` remote.
     const provider = resolveProvider(allocator, io, path, pr_arg, provider_override) catch |err| {
         switch (err) {
             error.UnknownProvider => setFetchDetail(allocator, fetch_detail, "unknown provider (expected github, gitlab, or generic)"),
@@ -385,10 +292,9 @@ pub fn useCaseWithPrograms(
 
     const cli = pr_cli.cliFor(provider).?;
     const trimmed = std.mem.trim(u8, raw, " \n\r");
-    // parseFromSliceLeaky BORROWS string slices from `raw` (no dupes),
-    // so every string must be duped into the request arena before `raw`
-    // is freed — otherwise the handler serializes freed memory
-    // (0xAA garbage in debug builds). Numbers copy by value.
+    // parseFromSliceLeaky BORROWS string slices from `raw` (no dupes), so
+    // every string must be duped into the request arena before `raw` is freed
+    // — otherwise the handler serializes freed memory (0xAA garbage in debug
     return switch (provider) {
         .github => try buildResponse(allocator, provider, trimmed, raw.len, cli, fetch_detail),
         .gitlab => try buildGlabResponse(allocator, provider, trimmed, raw.len, cli, fetch_detail),
@@ -397,17 +303,6 @@ pub fn useCaseWithPrograms(
 }
 
 /// Which forge to ask, or the reason we cannot ask one.
-///
-/// Order matters: an explicit `provider` always wins (the caller knows
-/// about self-hosted hosts we cannot sniff), then a URL-shaped `pr`
-/// argument, then `git remote get-url origin` for the repo we were
-/// pointed at. Falling back to the remote is what makes
-/// `GET /api/git/pr/status?path=<gitlab-repo>` answer with a `glab`
-/// lookup instead of a `gh` failure.
-///
-/// `pub` so `git_pr_checks.zig` asks the same three questions in the
-/// same order — two endpoints that disagree about which forge a repo
-/// belongs to would show a GitHub user GitLab error text.
 pub fn resolveProvider(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -457,15 +352,8 @@ fn detectProviderFromOrigin(allocator: std.mem.Allocator, io: std.Io, path: []co
     return p;
 }
 
-/// Best-effort provider, used ONLY to choose the wording of an error
-/// message ("no merge request found" vs "no pull request found").
-///
-/// The use case has already resolved the real provider by the time we
-/// get an error, but threading that value back out would change every
-/// one of the ~15 existing test seams for no functional gain. On the
-/// error path — a 404 or a 502, not a hot loop — one extra `git remote`
-/// read is cheap. Returns null on any doubt so the caller can fall back
-/// to GitHub wording rather than guessing wrong.
+/// Best-effort provider, used ONLY to choose the wording of an error message
+/// ("no merge request found" vs "no pull request found").
 fn handlerProvider(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -478,10 +366,7 @@ fn handlerProvider(
     return p;
 }
 
-/// The wording to use for an error message about this request. Falls
-/// back to GitHub's when the provider cannot be determined, because an
-/// unrecognised provider is far more often an old GitHub session than a
-/// self-hosted GitLab, and wrong wording beats no wording.
+/// The wording to use for an error message about this request.
 fn handlerCli(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -529,20 +414,9 @@ fn buildResponse(
     };
 }
 
-/// Build the wire response from `glab mr view --output json` stdout.
-///
-/// ## Why this parser is alias-tolerant while the `gh` one is not
-///
-/// `gh pr view --json` takes an explicit field list, so its output shape
-/// is pinned by the flag we pass. `glab mr view --output json` returns
-/// whatever the installed glab happens to render, and that has changed
-/// across releases: the identifier has been both `iid` and `id`, the
-/// link both `web_url` and `url`, and the numeric diff counters have
-/// been numbers in one version and strings in another. Declaring one
-/// rigid struct means a routine `glab` upgrade 502s the endpoint for
-/// every GitLab user. So the counters are `std.json.Value` (which
-/// accepts number *and* string) and the identity fields are read
-/// through a first-non-empty alias chain.
+/// Build the wire response from `glab mr view --output json` stdout. ## Why
+/// this parser is alias-tolerant while the `gh` one is not `gh pr view
+/// --json` takes an explicit field list, so its output shape is pinned by the
 const GlabMrView = struct {
     iid: i64 = 0,
     id: i64 = 0,
@@ -578,11 +452,7 @@ fn buildGlabResponse(
 ) !http_response.GitPrStatusResponse {
     // `parseFromSlice`, deliberately NOT the Leaky variant used by
     // `buildResponse`: GlabMrView holds `std.json.Value` counters, and a
-    // Value duplicates its string/object into a parser-owned arena. The
-    // Leaky variant has no `deinit` to hand that arena back, so every
-    // request would leak one allocation per non-null counter. The typed
-    // string fields below still borrow from `trimmed`, which outlives
-    // the dupes we return, so `deinit` here is safe.
+    // Value duplicates its string/object into a parser-owned arena.
     var parsed = std.json.parseFromSlice(GlabMrView, allocator, trimmed, .{ .ignore_unknown_fields = true }) catch {
         setParseDetail(allocator, fetch_detail, cli, raw_len);
         return error.FetchFailed;
@@ -591,10 +461,9 @@ fn buildGlabResponse(
     const mr = parsed.value;
 
     const url = firstNonEmpty(&.{ mr.web_url, mr.url });
-    // GitLab's merge_status vocabulary (can_be_merged / cannot_be_merged)
-    // and detailed_merge_status vocabulary (mergeable / conflicted) are
-    // different axes; `detailed_merge_status` is the closer analogue of
-    // `gh`'s `mergeStateStatus`, so it wins when both are present.
+    // GitLab's merge_status vocabulary (can_be_merged / cannot_be_merged) and
+    // detailed_merge_status vocabulary (mergeable / conflicted) are different
+    // axes; `detailed_merge_status` is the closer analogue of `gh`'s
     const detailed = mr.detailed_merge_status;
     const merge_status = mr.merge_status;
     return http_response.GitPrStatusResponse{
@@ -666,10 +535,9 @@ fn setParseDetail(allocator: std.mem.Allocator, fetch_detail: *?[]u8, cli: pr_cl
     setFetchDetail(allocator, fetch_detail, msg);
 }
 
-/// GET /api/git/pr/status?path=<repo>[&pr=<number|url|branch>][&provider=github]
+/// GET
+/// /api/git/pr/status?path=<repo>[&pr=<number|url|branch>][&provider=github]
 /// Returns the PR's open/merged/closed status via `gh pr view`.
-/// `pr` is optional: when omitted, `gh` resolves the PR for the
-/// current branch. Only the github provider is supported in v1.
 pub fn gitPrStatusHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
     const io = ctx.io;
@@ -711,10 +579,8 @@ pub fn gitPrStatusHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, 
             return res.jsonResponse(.{ .status_code = 404, .data = try http_response.makeGitStatusErrorResponse(allocator, msg) });
         },
         error.FetchFailed => {
-            // Surface the real CLI stderr (auth, bad number, rate
-            // limit) so DevTools shows WHY it failed instead of the
-            // generic hint. Falls back to the hint when no detail was
-            // captured (e.g. empty stderr).
+            // Surface the real CLI stderr (auth, bad number, rate limit) so
+            // DevTools shows WHY it failed instead of the generic hint.
             const cli = handlerCli(allocator, io, path_param, pr_param, provider_param);
             const msg = if (fetch_detail) |d|
                 try std.fmt.allocPrint(allocator, "failed to fetch {s} status: {s}", .{ cli.label, d })
@@ -754,17 +620,6 @@ test "GhPrView parses open-PR payload with null mergedAt/closedAt" {
 
 // ============================================================================
 // Behavioural test suite for the `gh pr view` child-process path.
-//
-// `runGhPrView` is the function that aborted the whole server process
-// (`thread N panic: reached unreachable code` from
-// `std/Io/Threaded.zig:closeFd` <- `childCleanupPosix` <- `Child.wait`)
-// and that could deadlock a worker-pool thread forever on a chatty
-// `gh`. These tests drive the real code path against fixture scripts.
-//
-// Fixture shape: `runGhPrView` takes the program name as a parameter,
-// so a test points it at a shell script it just wrote. That keeps the
-// whole suite hermetic — no `gh` install, no GitHub auth, no network.
-// ============================================================================
 
 const builtin_t = @import("builtin");
 
@@ -836,10 +691,9 @@ fn scriptPrintingJson(allocator: std.mem.Allocator, payload: []const u8) ![]u8 {
     return std.fmt.allocPrint(allocator, "#!/bin/sh\nprintf '%s' '{s}'\n", .{payload});
 }
 
-/// A realistic `glab mr view --output json` payload for an OPEN MR:
-/// GitLab's own field names (`iid`, `web_url`, `source_branch`,
-/// `detailed_merge_status`) and its `opened` state, plus `changes_count`
-/// as the numeric STRING the REST API returns.
+/// A realistic `glab mr view --output json` payload for an OPEN MR: GitLab's
+/// own field names (`iid`, `web_url`, `source_branch`,
+/// `detailed_merge_status`) and its `opened` state, plus `changes_count` as
 const OPEN_MR_JSON =
     \\{"id":11463,"iid":7,"title":"Add GitLab support","description":"body","state":"opened","created_at":"2026-09-28T10:00:00.000Z","updated_at":"2026-09-29T11:30:00.000Z","merged_at":null,"closed_at":null,"author":{"id":42,"name":"Ginwa","username":"ginwa123","state":"active"},"source_branch":"worktree/gitlab-support","target_branch":"main","web_url":"https://gitlab.com/acme/sub/app/-/merge_requests/7","merge_status":"can_be_merged","detailed_merge_status":"mergeable","changes_count":"4"}
 ;
@@ -876,11 +730,6 @@ fn makeGitRepo(fx: *Fixture) ![]u8 {
 }
 
 /// A directory that is genuinely NOT inside a git repository.
-///
-/// `std.testing.tmpDir` roots at `.zig-cache/tmp/`, which lives *inside*
-/// this repo — `git -C <that dir> rev-parse --git-dir` walks up and
-/// succeeds, so the `NotARepository` gate would never trip. Go to the
-/// system temp dir instead.
 pub fn makeNonRepoDir(allocator: std.mem.Allocator) ![]u8 {
     var name_buf: [48]u8 = undefined;
     var seed: [4]u8 = undefined;
@@ -900,13 +749,9 @@ pub fn removeNonRepoDir(allocator: std.mem.Allocator, path: []const u8) void {
     allocator.free(path);
 }
 
-/// True when the ambient environment already makes git claim every path
-/// is a repository — see the KNOWN LIMITATION note on the probe in
-/// `useCaseWith`. git exports `GIT_DIR` / `GIT_WORK_TREE` to the hooks
-/// it runs, so under `git push` (husky's pre-push gate, which runs
-/// `zig build test`) this is true and the gate is bypassed for reasons
-/// this test cannot fix. Detected by running the very same probe
-/// against a directory that is definitely not a repository.
+/// True when the ambient environment already makes git claim every path is a
+/// repository — see the KNOWN LIMITATION note on the probe in `useCaseWith`.
+/// git exports `GIT_DIR` / `GIT_WORK_TREE` to the hooks it runs, so under
 pub fn gitProbeIsEnvHijacked(allocator: std.mem.Allocator, empty_dir: []const u8) bool {
     const check = std.process.run(allocator, std.testing.io, .{
         .argv = &.{ "git", "-C", empty_dir, "rev-parse", "--git-dir" },
@@ -1086,12 +931,7 @@ test "runGhPrView: a non-zero exit with empty stderr still records the code" {
 }
 
 test "runGhPrView: >64 KiB of gh stderr does NOT deadlock (crash-class regression)" {
-    // THE regression test for the production hang. The pre-fix code
-    // drained stdout to EOF before touching stderr, so a `gh` that
-    // printed more than one 64 KiB pipe buffer to stderr blocked in
-    // write(2), never closed stdout, and the HTTP request — plus the
-    // worker thread running it — hung forever. If this test times out
-    // in CI, the concurrent drain is gone.
+    // THE regression test for the production hang.
     if (skipOnWindows()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
@@ -1215,11 +1055,8 @@ fn concurrentGhWorker(ctx: *ConcurrentGhCtx) void {
 }
 
 test "runGhPrView: 8 concurrent callers never trip the double-close abort" {
-    // The reported crash was a `closeFd` EBADF inside
-    // `childCleanupPosix` on a worker-pool thread, so it only ever
-    // showed up under concurrency. Every one of these calls spawns,
-    // drains, closes and reaps a real child from a real thread; if the
-    // fd ownership regressed, the test binary aborts rather than fails.
+    // The reported crash was a `closeFd` EBADF inside `childCleanupPosix` on
+    // a worker-pool thread, so it only ever showed up under concurrency.
     if (skipOnWindows()) return error.SkipZigTest;
     if (builtin_t.os.tag != .linux) return error.SkipZigTest;
     const a = testing.allocator;
@@ -1299,11 +1136,9 @@ test "useCase: a non-git path never spawns gh (repo-gate regression)" {
         return error.SkipZigTest;
     }
 
-    // A `gh` that succeeds AND drops a sentinel: if the repo gate ever
-    // fails to short-circuit, the sentinel appears and this test fails
-    // with a message that names the actual problem. Asserting on the
-    // sentinel rather than on `error.NotARepository` is deliberate —
-    // see the GIT_DIR note below.
+    // A `gh` that succeeds AND drops a sentinel: if the repo gate ever fails
+    // to short-circuit, the sentinel appears and this test fails with a
+    // message that names the actual problem.
     const sentinel = try std.fmt.allocPrint(a, "{s}/gh-was-run", .{fx.root});
     defer a.free(sentinel);
     const gh = try fx.writeScript("gh", try std.fmt.allocPrint(a,
@@ -1362,9 +1197,8 @@ test "useCase: an unknown provider string is rejected" {
 
 test "useCase: the generic provider is rejected — it has no forge CLI" {
     // `generic` is a legitimate provider for DIFFING (pure local refs,
-    // git_pr_diff.zig) but there is no CLI to ask for status, so the
-    // request is unanswerable and must say so rather than silently
-    // falling back to `gh`.
+    // git_pr_diff.zig) but there is no CLI to ask for status, so the request
+    // is unanswerable and must say so rather than silently falling back to
     if (skipOnWindows()) return error.SkipZigTest;
     if (!haveGit()) return error.SkipZigTest;
     const a = testing.allocator;

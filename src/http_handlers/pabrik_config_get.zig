@@ -116,10 +116,7 @@ pub fn pabrikConfigGetHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
     const cfg = parsed;
 
     // Plan 2026-09-04-subagents-per-profile: the top-level `sub_agents`
-    // response block was removed. Per-profile lists ride inside
-    // `profiles` as raw JSON passthrough — no typed materialization
-    // needed here. (`cfg.sub_agents` stays parsed for compat but is
-    // never sent; prefix with underscore to mark intentionally unused.)
+    // response block was removed.
     _ = cfg.sub_agents;
 
     // Masking happens inside `makeConfigResponse` - see the auth branch above.
@@ -130,12 +127,6 @@ pub fn pabrikConfigGetHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
 }
 
 /// The wire shape for one parsed config, in ONE place.
-///
-/// Both config surfaces build through this: `/api/config/pabrik` (user scope)
-/// and `/api/workspaces/:id/config` (workspace scope, where the caller hands
-/// it the EFFECTIVE config - user ⊕ overlay). Forking it would let one surface
-/// mask `web_search` and the other ship the key in cleartext - the exact bug
-/// the masking test at the bottom of this file exists to catch.
 pub fn makeConfigResponse(allocator: std.mem.Allocator, cfg: ConfigJson) ![]u8 {
     // Mask every provider credential before it reaches the browser. The
     // parse tree `cfg` borrows from is released by the caller AFTER this
@@ -149,9 +140,7 @@ pub fn makeConfigResponse(allocator: std.mem.Allocator, cfg: ConfigJson) ![]u8 {
         .active_profile = cfg.active_profile,
         .mcp_servers = cfg.mcp_servers,
         // Plan 2026-09-04-subagents-per-profile: top-level sub-agents are
-        // removed from the wire. Each profile carries its own `sub_agents`
-        // inside `profiles` (raw JSON passthrough above). The on-disk key is
-        // still parsed (compat) but never sent.
+        // removed from the wire.
         .sub_agents = null,
         .notify_on_complete = cfg.notify_on_complete,
         .notify_on_error = cfg.notify_on_error,
@@ -184,11 +173,7 @@ pub const ConfigJson = struct {
     profiles_models: ?json.Value = null,
     active_profile: ?[]const u8 = null,
     /// Top-level sub-agents array (snake_case, matches PABRIK.md JSON
-    /// convention). Parsed into the typed `LlmConfig.SubAgentJson` shape
-    /// so the response can mirror the same field set without falling
-    /// back to a generic JSON tree. Borrowed slices from the parsed
-    /// JSON — the handler must keep `parsed` alive until the response
-    /// is serialized (handled via `defer parsed.deinit()` above).
+    /// convention).
     sub_agents: ?[]const LlmConfig.SubAgentJson = null,
     /// Opt-in OS notification flag (see LlmConfigJson in Config.zig).
     notify_on_complete: bool = false,
@@ -213,10 +198,8 @@ pub const ConfigJson = struct {
     /// 2026-09-22-tools-menu-config-default-tools). Emitted as JSON
     /// `null` when the on-disk key is absent (mirrors `mcp_servers`).
     tools: ?[]const []const u8 = null,
-    /// Skill Evals block, read so the Settings toggle can render the
-    /// current switch. Default `.{ .enabled = false }` means a config
-    /// with no `skill_evals` key reads as OFF — the same value the
-    /// runtime uses, so the toggle never shows a phantom ON.
+    /// Skill Evals block, read so the Settings toggle can render the current
+    /// switch.
     skill_evals: config.SkillEvalsJson = .{},
 };
 
@@ -225,10 +208,7 @@ const testing = std.testing;
 
 test "PabrikConfigResponse serializes tools: null when absent, array when set" {
     // D2 wire contract: the frontend must be able to tell "key absent"
-    // (`tools: null` → legacy defaults) from an explicit `[]` (zero
-    // tools). Both keys must be PRESENT on the wire in both states —
-    // an omitted key would be indistinguishable from a backend that
-    // never shipped the field.
+    // (`tools: null` → legacy defaults) from an explicit `[]` (zero tools).
     const allocator = testing.allocator;
 
     const absent = try http_response.makePabrikConfigResponse(allocator, .{});
@@ -259,17 +239,7 @@ test "PabrikConfigResponse serializes tools: null when absent, array when set" {
 
 test "GET /api/config/pabrik never ships a web_search key in cleartext" {
     // `GET /api/config/pabrik` builds its response through TWO allowlist
-    // sites: one for `--auth` mode (users.config_json) and one for file
-    // mode. Both must run `cfg.web_search` through `maskProviders`
-    // before it reaches `makePabrikConfigResponse`, or the credential
-    // is masked in one deployment and shipped to the browser in
-    // cleartext in the other.
-    //
-    // The security contract is about the BYTES that come out, so assert
-    // the bytes: serialize the response the handler builds and prove the
-    // secret is absent — with a positive control proving it really was
-    // there a moment earlier, so the absence assertion cannot pass
-    // vacuously.
+    // sites: one for `--auth` mode (users.config_json) and one for file mode.
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();

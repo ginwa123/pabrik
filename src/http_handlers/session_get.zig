@@ -1,16 +1,4 @@
 //! `GET /api/llm/session/:session_id` — single-session detail.
-//!
-//! Returns the session row plus `workspace_id`: the workspace the
-//! session belongs to, resolved by `workspace_scope` (exact task link
-//! first, then cwd longest-prefix match against workspace-item paths).
-//! `workspace_id` is `null` when the session belongs to no workspace,
-//! when resolution is ambiguous (tie), or when the session is unknown
-//! to the resolver. An unknown session id returns 404.
-//!
-//! This endpoint did not exist before the workspace-scoped sessions
-//! plan — the frontend previously derived workspace membership only
-//! from task links. Layered as `useCase` (DB read + resolution + JSON)
-//! and a thin handler that maps errors to status codes.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -26,10 +14,9 @@ pub const SessionGetError = error{
     OutOfMemory,
 };
 
-/// Wire shape of the detail response. Field names mirror the session
-/// list (`session_id`, not `id`) so clients read both endpoints the
-/// same way; the full row is included so a detail fetch never needs
-/// a second round-trip.
+/// Wire shape of the detail response. Field names mirror the session list
+/// (`session_id`, not `id`) so clients read both endpoints the same way; the
+/// full row is included so a detail fetch never needs a second round-trip.
 pub const SessionDetailJson = struct {
     session_id: []const u8,
     name: []const u8,
@@ -62,10 +49,9 @@ fn useCase(
     db: *pabrikcore.sqlite.SqliteBackend,
     session_id: []const u8,
 ) SessionGetError!?[]const u8 {
-    // Empty id: fail closed without touching the resolver (it also
-    // guards this, but there is no row to find either). getSession
-    // binds the id in a SELECT — a probe for "" simply matches
-    // nothing; it is never written anywhere.
+    // Empty id: fail closed without touching the resolver (it also guards
+    // this, but there is no row to find either). getSession binds the id in a
+    // SELECT — a probe for "" simply matches nothing; it is never written
     if (session_id.len == 0) return null;
 
     const session = (llm_history.getSession(allocator, db, session_id) catch return error.QueryFailed) orelse return null;

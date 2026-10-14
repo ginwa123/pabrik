@@ -1,14 +1,4 @@
 //! Program: the Bubble-Tea-style event loop driver.
-//!
-//! Owns:
-//!   - raw-mode + alt-screen enter/exit (always restored, even on error)
-//!   - stdin key decoding
-//!   - the tick timer (spinner + polling cadence)
-//!   - frame double-buffering + diff-based rendering
-//!
-//! The user's Model must expose:
-//!   - `update(msg: Msg) !Cmd`
-//!   - `view(allocator, width, height) !Frame`
 
 const std = @import("std");
 const terminal = @import("terminal.zig");
@@ -23,9 +13,7 @@ pub const Cmd = msg_mod.Cmd;
 const TICK_MS: u64 = 100;
 
 /// Milliseconds to hand to the model for a tick that was last serviced at
-/// `last_tick_ms` (wall clock, ms). Saturating so a clock that appears to
-/// go backwards can't underflow, and clamped to 1 s so a suspend/resume
-/// can't fire a burst of catch-up polls.
+/// `last_tick_ms` (wall clock, ms).
 fn tickElapsedMs(now: u64, last: u64) u64 {
     return @max(1, @min(now -| last, 1000));
 }
@@ -44,12 +32,7 @@ pub fn Program(comptime Model: type) type {
         prev_frame: ?frame_mod.Frame = null,
         raw_mode: ?terminal.RawMode = null,
         quit_requested: bool = false,
-        /// Persistent input byte buffer. Bytes are read into
-        /// `input_buf[input_len..]`; after draining, leftover
-        /// (incomplete-sequence) bytes are shifted to the start so
-        /// the next read appends. 256 bytes is plenty for typical
-        /// sequences (SGR mouse is ~12 bytes). Sized to avoid
-        /// overflow with reasonable mouse-event bursts.
+        /// Persistent input byte buffer.
         input_buf: [256]u8 = undefined,
         input_len: usize = 0,
 
@@ -76,35 +59,19 @@ pub fn Program(comptime Model: type) type {
             defer {
                 if (self.raw_mode) |rm| terminal.leaveRawMode(rm);
                 self.writeOut("\x1b[?25h\x1b[?1049l"); // show cursor, leave alt-screen
-                // Disable mouse tracking (paired with the enable in
-                // run()). MUST be in the same defer block as the
-                // enable so a mid-run crash doesn't leave the user's
-                // terminal in mouse-tracking mode (which would make
-                // text selection paste escape sequences).
+                // Disable mouse tracking (paired with the enable in run()).
                 self.writeOut("\x1b[?1006l\x1b[?1000l");
             }
 
             self.writeOut("\x1b[?1049h\x1b[?25l"); // enter alt-screen, hide cursor
-            // Round-2 (Task 5): enable SGR mouse tracking so the
-            // terminal sends `\x1b[<button;col;rowM` sequences when
-            // the user scrolls the wheel. 1000 = basic mouse tracking
-            // (press/release), 1006 = SGR-encoded coordinates. We
-            // only handle wheel events in v1 (button 64/65); clicks
-            // are dropped at the key parser. Disable on cleanup so
-            // the terminal is left in a normal state — otherwise text
-            // selection (drag-to-highlight) would paste garbage.
+            // Round-2 (Task 5): enable SGR mouse tracking so the terminal
+            // sends `\x1b[<button;col;rowM` sequences when the user scrolls
+            // the wheel. 1000 = basic mouse tracking (press/release), 1006 =
             self.writeOut("\x1b[?1000h\x1b[?1006h");
 
-            // Round-3 fix (mouse-wheel leak): keep a persistent input
-            // buffer that accumulates bytes across reads. Without this,
-            // an SGR mouse event split across two reads (e.g. `\x1b[<`
-            // in read 1, `64;14;14M` in read 2) would: read 1 → parse
-            // returns "incomplete", dispatcher DROPS the 3 bytes; read
-            // 2 → parse sees `64;14;14M` starting with a digit, returns
-            // a rune for each — the user's input widget ends up with
-            // `64;14;14M...` typed text. The buffer carries the
-            // partial bytes into the next read so the parse eventually
-            // succeeds on the full sequence.
+            // Round-3 fix (mouse-wheel leak): keep a persistent input buffer
+            // that accumulates bytes across reads. Without this, an SGR mouse
+            // event split across two reads (e.g.
             self.input_len = 0;
 
             var size = terminal.size();
@@ -118,12 +85,7 @@ pub fn Program(comptime Model: type) type {
 
             while (!self.quit_requested) {
                 // Wait for the next stdin byte OR the next tick, whichever
-                // comes first. Polling (rather than read-then-sleep) is what
-                // holds keystroke latency at "as soon as the byte lands" —
-                // measured ~1 ms, versus ~104 ms before. The old loop had two
-                // stacked 100 ms penalties: it blocked in read() and then,
-                // when the read reported nothing, slept another 100 ms
-                // unconditionally.
+                // comes first.
                 const now = nowMs(self.io);
                 const wait_ms: i32 = if (now >= next_tick_ms)
                     0
@@ -138,19 +100,6 @@ pub fn Program(comptime Model: type) type {
                 if (ready > 0) {
                     if ((poll_fds[0].revents & std.posix.POLL.IN) != 0) {
                         // 1. Drain pending input.
-                        //
-                        // Round-3 fix: bytes go into `self.input_buf` AFTER
-                        // any leftover from the previous iteration
-                        // (incomplete sequence trailing bytes). Drain events
-                        // from the head of the buffer; leftover (incomplete)
-                        // bytes stay for the next read.
-                        // ONE read syscall — `readVec`, not `readSliceShort`.
-                        // Despite its name, `Reader.readSliceShort` loops until
-                        // the destination is completely full (or EOF), so
-                        // asking it for the whole 256-byte input buffer means
-                        // it keeps reading after the first byte and only gives
-                        // up when the tty's VTIME expires: measured 108 ms per
-                        // keystroke. A short read is exactly what we want here.
                         var read_dest = [1][]u8{self.input_buf[self.input_len..]};
                         const n = stdin_reader.interface.readVec(&read_dest) catch 0;
                         if (n > 0) {
@@ -194,7 +143,6 @@ pub fn Program(comptime Model: type) type {
                     // A redraw (or a still-buffered partial key sequence)
                     // already happened; a due tick is picked up on the next
                     // iteration (wait_ms goes to 0), so the tick cadence
-                    // can't drift behind input traffic.
                     continue;
                 }
 
@@ -238,10 +186,8 @@ pub fn Program(comptime Model: type) type {
             self.writeOut(bytes);
         }
 
-        /// Renders the model, diffs it against the previous frame and
-        /// returns the bytes that bring the terminal up to date. Split out
-        /// of `draw` so tests can exercise the allocation/ownership
-        /// behaviour without spraying escape codes at stdout.
+        /// Renders the model, diffs it against the previous frame and returns
+        /// the bytes that bring the terminal up to date.
         fn renderDiff(self: *Self, width: u16, height: u16) ![]u8 {
             var next = self.model.view(self.allocator, width, height) catch |e| {
                 std.log.err("model.view failed: {s}", .{@errorName(e)});
@@ -255,9 +201,7 @@ pub fn Program(comptime Model: type) type {
                 &next,
             );
             // Swap: the frame we just rendered becomes the reference for the
-            // next diff. Move ownership instead of allocating a fresh frame
-            // and memcpy-ing into it — that was one extra `width*height`
-            // allocation plus a full copy, on every single draw.
+            // next diff.
             if (self.prev_frame) |*p| p.deinit(self.allocator);
             self.prev_frame = next;
             return bytes;
@@ -312,9 +256,7 @@ test "Program: init/deinit without run is clean" {
 
 // The 2026-09-13 audit finding #2: draw() allocated a second frame buffer per
 // draw (`Frame.init` + `@memcpy`) and freed neither the previous reference
-// frame nor the just-rendered one in a way any arena could reclaim. That is
-// what leaked ~0.3 MB per keystroke. With a real allocator the frame swap must
-// release every byte it takes — `testing.allocator` fails the test otherwise.
+// frame nor the just-rendered one in a way any arena could reclaim.
 test "Program: repeated draws release every frame buffer (no leak)" {
     var model = TestModel{};
     var p = Program(TestModel).init(&model, testing.allocator, undefined);

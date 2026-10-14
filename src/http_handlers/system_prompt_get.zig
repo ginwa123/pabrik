@@ -1,29 +1,6 @@
-//! GET /test/system-prompt/:session_id
-//!
-//! Returns ONLY the system prompt that would be sent to the LLM for the
-//! given session, rendered through the same `buildMessages` pipeline the
-//! production workflow uses (`workflow.zig:509`). This is a debug/inspection
-//! endpoint — it does NOT make any LLM call; it just runs the prompt-build
-//! path and extracts the `role: .system` message.
-//!
-//! Why a separate endpoint (instead of reading `llm_history.response_content`):
-//! `response_content` only stores the assistant's reply per turn. The actual
-//! system prompt is rendered per-request from many sources (skills,
-//! memories, background processes, agent content, activity, sub-agents,
-//! workspace context, inherited parent history). Inspecting it requires
-//! running the full `buildMessages` stack — exactly what this endpoint does.
-//!
-//! Response shape: `{"session_id":"...","system_prompt":"...","size_bytes":N}`.
-//!
-//! Errors:
-//!   - 400 missing `:session_id` path param
-//!   - 404 session not found in DB
-//!   - 500 DB failure, buildMessages failure, JSON serialization failure
-//!
-//! See `src/http_handlers/session_compact.zig` for the
-//! closest sibling (same singleton + buildMessages pattern, but the compact
-//! handler proceeds to run compaction afterwards — this one stops after
-//! reading the system message).
+//! GET /test/system-prompt/:session_id Returns ONLY the system prompt that
+//! would be sent to the LLM for the given session, rendered through the same
+//! `buildMessages` pipeline the production workflow uses
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -87,9 +64,7 @@ pub fn systemPromptGetHandler(
     const cwd_str: []const u8 = cwd.?;
 
     // Load the DB-stored message history (same shape `workflow.zig` uses
-    // before calling buildMessages). An empty history is fine — buildMessages
-    // still emits the system message alone.
-    // const db_messages = llm_history.getMessages(allocator, sqlite_db, session_id) catch {
+    // before calling buildMessages).
     const db_messages = agentic_loop.getLLMHistories(*SqliteBackend, .{
         .allocator = allocator,
         .db = sqlite_db,
@@ -101,16 +76,9 @@ pub fn systemPromptGetHandler(
         });
     };
 
-    // Mirrors workflow.zig:509's call shape: empty parent_session_id,
-    // empty inherited_context, empty activeAgentContent (which falls back
-    // to BuildDynamicAgentContent — the main-agent flow's source of truth
-    // via the session_agents table). This is the "what does the main
-    // agent see" view.
-    //
-    // buildMessages' 10-arg signature (prompts_build_messages_for_agent_prompt.zig:23):
-    //   1. allocator, 2. io, 3. db, 4. cwd, 5. session_id,
-    //   6. parent_session_id, 7. historyMessages, 8. tools,
-    //   9. inherited_context_mode, 10. activeAgentContent
+    // Mirrors workflow.zig:509's call shape: empty parent_session_id, empty
+    // inherited_context, empty activeAgentContent (which falls back to
+    // BuildDynamicAgentContent — the main-agent flow's source of truth via
     const merged_tools: []tool_models.AgentTool = &.{};
     const messages = buildMessages(
         allocator,

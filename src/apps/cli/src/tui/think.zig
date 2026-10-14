@@ -1,20 +1,6 @@
-//! Strip `<think>...</think>` blocks from assistant content.
-//!
-//! Mirrors `src/apps/desktop/src/helpers/stripTags.ts:5-80` — pure
-//! functions on borrowed input. The slow path (with think blocks)
-//! allocates a new owned slice via `allocator`; the fast path (no
-//! tags) duplicates the trimmed input. The caller owns the returned
-//! slice and must `allocator.free(slice)` when done.
-//!
-//! Behaviour summary:
-//!   - `stripThinkingTags(allocator, content)` returns a freshly
-//!     allocated `[]u8` with every `<think>...</think>` block removed
-//!     (tags + inner content) and surrounding whitespace trimmed. When
-//!     no tags are present it returns a dupe of the trimmed input.
-//!   - `isThinkingOnly(allocator, content)` is `true` when stripping
-//!     leaves nothing — used by the assistant branch of
-//!     `renderMessage` to decide between rendering text vs. a
-//!     `… thinking …` chip. The caller still owns the returned slice.
+//! Strip `<think>...</think>` blocks from assistant content. Mirrors
+//! `src/apps/desktop/src/helpers/stripTags.ts:5-80` — pure functions on
+//! borrowed input.
 
 const std = @import("std");
 const testing = std.testing;
@@ -62,16 +48,9 @@ pub fn isThinkingOnly(allocator: std.mem.Allocator, content: []const u8) !bool {
     return stripped.len == 0;
 }
 
-/// Remove `<plain>`, `<markdown>`, `<html>` (and matching closing
-/// tags) while keeping the inner content. Mirrors the Vue frontend's
-/// `stripTags.ts:28-36` unwrap behaviour. Returns an owned slice.
-///
-/// Caller-owned: free with `allocator.free(slice)`.
-///
-/// Note: this is intentionally separate from `stripThinkingTags` —
-/// `<think>` is stripped (its content is hidden), but content-wrapper
-/// tags are unwrapped (their content is the visible text). Two
-/// helpers, two responsibilities.
+/// Remove `<plain>`, `<markdown>`, `<html>` (and matching closing tags) while
+/// keeping the inner content. Mirrors the Vue frontend's `stripTags.ts:28-36`
+/// unwrap behaviour.
 pub fn unwrapContentWrappers(allocator: std.mem.Allocator, content: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     defer out.deinit(allocator);
@@ -168,12 +147,7 @@ test "isThinkingOnly: false when no tags" {
 
 // ----------------------------------------------------------------------------
 // unwrapContentWrappers — strip `<plain>`, `<markdown>`, `<html>` content
-// tags (matches the Vue frontend's stripTags.ts:28-36 behaviour). The tag
-// chars are removed but the inner content is preserved. Used by
-// render_msg's assistant branch AFTER stripThinkingTags so a payload
-// like `<think>plan</think><plain>The answer</plain>` arrives at the
-// renderer as just `The answer`.
-// ----------------------------------------------------------------------------
+// tags (matches the Vue frontend's stripTags.ts:28-36 behaviour).
 
 test "unwrapContentWrappers: unwraps <plain>" {
     const got = try unwrapContentWrappers(testing.allocator, "<plain>hello</plain>");

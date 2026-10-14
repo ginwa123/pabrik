@@ -1,14 +1,5 @@
-//! `GET /api/agent-kanbans/:kanban_id/tools`.
-//!
-//! Returns `{tools: [string]}` — the enabled tool_names for the
-//! agent-kanbans config. Mirrors `agent_tools_list.zig` with the
-//! `agent_kanban_tools` table + `kanban_id` column.
-//!
-//! Memory: the per-request arena reaps all allocations at request end,
-//! so neither layer needs explicit `free`s.
-//!
-//! Plan: docs/superpowers/plans/2026-08-25-agent-kanbans-mirror.md
-//! Task: task_1787597624259_2
+//! `GET /api/agent-kanbans/:kanban_id/tools`. Returns `{tools: [string]}` —
+//! the enabled tool_names for the agent-kanbans config.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -95,12 +86,7 @@ pub fn agentKanbanToolsListHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-//
-// impl + tests in one file (project convention). Behavioural coverage:
-//
-//   1. Validation: empty kanban_id → KanbanIdRequired
-//   2. Empty result: board exists but has no tools → empty slice
-//   3. Filter by enabled + ordering ASC
+// impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;

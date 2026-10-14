@@ -25,19 +25,13 @@ pub const Migration070AddAgentMemories = struct {
             \\)
         , &[_][]const u8{});
 
-        // 2. updated_at index for future "recent memories" surfaces. The
-        //    v1 `load_memory` tool orders by FTS5 rank (not by
-        //    updated_at), but the index is cheap and unblocks future
-        //    listing UIs without another migration.
+        // 2. updated_at index for future "recent memories" surfaces.
         try db.exec(allocator,
             "CREATE INDEX IF NOT EXISTS idx_agent_memories_updated " ++
                 "ON agent_memories(updated_at DESC)",
             &[_][]const u8{});
 
-        // 3. FTS5 virtual table. NON-external-content so `snippet()`
-        //    works. Same porter+unicode61+remove_diacritics tokenizer
-        //    as `messages_fts` (Migration 058) so the two FTS5 indices
-        //    behave identically for the LLM.
+        // 3. FTS5 virtual table. NON-external-content so `snippet()` works.
         try db.exec(allocator,
             \\CREATE VIRTUAL TABLE IF NOT EXISTS agent_memories_fts USING fts5(
             \\    content,
@@ -46,10 +40,7 @@ pub const Migration070AddAgentMemories = struct {
             \\)
         , &[_][]const u8{});
 
-        // 4. Sync triggers — same pattern as Migration 058. Plain
-        //    DELETE FROM / INSERT INTO (NOT the special
-        //    `INSERT INTO <fts>(<fts>, rowid, ...) VALUES('delete', ...)`
-        //    form, which is reserved for external-content tables).
+        // 4. Sync triggers — same pattern as Migration 058.
         try db.exec(allocator,
             \\CREATE TRIGGER IF NOT EXISTS agent_memories_ai AFTER INSERT ON agent_memories BEGIN
             \\  INSERT INTO agent_memories_fts(rowid, content, tags)

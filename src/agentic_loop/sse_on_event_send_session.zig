@@ -47,19 +47,6 @@ pub fn onEventSendSessions(
     const data_copy = try allocator.dupe(u8, buf.items);
 
     // Granular event name drives the SSE wire format `event:` line.
-    // Three actions are mapped:
-    //   - "created" → "session_created" (initial session row insert)
-    //   - "updated" → "session_updated" (auto-rename on first user message,
-    //     unattended-mode toggle, last_finish_reason refresh)
-    //   - "deleted" → "session_deleted"
-    // The frontend's createUnifiedSseConnection pre-registers all three
-    // names in additionalEventTypes (api/index.ts:2925-2926) so the
-    // browser's EventSource dispatches each to the JS handler. A new
-    // action NOT in this map still falls through to "session_unknown"
-    // (the future-proofing default), which is currently NOT registered
-    // by the frontend — by design, so unknown actions don't leak into
-    // the session channel callback without an explicit contract.
-    // (Zig 0.16 can't `switch` on `[]const u8`.)
     const event_type_name: []const u8 = if (std.mem.eql(u8, input.action, "created"))
         "session_created"
     else if (std.mem.eql(u8, input.action, "updated"))
@@ -79,29 +66,9 @@ pub fn onEventSendSessions(
     event_bus.emit(SseEvent, "sessions", event);
 }
 
-// ─── Tests ───────────────────────────────────────────────────────────────────
-//
+// ─── Tests
+// ───────────────────────────────────────────────────────────────────
 // Behavioural tests for the wire-format `event_type_name` mapping (see the
-// if/else at the top of the file). These tests subscribe a capture callback
-// to the event bus, call `onEventSendSessions` with each action, and assert
-// the emitted SseEvent's `event_type` field.
-//
-// Pre-fix, `action = "updated"` (the most common case — fired by the
-// auto-rename cascade in `update_session_name.zig` and the unattended toggle
-// in `llm_history.zig`) fell through to `session_unknown`. The frontend's
-// `createUnifiedSseConnection` did not pre-register that name, so the
-// browser's EventSource dropped the event. Result: sidebar task rows never
-// updated from "New Chat" to the LLM-generated name until a page refresh.
-//
-// These tests catch the regression at the source — drop the "updated" branch
-// or rename it to "session_unknown" and one of them fails.
-//
-// The sibling `on_event_sent.zig::onEventSendSessions` uses an identical
-// `event_type_name` if/else but reaches the bus via a `pabrikcore.getSingleton()`
-// call that requires a live App. It's verified by code review of
-// the parallel fix (see PR #215). Behavioural coverage of the wire-format
-// mapping for the auto-rename cascade path — which is the user's reported
-// bug — lives here.
 
 const testing = std.testing;
 
@@ -157,9 +124,7 @@ test "onEventSendSessions: action='created' emits event_type 'session_created'" 
 test "onEventSendSessions: action='updated' emits event_type 'session_updated' (the fix — task_1786507100896)" {
     // This is the actual user-reported bug: the auto-rename-on-first-message
     // cascade calls updateSessionName() → onEventSendSessions(.action =
-    // "updated"). Pre-fix this emitted `event_type = "session_unknown"`,
-    // which the frontend didn't register, so the rename was dropped at the
-    // wire boundary and the sidebar never updated until a manual refresh.
+    // "updated").
     var s = try setupSessionBus();
     defer teardownSessionBus(&s);
     defer freeCapturedSessionEventData();
@@ -208,10 +173,8 @@ test "onEventSendSessions: action='deleted' emits event_type 'session_deleted'" 
 
 test "onEventSendSessions: unknown action falls through to 'session_unknown' (future-proofing default)" {
     // The 'session_unknown' branch is intentional: a NEW action that hasn't
-    // been wired into the if/else yet (e.g. a future 'reordered') lands
-    // here instead of crashing. The frontend doesn't pre-register this name,
-    // so unknown actions don't reach the JS handler — a deliberate safe-by-
-    // default gate. If you remove this test, you broke the gate.
+    // been wired into the if/else yet (e.g. a future 'reordered') lands here
+    // instead of crashing.
     var s = try setupSessionBus();
     defer teardownSessionBus(&s);
     defer freeCapturedSessionEventData();

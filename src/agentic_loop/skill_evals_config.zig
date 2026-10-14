@@ -1,21 +1,6 @@
-//! Per-session resolution of the `skill_evals` block.
-//!
-//! Why this exists: under `--auth` every user owns a `users.config_json`
-//! row, and both config handlers read and write that row and nothing else.
-//! The `LlmConfig` singleton, though, is only ever rewritten by the
-//! config PUT's live-reload block — which sits *after* the auth branch
-//! has already returned ("Auth mode: persist to users.config_json and
-//! return early"). So in auth mode the singleton keeps describing the
-//! on-disk `config.json` and never sees what the user saved.
-//!
-//! That is the "Skill Evals are off" trap: the Settings checkbox reads
-//! the database (true) while the tool reads the singleton (false), so the
-//! toggle looks like it works and every call refuses.
-//!
-//! Swapping the singleton from the auth PUT is NOT the fix. The singleton
-//! is one global pointer and auth config is per-user, so that would make
-//! whichever user saved last win for everybody. Resolve the switch per
-//! session instead.
+//! Per-session resolution of the `skill_evals` block. Why this exists: under
+//! `--auth` every user owns a `users.config_json` row, and both config
+//! handlers read and write that row and nothing else.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -25,13 +10,6 @@ const session_llm_config = @import("session_llm_config.zig");
 /// The `skill_evals` block in force for `session_id`, or null when
 /// `ctx.config.skill_evals` is already authoritative and should be read
 /// directly.
-///
-/// Null means "no per-user override applies" and covers every case where
-/// the database is not the authority: file mode (the PUT swaps the
-/// singleton there), no live singleton, a session with no owner, a user
-/// who never saved settings, or a config that failed to parse. All of them
-/// fall back to today's behaviour, so the failure mode is the
-/// pre-existing one rather than a new breakage.
 pub fn resolve(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -51,13 +29,6 @@ pub fn resolve(
 
 /// The `skill_evals` block stored for one user, or null when they have no
 /// saved config at all.
-///
-/// Delegates to `session_llm_config.forOwner` — the single JSON -> LlmConfig
-/// mapping (`LlmConfig.initFromJsonText`) — then copies the block out.
-/// `SkillEvalsConfig` owns no memory, so the copy outlives the temp config.
-/// Split out from `resolve` so it can be tested without the process-global
-/// singleton: there is no `clearSingleton`, so a test that installed one
-/// would leak into every other test in the binary.
 pub fn resolveForOwner(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,

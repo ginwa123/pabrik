@@ -1,13 +1,6 @@
 //! CLI configuration: server URL + optional session/profile defaults.
-//!
-//! Resolution order (highest priority first):
-//!   1. CLI flags (`--server`, `--session`, `--profile`)
-//!   2. Environment variables: `PABRIKCLI_SERVER`, `PABRIKCLI_SESSION_ID`,
-//!      `PABRIKCLI_PROFILE`
-//!   3. Compile-time defaults (see `default_server`).
-//!
-//! Defines a `Config` struct + a `load` helper. Tests live in
-//! `tests/config_test.zig`.
+//! Resolution order (highest priority first): 1. CLI flags (`--server`,
+//! `--session`, `--profile`) 2.
 
 const std = @import("std");
 

@@ -1,41 +1,6 @@
 //! Agent-callable tool: `add_mcp_server` — register a new MCP server in the
 //! live `LlmConfig` (in-memory + JSON mirror) so subsequent agent iterations
-//! pick up its tools via `buildMCPToolsRun`. The HTTP transport is added in
-//! a sibling task; this v1 covers stdio only (per the user request:
-//! "handle mcp stdio first").
-//!
-//! Wire shape:
-//!   input:  {
-//!     name:     string,            // server name (key in mcp_servers)
-//!     transport: "stdio" | "http", // v1 only accepts "stdio"
-//!     command:  string,            // required when transport == "stdio"
-//!     args:     string[]?,         // optional
-//!     url:      string?,           // reserved for the HTTP follow-up
-//!     headers:  { key: value }[]?, // reserved for the HTTP follow-up
-//!   }
-//!   output: {"name":...,"transport":"stdio","command":...,
-//!            "args":[...],            // [] when none
-//!            "persisted":"false",      // placeholder; exec wrapper substitutes
-//!            "tools":null,             // exec wrapper fills in best-effort
-//!            "note":...}
-//!   or:     {"error":...}
-//!
-//! Plan: docs/superpowers/plans/2026-08-28-add-mcp-server-agent-tool.md
-//!
-//! Why a separate file (vs adding to the existing tools_exec_add_*.zig
-//! chain): the storage primitive already lives in `Config.zig`. This
-//! file is the LLM-facing wrapper — JSON schema, input struct, success/
-//! error XML envelopes. The exec adapter in
-//! `src/agentic_loop/tools_exec_add_mcp_server.zig` calls
-//! `executeAddMcpServerToJSON` (same shape as `memory.zig`'s
-//! `executeAddSkillToString`).
-//!
-//! Notes for the future HTTP branch: the input struct already has
-//! `url` + `headers` fields (optional). The validator rejects any
-//! non-stdio transport today; the HTTP case is a sibling task and will
-//! add its own branch in `executeAddMcpServerToJSON`. Mirrors the
-//! frontend `McpServerModal` wire shape exactly so the LLM-facing
-//! contract doesn't change when HTTP lands.
+//! pick up its tools via `buildMCPToolsRun`.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -55,17 +20,7 @@ pub const Header = struct {
     value: []const u8,
 };
 
-/// Input for `add_mcp_server`. The LLM fills in `name` + `transport`; the
-/// transport-specific fields (`command` for stdio, `url` for HTTP) are
-/// v1-required when the matching transport is selected. `args` is the
-/// optional stdio field. `url` / `headers` are reserved for the HTTP
-/// sibling task (plan 2026-08-28-mcp-streamable-http + agent-tool).
-///
-/// There is deliberately no `cwd`: the parameter was dropped on 2026-10-14.
-/// It only ever reached the success envelope — nothing spawned a process
-/// with it — so it advertised a guarantee the tool did not honour, and the
-/// stdio child's working directory comes from the server's own config entry
-/// (which is stored with the rest of the workspace config).
+/// Input for `add_mcp_server`.
 pub const AddMcpServerInput = struct {
     /// Server name (key in `mcp_servers`). Must be non-empty and must not
     /// collide with an existing server. Trailing whitespace is NOT
@@ -155,27 +110,7 @@ pub const add_mcp_server_tool = AgentTool{
     },
 };
 
-/// Execute the `add_mcp_server` tool. Mutates `config.mcp_servers` in
-/// place (so the new server's tools appear in the NEXT agent iteration's
-/// system prompt via `buildMCPToolsRun`); the disk persistence + live-
-/// reload path lives in the exec wrapper so it can swap `di.llm_config`
-/// atomically (see `tools_exec_add_mcp_server.zig`).
-///
-/// Returns a JSON string for the LLM. The success payload carries:
-///   - `name`, `transport`, `command` — what was added
-///   - `args` — array of argv strings ([] when none)
-///   - `persisted` — disk-write outcome (only the exec wrapper can
-///     persist; pure fn reports `"false"` as a placeholder the wrapper
-///     substitutes)
-///   - `tools` — null here; the exec wrapper fills in the best-effort
-///     `mcp_<server>_<tool>` listing after a successful spawn
-///   - `note` — operator-facing hint ("server will be available on the
-///     next iteration")
-///
-/// Error payload: `{"error":...}`.
-///
-/// `io` is unused today but kept in the signature so the HTTP branch
-/// (which needs HTTP transport) doesn't have to change call sites.
+/// Execute the `add_mcp_server` tool.
 pub fn executeAddMcpServerToJSON(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -221,10 +156,8 @@ pub fn executeAddMcpServerToJSON(
     };
 
     // No best-effort tools listing here — it would pollute the global
-    // StdioRegistry (whose arena is only cleaned up in `deinitGlobal`,
-    // which tests don't call) and the test allocator would flag it as a
-    // leak. The exec wrapper performs the listing AFTER the in-memory
-    // mutation succeeds, where process-level registry state is fine.
+    // StdioRegistry (whose arena is only cleaned up in `deinitGlobal`, which
+    // tests don't call) and the test allocator would flag it as a leak.
 
     // ── 3. Build the success payload (`tools` stays null here; exec
     // wrapper fills it in after a successful listing). ───────────────
@@ -235,12 +168,8 @@ pub fn executeAddMcpServerToJSON(
 // JSON payloads
 // ───────────────────────────────────────────────────────────────────────
 
-// Note on the best-effort `tools/list` listing: it lives in the exec
-// wrapper (see `tools_exec_add_mcp_server.zig::listAndAppendTools`),
-// NOT the pure fn. Doing it here would call `StdioRegistry.global()`
-// from the pure fn's unit tests, polluting the global registry's
-// arena with no cleanup path (the global arena is freed only in
-// `deinitGlobal`, which tests never call).
+// Note on the best-effort `tools/list` listing: it lives in the exec wrapper
+// (see `tools_exec_add_mcp_server.zig::listAndAppendTools`), NOT the pure fn.
 
 fn successJSON(
     allocator: std.mem.Allocator,

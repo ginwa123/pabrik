@@ -1,23 +1,5 @@
 //! `GET /api/local-memories?cwd=...` — list `.md` memory files in
-//! `<cwd>/.pabrik/memories/`. The `cwd` query param is optional —
-//! when omitted, the handler falls back to the pabrik server's own
-//! CWD via `io.realPath`.
-//!
-//! Returns JSON: `{"memories":[{"name":"...","title":"...","path":"...","size":N}]}`
-//! Empty list when the directory does not exist or has no .md files.
-//!
-//! Layered as:
-//!   - `useCase` — resolves the local memories dir (query `cwd`
-//!     first, then io fallback) and produces the memories-list JSON.
-//!   - `localMemoriesListHandler` — thin orchestrator: extracts the
-//!     `?cwd=` query, calls `useCase`, maps errors to status codes,
-//!     builds the JSON response.
-//!
-//! Preserves the static-contract assertions in `local_memories_crud_test.zig`:
-//!   - `get_local_memories_path_for_dir` + `get_local_memories_path_from_io`
-//!     substring checks (cwd-resolution fallback chain)
-//!   - `req.query.get("cwd")` substring check (per-call cwd override)
-//!   - `500` + `no cwd available` substring checks
+//! `<cwd>/.pabrik/memories/`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -34,10 +16,6 @@ pub const LocalMemoriesListError = error{
     /// yielded a usable local-memories directory.
     NoCwdAvailable,
     /// `list_memory_mod.toJson` returned `error.OutOfMemory`. Maps to 500.
-    /// In production this is effectively unreachable (the
-    /// per-request arena reaps everything at request end) but the
-    /// type system requires the variant so the `try` on the call
-    /// propagates a typed error.
     OutOfMemory,
 };
 
@@ -48,10 +26,9 @@ pub const LocalMemoriesListInput = struct {
     cwd: []const u8,
 };
 
-/// Output of the list use-case: the heap-owned JSON body to return
-/// to the caller. Borrowed `dir_path` is freed by the use-case's
-/// internal defer; the JSON body lives until the per-request arena
-/// reaps at request end.
+/// Output of the list use-case: the heap-owned JSON body to return to the
+/// caller. Borrowed `dir_path` is freed by the use-case's internal defer; the
+/// JSON body lives until the per-request arena reaps at request end.
 pub const LocalMemoriesListOutput = struct {
     json_body: []const u8,
 };
@@ -60,14 +37,7 @@ pub const LocalMemoriesListOutput = struct {
 // Use case
 // =====================================================================
 
-/// Resolve the local memories dir and produce the list JSON.
-///
-/// Steps:
-///   1. Prefer `get_local_memories_path_for_dir(allocator, cwd)`
-///      when `input.cwd` is non-empty.
-///   2. Fall back to `get_local_memories_path_from_io(allocator, io)`.
-///   3. Both null → `NoCwdAvailable`.
-///   4. List via `listMemoriesInDir` and serialize to JSON.
+/// Resolve the local memories dir and produce the list JSON. Steps: 1.
 fn useCase(
     allocator: std.mem.Allocator,
     io: std.Io,

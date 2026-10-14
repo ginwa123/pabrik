@@ -1,13 +1,5 @@
-//! LLM tool: `move_element_to_page` — relocates an existing design
-//! element from one page to another page in the same design item.
-//! When `apply_to_children = true` (the default), the move cascades to
-//! every transitive descendant of the element via the backend's
-//! recursive CTE in one SQL transaction — so the LLM can say "move
-//! Group 2 to page 'Checkout'" and the whole subtree follows (Figma
-//! parity).
-//!
-//! Plan: docs/superpowers/plans/2026-08-06-move-element-to-page.md
-//! (Chunk 3, Task 3.1)
+//! LLM tool: `move_element_to_page` — relocates an existing design element
+//! from one page to another page in the same design item.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -19,13 +11,6 @@ const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
 
 /// Input shape for `move_element_to_page` tool.
-///
-/// All fields except `element_id` and `new_page_id` are optional.
-/// - `apply_to_children` defaults to `true` — matches the user's
-///   "move element parent will be move all child" mental model from
-///   the `move_design_element` tool.
-/// - `new_page_id` is REQUIRED (no default) — the tool errors out on
-///   empty / missing values.
 pub const MoveElementToPageInput = struct {
     /// The element id to move. Must exist on the active page.
     element_id: []const u8 = "",
@@ -129,13 +114,8 @@ fn validateInputShape(allocator: std.mem.Allocator, input: MoveElementToPageInpu
     return null;
 }
 
-/// Execute the `move_element_to_page` tool. Returns a JSON string for
-/// the LLM.
-///
-/// On success, the response shape is:
-/// `{"moved":[{"id":...,"page_id":...,"name":...,"type":...}, ...]}`.
-///
-/// On error, the response is `{"error":...}`.
+/// Execute the `move_element_to_page` tool. Returns a JSON string for the
+/// LLM.
 pub fn executeMoveElementToPageToString(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -168,10 +148,8 @@ pub fn executeMoveElementToPageToString(
     return try renderSuccessJSON(allocator, updated);
 }
 
-/// Render the success JSON response. Lists every moved element
-/// (root + descendants) with their `page_id`, `name`, `type`.
-/// Render the success JSON response. Lists every moved element
-/// (root + descendants) with their `page_id`, `name`, `type`.
+/// Render the success JSON response. Lists every moved element (root +
+/// descendants) with their `page_id`, `name`, `type`.
 fn renderSuccessJSON(
     allocator: std.mem.Allocator,
     moved: []const design_model.DesignElement,

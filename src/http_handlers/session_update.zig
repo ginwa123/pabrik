@@ -30,12 +30,9 @@ pub const ResponseSessionUpdate = struct {
     is_auto_retry_until_stop: []const u8,
 };
 
-/// PUT /api/session/:session_id
-/// PUT /api/llm/session/:session_id
-///
-/// Body (JSON, all fields optional):
-///   - selected_profile_model: profile name to assign to this session (empty/null = clear)
-///   - name: new session name (empty/null = unchanged)
+/// PUT /api/session/:session_id PUT /api/llm/session/:session_id Body (JSON,
+/// all fields optional): - selected_profile_model: profile name to assign to
+/// this session (empty/null = clear) - name: new session name (empty/null =
 pub fn sessionUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
     const session_id = req.params.get("session_id") orelse {
@@ -56,14 +53,8 @@ pub fn sessionUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
     const di = try root_mod.getSingleton();
     const sqlite_db = di.db;
 
-    // Plan 2026-08-06-set-active-profile-default — ensure the row
-    // exists before any UPDATE. The user can land here by changing
-    // the profile on a brand-new chat: the session_id is in the URL
-    // but the row hasn't been INSERTed yet (no message queued). The
-    // helper auto-creates with defaults so subsequent UPDATEs succeed
-    // and the user's profile choice is preserved for the first real
-    // LLM call. Without this, getSession() below returns null and the
-    // handler 404s with "session not found".
+    // Plan 2026-08-06-set-active-profile-default — ensure the row exists
+    // before any UPDATE.
     _ = try llm_history.ensureSessionExists(allocator, sqlite_db, session_id);
 
     // Claim an ownerless row created by the ensure above (same pattern as
@@ -89,10 +80,7 @@ pub fn sessionUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
         try llm_history.updateSessionName(allocator, sqlite_db, session_id, parsed.name);
     }
 
-    // Migration 063 — toggle unattended mode. Empty body value = no-op
-    // (preserves existing "do nothing when omitted" semantics so a
-    // frontend that only sends selected_profile_model/name doesn't
-    // accidentally flip the flag).
+    // Migration 063 — toggle unattended mode.
     if (parsed.is_auto_retry_until_stop.len > 0) {
         try llm_history.updateSessionAutoRetryUntilStop(
             allocator,
@@ -108,16 +96,9 @@ pub fn sessionUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
     };
     defer session.deinit(allocator);
 
-    // NEW (plan 2026-08-29-chat-sidebar-last-human-touched, Task 4):
-    // Stamp `sessions.last_human_touched_at_nano` when the user
-    // genuinely edits a field (rename / profile switch / unattended
-    // toggle). The earlier early-return on empty body ensures we
-    // never reach here with zero fields to update, so this stamp is
-    // only triggered by a real edit - no separate guard needed.
-    //
-    // Best-effort: log + continue on transient DB blip so a stamp
-    // failure can't fail the PUT response. Matches the project
-    // pattern at `task_mark_human_touched.zig:70` (task-side sibling).
+    // NEW (plan 2026-08-29-chat-sidebar-last-human-touched, Task 4): Stamp
+    // `sessions.last_human_touched_at_nano` when the user genuinely edits a
+    // field (rename / profile switch / unattended toggle).
     llm_history.updateSessionLastHumanTouchedAt(
         allocator, sqlite_db, session_id, null,
     ) catch |stamp_err| {
@@ -141,11 +122,5 @@ pub fn sessionUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
 }
 
 // ===== Tests merged from session_update_test.zig (2026-09-11 flatten) =====
-//
-// The stamp helper's effect is `sessions.last_human_touched_at_nano`
-// moving when a user renames / re-profiles / toggles unattended on a
-// session. `sessionUpdateHandler` reaches the DB through
-// `root_mod.getSingleton()`, so the only place that is observable end to
-// end is a live server: drive `PUT /api/session/:id` and read the column
-// back out of the sessions row (the python functional harness, not a
-// source grep).
+// The stamp helper's effect is `sessions.last_human_touched_at_nano` moving
+// when a user renames / re-profiles / toggles unattended on a session.

@@ -1,34 +1,5 @@
 //! Persistence for Skill Evals — Migration 095's usage ledger (and the home
 //! for the eval-table repository that follows).
-//!
-//! ## Why a ledger exists at all
-//!
-//! `session_skills` (Migration 008) is an `INSERT OR REPLACE` keyed on
-//! `(session_id, skill_name)`, written by `use_skill` alone. It therefore keeps
-//! only the *latest* body of a skill a session loaded, and it cannot answer
-//! three questions an eval depends on:
-//!
-//!   1. **Which turn** loaded this skill. (`session_skills` has no loop index,
-//!      and its `loaded_at_nano` is re-stamped by every reload — and is
-//!      seconds, despite the name.)
-//!   2. **Was this skill merely listed and then ignored?** A skill the agent
-//!      was offered and did not use is a real finding, and until now it left
-//!      no trace at all: `search_skills` returns name/description/path only and
-//!      writes nothing.
-//!   3. **Has the body changed since it was read?** `content_hash` here is the
-//!      hash of the body *as actually read*, so drift detection is a hash
-//!      compare rather than a diff of two full bodies.
-//!
-//! It is append-only, with a fresh id per row, so nothing about it can
-//! overwrite the history it is meant to preserve.
-//!
-//! ## Failure policy
-//!
-//! Every entry point on the write path **logs and swallows**. A ledger write
-//! must never fail a tool turn — the tool already succeeded or failed on its
-//! own terms, and the ledger is bookkeeping. This mirrors the existing
-//! `SaveSkill` / `saveProgressiveTool` call sites in `handle_tool.zig`, which
-//! use the same `catch |err| logger.errFmt(...)` shape.
 
 const std = @import("std");
 const testing = std.testing;
@@ -61,12 +32,6 @@ pub const SkillEventKind = enum {
 };
 
 /// Hex-encode SHA-256(input) into a 64-char lowercase string.
-///
-/// Allocation-free and caller-buffered, which is what lets the result be bound
-/// straight into a `?` argument — `SqliteBackend`'s arg list is
-/// `[]const []const u8`, so `&.{ hash_hex[0..] }` is the whole story and no
-/// `allocPrint` is needed. Mirrors `auth_common.sha256Hex`; `fmtSliceHexLower`
-/// does not exist in Zig 0.16, so this is the house idiom.
 pub fn sha256Hex(input: []const u8, out: *[64]u8) void {
     var digest: [32]u8 = undefined;
     std.crypto.hash.sha2.Sha256.hash(input, &digest, .{});
@@ -101,35 +66,11 @@ pub const SkillToolEventArgs = struct {
 };
 
 /// The `data` keys an "offered skills" result may carry the matches under.
-///
 /// `search_skills` (current) returns ONE `skills` array with `scope` on each
-/// row. `global_skills` / `local_skills` are the retired `list_skills` shape:
-/// kept in this list because `llm_history` rows are replayed when a session
-/// resumes, and a session that ran before the rename still carries the old
-/// envelope. Dropping these two would silently stop counting what those
-/// sessions were offered — the exact "offered but never loaded" signal the
-/// ledger exists to answer.
+/// row.
 const offered_buckets = [_][]const u8{ "skills", "global_skills", "local_skills" };
 
 /// Append one ledger row.
-///
-/// `dedupe` uses a deterministic composite id and `INSERT OR IGNORE`, which
-/// makes "first occurrence wins" a PRIMARY KEY property rather than a
-/// read-then-write — the only correct shape here, because `SqliteBackend` has
-/// no usable multi-statement transaction (`exec` releases its mutex per call;
-/// see the atomicity note in `http_handlers/workspaces_reorder.zig`). A second
-/// `search_skills` in the same session therefore cannot duplicate rows, and the
-/// recorded `created_at` stays the moment the skill was *first* offered, which
-/// is the fact the eval actually wants.
-///
-/// Non-deduped kinds get a fresh nanosecond id (`ordinal` disambiguates the
-/// several rows a single `search_skills` call would otherwise emit in the same
-/// nanosecond).
-///
-/// Free-text columns are wrapped in `COALESCE(NULLIF(?, ''), '')`: `exec` binds
-/// an empty slice as SQL NULL, which would violate `NOT NULL` (the Migration
-/// 079 `content` failure mode). `loop_index` is an INTEGER bound as text, the
-/// repo-wide idiom.
 pub fn insertEvent(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -159,11 +100,7 @@ pub fn insertEvent(
     }
 
     // A per-call monotonic counter, not the caller's `ordinal` (which every
-    // non-`listed` call site passes as 0). Two `use_skill` completions in the
-    // same nanosecond — parallel tool dispatch, or two workspaces in one
-    // process — would otherwise collide on the PRIMARY KEY, and because this is
-    // a plain INSERT the loser's row would be silently dropped by the
-    // log-and-swallow policy, taking the skill out of the eval set entirely.
+    // non-`listed` call site passes as 0).
     const seq = nextEventSeq();
     const id = try std.fmt.allocPrint(allocator, "sse:{d}_{d}_{d}", .{
         std.Io.Timestamp.now(args.io, .real).nanoseconds,
@@ -216,13 +153,6 @@ const Envelope = struct {
 
 /// Entry point for the save site in `handle_tool.zig`: one call per completed
 /// skill-tool call, and it decides what (if anything) belongs in the ledger.
-///
-/// All parsing lives here rather than in `handle_tool` so the call site stays a
-/// single line and this logic is unit-testable without a live tool turn. Never
-/// returns an error: it logs and swallows, like every other writer at that site.
-/// `?*Logger` so a caller (and a test) can pass `null` to discard the soft
-/// failures this path logs. An optional logger is an existing pattern in this
-/// directory — see `delete_worker.zig` and `background_watcher.zig`.
 fn logWarn(logger: ?*logger_mod.Logger, comptime fmt: []const u8, args: anytype) void {
     if (logger) |l| l.warnFmt(fmt, args);
 }
@@ -264,15 +194,7 @@ pub fn recordSkillToolEvents(
     if (std.mem.eql(u8, args.tool_name, "search_skills")) {
         // One row per matched skill, deduped by the PK, so a session that
         // searches skills ten times still records each skill once — at the
-        // moment it was FIRST offered. That is what makes "offered but never
-        // loaded" answerable: `event = 'listed'` with no later
-        // `event = 'loaded'`.
-        //
-        // `search_skills` returns ONE `skills` array (scope is a per-row
-        // field), where the retired `list_skills` returned two tier arrays.
-        // `offered_buckets` lists both so a ledger row recorded before the
-        // rename — and a replayed historical `llm_history` row that still
-        // carries the old envelope — keep counting as evidence.
+        // moment it was FIRST offered.
         var ordinal: u32 = 0;
         for (offered_buckets) |bucket| {
             const arr = dataArray(data, bucket) orelse continue;
@@ -614,8 +536,7 @@ pub const Verdict = enum {
 
     /// Parse a verdict as an LLM wrote it. Trimmed and case-insensitive,
     /// because the value comes from generated text and "Keep" is as good an
-    /// answer as "keep". Returns null for anything unrecognised — the caller
-    /// treats that as `needs_human` rather than guessing.
+    /// answer as "keep".
     pub fn fromString(raw: []const u8) ?Verdict {
         const s = std.mem.trim(u8, raw, &std.ascii.whitespace);
         inline for (@typeInfo(Verdict).@"enum".fields) |f| {
@@ -686,13 +607,8 @@ pub fn hasHighFinding(findings: []const ReportFinding) bool {
 }
 
 /// Validate a submitted report and return the verdict that may be stored.
-///
 /// This is the trust boundary: nothing an eval sub-agent writes reaches the
-/// tables without passing through here. Every rule either passes the verdict
-/// through or replaces it with `needs_human` — never a silent clamp, and never
-/// a guess. An out-of-range score or a finding with no evidence invalidates the
-/// whole report, because it means the report cannot be relied on in the parts
-/// that *do* look well-formed.
+/// tables without passing through here.
 pub fn validateReport(report: Report) Validation {
     const submitted = Verdict.fromString(report.verdict) orelse
         return refuse("verdict is not one of keep|update|rewrite|merge|delete|needs_human");
@@ -731,15 +647,8 @@ pub fn validateReport(report: Report) Validation {
 }
 
 /// Combine the shared (intrinsic) half with the per-session half into the
-/// verdict that is shown to a human.
-///
-/// Note what is **not** a parameter: `relevance`, `used`, `helpfulness`. That is
-/// the point. An intrinsic `keep` stays a `keep` no matter how irrelevant the
-/// task was, because "this accurate skill was loaded for the wrong job" is a
-/// *discovery* problem — the agent's fault — and reporting it as `update` or
-/// `delete` would destroy a perfectly good skill. Relevance is surfaced as a
-/// note (`relevanceNote`) and never as a verdict. A test asserts that invariant
-/// across the whole 0..3 range.
+/// verdict that is shown to a human. Note what is **not** a parameter:
+/// `relevance`, `used`, `helpfulness`.
 pub fn decideVerdict(intrinsic: Verdict, intrinsic_has_high: bool) Verdict {
     if (intrinsic == .needs_human) return .needs_human;
     if (intrinsic_has_high) return .delete;
@@ -768,12 +677,6 @@ pub fn relevanceNote(relevance: u8) []const u8 {
 // ─────────────────────────────────────────────────────────────────────────────
 // Concurrent-state primitives
 // ─────────────────────────────────────────────────────────────────────────────
-//
-// `SqliteBackend.exec` takes and releases its mutex per call and there is no
-// usable multi-statement transaction (see the atomicity note in
-// http_handlers/workspaces_reorder.zig). Every function below is therefore a
-// SINGLE guarded statement, and the winner is decided by `db.changes()`.
-// A pre-check before a write would be a TOCTOU bug, so there are none.
 
 pub const FactClaim = enum {
     /// We inserted the lease; we own the computation and must publish it.
@@ -787,11 +690,6 @@ pub const FactClaim = enum {
 };
 
 /// Claim the right to compute the intrinsic half for one exact question.
-///
-/// The question is `(skill_key, content_hash, context_key)`: two sessions that
-/// evaluate the same body at the same commit are answering the same thing, so
-/// the unique index turns the second writer into a reuse instead of a duplicate
-/// verdict.
 pub fn claimFact(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -846,20 +744,15 @@ pub const FactRow = struct {
     }
 };
 
-/// Parse a stored score. Out-of-range values are clamped to the top of the
-/// scale rather than refused, because a fact row is already-published state and
-/// a reader must not be able to fail a whole eval run. `validateReport` is the
-/// gate that stops an out-of-range score being *written*; this is only the
-/// defensive read.
+/// Parse a stored score.
 fn parseScore(raw: []const u8) u8 {
     const n = std.fmt.parseInt(u8, raw, 10) catch return 0;
     return if (n > 3) 3 else n;
 }
 
-/// Read a **completed** fact for one exact question, or null.
-///
-/// The `!= 'computing'` predicate is load-bearing, not cosmetic: a lease must
-/// never be mistaken for a verdict, so every read goes through here.
+/// Read a **completed** fact for one exact question, or null. The `!=
+/// 'computing'` predicate is load-bearing, not cosmetic: a lease must never
+/// be mistaken for a verdict, so every read goes through here.
 pub fn readFact(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -895,11 +788,6 @@ pub fn readFact(
 }
 
 /// Take over a lease whose owner has been gone longer than `lease_seconds`.
-///
-/// Without this, a crash between claiming and publishing leaves a `computing`
-/// row forever and everyone who wants that fact re-does the work — or worse,
-/// treats a lease as an answer. Because `readFact` refuses `computing`, the
-/// worst case is "not yet computed", never a wrong verdict.
 pub fn stealFact(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -977,11 +865,8 @@ pub fn publishFact(
 // ─── the judge tier's writes ──────────────────────────────────────────────
 
 /// The session-relative half, as the judge submitted it and as
-/// `validateReport` allowed it through.
-///
-/// Separate from `FactValues` because these are per-SESSION facts. Two
-/// sessions that loaded the same skill disagree about `relevance` and `used`
-/// by definition, so they live on the result row, never on the shared fact.
+/// `validateReport` allowed it through. Separate from `FactValues` because
+/// these are per-SESSION facts.
 pub const JudgeValues = struct {
     verdict: Verdict,
     relevance: u8 = 0,
@@ -995,34 +880,11 @@ pub const JudgeValues = struct {
     status: []const u8 = "done",
     rationale: []const u8 = "",
     /// The text this verdict would write into the skill -- the judge's
-    /// `proposed_content`, stored verbatim. The prompt REQUIRES it for
-    /// `update`/`rewrite` and `validateReport` refuses a report without it, so
-    /// by the time this struct is built the value is already mandatory
-    /// evidence. Storing it is what turns a verdict a human cannot act on
-    /// ("18 paths no longer exist") into one they can act on ("here is the
-    /// text, here is the body it replaces").
-    ///
-    /// Empty on the refusal paths, and empty for verdicts that change nothing
-    /// (`keep`, `merge`, `delete`), where there is no after.
+    /// `proposed_content`, stored verbatim.
     proposed_diff: []const u8 = "",
 };
 
 /// Write the judge tier's half onto one result row.
-///
-/// One guarded statement, decided by `db.changes()`, for the reason every
-/// primitive in this file is one statement: there is no usable multi-statement
-/// transaction here, so a read-then-write would be a TOCTOU bug.
-///
-/// Two guards, both load-bearing:
-///
-///   * `verdict = ?` is written from the CALLER's already-validated value.
-///     This function has no opinion about which verdicts are legal — that is
-///     `validateReport`'s job and it runs before we get here. What this
-///     function guarantees is narrower and more important: a verdict that did
-///     not pass validation cannot reach this line, because there is no path
-///     from a raw `Report` to this call that skips it.
-///   * `applied_at IS NULL` means a result a human has already acted on can
-///     never be rewritten by a judge that lands late.
 pub fn updateJudgeResult(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -1107,18 +969,9 @@ pub fn readJudgeScores(
     };
 }
 
-/// The task this session was doing, as the judge needs to see it.
-///
-/// "Is this skill relevant?" has no referent without it, so this is not an
-/// optional input to the judge — it is what makes the session-relative half
-/// computable at all. The FIRST user message, not the last: a session that
-/// drifted over twenty turns has a first message that says what it set out to
-/// do.
-///
-/// Returns an empty string when the session has no user row (a session that
-/// only ever ran tools). The judge is told the context is empty rather than
-/// being handed nothing, and a thin context is a legitimate reason for it to
-/// answer `needs_human`.
+/// The task this session was doing, as the judge needs to see it. "Is this
+/// skill relevant?" has no referent without it, so this is not an optional
+/// input to the judge — it is what makes the session-relative half computable
 pub fn sessionTaskContext(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -1146,10 +999,7 @@ pub fn sessionTaskContext(
     });
 }
 
-/// Claim the one self-prompted run a session is allowed. The agent can emit two
-/// `run_skill_eval` tool calls in a single turn and both would see "no run yet",
-/// so the partial unique index is the arbiter and `db.changes()` is how the
-/// loser finds out. A loser returns the existing summary instead of re-running.
+/// Claim the one self-prompted run a session is allowed.
 pub fn claimRun(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -1174,10 +1024,7 @@ pub fn claimRun(
         \\     COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), datetime('now'))
     // Bind order MUST match the placeholder order in the VALUES clause above:
     // id, session_id, skill_name, scope, trigger, profile, model, cwd,
-    // context_key. Getting this wrong is silent and dangerous — `trigger` would
-    // never equal 'self_prompt', so the partial unique index would not apply and
-    // the "one run per session" guarantee would quietly disappear. The count
-    // assertion in the claimRun test is what catches it.
+    // context_key.
     , &.{ id, session_id, skill_name, scope, trigger, profile, model, cwd, context_key });
     return db.changes() > 0;
 }
@@ -1232,10 +1079,7 @@ pub fn claimApply(
     return if (try resultExists(allocator, db, result_id)) .already_applied else .missing;
 }
 
-/// Give an apply claim back. The compensating action for the case where we won
-/// the right to apply and then discovered the skill body had changed underneath
-/// us — refusing is correct, but the claim must not stay taken or the verdict
-/// becomes unapplicable forever.
+/// Give an apply claim back.
 pub fn releaseApply(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -1248,12 +1092,6 @@ pub fn releaseApply(
 
 /// Mark a verdict as unapplicable because the body moved on. Recorded rather
 /// than deleted so the UI can offer a re-evaluate.
-///
-/// The missing paths are NOT written here: they are intrinsic and live on the
-/// fact, and `proposed_diff` means "the text this verdict would write into the
-/// skill" — storing a JSON array of paths there would make a future apply path
-/// write that array into a SKILL.MD. `status = 'stale'` plus the joined fact is
-/// the whole record.
 pub fn markResultStale(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -1406,10 +1244,7 @@ test "decideVerdict maps the intrinsic half, and a bare delete is never a deleti
 
 test "relevance can never change the verdict - the whole 0..3 range" {
     // The structural guarantee that a good skill loaded for the wrong task
-    // cannot be deleted or rewritten. `decideVerdict` does not even take
-    // relevance as an argument; this test pins that by iterating the range and
-    // asserting the outcome is constant, while `relevanceNote` still surfaces
-    // the finding to the human.
+    // cannot be deleted or rewritten.
     for ([_]Verdict{ .keep, .update, .rewrite, .merge, .needs_human }) |intrinsic| {
         const base = decideVerdict(intrinsic, false);
         var r: u8 = 0;
@@ -1429,13 +1264,6 @@ test "relevance can never change the verdict - the whole 0..3 range" {
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests — the concurrent-state primitives
 // ─────────────────────────────────────────────────────────────────────────────
-//
-// Concurrency claims are cheap to make, so these are proved as a SEQUENCE of
-// calls rather than with threads. That is a valid proof of the same code path:
-// `exec` is mutex-serialized per call, so the interleaving a real race produces
-// is exactly "statement, then statement". The only thing an actual race adds is
-// arbitrary ordering, and every predicate here is order-independent — the
-// expected outcome of each ordering is asserted below where it matters.
 
 test "claimFact: first writer wins, a live lease is not reusable, a published fact is" {
     const alloc = testing.allocator;
@@ -1636,15 +1464,6 @@ pub const SessionSkillUse = struct {
 };
 
 /// The skills one session was OFFERED and the ones it actually READ.
-///
-/// Aggregated in Zig from a single unordered query rather than in SQL: a
-/// session's ledger is tiny (deduped `listed` rows mean at most one per skill),
-/// so a correlated subquery per row would be harder to read for no measurable
-/// gain.
-///
-/// This is the set an eval runs over — derived from the ledger, never from an
-/// argument, which is what stops an agent quietly omitting the skill it had to
-/// work around.
 pub fn sessionSkillSet(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -1672,9 +1491,7 @@ pub fn sessionSkillSet(
 
         // An INDEX, not a pointer: `out` is an ArrayList and the `append`
         // below can reallocate its backing array, which would invalidate any
-        // pointer taken from an earlier iteration. Re-deriving the address from
-        // the index after the append is what makes that safe by construction
-        // rather than by luck of the current control flow.
+        // pointer taken from an earlier iteration.
         var idx: ?usize = null;
         for (out.items, 0..) |it, i| {
             if (std.mem.eql(u8, it.skill_name, name)) {
@@ -1806,10 +1623,7 @@ pub const RunFilter = struct {
 };
 
 /// Optional filters are expressed as `(? = '' OR col = ?)` rather than by
-/// building SQL text. That works because the empty-slice→NULL quirk is an
-/// `exec`-only behaviour: `query` always binds text, so `''` really is `''` in
-/// a SELECT and the sentinel compares correctly. It also keeps the query a
-/// compile-time constant, which is the point.
+/// building SQL text.
 pub fn listRuns(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -1857,21 +1671,10 @@ pub fn freeRunRows(allocator: std.mem.Allocator, rows: []RunRow) void {
 }
 
 /// A result row plus the intrinsic half resolved from its fact.
-///
-/// `freshness` / `accuracy` / `duplication` and the missing paths are NOT
-/// columns of `skill_eval_results` and must never become ones: they depend only
-/// on the skill body and the code state, so they live once on
-/// `skill_eval_facts` and every session's result references that row. Copying
-/// them per result would reintroduce the duplication the fact cache exists to
-/// remove. They are read here through a LEFT JOIN.
 pub const ResultRow = struct {
     id: []u8,
     run_id: []u8,
-    /// The session the eval ran in. Apply re-checks `base_content_hash` by
-    /// hashing the body on disk, and a project-local skill lives under the
-    /// SESSION's repo -- not the server process's cwd. Without this column on
-    /// the row the guard re-hashes the wrong file and refuses a live verdict as
-    /// stale, so the id has to travel with the row, not just with the run.
+    /// The session the eval ran in.
     session_id: []u8,
     skill_key: []u8,
     skill_name: []u8,
@@ -1888,9 +1691,7 @@ pub const ResultRow = struct {
     /// a body that is gone.
     base_content_hash: []u8,
     /// That same body, verbatim. A hash can only ANSWER "is this still the
-    /// body I judged?" -- it cannot show a human what the body was. Without
-    /// this column the eval can refuse a verdict as stale and cannot explain
-    /// why, which is the one thing the person clicking Apply needs.
+    /// body I judged?" -- it cannot show a human what the body was.
     content_at_use: []u8,
     /// The text this verdict would write, empty when there is none. Pairs with
     /// `content_at_use` to form a before/after.
@@ -1917,9 +1718,8 @@ pub const ResultRow = struct {
 };
 
 /// The projection both result reads share, concatenated (never retyped) into
-/// the two queries below so the column list and `mapResultRow`'s indices cannot
-/// drift apart. A second hand-maintained copy of this list is how the apply path
-/// came to ask `ResultRow` for a `session_id` the struct never had.
+/// the two queries below so the column list and `mapResultRow`'s indices
+/// cannot drift apart.
 const result_projection =
     \\SELECT r.id, r.run_id, COALESCE(r.session_id, ''),
     \\       r.skill_key, r.skill_name, r.status, r.verdict,
@@ -2314,10 +2114,7 @@ test "sessionTaskContext is empty, not an error, for a session with no user turn
 
 test "updateJudgeResult persists the proposal the judge was made to produce" {
     // The judge prompt REQUIRES proposed_content for update/rewrite and
-    // validateReport refuses a report without it. The value then reached this
-    // function and was dropped: the SET list named every other column the
-    // judge produced, so a verdict always landed with an empty proposed_diff
-    // and there was no "after" for a human to look at.
+    // validateReport refuses a report without it.
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -2406,9 +2203,8 @@ test "listResults carries the before body and the proposal" {
 
 test "readResultById carries the session_id the apply guard resolves the repo from" {
     // Apply re-hashes the body against the SESSION's repo
-    // (`readCurrentSkillHash` -> `workspace_scope.sessionCwd`), so a read that
-    // dropped the id re-hashed the server's own cwd and refused a live verdict
-    // as stale. That missing field is what #775's build break was pointing at.
+    // (`readCurrentSkillHash` -> `workspace_scope.sessionCwd`), so a read
+    // that dropped the id re-hashed the server's own cwd and refused a live
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();

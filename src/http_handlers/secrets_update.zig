@@ -1,15 +1,4 @@
-//! `PATCH /api/workspaces/:workspace_id/secrets/:secret_id`.
-//!
-//! Rotation. The name is immutable: a rename would silently break every
-//! prompt, skill and saved tool call that references
-//! `{{SECRETS:OLD_NAME}}`, and no rename can be undone from the UI. A
-//! `name` in the body is therefore not an instruction — it is a claim about
-//! which row is being addressed, and a claim that does not match is the
-//! same answer as a row that is not there (see `useCase`).
-//!
-//! NO VALUE APPEARS IN THIS RESPONSE, exactly as on create and list. The
-//! caller wrote the value; it cannot read it back (Design Decision 9,
-//! docs/superpowers/plans/2026-10-02-workspace-secrets.md).
+//! `PATCH /api/workspaces/:workspace_id/secrets/:secret_id`. Rotation.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -58,14 +47,9 @@ fn useCase(
     if (input.workspace_id.len == 0) return error.WorkspaceIdRequired;
     if (input.secret_id.len == 0) return error.SecretIdRequired;
 
-    // A `name` in the body is a claim about which row is being addressed,
-    // not a rename instruction: renaming would silently break every prompt,
-    // skill and saved tool call that references `{{SECRETS:OLD_NAME}}`. A
-    // claim that does not match the stored name gets the same answer as a
-    // row that is not there, so a rename attempt cannot be told apart from
-    // a cross-workspace probe — one more thing this endpoint does not
-    // disclose. Checked BEFORE the write so a refused rename leaves the
-    // stored value untouched.
+    // A `name` in the body is a claim about which row is being addressed, not
+    // a rename instruction: renaming would silently break every prompt, skill
+    // and saved tool call that references `{{SECRETS:OLD_NAME}}`.
     if (input.body.name) |name| {
         if (!secrets_store.isValidName(name)) return error.InvalidName;
         const current = try readRow(allocator, db, input.workspace_id, input.secret_id);
@@ -93,9 +77,7 @@ fn useCase(
         error.UpdateFailed => return error.UpdateFailed,
         error.OutOfMemory => return error.OutOfMemory,
         // The rest of the store's shared error set belongs to the create
-        // path, which this handler never calls. Naming them keeps this
-        // switch exhaustive, so a variant added to `SecretsError` breaks
-        // the build here rather than reaching the client unmapped.
+        // path, which this handler never calls.
         error.NameRequired,
         error.InvalidName,
         error.NameTaken,
@@ -132,13 +114,9 @@ fn readRow(
     };
 }
 
-// =====================================================================
-// Error mapping
-// =====================================================================
-//
-// Two exhaustive switches, one for the status and one for the message, so a
-// variant added to `SecretsUpdateError` fails the build here rather than
-// surfacing as an unhandled error at runtime.
+// ===================================================================== Error
+// mapping
+// ===================================================================== Two
 
 fn statusFor(err: SecretsUpdateError) u16 {
     return switch (err) {

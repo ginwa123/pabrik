@@ -1,26 +1,6 @@
-//! Bulk endpoint `POST .../kanban/columns/:column_id/run_all_agents`.
-//!
-//! Starts agents on every idle task in a kanban column, including tasks
-//! not yet loaded by frontend pagination. The frontend must NOT loop
-//! client-side (it only sees the loaded page); this use-case SELECTs all
-//! task ids for the column server-side and reuses the existing
-//! single-task `startAgentUseCase` per id (keeping its 404/409 guards).
-//!
-//! ## Layering
-//!
-//! - `PerTaskResult` / `TaskStarter` — injectable per-task starter so
-//!   behavioural tests can exercise the started/skipped/failed split
-//!   without scheduling real LLM workers.
-//! - `runAllAgentsWithStarter` — injectable core (column check + id list
-//!   + per-id loop). Never throws on single-task failure; failures are
-//!   collected into `failed`.
-//! - `runAllAgentsUseCase` — live binding that wraps `startAgentUseCase`
-//!   per id (Option C) and delegates to the injectable core.
-//! - `runAllAgentsHandler` — thin HTTP orchestrator (path param +
-//!   singleton + status mapping).
-//!
-//! Plan: docs/superpowers/plans/2026-09-09-run-all-agents-by-column.md
-//!   (Tasks 1+2, Option C).
+//! Bulk endpoint `POST .../kanban/columns/:column_id/run_all_agents`. Starts
+//! agents on every idle task in a kanban column, including tasks not yet
+//! loaded by frontend pagination.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -73,16 +53,6 @@ pub const RunAllAgentsOutcome = struct {
 // =====================================================================
 
 /// List every task id in `column_id`, then run `starter` per id.
-///
-/// Errors:
-///   - `error.EmptyColumnId` — empty `column_id` (empty-slice-as-NULL
-///     rule: "" must never reach a `WHERE id = ?` binding).
-///   - `error.ColumnNotFound` — no `kanban_columns` row for the id.
-///   - DB errors propagate (query/exec/alloc failures).
-///
-/// Single-task starter results never propagate as errors: `started`
-/// collects `triggered`, `skipped` collects `worker_already_running`,
-/// `failed` collects `task_not_found` + any other per-task failure.
 pub fn runAllAgentsWithStarter(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -186,10 +156,9 @@ fn liveRun(ptr: ?*anyopaque, task_id: []const u8) PerTaskResult {
     };
 }
 
-/// Production use-case: reuse the single-task `startAgentUseCase` per
-/// id (keeping its 404-via-getWorkspaceItemTask + 409-via-isTaskRunning
-/// guards — never copy-pasted). Maps `triggered→started`,
-/// `worker_already_running→skipped`, `task_not_found/other→failed`.
+/// Production use-case: reuse the single-task `startAgentUseCase` per id
+/// (keeping its 404-via-getWorkspaceItemTask + 409-via-isTaskRunning guards —
+/// never copy-pasted).
 pub fn runAllAgentsUseCase(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -207,11 +176,8 @@ pub fn runAllAgentsUseCase(
 // Handler
 // =====================================================================
 
-/// `POST /api/workspaces/:workspace_id/items/:item_id/kanban/columns/:column_id/run_all_agents`.
-///
-/// Success: `200` with
-/// `{"success":true,"column_id":"...","started":[...],"skipped":[...],"failed":[...]}`.
-/// Unknown column: `404`. Empty `column_id`: `400`.
+/// `POST
+/// /api/workspaces/:workspace_id/items/:item_id/kanban/columns/:column_id/run_all_agents`.
 pub fn runAllAgentsHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -282,11 +248,7 @@ pub fn runAllAgentsHandler(
 }
 
 // =====================================================================
-// Inline behavioural tests. Single-file convention mirroring
-// start_agent.zig (vs. a separate run_all_agents_test.zig): handler +
-// useCase + tests live here so the test_runner import of this file
-// discovers + runs them.
-// =====================================================================
+// Inline behavioural tests.
 
 const testing = std.testing;
 
@@ -364,10 +326,9 @@ fn seedThreeTaskColumn(ctx: *TestDb) !void {
         &.{});
 }
 
-/// Fake per-task starter with production guard semantics: consults
-/// the real `isTaskRunning` (seeded `worker` row ⇒ skipped), honours
-/// a scripted fail-list (⇒ failed), otherwise ⇒ started. Never
-/// touches `di.emit_run_agent`, so no real LLM worker is scheduled.
+/// Fake per-task starter with production guard semantics: consults the real
+/// `isTaskRunning` (seeded `worker` row ⇒ skipped), honours a scripted
+/// fail-list (⇒ failed), otherwise ⇒ started.
 const FakeCtx = struct {
     db: *sqlite.SqliteBackend,
     fail_ids: []const []const u8 = &.{},

@@ -1,20 +1,5 @@
-// Functional wire test for terminal max-20 cap + 429.
-//
-// Zig port of `tests/functional/terminal_limits_test.py` (same test
-// names, same order).
-//
-// Replays the EXACT JSON body the frontend sends (see TerminalTab.vue
-// newSession -> createTerminalSession(cwd, {cols, rows})):
-//
-//   POST /api/terminal/sessions { cwd, cols, rows } -> 201 { id, pid }
-//   21st create while 20 live -> 429 { error }
-//
-// Also verifies a DELETE frees a slot (next create is 201 again).
-//
-// Busy-exempt idle-kill is covered by Zig unit tests in
-// terminal_session.zig (isBusyByStamps + sweep with test seams) — the
-// 30min timeout is not fast-forwardable over HTTP, so this suite only
-// asserts the cap wire contract.
+// Functional wire test for terminal max-20 cap + 429. Zig port of
+// `tests/functional/terminal_limits_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -30,9 +15,6 @@ const MAX_SESSIONS: usize = 20;
 
 /// `POST /api/terminal/sessions` with the frontend's exact body shape,
 /// spawning a shell rooted at the harness's isolated tempdir.
-///
-/// `expect` is a parameter because the STATUS is the thing under test:
-/// 201 for the fills, 429 for the overflow probe.
 fn createTerminal(h: *Harness, expect: []const u16) !harness.Response {
     const body = try std.json.Stringify.valueAlloc(gpa, .{
         .cwd = h.temp_dir,
@@ -56,12 +38,9 @@ fn deleteTerminal(h: *Harness, id: []const u8) !void {
     defer r.deinit();
 }
 
-/// Python's `try/finally` cleanup block: every id the test created is
-/// torn down whether the assertions passed or not. Zig spells that as a
-/// `defer` that owns the id list.
-///
-/// Registered AFTER `defer h.deinit(io)`, so it runs BEFORE the harness
-/// goes away — the sessions must be closed while the server is still up.
+/// Python's `try/finally` cleanup block: every id the test created is torn
+/// down whether the assertions passed or not. Zig spells that as a `defer`
+/// that owns the id list.
 const SessionBag = struct {
     h: *Harness,
     ids: std.ArrayList([]u8) = .empty,

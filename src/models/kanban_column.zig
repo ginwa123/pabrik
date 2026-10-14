@@ -1,10 +1,6 @@
-//! Data model for the `kanban_columns` entity table.
-//!
-//! One row per user-defined kanban column (todo / in progress /
-//! done / etc.) under a kanban workspace item.
-//!
-//! Schema: Migration 051 (`add_kanban` step that creates the table)
-//! + Migration 053 (add `description`).
+//! Data model for the `kanban_columns` entity table. One row per user-defined
+//! kanban column (todo / in progress / done / etc.) under a kanban workspace
+//! item. Schema: Migration 051 (`add_kanban` step that creates the table)
 
 const std = @import("std");
 
@@ -63,11 +59,6 @@ pub fn clone(self: *const Self, allocator: std.mem.Allocator) !Self {
 // ===== Tests merged from models_test.zig (2026-09-29 flatten) =====
 
 // Sanity tests for the `src/models/` entity models.
-//
-// Verifies that every model file compiles, that `init` populates the
-// struct as expected, that `deinit` releases its strings, and that
-// external callers can read the struct's fields directly (matching
-// the file-level struct pattern requested by the user).
 
 const testing = std.testing;
 

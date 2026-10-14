@@ -1,21 +1,5 @@
-//! `GET /api/workspaces/:workspace_id/items/:item_id/design/pages`.
-//!
-//! List the design pages belonging to a workspace item of
-//! `item_type='design'`. Thin wrapper around
-//! `design_model.listPages` — no body parsing, just path-param
-//! validation, the DB call, and the response envelope.
-//!
-//! Response shape: `{"pages":[DesignPageResponse, ...], "count": N}`
-//! (built by `http_response.makeDesignPageListResponse`). An empty
-//! page list returns `{pages: [], count: 0}` with 200 OK — not 404,
-//! because "this design has no pages yet" is a normal state.
-//!
-//! Errors:
-//!   - 400 missing `item_id` path param
-//!   - 500 DB failure
-//!
-//! Plan: docs/superpowers/plans/2026-07-08-design-mode-redesign.md
-//!   (Chunk 3, Task 3.2)
+//! `GET /api/workspaces/:workspace_id/items/:item_id/design/pages`. List the
+//! design pages belonging to a workspace item of `item_type='design'`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -27,9 +11,7 @@ pub const DesignPagesListError = error{
     ItemIdRequired,
     QueryFailed,
     /// `makeDesignPageListResponse` returns `![]u8` (its body uses
-    /// `std.json.Stringify.valueAlloc` which can fail with
-    /// `OutOfMemory`). Effectively unreachable on the per-request
-    /// arena, but the type system requires the variant.
+    /// `std.json.Stringify.valueAlloc` which can fail with `OutOfMemory`).
     OutOfMemory,
 };
 

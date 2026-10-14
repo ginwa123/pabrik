@@ -1,116 +1,5 @@
-// HTTP/2 over TLS (ALPN) end-to-end tests — **the acceptance contract**.
-//
-// Zig port of `tests/functional/http2_tls_test.py` (same test names,
-// same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """HTTP/2 over TLS (ALPN) end-to-end tests — **the acceptance contract**.
-//
-//   Test-first: this suite pins the CLI + wire contract for serving HTTP/2 to
-//   *browsers* (they only speak h2 over TLS with ALPN, never h2c). The backend does
-//   not implement the flags yet, so these tests are EXPECTED TO FAIL until the
-//   integration commit lands. They are not skipped and not xfail'd — a red run here
-//   IS the report of what is missing.
-//
-//   The contract under test (see ``docs/http2-tls.md`` for the design):
-//
-//   * ``--tls <cert.pem> <key.pem>`` — serve TLS with existing PEM files.
-//   * ``--tls-selfsigned`` — generate (first run) / reuse a self-signed cert in the
-//     app data dir; the startup log prints the certificate path.
-//   * Both are OFF by default: plaintext HTTP/1.1 and h2c keep working unchanged.
-//   * ALPN offered by the server: ``h2`` first, then ``http/1.1``.
-//   * TLS and plaintext are mutually exclusive on one port (there is no separate
-//     TLS port, and no protocol sniffing to multiplex them).
-//   * ``--tls`` with a missing/invalid cert or key → non-zero exit whose message
-//     names both the flag and the offending path.
-//
-//   Why ``-k`` appears
-//   ------------------
-//   Most of these tests pass ``-k`` (``--insecure``). The self-signed cert is by
-//   construction not in the system trust store, and installing a trust anchor is
-//   the *desktop webview's* job (``ServerCertificateErrorDetected`` /
-//   ``didReceiveAuthenticationChallenge`` / ``load-failed-with-tls-errors``), not
-//   the CI box's. ``-k`` deliberately keeps "does this listener speak TLS with real
-//   ALPN" separate from "does this machine trust this one cert". Exactly one test
-//   (``test_tls_cert_san_matches_localhost``) drops ``-k`` and uses ``--cacert``,
-//   because *that* test is about the certificate contents, not the listener.
-//
-//   Why this file spawns the binary itself
-//   --------------------------------------
-//   ``FunctionalHarness.boot`` readiness-probes a **plaintext** ``GET
-//   http://…/health`` (``harness.py::_wait_ready``). A TLS-only listener — which is
-//   what the contract above requires — can never satisfy that probe, and ``boot()``
-//   kills the child and leaks the tempdir on the way out. ``_spawn_pabrik`` below
-//   therefore reuses every harness *invariant* (``pabrik-func-`` tmpdir validated by
-//   ``is_safe_tmp``, the random non-8081 port picker, ``FunctionalHarness``
-//   teardown) but waits on a TLS probe instead. It also returns the harness even
-//   when readiness fails, so a test can teardown and assert on the failure text.
-//
-//   Run:
-//       zig build install:linux
-//       PABRIK_BIN=$(pwd)/zig-out/bin/pabrikcore-linux-x86_64 \
-//           python3 -m pytest tests/functional/http2_tls_test.py -v
-//
-//   FORMERLY KNOWN-BROKEN, NOW FIXED: the TLS serve path
-//   ---------------------------------------------------
-//   These four tests used to be skipped behind `PABRIK_RUN_KNOWN_BROKEN_TLS`.
-//   The handshake completed (``TLSv1.3``, ``CN=localhost``) and the server then
-//   dropped the socket without answering::
-//
-//       $ curl -k https://127.0.0.1:<port>/health
-//       curl: (35) Send failure: Broken pipe
-//
-//   That was a bug in the pinned ``kabelweb`` dep, not in pabrik — pabrik's
-//   ``src/`` has no ``SSL_accept`` / ``SSL_read`` / ``SSL_write`` at all; it only
-//   builds the context (``gserverz.tls.Ctx.init(...)``) and hands it to the
-//   server (``gs.setTlsCtx(ctx)``). The event loop hands every hijack runner a
-//   NON-BLOCKING fd, and every runner restored blocking mode before its blocking
-//   work — except ``runTlsServe``, which called ``SSL_accept`` once on that fd,
-//   got ``WANT_READ`` (the ClientHello had barely landed) and reported
-//   ``HandshakeFailed``.
-//
-//   Fixed upstream by kabelweb PR #7 (``fix(tls): restore blocking mode before
-//   the TLS handshake in runTlsServe``) and picked up here by the ``eaf2b583``
-//   pin. The gate is gone with it: these four tests now run on every
-//   ``zig build functional-test:zig``, which is the point of keeping them.
-//   """
-//
-// ── PORTING NOTES ───────────────────────────────────────────────────────
-// * The client is STILL `curl`, not `std.http.Client`. Two reasons, both
-//   load-bearing. (1) The assertions are about ALPN: `%{http_version}` only
-//   reports `2` if the SERVER offered `h2` first and the client took it,
-//   which needs a client that speaks h2 — `std.http.Client` is HTTP/1.1
-//   only. (2) `std.crypto.tls.Client` has NO ALPN support at all in Zig
-//   0.16 (zero `alpn` hits under `std/`), so a Zig TLS client cannot
-//   express this test's subject even in principle.
-//
-// * curl's own `--connect-timeout` / `--max-time` are the wall-clock bound
-//   (Python relied on the same flags, with a `subprocess.run(timeout=…)`
-//   backstop on top). They are not politeness: an `https://` client talking
-//   to a *plaintext* listener deadlocks by default, so the "no TLS here"
-//   case hangs instead of failing.
-//
-// * `spawnTlsPabrik` reuses every harness invariant (random non-8081 port,
-//   isolated tmpdir HOME, XDG shadowing, `isSafeTmp`-gated teardown via
-//   `Harness.deinit`) but probes for the protocol the listener was ASKED
-//   to speak. The `Harness` struct is constructed field-by-field for that,
-//   which also means a future field added to `Harness` becomes a COMPILE
-//   error here rather than a silently-zeroed invariant.
-//
-// * The Python's `_expect_boot_failure` has no Zig counterpart here: its
-//   only caller (test 5) asserts on a process that must EXIT, which
-//   `harness.runPabrikCommand` reports directly (`exit_code`, and
-//   `error.RunTimedOut` when the flag was ignored and the server came up
-//   instead). Keeping a `Booted`-shaped wrapper would be a second,
-//   unused teardown path.
-//
-// * The two NON-TLS tests do not need any of that: test 4 is
-//   `Harness.boot` with `extra_args` (which is exactly what the Python's
-//   `_spawn_pabrik(tls=False)` did), and test 5 asserts on a process that
-//   must EXIT, so it uses `harness.runPabrikCommand` — whose watchdog
-//   turns "the flag was accepted and ignored" into `error.RunTimedOut`
-//   instead of a 3-second hang.
+// HTTP/2 over TLS (ALPN) end-to-end tests — **the acceptance contract**. Zig
+// port of `tests/functional/http2_tls_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -132,11 +21,7 @@ const io = testing.io;
 // curl helpers
 // ============================================================================
 
-/// Wall-clock ceiling for one curl invocation. Not politeness: an
-/// `https://` client talking to a *plaintext* listener deadlocks by
-/// default — curl sends a ClientHello and waits for a ServerHello while
-/// the HTTP/1.1 request parser waits for a `\r\n\r\n` that never comes.
-/// Without a bound, the "no TLS here" case hangs instead of failing.
+/// Wall-clock ceiling for one curl invocation.
 const CURL_MAX_TIME_S: u32 = 10;
 
 fn nowMs() i64 {
@@ -163,16 +48,12 @@ fn findCurl() ?[]u8 {
     return null;
 }
 
-/// Skip when this curl cannot ask for h2 at all.
-///
-/// CI ships curl 8.22 linked against nghttp2, so this does not fire there;
-/// it keeps the suite honest on a minimal dev box instead of asserting on
-/// a curl that cannot speak HTTP/2.
+/// Skip when this curl cannot ask for h2 at all. CI ships curl 8.22 linked
+/// against nghttp2, so this does not fire there; it keeps the suite honest on
+/// a minimal dev box instead of asserting on a curl that cannot speak HTTP/2.
 fn requireHttp2Curl() ![]u8 {
-    // Ownership TRANSFERS to the caller — there is deliberately no
-    // `defer gpa.free(curl)` here. `return curl` hands the allocation up;
-    // freeing it on the way out is a double free the moment the caller
-    // does the obvious `defer gpa.free(...)`.
+    // Ownership TRANSFERS to the caller — there is deliberately no `defer
+    // gpa.free(curl)` here.
     const curl = findCurl() orelse {
         std.debug.print("curl not on PATH; skipping\n", .{});
         return error.SkipZigTest;
@@ -219,10 +100,6 @@ const CurlResult = struct {
 };
 
 /// Run curl once and report `(rc, http_code, http_version, stderr)`.
-///
-/// Never "raises" on a slow/absent server: a hung transfer is reported as
-/// `rc=124`-ish so the caller can assert on it (some tests *want* the
-/// non-zero). curl's `--max-time` is what bounds it.
 fn curlRun(curl: []const u8, url: []const u8, extra: []const []const u8, max_time_s: u32) !CurlResult {
     // Owned separately and freed by the `defer`s below: an `allocPrint`
     // INLINE in the `appendSlice` argument list would outlive nothing and
@@ -255,10 +132,8 @@ fn curlRun(curl: []const u8, url: []const u8, extra: []const []const u8, max_tim
             .stderr = try std.fmt.allocPrint(gpa, "curl could not be spawned ({s})", .{@errorName(err)}),
         };
     };
-    // The captured buffers are COPIES of what the caller wants
-    // (`code` / `version` / `stderr` are duped below), so they are freed
-    // here. Without this every readiness probe leaks two allocations, and
-    // a 45s poll loop leaks ~600.
+    // The captured buffers are COPIES of what the caller wants (`code` /
+    // `version` / `stderr` are duped below), so they are freed here.
     defer {
         gpa.free(res.stdout);
         gpa.free(res.stderr);
@@ -334,25 +209,13 @@ const Booted = struct {
     ready: bool,
     detail: []u8,
 
-    /// The Python `finally: booted.harness.teardown()`, and the ONLY
-    /// teardown path: an early `return` after a failed assertion must
-    /// still stop the child and delete the isolated HOME. `Harness.deinit`
-    /// is idempotent, so this is safe on the success path too.
+    /// The Python `finally: booted.harness.teardown()`, and the ONLY teardown
+    /// path: an early `return` after a failed assertion must still stop the
+    /// child and delete the isolated HOME.
     fn deinit(self: *Booted) void {
-        // `Harness.stopBinary` opens with a PLAINTEXT
-        // `POST /test/shutdown` and `catch return`s when it fails — and for
-        // a TLS-only listener that POST connects but never gets a
-        // response head, so the SIGTERM/SIGKILL ladder AFTER that line in
-        // the harness is never reached and the child SURVIVES teardown.
-        // (Measured: two `pabrik --tls-selfsigned` processes still running
-        // eleven minutes after their test finished, holding their ports.)
-        //
-        // So the escalation happens HERE, before `Harness.deinit` — which
-        // is left to do the part only it can do: the `isSafeTmp`-gated
-        // deleteTree. `h.pid` is null when the child was already reaped
-        // (`reapIfExited`), and a not-yet-reaped child is a zombie whose
-        // pid the kernel has not recycled, so signalling it is safe in
-        // both cases.
+        // `Harness.stopBinary` opens with a PLAINTEXT `POST /test/shutdown`
+        // and `catch return`s when it fails — and for a TLS-only listener
+        // that POST connects but never gets a response head, so the
         if (self.h.pid) |pid| harness.signalGroup(pid, harness.SIGKILL);
 
         self.h.deinit(io) catch |err| {
@@ -366,18 +229,9 @@ fn dupeEmpty() []u8 {
     return gpa.dupe(u8, "") catch @panic("OOM duping an empty string");
 }
 
-/// Boot `pabrik` the way `Harness.boot` does, but probe for the protocol
-/// the listener was *asked* to speak.
-///
-/// `extra_args` is appended after `--port` (`--tls-selfsigned` etc.).
-/// `tls`: readiness is an `https://…/health` request succeeding when true,
-/// the harness's usual plaintext `/health` when false. `ready_timeout_ms`
-/// is the budget before giving up.
-///
-/// `ready == false` carries a human-readable `detail` the failing test
-/// asserts on (this is how the bad-flag test observes the non-zero exit).
-/// The caller MUST `deinit` the `Booted` — `Harness.deinit` is the same
-/// gated teardown every other suite uses.
+/// Boot `pabrik` the way `Harness.boot` does, but probe for the protocol the
+/// listener was *asked* to speak. `extra_args` is appended after `--port`
+/// (`--tls-selfsigned` etc.).
 fn spawnTlsPabrik(extra_args: []const []const u8, tls: bool, ready_timeout_ms: i64) !Booted {
     const bin = try harness.resolvePabrikBin(io, gpa);
     errdefer gpa.free(bin);
@@ -483,10 +337,7 @@ fn spawnTlsPabrik(extra_args: []const []const u8, tls: bool, ready_timeout_ms: i
         if (reapIfExited(&child)) h.pid = null;
 
         if (h.pid == null) {
-            // `tailLog` returns an OWNED buffer. Inlining the call in the
-            // format argument list (which is what this read like first)
-            // leaks it on every timeout — the readiness diagnostics are
-            // exactly where a leak is least visible and most annoying.
+            // `tailLog` returns an OWNED buffer.
             const tail = try h.tailLog(io, gpa, 30);
             defer gpa.free(tail);
             return .{
@@ -505,10 +356,6 @@ fn spawnTlsPabrik(extra_args: []const []const u8, tls: bool, ready_timeout_ms: i
         }
 
         // The listener answers plaintext while https never negotiates.
-        // Under the contract that is impossible (mutually exclusive on one
-        // port), so the only explanation is that the TLS flag was ignored —
-        // which is exactly today's state (unknown CLI args are dropped
-        // silently).
         if (tls and nowMs() - started > 3_000) {
             if (try probe(port, false, curl, &last)) {
                 const tail = try h.tailLog(io, gpa, 30);
@@ -545,10 +392,6 @@ fn spawnTlsPabrik(extra_args: []const []const u8, tls: bool, ready_timeout_ms: i
 }
 
 /// Reap the child if it already exited. Returns true when it did.
-///
-/// There is no `std.posix.waitpid` wrapper in Zig 0.16 — only the raw
-/// system layer — so this is `waitpid(2)` by hand, which is the whole of
-/// Python's `proc.poll()` under the hood.
 fn reapIfExited(child: *std.process.Child) bool {
     if (comptime builtin.os.tag == .windows) return false;
     if (child.id == null) return true;
@@ -633,10 +476,9 @@ fn probe(port: u16, tls: bool, curl: []const u8, detail_out: *[]u8) !bool {
     return true;
 }
 
-/// Fail the test with the captured boot detail.
-///
-/// The deliverable's visible output IS these failures, so keep them to one
-/// readable message instead of a repr of the whole `Booted`.
+/// Fail the test with the captured boot detail. The deliverable's visible
+/// output IS these failures, so keep them to one readable message instead of
+/// a repr of the whole `Booted`.
 fn requireReady(b: *Booted) !void {
     if (!b.ready) {
         std.debug.print("{s}\n", .{b.detail});
@@ -649,11 +491,8 @@ fn requireReady(b: *Booted) !void {
 // ============================================================================
 
 /// Extract the certificate path the server printed at startup.
-///
 /// `--tls-selfsigned` generates the cert on first run, so the test cannot
 /// know the path a priori — the contract is that the startup log prints it.
-/// Candidates are scored so the CERTIFICATE wins over the private key when
-/// both appear on the same line (`cert=… key=…`). Owned, or null.
 fn tlsCertPath(h: *Harness) ?[]u8 {
     const text = std.Io.Dir.cwd().readFileAlloc(io, h.log_path, gpa, .limited(1 << 20)) catch return null;
     defer gpa.free(text);
@@ -692,10 +531,9 @@ fn tlsCertPath(h: *Harness) ?[]u8 {
 // Tests
 // ============================================================================
 
-// `--tls-selfsigned` + a client that offers h2 (ALPN) → HTTP/2.
-//
-// `curl -k --http2` over an https URL negotiates via ALPN; `%{http_version}`
-// reports `2` only if the server offered `h2` first and our client took it.
+// `--tls-selfsigned` + a client that offers h2 (ALPN) → HTTP/2. `curl -k
+// --http2` over an https URL negotiates via ALPN; `%{http_version}` reports
+// `2` only if the server offered `h2` first and our client took it.
 test "tls_selfsigned_serves_http2" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -726,10 +564,9 @@ test "tls_selfsigned_serves_http2" {
     // booted.harness.teardown()`.
 }
 
-// A TLS client that only asks for `http/1.1` is still served, on h1.
-//
-// The ALPN list is `["h2", "http/1.1"]`: the server must not require h2
-// from every TLS client.
+// A TLS client that only asks for `http/1.1` is still served, on h1. The ALPN
+// list is `["h2", "http/1.1"]`: the server must not require h2 from every TLS
+// client.
 test "tls_offers_http11_fallback" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -762,10 +599,6 @@ test "tls_offers_http11_fallback" {
 }
 
 // `--cacert <cert>` verifies for BOTH `localhost` and `127.0.0.1`.
-//
-// This is the only test that does not use `-k`: it is the assertion that
-// the generated cert carries `SAN DNS:localhost, IP:127.0.0.1` (a webview
-// loads the app from one of those two names, depending on backend).
 test "tls_cert_san_matches_localhost" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -812,7 +645,6 @@ test "tls_cert_san_matches_localhost" {
 }
 
 // Default (no TLS flags): HTTP/1.1 and h2c keep working exactly as today.
-//
 // `--http2 h2c` is passed because it is the pre-existing, non-TLS flag that
 // makes the prior-knowledge assertion meaningful; nothing TLS-related is set.
 test "plaintext_still_works_without_tls_flags" {
@@ -856,10 +688,9 @@ test "plaintext_still_works_without_tls_flags" {
     }
 }
 
-// `--tls` with only one path (or a nonexistent path) must fail loudly.
-//
-// The contract: non-zero exit, and the message mentions BOTH the flag
-// (`--tls`) and the offending path — so the failure is actionable.
+// `--tls` with only one path (or a nonexistent path) must fail loudly. The
+// contract: non-zero exit, and the message mentions BOTH the flag (`--tls`)
+// and the offending path — so the failure is actionable.
 test "tls_flag_requires_both_files" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -925,11 +756,9 @@ test "tls_flag_requires_both_files" {
     }
 }
 
-// A TLS listener serves TLS ONLY; plaintext on the same port must fail.
-//
-// The contract says there is no second port and no sniffing: one port, one
-// transport. (If the implementation ever grows ALPN-less sniffing to serve both,
-// this test is the one that must be revised — deliberately, with the contract.)
+// A TLS listener serves TLS ONLY; plaintext on the same port must fail. The
+// contract says there is no second port and no sniffing: one port, one
+// transport.
 test "tls_and_h2c_are_mutually_exclusive_on_a_port" {
     try harness.requirePabrikBin(io, gpa);
 

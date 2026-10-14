@@ -18,11 +18,6 @@ const error_explain = @import("tools_error_explain.zig");
 
 /// What `runWithContext` hands back: the LLM-facing payload, plus the
 /// loop-control request parsed out of the same arguments.
-///
-/// `payload` is a bare JSON `ShellOutput` object on the success path, or an
-/// ALREADY-WRAPPED tool envelope on the argument-parse failure path (there is
-/// no other way for the parser to report a structured field error) — hence
-/// `execCommand`'s `looksWrapped` check.
 pub const RunResult = struct {
     payload: []const u8,
     /// `is_stop` from the arguments. False on the parse-failure path: the
@@ -33,11 +28,6 @@ pub const RunResult = struct {
 /// Merged exec body for the unified `command` tool (Phase A+B of the unify
 /// plan — shared logic moved here from `tools_exec_bash.zig` /
 /// `tools_exec_pwsh.zig`, which are now thin shims over this module).
-///
-/// Argument parsing uses `tools_exec_bash_args.parseShellArgs` (lenient:
-/// recovers LLM-hallucinated XML fragments like
-/// `timeout: "5</timeout>"` → 5, surfaces structured
-/// InvalidField info on real coercion failures).
 pub fn runWithContext(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -115,26 +105,11 @@ pub fn runWithContext(
                         };
                         // Immediate watcher: poll the PID every 2s and queue
                         // the completion the moment it exits (no cron wait).
-                        // Singleton is absent in unit tests → skip silently
-                        // (cron fallback covers production; the watcher core
-                        // is covered directly in background_watcher tests).
-                        // Dupes into di.allocator (process lifetime) inside.
                         if (pabrikcore.getSingleton() catch null) |di| {
                             background_process_events.emitCreated(allocator, di.event_bus, sess_id, pid, input.command);
-                            // The two detached modes differ in ONE obligation:
-                            // whether the agent is told when the process exits.
-                            //
-                            //   `background`             -> the watcher queues the log and wakes.
-                            //   `background_persistence` -> the reaper only collects the corpse
-                            //                               and marks the row `exited`. Not
-                            //                               scheduling ANY watcher here is the
-                            //                               first of the two places that make
-                            //                               this mode silent; the cron's
-                            //                               `kind = 'job'` filter is the second.
-                            //
-                            // The reaper is not optional housekeeping: `isProcessRunning`
-                            // probes with `kill(pid, 0)`, which succeeds for a ZOMBIE, so an
-                            // unreaped native child would read as running for ever.
+                            // The two detached modes differ in ONE
+                            // obligation: whether the agent is told when the
+                            // process exits.
                             if (mode == .background) {
                                 background_watcher.spawnCompletionWatcher(di, sess_id, pid, input.command, log_path);
                             } else {
@@ -154,16 +129,8 @@ pub fn runWithContext(
 
 pub fn execCommand(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     // Catch ANY remaining error from the run path (e.g. from
-    // `execute_command` itself — fork failures, permission errors, etc.)
-    // and wrap it in the standard tool-error envelope, matching
-    // execReadFile / execWriteFile / etc.
-    //
-    // The message goes through `error_explain.explain` rather than a bare
-    // `@errorName`. `command failed: TimeoutMissing` names no
-    // field, no value and no fix, so the model retries the identical call
-    // — the reported bug was four identical retries and then the stream
-    // dying. The explanation names the field, the constraint and what to
-    // send instead.
+    // `execute_command` itself — fork failures, permission errors, etc.) and
+    // wrap it in the standard tool-error envelope, matching execReadFile /
     const inner = runWithContext(ctx.allocator, ctx.io, tc, ctx.db, ctx.session_id) catch |err| {
         const err_msg = try error_explain.explain(ctx.allocator, err, null);
         defer ctx.allocator.free(err_msg);
@@ -171,10 +138,8 @@ pub fn execCommand(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
         return ToolExecResult{ .output = output, .output_allocated = true };
     };
     // `runWithContext` returns an ALREADY-WRAPPED envelope on its
-    // parse-failure path (it has no other way to report a structured
-    // field error), and a bare payload on the success path. Re-wrapping
-    // the former would double-encode it, so pass it through untouched and
-    // free the payload only on the success path.
+    // parse-failure path (it has no other way to report a structured field
+    // error), and a bare payload on the success path.
     if (looksWrapped(inner.payload)) {
         return ToolExecResult{ .output = inner.payload, .output_allocated = true };
     }
@@ -188,9 +153,6 @@ pub fn execCommand(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
 }
 
 /// True when `s` is already a tool envelope rather than a bare payload.
-/// `runWithContext` is the only producer here and it always emits the
-/// `{"tool":…,"v":1}` shape, so a prefix check is unambiguous — a shell
-/// payload is a `ShellOutput` object, which has neither key.
 fn looksWrapped(s: []const u8) bool {
     return std.mem.startsWith(u8, std.mem.trimStart(u8, s, " \t\r\n"), "{\"tool\":");
 }
@@ -282,8 +244,7 @@ test "execCommand: timeout = 0 gets the same explanation as a missing one" {
 test "execCommand: a missing cwd explains the field, the wrong-tree risk and the fix" {
     // `cwd` is required. Without it the shell inherits the SERVER's working
     // directory, so the command acts on the wrong tree and the caller never
-    // learns that it did. The prose has to name the field, WHY the omission is
-    // dangerous, and the shape of the value to send.
+    // learns that it did.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const allocator = testing.allocator;
@@ -385,20 +346,9 @@ test "execCommand: an over-max timeout states the ceiling and the alternative" {
 }
 
 test "execCommand: a well-formed call is not refused by the argument validator" {
-    // Positive control for the four tests above. They all assert on the
-    // ERROR envelope, so without this one they could pass vacuously on a
-    // tool that refuses every call. A call whose arguments are well-formed
-    // must get past `parseShellArgs` and reach `execute_command` — proven
-    // here by a `cwd` that does not exist, which fails INSIDE the shell
-    // spawn rather than in argument validation.
-    //
-    // Deliberately does not spawn a real command: `std.testing.io` is a
-    // single-threaded `Io.Threaded`, and `run_shell_command`'s reader
-    // threads need that runtime pumped. A foreground spawn from a test
-    // that runs after other tests have already used the singleton
-    // deadlocks in `anon_pipe_read`. The foreground happy path is covered
-    // at the `execute_command` level by
-    // `command.execute_command runs on the host shell` in command.zig.
+    // Positive control for the four tests above. They all assert on the ERROR
+    // envelope, so without this one they could pass vacuously on a tool that
+    // refuses every call.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const allocator = testing.allocator;

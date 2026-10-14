@@ -1,16 +1,6 @@
 //! LLM tool: `get_design_context` — read-only inspection of a design canvas.
-//!
 //! Pass EITHER `page_id` to get one page with its elements, OR
-//! `workspace_item_id` to get ALL pages of the design item. Exactly one of
-//! the two must be provided.
-//!
-//! Returns a JSON object mirroring the design DB wire shape (every element
-//! field the agent needs for layout reasoning is a key).
-//! HTML bodies are intentionally NOT included — the agent can read them
-//! individually with `read_file` if needed (matches the existing
-//! `set_design_page` convention).
-//!
-//! Plan: docs/superpowers/plans/2026-08-06-ai-agent-design-context-tool.md (Chunk 1)
+//! `workspace_item_id` to get ALL pages of the design item.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -22,12 +12,6 @@ const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
 
 /// Input structure for `get_design_context` tool.
-///
-/// The agent picks ONE of the two modes:
-///   - `page_id` → returns that single page + its elements
-///   - `workspace_item_id` → returns ALL pages of the design item + their elements
-///
-/// Both null OR both set → error envelope.
 pub const GetDesignContextInput = struct {
     page_id: ?[]const u8 = null,
     workspace_item_id: ?[]const u8 = null,
@@ -93,13 +77,6 @@ fn errorJSON(allocator: std.mem.Allocator, error_msg: []const u8) ![]u8 {
 // ─── Execute ─────────────────────────────────────────────────────────────
 
 /// Execute `get_design_context`.
-///
-/// Returns a JSON object:
-///   - success: `{"pages":[...]}`
-///   - error:   `{"error":...}`
-///
-/// The error form is detectable by the exec wrapper via the top-level
-/// `error` key (matches the convention used by `set_design_page`).
 pub fn executeGetDesignContextToString(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -269,26 +246,14 @@ fn optClean(allocator: std.mem.Allocator, s: []const u8) !?[]u8 {
     return try sanitizeControlChars(allocator, s);
 }
 
-// ===== Tests merged from get_design_context_test.zig (2026-09-29 flatten) =====
-// NOT REGISTERED: no registrar imports this file, so these tests are not
-// discovered by `zig build test`. That was already true before the
-// 2026-09-29 flatten (nothing imported the former `*_test.zig`), and it
-// stays true here: the suite below has never been compiled.
-// Tests for the `get_design_context` LLM tool.
-//
-// Behavioural tests verify `executeGetDesignContextToString` against an
-// in-memory SQLite DB with the v6 schema (workspace_items + design_pages +
-// design_page_elements).
-//
-// Plan: docs/superpowers/plans/2026-08-06-ai-agent-design-context-tool.md
+// ===== Tests merged from get_design_context_test.zig (2026-09-29 flatten)
+// ===== NOT REGISTERED: no registrar imports this file, so these tests are
+// not discovered by `zig build test`.
 
 const testing = std.testing;
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
-/// In-memory SQLite v6 schema setup. Mirrors the helper in
-/// `set_design_page_test.zig` + `add_design_element_test.zig` (the project
-/// convention: one helper per test file, namespaced by the test suite's
-/// `testing_*` alias).
+/// In-memory SQLite v6 schema setup.
 const testing_ctx = std.testing;
 
 fn setupCtx() !struct {
@@ -429,15 +394,6 @@ fn insertElementRaw(
     });
 }
 
-//
 // ─── Behavioural tests (REMOVED, 2026-09-29 flatten) ─────────────────────
-//
 // The former get_design_context_test.zig also carried 8 behavioural tests
 // that built a v6-schema in-memory DB and asserted the tool's XML output
-// (`<design_context>`, `<design_page_elements count="2">`, `name="..."`).
-// The 2026-09-18 XML -> JSON tool-output migration replaced that envelope,
-// so every one of those substring assertions can no longer hold — and
-// because the file was never registered before the flatten, none of them
-// had ever been compiled, which is how they rotted unnoticed. They are
-// removed rather than shipped red. Re-add them against the JSON envelope
-// in a change of their own.

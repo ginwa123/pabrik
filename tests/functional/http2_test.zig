@@ -1,46 +1,6 @@
-// HTTP/2 cleartext (h2c) end-to-end tests.
-//
-// Zig port of `tests/functional/http2_test.py` (same test names, same
-// order).
-//
-// PYTHON DOCSTRING, PRESERVED:
-//
-//   """HTTP/2 cleartext (h2c) end-to-end tests.
-//
-//   The server only speaks h2 OVER CLEARTEXT (no TLS/ALPN), so browsers
-//   keep using HTTP/1.1 and the only ready-made h2c client on a dev box
-//   / CI runner is `curl --http2-prior-knowledge` (nghttp2-backed).
-//   That is what these tests use, plus raw sockets for the protocol-
-//   error cases.
-//
-//   Every test boots the real binary with `--http2 h2c` via the harness
-//   `extra_args` hook and an isolated tmpdir HOME, so nothing here
-//   touches a developer's config.
-//   """
-//
-// ── PORTING NOTES ───────────────────────────────────────────────────────
-// * `_curl()` was `shutil.which("curl")` + `pytest.skip`. Zig has no
-//   `which`; the equivalent probe is SPAWNING `curl --version` — a
-//   missing binary surfaces as `error.FileNotFound` from
-//   `std.process.run`, which is where the skip lives.
-//
-// * `subprocess.run([...], capture_output=True, timeout=30)` becomes
-//   `std.process.run`, which returns `stdout`/`stderr` and a
-//   `Child.Term`. A non-`.exited` term is reported as the Python's
-//   `TimeoutExpired` would be, rather than silently becoming a null code.
-//
-// * `_curl_http_version` did `proc.stdout.rpartition("\n")`: curl writes
-//   the body, then `\n`, then `%{http_version}`. `afterLastNewline` is
-//   that rpartition; `afterFirst` from the harness is the OTHER
-//   direction and would silently return the body.
-//
-// * The bogus-preface test used `socket.create_connection` +
-//   `s.settimeout(10)` + `recv(4096)`. `Io.net.Stream` has no
-//   settimeout, so the receive deadline is set with `SO_RCVTIMEO` on the
-//   socket handle, which is the same kernel-level timeout. That call is
-//   comptime-gated off Windows, where `std.posix.setsockopt` is a
-//   `@compileError` — on Windows the read simply relies on the server
-//   closing the connection, which is what a protocol error produces.
+// HTTP/2 cleartext (h2c) end-to-end tests. Zig port of
+// `tests/functional/http2_test.py` (same test names, same order). PYTHON
+// DOCSTRING, PRESERVED: """HTTP/2 cleartext (h2c) end-to-end tests.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -63,12 +23,9 @@ fn exitCode(term: std.process.Child.Term) ?u8 {
     };
 }
 
-/// `_curl()` + `_curl_version_args()`: skip unless curl exists AND
-/// speaks HTTP/2 (nghttp2 / HTTP2 in `curl --version`).
-///
-/// Returns the resolved curl path when usable. Nothing is cached between
-/// tests — each booting test calls this first, which is what makes the
-/// skip visible per test rather than once per run.
+/// `_curl()` + `_curl_version_args()`: skip unless curl exists AND speaks
+/// HTTP/2 (nghttp2 / HTTP2 in `curl --version`). Returns the resolved curl
+/// path when usable.
 fn requireCurlHttp2() !void {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "curl", "--version" },
@@ -95,10 +52,6 @@ fn firstLine(s: []const u8) []const u8 {
 }
 
 /// Python's `s.rpartition("\n")[2]` — the text AFTER the LAST newline.
-///
-/// NOT `harness.afterFirst`: that splits on the FIRST delimiter, which
-/// for a body containing newlines would hand back the middle of the
-/// response instead of the version token.
 fn afterLastNewline(s: []const u8) []const u8 {
     const i = std.mem.lastIndexOfScalar(u8, s, '\n') orelse return "";
     return s[i + 1 ..];
@@ -127,16 +80,9 @@ fn curlRun(args: []const []const u8) !CurlResult {
     return .{ .exit = exitCode(res.term), .stdout = res.stdout, .stderr = res.stderr };
 }
 
-/// `_curl_http_version(url, extra)` -> `(http_version, body)`.
-///
-/// `assert proc.returncode == 0, f"curl failed: {proc.stderr}"` lives
-/// here, because this helper is only used where success IS the
-/// precondition.
-/// OWNS `body`: `version` is a slice into it (Python's
-/// `rpartition("\\n")[2]`, trimmed), so the caller must `defer deinit()`.
-/// A previous revision returned both slices while freeing the curl result
-/// on return — every `version`/`body` comparison then read
-/// DebugAllocator's 0xAA freed-memory fill and all four callers went red.
+/// `_curl_http_version(url, extra)` -> `(http_version, body)`. `assert
+/// proc.returncode == 0, f"curl failed: {proc.stderr}"` lives here, because
+/// this helper is only used where success IS the precondition.
 const Versioned = struct {
     version: []const u8,
     body: []u8,
@@ -223,23 +169,11 @@ fn bootH2() !Harness {
 // ============================================================================
 
 /// The bytes Python's `bogus` variable holds.
-///
-/// `b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"` — a CORRECT preface — then a
-/// 9-byte frame header claiming a 16 MiB payload:
-/// `struct.pack(">I", 0xFFFFFF)[3:]` is the low three bytes of the
-/// length (FF FF FF), then `00 00` (type = DATA 0x00, flags = 0x00),
-/// then stream 1 (`00 00 00 01`). That is a FRAME_SIZE_ERROR, so the
-/// server must answer GOAWAY.
 const BOGUS_PREFACE =
     "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n" ++
     "\xFF\xFF\xFF\x00\x00\x00\x00\x00\x01";
 
 /// Give the socket a receive deadline — Python's `s.settimeout(10)`.
-///
-/// `std.posix.setsockopt` is a `@compileError` on Windows, so the whole
-/// call is comptime-gated; there the read simply relies on the server
-/// closing the connection after GOAWAY (which is exactly what a protocol
-/// error produces).
 fn setRecvTimeout(stream: *Io.net.Stream, seconds: i64) void {
     if (comptime builtin.os.tag == .windows) return;
     const tv = std.posix.timeval{ .sec = @intCast(seconds), .usec = 0 };
@@ -252,25 +186,9 @@ fn setRecvTimeout(stream: *Io.net.Stream, seconds: i64) void {
 }
 
 /// Send `payload` to `port` and read whatever comes back. Owned.
-///
-/// Python caught `socket.timeout` and used `b""`; here a timed-out read
-/// returns the error, which terminates the loop and leaves whatever was
-/// accumulated — the same empty-or-partial outcome.
 fn rawProbe(port: u16, payload: []const u8) ![]u8 {
     const addr: Io.net.IpAddress = .{ .ip4 = .loopback(port) };
-    // `.timeout = .none` IS MANDATORY ON POSIX. `Io.net.connect` panics
-    // outright when a timeout is requested:
-    //
-    //     std/Io/Threaded.zig
-    //       netConnectIpPosix: if (options.timeout != .none)
-    //           @panic("TODO implement netConnectIpPosix with timeout");
-    //
-    // So `catch` cannot save it — the process aborts. Python's
-    // `socket.create_connection(..., timeout=10)` has no analogue here.
-    // The connect budget is enforced by `setRecvTimeout` below plus the
-    // caller's own deadline, which is where a real timeout belongs
-    // anyway: it bounds the READ, not the TCP handshake to a loopback
-    // address that either answers immediately or is not listening.
+    // `.timeout = .none` IS MANDATORY ON POSIX.
     var stream = addr.connect(io, .{
         .mode = .stream,
         .timeout = .none,
@@ -517,10 +435,9 @@ test "h2_unknown_route_is_404" {
 // Test 6: two requests over ONE connection
 // ============================================================================
 
-// Multiplexing/persistence: two URLs over ONE connection.
-//
-// HTTP/1.1 needs a second TCP connection here because every h1 response
-// says `Connection: close`; h2 keeps the connection alive.
+// Multiplexing/persistence: two URLs over ONE connection. HTTP/1.1 needs a
+// second TCP connection here because every h1 response says `Connection:
+// close`; h2 keeps the connection alive.
 test "h2_reuses_one_connection_for_two_requests" {
     try harness.requirePabrikBin(io, gpa);
     try requireCurlHttp2();
@@ -547,10 +464,9 @@ test "h2_reuses_one_connection_for_two_requests" {
         return error.TestUnexpectedResult;
     }
 
-    // curl reports num_connects=1 for the first URL and 0 for the
-    // second: the second transfer needed NO new TCP connection. (The h1
-    // baseline is 1 and 1, because every h1 response says
-    // `Connection: close`.)
+    // curl reports num_connects=1 for the first URL and 0 for the second: the
+    // second transfer needed NO new TCP connection. (The h1 baseline is 1 and
+    // 1, because every h1 response says `Connection: close`.)
     var got: [2]i64 = undefined;
     var n: usize = 0;
     var it = std.mem.tokenizeAny(u8, r.stdout, " \t\r\n");
@@ -593,10 +509,8 @@ test "h2_bogus_preface_gets_goaway_and_server_survives" {
         return error.TestUnexpectedResult;
     }
 
-    // The first frame the server sends on a valid preface is SETTINGS
-    // (type 0x4); on a garbage frame it is GOAWAY (type 0x7). Accept
-    // either but require HTTP/2 framing — hence the length check
-    // Python's `data[3]` read relied on.
+    // The first frame the server sends on a valid preface is SETTINGS (type
+    // 0x4); on a garbage frame it is GOAWAY (type 0x7).
     if (data.len < 4) {
         const shown = try harness.debugString(gpa, data);
         defer gpa.free(shown);
@@ -627,12 +541,9 @@ test "h2_bogus_preface_gets_goaway_and_server_survives" {
 // Test 8: response header names are lowercase on the h2 wire
 // ============================================================================
 
-// RFC 9113 section 8.2.1: an uppercase field name must not reach the
-// wire.
-//
-// curl/nghttp2 would reject the response outright, so a 200 here is
-// itself the assertion; we also assert the security headers the h1 path
-// adds are present.
+// RFC 9113 section 8.2.1: an uppercase field name must not reach the wire.
+// curl/nghttp2 would reject the response outright, so a 200 here is itself
+// the assertion; we also assert the security headers the h1 path adds are
 test "h2_response_headers_are_lowercase" {
     try harness.requirePabrikBin(io, gpa);
     try requireCurlHttp2();

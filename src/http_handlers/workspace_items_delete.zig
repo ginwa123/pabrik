@@ -61,19 +61,8 @@ fn useCase(
     if (existing == null) return error.WorkspaceItemNotFound;
     defer existing.?.deinit(allocator);
 
-    // For design items, rmdir the .pabrik/design/ folder from disk
-    // BEFORE the SQL DELETE. The DB row's FK ON DELETE CASCADE on
-    // design_pages takes care of the row cleanup, but the on-disk
-    // HTML files would otherwise be orphaned (the DB has no
-    // awareness of them). The path is `<workspace_item.path>/.pabrik/design/`
-    // per design_io.atomicWriteFile's convention.
-    //
-    // Best-effort: a failure to rmdir the folder is logged but does
-    // NOT fail the delete — the SQL row cleanup is the source of
-    // truth, and the user can re-run with `rm -rf` if they care
-    // about the orphan files. The user has already confirmed the
-    // delete via the Sidebar's openDeleteConfirm dialog, so we
-    // don't want to error out for a non-critical cleanup step.
+    // For design items, rmdir the .pabrik/design/ folder from disk BEFORE the
+    // SQL DELETE.
     const existing_item_type = existing.?.item_type;
     if (std.mem.eql(u8, existing_item_type, "design")) {
         if (existing.?.path) |p| {

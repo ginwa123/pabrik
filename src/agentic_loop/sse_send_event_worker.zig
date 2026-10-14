@@ -17,11 +17,9 @@ pub const OnEventInputWorkers = struct {
 };
 
 
-/// Send worker events to all subscribed clients via SSE
-/// Broadcasts worker list updates (created, updated, deleted)
-///
-/// SSE event name (the value of `event:` in the wire format):
-/// - workers:  worker_created | worker_updated | worker_deleted
+/// Send worker events to all subscribed clients via SSE Broadcasts worker
+/// list updates (created, updated, deleted) SSE event name (the value of
+/// `event:` in the wire format): - workers: worker_created | worker_updated |
 pub fn onEventSendWorkers(allocator: std.mem.Allocator, input: OnEventInputWorkers) !void {
 
     const event_bus = input.event_bus;
@@ -46,13 +44,9 @@ pub fn onEventSendWorkers(allocator: std.mem.Allocator, input: OnEventInputWorke
     // Duplicate the data so event owns its own copy (buf will be deallocated below)
     const data_copy = try allocator.dupe(u8, buf.items);
 
-    // Granular event name drives the SSE wire format `event:` line —
-    // the frontend's EventSource dispatches each named event to its
-    // registered listener without any JSON parsing (see project memory
-    // browser-eventsource-named-events.md).
-    //
-    // Zig 0.16 can't `switch` on `[]const u8`; use an if/else cascade
-    // (Zig's std.mem.eql returns the equality cheaply for short literals).
+    // Granular event name drives the SSE wire format `event:` line — the
+    // frontend's EventSource dispatches each named event to its registered
+    // listener without any JSON parsing (see project memory
     const event_type_name: []const u8 = if (std.mem.eql(u8, input.action, "created"))
         "worker_created"
     else if (std.mem.eql(u8, input.action, "updated"))
@@ -72,16 +66,9 @@ pub fn onEventSendWorkers(allocator: std.mem.Allocator, input: OnEventInputWorke
     event_bus.emit(SseEvent, "workers", event);
 }
 
-// ─── Tests ──────────────────────────────────────────────────────────────────
-//
-// These tests exercise `onEventSendWorkers` against a real `EventBus`
-// with a capture listener. The listener is a top-level `fn (SseEvent) void`
-// (Zig's `subscribe` takes a function pointer) that stashes the emitted
-// event into a module-level `var captured`.
-//
-// Tests run sequentially in Zig's test runner, so a single mutable
-// capture variable is safe across tests (each test resets it before
-// invoking the helper).
+// ─── Tests
+// ────────────────────────────────────────────────────────────────── These
+// tests exercise `onEventSendWorkers` against a real `EventBus` with a
 
 var captured: ?SseEvent = null;
 

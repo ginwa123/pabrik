@@ -1,21 +1,6 @@
-//! `DELETE /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id`.
-//!
-//! Delete a design element. The on-disk HTML file is unlinked
-//! AFTER the SQL DELETE succeeds (defer-pattern) via
-//! `design_model.deleteElement`. UI-only — no LLM tool exposes this
-//! endpoint, only the DesignView.vue "delete" button.
-//!
-//! Response shape: `{"success": true}` on a successful delete.
-//! Returns 404 if the element did not exist (so the frontend can
-//! distinguish "already gone" from "deleted right now").
-//!
-//! Errors:
-//!   - 400 missing `element_id` path param
-//!   - 404 element not found
-//!   - 500 DB failure
-//!
-//! Plan: docs/superpowers/plans/2026-07-08-design-mode-redesign.md
-//!   (Chunk 3, Task 3.3)
+//! `DELETE
+//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id`.
+//! Delete a design element.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");

@@ -12,13 +12,9 @@ pub const Migration051AddKanban = struct {
     pub const name = "add_kanban";
 
     pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
-        // Workspace Item Kanban feature — Chunk 1 (Migration 051).
-        // Adds the kanban_columns table and the two column-reference
-        // columns on workspace_item_tasks. Each kanban (item_type='kanban')
-        // owns its own set of columns; tasks inside a kanban point at one
-        // column via kanban_column_id and have a per-column ordering via
-        // kanban_position. Plan:
-        // docs/superpowers/plans/2026-06-21-workspace-item-kanban.md.
+        // Workspace Item Kanban feature — Chunk 1 (Migration 051). Adds the
+        // kanban_columns table and the two column-reference columns on
+        // workspace_item_tasks.
         try db.exec(allocator,
             \\CREATE TABLE IF NOT EXISTS kanban_columns (
             \\    id TEXT PRIMARY KEY,
@@ -40,10 +36,9 @@ pub const Migration051AddKanban = struct {
             "ALTER TABLE workspace_item_tasks ADD COLUMN kanban_column_id TEXT",
             &[_][]const u8{},
         );
-        // Per-column ordering (independent of the global workspace_item_tasks.position
-        // which the folder list view's drag-and-drop uses). DEFAULT 0 so existing
-        // tasks (including non-kanban ones where kanban_column_id IS NULL) get a
-        // valid value without backfill.
+        // Per-column ordering (independent of the global
+        // workspace_item_tasks.position which the folder list view's
+        // drag-and-drop uses).
         try db.exec(allocator,
             "ALTER TABLE workspace_item_tasks ADD COLUMN kanban_position INTEGER NOT NULL DEFAULT 0",
             &[_][]const u8{},

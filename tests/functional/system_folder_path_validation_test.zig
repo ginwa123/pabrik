@@ -1,53 +1,5 @@
-// Wire-level regression tests for system-folder path validation.
-//
-// Zig port of `tests/functional/system_folder_path_validation_test.py`
-// (same test name).
-//
-// One test, six rejection shapes:
-//   * `action=list`   with a relative base path → 400 InvalidPath
-//   * `action=search` with a relative base path → 400 InvalidPath
-//   * `action=read`   with a relative base path → 400 InvalidPath
-//   * `action=list`   with an EMPTY base path  → 400 InvalidPath
-//   * `action=search` with an EMPTY base path  → 400 "path required"
-//   * `action=read`   with a DRIVE-RELATIVE FILE (`C:foo`, i.e. resolved
-//     against the process CWD rather than the base) → 403
-//     "Cannot open file"
-// and after every one of them the server is still alive (`/health`).
-//
-// The point of the suite is not the status code alone: a non-absolute
-// path must be rejected by an ordinary `if` rather than reaching an
-// `open*Absolute` call, which would abort the whole process. The
-// `expectAlive` check after each case is what proves the server
-// survived.
-//
-// ── WHY THE QUERY IS BUILT HERE AND NOT VIA `.params` ───────────────────
-// The natural spelling is `.params = &.{.{ .name = "action", .value =
-// "list" }, .{ .name = "path", .value = "relative/path" }}`. That path
-// is currently unusable for TWO OR MORE parameters: `buildUrl` in
-// harness.zig reassigns `url` and THEN frees it (`gpa.free(url)` after
-// the reassignment), so the loop hands `std.Uri.parse` a freed pointer
-// and every multi-param request dies with `error.InvalidFormat`. It
-// also leaks the initial `"…?"` string on the first iteration.
-//
-// TODO(port): fix `harness.zig::buildUrl` to free the PREVIOUS string
-// before reassigning (keep the old one in a `prev` local). That is a
-// harness fix, not a suite fix, and it must land before any suite here
-// uses `.params` with two or more entries.
-//
-// Until then `folderTarget` builds the request target by hand. The bytes
-// on the wire are identical to what `.params` would have produced, so
-// the test asserts exactly what the Python original did.
-//
-// ── ENCODING ─────────────────────────────────────────────────────────────
-// `folderTarget` percent-encodes only the characters that would
-// otherwise change the SHAPE of the query — space, `&`, `=`, `#`, `%`,
-// `?`. It deliberately leaves `/` and `:` verbatim: Python's
-// `urlencode` turned them into `%2F` / `%3A`, which the server must
-// decode, whereas verbatim they are legal URI query characters that
-// arrive untouched. Encoding nothing that need not be encoded removes any
-// dependence on the server's percent-decoder — and that matters most for
-// the `C:…` case, whose 403 is precisely about how the handler reads
-// the raw value.
+// Wire-level regression tests for system-folder path validation. Zig port of
+// `tests/functional/system_folder_path_validation_test.py` (same test name).
 
 const std = @import("std");
 const testing = std.testing;
@@ -211,10 +163,8 @@ test "relative_base_path_returns_400_without_killing_server" {
         try expectAlive(&h, "rejecting an empty search path");
     }
 
-    // A DRIVE-RELATIVE file (`C:foo` — resolved against the process CWD,
-    // not the base) must be refused, not opened. The pid keeps the name
-    // unique per run so a stale file from a previous run cannot make
-    // this pass for the wrong reason.
+    // A DRIVE-RELATIVE file (`C:foo` — resolved against the process CWD, not
+    // the base) must be refused, not opened.
     const pid: u32 = if (h.pid) |p| p else 0;
     const foreign_file = try std.fmt.allocPrint(gpa, "C:pabrik-relative-{d}.txt", .{pid});
     defer gpa.free(foreign_file);

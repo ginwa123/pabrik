@@ -1,12 +1,7 @@
 const std = @import("std");
 const root_mod = @import("pabrikcore");
 const sqlite = root_mod.sqlite;
-// NOTE: NOT `root_mod.helpers.process_status`. `root.zig` dropped the
-// `helpers` re-export, so that decl does not compile when the EXE build
-// references it — and this file was only ever reached from the sharded unit
-// suite until `main.zig` began importing it (for the boot sweep), which is
-// when the latent error surfaced. `@import("helpers")` is the supported route,
-// the same one `background_watcher.zig` takes for the same reason.
+// NOTE: NOT `root_mod.helpers.process_status`.
 const process_status = @import("helpers").process_status;
 const shell_tool = root_mod.shell_tool;
 const testing = std.testing;
@@ -33,11 +28,6 @@ pub const KIND_JOB = "job";
 pub const KIND_SERVICE = "service";
 
 /// Release a `ProcessInfo` slice and every string in it.
-///
-/// One helper rather than the five inline free loops this used to have: adding
-/// a column to `ProcessInfo` silently turned every one of them into a leak,
-/// and a leak fails the whole suite (see the `leaked N allocations` line), not
-/// just this file's tests. A new field now costs one line, here.
 pub fn freeProcessInfos(allocator: std.mem.Allocator, infos: []ProcessInfo) void {
     freeProcessInfoStrings(allocator, infos);
     allocator.free(infos);
@@ -60,14 +50,8 @@ pub fn freeProcessInfo(allocator: std.mem.Allocator, p: ProcessInfo) void {
 
 const SqliteBackend = sqlite.SqliteBackend;
 
-/// Save a new background process to the database.
-///
-/// `kind` is `KIND_JOB` or `KIND_SERVICE` — see migration 107. An EMPTY
-/// `kind` is coerced to `KIND_JOB` rather than bound as-is, because this
-/// backend binds an empty slice as SQL NULL and the column is NOT NULL: a
-/// NULL there would match neither `kind = 'job'` nor `kind = 'service'`, so
-/// the row would drop out of the cron AND the service sweep at once and leak
-/// with nothing to notice it.
+/// Save a new background process to the database. `kind` is `KIND_JOB` or
+/// `KIND_SERVICE` — see migration 107.
 pub fn save(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []const u8, pid: u32, command: []const u8, log_path: []const u8, started_at: i64, kind: []const u8) !void {
     const pid_str = try std.fmt.allocPrint(allocator, "{}", .{pid});
     defer allocator.free(pid_str);
@@ -96,10 +80,7 @@ pub fn getBySession(db: *SqliteBackend, allocator: std.mem.Allocator, session_id
 
     while (try rows.next()) |row| {
         // The reader hands back a buffer of its own (`readRowPacked`); the
-        // caller owns it. Production hid this for a long time because the
-        // allocator there is a per-request ARENA, which reclaims the whole
-        // thing at the end of the turn — but it is a leak per row, per call,
-        // and CI's DebugAllocator says so the moment a test exercises it.
+        // caller owns it.
         defer row.deinit(allocator);
         const pid_str = row.values[0];
         const command = row.values[1];
@@ -111,12 +92,7 @@ pub fn getBySession(db: *SqliteBackend, allocator: std.mem.Allocator, session_id
         const started_at = try std.fmt.parseInt(i64, started_at_str, 10);
 
         try processes.append(allocator, .{
-            // DUPED, like every other field. It used to borrow the caller's
-            // slice — which was survivable only while the free loops freed
-            // `command`/`log_path`/`status` and nothing else. `freeProcessInfo`
-            // frees ALL of them, so a borrowed `session_id` became an invalid
-            // free the moment it was introduced. One rule for every field:
-            // whoever returns a `ProcessInfo` owns everything in it.
+            // DUPED, like every other field.
             .session_id = try allocator.dupe(u8, session_id),
             .pid = pid,
             .command = try allocator.dupe(u8, command),
@@ -151,11 +127,6 @@ pub fn delete(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []co
 
 /// Every `kind='service'` row, with `session_id` — the rows that
 /// `mode="background_persistence"` created.
-///
-/// Selected by KIND, not by `status`: the stored status drifts (a `kill -9`
-/// leaves it at 'running' because the defer that would have updated it never
-/// ran), so the only trustworthy liveness signal is the OS. Callers decide
-/// what to do with each row.
 pub fn getServices(db: *SqliteBackend, allocator: std.mem.Allocator) ![]ProcessInfo {
     var rows = try db.query(allocator,
         \\SELECT session_id, pid, command, log_path, started_at, status, COALESCE(kind, 'job'), COALESCE(last_read_offset, 0)
@@ -198,15 +169,6 @@ pub fn getServices(db: *SqliteBackend, allocator: std.mem.Allocator) ![]ProcessI
 }
 
 /// Is this pid alive — asked in the way that also REAPS.
-///
-/// `reap_pid_nohang` first, because for a child of this process `waitpid`
-/// answers the question AND collects the zombie in one call, and the fallback
-/// probe (`kill(pid, 0)`) returns SUCCESS for a zombie: without the reap a
-/// detached process that exited would be reported as running for ever.
-///
-/// `.not_our_child` is the honest answer for a row from before a restart, and
-/// for the `nohup` grandchild that `mode="background"` produces — there the
-/// signal probe is all that is available.
 pub fn isAlive(pid: u32) bool {
     return switch (shell_tool.reap_pid_nohang(pid)) {
         .exited => false,
@@ -220,8 +182,6 @@ pub fn isAlive(pid: u32) bool {
 pub fn isProcessRunning(pid: u32) bool {
     // Cross-platform: kill(pid, 0) on POSIX, OpenProcess(QUERY_LIMITED) on
     // Windows. See src/helpers/process_status.zig for the platform switch.
-    // `std.posix.kill` is `@compileError`'d on Windows because `std.c.pid_t`
-    // is `*anyopaque` there.
     return process_status.isProcessRunning(@intCast(pid));
 }
 
@@ -229,28 +189,11 @@ pub fn isProcessRunning(pid: u32) bool {
 /// Returns true if killed successfully, false if process doesn't exist or error
 pub fn killProcess(pid: u32) bool {
     // The previous implementation tried SIGTERM (15) first and fell back to
-    // SIGKILL (9). We send SIGKILL directly via the cross-platform helper
-    // (TerminateProcess on Windows is the equivalent of "force kill" — no
-    // graceful shutdown path). For graceful shutdown on POSIX, the caller
-    // can use std.c.kill(pid, SIGTERM) directly.
+    // SIGKILL (9).
     return process_status.killProcess(@intCast(pid));
 }
 
 /// Stop every live `kind='service'` process, TREE included.
-///
-/// Called from exactly two places, and deliberately NOT from the cancel path:
-///
-///   1. pabrik's own clean shutdown (SIGINT / SIGTERM), so a dev server the
-///      agent started does not outlive the service that owns it.
-///   2. the boot sweep, which covers the `kill -9` case no handler can catch.
-///
-/// A user pressing Stop on a chat must NOT reach here: `background_persistence`
-/// means "stays up for the life of the session", and taking someone's dev
-/// server down because they stopped a conversation is the opposite of what
-/// they asked for. That is also why this is NOT named `killAllForSession` —
-/// the old name invited exactly that misuse.
-///
-/// Returns how many rows were signalled.
 pub fn killServicesForShutdown(db: *SqliteBackend, io: std.Io, allocator: std.mem.Allocator) !usize {
     const services = try getServices(db, allocator);
     defer freeProcessInfos(allocator, services);
@@ -258,10 +201,7 @@ pub fn killServicesForShutdown(db: *SqliteBackend, io: std.Io, allocator: std.me
     var killed: usize = 0;
     for (services) |p| {
         // The process GROUP, not the PID: a service that forked (vite →
-        // esbuild) survives a single-PID kill and keeps its port. `pid ==
-        // pgid` because the spawn used `.pgid = 0`; a `job` row from before
-        // migration 107 has no such guarantee, which is one more reason this
-        // walk is scoped to `kind='service'`.
+        // esbuild) survives a single-PID kill and keeps its port.
         if (shell_tool.stopDetachedProcess(allocator, io, p.pid)) killed += 1;
         try updateStatus(db, allocator, p.session_id, p.pid, "killed");
     }
@@ -269,11 +209,6 @@ pub fn killServicesForShutdown(db: *SqliteBackend, io: std.Io, allocator: std.me
 }
 
 /// One process row by pid, or null when this session has no such process.
-///
-/// Scoped by `session_id` on purpose: a pid alone would let a session read — or
-/// stop — a process belonging to a DIFFERENT session, and pids are small enough
-/// to guess. The session is resolved server-side from the tool's context, never
-/// from the model's arguments.
 pub fn getByPid(db: *SqliteBackend, allocator: std.mem.Allocator, session_id: []const u8, pid: u32) !?ProcessInfo {
     const pid_str = try std.fmt.allocPrint(allocator, "{d}", .{pid});
     defer allocator.free(pid_str);
@@ -338,14 +273,9 @@ pub const DeltaRead = struct {
     }
 };
 
-/// Read the part of `log_path` the caller has NOT been shown yet.
-///
-/// Positional (`pread`-style) from the stored offset, so it neither depends on a
-/// file handle's own cursor nor reads the head it exists to avoid. The file is
-/// being appended to by another process while this runs; a partial line at the
-/// end is returned now and its remainder next time, which is the honest
-/// behaviour for a stream — and the reason the cursor is a byte count rather
-/// than a line count.
+/// Read the part of `log_path` the caller has NOT been shown yet. Positional
+/// (`pread`-style) from the stored offset, so it neither depends on a file
+/// handle's own cursor nor reads the head it exists to avoid.
 pub fn readDelta(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -446,33 +376,6 @@ pub const ServiceSweepResult = struct {
 };
 
 /// Boot pass over every `kind='service'` row.
-///
-/// A service must not outlive the pabrik that owns it — that is the mode's
-/// contract, and `killServicesForShutdown` carries it for a clean
-/// SIGINT/SIGTERM exit. This covers the OTHER exit: `kill -9`, a panic, a power
-/// cut. No handler runs, so the child is still out there holding its port, and
-/// nothing in the DB will ever notice. So on boot, a live service row is
-/// definitionally a leftover: kill it (tree included) and mark it `orphaned`.
-///
-/// `orphaned` rather than `killed` or a DELETE: the row is the only record
-/// that this process ever existed, and the popup computes liveness LIVE, so
-/// keeping it is what lets a human see "your dev server was left running by a
-/// previous pabrik". Deleting it would erase the evidence.
-///
-/// KNOWN LIMITATION, stated rather than hidden. Rows live in the session DB,
-/// so two pabrik instances sharing one `$HOME` share this table — and the
-/// second to boot would kill the first's services. That is accepted because a
-/// single `$HOME` is one pabrik identity (its config, its port choice and its
-/// DB are all per-HOME), and distinguishing the instances would need an
-/// owner/instance column this feature does not have. The alternative — never
-/// cleaning up — is the behaviour the mode was asked to replace.
-///
-/// Also note what this does NOT do: it does not re-arm completion watchers for
-/// `kind='job'` rows. The per-minute cron is their documented fallback and
-/// already notifies any dead job PID, so re-arming would be a second path to
-/// the same message. A job left running across a restart therefore keeps
-/// running (it was never claimed to die with pabrik) and is still reported when
-/// it finishes.
 pub fn sweepServicesOnBoot(db: *SqliteBackend, io: std.Io, allocator: std.mem.Allocator) !ServiceSweepResult {
     const services = try getServices(db, allocator);
     defer freeProcessInfos(allocator, services);
@@ -481,9 +384,7 @@ pub fn sweepServicesOnBoot(db: *SqliteBackend, io: std.Io, allocator: std.mem.Al
     for (services) |p| {
         // `reap_pid_nohang` FIRST: a service we spawned in a PREVIOUS pabrik
         // process is not our child any more, so this answers `.not_our_child`
-        // and the signal probe below decides. It matters within one process
-        // too: a zombie answers `kill(pid, 0)` with success, so the probe
-        // alone would call a corpse alive.
+        // and the signal probe below decides.
         const alive = switch (shell_tool.reap_pid_nohang(p.pid)) {
             .exited => false,
             .running => true,
@@ -499,25 +400,14 @@ pub fn sweepServicesOnBoot(db: *SqliteBackend, io: std.Io, allocator: std.mem.Al
     return result;
 }
 
-// ─── Background completion message helpers (Task 1) ─────────────────────────
-//
-// Pure helpers (no DB) used by the Task 2 completion queue: read a finished
-// background command's log file with a byte cap, then format the queue
-// message envelope the agent will see.
-//
-// Ownership: every function here returns caller-owned slices. Free with
-// `allocator.free` (or `TruncatedLog.free`). No arena memory is freed
-// inside — per the per-request arena rule, arena-backed inputs are simply
-// borrowed, never freed.
+// ─── Background completion message helpers (Task 1)
+// ───────────────────────── Pure helpers (no DB) used by the Task 2
+// completion queue: read a finished background command's log file with a byte
 
 /// Byte cap callers use when reading a background command's log file.
 pub const completion_log_cap_bytes: usize = 20 * 1024;
 
-/// Result of `readLogTruncated`. `content` is caller-owned (free with
-/// `allocator.free`, or call `free`); `total_bytes` is the full on-disk
-/// file size; `truncated` is `total_bytes > cap_bytes` (computed from the
-/// file size, NOT from the post-NUL-strip length, so stripping NULs never
-/// flips the flag).
+/// Result of `readLogTruncated`.
 pub const TruncatedLog = struct {
     content: []u8,
     total_bytes: usize,
@@ -528,23 +418,9 @@ pub const TruncatedLog = struct {
     }
 };
 
-/// Read up to `cap_bytes` bytes (HEAD — the first bytes of the file) from
-/// the log at `log_path`, strip NUL bytes so the content can never break
-/// SSE JSON framing, and report the full file size for the truncation
-/// suffix.
-///
-/// Missing file returns `error.FileNotFound` (surfaced by `statFile`;
-/// the caller maps it to a not-found marker — nothing is printed here).
-/// Empty file returns an empty (allocated) `content` with
-/// `truncated == false`.
-///
-/// Implementation note: `Dir.readFileAlloc` with `.limited(n)` FAILS with
-/// `error.StreamTooLong` when the file exceeds the limit (it is a safety
-/// cap, not a truncation) — so the head window is read explicitly with
-/// `openFile` + `readPositionalAll` (the Zig 0.16 positional-read idiom
-/// per `main.zig:writeFileRange`), which yields short reads instead of
-/// errors. A short read (file shrank between stat and read) just ends
-/// the window early; `total_bytes` still reports the stat size.
+/// Read up to `cap_bytes` bytes (HEAD — the first bytes of the file) from the
+/// log at `log_path`, strip NUL bytes so the content can never break SSE JSON
+/// framing, and report the full file size for the truncation suffix.
 pub fn readLogTruncated(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -611,18 +487,6 @@ pub fn readLogTruncated(
 }
 
 /// Build the queue message payload for a finished background command.
-///
-/// The payload is JSON (role stays `user` — the frontend renders
-/// background_command rows with the shell tool card instead of the
-/// user bubble):
-/// ```json
-/// {"pid":1234,"command":"sleep 10","stdout":"hello\nworld",
-///  "truncated":false,"total_bytes":null,"log_path":null}
-/// ```
-/// When the log was truncated, `truncated` is `true` and the payload
-/// also carries `total_bytes` + `log_path` so the agent knows where
-/// the full log lives. `command`, log content, and `log_path` go through
-/// the control-char sanitizer; Stringify handles the rest.
 pub fn buildCompletionMessage(
     allocator: std.mem.Allocator,
     command: []const u8,
@@ -796,12 +660,6 @@ test "readLogTruncated handles an empty file" {
 // ============================================================================
 // Tests — the read cursor, and the service-only sweep
 // ============================================================================
-//
-// These cover the `process` tool's `read` and `stop` half. The functional suite
-// proves the wire path (a scripted model calling `process list` and getting the
-// service back); these prove the semantics that a wire test cannot state
-// precisely — that a second read returns the DELTA and not the head again, and
-// that a cursor past EOF recovers instead of going silent for ever.
 
 const migration = @import("../migrations/migration.zig");
 
@@ -918,10 +776,8 @@ test "readDelta caps one read and says more is waiting" {
 }
 
 test "readDelta recovers from a cursor past EOF instead of going silent for ever" {
-    // A log can be TRUNCATED under a running cursor: the file is recreated, or
-    // opened with `>`. The stored offset is then past the end, and a naive
-    // `total - offset` would be negative and return nothing — for ever, with the
-    // model concluding the process had gone quiet.
+    // A log can be TRUNCATED under a running cursor: the file is recreated,
+    // or opened with `>`.
     var ctx = try setupCtx();
     defer ctx.deinit();
     const io = ctx.threaded.io();

@@ -1,47 +1,6 @@
 //! Storage layer for the per-workspace config OVERLAY (`workspace_settings`,
-//! Migration 105).
-//!
-//! One row per `(owner, workspace_id)` holding a SPARSE JSON object. The row
-//! is an overlay, not a replacement: `workspace_config.overlayJson` merges it
-//! over the user-level config, so a workspace that only overrides `tools`
-//! still inherits every profile, MCP server and eval flag from the user.
-//!
-//! ## Three states, and why the row's EXISTENCE matters
-//!
-//!   * NO ROW            - nobody has decided yet. `loadRaw` reads "inherit",
-//!                         and the one-shot `workspace_config` backfill is
-//!                         still allowed to seed this workspace.
-//!   * ROW, EMPTY BODY   - the user looked at this workspace and chose to
-//!                         inherit (or reset to inherited). `loadRaw` reads
-//!                         the same "inherit", but the backfill MUST leave it
-//!                         alone - otherwise every boot would resurrect the
-//!                         copy the user just deleted.
-//!   * ROW, WITH A BODY  - the workspace overrides those keys.
-//!
-//! So `loadRaw` and `hasOverlay` answer "does this workspace override
-//! anything?" (they look at the BODY), while `hasRow` answers "has this
-//! workspace been decided?" (it looks at the ROW). Collapsing the two would
-//! either lose a user's reset or re-copy config into a workspace that opted
-//! out.
-//!
-//! HOW THE OWNER IS DERIVED - the one thing callers must get right:
-//!   - `--auth` OFF  -> `FILE_MODE_OWNER` (`""`). One overlay per workspace.
-//!   - `--auth` ON   -> the session's `users.id`. A workspace is shared
-//!     between users, and the overlay holds API keys, so it is scoped per
-//!     user exactly like `users.config_json` is.
-//! Derive it from the same place the rest of the app does
-//! (`session_llm_config.sessionOwner`) - do not invent a second rule.
-//!
-//! ## The empty-slice landmine, twice over
-//!
-//! `SqliteBackend.exec` binds an EMPTY slice as SQL NULL, and `''` IS the
-//! `--auth`-off owner. So every statement here wraps the owner bind in
-//! `COALESCE(?, '')`: without it the INSERT trips `owner NOT NULL` and every
-//! `WHERE owner = ?` compares against NULL - which is never true, so a
-//! file-mode overlay would be write-only and silently invisible. Both
-//! directions are pinned by tests below.
-//!
-//! Ownership: every returned slice is allocator-owned; the caller frees it.
+//! Migration 105). One row per `(owner, workspace_id)` holding a SPARSE JSON
+//! object.
 
 const std = @import("std");
 const sqlite = @import("pabrikcore").sqlite;
@@ -50,11 +9,6 @@ const sqlite = @import("pabrikcore").sqlite;
 pub const FILE_MODE_OWNER = "";
 
 /// Is `json_text` an overlay that carries NO overrides?
-///
-/// `{}` and whitespace-only both count: they mean "change nothing", which is
-/// the same thing as having no row at all, and storing them would give the
-/// settings UI an override to display for a workspace the user never
-/// configured. Public so the HTTP handler and the store agree on one spelling.
 pub fn isEmptyOverlay(json_text: []const u8) bool {
     const trimmed = std.mem.trim(u8, json_text, " \t\r\n");
     return trimmed.len == 0 or std.mem.eql(u8, trimmed, "{}");
@@ -62,10 +16,6 @@ pub fn isEmptyOverlay(json_text: []const u8) bool {
 
 /// The raw overlay JSON for `(owner, workspace_id)`, or null when that
 /// workspace inherits everything from the user-level config.
-///
-/// A NULL column and an empty column both read as null - see the module
-/// header for why there is only one representation on the write path and why
-/// the read path stays tolerant anyway.
 pub fn loadRaw(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -75,11 +25,7 @@ pub fn loadRaw(
     if (workspace_id.len == 0) return null;
     var q = try db.query(
         allocator,
-        // `COALESCE(?, '')` on `owner`, NOT a bare `?`. This backend binds an
-        // empty slice as SQL NULL, and `owner = NULL` is never true - so in
-        // file mode (where the owner IS the empty string) a bare bind would
-        // make every overlay invisible. Same idiom as the WHERE clauses in
-        // `secrets_store.zig`.
+        // `COALESCE(?, '')` on `owner`, NOT a bare `?`.
         "SELECT COALESCE(config_json, '') FROM workspace_settings WHERE owner = COALESCE(?, '') AND workspace_id = ?",
         &[_][]const u8{ owner, workspace_id },
     );
@@ -91,12 +37,9 @@ pub fn loadRaw(
     return try allocator.dupe(u8, row.values[0]);
 }
 
-/// Write the overlay for `(owner, workspace_id)`.
-///
-/// An overlay that carries no overrides writes the EMPTY-BODY marker instead
-/// of storing `{}` - see `isEmptyOverlay` and the module header. UPSERT (not
-/// INSERT-then-UPDATE) so concurrent saves for the same workspace converge on
-/// one row rather than racing to a constraint error.
+/// Write the overlay for `(owner, workspace_id)`. An overlay that carries no
+/// overrides writes the EMPTY-BODY marker instead of storing `{}` - see
+/// `isEmptyOverlay` and the module header.
 pub fn saveRaw(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -117,11 +60,6 @@ pub fn saveRaw(
 
 /// Record "this workspace inherits the user-level config", so the workspace
 /// inherits again AND the one-shot backfill leaves it alone.
-///
-/// Deliberately an UPSERT with an EMPTY body rather than a DELETE: a delete
-/// would make a deliberate reset indistinguishable from "never decided", and
-/// the next boot's backfill would re-copy the very config the user cleared.
-/// Idempotent, so callers may call this blind.
 pub fn clear(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -140,10 +78,6 @@ pub fn clear(
 
 /// Has this `(owner, workspace_id)` been DECIDED yet - either overridden or
 /// explicitly left inherited?
-///
-/// The backfill's question, and it must not be `hasOverlay`: a workspace the
-/// user reset to inherited has a row and no overrides, and seeding it again
-/// would undo the reset on every boot.
 pub fn hasRow(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -166,16 +100,6 @@ pub fn hasRow(
 }
 
 /// Does this workspace carry any override at all?
-///
-/// Separate from `loadRaw` so a caller that only needs the yes/no (the
-/// "Inherited" vs "Overridden" pill on the settings screen) does not pay for
-/// reading and parsing the whole config.
-///
-/// "Any override" means a non-empty BODY, not merely a row: a row whose
-/// `config_json` is NULL or `''` carries no overrides, so reporting it as
-/// overridden would put an "Overridden" pill on a workspace that behaves
-/// exactly like an untouched one. This is the same property `loadRaw`
-/// enforces, and the two must not disagree.
 pub fn hasOverlay(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -200,21 +124,9 @@ pub fn hasOverlay(
     return false;
 }
 
-// =====================================================================
-// Tests (in-memory SQLite, same pattern as secrets_store.zig)
-// =====================================================================
-//
-// Five properties, each pinned because its failure mode is INVISIBLE until a
-// user notices their workspace config bleed:
-//
-//   1. Round-trip is byte-exact - the overlay is opaque JSON to this layer.
-//   2. `{}` / '' records an EXPLICIT INHERIT: no overrides, but a row, so the
-//      boot backfill can tell a deliberate reset from a never-configured
-//      workspace.
-//   3. A NULL column reads as "no overlay" (tolerance for a hand-edited DB).
-//   4. Two WORKSPACES never see each other's overlay.
-//   5. Two OWNERS in ONE workspace never see each other's overlay - the
-//      `--auth` leak the composite key exists to prevent.
+// ===================================================================== Tests
+// (in-memory SQLite, same pattern as secrets_store.zig)
+// ===================================================================== Five
 
 const testing = std.testing;
 
@@ -328,11 +240,6 @@ test "a NULL config_json column reads back as no overlay" {
 
     // Written straight to SQL: a row can exist with a NULL body (a manual
     // edit, or a future writer that clears the text but not the row).
-    //
-    // The owner is a SQL LITERAL `''` and not a bind on purpose - binding
-    // `FILE_MODE_OWNER` here would be collapsed to SQL NULL by this backend
-    // and trip `owner NOT NULL`, which is the store's own landmine rather
-    // than the one this test is about.
     try ctx.db.exec(
         alloc,
         "INSERT INTO workspace_settings (owner, workspace_id, config_json) VALUES ('', ?, NULL)",

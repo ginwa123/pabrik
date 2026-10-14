@@ -52,25 +52,6 @@ pub fn sessionMessagesHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
     // 2026-08-21-fix-ui-context-window — resolve the session's selected
     // profile so the response's `max_capacity_total_tokens` honors the
     // profile's `max_capacity_tokens` override (cascade step 2 in
-    // `maxCapacityForModel`). Previously this handler passed no profile,
-    // so the chat footer always showed the built-in per-model default
-    // (e.g. 500,000) even when the selected profile overrode the window
-    // (e.g. 950,000). Graceful degradation: empty name / unknown profile
-    // → null → Defaults-tab → built-in default (old behavior).
-    //
-    // `LlmProfile` is nested inside `LlmConfig` — refer to it as
-    // `config.LlmConfig.LlmProfile`. The bare `pabrikcore.config.LlmProfile`
-    // path compiles in `zig build test` (lib module lookup) but Zig 0.16's
-    // `zig build-exe` (exe module lookup) rejects it because the parent
-    // struct in the root module is `modules.config.Config` and has no
-    // top-level `LlmProfile` member. CI fix 2026-08-21.
-    //
-    // `resolveSessionProfile` walks session selection → active_profile →
-    // null, matching the workflow loop — so a Default chat with
-    // active_profile=alpha shows alpha's 950k window, not 500k.
-    // Session-scoped config: the session OWNER's stored config under
-    // `--auth`, the process-global one otherwise — one resolution module
-    // (`session_llm_config.zig`), never a hand-rolled singleton read.
     const cfg = session_llm_config.forSession(allocator, di.db, session_id) orelse
         pabrikcore.getLlmConfig(di);
     const profile_name = llm_history.getSessionProfileName(allocator, sqlite_db, session_id) catch "";
@@ -81,20 +62,13 @@ pub fn sessionMessagesHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
         return res.jsonResponse(.{ .status_code = 500, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "Database query failed" }) });
     };
 
-    // 2026-08-24-fix-flaky-create-and-run-profile-test — when the
-    // session has ZERO llm_history rows (fresh create_and_run session:
-    // the worker drains the queued user message asynchronously), the
-    // LEFT JOIN in getSessionMessagesSorted yields no rows and
-    // msg_response.selected_profile_model stays null even though the
-    // sessions row already carries the profile. Fall back to the
-    // direct sessions-table read (already fetched above for the
-    // capacity cascade) so the chatview's profile chip is correct from
-    // the very first GET — no race with the worker.
+    // 2026-08-24-fix-flaky-create-and-run-profile-test — when the session has
+    // ZERO llm_history rows (fresh create_and_run session: the worker drains
+    // the queued user message asynchronously), the LEFT JOIN in
     const selected_profile_model_final: ?[]const u8 = blk: {
         // Already-corrupted rows (0xAA poison) are invalid UTF-8, which
         // std.json would emit as a byte array ([170, ...]) instead of a
-        // string — the frontend then renders the array literally. Fall
-        // back to null (Default chip) so the wire never carries garbage.
+        // string — the frontend then renders the array literally.
         if (msg_response.selected_profile_model) |spm| {
             if (std.unicode.utf8ValidateSlice(spm)) break :blk spm;
             break :blk null;
@@ -103,10 +77,9 @@ pub fn sessionMessagesHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
         break :blk null;
     };
 
-    // Zero-message fallback for the attached-PR binding (same race as
-    // the profile chip above): the JOIN yields no rows before the
-    // first message, so read the sessions row directly. Non-empty
-    // direct values win; otherwise null (unset).
+    // Zero-message fallback for the attached-PR binding (same race as the
+    // profile chip above): the JOIN yields no rows before the first message,
+    // so read the sessions row directly.
     const pr_fields: llm_history.SessionPrFields = llm_history.getSessionPrFields(allocator, sqlite_db, session_id) catch .{ .pr_url = "", .pr_provider = "" };
     const pr_url_final: ?[]const u8 = msg_response.pr_url orelse (if (pr_fields.pr_url.len > 0) pr_fields.pr_url else null);
     const pr_provider_final: ?[]const u8 = msg_response.pr_provider orelse (if (pr_fields.pr_provider.len > 0) pr_fields.pr_provider else null);
@@ -171,11 +144,9 @@ pub fn sessionMessagesHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
         .git_worktree_cwd = msg_response.git_worktree_cwd,
         .pr_url = pr_url_final,
         .pr_provider = pr_provider_final,
-        // 2026-08-07-profile-persist-read — pass the per-session
-        // selected profile name through so the frontend's profile chip
-        // survives a page refresh. Without this the chip resets to
-        // "Default" because the read endpoint never returned the field
-        // that PUT /api/llm/session/:id persists.
+        // 2026-08-07-profile-persist-read — pass the per-session selected
+        // profile name through so the frontend's profile chip survives a page
+        // refresh.
         .selected_profile_model = selected_profile_model_final,
         // Migration 091 — sub-agent identity passthrough.
         .sub_agent_name = msg_response.sub_agent_name,
@@ -189,40 +160,9 @@ pub fn sessionMessagesHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
     return res.jsonResponse(.{ .status_code = 200, .data = try http_response.makeSessionMessagesResponse(allocator, http_resp) });
 }
 
-// ===== Tests merged from session_messages_get_test.zig (2026-09-11 flatten) =====
-// Behavioural tests for `getSessionMessagesSorted` carrying
+// ===== Tests merged from session_messages_get_test.zig (2026-09-11 flatten)
+// ===== Behavioural tests for `getSessionMessagesSorted` carrying
 // `selected_profile_model` through to its response.
-//
-// Why this file exists
-// ─────────────────────
-// Bug "profiles in chatview not persistent" (2026-08-07): the user
-// picks a profile ("900ribu") in the chatview dropdown → chip shows
-// the selection → user refreshes the page → chip reverts to "Default".
-//
-// Root cause: `sessions.selected_profile_model` IS persisted by
-// `session_update.zig`'s PUT handler, but the read-side
-// `getSessionMessagesSorted` (called by `GET /api/llm/session/:id/messages`)
-// never selects the column from the joined `sessions` row, so the
-// frontend's `getChatHistory()` / `getSession()` calls both return
-// nothing for `selected_profile_model`. The chip resets because the
-// frontend defaults to `null` when the field is missing.
-//
-// These tests pin down the fix end-to-end:
-//   1. The SQL actually selects `s.selected_profile_model` from the
-//      joined `sessions` row.
-//   2. The `SessionMessageResponse` struct carries the value.
-//   3. The HTTP `SessionMessagesResponse` JSON builder (the wire
-//      shape the frontend reads) emits the field.
-//
-// Why we test against `getSessionMessagesSorted` + a manual JSON
-// builder (not the full HTTP handler)
-// ─────────────────────────────────────
-// `sessionMessagesHandler` calls `pabrikcore.getSingleton()` to grab
-// the live DB handle, which is global process state and out of scope
-// for a unit test. The data layer (`getSessionMessagesSorted`) is
-// the only place where the field can be loaded — everything else is
-// pass-through. If the data layer returns the right value, the HTTP
-// handler is one struct field away from emitting it.
 
 const testing = std.testing;
 const sqlite = pabrikcore.sqlite;
@@ -231,10 +171,9 @@ const TestCtx = struct {
     threaded: std.Io.Threaded,
 };
 
-/// Open a fresh in-memory sqlite DB with `llm_history` and `sessions`
-/// tables that match the production schema columns the
-/// `getSessionMessagesSorted` query reads (plus
-/// `selected_profile_model`, which is what we're testing).
+/// Open a fresh in-memory sqlite DB with `llm_history` and `sessions` tables
+/// that match the production schema columns the `getSessionMessagesSorted`
+/// query reads (plus `selected_profile_model`, which is what we're testing).
 fn setupDb() !TestCtx {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
@@ -313,9 +252,7 @@ fn seedSession(
 }
 
 /// Insert a minimal message for `session_id` so the
-/// `getSessionMessagesSorted` query returns at least one row. Without
-/// any messages the LEFT JOIN yields zero rows and the helper exits
-/// before reaching the column-extraction block.
+/// `getSessionMessagesSorted` query returns at least one row.
 fn seedMessage(
     ctx: *TestCtx,
     allocator: std.mem.Allocator,
@@ -330,12 +267,8 @@ fn seedMessage(
 }
 
 test "getSessionMessagesSorted: returns selected_profile_model from joined sessions row" {
-    // Mirrors the production handler's allocator lifecycle: the per-
-    // request arena is reclaimed by the HTTP server. The handler does
-    // NOT free `msg_response.messages` itself — it lets the arena
-    // do the cleanup. We use an arena here so the test harness can
-    // deinit it in one shot without having to track the inner strings
-    // individually.
+    // Mirrors the production handler's allocator lifecycle: the per- request
+    // arena is reclaimed by the HTTP server.
     const alloc = testing.allocator;
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
@@ -396,15 +329,9 @@ test "getSessionMessagesSorted: returns null when session has no profile set" {
 }
 
 test "getSessionMessagesSorted: profile override flows into max_capacity_total_tokens" {
-    // 2026-08-21-fix-ui-context-window — the chat footer's context
-    // window readout must honor the session's selected profile's
-    // `max_capacity_tokens` override. Previously the capacity blk in
-    // `getSessionMessagesSorted` hardcoded a null profile, so a profile
-    // with an explicit override (e.g. 950,000) was ignored and the UI
-    // showed the built-in per-model default (e.g. 500,000).
-    //
-    // The profile is passed in directly (dependency injection) so this
-    // test doesn't need the process-global singleton.
+    // 2026-08-21-fix-ui-context-window — the chat footer's context window
+    // readout must honor the session's selected profile's
+    // `max_capacity_tokens` override.
     const alloc = testing.allocator;
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
@@ -476,12 +403,7 @@ test "getSessionProfileName: returns selected_profile_model for a session" {
 
 test "getSessionMessagesSorted: SessionMessagesResponse wire shape includes selected_profile_model" {
     // The frontend reads `data.selected_profile_model` from the JSON
-    // response. If the `SessionMessagesResponse` struct in
-    // http_response.zig doesn't have the field, std.json.Stringify
-    // drops it on the floor regardless of what `getSessionMessagesSorted`
-    // returns. This pins the wire shape.
-    //
-    // Mirrors the production handler's allocator lifecycle (see test #1).
+    // response.
     const alloc = testing.allocator;
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
@@ -561,16 +483,8 @@ test "getSessionMessagesSorted: SessionMessagesResponse wire shape includes sele
 }
 
 // ─── 2026-08-24-fix-flaky-create-and-run-profile-test ──────────────────────
-//
-// A fresh create_and_run session has ZERO llm_history rows until the
-// worker drains the queued user message (asynchronous). The LEFT JOIN
-// in getSessionMessagesSorted yields no rows → selected_profile_model
-// stays null even though the sessions row already carries the profile.
-// The handler now falls back to the direct sessions-table read
-// (getSessionProfileName, already fetched for the capacity cascade).
-// These tests pin the data-layer contract that makes the fallback
-// correct: null ⇔ zero messages, and getSessionProfileName still sees
-// the profile on a message-less session.
+// A fresh create_and_run session has ZERO llm_history rows until the worker
+// drains the queued user message (asynchronous).
 
 test "getSessionMessagesSorted: selected_profile_model is NULL when session has zero messages (fallback precondition)" {
     const alloc = testing.allocator;

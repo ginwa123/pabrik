@@ -1,50 +1,6 @@
 //! Storage layer for the `save_memory` + `load_memory` agent tools.
-//!
 //! Append-only: every `saveMemory` call inserts a NEW row with a fresh
-//! `mem_<16-hex>` id and `CURRENT_TIMESTAMP` timestamps. There is no
-//! update and no delete — a correction is just another row, and FTS5
-//! ranking surfaces the most relevant one. (Per user decision 2026-09-12:
-//! "memory is always add, no need edit or delete".)
-//!
-//! Three public functions:
-//!   - `saveMemory` — insert a new memory row (always a fresh id)
-//!   - `loadMemoriesByFts` — FTS5 phrase search with snippet + tags filter
-//!   - `getMemoryById` — lookup a single row by id (returns null if missing)
-//!
-//! Per-workspace isolation (Migration 095)
-//! ──────────────────────────────────────
-//! EVERY function here takes a `workspace_id` and scopes to it. There is
-//! deliberately no un-scoped variant: the one place that does not need a
-//! scope (the read-back at the end of `saveMemory`) passes the same id it
-//! just wrote, so a caller cannot accidentally open a global reader.
-//! The value comes from `workspace_scope.resolveWorkspaceId` at the exec
-//! layer — it is never a tool parameter, so the model cannot ask for
-//! another workspace's notes. `''` is the "this session has no workspace"
-//! sentinel and behaves like any other bucket: shared by workspace-less
-//! sessions, invisible to every real workspace.
-//!
-//! Backed by Migration 070's `agent_memories` table + `agent_memories_fts`
-//! FTS5 virtual table. The sync triggers from Migration 070 keep the FTS5
-//! index in lockstep with the source table automatically — no per-call
-//! FTS5 maintenance needed here.
-//!
-//! Plan: docs/superpowers/plans/2026-08-06-save-load-memory-fts5.md (Task 2)
-//! Task: task_1785958319567
-//!
-//! Why a dedicated module (NOT extending llm_history.zig)
-//! ──────────────────────────────────────────────────────
-//! `llm_history` is for session-scoped chat messages. The new memory
-//! store is for cross-session notes, isolated per workspace.
-//! Conceptually distinct (different storage, different consumer, different
-//! access pattern). Putting them in the same file would dilute both.
-//!
-//! Why `mem_<16-hex>` auto-generated ids
-//! ─────────────────────────────────────
-//! 64-bit random — collision odds for 10K rows are ~1 in 10^19
-//! (astronomically safe). Opaque (no metadata leak), agent treats as a
-//! token. Same shape as `llm_history` message ids (which use
-//! `unix-ns-<hex>` — the timestamp prefix is incidental; the random
-//! suffix is the meaningful bit).
+//! `mem_<16-hex>` id and `CURRENT_TIMESTAMP` timestamps.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -67,10 +23,8 @@ pub const MemoryRow = struct {
     updated_at: []const u8,
 };
 
-/// One FTS5 search hit. `snippet` is the FTS5 10-token preview with
-/// `[match]` markers around matched words. `total_count` is shared
-/// across all hits in one result set (it's the unfiltered COUNT(*)
-/// over the whole result window — same value on every hit).
+/// One FTS5 search hit. `snippet` is the FTS5 10-token preview with `[match]`
+/// markers around matched words.
 pub const MemoryHit = struct {
     id: []const u8,
     tags: []const u8,
@@ -108,18 +62,8 @@ pub const SaveMemoryArgs = struct {
 /// prevents a runaway agent from filling the DB.
 pub const MAX_CONTENT_BYTES: usize = 1 << 20; // 1 MiB
 
-/// Save a memory. ALWAYS inserts a new row with a fresh `mem_<16-hex>`
-/// id and `CURRENT_TIMESTAMP` for both `created_at` and `updated_at`.
-/// There is no update path — saving the same content twice yields two
-/// rows (a correction supersedes by recency/rank, it never overwrites).
-///
-/// Returns the persisted row (with the auto-generated id). Caller owns
-/// the row's strings and must free with `freeMemoryRow`.
-///
-/// Errors:
-///   - `error.InvalidContent` — content is empty
-///   - `error.ContentTooLarge` — content exceeds `MAX_CONTENT_BYTES`
-///   - DB errors propagate verbatim
+/// Save a memory. ALWAYS inserts a new row with a fresh `mem_<16-hex>` id and
+/// `CURRENT_TIMESTAMP` for both `created_at` and `updated_at`.
 pub fn saveMemory(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -132,18 +76,8 @@ pub fn saveMemory(
     const id = try generateMemoryId(allocator);
     defer allocator.free(id);
 
-    // Plain INSERT. The `agent_memories_ai` trigger keeps the FTS5 index
-    // in sync. (No OR REPLACE: a primary-key collision is practically
-    // impossible with 64-bit random ids, and silently replacing a row
-    // would violate append-only.)
-    //
-    // The column list is built rather than branched between fixed
-    // strings because TWO columns now want the "omit me when empty"
-    // treatment: `tags` (DEFAULT '') and `workspace_id` (DEFAULT '').
-    // `SqliteBackend.exec` binds a zero-length slice via
-    // `sqlite3_bind_null`, which would violate NOT NULL — so a column
-    // is left out of the INSERT rather than bound empty, and its schema
-    // DEFAULT applies.
+    // Plain INSERT. The `agent_memories_ai` trigger keeps the FTS5 index in
+    // sync.
     const tags_str: ?[]u8 = if (args.tags.len == 0) null else try joinTags(allocator, args.tags);
     defer if (tags_str) |t| allocator.free(t);
 
@@ -179,11 +113,7 @@ pub fn saveMemory(
     return row;
 }
 
-/// Look up a memory by id, scoped to `workspace_id`. Returns null when
-/// no row with that id exists IN THAT WORKSPACE — a row owned by a
-/// different workspace is indistinguishable from a missing one, which is
-/// the point: `load_memory {id}` must not be a cross-workspace read
-/// primitive that returns another workspace's full 1 MiB body.
+/// Look up a memory by id, scoped to `workspace_id`.
 pub fn getMemoryById(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -238,10 +168,7 @@ pub fn freeMemoryHits(allocator: std.mem.Allocator, hits: []MemoryHit) void {
 
 /// Options for `loadMemoriesByFts`.
 pub const LoadOptions = struct {
-    /// FTS5 phrase search. Must be non-empty. Sanitized via
-    /// `llm_history.escapeFtsQuery` before binding (so `.`, `-`, `:`,
-    /// `*`, `^`, `(`, `)`, `"`, `+` in the user's query don't crash
-    /// the FTS5 MATCH parser).
+    /// FTS5 phrase search. Must be non-empty.
     query: []const u8,
     /// AND filter: every tag must be present in the row's tags
     /// (substring match — `LIKE '%tag%'`). Empty array = no filter.
@@ -252,31 +179,13 @@ pub const LoadOptions = struct {
     /// Skip the first N rows of the ranked result set. 0 = start from
     /// the top.
     offset: u32,
-    /// Owning workspace (Migration 095). Mandatory scope: rows owned by
-    /// any other workspace are filtered out before ranking, so they can
-    /// neither appear in `results` nor be counted in `total_count`.
-    /// `''` is the "no workspace" bucket.
+    /// Owning workspace (Migration 095).
     workspace_id: []const u8,
 };
 
-/// FTS5 phrase search over `agent_memories_fts`. Returns ranked hits
-/// with `snippet(..., 0, '[', ']', '…', 10)` (10-token window with
-/// `[match]` markers around matches). The `total_count` field on every
-/// hit is the unfiltered COUNT(*) over the post-LIMIT result set — same
-/// value on every hit.
-///
-/// Tag filter semantics: AND across all tags. Each tag must be present
-/// in the row's `tags` column (substring match). Empty tags array = no
-/// filter.
-///
-/// Workspace scope: `opts.workspace_id` is a hard filter applied inside
-/// the FTS subquery. Every returned hit — and every `total_count` — comes
-/// from that workspace alone.
-///
-/// FTS5 sanitization: the query is passed through
-/// `llm_history.escapeFtsQuery` so plain text with FTS5 operators
-/// (`.`, `-`, `:`, `*`, etc.) doesn't crash the parser. See
-/// `llm_history.zig:1770` for the full rationale.
+/// FTS5 phrase search over `agent_memories_fts`. Returns ranked hits with
+/// `snippet(..., 0, '[', ']', '…', 10)` (10-token window with `[match]`
+/// markers around matches).
 pub fn loadMemoriesByFts(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -292,21 +201,12 @@ pub fn loadMemoriesByFts(
     if (sanitized_query.len == 0) return allocator.alloc(MemoryHit, 0);
 
     // Build the SQL.
-    //
-    // The query JOINs `agent_memories` to `agent_memories_fts` so the
-    // `snippet()` function can read the FTS5-indexed content AND we can
-    // also get the source-table columns (tags, created_at, updated_at).
-    // The `COUNT(*) OVER ()` window function gives us the total result
-    // count before LIMIT/OFFSET — same value on every row.
     var sql: std.ArrayList(u8) = .empty;
     defer sql.deinit(allocator);
 
     // Wrap FTS5 access in a subquery because SQLite virtual tables have
-    // restrictions on what SQL features they accept (notably window
-    // functions like `COUNT(*) OVER ()`). The outer query wraps the
-    // FTS5 access in a subquery, then ORDER BY / LIMIT / OFFSET work
-    // normally on the wrapper. Same pattern as `searchMessagesFts` in
-    // llm_history.zig:1797.
+    // restrictions on what SQL features they accept (notably window functions
+    // like `COUNT(*) OVER ()`).
     try sql.appendSlice(allocator,
         \\SELECT
         \\    id, tags, snippet, created_at, updated_at,
@@ -332,17 +232,12 @@ pub fn loadMemoriesByFts(
         binds.deinit(allocator);
     }
     try binds.append(allocator, sanitized_query);
-    // The workspace scope sits INSIDE the subquery, not in the outer
-    // wrapper: `COUNT(*) OVER ()` is evaluated over the subquery's rows,
-    // so a filter applied outside would report the GLOBAL match count
-    // next to a workspace-scoped `results` array — the agent would page
-    // with an `offset` derived from rows it can never see.
+    // The workspace scope sits INSIDE the subquery, not in the outer wrapper:
+    // `COUNT(*) OVER ()` is evaluated over the subquery's rows, so a filter
+    // applied outside would report the GLOBAL match count next to a
     try binds.append(allocator, opts.workspace_id);
 
-    // AND-filter by tags. Each tag adds a `LIKE '%tag%'` clause to the
-    // WHERE. Substring match is the project's convention (matches
-    // `workspace_item_tasks.tags` from Migration 067 — the agent picks
-    // tag names so substring collisions are unlikely).
+    // AND-filter by tags. Each tag adds a `LIKE '%tag%'` clause to the WHERE.
     for (opts.tags) |tag| {
         if (tag.len == 0) continue;
         try sql.appendSlice(allocator, " AND m.tags LIKE ?");
@@ -396,21 +291,6 @@ pub fn loadMemoriesByFts(
 // ---------------------------------------------------------------------------
 
 /// Generate a fresh `mem_<16-hex>` id.
-///
-/// Platform CSPRNG dispatch (mirrors `kabelweb repo src/server/security.zig::generateNonce`):
-///   * Linux → libc `getrandom(2)` (loops on partial reads). Declared
-///     inside a `comptime` `.linux` branch so the `std.os.linux.getrandom`
-///     reference is only validated when compiling for Linux targets — see
-///     the zig 0.16 cross-target note in the comment block.
-///   * macOS / iOS / tvOS / watchOS → libc `arc4random_buf` (CSPRNG under
-///     the hood; the "arc4" name is stale — uses SecRandomCopyBytes since
-///     macOS 10.12).
-///   * Windows → BCryptGenRandom via bcrypt.dll (linked by `databases` build.zig).
-/// `std.os.linux.getrandom` is the kernel syscall on Linux regardless of
-/// link_libc — using it sidesteps the `link_libc=false → std.c.getrandom is
-/// void` regression that bit Zig 0.16 cross-target compiles (where the
-/// module target and root target disagree). Returns an allocated string
-/// the caller owns.
 fn generateMemoryId(allocator: std.mem.Allocator) ![]u8 {
     var bytes: [8]u8 = undefined;
     switch (builtin.os.tag) {
@@ -483,11 +363,7 @@ fn joinTags(allocator: std.mem.Allocator, tags: []const []const u8) ![]u8 {
     return out;
 }
 
-/// Windows bcrypt.dll bindings. Declared locally because std.c only covers
-/// libc; bcrypt is a separate system DLL that the `databases` package links
-/// via `linkSystemLibrary("bcrypt")` (see `src/modules/databases/build.zig`).
-/// Only referenced from the `.windows` arm of `generateMemoryId`, so the
-/// Zig compiler prunes the unused extern at link time on POSIX.
+/// Windows bcrypt.dll bindings.
 const bcrypt = struct {
     extern "bcrypt" fn BCryptGenRandom(
         hAlgorithm: ?*const anyopaque,
@@ -551,9 +427,6 @@ test "joinTags joins with || and skips empty tags" {
 
 // ─── Inline tests (formerly agent_memories_test.zig) ─────────────────────
 // Behavioural tests for saveMemory / loadMemoriesByFts / getMemoryById.
-// Tests follow the project convention: every test walks all migrations
-// from scratch so the schema under test is GUARANTEED to match
-// production. No hand-rolled CREATE TABLE.
 
 const TestCtx = struct {
     db: sqlite.SqliteBackend,
@@ -849,10 +722,9 @@ test "loadMemoriesByFts: paginates via limit + offset and reports total_count" {
         try testing.expectEqual(@as(u32, 15), hits[0].total_count);
     }
 
-    // Page 3: limit=10 offset=20 → 0 rows, total=15 reported elsewhere.
-    // (We can't read hits[0].total_count when hits.len==0 — would be
-    // an out-of-bounds access. The total_count on every previous page
-    // already verified it stays at 15 throughout.)
+    // Page 3: limit=10 offset=20 → 0 rows, total=15 reported elsewhere. (We
+    // can't read hits[0].total_count when hits.len==0 — would be an
+    // out-of-bounds access.
     {
         const hits = try loadMemoriesByFts(alloc, &ctx.db, .{
             .query = "match",

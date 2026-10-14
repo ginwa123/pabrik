@@ -1,15 +1,5 @@
-//! `DELETE /api/agent-kanbans/:kanban_id/tools/:tool_name`.
-//! Removes a tool from the board's allowlist. Returns `{ok: true}` on
-//! success.
-//!
-//! Mirrors `agent_tools_delete.zig` with substitutions:
-//! table `agent_kanban_tools`, parent col `kanban_id`.
-//!
-//! Memory: the per-request arena reaps all allocations at request end,
-//! so neither layer needs explicit `free`s.
-//!
-//! Plan: docs/superpowers/plans/2026-08-25-agent-kanbans-mirror.md
-//! Task: task_1787597624259_2
+//! `DELETE /api/agent-kanbans/:kanban_id/tools/:tool_name`. Removes a tool
+//! from the board's allowlist. Returns `{ok: true}` on success.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -93,12 +83,7 @@ pub fn agentKanbanToolsDeleteHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-//
-// impl + tests in one file (project convention). Behavioural coverage:
-//
-//   1. Validation: empty kanban_id OR tool_name → IdsRequired
-//   2. Happy path: a matching row is removed (scoped by both ids)
-//   3. Idempotency: a non-existent tool_name doesn't error
+// impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;

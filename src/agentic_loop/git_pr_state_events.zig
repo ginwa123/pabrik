@@ -1,65 +1,6 @@
 //! The `git_pr_state` SSE channel: the backend telling every client that a
 //! branch's change request moved — merged or closed — so the badges that read
 //! the shared PR-status cache re-ask the forge instead of keeping the colour
-//! they fetched before the mutation.
-//!
-//! ## Why this exists
-//!
-//! `POST /api/git/pr/merge` and `POST /api/git/pr/close` changed a pull/merge
-//! request's state and told nobody. The client that made the call could react
-//! locally, but:
-//!
-//!   - a SECOND tab (or a second machine, or the same board in another window)
-//!     had no way to learn, and
-//!   - the badges do not call the forge on every render: `prStatusCache.ts`
-//!     holds a 60 s TTL, so the sidebar's RECENT icon and the kanban card kept
-//!     the pre-merge `open` green until something else happened to re-read.
-//!
-//! The 30 s PR-tab poll and the TTL eventually converge, which is exactly what
-//! "eventually" means to a user who just pressed Merge and is looking at a
-//! green branch icon.
-//!
-//! ## Why a central routing key, like `git_file_stage`
-//!
-//! A change request is not scoped to a session in a way the UI can use: a
-//! worktree (`cwd`) is identified by path, and several sessions can share one.
-//! So this emits on ONE central key and the frontend filters by `data.cwd`
-//! JS-side — the same shape `git_file_stage_events.zig` and
-//! `background_process_events.zig` use, and for the same reason.
-//!
-//! ## The payload is the frontend's cache key
-//!
-//! `cwd` + `branch` are precisely the two halves of `prStatusCache`'s
-//! `cwd::branch::<provider>` key, so the consumer is one call to
-//! `invalidatePrStatus(cwd, branch)` — no lookup, no guessing which branch the
-//! event is about.
-//!
-//! ## The four registration places
-//!
-//! A named SSE event that is not registered in ALL of these is dropped by the
-//! browser's `EventSource` before `onEvent` ever fires, which is
-//! indistinguishable from a dead stream (the PR #215 / `session_unknown`
-//! class). They are:
-//!
-//!   1. the Zig event-type ladder (this file)
-//!   2. `additionalEventTypes` in `src/apps/desktop/src/api/index.ts`
-//!   3. an `onEvent` dispatch branch in the same file
-//!   4. `SseEventMap` in `helpers/sseBus.ts` + `UnifiedChannels` in `api/index.ts`
-//!
-//! Miss any one and the event silently vanishes.
-//!
-//! …and TWO on the backend, before the browser is even reached. Both live in
-//! `src/http_handlers/unified_events_sse.zig`:
-//!
-//!   5. a `?channels=` token in `parseChannels` — without it the handshake is a
-//!      400 and the stream never opens;
-//!   6. the routing-key → callback branch in the subscribe loop. Missing THIS
-//!      one is the quietest failure of the six: the handshake succeeds, the
-//!      subscription is created, and no event ever arrives.
-//!
-//! `tests/functional/git_pr_state_sse_test.zig` is the witness for #6 — it was
-//! run, and went red on exactly that omission before the callback branch was
-//! added.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -85,18 +26,12 @@ pub const GitPrStateEventInput = struct {
     /// this — and it is also the first half of the cache key it invalidates.
     cwd: []const u8,
     /// The change request's head branch (`head_ref`) — the second half of the
-    /// cache key. The caller already has it: both mutating handlers re-read
-    /// `GET /api/git/pr/status` before answering, so this costs no extra
-    /// forge call.
+    /// cache key.
     branch: []const u8,
 };
 
-/// Emit one change-request state event.
-///
-/// No-op when `event_bus` is null (unit tests, and any caller that has no bus).
-/// Never fails the caller: a successful merge must not be reported as a failure
-/// because the UI could not be told about it. The event is bookkeeping — the
-/// frontend's local invalidate in `MergeBox` is the path that cannot be lost.
+/// Emit one change-request state event. No-op when `event_bus` is null (unit
+/// tests, and any caller that has no bus).
 pub fn emitGitPrStateEvent(
     allocator: std.mem.Allocator,
     event_bus: ?*event_bus_mod.EventBus,
@@ -110,11 +45,7 @@ pub fn emitGitPrStateEvent(
     };
     const data = std.json.Stringify.valueAlloc(allocator, payload, .{}) catch return;
 
-    // The granular wire name. An action not in this ladder falls through to
-    // `git_pr_state_unknown`, which the frontend deliberately does NOT
-    // register — so an unrecognised action cannot leak into the badge's
-    // invalidate callback without an explicit contract. (Zig 0.16 cannot
-    // `switch` on `[]const u8`.)
+    // The granular wire name.
     const event_type_name: []const u8 = if (std.mem.eql(u8, input.action, "merged"))
         EventMerged
     else if (std.mem.eql(u8, input.action, "closed"))
@@ -124,11 +55,7 @@ pub fn emitGitPrStateEvent(
 
     bus.emit(SseEvent, RoutingKey, .{
         // The routing-key literal, not a session id: this channel is not
-        // session-scoped (see the module docstring). `forwardToClients`
-        // resolves the envelope id against the sessions table, finds no row,
-        // and falls back to the payload — which carries no `session_id`
-        // either, so the event is delivered to every subscriber. That is
-        // correct here: the cwd filter is the frontend's job.
+        // session-scoped (see the module docstring).
         .session_id = RoutingKey,
         .data = data,
         .event_type = event_type_name,

@@ -1,11 +1,5 @@
-//! Data model for the `agent_tools` entity table.
-//!
-//! One row per tool explicitly enabled on an Agent. The runtime filter
-//! at `workflow.zig:1478` reads `agent_tools WHERE agent_id = ? AND
-//! enabled = 1` to and the LLM's function-call schema per spec D
-//! (empty allowlist = zero tools, secure-by-default).
-//!
-//! Schema: Migration 076 (`add_agents_and_agent_knowledge_and_agent_tools`).
+//! Data model for the `agent_tools` entity table. One row per tool explicitly
+//! enabled on an Agent.
 
 const std = @import("std");
 

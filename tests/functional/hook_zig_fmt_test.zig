@@ -1,43 +1,6 @@
-//! The project hook runs zig fmt on edited Zig files.
-//!
-//! The hook itself (.pabrik/hooks/register_hook.lua) is the deliverable, and it
-//! runs INSIDE pabrik's vendored Lua interpreter, on every tool dispatch. There
-//! is no way to reach it over HTTP without driving a whole LLM agent loop, so
-//! these tests execute the real hook file through a Lua interpreter and assert
-//! on what it did to the file on disk.
-//!
-//! Vendored Lua is 5.4.9 (vendor/lua/lua.h: LUA_VERSION_RELEASE 9) and the
-//! system lua5.4 here is also 5.4.9, so running the shipped file under the
-//! system interpreter exercises the same semantics pabrik gets. The test skips
-//! when no system Lua is present rather than silently passing.
-//!
-//! Behaviour under test: a .zig file edited by the agent comes out canonically
-//! formatted, and `zig fmt` rewrites the WHOLE file — pre-existing lines that
-//! were not fmt-clean get reformatted too. That whole-file rewrite is intended,
-//! not a bug: it is what "formatted" means for Zig, and the cleanup is wanted.
-//!
-//! Zig port of `tests/functional/hook_zig_fmt_test.py` (same test names, same
-//! order).
-//!
-//! Run:
-//!     PABRIK_BIN=<worktree>/zig-out/bin/pabrikcore-linux-x86_64 \
-//!       zig test tests/functional/hook_zig_fmt_test.zig
-//!
-//! TWO PATH FACTS WORTH KNOWING BEFORE READING THE HELPERS
-//! -------------------------------------------------------
-//! 1. `HOOK` is spelled repo-root-RELATIVE here (`.pabrik/hooks/register_hook.lua`)
-//!    and resolved to an ABSOLUTE path before it is embedded in the Lua
-//!    driver. The Python used `str(HOOK)` on a `Path(__file__).resolve()`
-//!    -derived constant, i.e. it was already absolute — and it has to be,
-//!    because the driver runs with `cwd` set to the fixture project dir, where
-//!    a relative hook path would resolve to nothing. Relative-to-cwd is the
-//!    convention this package already relies on (`harness.resolvePabrikBin`
-//!    probes `zig-out/bin/...`; `tests/functional/build.zig` pins the runner
-//!    CWD to the repo root).
-//! 2. `_fmt_clean` shells out to `zig fmt --check`, and the HOOK itself
-//!    shells out to `zig fmt`. Neither is `requirePabrikBin`-gated: the
-//!    `pabrik` binary is irrelevant here, and the Python had no such gate
-//!    either.
+//! The project hook runs zig fmt on edited Zig files. The hook itself
+//! (.pabrik/hooks/register_hook.lua) is the deliverable, and it runs INSIDE
+//! pabrik's vendored Lua interpreter, on every tool dispatch.
 
 const std = @import("std");
 const testing = std.testing;
@@ -57,18 +20,11 @@ const FMT_CHECK_TIMEOUT_MS: i64 = 30_000;
 
 /// Python's `_lua()`: `shutil.which("lua5.4") or shutil.which("lua")`, and
 /// `pytest.skip` when neither is present.
-///
-/// `which()` answers "is there an executable by this name on PATH", so the
-/// port's probe is "does spawning it succeed" and NOT "does it exit 0":
-/// `lua -v` writes the version banner to STDERR on some builds and its exit
-/// status is not the question being asked. The returned slice is owned and
-/// must be freed; it is a `name`, not a path, so `PATH` does the lookup.
 fn luaExe() ![]u8 {
     for ([_][]const u8{ "lua5.4", "lua" }) |name| {
         // The probe's captured streams are still owned by the caller:
-        // `RunResult` hands over `stdout` / `stderr` buffers whether or
-        // not the test looks at them, and the DebugAllocator reports
-        // them at the end of the test.
+        // `RunResult` hands over `stdout` / `stderr` buffers whether or not
+        // the test looks at them, and the DebugAllocator reports them at the
         const res = std.process.run(gpa, io, .{ .argv = &.{ name, "-v" } }) catch continue;
         gpa.free(res.stdout);
         gpa.free(res.stderr);
@@ -79,11 +35,6 @@ fn luaExe() ![]u8 {
 }
 
 /// Absolute path of a repo-root-relative file. Owned.
-///
-/// `realpath` rather than `cwd`-relative concatenation: the Lua driver runs
-/// with the fixture dir as its CWD, so anything it is handed has to already
-/// be absolute. `realpath` also fails loudly on a missing file, which is what
-/// `assert HOOK.exists()` did.
 fn repoFileAbs(rel: []const u8) ![]u8 {
     var buf: [std.fs.max_path_bytes]u8 = undefined;
     const n = std.Io.Dir.cwd().realPathFile(io, rel, &buf) catch |err| switch (err) {
@@ -97,12 +48,6 @@ fn repoFileAbs(rel: []const u8) ![]u8 {
 }
 
 /// Render `s` as a Lua SHORT-STRING literal (double-quoted).
-///
-/// The Python f-string interpolated `{str(HOOK)!r}` / `{arguments!r}` — a
-/// Python `repr`, which for these inputs happens to be a valid Lua string but
-/// escapes differently (`\'`, and `\x` for non-printables). Lua's own short
-/// string escapes are the correct target, so the escapes are spelled out
-/// here rather than borrowed.
 fn luaString(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
     var out: std.Io.Writer.Allocating = .init(allocator);
     errdefer out.deinit();
@@ -120,16 +65,6 @@ fn luaString(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
 }
 
 /// Drive the REAL hook: load it, call init("post_tool_use", data).
-///
-/// `subprocess.CompletedProcess` in Python; in Zig the caller gets the
-/// `std.process.RunResult` and owns its `stdout` / `stderr`, which is the
-/// same information (returncode + captured streams) with one fewer wrapper
-/// to keep in sync.
-///
-/// `std.process.run`'s `.cwd = .{ .path = ... }` is Python's `cwd=`;
-/// `.timeout` is Python's `timeout=` — the latter matters here because the
-/// hook shells out to `zig fmt` and a wedged child would otherwise hang the
-/// suite forever.
 fn runHook(lua: []const u8, hook_path: []const u8, cwd: []const u8, tool_name: []const u8, arguments: []const u8) !std.process.RunResult {
     const hook_lit = try luaString(gpa, hook_path);
     defer gpa.free(hook_lit);
@@ -163,13 +98,8 @@ fn runHook(lua: []const u8, hook_path: []const u8, cwd: []const u8, tool_name: [
     });
 }
 
-/// `subprocess.run(timeout=<ms>)` — Python's wall-clock-free "give the
-/// child N ms" budget, as `std.process.RunOptions.timeout`.
-///
-/// `Io.Timeout.duration` is a `Clock.Duration`, which is a
-/// (raw duration, clock) PAIR rather than a bare duration, and its
-/// constructors live on the RAW half. `.awake` is monotonic: an NTP step
-/// during a run must not extend or collapse the budget.
+/// `subprocess.run(timeout=<ms>)` — Python's wall-clock-free "give the child
+/// N ms" budget, as `std.process.RunOptions.timeout`.
 fn timeoutMs(ms: i64) std.Io.Timeout {
     return .{ .duration = .{
         .raw = .{ .nanoseconds = @as(i96, ms) * std.time.ns_per_ms },
@@ -178,11 +108,6 @@ fn timeoutMs(ms: i64) std.Io.Timeout {
 }
 
 /// Exit code of a finished child, or null if a signal stopped it.
-///
-/// `Child.Term` is a tagged union, NOT an optional: `.exited` is a `u8`
-/// field, so `res.term.exited orelse ...` does not compile and a bare
-/// `res.term.exited != 0` would silently read the wrong field on a
-/// signalled run.
 fn exitCode(term: std.process.Child.Term) ?u8 {
     return switch (term) {
         .exited => |c| c,
@@ -190,12 +115,8 @@ fn exitCode(term: std.process.Child.Term) ?u8 {
     };
 }
 
-/// `_fmt_clean(path)` — `zig fmt --check <path>` exits 0.
-///
-/// Python let a missing `zig` CLI raise out of the helper. The port keeps
-/// that: a machine with no `zig` on PATH cannot verify the hook's
-/// behaviour, and reporting that as a PASS would be the one outcome that
-/// hides a real regression.
+/// `_fmt_clean(path)` — `zig fmt --check <path>` exits 0. Python let a
+/// missing `zig` CLI raise out of the helper.
 fn fmtClean(path: []const u8) !bool {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "zig", "fmt", "--check", path },
@@ -224,22 +145,11 @@ fn writeFile(path: []const u8, content: []const u8) !void {
 
 /// Python's `workdir` fixture: a scratch dir holding one fmt-clean and one
 /// not-fmt-clean .zig file.
-///
-/// A `makeScratchDir` fixture, NOT `std.testing.tmpDir`: the latter lands in
-/// `<cwd>/.zig-cache/tmp/`, which for this package is inside the git
-/// worktree, and the hook resolves the fixture path relative to `cwd` — a
-/// fixture inside the repo would make the "did the hook touch anything
-/// outside the project?" assertions read the wrong tree.
 const Fixture = struct {
     scratch: []u8,
     proj: []u8,
 
     /// Delete the scratch tree, then the two path buffers.
-    ///
-    /// A single `defer` rather than three: the paths must outlive
-    /// `cleanupExtraDir`, and three separate `defer`s would put that
-    /// ordering at the mercy of LIFO registration order at every call
-    /// site.
     fn deinit(self: *Fixture) void {
         harness.cleanupExtraDir(io, gpa, self.scratch);
         gpa.free(self.proj);
@@ -280,11 +190,9 @@ fn makeWorkdir() !Fixture {
     return .{ .scratch = scratch, .proj = proj };
 }
 
-/// Assert the hook driver exited 0, printing stderr when it did not.
-///
-/// Python repeated `assert r.returncode == 0, f"hook errored: {r.stderr}"`
-/// seven times. One helper keeps the message identical everywhere and
-/// frees the captured streams on every path.
+/// Assert the hook driver exited 0, printing stderr when it did not. Python
+/// repeated `assert r.returncode == 0, f"hook errored: {r.stderr}"` seven
+/// times.
 fn expectHookOk(res: std.process.RunResult) !void {
     const code = exitCode(res.term);
     if (code == null or code.? != 0) {
@@ -296,14 +204,6 @@ fn expectHookOk(res: std.process.RunResult) !void {
 }
 
 /// `re.search(r"&\.\{\s*1,\s*2\s*\}", text)`.
-///
-/// Hand-matched rather than pulled through a regex engine: the pattern is
-/// three tokens with only `\s` between them, and `re.search` semantics are
-/// "anywhere in the string", so the scan below is the whole of it. Zig's
-/// stdlib ships no regex, and the alternative — asserting the literal
-/// `&.{1, 2}` — would be asserting MY spacing rather than the behaviour,
-/// which is exactly what the Python comment warned against (Zig 0.16 renders
-/// `.{1, 2}` as `.{ 1, 2 }`).
 fn survivesFmtEdit(text: []const u8) bool {
     var at: usize = 0;
     while (std.mem.indexOfPos(u8, text, at, "&.{")) |hit| {
@@ -367,11 +267,9 @@ test "hook_file_is_valid_lua" {
     }
 }
 
-// The headline behaviour: an edit lands canonically formatted.
-//
-// Without the hook the edit sits in whatever shape the model wrote it and
-// the file is left dirty. This is the payoff of the whole change: new Zig
-// comes out canonical without the model having to remember.
+// The headline behaviour: an edit lands canonically formatted. Without the
+// hook the edit sits in whatever shape the model wrote it and the file is
+// left dirty.
 test "formats_the_edited_region" {
     const lua = try luaExe();
     defer gpa.free(lua);
@@ -384,10 +282,9 @@ test "formats_the_edited_region" {
     const target = try fx.path("src/clean.zig");
     defer gpa.free(target);
     try writeFile(target, "pub fn main() void {\n    const x    =    1;\n    const y = 2;\n}\n");
-    // Python: `assert not _fmt_clean(target)` — the precondition, and it
-    // must stay an assertion rather than a comment, or a `zig fmt` that
-    // silently started accepting the dirty file would make the rest of
-    // the test vacuous.
+    // Python: `assert not _fmt_clean(target)` — the precondition, and it must
+    // stay an assertion rather than a comment, or a `zig fmt` that silently
+    // started accepting the dirty file would make the rest of the test
     if (try fmtClean(target)) {
         std.debug.print("precondition: the edit did not make the file dirty\n", .{});
         return error.TestUnexpectedResult;
@@ -413,12 +310,8 @@ test "formats_the_edited_region" {
     );
 }
 
-// Pre-existing unformatted lines are normalised too — by design.
-//
-// `zig fmt` is a whole-file rewriter. Editing a line of a file that was
-// already not-fmt-clean sweeps the rest of the file canonical as well.
-// That churn is intentional: it is what "this file is formatted" means,
-// and it only ever lands in the file the agent just edited.
+// Pre-existing unformatted lines are normalised too — by design. `zig fmt` is
+// a whole-file rewriter.
 test "formats_whole_file_not_just_the_edit" {
     const lua = try luaExe();
     defer gpa.free(lua);
@@ -464,11 +357,9 @@ test "formats_whole_file_not_just_the_edit" {
     }
 }
 
-// A mid-edit file that does not parse must be left byte-for-byte alone.
-//
-// zig fmt exits non-zero without writing on a parse error, so a half-typed
-// file is never mangled. This asserts the real behaviour rather than
-// trusting the manual.
+// A mid-edit file that does not parse must be left byte-for-byte alone. zig
+// fmt exits non-zero without writing on a parse error, so a half-typed file
+// is never mangled.
 test "syntax_broken_file_is_not_corrupted" {
     const lua = try luaExe();
     defer gpa.free(lua);

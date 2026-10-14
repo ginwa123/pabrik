@@ -1,8 +1,8 @@
 # zginlint
 
 A linter for Zig source, in the shape of ESLint: a lexer, a set of rules
-that read it, a report, and a pin file that lets a rule be enforced on a
-tree that has not been converted yet.
+that read it, and a report. There is no baseline and no suppression — a
+finding is a finding, and the only way to clear one is to fix it.
 
 It lives at `src/modules/zginlint/` as a **standalone** module — std only,
 not part of the `pabrikcore` module graph — so it compiles without the
@@ -14,15 +14,13 @@ app's dependency stack and can grow into a library of its own.
 zig build zginlint                       # build zig-out/bin/zginlint
 zig-out/bin/zginlint src tests           # report every finding, exit 1 if any
 zig-out/bin/zginlint --max-comment-lines 2 src
-zig build zginlint:check                 # the gate CI runs (pinned ceilings)
-zig build zginlint:pin                   # re-pin the baseline to today's counts
+zig build zginlint:check                 # the gate CI runs (zero findings)
 zig build test:zginlint                  # the linter's own tests
 ```
 
 `zginlint --help` prints the whole surface. Exit codes are part of the
-contract: `0` clean or within the pinned ceilings, `1` findings, `2` a
-usage or I/O error — a path the tool could not read never reads as "the
-tree is clean".
+contract: `0` clean, `1` findings, `2` a usage or I/O error — a path the
+tool could not read never reads as "the tree is clean".
 
 ## The rules
 
@@ -61,28 +59,24 @@ Debug/ReleaseSafe and is **undefined behaviour** in ReleaseFast.
   hit; `catch @panic("...")` is the sanctioned form and is not one either.
 - It takes no options, and its fingerprint is `-`.
 
-## The baseline ratchet
+## No baseline, no suppression
 
-The tree already contains thousands of long comment blocks (see
-`CODING_STANDARDS.md` §4), so the gate does not ask for zero — it asks for
-**no worse than pinned**. `zginlint-baseline.json` records, per rule, a
-ceiling for every file that has findings, plus the path set and the options
-the counts were measured with. `zig build zginlint:check` fails when:
+The gate asks for **zero**. There is no pin file, no per-file ceiling, no
+`--baseline` flag and no `zig build zginlint:pin` step — the ratchet that
+let a rule ship on an unconverted tree was deleted once the tree was
+converted, because a baseline allowlist is a rule nobody can tell is being
+followed (CODING_STANDARDS.md §3 rule 5, applied to §4 itself).
 
-- a file's count is above its pinned ceiling, or
-- a file with findings is not pinned at all (a new file cannot sneak in).
+`zginlint/max-comment-lines` carried 6,532 findings across 727 files when
+it landed. All of them were converted — every over-long block re-wrapped to
+at most three lines, cut at a sentence boundary — and the conversion was
+verified to touch comment lines only: zero findings remain, `zig ast-check`
+is clean on every file, and the sequence of code-bearing lines is
+byte-identical to the pre-conversion tree.
 
-A count that fell is printed as a `note ... re-pin with --update-baseline`
-and passes, so a ceiling can only ever be tightened. A rule with **no pin
-entry** has a ceiling of zero, which is how `no-catch-unreachable` ships:
-the tree had 20 sites in `tests/`, `tools/` and `build.zig` when the rule
-landed, and they were converted rather than pinned.
-
-A check whose path set, or whose options fingerprint for any rule, differs
-from the pin's is **refused** (`exit 2`) rather than compared against the
-wrong numbers. `zig build zginlint:pin` regenerates the file from today's
-counts, sorted by path and keyed by rule. Re-pin only to tighten, and in
-the same change that tightened it.
+A rule that needs an escape hatch does not have one here. If a block
+genuinely cannot be said in three lines, the prose belongs in `docs/`, the
+commit message or the module README — not in a suppression comment.
 
 ## Layout
 
@@ -95,7 +89,6 @@ the same change that tightened it.
 | `rule.zig` | what a rule is: id, options fingerprint, check |
 | `options.zig` | the options every rule is read with |
 | `zginlint.zig` | the engine: the rule list, `lintSource`, the tree walk, the ordering |
-| `baseline.zig` | the pin's format and the ratchet comparison |
 | `cli.zig` | argv parsing, the report, the exit codes |
 | `main.zig` | the thin exe entry point |
 | `test_root.zig` | the test root `zig build test:zginlint` runs |
@@ -108,5 +101,5 @@ needs one, add its declaration to `zginlint.rules`, and add its path to
 
 `.github/workflows/ci.yml` has a `zginlint` job (hanging off the cheap
 `lint` job) that runs `zig build zginlint:check`, and `.husky/pre-commit`
-mirrors that one command. The linter's own tests are part of `zig build
+mirrors that one command. Both fail on any finding. The linter's own tests are part of `zig build
 test`, so every backend cell of CI runs them on Linux, macOS and Windows.

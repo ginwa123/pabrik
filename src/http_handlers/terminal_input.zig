@@ -1,8 +1,6 @@
-//! `POST /api/terminal/sessions/:id/input` — write keystrokes to a PTY.
-//!
-//! Body: `{ data }` (required, non-empty string — raw terminal input,
-//! e.g. `"ls\n"`). Success: 200 `{ ok: true, bytes: <written> }`.
-//! Unknown id: 404. Write to an exited session: 410.
+//! `POST /api/terminal/sessions/:id/input` — write keystrokes to a PTY. Body:
+//! `{ data }` (required, non-empty string — raw terminal input, e.g.
+//! `"ls\n"`).
 
 const std = @import("std");
 const http_response = @import("http_response.zig");

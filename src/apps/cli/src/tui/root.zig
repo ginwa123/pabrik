@@ -1,19 +1,4 @@
 //! Public API surface for the `tui` module.
-//!
-//! A from-scratch, Bubble-Tea-inspired TUI framework in Zig:
-//!
-//! ```zig
-//! const tui = @import("tui");
-//!
-//! const MyModel = struct {
-//!     pub fn update(self: *MyModel, msg: tui.Msg) !tui.Cmd { ... }
-//!     pub fn view(self: *const MyModel, alloc, w, h) !tui.Frame { ... }
-//! };
-//!
-//! var model = MyModel{};
-//! var program = tui.Program(MyModel).init(&model, allocator, io);
-//! try program.run();
-//! ```
 
 pub const color = @import("color.zig");
 pub const style = @import("style.zig");
@@ -60,8 +45,7 @@ test {
     _ = @import("think.zig");
     _ = @import("tool_envelope.zig");
     _ = @import("render_msg.zig");
-    // TDD regression rounds (written before the fixes they pin) are
-    // merged into the files they exercise: the round-2 cases are now
-    // inline at the bottom of transport.zig, sse.zig and app.zig —
-    // all three of which are already referenced above.
+    // TDD regression rounds (written before the fixes they pin) are merged
+    // into the files they exercise: the round-2 cases are now inline at the
+    // bottom of transport.zig, sse.zig and app.zig — all three of which are
 }

@@ -1,44 +1,13 @@
-//! `present_files` — an agent tool that presents workspace files of ANY
-//! type (text, jpg/png, pdf, zip, code, html, etc.) as rich inline-preview
-//! cards in the chat transcript.
-//!
-//! The LLM calls this tool with a list of ABSOLUTE file paths. The
-//! server stats each file (existence, size, mime) and returns a JSON
-//! object listing them. The frontend's `<PresentFiles>` card renders
-//! one section per file with an inline preview plus a download action:
-//! images (`image/*`) render full-width, html renders in a sandboxed
-//! iframe, text/markdown/code render fetched source inline, pdf renders
-//! in an embedded frame, video/audio render native players, and anything
-//! else falls back to a generic row. Every row links to
-//! `GET /api/files/download?disposition=attachment` so clicking
-//! downloads the bytes with the original filename (cookie-based auth,
-//! so plain `<a href>` + `<img src>` carry credentials). Inline bytes
-//! come from `GET /api/files/download?disposition=inline`.
-//!
-//! Response shape (per project convention, like `generate_image.zig`):
-//!   {"status":"presented","count":2,"files":[
-//!     {"path":"/abs/a.txt","bytes":12,"mime":"text/plain; charset=utf-8","label":"notes"},
-//!     {"path":"/abs/b.jpg","bytes":48211,"mime":"image/jpeg","label":"b.jpg"}
-//!   ],"error":null}
-//!
-//! On error (any file fails validation):
-//!   {"status":null,"count":0,"files":[],"error":"..."}
-//!
-//! Design: docs/plans/2026-09-14-agent-tool-present-files.md
-//! This tool never reads file bytes — only `stat` — so the SSE payload
-//! stays tiny and previews render via URL instead of data URI. To show
-//! LLM-generated content inline, first persist it with `write_file`,
-//! then present the saved file.
+//! `present_files` — an agent tool that presents workspace files of ANY type
+//! (text, jpg/png, pdf, zip, code, html, etc.) as rich inline-preview cards
+//! in the chat transcript.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
 const path_validate = @import("helpers").path_validate;
 const invalidPathReason = path_validate.invalidPathReason;
 const AgentTool = schemas.AgentTool;
-// The one containment rule shared with GET /api/files/download. Imported,
-// never re-implemented here: the two disagreed once and every presented file
-// outside the session working directory became a card that 403s on every
-// fetch. See docs/plans/2026-09-29-present-files-sandbox-parity.md.
+// The one containment rule shared with GET /api/files/download.
 const file_sandbox = @import("file_sandbox.zig");
 
 /// Maximum number of files per call. Keeps the card scannable and the
@@ -47,8 +16,6 @@ pub const MAX_FILES: usize = 10;
 
 /// Maximum per-file size (50 MiB). Matches the download handler's cap
 /// (`files_download.zig`) so a presented file is always downloadable.
-/// Larger files are rejected with a clear error so the LLM can explain
-/// instead of emitting a dead link.
 pub const MAX_FILE_BYTES: usize = 50 * 1024 * 1024;
 
 /// One file reference from the LLM.
@@ -66,10 +33,7 @@ pub const PresentFileRef = struct {
 pub const PresentFilesInput = struct {
     files: []PresentFileRef,
     /// REQUIRED on the wire. Absolute directory this call works in; a
-    /// relative entry `path` resolves against it. Empty by default so the
-    /// struct stays constructible in tests that do not exercise the `cwd`
-    /// rule — `path_validate.validateCwd` rejects the empty value at exec
-    /// time.
+    /// relative entry `path` resolves against it.
     cwd: []const u8 = "",
 };
 
@@ -119,13 +83,8 @@ pub const present_files_tool = AgentTool{
 };
 
 // ─── JSON helpers ──────────────────────────────────────────────────────
-//
 // JSON payloads mirror the old `<present_files>` envelope 1:1: `status`,
 // `count`, and `files` (one object per former `<file>` tag with `path`,
-// `bytes`, `mime`, `label`). The old `<error>`-only envelope becomes the
-// same object with an explicit `error` string and null `status`.
-// Free-text fields are sanitized for control characters; `std.json`
-// handles the remaining escaping.
 
 pub const PresentFileJSON = struct {
     path: []const u8,
@@ -154,11 +113,8 @@ fn jsonErrorEnvelope(allocator: std.mem.Allocator, msg: []const u8) ![]u8 {
 }
 
 // ─── MIME detection ──────────────────────────────────────────────────────
-//
-// Extension-based, mirroring `static_files.zig:mimeForPath` (kept local
-// per the tool self-containment convention). Unknown extensions fall
-// back to `application/octet-stream` so the browser downloads instead
-// of rendering.
+// Extension-based, mirroring `static_files.zig:mimeForPath` (kept local per
+// the tool self-containment convention).
 
 const MimeEntry = struct {
     ext: []const u8,
@@ -214,10 +170,9 @@ pub fn mimeForPath(path: []const u8) []const u8 {
 
 // ─── Core execution ──────────────────────────────────────────────────────
 
-/// Stat one file: open (rejecting directories) + size. Returns the size
-/// on success. Errors:
-///   - `error.FileNotFound` — missing, unreadable, or a directory.
-///   - `error.FileTooLarge` — size exceeds `MAX_FILE_BYTES`.
+/// Stat one file: open (rejecting directories) + size. Returns the size on
+/// success. Errors: - `error.FileNotFound` — missing, unreadable, or a
+/// directory. - `error.FileTooLarge` — size exceeds `MAX_FILE_BYTES`.
 fn statFileSize(io: std.Io, path: []const u8) !u64 {
     // Any open failure (missing, dir, permissions, device errors)
     // surfaces as FileNotFound — the caller reports "not found (or is
@@ -229,19 +184,7 @@ fn statFileSize(io: std.Io, path: []const u8) !u64 {
     return stat.size;
 }
 
-/// Execute the tool: validate every file, then build the success
-/// object. Any validation failure yields an `{"error": ...}` object
-/// naming the offending path (never a Zig error return — the LLM sees a
-/// structured failure it can act on).
-///
-/// `sandbox_root` is the session working directory — the ONLY place the
-/// browser can be served bytes from (`GET /api/files/download`). A file
-/// outside it would render a card whose every fetch 403s with "Path escapes
-/// the session working directory", so it is rejected here instead, with a
-/// message the model can act on (copy the file in, or tell the user the
-/// path). Pass `null` (or `""`) only from dispatches that have no session
-/// row at all — the TUI and routines — which keep the un-sandboxed
-/// behaviour they had before this rule existed.
+/// Execute the tool: validate every file, then build the success object.
 pub fn executePresentFilesToString(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -298,10 +241,6 @@ pub fn executePresentFilesToString(
             return jsonErrorEnvelope(allocator, msg);
         }
         // Containment, through the same helper the download endpoint uses.
-        // Runs BEFORE the stat so a file outside the working directory is
-        // reported as such (the actionable signal) instead of a confusing
-        // "not found", and so a symlink out of the root is caught at all —
-        // `openFile` would happily read the target.
         if (sandbox_root) |root| {
             if (root.len > 0) {
                 if (file_sandbox.resolveInsideRoot(io, allocator, root, f.path, file_sandbox.nativeStyle())) |canon| {
@@ -432,20 +371,9 @@ test "executePresentFilesToString rejects relative path" {
     const obj = parsed.value.object;
     try testing.expect(obj.get("status").? == .null);
 
-    // Two different guards reject a relative path, and which one fires
-    // first is platform-dependent:
-    //
-    //   - POSIX: `invalidPathReason` returns null (the shape is merely
-    //     unusual, not dangerous), so the `std.fs.path.isAbsolute` guard
-    //     below it produces "... is not absolute. Pass an ABSOLUTE path."
-    //   - Windows: the NT-name guard in helpers/path_validate.zig fires
-    //     first — a bare name reaches NtCreateFile as a malformed NT
-    //     name, which panics the process rather than failing the call —
-    //     and produces "... is not a valid path on this platform: path
-    //     must be an absolute Windows path (e.g. C:\dir\file)".
-    //
-    // Both refusals are correct; the test asserts the message that this
-    // platform actually emits rather than the POSIX-shaped one.
+    // Two different guards reject a relative path, and which one fires first
+    // is platform-dependent: - POSIX: `invalidPathReason` returns null (the
+    // shape is merely unusual, not dangerous), so the
     const err_msg = obj.get("error").?.string;
     if (builtin.os.tag == .windows) {
         try testing.expect(std.mem.indexOf(u8, err_msg, "absolute Windows path") != null);
@@ -563,16 +491,8 @@ test "mimeForPath maps common extensions and falls back to octet-stream" {
 }
 
 // ─── Sandbox tests ───────────────────────────────────────────────────────
-//
 // The reported bug: the tool returned `{"status":"presented"}` for a file the
 // download endpoint refuses to serve, so the card rendered and every fetch
-// 403'd with "Path escapes the session working directory" (Windows, a report
-// the agent had written under `C:\Users\<user>\Downloads\`). The tool now
-// applies the SAME rule as the endpoint, through `file_sandbox.zig`.
-//
-// Fixtures are built with `std.testing.tmpDir` (never a hardcoded
-// `/tmp/...`, which is not absolute on Windows) so every case runs on all CI
-// operating systems. "Inside" and "outside" are two sibling temp dirs.
 
 const builtin = @import("builtin");
 
@@ -980,9 +900,8 @@ test "present_files: NUL and C0/DEL control characters in a label are sanitized"
 
 test "present_files: a label keeps its tabs and newlines (sanitizeControlChars contract)" {
     // Not a wish of this test — the shared helper deliberately passes \t \n
-    // through (they are legal in JSON/XLS text) and only replaces
-    // 0x00-0x08, 0x0B, 0x0C, 0x0E-0x1F and 0x7F. Pinned here so nobody
-    // "fixes" the card by double-escaping a legitimate label.
+    // through (they are legal in JSON/XLS text) and only replaces 0x00-0x08,
+    // 0x0B, 0x0C, 0x0E-0x1F and 0x7F.
     const alloc = testing.allocator;
     var f = try setupFixture();
     defer f.deinit(alloc);

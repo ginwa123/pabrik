@@ -1,18 +1,5 @@
-//! `GET /api/agents/:agent_id/tools`.
-//!
-//! Returns `{tools: [string]}` — the enabled tool_names for the agent.
-//! Mirrors the `agentsGetHandler.tools` field, but exposed as its
-//! own endpoint so the frontend's Tools panel can refresh without
-//! re-fetching knowledge.
-//!
-//! Layered as:
-//!   - `useCase` — SELECT enabled tool_names, return owned slice.
-//!   - `agentToolsListHandler` — thin orchestrator over `useCase`:
-//!     resolves the singleton DB handle, delegates to `useCase`,
-//!     marshals the result to JSON.
-//!
-//! Memory: the per-request arena reaps all allocations at request
-//! end, so neither layer needs explicit `free`s.
+//! `GET /api/agents/:agent_id/tools`. Returns `{tools: [string]}` — the
+//! enabled tool_names for the agent.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -20,20 +7,13 @@ const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const agent_db = @import("../models/agent.db.zig");
 
-/// Domain-level error set for `useCase`. The handler maps each
-/// variant to an HTTP status code + message via two exhaustive
-/// switches (intentional — adding a new variant fails to compile in
-/// the handler until both switches are updated, keeping status
-/// codes in lockstep with the error set).
+/// Domain-level error set for `useCase`.
 pub const ToolListError = error{
     /// `agent_id` path param was missing or empty.
     AgentIdRequired,
     /// `db.query` failed.
     QueryFailed,
-    /// `allocator.dupe` / `toOwnedSlice` failed. In production this
-    /// is effectively unreachable (the per-request arena reaps
-    /// everything at request end) but the type system requires the
-    /// variant so the `try` propagates a typed error.
+    /// `allocator.dupe` / `toOwnedSlice` failed.
     OutOfMemory,
 };
 
@@ -53,11 +33,8 @@ pub const ToolListOutput = struct {
 // Use case
 // =====================================================================
 
-/// Resolve the enabled tool_names for the agent. Returns an owned
-/// slice of `[]const u8` ordered by tool_name ASC. The use-case is
-/// transport-agnostic: it works for both the per-request arena
-/// (production HTTP handler) and `testing.allocator` (unit tests
-/// below) — all allocations go through the passed-in allocator.
+/// Resolve the enabled tool_names for the agent. Returns an owned slice of
+/// `[]const u8` ordered by tool_name ASC.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -111,14 +88,8 @@ pub fn agentToolsListHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-//
-// impl + tests in one file (project convention for Agent Mode).
-// 4 behavioural tests cover the use-case:
-//
-//   1. Validation: empty agent_id → AgentIdRequired
-//   2. Empty result: agent exists but has no tools → empty slice
-//   3. Filter by enabled: only enabled=1 tools are returned
-//   4. Ordering: tool_names are sorted ASC
+// impl + tests in one file (project convention for Agent Mode). 4 behavioural
+// tests cover the use-case: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;

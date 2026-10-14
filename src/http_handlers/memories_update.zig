@@ -1,23 +1,6 @@
 //! `PUT /api/memories/:name` — replace the body of a global memory file.
-//!
-//! Body: `{"content":"..."}`.
-//! On success: 200 with `{"memory":{name,title,path,size}}`.
-//!
-//! Layered as:
-//!   - `useCase` — resolves the singleton + env, validates the name,
-//!     runs the existence check, writes the file, re-lists to derive
-//!     metadata, and returns a heap-owned `MemoryInfo`.
-//!   - `memoryUpdateHandler` — thin orchestrator: parses `:name`
-//!     and the body, calls `useCase`, maps errors to status codes,
-//!     builds the JSON response.
-//!
-//! Preserves the static-contract assertions in `memories_crud_test.zig`:
-//!   - `getSingleton` + `500` substring checks
-//!   - `params.get("name")` + `400` substring checks
-//!   - `isValidMemoryName` validation
-//!   - `memoryExists` + `404` (NotFound) + `writeMemoryFile` substring checks
-//!   - `parseFromSliceLeaky` + `Invalid JSON body` substring checks
-//!   - `std.json.Stringify.valueAlloc` substring check
+//! Body: `{"content":"..."}`. On success: 200 with
+//! `{"memory":{name,title,path,size}}`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -25,11 +8,8 @@ const gserverz = pabrikcore.gserverz;
 const memories_mod = pabrikcore.memories;
 const http_response = @import("http_response.zig");
 
-/// JSON request body for `PUT /api/memories/:name`.
-///
-/// Only the new content is editable; the filename is fixed by the URL
-/// path parameter. A separate `POST /api/memories` (with a new name)
-/// is the way to create an additional memory.
+/// JSON request body for `PUT /api/memories/:name`. Only the new content is
+/// editable; the filename is fixed by the URL path parameter.
 const UpdateMemoryBody = struct {
     content: []const u8,
 };
@@ -72,16 +52,8 @@ pub const MemoryUpdateOutput = struct {
 // Use case
 // =====================================================================
 
-/// Replace the body of an existing global memory file.
-///
-/// Steps:
-///   1. Get the singleton + env.
-///   2. Validate `name` (non-empty + `isValidMemoryName`).
-///   3. 404 if the memory does not exist (via `memoryExists`).
-///   4. `writeMemoryFile` to overwrite the file.
-///   5. Re-list via `listAllMemories` to derive `title/path/size`.
-///   6. Locate the entry by name. Missing → 500 (consistency).
-///   7. Duplicate the matched slices for the response.
+/// Replace the body of an existing global memory file. Steps: 1. Get the
+/// singleton + env. 2.
 fn useCase(
     allocator: std.mem.Allocator,
     io: std.Io,

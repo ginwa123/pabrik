@@ -1,56 +1,5 @@
-// Wire tests for the data the `list_sub_agent` agent tool reads.
-//
-// Zig port of `tests/functional/list_sub_agent_test.py`
-// (same test names, same order).
-//
-// PYTHON DOCSTRING, PRESERVED:
-//
-//   """Wire tests for the data the `list_sub_agent` agent tool reads.
-//
-//   What this covers
-//   ================
-//   `list_sub_agent` (`src/modules/agent/tools/list_sub_agent.zig`,
-//   `executeListSubAgent`) is a pure function over the session profile's
-//   `sub_agents` list: it echoes `<profile>`, counts non-empty names
-//   into `<count>`, renders each row's tuning verbatim, emits the FULL
-//   `system_prompt` inside CDATA (never truncated, `]]>` split), omits
-//   null optional tags, and NEVER emits `api_key`/`base_url`.
-//
-//   There is NO HTTP hook that executes the tool or returns its
-//   `<list_sub_agent>` envelope: the only production caller is the exec
-//   adapter (`tools_exec_list_sub_agent.zig`), which runs exclusively
-//   inside the LLM agentic loop and therefore needs live LLM API
-//   credentials (unavailable in this environment). So these tests drive
-//   the strongest feasible path without creds — the same approach as
-//   `agent_add_mcp_server_test.py`:
-//
-//     1. Seed per-profile `sub_agents` via `PUT /api/config/pabrik`
-//        (object-map shape, the settings-UI path).
-//     2. `GET /api/config/pabrik` back and assert the round-tripped rows
-//        carry byte-for-byte the exact fields `executeListSubAgent`
-//        reads (`name`, `model`, `url_style`, `thinking`,
-//        `temperature`, optional tuning knobs, `system_prompt`).
-//
-//   What this does NOT cover (needs LLM creds)
-//   ==========================================
-//   The `<list_sub_agent>...</list_sub_agent>` / `<empty/>` XML envelope
-//   itself is never produced here — no chat completion is issued. That
-//   envelope IS covered by the Zig unit tests inline in
-//   `list_sub_agent.zig` (populated 2-row, null-omission, empty-name
-//   skip, unknown-profile `<empty/>`, empty-name `<empty/>`,
-//   secrets-absence, `]]>` CDATA split, no-truncation). A regression in
-//   the envelope rendering would fail `zig build test`, not this file.
-//
-//   Run:
-//       PABRIK_BIN=<worktree>/zig-out/bin/pabrikcore-linux-x86_64 \
-//         python3 -m pytest tests/functional/list_sub_agent_test.py -v
-//   """
-//
-// THE PYTHON FIXTURE BECAME `bootConfig()`: the shared `config_harness`
-// fixture in `pabrik_config_test.py` boots with `stub_llm_profile=True`
-// (plus a macOS config-path copy the Zig harness's `writeStubLlmProfile`
-// already does for all three layouts), so each test below boots
-// `Harness.boot(io, gpa, .{ .stub_llm_profile = true })`.
+// Wire tests for the data the `list_sub_agent` agent tool reads. Zig port of
+// `tests/functional/list_sub_agent_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -81,14 +30,6 @@ const SECRET_HOST = "secret-host-marker-xyz";
 // ============================================================================
 
 /// One `sub_agents` row as it goes on the wire.
-///
-/// The tuning knobs are OPTIONAL and default to null: Python's sparse
-/// fixture is a dict that simply lacks those keys, and the server must
-/// not invent defaults for them. `std.json.Stringify` OMITS null optional
-/// fields only when `emit_null_optional_fields = false`, so every
-/// `valueAlloc` below passes it explicitly — the default is `true`,
-/// which would have emitted `"max_capacity_tokens":null` and made the
-/// sparse-row assertion vacuous.
 const AgentRow = struct {
     name: []const u8,
     model: []const u8,
@@ -122,10 +63,9 @@ fn tunedAgent() AgentRow {
     };
 }
 
-/// All-null optionals: mirrors the tool's "sparse row" unit fixture.
-/// Omitted keys must round-trip as absent-or-null (never invented
-/// defaults), because the tool treats absent tags as "inherits the
-/// profile default".
+/// All-null optionals: mirrors the tool's "sparse row" unit fixture. Omitted
+/// keys must round-trip as absent-or-null (never invented defaults), because
+/// the tool treats absent tags as "inherits the profile default".
 fn sparseAgent() AgentRow {
     return .{
         .name = "helper",
@@ -145,12 +85,6 @@ fn sparseAgent() AgentRow {
 
 /// `PUT /api/config/pabrik` with the object-map profile shape, seeding
 /// `sub_agents` for `profile`. Python `_put_profile`.
-///
-/// `sub_agents_json` is the ALREADY-SERIALISED array, so the row values
-/// (notably `SPLIT_PROMPT`'s embedded quotes and `]]>`) go through
-/// `std.json.Stringify`'s escaper rather than string concatenation. The
-/// surrounding envelope is a literal because it is four fixed keys and
-/// one caller-chosen profile name with no escaping requirement.
 fn putProfile(h: *Harness, profile: []const u8, sub_agents_json: []const u8) !void {
     const body = try std.fmt.allocPrint(gpa,
         \\{{"profiles":{{"{s}":{{"model":"stub-model","base_url":"http://127.0.0.1:1","api_key":"stub-key-not-real","url_style":"openai","sub_agents":{s}}}}}}}
@@ -177,15 +111,9 @@ fn parseJson(bytes: []const u8) !harness.Json {
     return .{ .parsed = try std.json.parseFromSlice(std.json.Value, gpa, bytes, .{}) };
 }
 
-/// `profiles[profile].get("sub_agents")` as a raw `Value`.
-///
-/// `.null` stands for BOTH "key absent" and "explicit JSON null", which
-/// is exactly what Python's `... .get("sub_agents") or []` collapsed.
-/// The borrowed value dies with `doc`, so callers read it before
-/// `doc.deinit()`.
-///
-/// The top-level `sub_agents` assertion lives here because it ran in
-/// Python's `_profile_agents` — i.e. in EVERY test.
+/// `profiles[profile].get("sub_agents")` as a raw `Value`. `.null` stands for
+/// BOTH "key absent" and "explicit JSON null", which is exactly what Python's
+/// `... .get("sub_agents") or []` collapsed.
 fn profileSubAgents(doc: *const harness.Json, profile: []const u8, raw: []const u8) !std.json.Value {
     if (doc.get("sub_agents")) |v| switch (v) {
         .null => {},
@@ -273,10 +201,9 @@ fn expectNumber(obj: std.json.ObjectMap, key: []const u8, want: f64, ctx: []cons
     }
 }
 
-/// Python `obj.get(key) is None` — the key is ABSENT or explicitly
-/// JSON null. Anything else (number, string, `0`, `""`) is the
-/// regression this guards: a stored default would make the tool emit a
-/// phantom tag.
+/// Python `obj.get(key) is None` — the key is ABSENT or explicitly JSON null.
+/// Anything else (number, string, `0`, `""`) is the regression this guards: a
+/// stored default would make the tool emit a phantom tag.
 fn expectAbsentOrNull(obj: std.json.ObjectMap, key: []const u8, ctx: []const u8) !void {
     const v = obj.get(key) orelse return;
     switch (v) {
@@ -305,11 +232,6 @@ fn expectNotString(obj: std.json.ObjectMap, key: []const u8, ctx: []const u8) !v
 // ============================================================================
 
 // Two seeded rows come back with the exact fields the tool renders.
-//
-// Covers test spec (1): names/count/full prompt verbatim/tuning present,
-// plus spec (3): the >80-char prompt has no truncation marker — the
-// full tail ("the why behind every finding.") must be present, and no
-// "..." marker may appear inside the prompt.
 test "populated_profile_round_trips_tool_inputs_verbatim" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -396,10 +318,6 @@ test "populated_profile_round_trips_tool_inputs_verbatim" {
 }
 
 // Omitted tuning knobs must not gain invented defaults in storage.
-//
-// The tool renders optional tags ONLY when non-null; a GET that
-// materialises `0`/`""`/defaults here would change the tool's output
-// shape (phantom tags) versus what was seeded.
 test "sparse_row_null_optionals_stay_absent_or_null" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -463,12 +381,9 @@ test "sparse_row_null_optionals_stay_absent_or_null" {
     try expectStr(row, "system_prompt", SPLIT_PROMPT, "sparse row");
 }
 
-// A profile with no subagents round-trips zero rows, no error.
-//
-// This is the storage precondition for the tool's `<empty/>` branch
-// (empty list after seeding nothing). The envelope itself is covered by
-// Zig unit tests; here we prove the wire state the branch reads is
-// reachable and error-free over HTTP.
+// A profile with no subagents round-trips zero rows, no error. This is the
+// storage precondition for the tool's `<empty/>` branch (empty list after
+// seeding nothing).
 test "empty_profile_yields_no_rows" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -504,20 +419,9 @@ test "empty_profile_yields_no_rows" {
     }
 }
 
-// Secret VALUES are confined to `api_key`/`base_url` keys only.
-//
-// Honesty note: `GET /api/config/pabrik` is the settings API and
-// legitimately returns `api_key`/`base_url` (the settings UI needs them
-// — cf. `subagents_per_profile_test.py`, whose fixture asserts the
-// secrets round-trip). The no-leak contract belongs to the TOOL's
-// `<list_sub_agent>` envelope, which is covered by the Zig unit tests
-// (`executeListSubAgent: never emits api_key/base_url tags or values`).
-// What this test proves at the wire level is the precondition that
-// makes that exclusion well-defined: the marker secret values appear
-// ONLY as the values of the `api_key` / `base_url` keys, never smeared
-// into the fields the tool renders (`name`, `model`, `system_prompt`,
-// tuning knobs) — so an envelope built from exactly these fields cannot
-// leak them.
+// Secret VALUES are confined to `api_key`/`base_url` keys only. Honesty note:
+// `GET /api/config/pabrik` is the settings API and legitimately returns
+// `api_key`/`base_url` (the settings UI needs them — cf.
 test "secrets_confined_to_their_own_keys" {
     try harness.requirePabrikBin(io, gpa);
 

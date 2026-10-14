@@ -1,8 +1,6 @@
-//! Graceful-shutdown state for the server process (Ctrl+C / SIGTERM).
-//!
-//! The handler runs IN SIGNAL CONTEXT: it only stores a bool and calls
-//! `GinwaServer.shutdown()` (async-signal-safe). No logging, no allocation;
-//! the post-listen block in `main` does the logging after `listen()` unblocks.
+//! Graceful-shutdown state for the server process (Ctrl+C / SIGTERM). The
+//! handler runs IN SIGNAL CONTEXT: it only stores a bool and calls
+//! `GinwaServer.shutdown()` (async-signal-safe).
 
 const std = @import("std");
 const database = @import("databases").database;

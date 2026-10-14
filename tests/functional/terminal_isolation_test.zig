@@ -1,40 +1,6 @@
 // Functional tests for per-user terminal isolation (plan 2026-09-25, W2.5).
-//
-// Zig port of `tests/functional/terminal_isolation_test.py` (same test
-// names, same order).
-//
-// Boots a REAL pabrik binary via the harness (never a live dev server,
-// never port 8081). Two authenticated admins share ONE server process,
-// so this is the wire-level proof that user A cannot attach to, read,
-// type into, resize, or kill user B's PTY session.
-//
-// Why a wire test and not only a unit test: the terminal registry is
-// in-memory and process-global (`terminal_session.zig`), and the owner
-// is resolved from the request cookie at the handler. Only a real
-// two-cookie round-trip exercises cookie -> auth_sessions -> users.id ->
-// registry owner -> attach rejection. A unit test that passes an owner
-// straight into the registry cannot catch a handler that forgets to
-// resolve one.
-//
-// Covers:
-//   * ATTACH-ISOLATION — B's input/output/resize/delete against A's
-//                       terminal id are all 404 (not 403, so B cannot
-//                       probe for the existence of A's ids).
-//   * OWN-ACCESS       — A can still drive its own terminal (guards
-//                       against an "everyone gets 404" false pass).
-//   * AUTH-OFF-REGRESS — without `--auth` the same create + output
-//                       round-trip still works.
-//
-// Both users are created with `create-admin`, so the isolation
-// assertions here are also the admin-vs-admin assertions: `admin`
-// grants NO cross-user visibility (user decision 2026-09-25).
-//
-// Python's module-level `_raw` became `rawHttp` below: the harness's
-// `Harness.http` asserts on `expect` by default, but here the STATUS IS
-// the thing under test ("B must get 404, not 403"), so every call goes
-// out with `.assert_status = false` and the caller decides. Same reason
-// `auth_test.zig` grew the same helper — no suite needs a private HTTP
-// client.
+// Zig port of `tests/functional/terminal_isolation_test.py` (same test names,
+// same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -52,13 +18,9 @@ const COOKIE_NAME = "pabrik_session=";
 /// secret.
 const PASSWORD = "supersecret123";
 
-/// Issue a request WITHOUT a status assertion — the caller asserts.
-///
-/// `cookie` is the raw `Cookie:` header value (`pabrik_session=<tok>`),
-/// or null for no cookie at all. Python's `_raw` omitted the header
-/// entirely when it was None; this passes an empty `extra_headers`
-// slice rather than an empty-string header, which is the same request
-/// line.
+/// Issue a request WITHOUT a status assertion — the caller asserts. `cookie`
+/// is the raw `Cookie:` header value (`pabrik_session=<tok>`), or null for no
+/// cookie at all.
 fn rawHttp(
     h: *Harness,
     method: harness.HttpMethod,
@@ -84,14 +46,8 @@ fn bootAuth() !Harness {
     return Harness.boot(io, gpa, .{ .extra_args = &.{"--auth"} });
 }
 
-/// Run `pabrik create-admin` against the harness HOME.
-///
-/// `runPabrikCommand` prepends the resolved binary itself, so `argv`
-/// starts at the SUBCOMMAND. Passing the binary here as well produced
-/// `[bin, bin, "create-admin", ...]`, which made the dispatcher miss
-/// (it matches argv[1]) and fall through to booting a SERVER — which
-/// then tried to bind the default port 8081 and failed with a confusing
-/// "cannot bind" error about a port that was never the problem.
+/// Run `pabrik create-admin` against the harness HOME. `runPabrikCommand`
+/// prepends the resolved binary itself, so `argv` starts at the SUBCOMMAND.
 fn createAdmin(home: []const u8, email: []const u8, force: bool) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
@@ -128,10 +84,9 @@ fn login(h: *Harness, email: []const u8) ![]u8 {
         return error.TestUnexpectedResult;
     }
 
-    // The token is the SEGMENT between `pabrik_session=` and the next
-    // `;` — Python's `set_cookie.split("pabrik_session=", 1)[1].split(";", 1)[0].strip()`.
-    // `afterFirst` on the WHOLE header would return the text after the
-    // first `;`, i.e. `Path=/`.
+    // The token is the SEGMENT between `pabrik_session=` and the next `;` —
+    // Python's `set_cookie.split("pabrik_session=", 1)[1].split(";",
+    // 1)[0].strip()`.
     var attrs = std.mem.splitSequence(u8, set_cookie, ";");
     const first_attr = attrs.next() orelse return error.TestUnexpectedResult;
     const token = std.mem.trim(
@@ -143,10 +98,6 @@ fn login(h: *Harness, email: []const u8) ![]u8 {
 }
 
 /// `POST /api/terminal/sessions` → the new terminal's id.
-///
-/// `cwd` is derived from `h.temp_dir` rather than a literal `/tmp`: it is
-/// absolute on every platform, and it is a directory that certainly
-/// exists (the harness is running with it as HOME).
 fn createTerminal(h: *Harness, cookie: ?[]const u8) ![]u8 {
     const cwd = try harness.harnessPath(gpa, h.temp_dir, &.{});
     defer gpa.free(cwd);
@@ -180,13 +131,7 @@ const TwoTokens = struct {
     }
 };
 
-/// Boot auth mode with two admins in the SAME server process and log
-/// both in.
-///
-/// The `harness` is a caller-owned parameter rather than a return value
-/// so the two admin accounts, the two logins and the token cleanup all
-/// live inside the caller's `defer` chain — a returned harness would
-/// need its own owner to run `deinit` on.
+/// Boot auth mode with two admins in the SAME server process and log both in.
 fn twoUsers(h: *Harness) !TwoTokens {
     try createAdmin(h.temp_dir, "a@example.com", false);
     try createAdmin(h.temp_dir, "b@example.com", true);
@@ -199,10 +144,6 @@ fn twoUsers(h: *Harness) !TwoTokens {
 }
 
 // B must not be able to drive A's PTY by guessing its id.
-//
-// Every terminal route is keyed by a raw in-memory session id, so
-// before the owner check B could read A's shell output, type into it,
-// resize it, or kill it. All four are 404 for a foreign id.
 test "foreign_terminal_attach_is_refused" {
     try harness.requirePabrikBin(io, gpa);
 

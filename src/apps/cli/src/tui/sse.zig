@@ -1,15 +1,4 @@
 //! Minimal SSE frame parser for the pabrik event stream.
-//!
-//! The backend emits frames like:
-//!
-//! ```
-//! event: llm_history
-//! data: {"action":"updated","session_id":"session-123","id":"42",...}
-//!
-//! ```
-//!
-//! This module splits a byte stream into (event_name, data_payload)
-//! pairs and extracts just the fields the TUI cares about.
 
 const std = @import("std");
 
@@ -21,11 +10,8 @@ pub const Event = struct {
 };
 
 /// Parse ALL complete SSE events in `buf`. Returns how many bytes were
-/// consumed (events are complete only when terminated by a blank line
-/// — either `\n\n` or `\r\n\r\n`). `out` receives parsed events whose
-/// `data` field is either a borrowed slice into `buf` (single-line)
-/// or a freshly-allocated, newline-joined slice (multi-line, caller
-/// owns).
+/// consumed (events are complete only when terminated by a blank line —
+/// either `\n\n` or `\r\n\r\n`).
 pub fn parse(buf: []const u8, out: *std.ArrayList(Event), allocator: std.mem.Allocator) !usize {
     var consumed: usize = 0;
     var rest = buf;
@@ -164,8 +150,7 @@ test "sessionIdOf: extracts session_id" {
 
 // ===== Tests merged from tdd_round2_test.zig (2026-09-29 flatten) =====
 // Section 2 of tdd_round2_test.zig: the `sse.parse` regression tests
-// (CRLF-terminated frames + multi-line data). The file's leading doc
-// comment lives in transport.zig, which carries section 1.
+// (CRLF-terminated frames + multi-line data).
 
 // ============================================================================
 // 2. sse.parse — CRLF frames + multi-line data

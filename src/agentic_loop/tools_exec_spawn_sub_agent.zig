@@ -1,14 +1,4 @@
 //! The `spawn_sub_agent` tool: the tool layer over the shared batch runner.
-//!
-//! The batch itself — concurrency, the per-thread lifecycle, the progress
-//! protocol and the allowlist policy — lives in `sub_agent_batch.zig`, which
-//! the Skill Evals judge tier also drives. This file is the tool's half: parse
-//! a tool call, resolve the per-agent config overlay, and format the wire
-//! envelope.
-//!
-//! It is deliberately NOT a second implementation of any of that. Two copies
-//! of the fan-out would drift, and the drift would be invisible until a
-//! frontend card stranded on `running`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -38,19 +28,13 @@ pub fn execSpawnSubAgent(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResu
     ctx.logger.debugFmt("execSpawnSubAgent called, arguments len={}", .{tc.function.arguments.len});
     ctx.logger.debugFmt("arguments: '{s}'", .{tc.function.arguments[0..@min(tc.function.arguments.len, 200)]});
 
-    // 2026-09-04 refresh fix: the snapshot registry (subagent_progress)
-    // is the refresh-rehydrate source until the final envelope lands in
-    // the DB. If exec fails before building the envelope, drop the
-    // batch's rows so a refresh falls back to Task 0's "starting…"
-    // copy instead of stranding stale running rows. Idempotent.
+    // 2026-09-04 refresh fix: the snapshot registry (subagent_progress) is
+    // the refresh-rehydrate source until the final envelope lands in the DB.
     errdefer subagent_progress.clearSnapshot(ctx.tool_call_id);
 
     const parsed = spawn_sub_agent_tool.parse_sub_agents(ctx.allocator, tc.function.arguments, MaxBatch) catch |err| {
         ctx.logger.errFmt("parse_sub_agents failed: {}", .{err});
-        // Propagate the SPECIFIC parse error (e.g. AllToolsNotAllowed,
-        // EmptySubAgentTools) instead of collapsing to a generic
-        // InvalidArguments — dispatchTool formats @errorName(err) into
-        // the envelope <error>, which the card now renders.
+        // Propagate the SPECIFIC parse error (e.g.
         return err;
     };
     defer parsed.deinit(ctx.allocator);
@@ -92,10 +76,8 @@ pub fn execSpawnSubAgent(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResu
     // intermediate writer buffer needed.
     const success_count = outcome.succeeded();
 
-    // Build the result JSON object via `std.json.Stringify.valueAlloc`
-    // (never string-concat). Former tag names become keys 1:1; the
-    // optional session/response/error slots are explicit nulls when
-    // absent and per-agent entries form the `results` array.
+    // Build the result JSON object via `std.json.Stringify.valueAlloc` (never
+    // string-concat).
     const JsonAgent = struct {
         name: []const u8,
         success: bool,
@@ -152,30 +134,15 @@ pub fn execSpawnSubAgent(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResu
         },
     }, .{});
     const output = try wrapToolOutput(ctx.allocator, "spawn_sub_agent", tc.function.arguments, true, null, inner_owned);
-    // 2026-09-04 refresh fix: the final results payload is built —
-    // the DB row (written by handle_tool's updateAndSendToolResult right
-    // after we return) takes over as the source of truth, so the
-    // snapshot has served its purpose. Drop it; a post-completion
-    // refresh renders the payload, never the snapshot. (The errdefer
-    // above covers the failure paths.)
+    // 2026-09-04 refresh fix: the final results payload is built — the DB row
+    // (written by handle_tool's updateAndSendToolResult right after we
+    // return) takes over as the source of truth, so the snapshot has served
     subagent_progress.clearSnapshot(ctx.tool_call_id);
     return ToolExecResult{ .output = output, .output_allocated = true };
 }
 
 /// Resolve one sub-agent's config overlay from the live LlmConfig.
-///
-/// `agent_name` is the LLM-provided name. It is looked up in the active
-/// profile's sub_agents list and the resolved fields become an overlay on the
-/// orchestrator's defaults; a name that matches nothing falls back to a
-/// generated random name plus the defaults.
-///
-/// The `@constCast` is needed because `resolveSubAgent` mutates
-/// `self.random_names` to track the random fallback's allocation for deinit
-/// cleanup. The LlmConfig is logically immutable (it lives in the singleton
-/// for the server's lifetime); this single private mutation is a tracking
-/// side-effect, not a semantic change. Casting away const at the one
-/// production call site keeps the rest of the type system honest about
-/// read-only access.
+/// `agent_name` is the LLM-provided name.
 fn resolveOverrides(ctx: ToolExecContext, an: []const u8) ai_workflow.SubAgentOverrides {
     const resolved = @constCast(ctx.config).resolveSubAgent(ctx.selected_profile_model, an);
     if (resolved.is_random_fallback) {
@@ -200,10 +167,9 @@ fn resolveOverrides(ctx: ToolExecContext, an: []const u8) ai_workflow.SubAgentOv
         .opencode_auto = resolved.opencode_auto,
         .is_thinking = resolved.is_thinking,
         .temperature = resolved.temperature,
-        // Model-thinking knobs (plan 2026-08-23-model-thinking), threaded from
-        // ResolvedSubAgent so the spawned sub-agent can override its parent
-        // profile's thinking budget / reasoning effort without touching the
-        // global config.
+        // Model-thinking knobs (plan 2026-08-23-model-thinking), threaded
+        // from ResolvedSubAgent so the spawned sub-agent can override its
+        // parent profile's thinking budget / reasoning effort without
         .thinking_budget_tokens = resolved.thinking_budget_tokens,
         .reasoning_effort = resolved.reasoning_effort,
         .system_prompt = resolved.system_prompt,

@@ -1,52 +1,12 @@
-// src/apps/desktop_app/extraction.zig
-//
-// Runtime asset extraction: write a flat list of `AssetEntry` records
-// (the source: webapp_assets.assets — see tools/codegen_webapp_assets.zig)
-// to a fresh per-user temp dir. The returned absolute path is what the
-// webview in Chunks 4-7 loads via `file://` (or as the pabrik `--static-dir`
-// argument) at app startup; `cleanup` is called on shutdown to remove
-// the temp dir.
-//
-// Why temp + per-run: the assets are embedded in the binary (10+ MiB),
-// but the pabrik server's `--static-dir` only reads from disk. We unpack
-// to a per-pid temp subdir so multiple concurrent pabrik-desktop
-// invocations don't collide. The subdir is created via
-// `pabrik-desktop-webapp-<pid>` and removed in cleanup().
-//
-// Zig 0.16 API notes:
-//   * `std.posix.getenv` doesn't exist in 0.16; use `std.c.getenv`
-//     (libc). It returns `?[*:0]const u8` (a NUL-terminated optional
-//     pointer), not `?[]const u8`; we have to slice the value to a
-//     regular `[]const u8` via `std.mem.span` before dupe'ing it.
-//   * `std.os.linux.getpid()` is gone in 0.16; use `std.c.getpid()`
-//     (libc). It returns `c_int` (a `pid_t` on Linux/macOS).
-//   * `std.fs.cwd()` is gone in 0.16; the new API is `std.Io.Dir.cwd()`
-//     which requires an Io handle. For a build/CLI-style helper that
-//     just needs `mkdir` + `open` + `write` + `deleteTree` in a
-//     synchronous flow, the libc `std.c.*` wrappers are simpler than
-//     dragging in an Io runtime — they don't need io, they're blocking,
-//     and they work cross-platform (Linux + macOS + Windows). The
-//     earlier version of this file used raw `std.os.linux.*` syscalls
-//     which compile fine on macOS but invoke Linux syscall numbers that
-//     don't exist on the Darwin kernel — the process gets killed with
-//     SIGSYS the moment the first `faccessat` runs. The libc wrappers
-//     fix that without an Io dependency.
+// src/apps/desktop_app/extraction.zig Runtime asset extraction: write a flat
+// list of `AssetEntry` records (the source: webapp_assets.assets — see
+// tools/codegen_webapp_assets.zig) to a fresh per-user temp dir.
 
 const std = @import("std");
 const builtin = @import("builtin");
 
-/// A flat asset entry. Source: the generated webapp_assets.zig at
-/// comptime (one `pub const assets: []const Asset` slice for the
-/// whole app). At runtime, `extract()` walks this list and writes
-/// each entry to disk under a per-pid subdir of the system temp.
-///
-/// NOTE: `AssetEntry` is structurally identical to the generated
-/// `webapp_assets.Asset` but is a *nominal-distinct* Zig type
-/// (per the project memory `zig-anonymous-struct-type-identity`).
-/// Callers must pass the right struct literal — easiest path is to
-/// import `webapp_assets.Asset` directly and rely on Zig's structural
-/// matching. We do NOT re-export here because `extraction` shouldn't
-/// depend on the `embedded` module's generated file path.
+/// A flat asset entry. Source: the generated webapp_assets.zig at comptime
+/// (one `pub const assets: []const Asset` slice for the whole app).
 pub const AssetEntry = struct {
     /// Path as served by the webserver, e.g. "/index.html" or
     /// "/assets/app.js". Must start with "/"; the leading slash is
@@ -58,42 +18,14 @@ pub const AssetEntry = struct {
     mime: []const u8,
 };
 
-/// Extract the given assets to a fresh per-pid temp subdir. Returns
-/// the absolute path of the temp dir. The caller MUST call
-/// `cleanup(allocator, dir)` on shutdown.
-///
-/// NOTE: this is the per-run variant. The desktop's real startup path uses
-/// `ensurePersistent` instead, because a dir that gets deleted at window
-/// close cannot be handed to a daemon that outlives the window (that was
-/// the `404 Not Found` bug). Kept — and tested — for callers that really
-/// do want a throwaway tree (and so `cleanup` keeps a regression test).
-///
-/// The assets parameter is `anytype` so callers can pass either
-/// `extraction.AssetEntry` (the canonical type) or the generated
-/// `webapp_assets.Asset` (structurally identical but nominally
-/// distinct — see project memory `zig-anonymous-struct-type-identity`).
-/// The element type must have `path: []const u8`, `content: []const u8`,
-/// and `mime: []const u8` fields, accessed via the helper below.
-///
-/// On error, the partially-created temp dir is removed before the
-/// error propagates (best-effort — `deleteTree` errors during
-/// error-path cleanup are swallowed since we can't do anything with
-/// them).
+/// Extract the given assets to a fresh per-pid temp subdir. Returns the
+/// absolute path of the temp dir. The caller MUST call `cleanup(allocator,
+/// dir)` on shutdown.
 pub fn extract(allocator: std.mem.Allocator, assets: anytype) ![]u8 {
     const tmp_base = tmpDirBase(allocator);
     defer allocator.free(tmp_base);
 
-    // Make a per-pid subdir so concurrent runs don't collide. PID is
-    // stable for the lifetime of the process; if the host recycles
-    // the PID before our cleanup, the collision is benign (the new
-    // process will fail its first write with EEXIST, which is
-    // better than silently clobbering live files).
-    //
-    // Windows note: `std.c.getpid()` returns `windows.HANDLE` (= `*anyopaque`)
-    // because Windows libc has no real `pid_t`. We cast the handle pointer to
-    // `usize` to get a unique-enough integer for the subdir name (collisions
-    // are benign — see above). Real Windows PIDs would be cleaner, but they
-    // aren't reachable via `std.c.getpid()` in Zig 0.16.
+    // Make a per-pid subdir so concurrent runs don't collide.
     const pid_for_subdir: u64 = switch (builtin.os.tag) {
         .windows => @intFromPtr(std.c.getpid()),
         else => @intCast(std.c.getpid()),
@@ -135,30 +67,7 @@ pub fn cleanup(allocator: std.mem.Allocator, dir: []const u8) void {
 pub const complete_marker_name = ".pabrik-webapp-complete";
 
 /// Materialise the webapp into a **persistent, content-addressed** dir and
-/// return its absolute path. The caller owns the returned slice and must
-/// `allocator.free` it — but must NEVER delete the directory.
-///
-/// This is the replacement for `extract()` on the real startup path.
-/// `extract()` hands out a per-pid temp dir that `cleanup()` deletes when
-/// the window closes — but the pabrik daemon the desktop spawned keeps
-/// running with `--static-dir <that dir>` long after the window is gone
-/// (the desktop deliberately never signals the daemon). Once the dir is
-/// deleted, that daemon answers `GET /` with `404 Not Found`; the NEXT
-/// desktop launch sees its `/health` still returning 200 (health says
-/// nothing about the static dir), attaches to it, and the webview opens
-/// on a blank "404 Not Found" page.
-///
-/// Layout: `<base>/<hash>`, `<hash>` being a hex digest over the embedded
-/// asset set (path + mime + bytes, in order). Consequences:
-///   * the same build reuses the same dir — no multi-MiB rewrite per
-///     launch, and, critically, the path a daemon was started with stays
-///     valid across launches and reboots;
-///   * a build with changed assets lands in a NEW dir, so an old daemon
-///     can never serve a mix of old and new files.
-///
-/// Publishing is crash-safe: assets are written to `<base>/<hash>.tmp-<pid>`,
-/// then the marker file, then the dir is renamed into place. A
-/// half-written staging tree is never visible under the final name.
+/// return its absolute path.
 pub fn ensurePersistent(allocator: std.mem.Allocator, assets: anytype) ![]u8 {
     const base = persistentBaseDir(allocator);
     defer allocator.free(base);
@@ -226,28 +135,12 @@ pub fn ensurePersistentIn(
     return final_dir;
 }
 
-/// Name of the stable symlink inside the persistent base dir. The symlink
-/// points at the current `<hash>` dir, so the path handed to
-/// `pabrik --static-dir` is a single stable string (`<base>/current`)
-/// instead of a hash that changes on every webapp rebuild. `ps` output,
-/// state files, and docs can all name one path.
-///
-/// The versioned `<hash>` dirs stay behind the link (same atomic-publish
-/// guarantees as `ensurePersistentIn`): a running daemon canonicalizes the
-/// link via `realPath` at boot and stays pinned to its boot version across
-/// a flip, so an upgrade can never tear a live server into a 404 window.
-/// A fresh boot picks up whatever the link points at.
+/// Name of the stable symlink inside the persistent base dir.
 pub const stable_link_name = "current";
 
-/// `ensurePersistent` with a stable return path: materialise the assets
-/// into `<base>/<hash>` as usual, then atomically point `<base>/current`
-/// at it and return the `<base>/current` path. The caller owns the
-/// returned slice and must `allocator.free` it — but must NEVER delete
-/// either the link or its target.
-///
-/// Windows falls back to the versioned dir (symlinks need a privilege most
-/// installs don't have; the installed `html/` path is already stable
-/// there, so nothing is lost).
+/// `ensurePersistent` with a stable return path: materialise the assets into
+/// `<base>/<hash>` as usual, then atomically point `<base>/current` at it and
+/// return the `<base>/current` path.
 pub fn ensurePersistentStable(allocator: std.mem.Allocator, assets: anytype) ![]u8 {
     const base = persistentBaseDir(allocator);
     defer allocator.free(base);
@@ -283,8 +176,7 @@ pub fn ensurePersistentStableIn(
 
 /// Atomically point `link_path` at `target` via a temp symlink + rename.
 /// `target` is stored as given (callers pass the hash basename, making the
-/// link relative). A leftover temp link from a killed run is unlinked
-/// first — never deleted as a tree, since it is a symlink, not a dir.
+/// link relative).
 fn pointSymlinkAt(allocator: std.mem.Allocator, link_path: []const u8, target: []const u8) !void {
     const pid: u64 = switch (builtin.os.tag) {
         .windows => @intFromPtr(std.c.getpid()),
@@ -323,10 +215,7 @@ fn unlinkAbsolute(path: []const u8) void {
     _ = std.c.unlink(path_z);
 }
 
-/// Per-user base dir for the persistent webapp copies. Deliberately NOT a
-/// temp dir: `$XDG_RUNTIME_DIR` / `$TMPDIR` are wiped on logout and by
-/// tmpfiles reapers, which would resurrect the very 404 this fixes even
-/// when the desktop exits cleanly.
+/// Per-user base dir for the persistent webapp copies.
 fn persistentBaseDir(allocator: std.mem.Allocator) []u8 {
     switch (builtin.os.tag) {
         .linux => {
@@ -373,15 +262,7 @@ fn getenvNonEmpty(name: [*:0]const u8) ?[]const u8 {
     return v;
 }
 
-/// Hex digest over the asset set. `assets` is `anytype` for the same
-/// reason `extract` takes it that way — callers pass either
-/// `extraction.AssetEntry` or the generated `webapp_assets.Asset`.
-///
-/// Field order in the hash is fixed (path, mime, content) and each field
-/// is NUL-separated so `("a", "bc")` and `("ab", "c")` can't collide.
-///
-/// 128 bits of Blake3-256 — truncation is fine here: the digest is a cache
-/// key for our own generated assets, not a security boundary.
+/// Hex digest over the asset set.
 fn assetSetHashHex(allocator: std.mem.Allocator, assets: anytype) ![]u8 {
     var hasher = std.crypto.hash.Blake3.init(.{});
     for (assets) |asset| {
@@ -396,19 +277,13 @@ fn assetSetHashHex(allocator: std.mem.Allocator, assets: anytype) ![]u8 {
     hasher.final(&digest);
     var hex_buf: [32]u8 = undefined;
     // Dupe the slice `bufPrint` actually wrote — not the whole buffer.
-    // `{x}` on 16 bytes currently emits exactly 32 chars, but binding to
-    // the returned slice keeps the dir name correct even if that changes
-    // (uninitialised trailing bytes in a path would silently break the
-    // reuse property this whole function exists for).
     const hex = std.fmt.bufPrint(&hex_buf, "{x}", .{digest[0..16]}) catch @panic("bufPrint failed formatting the asset-set hash");
     return allocator.dupe(u8, hex);
 }
 
-/// True when `dir` holds a completed extraction. Only the marker is
-/// checked: it is written after every asset, so its presence implies the
-/// whole tree landed. (A build with zero embedded assets — the CI stub
-/// case — legitimately produces a marker plus no files; that must stay
-/// "complete" so it is reused instead of rewritten on every launch.)
+/// True when `dir` holds a completed extraction. Only the marker is checked:
+/// it is written after every asset, so its presence implies the whole tree
+/// landed.
 fn dirIsComplete(dir: []const u8) bool {
     if (!pathExistsAbs(dir)) return false;
     var buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -418,10 +293,8 @@ fn dirIsComplete(dir: []const u8) bool {
 
 /// Write one asset into `dir`, creating parent dirs as needed.
 fn writeAssetInto(allocator: std.mem.Allocator, dir: []const u8, asset: anytype) !void {
-    // Strip the leading "/" from the path; everything else is relative to
-    // the webapp root. An empty path or a path that doesn't start with "/"
-    // is a programmer error in the generated assets, so we make no special
-    // case for it.
+    // Strip the leading "/" from the path; everything else is relative to the
+    // webapp root.
     const rel = if (asset.path.len > 0 and asset.path[0] == '/')
         asset.path[1..]
     else
@@ -439,10 +312,8 @@ fn writeAssetInto(allocator: std.mem.Allocator, dir: []const u8, asset: anytype)
     try writeFileAbsolute(abs_path, asset.content);
 }
 
-/// Pick a base temp dir for this platform. The returned slice is
-/// freshly allocated; the caller owns it. We always fall back to
-/// `/tmp` if the platform-preferred env var is missing (which is
-/// the common case on minimal Linux installs without XDG setup).
+/// Pick a base temp dir for this platform. The returned slice is freshly
+/// allocated; the caller owns it.
 fn tmpDirBase(allocator: std.mem.Allocator) []u8 {
     const builtin_os = builtin.os.tag;
     return switch (builtin_os) {
@@ -479,21 +350,9 @@ fn fallbackTmp(allocator: std.mem.Allocator) []u8 {
     return allocator.dupe(u8, "/tmp") catch @panic("out of memory resolving temp dir");
 }
 
-// =====================================================================
-// Raw syscall helpers
-// =====================================================================
-//
-// Zig 0.16 removed the `std.fs.cwd()` shortcut and the
-// `std.fs.Dir.{makePath,deleteTree,createFileAbsolute,openFileAbsolute}`
-// helpers in favor of an Io-runtime-based API. For a build/CLI helper
-// that just needs `mkdir -p` + `write file` + `rm -rf` synchronously,
-// raw syscalls are simpler than dragging in an Io runtime.
-//
-// Every helper here copies the path into a per-call NUL-terminated
-// stack buffer (the `copyToNull` pattern from
-// tools/codegen_webapp_assets.zig) because the linux.* syscalls want
-// `[*:0]const u8`. The buffer must outlive the syscall — see PABRIK.md
-// "Never return stack-allocated slices from functions".
+// ===================================================================== Raw
+// syscall helpers
+// ===================================================================== Zig
 
 fn copyToNull(buf: *[std.fs.max_path_bytes:0]u8, path: []const u8) [*:0]const u8 {
     if (path.len >= buf.len) @panic("path too long for null-terminated buffer");
@@ -502,15 +361,8 @@ fn copyToNull(buf: *[std.fs.max_path_bytes:0]u8, path: []const u8) [*:0]const u8
     return buf;
 }
 
-/// `mkdir -p` for an absolute path. Walks the path component by
-/// component, calling `mkdir(2)` for each missing segment. EEXIST
-/// (segment already exists) is treated as success.
-///
-/// Uses libc (`std.c.*`) for portability — works on Linux + macOS + Windows
-/// without an Io runtime. The previous version called `std.os.linux.*` syscalls
-/// directly, which compile on macOS but invoke Linux syscall numbers that don't
-/// exist on the Darwin kernel (the process dies with SIGSYS = "Bad system call"
-/// the first time the syscall instruction runs).
+/// `mkdir -p` for an absolute path. Walks the path component by component,
+/// calling `mkdir(2)` for each missing segment.
 fn makePathAbsolute(path: []const u8) !void {
     if (path.len == 0 or (path.len == 1 and path[0] == '.')) return;
 
@@ -526,21 +378,13 @@ fn makePathAbsolute(path: []const u8) !void {
     }
 
     // Now mkdir this path. EEXIST is fine (a concurrent creator).
-    // `std.c.mkdir` returns 0 on success, -1 on failure with errno set
-    // (libc convention). The Zig 0.16 `std.c.errno(rc)` helper returns
-    // `.SUCCESS` when rc != -1, or the actual errno enum (`.E.EXIST`,
-    // `.E.ACCES`, etc.) when rc == -1.
     const mkdir_rc = std.c.mkdir(path_z, 0o755);
     if (mkdir_rc == 0) return;
     if (std.c.errno(mkdir_rc) == std.c.E.EXIST) return;
     return error.MkdirFailed;
 }
 
-/// Does this absolute path exist? `faccessat(AT_FDCWD, ..., F_OK)` on
-/// POSIX (works on Linux + macOS) and `GetFileAttributesW` on Windows
-/// (where the Zig 0.16 `std.c.AT.FDCWD` constant isn't available, see
-/// path_resolve.zig:155). Both return 0 / a non-INVALID attribute word
-/// on "exists".
+/// Does this absolute path exist?
 fn pathExistsAbs(path: []const u8) bool {
     switch (builtin.os.tag) {
         .windows => {
@@ -604,29 +448,11 @@ fn renameAbsolute(from: []const u8, to: []const u8) !void {
 }
 
 // Local extern decls + scratch buffer for the Win32 `stat` path above.
-//
-// Note: the Windows API function is `GetFileAttributesW` — the
-// `extGetFileAttributesW` prefix was a leftover from when this file
-// declared the extern in a "private" namespace inside a `struct` and
-// needed a unique symbol name to avoid colliding with the Win32
-// API. When the function was hoisted to module scope (during the Zig
-// 0.16 cross-platform port), the name should have been restored to
-// the canonical `GetFileAttributesW` so the linker can resolve it
-// against `kernel32.dll`'s import library. The wrong name was masked
-// by the build's earlier `std.c.readdir` compile error on Windows
-// (which prevented the linker from ever running for this target).
 extern "kernel32" fn GetFileAttributesW(lpFileName: [*:0]const u16) callconv(.winapi) std.os.windows.DWORD;
 
-/// Create (or truncate) a file at an absolute path and write the
-/// given bytes. Returns nothing on success; on write error the
-/// partial file is left on disk (the caller can `deleteTree` to
-/// clean up).
-///
-/// Per-platform: POSIX uses libc `std.c.open` + `std.c.write`; Windows
-/// uses Win32 `CreateFileW` + `WriteFile`. The `std.c.O` struct of
-/// open-flag bits is `void` on Windows in Zig 0.16 (the libc bindings
-/// don't expose open-flag constants for the Windows CRT), so we have
-/// to take the per-platform fork.
+/// Create (or truncate) a file at an absolute path and write the given bytes.
+/// Returns nothing on success; on write error the partial file is left on
+/// disk (the caller can `deleteTree` to clean up).
 fn writeFileAbsolute(path: []const u8, content: []const u8) !void {
     var path_buf: [std.fs.max_path_bytes:0]u8 = undefined;
     const path_z = copyToNull(&path_buf, path);
@@ -669,9 +495,6 @@ fn writeFileAbsoluteWindows(path: []const u8, content: []const u8) !void {
     path_w[written] = 0;
 
     // CreateFileW flags: GENERIC_WRITE | OPEN_ALWAYS (truncate if exists).
-    // CREATE_ALWAYS would also work but loses the existing file's ACL on
-    // some Windows versions; OPEN_ALWAYS + truncation via SetEndOfFile
-    // is the more conservative choice.
     const h_opt = CreateFileW(
         @ptrCast(&path_w),
         0x40000000, // GENERIC_WRITE
@@ -705,11 +528,7 @@ fn writeFileAbsoluteWindows(path: []const u8, content: []const u8) !void {
     }
 }
 
-// Local Win32 externs for the file-write path above. The `std.os.windows`
-// bindings expose `CreateFileW` and `WriteFile` indirectly via
-// `std.fs.File.create` (which returns a Zig file handle, not a Win32
-// HANDLE), and we need raw HANDLE access to pass through `SetFilePointerEx`
-// + `WriteFile` directly. `CloseHandle` is the matching HANDLE closer.
+// Local Win32 externs for the file-write path above.
 extern "kernel32" fn CreateFileW(
     lpFileName: [*:0]const u16,
     dwDesiredAccess: std.os.windows.DWORD,
@@ -735,14 +554,7 @@ extern "kernel32" fn SetFilePointerEx(
 ) callconv(.winapi) std.os.windows.BOOL;
 
 // Win32 FindFirstFileW / FindNextFileW bindings for the Windows-only
-// deleteTree path. `std.c.readdir` is declared as `{}` in Zig 0.16 for
-// Windows (no POSIX readdir in MSVCRT/UCRT), so we have to use the native
-// Win32 directory-enumeration API. Struct layout matches the Win32 SDK
-// `WIN32_FIND_DATAW` declaration exactly — any field reorder would break
-// the kernel's view of the struct.
-//
-// We only declare these externs when building for Windows so non-Windows
-// targets don't get a `kernel32` link-time dependency.
+// deleteTree path.
 const win32_dir_apis = if (builtin.os.tag == .windows) struct {
     /// `WIN32_FIND_DATAW` per Win32 SDK. Layout MUST match the OS struct —
     /// the kernel writes directly into this buffer via FindFirstFileW.
@@ -768,9 +580,6 @@ const win32_dir_apis = if (builtin.os.tag == .windows) struct {
     const ERROR_ALREADY_EXISTS: u32 = 183;
 
     /// Directory rename (the publishing step of `ensurePersistentIn`).
-    /// Plain `MoveFileW` (no MOVEFILE_REPLACE_EXISTING) fails when the
-    /// target exists — which is exactly the signal we want for "another
-    /// process published first".
     extern "kernel32" fn MoveFileW(
         lpExistingFileName: [*:0]const u16,
         lpNewFileName: [*:0]const u16,
@@ -796,13 +605,8 @@ const win32_dir_apis = if (builtin.os.tag == .windows) struct {
 } else struct {};
 
 /// Windows-only recursive-delete implementation, mirrors the POSIX path's
-/// semantics (best-effort, errors swallowed at the top-level caller) but
-/// uses Win32 `FindFirstFileW` / `FindNextFileW` because `std.c.readdir`
-/// is `{}` on Windows in Zig 0.16. The directory walk is the same
-/// recursive pattern as `deleteTreeRecursive`: enumerate children, recurse
-/// into subdirs, then unlink/rmdir. Path separator is `\\` (Windows native,
-/// though most APIs accept `/` too — `\\` matches what `std.fs.path.join`
-/// produces).
+/// semantics (best-effort, errors swallowed at the top-level caller) but uses
+/// Win32 `FindFirstFileW` / `FindNextFileW` because `std.c.readdir` is `{}`
 fn deleteTreeRecursiveWindows(path: []const u8) !void {
     // Build "<path>\*" in a WTF-16 buffer. FindFirstFileW needs the wildcard
     // suffix to enumerate children.
@@ -858,8 +662,7 @@ fn deleteTreeRecursiveWindows(path: []const u8) !void {
 
             // Advance to the next entry. FindNextFileW returns FALSE when
             // there are no more entries (sets GetLastError to
-            // ERROR_NO_MORE_FILES). Win32's `BOOL` is a typed enum (not a
-            // raw integer) so we compare against `.FALSE` rather than `0`.
+            // ERROR_NO_MORE_FILES).
             const more = win32_dir_apis.FindNextFileW(find_handle, &find_data);
             if (more == .FALSE) break;
         }
@@ -875,17 +678,6 @@ fn deleteTreeRecursiveWindows(path: []const u8) !void {
 
 /// `rm -rf` via libc `opendir` / `readdir` / `closedir` + `unlink` / `rmdir`.
 /// Best-effort: errors are logged but not propagated.
-///
-/// Uses libc (`std.c.*`) instead of Linux `getdents64` + `unlinkat` syscalls
-/// because the Linux raw syscalls compile fine on macOS but invoke Linux
-/// syscall numbers that don't exist on the Darwin kernel (SIGSYS on first
-/// call). The libc `readdir` is the cross-platform equivalent.
-///
-/// Windows note: `std.c.readdir` is declared as `{}` (no callable) in Zig
-/// 0.16 because Windows CRT has no POSIX `readdir`. We dispatch to a
-/// Win32 `FindFirstFileW`/`FindNextFileW` implementation via
-/// `deleteTreeRecursiveWindows` below — keeping the POSIX path untouched
-/// so Linux/macOS behavior is byte-for-byte identical.
 fn deleteTreeBestEffort(path: []const u8) void {
     switch (builtin.os.tag) {
         .windows => deleteTreeRecursiveWindows(path) catch |err| {
@@ -905,19 +697,14 @@ fn deleteTreeRecursive(path: []const u8) !void {
     const dir = std.c.opendir(dir_path_z) orelse return error.OpenDirFailed;
     defer _ = std.c.closedir(dir);
 
-    // Iterate entries. `std.c.readdir` returns `?*dirent`; null = end of stream
-    // (errno unchanged) or error (errno set). We treat null as end-of-stream
-    // for cleanup purposes — the final rmdir() will fail if the dir is
-    // genuinely non-empty, which is fine (best-effort cleanup at shutdown).
+    // Iterate entries. `std.c.readdir` returns `?*dirent`; null = end of
+    // stream (errno unchanged) or error (errno set).
     var child_path_buf: [std.fs.max_path_bytes:0]u8 = undefined;
 
     while (std.c.readdir(dir)) |entry| {
         // The libc `dirent` struct uses the field name `name` (NOT `d_name`,
-        // which is a glibc extension we don't have here) on both Linux
-        // and macOS. Linux's `name: [256]u8` is NUL-terminated by the
-        // kernel; macOS's `name: [1024]u8` is NOT NUL-terminated but is
-        // accompanied by a `namlen: u16` field giving the actual byte
-        // count. Branch on builtin.os.tag to handle both correctly.
+        // which is a glibc extension we don't have here) on both Linux and
+        // macOS.
         const name = switch (builtin.os.tag) {
             .macos => entry.name[0..entry.namlen],
             else => blk: {
@@ -964,29 +751,7 @@ fn deleteTreeRecursive(path: []const u8) !void {
 }
 
 // ===== Tests merged from extraction_test.zig (2026-09-29 flatten) =====
-// Tests for the runtime extraction module. Two test cases:
-//
-//   1. extract() writes every asset's bytes to a fresh temp dir, returns
-//      an absolute path, and the on-disk files match the source content
-//      byte-for-byte (including files in subdirectories, which test
-//      extract's makePath-for-parent logic).
-//   2. cleanup() removes the temp dir recursively.
-//
-// Both tests are pure CPU + filesystem; no networking or subprocesses.
-// They use the system's default temp dir (`$TMPDIR` / `$XDG_RUNTIME_DIR` /
-// `/tmp`), so a parallel test run on the same host could in theory
-// collide — but `extract` puts each run in a per-pid subdir, so the
-// collision window is essentially zero.
-//
-// Zig 0.16 API notes:
-//   * `std.fs.cwd()` is gone, so file reads in the test use raw
-//     `std.os.linux.open` + `read` syscalls (matching the patterns in
-//     subprocess.zig and path_resolve.zig). The actual SUT code
-//     (extraction.zig) also uses raw syscalls internally for the same
-//     reason.
-//   * The cwd-only stat for "did cleanup succeed?" uses faccessat(2)
-//     with AT.FDCWD, which is a single syscall and doesn't need an
-//     Io runtime.
+// Tests for the runtime extraction module.
 
 const testing = std.testing;
 
@@ -1103,16 +868,7 @@ fn testCopyToNull(buf: *[std.fs.max_path_bytes:0]u8, path: []const u8) [*:0]cons
 
 // =====================================================================
 // ensurePersistentIn — the persistent, content-addressed webapp dir
-// =====================================================================
-//
-// Why these exist: the desktop used to hand a spawned (detached) pabrik a
-// per-pid temp dir and then delete that dir at window close. The daemon
-// kept running with a --static-dir that no longer existed, so the NEXT
-// desktop launch attached to it and the webview rendered
-// `404 Not Found`. `ensurePersistentIn` is the fix; the tests below lock
-// in the two properties that make it one — the dir outlives the process
-// that created it (nothing here ever calls cleanup), and the same assets
-// always map to the same path.
+// ===================================================================== Why
 
 /// Return a tmpDir's real absolute path into `buf`.
 fn tmpBase(tmp: *std.testing.TmpDir, buf: *[std.fs.max_path_bytes]u8) ![]const u8 {

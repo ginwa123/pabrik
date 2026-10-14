@@ -1,35 +1,6 @@
-// Functional tests for `search_tool`'s regex + paging contract.
-//
-// Zig port of `tests/functional/progressive_tool_search_regex_test.py`
-// (same test names, same order).
-//
-// Plan: docs/superpowers/plans/2026-09-12-progressive-tool-search-regex.md
-//
-// WHAT IS VERIFIABLE AT THE REAL WIRE (booted binary, isolated HOME, no
-// live LLM):
-//
-//   * `GET /api/agent-tools/registry` is built from
-//     `tools_equipped.UNIFIED_TOOL_REGISTRY()` — the SAME source the
-//     workflow reads to fill the LLM's `tools[]`. So `search_tool`'s
-//     description asserted here is byte-for-byte what the model is sent
-//     (after JSON decoding), which is what makes this the right level
-//     to lock the "why regex / why paging" wording: a regression that
-//     drops it from the schema changes model behaviour, and no
-//     in-process test can see that.
-//
-//   * The matching itself (regex vs literal, the invalid-pattern
-//     fallback, limit/offset windows) is covered where it is
-//     reachable: `src/agentic_loop/progressive_catalog.zig` (pure
-//     matcher) and `src/agentic_loop/tools_exec_progressive_tools.zig`
-//     (the real adapter over the real registry + a real `:memory:`
-//     DB). There is no HTTP route that dispatches an agent tool and the
-//     harness has no stub LLM server, so the wire test deliberately
-//     stops at the registry payload rather than pretending to exercise
-//     the agent loop.
-//
-// Run:
-//     PABRIK_BIN=<worktree>/zig-out/bin/pabrikcore-linux-x86_64 \
-//       zig build test
+// Functional tests for `search_tool`'s regex + paging contract. Zig port of
+// `tests/functional/progressive_tool_search_regex_test.py` (same test names,
+// same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -50,12 +21,6 @@ const REQUIRED_META_TOOLS = [_][]const u8{ "search_tool", "view_tool", "use_tool
 // ============================================================================
 
 /// `GET /api/agent-tools/registry` indexed by name.
-///
-/// Mirrors the Python `_registry` helper: assert the list is non-empty
-/// and that EVERY entry carries both `name` and `description` (an entry
-/// without a `description` is exactly how a sentence the next test
-/// looks for can go missing), then index by name. Keys and values
-/// BORROW from `doc`'s parse arena, hence the `deinit` order.
 const Registry = struct {
     resp: harness.Response,
     doc: harness.Json,
@@ -165,11 +130,9 @@ fn expectCarries(desc: []const u8, tool: []const u8, needle: []const u8) !void {
     return error.TestUnexpectedResult;
 }
 
-/// The wire `tools[].name` list, in wire order — the Python
-/// `names = [t["name"] for t in parsed["tools"]]`.
-///
-/// Owned: each name is duped out of the parse arena so the caller can
-/// compare/print it after `doc.deinit()`.
+/// The wire `tools[].name` list, in wire order — the Python `names =
+/// [t["name"] for t in parsed["tools"]]`. Owned: each name is duped out of
+/// the parse arena so the caller can compare/print it after `doc.deinit()`.
 fn ownedNames(doc: *const harness.Json) ![][]const u8 {
     const tools = doc.array("tools") orelse return error.TestUnexpectedResult;
     const names = try gpa.alloc([]const u8, tools.items.len);
@@ -209,13 +172,6 @@ const ASCII_WS = " \t\n\r\x0b\x0c";
 // ============================================================================
 
 // The model-facing description must say WHAT (regex, literal) and WHY.
-//
-// The WHY is the point of the feature: a substring query cannot
-// express "any MCP create-tool on any server" or "this capability
-// under either spelling", and the model only reaches for a pattern if
-// the description gives it the examples. Asserting the examples (not
-// just the word "regex") is what keeps the justification from being
-// edited away later.
 test "search_tool_description_teaches_regex_with_a_reason" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -238,25 +194,15 @@ test "search_tool_description_teaches_regex_with_a_reason" {
     // serve.
     try expectCarries(desc, "search_tool", "^mcp_.*_create"); // the anchored/wildcard example is gone
     try expectCarries(desc, "search_tool", "doc|documentation"); // the alternation example is gone
-    // The word-boundary example. The registry description spells it
-    // with ONE escaped backslash (`\bsearch\b` in the Zig source's
-    // multiline literal), which JSON-encodes as `\\bsearch\\b`; after
-    // the decode performed by `Response.json()` the in-memory value
-    // holds the single-backslash form the Python `json.loads` also saw.
+    // The word-boundary example.
     try expectCarries(desc, "search_tool", "\\bsearch\\b"); // the word-boundary example is gone
     // The reason itself, in words — the registry carries the tool-level
-    // description (the `query` PARAM description is not exposed by any
-    // HTTP route, so its wording is locked by the inline schema tests
-    // instead).
+    // description (the `query` PARAM description is not exposed by any HTTP
+    // route, so its wording is locked by the inline schema tests instead).
     try expectCarries(desc, "search_tool", "one pattern reaches a capability spelled several ways");
 }
 
-// A catalog full of MCP tools must not be dumped into the context
-// window.
-//
-// `limit`/`offset` exist for exactly that, so the description has to
-// say so — otherwise the model treats a 40-row page as the whole
-// catalog and gives up on the tool it was looking for.
+// A catalog full of MCP tools must not be dumped into the context window.
 test "search_tool_description_documents_paging_for_big_catalogs" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -276,19 +222,6 @@ test "search_tool_description_documents_paging_for_big_catalogs" {
 }
 
 // Guard the envelope shape the frontend/LLM consume.
-//
-// The endpoint returns `{tools: [{name, description}]}`; both
-// progressive meta-tools must remain listed (they are ordinary tools
-// as far as the registry is concerned), and the payload must
-// round-trip through JSON — which is where a stray control character
-// in a hand-written description would surface.
-//
-// WHY THIS DOES NOT CALL THE SHARED `Registry` HELPER: the Python
-// original deliberately re-fetched the RAW body and re-parsed it with
-// `json.loads`, because the round-trip itself is part of the
-// assertion. Here `Response.json()` parses the raw wire bytes — the
-// same single step — so the round-trip is preserved without the
-// indirection.
 test "registry_payload_is_json_clean_and_search_tool_stayed_in_it" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});

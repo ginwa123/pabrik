@@ -8,16 +8,7 @@ const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
 
 /// Migration 104 - Add `sessions.is_pinned` + `sessions.pinned_position`.
-///
-/// Powers the PINNED section above RECENT in the sidebar. Right-clicking a
-/// session (global recents list or kanban task row, where task.id ==
-/// session_id) pins it; pinned rows render in their own section and stay
-/// out of the recents sort.
-///
-/// Mirrors Migration 050 (workspace_item_tasks.is_pinned/pinned_position):
-/// INTEGER 0/1 flag + INTEGER position, COALESCE'd to 0 at the SELECT
-/// boundary so legacy rows read as unpinned. New pins bump to MAX+1 so
-/// they land at the bottom of the pinned region; unpins reset to 0.
+/// Powers the PINNED section above RECENT in the sidebar.
 pub const Migration104AddSessionPinned = struct {
     pub const version: u32 = 104;
     pub const name = "add_session_pinned";

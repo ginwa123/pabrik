@@ -1,18 +1,5 @@
-//! Render a single backend message into 0..N styled `Line`s for the
-//! viewport. Pure function — no state, no side effects. Caller owns
-//! the returned slice (each `Line.text` is independently allocated
-//! and must be freed).
-//!
-//! Role dispatch:
-//!   - `user`      → one `Line` of "> {content}" in bold green.
-//!   - `assistant` → `<think>...</think>` stripped. Thinking-only
-//!                   renders as a single dim `… thinking …` chip.
-//!   - `tool`      → parsed `<tool>` envelope renders as a compact
-//!                   card header (`▶ {name}  {primary}  ✓/✗`). Legacy
-//!                   non-envelope content renders as raw dim text.
-//!
-//! Mirrors the Vue chatview's three-tier behaviour at the textual
-//! level — no expansion model in v1 (folded away; see design spec).
+//! Render a single backend message into 0..N styled `Line`s for the viewport.
+//! Pure function — no state, no side effects.
 
 const std = @import("std");
 const testing = std.testing;

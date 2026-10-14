@@ -1,24 +1,6 @@
 //! Stream snapshot registry — in-flight LLM stream buffer per session.
-//!
-//! 2026-09-02 stream-resume-on-reselect (task_1787673548905_0):
-//! When the user closes/re-selects a chat session mid-stream, ChatView
-//! drops its `streaming-*` placeholder and resets `streamingContent`.
-//! The backend keeps streaming chunks, but the re-mounted view has no
-//! way to recover the partial text. This module is the backend's
-//! authoritative in-memory record of the in-flight stream content per
-//! session, so a new endpoint `GET /api/llm/session/:id/stream` can
-//! return `{ active: bool, content: string }` and the frontend can
-//! resume seamlessly.
-//!
-//! Design:
-//! - A single global registry (`std.StringHashMap` behind a mutex)
-//!   maps session_id → accumulated content buffer.
-//! - `stream_callback` (workflow.zig) appends each content delta via
-//!   `appendContent` / clears via `beginStream` / `endStream`.
-//! - The HTTP handler reads via `getSnapshot` (dupe into the request
-//!   arena — the registry owns its own copies).
-//! - Registry-owned buffers use the DI allocator (process lifetime),
-//!   NOT the per-request/per-iteration arena.
+//! 2026-09-02 stream-resume-on-reselect (task_1787673548905_0): When the user
+//! closes/re-selects a chat session mid-stream, ChatView drops its
 
 const std = @import("std");
 
@@ -56,10 +38,9 @@ pub const Entry = struct {
 
 fn ensureInit() void {
     if (registry == null) {
-        // The registry is a process-global singleton — it MUST NOT live
-        // in a caller's arena (each test / request passes a different
-        // arena that dies at scope exit). page_allocator gives it
-        // process lifetime. Entries + keys use the same allocator.
+        // The registry is a process-global singleton — it MUST NOT live in a
+        // caller's arena (each test / request passes a different arena that
+        // dies at scope exit). page_allocator gives it process lifetime.
         registry = std.StringHashMap(*Entry).init(std.heap.page_allocator);
     }
 }

@@ -1,12 +1,6 @@
-// Exec wrapper for the `get_plan` agent tool.
-//
-// `get_plan` declares zero required parameters — session_id is implicit
-// (D3) and pulled from `ctx.session_id` here. The wrapper calls the
-// pure-fn layer (which returns `<empty/>` when no plan exists, D6) and
-// wraps the result in the standard `<tool>...</tool>` envelope.
-//
-// Plan: docs/superpowers/plans/2026-08-19-session-plan-agent-tool.md
-// Task: task_1787073929852_8 (Task 4 of 9)
+// Exec wrapper for the `get_plan` agent tool. `get_plan` declares zero
+// required parameters — session_id is implicit (D3) and pulled from
+// `ctx.session_id` here.
 
 const std = @import("std");
 const testing = std.testing;
@@ -60,10 +54,7 @@ fn setupDb() !TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
-/// Build a `ToolExecContext` that the exec wrapper can use. The exec
-/// wrapper only reads `allocator`, `db`, and `session_id`; the other
-/// fields (`logger`, `config`, etc.) are left
-/// `undefined` because the wrapper never dereferences them.
+/// Build a `ToolExecContext` that the exec wrapper can use.
 fn makeTestCtx(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8) ToolExecContext {
     var dummy_f32: f32 = 0.0;
     var dummy_bool: bool = false;
@@ -129,11 +120,8 @@ test "execGetPlan: present plan returns wrapped envelope with plan field" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Seed the plan via the pure-fn layer (mirrors production wiring:
-    // an earlier update_plan call already populated the row). The
-    // pure-fn returns an allocated XML envelope we don't need —
-    // discard with `_` and free explicitly to satisfy Zig 0.16's
-    // "non-void values must be used" rule.
+    // Seed the plan via the pure-fn layer (mirrors production wiring: an
+    // earlier update_plan call already populated the row).
     {
         const seed_envelope = try update_plan_mod.executeUpdatePlan(alloc, &ctx.db, "sess_with_plan", .{
             .content = "# Goal\n\n- [x] done\n- [ ] pending\n",

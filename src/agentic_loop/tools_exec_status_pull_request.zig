@@ -21,10 +21,8 @@ fn payloadString(inner_parsed: ?std.json.Parsed(std.json.Value), field: []const 
 }
 
 /// Best-effort provider sniff from the worktree's own `origin` remote.
-/// Returns null when there is no origin, git cannot be asked, or the
-/// remote names no known forge. Lets `status_pull_request` with no
-/// arguments do the right thing in a GitLab worktree without the caller
-/// naming a provider.
+/// Returns null when there is no origin, git cannot be asked, or the remote
+/// names no known forge.
 fn providerFromOrigin(allocator: std.mem.Allocator, io: std.Io, worktree_path: []const u8) ?pr_provider.PrProvider {
     const res = std.process.run(allocator, io, .{
         .argv = &.{ "git", "-C", worktree_path, "remote", "get-url", "origin" },

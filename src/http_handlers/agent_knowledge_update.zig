@@ -1,19 +1,6 @@
-//! `PATCH /api/agents/:agent_id/knowledge/:knowledge_id`.
-//!
-//! Updates file_path and/or label of an existing knowledge entry.
-//! Body: `{file_path?, label?}` (both optional; at least one required).
-//! `file_path` MUST be absolute if provided.
-//!
-//! Layered as:
-//!   - `useCase` — validate ids + body → build dynamic UPDATE SQL
-//!     (Zig 0.16 dropped std.io.fixedBufferStream, so we use
-//!     `ArrayList.appendSlice` for the static SQL fragments) →
-//!     UPDATE → SELECT refetch → return typed Knowledge.
-//!   - `agentKnowledgeUpdateHandler` — thin orchestrator over
-//!     `useCase`: parses path/body, delegates, maps outcome to HTTP.
-//!
-//! Memory: the per-request arena reaps all allocations at request
-//! end, so neither layer needs explicit nor free.
+//! `PATCH /api/agents/:agent_id/knowledge/:knowledge_id`. Updates file_path
+//! and/or label of an existing knowledge entry. Body: `{file_path?, label?}`
+//! (both optional; at least one required).
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -33,11 +20,7 @@ const UpdateKnowledgeBody = struct {
 /// Subset of the knowledge row returned by the use-case.
 pub const Knowledge = agent_db.KnowledgeRow;
 
-/// Domain-level error set for `useCase`. The handler maps each
-/// variant to an HTTP status code + message via two exhaustive
-/// switches (intentional — adding a new variant fails to compile in
-/// the handler until both switches are updated, keeping status
-/// codes in lockstep with the error set).
+/// Domain-level error set for `useCase`.
 pub const KnowledgeUpdateError = error{
     /// `agent_id` or `knowledge_id` path param was missing or empty.
     IdsRequired,
@@ -78,22 +61,7 @@ pub const KnowledgeUpdateOutput = struct {
 // Use case
 // =====================================================================
 
-/// Update an existing knowledge row. Validates that at least one of
-/// `file_path` / `label` / `content` is provided, that any provided
-/// NON-EMPTY `file_path` is absolute (empty string = clear the column,
-/// i.e. switch the row to content-backed), then UPDATE-with-dynamic-SQL
-/// the requested fields and SELECT-refetch the row. The use-case is
-/// transport-agnostic: it works for both the per-request arena
-/// (production HTTP handler) and `testing.allocator` (unit tests
-/// below) — all allocations go through the passed-in allocator.
-///
-/// Empty-string semantics (2026-08-22 fix, PR #291 follow-up):
-///   - `file_path = ""` → clears the path (row becomes inline-text).
-///     NOT a NotAbsolutePath error — the edit dialog's mode switch
-///     sends `{file_path: "", content: "..."}` atomically.
-///   - `content = ""`  → clears the text (row becomes file-backed).
-///     Bound via COALESCE(?, '') because SqliteBackend.exec binds
-///     empty slices as SQL NULL, which violates NOT NULL.
+/// Update an existing knowledge row.
 pub fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -190,15 +158,8 @@ pub fn agentKnowledgeUpdateHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-//
-// impl + tests in one file (project convention for Agent Mode).
-// 5 behavioural tests cover the use-case:
-//
-//   1. Validation: empty ids OR neither field → respective errors
-//   2. NotAbsolutePath: relative file_path rejected
-//   3. Happy path: updates file_path AND label
-//   4. file_path only: updates just file_path
-//   5. label only: updates just label
+// impl + tests in one file (project convention for Agent Mode). 5 behavioural
+// tests cover the use-case: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;
@@ -370,11 +331,9 @@ test "useCase: PATCH can set content on an existing row" {
     try testing.expectEqualStrings("/tmp/orig.md", output.knowledge.file_path);
 }
 
-// ─── Mode-switch tests (2026-08-22, PR #291 follow-up) ─────────────────
-//
-// The edit dialog's File↔Text mode switch sends BOTH source fields in
-// one PATCH — the inactive one as "". These tests lock in the
-// empty-string semantics: "" = clear this column (not an error).
+// ─── Mode-switch tests (2026-08-22, PR #291 follow-up) ───────────────── The
+// edit dialog's File↔Text mode switch sends BOTH source fields in one PATCH —
+// the inactive one as "".
 
 test "useCase: file_path='' clears path and sets content (file→text switch)" {
     const alloc = testing.allocator;
@@ -436,38 +395,9 @@ test "useCase: relative non-empty file_path still returns NotAbsolutePath" {
     );
 }
 
-// ===== Tests merged from agent_knowledge_update_functional_test.zig (2026-09-11 flatten) =====
-// ISOLATED functional tests for the agent-knowledge UPDATE flow
-// (PATCH /api/agents/:agent_id/knowledge/:knowledge_id).
-// 
-// WHY THIS FILE EXISTS (lesson from PR #291, 2026-08-22):
-// The edit dialog's File↔Text mode switch sends BOTH source fields in
-// one PATCH — the inactive one as `""`. The first implementation
-// passed all unit tests but 400'd/500'd in real use because:
-//   1. `std.fs.path.isAbsolute("")` is false → `file_path: ""` was
-//      rejected as "not absolute" (400).
-//   2. `SqliteBackend.exec` binds EMPTY slices as SQL NULL →
-//      `content: ""` violated the NOT NULL constraint (500).
-// Neither failure is visible to a mock-level test; both only appear
-// when the REAL useCase runs against a REAL SQLite database with the
-// EXACT wire payload the frontend sends.
-// 
-// LESSON (user directive): verify HTTP-body-shaped behaviour with
-// isolated functional tests that replay the exact JSON body the
-// client sends — do NOT spin up a live server for verification.
-// These tests run the production `useCase` against an in-memory DB
-// seeded via the real migrations (076 + 079), no sockets involved.
-// 
-// Coverage:
-//   A. file→text switch: `{file_path:"", content:"..."}` → 200-shape,
-//      row flips to content-backed.
-//   B. text→file switch: `{file_path:"/abs", content:""}` → row flips
-//      to file-backed, content cleared (NOT a NULL crash).
-//   C. relative non-empty path still rejected (guard stays).
-//   D. route-order contract: `/knowledge/reorder` must be registered
-//      BEFORE `/knowledge/:knowledge_id` in main.zig, or the literal
-//      route is shadowed and reorder PATCHes hit the update handler
-//      with knowledge_id="reorder".
+// ===== Tests merged from agent_knowledge_update_functional_test.zig
+// (2026-09-11 flatten) ===== ISOLATED functional tests for the
+// agent-knowledge UPDATE flow (PATCH
 
 const update_mod = @This();
 
@@ -637,10 +567,4 @@ test "functional: non-empty relative file_path still returns NotAbsolutePath" {
 }
 
 // ─── D. route order ─────────────────────────────────────────────────────
-//
-// The `/knowledge/reorder` literal must win over its `:knowledge_id`
-// sibling. That is a property of the REGISTERED TABLE, so it is asserted
-// there: `http_routes.zig` builds the real table and asks `matchRoute`
-// which handler `PATCH /api/agents/<id>/knowledge/reorder` resolves to.
-// See "route table: every /knowledge/reorder literal wins over its :id
-// sibling" at the bottom of that file.
+// The `/knowledge/reorder` literal must win over its `:knowledge_id` sibling.

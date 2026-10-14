@@ -1,22 +1,4 @@
 //! `web_search_request` — host pinning and `{key}` substitution.
-//!
-//! **This is the only module in the feature that ever sees a credential.**
-//! Everything upstream of it works on `{key}` placeholders and never on a
-//! secret; `web_search_curl` has no field that could hold one. Keeping the
-//! two operations in one small, I/O-free file is what makes "the key is
-//! read in exactly two places" an auditable claim rather than an aspiration.
-//!
-//! ## The order here IS the security boundary
-//!
-//! 1. `validateKeySite` — is this template even usable for this entry?
-//! 2. `checkPin` — is the requested host the host the user approved?
-//! 3. `substituteKey` — only NOW does the credential enter the request.
-//!
-//! Collapsing or reordering those is the bug that matters. Without step 2 a
-//! prompt injection can point a credentialed request at a host of its
-//! choosing: the agent has unrestricted egress already (the `command` tool
-//! spawns `bash -c`), so what it must never gain is a *credentialed* egress
-//! to an arbitrary destination.
 
 const std = @import("std");
 const curl = @import("web_search_curl.zig");
@@ -47,12 +29,6 @@ const HostParts = struct {
 };
 
 /// Split `host[:port]` into a lowercased name and a port string.
-///
-/// Three normalisations, each of which would otherwise produce a confusing
-/// false mismatch:
-///   - case is folded (DNS is case-insensitive),
-///   - one trailing dot is dropped (`host.` is the DNS root form of `host`),
-///   - a bracketed IPv6 literal keeps its brackets so it round-trips.
 fn splitHost(hostport: []const u8) HostParts {
     var rest = hostport;
 
@@ -96,15 +72,6 @@ fn effectivePort(port: []const u8) []const u8 {
 }
 
 /// True when the request's host is exactly the pinned host.
-///
-/// **Exact, not suffix.** `evil.api.search.tinyfish.ai` is a different
-/// origin from `api.search.tinyfish.ai` and must never inherit its pin —
-/// that prefix-match is the whole attack. Same for
-/// `api.search.tinyfish.ai.evil.com`.
-///
-/// The port is compared explicitly rather than ignored: a pin for
-/// `host:443` must not authorise a request to `host:8443`, where the
-/// operator may be running something else entirely.
 pub fn hostMatches(request_url: []const u8, pinned_url: []const u8) bool {
     const req = splitHost(curl.hostOfUrl(request_url));
     const pin = splitHost(curl.hostOfUrl(pinned_url));
@@ -113,9 +80,7 @@ pub fn hostMatches(request_url: []const u8, pinned_url: []const u8) bool {
 }
 
 /// Verify the pinned URL the user configured is itself safe to send a
-/// credential to. Called on BOTH the PUT path (so the mistake is caught
-/// while the user is editing) and the execute path (so a config file edited
-/// by hand cannot smuggle one in).
+/// credential to.
 pub fn validatePinnedUrl(pinned_url: []const u8) RefuseError!void {
     if (!hasHttpsScheme(pinned_url)) return error.UnsafePinnedUrl;
     if (curl.isNonPublicHost(curl.hostOfUrl(pinned_url))) return error.UnsafePinnedUrl;
@@ -127,12 +92,8 @@ fn hasHttpsScheme(url: []const u8) bool {
 }
 
 /// The policy the parser cannot know: does this template match this entry?
-///
 /// `parse` accepts a template with no `{key}` because a self-hosted provider
-/// genuinely has no credential. Whether that is CORRECT depends on the
-/// config entry, which is why the check lives here rather than in the
-/// parser — and why it has to be an explicit two-sided test rather than
-/// "if the site exists, substitute".
+/// genuinely has no credential.
 pub fn validateKeySite(parsed: Parsed, has_configured_key: bool) RefuseError!void {
     if (has_configured_key and parsed.key_site == .none) return error.MissingKeySite;
     if (!has_configured_key and parsed.key_site != .none) return error.UnexpectedKeySite;
@@ -158,10 +119,6 @@ pub const BuiltRequest = struct {
 };
 
 /// Replace every occurrence of `needle` in `haystack` with `replacement`.
-///
-/// `std.mem.replaceOwned` exists but returns `OutOfMemory`-only errors and
-/// allocates per occurrence; this is the same operation without the
-/// intermediate list. The result is owned by the caller.
 fn replaceAll(
     allocator: std.mem.Allocator,
     haystack: []const u8,
@@ -184,21 +141,15 @@ fn replaceAll(
 }
 
 /// Substitute the credential into a parsed request, producing the URL and
-/// header list to send.
-///
-/// The caller MUST have run `checkPin` first. This function does not verify
-/// the host and has no way to — by the time it is called the decision has
-/// been made, and re-deciding it here would be the exact confusion this
-/// module exists to prevent.
+/// header list to send. The caller MUST have run `checkPin` first.
 pub fn substituteKey(
     allocator: std.mem.Allocator,
     parsed: Parsed,
     key: ?[]const u8,
 ) std.mem.Allocator.Error!BuiltRequest {
-    // Accumulate in a list rather than a pre-sized array. A pre-sized
-    // array of `Header` holds UNINITIALISED slots, so an errdefer that
-    // walks all of them on a mid-loop failure frees garbage. Only entries
-    // that were fully built are ever reachable in a list.
+    // Accumulate in a list rather than a pre-sized array. A pre-sized array
+    // of `Header` holds UNINITIALISED slots, so an errdefer that walks all of
+    // them on a mid-loop failure frees garbage.
     var headers: std.ArrayList(Header) = .empty;
     errdefer {
         for (headers.items) |h| {

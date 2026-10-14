@@ -1,22 +1,6 @@
-//! `GET /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/html`.
-//!
-//! Lazy-load an element's full HTML body. The page+elements GET
-//! (`design_pages_get`) deliberately omits HTML bodies to keep the
-//! payload small for designs with many elements. The iframe
-//! preview fetches bodies via this endpoint as the user selects
-//! each element.
-//!
-//! Response shape: `{"html": string}` (built via
-//! `std.json.Stringify.valueAlloc` so the HTML body is properly
-//! JSON-escaped — quotes, backslashes, newlines, control chars).
-//!
-//! Errors:
-//!   - 400 missing `element_id` path param
-//!   - 404 element not found (or file not found on disk)
-//!   - 500 DB / IO failure
-//!
-//! Plan: docs/superpowers/plans/2026-07-08-design-mode-redesign.md
-//!   (Chunk 3, Task 3.4)
+//! `GET
+//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/html`.
+//! Lazy-load an element's full HTML body.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");

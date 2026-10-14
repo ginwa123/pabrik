@@ -1,57 +1,5 @@
-// Functional coverage for the `delete_document` / `search_documents` agent tools.
-//
-// Zig port of `tests/functional/document_agent_tools_test.py` (same test
-// names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional coverage for the `delete_document` / `search_documents` agent tools.
-//
-//   Neither tool is reachable over HTTP on its own — agent tools are dispatched
-//   by the LLM loop, and there is no endpoint that invokes one by name. So what
-//   this file pins down is everything AROUND the dispatch that a unit test on
-//   the executor cannot see:
-//
-//     * REGISTRY — `GET /api/agent-tools/registry` must list both tools. That
-//       endpoint reads `tools_equipped.UNIFIED_TOOL_REGISTRY()`, the same table
-//       the runtime dispatcher reads, so a missing entry here means the model
-//       can never call the tool AND the Settings → Tools checklist has no tick
-//       for it. Two surfaces, one assertion.
-//     * SEEDED — a freshly created agent item must be seeded with
-//       `search_documents` and must NOT be seeded with `delete_document`. The
-//       allowlist rows are written once at creation and never backfilled, so a
-//       fresh item is the only place the asymmetry is observable, and
-//       `default_tools.py` is the transcription that has to stay in sync.
-//     * THE SURROUNDING API still works — documents created through
-//       `/api/workspaces/:ws/documents` are what `search_documents` reads, and
-//       deleting one through the HTTP DELETE is the same row `delete_document`
-//       removes. If this regresses, the search tool is searching nothing.
-//
-//   The tool LOGIC (regex/literal/matching, paging, excerpts, the LIKE
-//   prefilter, cross-workspace refusal) is covered by the Zig tests in
-//   `src/agentic_loop/documents_search.zig` and
-//   `src/agentic_loop/tools_exec_document.zig`, which drive the real executors
-//   against in-memory SQLite. This file covers the wire.
-//
-//   Plan: docs/superpowers/plans/ — task "add another tools name
-//   delete_document and search_documents".
-//   """
-//
-// ONE PORT DEVIATION, DELIBERATE: the Python `_create_agent` sent a
-// literal `"/tmp/doc-tools-agent"`. The server validates an item's
-// `path` with `std.fs.path.isAbsolute`, which is platform-relative, so
-// that literal 400s on Windows and reads there as a server regression
-// that does not exist. Every agent path here is derived from
-// `h.temp_dir` via `harness.harnessPath` instead.
-//
-// WHY THE EXPECTED TOOL LIST IS INLINED: the Python original imported
-// `DEFAULT_AGENT_TOOLS` from `tests/functional/default_tools.py`. A Zig
-// test package can only reach a non-test file when `root.zig` names it
-// in `suites`, and `root.zig` is owned by another agent for this port —
-// so the list is transcribed below, exactly as
-// `agent_tools_defaults_test.zig` does for the same table. The
-// `comptime` block re-asserts the invariants `default_tools.py` states
-// in prose, so a hand-edit that breaks them fails at COMPILE time.
+// Functional coverage for the `delete_document` / `search_documents` agent
+// tools.
 
 const std = @import("std");
 const testing = std.testing;
@@ -67,12 +15,8 @@ const SEARCH_DOCUMENTS = "search_documents";
 // Expected tool list — mirrors tests/functional/default_tools.py
 // ============================================================================
 
-/// Mirrors `DEFAULT_AGENT_TOOLS` — 33 names, sorted ASC, matching the
-/// wire order of `GET /api/agents/:agent_id/tools`.
-///
-/// `delete_document` is deliberately ABSENT: it is irreversible, so it
-/// is registered (and therefore one tick away in the Settings → Tools
-/// checklist, which reads the same registry) but never seeded.
+/// Mirrors `DEFAULT_AGENT_TOOLS` — 33 names, sorted ASC, matching the wire
+/// order of `GET /api/agents/:agent_id/tools`.
 const DEFAULT_AGENT_TOOLS = [_][]const u8{
     "add_document",
     "add_skill",
@@ -424,10 +368,7 @@ test "registry_lists_both_new_document_tools" {
         return error.TestUnexpectedResult;
     }
 
-    // `delete_document` takes exactly one argument. A second knob on an
-    // irreversible call is a knob the model can fill in wrongly, and the
-    // registry description is where a "just one more option" would first
-    // show up.
+    // `delete_document` takes exactly one argument.
     if (containsIgnoreCase(delete_desc.?, "force")) {
         std.debug.print("{s} grew a confirmation knob; got \"{s}\"\n", .{ DELETE_DOCUMENT, delete_desc.? });
         return error.TestUnexpectedResult;
@@ -471,17 +412,9 @@ test "fresh_agent_is_seeded_with_search_documents_but_not_delete" {
     try expectExactSet(tools, &DEFAULT_AGENT_TOOLS);
 }
 
-// Registered is not the same as seeded — the user can still tick it.
-//
-// `POST /api/agents/:id/tools` validates `tool_name` against
-// `UNIFIED_TOOL_REGISTRY` and 400s on anything unknown. So a 201 here is
-// two assertions at once: the tool is in the registry, and the opt-in
-// persists. The one thing that would be a real regression is
-// `delete_document` being unreachable — a user who WANTS the agent to
-// clean up notes must be able to ask for it.
-//
-// This is also why not seeding it is a choice rather than an omission:
-// the same wire that refuses an unknown name accepts this one.
+// Registered is not the same as seeded — the user can still tick it. `POST
+// /api/agents/:id/tools` validates `tool_name` against
+// `UNIFIED_TOOL_REGISTRY` and 400s on anything unknown.
 test "delete_document_can_be_enabled_explicitly" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -543,10 +476,9 @@ test "delete_document_can_be_enabled_explicitly" {
     try expectExactSet(final, &DEFAULT_AGENT_TOOLS);
 }
 
-// The registry validation is real, not a rubber stamp.
-//
-// Without this, "POST returned 201" in the test above would prove
-// nothing — an endpoint that accepts any string would pass it too.
+// The registry validation is real, not a rubber stamp. Without this, "POST
+// returned 201" in the test above would prove nothing — an endpoint that
+// accepts any string would pass it too.
 test "an_unknown_tool_name_is_still_rejected" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -573,10 +505,6 @@ test "an_unknown_tool_name_is_still_rejected" {
 }
 
 // `search_documents` reads the `documents` table; prove it is populated.
-//
-// A tool whose backing rows the REST surface cannot create would be a
-// tool that can only ever find documents some other code path made — and
-// nothing in the build would say so.
 test "documents_crud_round_trip_the_search_tool_reads" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -711,12 +639,8 @@ test "documents_crud_round_trip_the_search_tool_reads" {
 }
 
 // `search_documents` has to match an empty body without erroring.
-//
-// `SqliteBackend.exec` binds a zero-length slice as SQL NULL, so an
-// empty body is the one input that has historically broken writes. A
-// document with an empty body must land as "" — a NULL would make the
-// search engine read a null haystack, and the unit tests do not catch
-// it because they insert through the same store the tool does.
+// `SqliteBackend.exec` binds a zero-length slice as SQL NULL, so an empty
+// body is the one input that has historically broken writes.
 test "documents_body_empty_round_trips_as_empty_string" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -771,11 +695,9 @@ fn expectFieldStr(obj: std.json.ObjectMap, key: []const u8, want: []const u8, bo
     }
 }
 
-/// Element-wise equality over a list of tool names.
-///
-/// `std.mem.eql([]const u8, a, b)` does not compile: its `a_elem != b_elem`
-/// test rejects a slice element. Comparing length then each name is the
-/// spelling that does.
+/// Element-wise equality over a list of tool names. `std.mem.eql([]const u8,
+/// a, b)` does not compile: its `a_elem != b_elem` test rejects a slice
+/// element. Comparing length then each name is the spelling that does.
 fn nameSlicesEqual(a: []const []const u8, b: []const []const u8) bool {
     if (a.len != b.len) return false;
     for (a, b) |x, y| {

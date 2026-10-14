@@ -17,12 +17,7 @@ const GH_TIMEOUT_MS: u32 = 60_000;
 /// Per-stream capture cap for the PR URL / gh error text.
 const MAX_CAPTURE_BYTES: usize = 64 * 1024;
 
-/// Outcome of running `gh pr create` in a worktree. The use case catches
-/// every `gh`-related failure mode (spawn failure, non-zero exit, signal
-/// kill, wait failure) and surfaces them via `status == .gh_failed` +
-/// `stderr` so the handler does not need to know anything about process
-/// plumbing. The use case only propagates the unexpected error union
-/// (`std.fmt.AllocPrintError` and similar) for things like OOM.
+/// Outcome of running `gh pr create` in a worktree.
 const GhStatus = enum { success, gh_failed };
 
 const CreatePullRequestResult = struct {
@@ -36,25 +31,8 @@ const CreatePullRequestResult = struct {
     stderr: []const u8,
 };
 
-/// Use case — spawn `gh pr create` in the worktree directory and capture
-/// the result. No HTTP types; takes the same `(allocator, io, …)` pair
-/// the GinwaServer handler gives us, returns a domain struct.
-///
-/// `gh` is invoked through `helpers.run_captured` rather than a
-/// hand-rolled `spawn` → drain-stdout → drain-stderr → `Child.wait`.
-/// The hand-rolled shape is what killed the server in
-/// `git_pr_status.zig`: `Child.wait` runs `childCleanupPosix`, which
-/// `closeFd`s every pipe still attached to the `Child`, and Zig 0.16
-/// turns EBADF there into `unreachable` in Debug builds — a
-/// process-wide SIGABRT. Draining stdout before stderr also deadlocks
-/// as soon as `gh` writes more than one 64 KiB pipe buffer to stderr.
-/// See `src/helpers/run_captured.zig`.
-///
-/// On success, `pr_url` holds the trimmed stdout (gh prints the URL).
-/// On any `gh`-related failure, `status` is `.gh_failed` and `stderr`
-/// holds either the trimmed gh stderr, or a synthesized hint. The
-/// function does NOT raise any domain-specific errors; the handler maps
-/// the status to HTTP 200/500.
+/// Use case — spawn `gh pr create` in the worktree directory and capture the
+/// result.
 fn createPullRequestUseCase(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -64,12 +42,7 @@ fn createPullRequestUseCase(
     title: []const u8,
     body: []const u8,
 ) !CreatePullRequestResult {
-    // The program MUST be derived from the provider. Hardcoding `gh`
-    // here — which is what this did before GitLab support — made
-    // `provider: "gitlab"` spawn `gh mr create`, and gh answers that
-    // with `unknown command "mr"`. The unit tests did not catch it
-    // because they pass the program in explicitly; the functional
-    // harness did, because it is the only place the real handler runs.
+    // The program MUST be derived from the provider.
     const cli = pr_cli.cliFor(provider) orelse return ghFailed(allocator, "the generic provider has no forge CLI, so a pull/merge request cannot be created");
     return createPullRequestUseCaseWith(allocator, io, cli.program, provider, worktree_path, base, title, body);
 }
@@ -86,17 +59,11 @@ fn createPullRequestUseCaseWith(
 ) !CreatePullRequestResult {
     const cli = pr_cli.cliFor(provider) orelse return ghFailed(allocator, "the generic provider has no forge CLI, so a pull/merge request cannot be created");
 
-    // `glab mr create` does not infer the source branch the way
-    // `gh pr create` infers it from the worktree checkout, and it must
-    // be told explicitly. Reading it here (rather than requiring the
-    // caller to pass it) keeps the request body unchanged for GitHub
-    // and removes a field the dialog would otherwise have to send.
+    // `glab mr create` does not infer the source branch the way `gh pr
+    // create` infers it from the worktree checkout, and it must be told
+    // explicitly.
     var source_branch: ?[]u8 = null;
-    // FUNCTION scope on purpose. A `defer` inside the `if` below would
-    // fire at the end of that BLOCK — freeing `source_branch` before
-    // `createArgv` copies it into argv and long before the spawn reads
-    // it. That is a use-after-free that segfaults the server, and it is
-    // invisible on the GitHub path because only GitLab passes a branch.
+    // FUNCTION scope on purpose.
     defer if (source_branch) |b| allocator.free(b);
     if (provider == .gitlab) {
         source_branch = currentBranch(allocator, io, worktree_path);
@@ -118,10 +85,7 @@ fn createPullRequestUseCaseWith(
         .timeout_ms = GH_TIMEOUT_MS,
     }) catch |err| {
         // Spawn-time failure (CLI not installed, perm denied, etc).
-        // Synthesize a stderr message so the handler can return it
-        // verbatim. `bufPrint`, not `allocPrint`: ghFailed copies the
-        // message into the request arena, so an allocated temporary here
-        // would leak on every spawn failure.
+        // Synthesize a stderr message so the handler can return it verbatim.
         var msg_buf: [192]u8 = undefined;
         const msg = std.fmt.bufPrint(&msg_buf, "{s} (is the {s} CLI installed and on PATH?)", .{ @errorName(err), cli.program }) catch "forge CLI spawn failed";
         return ghFailed(allocator, msg);
@@ -145,13 +109,8 @@ fn createPullRequestUseCaseWith(
     }
 
     // The CLI prints the PR/MR URL on stdout, but NOT always on its own:
-    // `glab mr create` prefixes a "Creating merge request for <branch>
-    // on <host>…" banner before the link. Taking the whole stdout —
-    // which is what this did before GitLab support — would store that
-    // banner as `pr_url`, and the frontend would then hand it to
-    // `set_pull_request`, which rejects it as an unparseable URL.
-    // `res` is freed by the defer above, so the extracted slice must be
-    // copied into the request arena before returning.
+    // `glab mr create` prefixes a "Creating merge request for <branch> on
+    // <host>…" banner before the link.
     return .{
         .status = .success,
         .pr_url = allocator.dupe(u8, pr_cli.extractCreatedUrl(res.stdout)) catch "",
@@ -159,13 +118,9 @@ fn createPullRequestUseCaseWith(
     };
 }
 
-/// The branch checked out in `path`, OWNED by `allocator` (the caller
-/// must free it), or null when it cannot be determined — detached HEAD,
-/// not a repo, git missing.
-///
-/// The null is load-bearing rather than an empty string: this returns an
-/// owned allocation, and an "" return would be indistinguishable from the
-/// empty string literal, which the caller must never free.
+/// The branch checked out in `path`, OWNED by `allocator` (the caller must
+/// free it), or null when it cannot be determined — detached HEAD, not a
+/// repo, git missing.
 fn currentBranch(allocator: std.mem.Allocator, io: std.Io, path: []const u8) ?[]u8 {
     const res = std.process.run(allocator, io, .{ .argv = &.{ "git", "-C", path, "branch", "--show-current" } }) catch return null;
     defer {
@@ -190,19 +145,11 @@ fn ghFailed(allocator: std.mem.Allocator, msg: []const u8) CreatePullRequestResu
 }
 
 /// HTTP handler for `POST /api/git/pr`.
-///
-/// Body: { "worktree_path": "...", "base": "main", "title": "...", "body": "..." }
-///
-/// This handler is a thin wrapper: it parses + validates the request body,
-/// delegates to `createPullRequestUseCase`, then maps the domain result to
-/// an HTTP response. All `gh` CLI knowledge lives in the use case.
 pub fn gitPrCreateHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
 
     // Parse JSON body using the Leaky variant — see memory
-    // pabrik-http-handler-thin-wrapper-pattern.md. No `defer parsed.deinit()`
-    // because the per-request arena reaps the parsed value (memory
-    // custom-http-server-per-request-arena).
+    // pabrik-http-handler-thin-wrapper-pattern.md.
     const Body = struct {
         worktree_path: []const u8 = "",
         base: []const u8 = "main",
@@ -276,15 +223,6 @@ fn resolveCreateProvider(allocator: std.mem.Allocator, io: std.Io, body: anytype
 
 // ===== Tests merged from git_pr_create_test.zig (2026-09-11 flatten) =====
 // Behavioural tests: the forge CLI argv + output handling.
-//
-// These cover the argv `createPullRequestUseCase` builds and the stdout
-// it turns into a `pr_url` — the half that GitLab support changes, and
-// the half that decides whether the user ends up with a working link.
-//
-// Hermetic like the git_pr_status fixtures: `createPullRequestUseCase`
-// takes the program from `pr_cli.createArgv`, so a test points it at a
-// shell script it just wrote. No `gh` install, no `glab` install, no
-// network.
 
 const builtin_t = @import("builtin");
 
@@ -312,11 +250,8 @@ const Fixture = struct {
     fn init(allocator: std.mem.Allocator) !Fixture {
         var tmp = std.testing.tmpDir(.{});
         errdefer tmp.cleanup();
-        // NOT sized from `std.fs.max_path_bytes`: that is ~96 KB on
-        // Windows, and this is a stack buffer. These tests are
-        // Windows-skipped today, but a 96 KB frame here would blow the
-        // stack the moment anyone un-skips them. A tmpdir path is
-        // comfortably under 512 bytes.
+        // NOT sized from `std.fs.max_path_bytes`: that is ~96 KB on Windows,
+        // and this is a stack buffer.
         var buf: [512]u8 = undefined;
         const root = try tmp.dir.realPath(std.testing.io, &buf);
         const owned = try allocator.dupe(u8, buf[0..root]);
@@ -429,9 +364,8 @@ test "create: gitlab runs glab mr create with --source-branch and --yes" {
 
 test "create: a glab banner before the URL does not become pr_url" {
     // THE regression this guards: the use case used to treat the WHOLE
-    // trimmed stdout as the URL. glab prints a banner first, so that
-    // stored a non-URL as pr_url, and the frontend then handed it to
-    // set_pull_request, which rejects it as unparseable.
+    // trimmed stdout as the URL. glab prints a banner first, so that stored a
+    // non-URL as pr_url, and the frontend then handed it to set_pull_request,
     if (skipOnWindows()) return error.SkipZigTest;
     if (!haveGit()) return error.SkipZigTest;
     const a = testing.allocator;

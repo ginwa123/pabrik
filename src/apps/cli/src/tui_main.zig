@@ -1,10 +1,4 @@
 //! `pabrik-tui` — interactive streaming chat TUI for the pabrik backend.
-//!
-//! Usage:
-//!   pabrik-tui [--server <url>] [--session <id>] [--profile <name>]
-//!
-//! Flags mirror `pabrikcli`; env vars PABRIKCLI_SERVER / PABRIKCLI_SESSION_ID /
-//! PABRIKCLI_PROFILE are honored as fallbacks.
 
 const std = @import("std");
 const tui = @import("tui");
@@ -38,9 +32,7 @@ fn usage() []const u8 {
 pub fn main(init: std.process.Init) !void {
     // `init.gpa` — NOT `init.arena.allocator()`. The TUI allocates and frees
     // per-frame temporaries (two frame buffers, the diff writer, word-wrap
-    // chunk lists, HTTP bodies). An arena only reclaims its most recent
-    // allocation; every other free is a silent no-op, so using it here
-    // leaked ~0.3 MB per keystroke (measured) and ~1.8 MB/s while idle.
+    // chunk lists, HTTP bodies).
     const allocator = init.gpa;
     // The process-lifetime arena is still the right home for strings that
     // must outlive everything and are never freed individually (argv/env
@@ -98,10 +90,8 @@ pub fn main(init: std.process.Init) !void {
     } else if (env.get("PABRIKCLI_CWD")) |v| {
         if (v.len > 0) cfg.cwd = v;
     } else {
-        // Capture OS cwd via realPathFile with ".". On failure (e.g., cwd deleted),
-        // fall back to "" so the backend uses its sandbox fallback.
-        // NOTE: Dir.realPath (no sub_path) fails with FileNotFound on Linux
-        // (see /tmp/test_cwd.zig) — must use realPathFile with ".".
+        // Capture OS cwd via realPathFile with ".". On failure (e.g., cwd
+        // deleted), fall back to "" so the backend uses its sandbox fallback.
         var cwd_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
         if (std.Io.Dir.cwd().realPathFile(io, ".", &cwd_buf)) |cwd_len| {
             const cwd_slice = cwd_buf[0..cwd_len];
@@ -180,10 +170,8 @@ fn sendAndTrack(model: *app_mod.App, msg_text: []const u8) void {
 
 fn pollMessages(model: *app_mod.App) void {
     const sid = model.session_id orelse return;
-    // Bulk-free the per-poll temporaries (HTTP body + JSON parse of up to
-    // 100 rows) in one shot instead of tracking each one. The backing
-    // allocator is `init.gpa`, so the arena blocks really are returned to
-    // the general allocator here — this is a convenience, not a leak fix.
+    // Bulk-free the per-poll temporaries (HTTP body + JSON parse of up to 100
+    // rows) in one shot instead of tracking each one.
     var arena = std.heap.ArenaAllocator.init(model.allocator);
     defer arena.deinit();
     const tmp_allocator = arena.allocator();

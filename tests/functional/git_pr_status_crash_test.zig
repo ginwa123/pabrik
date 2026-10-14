@@ -1,35 +1,5 @@
-// Functional wire tests for the crash-class regressions in
-// GET /api/git/pr/status.
-//
-// Zig port of `tests/functional/git_pr_status_crash_test.py`
-// (same test names, same order).
-//
-// Two production failures lived in the same 30 lines of
-// `src/http_handlers/git_pr_status.zig`:
-//
-//   1. `Child.wait` -> `childCleanupPosix` -> `Io.Threaded.closeFd` on a
-//      pipe the caller still owned. Zig 0.16 turns EBADF into
-//      `unreachable` in Debug builds, so one request took the whole
-//      process down with `thread N panic: reached unreachable code`.
-//   2. stdout was drained to EOF *before* stderr, so a `gh` that wrote
-//      more than one 64 KiB pipe buffer to stderr blocked in
-//      `write(2)`, never closed stdout, and the request (plus its
-//      worker thread) hung forever.
-//
-// Neither is observable from a unit test: the bug is in the wire path,
-// under a real HTTP server, on a worker-pool thread. These tests drive
-// the actual binary through the harness and assert on process liveness
-// afterwards.
-//
-// The fake `gh` reaches the booted server the only way it can over the
-// wire: by being first on the server's `PATH`. The Python original got
-// there with `monkeypatch.setenv("PATH", ...)`; the Zig harness builds
-// the child env from `std.testing.environ`, so the equivalent is
-// `PathShadow` below — a scoped, restorable prepend of that one var.
-//
-// The query string rides in `path`, NOT in `HttpOptions.params`: see
-// the note in `git_pr_status_branch_test.zig`, which established the
-// spelling for both `pr/status` suites.
+// Functional wire tests for the crash-class regressions in GET
+// /api/git/pr/status.
 
 const std = @import("std");
 const testing = std.testing;
@@ -43,15 +13,8 @@ const io = testing.io;
 // Fixtures
 // ============================================================================
 
-/// A scratch directory for the suite's OWN fixture (the git repo + the
-/// fake `gh`), outside the harness's tempdir namespace.
-///
-/// `makeScratchDir`, NOT `std.testing.tmpDir`: the latter allocates
-/// under `<cwd>/.zig-cache/tmp/`, which for this package is inside the
-/// git worktree — and `git symbolic-ref` walks UP, so the fixture repo
-/// would resolve to the WORKTREE's branch. The `pabrik-fix-` prefix is
-/// also what keeps `reapOrphanTestPids` (which only matches
-/// `pabrik-func-`) from deleting the fixture mid-test.
+/// A scratch directory for the suite's OWN fixture (the git repo + the fake
+/// `gh`), outside the harness's tempdir namespace.
 const Scratch = struct {
     root: []u8,
 
@@ -78,20 +41,12 @@ fn writeFileAt(path: []const u8, contents: []const u8) !void {
 }
 
 /// Write an executable `/bin/sh` script at `path`.
-///
-/// The Python original wrote the file and then OR'd `stat.S_IEXEC` into
-/// its mode; `setFilePermissions(..., .executable_file, ...)` is the
-/// portable spelling, and it also makes the file READABLE, which a bare
-/// OR-in of the exec bit does not guarantee on a fresh file.
 fn writeExecScript(path: []const u8, contents: []const u8) !void {
     try writeFileAt(path, contents);
     try std.Io.Dir.cwd().setFilePermissions(io, path, .executable_file, .{});
 }
 
-/// Python's `_git`: run `git` in `cwd` with the fixture identity baked
-/// in. (`-c commit.gpgsign=false` is an addition, not a port artifact —
-/// it stops a developer's global signing config from failing the commit
-/// on a box that has one.)
+/// Python's `_git`: run `git` in `cwd` with the fixture identity baked in.
 fn git(cwd: []const u8, args: []const []const u8) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
@@ -133,11 +88,7 @@ fn gitInit(path: []const u8) !void {
     }
 }
 
-/// Build the `pr-status-crash-proj` fixture: one committed file on
-/// `main`. The committed file is what makes this a real worktree —
-/// `git_pr_status.zig`'s repo gate is `git -C <path> rev-parse
-/// --git-dir`, so `init` alone would do, but a HEAD-less directory is
-/// not what a broken `gh` failure looks like.
+/// Build the `pr-status-crash-proj` fixture: one committed file on `main`.
 fn buildRepo(s: *Scratch) ![]u8 {
     const cwd = try s.path(&.{"pr-status-crash-proj"});
     errdefer gpa.free(cwd);
@@ -156,13 +107,8 @@ fn buildRepo(s: *Scratch) ![]u8 {
     return cwd;
 }
 
-/// Python's `_install_fake_gh`: put an executable `gh` stub at the front
-/// of PATH.
-///
-/// The harness boots the server with the parent's environment, so this
-/// is what makes the backend's `gh pr view` spawn return canned output
-/// without touching the network. Returns the bindir so the caller can
-/// install the PATH shadow.
+/// Python's `_install_fake_gh`: put an executable `gh` stub at the front of
+/// PATH.
 fn installFakeGh(s: *Scratch, dir_name: []const u8, body: []const u8) ![]u8 {
     const bindir = try s.path(&.{dir_name});
     errdefer gpa.free(bindir);
@@ -175,28 +121,16 @@ fn installFakeGh(s: *Scratch, dir_name: []const u8, body: []const u8) ![]u8 {
     return bindir;
 }
 
-/// Prepend `prefix` to `PATH` in `std.testing.environ` — the exact
-/// block `Harness.boot` copies into the child env — so the booted
-/// `pabrik` resolves `gh` to the fixture script.
-///
-/// WHY THE PROCESS ENV AND NOT A HARNESS OPTION: `git_pr_status.zig`
-/// spawns `gh` by bare name (`Programs.gh = "gh"`); the only injection
-/// seam (`useCaseWithPrograms`) is a unit-test-only function, invisible
-/// over HTTP. PATH is therefore the whole of the wire-level seam, which
-/// is exactly how the Python original faked it too.
-///
-/// Scoped by `restore`: the shadow must not outlive the test, or every
-/// later suite in the same process would spawn the fake `gh`.
+/// Prepend `prefix` to `PATH` in `std.testing.environ` — the exact block
+/// `Harness.boot` copies into the child env — so the booted `pabrik` resolves
+/// `gh` to the fixture script.
 const PathShadow = struct {
     gpa: std.mem.Allocator,
     saved: std.process.Environ,
     entries: [:null]const ?[*:0]const u8,
 
     fn install(alloc: std.mem.Allocator, prefix: []const u8) !PathShadow {
-        // `Environ`'s block is a raw `KEY=VALUE` slice on POSIX. On
-        // Windows it is a PEB pointer read through `GlobalBlock`, which
-        // Zig offers no way to shadow — and the fixture `gh` is a
-        // `/bin/sh` script anyway, so this suite is POSIX-only.
+        // `Environ`'s block is a raw `KEY=VALUE` slice on POSIX.
         if (comptime @import("builtin").os.tag != .windows) {
             const saved = std.testing.environ;
             const orig = saved.block.slice;
@@ -274,13 +208,6 @@ const GH_OK_SCRIPT =
 // ============================================================================
 
 // 1 MiB of `gh` stderr must still produce a prompt 502.
-//
-// Before the fix the handler drained stdout to EOF first: `gh` filled
-// the 64 KiB stderr pipe, blocked in `write(2)`, and never closed
-// stdout — so the HTTP request never completed and the worker-pool
-// thread handling it was wedged for the life of the process. A later
-// 1 MiB-vs-64 KiB payload is a perfectly ordinary `gh` error (a big
-// hook stack trace, a verbose git warning), so this is not exotic.
 test "huge_gh_stderr_does_not_hang_the_request" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -336,11 +263,9 @@ test "huge_gh_stderr_does_not_hang_the_request" {
     }
 }
 
-// A `gh` blocked forever must time out, not hold a worker thread.
-//
-// The handler has a 20s deadline; the assertion budget is 45s so a
-// loaded CI box does not flake, but a pre-fix handler (no deadline)
-// would never answer at all.
+// A `gh` blocked forever must time out, not hold a worker thread. The handler
+// has a 20s deadline; the assertion budget is 45s so a loaded CI box does not
+// flake, but a pre-fix handler (no deadline) would never answer at all.
 test "gh_that_never_exits_is_killed_not_awaited_forever" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -384,11 +309,9 @@ test "gh_that_never_exits_is_killed_not_awaited_forever" {
 const burst_workers: usize = 8;
 const burst_requests: usize = 24;
 
-/// One thread's share of the burst.
-///
-/// A thread cannot `try`, so every failure is recorded as a status the
-/// main thread will reject: `0` is not a real HTTP status, so a
-/// transport error cannot masquerade as a pass.
+/// One thread's share of the burst. A thread cannot `try`, so every failure
+/// is recorded as a status the main thread will reject: `0` is not a real
+/// HTTP status, so a transport error cannot masquerade as a pass.
 const BurstWorker = struct {
     h: *Harness,
     repo: []const u8,
@@ -424,12 +347,6 @@ const BurstWorker = struct {
 };
 
 // The reported abort only ever happened under concurrency.
-//
-// `closeFd` was reached from a worker-pool thread while other threads
-// were spawning children of their own, so one request could take the
-// whole server down. Fan out a burst of pr-status calls and then prove
-// the process is still serving — a SIGABRT here fails the `health()`
-// check, not a return value.
 test "concurrent_pr_status_calls_keep_the_process_alive" {
     try harness.requirePabrikBin(io, gpa);
 

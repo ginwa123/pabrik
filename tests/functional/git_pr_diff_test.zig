@@ -1,32 +1,5 @@
-// Functional wire tests for GET /api/git/pr/diff (generic provider).
-//
-// Zig port of `tests/functional/git_pr_diff_test.py` (same test names,
-// same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """
-//   Functional wire tests for GET /api/git/pr/diff (generic provider).
-//
-//   Exercises the endpoint the ChatView right panel will call in PR mode,
-//   using pure-git base...head diffs on a fixture repo (no network, no
-//   forge CLI):
-//
-//     1. Generic diff between main and a feature branch returns hunks.
-//     2. Unknown head ref → clean 502 JSON (not a crash).
-//     3. Missing pr_url → 400.
-//
-//   Plus the GitHub-provider path against a fixture whose `origin` publishes
-//   `refs/pull/1/head`: when the forge CLI cannot answer, the handler must fall
-//   back to that ref instead of returning 502.
-//   """
-//
-// WHERE THE FIXTURE LIVES: `harness.makeScratchDir`, never
-// `std.testing.tmpDir` and never the harness's own tempdir. The
-// `pabrik-func-` namespace is what `reapOrphanTestPids` deletes on every
-// boot, and `<cwd>/.zig-cache/tmp/` is INSIDE the git worktree — where
-// `git symbolic-ref` walks UP and the fixture repo resolves to the
-// worktree's branch. See `git_commits_test.zig` for the long form.
+// Functional wire tests for GET /api/git/pr/diff (generic provider). Zig port
+// of `tests/functional/git_pr_diff_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;

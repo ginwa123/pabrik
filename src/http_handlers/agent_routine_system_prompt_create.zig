@@ -1,17 +1,6 @@
-//! `POST /api/agent-routines/:routine_id/system_prompt`.
-//!
-//! Adds a named system-prompt block to an agent-routines config. Body:
-//! `{title?, content}`. `content` is required (non-empty after trim);
-//! `title` optional ('' = untitled).
-//!
-//! Mirrors `agent_system_prompt_create.zig` with substitutions:
-//! table `agent_routine_system_prompt`, parent col `routine_id`.
-//!
-//! Memory: the per-request arena reaps all allocations at request end,
-//! so neither layer needs explicit `free`s.
-//!
-//! Plan: Routine mode task_1789505553300_1 (option A, mirror agent_routine_*)
-//! Task: task_1789505553300_1
+//! `POST /api/agent-routines/:routine_id/system_prompt`. Adds a named
+//! system-prompt block to an agent-routines config. Body: `{title?,
+//! content}`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -68,9 +57,6 @@ pub const SystemPromptCreateOutput = struct {
 // =====================================================================
 
 /// Create a system-prompt row for the given agent-routines config.
-/// Validates that the workspace_item is a routine WITH an `agent_routines`
-/// row and that content is non-empty, then INSERTs with
-/// `position = MAX(position) + 1` (COALESCE so the first row gets 0).
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -167,14 +153,7 @@ pub fn agentRoutineSystemPromptCreateHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-//
-// impl + tests in one file (project convention). Behavioural coverage:
-//
-//   1. Validation: empty routine_id → RoutineIdRequired
-//   2. Validation: empty/whitespace content → ContentRequired
-//   3. RoutineNotFound: wrong type / unconfigured routine
-//   4. Happy path: first row gets position 0; second gets 1
-//   5. Empty title tolerated (COALESCE → '')
+// impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;

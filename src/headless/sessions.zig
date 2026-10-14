@@ -1,13 +1,4 @@
 //! `pabrik headless sessions` and `pabrik headless messages`.
-//!
-//! Read-only views over the same tables the HTTP handlers read, reached
-//! through the same functions they call — `llm_history.getSessionList`
-//! and `llm_history.getSessionMessagesSorted` — so a headless listing and
-//! a browser listing cannot drift.
-//!
-//! Both commands exist so an agent can answer "what happened last time?"
-//! without a server: resume a session with `headless run --session <id>`
-//! after reading it here.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -47,13 +38,6 @@ pub const MessagesResult = struct {
 };
 
 /// List recent sessions, newest first.
-///
-/// Uses `getSessionListWithCursor` rather than the older `getSessionList`:
-/// the cursor variant is the one `session_list.zig` drives, so its
-/// `SessionInfo` literal is the one that stays complete as columns are
-/// added — the plain `getSessionList` literal is missing `updated_at` and
-/// no longer compiles when referenced. Reaching for the maintained entry
-/// point is also what keeps a headless listing identical to the sidebar's.
 pub fn listSessions(
     allocator: std.mem.Allocator,
     backend: *boot_mod.Backend,

@@ -1,41 +1,6 @@
-//! `POST /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements`.
-//!
-//! Add a new design element to a design page. Atomically writes
-//! the element's HTML body to disk (under
-//! `<workspace_item.path>/.pabrik/design/<page>/<element>.html`) and
-//! inserts the metadata row. Delegates to `design_model.addElement`.
-//!
-//! Body: `{name: string, type: "rectangle"|"ellipse"|"text"|"image"|"frame"|"group",
-//!        html: string, x?: number=0, y?: number=0, width?: number=375, height?: number=667,
-//!        fill?: string="", rotation?: number=0, corner_radius?: number=0, opacity?: number=1.0,
-//!        text_content?: string="", text_style?: string="", image_url?: string=""}`.
-//!
-//! Defaults match the v6 design-mode spec §5.1 (375×667 default size
-//! to mirror a phone-shaped rectangle; other defaults 0/empty).
-//!
-//! Response shape: `DesignElementResponse` for the newly-created
-//! element (without `html` — fetch lazily via
-//! `GET .../elements/:eid/html`). Built by
-//! `http_response.makeDesignElementResponse`.
-//!
-//! Layered as:
-//!   - `useCase` — business logic (validate → call addElement →
-//!     re-fetch via getElement → emit SSE → return heap-owned
-//!     `DesignElement`).
-//!   - `designElementsCreateHandler` — thin orchestrator over
-//!     `useCase`: parses the HTTP request, resolves the singleton
-//!     DB handle, delegates to `useCase`, maps the use-case outcome
-//!     to an HTTP response (201 / 400 / 404 / 500).
-//!
-//! Errors:
-//!   - 400 missing/invalid JSON body, missing/empty `name`, missing
-//!     `page_id` path param, invalid `type`, design item has no
-//!     `path` set, bad numeric fields
-//!   - 404 `page_id` not found in `design_pages`
-//!   - 500 DB failure or file-write failure
-//!
-//! Plan: docs/superpowers/plans/2026-07-08-design-mode-redesign.md
-//!   (Chunk 3, Task 3.3)
+//! `POST
+//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements`.
+//! Add a new design element to a design page.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -44,12 +9,7 @@ const http_response = @import("http_response.zig");
 const design_model = @import("../agentic_loop/design_model.zig");
 const on_event_sent_design = pabrikcore.ai_mod.on_event_sent_design;
 
-/// HTTP request body for element-create. Decoupled from the
-/// `AddElementInput` domain struct so the wire format can evolve
-/// independently (e.g. adding `?` optional fields) without touching
-/// the use-case. `type` is the wire string ("rectangle", "ellipse",
-/// "text", "image", "frame", "group") — translated to the
-/// `ElementType` enum at the handler boundary.
+/// HTTP request body for element-create.
 const CreateElementBody = struct {
     name: []const u8,
     type: []const u8,
@@ -67,13 +27,9 @@ const CreateElementBody = struct {
     image_url: ?[]const u8 = null,
 };
 
-/// Domain-level error set for `useCase`. The handler maps each
-/// variant to an HTTP status code + message via two exhaustive
-/// switches (one for status, one for the user-facing message).
-///
-/// Adding a new variant fails to compile in the handler until both
-/// switches are updated — that's intentional, to keep status codes
-/// in lockstep with the error set.
+/// Domain-level error set for `useCase`. The handler maps each variant to an
+/// HTTP status code + message via two exhaustive switches (one for status,
+/// one for the user-facing message).
 pub const DesignElementCreateError = error{
     /// `:page_id` path param was missing or empty.
     PageIdRequired,
@@ -124,11 +80,7 @@ pub const CreateElementInput = struct {
 
 /// Output of the create-element use-case.
 pub const CreateElementOutput = struct {
-    /// The freshly-created element. The slice fields are HEAP-OWNED
-    /// by the use-case: the use-case duplicates them out of the
-    /// `getElement` result so the output survives the useCase's
-    /// internal `freeElement` defer (and any later `freeElement(e)`
-    /// that runs in the caller).
+    /// The freshly-created element.
     element: design_model.DesignElement,
 };
 
@@ -136,18 +88,7 @@ pub const CreateElementOutput = struct {
 // Use case
 // =====================================================================
 
-/// Create a design element.
-///
-/// Steps:
-///   1. Validate `page_id` and `name`.
-///   2. Call `design_model.addElement(...)` — returns the new
-///      element_id (also writes the HTML file atomically).
-///   3. Re-query via `design_model.getElement(...)` to fetch the full
-///      row (addElement only returns the id).
-///   4. Emit a `design_element` SSE event with `action="created"`.
-///      Best-effort: SSE failures are logged but don't fail the
-///      request.
-///   5. Return a heap-owned `DesignElement` for the response.
+/// Create a design element. Steps: 1. Validate `page_id` and `name`. 2.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,

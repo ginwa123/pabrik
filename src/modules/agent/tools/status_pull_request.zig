@@ -13,18 +13,11 @@ const run_captured = @import("helpers").run_captured;
 /// state of a pull/merge request via the forge CLI; it never creates,
 /// mutates, or (un)binds anything).
 pub const StatusPullRequestInput = struct {
-    /// Which PR/MR to report on. Accepts a full URL
-    /// (`https://github.com/acme/app/pull/42`), a number/IID (`"42"`),
-    /// or a branch name (resolved by the forge CLI from the worktree).
-    /// Empty (the default) = use the session's bound PR (the URL stored
-    /// by `set_pull_request`). The exec wrapper injects the binding when
-    /// this is empty; passing a value always wins over the binding.
+    /// Which PR/MR to report on.
     pr_url: []const u8 = "",
-    /// Optional provider override: "github" | "gitlab" | "generic".
-    /// Empty (the default) = auto-detect from the URL, falling back to
-    /// the session binding's provider and then the worktree's origin
-    /// remote. Pass an explicit value for self-hosted forges whose host
-    /// does not reveal the provider.
+    /// Optional provider override: "github" | "gitlab" | "generic". Empty
+    /// (the default) = auto-detect from the URL, falling back to the session
+    /// binding's provider and then the worktree's origin remote.
     provider: []const u8 = "",
     /// The session_id whose PR binding is the default target. The LLM
     /// does NOT supply this — the exec wrapper injects `ctx.session_id`
@@ -162,9 +155,7 @@ pub fn validateProviderOverride(provider: []const u8) ?[]const u8 {
 // ─── Status normalization (pure, no IO) ─────────────────────────────────
 
 /// Normalize a forge state to the lowercase status the panel switches on.
-/// GitHub says OPEN/CLOSED/MERGED; GitLab says opened/closed/merged/
-/// locked. Unknown values are lowercased verbatim so a future forge state
-/// surfaces as itself rather than as "".
+/// GitHub says OPEN/CLOSED/MERGED; GitLab says opened/closed/merged/ locked.
 pub fn normalizeStatusAlloc(allocator: std.mem.Allocator, state: []const u8) ![]u8 {
     if (std.ascii.eqlIgnoreCase(state, "OPEN") or std.ascii.eqlIgnoreCase(state, "OPENED")) return allocator.dupe(u8, "open");
     if (std.ascii.eqlIgnoreCase(state, "CLOSED")) return allocator.dupe(u8, "closed");
@@ -179,8 +170,7 @@ pub fn normalizeStatusAlloc(allocator: std.mem.Allocator, state: []const u8) ![]
 
 /// Raw shape of `gh pr view --json ...` output. All fields optional with
 /// defaults so a future `gh` version adding/removing a key does not break
-/// parsing. `mergedAt`/`closedAt` stay optional: parsing JSON null into
-/// `[]const u8` fails and every OPEN PR would error.
+/// parsing.
 const GhPrView = struct {
     number: i64 = 0,
     title: []const u8 = "",
@@ -234,11 +224,7 @@ pub fn parseGithubStatus(allocator: std.mem.Allocator, provider: PrProvider, raw
     );
 }
 
-/// Raw shape of `glab mr view --output json` output. `glab` returns
-/// whatever the installed version renders — the identifier has been both
-/// `iid` and `id`, the link both `web_url` and `url`, and the counters
-/// numbers in one version and strings in another — so identity fields go
-/// through a first-non-empty alias chain and counters are `std.json.Value`.
+/// Raw shape of `glab mr view --output json` output.
 const GlabMrView = struct {
     iid: i64 = 0,
     id: i64 = 0,
@@ -342,11 +328,8 @@ const VIEW_TIMEOUT_MS: u32 = 20_000;
 /// anything past this is an error message we truncate anyway.
 const VIEW_MAX_OUTPUT_BYTES: usize = 64 * 1024;
 
-/// Whether a non-zero-exit stderr means "that PR/MR does not exist"
-/// rather than "the lookup blew up". An auth failure must NOT match here
-/// — it has to stay a hard error carrying the real stderr, otherwise a
-/// logged-out user gets a misleading not-found and never learns to run
-/// `gh auth login` / `glab auth login`.
+/// Whether a non-zero-exit stderr means "that PR/MR does not exist" rather
+/// than "the lookup blew up".
 fn isNotFoundStderr(stderr: []const u8, provider: PrProvider) bool {
     if (std.mem.indexOf(u8, stderr, "404") != null) return true;
     if (std.ascii.indexOfIgnoreCase(stderr, "not found") != null) return true;
@@ -362,13 +345,8 @@ fn isNotFoundStderr(stderr: []const u8, provider: PrProvider) bool {
     };
 }
 
-/// Run the forge CLI's read-only view command in `worktree_path` and
-/// return the raw stdout JSON (owned). `pr_arg` is "" for "the PR/MR for
-/// the current branch", otherwise a number, IID, URL, or branch name
-/// passed straight through. `prog` selects the binary: null means the
-/// provider's default (`gh` / `glab`); a concrete path is the seam the
-/// test suite injects fixture scripts through. `fetch_detail` receives an
-/// owned, trimmed, capped copy of the real failure on FetchFailed.
+/// Run the forge CLI's read-only view command in `worktree_path` and return
+/// the raw stdout JSON (owned).
 fn runStatusView(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -431,16 +409,7 @@ fn runStatusView(
     return allocator.dupe(u8, res.stdout) catch return error.FetchFailed;
 }
 
-/// Report the live status of one PR/MR. Returns the status JSON string
-/// (owned) on success or an `{"error": ...}` JSON string (owned) when the
-/// lookup fails — never a Zig error for expected failure modes, so the
-/// exec wrapper can always surface a tool payload.
-///
-/// `provider` must already be resolved (github or gitlab); `generic` is
-/// answered without spawning anything. `pr_arg` is "" for "the PR/MR for
-/// the worktree's current branch", otherwise a URL, number, IID, or
-/// branch name. `prog_override` injects the CLI binary (null = default);
-/// the test suite points it at fixture scripts.
+/// Report the live status of one PR/MR.
 pub fn executeStatusPullRequestToJSON(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -652,8 +621,7 @@ test "execute missing CLI reports install guidance, not a stack trace" {
 
 // ─── Fixture-script run-path tests (POSIX only) ────────────────────────────
 // These drive the REAL spawn path (runStatusView → fixture `gh`/`glab` →
-// parse) so both forges are proven end to end without a CLI install,
-// auth, or network. Windows CI skips them (`/bin/sh` fixtures).
+// parse) so both forges are proven end to end without a CLI install, auth, or
 
 const builtin_t = @import("builtin");
 

@@ -23,10 +23,9 @@ pub const InsertLLMHistoriesInput = struct {
     cwd: []const u8,
     entity: LLMHistory,
     is_skip_db: bool = false,
-    /// True when this insert is an agentic-loop diagnostic (retry attempt
-    /// or TooManyRetries bail) — forwarded to the SSE payload so the
-    /// frontend renders it in a dedicated AgentErrorCard. Never persisted
-    /// (diagnostic sites always pair this with is_skip_db = true).
+    /// True when this insert is an agentic-loop diagnostic (retry attempt or
+    /// TooManyRetries bail) — forwarded to the SSE payload so the frontend
+    /// renders it in a dedicated AgentErrorCard.
     is_error: bool = false,
 };
 
@@ -41,12 +40,7 @@ pub fn inserLLMHistories(
 
     const input = obj.entity;
     const session_id = input.session_id;
-    // Guard the model BEFORE it becomes a bind arg. An empty slice binds
-    // as SQL NULL (`SqliteBackend.exec`), which trips the column's NOT
-    // NULL constraint and makes the whole INSERT fail — and every caller
-    // swallows that non-fatally, silently losing the user's message row.
-    // `resolve` substitutes a sentinel instead, so the row is always
-    // written and `model` is never empty. See llm_history_model_guard.zig.
+    // Guard the model BEFORE it becomes a bind arg.
     const model = model_guard.resolve(input.model);
     const cwd = obj.cwd;
     const temperature = input.temperature;
@@ -56,23 +50,14 @@ pub fn inserLLMHistories(
     const finish_reason = input.finish_reason;
     const reasoning_content = input.reasoning_content;
 
-    // Sample the timestamp ONCE for both `id` and `created_at`. The
-    // `created_at` column stores Unix **microseconds** (see Migration
-    // 059 header), but the stdlib only exposes `.nanoseconds`, so we
-    // divide by `std.time.ns_per_us` to convert. The pre‑fix code
-    // stored the raw nanosecond string AND never set `created_iso`,
-    // so every row inserted via this path had NULL `created_iso` AND
-    // any future fix‑up would have produced year 58,507 for them.
+    // Sample the timestamp ONCE for both `id` and `created_at`.
     const id = try std.fmt.allocPrint(allocator, "{}", .{std.Io.Timestamp.now(io, .real).nanoseconds});
     defer allocator.free(id);
     const created_at = try std.fmt.allocPrint(allocator, "{}", .{std.Io.Timestamp.now(io, .real).nanoseconds});
     defer allocator.free(created_at);
 
-    // Compute `created_iso` for the `since`/`until` filters. Mirrors
-    // the conversion in `llm_history.saveMessage`. The helper
-    // returns the current UTC time as ISO — semantically the same
-    // as `created_at_us`/`now_ns` since both are generated from the
-    // same `now_ns` source a few lines above.
+    // Compute `created_iso` for the `since`/`until` filters. Mirrors the
+    // conversion in `llm_history.saveMessage`.
     const created_iso = try helpers.currentTimeIsoLocal(allocator, io);
     defer allocator.free(created_iso);
 
@@ -83,10 +68,8 @@ pub fn inserLLMHistories(
     const agentStr = input.agent;
 
     // Option A envelopes: user rows always carry {user,name,msg}; non-empty
-    // assistant text carries {model,msg} even when tool_calls_json is
-    // present (screenshot case). Never tool/system, never empty, never
-    // double-envelop. Identity fields default to empty until auth supplies
-    // them; model mirrors the resolved column value.
+    // assistant text carries {model,msg} even when tool_calls_json is present
+    // (screenshot case).
     var enveloped_owned: ?[]u8 = null;
     defer if (enveloped_owned) |e| allocator.free(e);
     var effective_content: []const u8 = contentStr;
@@ -118,10 +101,8 @@ pub fn inserLLMHistories(
     const is_emit_sse = obj.is_emit_sse;
     const is_skip_db = obj.is_skip_db;
 
-    // tool_calls_json holds ONLY the serialized tool_calls array (assistant message wire format).
-    // For tool result messages, the tool_call_id lives in the dedicated tool_call_id column —
-    // do NOT overload tool_calls_json with the id. That overload caused the 2013 bug where the
-    // transform could not tell a JSON array from a plain id string.
+    // tool_calls_json holds ONLY the serialized tool_calls array (assistant
+    // message wire format).
     const toolCallsOwned = input.tool_calls_json;
 
     const sql =

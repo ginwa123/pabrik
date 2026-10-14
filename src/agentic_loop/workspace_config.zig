@@ -1,37 +1,5 @@
 //! The per-workspace config OVERLAY: how a workspace's `workspace_settings`
 //! row is combined with the user-level config.
-//!
-//! ## Why this is a JSON-text merge and not a struct merge
-//!
-//! `LlmConfig` owns heap strings and maps, so overlaying two of them would
-//! mean writing a deep-clone-with-override for every field, in step with
-//! `Config.zig`'s parser forever. Merging the two JSON documents BEFORE
-//! parsing reuses `LlmConfig.initFromJsonText` unchanged, so an overlay and a
-//! `config.json` with identical bytes keep producing identical configs - the
-//! same guarantee `session_llm_config.zig` relies on.
-//!
-//! ## The merge rule (ONE rule, stated once)
-//!
-//!   * OBJECT over OBJECT -> recurse (deep merge).
-//!   * Everything else    -> the overlay REPLACES the base value.
-//!
-//! Two consequences worth naming, because both are load-bearing:
-//!
-//!   * `profiles` is an object, so overriding one profile's `model` keeps
-//!     that profile's `api_key`, and keeps every OTHER profile. "Last write
-//!     wins" would silently drop the credentials of every profile the
-//!     workspace did not mention.
-//!   * `tools` is an ARRAY, so a workspace's tool list REPLACES the user's
-//!     list rather than unioning with it. Union would make it impossible to
-//!     NARROW the tools in one workspace, which is the main reason to set
-//!     them there at all.
-//!
-//! ## Degrading, never failing a turn
-//!
-//! A malformed base or overlay returns the BASE unchanged rather than an
-//! error. This runs on the chat path, and a corrupt overlay must not be able
-//! to break a chat - the worst acceptable outcome is "this workspace still
-//! behaves like the user config".
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -39,10 +7,6 @@ const sqlite = pabrikcore.sqlite;
 
 /// Merge `overlay_json` over `base_json`, returning a newly allocated JSON
 /// object text.
-///
-/// An empty or `{}` overlay, an unparseable overlay, or an overlay that is
-/// not a JSON object all return a copy of the base - see the module header.
-/// The caller owns the returned slice.
 pub fn overlayJson(
     allocator: std.mem.Allocator,
     base_json: []const u8,
@@ -82,17 +46,10 @@ pub fn overlayJson(
 }
 
 /// The explicit error set of the `appendMergedObject`/`appendMergedValue`
-/// pair. It has to be spelled out: the two functions recurse into each other,
-/// and two mutually recursive functions that both infer their error set are a
-/// compile-time "dependency loop with length 2". `OutOfMemory` is the whole
-/// set - every call underneath is an allocator call.
+/// pair.
 const AppendError = error{OutOfMemory};
 
 /// Write `{ base keys (overlay-merged where present) , overlay-only keys }`.
-///
-/// Base key ORDER is preserved and overlay-only keys are appended, so the
-/// output is deterministic for a given pair of inputs - a diff of two runs
-/// shows real changes instead of hash-map shuffle.
 fn appendMergedObject(
     allocator: std.mem.Allocator,
     out: *std.ArrayList(u8),
@@ -169,29 +126,12 @@ fn appendKeyJson(
 }
 
 /// The config keys that MOVED to workspace scope.
-///
-/// `profiles` / `active_profile` / `mcp_servers` / `tools` / `skill_evals`
-/// are the four Settings sections this refactor relocates; `web_search` rides
-/// with the MCP tab because both answer "where does the agent reach outside
-/// this machine" (decision D3).
-///
-/// Everything NOT in this list stays a USER-level setting on purpose
-/// (decision D4): `notify_on_complete`, `notify_on_error`, `retry_delay_ms`,
-/// `web_launch_enabled`, `model_compaction_size_kb`,
-/// `max_capacity_token_model` and `compaction_threshold_percent` keep
-/// applying everywhere. Copying them into a workspace would freeze them there
-/// and silently stop a later General-tab change from reaching that workspace
-/// - a bug the user cannot see, because General is not even rendered in the
-/// workspace scope.
 pub const ScopedKey = struct {
     /// The spelling `LlmConfigJson` parses out of config.json - the one the
     /// overlay MUST use, because the overlay is merged into that same text
     /// and then handed to `LlmConfig.initFromJsonText`.
     disk: []const u8,
-    /// The spelling the HTTP wire uses, when it differs. `profiles` is the
-    /// wire name and `profiles_models` is the on-disk one, so an overlay
-    /// written with the wire spelling would merge in cleanly and then be
-    /// IGNORED by the parser - a silent no-op with no error to debug.
+    /// The spelling the HTTP wire uses, when it differs.
     wire: []const u8 = "",
 };
 
@@ -212,13 +152,6 @@ fn scopedValue(obj: std.json.ObjectMap, key: ScopedKey) ?std.json.Value {
 }
 
 /// The workspace-scoped SLICE of a user-level config, as overlay JSON.
-///
-/// This is the "copy the user's config into this workspace" operation: the
-/// result is written with `workspace_settings_store.saveRaw`, so the
-/// workspace owns an independent copy of the sections that moved and nothing
-/// else. An unparseable or empty input yields `{}` (which the store treats as
-/// "no overrides"), so a corrupt config cannot seed a workspace with junk.
-/// Caller owns the returned slice.
 pub fn workspaceScopedOverlay(
     allocator: std.mem.Allocator,
     user_config_json: []const u8,
@@ -262,14 +195,8 @@ pub const SeedReport = struct {
 };
 
 /// Give every UNDECIDED workspace a copy of the user-level config.
-///
 /// "Undecided" is `workspace_settings_store.hasRow`, not `hasOverlay`: a
 /// workspace whose row exists with an empty body was deliberately reset to
-/// inherit, and re-seeding it on every boot would undo that reset. A
-/// workspace with an overlay is left exactly as it is.
-///
-/// Idempotent, so it is safe to run at every boot. Caller owns nothing here;
-/// every allocation is freed before returning.
 pub fn seedWorkspaces(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -292,11 +219,7 @@ pub fn seedWorkspaces(
     }
 
     // The reader lives in its OWN block so it is closed before the writes
-    // below, not at the end of the function. A `defer q.deinit()` at function
-    // scope keeps the read cursor open across `saveRaw`, and a read cursor
-    // held across a write on a pooled backend is a DEADLOCK - not a slow
-    // path, a hang with no error and no log, which is exactly what this cost
-    // once. Collect, close, then write.
+    // below, not at the end of the function.
     {
         var q = db.query(allocator, "SELECT id FROM workspaces", &.{}) catch return report;
         defer q.deinit();
@@ -319,23 +242,8 @@ pub fn seedWorkspaces(
     return report;
 }
 
-/// The user-level config TEXT that a workspace overlay is layered over.
-///
-///   * `--auth` ON  -> `users.config_json` for `owner`.
-///   * `--auth` OFF -> `config.json` on disk, whose path comes from the
-///     environment (`$HOME/.config/pabrik/config.json`, or the macOS
-///     Application Support location).
-///
-/// `null` means "there is nothing to layer over", and it covers every
-/// non-answer the same way on purpose: no saved user config, no config.json
-/// yet (a fresh install), an unreadable file, no environment. Every caller
-/// treats that as "the overlay stands alone", which is the honest reading -
-/// a user who has never configured anything has nothing to inherit.
-///
-/// Never returns an error: this runs on the chat path (`session_llm_config
-/// .forSession`) and a config read must not be able to fail a turn.
-///
-/// Caller owns the returned slice.
+/// The user-level config TEXT that a workspace overlay is layered over. *
+/// `--auth` ON -> `users.config_json` for `owner`.
 pub fn baseConfigText(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -362,16 +270,9 @@ pub fn baseConfigText(
     return reader.interface.allocRemaining(allocator, .limited(1024 * 1024)) catch null;
 }
 
-// =====================================================================
-// Tests
-// =====================================================================
-//
-// Every assertion re-PARSES the merged text and reads a value out of it,
-// rather than comparing bytes to a hand-written expected string: the property
-// under test is "the merged config says X", and a byte comparison would also
-// fail on harmless key-order changes, which is not what this module promises.
-// The two exceptions are the "no change" cases, where byte identity IS the
-// promise (an untouched workspace must not churn the config text).
+// ===================================================================== Tests
+// ===================================================================== Every
+// assertion re-PARSES the merged text and reads a value out of it, rather
 
 const testing = std.testing;
 
@@ -514,13 +415,8 @@ test "keys needing JSON escaping survive the round trip" {
 }
 
 // ─── the copy slice ────────────────────────────────────────────────────────
-//
 // The single most important property here is a NEGATIVE one: the copy must
-// NOT carry the General-tab keys. If it did, every workspace would freeze
-// `retry_delay_ms` / `notify_*` / `web_launch_enabled` at copy time, and a
-// later General change would silently stop reaching those workspaces - with
-// no UI in the workspace scope to even show what happened. The positive
-// control below proves the input really did contain those keys.
+// NOT carry the General-tab keys.
 
 const USER_CONFIG =
     \\{"profiles_models":{"claude":{"model":"opus","api_key":"sk-secret"}},
@@ -579,9 +475,7 @@ test "a config using the WIRE spelling is normalised to the on-disk one" {
     const alloc = testing.allocator;
 
     // The bug this pins: `LlmConfigJson` parses `profiles_models`, while the
-    // HTTP wire calls it `profiles`. An overlay written with the wire
-    // spelling merges in cleanly, parses as an unknown key, and is silently
-    // ignored - no error, no log, just a workspace whose profiles do nothing.
+    // HTTP wire calls it `profiles`.
     const wire_shaped = "{\"profiles\":{\"claude\":{\"model\":\"opus\"}},\"tools\":[\"read_file\"]}";
     const copy = try workspaceScopedOverlay(alloc, wire_shaped);
     defer alloc.free(copy);

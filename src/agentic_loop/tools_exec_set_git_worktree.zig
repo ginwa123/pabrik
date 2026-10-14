@@ -26,9 +26,7 @@ pub fn execSetGitWorktree(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecRes
     defer parsed.deinit();
 
     // `cwd` is REQUIRED and names the REPOSITORY the worktree is created
-    // from. It replaces the session cwd this call used to borrow: the model
-    // now states which repo it is branching, instead of inheriting whichever
-    // one the session happened to be bound to.
+    // from.
     path_validate.validateCwd(parsed.value.cwd) catch |err| {
         const err_msg = try error_explain.explain(ctx.allocator, err, null);
         defer ctx.allocator.free(err_msg);
@@ -59,11 +57,8 @@ pub fn execSetGitWorktree(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecRes
         return ToolExecResult{ .output = output, .output_allocated = true };
     }
 
-    // SUCCESS: persist the new git_worktree_cwd to the DB so the
-    // session remembers it across tool calls. For CLEAR, pass null
-    // (the function treats null and "" identically as "clear the
-    // binding"). For SET, extract the "path" from the inner JSON
-    // and persist it.
+    // SUCCESS: persist the new git_worktree_cwd to the DB so the session
+    // remembers it across tool calls.
     if (parsed.value.clear) {
         llm_history.updateSessionGitWorktreeCwd(ctx.allocator, ctx.db, ctx.session_id, null) catch |err| {
             ctx.logger.errFmt("set_git_worktree: failed to persist git_worktree_cwd: {s}", .{@errorName(err)});
@@ -82,9 +77,6 @@ pub fn execSetGitWorktree(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecRes
 }
 
 /// Extract the "error" string from the inner JSON payload.
-/// Returns null when the payload has no error (success case) or when
-/// the payload is not valid JSON (treat as success and let the wrapper
-/// surface it via _raw). Caller owns the returned slice.
 fn extractJsonError(allocator: std.mem.Allocator, inner: []const u8) ?[]u8 {
     const parsed = std.json.parseFromSlice(std.json.Value, allocator, inner, .{}) catch return null;
     defer parsed.deinit();

@@ -1,21 +1,6 @@
 //! `POST /api/workspaces/:workspace_id/items/:item_id/tasks/reorder_pinned`.
-//!
 //! Body: `{ "ordered_ids": ["id1", "id2", ..., "idN"] }` (top-to-bottom
 //! display order of the pinned subset).
-//!
-//! Behavior: assigns `pinned_position = N-1 - i` to the i-th id.
-//! The list lister's `ORDER BY is_pinned DESC, pinned_position DESC,
-//! id DESC` then renders them in the user's chosen order. Rows that
-//! aren't currently pinned (is_pinned=0) or that belong to a
-//! different workspace_item are silently skipped (defense in depth,
-//! consistent with the workspace reorder endpoints).
-//!
-//! Idempotent: a second call with the same array leaves the data
-//! unchanged (positions are recomputed but the final state is the
-//! same).
-//!
-//! Layered as `useCase` (parse body + collect ids + reorder) and a
-//! thin handler that maps errors to status codes / JSON.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -95,9 +80,6 @@ pub fn tasksReorderPinnedHandler(
     }
 
     // Parse JSON. The body shape is `{ ordered_ids: string[] }`.
-    // We use `std.json.Value` because we want to extract a
-    // dynamic-length string array without a dedicated struct
-    // (the field name is the contract; the inner type is `[]string`).
     const parsed = std.json.parseFromSliceLeaky(std.json.Value, allocator, body, .{}) catch {
         return res.jsonResponse(.{
             .status_code = 400,
@@ -109,10 +91,9 @@ pub fn tasksReorderPinnedHandler(
     const ordered_ids_val = root.get("ordered_ids") orelse {
         return res.jsonResponse(.{
             .status_code = 400,
-            // The contract substring "ordered_ids" must appear in the
-            // source for the static-contract test (see tasks_reorder_pinned_test.zig).
-            // Keeping the human-readable message here matches the
-            // test's check: it asserts `std.mem.indexOf(u8, source, "ordered_ids") == null` → false.
+            // The contract substring "ordered_ids" must appear in the source
+            // for the static-contract test (see
+            // tasks_reorder_pinned_test.zig).
             .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "ordered_ids required" }),
         });
     };
@@ -123,10 +104,7 @@ pub fn tasksReorderPinnedHandler(
         });
     }
 
-    // Collect the string ids into an ArrayList. Non-string entries
-    // (numbers, bools, objects) are silently skipped — the model
-    // function only handles strings, and a defensive parse matches
-    // the "silently skip invalid rows" contract used elsewhere.
+    // Collect the string ids into an ArrayList.
     var ids = std.ArrayList([]const u8).empty;
     defer ids.deinit(allocator);
     for (ordered_ids_val.array.items) |item| {

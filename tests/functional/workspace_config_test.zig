@@ -1,28 +1,5 @@
-//! Functional tests for the per-workspace config overlay
-//! (Migration 105) over the wire.
-//!
-//! What these cover, and why they have to be functional: the overlay's four
-//! routes, the EFFECTIVE-config response, the isolation between a workspace
-//! overlay and the user-level config, and the masking of provider keys. None
-//! of that is visible from the use-case unit tests — route ORDER, the exact
-//! wire shape and "did the user config change?" are wire facts.
-//!
-//!   GET  /api/workspaces/:id/config   the effective config (user ⊕ overlay)
-//!   PUT  /api/workspaces/:id/config   store the workspace-scoped slice
-//!
-//! Two routes only: the boot seeding IS the migration, so there is no
-//! reset/copy endpoint. `PUT` with an EMPTY body is the "inherit" path and is
-//! covered below.
-//! NOT covered here: the boot-time seeding of existing workspaces
-//! (`server_boot.seedWorkspaceSettingsFromUserConfig`). Its loop is unit
-//! tested (`workspace_config.seedWorkspaces`, 8 tests) and its boot wiring is
-//! proven by a manual probe, but a committed test needs a seam this harness
-//! does not have: `Harness.boot` ALLOCATES its tmpdir, so there is no way to
-//! (a) plant a config.json before the spawn and (b) boot a SECOND time against
-//! the same HOME after creating a workspace — and the seeding only ever runs at
-//! boot, with a workspace already present. The seam to add is the one already
-//! noted in `harness.zig`: `BootOptions.config_json` (pre-spawn seed) plus a
-//! `home_dir` reuse option. See the plan doc, Phase 1d.
+//! Functional tests for the per-workspace config overlay (Migration 105) over
+//! the wire.
 
 const std = @import("std");
 const testing = std.testing;
@@ -32,9 +9,8 @@ const gpa = testing.allocator;
 const io = testing.io;
 
 /// A user-level config with BOTH kinds of key: the ones that move to a
-/// workspace (profiles, tools) and the ones that must keep applying everywhere
-/// (notify_on_complete, retry_delay_ms). The distinction is the whole point of
-/// the overlay, so every test needs a config where it is observable.
+/// workspace (profiles, tools) and the ones that must keep applying
+/// everywhere (notify_on_complete, retry_delay_ms).
 const USER_CONFIG =
     \\{"profiles":{"stub":{"model":"stub-model","base_url":"http://127.0.0.1:1","api_key":"stub-key-not-real"},
     \\ "extra":{"model":"extra-model","base_url":"http://127.0.0.1:1","api_key":"extra-key-not-real"}},
@@ -121,9 +97,7 @@ test "workspace_config_route_answers_the_config_handler" {
     defer gpa.free(id);
 
     // A 200 whose body carries `profiles` is the config handler's shape (the
-    // helper asserts it). `matchRoute` walks routes in registration order and
-    // returns the first hit, so a `/config` captured by a `:param` sibling
-    // would answer differently (or 404) — and only a wire test can see that.
+    // helper asserts it).
     var got = try getWorkspaceConfig(&h, id);
     defer got.doc.deinit();
     defer got.r.deinit();
@@ -382,21 +356,11 @@ test "workspace_config_masks_the_web_search_key" {
 // ============================================================================
 // The profile picker's premise: a workspace-only profile is in the WORKSPACE
 // config and NOT in the user config
-// ============================================================================
 
 test "a profile added to a workspace overlay is absent from the user-scope config" {
     // Why this is a wire fact and not a unit test: the two endpoints are the
     // two possible sources for ChatView's profile picker, and the bug was
-    // asking the WRONG one. The picker read `/api/config/pabrik` (user scope,
-    // no overlay) and listed exactly the user set, so a profile that lives only
-    // in a workspace overlay — where Migration 105 puts per-workspace profiles
-    // — could never appear in ANY picker, not even in the workspace that owns
-    // it. A real instance had a `kilo` profile in one workspace's overlay and
-    // in no picker.
-    //
-    // The assertion therefore has to be the CONTRAST: the same profile is
-    // present in the workspace-scope response and absent from the user-scope
-    // one, with a positive control on each side so neither can pass vacuously.
+    // asking the WRONG one.
     var h = try boot();
     defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
     try putUserConfig(&h);

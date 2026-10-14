@@ -1,27 +1,6 @@
-//! `PUT /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id`.
-//!
-//! Update an existing design element. Each non-null field in the
-//! request body is SET in the SQL UPDATE; null fields are left
-//! unchanged. If `html` is provided, the element's on-disk HTML
-//! file is rewritten atomically. Delegates to
-//! `design_model.updateElement`.
-//!
-//! Body: same fields as the create body, all optional. The wire
-//! `type` string is translated to the `ElementType` enum.
-//!
-//! Response shape: `DesignElementResponse` for the updated element.
-//! The element is re-fetched via `design_model.getElement` so the
-//! response reflects the post-update state (instead of returning
-//! just the id like the model does).
-//!
-//! Errors:
-//!   - 400 missing `element_id` path param, invalid JSON body, no
-//!     fields provided (no-op), invalid `type` string
-//!   - 404 `element_id` not found
-//!   - 500 DB failure or file-write failure
-//!
-//! Plan: docs/superpowers/plans/2026-07-08-design-mode-redesign.md
-//!   (Chunk 3, Task 3.3)
+//! `PUT
+//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id`.
+//! Update an existing design element.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -29,11 +8,7 @@ const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const design_model = @import("../agentic_loop/design_model.zig");
 
-/// HTTP request body for element-update. All fields optional so
-/// callers can PATCH a single field at a time (the wire shape is
-/// the same for PUT and PATCH in this design — the route paths
-/// differ). The `type` field is the wire string; translated to
-/// the `ElementType` enum at the handler boundary.
+/// HTTP request body for element-update.
 const UpdateElementBody = struct {
     name: ?[]const u8 = null,
     type: ?[]const u8 = null,
@@ -56,19 +31,13 @@ const UpdateElementBody = struct {
     /// (reparent to top-level).
     parent_id: ?[]const u8 = null,
     /// Optional post-update position normalization. Today only
-    /// "last_in_parent" is supported; unrecognized values are
-    /// treated as `null` (no position recompute) by the handler.
-    /// Plan: docs/superpowers/plans/2026-07-30-design-layer-drag-join-or-leave-group.md
+    /// "last_in_parent" is supported; unrecognized values are treated as
+    /// `null` (no position recompute) by the handler.
     reposition: ?[]const u8 = null,
 };
 
-/// Domain-level error set for `useCase`. The handler maps each
-/// variant to an HTTP status code + message via two exhaustive
-/// switches.
-///
-/// Adding a new variant fails to compile in the handler until both
-/// switches are updated — that's intentional, to keep status codes
-/// in lockstep with the error set.
+/// Domain-level error set for `useCase`. The handler maps each variant to an
+/// HTTP status code + message via two exhaustive switches.
 pub const DesignElementUpdateError = error{
     /// `:element_id` path param was missing or empty.
     ElementIdRequired,
@@ -136,16 +105,7 @@ pub const UpdateElementOutput = struct {
 // Use case
 // =====================================================================
 
-/// Update a design element.
-///
-/// Steps:
-///   1. Validate `element_id`.
-///   2. Call `design_model.updateElement(...)` — returns the
-///      element_id (even if no fields changed — see `NoChanges`
-///      detection below).
-///   3. Re-query via `design_model.getElement(...)` to fetch the
-///      full row.
-///   4. Return a heap-owned `DesignElement` for the response.
+/// Update a design element. Steps: 1. Validate `element_id`. 2.
 pub fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -266,10 +226,9 @@ pub fn designElementsUpdateHandler(
         };
     }
 
-    // Translate the wire `reposition` string to the enum (if provided).
-    // Today only "last_in_parent" is supported; any unrecognized value
-    // is silently ignored (treated as `null`) to keep the wire shape
-    // forward-compatible.
+    // Translate the wire `reposition` string to the enum (if provided). Today
+    // only "last_in_parent" is supported; any unrecognized value is silently
+    // ignored (treated as `null`) to keep the wire shape forward-compatible.
     var reposition: ?design_model.RepositionMode = null;
     if (parsed.reposition) |r| {
         if (std.mem.eql(u8, r, "last_in_parent")) {
@@ -343,7 +302,6 @@ pub fn designElementsUpdateHandler(
 }
 
 // ─── Behavioural tests for parent_id + reposition wire (Chunk 1 Task 1.3) ─
-//
 // Pulled in from design_elements_update_reparent_test.zig — one-file-per-impl
 // convention.
 
@@ -589,16 +547,8 @@ test "useCase rejects an invalid reposition string with BadReparent (handler map
     defer alloc.free(leaf_id);
 
     // The wire layer translates "garbage" to null (since it's not
-    // "last_in_parent"); the useCase then no-ops on reposition and
-    // either succeeds or rejects based on parent_id. The handler
-    // is what should reject "garbage" with 400 — see the handler
-    // test in Chunk 1.3 implementation. The useCase correctly
-    // accepts null (unrecognized translates to null in our shim).
-    //
-    // For this behavioural test, the useCase sees `reposition = null`
-    // because the handler-level translation would have already
-    // produced 400. Verify that the useCase rejects the cycle
-    // instead (path coverage for the no_changes rejection).
+    // "last_in_parent"); the useCase then no-ops on reposition and either
+    // succeeds or rejects based on parent_id.
     const result = useCase(alloc, &ctx.db, .{
         .element_id = leaf_id,
         .name = null, .elem_type = null, .html = null,

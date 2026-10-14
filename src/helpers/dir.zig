@@ -4,12 +4,7 @@ const std = @import("std");
 /// Helper to get pabrik data directory (~/local/share/pabrik/data/apps)
 pub fn getDataAppsDir(allocator: std.mem.Allocator, io: std.Io, environment: *const std.process.Environ.Map) ![]u8 {
     _ = io;
-    // On POSIX systems, the canonical user-home env var is `HOME`. On
-    // native Windows (cmd/pwsh — NOT Git Bash, which sets HOME to
-    // %USERPROFILE%) `HOME` is typically unset; fall back to
-    // `USERPROFILE` (Windows' canonical user-home variable). Only used
-    // if HOME is missing or empty. Mirrors
-    // helpers.db_path.getDbPath (same HOME -> USERPROFILE chain).
+    // On POSIX systems, the canonical user-home env var is `HOME`.
     const home = blk: {
         if (environment.get("HOME")) |h| {
             if (h.len > 0) break :blk h;

@@ -1,42 +1,6 @@
-//! `POST /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/geometry-batch`.
-//!
-//! ⚠️  DEPRECATED — replaced by `POST .../elements/move-batch` (server-
-//! side cascade via recursive CTE) for multi-element translation.
-//! The new endpoint:
-//!   - cascades dx/dy to every transitive descendant for free
-//!   - accepts delta (dx, dy) instead of absolute (x, y)
-//!   - one SSE event per request carrying the deduped union of ids
-//!
-//! This handler is kept for back-compat with any client (e.g. the
-//! old LLM `update_element` tool, or a 3rd-party integration) still
-//! wired to the old endpoint. New code MUST use /move-batch.
-//! See `docs/superpowers/plans/2026-08-06-split-move-resize.md`.
-//!
-//! Atomic N-element geometry update. Used by the canvas drag/resize
-//! handlers when multiple elements are selected (multi-element drag,
-//! a `group`/`frame` element being moved). Single SQL transaction
-//! (all-or-nothing), single `design_elements_geometry_batch_updated`
-//! SSE event carrying the full id context.
-//!
-//! Body: `{ updates: [{element_id, x?, y?, width?, height?, rotation?}, …] }`
-//! At least one `updates` entry is required.
-//!
-//! Response shape: `{ updated: DesignElementResponse[] }` — the
-//! post-batch elements in INPUT order. Built via
-//! `std.json.Stringify.valueAlloc`.
-//!
-//! Errors:
-//!   - 400 empty `updates` array (`EmptyUpdates`)
-//!   - 400 malformed JSON body
-//!   - 404 `:page_id` not found
-//!   - 404 any `element_id` not found on the page (`ElementNotFound`)
-//!   - 500 DB failure (DbError)
-//!
-//! Plan: docs/superpowers/plans/2026-07-30-design-drag-debounce-batch.md
-//!   (Chunk 1, Task 1.3) — original endpoint.
-//! Plan: docs/superpowers/plans/2026-08-06-split-move-resize.md
-//!   (Task 2: deprecation — keep working but route new clients to
-//!   /move-batch).
+//! `POST
+//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/geometry-batch`.
+//! ⚠️ DEPRECATED — replaced by `POST .../elements/move-batch` (server- side
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -45,10 +9,8 @@ const gserverz = pabrikcore.gserverz;
 const design_model = @import("../agentic_loop/design_model.zig");
 
 /// HTTP request body for batch-geometry-update. Each `updates[i]` is a
-/// partial geometry patch — only the listed fields are SET in the SQL
-/// UPDATE; null fields are left unchanged. At least one field per
-/// element is recommended (a fully-empty entry is a no-op UPDATE for
-/// that element, which the SQL still happily applies).
+/// partial geometry patch — only the listed fields are SET in the SQL UPDATE;
+/// null fields are left unchanged.
 const BatchBody = struct {
     updates: []const SingleUpdate = &.{},
 };
@@ -213,12 +175,7 @@ pub fn designElementsGeometryBatchHandler(
         });
     };
 
-    // 4. Build the success response (200 OK). We can't use the
-    //    shared `http_response.makeDesignElementResponse` from the
-    //    per-element handler without a circular import — instead
-    //    serialize via std.json.Stringify.valueAlloc, which
-    //    recursively walks the `DesignElement` fields and produces
-    //    wire-compatible JSON.
+    // 4. Build the success response (200 OK).
     defer {
         design_model.freeElements(allocator, output.updated);
     }
@@ -245,15 +202,8 @@ fn makeErrorJson(allocator: std.mem.Allocator, message: []const u8) ![]u8 {
 }
 
 // ─── Behavioural tests for the `POST .../elements/geometry-batch` handler ─
-//
 // Plan: docs/superpowers/plans/2026-07-30-design-drag-debounce-batch.md
-// (Chunk 1, Task 1.3). Mirrors `design_elements_group_test.zig`'s
-// convention: tests the public `useCase` directly with crafted inputs
-// — no HTTP framework mocking. The handler's parseFromSliceLeaky +
-// status-code mapping is covered by the parallel pattern in
-// `design_elements_geometry_update_test.zig` (which stays separate).
-//
-// Inline at the bottom of the impl file per the project rule.
+// (Chunk 1, Task 1.3).
 
 const testing_handler = std.testing;
 

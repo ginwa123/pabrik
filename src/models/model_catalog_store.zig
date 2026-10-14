@@ -1,22 +1,4 @@
 //! `model_catalog_store` — the durable half of the models.dev catalog.
-//!
-//! The in-memory `model_catalog.Catalog` is the hot index: the compaction
-//! decision reads the context window on every loop iteration and cannot afford
-//! a query. This module is where that index comes from and goes back to.
-//!
-//! SHAPE OF THE EXCHANGE
-//!
-//!   refresh (background, hourly)  fetch -> trim -> saveCatalog -> setSingleton
-//!   boot                          loadCatalog -> setSingleton
-//!
-//! Both directions go through the SAME two tables, so there is one authority
-//! for what we know about a model. Nothing else writes them.
-//!
-//! NULLABILITY IS LOAD-BEARING — see Migration 106's header. This backend binds
-//! an empty slice as SQL NULL, which is exactly what we want for the nullable
-//! INTEGER/REAL columns (`context_window` etc.: `nullOr` returns `""` for a null
-//! and SQLite stores NULL), and exactly what we must NOT rely on for the TEXT
-//! columns (hence COALESCE on every read).
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -38,11 +20,9 @@ pub const SaveStats = struct {
     models: usize,
 };
 
-/// Replace the whole catalog in ONE transaction.
-///
-/// Replace-not-merge is deliberate: a refresh is a snapshot of an external
-/// source of truth, and a model deleted upstream must disappear here too. A
-/// partial merge would leave rows nobody can explain.
+/// Replace the whole catalog in ONE transaction. Replace-not-merge is
+/// deliberate: a refresh is a snapshot of an external source of truth, and a
+/// model deleted upstream must disappear here too.
 pub fn saveCatalog(db: *sqlite.SqliteBackend, alloc: Allocator, cat: *const catalog.Catalog) !SaveStats {
     try db.exec(alloc, "BEGIN IMMEDIATE", &.{});
     errdefer db.exec(alloc, "ROLLBACK", &.{}) catch {};
@@ -146,20 +126,13 @@ pub fn freeMeta(alloc: Allocator, meta: *const Meta) void {
     alloc.free(meta.source);
 }
 
-/// Load the whole catalog into an in-memory `Catalog`.
-///
-/// `null` when there is no usable catalog: no meta row (never synced), or a
-/// meta row written by another schema version. A catalog with ZERO providers is
-/// still a catalog — the caller sees `providerCount() == 0` rather than a
-/// `null` it would have to guess about.
+/// Load the whole catalog into an in-memory `Catalog`. `null` when there is
+/// no usable catalog: no meta row (never synced), or a meta row written by
+/// another schema version.
 pub fn loadCatalog(db: *sqlite.SqliteBackend, alloc: Allocator) !?*catalog.Catalog {
-    // `std.json.parseFromSliceLeaky` is LEAKY BY DESIGN — it wants an allocator
-    // whose memory is released wholesale, not one that has to free each piece.
-    // Handing it the caller's allocator leaked two allocations per loaded model
-    // and turned `zig build test` red on every platform. This scratch arena is
-    // that "wholesale" scope; nothing parsed here has to outlive the function
-    // because `putProvider` / `putModel` dupe what they are given into the
-    // CATALOG's own arena.
+    // `std.json.parseFromSliceLeaky` is LEAKY BY DESIGN — it wants an
+    // allocator whose memory is released wholesale, not one that has to free
+    // each piece.
     var scratch = std.heap.ArenaAllocator.init(alloc);
     defer scratch.deinit();
     const sa = scratch.allocator();
@@ -286,12 +259,6 @@ fn parseFloat(raw: []const u8) ?f64 {
 
 // ============================================================================
 // Tests — in-memory SQLite, the same TestCtx shape the other stores use.
-//
-// These are the tests that make Migration 106's nullability choices real:
-// a NULL context window must come back as `null` (not 0), and a provider with
-// no base URL must come back as `""` (not a constraint error, not a NULL that
-// a `WHERE base_url = ?` would silently miss).
-// ============================================================================
 
 const testing = std.testing;
 const Migration106 = @import("../migrations/migration.zig").Migration106CreateModelCatalog;

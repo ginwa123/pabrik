@@ -1,17 +1,4 @@
 //! Hand-declared Lua 5.4 C API bindings (no `@cImport`).
-//!
-//! Follows the same recipe as the OpenSSL bindings: declare each
-//! symbol as an `extern fn` with `callconv(.c)` and verify every constant
-//! against the vendored headers in `vendor/lua/` (Lua 5.4.9, see
-//! `vendor/lua/README.vendor`):
-//!   LUA_OK = 0, LUA_TNIL = 0 / LUA_TBOOLEAN = 1 / LUA_TNUMBER = 3 /
-//!   LUA_TSTRING = 4 / LUA_TTABLE = 5 / LUA_TFUNCTION = 6, LUA_MULTRET = -1.
-//!
-//! Lua is compiled from vendored C for every target (`build.zig`
-//! `linkVendoredLua`), so these symbols exist on Linux, macOS, and
-//! Windows. Any binary calling them must link libc (missing `-lc`
-//! segfaults in `luaL_newstate` — proven by the Phase 0 spike);
-//! `linkPlatformDeps` already links `"c"` on every target.
 
 const std = @import("std");
 

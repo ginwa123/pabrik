@@ -1,45 +1,6 @@
-// Functional tests for the Agent Mode tool toggle wire.
-//
-// Zig port of `tests/functional/agent_tools_toggle_test.py` (same test
-// names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional tests for the Agent Mode tool toggle wire.
-//
-//   Exercises the INSERT/DELETE flow against the `agent_tools` table
-//   (per-plan path):
-//
-//     Plan: docs/superpowers/plans/2026-08-19-agent-tools-toggle-wire.md
-//
-//   Covers:
-//     * ENABLE  — POST /api/agents/:agent_id/tools  → 201 + new row
-//     * DUPLICATE — POST same tool again → 409 (UNIQUE violation)
-//     * UNKNOWN — POST a tool_name not in the registry → 400
-//     * LIST    — GET returns tool_names sorted ASC
-//     * DISABLE — DELETE /api/agents/:agent_id/tools/:tool_name → 200, row gone
-//     * IDEMPOTENT — DELETE non-existent → 200 (no-op)
-//     * LIFECYCLE — end-to-end: enable → list → enable more → delete → list
-//
-//   The DELETE path-param switch from `:tool_id` to `:tool_name`
-//   (Tasks 1+2 of the plan) is what these tests specifically guard —
-//   without the rename, `harness.http("DELETE", ".../tools/{tool_name}")`
-//   would 404 against the old `:tool_id` route.
-//   """
-//
-// WHY `EXPECTED_DEFAULTS` IS INLINED HERE: the Python original did
-// `from default_tools import DEFAULT_AGENT_TOOLS`, and
-// `tests/functional/default_tools.py` is not a Zig-importable module
-// (root.zig's `suites` list is owned by another agent for this port).
-// The list is transcribed once below, with the same comptime guards
-// `agent_tools_defaults_test.zig` uses, so a drift between the two
-// transcriptions fails at COMPILE time rather than in CI.
-//
-// PATHS: the Python original passed a literal `"/tmp/agent-tools-toggle-test"`
-// as the agent item's `path`. The create handler validates it with
-// `std.fs.path.isAbsolute`, which is FALSE for a leading-slash path on
-// Windows — so every path here is derived from `h.temp_dir` via
-// `harness.harnessPath`.
+// Functional tests for the Agent Mode tool toggle wire. Zig port of
+// `tests/functional/agent_tools_toggle_test.py` (same test names, same
+// order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -119,12 +80,9 @@ comptime {
 // Helpers
 // ============================================================================
 
-/// An owned list of strings copied out of a JSON response.
-///
-/// A `harness.Json` BORROWS from the `Response`'s body buffer, so a
-/// helper cannot hand one back to the caller (rule 7). Python's
-/// `_list_tools` returned a `list[str]`, so the Zig shape is owned
-/// strings.
+/// An owned list of strings copied out of a JSON response. A `harness.Json`
+/// BORROWS from the `Response`'s body buffer, so a helper cannot hand one
+/// back to the caller (rule 7).
 const NameList = struct {
     items: [][]const u8,
 
@@ -141,10 +99,6 @@ fn freeNameSlice(slice: [][]const u8) void {
 
 /// Sorted union of `base` and `extras` — the Zig spelling of Python's
 /// `sorted(EXPECTED_DEFAULTS + picked)`.
-///
-/// The returned outer slice is owned; the element pointers are BORROWED
-/// from `base` / `extras`, which are comptime constants or caller-owned
-/// `NameList`s. Free with `gpa.free`, not per element.
 fn sortedUnion(base: []const []const u8, extras: []const []const u8) ![][]const u8 {
     var out: std.ArrayList([]const u8) = .empty;
     errdefer out.deinit(gpa);
@@ -216,10 +170,6 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
 
 /// `POST /api/workspaces/:ws/items/agent` → the agent id (owned), after
 /// asserting the `{item, agent}` envelope and the 1-1 id invariant.
-///
-/// The `path` field is required by the create handler
-/// (`workspace_items_create_agent.zig` → `error.PathRequired` on empty)
-/// and need NOT exist on disk: the create handler does not fs-stat it.
 fn createAgent(h: *Harness, ws_id: []const u8, name: []const u8, path: []const u8) ![]u8 {
     const body = try std.fmt.allocPrint(
         gpa,
@@ -315,11 +265,9 @@ fn listTools(h: *Harness, agent_id: []const u8) !NameList {
     return .{ .items = try out.toOwnedSlice(gpa) };
 }
 
-/// The `AgentToolRow` a successful enable returned, copied out so it
-/// outlives the response body.
-///
-/// Wire shape: the backend returns the row DIRECTLY (not wrapped in
-/// `{tool: ...}`) — see the Python docstring on `_enable_tool`.
+/// The `AgentToolRow` a successful enable returned, copied out so it outlives
+/// the response body. Wire shape: the backend returns the row DIRECTLY (not
+/// wrapped in `{tool: ...}`) — see the Python docstring on `_enable_tool`.
 const EnabledTool = struct {
     tool_name: []u8,
     enabled: i64,
@@ -391,10 +339,9 @@ fn disableTool(h: *Harness, agent_id: []const u8, tool_name: []const u8) !void {
     }
 }
 
-/// `GET /api/agent-tools/registry` → every canonical tool name (owned).
-///
-/// Used to pick tool_names we KNOW are valid, so the enable-unknown
-/// cases are intentional rather than accidental.
+/// `GET /api/agent-tools/registry` → every canonical tool name (owned). Used
+/// to pick tool_names we KNOW are valid, so the enable-unknown cases are
+/// intentional rather than accidental.
 fn registryTools(h: *Harness) !NameList {
     var r = try h.http(io, .GET, "/api/agent-tools/registry", .{ .expect = &.{200} });
     defer r.deinit();
@@ -436,9 +383,8 @@ fn isDefaultTool(name: []const u8) bool {
 }
 
 /// The registry names that are NOT seeded defaults, copied out as a
-/// borrowed-name slice valid while `registry` lives.
-///
-/// Python: `[n for n in registry if n not in EXPECTED_DEFAULTS]`.
+/// borrowed-name slice valid while `registry` lives. Python: `[n for n in
+/// registry if n not in EXPECTED_DEFAULTS]`.
 fn nonDefaultCandidates(registry: NameList) ![][]const u8 {
     var out: std.ArrayList([]const u8) = .empty;
     errdefer out.deinit(gpa);
@@ -648,10 +594,9 @@ test "returns_sorted_ascending" {
 // TestDisableTool — DELETE /api/agents/:agent_id/tools/:tool_name
 // ============================================================================
 
-// DELETE removes the row; the list drops back to the seeded defaults.
-//
-// The DELETE path param is `:tool_name` (the plan's Task 1+2 rename),
-// so this route would 404 against the old `:tool_id` spelling.
+// DELETE removes the row; the list drops back to the seeded defaults. The
+// DELETE path param is `:tool_name` (the plan's Task 1+2 rename), so this
+// route would 404 against the old `:tool_id` spelling.
 test "delete_removes_row" {
     try harness.requirePabrikBin(io, gpa);
     var h = try boot();
@@ -854,11 +799,9 @@ test "full_lifecycle" {
     try expectNames(final_got, want, "step 5: after re-enabling tool_a");
 }
 
-// Tool toggles on agent_A do not affect agent_B.
-//
-// Both agents live in separate workspaces (isolation proof; a
-// same-workspace second create also works since the workspace_item_id
-// fix in workspace_items_create_agent.zig).
+// Tool toggles on agent_A do not affect agent_B. Both agents live in separate
+// workspaces (isolation proof; a same-workspace second create also works
+// since the workspace_item_id fix in workspace_items_create_agent.zig).
 test "scoped_to_agent_id" {
     try harness.requirePabrikBin(io, gpa);
     var h = try boot();

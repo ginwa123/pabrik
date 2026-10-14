@@ -1,48 +1,6 @@
-// Functional tests for the create_session user-message fix.
-//
-// Zig port of
-// `tests/functional/kanban_create_session_user_message_test.py`
-// (same test names, same order).
-//
-// PYTHON DOCSTRING, PRESERVED:
-//
-//   """Functional tests for the create_session user-message fix.
-//
-//   Regression for the bug "create task still not insert user llm
-//   history role" (task_1787213354784_1). Pre-fix, POST
-//   /api/workspaces/:ws/items/:kanban/tasks with `mode='create_session'`
-//   inserted the sessions row but NOT a user-role llm_history row —
-//   the user's typed description was silently dropped, the chatview
-//   landed on an empty session, and the user had no record of what
-//   they originally asked for.
-//
-//   Post-fix, when `mode='create_session'` is used with a non-empty
-//   description, the handler inserts a user-role llm_history row with
-//   content = `name + "\n\n" + description` (mirrors create_and_run's
-//   wire format). Empty descriptions stay on a clean chat — title-only
-//   tasks don't get a stray "name\n\n" bubble.
-//
-//   We use the harness with `stub_llm_profile=True` so the
-//   create_and_run variant of the test doesn't try to call a real LLM
-//   (the wire works, the worker fails silently, we don't care about LLM
-//   outcomes).
-//
-//   Plan: docs/superpowers/plans/2026-08-19-kanban-create-task-inits-session.md
-//   Task: task_1787213354784_1
-//   """
-//
-// ── PORTING NOTES ───────────────────────────────────────────────────────
-// * `_get_session_selected_profile` polls the VALUE, never the key's
-//   presence. The Python comment is explicit about why: the response
-//   ALWAYS carries `selected_profile_model` (as an explicit null), so a
-//   key-presence guard would short-circuit on attempt 0 and never
-//   retry. Here `doc.get(...) == null` covers BOTH an absent key and a
-//   JSON `null`, which is precisely the Python's `is not None`.
-//
-// * `_get_session_flag_via_db` opened agent.db with Python's stdlib
-//   `sqlite3`; the port spawns the `sqlite3` CLI and reads `-json`
-//   output (see `session_human_touched_at_test.zig`). Tests that read
-//   the DB skip when the CLI is absent.
+// Functional tests for the create_session user-message fix. Zig port of
+// `tests/functional/kanban_create_session_user_message_test.py` (same test
+// names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -51,11 +9,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// A pair of stub base64 image URLs (deliberately short — the
-// llm_history column stores the full data URL string, but we only need
-// to assert "the value passed in is the value stored"). These match
-// the wire shape the frontend's KanbanDescriptionEditor sends via
-// fileToBase64().
+// A pair of stub base64 image URLs (deliberately short — the llm_history
+// column stores the full data URL string, but we only need to assert "the
+// value passed in is the value stored").
 const PNG_DATA_URL_1 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABh6FO1AAAAABJRU5ErkJggg==";
 const JPEG_DATA_URL_2 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwA/wA/8H//2Q==";
 
@@ -63,11 +19,9 @@ const JPEG_DATA_URL_2 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBD
 // Helpers — wire
 // ============================================================================
 
-/// Parse OWNED bytes into a `harness.Json`.
-///
-/// A `harness.Json` aliases the `Response` body it was parsed from, so a
-/// helper may not RETURN one. Helpers below return owned bytes and each
-/// test parses locally.
+/// Parse OWNED bytes into a `harness.Json`. A `harness.Json` aliases the
+/// `Response` body it was parsed from, so a helper may not RETURN one.
+/// Helpers below return owned bytes and each test parses locally.
 fn parseJson(bytes: []const u8) !harness.Json {
     return .{ .parsed = try std.json.parseFromSlice(std.json.Value, gpa, bytes, .{}) };
 }
@@ -134,15 +88,8 @@ fn createKanban(h: *Harness, workspace_id: []const u8, name: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// The wire body of `POST .../kanban/tasks`.
-///
-/// `image_urls` is the array of base64 data URLs the user pasted in the
-/// kanban detail editor. The frontend converts each file to a
-/// `data:<mime>;base64,...` URL and JOINS the array with `|` before
-/// sending (api/index.ts:752 — `body.image_urls = params.imageUrls.join('||')`
-/// is the stored form; the wire form is the single joined string). The
-/// workflow drain splits by single `|`, so the value stored in
-/// llm_history.image_url uses the single-`|` separator.
+/// The wire body of `POST .../kanban/tasks`. `image_urls` is the array of
+/// base64 data URLs the user pasted in the kanban detail editor.
 const TaskBody = struct {
     mode: []const u8,
     name: []const u8,
@@ -171,13 +118,9 @@ fn createTask(h: *Harness, ws: []const u8, kanban: []const u8, body: TaskBody) !
     return gpa.dupe(u8, r.body);
 }
 
-/// `_create_task_via_kanban_endpoint` — the shape the dialog sends.
-///
-/// For `create_and_run` the backend requires a non-empty
-/// `queue_message` (validation lives in kanban_tasks_create.zig:127-135
-/// — 400 otherwise). The frontend builds this from
-/// `name + "\n\n" + description` (or bare `name` when the description
-/// is empty), so we mirror that contract here.
+/// `_create_task_via_kanban_endpoint` — the shape the dialog sends. For
+/// `create_and_run` the backend requires a non-empty `queue_message`
+/// (validation lives in kanban_tasks_create.zig:127-135 — 400 otherwise).
 fn createTaskViaKanbanEndpoint(
     h: *Harness,
     ws: []const u8,
@@ -242,10 +185,9 @@ fn getSessionMessages(h: *Harness, session_id: []const u8) ![]u8 {
     return gpa.dupe(u8, r.body);
 }
 
-/// How many `messages` entries carry `role == "user"`.
-///
-/// The bug under test is specifically about a MISSING user-role row, so
-/// this is the count every assertion is about.
+/// How many `messages` entries carry `role == "user"`. The bug under test is
+/// specifically about a MISSING user-role row, so this is the count every
+/// assertion is about.
 fn userRoleCount(doc: *const harness.Json) !usize {
     const messages = doc.array("messages") orelse {
         std.debug.print("expected messages list, got: {s}\n", .{@tagName(doc.value().*)});
@@ -276,23 +218,7 @@ fn userRoleValue(doc: *const harness.Json, n: usize, key: []const u8) ?std.json.
 }
 
 /// `GET /api/llm/session/:id/messages?limit=1` → `selected_profile_model`.
-///
-/// This is the exact endpoint the chatview reads on session open. The
-/// backend COALESCEs NULL → '' so a lost profile surfaces as '' (the
-/// control test asserts on that).
-///
-/// For `create_and_run` the workflow runs in the background after the
-/// create response returns; the queued user message is drained
-/// asynchronously. Until it lands the session has 0 llm_history rows
-/// and the endpoint returns `selected_profile_model: null` (the value is
-/// extracted from the first JOINed row).
-///
-/// IMPORTANT (the flake this helper once had): the response ALWAYS
-/// contains the `selected_profile_model` KEY, so a key-presence guard
-/// would short-circuit on attempt 0 and never retry. Poll on the VALUE:
-/// retry until it is a STRING, then return whatever we got ('' included
-/// — that's the no-profile sentinel the control test asserts on). An
-/// OWNED copy is returned because a `Json` may never outlive its body.
+/// This is the exact endpoint the chatview reads on session open.
 fn getSessionSelectedProfile(h: *Harness, session_id: []const u8) !?[]u8 {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}/messages", .{session_id});
     defer gpa.free(path);
@@ -399,16 +325,9 @@ fn sqliteRun(db_path: []const u8, sql: []const u8) ![]u8 {
     return res.stdout;
 }
 
-/// Read `sessions.is_auto_retry_until_stop` straight from the DB.
-///
-/// Used to prove the unattended flag itself is NOT lost by the gating
-/// fix (it must land on the step-5 full INSERT instead of the useCase's
-/// bare INSERT).
-///
-/// The RAW `sessions.is_auto_retry_until_stop` column for `session_id`.
-///
-/// SQLite stores it as INTEGER (schema default 0), so the Python
-/// compared BOTH `'1'` and `1` — hence the two shapes here.
+/// Read `sessions.is_auto_retry_until_stop` straight from the DB. Used to
+/// prove the unattended flag itself is NOT lost by the gating fix (it must
+/// land on the step-5 full INSERT instead of the useCase's bare INSERT).
 const Flag = union(enum) {
     missing,
     null_,
@@ -486,13 +405,6 @@ fn readAutoRetryFlag(temp_dir: []const u8, session_id: []const u8) !Flag {
 // ============================================================================
 
 // Regression for task_1787213354784_1.
-//
-// When the user clicks the plain "Create task" button (which sends
-// mode='create_session' on the wire), the handler must insert a
-// user-role llm_history row with content = `name + "\n\n" +
-// description`. Pre-fix the row was missing entirely; the chatview
-// landed on an empty session and the user's typed description was
-// silently dropped.
 test "create_session_with_description_inserts_user_role_row" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
@@ -612,17 +524,6 @@ test "create_session_with_description_inserts_user_role_row" {
 // ============================================================================
 
 // Regression for the empty-description bug (task_1787757006639_2).
-//
-// Title-only tasks (description == '' AND no image_urls) MUST still get
-// a user-role llm_history row, otherwise the chatview lands on a blank
-// session showing "How can I help you?".
-//
-// Pre-fix, the handler gated the INSERT behind
-// `description.len > 0 or image_urls_wire.len > 0` — when both were
-// empty, NO row was inserted and the chatview rendered the empty state.
-// Post-fix the gate is removed and the INSERT always fires with
-// content = `name + "\n\n" + description` (empty description → content =
-// `name + "\n\n"`, with the trailing separator).
 test "create_session_with_empty_description_inserts_user_message" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
@@ -696,13 +597,9 @@ test "create_session_with_empty_description_inserts_user_message" {
 // Test 3: image attachments are persisted on the user message
 // ============================================================================
 
-// Image attachments from the kanban detail dialog must land on the
-// user-role llm_history row's `image_url` column, so the chatview can
-// render thumbnails inline.
-//
-// Pre-fix the user-role row was missing entirely — the user's typed
-// description + attachments were silently dropped from the chat.
-// Post-fix the row exists AND carries the attachments.
+// Image attachments from the kanban detail dialog must land on the user-role
+// llm_history row's `image_url` column, so the chatview can render thumbnails
+// inline.
 test "create_session_with_image_urls_attaches_them_to_user_message" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
@@ -806,14 +703,9 @@ test "create_session_with_image_urls_attaches_them_to_user_message" {
 // Test 4: image-only (empty description) still inserts a row
 // ============================================================================
 
-// The new contract fires on `description.len > 0 OR image_urls.len > 0`
-// — title-only tasks with attached images must still get a user-role row
+// The new contract fires on `description.len > 0 OR image_urls.len > 0` —
+// title-only tasks with attached images must still get a user-role row
 // (otherwise the chatview would land on an empty session and the user's
-// attachment intent would be invisible).
-//
-// Regression guard for the gate change — pre-fix the gate was
-// `description.len > 0` only, which would silently drop image-only
-// tasks.
 test "create_session_with_image_urls_only_still_inserts_user_message" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
@@ -886,16 +778,8 @@ test "create_session_with_image_urls_only_still_inserts_user_message" {
 // Profile persistence (regression: task_1787494153778_2)
 // ============================================================================
 
-// Regression for task_1787494153778_2 ("wrong profile select").
-//
-// The dialog ALWAYS sends is_auto_retry_until_stop ('0' or '1').
-// Pre-fix, that flag made task_create.useCase insert a bare sessions row
-// (no selected_profile_model column) BEFORE the handler's
-// profile-bearing INSERT OR IGNORE — which then no-oped on the PK
-// conflict and the profile was silently dropped (GET returned '').
-//
-// This test replays the EXACT wire the dialog sends with Unattended ON +
-// a profile picked: both fields present, mode='create_session'.
+// Regression for task_1787494153778_2 ("wrong profile select"). The dialog
+// ALWAYS sends is_auto_retry_until_stop ('0' or '1').
 test "create_session_persists_selected_profile_model" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -940,10 +824,8 @@ test "create_session_persists_selected_profile_model" {
         return error.TestUnexpectedResult;
     }
 
-    // And the unattended flag must NOT be lost by the gating — it now
-    // lands via the step-5 full INSERT instead of the useCase's bare
-    // one. SQLite stores it as INTEGER (schema default 0), so the
-    // Python compared both '1' and 1.
+    // And the unattended flag must NOT be lost by the gating — it now lands
+    // via the step-5 full INSERT instead of the useCase's bare one.
     var flag = try readAutoRetryFlag(h.temp_dir, task_id);
     defer flag.deinit();
     if (!flag.isOne()) {
@@ -1026,11 +908,8 @@ test "create_session_without_profile_stays_empty" {
     const task_id = try taskIdOf(resp);
     defer gpa.free(task_id);
 
-    // Python: `assert got in ("", None)` — BOTH are accepted, because
-    // the helper itself returns None when the value never became
-    // non-null. Ported verbatim rather than tightened: the point of the
-    // control is that the value is NOT a stale profile, and both
-    // outcomes satisfy that.
+    // Python: `assert got in ("", None)` — BOTH are accepted, because the
+    // helper itself returns None when the value never became non-null.
     const got = try getSessionSelectedProfile(&h, task_id);
     defer if (got) |g| gpa.free(g);
     if (got) |g| {

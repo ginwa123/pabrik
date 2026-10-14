@@ -1,16 +1,4 @@
 //! `pabrik headless` argument parsing.
-//!
-//! Pure functions over an argv slice — no I/O, no singleton, no DB — for
-//! the same reason `src/cli_args.zig` is pure: parsing must be complete
-//! and unit-testable BEFORE any subsystem starts. `LlmConfig.init` starts
-//! the routine scheduler on a background thread, so an error returned
-//! after that point exits the process while the thread is mid-query,
-//! which segfaults and buries the real message in a crash dump.
-//!
-//! `parse` does NOT log. It returns a `Failure` and lets the caller print
-//! it, which keeps the parser pure and keeps the negative-path unit tests
-//! from tripping Zig's test runner (which fails any test that emits an
-//! `std.log.err` line).
 
 const std = @import("std");
 
@@ -86,10 +74,7 @@ pub const HELP_TEXT =
 ;
 
 /// What `parse` produced: exactly one of the two fields is non-null.
-///
-/// `mod.zig` turns this into the `Command` union. The split exists because
-/// `Command` names the arg structs that live in THIS file, so a `Command`
-/// return type here would be a circular import.
+/// `mod.zig` turns this into the `Command` union.
 pub const Outcome = union(enum) {
     run: RunArgs,
     sessions: SessionsArgs,
@@ -100,9 +85,8 @@ pub const Outcome = union(enum) {
 };
 
 /// Parse `argv` (WITHOUT argv[0] and WITHOUT the leading `headless` word).
-///
-/// Never returns an error union for bad input — the `invalid` payload
-/// carries what was rejected so the caller decides how loudly to report it.
+/// Never returns an error union for bad input — the `invalid` payload carries
+/// what was rejected so the caller decides how loudly to report it.
 pub fn parse(argv: []const []const u8) ParseError!Outcome {
     if (argv.len == 0) return .help;
 

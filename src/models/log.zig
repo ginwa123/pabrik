@@ -1,12 +1,6 @@
-//! Data model for the `logs` entity table.
-//!
-//! Captures structured log entries emitted by the agent runtime —
-//! both backend (Zig) logs and frontend (browser console) logs.
-//!
-//! Schema: Migration 064 (`add_frontend_logs`).
-//!
-//! Note: `created_at` is stored as INTEGER (unix-ms) on this table —
-//! distinct from the DATETIME convention used by most other tables.
+//! Data model for the `logs` entity table. Captures structured log entries
+//! emitted by the agent runtime — both backend (Zig) logs and frontend
+//! (browser console) logs.
 
 const std = @import("std");
 
@@ -102,11 +96,6 @@ pub fn clone(self: *const Self, allocator: std.mem.Allocator) !Self {
 // ===== Tests merged from models_test.zig (2026-09-29 flatten) =====
 
 // Sanity tests for the `src/models/` entity models.
-//
-// Verifies that every model file compiles, that `init` populates the
-// struct as expected, that `deinit` releases its strings, and that
-// external callers can read the struct's fields directly (matching
-// the file-level struct pattern requested by the user).
 
 const testing = std.testing;
 

@@ -23,8 +23,7 @@ pub fn workspacesCreateHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequ
 
     // The owner is derived server-side from the `pabrik_session` cookie —
     // never from the request body, which a client controls (a body-supplied
-    // owner id would be a spoofing vector). Auth off / no cookie resolves to
-    // the shared `user_system` sentinel, so auth-off behaviour is unchanged.
+    // owner id would be a spoofing vector).
     const owner = auth_common.resolveRequestUserId(allocator, sqlite_db, di.auth_enabled, req.headers) catch {
         return res.jsonResponse(.{
             .status_code = 500,
@@ -86,7 +85,5 @@ fn useCase(
     // Id generation, the `position = MAX + 1` formula, the paired
     // `workspace_members` grant and the attached default project all live in
     // workspace_provisioning.zig — the same code the automatic per-user
-    // provisioning runs. Two copies of an INSERT is how the two creation
-    // routes silently drift apart.
     return provisioning.createWorkspaceRow(allocator, sqlite_db, io, name.string, owner, environment);
 }

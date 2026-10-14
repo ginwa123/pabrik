@@ -1,14 +1,5 @@
-//! `DELETE /api/workspaces/:workspace_id/secrets/:secret_id`.
-//!
-//! Removes one secret. Scoped like every other read in this feature: a
-//! foreign id reports 404 and deletes nothing, so this endpoint cannot be
-//! used to probe another workspace's row ids — a 403 would confirm the id
-//! exists, which is the one thing the scoping exists to withhold.
-//!
-//! Migration 103 declares `ON DELETE CASCADE` on `workspace_id`, but this
-//! project leaves `PRAGMA foreign_keys` OFF, so the declared cascade is
-//! documentation only. The workspace delete path issues the child DELETE
-//! itself; see `workspace_delete.zig`.
+//! `DELETE /api/workspaces/:workspace_id/secrets/:secret_id`. Removes one
+//! secret.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -46,8 +37,6 @@ fn useCase(
         // The guards above already caught an empty workspace_id, so this
         // variant cannot reach the client from here — but the switch is
         // exhaustive over the store's shared error set on purpose, so a
-        // variant added to `SecretsError` breaks the build rather than
-        // reaching it unmapped.
         error.WorkspaceIdRequired => return error.WorkspaceIdRequired,
         error.NameRequired,
         error.ValueRequired,
@@ -61,13 +50,9 @@ fn useCase(
     };
 }
 
-// =====================================================================
-// Error mapping
-// =====================================================================
-//
-// Two exhaustive switches, one for the status and one for the message, so a
-// variant added to `SecretsDeleteError` fails the build here rather than
-// surfacing as an unhandled error at runtime.
+// ===================================================================== Error
+// mapping
+// ===================================================================== Two
 
 fn statusFor(err: SecretsDeleteError) u16 {
     return switch (err) {

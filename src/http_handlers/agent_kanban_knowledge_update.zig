@@ -1,19 +1,5 @@
-//! `PATCH /api/agent-kanbans/:kanban_id/knowledge/:knowledge_id`.
-//!
-//! Updates file_path / label / content of an existing knowledge entry.
-//! Body: `{file_path?, label?, content?}` (all optional; at least one
-//! required). Empty-string semantics mirror agent_knowledge_update.zig:
-//! `file_path = ""` clears the path (mode switch to text-backed);
-//! `content = ""` clears the text (mode switch to file-backed).
-//!
-//! Mirrors `agent_knowledge_update.zig` with substitutions:
-//! table `agent_kanban_knowledges`, parent col `kanban_id`.
-//!
-//! Memory: the per-request arena reaps all allocations at request end,
-//! so neither layer needs explicit `free`s.
-//!
-//! Plan: docs/superpowers/plans/2026-08-25-agent-kanbans-mirror.md
-//! Task: task_1787597624259_2
+//! `PATCH /api/agent-kanbans/:kanban_id/knowledge/:knowledge_id`. Updates
+//! file_path / label / content of an existing knowledge entry.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -69,10 +55,7 @@ pub const KnowledgeUpdateOutput = struct {
 // Use case
 // =====================================================================
 
-/// Update an existing knowledge row. Validates that at least one of
-/// `file_path` / `label` / `content` is provided, that any provided
-/// NON-EMPTY `file_path` is absolute, then UPDATE-with-dynamic-SQL the
-/// requested fields and SELECT-refetch the row. Transport-agnostic.
+/// Update an existing knowledge row.
 pub fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -167,13 +150,7 @@ pub fn agentKanbanKnowledgeUpdateHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-//
-// impl + tests in one file (project convention). Behavioural coverage:
-//
-//   1. Validation: empty ids OR nothing-to-update → respective errors
-//   2. Happy path: updates file_path AND label
-//   3. Mode-switch: file_path='' + content set (file→text)
-//   4. Mode-switch: content='' + file_path set (text→file)
+// impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;

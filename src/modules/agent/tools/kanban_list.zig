@@ -6,10 +6,7 @@ const sqlite = pabrikcore.sqlite;
 const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
 
-/// One column summary row in the kanban tool output. Mirrors
-/// `kanban_model.KanbanColumn` field-for-field so the LLM sees the
-/// same shape it would see from the HTTP endpoint (minus the
-/// `created_at` audit field, which the LLM doesn't need).
+/// One column summary row in the kanban tool output.
 pub const ColumnSummary = struct {
     id: []const u8,
     name: []const u8,
@@ -21,9 +18,8 @@ pub const ColumnSummary = struct {
 };
 
 /// One task summary row in the kanban tool output. `column_id` and
-/// `column_name` are null when the task is unassigned (its column
-/// was deleted — see `kanban_model.deleteColumn` which sets
-/// `kanban_column_id = NULL`).
+/// `column_name` are null when the task is unassigned (its column was deleted
+/// — see `kanban_model.deleteColumn` which sets `kanban_column_id = NULL`).
 pub const TaskSummary = struct {
     id: []const u8,
     name: []const u8,
@@ -52,13 +48,6 @@ pub fn freeKanbanTaskRows(allocator: std.mem.Allocator, rows: []KanbanTaskRow) v
 }
 
 /// Input structure for kanban_list tool.
-///
-/// The agent should pass `workspace_id` + `item_id` from the active
-/// chat context (injected by the frontend into the system prompt —
-/// see `BuildWorkspaceContext` in
-/// `src/ai_workflow/tui/prompts_build_messages_for_agent_prompt.zig`). The
-/// LLM is told in the description that the active kanban is
-/// discoverable from the chat's workspace context.
 pub const KanbanListInput = struct {
     /// The workspace that owns the kanban item. Injected from chat
     /// context (the "active workspace_id" in the system prompt's
@@ -76,10 +65,9 @@ pub const KanbanListInput = struct {
     offset: ?u32 = null,
 };
 
-/// Top-level tool definition for the LLM. The description is the
-/// agent's primary signal for WHEN to use this tool — it explicitly
-/// says the workspace_id + item_id come from the active chat's
-/// workspace context.
+/// Top-level tool definition for the LLM. The description is the agent's
+/// primary signal for WHEN to use this tool — it explicitly says the
+/// workspace_id + item_id come from the active chat's workspace context.
 pub const kanban_list_tool_system_prompt =
     \\## Kanban List Tool — Behavior
     \\Use `kanban_list` to list kanban board structure: columns and tasks.
@@ -134,15 +122,7 @@ pub const kanban_list_tool = AgentTool{
     },
 };
 
-/// Read all tasks for a kanban item from the DB. Includes
-/// `kanban_column_id` + `kanban_position` (the HTTP endpoint
-/// `GET /tasks` does NOT include these — see project memory
-/// `pabrik-image-urls-vs-image-url` for the parallel image_url
-/// situation). The list is ordered by (column_id, position) so the
-/// LLM sees tasks in board-reading order.
-///
-/// Caller owns the returned slice and must release it with
-/// `freeKanbanTaskRows`.
+/// Read all tasks for a kanban item from the DB.
 pub fn countKanbanTasks(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -260,10 +240,9 @@ pub fn listKanbanTasks(
     return try rows.toOwnedSlice(allocator);
 }
 
-/// Resolve a column name to its id via a case-insensitive trimmed
-/// match. Returns the first match or null. Used by
-/// `executeKanbanListToJSON` to populate `column_name` in the
-/// task summary output.
+/// Resolve a column name to its id via a case-insensitive trimmed match.
+/// Returns the first match or null. Used by `executeKanbanListToJSON` to
+/// populate `column_name` in the task summary output.
 fn resolveColumnIdToName(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -284,27 +263,6 @@ fn resolveColumnIdToName(
 }
 
 /// Execute the kanban_list tool. Returns a JSON string for the LLM.
-///
-/// Response shape (the `data` field that `wrapToolOutput` puts inside
-/// `<tool>...<data>...</data></tool>`):
-///   {"workspace_id":...,"item_id":...,
-///    "columns":[{"id":...,"name":...,"position":...,"task_count":...}, ...],
-///    "tasks":[{"id":...,"name":...,
-///               "column_id":... (or null when unassigned),
-///               "column_name":... (or null when unassigned),
-///               "position":...}, ...],
-///    "total_count":...,"limit":...,"offset":...,"has_more":...,
-///    "hint":... (or null)}
-///
-/// Error cases (encoded as {"error":...} so the LLM sees a structured failure):
-///   - workspace_id or item_id is empty
-///   - item_id has a known-wrong prefix (task_/col_/ws_), with a
-///     self-correcting hint pointing at the Workspace Context listing
-///   - item_id is well-formed (starts with "item_") but no matching
-///     workspace_item of type 'kanban' exists
-///   - The kanban exists but has 0 columns: a friendly hint (NOT an error)
-///     so the LLM can distinguish "wrong item_id" from "empty board"
-///   - DB read failure: {"error":"DB: ..."}
 pub fn executeKanbanListToJSON(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -316,11 +274,7 @@ pub fn executeKanbanListToJSON(
         return err_xml;
     }
 
-    // 2. Validate the item exists in the DB AND is a kanban. The shape
-    //    check above only inspects the prefix; this catches typos and
-    //    cross-item-type confusion (e.g., passing a folder's item_id
-    //    to kanban_list). When the item doesn't exist, return a clear
-    //    error so the LLM can re-fetch the workspace context.
+    // 2. Validate the item exists in the DB AND is a kanban.
     const exists = itemExists(allocator, db, input.item_id) catch |err| {
         return errorJSONOwned(allocator, try std.fmt.allocPrint(allocator, "DB: itemExists failed: {s}", .{@errorName(err)}));
     };
@@ -336,11 +290,7 @@ pub fn executeKanbanListToJSON(
     };
     defer pabrikcore.ai_mod.kanban_model.freeColumns(allocator, cols);
 
-    // 4. If the kanban is well-formed but legitimately has no columns
-    //    (user deleted them all), surface that as a structured hint so
-    //    the LLM can distinguish from "wrong item_id". Empty XML
-    //    without this hint looks identical to the bug we're fixing.
-    //    Note: NOT wrapped in <error> — the kanban is valid, just empty.
+    // 4.
     const empty_board_hint: ?[]u8 = if (cols.len == 0) blk: {
         const h = try std.fmt.allocPrint(allocator,
             \\This kanban item has no columns (0 columns). The user may have deleted all columns, or the kanban was just created and columns haven't been seeded yet. Ask the user, or call kanban_list with a different item_id.
@@ -384,16 +334,8 @@ pub fn executeKanbanListToJSON(
 
     var task_summaries = std.ArrayList(TaskSummary).empty;
     defer task_summaries.deinit(allocator);
-    // Track every allocated col_name so we can free them all AFTER
-    // toJSON() reads the task_summaries. The earlier version of this
-    // code used `defer if (col_name) |n| allocator.free(n);` INSIDE
-    // the for-loop, but Zig's `defer` fires at the end of the
-    // iteration block — so the slice was freed BEFORE toJSON was
-    // called, leaving `task_summaries` with dangling pointers. The
-    // AI then read freed memory (Zig debug allocator's 0xAA free-fill
-    // pattern shows up in the column_name) and interpreted the
-    // garbled output as "empty board". See project memory
-    // `zig-slice-headers-across-defer-lifetimes.md`.
+    // Track every allocated col_name so we can free them all AFTER toJSON()
+    // reads the task_summaries.
     var col_names_owned = std.ArrayList([]u8).empty;
     defer {
         for (col_names_owned.items) |n| allocator.free(n);
@@ -563,19 +505,8 @@ pub const KanbanListOutput = struct {
     @"error": ?[]const u8 = null,
 };
 
-/// Detect the three known LLM id-confusion mistakes (task_id,
-/// column_id, workspace_id passed where item_id was expected). Returns
-/// null when the shape looks correct, or a structured error XML
-/// describing the exact mistake + the canonical id source.
-///
-/// This runs BEFORE the DB query so the LLM gets a fast, typed
-/// error instead of a silent empty board. Empty input is also
-/// caught here (mirrors the existing "workspace_id and item_id are
-/// required" guard) so the LLM gets one consistent error path.
-///
-/// The mistake hints deliberately show the canonical id source
-/// ("see Workspace Context", "item_id: `item_...`") so the LLM can
-/// self-correct on the next call.
+/// Detect the three known LLM id-confusion mistakes (task_id, column_id,
+/// workspace_id passed where item_id was expected).
 pub fn validateItemIdShape(
     allocator: std.mem.Allocator,
     item_id: []const u8,
@@ -610,17 +541,8 @@ pub fn validateItemIdShape(
     return null;
 }
 
-/// Verify the item_id corresponds to a real `workspace_items` row of
-/// type 'kanban'. Returns true if the row exists AND is a kanban,
-/// false if it doesn't exist OR is a different item_type. Used to
-/// distinguish "item_id is well-formed but doesn't exist" from
-/// "item_id is well-formed, exists, but has no columns (degenerate
-/// empty board)" so the LLM gets a different error message in each
-/// case.
-///
-/// Cheap query (indexed PK lookup). Called only AFTER
-/// `validateItemIdShape` passes, so we know the input has the
-/// correct `item_` prefix.
+/// Verify the item_id corresponds to a real `workspace_items` row of type
+/// 'kanban'.
 fn itemExists(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -729,14 +651,8 @@ test "errorJSON on missing field returns parsed error payload" {
 
 // ─── DB integration behavioral tests (in-memory SQLite) ────────────────
 
-/// Set up an in-memory SQLite with the kanban tables + a kanban
-/// workspace item + 3 default columns (todo/in progress/done).
-///
-/// Returns the db + threaded as a value (not a pointer) so the
-/// caller can `var s = try setupDb();` and pass `&s.db` to
-/// non-const-`*SqliteBackend` parameters — exactly the pattern from
-/// `kanban_model_test.zig`. Returns an unnamed struct so the
-/// caller's `var s` infers the fields.
+/// Set up an in-memory SQLite with the kanban tables + a kanban workspace
+/// item + 3 default columns (todo/in progress/done).
 fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
@@ -922,15 +838,6 @@ test "executeKanbanListToJSON returns error JSON when item_id is empty" {
 }
 
 // Regression test for the use-after-free bug fixed in this branch.
-// Before the fix, `defer if (col_name) |n| allocator.free(n);` inside
-// the for-loop fired at the end of EACH iteration — so the col_name
-// slice was freed BEFORE toJSON() was called, leaving task_summaries
-// with dangling pointers. The AI then read the freed memory (Zig's
-// 0xAA debug-allocator free-fill pattern) and interpreted the garbled
-// output as "empty board".
-//
-// This test inserts a task assigned to a column and asserts the
-// rendered JSON contains the real column_name, not 0xAA bytes.
 test "executeKanbanListToJSON column_name is real bytes (use-after-free regression)" {
     const alloc = testing.allocator;
     var s = try setupDb();

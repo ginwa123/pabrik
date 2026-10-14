@@ -1,61 +1,6 @@
-// Functional regression for "the second turn never shows up in
-// pabrik-tui".
-//
-// Zig port of `tests/functional/tui_turn_streaming_test.py` (same test
-// names, same order).
-//
-// User report (2026-09-13): the first exchange renders fine, but a
-// SECOND message in the same session produces nothing in the TUI, even
-// though the reply exists — the desktop client (SSE) shows it.
-//
-// Root cause: `App.onMessages` decided "this turn is over" by scanning
-// the WHOLE polled message array for *any* assistant row with
-// `finish_reason="stop"`. The poll returns the session's last 100
-// messages, which includes the previous turn's completed reply. So the
-// first poll of turn 2 found turn 1's `stop`, flipped
-// `is_streaming = false`, and the poll loop stopped before any of turn
-// 2's rows arrived. Turn 1 only worked because the array contained no
-// earlier `stop`.
-//
-// This suite drives the real `pabrik-tui` binary in a PTY against a fake
-// backend that serves two turns, and asserts that turn 2's user text and
-// reply both reach the terminal.
-//
-// ── WHY THE FIRST LINE IS NOT `requirePabrikBin` ──────────────────────────
-// Every other suite in this package boots a `pabrik` SERVER through the
-// harness. This one boots no server at all: it runs a stub HTTP backend
-// in-process and drives the `pabrik-tui` CLIENT binary against it. The
-// equivalent guard is `requireTuiBin` below, which resolves the TUI
-// binary (or skips) exactly as the harness does for the server.
-//
-// ── WHY THERE IS NO STREAMING HELPER IN THE HARNESS ──────────────────────
-// This is not a streaming test; it is the opposite — the TUI v1 loop is
-// POLL-based (`App.handleTick` → `.poll_messages` every `POLL_MS`).
-// What it needs from the harness is a plain TCP listener it controls,
-// which `Io.net` provides directly. `harness.findFreePortRandom` supplies
-// the port so the stub never collides with the server harness (and never
-// with 8081).
-//
-// ── THE PTY ───────────────────────────────────────────────────────────────
-// Zig's stdlib exposes no `posix_openpt`/`forkpty`, so the four calls
-// Python made through `pty.openpty` are spelled against `std.os.linux`:
-//
-//     master = open("/dev/ptmx", O_RDWR|O_NOCTTY)
-//     ioctl(master, TIOCSPTLCK, 0)        // unlockpt
-//     ioctl(master, TIOCGPTN, &n)         // ptsname
-//     slave  = open("/dev/pts/<n>", O_RDWR|O_NOCTTY)
-//     ioctl(slave, TIOCSWINSZ, {50,200})  // the Python's winsize
-//
-// `unlockpt` is not optional: without it the slave open fails `EIO`,
-// which is exactly what the first version of this file did (it passed
-// `0` as the ioctl ARGUMENT rather than a pointer to a zero int).
-//
-// TODO(port): this is Linux-only. `platform_gates.py` already records
-// the same blocker for the Python original ("needs a POSIX pty"); the
-// Zig spelling additionally needs the Linux `std.os.linux` ioctl
-// numbers, which differ on macOS (where `TIOCSPTLCK` is `TIOCPTYGRANT`).
-// The suite therefore `SkipZigTest`s off Linux rather than claiming a
-// portability it does not have.
+// Functional regression for "the second turn never shows up in pabrik-tui".
+// Zig port of `tests/functional/tui_turn_streaming_test.py` (same test names,
+// same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -115,13 +60,9 @@ const SEQ_AFTER_POST_2 = [_][]const u8{
     TURN2_USER_ROW,  TURN2_REPLY_ROW,
 };
 
-/// Join a sequence of message rows into `{"messages":[...]}`.
-///
-/// `{"messages":[ <seq[index]> ]}` — ONE poll step, not the whole
-/// sequence. Owned by the caller.
-///
-/// Built with an explicit writer rather than `allocPrint` + a joined
-/// slice so there is exactly one allocation and one owner.
+/// Join a sequence of message rows into `{"messages":[...]}`. `{"messages":[
+/// <seq[index]> ]}` — ONE poll step, not the whole sequence. Owned by the
+/// caller.
 fn messagesBody(allocator: std.mem.Allocator, seq: []const []const u8, index: usize) ![]u8 {
     const rows = seq[index .. index + 1];
     var w: Io.Writer.Allocating = .init(allocator);
@@ -140,13 +81,8 @@ fn messagesBody(allocator: std.mem.Allocator, seq: []const []const u8, index: us
 // Stub backend
 // ============================================================================
 
-/// A one-request-at-a-time HTTP stub serving the two-turn sequence,
-/// driven by its own thread.
-///
-/// The counters live here, not in the test body, because the TUI drives
-/// them from the serve thread: `backend.posts == 2` at the end of the
-/// regression test is the assertion that proves the client sent a SECOND
-/// message rather than stalling after the first.
+/// A one-request-at-a-time HTTP stub serving the two-turn sequence, driven by
+/// its own thread.
 const Backend = struct {
     io: Io,
     port: u16 = 0,
@@ -155,12 +91,8 @@ const Backend = struct {
     /// Named `stop_flag`, not `stop`: the method below is `stop`, and a
     /// struct cannot carry a field and a function of the same name.
     stop_flag: std.atomic.Value(bool) = .init(false),
-    /// Guards `posts` / `gets`: the serve thread writes them while the
-    /// test reads `posts` after the TUI has been driven. `Io.Mutex`,
-    /// not `std.Thread.Mutex` — Zig 0.16 deleted the latter and the
-    /// replacement takes the `Io` handle for its contended path.
-    /// `lockUncancelable` because these critical sections are a counter
-    /// increment and a slice index; neither is worth abandoning.
+    /// Guards `posts` / `gets`: the serve thread writes them while the test
+    /// reads `posts` after the TUI has been driven.
     mutex: Io.Mutex = .init,
     posts: usize = 0,
     gets: usize = 0,
@@ -173,12 +105,7 @@ const Backend = struct {
         self.thread = try std.Thread.spawn(.{}, serve, .{self});
     }
 
-    /// Wake the blocked `accept`, join, and free. See the header note
-    /// on `stopStub` in `anthropic_chat_headers_test.zig`: closing a
-    /// listening socket does NOT wake a thread already blocked in
-    /// `accept`, so a throwaway self-connect is made to hand it
-    /// something. If the listener is already gone, `connect` fails and
-    /// the serve loop has already exited — both branches converge.
+    /// Wake the blocked `accept`, join, and free.
     fn stop(self: *Backend) void {
         self.stop_flag.store(true, .release);
         const addr: Io.net.IpAddress = .{ .ip4 = .loopback(self.port) };
@@ -216,12 +143,9 @@ fn handleRequest(b: *Backend, stream: Io.net.Stream) !void {
     var acc: Io.Writer.Allocating = .init(gpa);
     defer acc.deinit();
 
-    // THE HEAD AND THE BODY OVERLAP IN THE SOCKET BUFFER. `fill(1)`
-    // reads a whole syscall's worth, so one call typically returns the
-    // head AND the first chunk of the body. Accumulate everything seen
-    // and slice out the first `\r\n\r\n`-terminated head — discarding
-    // the body bytes would block the drain below on data the client had
-    // already sent.
+    // THE HEAD AND THE BODY OVERLAP IN THE SOCKET BUFFER. `fill(1)` reads a
+    // whole syscall's worth, so one call typically returns the head AND the
+    // first chunk of the body.
     var head_len: usize = 0;
     while (head_len == 0) {
         r.fill(1) catch return;
@@ -251,10 +175,8 @@ fn handleRequest(b: *Backend, stream: Io.net.Stream) !void {
     if (is_post) {
         b.mutex.lockUncancelable(b.io);
         b.posts += 1;
-        // Turn 2 begins: reset the GET sequence so the client sees
-        // turn 1's rows (including its `stop`) followed by turn 2's.
-        // That is the whole point — the regression is the client
-        // misreading turn 1's `stop` as the end of turn 2.
+        // Turn 2 begins: reset the GET sequence so the client sees turn 1's
+        // rows (including its `stop`) followed by turn 2's.
         if (b.posts > 1) b.gets = 0;
         b.mutex.unlock(b.io);
     } else {
@@ -273,11 +195,7 @@ fn handleRequest(b: *Backend, stream: Io.net.Stream) !void {
         return;
     }
 
-    // The POST reply is the session id. Python read it out of the
-    // request body (`req.get("session_id") or "sid"`); the TUI does not
-    // read it back (`onSendOk` is called with the id IT generated), so
-    // a fixed one is wire-equivalent and keeps the handler free of a
-    // second JSON parse.
+    // The POST reply is the session id.
     try writeJson(stream, b.io, "{\"session_id\":\"tui-turn-streaming\"}");
 }
 
@@ -366,10 +284,7 @@ fn openPty() !struct { master: posix.fd_t, slave: posix.fd_t } {
 }
 
 /// A running `pabrik-tui` attached to a PTY, with a reader thread
-/// accumulating its output.
-///
-/// This is Python's `_Tui`. The order the fields appear in does NOT
-/// matter; the order of `deinit` DOES, and it is spelled out there.
+/// accumulating its output. This is Python's `_Tui`.
 const Tui = struct {
     master: posix.fd_t,
     child: std.process.Child,
@@ -380,14 +295,6 @@ const Tui = struct {
     chunks: std.ArrayList(u8) = .empty,
 
     /// Resolve the `pabrik-tui` binary, or skip.
-    ///
-    /// Mirrors the harness's `resolvePabrikBin` — `$PABRIK_TUI_BIN`
-    /// first, then the known `zig-out/bin` spellings, resolved against
-    /// the repo root — but for a different binary. `resolvePabrikBin`
-    /// itself is deliberately not reused: its candidate list names
-    /// `pabrik` / `pabrikcore-*`, and a server binary spawned as a
-    /// "TUI" would boot a listener instead of a chat client, which fails
-    /// far from the cause.
     fn resolveBin() ![]u8 {
         const env_bin = std.testing.environ.getAlloc(gpa, "PABRIK_TUI_BIN") catch "";
         defer gpa.free(env_bin);
@@ -406,19 +313,8 @@ const Tui = struct {
         return error.SkipZigTest;
     }
 
-    /// Returns a HEAP-ALLOCATED `*Tui`, or null after cleaning up.
-    ///
-    /// WHY A POINTER, NOT A VALUE. `drain` runs on its own thread and
-    /// writes into this struct, so the struct's ADDRESS must outlive
-    /// the frame that built it. Returning a `Tui` by value from a
-    /// function whose local `var self` was the spawn target hands the
-    /// thread a pointer into a frame that is gone the moment the
-    /// function returns — the reader then appends into whatever now
-    /// occupies that stack, and the TUI's output is silently lost. The
-    /// first version did exactly that and reported "turn-1 user
-    /// message missing" against a screen containing only the welcome
-    /// frame. `gpa.create` gives the struct a stable home for the whole
-    /// life of the connection; `deinit` destroys it.
+    /// Returns a HEAP-ALLOCATED `*Tui`, or null after cleaning up. WHY A
+    /// POINTER, NOT A VALUE.
     fn start(backend_port: u16) !?*Tui {
         if (comptime builtin.os.tag != .linux) return error.SkipZigTest;
 
@@ -438,10 +334,8 @@ const Tui = struct {
             .stdin = .{ .file = slave_file },
             .stdout = .{ .file = slave_file },
             .stderr = .{ .file = slave_file },
-            // Own process group, so the SIGTERM below reaches any
-            // subprocess the TUI spawned. Python's `preexec_fn=
-            // os.setsid` also made it a session leader; `pgid` is the
-            // part the cleanup path actually uses.
+            // Own process group, so the SIGTERM below reaches any subprocess
+            // the TUI spawned.
             .pgid = 0,
         });
         // The child's stdio are dups; ours must go or the master never
@@ -459,27 +353,14 @@ const Tui = struct {
         errdefer gpa.destroy(self);
         self.reader = try std.Thread.spawn(.{}, drain, .{self});
 
-        // Python's fixture: `time.sleep(1.5)` after spawn, before the
-        // first keystroke. The TUI draws its welcome frame and enters
-        // raw mode on startup; typing before that lands in a shell that
-        // has not opened the terminal yet.
+        // Python's fixture: `time.sleep(1.5)` after spawn, before the first
+        // keystroke.
         std.Io.sleep(io, .fromMilliseconds(1_500), .awake) catch {};
         return self;
     }
 
-    /// Stop the child, stop the reader, free everything.
-    ///
-    /// Explicit ordering rather than a chain of `defer`s, because the
-    /// order is load-bearing:
-    ///   1. SIGTERM the child's process group, then SIGKILL the child
-    ///      and reap it (`Child.kill` already waits, so there is no
-    ///      `wait` after it).
-    ///   2. Set `stop` and JOIN the reader — a thread that outlives the
-    ///      test leaks its stack past the DebugAllocator.
-    ///   3. Close the master. Until both the child and the reader are
-    ///      gone nothing else touches the fd.
-    ///   4. Free the buffer LAST: `plain()` (below) reads it, so any
-    ///      free registered before a read would be a use-after-free.
+    /// Stop the child, stop the reader, free everything. Explicit ordering
+    /// rather than a chain of `defer`s, because the order is load-bearing: 1.
     fn deinit(self: *Tui) void {
         harness.signalGroup(@intCast(self.child.id.?), harness.SIGTERM);
         // The TUI restores the terminal on the way out; give it a
@@ -499,10 +380,6 @@ const Tui = struct {
 
     /// Type `text` one byte at a time (the TUI is in raw mode and reads
     /// key-by-key), then Enter, then let the frame settle.
-    ///
-    /// The 20ms inter-key gap is Python's; without it the whole string
-    /// lands in one read and the TUI's key decoder sees a paste, which
-    /// the input widget handles differently.
     fn typeAndSend(self: *Tui, text: []const u8, settle_ms: i64) !void {
         for (text) |ch| {
             try self.writeMaster(&[_]u8{ch});
@@ -524,14 +401,8 @@ const Tui = struct {
         if (written != bytes.len) return error.PtyWriteFailed;
     }
 
-    /// Terminal output with CSI/OSC escape sequences stripped —
-    /// Python's `_Tui.plain`.
-    ///
-    /// Returns an OWNED buffer the caller frees. Strips at the BYTE
-    /// level rather than decoding UTF-8 first: every escape introducer
-    /// and every byte this suite searches for is ASCII, so decoding
-    /// would only risk splitting a multi-byte rune across a chunk
-    /// boundary and turning it into a replacement character.
+    /// Terminal output with CSI/OSC escape sequences stripped — Python's
+    /// `_Tui.plain`. Returns an OWNED buffer the caller frees.
     fn plain(self: *Tui) ![]u8 {
         self.mutex.lockUncancelable(io);
         defer self.mutex.unlock(io);
@@ -581,11 +452,6 @@ const Tui = struct {
 };
 
 /// THE FIRST LINE OF EVERY BOOTING TEST IN THIS FILE.
-///
-/// The analogue of `harness.requirePabrikBin` for the `pabrik-tui`
-/// CLIENT binary: returns `error.SkipZigTest` unless one resolves, so a
-/// worktree that has never run `zig build install:tui` reports one skip
-/// instead of a red test whose message is "no such file".
 fn requireTuiBin() !void {
     const bin = try Tui.resolveBin();
     defer gpa.free(bin);
@@ -601,16 +467,6 @@ fn isExecutable(path: []const u8) bool {
 }
 
 /// Drain the PTY master into `chunks` until `stop`.
-///
-/// The thread exists because the PTY's output buffer is finite: the TUI
-/// redraws a 200x50 frame every tick, and a test thread that only read
-/// AFTER `type_and_send` returned would find the child blocked in
-/// `write(2)` mid-frame. Python had the same daemon drain thread.
-///
-/// `poll` with a timeout rather than a blocking `read` so the loop
-/// observes `stop` within one tick — a blocking read has no wakeup, and
-/// closing the master from another thread does not reliably interrupt
-/// one already in flight.
 fn drain(t: *Tui) void {
     var scratch: [16 * 1024]u8 = undefined;
     var fds = [_]posix.pollfd{.{
@@ -663,11 +519,9 @@ test "first_turn_renders" {
     }
 }
 
-// The regression: a completed previous turn must not end the next one.
-//
-// The poll response always contains the whole session, so turn 1's
-// `finish_reason="stop"` row is present during turn 2. Only a stop row
-// that is *new* may end the turn.
+// The regression: a completed previous turn must not end the next one. The
+// poll response always contains the whole session, so turn 1's
+// `finish_reason="stop"` row is present during turn 2.
 test "second_turn_renders_after_the_previous_turn_finished" {
     try requireTuiBin();
 

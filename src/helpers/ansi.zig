@@ -1,43 +1,6 @@
 //! ansi.zig — remove terminal escape sequences from captured process output.
-//!
-//! ## Why this exists
-//!
-//! Plenty of real toolchains colour their diagnostics even when stdout is
-//! a pipe rather than a TTY. MSBuild is the one that bit us: a
-//! `dotnet build` piped through `Select-String` returns
-//!
-//! ```text
-//! ...targets(4919,5): ESC[7mwarning ESC[0mESC[1mMSB ESC[0m3026: ...
-//! ```
-//!
-//! Every downstream stage treats those bytes as plain text. `ESC` is a
-//! C0 control (0x1B), so `sanitizeControlChars` rewrites it to U+FFFD —
-//! and the CSI parameters that follow it are ordinary printable ASCII,
-//! so they survive verbatim. The result is the literal text
-//! `�[7mwarning �[0m`, which is what a user sees when their build log
-//! arrives full of `????`.
-//!
-//! The U+FFFD substitution is **irreversible**: once the escape has been
-//! flattened you cannot tell `[7m` (a colour code we should drop) from
-//! `[7m` (text a user genuinely typed, unlikely but possible). So this
-//! must run BEFORE the control-char sanitiser, never after.
-//!
-//! ## What gets stripped
-//!
-//! ECMA-48 escape sequences, the subset that can actually reach a pipe:
-//!
-//! - **CSI** — `ESC [` params intermediates final. Colour, cursor moves,
-//!   erase, private modes (`ESC[?25l`).
-//! - **OSC** — `ESC ]` … terminated by `BEL` or `ST` (`ESC \`). Window
-//!   titles, hyperlinks, clipboard (`OSC 52`).
-//! - **DCS / SOS / PM / APC** — `ESC P` / `ESC X` / `ESC ^` / `ESC _` …
-//!   terminated by `ST`. Same terminator handling as OSC.
-//! - **Two-byte escapes** — `ESC` plus one byte, optionally preceded by
-//!   intermediate bytes (charset designation `ESC ( B`, DECSC `ESC # 8`,
-//!   RIS `ESC c`, keypad mode `ESC =`).
-//!
-//! A lone trailing `ESC`, or a malformed sequence that runs to the end of
-//! the buffer, is dropped rather than emitted — half a sequence is noise.
+//! Plenty of real toolchains colour their diagnostics even when stdout is a
+//! pipe rather than a TTY.
 
 const std = @import("std");
 
@@ -46,11 +9,9 @@ const ESC: u8 = 0x1B;
 /// Bell — the legacy terminator for OSC / DCS payloads.
 const BEL: u8 = 0x07;
 
-/// Strip ANSI/ECMA-48 escape sequences from `s`.
-///
-/// Returns an owned slice; the caller must free it. Input without an
-/// `ESC` byte is copied verbatim (including its length), so the result
-/// never aliases the argument.
+/// Strip ANSI/ECMA-48 escape sequences from `s`. Returns an owned slice; the
+/// caller must free it. Input without an `ESC` byte is copied verbatim
+/// (including its length), so the result never aliases the argument.
 pub fn stripAnsi(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
     // Fast path — the overwhelming majority of captured output has no
     // escapes at all (git, gh, most build tools on POSIX).
@@ -72,10 +33,7 @@ pub fn stripAnsi(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
 
         switch (s[i]) {
             // CSI: ESC '[' parameters/intermediates, ended by one byte in
-            // 0x40..0x7E. Parameter bytes (0x30..0x3F, which is where
-            // digits, ';', '?' and the private-mode markers live) and
-            // intermediate bytes (0x20..0x2F) are all below 0x40, so
-            // "first byte at or above 0x40" is the terminator.
+            // 0x40..0x7E.
             '[' => {
                 i += 1;
                 while (i < s.len and !(s[i] >= 0x40 and s[i] <= 0x7E)) i += 1;
@@ -89,9 +47,8 @@ pub fn stripAnsi(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
             'P', 'X', '^', '_' => i = skipStringPayload(s, i + 1),
 
             // Everything else is a two-character escape, optionally with
-            // intermediate bytes in 0x20..0x2F before the final byte
-            // (charset designation `ESC ( B`, DECALN `ESC # 8`, RIS
-            // `ESC c`, keypad application mode `ESC =`).
+            // intermediate bytes in 0x20..0x2F before the final byte (charset
+            // designation `ESC ( B`, DECALN `ESC # 8`, RIS `ESC c`, keypad
             0x20...0x2F, 0x30...0x3F => {
                 // Only an intermediate byte (0x20..0x2F) means another
                 // byte follows; `ESC =` is complete at `=` and must not
@@ -113,14 +70,7 @@ pub fn stripAnsi(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
 }
 
 /// Resume index just past an OSC/DCS-style string payload starting at
-/// `start`. Returns an absolute index into `s`, not a byte count — the
-/// terminator is consumed too, so the caller's cursor lands on the first
-/// byte after the sequence.
-///
-/// The terminator is `ST` (`ESC '\'`) per ECMA-48, or `BEL` for the
-/// legacy form that terminals and tools still emit. An unterminated
-/// payload consumes the rest of the buffer, so a truncated capture cannot
-/// spill a fragment into the output.
+/// `start`.
 fn skipStringPayload(s: []const u8, start: usize) usize {
     var i = start;
     while (i < s.len) {
@@ -131,10 +81,9 @@ fn skipStringPayload(s: []const u8, start: usize) usize {
     return s.len;
 }
 
-// ─── Tests ──────────────────────────────────────────────────────────────────
-//
-// These assert BEHAVIOUR on real byte sequences (the exact shapes MSBuild,
-// PowerShell and friends emit), not on anything about the source above.
+// ─── Tests
+// ────────────────────────────────────────────────────────────────── These
+// assert BEHAVIOUR on real byte sequences (the exact shapes MSBuild,
 
 const testing = std.testing;
 

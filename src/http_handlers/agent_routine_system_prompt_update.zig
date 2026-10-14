@@ -1,16 +1,6 @@
-//! `PATCH /api/agent-routines/:routine_id/system_prompt/:prompt_id`.
-//!
-//! Updates title and/or content of an existing system-prompt entry.
-//! Body: `{title?, content?}` (both optional; at least one required).
-//!
-//! Mirrors `agent_system_prompt_update.zig` with substitutions:
-//! table `agent_routine_system_prompt`, parent col `routine_id`.
-//!
-//! Memory: the per-request arena reaps all allocations at request end,
-//! so neither layer needs explicit `free`s.
-//!
-//! Plan: Routine mode task_1789505553300_1 (option A, mirror agent_routine_*)
-//! Task: task_1789505553300_1
+//! `PATCH /api/agent-routines/:routine_id/system_prompt/:prompt_id`. Updates
+//! title and/or content of an existing system-prompt entry. Body: `{title?,
+//! content?}` (both optional; at least one required).
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -149,12 +139,7 @@ pub fn agentRoutineSystemPromptUpdateHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-//
-// impl + tests in one file (project convention). Behavioural coverage:
-//
-//   1. Validation: empty ids OR nothing-to-update → respective errors
-//   2. Happy path: updates title AND content
-//   3. title-only update keeps content
+// impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;

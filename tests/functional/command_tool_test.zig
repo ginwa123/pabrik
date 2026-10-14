@@ -1,51 +1,5 @@
-// Functional wire verification for the unified `command` tool.
-//
-// Zig port of `tests/functional/command_tool_test.py` (same test names,
-// same order).
-//
-// Branch: worktree/pabrik-unify-command (commit `unify: add command
-// tool merged from bash+pwsh`).
-//
-// What this covers
-// ================
-// The unify change merges `bash` + `pwsh` into a single `command` tool
-// (`src/modules/agent/tools/command.zig`) that dispatches per-OS
-// (`pwsh` on Windows, `bash` elsewhere). `bash`/`pwsh` survive only as
-// unregistered shim modules (they still compile) — the equipped
-// registry (`tools_equipped.zig`: `equips()` +
-// `UNIFIED_TOOL_REGISTRY()`) exposes `command` ONLY.
-//
-// A full end-to-end LLM agent run (`echo hello` via chat) is too heavy
-// for a wire test (it needs a stub LLM that returns a tool_call for
-// `command`), so this test verifies the wire-visible halves instead —
-// the same strategy as `agent_add_mcp_server_test.py`:
-//
-//   * REGISTRY — GET /api/agent-tools/registry exposes `command` and
-//     NOT `bash` / `pwsh` (proves the equipped surface is
-//     command-only).
-//   * ENABLE/DISABLE — POST/DELETE /api/agents/:id/tools round-trips
-//     `command` (proves the per-agent allowlist path accepts the new
-//     name; unknown names 400).
-//   * LEGACY — POST `bash` / `pwsh` now 400s (proves the old names are
-//     no longer equipped).
-//
-// The Python original imported `DEFAULT_AGENT_TOOLS` and
-// `agent_defaults_without` from `tests/functional/default_tools.py`. A
-// Zig test package can only reach a NON-test file if `root.zig` names
-// it in `suites`, and `root.zig` is owned by another agent for this
-// port — so both are transcribed here, ONCE, and
-// `agentDefaultsWithout` derives the second list from the first at
-// comptime exactly as the Python helper did. The `comptime` block then
-// re-asserts the invariants `default_tools.py` states in prose, so a
-// drift fails at COMPILE time. It cannot catch "someone added a backend
-// tool and forgot to transcribe it"; the header of `default_tools.py`
-// names that one file to re-read when `DEFAULT_AGENT_TOOLS` changes —
-// the same limitation `agent_tools_defaults_test.zig` documents.
-//
-// Paths: the Python original passed a literal `"/tmp/command-tool-test"`.
-// The server validates an agent's `path` with `std.fs.path.isAbsolute`,
-// which is FALSE for a leading-slash path on Windows, so this port
-// derives every path from `h.temp_dir` — see `harness.harnessPath`.
+// Functional wire verification for the unified `command` tool. Zig port of
+// `tests/functional/command_tool_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -59,12 +13,8 @@ const io = testing.io;
 // Expected tool lists — mirrors tests/functional/default_tools.py
 // ============================================================================
 
-/// Mirrors `DEFAULT_AGENT_TOOLS` — 33 names, sorted ASC, matching the
-/// wire order of `GET /api/agents/:agent_id/tools`.
-///
-/// `delete_document` is deliberately ABSENT: it is irreversible, so it
-/// is registered (and therefore one tick away in the Settings → Tools
-/// checklist, which reads the same registry) but never seeded.
+/// Mirrors `DEFAULT_AGENT_TOOLS` — 33 names, sorted ASC, matching the wire
+/// order of `GET /api/agents/:agent_id/tools`.
 const EXPECTED_DEFAULTS = [_][]const u8{
     "add_document",
     "add_skill",
@@ -116,16 +66,8 @@ fn isSorted(list: []const []const u8) bool {
     return true;
 }
 
-/// Mirrors `default_tools.agent_defaults_without("command")` — the
-/// seeded agent list minus one tool, still sorted ASC.
-///
-/// Used as the post-DELETE expectation: disabling `command` must leave
-/// exactly the defaults that are not `command`, not a re-derived set.
-/// Derived at COMPILE time from `EXPECTED_DEFAULTS` so the two lists
-/// cannot drift — a `var` here would not do: a global holding a
-/// pointer to a comptime var is rejected ("global variable contains
-/// reference to comptime var"), so the buffer is copied into a `const`
-/// before its address escapes the block.
+/// Mirrors `default_tools.agent_defaults_without("command")` — the seeded
+/// agent list minus one tool, still sorted ASC.
 const DEFAULTS_MINUS_COMMAND: []const []const u8 = blk: {
     var buf: [EXPECTED_DEFAULTS.len - 1][]const u8 = undefined;
     var i: usize = 0;
@@ -176,10 +118,6 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
 }
 
 /// `POST /api/workspaces/:ws/items/agent` → the new item id.
-///
-/// Asserts the `{item, agent}` envelope AND the 1-1 invariant
-/// `agents.id == workspace_items.id` on the way out — the Python helper
-/// asserted both, and the envelope is what the frontend destructures.
 fn createAgent(h: *Harness, workspace_id: []const u8, name: []const u8) ![]u8 {
     const path = try harness.harnessPath(gpa, h.temp_dir, &.{"command-tool-test"});
     defer gpa.free(path);
@@ -223,14 +161,6 @@ fn createAgent(h: *Harness, workspace_id: []const u8, name: []const u8) ![]u8 {
 }
 
 /// The registry's tool names, in wire order.
-///
-/// `assert len(names) >= 1` in the Python original: a registry that
-/// returned zero tools would make every membership assertion below pass
-/// vacuously, so the non-empty check is load-bearing, not a smoke test.
-///
-/// Every name is DUPPED: the borrowed slices live inside the parsed
-/// JSON arena, which this function's `defer doc.deinit()` reaps before
-/// the caller ever looks at them.
 fn registryNames(h: *Harness) ![][]const u8 {
     var r = try h.http(io, .GET, "/api/agent-tools/registry", .{ .expect = &.{200} });
     defer r.deinit();
@@ -272,10 +202,8 @@ fn registryNames(h: *Harness) ![][]const u8 {
 }
 
 /// `GET /api/agents/:id/tools` → the enabled tool names, in wire order.
-///
 /// Unlike the registry, this one does NOT assert non-empty: "every tool
-/// deleted" is a legitimate state the lifecycle test walks through. The
-/// names are duped for the same arena reason as `registryNames`.
+/// deleted" is a legitimate state the lifecycle test walks through.
 fn listTools(h: *Harness, agent_id: []const u8) ![][]const u8 {
     const url = try std.fmt.allocPrint(gpa, "/api/agents/{s}/tools", .{agent_id});
     defer gpa.free(url);
@@ -309,10 +237,9 @@ fn freeNames(names: [][]const u8) void {
     gpa.free(names);
 }
 
-/// `POST /api/agents/:id/tools` → 201 + the created row.
-///
-/// Asserts `tool_name` round-tripped, which is what proves the wire
-/// field name is the one the frontend sends (not, say, `name`).
+/// `POST /api/agents/:id/tools` → 201 + the created row. Asserts `tool_name`
+/// round-tripped, which is what proves the wire field name is the one the
+/// frontend sends (not, say, `name`).
 fn enableTool(h: *Harness, agent_id: []const u8, tool_name: []const u8) !void {
     const url = try std.fmt.allocPrint(gpa, "/api/agents/{s}/tools", .{agent_id});
     defer gpa.free(url);

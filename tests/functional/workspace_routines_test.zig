@@ -1,44 +1,6 @@
-// Workspace-level routines (Migration 084) wire contract.
-//
-// Zig port of `tests/functional/workspace_routines_test.py` (same test
-// names, same order).
-//
-// Exercises the new workspace-routine endpoints against a REAL pabrik
-// binary + REAL SQLite, replaying the EXACT JSON bodies the frontend
-// RoutineView will send — plus deletion proofs that the old per-task
-// surface is gone.
-//
-//   Plan: docs/superpowers/plans/2026-09-10-workspace-items-routines.md
-//   Task: task_1789032258828_0
-//
-// Covers:
-//   * CREATE      — happy path (201 {item, routine} + next_run_at set),
-//                   bad cron → 400, empty name/path → 400,
-//                   no schedule → manual-only (next_run_at '').
-//   * GET bundle  — 200 shape; agent-type item → 400 ItemNotRoutine;
-//                   unknown item → 404.
-//   * PATCH       — instruction-only keeps schedule; schedule change
-//                   recomputes next_run_at; schedule '' → NULL;
-//                   enabled=false → NULL; bad cron → 400.
-//   * DELETION    — GET /api/routines → 404; POST .../tasks/:id/run → 404;
-//                   POST tasks {task_type:'routine'} → 400
-//                   RoutineTasksRemoved; PUT tasks with routine fields →
-//                   200 plain update (fields ignored, still standard).
-//
-// TWO PYTHON IDIOMS THAT DID NOT SURVIVE THE PORT, both called out at
-// their helpers below:
-//
-//   1. `_create_routine` returned a live PARSED document. A
-//      `harness.Json` borrows the bytes of the `Response` it was parsed
-//      from, so a helper may NOT return one after freeing that response.
-//      The helpers here re-parse with `.allocate = .alloc_always`, which
-//      copies every string into the parse arena — the returned document
-//      is SELF-CONTAINED and the caller owns it.
-//   2. Every `path` was the literal `"/tmp/routine-test"`. The server
-//      validates item paths with `std.fs.path.isAbsolute`, which is
-//      platform-relative: correct on Linux, rejected on Windows. Each
-//      path here is derived from the harness tempdir via
-//      `harness.harnessPath`.
+// Workspace-level routines (Migration 084) wire contract. Zig port of
+// `tests/functional/workspace_routines_test.py` (same test names, same
+// order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -91,12 +53,6 @@ fn boolAt(obj: std.json.ObjectMap, key: []const u8, ctx: []const u8) !bool {
 
 /// Python `r.json().get("error", "")` with a case-insensitive substring
 /// assertion: any ONE of `needles` must appear (both sides lowercased).
-///
-/// The body is BORROWED, not adopted: the caller's `defer r.deinit()`
-/// still owns `body`, so taking it here and freeing it in a second
-/// `deinit` would be a double free that reads as a harness bug. The
-/// parse uses `.alloc_always` so nothing in the tree aliases the
-/// borrowed bytes.
 fn expectErrorContains(body: []const u8, needles: []const []const u8, ctx: []const u8) !void {
     var doc: harness.Json = .{ .parsed = try std.json.parseFromSlice(
         std.json.Value,
@@ -148,9 +104,8 @@ fn parseOwned(bytes: []u8) !OwnedDoc {
 }
 
 /// Issue a request and hand back an owned, self-contained document.
-///
-/// `.alloc_always` is what makes this legal: no string in the returned
-/// tree borrows `r.body`, which is freed before the caller sees it.
+/// `.alloc_always` is what makes this legal: no string in the returned tree
+/// borrows `r.body`, which is freed before the caller sees it.
 fn requestDoc(h: *Harness, method: harness.HttpMethod, path: []const u8, opts: harness.Harness.HttpOptions) !OwnedDoc {
     var r = try h.http(io, method, path, opts);
     defer r.deinit();
@@ -181,18 +136,14 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// The per-suite project path every item is created under.
-///
-/// Derived from the harness tempdir — a literal `/tmp/...` would be
-/// rejected on Windows, where `isAbsolute` is platform-relative.
+/// The per-suite project path every item is created under. Derived from the
+/// harness tempdir — a literal `/tmp/...` would be rejected on Windows, where
+/// `isAbsolute` is platform-relative.
 fn projectPath(h: *Harness) ![]u8 {
     return harness.harnessPath(gpa, h.temp_dir, &.{"routine-test"});
 }
 
-/// Python `_create_routine`. The `path` field is mandatory in the body,
-/// so it is an argument; the optional routine fields ride along with
-/// `emit_null_optional_fields = false` (Python only added the key when
-/// the caller passed one).
+/// Python `_create_routine`.
 fn createRoutine(h: *Harness, ws_id: []const u8, name: []const u8, path: []const u8, instruction: ?[]const u8, schedule: ?[]const u8) !OwnedDoc {
     const body = try std.json.Stringify.valueAlloc(gpa, .{
         .name = name,

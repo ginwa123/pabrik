@@ -1,24 +1,5 @@
-// Functional tests for the in-flight stream snapshot endpoint.
-//
-// Zig port of `tests/functional/llm_stream_get_test.py`
-// (same test names, same order).
-//
-// Task: task_1787673548905_0 (stream-resume-on-reselect).
-//
-// The bug: when the user closes/re-selects a chat session mid-stream,
-// ChatView drops its `streaming-*` placeholder and resets
-// `streamingContent`. The backend keeps streaming chunks, but the
-// re-mounted view has no way to recover the partial text — it shows only
-// what arrived after re-selecting (or nothing until the stream ends).
-//
-// The fix: `GET /api/llm/session/:session_id/stream` returns
-// `{ active: bool, content: string }` from the in-memory stream_snapshot
-// registry that workflow.zig's stream_callback feeds. These tests replay
-// the wire round-trip against a real binary:
-//
-//   1. idle session → 200 `{ active: false, content: "" }`.
-//   2. unknown session → still 200 inactive (in-memory registry, no 404).
-//   3. sibling routes still work (route-order shadowing guard).
+// Functional tests for the in-flight stream snapshot endpoint. Zig port of
+// `tests/functional/llm_stream_get_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -28,11 +9,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// `POST /api/llm/session` → the new session's id.
-///
-/// The Python original did this inline in each test; the body differs
-/// only in `name`, so one helper keeps the three tests focused on what
-/// they actually assert.
+/// `POST /api/llm/session` → the new session's id. The Python original did
+/// this inline in each test; the body differs only in `name`, so one helper
+/// keeps the three tests focused on what they actually assert.
 fn createSession(h: *Harness, name: []const u8) ![]u8 {
     const body = try std.json.Stringify.valueAlloc(gpa, .{ .name = name }, .{});
     defer gpa.free(body);
@@ -81,10 +60,9 @@ test "stream_get_idle_session_returns_inactive" {
     var doc = try r.json();
     defer doc.deinit();
 
-    // Python: `assert body["active"] is False`. `is False` is an
-    // identity check against the singleton, so a MISSING key or a
-    // truthy value both fail — which is what `orelse` + expectEqual
-    // reproduces here.
+    // Python: `assert body["active"] is False`. `is False` is an identity
+    // check against the singleton, so a MISSING key or a truthy value both
+    // fail — which is what `orelse` + expectEqual reproduces here.
     const active = doc.boolean("active") orelse {
         std.debug.print("stream snapshot has no boolean `active`: {s}\n", .{r.body});
         return error.TestUnexpectedResult;

@@ -29,27 +29,6 @@ pub const Key = union(enum) {
 };
 
 /// Result of parsing one input chunk.
-///
-/// Semantics:
-///   - `key != null, len > 0`   → complete, recognised sequence.
-///   - `key == null, len > 0`   → complete but unhandled (e.g. an SGR
-///                                mouse movement event with button 27).
-///                                Caller advances past `len` bytes and
-///                                continues with the next.
-///   - `key == null, len == 0`  → INCOMPLETE — the buffer starts a
-///                                sequence that needs more bytes (e.g.
-///                                read got `\x1b[<` without the
-///                                trailing `M`). Caller MUST keep the
-///                                bytes for the next read.
-///
-/// Round-3 fix (mouse-wheel bug): previously the parser returned
-/// `?struct{key, len}` with `null` meaning both "incomplete" and
-/// "complete unhandled". The dispatcher treated the second case as
-/// incomplete, broke out of the parse loop, and DROPPED every byte
-/// after the offending sequence. On the next stdin read those
-/// residual bytes (`64;14;14M`) got re-parsed as runes and typed
-/// into the input widget — visible to the user as
-/// `;14M4;48;14M;...` typed text while scrolling.
 pub const ParseResult = struct {
     key: ?Key,
     len: usize,
@@ -73,9 +52,7 @@ pub fn parse(buf: []const u8) ParseResult {
             if (buf[1] == '[') {
                 // SGR mouse: ESC [ < button ; col ; row M (or m for release).
                 // Distinguish from ordinary CSI by the '<' prefix character
-                // and the final byte (M or m). We treat the rest of the
-                // existing CSI dispatch as a fallback.
-                // NB: need buf.len > 2 (strict) so index 2 is in-range.
+                // and the final byte (M or m).
                 if (buf.len > 2 and buf[2] == '<') {
                     var i: usize = 3;
                     while (i < buf.len and (std.ascii.isDigit(buf[i]) or buf[i] == ';')) : (i += 1) {}
@@ -101,10 +78,6 @@ pub fn parse(buf: []const u8) ParseResult {
                     };
                     if (k) |key| return .{ .key = key, .len = consumed };
                     // Complete SGR mouse event but unhandled button.
-                    // CRITICAL: report `consumed` so the dispatcher
-                    // advances past these bytes — otherwise they
-                    // re-enter the parse loop as a sequence of runes
-                    // and leak into the input widget.
                     return .{ .key = null, .len = consumed };
                 }
 
@@ -208,10 +181,9 @@ test "parse: arrow keys" {
 }
 
 test "parse: incomplete escape returns len=0 (not nil)" {
-    // Round-3 fix: an incomplete sequence now reports key=null,
-    // len=0 so the dispatcher knows to KEEP the bytes for the next
-    // read rather than dropping them (which would let residual bytes
-    // leak into the input widget as typed text).
+    // Round-3 fix: an incomplete sequence now reports key=null, len=0 so the
+    // dispatcher knows to KEEP the bytes for the next read rather than
+    // dropping them (which would let residual bytes leak into the input
     const r = parse("\x1b[");
     try testing.expect(r.key == null);
     try testing.expectEqual(@as(usize, 0), r.len);
@@ -228,18 +200,6 @@ test "parse: home/end/delete/page keys" {
 // ----------------------------------------------------------------------------
 // SGR mouse wheel (round-2 — Task 5)
 // ----------------------------------------------------------------------------
-//
-// Format: \x1b[<button;col;rowM (uppercase M = press, lowercase m = release).
-//   button 64 = wheel up, 65 = wheel down (no modifier). Other buttons
-//   (clicks, drags, movement) are ignored in v1 — parser returns
-//   `key=null, len=consumed` so the dispatcher drops them without
-//   entering an infinite loop and WITHOUT leaking the residual bytes
-//   into the input widget (the round-3 fix).
-//
-// We enable SGR mode (CSI ? 1006 h) and basic mouse tracking (CSI ?
-// 1000 h) on program startup, so the terminal is guaranteed to send
-// the modern format. X10 mode (legacy \x1b[M + 3 bytes) is NOT
-// supported in v1.
 
 test "parse: SGR mouse wheel up = button 64" {
     const got = parse("\x1b[<64;12;8M");
@@ -253,10 +213,9 @@ test "parse: SGR mouse wheel down = button 65" {
 }
 
 test "parse: complete SGR mouse movement (button 27) reports key=null, len=consumed" {
-    // Round-3 fix: this is the sequence that previously broke scroll.
-    // The bytes must be CONSUMED (so the dispatcher advances past
-    // them) but the key is null (no scroll). Reported as key=null,
-    // len=12 — distinct from incomplete (key=null, len=0).
+    // Round-3 fix: this is the sequence that previously broke scroll. The
+    // bytes must be CONSUMED (so the dispatcher advances past them) but the
+    // key is null (no scroll).
     const got = parse("\x1b[<27;14;14M");
     try testing.expect(got.key == null);
     try testing.expectEqual(@as(usize, 12), got.len);

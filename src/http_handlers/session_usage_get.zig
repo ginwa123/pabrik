@@ -1,31 +1,5 @@
 //! `GET /api/llm/session/:session_id/usage` — token usage + cache hit rate.
-//!
-//! DERIVED, not stored. The `sessions` table carries no token column of any
-//! kind, so the numbers come from one aggregate over `llm_history`, where
-//! Migration 074 added `cache_read_input_tokens` /
-//! `cache_creation_input_tokens`. The `(session_id, created_at_nano DESC)`
-//! index serves the `WHERE session_id = ?` as an index seek, so this stays a
-//! per-session read rather than a scan of the whole history table.
-//!
-//! Cache hit rate = cache READ tokens / total input tokens, as a percentage.
-//! The denominator is `SUM(prompt_tokens)` because `prompt_tokens` already
-//! INCLUDES the cached tokens: `Agent.parse_anthropic_stream_chunk` folds
-//! `cache_read` + `cache_creation` into it, which is also OpenAI's semantic
-//! (`prompt_tokens` counts cached tokens). `cache_creation` is a cache WRITE,
-//! so it never enters the numerator.
-//!
-//! `calls_with_cache` is what keeps a `0` honest. Providers that report no
-//! cache counters at all — the chat-completions path ignores
-//! `prompt_tokens_details.cached_tokens` (OpenAI) and
-//! `prompt_cache_hit_tokens` (DeepSeek), so every one of their rows stores 0 —
-//! would otherwise be indistinguishable from a session whose cache genuinely
-//! never hit. `cache_hit_rate == 0` with `calls_with_cache == 0` means
-//! "not reported"; a client should render that as n/a, not as 0%.
-//!
-//! An UNKNOWN session id answers 200 with zeros, matching the sibling
-//! `session_messages` read (which also does not 404): the endpoint reports
-//! what the recorded usage says, and a session with no calls legitimately has
-//! none. Only an EMPTY id is rejected, as a 400.
+//! DERIVED, not stored.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -226,10 +200,7 @@ fn run(ctx: *TestCtx, session_id: []const u8) !std.json.Parsed(std.json.Value) {
     return std.json.parseFromSlice(std.json.Value, testing.allocator, json, .{});
 }
 
-/// The rate as `f64`. Zig renders a float in its shortest round-trip form, so
-/// `90.0` reaches the wire as `90` and std.json parses it back as an INTEGER —
-/// a `.float`-only assertion would pass or fail on the value, not the math.
-/// Mirrors the functional harness's `Json.number`.
+/// The rate as `f64`.
 fn rateOf(obj: std.json.ObjectMap) ?f64 {
     return switch (obj.get("cache_hit_rate") orelse return null) {
         .float => |f| f,
@@ -356,8 +327,6 @@ test "wire: the serialized body is byte-stable — field order, float rendering,
     // The whole response is asserted as TEXT because three separate things a
     // client depends on are invisible to a field-by-field check: the field
     // ORDER, the rendering of the rate (Zig's shortest round-trip form emits
-    // `90` for 90.0 — a valid JSON number, but not `90.0`), and `null` for a
-    // session with nothing to divide by rather than a fabricated `0`.
     var ctx = try setupDb();
     defer teardown(&ctx);
     try insertRow(&ctx, "h1", "s1", 1000, 900, 0);

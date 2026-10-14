@@ -1,48 +1,5 @@
-// Tests for the orphan-pabrik-pid reap step in FunctionalHarness.boot().
-//
-// Zig port of `tests/functional/harness_orphan_reap_test.py`.
-//
-// When the harness Python is killed unexpectedly (Ctrl+C, `kill -9`,
-// OOM, terminal close), its pabrik child survives in its own process
-// group (`subprocess.Popen(start_new_session=True)`) and continues to
-// hold the TCP port the test allocated. After ~120 such incidents the
-// harness's 8080..8199 scan window is exhausted and every subsequent
-// test errors at boot with `No free port found in 8080..8199 (excluding
-// 8081)`.
-//
-// These tests cover the reap logic that runs at the top of every `boot()`
-// to clean up after prior aborted runs. The reap step:
-//
-//   1. Scans `<tempfile.gettempdir()>/pabrik-func-*/.harness.pid`.
-//   2. For each pidfile, parses `<harness_pid> <pabrik_pid>`.
-//   3. If `harness_pid` is no longer alive, the dir is orphaned — kill
-//      `pabrik_pid` (SIGTERM → wait 1s → SIGKILL) and `rmtree` the dir
-//      via the existing `isSafeTmp()` safety validator.
-//
-// The "pabrik" pid is just a long-lived sleeper spawned with its own
-// process group, to mimic the pabrik spawn pattern.
-//
-// FIVE OF THE NINE TESTS NEED NO BINARY
-//
-// The five reaper tests drive `reapOrphanTestPids` directly against a
-// hand-built `pabrik-func-*` directory, so they run on a clean checkout
-// with no `zig-out/` at all — which is when you most want them. The two
-// boot/teardown pidfile tests need a real child process to have been
-// spawned, so they take the package-wide `requirePabrikBin` guard and
-// use the REAL binary in place of Python's hand-written fake server:
-// `harness.zig`'s `Harness.boot` resolves the child through
-// `resolvePabrikBin`, which reads `$PABRIK_BIN` — and `PABRIK_BIN`
-// cannot be set from inside a Zig test (see the env note below). The
-// assertions are unchanged: they read the pidfile `boot()` wrote and
-// check teardown removed it.
-//
-// `PABRIK_FUNCTIONAL_DRY_RUN=1` has the same problem — there is no
-// supported way to mutate `std.testing.environ` — but it also has no
-// Python-only workaround: `Harness.dry_run` is a PUBLIC field, so the
-// dry-run test builds the instance by hand with `dry_run = true`
-// instead of going through the environment. The invariant under test
-// ("teardown removes the pidfile even when it skips rmtree") is the
-// same one either way.
+// Tests for the orphan-pabrik-pid reap step in FunctionalHarness.boot(). Zig
+// port of `tests/functional/harness_orphan_reap_test.py`.
 
 const std = @import("std");
 const testing = std.testing;
@@ -58,15 +15,13 @@ const is_windows = builtin.os.tag == .windows;
 // Helpers
 // ============================================================================
 
-/// Spawn a 60-second sleeper in its own process group, like pabrik.
-///
-/// The caller must kill or `wait` it; `Child.kill` is idempotent, so
-/// registering `defer child.kill(io)` is the safe net either way.
+/// Spawn a 60-second sleeper in its own process group, like pabrik. The
+/// caller must kill or `wait` it; `Child.kill` is idempotent, so registering
+/// `defer child.kill(io)` is the safe net either way.
 fn spawnLongLivedChild() !std.process.Child {
-    // `/bin/sleep` rather than a Python one-liner: the Python version of
-    // this fixture spawned `sys.executable`, which made the Zig port
-    // depend on an interpreter. A missing `/bin/sleep` is a missing
-    // subject, not a failure.
+    // `/bin/sleep` rather than a Python one-liner: the Python version of this
+    // fixture spawned `sys.executable`, which made the Zig port depend on an
+    // interpreter.
     std.Io.Dir.cwd().access(io, "/bin/sleep", .{ .execute = true }) catch {
         std.debug.print("/bin/sleep missing or not executable\n", .{});
         return error.SkipZigTest;
@@ -78,12 +33,8 @@ fn spawnLongLivedChild() !std.process.Child {
     });
 }
 
-/// `kill(pid, 0)` — Python's `_pid_alive`.
-///
-/// NOTE: a zombie process reports alive here (`kill -0` succeeds). The
-/// test follows kill-with-`wait` (this process is the parent) to drain
-/// the zombie before asserting "dead", which is what Python's
-/// `_reap_child_zombie` did.
+/// `kill(pid, 0)` — Python's `_pid_alive`. NOTE: a zombie process reports
+/// alive here (`kill -0` succeeds).
 fn pidAlive(pid: u32) bool {
     if (is_windows) return true;
     std.posix.kill(@as(std.posix.pid_t, @intCast(pid)), @as(std.posix.SIG, @enumFromInt(0))) catch return false;
@@ -92,11 +43,6 @@ fn pidAlive(pid: u32) bool {
 
 /// Allocate AND create `<tmpRoot>/pabrik-func-<hex>` — the namespace
 /// `reapOrphanTestPids` actually scans.
-///
-/// This is deliberately NOT `makeScratchDir`: that hands back a
-/// `pabrik-fix-` directory, which `isSafeTmp` accepts but the reaper
-/// never looks at (see `harness.zig`'s note on why the two prefixes
-/// differ). A fixture in the wrong namespace would prove nothing.
 fn freshOrphanDir() ![]u8 {
     const root = try harness.tmpRoot(gpa);
     defer gpa.free(root);
@@ -150,15 +96,9 @@ fn pidfilePath(dir: []const u8) ![]u8 {
     return std.fs.path.join(gpa, &.{ dir, ".harness.pid" });
 }
 
-/// A `Harness` built WITHOUT `boot`, with `dry_run` set directly.
-///
-/// Python reached this state with `monkeypatch.setenv(
-/// "PABRIK_FUNCTIONAL_DRY_RUN", "1")`. Zig has no equivalent seam:
-/// `std.testing.environ` is populated once by the test runner and its
-/// POSIX block is a `const` slice, so a test cannot shadow an env var
-/// for the current process. `Harness.dry_run` is a public field, so the
-/// behaviour is reachable without the environment — which is what makes
-/// this test BETTER off than the Python one.
+/// A `Harness` built WITHOUT `boot`, with `dry_run` set directly. Python
+/// reached this state with `monkeypatch.setenv( "PABRIK_FUNCTIONAL_DRY_RUN",
+/// "1")`.
 fn bareDryRunHarness(temp_dir: []const u8) !Harness {
     return .{
         .allocator = gpa,
@@ -183,13 +123,8 @@ fn bareDryRunHarness(temp_dir: []const u8) !Harness {
 // Task 1: reapOrphanTestPids kills an orphan child pid + rmtree's its dir
 // ============================================================================
 
-// A stale pidfile whose harness parent is dead → reap kills the child
-// and rmtree's the tempdir.
-//
-// This is the exact failure mode the user hit on 2026-08-23: a prior
-// `pytest -n auto` run was killed -9, the workers died, the pabrik
-// children survived in their own pgids, and every subsequent test
-// errored at boot with "No free port found in 8080..8199".
+// A stale pidfile whose harness parent is dead → reap kills the child and
+// rmtree's the tempdir.
 test "reap_kills_orphan_pabrik_and_removes_dir" {
     var child = try spawnLongLivedChild();
     defer child.kill(io);
@@ -204,17 +139,7 @@ test "reap_kills_orphan_pabrik_and_removes_dir" {
     defer gpa.free(temp_dir);
     defer harness.cleanupExtraDir(io, gpa, temp_dir); // no-op if reaped
 
-    // PID 0 is special on Linux (the kernel's idle task / swapper). To
-    // get a pid we know is DEAD, spawn a process, wait for it (which is
-    // the only way to make the OS mark a pid as truly gone — not even a
-    // zombie), and reuse its number.
-    //
-    // Windows exception, carried over from the Python test: a terminated
-    // child's process handle stays open in the parent, so `os.kill()`
-    // keeps reporting "alive" even after wait(). Instead use a
-    // never-assigned pid above Windows' max pid (2^22): the probe
-    // deterministically fails, which is exactly the "harness dead"
-    // signal reap keys on.
+    // PID 0 is special on Linux (the kernel's idle task / swapper).
     const dead_pid: u32 = blk: {
         if (is_windows) break :blk 99_999_999;
         var quick = try std.process.spawn(io, .{ .argv = &.{"/bin/true"} });
@@ -237,9 +162,7 @@ test "reap_kills_orphan_pabrik_and_removes_dir" {
     };
 
     // Reap the zombie via the test process — we are the parent, and
-    // `Child.wait` is the only thing that clears it. Without this,
-    // `kill(pid, 0)` keeps reporting "alive" even though reap's job is
-    // done. `kill` (registered in the defer) is idempotent afterwards.
+    // `Child.wait` is the only thing that clears it.
     _ = child.wait(io) catch {};
 
     // Assert: child killed, dir removed, count reported.
@@ -273,10 +196,9 @@ test "reap_idempotent_when_no_orphans" {
     std.debug.print("reap idempotency: first={d} second={d}\n", .{ first, second });
 }
 
-// A pidfile whose harness parent is alive is NOT reaped.
-//
-// This is the cross-xdist safety case: worker A scanning for orphans
-// must NOT kill worker B's live test's child.
+// A pidfile whose harness parent is alive is NOT reaped. This is the
+// cross-xdist safety case: worker A scanning for orphans must NOT kill worker
+// B's live test's child.
 test "reap_skips_live_harness" {
     var child = try spawnLongLivedChild();
     defer child.kill(io);
@@ -302,11 +224,6 @@ test "reap_skips_live_harness" {
     try testing.expect(pathIsDir(temp_dir));
 
     // Drain the zombie ourselves (Python's `_reap_child_zombie`).
-    //
-    // `Child.kill` ALREADY reaps — the stdlib documents it as "kills
-    // … then blocks until it terminates, then cleans up all resources"
-    // and it nulls `child.id`. `wait` opens with `assert(child.id !=
-    // null)`, so calling it after `kill` is a panic, not a no-op.
     child.kill(io);
 }
 
@@ -393,10 +310,9 @@ test "boot_writes_pidfile_with_both_pids" {
     }
 }
 
-// teardown() removes the pidfile before rmtree'ing the tempdir.
-//
-// Without this, a dry-run teardown would leave the pidfile behind and a
-// subsequent boot would (incorrectly) see the tempdir as orphaned.
+// teardown() removes the pidfile before rmtree'ing the tempdir. Without this,
+// a dry-run teardown would leave the pidfile behind and a subsequent boot
+// would (incorrectly) see the tempdir as orphaned.
 test "teardown_removes_pidfile" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -442,9 +358,6 @@ test "teardown_dry_run_removes_pidfile" {
 
     // Manual cleanup since dry_run skipped rmtree — `cleanupExtraDir` is
     // gated by `isSafeTmp`, and this path carries `REQUIRED_TMP_SUBSTR`.
-    // Python used `_rmtree_retry` here for Windows' transient post-exit
-    // file locks; no `pabrik` child exists in this port, so a single
-    // gated delete is enough.
 }
 
 // ============================================================================
@@ -452,13 +365,6 @@ test "teardown_dry_run_removes_pidfile" {
 // ============================================================================
 
 // findFreePort uses SO_REUSEADDR so it can scan past TIME_WAIT.
-//
-// Regression for the 2026-08-23 failure where rapid test runs saturated
-// the 8080..8199 scan window with server-side TIME_WAITs (last ~60s),
-// causing every subsequent test to error with 'No free port found'. The
-// harness's scan socket now sets SO_REUSEADDR — the same option the
-// real listener already uses — so the scan can pick ports in TIME_WAIT
-// state and the server can subsequently bind them.
 test "find_free_port_picks_time_wait_port" {
     // Find a port that's currently FREE on this host (avoid the dev's
     // 8081 and don't assume 8080 is free — earlier tests may have left

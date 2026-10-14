@@ -1,35 +1,4 @@
 //! In-memory PTY session registry for the right-sidebar terminal.
-//!
-//! Transport is plain REST + poll (no WebSocket, no kabelweb changes):
-//!
-//!   POST   /api/terminal/sessions            {cwd, shell?, cols?, rows?}
-//!   POST   /api/terminal/sessions/:id/input  {data}
-//!   GET    /api/terminal/sessions/:id/output?cursor=N
-//!   POST   /api/terminal/sessions/:id/resize {cols, rows}
-//!   DELETE /api/terminal/sessions/:id
-//!
-//! Each session owns a real PTY (libc `forkpty`: `pty.h` on Linux,
-//! `util.h` on macOS) running the user's shell with the requested cwd.
-//! Output accumulates in a capped per-session buffer (256 KiB, oldest
-//! dropped first); readers poll with an absolute byte cursor, so a
-//! re-mounted frontend resumes without loss or replay.
-//!
-//! Lifetime: UNLIMITED sessions (no cap, no LRU kills). A session ages
-//! out only after `idle_timeout_s` (24h) with ZERO interaction — every
-//! open (attach flush), poll, input, and resize refreshes its age, so
-//! a terminal you look at never dies under you. The sweep runs lazily
-//! on create + read (no background thread).
-//!
-//! Platform scope: Linux + macOS only. Every other OS gets
-//! `error.UnsupportedPlatform` (mapped to 501 by the endpoint files).
-//! All libc symbols are declared as `extern "c"` (no `@cImport`, so no
-//! header-parse risk on any target) and every reference lives behind a
-//! comptime OS gate, so Windows cross-compiles cleanly.
-//!
-//! SECURITY: the server binds 127.0.0.1 (see main.zig) — localhost is
-//! the auth boundary, same as the agent shell tools. `cwd` must be an
-//! absolute path to an existing directory; `shell`, when given, must
-//! be absolute. No DB, no migration: a server restart drops sessions.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -48,16 +17,11 @@ pub const idle_kill_s: i64 = 30 * 60;
 pub const busy_output_window_s: i64 = 5 * 60;
 pub const max_sessions: u32 = 20;
 pub const buffer_cap: usize = 256 * 1024;
-/// One poll drains at most this many bytes (32 x 8 KiB reads). A
-/// flooding child (`yes`, `cat` huge file, `rg` over a big tree)
-/// is spread across polls instead of starving the WS thread in one
-/// unbounded `while (true)` spin with O(cap) memmove per chunk.
+/// One poll drains at most this many bytes (32 x 8 KiB reads).
 pub const max_drain_bytes_per_call: usize = 256 * 1024;
 pub const max_drain_iters: usize = 32;
-/// Capacity slack before we give memory back: len stays at
-/// `buffer_cap`, but ArrayList capacity can double once on the way
-/// up. Past this slack we shrink so a burst doesn't pin 512 KiB+
-/// forever under memory pressure (remap-OOM abort at old :515).
+/// Capacity slack before we give memory back: len stays at `buffer_cap`, but
+/// ArrayList capacity can double once on the way up.
 pub const buffer_capacity_slack: usize = 64 * 1024;
 pub const default_cols: u16 = 80;
 pub const default_rows: u16 = 24;
@@ -141,12 +105,7 @@ pub const Session = struct {
     child_pid: c_int,
     cols: u16,
     rows: u16,
-    /// Owning user id (plan 2026-09-25, W2.5). Empty means "no identity" —
-    /// auth off, or a session created before this field existed — and every
-    /// caller may attach, which keeps the auth-off path unchanged. A real
-    /// owner is compared against the request's server-derived owner; a
-    /// mismatch is a 404, never a 403, so a foreign id is indistinguishable
-    /// from a missing one.
+    /// Owning user id (plan 2026-09-25, W2.5).
     owner: []u8,
     /// Ring-ish output log: `buf` holds the newest bytes, `base` is the
     /// absolute cursor of `buf[0]`, `total` the absolute cursor of the
@@ -161,10 +120,8 @@ pub const Session = struct {
     /// resize/create). Sessions older than the idle timeout with zero
     /// interaction are reaped by the lazy sweep.
     last_active_s: i64,
-    /// Wall-clock seconds of the last explicit user action (input,
-    /// resize, attach, create). Background output polls refresh
-    /// `last_active_s` but NOT this stamp, so an open-but-unwatched
-    /// tab still ages out via `idle_kill_s`.
+    /// Wall-clock seconds of the last explicit user action (input, resize,
+    /// attach, create).
     last_user_active_s: i64,
     /// Wall-clock seconds when output last grew + the total cursor at
     /// that moment. Powers the busy-exempt check: a session producing
@@ -231,10 +188,8 @@ pub fn sessionCount() usize {
     return reg.count();
 }
 
-/// Wall-clock seconds (libc `time`). Coarse seconds are plenty for
-/// idle aging. Referenced from touch paths that are live on every OS
-/// (REST handlers are registered unconditionally) — `time` exists in
-/// msvcrt too, so Windows codegen stays clean.
+/// Wall-clock seconds (libc `time`). Coarse seconds are plenty for idle
+/// aging.
 fn nowSeconds() i64 {
     return time(null);
 }
@@ -267,11 +222,9 @@ pub fn setMaxSessionsForTest(n: u32) u32 {
     return prev;
 }
 
-/// Test-only hook invoked by `sweepIdleExcluding` right after the
-/// victims are detached from the registry (g_mutex already released)
-/// and before teardown begins. Tests park the sweeper here to make
-/// the sweep-vs-destroy ownership race deterministic; production code
-/// never installs it (stays null).
+/// Test-only hook invoked by `sweepIdleExcluding` right after the victims are
+/// detached from the registry (g_mutex already released) and before teardown
+/// begins.
 var g_sweep_detached_hook: ?*const fn () void = null;
 
 pub fn setSweepDetachedHookForTest(h: ?*const fn () void) void {
@@ -280,10 +233,8 @@ pub fn setSweepDetachedHookForTest(h: ?*const fn () void) void {
     g_sweep_detached_hook = h;
 }
 
-/// Pure busy predicate over stamps (unit-tested, no locks): a session
-/// is busy when its shell is alive and it produced output within the
-/// busy window. Long runners (`bun run dev`, servers, installs) keep
-/// printing, so they survive the idle kill untouched.
+/// Pure busy predicate over stamps (unit-tested, no locks): a session is busy
+/// when its shell is alive and it produced output within the busy window.
 pub fn isBusyByStamps(exited: bool, last_output_at_s: i64, now_s: i64) bool {
     if (exited) return false;
     if (last_output_at_s <= 0) return false;
@@ -309,20 +260,13 @@ pub fn touchUser(s: *Session) void {
 }
 
 /// Reap sessions with zero interaction older than the idle timeout.
-/// Runs lazily on create + read (no background thread): abandoned
-/// shells age out, while anything you open, poll, type in, or resize
-/// stays alive via its refreshed stamp. Victim stamps are read without
-/// the session lock — a torn read only mis-picks a victim, never
-/// corrupts state.
 fn sweepIdle() void {
     sweepIdleExcluding(null);
 }
 
-/// Same as sweepIdle but never reaps `exclude`: a poll must not free
-/// its own session mid-call (old readOutput swept first, then locked
-/// the freed pointer — heap UAF surfacing as a remap abort in
-/// appendSlice). The excluded session is reaped later by another
-/// session's sweep once it is truly abandoned.
+/// Same as sweepIdle but never reaps `exclude`: a poll must not free its own
+/// session mid-call (old readOutput swept first, then locked the freed
+/// pointer — heap UAF surfacing as a remap abort in appendSlice).
 fn sweepIdleExcluding(exclude: ?*Session) void {
     if (comptime !is_pty_os) return;
     const now = nowSeconds();
@@ -347,14 +291,6 @@ fn sweepIdleExcluding(exclude: ?*Session) void {
         }
     }
     // Detach every victim from the registry BEFORE dropping the lock.
-    // Ownership of the `*Session` transfers to us here: after this
-    // point destroySession (DELETE / another sweep) can only observe
-    // SessionNotFound, never free a victim we still point at. The old
-    // code re-locked per victim via destroySession(v.id), so a
-    // concurrent destroy could free the session (and its id string)
-    // first — then `v.id` was a dangling slice and fetchRemove's
-    // Wyhash walk segfaulted on a wild pointer (crash: SEGV in
-    // hashString via destroySession <- sweepIdleExcluding).
     for (victims.items) |v| {
         const removed = reg.fetchRemove(v.id);
         std.debug.assert(removed != null);
@@ -425,22 +361,15 @@ pub const SessionInfo = struct {
     pid: i32,
 };
 
-/// Spawn a shell on a fresh PTY. `shell` null/empty selects
-/// `$SHELL`, then `/bin/bash`, then `/bin/sh`.
-///
-/// `owner` is the server-derived user id (plan 2026-09-25, W2.5). Pass an
-/// empty slice when there is no identity (auth off) — the session is then
-/// accessible to every caller, which is the pre-isolation behaviour.
+/// Spawn a shell on a fresh PTY. `shell` null/empty selects `$SHELL`, then
+/// `/bin/bash`, then `/bin/sh`. `owner` is the server-derived user id (plan
+/// 2026-09-25, W2.5).
 pub fn createSession(io: std.Io, cwd: []const u8, shell: ?[]const u8, cols: ?u16, rows: ?u16, owner: []const u8) SessionError!SessionInfo {
     if (comptime !is_pty_os) return error.UnsupportedPlatform;
     return createSessionPosix(io, cwd, shell, cols, rows, owner);
 }
 
 /// True when `caller_owner` may drive `s`.
-///
-/// An empty owner on EITHER side means "no identity" (auth off, or a session
-/// created before this field existed) and access is allowed — the auth-off
-/// path must stay byte-identical. Otherwise the ids must match exactly.
 pub fn mayAccess(s: *Session, caller_owner: []const u8) bool {
     if (s.owner.len == 0 or caller_owner.len == 0) return true;
     return std.mem.eql(u8, s.owner, caller_owner);
@@ -475,10 +404,9 @@ fn defaultShell() []const u8 {
 }
 
 fn createSessionPosix(io: std.Io, cwd: []const u8, shell_opt: ?[]const u8, cols_opt: ?u16, rows_opt: ?u16, owner: []const u8) SessionError!SessionInfo {
-    // Empty cwd (fresh standalone chats have no session cwd yet):
-    // fall back to the server process cwd, mirroring the agent shell
-    // tools' optional-cwd behavior. Never fail closed here — an empty
-    // string from the frontend must still yield a working shell.
+    // Empty cwd (fresh standalone chats have no session cwd yet): fall back
+    // to the server process cwd, mirroring the agent shell tools'
+    // optional-cwd behavior.
     var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
     const eff_cwd: []const u8 = if (cwd.len == 0) blk: {
         const ptr = getcwd(&cwd_buf, cwd_buf.len) orelse return error.CwdNotDir;
@@ -748,12 +676,8 @@ pub fn readOutput(s: *Session, cursor: u64) OutputSlice {
     if (comptime !is_pty_os) {
         return .{ .data = &.{}, .cursor = cursor, .exited = true, .exit_code = null };
     }
-    // Every poll reaps the long-idle, but polls do NOT refresh the
-    // user stamp — only explicit input/resize/attach does. An
-    // open-but-unwatched tab still ages out; a busy one (recent
-    // output) is exempt via isBusyByStamps. The sweep excludes self
-    // so it never frees the caller's session mid-call (UAF that
-    // surfaced as a remap abort in appendSlice).
+    // Every poll reaps the long-idle, but polls do NOT refresh the user stamp
+    // — only explicit input/resize/attach does.
     sweepIdleExcluding(s);
     mutexLock(&s.mutex);
     s.last_active_s = nowSeconds();
@@ -773,11 +697,9 @@ pub fn readOutput(s: *Session, cursor: u64) OutputSlice {
     };
 }
 
-/// Owned variant of readOutput: drains under the session lock and
-/// dupes the requested tail into `allocator` before unlocking, so the
-/// caller holds no borrow into the live ring buffer. Eliminates the
-/// use-after-free window where a concurrent drain reallocs (remap)
-/// while the caller still reads the old slice.
+/// Owned variant of readOutput: drains under the session lock and dupes the
+/// requested tail into `allocator` before unlocking, so the caller holds no
+/// borrow into the live ring buffer.
 pub const OwnedOutput = struct {
     data: []u8,
     cursor: u64,
@@ -831,10 +753,6 @@ pub fn resizeSession(s: *Session, cols: u16, rows: u16) SessionError!void {
 }
 
 /// Kill the child (if running), close the master, drop the session.
-/// `id` must NOT alias `s.id` of a session another thread could be
-/// reaping — callers that own a `*Session` (the sweep) remove it from
-/// the registry under g_mutex themselves and go straight to
-/// `reapSession`, so the id slice is never read after free.
 pub fn destroySession(id: []const u8) SessionError!void {
     if (comptime !is_pty_os) return error.UnsupportedPlatform;
     const reg = registry();
@@ -847,10 +765,7 @@ pub fn destroySession(id: []const u8) SessionError!void {
     reapSession(entry.value);
 }
 
-/// Owner-checked `destroySession` (plan 2026-09-25, W2.5). A caller who may
-/// not drive the session gets `SessionNotFound`, so a foreign id cannot be
-/// used to kill another user's shell and is indistinguishable from a
-/// missing one.
+/// Owner-checked `destroySession` (plan 2026-09-25, W2.5).
 pub fn destroySessionForOwner(id: []const u8, caller_owner: []const u8) SessionError!void {
     if (comptime !is_pty_os) return error.UnsupportedPlatform;
     const reg = registry();
@@ -1165,7 +1080,6 @@ test "readOutputAlloc returns an owned copy independent of the ring (posix only)
 // ---------------------------------------------------------------------
 // Crash-fix regression: sweep vs concurrent destroy race (SEGV in
 // destroySession's fetchRemove hashing a freed id slice)
-// ---------------------------------------------------------------------
 
 /// Thread entry points for the sweep/destroy race test (file scope:
 /// thread fns cannot capture test locals).
@@ -1189,18 +1103,8 @@ test "concurrent sweep and destroy never double-free a victim (posix only)" {
     defer _ = setIdleTimeoutForTest(prev_timeout);
     defer setSweepDetachedHookForTest(null);
 
-    // The old sweep collected `*Session` pointers, dropped g_mutex,
-    // then called destroySession(v.id) per victim. A concurrent
-    // DELETE-style destroy could win a victim in that window, freeing
-    // both the Session struct and its id string — the sweep then read
-    // a dangling `v.id` and fetchRemove's hash walk segfaulted on a
-    // wild pointer (production SEGV: handleCrashSignalSiginfo <-
-    // ... <- destroySession <- sweepIdleExcluding <- readOutputAlloc).
-    // The test parks the sweeper at the handoff point (victims
-    // detached from the registry, teardown not yet started) and runs
-    // destroys against those victims: with the fix every destroy sees
-    // SessionNotFound; under the old code the same interleaving read
-    // the freed Session and crashed.
+    // The old sweep collected `*Session` pointers, dropped g_mutex, then
+    // called destroySession(v.id) per victim.
     const rounds: usize = 3;
     const per_round: usize = 3;
     var owned_ids = std.ArrayList([]u8).empty;
@@ -1215,10 +1119,9 @@ test "concurrent sweep and destroy never double-free a victim (posix only)" {
         var i: usize = 0;
         while (i < per_round) : (i += 1) {
             const info = try createSession(testing.io, "/tmp", "/bin/sh", 80, 24, "user_test");
-            // Test-owned id copies: the session's own id buffer is
-            // freed by whoever reaps it, so the destroy side must hash
-            // its own stable slice (mirrors DELETE, whose id comes from
-            // the request, not the session struct).
+            // Test-owned id copies: the session's own id buffer is freed by
+            // whoever reaps it, so the destroy side must hash its own stable
+            // slice (mirrors DELETE, whose id comes from the request, not the
             const owned = try testing.allocator.dupe(u8, info.id);
             errdefer testing.allocator.free(owned);
             try owned_ids.append(testing.allocator, owned);
@@ -1245,12 +1148,9 @@ test "concurrent sweep and destroy never double-free a victim (posix only)" {
         try testing.expect(SweepRace.parked.load(.acquire));
         setSweepDetachedHookForTest(null);
 
-        // Destroy side of the race: after the handoff the victims
-        // belong to the sweeper, so every destroy must observe
-        // SessionNotFound — never free memory the sweeper still points
-        // at. (Old code freed them here; the sweep's subsequent
-        // `v.id` read then saw tcache-poisoned garbage — the UAF that
-        // segfaulted in production.)
+        // Destroy side of the race: after the handoff the victims belong to
+        // the sweeper, so every destroy must observe SessionNotFound — never
+        // free memory the sweeper still points at.
         const base = owned_ids.items.len - per_round;
         for (owned_ids.items[base..]) |id| {
             try testing.expectError(error.SessionNotFound, destroySession(id));

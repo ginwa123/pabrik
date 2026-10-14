@@ -11,10 +11,7 @@ pub const Migration099RenameListSkillsTool = struct {
     pub const version: u32 = 99;
     pub const name = "rename_list_skills_tool";
 
-    /// True when `name` is a table in this database. Used so the rename is a
-    /// no-op on a database that does not have every one of the three
-    /// allowlist tables, instead of aborting the whole migration on
-    /// "no such table".
+    /// True when `name` is a table in this database.
     fn tableExists(allocator: std.mem.Allocator, db: *SqliteBackend, table: []const u8) !bool {
         var q = try db.query(
             allocator,
@@ -30,18 +27,7 @@ pub const Migration099RenameListSkillsTool = struct {
     fn renameIn(allocator: std.mem.Allocator, db: *SqliteBackend, table: []const u8, owner_col: []const u8) !void {
         if (!try tableExists(allocator, db, table)) return;
 
-        // A plain `UPDATE ... SET tool_name = 'search_skills'` trips
-        // UNIQUE(owner, tool_name) for an owner that ALREADY has the new name
-        // (easy to hit: config.json and the seed defaults are edited by hand),
-        // and `UPDATE OR IGNORE` would then silently SKIP that row — leaving
-        // `list_skills` behind. So: insert a new row under a fresh id, then
-        // delete the stale one. `INSERT OR IGNORE` covers the one case where
-        // the owner already has `search_skills` — the pre-existing row wins
-        // and the checklist still ends with exactly one entry.
-        //
-        // The id is suffixed rather than reused: `id` is the PRIMARY KEY, so
-        // re-inserting the same value would make OR IGNORE swallow the insert
-        // and the follow-up DELETE would then delete the only row.
+        // A plain `UPDATE ...
         const sql = try std.fmt.allocPrint(
             allocator,
             \\INSERT OR IGNORE INTO {s} (id, {s}, tool_name, enabled, created_at)

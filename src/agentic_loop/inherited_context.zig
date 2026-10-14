@@ -36,23 +36,9 @@ pub fn parseMode(raw: []const u8) ParseError!Mode {
     return error.InvalidInheritedContextMode;
 }
 
-/// Subagent detection predicate.
-///
-/// A sub-agent is a child session whose `parent_session_id` refers to a
-/// different session than its own `session_id`. Returns `false` (i.e.
-/// "NOT a subagent — do NOT inherit parent history") when:
-///
-///   - `parent_session_id` is empty (the caller IS the parent), or
-///   - `session_id` is empty (defensive — a session-less caller has no
-///     parent context to inherit), or
-///   - `session_id` equals `parent_session_id` (data-anomaly guard: if
-///     a parent_session_id was set but points at the current session,
-///     treat it as "not a subagent" — never inherit your own history as
-///     if it were a parent's).
-///
-/// Used by `formatHistory` to short-circuit and by any other
-/// subagent-aware prompt logic. Comparison is case-sensitive to match
-/// session_id semantics in the rest of the codebase.
+/// Subagent detection predicate. A sub-agent is a child session whose
+/// `parent_session_id` refers to a different session than its own
+/// `session_id`.
 pub fn isSubagent(session_id: []const u8, parent_session_id: []const u8) bool {
     if (parent_session_id.len == 0) return false;
     if (session_id.len == 0) return false;
@@ -73,17 +59,7 @@ const HEADER =
 ;
 
 /// Fetch user/assistant messages from the parent's history and render them as
-/// a Markdown block. Returns an empty string when:
-///   - `session_id` is empty (defensive — no caller to attach the block to)
-///   - `parent_session_id` is empty (the caller IS the parent)
-///   - `session_id == parent_session_id` (NOT a subagent — same session
-///     as the parent; surfaced by `isSubagent` returning false)
-///   - the parent has no user/assistant messages
-///   - `mode` is `.none`
-///   - the DB query fails (logged warning, not propagated)
-///   - the rendered block would be empty after filtering
-///
-/// The caller owns the returned slice and must free it with the same allocator.
+/// a Markdown block.
 pub fn formatHistory(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -239,9 +215,7 @@ fn renderHistory(allocator: std.mem.Allocator, messages: []HistoryRow) ![]const 
 }
 
 // ─── Inline tests (formerly inherited_context_test.zig) ──────────────────
-// Behavioural tests for parseMode + parseExplicitBlocks. Inlined here
-// per the agentic_loop/ convention (tests live at the bottom of the
-// impl file, NOT in a separate _test.zig sibling).
+// Behavioural tests for parseMode + parseExplicitBlocks.
 
 test "parseMode - null/empty string returns Mode.none" {
     const m = try parseMode("");
@@ -611,10 +585,8 @@ test "formatHistory - 20KB byte cap emits truncation notice" {
 
     // Byte cap should have fired (we seeded 30 KB of content, cap is 20 KB).
     try std.testing.expect(std.mem.indexOf(u8, out, "more messages omitted") != null);
-    // The rendered output (HEADER + bullets + notice) must be ≤ 20 KB + slack.
-    // Slack accounts for HEADER (~400) + notice (~50) + the bullet line that
-    // was the next one to be considered but rejected by the cap check.
-    // We assert < 25 KB to allow slack while still proving the cap fired.
+    // The rendered output (HEADER + bullets + notice) must be ≤ 20 KB +
+    // slack.
     try std.testing.expect(out.len < 25 * 1024);
 }
 

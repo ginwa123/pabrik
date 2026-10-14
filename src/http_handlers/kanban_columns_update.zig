@@ -1,24 +1,6 @@
-//! `PATCH /api/workspaces/:workspace_id/items/:item_id/kanban/columns/:column_id`.
-//!
+//! `PATCH
+//! /api/workspaces/:workspace_id/items/:item_id/kanban/columns/:column_id`.
 //! Rename and/or reorder a kanban column.
-//!
-//! Body: `{name?, description?, position?}` — at least one of the
-//! three fields must be present; otherwise the use-case returns
-//! `error.NothingToUpdate` (mapped to 400).
-//!
-//! All three fields are optional because the frontend uses PATCH as
-//! a single endpoint for "rename", "reorder", "rename+reorder",
-//! "set description", etc.
-//!
-//! Response shape: `{"columns": [...], "count": N}` (the updated
-//! board) — the frontend re-renders the entire board from this list.
-//!
-//! Layered as `useCase` (validate + rename/reorder + list + emit
-//! SSE + return JSON) and a thin handler that maps the outcome +
-//! errors to status codes.
-//!
-//! Plan: docs/superpowers/plans/2026-06-21-workspace-item-kanban.md
-//!   (Chunk 3, Task 3.5)
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -27,20 +9,8 @@ const http_response = @import("http_response.zig");
 const kanban_model = @import("../agentic_loop/kanban_model.zig");
 const on_event_sent_kanban = pabrikcore.ai_mod.on_event_sent_kanban;
 
-/// Request body for column-update.
-///
-/// All fields are optional. At least one must be present (validated
-/// in the use-case). The model functions are called only for fields
-/// that are non-null, so an absent `name` keeps the existing name,
-/// an absent `description` keeps the existing description, and an
-/// absent `position` keeps the existing position.
-///
-/// Distinguish two states for `description`:
-///   - field absent → `null` → "leave unchanged"
-///   - field present with `""` → "clear" (the Settings UI sends
-///     explicit `""` when the user empties the description textarea;
-///     this is distinct from omitting the field).
-/// See `kanban_model.updateColumn` for the SQL-level handling.
+/// Request body for column-update. All fields are optional. At least one must
+/// be present (validated in the use-case).
 const UpdateColumnBody = struct {
     name: ?[]const u8 = null,
     /// New description: `null` leaves the existing description
@@ -58,10 +28,8 @@ pub const KanbanColumnUpdateError = error{
     UpdateFailed,
     ReorderFailed,
     ListFailed,
-    /// `makeKanbanColumnListResponse` returns `![]u8` — its body
-    /// uses `std.json.Stringify.valueAlloc` which can fail with
-    /// `OutOfMemory`. Unreachable on the per-request arena, but
-    /// the type system requires the variant.
+    /// `makeKanbanColumnListResponse` returns `![]u8` — its body uses
+    /// `std.json.Stringify.valueAlloc` which can fail with `OutOfMemory`.
     OutOfMemory,
 };
 
@@ -123,12 +91,7 @@ fn useCase(
     const cols = kanban_model.listColumns(allocator, db, input.item_id) catch return error.ListFailed;
     defer kanban_model.freeColumns(allocator, cols);
 
-    // Emit SSE event so other connected clients refresh their kanban
-    // view. `reordered` takes precedence over `updated` when the body
-    // sets `position` — reordering changes the column order even if
-    // the name is also being changed, so the frontend re-fetches
-    // either way. Both fields are included in the payload so the
-    // frontend can dispatch on action without re-parsing the body.
+    // Emit SSE event so other connected clients refresh their kanban view.
     const action: []const u8 = if (parsed.position != null) "reordered" else "updated";
     on_event_sent_kanban.onEventSendKanbanColumn(allocator, .{
         .action = action,

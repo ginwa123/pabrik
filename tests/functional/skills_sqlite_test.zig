@@ -1,55 +1,5 @@
-// Functional tests for the workspace-scoped skills HTTP surface.
-//
-// Zig port of `tests/functional/skills_sqlite_test.py` (same test
-// names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   r"""Functional tests for the workspace-scoped skills HTTP surface.
-//
-//   The wire shapes are pinned in
-//   `docs/plans/2026-10-04-skills-sqlite-table.md`:
-//
-//   | Route | Response |
-//   |---|---|
-//   | `GET /api/workspaces/:workspace_id/skills` | `{"skills": [{"name",
-//     "description", "is_can_auto_improve"}]}` |
-//   | `GET /api/workspaces/:workspace_id/skills/:skill_name` | `{"skill":
-//     {name, description, content, asset_count, is_can_auto_improve} | null,
-//     "error_message": ""}` |
-//   | `DELETE /api/workspaces/:workspace_id/skills/:skill_name` | `{"success",
-//     "skill_name", "error_message": ""}` |
-//
-//   These are WIRE round-trips on purpose. The Zig useCase tests cover
-//   the same behaviour against an in-memory database, but they cannot
-//   see a route that `matchRoute` swallows: `matchRoute` walks routes
-//   in registration order and returns on the first hit, so a
-//   `:skill_name` route registered before the collection route answers
-//   the collection request with the wrong handler, or a stale
-//   `/api/skills` route keeps answering after the move and every
-//   assertion here passes against the old contract instead of the new
-//   one. That failure is invisible from unit tests.
-//
-//   There is no HTTP write route for skills — creation is an agent tool
-//   (`add_skill`) — so rows are seeded straight into the same on-disk
-//   database the harness isolated, following the read-only-handle
-//   precedent in `default_workspace_provisioning_test.py`. The
-//   isolation assertions are the point: a skill seeded in one
-//   workspace must be invisible, undeletable and unconfirmable from
-//   another.
-//   """
-//
-// THE DB IS WRITTEN AND READ WITH THE `sqlite3` CLI, NOT THE STDLIB
-// MODULE. Python used `sqlite3.connect`; this package links no SQLite
-// and must stay portable to a runner with no `libsqlite3` dev package,
-// so the port spawns the `sqlite3` COMMAND-LINE tool and SKIPS the test
-// when it is absent — see `requireSqlite3Cli`.
-//
-// The seeding SQL keeps the `COALESCE(NULLIF(?, ''), '')` guard the
-// production `skills_store.upsertSkill` uses: `SqliteBackend.exec`
-// binds an empty slice as SQL NULL, which would violate the NOT NULL
-// constraint on `description`. Seeding the raw value would make this
-// suite fail for a reason that has nothing to do with the routes.
+// Functional tests for the workspace-scoped skills HTTP surface. Zig port of
+// `tests/functional/skills_sqlite_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -73,11 +23,8 @@ fn exitCode(term: std.process.Child.Term) ?u8 {
     };
 }
 
-/// Skip unless a `sqlite3` CLI is present and speaks `-json`.
-///
-/// `-json` landed in SQLite 3.33 (2020). Probing once up front is what
-/// lets every LATER non-zero exit be read as a real SQL failure instead
-/// of "this build of sqlite3 has no such flag".
+/// Skip unless a `sqlite3` CLI is present and speaks `-json`. `-json` landed
+/// in SQLite 3.33 (2020).
 fn requireSqlite3Cli() !void {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-json", ":memory:", "SELECT 1 AS probe;" },
@@ -121,9 +68,8 @@ fn sqlLit(s: []const u8) ![]u8 {
 }
 
 /// Run one statement against `db_path`, return the CLI's stdout (owned).
-///
-/// `.timeout 5000` is the `busy_timeout` the server's WAL connection
-/// needs; a bare CLI invocation would otherwise fail with SQLITE_BUSY.
+/// `.timeout 5000` is the `busy_timeout` the server's WAL connection needs; a
+/// bare CLI invocation would otherwise fail with SQLITE_BUSY.
 fn sqliteRun(db_path: []const u8, sql: []const u8) ![]u8 {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-cmd", ".timeout 5000", "-json", db_path, sql },
@@ -165,10 +111,9 @@ fn dbRun(temp_dir: []const u8, sql: []const u8) ![]u8 {
     return sqliteRun(db, sql);
 }
 
-/// Insert one `skills` row directly.
-///
-/// Written the way `skills_store.upsertSkill` writes it, including the
-/// `COALESCE(NULLIF(?, ''), '')` guard (see the file header).
+/// Insert one `skills` row directly. Written the way
+/// `skills_store.upsertSkill` writes it, including the `COALESCE(NULLIF(?,
+/// ''), '')` guard (see the file header).
 fn seedSkill(temp_dir: []const u8, workspace_id: []const u8, name: []const u8, description: []const u8, content: []const u8) !void {
     const ws_lit = try sqlLit(workspace_id);
     defer gpa.free(ws_lit);
@@ -429,10 +374,6 @@ fn expectFalse(obj: std.json.ObjectMap, key: []const u8, ctx: []const u8) !void 
 }
 
 /// Python `assert obj[key] is None` — the key must be present AND null.
-/// (`doc.get(key)` returning null also covers an ABSENT key, which is
-/// indistinguishable from `None` on the wire in Python; this helper
-/// asserts the null case only and a missing key is a miss, so the
-/// separate "must carry the key" checks stay explicit.)
 fn expectNull(obj: std.json.ObjectMap, key: []const u8, ctx: []const u8) !void {
     const v = obj.get(key) orelse {
         std.debug.print("{s}: `{s}` is absent (expected null)\n", .{ ctx, key });
@@ -516,12 +457,8 @@ fn skillsArray(obj: std.json.ObjectMap, key: []const u8, ctx: []const u8) !std.j
 // ============================================================================
 
 // The three routes moved; the directory-tier collection route is gone.
-//
 // `/api/skills` answered by merging `~/.config/pabrik/skills/` with
-// `<cwd>/.pabrik/skills/` and had no workspace id to scope either to. It
-// must 404 now, not answer with a legacy shape — a client pinned to the
-// old shape would otherwise keep working and never learn the move
-// happened.
+// `<cwd>/.pabrik/skills/` and had no workspace id to scope either to.
 test "skills_are_reachable_only_under_a_workspace" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -574,16 +511,9 @@ test "skills_are_reachable_only_under_a_workspace" {
     }
 }
 
-// `{skills:[{name, description, is_can_auto_improve}]}` — no body, no
-// path, no is_global.
-//
-// `is_global` described which of two directories a body was read from.
-// With one workspace-scoped table there is no such question, and a field
-// that is always `false` (or always `true`) is worse than an absent one:
-// a client would keep branching on it.
-//
-// `is_can_auto_improve` is not that: the list is where the Settings panel
-// renders one checkbox per skill, so the flag has to reach this route.
+// `{skills:[{name, description, is_can_auto_improve}]}` — no body, no path,
+// no is_global. `is_global` described which of two directories a body was
+// read from.
 test "list_returns_name_description_and_the_auto_improve_lock" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -652,11 +582,6 @@ fn findByName(arr: std.json.Array, name: []const u8) ?std.json.ObjectMap {
 }
 
 // `{skill:{name, description, content, asset_count}, error_message:""}`.
-//
-// `content` is asserted BYTE-EXACT, frontmatter included: `skill_eval`
-// identities are `sha256(body)`, so a handler that trimmed, re-encoded
-// or stripped the `---` block would stale every cached verdict for the
-// skill with no other symptom.
 test "detail_returns_the_body_and_the_companion_count" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -719,13 +644,8 @@ test "detail_returns_the_body_and_the_companion_count" {
     try expectKeyAbsent(skill, "is_global", "skill");
 }
 
-// A foreign name is NOT 403.
-//
-// A 403 would confirm the name exists, which is exactly what the
-// workspace scoping exists to hide. The payload instead carries
-// `available_skills` — the REQUESTING workspace's names, never the other
-// workspace's — so a caller that got the name wrong is told what does
-// exist instead of only that it does not.
+// A foreign name is NOT 403. A 403 would confirm the name exists, which is
+// exactly what the workspace scoping exists to hide.
 test "detail_of_a_foreign_workspace_is_404_and_lists_what_does_exist" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -789,11 +709,7 @@ test "detail_of_a_foreign_workspace_is_404_and_lists_what_does_exist" {
 }
 
 // `{success, skill_name, error_message}` with no `deleted_from`.
-//
-// `deleted_from` named the directory the body was removed from. There
-// is no directory of record any more, and the importer never deletes
-// from disk — so the row goes and the `SKILL.MD` stays, which is the
-// deliberate consequence of a non-destructive migration.
+// `deleted_from` named the directory the body was removed from.
 test "delete_removes_the_row_and_its_companions" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -889,12 +805,9 @@ test "delete_from_a_foreign_workspace_deletes_nothing" {
     }
 }
 
-// The list reflects writes made by the agent tools, not a cached walk.
-//
-// The old handlers re-read the directory on every request, so a
-// filesystem change showed up immediately. The table has to keep that
-// promise for `add_skill`, or the sidebar and the model disagree about
-// which skills exist.
+// The list reflects writes made by the agent tools, not a cached walk. The
+// old handlers re-read the directory on every request, so a filesystem change
+// showed up immediately.
 test "a_skill_created_by_a_tool_is_visible_to_the_next_read" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -944,13 +857,6 @@ test "a_skill_created_by_a_tool_is_visible_to_the_next_read" {
 }
 
 // A miss is a 404 that says what the workspace DOES hold.
-//
-// The payload shape matters as much as the status: the caller is holding
-// a name it cannot use, and `available_skills` is the only way it learns
-// the right one. (Path traversal in a name is refused by
-// `skills_store.isValidSkillName` and asserted in Zig's own tests; a URL
-// client normalises `..` segments away before they reach the server, so
-// it is not something this layer can even be asked about.)
 test "detail_of_an_unknown_name_is_a_clean_404" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -976,12 +882,9 @@ test "detail_of_an_unknown_name_is_a_clean_404" {
     }
 }
 
-// Guard against a `count`/tiered envelope creeping back in.
-//
-// The old payload was `{global_skills, local_skills, cwd}` — two arrays
-// because there were two directories. One table means one array, and a
-// client that has to branch on which array to read is the precedence bug
-// this change removes.
+// Guard against a `count`/tiered envelope creeping back in. The old payload
+// was `{global_skills, local_skills, cwd}` — two arrays because there were
+// two directories.
 test "list_response_is_a_plain_array_of_objects" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();

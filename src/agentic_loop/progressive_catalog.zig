@@ -1,20 +1,4 @@
-//! Progressive tool catalog.
-//!
-//! The agent does not receive every tool up front. This module answers the
-//! question "what could this session enable that it does not already have?"
-//! and is the single definition used by BOTH the search/view/use exec
-//! adapters and the workflow's meta-tool gate — so the tools the agent is
-//! offered can never drift from the tools the LLM actually receives.
-//!
-//! Catalog definition (see docs/superpowers/plans/2026-09-12-progressive-tool-search.md):
-//!
-//!     catalog = (registered built-ins − enabled built-ins − session-equipped)
-//!               ∪ (mcp tools − session-equipped)
-//!
-//! where "enabled" is whatever `tool_eligibility.allowlistFilter` yields for
-//! this session's `allowed_tools` plus the workspace-item-type policy. A
-//! tool that is already in the LLM's tool list is deliberately NOT a search
-//! result: the tools array IS the index of what is enabled.
+//! Progressive tool catalog. The agent does not receive every tool up front.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -44,12 +28,9 @@ pub const Entry = struct {
     tool: AgentTool,
 };
 
-/// The server segment of an MCP tool name.
-///
-/// Mirrors `handle_mcp_tool.zig:35-43` exactly: everything between the
-/// `mcp_` prefix and the FIRST underscore. That split is lossy when a
-/// server name itself contains an underscore, but it is what dispatch
-/// uses, so using anything else here would disagree with reality.
+/// The server segment of an MCP tool name. Mirrors
+/// `handle_mcp_tool.zig:35-43` exactly: everything between the `mcp_` prefix
+/// and the FIRST underscore.
 pub fn serverOf(name: []const u8) []const u8 {
     if (!std.mem.startsWith(u8, name, "mcp_")) return "";
     const after_mcp = name["mcp_".len..];
@@ -88,16 +69,12 @@ fn containsName(names: []const []const u8, name: []const u8) bool {
 
 /// The meta-tools are infrastructure for browsing the catalog; offering them
 /// AS catalog entries would let the agent "discover" search_tool with
-/// search_tool. They are always injected by the workflow when the catalog is
-/// non-empty, so they are never candidates.
+/// search_tool.
 fn isProgressiveMetaTool(name: []const u8) bool {
     return containsName(&pabrikcore.progressive_tools.PROGRESSIVE_TOOL_NAMES, name);
 }
 
-/// Build the catalog. `registered` is the full built-in registry
-/// (`tools_equipped.equips()`); `mcp` is the live MCP tool cache (null =
-/// none configured/fetched); `equipped_names` are this session's
-/// `session_progressive_tool` rows.
+/// Build the catalog.
 pub fn buildCatalog(
     allocator: std.mem.Allocator,
     registered: []const AgentTool,
@@ -200,16 +177,6 @@ pub const QueryResult = struct {
 };
 
 /// Match the catalog.
-///
-/// `query` is a REGEX by default — case-insensitive, unanchored, ASCII /
-/// byte-oriented (see `progressive_regex.zig` for the supported subset, which
-/// mirrors the `search` agent tool: regex unless `literal` is set). Either way
-/// it is matched against the tool NAME and its DESCRIPTION.
-///
-/// A query that fails to compile is never a hard error: it degrades to the
-/// pre-regex behaviour (case-insensitive substring) and the result carries the
-/// reason, so a stray `(` in a legitimate search costs the agent nothing and
-/// teaches it the syntax in the same turn.
 pub fn matchQuery(
     allocator: std.mem.Allocator,
     entries: []const Entry,
@@ -291,13 +258,6 @@ pub fn findByName(entries: []const Entry, name: []const u8) ?Entry {
 
 /// Look up a tool definition by name across BOTH the registered built-ins and
 /// the MCP catalog, regardless of whether it is enabled or already equipped.
-///
-/// Needed because `buildCatalog` deliberately excludes enabled and
-/// already-equipped names (they are not discoverable), yet `use_tool` /
-/// `view_tool` must still recognise such a name to answer "already enabled"
-/// instead of "unknown tool". `equipped` is set to `.session` by the caller's
-/// context; this helper always reports `.session` when found, and callers
-/// that know better overwrite it.
 pub fn findAnyByName(
     registered: []const AgentTool,
     mcp: ?[]const AgentTool,
@@ -343,9 +303,8 @@ pub fn findAnyByNameFiltered(
 }
 
 /// Cheap "did you mean" candidates for an unknown name: ASCII
-/// case-insensitive, separators (`_`/`-`) folded away, then a substring
-/// sweep in both directions. Enough to catch `kanban_listt` →
-/// `kanban_list` and `mcp_context7_query_docs` → `mcp_context7_query-docs`.
+/// case-insensitive, separators (`_`/`-`) folded away, then a substring sweep
+/// in both directions.
 pub fn didYouMean(
     allocator: std.mem.Allocator,
     entries: []const Entry,
@@ -432,8 +391,7 @@ fn makeToolList(allocator: std.mem.Allocator, specs: []const [2][]const u8) ![]A
 
 // "Nothing enabled" cannot be expressed with "" — an empty allowed_tools
 // means NO FILTERING (every tool enabled), which is the pre-existing
-// semantics tool_eligibility.allowlistFilter deliberately preserves. A CSV
-// that matches no registered name is how a test says "nothing is enabled".
+// semantics tool_eligibility.allowlistFilter deliberately preserves.
 const NONE_ENABLED = "zzz_nothing_enabled";
 
 const registered_specs = [_][2][]const u8{
@@ -567,7 +525,6 @@ test "buildCatalog: the browsing meta-tools are never offered as catalog entries
     // The real registry: it CONTAINS the three meta-tools (they are injected
     // by the workflow), so without an explicit exclusion they would show up
     // as things to discover — letting the agent find search_tool with
-    // search_tool.
     const registered = @import("tools_equipped.zig").equips(a);
     const catalog = try buildCatalog(a, registered, NONE_ENABLED, false, null, &.{}, "agent");
     try testing.expect(catalog.len > 0);
@@ -805,16 +762,8 @@ test "findByName + didYouMean: fuzzy recovery for a mistyped name" {
 }
 
 // ============================================================================
-// Result renderers
-//
-// These produce the INNER body of each tool result; the standard
-// `wrapToolOutput` envelope is applied by the exec adapter, exactly like
-// every other tool.
-//
-// They live here rather than in `src/modules/agent/tools/progressive_tools.zig`
-// because they operate on `Entry`, and a `modules → agentic_loop` import
-// would close a cycle through the `pabrikcore` root.
-// ============================================================================
+// Result renderers These produce the INNER body of each tool result; the
+// standard `wrapToolOutput` envelope is applied by the exec adapter, exactly
 
 pub const MAX_SEARCH_ROWS: usize = 40;
 pub const SUMMARY_MAX: usize = 120;
@@ -965,18 +914,7 @@ fn parseResult(a: std.mem.Allocator, out: []const u8) !std.json.Parsed(std.json.
     return try std.json.parseFromSlice(std.json.Value, a, out, .{});
 }
 
-/// `search_tool` result as JSON. `page` is the `offset`/`limit` window (the renderer
-/// re-caps it at `params.limit`); `params.total` is the pre-page match count and
-/// `params.offset` the window start, so the model knows exactly how much it has
-/// not seen and which offset continues the listing. `mode` + `warning` report
-/// how the query was interpreted, so a literal fallback is never silent.
-/// `search_tool` result as JSON: `{"query","pattern_mode","pattern_warning",
-/// "server","count","total","offset","limit","tools","truncated","next_offset",
-/// "hint"}`. `page` is the `offset`/`limit` window (the renderer re-caps it at
-/// `params.limit`); `params.total` is the pre-page match count and
-/// `params.offset` the window start, so the model knows exactly how much it has
-/// not seen and which offset continues the listing. `mode` + `warning` report
-/// how the query was interpreted, so a literal fallback is never silent.
+/// `search_tool` result as JSON.
 pub fn renderSearchResult(
     allocator: std.mem.Allocator,
     page: []const Entry,
@@ -1061,12 +999,8 @@ pub fn renderViewToolNotFound(
     }, .{});
 }
 
-/// `use_tool` result. `inserted` must come from the caller's real DB
-/// outcome (a `saveProgressiveTool` that returned true) — never guessed.
-///
-/// Deliberately minimal: no repeated description/schema here. The `hint`
-/// still points at `view_tool` because the agent may have skipped it
-/// (search -> use directly) and need the full spec to call correctly.
+/// `use_tool` result. `inserted` must come from the caller's real DB outcome
+/// (a `saveProgressiveTool` that returned true) — never guessed.
 pub fn renderUseTool(
     allocator: std.mem.Allocator,
     entry: Entry,

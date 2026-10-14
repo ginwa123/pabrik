@@ -1,42 +1,5 @@
-// Functional wire tests for the read-only commits history endpoints.
-//
-// Zig port of `tests/functional/git_commits_test.py` (same test names,
-// same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional wire tests for the read-only commits history endpoints.
-//
-//   The Commits view (GitCommits.vue, embedded in RightSidebar +
-//   SidebarDiffPanel) talks to two REST endpoints and this file proves
-//   the exact wire payloads:
-//
-//     1. GET /api/git/commits lists history newest-first with skip/limit
-//        paging.
-//     2. GET /api/git/commit returns the full message + touched files for a
-//        SHA.
-//     3. Non-repo paths return 200 with is_git_repo=false (git_changes.zig:150
-//        convention); missing/invalid params return 400.
-//
-//   Fixture repo (under pytest tmp_path, NOT the harness HOME):
-//     <cwd>/a.txt  committed 3x ("first", 'second "quoted"' + body, "third")
-//   """
-//
-// WHERE THE FIXTURE LIVES, AND WHY IT IS NOT THE HARNESS'S TEMPDIR:
-//
-// `std.testing.tmpDir` allocates under `<cwd>/.zig-cache/tmp/`, which for
-// this package is INSIDE the git worktree — `git symbolic-ref` walks UP,
-// so a repo created there resolves to the WORKTREE's branch and the
-// `branch == "main"` assertion below would pass for the wrong reason. And
-// a `pabrik-func-` directory is deleted by `reapOrphanTestPids`, which
-// runs on EVERY harness boot. `harness.makeScratchDir` therefore
-// allocates under `pabrik-fix-`: still under the OS temp root (so
-// `isSafeTmp` gates the delete), invisible to the reaper. See
-// `git_file_diffs_test.zig` for the same reasoning at length.
-//
-// DEFER ORDER IS LIFO AND LOADS-BEARING in every test below:
-// `free(scratch)` is registered BEFORE `cleanupExtraDir(scratch)`, and
-// `free(repo)` BEFORE the HTTP calls that read it.
+// Functional wire tests for the read-only commits history endpoints. Zig port
+// of `tests/functional/git_commits_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -51,9 +14,6 @@ const io = testing.io;
 
 /// Run `git` with a fixed identity so the fixture never depends on the
 /// machine's global git config (which CI does not set).
-///
-/// Python's `_git` used `check=True`, which raises on non-zero exit; the
-/// Zig equivalent is to return an error the caller propagates.
 fn git(cwd: []const u8, args: []const []const u8) !void {
     var full: std.ArrayList([]const u8) = .empty;
     defer full.deinit(gpa);

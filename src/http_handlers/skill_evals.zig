@@ -1,21 +1,5 @@
 //! `GET /api/skill-evals/runs` and `GET /api/skill-evals/summary` — the READ
 //! surface for Skill Evals.
-//!
-//! Why a sibling prefix rather than routes under `/api/skills/`: `matchRoute`
-//! walks the route table in registration order and returns on first hit, so a
-//! literal like `/api/skills/evals` registered after `/api/skills/:name`
-//! (main.zig:602) would be captured with `name = "evals"`. A sibling prefix has
-//! no such interaction at all, which is cheaper than remembering the ordering
-//! rule forever. See docs/plans/2026-09-27-skill-evals.md §4.10.
-//!
-//! Query parameters only, no path parameters, for the same reason: `/runs` and
-//! `/summary` are literals, so the wire surface cannot be shadowed by a later
-//! route addition. `run_id` selects one run and additionally returns its
-//! results; `session_id` filters; `limit` caps the list.
-//!
-//! Layered like the other read handlers: a `useCase` that resolves the
-//! singleton and does the DB work, and a thin handler that maps a closed error
-//! set to status codes.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -67,10 +51,9 @@ const ResultJson = struct {
     /// Whether the intrinsic half came from the shared fact cache rather than
     /// being computed for this session.
     shared_fact: bool,
-    /// The skill body the verdict was computed against, verbatim, and the text
-    /// the verdict would write over it. Together they are the before/after a
-    /// human needs to judge a proposal. Both empty on a Tier-0-only run, which
-    /// is why they are nullable-in-spirit rather than required.
+    /// The skill body the verdict was computed against, verbatim, and the
+    /// text the verdict would write over it. Together they are the
+    /// before/after a human needs to judge a proposal.
     content_at_use: []const u8,
     proposed_diff: []const u8,
     applied: bool,
@@ -199,24 +182,8 @@ const ApplyJson = struct {
     message: []const u8,
 };
 
-/// Apply one verdict.
-///
-/// The order matters and is the whole design:
-///
-///   1. Read the result. A missing row is a 404, not a 500.
-///   2. `claimApply` takes the exclusive right to apply it. Two clicks, two
-///      clients or two humans cannot both write the skill — the loser is told
-///      `already_applied` rather than silently overwriting.
-///   3. Re-check the body hash. Between the eval and the click a human may have
-///      edited the skill, and applying a verdict computed against the OLD body
-///      would write a stale proposal over fresh work. On a mismatch we
-///      `releaseApply` (or the verdict becomes unapplicable forever) and
-///      `markResultStale` (so the UI can offer a re-evaluate), then 409.
-///   4. Only then is the action recorded.
-///
-/// `apply_mode` is deliberately NOT consulted here: this endpoint is the human
-/// clicking Apply, which is the `propose` flow's terminal step. The automatic
-/// modes are a separate, later decision.
+/// Apply one verdict. The order matters and is the whole design: 1. Read the
+/// result.
 fn applyUseCase(
     allocator: std.mem.Allocator,
     result_id: []const u8,
@@ -281,21 +248,8 @@ fn emitApplied(
     });
 }
 
-/// Hash the skill body as it stands in the workspace this result's session ran
-/// in, or null when it cannot be read.
-///
-/// A skill is a row in one workspace-scoped table, so there is no longer a
-/// local tier to prefer over a global one and no directory to walk: the body
-/// is `skills_store.getSkillByName(workspace_id, skill_name)`, with the
-/// workspace resolved from the RESULT's own `session_id` — the session whose
-/// verdict this is. That is the same row, behind the same guard, that
-/// `use_skill` materialised when the verdict was computed.
-///
-/// Resolving from the result's session rather than the request's is not a
-/// detail: a verdict belongs to the body its own session read. Hashing a name
-/// out of whatever workspace happens to answer it would refuse a live verdict
-/// as stale — or, worse, bless one computed against a different workspace's
-/// body.
+/// Hash the skill body as it stands in the workspace this result's session
+/// ran in, or null when it cannot be read.
 fn readCurrentSkillHash(
     allocator: std.mem.Allocator,
     di: *pabrikcore.App,
@@ -382,14 +336,8 @@ pub fn skillEvalsSummaryHandler(
     return res.jsonResponse(.{ .status_code = 200, .data = body });
 }
 
-/// `POST /api/skill-evals/results/apply?result_id=...&action=...`
-///
-/// A POST because it mutates: it records that a human accepted a verdict. The
-/// `result_id` is a QUERY parameter rather than a path segment on purpose — a
-/// `/results/:result_id/apply` route would put a `:param` under this prefix,
-/// and `matchRoute` walks the table in registration order, so any literal
-/// registered after it would be shadowed. Keeping every route here a literal
-/// removes the ordering rule from the design entirely.
+/// `POST /api/skill-evals/results/apply?result_id=...&action=...` A POST
+/// because it mutates: it records that a human accepted a verdict.
 pub fn skillEvalsApplyHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,

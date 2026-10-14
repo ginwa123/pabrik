@@ -1,16 +1,6 @@
-//! Data model for the `session_background_process` entity table.
-//!
-//! Tracks long-lived background processes (dev servers, file
-//! watchers, build daemons) spawned by the bash tool. The process
-//! monitor reads this table to surface running bg processes in the
-//! chat header and to clean up orphans on session end.
-//!
-//! Schema: Migration 011 (`add_background_process`).
-//!
-//! Composite PRIMARY KEY: (session_id, pid).
-//!
-//! Note: `started_at` is stored as INTEGER (unix-seconds), distinct
-//! from the DATETIME convention used by most other tables.
+//! Data model for the `session_background_process` entity table. Tracks
+//! long-lived background processes (dev servers, file watchers, build
+//! daemons) spawned by the bash tool.
 
 const std = @import("std");
 
@@ -75,11 +65,6 @@ pub fn clone(self: *const Self, allocator: std.mem.Allocator) !Self {
 // ===== Tests merged from models_test.zig (2026-09-29 flatten) =====
 
 // Sanity tests for the `src/models/` entity models.
-//
-// Verifies that every model file compiles, that `init` populates the
-// struct as expected, that `deinit` releases its strings, and that
-// external callers can read the struct's fields directly (matching
-// the file-level struct pattern requested by the user).
 
 const testing = std.testing;
 

@@ -1,27 +1,4 @@
 //! Immediate background-command completion watcher.
-//!
-//! A `command background=true` completion is otherwise only noticed by the
-//! per-minute `cleanup_stale_background_process` cron (notify-then-delete +
-//! wake). This module schedules a fire-and-forget Io-task watcher at exec
-//! time on `di.group_bg_watchers` that polls `isProcessRunning(pid)` every
-//! 2s and inserts the queue message the moment the command exits — no cron
-//! wait. The group is process-lifetime and never awaited or cancelled
-//! (same as `group_emit_session_create`).
-//!
-//! True event-driven wait is impossible: the bg PID is a grandchild
-//! (`nohup cmd &` inside a shell that exits — not our child, no waitpid).
-//! A shell-wrapper+HTTP-callback alternative is rejected (new endpoint +
-//! auth surface). Polling is the only option; the cron remains as fallback
-//! (cap expiry, spawn failure, crash between save and spawn).
-//!
-//! Concurrency: the cron already uses `di.db` + `emit_run_agent`
-//! concurrently with request handlers, so watcher-task DB/emit use is the
-//! same class. The task never panics — every failure is caught and logged.
-//!
-//! Ownership (per-request arena rule): the spawn call dupes
-//! session_id/command/log_path/pid_str with `di.allocator` (process
-//! lifetime — NEVER the request ctx allocator). The Io task frees them on
-//! exit. Notify buffers live in a per-watch arena.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -32,10 +9,7 @@ const bg_proc = pabrikcore.ai_mod.background_process;
 const cleanup = pabrikcore.cleanup_stale_background_process;
 // NOTE: neither `process_status` nor `shell_tool` is imported here any more —
 // this module asks `bg_proc.isAlive`, which owns the reap-then-probe liveness
-// question for every caller (the watcher, the boot sweep, the `process` tool).
-// `background_process.zig` reaches `helpers` through `@import("helpers")`
-// because `root.zig` dropped the `helpers` re-export; putting that decl back
-// would break the EXE build only (the sharded unit suite never compiles it).
+// question for every caller (the watcher, the boot sweep, the `process`
 const migration = @import("../migrations/migration.zig");
 const testing = std.testing;
 
@@ -45,24 +19,10 @@ pub const watcher_poll_interval_ns: u64 = 2 * std.time.ns_per_s;
 /// task exits silently — the cron is the fallback.
 pub const watcher_max_iters: usize = 43200;
 
-/// Cap for the SERVICE reaper. Effectively unbounded, and that is deliberate:
-/// a `background_persistence` process is defined by running for the life of
-/// the session, so a 24h cap would retire the reaper and leave the eventual
-/// corpse unreaped — and a zombie answers `kill(pid, 0)` with SUCCESS, so the
-/// process would then read as "running" until the next boot. The cron does not
-/// cover services (it filters `kind = 'job'`), so nothing else would either.
+/// Cap for the SERVICE reaper.
 pub const service_reaper_max_iters: usize = std.math.maxInt(usize);
 
 /// Liveness that also REAPS.
-///
-/// For a child of THIS process `waitpid(WNOHANG)` answers "is it alive" AND
-/// collects the zombie in one call — which matters because the alternative
-/// probe, `kill(pid, 0)`, returns SUCCESS for a zombie. Without this, a
-/// `background_persistence` process that exited would look alive forever.
-///
-/// `.not_our_child` is the honest answer for a row from before a restart, and
-/// for the `nohup` grandchild that `mode="background"` produces; there the
-/// signal probe is all that is available.
 fn stillRunning(pid: u32) bool {
     // Delegates to the registry's single implementation so the watcher, the
     // boot sweep and the `process` tool cannot drift on what "alive" means.
@@ -84,18 +44,13 @@ pub const WatchCoreArgs = struct {
     log_path: []const u8,
     poll_interval_ns: u64 = watcher_poll_interval_ns,
     max_iters: usize = watcher_max_iters,
-    /// true  — `mode="background"`: queue the log and wake the session on exit.
-    /// false — `mode="background_persistence"`: SILENT. Mark the row `exited`
-    ///         and refresh the list; write no queue message, wake nobody.
-    ///         This flag is the watcher half of that mode's contract, and the
-    ///         cron's `kind = 'job'` filter is the other half.
+    /// true — `mode="background"`: queue the log and wake the session on
+    /// exit. false — `mode="background_persistence"`: SILENT.
     notify: bool = true,
 };
 
-/// Poll until the PID dies (or the cap hits), then notify + delete.
-/// Returns true iff notified AND the row was deleted (caller wakes).
-/// Never panics — notify/delete failures are caught, logged, return false
-/// (cron fallback retries next tick).
+/// Poll until the PID dies (or the cap hits), then notify + delete. Returns
+/// true iff notified AND the row was deleted (caller wakes).
 pub fn watchAndNotify(args: WatchCoreArgs) bool {
     var i: usize = 0;
     while (i < args.max_iters) : (i += 1) {
@@ -107,9 +62,7 @@ pub fn watchAndNotify(args: WatchCoreArgs) bool {
     if (stillRunning(args.pid_num)) return false;
 
     // ── silent service path ────────────────────────────────────────────────
-    // The process exited. For a service that is worth reflecting in the DB and
-    // in the popup, and worth NOT telling the model: the whole point of
-    // `background_persistence` is that the agent decides when to look.
+    // The process exited.
     if (!args.notify) {
         bg_proc.updateStatus(args.db, args.allocator, args.session_id, args.pid_num, "exited") catch |err| {
             if (args.logger) |log| {
@@ -132,9 +85,8 @@ pub fn watchAndNotify(args: WatchCoreArgs) bool {
     }
 
     // Per-call arena for the notify buffers (same as the cron pass-1.5:
-    // insertQueueMessage binds synchronously, so arena lifetime covering
-    // the call is enough; the arena frees log_content + message in one
-    // shot so DebugAllocator tests don't leak).
+    // insertQueueMessage binds synchronously, so arena lifetime covering the
+    // call is enough; the arena frees log_content + message in one shot so
     var arena = std.heap.ArenaAllocator.init(args.allocator);
     defer arena.deinit();
     const a = arena.allocator();
@@ -218,12 +170,7 @@ fn watchFn(args: WatchArgs) void {
     cleanup.wakeSessionForCompletion(di, a, args.session_id);
 }
 
-/// Schedule the fire-and-forget watcher task. Returns void — every failure
-/// (dupe OOM, concurrent() error such as error.ConcurrencyUnavailable on a
-/// bare blocking Io) is silent (cron fallback covers production; unit tests
-/// cover the watcher core directly via `watchAndNotify`).
-/// Must be called AFTER `background_process.save` succeeds, with the
-/// borrowed slices still alive (they are duped synchronously here).
+/// Schedule the fire-and-forget watcher task.
 pub fn spawnCompletionWatcher(
     di: *pabrikcore.App,
     session_id: []const u8,
@@ -235,13 +182,6 @@ pub fn spawnCompletionWatcher(
 }
 
 /// Schedule the SILENT reaper for a `mode="background_persistence"` process.
-///
-/// Same poll loop as the watcher, minus everything that talks to the model: it
-/// reaps the child (so `kill(pid, 0)` stops reporting a corpse as alive) and
-/// marks the row `exited`. No queue message, no wake — that is the mode.
-///
-/// Must be called AFTER `background_process.save` succeeds, with the borrowed
-/// slices still alive (they are duped synchronously inside).
 pub fn spawnServiceReaper(
     di: *pabrikcore.App,
     session_id: []const u8,
@@ -298,11 +238,7 @@ fn spawnWatcherWithPoll(
         .notify = notify,
     };
     // Fire-and-forget on the process-lifetime group (same as
-    // `group_emit_session_create` — never awaited or cancelled). On
-    // concurrent() error (notably error.ConcurrencyUnavailable on a bare
-    // blocking Io, same as tools_exec_spawn_sub_agent.zig) free the dupes
-    // here (the task never started, so it cannot free them); on success
-    // the task owns them.
+    // `group_emit_session_create` — never awaited or cancelled).
     di.group_bg_watchers.concurrent(di.io, watchFn, .{args}) catch {
         gpa.free(sid);
         gpa.free(cmd);
@@ -399,9 +335,6 @@ test "watchAndNotify notifies a dead PID immediately then deletes the row" {
 // The silence contract of `mode="background_persistence"`, in the one place
 // it is decidable: the watcher is the ONLY thing that could tell the agent a
 // service exited, so `notify = false` must leave the queue untouched.
-//
-// Paired with its positive control in the next test — "no queue message" is
-// also what a watcher that crashed before it did anything looks like.
 test "watchAndNotify: notify=false writes NO queue message and marks the row exited" {
     var ctx = try setupCtx();
     defer ctx.deinit();

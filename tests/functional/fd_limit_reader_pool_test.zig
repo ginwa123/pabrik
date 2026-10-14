@@ -1,27 +1,5 @@
 // Functional: macOS's descriptor default must not turn a pooled SQLite read
-// into a 5-second wait.
-//
-// WHY THIS TEST EXISTS. The `databases` package derives its reader-pool
-// ceiling from the process's soft `RLIMIT_NOFILE`:
-//
-//     readerCapForSoftLimit(soft) = (soft - headroom) / FDS_PER_READER(2)
-//
-// macOS hands a process a soft limit of **256**, and that used to collide with
-// `FD_HEADROOM` (256): the ceiling collapsed to **1**, so the elastic pool
-// could never open a second reader past its warm floor, and every read that
-// arrived while that one reader was busy burned the whole `reader_wait_ms`
-// budget before falling back to the write connection:
-//
-//     warning: sqlite: reader pool unavailable after waiting 5000ms
-//              (PoolExhausted); serving this read on the write connection
-//
-// ruangsql#9 scaled the reserve (`min(FD_HEADROOM, soft / 2)`), so 256 now
-// funds 64 readers. This suite boots the REAL binary with the REAL macOS
-// default and pins the observable end of that: the read latency on the wire,
-// and a boot log whose `fd_backstop` is anything above the warm floor.
-//
-// The pre-fix negative control, measured through this harness with the old
-// pin: `GET /api/llm/session` = 5.001 s and `fd_backstop=1`.
+// into a 5-second wait. WHY THIS TEST EXISTS.
 
 const std = @import("std");
 const builtin = @import("builtin");

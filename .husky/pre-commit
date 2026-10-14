@@ -38,5 +38,5 @@ echo "→ zig coding standards (no catch unreachable)"
 bash scripts/lint-no-catch-unreachable.sh --selftest
 bash scripts/lint-no-catch-unreachable.sh
 
-echo "→ zginlint (comment-block ceilings)"
+echo "→ zginlint (comment-block ceiling, zero findings)"
 zig build zginlint:check

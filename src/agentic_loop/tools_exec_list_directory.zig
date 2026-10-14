@@ -46,12 +46,6 @@ pub fn execListDirectory(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResu
     };
 
     // 2b. Resolve the model-supplied path against the call's `cwd`.
-    // `execute_list_directory` reaches `std.Io.Dir.openDirAbsolute`, whose
-    // precondition is `assert(path.isAbsolute(...))` — in a Debug build that
-    // becomes `unreachable`, which panics and aborts the WHOLE worker instead
-    // of returning an error. Passing the raw relative path straight through
-    // (what this wrapper used to do) crashed the process for the documented
-    // `path: "frontend/src"` call.
     const dir_path_abs = try path_validate.resolveAgainstCwd(ctx.allocator, parsed.value.cwd, parsed.value.path);
     defer ctx.allocator.free(dir_path_abs);
 
@@ -80,11 +74,8 @@ pub fn execListDirectory(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResu
     return ToolExecResult{ .output = output, .output_allocated = true };
 }
 
-// End-to-end proof that the list_directory exec wrapper resolves its
-// input BEFORE reaching the underlying tool. Absolute input is used
-// as-is; relative input is joined onto the call's required `cwd` (the
-// shared rule in helpers/path_validate.zig — see the "resolves against
-// the call's cwd" test below).
+// End-to-end proof that the list_directory exec wrapper resolves its input
+// BEFORE reaching the underlying tool.
 test "execListDirectory: absolute path passes through and lists entries" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -119,14 +110,7 @@ test "execListDirectory: absolute path passes through and lists entries" {
         .is_thinking = &dummy_bool,
         .environment = null,
     };
-    // Build JSON with the absolute path embedded. The previous
-    // `std.fmt.allocPrint` template did NOT escape backslashes, so on
-    // Windows hosts (where root_abs contains `\` chars) the resulting
-    // JSON was malformed (`{"path":"C:\Users\foo\bar"}` — `\U` and
-    // `\f` are invalid JSON escapes) and `execListDirectory`'s
-    // `std.json.parseFromSlice` rejected it, surfacing an error
-    // envelope instead of the directory listing. Escape `\` → `\\`
-    // (and `"` → `\"`) before splicing the path into the JSON template.
+    // Build JSON with the absolute path embedded.
     var escaped_path: std.ArrayList(u8) = .empty;
     defer escaped_path.deinit(a);
     for (root_abs) |c| {
@@ -174,24 +158,6 @@ test "execListDirectory: absolute path passes through and lists entries" {
 
 test "execListDirectory: absolute path returns success envelope without validator error" {
     // Absolute paths are used as-is (never joined onto ctx.cwd).
-    // Calling with a real absolute directory MUST produce a success
-    // envelope containing that same path, and MUST NOT contain a
-    // relative-path resolution error.
-    //
-    // The path comes from a tmpDir `realPath`, NOT a hardcoded `/tmp`:
-    // `/tmp` is rooted-but-driveless on Windows, so `resolveAgainstCwd`
-    // treats it as relative, joins it onto `ctx.cwd`, and the tool then
-    // returns `PathNotAbsolute` — an error envelope, which is the
-    // opposite of the assertion below. `std.fs.path.isAbsolute`
-    // dispatches to `isAbsoluteWindows` on a Windows host, so only a
-    // drive-anchored path passes through untouched.
-    //
-    // Uses an arena to paper over the current `execListDirectory`
-    // implementation allocating an intermediate `inner` XML string
-    // (from `list_directory.toJSON`) that is never explicitly freed
-    // by the wrapper — `wrapToolOutput` borrows the slice into its
-    // own output, so the leak is benign and the arena cleans it up
-    // at test teardown.
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
@@ -224,9 +190,7 @@ test "execListDirectory: absolute path returns success envelope without validato
     };
 
     // `std.json.Stringify` escapes the Windows separators for us (a raw
-    // `C:\Users\...` inside a JSON string is malformed). `cwd` is a
-    // DIFFERENT absolute base on purpose: absolute input is used as-is, so a
-    // wrapper that joined `path` onto `cwd` would fail the assertion below.
+    // `C:\Users\...` inside a JSON string is malformed).
     const args = try std.json.Stringify.valueAlloc(a, .{
         .path = abs_dir,
         .cwd = "/home/user/proj",
@@ -254,23 +218,10 @@ test "execListDirectory: absolute path returns success envelope without validato
 }
 
 // =====================================================================
-// Relative-path regression tests (crash: task_1790256349339_0)
-//
-// The LLM called `list_directory` with `{"path":"frontend/src"}` and the
-// wrapper forwarded that relative string straight into
-// `std.Io.Dir.openDirAbsolute`, whose precondition is
-// `assert(path.isAbsolute(...))`. In a Debug build the assert is
-// `unreachable` → panic → abort(), so the ENTIRE worker died (the
-// sub-agent thread included) instead of the tool returning an error.
-//
-// Every test below drives `execListDirectory` with the wire body the
-// model actually sends.
-// =====================================================================
+// Relative-path regression tests (crash: task_1790256349339_0) The LLM called
+// `list_directory` with `{"path":"frontend/src"}` and the wrapper forwarded
 
-/// Build a ToolExecContext for the wrapper tests. `session_cwd` stands in
-/// for the session's (or worktree's) directory: the tests pass it in the
-/// call's own required `cwd` argument, which is what a relative `path` now
-/// resolves against.
+/// Build a ToolExecContext for the wrapper tests.
 fn testCtx(
     a: std.mem.Allocator,
     session_cwd: []const u8,
@@ -353,9 +304,6 @@ test "execListDirectory: relative 'frontend/src' resolves against the call's cwd
     // NB: `count` may legitimately be 0 on this call — `tmpDir` creates the
     // fixture under `.zig-cache/tmp/<rand>`, which lives INSIDE the repo and
     // is covered by the repo's `.gitignore`, so `git check-ignore` filters
-    // every entry. That is the gitignore feature working, not a resolution
-    // failure. The second call below turns filtering off and asserts the
-    // resolved directory really was walked.
     const entries = data.get("entries").?.array.items;
     try testing.expectEqual(data.get("count").?.integer, @as(i64, @intCast(entries.len)));
 
@@ -441,8 +389,7 @@ test "execListDirectory: an empty path resolves to the call's cwd" {
 
     // Some providers emit `"path":""` for an optional string instead of
     // omitting the field (same class of bug as the migrations' empty-slice
-    // binding). `std.fs.path.isAbsolute("")` is false, so this used to be
-    // another route into the same assertion.
+    // binding).
     const call = try std.json.Stringify.valueAlloc(a, .{
         .path = "",
         .cwd = root_abs,

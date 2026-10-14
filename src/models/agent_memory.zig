@@ -1,21 +1,15 @@
-//! Data model for the `agent_memories` entity table.
-//!
-//! Cross-session, cross-workspace note store backing the
-//! `save_memory` and `load_memory` agent tools. Distinct from
-//! `llm_history` (session-scoped chat) — a memory row is a sticky
-//! note the agent writes for its future self.
-//!
-//! Schema: Migration 071 (`add_agent_memories`).
+//! Data model for the `agent_memories` entity table. Cross-session,
+//! cross-workspace note store backing the `save_memory` and `load_memory`
+//! agent tools.
 
 const std = @import("std");
 
 pub const EntityId = []u8;
 
 id: EntityId,
-/// The note body. 1 KiB – 1 MiB (validated by the
-/// `save_memory` tool handler). Empty content is rejected on
-/// INSERT (matches the `error.InvalidContent` contract from
-/// `agent_memories.zig`).
+/// The note body. 1 KiB – 1 MiB (validated by the `save_memory` tool
+/// handler). Empty content is rejected on INSERT (matches the
+/// `error.InvalidContent` contract from `agent_memories.zig`).
 content: []u8,
 /// `||`-delimited tags string. Empty slice is the canonical "no
 /// tags" sentinel.
@@ -64,11 +58,6 @@ pub fn clone(self: *const Self, allocator: std.mem.Allocator) !Self {
 // ===== Tests merged from models_test.zig (2026-09-29 flatten) =====
 
 // Sanity tests for the `src/models/` entity models.
-//
-// Verifies that every model file compiles, that `init` populates the
-// struct as expected, that `deinit` releases its strings, and that
-// external callers can read the struct's fields directly (matching
-// the file-level struct pattern requested by the user).
 
 const testing = std.testing;
 
