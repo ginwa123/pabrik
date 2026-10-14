@@ -960,3 +960,39 @@ test "malformed JSON arguments become a parse failure, not a crash" {
     try testing.expect(!s.success);
     try testing.expect(std.mem.indexOf(u8, s.err.?, "parse") != null);
 }
+
+test "execEditSkill: a locked skill is a refusal at the envelope, and the body survives" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const seeded = try skills_store.upsertSkill(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .name = "pinned",
+        .description = "pinned by the human",
+        .content = "KEEPME",
+        .is_can_auto_improve = false,
+    });
+    skills_store.freeSkillRow(alloc, seeded);
+
+    // The tool's inner payload carries `error`, and the `InnerErrorProbe`
+    // re-parse is what turns that into `success: false`. Without it the
+    // model would read a refused edit as a completed one.
+    const result = try execEditSkill(makeTestCtx(alloc, &ctx.db, "s1"), fakeToolCall(
+        "edit_skill",
+        "{\"skill_name\":\"pinned\",\"content\":\"hijacked\"}",
+    ));
+    defer alloc.free(result.output);
+    var env = try parseEnvelope(alloc, result.output);
+    defer env.deinit();
+
+    try testing.expect(!env.success);
+    try testing.expect(!env.updated);
+    try testing.expect(env.err != null);
+    try testing.expect(std.mem.indexOf(u8, env.err.?, "locked") != null);
+
+    const survivor = try skills_store.getSkillByName(alloc, &ctx.db, "ws_1", "pinned");
+    defer skills_store.freeSkillRow(alloc, survivor);
+    try testing.expectEqualStrings("KEEPME", survivor.content);
+}

@@ -35,6 +35,7 @@ const CreateSkillBody = struct {
     name: []const u8 = "",
     description: []const u8 = "",
     content: []const u8 = "",
+    is_can_auto_improve: ?bool = null,
 };
 
 pub const SkillCreateError = error{
@@ -102,6 +103,7 @@ fn useCase(
         .name = name,
         .description = input.body.description,
         .content = input.body.content,
+        .is_can_auto_improve = input.body.is_can_auto_improve,
     }) catch |err| switch (err) {
         error.WorkspaceIdNameRequired => return error.WorkspaceIdRequired,
         error.NameTooLong => return error.InvalidName,
@@ -205,6 +207,7 @@ pub fn skillCreateHandler(
             // here has none — and claiming otherwise would render a
             // "0 bundled files" row the user never asked for.
             .asset_count = 0,
+            .is_can_auto_improve = output.skill.is_can_auto_improve,
         }),
     }, .{});
     return res.jsonResponse(.{ .status_code = 201, .data = data });
@@ -432,4 +435,28 @@ test "useCase: a store failure is a 500 DB error" {
     try testing.expectEqualStrings("DB error", messageFor(error.WriteFailed, testing.allocator, "x") catch @panic("allocPrint failed for the skill_create message fixture"));
     try testing.expectEqual(@as(u16, 500), statusFor(error.OutOfMemory));
     try testing.expectEqual(@as(u16, 413), statusFor(error.ContentTooLarge));
+}
+
+test "useCase: a create may arrive already locked" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    // The checkbox is on the create form too, so a pinned skill can be
+    // written once instead of created and then immediately toggled.
+    const output = try useCase(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .body = .{ .name = "pinned", .description = "d", .content = "body", .is_can_auto_improve = false },
+    });
+    defer skills_store.freeSkillRow(alloc, output.skill);
+    try testing.expect(!output.skill.is_can_auto_improve);
+
+    // An omitted flag still means "the agent may evolve this".
+    const open = try useCase(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .body = .{ .name = "open", .description = "d", .content = "body" },
+    });
+    defer skills_store.freeSkillRow(alloc, open.skill);
+    try testing.expect(open.skill.is_can_auto_improve);
 }

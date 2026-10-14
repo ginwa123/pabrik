@@ -1567,6 +1567,7 @@ pub const SkillDetailResponse = struct {
     description: []const u8,
     content: []const u8,
     asset_count: usize,
+    is_can_auto_improve: bool,
 };
 
 /// Map a `skills_store.SkillRow` (or any struct with the same fields) into
@@ -1578,5 +1579,6 @@ pub fn makeSkillDetailResponse(skill: anytype) SkillDetailResponse {
         .description = skill.description,
         .content = skill.content,
         .asset_count = skill.asset_count,
+        .is_can_auto_improve = skill.is_can_auto_improve,
     };
 }

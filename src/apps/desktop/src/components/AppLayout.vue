@@ -1013,7 +1013,7 @@ const closeGitViewer = () => {
 }
 
 // Skill viewer state
-const skillViewerSkill = ref<api.Skill | null>(null)
+const skillViewerSkill = ref<{ name: string } | null>(null)
 
 const closeSkillViewer = () => {
   skillViewerSkill.value = null
@@ -2715,7 +2715,6 @@ const reconcileRoute = async () => {
     if (skillName) {
       skillViewerSkill.value = {
         name: skillName,
-        description: '',
       }
     }
   } else if (view === 'code-editor') {

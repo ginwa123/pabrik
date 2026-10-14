@@ -21,6 +21,7 @@ pub const Migration102CreateSkills = struct {
             \\    content TEXT NOT NULL DEFAULT '',
             \\    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             \\    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            \\    is_can_auto_improve INTEGER NOT NULL DEFAULT 1,
             \\    UNIQUE (workspace_id, name),
             \\    FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
             \\)

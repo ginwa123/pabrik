@@ -157,6 +157,25 @@ pub fn toolErrorJSON(
     }, .{});
 }
 
+// ─── locked skills ───
+
+/// The refusal for a skill the human has pinned. `is_can_auto_improve` off
+/// means "the agent may not evolve this", and every agent write tool routes
+/// its refusal through here so the three cannot drift into three wordings.
+fn lockedSkillJSON(
+    allocator: std.mem.Allocator,
+    tool_name: []const u8,
+    skill_name: []const u8,
+) ![]const u8 {
+    const msg = try std.fmt.allocPrint(
+        allocator,
+        "{s}: the skill '{s}' is locked — auto-improve is off for it, so no agent may change or delete it. Nothing was written. Ask the human to make this change, or to turn auto-improve back on for this skill in the workspace's Skills settings.",
+        .{ tool_name, skill_name },
+    );
+    defer allocator.free(msg);
+    return toolErrorJSON(allocator, tool_name, skill_name, msg);
+}
+
 // ─── search_skills ───
 
 /// Input for `search_skills`. Every field is optional: no args returns
@@ -463,7 +482,7 @@ pub const remove_skill_tool = AgentTool{
     .type = "function",
     .function = .{
         .name = "remove_skill",
-        .description = "Permanently delete a skill from this workspace, with any companion files. Use only when it is obsolete or the user asks.",
+        .description = "Permanently delete a skill from this workspace, with any companion files. Use only when it is obsolete or the user asks. A skill with auto-improve turned off is locked, and removing it is refused.",
         .parameters = .{
             .type = "object",
             .properties = &.{
@@ -504,6 +523,25 @@ pub fn execute_remove_skill_to_string(
     const workspace_id = (try resolveWorkspaceScope(allocator, db, caller_session_id)) orelse
         return try scopeErrorJSON(allocator, "remove_skill", caller_session_id);
     defer allocator.free(workspace_id);
+
+    const existing = skills_store.getSkillByName(allocator, db, workspace_id, name) catch |err| switch (err) {
+        error.NotFound => {
+            const msg = try std.fmt.allocPrint(allocator, "remove_skill: no skill named '{s}' exists in this workspace. Run search_skills to list the installed names.", .{name});
+            defer allocator.free(msg);
+            return try toolErrorJSON(allocator, "remove_skill", name, msg);
+        },
+        error.QueryFailed => return try toolErrorJSON(allocator, "remove_skill", name, "Could not read this workspace's skills (database error)."),
+        error.OutOfMemory => return error.OutOfMemory,
+        error.WorkspaceIdNameRequired => return try toolErrorJSON(allocator, "remove_skill", name, REMOVE_SKILL_BAD_NAME),
+    };
+    defer skills_store.freeSkillRow(allocator, existing);
+
+    // A delete is the most destructive write there is, so a pinned skill is
+    // off-limits for it too — otherwise "remove then re-add" walks straight
+    // around the lock.
+    if (!existing.is_can_auto_improve) {
+        return try lockedSkillJSON(allocator, "remove_skill", name);
+    }
 
     skills_store.deleteSkill(allocator, db, workspace_id, name) catch |err| switch (err) {
         error.NotFound => {
@@ -658,6 +696,8 @@ pub const add_skill_tool = AgentTool{
         \\Create a new skill in this workspace — a reusable workflow, pattern or set of instructions for future sessions. `name`, `description` and `content` are separate arguments: the `---` YAML frontmatter is generated from the first two, so never paste one into `content`.
         \\
         \\- `description` decides whether any future session finds the skill at all: `search_skills` returns that one sentence and nothing else.
+        \\
+        \\- Re-adding an existing name REPLACES that skill. When it is locked (auto-improve off) the call is refused and nothing is written.
         ,
         .parameters = .{
             .type = "object",
@@ -770,6 +810,7 @@ pub fn executeAddSkillToString(
     // create-or-replace, so afterwards there is no way left to tell the
     // two apart — and the model needs to, because re-adding a name is how
     // it refines a skill.
+    var replacing_locked = false;
     const existed = blk: {
         const existing = skills_store.getSkillByName(allocator, db, workspace_id, resolved_name) catch |err| switch (err) {
             error.NotFound => break :blk false,
@@ -777,9 +818,16 @@ pub fn executeAddSkillToString(
             error.OutOfMemory => return error.OutOfMemory,
             error.WorkspaceIdNameRequired => return try toolErrorJSON(allocator, "add_skill", resolved_name, ADD_SKILL_BAD_NAME),
         };
+        replacing_locked = !existing.is_can_auto_improve;
         skills_store.freeSkillRow(allocator, existing);
         break :blk true;
     };
+
+    // `upsertSkill` is create-or-REPLACE, so re-adding a pinned name is an
+    // edit of a locked skill wearing a create's clothes.
+    if (replacing_locked) {
+        return try lockedSkillJSON(allocator, "add_skill", resolved_name);
+    }
 
     const file_content = buildSkillContent(allocator, resolved);
     defer allocator.free(file_content);
@@ -905,6 +953,8 @@ pub const edit_skill_tool = AgentTool{
         \\Edit an existing skill — its `description`, its `content` body, or both. Omit a field to keep its current value; at least one must be supplied. `skill_name` is the exact name `search_skills` reported.
         \\
         \\- `content` is the BODY only (frontmatter is regenerated). Rewriting `description` is the highest-leverage edit: that one line decides whether the skill is ever loaded.
+        \\
+        \\- A skill with auto-improve turned off is LOCKED: this call is refused and its body is left untouched. Do not retry it — ask the human to make the edit, or to unlock the skill in the workspace's Skills settings.
         ,
         .parameters = .{
             .type = "object",
@@ -1012,6 +1062,10 @@ pub fn executeEditSkillToString(
         error.WorkspaceIdNameRequired => return try toolErrorJSON(allocator, "edit_skill", name, EDIT_SKILL_BAD_NAME),
     };
     defer skills_store.freeSkillRow(allocator, existing);
+
+    if (!existing.is_can_auto_improve) {
+        return try lockedSkillJSON(allocator, "edit_skill", name);
+    }
 
     const new_description = firstNonEmpty(&.{ input.description, lifted_description }) orelse existing.description;
 
@@ -1915,4 +1969,137 @@ test "schema contract: use_skill is keyed by name, not by path" {
         if (std.mem.eql(u8, field.name, "name")) has_name = true;
     }
     try testing.expect(has_name);
+}
+
+// ─── the auto-improve lock ───
+
+fn seedLockedSkill(
+    alloc: std.mem.Allocator,
+    db: *sqlite.SqliteBackend,
+    workspace_id: []const u8,
+    name: []const u8,
+    content: []const u8,
+) !void {
+    const row = try skills_store.upsertSkill(alloc, db, .{
+        .workspace_id = workspace_id,
+        .name = name,
+        .description = "pinned by the human",
+        .content = content,
+        .is_can_auto_improve = false,
+    });
+    skills_store.freeSkillRow(alloc, row);
+}
+
+test "edit_skill refuses a skill whose auto-improve flag is off and writes nothing" {
+    const alloc = testing.allocator;
+    var ctx = try setupSkillsDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try seedLockedSkill(alloc, &ctx.db, "ws_1", "pinned", "TOPSECRETBODY");
+
+    const out = try executeEditSkillToString(alloc, &ctx.db, "s1", .{
+        .skill_name = "pinned",
+        .content = "hijacked",
+    });
+    defer alloc.free(out);
+    var parsed = try parseJson(EditSkillOutput, alloc, out);
+    defer parsed.deinit();
+
+    try testing.expect(!parsed.value.updated);
+    try testing.expect(!parsed.value.edited);
+    try testing.expect(std.mem.indexOf(u8, parsed.value.@"error" orelse "", "locked") != null);
+
+    const row = try skills_store.getSkillByName(alloc, &ctx.db, "ws_1", "pinned");
+    defer skills_store.freeSkillRow(alloc, row);
+    try testing.expectEqualStrings("TOPSECRETBODY", row.content);
+    try testing.expect(!row.is_can_auto_improve);
+}
+
+test "add_skill refuses to replace a locked skill but still creates a new name" {
+    const alloc = testing.allocator;
+    var ctx = try setupSkillsDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try seedLockedSkill(alloc, &ctx.db, "ws_1", "pinned", "ORIGINAL");
+
+    // `upsertSkill` is create-or-replace, so a re-add of a pinned name would
+    // otherwise walk straight past the lock.
+    const replaced = try executeAddSkillToString(alloc, &ctx.db, "s1", .{
+        .name = "pinned",
+        .description = "a new description",
+        .content = "## When to Use\n\nHijacked.\n",
+    });
+    defer alloc.free(replaced);
+    var a = try parseJson(AddSkillOutput, alloc, replaced);
+    defer a.deinit();
+    try testing.expect(!a.value.created);
+    try testing.expect(std.mem.indexOf(u8, a.value.@"error" orelse "", "locked") != null);
+
+    const survivor = try skills_store.getSkillByName(alloc, &ctx.db, "ws_1", "pinned");
+    defer skills_store.freeSkillRow(alloc, survivor);
+    try testing.expectEqualStrings("ORIGINAL", survivor.content);
+    try testing.expectEqualStrings("pinned by the human", survivor.description);
+
+    // A name that does not exist yet is not locked by anything: the agent
+    // can still grow the library, and what it writes is auto-improvable.
+    const fresh = try executeAddSkillToString(alloc, &ctx.db, "s1", .{
+        .name = "brand-new",
+        .description = "written by the agent",
+        .content = "## When to Use\n\nAlways.\n",
+    });
+    defer alloc.free(fresh);
+    var b = try parseJson(AddSkillOutput, alloc, fresh);
+    defer b.deinit();
+    try testing.expect(b.value.created);
+
+    const created = try skills_store.getSkillByName(alloc, &ctx.db, "ws_1", "brand-new");
+    defer skills_store.freeSkillRow(alloc, created);
+    try testing.expect(created.is_can_auto_improve);
+}
+
+test "remove_skill refuses a locked skill and leaves the row in place" {
+    const alloc = testing.allocator;
+    var ctx = try setupSkillsDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try seedLockedSkill(alloc, &ctx.db, "ws_1", "pinned", "KEEPME");
+
+    // Deleting is a write too, and the most destructive one — otherwise
+    // "remove then re-add" is how the lock gets bypassed.
+    const out = try execute_remove_skill_to_string(alloc, &ctx.db, "s1", .{ .skill_name = "pinned" });
+    defer alloc.free(out);
+    var parsed = try parseJson(RemoveSkillOutput, alloc, out);
+    defer parsed.deinit();
+    try testing.expect(!parsed.value.removed);
+    try testing.expect(std.mem.indexOf(u8, parsed.value.@"error" orelse "", "locked") != null);
+
+    const survivor = try skills_store.getSkillByName(alloc, &ctx.db, "ws_1", "pinned");
+    defer skills_store.freeSkillRow(alloc, survivor);
+    try testing.expectEqualStrings("KEEPME", survivor.content);
+}
+
+test "an unlocked skill still edits, and the edit keeps it unlocked" {
+    const alloc = testing.allocator;
+    var ctx = try setupSkillsDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try seedSkill(alloc, &ctx.db, "ws_1", "open", "a description", "first body");
+
+    const out = try executeEditSkillToString(alloc, &ctx.db, "s1", .{
+        .skill_name = "open",
+        .content = "second body",
+    });
+    defer alloc.free(out);
+    var parsed = try parseJson(EditSkillOutput, alloc, out);
+    defer parsed.deinit();
+
+    try testing.expect(parsed.value.updated);
+    const row = try skills_store.getSkillByName(alloc, &ctx.db, "ws_1", "open");
+    defer skills_store.freeSkillRow(alloc, row);
+    try testing.expect(std.mem.indexOf(u8, row.content, "second body") != null);
+    try testing.expect(row.is_can_auto_improve);
 }
