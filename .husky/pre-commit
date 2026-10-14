@@ -15,21 +15,23 @@
 # mirroring nothing. It is back as a gate as of the pipeline
 # restructure, so the mirror is real again.
 #
-# The `cd src/apps/desktop` here matches that working-directory because
-# pnpm lint scripts resolve relative to CWD. Husky runs this script from
-# the worktree root (per core.hooksPath), so we MUST cd first.
-#
-# The Zig half needs no cd: the lint script resolves the repo root from
-# its own location, so it works from anywhere.
+# The frontend lint runs in a SUBSHELL, not a bare `cd`. Husky runs this
+# script from the worktree root (per core.hooksPath), and the Zig half
+# below invokes `scripts/lint-no-catch-unreachable.sh` by a path that is
+# relative to that root — so the CWD must still be the root when it runs.
+# A bare `cd src/apps/desktop` followed by `cd ../..` does NOT get back
+# there: it lands in `src/`, and the Zig step then dies with
+# `bash: scripts/lint-no-catch-unreachable.sh: No such file or directory`
+# (exit 127) — which is exactly the failure that shipped this hook broken
+# in #926. `.husky/pre-push` already uses the subshell form for the same
+# reason.
 #
 # Bypass for emergencies: `git commit --no-verify`.
 
 set -e
 
-cd src/apps/desktop || exit 1
-pnpm run lint:check
-
-cd ../..
+echo "→ pnpm run lint:check (src/apps/desktop)"
+(cd src/apps/desktop && pnpm run lint:check)
 
 echo "→ zig coding standards (no catch unreachable)"
 bash scripts/lint-no-catch-unreachable.sh --selftest
