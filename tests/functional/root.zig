@@ -89,6 +89,7 @@ const harness_safety_test = @import("harness_safety_test.zig");
 const headless_run_test = @import("headless_run_test.zig");
 const hook_zig_fmt_test = @import("hook_zig_fmt_test.zig");
 const hooks_lua_test = @import("hooks_lua_test.zig");
+const husky_pre_commit_cwd_test = @import("husky_pre_commit_cwd_test.zig");
 const http2_test = @import("http2_test.zig");
 const http2_tls_test = @import("http2_tls_test.zig");
 const install_browser_url_test = @import("install_browser_url_test.zig");
@@ -245,6 +246,7 @@ pub const suites = .{
     headless_run_test,
     hook_zig_fmt_test,
     hooks_lua_test,
+    husky_pre_commit_cwd_test,
     http2_test,
     http2_tls_test,
     install_browser_url_test,
