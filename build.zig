@@ -3746,6 +3746,65 @@ pub fn build(b: *std.Build) void {
     b.step("test:helpers:git_env_guard", "Run git_env_guard helper tests")
         .dependOn(&run_git_env_guard_tests.step);
 
+    // ── zginlint: the Zig linter (src/modules/zginlint/README.md) ────────
+    // A standalone, std-only module — deliberately NOT part of the
+    // pabrikcore module graph, so its tests compile without the app's
+    // dependency stack and CI can gate on it in its own job.
+    //
+    // It is also NOT attached to the default `install` step: the release
+    // zips stage the whole of zig-out/bin, and a linter does not belong in
+    // them. `zig build zginlint` installs it on demand.
+    const zginlint_target = b.graph.host;
+    const zginlint_exe = b.addExecutable(.{
+        .name = "zginlint",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/modules/zginlint/main.zig"),
+            .target = zginlint_target,
+            .optimize = optimize,
+        }),
+    });
+    const install_zginlint = b.addInstallArtifact(zginlint_exe, .{});
+    b.step("zginlint", "Build the zginlint CLI into zig-out/bin/zginlint")
+        .dependOn(&install_zginlint.step);
+
+    const zginlint_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/modules/zginlint/test_root.zig"),
+            .target = zginlint_target,
+            .optimize = optimize,
+        }),
+    });
+    const run_zginlint_tests = b.addRunArtifact(zginlint_tests);
+    test_step.dependOn(&run_zginlint_tests.step);
+    b.step("test:zginlint", "Run the zginlint unit tests")
+        .dependOn(&run_zginlint_tests.step);
+
+    // The tree paths and the pin file are the gate's whole definition,
+    // shared by the two steps below so a check and a re-pin can never
+    // disagree about what they cover (the pin records them, and a check
+    // over a different set is refused).
+    const zginlint_scope = [_][]const u8{ "src", "tests", "tools", "build.zig" };
+    const zginlint_pin_file = "zginlint-baseline.json";
+
+    // `has_side_effects` is load-bearing on both: a Run step is keyed by
+    // its binary and argv, NOT by the tree it reads, so without it the
+    // second run is "cached" and the gate silently skips the scan.
+    const zginlint_check = b.step("zginlint:check", "Enforce the zginlint rules on the tree (pinned ceilings)");
+    const run_zginlint_check = b.addRunArtifact(zginlint_exe);
+    run_zginlint_check.setCwd(b.path("."));
+    run_zginlint_check.addArgs(&.{ "--baseline", zginlint_pin_file });
+    run_zginlint_check.addArgs(&zginlint_scope);
+    run_zginlint_check.has_side_effects = true;
+    zginlint_check.dependOn(&run_zginlint_check.step);
+
+    const zginlint_pin = b.step("zginlint:pin", "Re-pin the zginlint baseline to today's counts");
+    const run_zginlint_pin = b.addRunArtifact(zginlint_exe);
+    run_zginlint_pin.setCwd(b.path("."));
+    run_zginlint_pin.addArgs(&.{ "--update-baseline", zginlint_pin_file });
+    run_zginlint_pin.addArgs(&zginlint_scope);
+    run_zginlint_pin.has_side_effects = true;
+    zginlint_pin.dependOn(&run_zginlint_pin.step);
+
     // kabelweb's own suites (server + client) run in the kabelweb
     // repo's CI (github.com/ginwa123/kabelweb), not here — it's an
     // external URL dependency, and a consumer build never runs a

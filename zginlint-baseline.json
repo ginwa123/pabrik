@@ -1,0 +1,2924 @@
+{
+  "rule": "zginlint/max-comment-lines",
+  "max_comment_lines": 3,
+  "paths": [
+    "src",
+    "tests",
+    "tools",
+    "build.zig"
+  ],
+  "files": [
+    {
+      "path": "build.zig",
+      "count": 167
+    },
+    {
+      "path": "src/agentic_loop/agent_kanban_tools_allowed.zig",
+      "count": 2
+    },
+    {
+      "path": "src/agentic_loop/agent_memories.zig",
+      "count": 16
+    },
+    {
+      "path": "src/agentic_loop/agent_tools_allowed.zig",
+      "count": 2
+    },
+    {
+      "path": "src/agentic_loop/ask_user_pending.zig",
+      "count": 12
+    },
+    {
+      "path": "src/agentic_loop/background_process.zig",
+      "count": 21
+    },
+    {
+      "path": "src/agentic_loop/background_process_events.zig",
+      "count": 1
+    },
+    {
+      "path": "src/agentic_loop/background_watcher.zig",
+      "count": 12
+    },
+    {
+      "path": "src/agentic_loop/claude_code.zig",
+      "count": 9
+    },
+    {
+      "path": "src/agentic_loop/design_io.zig",
+      "count": 20
+    },
+    {
+      "path": "src/agentic_loop/design_model.zig",
+      "count": 112
+    },
+    {
+      "path": "src/agentic_loop/documents_search.zig",
+      "count": 16
+    },
+    {
+      "path": "src/agentic_loop/documents_store.zig",
+      "count": 11
+    },
+    {
+      "path": "src/agentic_loop/get_llm_histories.zig",
+      "count": 2
+    },
+    {
+      "path": "src/agentic_loop/get_queue_message.zig",
+      "count": 1
+    },
+    {
+      "path": "src/agentic_loop/git_file_stage_events.zig",
+      "count": 4
+    },
+    {
+      "path": "src/agentic_loop/git_pr_state_events.zig",
+      "count": 5
+    },
+    {
+      "path": "src/agentic_loop/handle_mcp_tool.zig",
+      "count": 11
+    },
+    {
+      "path": "src/agentic_loop/handle_tool.zig",
+      "count": 57
+    },
+    {
+      "path": "src/agentic_loop/hooks.zig",
+      "count": 4
+    },
+    {
+      "path": "src/agentic_loop/inherited_context.zig",
+      "count": 4
+    },
+    {
+      "path": "src/agentic_loop/insert_llm_histories.zig",
+      "count": 6
+    },
+    {
+      "path": "src/agentic_loop/is_session_kanban.zig",
+      "count": 3
+    },
+    {
+      "path": "src/agentic_loop/kanban_model.zig",
+      "count": 33
+    },
+    {
+      "path": "src/agentic_loop/llm_history.zig",
+      "count": 193
+    },
+    {
+      "path": "src/agentic_loop/llm_history_model_guard.zig",
+      "count": 4
+    },
+    {
+      "path": "src/agentic_loop/llm_history_row.zig",
+      "count": 2
+    },
+    {
+      "path": "src/agentic_loop/lua_bindings.zig",
+      "count": 1
+    },
+    {
+      "path": "src/agentic_loop/model_catalog.zig",
+      "count": 11
+    },
+    {
+      "path": "src/agentic_loop/model_catalog_refresh.zig",
+      "count": 2
+    },
+    {
+      "path": "src/agentic_loop/on_event_design.zig",
+      "count": 4
+    },
+    {
+      "path": "src/agentic_loop/on_event_sent.zig",
+      "count": 19
+    },
+    {
+      "path": "src/agentic_loop/on_event_sent_design.zig",
+      "count": 7
+    },
+    {
+      "path": "src/agentic_loop/on_event_sent_kanban.zig",
+      "count": 7
+    },
+    {
+      "path": "src/agentic_loop/opencode.zig",
+      "count": 9
+    },
+    {
+      "path": "src/agentic_loop/parsing.zig",
+      "count": 10
+    },
+    {
+      "path": "src/agentic_loop/progressive_catalog.zig",
+      "count": 12
+    },
+    {
+      "path": "src/agentic_loop/progressive_regex.zig",
+      "count": 2
+    },
+    {
+      "path": "src/agentic_loop/prompts_build_messages_for_agent_prompt.zig",
+      "count": 42
+    },
+    {
+      "path": "src/agentic_loop/prompts_make_agent_kanban_knowledge.zig",
+      "count": 3
+    },
+    {
+      "path": "src/agentic_loop/prompts_make_agent_kanban_system_prompt.zig",
+      "count": 1
+    },
+    {
+      "path": "src/agentic_loop/prompts_make_agent_knowledge.zig",
+      "count": 4
+    },
+    {
+      "path": "src/agentic_loop/prompts_make_agent_routine_knowledge.zig",
+      "count": 4
+    },
+    {
+      "path": "src/agentic_loop/prompts_make_agent_routine_system_prompt.zig",
+      "count": 2
+    },
+    {
+      "path": "src/agentic_loop/prompts_make_agent_system_prompt.zig",
+      "count": 1
+    },
+    {
+      "path": "src/agentic_loop/prompts_make_cross_project_context.zig",
+      "count": 1
+    },
+    {
+      "path": "src/agentic_loop/prompts_make_design_context.zig",
+      "count": 1
+    },
+    {
+      "path": "src/agentic_loop/prompts_make_kanban_context.zig",
+      "count": 9
+    },
+    {
+      "path": "src/agentic_loop/prompts_make_plan_context.zig",
+      "count": 4
+    },
+    {
+      "path": "src/agentic_loop/prompts_make_working_directory_context.zig",
+      "count": 2
+    },
+    {
+      "path": "src/agentic_loop/retry_delay_ms.zig",
+      "count": 2
+    },
+    {
+      "path": "src/agentic_loop/run_skill_eval.zig",
+      "count": 29
+    },
+    {
+      "path": "src/agentic_loop/save_agent.zig",
+      "count": 1
+    },
+    {
+      "path": "src/agentic_loop/secrets_store.zig",
+      "count": 17
+    },
+    {
+      "path": "src/agentic_loop/secrets_substitution.zig",
+      "count": 3
+    },
+    {
+      "path": "src/agentic_loop/session_llm_config.zig",
+      "count": 10
+    },
+    {
+      "path": "src/agentic_loop/session_plan.zig",
+      "count": 3
+    },
+    {
+      "path": "src/agentic_loop/skill_eval_events.zig",
+      "count": 3
+    },
+    {
+      "path": "src/agentic_loop/skill_eval_judge.zig",
+      "count": 6
+    },
+    {
+      "path": "src/agentic_loop/skill_evals_config.zig",
+      "count": 3
+    },
+    {
+      "path": "src/agentic_loop/skill_evals_db.zig",
+      "count": 34
+    },
+    {
+      "path": "src/agentic_loop/skill_evals_drift.zig",
+      "count": 15
+    },
+    {
+      "path": "src/agentic_loop/skills_import.zig",
+      "count": 28
+    },
+    {
+      "path": "src/agentic_loop/skills_search.zig",
+      "count": 7
+    },
+    {
+      "path": "src/agentic_loop/skills_store.zig",
+      "count": 13
+    },
+    {
+      "path": "src/agentic_loop/slash_skill_expand.zig",
+      "count": 9
+    },
+    {
+      "path": "src/agentic_loop/sse_on_event_send_llm_history.zig",
+      "count": 6
+    },
+    {
+      "path": "src/agentic_loop/sse_on_event_send_session.zig",
+      "count": 4
+    },
+    {
+      "path": "src/agentic_loop/sse_send_event_worker.zig",
+      "count": 3
+    },
+    {
+      "path": "src/agentic_loop/startup.zig",
+      "count": 1
+    },
+    {
+      "path": "src/agentic_loop/stream_snapshot.zig",
+      "count": 2
+    },
+    {
+      "path": "src/agentic_loop/sub_agent_batch.zig",
+      "count": 11
+    },
+    {
+      "path": "src/agentic_loop/subagent_progress.zig",
+      "count": 18
+    },
+    {
+      "path": "src/agentic_loop/test_runner.zig",
+      "count": 9
+    },
+    {
+      "path": "src/agentic_loop/test_sleep.zig",
+      "count": 3
+    },
+    {
+      "path": "src/agentic_loop/tool_eligibility.zig",
+      "count": 5
+    },
+    {
+      "path": "src/agentic_loop/tools.zig",
+      "count": 6
+    },
+    {
+      "path": "src/agentic_loop/tools_args_repair.zig",
+      "count": 7
+    },
+    {
+      "path": "src/agentic_loop/tools_equipped.zig",
+      "count": 39
+    },
+    {
+      "path": "src/agentic_loop/tools_error_explain.zig",
+      "count": 2
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_add_mcp_server.zig",
+      "count": 24
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_ask_user.zig",
+      "count": 5
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_bash_args.zig",
+      "count": 12
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_command.zig",
+      "count": 9
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_create_kanban_task.zig",
+      "count": 4
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_document.zig",
+      "count": 14
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_generate_image.zig",
+      "count": 3
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_get_plan.zig",
+      "count": 3
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_list_directory.zig",
+      "count": 9
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_list_secrets.zig",
+      "count": 6
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_list_sub_agent.zig",
+      "count": 2
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_list_web_search_providers.zig",
+      "count": 2
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_memory.zig",
+      "count": 3
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_move_design_element.zig",
+      "count": 1
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_move_element_to_page.zig",
+      "count": 2
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_present_files.zig",
+      "count": 5
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_process.zig",
+      "count": 2
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_progressive_tools.zig",
+      "count": 9
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_search.zig",
+      "count": 3
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_set_git_worktree.zig",
+      "count": 3
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_set_pull_request.zig",
+      "count": 1
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_skills.zig",
+      "count": 12
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_spawn_sub_agent.zig",
+      "count": 7
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_status_pull_request.zig",
+      "count": 1
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_text_replace.zig",
+      "count": 14
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_update_element.zig",
+      "count": 1
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_update_plan.zig",
+      "count": 6
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_used_tools.zig",
+      "count": 2
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_web_search.zig",
+      "count": 2
+    },
+    {
+      "path": "src/agentic_loop/tools_exec_write_file.zig",
+      "count": 3
+    },
+    {
+      "path": "src/agentic_loop/tools_wrap_output.zig",
+      "count": 5
+    },
+    {
+      "path": "src/agentic_loop/update_worker.zig",
+      "count": 4
+    },
+    {
+      "path": "src/agentic_loop/web_search_config.zig",
+      "count": 4
+    },
+    {
+      "path": "src/agentic_loop/workflow.zig",
+      "count": 102
+    },
+    {
+      "path": "src/agentic_loop/workflow_compact_message.zig",
+      "count": 73
+    },
+    {
+      "path": "src/agentic_loop/workspace_config.zig",
+      "count": 13
+    },
+    {
+      "path": "src/agentic_loop/workspace_scope.zig",
+      "count": 4
+    },
+    {
+      "path": "src/agentic_loop/workspace_settings_store.zig",
+      "count": 10
+    },
+    {
+      "path": "src/ai_workflow/tui/mod.zig",
+      "count": 2
+    },
+    {
+      "path": "src/ai_workflow/tui/routines/Scheduler.zig",
+      "count": 6
+    },
+    {
+      "path": "src/ai_workflow/tui/routines/cron.zig",
+      "count": 8
+    },
+    {
+      "path": "src/ai_workflow/tui/routines/fire.zig",
+      "count": 13
+    },
+    {
+      "path": "src/ai_workflow/tui/routines/model.zig",
+      "count": 11
+    },
+    {
+      "path": "src/ai_workflow/tui/test_runner.zig",
+      "count": 13
+    },
+    {
+      "path": "src/app.zig",
+      "count": 28
+    },
+    {
+      "path": "src/apps/cli/src/client.zig",
+      "count": 4
+    },
+    {
+      "path": "src/apps/cli/src/commands/events.zig",
+      "count": 2
+    },
+    {
+      "path": "src/apps/cli/src/commands/messages.zig",
+      "count": 1
+    },
+    {
+      "path": "src/apps/cli/src/commands/pr_status.zig",
+      "count": 2
+    },
+    {
+      "path": "src/apps/cli/src/commands/root.zig",
+      "count": 3
+    },
+    {
+      "path": "src/apps/cli/src/commands/send.zig",
+      "count": 2
+    },
+    {
+      "path": "src/apps/cli/src/commands/sessions.zig",
+      "count": 1
+    },
+    {
+      "path": "src/apps/cli/src/config.zig",
+      "count": 1
+    },
+    {
+      "path": "src/apps/cli/src/format.zig",
+      "count": 2
+    },
+    {
+      "path": "src/apps/cli/src/main.zig",
+      "count": 5
+    },
+    {
+      "path": "src/apps/cli/src/root.zig",
+      "count": 2
+    },
+    {
+      "path": "src/apps/cli/src/tui/app.zig",
+      "count": 17
+    },
+    {
+      "path": "src/apps/cli/src/tui/color.zig",
+      "count": 1
+    },
+    {
+      "path": "src/apps/cli/src/tui/frame.zig",
+      "count": 5
+    },
+    {
+      "path": "src/apps/cli/src/tui/key.zig",
+      "count": 6
+    },
+    {
+      "path": "src/apps/cli/src/tui/program.zig",
+      "count": 12
+    },
+    {
+      "path": "src/apps/cli/src/tui/render_msg.zig",
+      "count": 1
+    },
+    {
+      "path": "src/apps/cli/src/tui/root.zig",
+      "count": 2
+    },
+    {
+      "path": "src/apps/cli/src/tui/sse.zig",
+      "count": 3
+    },
+    {
+      "path": "src/apps/cli/src/tui/style.zig",
+      "count": 1
+    },
+    {
+      "path": "src/apps/cli/src/tui/terminal.zig",
+      "count": 3
+    },
+    {
+      "path": "src/apps/cli/src/tui/think.zig",
+      "count": 3
+    },
+    {
+      "path": "src/apps/cli/src/tui/tool_envelope.zig",
+      "count": 6
+    },
+    {
+      "path": "src/apps/cli/src/tui/transport.zig",
+      "count": 2
+    },
+    {
+      "path": "src/apps/cli/src/tui/widgets.zig",
+      "count": 16
+    },
+    {
+      "path": "src/apps/cli/src/tui_main.zig",
+      "count": 4
+    },
+    {
+      "path": "src/apps/desktop_app/attach.zig",
+      "count": 18
+    },
+    {
+      "path": "src/apps/desktop_app/browser.zig",
+      "count": 4
+    },
+    {
+      "path": "src/apps/desktop_app/cli.zig",
+      "count": 8
+    },
+    {
+      "path": "src/apps/desktop_app/cross_compile_check.zig",
+      "count": 1
+    },
+    {
+      "path": "src/apps/desktop_app/extraction.zig",
+      "count": 31
+    },
+    {
+      "path": "src/apps/desktop_app/main.zig",
+      "count": 14
+    },
+    {
+      "path": "src/apps/desktop_app/path_resolve.zig",
+      "count": 15
+    },
+    {
+      "path": "src/apps/desktop_app/port.zig",
+      "count": 4
+    },
+    {
+      "path": "src/apps/desktop_app/subprocess.zig",
+      "count": 25
+    },
+    {
+      "path": "src/apps/desktop_app/test_runner.zig",
+      "count": 1
+    },
+    {
+      "path": "src/apps/desktop_app/webview_lib.zig",
+      "count": 8
+    },
+    {
+      "path": "src/boot/cli_dispatch.zig",
+      "count": 2
+    },
+    {
+      "path": "src/boot/db_config.zig",
+      "count": 10
+    },
+    {
+      "path": "src/boot/headless_dispatch.zig",
+      "count": 5
+    },
+    {
+      "path": "src/boot/server_boot.zig",
+      "count": 6
+    },
+    {
+      "path": "src/boot/shutdown.zig",
+      "count": 1
+    },
+    {
+      "path": "src/cli_args.zig",
+      "count": 7
+    },
+    {
+      "path": "src/headless/args.zig",
+      "count": 3
+    },
+    {
+      "path": "src/headless/boot.zig",
+      "count": 12
+    },
+    {
+      "path": "src/headless/mod.zig",
+      "count": 2
+    },
+    {
+      "path": "src/headless/run.zig",
+      "count": 7
+    },
+    {
+      "path": "src/headless/sessions.zig",
+      "count": 2
+    },
+    {
+      "path": "src/helpers/ansi.zig",
+      "count": 6
+    },
+    {
+      "path": "src/helpers/build.zig",
+      "count": 1
+    },
+    {
+      "path": "src/helpers/db_path.zig",
+      "count": 4
+    },
+    {
+      "path": "src/helpers/dir.zig",
+      "count": 1
+    },
+    {
+      "path": "src/helpers/git_env_guard.zig",
+      "count": 1
+    },
+    {
+      "path": "src/helpers/mod.zig",
+      "count": 23
+    },
+    {
+      "path": "src/helpers/path_validate.zig",
+      "count": 6
+    },
+    {
+      "path": "src/helpers/process.zig",
+      "count": 1
+    },
+    {
+      "path": "src/helpers/process_status.zig",
+      "count": 7
+    },
+    {
+      "path": "src/helpers/random.zig",
+      "count": 1
+    },
+    {
+      "path": "src/helpers/run_captured.zig",
+      "count": 23
+    },
+    {
+      "path": "src/helpers/sanitize.zig",
+      "count": 1
+    },
+    {
+      "path": "src/helpers/test_path.zig",
+      "count": 5
+    },
+    {
+      "path": "src/helpers/text_normalize.zig",
+      "count": 4
+    },
+    {
+      "path": "src/helpers/video.zig",
+      "count": 1
+    },
+    {
+      "path": "src/helpers/xml_escape.zig",
+      "count": 2
+    },
+    {
+      "path": "src/helpers/xml_unescape.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/agent_kanban_knowledge_create.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/agent_kanban_knowledge_delete.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/agent_kanban_knowledge_reorder.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/agent_kanban_knowledge_update.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/agent_kanban_system_prompt_create.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/agent_kanban_system_prompt_delete.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/agent_kanban_system_prompt_reorder.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/agent_kanban_system_prompt_update.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/agent_kanban_tools_create.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/agent_kanban_tools_delete.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/agent_kanban_tools_list.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/agent_kanbans_get.zig",
+      "count": 4
+    },
+    {
+      "path": "src/http_handlers/agent_kanbans_update.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/agent_knowledge_create.zig",
+      "count": 6
+    },
+    {
+      "path": "src/http_handlers/agent_knowledge_delete.zig",
+      "count": 5
+    },
+    {
+      "path": "src/http_handlers/agent_knowledge_reorder.zig",
+      "count": 5
+    },
+    {
+      "path": "src/http_handlers/agent_knowledge_update.zig",
+      "count": 7
+    },
+    {
+      "path": "src/http_handlers/agent_routine_knowledge_create.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/agent_routine_knowledge_delete.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/agent_routine_knowledge_reorder.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/agent_routine_knowledge_update.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/agent_routine_system_prompt_create.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/agent_routine_system_prompt_delete.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/agent_routine_system_prompt_reorder.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/agent_routine_system_prompt_update.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/agent_routine_tools_create.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/agent_routine_tools_delete.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/agent_routine_tools_list.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/agent_routines_get.zig",
+      "count": 4
+    },
+    {
+      "path": "src/http_handlers/agent_routines_update.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/agent_system_prompt_create.zig",
+      "count": 5
+    },
+    {
+      "path": "src/http_handlers/agent_system_prompt_delete.zig",
+      "count": 5
+    },
+    {
+      "path": "src/http_handlers/agent_system_prompt_reorder.zig",
+      "count": 4
+    },
+    {
+      "path": "src/http_handlers/agent_system_prompt_update.zig",
+      "count": 4
+    },
+    {
+      "path": "src/http_handlers/agent_tools_create.zig",
+      "count": 5
+    },
+    {
+      "path": "src/http_handlers/agent_tools_delete.zig",
+      "count": 4
+    },
+    {
+      "path": "src/http_handlers/agent_tools_list.zig",
+      "count": 5
+    },
+    {
+      "path": "src/http_handlers/agent_tools_registry.zig",
+      "count": 6
+    },
+    {
+      "path": "src/http_handlers/agents_get.zig",
+      "count": 4
+    },
+    {
+      "path": "src/http_handlers/agents_update.zig",
+      "count": 5
+    },
+    {
+      "path": "src/http_handlers/ask_user_answer.zig",
+      "count": 7
+    },
+    {
+      "path": "src/http_handlers/auth_common.zig",
+      "count": 14
+    },
+    {
+      "path": "src/http_handlers/auth_login.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/auth_middleware.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/background_process_log_get.zig",
+      "count": 4
+    },
+    {
+      "path": "src/http_handlers/background_processes_list.zig",
+      "count": 4
+    },
+    {
+      "path": "src/http_handlers/design_elements_create.zig",
+      "count": 5
+    },
+    {
+      "path": "src/http_handlers/design_elements_delete.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/design_elements_geometry_batch.zig",
+      "count": 4
+    },
+    {
+      "path": "src/http_handlers/design_elements_geometry_update.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/design_elements_group.zig",
+      "count": 7
+    },
+    {
+      "path": "src/http_handlers/design_elements_html_get.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/design_elements_html_update.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/design_elements_move_batch.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/design_elements_move_to_page.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/design_elements_reorder.zig",
+      "count": 5
+    },
+    {
+      "path": "src/http_handlers/design_elements_reparent.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/design_elements_resize.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/design_elements_translate.zig",
+      "count": 6
+    },
+    {
+      "path": "src/http_handlers/design_elements_ungroup.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/design_elements_update.zig",
+      "count": 8
+    },
+    {
+      "path": "src/http_handlers/design_items_create.zig",
+      "count": 7
+    },
+    {
+      "path": "src/http_handlers/design_pages_create.zig",
+      "count": 11
+    },
+    {
+      "path": "src/http_handlers/design_pages_delete.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/design_pages_get.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/design_pages_list.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/design_pages_update.zig",
+      "count": 6
+    },
+    {
+      "path": "src/http_handlers/dev_sse_emit.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/documents_create.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/documents_delete.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/documents_get.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/documents_list.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/documents_update.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/files_download.zig",
+      "count": 7
+    },
+    {
+      "path": "src/http_handlers/frontend_log_get.zig",
+      "count": 23
+    },
+    {
+      "path": "src/http_handlers/frontend_log_post.zig",
+      "count": 18
+    },
+    {
+      "path": "src/http_handlers/git_blame.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/git_branches_list.zig",
+      "count": 9
+    },
+    {
+      "path": "src/http_handlers/git_changes.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/git_commit.zig",
+      "count": 4
+    },
+    {
+      "path": "src/http_handlers/git_commits.zig",
+      "count": 5
+    },
+    {
+      "path": "src/http_handlers/git_file_diff.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/git_file_diffs.zig",
+      "count": 12
+    },
+    {
+      "path": "src/http_handlers/git_file_stage.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/git_pr_checks.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/git_pr_close.zig",
+      "count": 6
+    },
+    {
+      "path": "src/http_handlers/git_pr_conflicts.zig",
+      "count": 20
+    },
+    {
+      "path": "src/http_handlers/git_pr_create.zig",
+      "count": 13
+    },
+    {
+      "path": "src/http_handlers/git_pr_diff.zig",
+      "count": 7
+    },
+    {
+      "path": "src/http_handlers/git_pr_list.zig",
+      "count": 11
+    },
+    {
+      "path": "src/http_handlers/git_pr_merge.zig",
+      "count": 5
+    },
+    {
+      "path": "src/http_handlers/git_pr_status.zig",
+      "count": 31
+    },
+    {
+      "path": "src/http_handlers/git_status.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/git_worktree_info.zig",
+      "count": 4
+    },
+    {
+      "path": "src/http_handlers/health.zig",
+      "count": 4
+    },
+    {
+      "path": "src/http_handlers/http_response.zig",
+      "count": 74
+    },
+    {
+      "path": "src/http_handlers/image_urls_validation.zig",
+      "count": 5
+    },
+    {
+      "path": "src/http_handlers/kanban_columns_create.zig",
+      "count": 11
+    },
+    {
+      "path": "src/http_handlers/kanban_columns_delete.zig",
+      "count": 11
+    },
+    {
+      "path": "src/http_handlers/kanban_columns_list.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/kanban_columns_update.zig",
+      "count": 4
+    },
+    {
+      "path": "src/http_handlers/kanban_copy_spec.zig",
+      "count": 5
+    },
+    {
+      "path": "src/http_handlers/kanban_tags_list.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/kanban_tasks_create.zig",
+      "count": 17
+    },
+    {
+      "path": "src/http_handlers/local_memories_create.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/local_memories_delete.zig",
+      "count": 4
+    },
+    {
+      "path": "src/http_handlers/local_memories_detail.zig",
+      "count": 4
+    },
+    {
+      "path": "src/http_handlers/local_memories_list.zig",
+      "count": 4
+    },
+    {
+      "path": "src/http_handlers/local_memories_update.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/memories_create.zig",
+      "count": 5
+    },
+    {
+      "path": "src/http_handlers/memories_delete.zig",
+      "count": 5
+    },
+    {
+      "path": "src/http_handlers/memories_detail.zig",
+      "count": 5
+    },
+    {
+      "path": "src/http_handlers/memories_list.zig",
+      "count": 5
+    },
+    {
+      "path": "src/http_handlers/memories_update.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/mod.zig",
+      "count": 66
+    },
+    {
+      "path": "src/http_handlers/models_catalog.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/pabrik_config_get.zig",
+      "count": 7
+    },
+    {
+      "path": "src/http_handlers/pabrik_config_profile_delete.zig",
+      "count": 22
+    },
+    {
+      "path": "src/http_handlers/pabrik_config_put.zig",
+      "count": 60
+    },
+    {
+      "path": "src/http_handlers/ping.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/queue_messages_get.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/run_all_agents.zig",
+      "count": 6
+    },
+    {
+      "path": "src/http_handlers/secrets_create.zig",
+      "count": 4
+    },
+    {
+      "path": "src/http_handlers/secrets_delete.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/secrets_list.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/secrets_update.zig",
+      "count": 4
+    },
+    {
+      "path": "src/http_handlers/session_compact.zig",
+      "count": 5
+    },
+    {
+      "path": "src/http_handlers/session_create.zig",
+      "count": 24
+    },
+    {
+      "path": "src/http_handlers/session_exist.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/session_get.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/session_latest.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/session_list.zig",
+      "count": 8
+    },
+    {
+      "path": "src/http_handlers/session_mark_touched.zig",
+      "count": 5
+    },
+    {
+      "path": "src/http_handlers/session_messages_get.zig",
+      "count": 12
+    },
+    {
+      "path": "src/http_handlers/session_pin.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/session_reorder_pinned.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/session_stop.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/session_to_client_ids.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/session_update.zig",
+      "count": 5
+    },
+    {
+      "path": "src/http_handlers/session_usage_get.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/shutdown.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/skill_create.zig",
+      "count": 7
+    },
+    {
+      "path": "src/http_handlers/skill_delete.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/skill_detail.zig",
+      "count": 5
+    },
+    {
+      "path": "src/http_handlers/skill_evals.zig",
+      "count": 5
+    },
+    {
+      "path": "src/http_handlers/skill_update.zig",
+      "count": 4
+    },
+    {
+      "path": "src/http_handlers/skills_list.zig",
+      "count": 5
+    },
+    {
+      "path": "src/http_handlers/sse_disconnect.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/start_agent.zig",
+      "count": 11
+    },
+    {
+      "path": "src/http_handlers/stop_all_agents.zig",
+      "count": 6
+    },
+    {
+      "path": "src/http_handlers/stream_get.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/subagent_progress_get.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/system_folder.zig",
+      "count": 6
+    },
+    {
+      "path": "src/http_handlers/system_prompt_get.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/tags_validation.zig",
+      "count": 5
+    },
+    {
+      "path": "src/http_handlers/task_create.zig",
+      "count": 34
+    },
+    {
+      "path": "src/http_handlers/task_delete.zig",
+      "count": 8
+    },
+    {
+      "path": "src/http_handlers/task_mark_human_touched.zig",
+      "count": 4
+    },
+    {
+      "path": "src/http_handlers/task_pin.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/task_update.zig",
+      "count": 11
+    },
+    {
+      "path": "src/http_handlers/tasks_get.zig",
+      "count": 4
+    },
+    {
+      "path": "src/http_handlers/tasks_list.zig",
+      "count": 14
+    },
+    {
+      "path": "src/http_handlers/tasks_media.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/tasks_move.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/tasks_reorder_pinned.zig",
+      "count": 4
+    },
+    {
+      "path": "src/http_handlers/terminal_create.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/terminal_delete.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/terminal_input.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/terminal_output.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/terminal_resize.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/terminal_session.zig",
+      "count": 22
+    },
+    {
+      "path": "src/http_handlers/terminal_ws.zig",
+      "count": 4
+    },
+    {
+      "path": "src/http_handlers/unified_events_sse.zig",
+      "count": 25
+    },
+    {
+      "path": "src/http_handlers/video_urls_validation.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/web_search_mask.zig",
+      "count": 6
+    },
+    {
+      "path": "src/http_handlers/web_status.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/worker_get.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/worker_list.zig",
+      "count": 11
+    },
+    {
+      "path": "src/http_handlers/workspace_config.zig",
+      "count": 6
+    },
+    {
+      "path": "src/http_handlers/workspace_delete.zig",
+      "count": 8
+    },
+    {
+      "path": "src/http_handlers/workspace_get.zig",
+      "count": 8
+    },
+    {
+      "path": "src/http_handlers/workspace_items_create.zig",
+      "count": 4
+    },
+    {
+      "path": "src/http_handlers/workspace_items_create_agent.zig",
+      "count": 11
+    },
+    {
+      "path": "src/http_handlers/workspace_items_create_kanban.zig",
+      "count": 14
+    },
+    {
+      "path": "src/http_handlers/workspace_items_create_routine.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/workspace_items_default.zig",
+      "count": 17
+    },
+    {
+      "path": "src/http_handlers/workspace_items_delete.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/workspace_items_get.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/workspace_items_reorder.zig",
+      "count": 7
+    },
+    {
+      "path": "src/http_handlers/workspace_items_update.zig",
+      "count": 11
+    },
+    {
+      "path": "src/http_handlers/workspace_provisioning.zig",
+      "count": 10
+    },
+    {
+      "path": "src/http_handlers/workspace_routines_get.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/workspace_routines_run.zig",
+      "count": 3
+    },
+    {
+      "path": "src/http_handlers/workspace_routines_update.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/workspace_update.zig",
+      "count": 1
+    },
+    {
+      "path": "src/http_handlers/workspaces_create.zig",
+      "count": 2
+    },
+    {
+      "path": "src/http_handlers/workspaces_list.zig",
+      "count": 8
+    },
+    {
+      "path": "src/http_handlers/workspaces_reorder.zig",
+      "count": 8
+    },
+    {
+      "path": "src/http_routes.zig",
+      "count": 54
+    },
+    {
+      "path": "src/http_static/static_serve.zig",
+      "count": 5
+    },
+    {
+      "path": "src/main.zig",
+      "count": 9
+    },
+    {
+      "path": "src/migrations/common.zig",
+      "count": 4
+    },
+    {
+      "path": "src/migrations/migration.zig",
+      "count": 214
+    },
+    {
+      "path": "src/migrations/migration_100.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_101.zig",
+      "count": 3
+    },
+    {
+      "path": "src/migrations/migration_103.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_104.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_105.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_106.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_107.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_108.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_20.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_34.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_41.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_42.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_43.zig",
+      "count": 2
+    },
+    {
+      "path": "src/migrations/migration_44.zig",
+      "count": 2
+    },
+    {
+      "path": "src/migrations/migration_45.zig",
+      "count": 2
+    },
+    {
+      "path": "src/migrations/migration_46.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_48.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_49.zig",
+      "count": 2
+    },
+    {
+      "path": "src/migrations/migration_51.zig",
+      "count": 2
+    },
+    {
+      "path": "src/migrations/migration_52.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_53.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_56.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_57.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_58.zig",
+      "count": 2
+    },
+    {
+      "path": "src/migrations/migration_59.zig",
+      "count": 2
+    },
+    {
+      "path": "src/migrations/migration_60.zig",
+      "count": 2
+    },
+    {
+      "path": "src/migrations/migration_61.zig",
+      "count": 2
+    },
+    {
+      "path": "src/migrations/migration_62.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_63.zig",
+      "count": 2
+    },
+    {
+      "path": "src/migrations/migration_64.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_65.zig",
+      "count": 2
+    },
+    {
+      "path": "src/migrations/migration_66.zig",
+      "count": 7
+    },
+    {
+      "path": "src/migrations/migration_67.zig",
+      "count": 2
+    },
+    {
+      "path": "src/migrations/migration_68.zig",
+      "count": 5
+    },
+    {
+      "path": "src/migrations/migration_69.zig",
+      "count": 2
+    },
+    {
+      "path": "src/migrations/migration_70.zig",
+      "count": 3
+    },
+    {
+      "path": "src/migrations/migration_71.zig",
+      "count": 2
+    },
+    {
+      "path": "src/migrations/migration_72.zig",
+      "count": 5
+    },
+    {
+      "path": "src/migrations/migration_73.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_75.zig",
+      "count": 3
+    },
+    {
+      "path": "src/migrations/migration_77.zig",
+      "count": 2
+    },
+    {
+      "path": "src/migrations/migration_78.zig",
+      "count": 3
+    },
+    {
+      "path": "src/migrations/migration_82.zig",
+      "count": 3
+    },
+    {
+      "path": "src/migrations/migration_84.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_85.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_86.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_87.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_88.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_9.zig",
+      "count": 2
+    },
+    {
+      "path": "src/migrations/migration_90.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_94.zig",
+      "count": 2
+    },
+    {
+      "path": "src/migrations/migration_95.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_96.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_97.zig",
+      "count": 2
+    },
+    {
+      "path": "src/migrations/migration_98.zig",
+      "count": 1
+    },
+    {
+      "path": "src/migrations/migration_99.zig",
+      "count": 2
+    },
+    {
+      "path": "src/migrations/test_runner.zig",
+      "count": 1
+    },
+    {
+      "path": "src/models/agent.db.zig",
+      "count": 2
+    },
+    {
+      "path": "src/models/agent.zig",
+      "count": 1
+    },
+    {
+      "path": "src/models/agent_kanban.db.zig",
+      "count": 2
+    },
+    {
+      "path": "src/models/agent_knowledge.zig",
+      "count": 1
+    },
+    {
+      "path": "src/models/agent_memory.zig",
+      "count": 3
+    },
+    {
+      "path": "src/models/agent_routine.db.zig",
+      "count": 2
+    },
+    {
+      "path": "src/models/agent_tool.zig",
+      "count": 1
+    },
+    {
+      "path": "src/models/design_page.zig",
+      "count": 2
+    },
+    {
+      "path": "src/models/design_page_element.zig",
+      "count": 2
+    },
+    {
+      "path": "src/models/kanban_assignment.zig",
+      "count": 2
+    },
+    {
+      "path": "src/models/kanban_column.zig",
+      "count": 2
+    },
+    {
+      "path": "src/models/llm_history.zig",
+      "count": 2
+    },
+    {
+      "path": "src/models/log.zig",
+      "count": 2
+    },
+    {
+      "path": "src/models/model_catalog_store.zig",
+      "count": 5
+    },
+    {
+      "path": "src/models/session.zig",
+      "count": 2
+    },
+    {
+      "path": "src/models/session_activity.zig",
+      "count": 3
+    },
+    {
+      "path": "src/models/session_agent.zig",
+      "count": 2
+    },
+    {
+      "path": "src/models/session_background_process.zig",
+      "count": 2
+    },
+    {
+      "path": "src/models/session_queue_message.zig",
+      "count": 2
+    },
+    {
+      "path": "src/models/session_skill.zig",
+      "count": 2
+    },
+    {
+      "path": "src/models/worker.zig",
+      "count": 2
+    },
+    {
+      "path": "src/models/workspace.zig",
+      "count": 2
+    },
+    {
+      "path": "src/models/workspace_item.zig",
+      "count": 3
+    },
+    {
+      "path": "src/models/workspace_item_task.zig",
+      "count": 2
+    },
+    {
+      "path": "src/models/workspace_routine.zig",
+      "count": 2
+    },
+    {
+      "path": "src/modules/agent/Agent.zig",
+      "count": 118
+    },
+    {
+      "path": "src/modules/agent/LLMModels.zig",
+      "count": 2
+    },
+    {
+      "path": "src/modules/agent/mcp/mcp/mcp_http.zig",
+      "count": 32
+    },
+    {
+      "path": "src/modules/agent/mcp/mcp/mcp_stdio.zig",
+      "count": 99
+    },
+    {
+      "path": "src/modules/agent/mcp/mcp/mcp_tools.zig",
+      "count": 1
+    },
+    {
+      "path": "src/modules/agent/prompts.zig",
+      "count": 33
+    },
+    {
+      "path": "src/modules/agent/prompts/core.zig",
+      "count": 1
+    },
+    {
+      "path": "src/modules/agent/prompts/prompts.zig",
+      "count": 5
+    },
+    {
+      "path": "src/modules/agent/test_runner.zig",
+      "count": 7
+    },
+    {
+      "path": "src/modules/agent/tools/add_design_element.zig",
+      "count": 14
+    },
+    {
+      "path": "src/modules/agent/tools/add_mcp_server.zig",
+      "count": 5
+    },
+    {
+      "path": "src/modules/agent/tools/ask_user.zig",
+      "count": 11
+    },
+    {
+      "path": "src/modules/agent/tools/bash.zig",
+      "count": 25
+    },
+    {
+      "path": "src/modules/agent/tools/command.zig",
+      "count": 13
+    },
+    {
+      "path": "src/modules/agent/tools/create_kanban_task.zig",
+      "count": 31
+    },
+    {
+      "path": "src/modules/agent/tools/diff.zig",
+      "count": 5
+    },
+    {
+      "path": "src/modules/agent/tools/document.zig",
+      "count": 17
+    },
+    {
+      "path": "src/modules/agent/tools/file_sandbox.zig",
+      "count": 11
+    },
+    {
+      "path": "src/modules/agent/tools/generate_image.zig",
+      "count": 15
+    },
+    {
+      "path": "src/modules/agent/tools/get_design_context.zig",
+      "count": 6
+    },
+    {
+      "path": "src/modules/agent/tools/get_plan.zig",
+      "count": 4
+    },
+    {
+      "path": "src/modules/agent/tools/glob.zig",
+      "count": 31
+    },
+    {
+      "path": "src/modules/agent/tools/group_design_elements.zig",
+      "count": 8
+    },
+    {
+      "path": "src/modules/agent/tools/indexing_semantic_search.zig",
+      "count": 4
+    },
+    {
+      "path": "src/modules/agent/tools/kanban_list.zig",
+      "count": 14
+    },
+    {
+      "path": "src/modules/agent/tools/kanban_move_task.zig",
+      "count": 12
+    },
+    {
+      "path": "src/modules/agent/tools/list_directory.zig",
+      "count": 7
+    },
+    {
+      "path": "src/modules/agent/tools/list_memory.zig",
+      "count": 3
+    },
+    {
+      "path": "src/modules/agent/tools/list_secrets.zig",
+      "count": 2
+    },
+    {
+      "path": "src/modules/agent/tools/list_sub_agent.zig",
+      "count": 3
+    },
+    {
+      "path": "src/modules/agent/tools/memories.zig",
+      "count": 27
+    },
+    {
+      "path": "src/modules/agent/tools/memory.zig",
+      "count": 24
+    },
+    {
+      "path": "src/modules/agent/tools/move_design_element.zig",
+      "count": 4
+    },
+    {
+      "path": "src/modules/agent/tools/move_element_to_page.zig",
+      "count": 4
+    },
+    {
+      "path": "src/modules/agent/tools/pr_cli.zig",
+      "count": 14
+    },
+    {
+      "path": "src/modules/agent/tools/pr_provider.zig",
+      "count": 6
+    },
+    {
+      "path": "src/modules/agent/tools/present_files.zig",
+      "count": 12
+    },
+    {
+      "path": "src/modules/agent/tools/preview_design_page.zig",
+      "count": 6
+    },
+    {
+      "path": "src/modules/agent/tools/process.zig",
+      "count": 1
+    },
+    {
+      "path": "src/modules/agent/tools/progressive_tools.zig",
+      "count": 2
+    },
+    {
+      "path": "src/modules/agent/tools/pwsh.zig",
+      "count": 5
+    },
+    {
+      "path": "src/modules/agent/tools/read_file.zig",
+      "count": 4
+    },
+    {
+      "path": "src/modules/agent/tools/read_workspace_session.zig",
+      "count": 9
+    },
+    {
+      "path": "src/modules/agent/tools/remove_file.zig",
+      "count": 3
+    },
+    {
+      "path": "src/modules/agent/tools/schemas.zig",
+      "count": 6
+    },
+    {
+      "path": "src/modules/agent/tools/search.zig",
+      "count": 73
+    },
+    {
+      "path": "src/modules/agent/tools/semantic_search.zig",
+      "count": 1
+    },
+    {
+      "path": "src/modules/agent/tools/set_design_page.zig",
+      "count": 11
+    },
+    {
+      "path": "src/modules/agent/tools/set_element_parent.zig",
+      "count": 3
+    },
+    {
+      "path": "src/modules/agent/tools/set_git_worktree.zig",
+      "count": 44
+    },
+    {
+      "path": "src/modules/agent/tools/set_pull_request.zig",
+      "count": 4
+    },
+    {
+      "path": "src/modules/agent/tools/shell.zig",
+      "count": 84
+    },
+    {
+      "path": "src/modules/agent/tools/skill_tools.zig",
+      "count": 32
+    },
+    {
+      "path": "src/modules/agent/tools/skills.zig",
+      "count": 9
+    },
+    {
+      "path": "src/modules/agent/tools/spawn_sub_agent.zig",
+      "count": 7
+    },
+    {
+      "path": "src/modules/agent/tools/status_pull_request.zig",
+      "count": 9
+    },
+    {
+      "path": "src/modules/agent/tools/text_replace.zig",
+      "count": 14
+    },
+    {
+      "path": "src/modules/agent/tools/tools.zig",
+      "count": 1
+    },
+    {
+      "path": "src/modules/agent/tools/update_design_element.zig",
+      "count": 6
+    },
+    {
+      "path": "src/modules/agent/tools/update_plan.zig",
+      "count": 6
+    },
+    {
+      "path": "src/modules/agent/tools/used_tools.zig",
+      "count": 3
+    },
+    {
+      "path": "src/modules/agent/tools/web_search.zig",
+      "count": 8
+    },
+    {
+      "path": "src/modules/agent/tools/web_search_curl.zig",
+      "count": 13
+    },
+    {
+      "path": "src/modules/agent/tools/web_search_request.zig",
+      "count": 8
+    },
+    {
+      "path": "src/modules/agent/tools/write_file.zig",
+      "count": 15
+    },
+    {
+      "path": "src/modules/config/Config.zig",
+      "count": 130
+    },
+    {
+      "path": "src/modules/config/UserConfigStore.zig",
+      "count": 2
+    },
+    {
+      "path": "src/modules/config/parse_thinking.zig",
+      "count": 4
+    },
+    {
+      "path": "src/modules/config/web_port.zig",
+      "count": 3
+    },
+    {
+      "path": "src/modules/cronjob/ProcessChecker.zig",
+      "count": 1
+    },
+    {
+      "path": "src/modules/event_bus/build.zig",
+      "count": 12
+    },
+    {
+      "path": "src/modules/event_bus/src/event.zig",
+      "count": 10
+    },
+    {
+      "path": "src/modules/event_bus/src/test_runner.zig",
+      "count": 2
+    },
+    {
+      "path": "src/modules/gilvec_db/build.zig",
+      "count": 12
+    },
+    {
+      "path": "src/modules/logger/Logger.zig",
+      "count": 5
+    },
+    {
+      "path": "src/modules/logger/RequestId.zig",
+      "count": 4
+    },
+    {
+      "path": "src/modules/logger/test_runner.zig",
+      "count": 1
+    },
+    {
+      "path": "src/modules/notification/notifications.zig",
+      "count": 16
+    },
+    {
+      "path": "src/modules/static_files.zig",
+      "count": 28
+    },
+    {
+      "path": "src/modules/system_folder/system_folder.zig",
+      "count": 24
+    },
+    {
+      "path": "src/modules/test_runner.zig",
+      "count": 1
+    },
+    {
+      "path": "src/root.zig",
+      "count": 32
+    },
+    {
+      "path": "src/schedulers/cleanup_stale_background_process.zig",
+      "count": 26
+    },
+    {
+      "path": "src/schedulers/cleanup_stale_worker.zig",
+      "count": 7
+    },
+    {
+      "path": "src/service/crash_handler.zig",
+      "count": 26
+    },
+    {
+      "path": "src/service/crash_handler_smoke.zig",
+      "count": 5
+    },
+    {
+      "path": "src/service/daemon.zig",
+      "count": 15
+    },
+    {
+      "path": "src/service/main_service.zig",
+      "count": 11
+    },
+    {
+      "path": "src/service/mod.zig",
+      "count": 1
+    },
+    {
+      "path": "src/service/signal_handlers.zig",
+      "count": 9
+    },
+    {
+      "path": "src/service/state_file.zig",
+      "count": 11
+    },
+    {
+      "path": "tests/functional/agent_add_mcp_server_test.zig",
+      "count": 11
+    },
+    {
+      "path": "tests/functional/agent_create_kanban_task_session_test.zig",
+      "count": 4
+    },
+    {
+      "path": "tests/functional/agent_kanbans_test.zig",
+      "count": 4
+    },
+    {
+      "path": "tests/functional/agent_knowledge_edit_test.zig",
+      "count": 7
+    },
+    {
+      "path": "tests/functional/agent_list_directory_relative_path_test.zig",
+      "count": 17
+    },
+    {
+      "path": "tests/functional/agent_present_files_test.zig",
+      "count": 8
+    },
+    {
+      "path": "tests/functional/agent_routines_test.zig",
+      "count": 2
+    },
+    {
+      "path": "tests/functional/agent_system_prompt_test.zig",
+      "count": 7
+    },
+    {
+      "path": "tests/functional/agent_tools_defaults_test.zig",
+      "count": 2
+    },
+    {
+      "path": "tests/functional/agent_tools_path_params_test.zig",
+      "count": 1
+    },
+    {
+      "path": "tests/functional/agent_tools_toggle_test.zig",
+      "count": 9
+    },
+    {
+      "path": "tests/functional/agent_video_upload_test.zig",
+      "count": 6
+    },
+    {
+      "path": "tests/functional/agent_workspace_history_test.zig",
+      "count": 3
+    },
+    {
+      "path": "tests/functional/android_chat_sse_contract_test.zig",
+      "count": 21
+    },
+    {
+      "path": "tests/functional/android_sidebar_contract_test.zig",
+      "count": 14
+    },
+    {
+      "path": "tests/functional/android_workers_contract_test.zig",
+      "count": 22
+    },
+    {
+      "path": "tests/functional/anthropic_chat_headers_test.zig",
+      "count": 14
+    },
+    {
+      "path": "tests/functional/ask_user_multi_question_test.zig",
+      "count": 11
+    },
+    {
+      "path": "tests/functional/ask_user_test.zig",
+      "count": 17
+    },
+    {
+      "path": "tests/functional/auth_config_source_test.zig",
+      "count": 3
+    },
+    {
+      "path": "tests/functional/auth_test.zig",
+      "count": 4
+    },
+    {
+      "path": "tests/functional/background_command_completion_test.zig",
+      "count": 8
+    },
+    {
+      "path": "tests/functional/background_process_sse_test.zig",
+      "count": 12
+    },
+    {
+      "path": "tests/functional/background_processes_api_test.zig",
+      "count": 4
+    },
+    {
+      "path": "tests/functional/build.zig",
+      "count": 2
+    },
+    {
+      "path": "tests/functional/chat_content_envelope_test.zig",
+      "count": 1
+    },
+    {
+      "path": "tests/functional/chat_right_sidebar_git_test.zig",
+      "count": 3
+    },
+    {
+      "path": "tests/functional/command_is_stop_test.zig",
+      "count": 12
+    },
+    {
+      "path": "tests/functional/command_tool_test.zig",
+      "count": 7
+    },
+    {
+      "path": "tests/functional/config_simplify_test.zig",
+      "count": 9
+    },
+    {
+      "path": "tests/functional/config_tools_test.zig",
+      "count": 10
+    },
+    {
+      "path": "tests/functional/cross_project_cwd_prompt_test.zig",
+      "count": 6
+    },
+    {
+      "path": "tests/functional/default_workspace_provisioning_test.zig",
+      "count": 7
+    },
+    {
+      "path": "tests/functional/design_advanced_test.zig",
+      "count": 1
+    },
+    {
+      "path": "tests/functional/design_lifecycle_test.zig",
+      "count": 8
+    },
+    {
+      "path": "tests/functional/desktop_app_icon_test.zig",
+      "count": 2
+    },
+    {
+      "path": "tests/functional/desktop_webapp_404_test.zig",
+      "count": 6
+    },
+    {
+      "path": "tests/functional/desktop_webapp_stable_symlink_test.zig",
+      "count": 4
+    },
+    {
+      "path": "tests/functional/document_agent_tools_test.zig",
+      "count": 8
+    },
+    {
+      "path": "tests/functional/fd_limit_reader_pool_test.zig",
+      "count": 1
+    },
+    {
+      "path": "tests/functional/frontend_log_dedup_test.zig",
+      "count": 2
+    },
+    {
+      "path": "tests/functional/git_commit_create_test.zig",
+      "count": 2
+    },
+    {
+      "path": "tests/functional/git_commits_test.zig",
+      "count": 2
+    },
+    {
+      "path": "tests/functional/git_file_diffs_test.zig",
+      "count": 7
+    },
+    {
+      "path": "tests/functional/git_file_relative_path_crash_test.zig",
+      "count": 6
+    },
+    {
+      "path": "tests/functional/git_file_stage_sse_test.zig",
+      "count": 2
+    },
+    {
+      "path": "tests/functional/git_folder_diffs_test.zig",
+      "count": 7
+    },
+    {
+      "path": "tests/functional/git_pr_checks_test.zig",
+      "count": 9
+    },
+    {
+      "path": "tests/functional/git_pr_conflicts_test.zig",
+      "count": 6
+    },
+    {
+      "path": "tests/functional/git_pr_diff_test.zig",
+      "count": 1
+    },
+    {
+      "path": "tests/functional/git_pr_gitlab_test.zig",
+      "count": 13
+    },
+    {
+      "path": "tests/functional/git_pr_list_close_test.zig",
+      "count": 5
+    },
+    {
+      "path": "tests/functional/git_pr_merge_test.zig",
+      "count": 3
+    },
+    {
+      "path": "tests/functional/git_pr_state_sse_test.zig",
+      "count": 3
+    },
+    {
+      "path": "tests/functional/git_pr_status_branch_test.zig",
+      "count": 7
+    },
+    {
+      "path": "tests/functional/git_pr_status_crash_test.zig",
+      "count": 12
+    },
+    {
+      "path": "tests/functional/git_pr_status_test.zig",
+      "count": 13
+    },
+    {
+      "path": "tests/functional/graceful_shutdown_test.zig",
+      "count": 5
+    },
+    {
+      "path": "tests/functional/harness.zig",
+      "count": 71
+    },
+    {
+      "path": "tests/functional/harness_orphan_reap_test.zig",
+      "count": 14
+    },
+    {
+      "path": "tests/functional/harness_port_random_test.zig",
+      "count": 27
+    },
+    {
+      "path": "tests/functional/harness_safety_test.zig",
+      "count": 31
+    },
+    {
+      "path": "tests/functional/headless_run_test.zig",
+      "count": 13
+    },
+    {
+      "path": "tests/functional/hook_zig_fmt_test.zig",
+      "count": 17
+    },
+    {
+      "path": "tests/functional/hooks_lua_test.zig",
+      "count": 9
+    },
+    {
+      "path": "tests/functional/http2_test.zig",
+      "count": 12
+    },
+    {
+      "path": "tests/functional/http2_tls_test.zig",
+      "count": 20
+    },
+    {
+      "path": "tests/functional/husky_pre_commit_cwd_test.zig",
+      "count": 19
+    },
+    {
+      "path": "tests/functional/install_browser_url_test.zig",
+      "count": 10
+    },
+    {
+      "path": "tests/functional/kanban_advanced_test.zig",
+      "count": 5
+    },
+    {
+      "path": "tests/functional/kanban_column_run_all_agents_test.zig",
+      "count": 7
+    },
+    {
+      "path": "tests/functional/kanban_column_stop_all_agents_test.zig",
+      "count": 1
+    },
+    {
+      "path": "tests/functional/kanban_create_session_user_message_test.zig",
+      "count": 15
+    },
+    {
+      "path": "tests/functional/kanban_lifecycle_test.zig",
+      "count": 6
+    },
+    {
+      "path": "tests/functional/kanban_task_auth_config_test.zig",
+      "count": 2
+    },
+    {
+      "path": "tests/functional/kanban_task_create_message_format_test.zig",
+      "count": 8
+    },
+    {
+      "path": "tests/functional/kanban_task_get_test.zig",
+      "count": 4
+    },
+    {
+      "path": "tests/functional/kanban_task_image_urls_test.zig",
+      "count": 3
+    },
+    {
+      "path": "tests/functional/kanban_task_long_description_test.zig",
+      "count": 3
+    },
+    {
+      "path": "tests/functional/kanban_task_session_name_test.zig",
+      "count": 17
+    },
+    {
+      "path": "tests/functional/list_sub_agent_test.zig",
+      "count": 10
+    },
+    {
+      "path": "tests/functional/llm_history_model_not_empty_test.zig",
+      "count": 10
+    },
+    {
+      "path": "tests/functional/llm_stream_get_test.zig",
+      "count": 3
+    },
+    {
+      "path": "tests/functional/llm_test_test.zig",
+      "count": 16
+    },
+    {
+      "path": "tests/functional/mcp_http_test.zig",
+      "count": 17
+    },
+    {
+      "path": "tests/functional/mcp_server_toggle_test.zig",
+      "count": 8
+    },
+    {
+      "path": "tests/functional/mcp_stdio_hang_test.zig",
+      "count": 15
+    },
+    {
+      "path": "tests/functional/mcp_stdio_test.zig",
+      "count": 16
+    },
+    {
+      "path": "tests/functional/mcp_test_test.zig",
+      "count": 10
+    },
+    {
+      "path": "tests/functional/memories_skills_test.zig",
+      "count": 13
+    },
+    {
+      "path": "tests/functional/model_catalog_test.zig",
+      "count": 2
+    },
+    {
+      "path": "tests/functional/model_thinking_test.zig",
+      "count": 8
+    },
+    {
+      "path": "tests/functional/new_chat_session_not_found_test.zig",
+      "count": 5
+    },
+    {
+      "path": "tests/functional/notify_on_error_test.zig",
+      "count": 6
+    },
+    {
+      "path": "tests/functional/openai_thinking_param_test.zig",
+      "count": 15
+    },
+    {
+      "path": "tests/functional/pabrik_config_test.zig",
+      "count": 8
+    },
+    {
+      "path": "tests/functional/platform_gates_test.zig",
+      "count": 23
+    },
+    {
+      "path": "tests/functional/progressive_tool_search_regex_test.zig",
+      "count": 8
+    },
+    {
+      "path": "tests/functional/progressive_tool_search_test.zig",
+      "count": 9
+    },
+    {
+      "path": "tests/functional/read_file_raw_content_test.zig",
+      "count": 4
+    },
+    {
+      "path": "tests/functional/responses_tool_output_sanitize_test.zig",
+      "count": 15
+    },
+    {
+      "path": "tests/functional/root.zig",
+      "count": 3
+    },
+    {
+      "path": "tests/functional/server_port_bind_test.zig",
+      "count": 7
+    },
+    {
+      "path": "tests/functional/session_auto_name_retry_test.zig",
+      "count": 2
+    },
+    {
+      "path": "tests/functional/session_created_sse_test.zig",
+      "count": 7
+    },
+    {
+      "path": "tests/functional/session_detail_metadata_test.zig",
+      "count": 3
+    },
+    {
+      "path": "tests/functional/session_human_touched_at_test.zig",
+      "count": 8
+    },
+    {
+      "path": "tests/functional/session_list_workspace_test.zig",
+      "count": 7
+    },
+    {
+      "path": "tests/functional/session_mark_touched_test.zig",
+      "count": 3
+    },
+    {
+      "path": "tests/functional/session_pin_test.zig",
+      "count": 1
+    },
+    {
+      "path": "tests/functional/session_skills_live_test.zig",
+      "count": 12
+    },
+    {
+      "path": "tests/functional/session_usage_cache_rate_test.zig",
+      "count": 3
+    },
+    {
+      "path": "tests/functional/session_wire_test.zig",
+      "count": 8
+    },
+    {
+      "path": "tests/functional/sessions_and_llm_test.zig",
+      "count": 10
+    },
+    {
+      "path": "tests/functional/sidebar_git_branch_test.zig",
+      "count": 7
+    },
+    {
+      "path": "tests/functional/sidebar_new_chat_default_project_test.zig",
+      "count": 17
+    },
+    {
+      "path": "tests/functional/skill_evals_api_test.zig",
+      "count": 11
+    },
+    {
+      "path": "tests/functional/skill_evals_config_toggle_test.zig",
+      "count": 9
+    },
+    {
+      "path": "tests/functional/skills_memories_boundary_test.zig",
+      "count": 7
+    },
+    {
+      "path": "tests/functional/skills_sqlite_test.zig",
+      "count": 13
+    },
+    {
+      "path": "tests/functional/skills_write_test.zig",
+      "count": 13
+    },
+    {
+      "path": "tests/functional/smoke_boot_test.zig",
+      "count": 6
+    },
+    {
+      "path": "tests/functional/spawn_sub_agent_tools_required_test.zig",
+      "count": 5
+    },
+    {
+      "path": "tests/functional/sqlite_write_lock_test.zig",
+      "count": 3
+    },
+    {
+      "path": "tests/functional/sse_auth_test.zig",
+      "count": 15
+    },
+    {
+      "path": "tests/functional/sse_endtoend_test.zig",
+      "count": 19
+    },
+    {
+      "path": "tests/functional/sse_isolation_test.zig",
+      "count": 18
+    },
+    {
+      "path": "tests/functional/static_serve_concurrency_test.zig",
+      "count": 4
+    },
+    {
+      "path": "tests/functional/subagent_identity_test.zig",
+      "count": 3
+    },
+    {
+      "path": "tests/functional/subagent_peek_test.zig",
+      "count": 6
+    },
+    {
+      "path": "tests/functional/subagent_refresh_test.zig",
+      "count": 3
+    },
+    {
+      "path": "tests/functional/subagent_selected_profile_test.zig",
+      "count": 4
+    },
+    {
+      "path": "tests/functional/subagents_per_profile_test.zig",
+      "count": 10
+    },
+    {
+      "path": "tests/functional/system_folder_gitignore_test.zig",
+      "count": 4
+    },
+    {
+      "path": "tests/functional/system_folder_home_test.zig",
+      "count": 14
+    },
+    {
+      "path": "tests/functional/system_folder_path_validation_test.zig",
+      "count": 2
+    },
+    {
+      "path": "tests/functional/system_folder_search_test.zig",
+      "count": 6
+    },
+    {
+      "path": "tests/functional/task_lifecycle_test.zig",
+      "count": 22
+    },
+    {
+      "path": "tests/functional/task_rename_id_route_auth_test.zig",
+      "count": 6
+    },
+    {
+      "path": "tests/functional/terminal_isolation_test.zig",
+      "count": 7
+    },
+    {
+      "path": "tests/functional/terminal_limits_test.zig",
+      "count": 3
+    },
+    {
+      "path": "tests/functional/terminal_session_test.zig",
+      "count": 10
+    },
+    {
+      "path": "tests/functional/terminal_ws_test.zig",
+      "count": 14
+    },
+    {
+      "path": "tests/functional/tui_cwd_test.zig",
+      "count": 10
+    },
+    {
+      "path": "tests/functional/tui_turn_streaming_test.zig",
+      "count": 19
+    },
+    {
+      "path": "tests/functional/used_tools_test.zig",
+      "count": 3
+    },
+    {
+      "path": "tests/functional/user_config_test.zig",
+      "count": 4
+    },
+    {
+      "path": "tests/functional/web_launch_toggle_test.zig",
+      "count": 9
+    },
+    {
+      "path": "tests/functional/web_search_config_test.zig",
+      "count": 6
+    },
+    {
+      "path": "tests/functional/worker_gate_queue_test.zig",
+      "count": 1
+    },
+    {
+      "path": "tests/functional/workflow_mcp_snapshot_turn_lifetime_test.zig",
+      "count": 11
+    },
+    {
+      "path": "tests/functional/workspace_config_test.zig",
+      "count": 5
+    },
+    {
+      "path": "tests/functional/workspace_default_profile_test.zig",
+      "count": 1
+    },
+    {
+      "path": "tests/functional/workspace_isolation_test.zig",
+      "count": 8
+    },
+    {
+      "path": "tests/functional/workspace_items_test.zig",
+      "count": 16
+    },
+    {
+      "path": "tests/functional/workspace_lifecycle_test.zig",
+      "count": 10
+    },
+    {
+      "path": "tests/functional/workspace_members_sharing_test.zig",
+      "count": 15
+    },
+    {
+      "path": "tests/functional/workspace_routines_test.zig",
+      "count": 5
+    },
+    {
+      "path": "tests/functional/workspace_secrets_test.zig",
+      "count": 5
+    },
+    {
+      "path": "tools/clean_webapp_cache.zig",
+      "count": 2
+    },
+    {
+      "path": "tools/codegen_webapp_assets.zig",
+      "count": 19
+    },
+    {
+      "path": "tools/install_tui.zig",
+      "count": 2
+    }
+  ]
+}

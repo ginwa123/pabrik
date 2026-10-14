@@ -2,13 +2,14 @@
 # Pre-commit hook — mirror CI's `lint (oxlint + eslint)` job exactly so
 # commits can't slip past locally with lint errors that CI would catch.
 #
-# Mirrors the two lint steps in the `lint` job of
-# `.github/workflows/ci.yml`:
+# Mirrors the lint steps of `.github/workflows/ci.yml`:
 #   working-directory: src/apps/desktop
 #   run: pnpm run lint:check
-# and
+# and, in the `lint` job,
 #   run: bash scripts/lint-no-catch-unreachable.sh --selftest
 #        bash scripts/lint-no-catch-unreachable.sh
+# and, in the `zginlint` job,
+#   run: zig build zginlint:check
 #
 # That first step used to live at ci.yml lines 1485-1491 and the CI job
 # was deleted in PR #398 ("drop frontend job"), which left this hook
@@ -36,3 +37,6 @@ echo "→ pnpm run lint:check (src/apps/desktop)"
 echo "→ zig coding standards (no catch unreachable)"
 bash scripts/lint-no-catch-unreachable.sh --selftest
 bash scripts/lint-no-catch-unreachable.sh
+
+echo "→ zginlint (comment-block ceilings)"
+zig build zginlint:check

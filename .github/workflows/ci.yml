@@ -1,9 +1,10 @@
 # CI orchestrator. The graph, and nothing else.
 #
-#   changes ──▶ lint ──┬─▶ backend-linux   ──▶ functional-linux-{1,2,3}   ──┐
-#                      ├─▶ backend-macos   ──▶ functional-macos-{1,2,3}   ──┤
-#                      ├─▶ backend-windows ──▶ functional-windows-{1,2,3} ──┼─▶ ci-ok
-#                      └─▶ android-apk ──▶ android-test ──────────────────┘
+#   changes ──▶ lint ──┬─▶ zginlint ────────────────────────────────────────┐
+#                      ├─▶ backend-linux   ──▶ functional-linux-{1,2,3}     ──┤
+#                      ├─▶ backend-macos   ──▶ functional-macos-{1,2,3}     ──┼─▶ ci-ok
+#                      ├─▶ backend-windows ──▶ functional-windows-{1,2,3}   ──┤
+#                      └─▶ android-apk ──▶ android-test ────────────────────┘
 #
 # WHAT CHANGED, AND WHY EACH ONE WAS WORTH THE CHURN
 # ----------------------------------------------------
@@ -44,6 +45,12 @@
 # 6. ONE REQUIRED CHECK. `ci-ok` at the bottom is the only thing branch
 #    protection needs to list, so the matrix can change shape without
 #    anyone editing the ruleset.
+#
+# 7. ZGINLINT IS ITS OWN JOB, not a step in `lint`. That job has no Zig
+#    toolchain and no package cache, and it exists to be the cheap gate in
+#    front of 20-50 minute builds; the Zig linter needs the toolchain, the
+#    build graph and the package cache, and it is the one gate that is
+#    about Zig source rather than JavaScript. Two jobs, two toolchains.
 #
 # The two reusable workflows sit at the TOP level of .github/workflows and
 # NOT in a subdirectory. A subdirectory looks tidier and is wrong: GitHub
@@ -263,6 +270,59 @@ jobs:
           set -euo pipefail
           bash scripts/lint-no-catch-unreachable.sh --selftest
           bash scripts/lint-no-catch-unreachable.sh
+
+  # ── 1b. zginlint ────────────────────────────────────────────────────
+  # The Zig linter's gate: `src/modules/zginlint/` implemented as a CLI,
+  # run over the tree against a pinned per-file ceiling
+  # (`zginlint-baseline.json`, whose entries may only fall). The rule and
+  # the ratchet are documented in CODING_STANDARDS.md §4.
+  #
+  # It hangs off `lint` for the same reason the backend cells do: a red
+  # cheap gate must not schedule an expensive job. Nothing here consumes
+  # a JS artifact and nothing in `lint` consumes a Zig one.
+  zginlint:
+    name: zginlint (comment-block ceilings)
+    needs: [changes, lint]
+    if: ${{ needs.lint.result == 'success' && needs.changes.outputs.heavy == 'true' && !cancelled() }}
+    runs-on: ubuntu-24.04
+    # `zig build`'s configure step resolves the whole package graph, then
+    # compiles one std-only binary. A cold-cache pass is well inside this.
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Zig ${{ env.ZIG_VERSION }}
+        uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: Cache the Zig package cache
+        # ONLY the global package cache, not `.zig-cache`: the one compile
+        # in this job is a std-only binary, so a restored `.zig-cache` would
+        # cost more archive I/O than it saves. The key prefix matches the
+        # Linux backend cell's (`v1-zig-global-ubuntu-24.04-`), so this job
+        # normally restores the dependencies that cell already unpacked.
+        # `~/.cache/zig` is hardcoded because this job only ever runs on
+        # ubuntu-24.04; ci-backend.yml has to ask zig instead, since it runs
+        # the same step on macOS and Windows.
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/zig
+          key: v1-zig-global-ubuntu-24.04-zginlint-${{ hashFiles('build.zig.zon') }}
+          restore-keys: |
+            v1-zig-global-ubuntu-24.04-
+
+      - name: Zig lint (zginlint, pinned comment-block ceilings)
+        # The gate `.husky/pre-commit` mirrors. `zginlint:check` builds the
+        # CLI, runs it over the paths build.zig pins, and fails on any file
+        # above its pinned ceiling or missing from the baseline.
+        #
+        # The unit tests are NOT run here: they are part of `zig build test`,
+        # which all three backend cells already run, so this job would only
+        # duplicate them (and only on Linux).
+        shell: bash
+        run: zig build zginlint:check
 
   # ── 2. Backend, one job per platform ────────────────────────────────
   # Three calls of the same reusable workflow instead of one 3-cell
@@ -972,11 +1032,12 @@ jobs:
     # aggregate check: a new job that is NOT added to this list will not
     # hold up a merge, so a new heavy job has to be added in two places.
     # That is a fair trade for branch protection listing one context
-    # instead of thirteen, and for being able to change the shard count
+    # instead of fourteen, and for being able to change the shard count
     # without editing a ruleset.
     needs:
       - changes
       - lint
+      - zginlint
       - backend-linux
       - backend-macos
       - backend-windows
@@ -1002,7 +1063,7 @@ jobs:
       - name: Aggregate the upstream results
         shell: bash
         env:
-          # One multi-line value rather than sixteen `env:` keys: it is the
+          # One multi-line value rather than seventeen `env:` keys: it is the
           # same list as `needs:` above (written twice by hand either way),
           # and `job=result` lines read far better in a log than a
           # numbered array.
@@ -1013,6 +1074,7 @@ jobs:
           RESULTS: |
             changes=${{ needs.changes.result }}
             lint=${{ needs.lint.result }}
+            zginlint=${{ needs.zginlint.result }}
             backend-linux=${{ needs.backend-linux.result }}
             backend-macos=${{ needs.backend-macos.result }}
             backend-windows=${{ needs.backend-windows.result }}
