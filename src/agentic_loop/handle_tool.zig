@@ -158,6 +158,9 @@ const ToolResult = struct {
     skill_saved: ?SkillSaveInfo = null,
     agent_saved: ?AgentSaveInfo = null,
     progressive_tool_saved: ?ProgressiveToolSaveInfo = null,
+    /// See `tools.ToolExecResult.stop_loop` — the tool asked for the turn to
+    /// end once this batch is persisted. OR-merged into `ToolBatchOutcome`.
+    stop_loop: bool = false,
     /// Secrets this dispatch resolved, so the caller can scrub them back out
     /// of `output` before it is persisted or streamed. Empty when the call
     /// carried no placeholder.
@@ -542,6 +545,7 @@ fn dispatchFromRegistry(ctx: ToolContext, tool_call: agent.ToolCall, exec: tools
         .output = exec_result.output,
         .temperature = exec_result.temperature,
         .is_thinking = exec_result.is_thinking,
+        .stop_loop = exec_result.stop_loop,
         .skill_saved = if (exec_result.skill_save) |sk| SkillSaveInfo{ .name = sk.name, .content = sk.content } else null,
         .agent_saved = if (exec_result.agent_save) |ag| AgentSaveInfo{ .name = ag.name } else null,
         .progressive_tool_saved = if (exec_result.progressive_tool_save) |pt| ProgressiveToolSaveInfo{
@@ -765,6 +769,21 @@ fn buildWorkerActivityDescription(
     return std.fmt.allocPrint(allocator, "{s}{s} {s}{s}", .{ prefix, tool_name, trimmed[0..end], ellipsis });
 }
 
+/// What `handle_tool` reports back to the workflow loop.
+///
+/// A plain `void` was enough while every tool was fire-and-forget. `is_stop`
+/// makes one tool's result a LOOP decision, and the workflow loop is the only
+/// place allowed to act on it — so the request travels back as data rather
+/// than as a side effect the loop would have to re-read from the DB.
+pub const ToolBatchOutcome = struct {
+    /// At least one tool in the batch asked to end the turn
+    /// (`command`'s `is_stop`). OR-merged across the batch: the batch is
+    /// always dispatched and persisted in full first, because every
+    /// `tool_call_id` needs its `role=tool` row or the provider rejects the
+    /// next turn (see the Phase-1 placeholder note in `handle_tool`).
+    stop_loop: bool = false,
+};
+
 pub fn handle_tool(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -788,7 +807,9 @@ pub fn handle_tool(
     // does. The tool-result envelope stays the same either way.
     allowed_tools: []const u8,
     is_sub_agent: bool,
-) !void {
+) !ToolBatchOutcome {
+    var outcome: ToolBatchOutcome = .{};
+
     if (res_dynamic_agent.tool_calls) |tc| {
         // ─── Phase 1: INSERT placeholder rows for ALL known tools ───
         //
@@ -1191,6 +1212,11 @@ pub fn handle_tool(
             };
 
             tool_result = exec_result.output;
+            // Loop control (`command`'s `is_stop`). Merged here, in Phase 3,
+            // so the value can only be set by a tool that ACTUALLY RAN — a
+            // call rejected as an unknown tool or denied by a hook cannot end
+            // the turn.
+            if (exec_result.stop_loop) outcome.stop_loop = true;
             // `exec_result.secrets` is ours to release once the result has been
             // scrubbed; the catch above `continue`s, so nothing registers it
             // on a path that never got a result.
@@ -1262,6 +1288,8 @@ pub fn handle_tool(
     }
 
     logger.debugFmt("Tool calls processing complete, looping back for next API call...", .{});
+
+    return outcome;
 }
 
 /// Persist a tool result with every resolved secret put back behind its

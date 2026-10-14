@@ -48,6 +48,17 @@ pub const ShellInput = struct {
     background: bool = false,
     max_lines: ?usize = 1000,
     do_encoding: bool = false,
+    /// ASK THE AGENTIC LOOP TO END THIS TURN after the current tool batch.
+    ///
+    /// Not a shell concern, and `shell.zig` never reads it — the field rides
+    /// in this struct only because `ShellInput` is the parsed-arguments type
+    /// for the `command` tool (the retired `bash` / `pwsh` shims alias it).
+    /// `tools_exec_command` copies it onto `ToolExecResult.stop_loop`, which
+    /// `handle_tool` returns to the workflow loop.
+    ///
+    /// Nothing is killed: a detached command started by the same call keeps
+    /// running. See `docs/plans/2026-10-14-command-is-stop-persistence.md`.
+    is_stop: bool = false,
 };
 
 pub const ShellOutput = struct {

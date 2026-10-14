@@ -335,3 +335,65 @@ backend-first, so: no).
 | A dev server is left holding a port after the user hits Stop (by design, D8). | The `mode` description tells the agent to `stop` when done; the popup lists it so a human can. |
 | `handle_tool` signature change ripples. | Exactly one caller — verified (`workflow.zig:1676`). |
 | Buffered stdout: `pnpm run dev` under a redirect may print nothing until flush. | Document `stdbuf -oL`; the persistence functional test uses a genuinely line-buffered command so the test does not encode the assumption. |
+
+---
+
+## 9. Implementation log — PR 1 (`is_stop`)
+
+Status: **implemented and verified** on
+`worktree/add-new-parameter-to-ai-agent-command-1791972429011`.
+
+### 9.1 Files
+
+| file | change |
+|---|---|
+| `src/modules/agent/tools/shell.zig` | `ShellInput.is_stop: bool = false`, documented as loop control that `shell.zig` never reads. |
+| `src/agentic_loop/tools_exec_bash_args.zig` | parse `is_stop`; `BOOL_FIELDS += "is_stop"`. |
+| `src/agentic_loop/tools.zig` | `ToolExecResult.stop_loop: bool = false`. |
+| `src/agentic_loop/tools_exec_command.zig` | `runWithContext` returns `RunResult{ payload, stop_loop }`; `execCommand` propagates it. |
+| `src/agentic_loop/handle_tool.zig` | `ToolResult.stop_loop`, `ToolBatchOutcome`, `handle_tool` returns it, OR-merged in Phase 3. |
+| `src/agentic_loop/workflow.zig` | capture the outcome; new `is_stop` arm in `.tool_calls` — `last_finish_reason = "stop"`, `deleteWorker`, `break`. |
+| `src/modules/agent/tools/command.zig` | the `is_stop` schema property + the rule in the description and the system prompt. |
+| `tests/functional/command_is_stop_test.zig` | the wire test (below). |
+
+### 9.2 Deviation from §2.2 step 1, with the reason
+
+The plan proposed a wrapper `CommandArgs{ shell, is_stop }` to keep `ShellInput` free of loop
+concerns. Implemented as a field ON `ShellInput` instead, because the wrapper changes the
+`parseShellArgs` return payload and therefore every `.success => |input| input.field` in ~20
+existing tests — ~20 edits with no behavioural gain, all of them in tests unrelated to this work.
+`shell.zig` still has no loop behaviour: it never reads the field, and its doc comment says so.
+
+### 9.3 Verification actually run
+
+**Unit** — `zig build test --summary all`:
+**26/26 steps succeeded; 4334/4344 tests passed (10 skipped); 0 failed.** Added 5 parser tests
+(`is_stop` absent → false, JSON bool, string bool, garbage → `InvalidField` naming `is_stop`,
+present in `BOOL_FIELDS`) and 2 schema tests (optional boolean + full contract in the description;
+the rule reaches description AND system prompt).
+
+Positive control for the new tests: one of them was deliberately inverted
+(`expect(!input.is_stop)`) and the suite went red with
+`'agentic_loop.tools_exec_bash_args.test.parseShellArgs: is_stop reads a string boolean' failed`
+— `4333/4344 passed (1 failed)`, exit 1 — then reverted. This rules out the failure mode where a
+new test is compiled but never selected by the runner's `--test-filter` sharding.
+
+**Functional** — `tests/functional/command_is_stop_test.zig`, a stub upstream that counts requests,
+driven through `POST /api/llm/session`:
+
+- `is_stop ends the turn after one model call, with the batch persisted` — the stub saw **exactly 1**
+  agent round; the `worker` row is gone; `sessions.last_finish_reason = 'stop'` (the loop's own
+  overwrite, not the provider's `tool_calls`); the `role='tool'` row exists for the real
+  `tool_call_id`; the assistant row still carries `finish_reason = 'tool_calls'`.
+- `without is_stop the loop calls the model again (positive control)` — same run, flag omitted:
+  **≥ 2** model calls. Without this, "exactly 1 call" would also be satisfied by a run that died
+  early.
+
+Both pass. The matched pair is the point: one asserts the override, the other asserts the
+behaviour being overridden.
+
+### 9.4 Still to come
+
+PR 2 (`mode` + migration 107 `kind` + native detached spawn + tree kill + dies-with-pabrik) and
+PR 3 (the `process` tool) — §3 and §5. `mode` is deliberately absent from PR 1 so the loop-control
+change can be reviewed on its own.

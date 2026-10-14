@@ -58,7 +58,7 @@ pub const NUMERIC_USIZE_FIELDS = [_][]const u8{ "max_output", "max_lines" };
 
 /// Boolean fields on `ShellInput` whose values the LLM may have
 /// contaminated with stray XML closing tags.
-pub const BOOL_FIELDS = [_][]const u8{ "background", "do_encoding" };
+pub const BOOL_FIELDS = [_][]const u8{ "background", "do_encoding", "is_stop" };
 
 /// String fields on `ShellInput` whose values the LLM may have
 /// contaminated with stray XML closing tags.
@@ -224,6 +224,14 @@ pub fn parseShellArgs(
             return returnFail(allocator, &out, v, "do_encoding", "boolean (or \"true\"/\"false\")");
         };
         out.do_encoding = b;
+    }
+
+    // is_stop (bool, default false) — loop control, not a shell option.
+    if (obj.get("is_stop")) |v| {
+        const b = coerceBool(allocator, v, "is_stop") orelse {
+            return returnFail(allocator, &out, v, "is_stop", "boolean (or \"true\"/\"false\")");
+        };
+        out.is_stop = b;
     }
 
     return .{ .success = out };
@@ -522,6 +530,75 @@ test "parseShellArgs: bool from string 'false'" {
         },
         .failure => return error.TestUnexpectedResult,
     }
+}
+
+test "parseShellArgs: is_stop defaults to false when absent" {
+    // Every existing caller (and every transcript written before this field
+    // existed) omits `is_stop`. Absent must mean "keep looping" — not
+    // "unset in a way that has to be guarded at each read site".
+    const args = "{\"command\":\"ls\",\"cwd\":\"/tmp\"}";
+    const result = parseShellArgs(testing.allocator, args);
+    switch (result) {
+        .success => |input| {
+            defer freeInput(testing.allocator, input);
+            try testing.expect(!input.is_stop);
+        },
+        .failure => return error.TestUnexpectedResult,
+    }
+}
+
+test "parseShellArgs: is_stop reads a JSON boolean" {
+    const args = "{\"command\":\"ls\",\"cwd\":\"/tmp\",\"is_stop\":true}";
+    const result = parseShellArgs(testing.allocator, args);
+    switch (result) {
+        .success => |input| {
+            defer freeInput(testing.allocator, input);
+            try testing.expect(input.is_stop);
+        },
+        .failure => return error.TestUnexpectedResult,
+    }
+}
+
+test "parseShellArgs: is_stop reads a string boolean" {
+    // The lenient path that exists for `background` must cover `is_stop`
+    // too: a model that learned the bool-as-string shape from an old
+    // transcript must not get an error it cannot act on.
+    const args = "{\"command\":\"ls\",\"cwd\":\"/tmp\",\"is_stop\":\"true\"}";
+    const result = parseShellArgs(testing.allocator, args);
+    switch (result) {
+        .success => |input| {
+            defer freeInput(testing.allocator, input);
+            try testing.expect(input.is_stop);
+        },
+        .failure => return error.TestUnexpectedResult,
+    }
+}
+
+test "parseShellArgs: a garbage is_stop names the field instead of guessing" {
+    // The dangerous alternative is coercing `"yes"`-ish input to true or
+    // false. Either guess ends the user's turn (or keeps it running) on a
+    // value the model never sent, so this must be a structured failure.
+    const args = "{\"command\":\"ls\",\"cwd\":\"/tmp\",\"is_stop\":\"maybe\"}";
+    const result = parseShellArgs(testing.allocator, args);
+    switch (result) {
+        .success => return error.TestUnexpectedResult,
+        .failure => |info| {
+            defer testing.allocator.free(info.got);
+            try testing.expectEqualStrings("is_stop", info.field);
+            try testing.expectEqualStrings("maybe", info.got);
+        },
+    }
+}
+
+test "parseShellArgs: is_stop is documented as a lenient bool field" {
+    // BOOL_FIELDS is what the header promises covers every boolean the LLM
+    // may contaminate with a stray XML close tag. A boolean added to the
+    // struct but not to this table silently loses that recovery.
+    var found = false;
+    for (BOOL_FIELDS) |name| {
+        if (std.mem.eql(u8, name, "is_stop")) found = true;
+    }
+    try testing.expect(found);
 }
 
 test "parseShellArgs: max_output with stray XML fragment" {

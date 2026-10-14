@@ -16,6 +16,20 @@ const wrapToolOutput = tools.wrapToolOutput;
 const bash_args = @import("tools_exec_bash_args.zig");
 const error_explain = @import("tools_error_explain.zig");
 
+/// What `runWithContext` hands back: the LLM-facing payload, plus the
+/// loop-control request parsed out of the same arguments.
+///
+/// `payload` is a bare JSON `ShellOutput` object on the success path, or an
+/// ALREADY-WRAPPED tool envelope on the argument-parse failure path (there is
+/// no other way for the parser to report a structured field error) — hence
+/// `execCommand`'s `looksWrapped` check.
+pub const RunResult = struct {
+    payload: []const u8,
+    /// `is_stop` from the arguments. False on the parse-failure path: the
+    /// field could not be read, so nothing may be assumed about it.
+    stop_loop: bool = false,
+};
+
 /// Merged exec body for the unified `command` tool (Phase A+B of the unify
 /// plan — shared logic moved here from `tools_exec_bash.zig` /
 /// `tools_exec_pwsh.zig`, which are now thin shims over this module).
@@ -30,7 +44,7 @@ pub fn runWithContext(
     tool_call: agent.ToolCall,
     db: ?*sqlite.SqliteBackend,
     session_id: ?[]const u8,
-) ![]const u8 {
+) !RunResult {
     const input = switch (bash_args.parseShellArgs(allocator, tool_call.function.arguments)) {
         .success => |in| in,
         .failure => |info| {
@@ -41,7 +55,10 @@ pub fn runWithContext(
             defer allocator.free(err_msg);
             defer allocator.free(info.got);
             const output = try wrapToolOutput(allocator, "command", tool_call.function.arguments, false, err_msg, "");
-            return output;
+            // `.stop_loop` stays false: the arguments did not parse, so
+            // `is_stop` was never read. Ending a turn on a malformed call
+            // would hide the error the envelope exists to report.
+            return .{ .payload = output };
         },
     };
     // parseShellArgs dups every string field it produces (command / cwd /
@@ -111,7 +128,7 @@ pub fn runWithContext(
 
     const res_command = try command_tool_mod.command_result_to_json(allocator, command_output);
 
-    return res_command;
+    return .{ .payload = res_command, .stop_loop = input.is_stop };
 }
 
 pub fn execCommand(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
@@ -137,12 +154,16 @@ pub fn execCommand(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     // field error), and a bare payload on the success path. Re-wrapping
     // the former would double-encode it, so pass it through untouched and
     // free the payload only on the success path.
-    if (looksWrapped(inner)) {
-        return ToolExecResult{ .output = inner, .output_allocated = true };
+    if (looksWrapped(inner.payload)) {
+        return ToolExecResult{ .output = inner.payload, .output_allocated = true };
     }
-    defer ctx.allocator.free(inner);
-    const output = try wrapToolOutput(ctx.allocator, "command", tc.function.arguments, true, null, inner);
-    return ToolExecResult{ .output = output, .output_allocated = true };
+    defer ctx.allocator.free(inner.payload);
+    const output = try wrapToolOutput(ctx.allocator, "command", tc.function.arguments, true, null, inner.payload);
+    return ToolExecResult{
+        .output = output,
+        .output_allocated = true,
+        .stop_loop = inner.stop_loop,
+    };
 }
 
 /// True when `s` is already a tool envelope rather than a bare payload.

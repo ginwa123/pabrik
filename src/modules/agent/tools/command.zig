@@ -94,6 +94,7 @@ pub const command_tool_system_prompt =
     \\Host picks the shell: `bash` on Linux/macOS, `pwsh` on Windows (silent `cmd.exe /c` fallback when pwsh is missing).
     \\Do NOT prefix commands with a shell `timeout` utility — `mandatory_timeout` (required, max 60) is the only deadline. Bound output with `| head -n <N>` / `| tail -n <N>` (bash) or `| Select-Object -First <N>` (pwsh).
     \\Prefer `search` / `read_file` / `glob` over shell search; always set `cwd` explicitly; use `background=true` (returns PID + log path) for long-running processes — never start dev servers. Under cmd.exe: no `| head -n`, use cmd syntax (dir / where / type / %VAR% / && / double-quoted URLs).
+    \\Set `is_stop=true` to end YOUR turn after this call: the command still runs and any `background=true` process keeps running, but the loop returns to the user instead of calling the model again. Put your final answer in the message content — a `tool_calls` turn normally carries none, so without it the turn ends on a bare tool card.
     \\
 ;
 
@@ -112,6 +113,7 @@ pub const command_tool = AgentTool{
         \\- Prefer `search` / `read_file` / `glob` over shell rg/grep/find; use `rg` over grep, `fd` over find, `tree` for directory structure.
         \\- No unbounded output, no destructive commands, no dev servers (`vite`, `http.server`, `nohup ... &`) — use `background=true` (PID + log path) or the functional harness instead.
         \\- Web fetch: use the `agent-browser` CLI.
+        \\- End your turn: pass `is_stop=true`. It ends YOUR turn after this batch (`background` processes keep running) and is NOT a cancel — nothing is killed. Put your final answer in the message content, because a `tool_calls` turn normally has none.
         \\
         \\## Platform notes
         \\Install pwsh via `winget install Microsoft.PowerShell` (Windows) or brew/snap (macOS/Linux); missing binary fails with `FileNotFound` at spawn (Windows retries under cmd.exe). Under cmd.exe: double-quote URLs, `%NAME%` env vars, `&&` chaining, `dir` / `where` / `type`.
@@ -175,6 +177,21 @@ pub const command_tool = AgentTool{
                     \\Note: when background=true the mandatory_timeout field is
                     \\ignored (the detached process has no deadline enforced by
                     \\this tool — the caller is responsible for killing it later).
+                    ,
+                },
+                .{
+                    .name = "is_stop",
+                    .type = "boolean",
+                    .description =
+                    \\End YOUR turn after this call. The command still runs — and a
+                    \\`background=true` process started by the same call keeps running.
+                    \\This is not a cancel: nothing is killed. The agent loop stops
+                    \\calling the model and hands control back to the user.
+                    \\Put your final answer in the message content of this same
+                    \\message: a `tool_calls` turn normally carries no prose, so
+                    \\without it the turn ends on a bare tool card.
+                    \\Use it for "start the dev server, then stop" or when the work is
+                    \\genuinely finished. Leave it false when you intend to keep going.
                     ,
                 },
                 .{
@@ -320,6 +337,51 @@ test "command_tool schema: required fields are (command, cwd, mandatory_timeout)
     try testing.expect(found_command);
     try testing.expect(found_cwd);
     try testing.expect(found_mt);
+}
+
+test "command_tool schema: is_stop is optional boolean and states its whole contract" {
+    // `is_stop` is the model's own "I am done" signal: it ends the TURN, it
+    // kills NOTHING, and a `background=true` process in the same call keeps
+    // running. Each of those three is a way the model can be wrong in a way
+    // the human then has to clean up, so the description has to carry all
+    // three — a bare "stop the agent" would read as a cancel.
+    //
+    // Optional on purpose: defaulting to true would end every turn on the
+    // first tool call, and requiring it would make every existing call site
+    // (and every transcript) invalid.
+    const params = command.command_tool.function.parameters;
+
+    var is_stop: ?@TypeOf(params.properties[0]) = null;
+    for (params.properties) |prop| {
+        if (std.mem.eql(u8, prop.name, "is_stop")) is_stop = prop;
+    }
+    try testing.expect(is_stop != null);
+    try testing.expectEqualStrings("boolean", is_stop.?.type);
+
+    for (params.required) |name| {
+        try testing.expect(!std.mem.eql(u8, name, "is_stop"));
+    }
+
+    const d = is_stop.?.description;
+    // Ends the turn (not the process)…
+    try testing.expect(std.mem.indexOf(u8, d, "End YOUR turn") != null);
+    // …is not a cancel…
+    try testing.expect(std.mem.indexOf(u8, d, "not a cancel") != null);
+    // …leaves a background process alone…
+    try testing.expect(std.mem.indexOf(u8, d, "keeps running") != null);
+    // …and the final answer has to come from the message body, because a
+    // `tool_calls` turn carries no prose. Without this the turn ends on a
+    // bare tool card and the user reads silence.
+    try testing.expect(std.mem.indexOf(u8, d, "final answer in the message content") != null);
+}
+
+test "command_tool schema: the is_stop rule reaches the description AND the system prompt" {
+    // The description is what the provider embeds in the tool schema; the
+    // system prompt is the prose reminder. The `timeout`-prefix regression
+    // taught that a rule stated in only one of the two gets dropped from the
+    // model's behaviour as soon as one of them is edited.
+    try testing.expect(std.mem.indexOf(u8, command.command_tool.function.description, "is_stop=true") != null);
+    try testing.expect(std.mem.indexOf(u8, command.command_tool_system_prompt, "is_stop=true") != null);
 }
 
 test "CommandInput is the same type as ShellInput (alias liveness check)" {

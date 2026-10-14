@@ -162,6 +162,14 @@ pub const ToolExecResult = struct {
     skill_save: ?SkillSaveInfo = null,
     agent_save: ?AgentSaveInfo = null,
     progressive_tool_save: ?ProgressiveToolSaveInfo = null,
+    /// The tool asked the agentic loop to END THIS TURN once the whole tool
+    /// batch has been dispatched and persisted (`command`'s `is_stop`).
+    ///
+    /// Distinct from a worker cancellation: nothing is killed, and a
+    /// detached command started in the same batch keeps running. `handle_tool`
+    /// OR-merges this across the batch and returns it to `workflow.zig`,
+    /// which takes the same `break` the `.stop` finish_reason arm takes.
+    stop_loop: bool = false,
 
     pub fn deinit(self: *const ToolExecResult, allocator: std.mem.Allocator) void {
         if (self.output_allocated) {
