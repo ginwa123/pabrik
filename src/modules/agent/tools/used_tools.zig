@@ -46,7 +46,7 @@ pub const used_tools_tool = AgentTool{
     .function = .{
         .name = "used_tools",
         .description =
-        \\List the tools currently equipped for this session, with each tool's name and description. Call this to answer "what tools do I have" or to check availability before calling a tool. For tools you do not have yet, use search_tool / view_tool to discover them and use_tool to equip one. Read-only, no side effects.
+        \\List the tools currently equipped for this session with their name and description, so you can check what you have before calling one. To find a tool you lack: search_tool → view_tool → use_tool. Read-only, no side effects.
         ,
         .parameters = .{
             .type = "object",

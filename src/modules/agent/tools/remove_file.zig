@@ -41,7 +41,7 @@ pub const remove_file_tool = AgentTool{
     .type = "function",
     .function = .{
         .name = "remove_file",
-        .description = "Delete a file or directory from the filesystem. `cwd` is REQUIRED and must be an absolute path: it is the directory this call works in, and a relative `path` resolves against it. Use recursive=true to delete folders with all contents inside. Warning: This cannot be undone!",
+        .description = "Delete a file or directory from the filesystem. Use recursive=true to delete a folder with its contents. Warning: this cannot be undone!",
         .parameters = .{
             .type = "object",
             .properties = &.{
@@ -53,13 +53,13 @@ pub const remove_file_tool = AgentTool{
                 .{
                     .name = "cwd",
                     .type = "string",
-                    .description = "REQUIRED. Absolute path to the directory this call works in. A relative `path` resolves against it; an absolute `path` is used as-is. Pass the tree you are actually editing (your worktree root, NOT the server's directory).",
+                    .description = "REQUIRED. Absolute directory this call works in; a relative `path` resolves against it. Pass the tree you are editing (your worktree root, NOT the server's directory).",
                 },
 
                 .{
                     .name = "recursive",
                     .type = "boolean",
-                    .description = "If true, recursively delete directory and all contents inside. Default: false.",
+                    .description = "If true, delete the directory and everything inside it. Default: false.",
                 },
             },
             .required = &.{ "path", "cwd" },

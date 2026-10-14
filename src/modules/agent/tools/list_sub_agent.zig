@@ -66,7 +66,7 @@ pub const list_sub_agent_tool = AgentTool{
     .function = .{
         .name = "list_sub_agent",
         .description =
-        \\List the subagents configured on your current profile with their full specs (model, tuning, system prompt). Call this before spawn_sub_agent when you are unsure which agent_name values exist or which one fits the job. Absent optional tags mean 'inherits the profile default'. Read-only, no side effects.
+        \\List the subagents configured on your current profile, with their full specs (model, tuning, system prompt). Call this before spawn_sub_agent when unsure which agent_name values exist or which fits the job. Absent optional tags mean 'inherits the profile default'. Read-only, no side effects.
         ,
         .parameters = .{
             .type = "object",

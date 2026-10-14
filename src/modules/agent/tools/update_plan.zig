@@ -76,37 +76,15 @@ pub const update_plan_tool = AgentTool{
     .function = .{
         .name = "update_plan",
         .description =
-        \\The `update_plan` tool overwrites (UPSERT) the agent's structured task plan for the current session. The plan body is plain markdown with a `- [ ]` (todo) / `- [x]` (done) checklist.
+        \\`update_plan` overwrites (UPSERT) this session's structured task plan — plain markdown with a `- [ ]` (todo) / `- [x]` (done) checklist.
         \\
-        \\Use `update_plan` to:
-        \\1. Lay out your plan BEFORE you start work, after understanding the user's request.
-        \\2. Overwrite the plan AFTER completing each checklist item, flipping `- [ ]` to `- [x]`.
+        \\- Lay out your plan BEFORE you start work, then overwrite it after each checklist item, flipping `- [ ]` to `- [x]`.
+        \\- The plan is re-injected into your system prompt every iteration, so the next agent (after compaction, restart, or sub-agent handoff) sees the same progress.
+        \\- `content` must be 1 byte – 256 KiB; empty content is rejected. Every call overwrites the prior plan (UPSERT) — there is no merge. `session_id` is implicit (the current session).
+        \\- To close out a finished plan, call with a final marker like `# Plan complete` — never with empty content.
+        \\- To read the current plan, use `get_plan`.
         \\
-        \\The plan is automatically re-injected into your system prompt on every iteration,
-        \\so the next agent (after compaction, restart, or sub-agent handoff) sees the
-        \\same structured progress you do.
-        \\
-        \\Format suggestion (the agent is free to adapt):
-        \\```
-        \\## Goal
-        \\<one-line summary>
-        \\
-        \\## Steps
-        \\- [x] Step 1 — done
-        \\- [ ] Step 2 — in progress
-        \\- [ ] Step 3 — pending
-        \\
-        \\## Notes
-        \\<free-form>
-        \\```
-        \\
-        \\Constraints:
-        \\- `content` must be 1 byte – 256 KiB. Empty content is rejected.
-        \\- The tool overwrites the prior plan every time (UPSERT) — there is no merge.
-        \\- `session_id` is implicit (the tool operates on the current session).
-        \\- To "close out" a finished plan, call with a final marker like
-        \\  `# Plan complete\nAll steps done.` — do NOT call with empty content.
-        \\- To read the current plan, use the companion `get_plan` tool.
+        \\Format suggestion (adapt freely): `## Goal`, then a `## Steps` checklist of `- [x]` done / `- [ ]` pending items, then optional `## Notes`.
         ,
         .parameters = .{
             .type = "object",

@@ -93,11 +93,11 @@ pub const kanban_list_tool = AgentTool{
     .function = .{
         .name = "kanban_list",
         .description =
-        \\List the structure of a kanban board: all columns (with their task counts) and all tasks (with their column assignment + position). Use this tool when the user asks about the state of a kanban board, asks "what's in the done column?", or wants to discover a task's id before calling kanban_move_task.
+        \\List a kanban board's structure: every column (with its task count) and every task (with its column assignment + position). Use it for "what's in the done column?" or to discover a task's id before `kanban_move_task`.
         \\
-        \\The workspace_id and item_id parameters must come from the chat context — see the "## Workspace Context" section of the system prompt. Each sibling item is rendered as `- **<name>** (id: <id>, item_type: <type>, path: <path>)` where the id is a backtick-quoted id (e.g. item_1782313125507292140). The id is the **canonical** lookup key — do NOT pass the human-readable name (e.g. "kanban feature"); the DB columns are indexed by id and a name lookup returns zero rows. The kanban item the user is currently viewing is the one marked with `*(this task)*` (it is the parent of the active chat's task).
+        \\`workspace_id` and `item_id` come from the `## Workspace Context` section of the system prompt — the kanban being viewed is the entry marked `*(this task)*`. Ids are the backtick-quoted value after `id: ` (e.g. `item_1782313125507292140`) and are the canonical lookup key: never pass the human-readable name, which matches zero rows. If there is no Workspace Context section, ask the user for the kanban's id.
         \\
-        \\If the system prompt does not include a "## Workspace Context" section, ask the user for the kanban's id (the one they want to list). The optional `column_id` parameter narrows the task list to one column (use kanban_list first to discover column ids, or call without it to get all tasks). Pagination: `limit` (default 20, max 100) and `offset` (default 0) control how many tasks are returned. Large boards are truncated — check `total_count` and `has_more` in the response to paginate.
+        \\`column_id` narrows the task list to one column; omit it for all tasks. Paging: `limit` (default 20, max 100) and `offset` (default 0) — check `total_count` and `has_more` in the response.
         ,
         .parameters = .{
             .type = "object",
@@ -105,27 +105,27 @@ pub const kanban_list_tool = AgentTool{
                 .{
                     .name = "workspace_id",
                     .type = "string",
-                    .description = "The workspace that owns the kanban. Should match the active workspace_id in the system prompt's `## Workspace Context` section.",
+                    .description = "The workspace that owns the kanban — the active workspace_id in the system prompt's `## Workspace Context` section.",
                 },
                 .{
                     .name = "item_id",
                     .type = "string",
-                    .description = "The kanban workspace item id (NOT the name). Find it next to the literal text `id: ` followed by a backtick-quoted id (e.g. item_1782313125507292140) in the Workspace Context listing — pass the value between the backticks, not the human-readable item name.",
+                    .description = "The kanban workspace item id (NOT the name): the backtick-quoted id after `id: ` in the Workspace Context listing (e.g. `item_1782313125507292140`).",
                 },
                 .{
                     .name = "column_id",
                     .type = "string",
-                    .description = "Optional: only return tasks in this specific column. Omit to get all tasks across all columns.",
+                    .description = "Optional: only return tasks in this specific column. Omit to get all tasks.",
                 },
                 .{
                     .name = "limit",
                     .type = "integer",
-                    .description = "Optional: max tasks to return. Default 20, max 100. Use with offset for pagination.",
+                    .description = "Optional: max tasks to return. Default 20, max 100.",
                 },
                 .{
                     .name = "offset",
                     .type = "integer",
-                    .description = "Optional: offset for pagination. Default 0. Use with limit to page through large boards.",
+                    .description = "Optional: offset for pagination. Default 0.",
                 },
             },
             .required = &.{ "workspace_id", "item_id" },

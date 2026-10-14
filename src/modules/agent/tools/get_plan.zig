@@ -60,16 +60,11 @@ pub const get_plan_tool = AgentTool{
     .function = .{
         .name = "get_plan",
         .description =
-        \\Fetch the agent's current task plan for this session. Returns the markdown body in the `plan` field, or `{"empty":true}` when no plan has been set yet (use `update_plan` to lay one out).
+        \\Fetch the agent's current task plan for this session. Returns the markdown body in the `plan` field, or `{"empty":true}` when no plan has been set yet (lay one out with `update_plan`).
         \\
-        \\The plan is also re-injected into your system prompt on every iteration, so calling `get_plan` is mostly useful for explicit verification, or after you've made several changes and want to see the current state without scrolling back through the system prompt.
+        \\The plan is also re-injected into your system prompt every iteration, so calling `get_plan` is mostly for explicit verification: before flipping a `- [ ]` to `- [x]`, before your first `update_plan` after a session handoff, or after a compaction to check the injected copy.
         \\
-        \\Use this tool to:
-        \\1. Verify the current plan before flipping a `- [ ]` to `- [x]` in `update_plan`.
-        \\2. Confirm `<empty/>` before laying out your first plan with `update_plan` (e.g. after a session handoff where the new agent didn't inherit a plan).
-        \\3. Re-read the plan after a compaction event, to check that the auto-injected copy matches what you expect.
-        \\
-        \\The output is a JSON payload, so the raw `<`, `>`, `&` inside the markdown body are preserved verbatim — the LLM sees its own plan back byte-for-byte.
+        \\The output is JSON, so the raw `<`, `>`, `&` inside the markdown body are preserved verbatim — the LLM sees its own plan back byte-for-byte.
         ,
         .parameters = .{
             .type = "object",

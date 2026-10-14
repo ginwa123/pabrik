@@ -53,7 +53,7 @@ pub const list_secrets_tool = AgentTool{
     .function = .{
         .name = "list_secrets",
         .description =
-        \\List the names of the secrets stored in this workspace, with the timestamp each was last rotated. Takes no parameters — the workspace is the calling session's. Names only: the values are never returned. Call this before writing a {{SECRETS:NAME}} placeholder so you use a name that exists. Read-only, no side effects.
+        \\List this workspace's secrets — Names only, never returned — with the timestamp each was last rotated. No parameters: the workspace is the calling session's. Call this before writing a {{SECRETS:NAME}} placeholder so you use a name that exists. Read-only, no side effects.
         ,
         .parameters = .{
             .type = "object",

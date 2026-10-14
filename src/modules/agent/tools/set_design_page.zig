@@ -59,15 +59,13 @@ pub const set_design_page_tool = AgentTool{
     .function = .{
         .name = "set_design_page",
         .description =
-        \\Create or update a page on a design canvas. This tool has dual semantics: it both CREATES a new page (when none exists with this name on this design item) AND returns the current state of the page INCLUDING all its elements. Use this tool to (1) discover what elements already exist on a page, (2) set the page dimensions, or (3) create a new page.
+        \\Create or update a design page. The call is idempotent: re-issuing the same (`item_id`, `page_name`) replaces that page's `width`/`height` in place (other clients see it via SSE). Every call returns the page WITH all its elements, so it also answers "what exists on this page?".
         \\
-        \\The call is idempotent: re-issuing `set_design_page` with the same (item_id, page_name) REPLACES the existing page's width/height in place. Other connected clients see the change via SSE.
+        \\`item_id` comes from the `## Workspace Context` section of the system prompt — the entry with `item_type='design'`, marked `*(this task)*` when active. Take the backtick-quoted id after `id: ` (e.g. `item_1782313125505579000`), never the human-readable name.
         \\
-        \\The item_id must come from the chat context — see the "## Workspace Context" section of the system prompt. Each sibling item is rendered as `- **<name>** (id: <id>, item_type: <type>, path: <path>)` where the id is a backtick-quoted id (e.g. item_1782313125505579000). The id is the **canonical** lookup key — do NOT pass the human-readable name. The design item is the one with `item_type='design'`.
+        \\`page_name` must be unique per design item and must NOT contain `/` or null bytes. Use clear names: `Login`, `Dashboard`, `Settings`.
         \\
-        \\Page name rules: must be unique per design item, must NOT contain `/` or null bytes (the unique index rejects duplicates with an `error` response). Pick clear names: `Login`, `Dashboard`, `Settings`, `Profile`, etc.
-        \\
-        \\On error, recover by: (1) verify the item_id from the Workspace Context (the active design item is the one marked `*(this task)*`); (2) if the item has no path set, the user must open the AddDesign dialog first to set one — you cannot create pages for an unconfigured item.
+        \\On error: re-check `item_id`; if the item has no path, the user must set one via the AddDesign dialog first — pages cannot be created for an unconfigured item.
         ,
         .parameters = .{
             .type = "object",
@@ -75,22 +73,22 @@ pub const set_design_page_tool = AgentTool{
                 .{
                     .name = "item_id",
                     .type = "string",
-                    .description = "The design workspace item id (NOT the name). Find it next to the literal text `id: ` followed by a backtick-quoted id (e.g. item_1782313125505579000) in the Workspace Context listing — pass the value between the backticks, not the human-readable item name. The item has `item_type='design'`.",
+                    .description = "The design workspace item id (NOT the name): the backtick-quoted id after `id: ` in the Workspace Context listing (e.g. `item_1782313125505579000`). It has `item_type='design'`.",
                 },
                 .{
                     .name = "page_name",
                     .type = "string",
-                    .description = "Human-readable page name (e.g. 'Login', 'Dashboard'). Must be unique per design item. Must NOT contain '/' or null bytes.",
+                    .description = "Human-readable page name (e.g. 'Login', 'Dashboard'). Must be unique per design item; must NOT contain '/' or null bytes.",
                 },
                 .{
                     .name = "width",
                     .type = "integer",
-                    .description = "Page width in CSS pixels. Optional; defaults to 1440 (standard design viewport).",
+                    .description = "Page width in CSS pixels. Optional; defaults to 1440.",
                 },
                 .{
                     .name = "height",
                     .type = "integer",
-                    .description = "Page height in CSS pixels. Optional; defaults to 1024 (standard design viewport).",
+                    .description = "Page height in CSS pixels. Optional; defaults to 1024.",
                 },
             },
             .required = &.{ "item_id", "page_name" },

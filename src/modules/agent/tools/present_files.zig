@@ -90,16 +90,13 @@ pub const present_files_tool = AgentTool{
     .function = .{
         .name = "present_files",
         .description =
-        \\Present one or more workspace files as inline-preview cards in the chat transcript. Use this tool when the user asks to "share", "attach", "present", "send", "show", "preview", "render", or "download" a file — or when you just created/edited a file (report, image, export, notes, html page) and want the user to see it inline with one click to download.
+        \\Present one or more workspace files as inline-preview cards in the chat transcript — when the user asks to "share", "attach", "present", "send", "show", "preview", "render" or "download" a file, or when you just created/edited one (report, image, export, notes, html page) and want it visible inline.
         \\
-        \\INPUT: cwd (required, ABSOLUTE path to the directory this call works in) and files (required, array of 1-10 objects). Each object: path (required — absolute, or relative to `cwd`; e.g. "report.md" or "/home/user/report.md"), label (optional, short display name — defaults to the filename), caption (optional, note shown below the row).
-        \\WORKING DIRECTORY: every path must live inside the session working directory — that is the only place the browser can be served the bytes from, so a file outside it is rejected (copy it into the working directory first with `bash cp`).
+        \\Every entry must exist, be ≤ 50 MiB, contain no `..` and live INSIDE the session working directory — the only place the browser is served file bytes from, so a path outside it (e.g. under ~/Downloads) is rejected: copy the file in first (`bash cp "<path>" "<working-dir>/"`) and present the copy. A missing file, a directory and a relative path are rejected too, each with a structured error naming the offending path.
         \\
-        \\BEHAVIOUR: The server stats each file (existence, size, mime) and returns metadata only — file bytes are served on demand via GET /api/files/download (disposition=inline for previews, attachment for downloads). The card renders each file inline: images (jpg/png/gif/webp/svg) full-width with click-to-fullscreen, html in a sandboxed iframe with an "open in new tab" action, text/markdown/code (md/txt/json/csv/log/zig/ts/py/js/css) as fetched source with syntax-aware rendering, pdf embedded, video/audio with native players; every other type (zip, etc.) renders a file row with a download button. Files must be ≤ 50 MiB each, must live inside the session working directory, and must not contain `..`; a path outside the working directory, a missing file, a directory, a relative path and an oversized file are all rejected with a structured error naming the offending path.
+        \\The card previews images, html (sandboxed iframe), text/markdown/code, pdf and video/audio inline; any other type gets a file row with a download button. Bytes are served on demand from GET /api/files/download — the server stats each file and returns metadata only.
         \\
-        \\OUTPUT (JSON success envelope): {"status":"presented","count":N,"files":[{"path":...,"bytes":...,"mime":...,"label":...}],"error":null}. On error: {"status":null,"count":0,"files":[],"error":"..."}.
-        \\
-        \\This tool does NOT write anything to disk — it only presents existing files. To show generated content inline, first save it with `write_file`, then present the saved file.
+        \\OUTPUT (JSON): {"status":"presented","count":N,"files":[{"path":...,"bytes":...,"mime":...,"label":...}],"error":null}, or {"status":null,"count":0,"files":[],"error":"..."} on failure. This tool writes nothing to disk — to show generated content inline, save it with `write_file` first.
         ,
         .parameters = .{
             .type = "object",
@@ -107,12 +104,12 @@ pub const present_files_tool = AgentTool{
                 .{
                     .name = "files",
                     .type = "array",
-                    .description = "1-10 file objects to present. Each: {path (absolute, or relative to `cwd`), label? (display name), caption? (note)}.",
+                    .description = "1-10 files, each {path (absolute, or relative to `cwd`), label? (display name), caption? (note)}.",
                 },
                 .{
                     .name = "cwd",
                     .type = "string",
-                    .description = "REQUIRED. Absolute path to the directory this call works in. A relative `path` resolves against it; an absolute `path` is used as-is. Pass the tree you are actually editing (your worktree root, NOT the server's directory).",
+                    .description = "REQUIRED. Absolute path to the directory this call works in — a relative `path` resolves against it, an absolute `path` is used as-is. Pass the tree you are actually editing (your worktree root, NOT the server's directory).",
                 },
             },
             .required = &.{ "files", "cwd" },

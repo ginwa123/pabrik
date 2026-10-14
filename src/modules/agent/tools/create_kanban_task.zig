@@ -151,19 +151,14 @@ pub const create_kanban_task_tool = AgentTool{
     .function = .{
         .name = "create_kanban_task",
         .description =
-        \\Create a new task/card on a kanban board. Use this tool when the user asks to add a new task to a kanban, "create a card for X", "add 'do the thing' to the sprint", or any other instruction that means "make a new card". The task is auto-assigned to the first column at MAX(kanban_position)+1 unless column_id is supplied.
+        \\Create a new task card on a kanban board, for follow-up work that should be tracked.
         \\
-        \\The workspace_id and item_id must come from the chat context — see the "## Workspace Context" section of the system prompt. Each sibling item is rendered as `- **<name>** (id: <id>, item_type: <type>, path: <path>)` where the id is a backtick-quoted id (e.g. item_1782313125507292140). The id is the **canonical** lookup key — do NOT pass the human-readable name (e.g. "sprint 1"); the DB columns are indexed by id and a name lookup returns zero rows. The kanban item is the one with `item_type='kanban'` marked with `*(this task)*` in the Workspace Context.
+        \\- `workspace_id` and `item_id` come from the "## Workspace Context" section of the system prompt. Pass the backtick-quoted id, never the human-readable name — the DB columns are indexed by id, so a name lookup returns zero rows. The kanban item is the one with `item_type='kanban'` marked `*(this task)*`.
         \\
-        \\REQUIRED fields (must be non-empty): name (card title shown on the board) and description (card tooltip text — promoted to required on 2026-08-18 so the kanban view always has enough context for human triage). No cwd is passed: the card's working directory is the kanban item's own `path`, which the server reads from `item_id`. column_id is OPTIONAL — when omitted, the task is auto-assigned to the first kanban column at MAX(kanban_position)+1; when supplied, the column must belong to the same kanban item. To set a specific position, call kanban_move_task after this tool returns.
-        \\
-        \\Optional fields (mirror the user-facing KanbanTaskDetailDialog form, Migration 062 / 067 / 069 / 071 — all four are persisted on create, not just on chat-spawn):
-        \\  - tags: JSON-encoded array string like "[\"bug\",\"urgent\"]". Letters/digits/`_`/`-` only, ≤50 chars per tag, case-insensitive dedupe. Null/empty = no tags.
-        \\  - image_urls: `||`-delimited `data:image/<mime>;base64,<payload>` URLs. Null/empty = no images. 10 MB cap.
-        \\  - is_auto_retry_until_stop: "1" enables unattended mode (agent keeps retrying past the 10-error TooManyRetries bail). Anything else normalizes to "0". A sessions row is always created keyed by the new task's id; this flag only sets its column.
-        \\  - selected_profile_model: name of the profile in `LlmConfig.profiles` to bind on the new sessions row (Path A — persisted on the chat session, not on the task). Null/empty = backend default.
-        \\
-        \\Workflow: (1) call kanban_list first to discover the kanban item id and (optionally) the column id if the user named one, (2) call create_kanban_task with those ids, (3) use kanban_move_task if the task needs to land in a non-default position. On error, recover by: (1) verify item_id from the Workspace Context listing; (2) if the parent item is not a kanban, the tool returns a structured error — pick the item marked `*(this task)*` instead; (3) if column_id was rejected, omit it and let auto-assign place the card.
+        \\- REQUIRED: `name` (card title) and `description` (card tooltip — enough context for human triage). No `cwd` is passed: the card's working directory is the kanban item's own `path`, which the server reads from `item_id`.
+        \\- `column_id` is OPTIONAL: omitted, the card is auto-assigned to the first kanban column at MAX(kanban_position)+1; supplied, the column must belong to the same kanban item. Call kanban_move_task afterwards to set a specific position.
+        \\- Workflow: call kanban_list first to discover the kanban item id (and a column id if the user named one), then create the card, then kanban_move_task if it needs to land in a non-default position.
+        \\- On error: re-verify `item_id` against the Workspace Context — a parent item that is not a kanban is a structured error, so pick the item marked `*(this task)*`; if `column_id` was rejected, omit it and let auto-assign place the card.
         ,
         .parameters = .{
             .type = "object",
@@ -171,47 +166,47 @@ pub const create_kanban_task_tool = AgentTool{
                 .{
                     .name = "workspace_id",
                     .type = "string",
-                    .description = "The workspace that owns the kanban item. From chat context. Always starts with `ws_`.",
+                    .description = "Workspace owning the kanban item, from chat context. Always starts with `ws_`.",
                 },
                 .{
                     .name = "item_id",
                     .type = "string",
-                    .description = "The kanban workspace item id (NOT the name). From chat context. The item has `item_type='kanban'`. Always starts with `item_`.",
+                    .description = "Kanban workspace item id (NOT the name), from chat context. The item has `item_type='kanban'`. Always starts with `item_`.",
                 },
                 .{
                     .name = "name",
                     .type = "string",
-                    .description = "Card title shown on the kanban board. Required, non-empty after trim. Used as the chat session's name when the user later opens the card.",
+                    .description = "Card title, non-empty after trim. Also becomes the chat session's name when the user opens the card.",
                 },
                 .{
                     .name = "description",
                     .type = "string",
-                    .description = "Card description / tooltip text shown in the kanban UI. REQUIRED (non-empty after trim — same rule as `name`). Promoted to required on 2026-08-18; pass a one-to-three-sentence summary of what the task is about.",
+                    .description = "Card tooltip text shown in the kanban UI. REQUIRED since 2026-08-18, non-empty after trim (same rule as `name`); one to three sentences on what the task is about.",
                 },
                 .{
                     .name = "column_id",
                     .type = "string",
-                    .description = "Optional target column id (NOT name). When omitted, the task is auto-assigned to the first column at MAX(kanban_position)+1. Use kanban_list to discover column ids — never pass the human-readable name.",
+                    .description = "Target column id (NOT name). Omitted: auto-assigned to the first column at MAX(kanban_position)+1. Use kanban_list to discover ids; never pass the human-readable name.",
                 },
                 .{
                     .name = "tags",
                     .type = "string",
-                    .description = "Optional tags as a JSON-encoded array string, e.g. \"[\"bug\",\"urgent\"]\". Letters/digits/`_`/`-` only, ≤50 chars per tag, case-insensitive dedupe (validated by tags_validation). Null or empty = no tags.",
+                    .description = "JSON-encoded array string, e.g. \"[\"bug\",\"urgent\"]\". Letters/digits/`_`/`-` only, ≤50 chars per tag, case-insensitive dedupe. Null or empty = no tags.",
                 },
                 .{
                     .name = "image_urls",
                     .type = "string",
-                    .description = "Optional image attachments as a `||`-delimited string of `data:image/<mime>;base64,<payload>` URLs (10 MB cap, validated by image_urls_validation). Null or empty = no images.",
+                    .description = "`||`-delimited `data:image/<mime>;base64,<payload>` URLs (10 MB cap). Null or empty = no images.",
                 },
                 .{
                     .name = "is_auto_retry_until_stop",
                     .type = "string",
-                    .description = "Optional unattended-mode flag. `\"1\"` enables retrying past the 10-error TooManyRetries bail (overnight runs); any other value normalizes to `\"0\"`. A sessions row is always created keyed by the new task's id; this flag only sets its column.",
+                    .description = "Unattended-mode flag: `\"1\"` retries past the 10-error TooManyRetries bail (overnight runs), any other value normalizes to `\"0\"`. A sessions row is always created keyed by the new task's id; this flag only sets its column.",
                 },
                 .{
                     .name = "selected_profile_model",
                     .type = "string",
-                    .description = "Optional profile name from `LlmConfig.profiles` to bind on the new sessions row. Null or empty = backend default (top-level config).",
+                    .description = "Profile name from `LlmConfig.profiles` to bind on the new sessions row. Null or empty = backend default (top-level config).",
                 },
             },
             // Four required fields (description promoted from optional on

@@ -642,39 +642,15 @@ pub const web_search_tool = AgentTool{
     .function = .{
         .name = "web_search",
         .description =
-        \\Search the open internet and return ranked results. Backed by a search
-        \\provider the USER configured — there are no built-in providers, so call
-        \\`list_web_search_providers` first to see what is available.
+        \\Search the open internet and return ranked results through a provider the USER configured — none are built in, so call `list_web_search_providers` first.
         \\
-        \\INPUT:
-        \\  provider (required, string) — a provider name exactly as
-        \\    `list_web_search_providers` returned it.
-        \\  curl (required, string) — the request, built by editing that
-        \\    provider's template. Put your search text where the template's
-        \\    placeholder is, leave `{key}` exactly where the template has it,
-        \\    and change any other parameter you need (location, language,
-        \\    count, …).
+        \\Build `curl` from that provider's template: put your search text where its placeholder is and leave `{key}` where it is (the backend substitutes the stored credential).
         \\
-        \\BEHAVIOUR: The backend parses the curl, checks the request host against
-        \\the host the user pinned for that provider, substitutes the stored
-        \\credential for `{key}`, and performs a GET. GET only: `-X`, `-d`,
-        \\`-o` and `--upload-file` are rejected. If the request host is not the
-        \\pinned one the request is REFUSED and no key is sent.
+        \\GET only: `-X`, `-d`, `-o` and `--upload-file` are rejected. The backend checks the request host against the host the user pinned for that provider; on a mismatch the request is REFUSED and no key is sent.
         \\
-        \\OUTPUT (success, JSON): {"provider":"…","status":200,"response":{…}}
-        \\where `response` is the provider's own JSON, passed through unchanged —
-        \\every provider has a different result shape, so read it rather than
-        \\assuming one.
+        \\OUTPUT (JSON): {"provider":"…","status":200,"response":{…}} — `response` is the provider's own JSON passed through unchanged, so read it rather than assuming a shape.
         \\
-        \\On error the payload carries an `error` field plus a reason flag:
-        \\  host_mismatch  — the curl pointed somewhere the user did not approve
-        \\  invalid_curl    — the curl could not be parsed (the message names why)
-        \\  exhausted       — the provider's quota is used up; `other_providers`
-        \\                    lists the alternatives, call one of those next
-        \\  configured:false — no providers are configured at all
-        \\
-        \\NEXT STEP: Read `response.results` (most providers) or the equivalent
-        \\array, and cite the URLs you actually used.
+        \\On error the payload carries `error` plus a reason flag: host_mismatch, invalid_curl, exhausted (see `other_providers`), configured:false. Cite the URLs you actually used.
         ,
         .parameters = .{
             .type = "object",
@@ -687,7 +663,7 @@ pub const web_search_tool = AgentTool{
                 .{
                     .name = "curl",
                     .type = "string",
-                    .description = "The search request, built by editing that provider's template. Replace the placeholder with your search text, keep {key} exactly where the template has it. GET only.",
+                    .description = "Built by editing that provider's template: put your search text in the placeholder and keep {key} where the template has it. GET only.",
                 },
             },
             .required = &.{ "provider", "curl" },
@@ -710,15 +686,9 @@ pub const list_web_search_providers_tool = AgentTool{
     .function = .{
         .name = "list_web_search_providers",
         .description =
-        \\List the web-search providers configured by the user, with a ready-to-edit
-        \\`curl` template for each. Takes no arguments.
+        \\List the user's configured web-search providers, each with a ready-to-edit `curl` template. Takes no arguments.
         \\
-        \\Returns {"providers":[{"name":"…","url":"…","description":"…","curl":"…"}]}.
-        \\The `curl` is a TEMPLATE: it carries the literal text `{key}` where the
-        \\user's credential goes. You never see the credential itself — the
-        \\backend substitutes it. To search, take a provider's template, replace
-        \\the query placeholder with your search text, and pass the result to
-        \\`web_search` along with that provider's name.
+        \\Returns {"providers":[{"name":"…","url":"…","description":"…","curl":"…"}]}. Each `curl` is a TEMPLATE carrying the literal `{key}` where the user's credential goes — you never see the credential, the backend substitutes it. To search, replace the query placeholder with your search text and pass the result to `web_search` with that provider's name.
         ,
         .parameters = .{
             .type = "object",

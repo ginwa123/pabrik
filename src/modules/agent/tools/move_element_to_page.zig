@@ -51,13 +51,11 @@ pub const move_element_to_page_tool = AgentTool{
     .function = .{
         .name = "move_element_to_page",
         .description =
-        \\Relocate an existing design element from the active page to a different page within the same design item. Use this when the user wants to reorganize elements across the page list — e.g. "move this button to the Checkout page". When `apply_to_children=true` (the default), every transitive descendant of the element moves with it (Figma parity: moving a `group` or `frame` moves the whole subtree). When `apply_to_children=false`, only the root moves; descendants are left behind on the source page as top-level orphans.
+        \\Relocate an existing design element to another page of the same design item. With `apply_to_children=true` (the default) every transitive descendant moves too (Figma parity: a moved `group` or `frame` keeps its subtree); with `false` only the root moves and its descendants stay on the source page as top-level orphans.
         \\
-        \\The `element_id` must reference an element on the active page. The `new_page_id` must be a sibling page in the same design item — discover siblings via `get_design_context` (the `<pages count="N">` block). Both fields are required. Passing the same page as the active page (`new_page_id == active_page`) returns `SamePage`.
+        \\`element_id` must reference an element on the active page; `new_page_id` must be a sibling page of the same design item — discover siblings via `get_design_context` (the `<pages count="N">` block). Both are required; the active page returns `SamePage`.
         \\
-        \\Discover ids via `set_design_page` / `get_design_context` — each element / page object carries an `id` field.
-        \\
-        \\On error, recover by: (1) verify `element_id` and `new_page_id` are non-empty and correctly prefixed; (2) call `get_design_context` to confirm `new_page_id` exists on the same design item as the active page; (3) on `ElementNotFound`, refresh the active page's element list — the element may have been deleted.
+        \\On error: verify both ids are correctly prefixed; use `get_design_context` for a fresh `new_page_id`; refresh the active page on `ElementNotFound`.
         ,
         .parameters = .{
             .type = "object",
@@ -65,17 +63,17 @@ pub const move_element_to_page_tool = AgentTool{
                 .{
                     .name = "element_id",
                     .type = "string",
-                    .description = "The element id to move. Find it in the `id` field of an element object in a `set_design_page` or `get_design_context` response.",
+                    .description = "The element id to move, from the `id` field of an element object in a `set_design_page`/`get_design_context` response.",
                 },
                 .{
                     .name = "new_page_id",
                     .type = "string",
-                    .description = "The destination page id. Must be a sibling page in the same design item. Find it in the `id` field of a page object in `get_design_context`.",
+                    .description = "The destination page id — the `id` field of a page object from `get_design_context`. Must be a sibling page of the same design item.",
                 },
                 .{
                     .name = "apply_to_children",
                     .type = "boolean",
-                    .description = "Default true. When true, every transitive descendant of the element moves with it. Pass false to move a single element only (descendants stay on the source page as orphans).",
+                    .description = "Default true: every transitive descendant moves too. Pass false to move only the element (descendants stay on the source page as orphans).",
                 },
             },
             .required = &.{ "element_id", "new_page_id" },

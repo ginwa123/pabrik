@@ -67,7 +67,7 @@ pub const set_pull_request_tool = AgentTool{
     .function = .{
         .name = "set_pull_request",
         .description =
-        \\Attach an existing pull/merge-request URL to the current session so the chat's right panel shows the PR's file changes. Works for GitHub (gh CLI), GitLab (glab CLI, incl. self-hosted), and generic forges (pure-git base...head diff, no CLI needed). This tool never creates a PR — only binds one. Pass clear=true to unbind the current PR.
+        \\Attach an existing pull/merge-request URL to the current session so the chat's right panel shows the PR's file changes. Works for GitHub (gh CLI), GitLab (glab CLI, incl. self-hosted), and generic forges (pure-git base...head diff, no CLI needed). Never creates a PR — only binds one. Pass clear=true to unbind the current PR.
         ,
         .parameters = .{
             .type = "object",
@@ -95,12 +95,12 @@ pub const set_pull_request_tool = AgentTool{
                 .{
                     .name = "clear",
                     .type = "boolean",
-                    .description = "If true, unbind the session's PR (clears pr_url + pr_provider). All other fields are ignored when true. Default: false.",
+                    .description = "If true, unbind the session's PR (clears pr_url + pr_provider); all other fields are ignored. Default: false.",
                 },
                 .{
                     .name = "verify",
                     .type = "boolean",
-                    .description = "If true (default), confirm the PR exists via gh/glab before persisting. Missing CLI degrades to persist-with-warning; not-found/auth failure is a hard error.",
+                    .description = "If true (default), confirm the PR exists via gh/glab before persisting. A missing CLI degrades to persist-with-warning; not-found/auth failure is a hard error.",
                 },
             },
             .required = &.{},

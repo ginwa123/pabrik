@@ -47,25 +47,20 @@ pub const get_design_context_tool = AgentTool{
     .function = .{
         .name = "get_design_context",
         .description =
-        \\Inspect the structure of a design canvas (pages + elements). Pass EITHER `page_id` to get one page with its elements, OR `workspace_item_id` to get ALL pages of the design item. Exactly one of the two must be provided.
+        \\Inspect a design canvas (pages + elements). Pass EITHER `page_id` (one page, with its elements) OR `workspace_item_id` (all pages of the design item) — exactly one of the two.
         \\
-        \\Returns a JSON object:
+        \\Element keys match the design DB row wire shape:
         \\
-        \\{"pages": [{"id": "page_X", "name": "Login", "width": 1440,
-        \\"height": 1024, "position": 0, "elements": [{"id": "elem_Y",
-        \\"page_id": "page_X", "name": "...", "type": "rectangle",
-        \\"x": ..., "y": ..., "width": ..., "height": ...,
-        \\"rotation": ..., "fill": ..., "stroke": ...,
-        \\"corner_radius": ..., "opacity": ..., "text_content": ...,
-        \\"image_url": ..., "parent_id": ..., "file_path": ...,
-        \\"z_index": ..., "position": ..., "created_at": ...,
-        \\"updated_at": ...}]}]}
+        \\{"pages":[{"id":...,"name":...,"width":...,"height":...,"position":...,
+        \\"elements":[{"id":...,"page_id":...,"name":...,"type":...,
+        \\"x":...,"y":...,"width":...,"height":...,"rotation":...,"fill":...,
+        \\"stroke":...,"corner_radius":...,"opacity":...,"text_content":...,
+        \\"image_url":...,"parent_id":...,"file_path":...,"z_index":...,
+        \\"position":...,"created_at":...,"updated_at":...}]}]}
         \\
-        \\Each element key matches the design DB row wire shape (so the agent can spot `x`/`y`/`width`/`height` for layout, `parent_id` for grouping, `text_content` for content).
+        \\HTML bodies are NOT included — read them with `read_file`. If the page has no elements yet, create them with `add_element` / `set_design_page` first.
         \\
-        \\HTML bodies are intentionally NOT included — the agent can read them individually with `read_file` if needed. If the page has no HTML bodies yet, use `add_element` (or `set_design_page` to create the page) first.
-        \\
-        \\On error, the response is `{"error":...}`.
+        \\On error: `{"error":...}`.
         ,
         .parameters = .{
             .type = "object",
@@ -73,12 +68,12 @@ pub const get_design_context_tool = AgentTool{
                 .{
                     .name = "page_id",
                     .type = "string",
-                    .description = "Get context for ONE page. Pass it OR `workspace_item_id` (not both). Use `set_design_page` first if you don't know the page_id.",
+                    .description = "ONE page with its elements. Mutually exclusive with `workspace_item_id`. Discover page ids from a `set_design_page` response.",
                 },
                 .{
                     .name = "workspace_item_id",
                     .type = "string",
-                    .description = "Get context for ALL pages of a design item. Must come from the Workspace Context listing (item_type='design'). Pass it OR `page_id` (not both).",
+                    .description = "ALL pages of a design item. Must come from the Workspace Context listing (item_type='design'). Mutually exclusive with `page_id`.",
                 },
             },
             .required = &.{},

@@ -106,45 +106,21 @@ pub const read_workspace_session_tool = AgentTool{
     .function = .{
         .name = "read_workspace_session",
         .description =
-        \\Discover, search, and read other chat sessions in YOUR workspace — including messages compacted out of the live context. Scope is derived server-side from your session: you can only ever see sessions in your own workspace. Reads of other workspaces' sessions are denied.
+        \\Discover, search, and read other chat sessions in YOUR workspace — including messages compacted out of the live context. Scope is derived server-side from your session: you can only ever see sessions in your own workspace; reads of another workspace's session are denied.
         \\
         \\FOUR BEHAVIORS (pick by params):
-        \\- LIST (neither `query` nor `session_id`): sessions in your workspace with name, status, message count, last activity, and a preview of the latest human message. Your own session is excluded unless `is_current_session` is true. Use this when you need to find "the conversation about X" but don't know its session id.
-        \\- SEARCH (`query` only): full-text search over message content across your workspace using SQLite FTS5. Filter by `role`/`tool_name`/`parent_session_id`/`agent`, time-bound via `since`/`until`, restrict to live or compacted rows via `live_only`/`compacted_only`, paginate with `offset` + `limit`. Returns ranked matches with a preview snippet + owning session id/name. For long result sets, read <total_count> and call again with offset=N until offset + count >= total_count.
-        \\- READ (`session_id` only): messages of one session in your workspace (live + compacted). Returns an index (id, role, created_at, preview); pass `message_ids` (up to 50) for full <content> bodies. Use `order="desc"` for most-recent-first, `since`/`until` to paginate forward.
-        \\- SEARCH-WITHIN (both `query` and `session_id`): FTS restricted to that one session (which must be in your workspace).
+        \\- LIST (neither `query` nor `session_id`): sessions in your workspace with name, status, message count, last activity, and a preview of the latest human message. Use it to find "the conversation about X" when you don't know its session id.
+        \\- SEARCH (`query` only): SQLite FTS5 over message content across your workspace. Returns ranked matches with a preview snippet + owning session id/name. For long result sets, read <total_count> and call again with offset=N until offset + count >= total_count.
+        \\- READ (`session_id` only): messages of one session (live + compacted) as an index (id, role, created_at, preview); pass `message_ids` (up to 50) for full <content> bodies.
+        \\- SEARCH-WITHIN (both `query` and `session_id`): FTS restricted to that one session.
         \\
-        \\YOUR OWN SESSION (all four behaviors): excluded by default. LIST/SEARCH filter it out; READ/SEARCH-WITHIN aimed at it return an `error` telling you to retry. Set `is_current_session: true` to opt back in — you already hold the current session in your live context, so only ask for it deliberately (e.g. `compacted_only` to recover messages compaction dropped).
+        \\YOUR OWN SESSION (all four behaviors): excluded by default. LIST/SEARCH filter it out; READ/SEARCH-WITHIN aimed at it return an `error` telling you to retry. Set `is_current_session: true` to opt back in — you already hold the current session in your live context, so only ask deliberately (e.g. `compacted_only` to recover messages compaction dropped).
         \\
-        \\FTS QUERY SANITIZATION: queries with `.`, `-`, `:`, `*`, `^`, `(`, `)`, `"`, `+` are auto-sanitized — you can write `handle_tool.zig` or `AGENTS.md` without pre-escaping. Multi-word queries are joined with FTS5 OR (`a b` matches rows containing `a` OR `b`) for natural recall.
+        \\FTS QUERY SANITIZATION: `.`, `-`, `:`, `*`, `^`, `(`, `)`, `"`, `+` are auto-sanitized — write `handle_tool.zig` or `AGENTS.md` without pre-escaping. Multi-word queries are joined with FTS5 OR (`a b` matches rows containing `a` OR `b`).
         \\
-        \\Response shape (JSON fields):
-        \\- `count`: number of entries in THIS response (page size).
-        \\- `total_count`: total matching entries before pagination. Use to know whether more pages exist.
-        \\- per-message `content` is truncated to 16 KB; `content_truncated=true` indicates there's more. Call again with a narrower message_ids list to fetch the rest.
-        \\- cross-workspace targets return `denied:true`, not content. Sessions outside your workspace are never listed, never searched, never read.
+        \\RESPONSE (JSON fields): `count` = entries in THIS response (page size); `total_count` = matches before pagination (tells you whether more pages exist); per-message `content` truncated to 16 KB with `content_truncated=true` when there is more (call again with a narrower `message_ids` to fetch the rest); cross-workspace targets return `denied:true`, never content.
         \\
-        \\Filters (optional, apply to SEARCH/READ/SEARCH-WITHIN unless noted):
-        \\- role: "user", "assistant", or "tool" — exact match.
-        \\- tool_name: exact-match filter on the tool that produced the row. Useful for "find every `command` invocation that ran `cargo test`".
-        \\- parent_session_id: exact-match filter on sub-agent sessions. Useful for tracing a sub-agent's full session.
-        \\- agent: exact-match filter on the agent name (e.g. "main", "planning", "compaction").
-        \\- live_only / compacted_only (mutually exclusive): restrict to messages still in your live context (is_feed_to_llm=1) vs. dropped by compaction (is_feed_to_llm=0). Default returns both.
-        \\- since / until: YYYY-MM-DD HH:MM:SS inclusive bounds on created_at.
-        \\- is_current_session: when true, the CURRENT session is included in the results. Default false — your own session is excluded from LIST/SEARCH and refused by READ/SEARCH-WITHIN.
-        \\- limit: max rows to return (default 20, max 200; LIST max 50).
-        \\- offset: SEARCH only — skip first N matches for pagination.
-        \\- order: READ only — "asc" (chronological forward, default) or "desc" (most-recent-first).
-        \\
-        \\Example (list): {}
-        \\Example (search): {"query": "login bug fix"}
-        \\Example (search page 2): {"query": "login bug", "offset": 20}
-        \\Example (read): {"session_id": "s_42"}
-        \\Example (read recent first): {"session_id": "s_42", "order": "desc"}
-        \\Example (read full bodies): {"session_id": "s_42", "message_ids": "h_1781,h_1782"}
-        \\Example (search within): {"session_id": "s_42", "query": "migration"}
-        \\Example (include your own session): {"is_current_session": true}
-        \\Example (own compacted messages): {"is_current_session": true, "compacted_only": true}
+        \\Examples: {} list · {"query": "login bug fix"} search · {"session_id": "s_42"} read · {"session_id": "s_42", "query": "migration"} search-within · {"is_current_session": true, "compacted_only": true} own compacted messages.
         ,
         .parameters = .{
             .type = "object",
@@ -156,7 +132,7 @@ pub const read_workspace_session_tool = AgentTool{
                 .{ .name = "tool_name", .type = "string", .description = "Optional exact-match filter on tool_name. Useful for finding every `command` / read_file / search invocation." },
                 .{ .name = "parent_session_id", .type = "string", .description = "Optional exact-match filter on parent_session_id. Useful for tracing a sub-agent's full session." },
                 .{ .name = "agent", .type = "string", .description = "Optional exact-match filter on agent name (e.g. 'main', 'planning', 'compaction')." },
-                .{ .name = "live_only", .type = "boolean", .description = "If true, restrict to messages still in the LLM's live context (is_feed_to_llm=1). Mutually exclusive with compacted_only." },
+                .{ .name = "live_only", .type = "boolean", .description = "If true, restrict to messages still in the LLM's live context (is_feed_to_llm=1). Mutually exclusive with compacted_only — omit both for live + compacted." },
                 .{ .name = "compacted_only", .type = "boolean", .description = "If true, restrict to messages dropped by compaction (is_feed_to_llm=0). Mutually exclusive with live_only." },
                 .{ .name = "since", .type = "string", .description = "Optional lower bound on created_at (inclusive). YYYY-MM-DD HH:MM:SS." },
                 .{ .name = "until", .type = "string", .description = "Optional upper bound on created_at (inclusive)." },

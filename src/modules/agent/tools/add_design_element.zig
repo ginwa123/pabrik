@@ -97,17 +97,7 @@ pub const add_design_element_tool = AgentTool{
     .function = .{
         .name = "add_element",
         .description =
-        \\Add a new element to a design page. This creates a positioned visual element with a writable HTML body stored on disk under `<workspace_item.path>/.pabrik/design/<page>/<element>.html`.
-        \\
-        \\The 6 valid element types are: `rectangle` (solid fill box), `ellipse` (circle/ellipse), `text` (HTML text node — set `text_content`), `image` (raster image — set `image_url`), `frame` (container that clips children), `group` (container that does not clip).
-        \\
-        \\Discover the `page_id` by calling `set_design_page` first — the response includes the page id in the `id` field. Element names must be unique within a page; re-issuing with the same name fails with an `error` object.
-        \\
-        \\Defaults: x=0, y=0, width=200, height=100, fill="" (no fill), rotation=0, corner_radius=0, opacity=1.0, text_content="", text_style="", image_url="".
-        \\
-        \\Returns the full element JSON object (omits the html body to keep the response compact — the body lives at `file_path` which is shown in the response).
-        \\
-        \\On error, recover by: (1) verify `page_id` from a fresh `set_design_page` call; (2) check the element name is unique within the page (use `set_design_page` to list existing elements); (3) check `type` is one of the 6 valid values.
+        \\Add a new positioned element to a design page, with a writable HTML body stored on disk. Discover `page_id` via `set_design_page` first; the name must be unique within the page. Returns the element JSON object — the html body itself is omitted, its location is in `file_path`.
         ,
         .parameters = .{
             .type = "object",
@@ -115,47 +105,47 @@ pub const add_design_element_tool = AgentTool{
                 .{
                     .name = "page_id",
                     .type = "string",
-                    .description = "The page id (NOT the item_id). Find it in the `id=\"...\"` attribute of a previous `set_design_page` response.",
+                    .description = "The page id (NOT the item_id), from a previous `set_design_page` response's `id` attribute.",
                 },
                 .{
                     .name = "name",
                     .type = "string",
-                    .description = "Human-readable element name (e.g. 'login-card', 'hero-image'). Must be unique within the page. Must NOT contain '/' or null bytes.",
+                    .description = "Human-readable element name (e.g. 'login-card'). Unique within the page; must NOT contain '/' or null bytes.",
                 },
                 .{
                     .name = "type",
                     .type = "string",
-                    .description = "Element type: one of 'rectangle', 'ellipse', 'text', 'image', 'frame', 'group'.",
+                    .description = "Element type — one of: 'rectangle', 'ellipse', 'text' (HTML text node — set `text_content`), 'image' (raster image — set `image_url`), 'frame' (container that clips children), 'group' (container that does not clip).",
                 },
                 .{
                     .name = "html",
                     .type = "string",
-                    .description = "HTML body for the element. Required (non-empty). Written to disk under `<workspace_item.path>/.pabrik/design/<page>/<element>.html`.",
+                    .description = "HTML body for the element, required and non-empty. Written under `<workspace_item.path>/.pabrik/design/<page>/<element>.html`.",
                 },
                 .{
                     .name = "x",
                     .type = "integer",
-                    .description = "X position in CSS pixels. Defaults to 0.",
+                    .description = "X position in CSS pixels (default 0).",
                 },
                 .{
                     .name = "y",
                     .type = "integer",
-                    .description = "Y position in CSS pixels. Defaults to 0.",
+                    .description = "Y position in CSS pixels (default 0).",
                 },
                 .{
                     .name = "width",
                     .type = "integer",
-                    .description = "Width in CSS pixels. Defaults to 200.",
+                    .description = "Width in CSS pixels (default 200).",
                 },
                 .{
                     .name = "height",
                     .type = "integer",
-                    .description = "Height in CSS pixels. Defaults to 100.",
+                    .description = "Height in CSS pixels (default 100).",
                 },
                 .{
                     .name = "fill",
                     .type = "string",
-                    .description = "Fill color (CSS color string, e.g. '#ffffff', 'transparent'). Defaults to ''.",
+                    .description = "Fill color (CSS color, e.g. '#ffffff', 'transparent'). Defaults to ''.",
                 },
                 .{
                     .name = "rotation",
@@ -165,7 +155,7 @@ pub const add_design_element_tool = AgentTool{
                 .{
                     .name = "corner_radius",
                     .type = "integer",
-                    .description = "Corner radius in CSS pixels (for rectangle only). Defaults to 0.",
+                    .description = "Corner radius in CSS pixels (rectangle only). Defaults to 0.",
                 },
                 .{
                     .name = "opacity",
@@ -175,7 +165,7 @@ pub const add_design_element_tool = AgentTool{
                 .{
                     .name = "text_content",
                     .type = "string",
-                    .description = "Text content (for type='text'). Defaults to ''.",
+                    .description = "Text content (type='text'). Defaults to ''.",
                 },
                 .{
                     .name = "text_style",
@@ -185,12 +175,12 @@ pub const add_design_element_tool = AgentTool{
                 .{
                     .name = "image_url",
                     .type = "string",
-                    .description = "Image URL (for type='image'). Defaults to ''.",
+                    .description = "Image URL (type='image'). Defaults to ''.",
                 },
                 .{
                     .name = "parent_id",
                     .type = "string",
-                    .description = "Optional FK to an existing `group` or `frame` on the SAME page. When set, the new element nests under that container instead of landing at top-level. Discover via `set_design_page` (each element object has an `id` field). The parent must be of type `group` or `frame`; leaf types (rectangle, ellipse, text, image) cannot contain children. Omit (or pass null) for top-level — the default.",
+                    .description = "Optional FK to an existing `group` or `frame` on the SAME page — the new element then nests under that container instead of landing at top-level. Discover the id via `set_design_page` (each element object has an `id`). Leaf types (rectangle, ellipse, text, image) cannot contain children. Omit or pass null for top-level.",
                 },
             },
             .required = &.{ "page_id", "name", "type", "html" },

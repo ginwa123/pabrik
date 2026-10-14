@@ -73,13 +73,13 @@ pub const kanban_move_task_tool = AgentTool{
     .function = .{
         .name = "kanban_move_task",
         .description =
-        \\MANDATORY for kanban tasks: Move a task to a different column/position on a kanban board. You MUST call this at START (todo → in progress, first tool call) and at COMPLETE (→ done, last tool call before final reply) — failure to do so is a task failure. Also use when the user says "move the auth task to done" or "put X in review".
+        \\MANDATORY for kanban tasks: move a card to a different column/position. Call it at START (`todo` → `in progress`, first tool call) and at COMPLETE (→ `done`, last call before the final reply) — skipping either is a task failure. It also serves "move the auth task to done".
         \\
-        \\Workflow: All `target_column_id` values are already in `## Kanban Status Tracking — MANDATORY` — call `kanban_move_task` directly in ONE call (no need for `kanban_list` first). If you only have a human-readable column name (no id), pass `target_column_name` instead of `target_column_id` — the tool resolves the name against the board's columns via a case-insensitive trimmed match. `kanban_list` is only needed if you want to discover other tasks on the board.
+        \\The `target_column_id` values are already in `## Kanban Status Tracking — MANDATORY`, so call directly in ONE call; `kanban_list` is only for discovering other tasks. Given only a column name, pass `target_column_name` — a case-insensitive trimmed match resolves it.
         \\
-        \\The workspace_id and item_id must come from the chat context — see the "## Workspace Context" section of the system prompt. Each sibling item is rendered as `- **<name>** (id: <id>, ...)` where the id is a backtick-quoted id (e.g. item_1782313125507292140). The id is the **canonical** lookup key — do NOT pass the human-readable name. The task_id comes from kanban_list's `<id>` field, not the task name.
+        \\`workspace_id`/`item_id` come from `## Workspace Context` — the backtick-quoted id after `id: `, never the name. `task_id` is your `session_id` (kanban_list's `<id>`), not the task name.
         \\
-        \\On error, recover by: (1) re-call kanban_list to get fresh ids (the user may have just renamed a column or moved the task); (2) if `target_column_name` matched multiple columns (case-insensitive), the move fails with a list of candidates — pass `target_column_id` to disambiguate; (3) if the task isn't on this kanban, the move fails with "TaskNotFound" — verify the task_id is correct.
+        \\On error: re-call `kanban_list` for fresh ids (a column may have been renamed); an ambiguous `target_column_name` fails with the candidates — pass `target_column_id`; "TaskNotFound" means the task is not on this board.
         ,
         .parameters = .{
             .type = "object",
@@ -87,12 +87,12 @@ pub const kanban_move_task_tool = AgentTool{
                 .{
                     .name = "workspace_id",
                     .type = "string",
-                    .description = "The workspace that owns the kanban. From the system prompt's `## Workspace Context` section.",
+                    .description = "The workspace that owns the kanban, from `## Workspace Context`.",
                 },
                 .{
                     .name = "item_id",
                     .type = "string",
-                    .description = "The kanban workspace item id (NOT the name). Find it next to the literal text `id: ` followed by a backtick-quoted id (e.g. item_1782313125507292140) in the Workspace Context listing — pass the value between the backticks, not the human-readable item name.",
+                    .description = "The kanban workspace item id (NOT the name): the backtick-quoted value after `id: ` in `## Workspace Context` (e.g. item_1782313125507292140).",
                 },
                 .{
                     .name = "task_id",
@@ -107,12 +107,12 @@ pub const kanban_move_task_tool = AgentTool{
                 .{
                     .name = "target_column_name",
                     .type = "string",
-                    .description = "Human-readable column name (e.g. 'done'). Matched case-insensitively after trim. Use ONLY when you don't have the column id — prefer target_column_id for exactness.",
+                    .description = "Human-readable column name (e.g. 'done'), matched case-insensitively after trim. Prefer `target_column_id` when you have it.",
                 },
                 .{
                     .name = "position",
                     .type = "integer",
-                    .description = "0-based position within the target column. When omitted/null, the task is appended to the end of the column.",
+                    .description = "0-based position within the target column; omitted/null appends to the end of the column.",
                 },
             },
             .required = &.{ "workspace_id", "item_id", "task_id" },

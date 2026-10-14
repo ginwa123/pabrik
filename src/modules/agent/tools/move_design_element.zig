@@ -61,13 +61,11 @@ pub const move_design_element_tool = AgentTool{
     .function = .{
         .name = "move_design_element",
         .description =
-        \\Translate an existing design element by a (dx, dy) delta in one atomic batch PATCH. When apply_to_children=true (the default), the delta cascades to every transitive descendant of the element — so moving a `group`/`frame` moves the whole subtree (Figma parity). Optional width/height/rotation apply ONLY to the root element (resize is per-element, Figma convention).
-        \\
-        \\The element_id must reference an element on the active page. The dx/dy is mandatory (zero is valid for a pure resize). Pass apply_to_children=false to move a single element WITHOUT cascading to its children (rare — e.g. "I want to move a leaf out from inside a group without taking the group with it").
+        \\Translate an existing design element by a (dx, dy) delta in one atomic batch PATCH. The `element_id` must reference an element on the active page; dx and dy are mandatory (a zero delta is valid for a pure resize).
         \\
         \\Discover ids via `set_design_page` — each element object's `id` field carries the id.
         \\
-        \\On error, recover by: (1) verify `element_id` from a fresh `set_design_page` call; (2) if dx/dy is huge and the cascade leaves the canvas, use `update_design_element` with explicit x/y values instead.
+        \\On error: re-verify `element_id` via `set_design_page`; if a huge cascade leaves the canvas, use `update_design_element` with explicit x/y instead.
         ,
         .parameters = .{
             .type = "object",
@@ -75,37 +73,37 @@ pub const move_design_element_tool = AgentTool{
                 .{
                     .name = "element_id",
                     .type = "string",
-                    .description = "The element id to translate (NOT a page_id or workspace_id). Find it in the `id` field of an element object in a previous set_design_page response.",
+                    .description = "The element id to translate (NOT a page_id or workspace_id); from the `id` field of a `set_design_page` element object.",
                 },
                 .{
                     .name = "dx",
                     .type = "number",
-                    .description = "X translation delta in design-px. Cascades to descendants when apply_to_children=true.",
+                    .description = "X delta in design-px. Cascades when apply_to_children=true.",
                 },
                 .{
                     .name = "dy",
                     .type = "number",
-                    .description = "Y translation delta in design-px. Cascades to descendants when apply_to_children=true.",
+                    .description = "Y delta in design-px. Cascades when apply_to_children=true.",
                 },
                 .{
                     .name = "apply_to_children",
                     .type = "boolean",
-                    .description = "Default true. When true, the delta cascades to every transitive descendant of the element. Pass false to move a single element only.",
+                    .description = "Default true: the delta cascades to every transitive descendant, so a `group`/`frame` moves its whole subtree (Figma parity). Pass false to move that element only.",
                 },
                 .{
                     .name = "width",
                     .type = "number",
-                    .description = "Optional. New width (root only, never cascades).",
+                    .description = "New width (root only — resize never cascades).",
                 },
                 .{
                     .name = "height",
                     .type = "number",
-                    .description = "Optional. New height (root only, never cascades).",
+                    .description = "New height (root only — resize never cascades).",
                 },
                 .{
                     .name = "rotation",
                     .type = "number",
-                    .description = "Optional. New rotation in degrees (root only, never cascades).",
+                    .description = "New rotation in degrees (root only — resize never cascades).",
                 },
             },
             .required = &.{ "element_id", "dx", "dy" },

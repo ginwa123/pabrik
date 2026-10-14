@@ -64,7 +64,7 @@ pub const search_tool_tool = AgentTool{
     .function = .{
         .name = "search_tool",
         .description =
-        \\Search the catalog of tools that are NOT currently enabled for this session (MCP tools and built-in tools this agent does not have). `query` is a case-insensitive REGEX matched against tool names and descriptions, so one pattern reaches a capability spelled several ways (`^mcp_.*_create`, `doc|documentation`, `\bsearch\b`); pass `literal: true` when the query is literal text. Results are PAGED — `limit` (default 40) caps the rows returned, `total` is the real match count, and `offset` continues the listing — so a big catalog or a broad pattern never floods your context. Returns name, kind, server, enabled state and a one-line summary — never the full parameter schema; call view_tool for that. Tools already in your tool list are excluded, so a zero-result search means 'look at your existing tools'. Call this whenever a task needs a capability you do not seem to have.
+        \\Search the catalog of tools NOT enabled for this session — MCP tools and built-ins this agent does not have. `query` is a case-insensitive REGEX over tool names and descriptions; results are PAGED (`limit`/`offset`). Returns name, kind, server, enabled state and a one-line summary — never the full schema; call view_tool for that. Tools already in your tool list are excluded.
         ,
         .parameters = .{
             .type = "object",
@@ -72,27 +72,27 @@ pub const search_tool_tool = AgentTool{
                 .{
                     .name = "query",
                     .type = "string",
-                    .description = "Regex, matched case-insensitively against every catalog tool's name and description. A pattern finds tools a phrase cannot: '^mcp_.*_create' = MCP create-tools on any server, 'doc|docs|documentation' = one call instead of three, 'memory.*(save|store)' = either concept, '\\bsearch\\b' = the word without matching 'searcher'. Supported: literals, '.', '[...]', '\\d \\w \\s', '\\b', '* + ? {m,n}', '( )', '|', '^', '$'. A metacharacter-free query is still a plain substring search. An invalid pattern is matched as a literal substring instead and the result says so in <pattern_warning>. Omit to list the start of the catalog.",
+                    .description = "Regex, matched case-insensitively against tool names and descriptions. A pattern finds tools a phrase cannot: '^mcp_.*_create' = MCP create-tools, 'doc|docs|documentation' = one call instead of three, '\\bsearch\\b' = the word, not 'searcher'. Supported: literals, '.', '[...]', '\\d \\w \\s', '\\b', '* + ? {m,n}', '( )', '|', '^', '$'. A metacharacter-free query is still a plain substring search; an invalid pattern falls back to one, flagged in <pattern_warning>. Omit to list the start of the catalog.",
                 },
                 .{
                     .name = "literal",
                     .type = "boolean",
-                    .description = "Treat `query` as a literal string — regex metacharacters like '.', '*', '[', '(' are matched verbatim. Set this for code-shaped queries ('fn(', '*.zig'). Default false (regex mode).",
+                    .description = "Treat `query` as a literal string: '.', '*', '[', '(' are matched verbatim. Set this for code-shaped queries ('fn(', '*.zig'). Default false (regex mode).",
                 },
                 .{
                     .name = "limit",
                     .type = "number",
-                    .description = "Maximum matches in THIS response (default 40, max 200). The catalog can hold the built-ins plus every tool from every connected MCP server, so results are paged to keep the context window small. The result always reports the true `<total>` — raise limit, or page with offset, only when you need more.",
+                    .description = "Maximum matches in THIS response (default 40, max 200), paged to keep the context window small; the result always reports the true `<total>`.",
                 },
                 .{
                     .name = "offset",
                     .type = "number",
-                    .description = "Skip the first N matches, for paging a broad query (default 0). The previous page's `<hint>` names the exact offset that continues it; a broad pattern plus a small limit is how you browse a big catalog without flooding your context.",
+                    .description = "Skip the first N matches (default 0) when paging a broad query. The previous page's `<hint>` names the offset that continues it.",
                 },
                 .{
                     .name = "server",
                     .type = "string",
-                    .description = "Optional exact MCP server name filter (e.g. 'context7'). Ignored for built-in tools.",
+                    .description = "Optional exact MCP server name (e.g. 'context7'); ignored for built-in tools.",
                 },
             },
             .required = &.{},
@@ -116,7 +116,7 @@ pub const view_tool_tool = AgentTool{
     .function = .{
         .name = "view_tool",
         .description =
-        \\Show one catalog tool's full definition (description + JSON parameter schema) WITHOUT enabling it. Use the exact name returned by search_tool. Read-only, no side effects. Follow with use_tool to make it callable.
+        \\Show one catalog tool's full definition (description + JSON parameter schema) WITHOUT enabling it. Read-only, no side effects.
         ,
         .parameters = .{
             .type = "object",
@@ -124,7 +124,7 @@ pub const view_tool_tool = AgentTool{
                 .{
                     .name = "name",
                     .type = "string",
-                    .description = "Exact tool name from search_tool (e.g. 'mcp_context7_query-docs' or 'kanban_list').",
+                    .description = "Exact tool name from search_tool (e.g. 'mcp_context7_query-docs').",
                 },
             },
             .required = &.{"name"},
@@ -148,7 +148,7 @@ pub const use_tool_tool = AgentTool{
     .function = .{
         .name = "use_tool",
         .description =
-        \\Enable a catalog tool for this session so you can call it from your next turn onward (the current turn's tool list was already sent). Takes the exact name from search_tool/view_tool. Idempotent — enabling an already-enabled tool is a no-op that reports inserted=false. Unknown names are rejected with suggestions and nothing is written. Session-scoped only: the user's saved tool configuration is never modified.
+        \\Enable a catalog tool for this session — it becomes callable from your next turn (this turn's tool list was already sent). Idempotent — enabling an already-enabled tool is a no-op reporting inserted=false. Unknown names are rejected with suggestions and nothing is written. Session-scoped only: the user's saved tool configuration is never modified.
         ,
         .parameters = .{
             .type = "object",

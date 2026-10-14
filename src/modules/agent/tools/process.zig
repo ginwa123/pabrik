@@ -66,31 +66,16 @@ pub const process_tool = AgentTool{
     .function = .{
         .name = "process",
         .description =
-        \\Look at, or stop, a process this session started with the `command` tool's detached modes.
+        \\Look at, or stop, a process this session started with the `command` tool's detached modes (`mode="background"`, `mode="background_persistence"`).
         \\
         \\## Actions
-        \\- `list` — every process this session started: pid, command, kind, status, live liveness. Takes no `pid`.
-        \\- `read` — the log output since your LAST read of that pid (not the whole log). Needs `pid`.
-        \\- `stop` — kill that pid and everything it forked. Needs `pid`.
+        \\- `list` — every process this session started: pid, command, kind, status, liveness. Needs no `pid`.
+        \\- `read` (needs `pid`) — only the output since your LAST read of that pid, so polling is cheap. The first read starts at the beginning; an empty read means "nothing new" — an answer, not an error, and not a sign the process died.
+        \\- `stop` (needs `pid`) — a tree kill of the whole process group: a dev server forks workers, so killing the pid alone leaves them holding the port.
         \\
-        \\## Reading is incremental, on purpose
-        \\`read` returns only what is new since the previous read of that pid, so polling a running
-        \\process is cheap: a poll with no news returns nothing and costs almost nothing. The first
-        \\read of a process returns its log from the start (capped at `max_bytes`, default 16384);
-        \\if the output was longer, `more_pending` is true and the next read continues from there.
-        \\
-        \\An empty `read` means "nothing new since last time" — it is NOT an error and NOT a sign the
-        \\process died. Use `list` (or the `running` field a `read` also reports) for liveness.
-        \\
-        \\## kind: what you owe each process
-        \\- `job` (`mode="background"`) — a bounded command. You ARE messaged when it exits, so you
-        \\  rarely need to read it; do not poll a build you will be told about.
-        \\- `service` (`mode="background_persistence"`) — a dev server or watcher. It is SILENT: no
-        \\  message will ever arrive, so nothing but this tool will tell you it crashed, and nothing
-        \\  but `stop` (or pabrik shutting down) will end it.
-        \\
-        \\`stop` is a tree kill — the whole process group — because a dev server forks its workers and
-        \\killing only the pid leaves them holding the port.
+        \\## kind
+        \\- `job` — a bounded command; you ARE messaged when it exits, so do not poll it.
+        \\- `service` — a dev server or watcher, SILENT: no message will ever arrive, so nothing but this tool will tell you it crashed, and nothing but `stop` (or pabrik shutting down) will end it.
         ,
         .parameters = .{
             .type = "object",
@@ -99,8 +84,7 @@ pub const process_tool = AgentTool{
                     .name = "action",
                     .type = "string",
                     .description =
-                    \\REQUIRED. One of "read", "stop", "list".
-                    \\"list" takes no other argument. "read" and "stop" both need a `pid`.
+                    \\REQUIRED. One of "read", "stop", "list". "read" and "stop" need a `pid`.
                     ,
                 },
                 .{
@@ -108,18 +92,16 @@ pub const process_tool = AgentTool{
                     .type = "number",
                     .description =
                     \\The process to act on, as returned by the `command` call that started it (or by
-                    \\this tool's own `list`). Required for "read" and "stop"; ignored by "list".
-                    \\A pid this session did not start is refused — you cannot read or kill another
-                    \\session's process.
+                    \\`list`). Required for "read" and "stop"; ignored by "list". A pid this
+                    \\session did not start is refused.
                     ,
                 },
                 .{
                     .name = "max_bytes",
                     .type = "number",
                     .description =
-                    \\Cap on the bytes "read" returns in this call. Default 16384. Output beyond it is
-                    \\NOT lost: the response reports `more_pending` and the next read continues from
-                    \\where this one stopped.
+                    \\Cap on the bytes "read" returns. Default 16384. Output beyond it is
+                    \\NOT lost: the response reports `more_pending` and the next read continues there.
                     ,
                 },
             },

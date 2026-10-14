@@ -111,31 +111,25 @@ pub const generate_image_tool = AgentTool{
     .function = .{
         .name = "generate_image",
         .description =
-        \\Generate an image from a text prompt using the OpenAI Images API (POST /v1/images/generations). Supports DALL-E 2, DALL-E 3, and gpt-image-1.
+        \\Generate an image from a text prompt via the OpenAI Images API (POST /v1/images/generations). Supports DALL-E 2, DALL-E 3, and gpt-image-1.
         \\
-        \\INPUT: prompt (required, string), model (optional, default "dall-e-3"), n (optional, default 1, max 10), size (optional, default "1024x1024"), quality (optional, dall-e-3 only — "standard"|"hd"), style (optional, dall-e-3 only — "vivid"|"natural"), response_format (optional, default "b64_json" — "url"|"b64_json"), user (optional, end-user id).
-        \\
-        \\BEHAVIOUR: Calls the OpenAI Images API using the active profile's api_key and base_url (same auth as chat completion — NO separate key needed). Saves the returned image to <cwd>/generated_images/img_<timestamp>_<index>.png. Creates the directory if missing.
+        \\Uses the active profile's api_key + base_url — same auth as chat completion, NO separate key; point base_url at a proxy for a self-hosted DALL-E-compatible endpoint. Saves to <cwd>/generated_images/img_<timestamp>_<index>.png, creating the directory if missing.
         \\
         \\OUTPUT (JSON success payload): <generate_image><status>generated</status><count>N</count><model>...</model><size>...</size><images><image index="0" path="/abs/path/img_xxx.png" bytes="12345" mime="image/png"/></images><revised_prompt>...</revised_prompt></generate_image>. On error: <generate_image><error>HTTP 400: ...OpenAI message...</error></generate_image>.
         \\
-        \\NEXT STEP: Call `present_files` with files=[{path=<path from the envelope>}] and label=<prompt> (or a truncated version) to display the image inline in the chat. The image is durable on disk, so the user can re-view it later.
-        \\
-        \\IMAGE SIZE NOTE: DALL-E 3 images are 1-5 MB — present them via `present_files` (URL-based preview, no inline byte cap).
-        \\
-        \\AUTH: Active profile's api_key + base_url. Self-hosted DALL-E-compatible endpoints work the same way (just set base_url to the proxy).
+        \\NEXT STEP: call `present_files` with files=[{path=<path from the envelope>}] and label=<prompt> — DALL-E 3 images are 1-5 MB, so URL-preview them (no inline byte cap). The file is durable on disk, so the user can re-view it later.
         ,
         .parameters = .{
             .type = "object",
             .properties = &[_]ToolProperty{
-                .{ .name = "prompt", .type = "string", .description = "A text description of the desired image. Max 1000 characters for dall-e-2, 4000 for dall-e-3 / gpt-image-1. Be specific — subject, style, lighting, composition." },
-                .{ .name = "model", .type = "string", .description = "The model to use. One of \"dall-e-2\" (cheaper, allows n>1), \"dall-e-3\" (best quality, default), \"gpt-image-1\" (newest, multimodal)." },
-                .{ .name = "n", .type = "string", .description = "Number of images to generate (1-10). DALL-E 3 and gpt-image-1 only accept n=1." },
+                .{ .name = "prompt", .type = "string", .description = "What to draw. Max 1000 characters for dall-e-2, 4000 for dall-e-3 / gpt-image-1. Be specific — subject, style, lighting, composition." },
+                .{ .name = "model", .type = "string", .description = "One of \"dall-e-2\" (cheaper, allows n>1), \"dall-e-3\" (best quality, default), \"gpt-image-1\" (newest, multimodal)." },
+                .{ .name = "n", .type = "string", .description = "Images to generate (1-10). DALL-E 3 and gpt-image-1 accept only n=1." },
                 .{ .name = "size", .type = "string", .description = "Output size. dall-e-2: \"256x256\", \"512x512\", \"1024x1024\". dall-e-3: \"1024x1024\", \"1792x1024\", \"1024x1792\". gpt-image-1: \"1024x1024\", \"1536x1024\", \"1024x1536\". Default \"1024x1024\"." },
                 .{ .name = "quality", .type = "string", .description = "DALL-E 3 only. \"standard\" (default) or \"hd\" (more detail, ~2× cost). Ignored for dall-e-2 / gpt-image-1." },
                 .{ .name = "style", .type = "string", .description = "DALL-E 3 only. \"vivid\" (default, hyper-real / dramatic) or \"natural\" (more subdued). Ignored for dall-e-2 / gpt-image-1." },
-                .{ .name = "response_format", .type = "string", .description = "\"url\" or \"b64_json\" (default). We always save to disk regardless of format. \"b64_json\" is the standard; \"url\" is only useful if you also want the OpenAI URL (which expires after ~60 min)." },
-                .{ .name = "user", .type = "string", .description = "A unique identifier for the end-user. Helps OpenAI detect abuse. Optional." },
+                .{ .name = "response_format", .type = "string", .description = "\"url\" or \"b64_json\" (default). The image is always saved to disk; \"url\" only additionally returns the OpenAI URL, which expires after ~60 min." },
+                .{ .name = "user", .type = "string", .description = "End-user identifier. Helps OpenAI detect abuse. Optional." },
             },
             .required = &.{"prompt"},
         },

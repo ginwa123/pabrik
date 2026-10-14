@@ -35,8 +35,8 @@ pub const semantic_search_tool = AgentTool{
     .function = .{
         .name = "semantic_search",
         .description =
-        \\Search codebase by meaning, not keywords.
-        \\Returns file path, line range, content snippet, and relevance score.
+        \\Search the codebase by meaning, not keywords.
+        \\Returns file path, line range, content snippet, relevance score.
         ,
         .parameters = .{
             .type = "object",

@@ -153,11 +153,7 @@ pub const write_file_tool = AgentTool{
     .function = .{
         .name = "write_file",
         .description =
-        \\Write content to a new file. Creates file if it doesn't exist, overwrites if it does.
-        \\`cwd` is REQUIRED and must be an absolute path: it is the directory this call works in, and a relative `path` resolves against it.
-        \\For partial file updates, use text_replace tool instead.
-        \\Set create_with_dir to true to automatically create parent directories.
-        \\return {"file_write": <path>, "error": null}
+        \\Write content to a new file: creates it if absent, overwrites if present. Set `create_with_dir` to create missing parent directories. For partial updates use `text_replace` instead. Returns `{"file_write": <path>, "error": null}`.
         ,
         .parameters = .{
             .type = "object",
@@ -175,13 +171,13 @@ pub const write_file_tool = AgentTool{
                 .{
                     .name = "cwd",
                     .type = "string",
-                    .description = "REQUIRED. Absolute path to the directory this call works in. A relative `path` resolves against it; an absolute `path` is used as-is. Pass the tree you are actually editing (your worktree root, NOT the server's directory).",
+                    .description = "REQUIRED. Absolute directory this call works in; a relative `path` resolves against it. Pass the tree you are editing (your worktree root, NOT the server's directory).",
                 },
 
                 .{
                     .name = "create_with_dir",
                     .type = "boolean",
-                    .description = "If true, automatically create parent directories if they don't exist. Default: false.",
+                    .description = "If true, create missing parent directories. Default: false.",
                 },
             },
             .required = &.{ "path", "content", "cwd" },

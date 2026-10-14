@@ -166,26 +166,18 @@ pub const save_memory_tool = AgentTool{
     .function = .{
         .name = "save_memory",
         .description =
-        \\Append a structured note that you can recall later via the `load_memory` tool. Use this to remember facts, preferences, decisions, or any short, structured context that you want to persist across sessions.
+        \\Append a note you can recall later with `load_memory` — a preference, a convention, a decision, a correction worth persisting.
         \\
-        \\This is APPEND-ONLY: every call inserts a new row with a fresh auto-generated `mem_<16-hex>` id and `CURRENT_TIMESTAMP` timestamps. There is no update and no delete — to correct a stored fact, save a new memory (recency + FTS5 rank surface the latest one).
-        \\
-        \\Storage: the note is stored in a SQLite table with an FTS5 index, filed under this session's workspace. Searches (`load_memory`) can find it via phrase matching on the content or tags.
-        \\
-        \\Constraints:
+        \\- APPEND-ONLY: every call inserts a new row with a fresh auto-generated `mem_<16-hex>` id and `CURRENT_TIMESTAMP` timestamps. There is no update and no delete — to correct a fact, save a new memory; recency + FTS5 rank surface the latest one.
         \\- `content` must be 1 KiB – 1 MiB. Empty content is rejected; oversized is rejected (no silent truncation).
-        \\- `tags` are joined with `||` in storage and split on `|` at read time.
-        \\- Per-workspace scope (Migration 095): a note is filed under the workspace this session
-        \\  belongs to, and only sessions in that same workspace can ever recall it. There is no
-        \\  `workspace_id` parameter — the scope is derived from the session, never from your
-        \\  arguments. Facts that must outlive this workspace (a user preference) belong in
-        \\  `~/.config/pabrik/memories/*.md`, which stays global.
+        \\- Stored in a SQLite FTS5 table; `load_memory` finds it by phrase matching on content or tags.
+        \\- Per-workspace scope (Migration 095): only sessions in the same workspace can recall it, and the scope comes from the session, never from your arguments — there is no `workspace_id` parameter. A fact that must outlive this workspace belongs in `~/.config/pabrik/memories/*.md`, which is global.
         ,
         .parameters = .{
             .type = "object",
             .properties = &.{
                 .{ .name = "content", .type = "string", .description = "The note body. 1 KiB – 1 MiB. Required." },
-                .{ .name = "tags", .type = "string", .description = "Optional labels as a single string. Multiple tags separated by `||` (preferred), e.g. 'preferences||user'. Also accepts `|`, `,`, or space as separators for robustness. Empty string = no tags." },
+                .{ .name = "tags", .type = "string", .description = "Labels, single string: `||`-separated (`|`, `,`, space also accepted), e.g. 'preferences||user'. Empty string = no tags." },
             },
             .required = &.{"content"},
         },
@@ -472,36 +464,23 @@ pub const load_memory_tool = AgentTool{
     .function = .{
         .name = "load_memory",
         .description =
-        \\Search your saved notes (from `save_memory`) using SQLite FTS5 search. Returns ranked hits with a short `"snippet"` (10-token window with `[match]` markers) per row.
+        \\Search your saved notes (from `save_memory`) with SQLite FTS5. Each hit carries a short `"snippet"` (10-token window with `[match]` markers); `"total_count"` is the full match count.
         \\
-        \\BY-ID LOOKUP: pass `id="mem_xxx"` to fetch a single memory by its exact id (no FTS5, no 2 KiB snippet cap, returns the full body up to 1 MiB). When `id` is set, `tags` is ignored. Either `query` or `id` must be non-empty — supplying both is allowed (by-id wins).
-        \\
-        \\Context anti-bloat: by default, only `"snippet"` is returned — NOT the raw content. Pass `with_content=true` when you need the full body of a hit (capped at 2 KiB per row). The default `limit` is 10 (hard cap 50), so the worst-case response is ~6 KiB snippets-only or ~100 KiB with content. The by-id path always returns full content.
-        \\
-        \\SCOPE — PER WORKSPACE, NOT GLOBAL: results are limited to notes saved in the workspace THIS SESSION belongs to (Migration 095). A `mem_<16-hex>` id belonging to another workspace returns `not found`, exactly like an id that never existed. There is no `workspace_id` parameter and no way to reach another workspace from here. The response echoes the `workspace_id` it was scoped to. If a fact must hold across every workspace, write it to a `.md` file under `~/.config/pabrik/memories/` instead of `save_memory`.
-        \\
-        \\MULTI-WORD QUERIES ARE JOINED WITH OR. `query="preferred model"` matches memories that mention EITHER "preferred" OR "model" (not just memories with the literal substring "preferred model"). This is the natural recall semantics — for a more precise search, use a single keyword. The query matches against both the content AND the tags column.
-        \\
-        \\FTS5 QUERY SANITIZATION: queries with `.`, `-`, `:`, `*`, `^`, `(`, `)`, `"`, `+` are auto-sanitized — so you can write "handle_tool.zig" or "2026-08-06" without crashes. FTS5's default tokenizer splits on those characters like the indexer did.
-        \\
-        \\Tags filter: AND semantics. Every tag in the `tags` array must be present in the row's tags (substring match). Empty `tags` = no filter. Ignored when `id` is set.
-        \\
-        \\Pagination: use `offset` to walk through more results. The `"total_count"` field tells you how many total matches exist.
-        \\
-        \\Example: {"query": "preferred model", "tags": "user"} — finds memories about either preference OR model.
-        \\Example: {"query": "AGENTS.md", "limit": 3}
-        \\Example: {"query": "dark mode", "with_content": true}
-        \\Example: {"id": "mem_9f3c1a2b4d5e6f70"} — fetch a specific memory's full body, no FTS.
+        \\- MULTI-WORD QUERIES ARE JOINED WITH OR: `query="preferred model"` matches notes mentioning EITHER "preferred" OR "model". Use a single keyword for precision; `query` matches both content AND tags.
+        \\- FTS5 operators (`.`, `-`, `:`, `*`, `^`, `(`, `)`, `"`, `+`) are auto-sanitized, so `handle_tool.zig` and `2026-08-06` are safe query text.
+        \\- BY-ID LOOKUP: `id="mem_xxx"` returns one memory's full body (no FTS5, no 2 KiB snippet cap, up to 1 MiB) and ignores `tags`. Either `query` or `id` must be non-empty; supplying both is allowed (by-id wins).
+        \\- By default only the `"snippet"` comes back: `with_content=true` adds each hit's full body (capped at 2 KiB per row). At the default `limit` of 10 (hard cap 50) that is at most ~6 KiB snippets-only, ~100 KiB with content.
+        \\- SCOPE — PER WORKSPACE, NOT GLOBAL (Migration 095): only notes saved in the workspace THIS SESSION belongs to are reachable, by search or by `id`. A `mem_<16-hex>` id from another workspace returns `not found`, exactly like an id that never existed. There is no `workspace_id` parameter. A fact that must hold across every workspace belongs in a `.md` file under `~/.config/pabrik/memories/`, not in `save_memory`.
         ,
         .parameters = .{
             .type = "object",
             .properties = &.{
-                .{ .name = "query", .type = "string", .description = "FTS5 search keywords. Required when `id` is empty. Auto-sanitized (FTS5 operators stripped); multi-word queries are joined with OR for natural recall." },
-                .{ .name = "id", .type = "string", .description = "Look up a single memory by exact id (e.g. 'mem_aabbcc...'). When non-empty, FTS5 is skipped and the full body is included (no 2 KiB cap). When set, `tags` is ignored." },
-                .{ .name = "tags", .type = "string", .description = "Optional AND filter as a single string. Multiple tags separated by `||` (preferred), e.g. 'preferences||user'. Also accepts `|`, `,`, or space as separators. Empty string = no filter. Ignored when `id` is set." },
+                .{ .name = "query", .type = "string", .description = "FTS5 search keywords. Required when `id` is empty. Auto-sanitized (FTS5 operators stripped); multi-word queries are joined with OR." },
+                .{ .name = "id", .type = "string", .description = "Single memory by exact id (e.g. 'mem_aabbcc...'). FTS5 is skipped and the full body is returned (no 2 KiB cap); `tags` is ignored." },
+                .{ .name = "tags", .type = "string", .description = "AND filter, single string: `||`-separated (`|`, `,`, space also accepted), e.g. 'preferences||user'. Empty string = no filter. Ignored when `id` is set." },
                 .{ .name = "limit", .type = "number", .description = "Max rows to return. Default 10, hard cap 50." },
                 .{ .name = "offset", .type = "number", .description = "Skip the first N results. Default 0. Use total_count to know when to stop." },
-                .{ .name = "with_content", .type = "boolean", .description = "Include truncated full content (max 2 KiB per row) for FTS hits. Default false (snippet-only — anti-bloat). Ignored when `id` is set (by-id always returns full content)." },
+                .{ .name = "with_content", .type = "boolean", .description = "Include each hit's full body (max 2 KiB per row) instead of the snippet alone. Default false. Ignored when `id` is set." },
             },
             // `query` was previously the only required field. With the
             // 2026-08-19 by-id addition, EITHER `query` OR `id` must be

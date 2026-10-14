@@ -74,9 +74,9 @@ pub const set_git_worktree_tool = AgentTool{
     .function = .{
         .name = "set_git_worktree",
         .description =
-        \\Create a git worktree at an absolute path you provide and bind it as the session's working directory. Canonical root is `$HOME/.config/pabrik/.worktrees/<task-slug>` (e.g. '/home/you/.config/pabrik/.worktrees/fix-login') — the kanban dialog prefills this as the `Path:` line after `#Notes UseGitWorktree`. A custom absolute path elsewhere is accepted for ad-hoc use. While bound, command/read_file/write_file/text_replace/glob/search operate on the worktree instead of the session's original cwd. The branch defaults to 'worktree/<basename(path)>'. Pass `base` (e.g. 'origin/main') to create the branch FROM that ref instead of the repo's current HEAD — the kanban note carries it as the `Base:` line. If a path starts with `~/`, expand `~` to `$HOME` before calling (non-absolute paths are rejected). Call again with a different path to switch the binding to that worktree. Pass clear=true to remove the worktree directory and clear the binding.
+        \\Create a git worktree at an absolute path and bind it as this session's working directory — command/read_file/write_file/text_replace/glob/search then run inside it instead of the session's original cwd. The kanban dialog prefills the path under `$HOME/.config/pabrik/.worktrees/<task-slug>` after `#Notes UseGitWorktree`. Calling again with a different path switches the binding.
         \\
-        \\On error, recover by: (1) the tool pre-checks for path collisions before invoking git, so a "path already exists" error means the path is occupied by an existing worktree — pass `branch=<existing-branch>` to auto-bind to it, or pick a different path; (2) for branch conflicts (a different worktree already has the same branch checked out), pass `branch=''` to use the auto-derived name `worktree/<basename(path)>`; (3) NEVER `rm -rf` the conflicting path — there may be uncommitted work in it. Use `command` + `git -C <repo> worktree list --porcelain` to inspect the current state if the error is unclear.
+        \\On error: (1) "path already exists" means an existing worktree occupies the path — pass `branch=<existing-branch>` to auto-bind, or pick a different path; (2) on a branch conflict pass `branch=''` for the auto-derived name; (3) NEVER `rm -rf` a conflicting path — it may hold uncommitted work; inspect with `git -C <repo> worktree list --porcelain`.
         ,
         .parameters = .{
             .type = "object",
@@ -84,12 +84,12 @@ pub const set_git_worktree_tool = AgentTool{
                 .{
                     .name = "path",
                     .type = "string",
-                    .description = "Absolute path to the worktree directory. Canonical root is `$HOME/.config/pabrik/.worktrees/<task-slug>` (e.g. '/home/you/.config/pabrik/.worktrees/fix-login'). Must be absolute, contain no '..' segments, no null bytes, be ≤ 4096 chars, and the parent directory must already exist. The basename must match [A-Za-z0-9._-]{1,100} (so the auto-derived branch name is legal). Expand a leading `~/` to `$HOME` before calling.",
+                    .description = "Absolute path to the worktree directory; its parent directory must already exist. Must be absolute, contain no '..' or null bytes, be ≤ 4096 chars, and have a basename matching [A-Za-z0-9._-]{1,100}. Expand a leading `~/` to `$HOME` before calling. Canonical root: `$HOME/.config/pabrik/.worktrees/<task-slug>`, e.g. '/home/you/.config/pabrik/.worktrees/fix-login'.",
                 },
                 .{
                     .name = "cwd",
                     .type = "string",
-                    .description = "REQUIRED. Absolute path to the repository the worktree is created from — the directory `git worktree add` runs in. Ignored when clear=true.",
+                    .description = "REQUIRED. Absolute path to the repository the worktree is created from — where `git worktree add` runs. Ignored when clear=true.",
                 },
                 .{
                     .name = "branch",
@@ -99,7 +99,7 @@ pub const set_git_worktree_tool = AgentTool{
                 .{
                     .name = "base",
                     .type = "string",
-                    .description = "Optional ref the new branch is created FROM, e.g. 'origin/main'. Take it verbatim from the `Base:` line after `#Notes UseGitWorktree` in the task note. Omit when there is no `Base:` line (the worktree then branches from the repo's current HEAD).",
+                    .description = "Optional ref the new branch is created FROM, e.g. 'origin/main'. Take it verbatim from the task note's `Base:` line; omit when there is none (the branch then starts at the repo's current HEAD).",
                 },
                 .{
                     .name = "clear",
