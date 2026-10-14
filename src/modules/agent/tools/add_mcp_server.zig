@@ -107,19 +107,13 @@ pub const add_mcp_server_tool = AgentTool{
     .function = .{
         .name = "add_mcp_server",
         .description =
-        \\The `add_mcp_server` tool registers a new MCP (Model Context Protocol) server so its tools become available to you on the NEXT iteration. Call this when the user asks to add a new MCP server, configure a stdio MCP integration, or register a tool provider the user wants to use.
+        \\Register a new MCP (Model Context Protocol) server with `add_mcp_server` so its tools become available on the NEXT iteration. Call it when the user asks to add a stdio MCP integration or register a tool provider.
         \\
-        \\After a successful call, the new server's tools become discoverable as `mcp_<serverName>_<toolName>` on the next iteration — find them with `search_tool`, then call `use_tool` to make one callable. They are NOT added to your tool list automatically, and until you equip one the just-added server has no callable tools — finish your reply first.
+        \\After a successful call the server's tools appear as `mcp_<serverName>_<toolName>`: find one with `search_tool`, then `use_tool` to make it callable. They are NOT in your tool list automatically — finish your reply first.
         \\
-        \\v1 supports the `stdio` transport only (per current scope). The fields you MUST provide for stdio:
-        \\  - `name`     : the server key (letters/digits/`_`/`-` recommended). Must not already exist.
-        \\  - `transport`: `"stdio"`.
-        \\  - `command`  : the binary to spawn (e.g. `"npx"`, `"mcp-hello-world"`).
-        \\  - `args`     : (optional) command-line args, e.g. `["-y", "@upstash/context7-mcp"]`.
+        \\v1 accepts `stdio` only; `url` + `headers` (HTTP) are reserved for a sibling task and return a clear error today.
         \\
-        \\HTTP transport (`url` + `headers`) is reserved for a sibling task and will return a clear error today.
-        \\
-        \\The tool validates inputs, mutates the live in-memory config, then persists the change to `~/.config/pabrik/config.json` (or platform equivalent) so the server survives restart. On success the tool returns the list of tools the new server exposed (best-effort; if the server can't be reached right now, the call still succeeds and you can call its tools on the next iteration).
+        \\The call validates the input, mutates the live in-memory config, then persists it to `~/.config/pabrik/config.json` (or platform equivalent) so the server survives restart. It still succeeds if the server cannot be reached right now.
         ,
         .parameters = .{
             .type = "object",
@@ -127,22 +121,22 @@ pub const add_mcp_server_tool = AgentTool{
                 .{
                     .name = "name",
                     .type = "string",
-                    .description = "Server name (key). Must be non-empty and not collide with an existing server.",
+                    .description = "Server key. Must be non-empty and must not already exist.",
                 },
                 .{
                     .name = "transport",
                     .type = "string",
-                    .description = "Transport discriminator. v1: only `\"stdio\"` is accepted. HTTP lands in a sibling task.",
+                    .description = "Transport. v1 accepts only `\"stdio\"`.",
                 },
                 .{
                     .name = "command",
                     .type = "string",
-                    .description = "stdio command to spawn. Required when transport == \"stdio\". E.g. `\"npx\"`, `\"mcp-hello-world\"`.",
+                    .description = "stdio binary to spawn. Required when transport == \"stdio\". E.g. `\"npx\"`, `\"mcp-hello-world\"`.",
                 },
                 .{
                     .name = "args",
                     .type = "array",
-                    .description = "stdio command-line args. Optional. Each entry is a single argv string.",
+                    .description = "stdio argv (optional). One string per argument.",
                 },
                 .{
                     .name = "url",

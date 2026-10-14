@@ -193,7 +193,7 @@ pub const search_skills_tool = AgentTool{
     .function = .{
         .name = "search_skills",
         .description =
-        \\Search the skills installed in this workspace by name or description. `query` is a case-insensitive REGEX matched against each skill's name AND description, so one pattern reaches a skill spelled several ways (`doc|documentation`, `^zig`, `\btest\`, `(save|load)_memory`); pass `literal: true` when the query is literal text. Results are PAGED — `limit` (default 40) caps the rows returned, `total` is the real match count, and `offset` continues the listing — so a big skill library never floods your context. Each row carries the exact `name` to pass to use_skill. Omit `query` to page through everything installed.
+        \\Search the skills installed in this workspace by name or description. Each row carries the exact `name` to pass to `use_skill`; omit `query` to list them all.
         ,
         .parameters = .{
             .type = "object",
@@ -201,22 +201,22 @@ pub const search_skills_tool = AgentTool{
                 .{
                     .name = "query",
                     .type = "string",
-                    .description = "Regex, matched case-insensitively against every installed skill's name and description. A pattern finds skills a phrase cannot: 'doc|documentation' = either spelling in one call, '^zig' = the zig-prefixed ones, '\\btest\\b' = the word without matching 'testify'. Supported: literals, '.', '[...]', '\\d \\w \\s \\b', '*', '+', '?', '{m,n}' ranges, '( )' groups, '|', '^', '$'. A metacharacter-free query is still a plain substring search. An invalid pattern is matched as a literal substring instead and the result says so in pattern_warning. Omit to list the start of the library.",
+                    .description = "Regex, matched case-insensitively against each skill's name and description. Supported: literals, '.', '[...]', '\\d \\w \\s \\b', '*', '+', '?', '{m,n}' ranges, '( )' groups, '|', '^', '$'. A metacharacter-free query is a plain substring search; an invalid one is matched as a literal substring and reported in `pattern_warning`.",
                 },
                 .{
                     .name = "literal",
                     .type = "boolean",
-                    .description = "Treat `query` as a literal string — regex metacharacters like '.', '*', '[', '(' are matched verbatim. Set this for code-shaped queries ('*.zig', 'fn('). Default false (regex mode).",
+                    .description = "Treat `query` as a literal string — '.', '*', '[', '(' match verbatim. Set this for code-shaped queries ('*.zig', 'fn('). Default false (regex mode).",
                 },
                 .{
                     .name = "limit",
                     .type = "number",
-                    .description = "Maximum matches in THIS response (default 40, max 200). Results are paged to keep the context window small. The result always reports the true `total` — raise limit, or page with offset, only when you need more.",
+                    .description = "Maximum matches in THIS response (default 40, max 200). The result always reports the true `total` — raise it or page with `offset` only when needed.",
                 },
                 .{
                     .name = "offset",
                     .type = "number",
-                    .description = "Skip the first N matches, for paging a broad query (default 0). The previous page's `hint` names the exact offset that continues it.",
+                    .description = "Skip the first N matches (default 0). The previous page's `hint` names the offset that continues it.",
                 },
             },
             .required = &.{},
@@ -278,14 +278,14 @@ pub const use_skill_tool = AgentTool{
     .type = "function",
     .function = .{
         .name = "use_skill",
-        .description = "Load a skill's full instructions by exact name (the `name` `search_skills` returned). Use this when you need detailed guidance for a specific capability. Returns the skill body; if the skill is a bundle of companion files, it also returns `asset_dir` (an absolute directory holding them) and `asset_count`.",
+        .description = "Load a skill's full instructions by the exact `name` `search_skills` returned. Returns the skill body; a bundle of companion files also returns `asset_dir` (an absolute directory holding them) and `asset_count`.",
         .parameters = .{
             .type = "object",
             .properties = &.{
                 .{
                     .name = "name",
                     .type = "string",
-                    .description = "The exact skill name from search_skills (e.g. 'skill-creator'). Names are single tokens — letters, digits, dots, dashes, underscores — so there is no path to build and no extension to add.",
+                    .description = "The exact skill name from `search_skills` (e.g. 'skill-creator'). A single token — letters, digits, dots, dashes, underscores — not a path.",
                 },
             },
             .required = &.{"name"},
@@ -463,14 +463,14 @@ pub const remove_skill_tool = AgentTool{
     .type = "function",
     .function = .{
         .name = "remove_skill",
-        .description = "Permanently delete a skill from this workspace. Removes the skill and any of its companion files. Use this only when the skill is obsolete or the user asks for it.",
+        .description = "Permanently delete a skill from this workspace, with any companion files. Use only when it is obsolete or the user asks.",
         .parameters = .{
             .type = "object",
             .properties = &.{
                 .{
                     .name = "skill_name",
                     .type = "string",
-                    .description = "The exact name of the skill to remove, as `search_skills` reported it. A single name, not a path.",
+                    .description = "The exact name of the skill to remove, as `search_skills` reported it.",
                 },
             },
             .required = &.{"skill_name"},
@@ -655,11 +655,9 @@ pub const add_skill_tool = AgentTool{
     .function = .{
         .name = "add_skill",
         .description =
-        \\Create a new skill in this workspace. Use this when the user wants to save a workflow, pattern, or reusable instructions as a skill for future use.
+        \\Create a new skill in this workspace — a reusable workflow, pattern or set of instructions for future sessions. `name`, `description` and `content` are separate arguments: the `---` YAML frontmatter is generated from the first two, so never paste one into `content`.
         \\
-        \\`name` and `description` are SEPARATE ARGUMENTS; `content` is the markdown BODY only. The `---` YAML frontmatter is generated from `name` + `description` — never paste one into `content`. (If you do, it is stripped and its fields lifted, so nothing breaks, but you lose the chance to be explicit about either field.)
-        \\
-        \\`description` decides whether any future session finds the skill at all: `search_skills` returns that one sentence and nothing else. The skill belongs to the workspace you are working in — `search_skills` only ever sees that workspace's skills, and there is no flag to place it somewhere else.
+        \\- `description` decides whether any future session finds the skill at all: `search_skills` returns that one sentence and nothing else.
         ,
         .parameters = .{
             .type = "object",
@@ -667,17 +665,17 @@ pub const add_skill_tool = AgentTool{
                 .{
                     .name = "name",
                     .type = "string",
-                    .description = "The skill's name, sent as its own argument. Kebab-case letters, digits, dots, dashes, underscores; no slashes, spaces or leading dot. Example: 'zig-move-code-static-contract-path-pins'.",
+                    .description = "The skill's name, sent as its own argument. Letters, digits, dots, dashes, underscores; no slashes, spaces or leading dot. Example: 'my-workflow'.",
                 },
                 .{
                     .name = "description",
                     .type = "string",
-                    .description = "One sentence: what the skill does AND when to use it — trigger conditions, not a title. Example: \"Use when MOVING Zig code between files in this repo and a static-contract test breaks on the path.\"",
+                    .description = "One sentence: what the skill does AND when to use it — trigger conditions, not a title. E.g. \"Use when moving Zig code between files here.\"",
                 },
                 .{
                     .name = "content",
                     .type = "string",
-                    .description = "The markdown BODY: `## When to Use`, `## Procedure`, `## Pitfalls`. Skip sections that do not apply. No `---` frontmatter block — it is generated.",
+                    .description = "The markdown BODY: `## When to Use`, `## Procedure`, `## Pitfalls`. Skip sections that do not apply. No `---` frontmatter — it is generated.",
                 },
             },
             .required = &.{ "name", "description", "content" },
@@ -904,11 +902,9 @@ pub const edit_skill_tool = AgentTool{
     .function = .{
         .name = "edit_skill",
         .description =
-        \\Edit an existing skill in this workspace. Updates the description and/or content of a skill. At least one of description or content must be provided; omit the other to keep it.
+        \\Edit an existing skill — its `description`, its `content` body, or both. Omit a field to keep its current value; at least one must be supplied. `skill_name` is the exact name `search_skills` reported.
         \\
-        \\`skill_name` is the exact name `search_skills` reported.
-        \\
-        \\`content` is the BODY only — the frontmatter is regenerated on every write. Rewriting the `description` is the highest-leverage edit available: it is the one line that decides whether this skill is ever loaded.
+        \\- `content` is the BODY only (frontmatter is regenerated). Rewriting `description` is the highest-leverage edit: that one line decides whether the skill is ever loaded.
         ,
         .parameters = .{
             .type = "object",
@@ -921,12 +917,12 @@ pub const edit_skill_tool = AgentTool{
                 .{
                     .name = "description",
                     .type = "string",
-                    .description = "New one-sentence description: what the skill does AND when to use it. Omit to keep the existing one.",
+                    .description = "New one-sentence description: what the skill does AND when to use it. Omit to keep it.",
                 },
                 .{
                     .name = "content",
                     .type = "string",
-                    .description = "New markdown BODY — `## When to Use` / `## Procedure` / `## Pitfalls`. No `---` frontmatter block. Omit to keep the existing body.",
+                    .description = "New markdown BODY — `## When to Use` / `## Procedure` / `## Pitfalls`. No `---` frontmatter. Omit to keep the existing body.",
                 },
             },
             .required = &.{"skill_name"},

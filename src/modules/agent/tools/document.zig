@@ -122,25 +122,17 @@ pub const add_document_tool = AgentTool{
     .function = .{
         .name = "add_document",
         .description =
-        \\Create a markdown document in YOUR workspace. Use this to record a plan, a spec, meeting notes, a research summary, or any other prose artifact the user should be able to re-read later.
+        \\Create a markdown document in YOUR workspace — a plan, a spec, meeting notes, a research summary, any prose artifact worth re-reading later.
         \\
-        \\The document is stored in SQLite and shown in the "Documents" section of the desktop sidebar, where the user can open and edit it.
-        \\
-        \\SCOPE: automatic and server-side. Your session's workspace is resolved before the write, so you can only ever create documents in your own workspace. There is no `workspace_id` argument — a model that supplies one has it ignored.
-        \\
-        \\Constraints:
-        \\- `title` is required and must contain at least one non-whitespace character.
-        \\- `content` may be empty; `format` accepts 'markdown' (the default) and is reserved for future formats.
-        \\- `content` is capped at 4 MiB. Larger is rejected, not truncated.
-        \\
-        \\Example: {"title": "Release plan v2", "content": "# Release plan\n\n- ship 095\n- add the frontend\n"}
+        \\- The document is stored in SQLite and shown in the "Documents" section of the sidebar, where the user can open and edit it.
+        \\- SCOPE is automatic: your session's workspace is resolved before the write, so there is no `workspace_id` argument — one supplied is ignored.
         ,
         .parameters = .{
             .type = "object",
             .properties = &.{
-                .{ .name = "title", .type = "string", .description = "Human-readable document name, shown in the sidebar Documents list. Required, must be non-blank." },
-                .{ .name = "content", .type = "string", .description = "The markdown body. May be empty. Capped at 4 MiB. Defaults to an empty document." },
-                .{ .name = "format", .type = "string", .description = "Document format. Only 'markdown' is supported in this version; omit it unless you have a specific reason." },
+                .{ .name = "title", .type = "string", .description = "Human-readable document name, shown in the sidebar Documents list. Required, non-blank." },
+                .{ .name = "content", .type = "string", .description = "The markdown body. May be empty. Capped at 4 MiB." },
+                .{ .name = "format", .type = "string", .description = "Only 'markdown' is supported in this version; omit it." },
             },
             .required = &.{"title"},
         },
@@ -163,26 +155,17 @@ pub const edit_document_tool = AgentTool{
     .function = .{
         .name = "edit_document",
         .description =
-        \\Edit an existing markdown document in YOUR workspace. Use this to revise a document you (or the user) created earlier — append a section, correct a plan, expand a summary.
+        \\Edit an existing markdown document in YOUR workspace — append a section, correct a plan, expand a summary.
         \\
-        \\SCOPE: automatic and server-side. A `document_id` that belongs to another workspace reports "not found", exactly as a nonexistent id does, so you cannot enumerate or probe another workspace's documents.
-        \\
-        \\PATCH SEMANTICS:
-        \\- Omit `title` to keep the current title; omit `content` to keep the current body.
-        \\- `content` is the COMPLETE new body, not a diff or an append fragment. Include everything the document should contain after the edit.
-        \\- Passing `content: ""` clears the body. That is different from omitting the field.
-        \\- Supplying neither `title` nor `content` is rejected.
-        \\
-        \\`content` is capped at 4 MiB. Larger is rejected, not truncated.
-        \\
-        \\Example: {"document_id": "doc_1790700000000000000", "content": "# Release plan\n\n- ship 095\n- add the frontend\n- dogfood for a week\n"}
+        \\- SCOPE is automatic: a `document_id` in another workspace reports "not found", exactly as a nonexistent id does — you cannot probe or enumerate another workspace.
+        \\- PATCH: omitted fields keep their current value; `content` is the COMPLETE new body, not a diff (include everything the document should hold after the edit); `content: ""` clears the body, unlike omitting the field; supplying neither field is rejected.
         ,
         .parameters = .{
             .type = "object",
             .properties = &.{
-                .{ .name = "document_id", .type = "string", .description = "Id of the document to edit, as returned by `add_document`. A document in another workspace reports 'not found'. Required." },
-                .{ .name = "title", .type = "string", .description = "New title. Omit to keep the current one. Must be non-blank when supplied." },
-                .{ .name = "content", .type = "string", .description = "The COMPLETE new markdown body (not a diff). Omit to keep the current body; pass \"\" to clear it. Capped at 4 MiB." },
+                .{ .name = "document_id", .type = "string", .description = "Document id from `add_document` or a `search_documents` row. A row in another workspace reports 'not found'." },
+                .{ .name = "title", .type = "string", .description = "New title. Omit to keep the current one. Must be non-blank." },
+                .{ .name = "content", .type = "string", .description = "The COMPLETE new body (not a diff). Omit to keep the current body; pass \"\" to clear it. Capped at 4 MiB." },
             },
             .required = &.{"document_id"},
         },
@@ -206,18 +189,15 @@ pub const delete_document_tool = AgentTool{
     .function = .{
         .name = "delete_document",
         .description =
-        \\Permanently delete ONE document from YOUR workspace by id. This is IRREVERSIBLE — the body is not moved to a trash and cannot be recovered.
+        \\Permanently delete ONE document from YOUR workspace by id. IRREVERSIBLE — the body is not moved to a trash and cannot be recovered.
         \\
-        \\SCOPE: automatic and server-side. A `document_id` belonging to another workspace reports "not found", exactly as a nonexistent id does, so you cannot enumerate or delete another workspace's documents.
-        \\
-        \\Use `edit_document` to revise a document. Use this only when the user has asked for the document to be REMOVED.
-        \\
-        \\Example: {"document_id": "doc_1790700000000000000"}
+        \\- SCOPE is automatic: a `document_id` in another workspace reports "not found", exactly as a nonexistent id does, so you cannot delete across a workspace boundary.
+        \\- Use only when the user asked for the document to be REMOVED; revise with `edit_document` instead.
         ,
         .parameters = .{
             .type = "object",
             .properties = &.{
-                .{ .name = "document_id", .type = "string", .description = "Id of the document to delete, as returned by `add_document` or a `search_documents` row. A document in another workspace reports 'not found'. Required." },
+                .{ .name = "document_id", .type = "string", .description = "Document id from `add_document` or a `search_documents` row. A row in another workspace reports 'not found'." },
             },
             .required = &.{"document_id"},
         },
@@ -243,7 +223,10 @@ pub const search_documents_tool = AgentTool{
     .function = .{
         .name = "search_documents",
         .description =
-        \\Search YOUR workspace's documents by title OR body content. `query` is a case-insensitive REGEX, so one pattern reaches a phrase several words would (`release|launch`, `^Q3`, `\\bTODO\\b`); pass `literal: true` when the query is literal text. Results are PAGED — `limit` (default 20) caps the rows returned, `total` is the real match count, `offset` continues the listing — so a big document set never floods your context. Every row carries `document_id` (pass it straight to `edit_document` / `delete_document`), `title`, `updated_at`, `content_length`, and a short `excerpt` centred on the hit. Omit `query` to list your documents newest-first; pass `include_content: true` only when you need the full bodies for an edit.
+        \\Search YOUR workspace's documents by title OR body. This is how you get a `document_id` for `edit_document` / `delete_document` — never invent one. Omit `query` to list them newest-updated first.
+        \\
+        \\- `query` is a case-insensitive REGEX matched against title AND content. Pass `literal: true` for literal text.
+        \\- An invalid pattern is matched as a literal substring and reported in `pattern_warning`, not as a failure.
         ,
         .parameters = .{
             .type = "object",
@@ -251,27 +234,27 @@ pub const search_documents_tool = AgentTool{
                 .{
                     .name = "query",
                     .type = "string",
-                    .description = "Regex, matched case-insensitively against every document's title AND content. A pattern finds what a phrase cannot: 'release|launch' = either word, '^Q3' = the Q3-prefixed titles, '\\bTODO\\b' = the word without matching 'TODOIST'. Supported: literals, '.', '[...]', '\\d \\w \\s \\b', '*', '+', '?', '{m,n}' ranges, '( )' groups, '|', '^', '$'. A metacharacter-free query is still a plain substring search. An invalid pattern is matched as a literal substring instead and the result says so in pattern_warning. Omit to list the newest documents first.",
+                    .description = "Regex, matched case-insensitively against each document's title AND content. Supported: literals, '.', '[...]', '\\d \\w \\s \\b', '*', '+', '?', '{m,n}' ranges, '( )' groups, '|', '^', '$'. A metacharacter-free query is a plain substring search. An invalid pattern is matched as a literal substring and reported in `pattern_warning`. Omit to list the newest documents first.",
                 },
                 .{
                     .name = "literal",
                     .type = "boolean",
-                    .description = "Treat `query` as a literal string — regex metacharacters like '.', '*', '[', '(' are matched verbatim. Set this for code-shaped or glob-shaped queries ('*.md', 'fn('). Default false (regex mode).",
+                    .description = "Treat `query` as a literal string — '.', '*', '[', '(' are matched verbatim. Set this for code- or glob-shaped queries ('*.md', 'fn('). Default false (regex mode).",
                 },
                 .{
                     .name = "limit",
                     .type = "number",
-                    .description = "Maximum matches in THIS response (default 20, max 100). Results are paged to keep the context window small. The result always reports the true `total` — raise limit, or page with offset, only when you need more.",
+                    .description = "Maximum matches in THIS response (default 20, max 100). The result always reports the true `total` — raise limit, or page with `offset`, only when you need more.",
                 },
                 .{
                     .name = "offset",
                     .type = "number",
-                    .description = "Skip the first N matches, for paging a broad query (default 0). The previous page's `hint` names the exact offset that continues it.",
+                    .description = "Skip the first N matches (default 0). The previous page's `hint` names the offset that continues it.",
                 },
                 .{
                     .name = "include_content",
                     .type = "boolean",
-                    .description = "Include each match's FULL body as `content`. Off by default — rows carry a bounded `excerpt` instead. Turn it on only when the next action is `edit_document`, which replaces the whole body and needs the current one first.",
+                    .description = "Include each match's FULL body as `content`. Off by default — rows carry a bounded `excerpt` instead. Turn it on only when the next action is `edit_document`, which replaces the whole body.",
                 },
             },
             .required = &.{},

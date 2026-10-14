@@ -52,80 +52,25 @@ pub const spawn_sub_agent_tool = AgentTool{
     .function = .{
         .name = "spawn_sub_agent",
         .description =
-        \\Spawn 1 to 20 parallel sub-agents to complete tasks concurrently.
+        \\Spawn 1 to 20 parallel sub-agents to complete independent tasks concurrently.
         \\
-        \\HOW IT WORKS:
-        \\- You MUST include all necessary context, background, and instructions
-        \\  directly inside each sub-agent's "instruction" field.
-        \\- All sub-agents run in parallel and return results separately.
-        \\
-        \\WHEN TO USE:
-        \\- Use when tasks can be broken down into independent parallel workloads.
-        \\- Use when you need to research multiple topics simultaneously.
-        \\- Use when processing multiple files, URLs, or data sources at once.
+        \\- Sub-agents run in parallel and return results separately. Each one is a fresh context: put ALL necessary context, background and instructions directly in its "instruction" field.
+        \\- Use it when work splits into independent parallel workloads (research several topics at once, process many files / URLs / data sources).
         \\
         \\TOOLS (REQUIRED, explicit allowlist):
-        \\- Every sub-agent MUST list its own "tools" — a non-empty array of exact tool names. Missing, empty, or ["all"] is rejected at parse time.
-        \\- There is no omit-means-all: pick the minimal set the task needs. Explorer-code (read-only research) e.g. ["read_file", "glob", "search"]. Writer e.g. ["read_file", "write_file", "text_replace", "set_git_worktree", "command"].
-        \\- MAIN-AGENT-ONLY: "ask_user" and "spawn_sub_agent" can never be given to a sub-agent and listing either is rejected at parse time. A sub-agent has no way to reach the human, so asking would leave the question unanswered forever — put any question in YOUR "instruction" instead, or ask the human yourself before spawning.
-        \\- Unknown names are ignored (the child simply never receives them), so double-check spelling against the tool list.
+        \\- Every sub-agent MUST list its own "tools": a non-empty array of exact tool names. Missing, empty, or ["all"] is rejected at parse time. There is no omit-means-all — pick the minimal set the task needs. Explorer-code (read-only research) e.g. ["read_file", "glob", "search"]. Writer e.g. ["read_file", "write_file", "text_replace", "set_git_worktree", "command"].
+        \\- MAIN-AGENT-ONLY: "ask_user" and "spawn_sub_agent" can never be given to a sub-agent and listing either is rejected at parse time. A sub-agent cannot reach the human, so put any question in YOUR "instruction" instead, or ask the human yourself before spawning.
+        \\- Unknown names are ignored (the child never receives them), so double-check spelling against the tool list.
         \\
         \\WORKTREE RULE (explorer shares, writer isolates):
-        \\- Explorer-code sub-agent (read-only: read_file, glob, search, semantic_search, web_search): NO new worktree — it shares your cwd, that is fine.
+        \\- Explorer-code sub-agent (read-only: read_file, glob, search, semantic_search, web_search): NO new worktree — it shares your cwd.
         \\- Writer/editor sub-agent (anything that creates or modifies files): you MUST tell it explicitly in "instruction" to call `set_git_worktree` FIRST with a path under `.worktree/worktrees_agent_<randomname>`, do all file work inside that worktree, then return a summary of changed files and whether it pushed. Its "tools" MUST include "set_git_worktree" plus the write tools it needs.
         \\
-        \\TIMEOUT OPTION:
-        \\- Each sub-agent can have an optional "timeout_seconds" field.
-        \\- If a sub-agent exceeds its timeout, it will be terminated and return an error.
-        \\- Default: no timeout (sub-agent runs until completion).
+        \\AGENT_NAME (REQUIRED): the name of a pre-configured sub-agent in the active profile's `sub_agents` list (per-profile only — there is no top-level fallback), resolved against the parent session's `selected_profile_model`. Call `list_sub_agent` first if you are unsure which names exist or which fits; absent optional tags there mean "inherits the profile default". The sub-agent takes that config's model, base_url, api_key, url_style, thinking, temperature and system_prompt (injected as its "## Your Active Agent Configuration" block). The name is also the label on the result XML's <agent name="...">. If the name is NOT found, a random "agent-{16 hex chars}" name is used with the orchestrator's default model / api_key / base_url / url_style and no specialized system prompt, and the affected <agent> tag carries random_fallback="true".
         \\
-        \\INHERITED CONTEXT:
-        \\- Each sub-agent can have an optional "inherited_context" mode string
-        \\  that controls whether the parent's recent conversation history is
-        \\  injected into the sub-agent's system prompt as a labelled read-only
-        \\  block ("## Conversation History From Parent Agent").
-        \\- Valid values:
-        \\    - "none"        — no inheritance (default when omitted)
-        \\    - "last:N"      — last N user/assistant turns from the parent (N: 1-50, default 10)
-        \\    - "all"         — all user/assistant turns (capped at 50)
-        \\    - "since_last_user" — from the parent's last user message onwards
-        \\- Only user and assistant text turns are inherited. Tool calls and
-        \\  tool results from the parent are NOT included — the sub-agent has
-        \\  its own tool set and shouldn't assume the parent's tool state.
-        \\
-        \\AGENT_NAME (sub-agent from config):
-        \\- Each sub-agent MUST include an "agent_name" field. This is
-        \\  the name of a pre-configured sub-agent to load from
-        \\  `~/.config/pabrik/config.json`. The sub-agent uses that
-        \\  sub-agent's:
-        \\    - model, base_url, api_key, url_style (overlay on orchestrator defaults)
-        \\    - thinking ("auto" | "true" | "false")
-        \\    - temperature ("auto" or a numeric value)
-        \\    - system_prompt (injected as the sub-agent's
-        \\      "## Your Active Agent Configuration" block in the system prompt)
-        \\- The agent_name is also used as the sub-agent's label in
-        \\  the result XML (the <agent name="..."> attribute).
-        \\- Resolution: the name is looked up in the parent session's
-        \\  profile (`selected_profile_model`) and its `sub_agents` list
-        \\  only (per-profile-only — there is no top-level fallback).
-        \\- If you are unsure which agent_name values exist or which fits
-        \\  the job, call list_sub_agent first — it shows full specs
-        \\  (model, tuning, system prompt); absent optional tags mean
-        \\  'inherits the profile default'.
-        \\- If the name is NOT found, a random name of the form
-        \\  "agent-{16 hex chars}" is generated for tracking, and the
-        \\  orchestrator's default model / api_key / base_url / url_style
-        \\  is used. The system prompt is the default (no specialized
-        \\  system_prompt injection). The result XML will carry
-        \\  `random_fallback="true"` on the affected <agent> tag.
-        \\- Example: { "instruction": "Review the diff in src/foo.zig and summarize the risks",
-        \\             "tools": ["read_file", "glob", "search"],
-        \\             "agent_name": "code-reviewer" }
-        \\
-        \\EXAMPLE USE CASES:
-        \\  - Spawn 3 agents: one to browse URL A, one to browse URL B, one to browse URL C (each with "tools": ["web_search"])
-        \\  - Spawn 5 agents to explore 5 different files in parallel (explorer-code, read-only tools, no worktree)
-        \\  - Spawn a writer agent with ["read_file", "write_file", "text_replace", "set_git_worktree", "command"] and an instruction that starts with "First call set_git_worktree ..."
+        \\Optional per sub-agent:
+        \\- "timeout_seconds": on expiry the sub-agent is terminated and returns an error. Default: no timeout (runs until completion).
+        \\- "inherited_context": whether the parent's recent conversation history is injected into the sub-agent's system prompt as a labelled read-only block ("## Conversation History From Parent Agent"). Values: "none" (default when omitted), "last:N" (N: 1-50, default 10), "all" (capped at 50), "since_last_user". Only user and assistant text turns are inherited — the parent's tool calls and tool results are NOT, because the sub-agent has its own tool set.
         ,
         .parameters = .{
             .type = "object",
@@ -134,42 +79,19 @@ pub const spawn_sub_agent_tool = AgentTool{
                     .name = "json_input",
                     .type = "string",
                     .description =
-                    \\A JSON string defining the sub-agents to spawn. Maximum 20 sub-agents.
-                    \\
-                    \\SCHEMA:
+                    \\A JSON string defining the sub-agents to spawn. Maximum 20.
                     \\{
                     \\  "sub_agents": [
                     \\    {
-                    \\      "instruction": "Full task details", // Required. Must be self-contained —
-                    \\                                          //   include ALL context the agent needs.
-                    \\      "agent_name": "code-reviewer"       // Required. Name of a pre-configured sub-agent
-                    \\                                          //   (looked up in the active profile's sub_agents
-                    \\                                          //   only). Also used as the
-                    \\                                          //   sub-agent's label in the result XML.
-                    \\      "tools": ["read_file", "glob", "search"], // REQUIRED. Non-empty explicit allowlist. Never omit, never "all".
-                    \\      "timeout_seconds": 300,             // Optional. Timeout in seconds (0 = no limit).
-                    \\      "inherited_context": "last:5"        // Optional. Mode for parent history inheritance.
+                    \\      "instruction": "Full task details", // Required. Self-contained: include ALL context the agent needs.
+                    \\      "agent_name": "code-reviewer",      // Required. Pre-configured sub-agent from the active profile's sub_agents.
+                    \\      "tools": ["read_file", "glob", "search"], // REQUIRED non-empty explicit allowlist. Never omit, never "all".
+                    \\      "timeout_seconds": 300,             // Optional. Seconds (0 = no limit).
+                    \\      "inherited_context": "last:5"       // Optional. Parent-history inheritance mode.
                     \\    }
                     \\  ]
                     \\}
-                    \\
-                    \\GOOD EXPLORER-CODE EXAMPLE (read-only, no worktree):
-                    \\  "instruction": "Browse https://example.com/pricing and extract all pricing
-                    \\   tiers, their names, prices, and included features. Return as a markdown table.",
-                    \\  "tools": ["web_search"]
-                    \\
-                    \\GOOD WRITER EXAMPLE (own worktree, then summarize):
-                    \\  "instruction": "First call set_git_worktree with path `.worktree/worktrees_agent_<randomname>`.
-                    \\   Then implement the fix inside that worktree. When done, return a summary of changed
-                    \\   files and whether you pushed.",
-                    \\  "tools": ["read_file", "write_file", "text_replace", "set_git_worktree", "command"]
-                    \\
-                    \\BAD INSTRUCTION EXAMPLE (too vague, no context):
-                    \\  "instruction": "Check the pricing page"  ← agent won't know what site or goal
-                    \\
-                    \\BAD TOOLS EXAMPLES (all rejected at parse time):
-                    \\  missing "tools" field, "tools": [], "tools": ["all"],
-                    \\  "tools": ["ask_user"] or ["spawn_sub_agent"] (main-agent-only)
+                    \\Rejected at parse time: a missing "tools", [], ["all"], and a main-agent-only name. A writer instruction must open by telling the sub-agent to call set_git_worktree.
                     ,
                 },
             },

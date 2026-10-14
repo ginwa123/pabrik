@@ -195,21 +195,17 @@ pub const list_directory_tool = AgentTool{
     .function = .{
         .name = "list_directory",
         .description =
-        \\List first-level entries in a directory (like `ls <path>`).
-        \\Companion to `glob` (which finds files by pattern, recursive).
+        \\List first-level entries in a directory (like `ls <path>`) — the non-recursive companion to `glob`.
         \\
-        \\Respects `.gitignore` by default — entries ignored by git
-        \\are filtered out. Hidden files (starting with `.`) are
-        \\skipped unless `hidden=true`.
-        \\
-        \\Results are sorted: directories first, then files, alphabetically.
-        \\Each entry is an object {name, path, is_directory, is_symlink}
-        \\inside `entries`, with `path` and `count` alongside.
-        \\
-        \\`cwd` is REQUIRED and must be absolute: it is the directory this
-        \\call works in. `path` may be relative — it is resolved against
-        \\`cwd` — or absolute, in which case it is used as-is. Every
+        \\Sorted: directories first, then files, alphabetically. The payload is
+        \\{path, count, entries:[{name, path, is_directory, is_symlink}]}, and every
         \\entry's `path` is absolute.
+        \\
+        \\Respects `.gitignore` by default. Hidden entries (starting with `.`) are skipped
+        \\unless `hidden=true`.
+        \\
+        \\`cwd` is REQUIRED and must be absolute. `path` may be relative — resolved against
+        \\`cwd` — or absolute, in which case it is used as-is.
         ,
         .parameters = .{
             .type = "object",
@@ -222,7 +218,7 @@ pub const list_directory_tool = AgentTool{
                 .{
                     .name = "cwd",
                     .type = "string",
-                    .description = "REQUIRED. Absolute path to the directory this call works in. A relative `path` resolves against it; an absolute `path` is used as-is. Pass the tree you are actually editing (your worktree root, NOT the server's directory).",
+                    .description = "REQUIRED. Absolute path to the directory this call works in. Pass the tree you are actually editing (your worktree root, NOT the server's directory).",
                 },
                 .{
                     .name = "hidden",
@@ -232,7 +228,7 @@ pub const list_directory_tool = AgentTool{
                 .{
                     .name = "respect_ignore_files",
                     .type = "boolean",
-                    .description = "Respect .gitignore (entries ignored by git are filtered out). Default: true. Set false to list gitignored paths (build/, .zig-cache/, .git/, etc.).",
+                    .description = "Default: true. Set false to list gitignored paths (build/, .zig-cache/, .git/, etc.).",
                 },
             },
             .required = &.{"cwd"},

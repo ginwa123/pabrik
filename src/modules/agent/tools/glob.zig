@@ -1141,24 +1141,9 @@ pub const glob_tool = AgentTool{
     .function = .{
         .name = "glob",
         .description =
-        \\Find files matching glob patterns (like node-glob).
-        \\Automatically respects .gitignore files - ignored files are excluded from results.
-        \\Returns JSON: {"pattern": ..., "files": [...], "total": ..., "returned": ..., "truncated": ...}.
+        \\Find files by glob pattern (e.g. `**/*.ts`). Respects .gitignore/.ignore/.rgignore; `respect_ignore_files=false` includes ignored paths (node_modules/, build/, .git/, etc.). Hidden files are excluded unless `hidden=true`. Use it to find files by name before reading them.
         \\
-        \\Gitignore behavior:
-        \\  - Respects .gitignore rules from the search path and subdirectories
-        \\  - Files matching gitignore patterns are automatically excluded
-        \\  - Use hidden=true to include hidden files (still respects gitignore if file is not gitignored)
-        \\  - respect_ignore_files: default true. Set false to list gitignored paths
-        \\    (node_modules/, build/, .git/, etc.).
-        \\
-        \\Glob patterns supported:
-        \\  * - Match any characters (except /)
-        \\  ** - Match any characters including / (recursive)
-        \\  ? - Match single character
-        \\  [abc] - Character class
-        \\  {a,b,c} - Brace expansion
-        \\  {1..5} - Numeric range expansion
+        \\Returns {pattern, files, total, returned, truncated}.
         ,
         .parameters = .{
             .type = "object",
@@ -1166,7 +1151,7 @@ pub const glob_tool = AgentTool{
                 .{
                     .name = "pattern",
                     .type = "string",
-                    .description = "Glob pattern (e.g., \"*.zig\", \"**/*.ts\", \"{*.js,*.ts}\"). Default: \"*\"",
+                    .description = "Glob pattern. `*` any except `/`, `**` any incl `/`, `?` one char, `[abc]` class, `{a,b,c}` alternates, `{1..5}` range. Default: \"*\"",
                 },
                 .{
                     .name = "path",
@@ -1176,32 +1161,32 @@ pub const glob_tool = AgentTool{
                 .{
                     .name = "cwd",
                     .type = "string",
-                    .description = "REQUIRED. Absolute path to the directory this call works in. A relative `path` resolves against it; an absolute `path` is used as-is. Pass the tree you are actually editing (your worktree root, NOT the server's directory).",
+                    .description = "REQUIRED. Absolute path to the directory this call works in. Pass the tree you are editing (your worktree root, NOT the server's directory).",
                 },
                 .{
                     .name = "max_results",
                     .type = "number",
-                    .description = "Maximum number of results (default: 100, max: 500)",
+                    .description = "Max results (default: 100, max: 500)",
                 },
                 .{
                     .name = "offset",
                     .type = "number",
-                    .description = "Skip first N results for pagination.",
+                    .description = "Skip first N results.",
                 },
                 .{
                     .name = "hidden",
                     .type = "boolean",
-                    .description = "Include hidden files (starting with .). Default: false",
+                    .description = "Include hidden files (dotfiles). Default: false",
                 },
                 .{
                     .name = "ignore_case",
                     .type = "boolean",
-                    .description = "Case insensitive matching. Default: false",
+                    .description = "Case-insensitive matching. Default: false",
                 },
                 .{
                     .name = "file_type",
                     .type = "string",
-                    .description = "Filter by type: \"f\" for files, \"d\" for directories",
+                    .description = "Filter by type: \"f\"=files, \"d\"=directories",
                 },
                 .{
                     .name = "follow",
@@ -1211,12 +1196,12 @@ pub const glob_tool = AgentTool{
                 .{
                     .name = "respect_ignore_files",
                     .type = "boolean",
-                    .description = "Respect .gitignore/.ignore/.rgignore (glob's custom parser). Default: true. Set false to list gitignored paths (node_modules/, build/, .git/, etc.).",
+                    .description = "Respect .gitignore/.ignore/.rgignore. Default: true; false lists gitignored paths (node_modules/, build/, .git/, etc.).",
                 },
                 .{
                     .name = "cwd",
                     .type = "string",
-                    .description = "REQUIRED. Absolute path to the directory this call works in. A relative `path` resolves against it; an absolute `path` is used as-is. Pass the tree you are actually editing (your worktree root, NOT the server's directory).",
+                    .description = "REQUIRED. Absolute path to the directory this call works in. Pass the tree you are editing (your worktree root, NOT the server's directory).",
                 },
             },
             .required = &.{"cwd"},

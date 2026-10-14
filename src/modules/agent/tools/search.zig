@@ -1355,120 +1355,24 @@ pub const search_tool = AgentTool{
     .function = .{
         .name = "search",
         .description =
-        \\PRIMARY search tool for code navigation. Use THIS tool — not a shell
-        \\`rg` / `grep` / `find` run through `command` — to search the codebase.
+        \\PRIMARY search tool for code navigation — use it instead of a shell `rg` / `grep` / `find` run through `command`.
+        \\Use it to locate a definition (symbol, function, type, constant), find references to X, check whether a pattern already exists before writing new code, find which file produced an error or log line, or follow a non-trivial code path.
         \\
-        \\WHY THIS TOOL OVER A SHELL `rg ...`
-        \\- Structured JSON output with line numbers and file paths — no shell
-        \\  parsing or `rg --line-number --no-heading` flag-juggling required.
-        \\- Automatically respects .gitignore / .ignore / .rgignore (skips
-        \\  build/, node_modules/, .git/, target/, vendor/).
-        \\- Pattern is passed via argv, not a shell — no injection risk from
-        \\  regex-looking patterns, no need to escape quotes or backticks.
-        \\- Capped output (max_results + max_output) prevents runaway results
-        \\  from filling the context window.
-        \\- Identical behavior across platforms — no per-OS rg-flag differences.
+        \\NOT this tool:
+        \\- You already know the exact file path → `read_file`.
+        \\- You want files BY NAME (not by content) → `glob`.
+        \\- You need a ripgrep flag this tool does not expose → run `rg` through `command`.
         \\
-        \\Fall back to a shell `rg` (via `command`) ONLY when you need an rg flag this tool does
-        \\not expose (rare — word_boundary / literal / only_matching cover the
-        \\common cases below).
+        \\WHY over a shell `rg`: structured JSON with line numbers and paths (no flag-juggling); .gitignore/.ignore/.rgignore honored automatically; pattern passed via argv (no shell quoting or escaping); output capped by `max_results` + `max_output`.
         \\
-        \\WHEN TO USE
-        \\- "Where is X defined?" — symbol, function, type, constant lookup.
-        \\- "Which files use / call Y?" — finding references across the project.
-        \\- "Does this pattern or feature already exist in the codebase?" before
-        \\  writing new code (check first to avoid duplication).
-        \\- "Which file produced this error / log line?"
-        \\- Understanding any non-trivial code path or control flow.
+        \\RESPONSE FORMAT — JSON carrying the args plus the collection summary:
+        \\- `returned` = rows in this response; `total` = matched lines rg found in the WHOLE search; `truncated` = true when max_output, max_results, head or tail cut the visible rows; `output_truncated` = the raw rg JSON stream exceeded max_output (a successful partial result from the retained prefix); `output_bytes` = stdout bytes observed while draining. ALWAYS check `truncated` and `truncated_hint`: when true the result is a window, not the complete answer; the hint names the active limit and is null otherwise.
+        \\- `files[]` entries carry `path`, `total` (matched lines in that file for THIS search — not the file's line count, and a lower bound when output_truncated=true), `count` (rows shown), `matches[]` with `line` (1-indexed) + `text` (windowed to snippet_max_chars, default 240, "..." when the line is longer).
+        \\- No matches returns `files: []` (or `matches: []` when `group_by_file` is false) plus a `warning` naming the pattern and path that were searched. Values are plain JSON strings (control bytes sanitized) — a snippet containing "</s></m>" comes back verbatim in `text`.
         \\
-        \\WHEN NOT TO USE
-        \\- You already know the exact file path → use read_file.
-        \\- You want to find files BY NAME (not by content) → use glob.
-        \\- You need a real ripgrep flag this tool does not expose → run `rg`
-        \\  through `command`, but first check whether the flag has a parameter here.
-        \\
-        \\RESPONSE FORMAT
-        \\Results are a JSON object carrying the args plus the
-        \\collection summary:
-        \\
-        \\{"pattern":"regex","path":"path","returned":2,"total":2,
-        \\"truncated":false,"output_truncated":false,"output_bytes":1234,
-        \\"truncated_hint":null,"grouped":true,
-        \\"files":[{"path":"path/to/file.zig","total":3,"count":2,
-        \\"matches":[{"line":10,"text":"snippet at line 10"},
-        \\{"line":25,"text":"snippet at line 25"}]}],"warning":null}
-        \\
-        \\Field meanings:
-        \\- `returned` = rows in this response; `total` = matched lines rg
-        \\  found in the WHOLE search. `truncated` means the visible rows are
-        \\  incomplete because max_output, max_results, head, or tail cut it.
-        \\- `output_truncated` = the raw rg JSON stream exceeded max_output;
-        \\  this is a successful partial result containing only complete
-        \\  records from the retained prefix. `output_bytes` is the number of
-        \\  stdout bytes observed while draining.
-        \\  ALWAYS check `truncated` and `truncated_hint`: when true, the
-        \\  result is a window, not the complete answer. The hint identifies
-        \\  the active limit and is null otherwise.
-        \\- `files[]` entries carry `path`, `total` (matched lines in that
-        \\  file for THIS search — not the file's line count; use read_file
-        \\  for the real line count; when output_truncated=true it may be a
-        \\  lower bound because the per-file end record was cut), `count`
-        \\  (rows shown), and `matches[]` with `line` (1-indexed) + `text` (windowed to snippet_max_chars,
-        \\  default 240, with "..." markers when the line is longer).
-        \\
-        \\No matches returns `files: []` (or `matches: []` when
-        \\`group_by_file` is false) plus a `warning` string naming the
-        \\pattern and path that were searched.
-        \\
-        \\Values are plain JSON strings (control bytes sanitized) — a snippet
-        \\containing "</s></m>" comes back verbatim in `text`.
-        \\
-        \\Set `group_by_file: false` for a flat list (`grouped: false` with
-        \\a top-level `matches[]` of `{line, text, file}` instead of `files`):
-        \\{"pattern":"...","path":"...","returned":1,"total":1,
-        \\"truncated":false,"output_truncated":false,"output_bytes":1234,
-        \\"truncated_hint":null,"grouped":false,
-        \\"matches":[{"line":10,"text":"snippet","file":"path/to/file.zig"}],
-        \\"warning":null}
-        \\
-        \\MATCHING MODES (all default false; can be combined freely)
-        \\- word_boundary: whole-word match. "foo" matches "foo bar" but NOT
-        \\  "foobar". Use for identifier lookups where partial matches would
-        \\  be noise.
-        \\- literal: treat pattern as a literal string — regex metacharacters
-        \\  like '.', '*', '[', '(', '\\' are matched verbatim. Safer for
-        \\  code-shaped patterns like "fn(", "*.zig", ".{".
-        \\- only_matching: return just the matched substring, not the
-        \\  surrounding line. Useful for short tokens in noisy lines
-        \\  (extracting IDs, version strings, dates).
-        \\
-        \\PIPELINE HINT (important for agentic loops)
-        \\Run search to identify candidate file:line, then call read_file with
-        \\offset/limit to view the surrounding context. Two focused calls are
-        \\faster and more accurate than reading whole files blind.
-        \\
-        \\EDGE CASES
-        \\- Pattern starting with `-` is treated as a literal (rg's `-e` flag
-        \\  is used internally) — searching for the literal text "--help"
-        \\  works without escaping.
-        \\- Pattern must be non-empty and contain no NUL bytes.
-        \\- max_results and max_output must be > 0.
-        \\- max_output is hard-capped at 100MB.
-        \\- head/tail must be > 0 and are mutually exclusive. Omit the unused
-        \\  field entirely; do not send 0 as a placeholder. Both are still
-        \\  bounded by max_results (the hard row cap); `tail` scans the whole
-        \\  match stream when output fits and keeps the newest rows. If
-        \\  max_output truncates the stream, tail applies to the retained
-        \\  prefix and the result is marked output_truncated.
-        \\- respect_ignore_files (default true): set false to search
-        \\  gitignored paths (build/, node_modules/, target/, vendor/). NOTE:
-        \\  rg still skips HIDDEN entries — that flag does NOT reach .git/ or
-        \\  .github/; pass hidden=true for those.
-        \\- hidden (default false): adds --hidden so dotfiles/dotdirs match.
-        \\- glob: ripgrep --glob filter (e.g. "*.zig", "!test_*") — the
-        \\  cheapest way to cut noise in a polyglot tree.
-        \\- snippet_max_chars (default 240, 0 = no cap): long lines are
-        \\  windowed around the match instead of being returned whole.
+        \\`word_boundary` / `literal` / `only_matching` map to rg's -w / -F / -o and combine freely.
+        \\PIPELINE: search for candidate file:line, then `read_file` with offset/limit — faster and more accurate than reading whole files blind.
+        \\EDGE: a pattern starting with `-` is treated as a literal (rg's `-e` is used internally), so searching for "--help" needs no escaping.
         ,
         .parameters = .{
             .type = "object",
@@ -1486,22 +1390,22 @@ pub const search_tool = AgentTool{
                 .{
                     .name = "max_results",
                     .type = "number",
-                    .description = "Hard cap on rows returned. Default: 50. Must be > 0. When it bites, the result reports truncated=true + a truncated_hint string.",
+                    .description = "Hard cap on rows returned. Default: 50, must be > 0. When it bites, the result reports truncated=true plus a truncated_hint naming it.",
                 },
                 .{
                     .name = "head",
                     .type = "number",
-                    .description = "Optional first-N filter. Still bounded by max_results. Mutually exclusive with tail. Must be > 0; omit this field when unused instead of sending 0.",
+                    .description = "First-N filter of the whole match stream, still bounded by max_results. Mutually exclusive with tail. Must be > 0; omit this field when unused instead of sending 0.",
                 },
                 .{
                     .name = "tail",
                     .type = "number",
-                    .description = "Optional last-N filter of the WHOLE search: the collector scans to the end and keeps the newest rows (bounded by max_results). Mutually exclusive with head. Must be > 0; omit this field when unused instead of sending 0.",
+                    .description = "Last-N filter of the WHOLE search: the collector scans to the end and keeps the newest rows (bounded by max_results). Mutually exclusive with head. Must be > 0; omit this field when unused instead of sending 0. Under output truncation it applies to the retained prefix (result marked output_truncated).",
                 },
                 .{
                     .name = "max_output",
                     .type = "number",
-                    .description = "Max raw output bytes to retain from ripgrep. Default: 1048576 (1MB). Hard cap: 100MB; must be > 0. If the stream exceeds this limit, the call still succeeds with complete records from the retained prefix plus output_truncated=true and a truncated_hint.",
+                    .description = "Max raw output bytes to retain from ripgrep. Default: 1048576 (1MB), hard cap 100MB, must be > 0. Over the limit the call still succeeds with complete records from the retained prefix plus output_truncated=true and a truncated_hint.",
                 },
                 .{
                     .name = "group_by_file",
@@ -1516,7 +1420,7 @@ pub const search_tool = AgentTool{
                 .{
                     .name = "respect_ignore_files",
                     .type = "boolean",
-                    .description = "Respect .gitignore/.ignore/.rgignore. Default: true. Set false to search gitignored paths (build/, node_modules/, target/, vendor/). NOTE: rg still skips hidden entries — use `hidden` for .git/ and .github/.",
+                    .description = "Respect .gitignore/.ignore/.rgignore. Default: true. Set false to search gitignored paths (build/, node_modules/, target/, vendor/). rg still skips hidden entries either way — use `hidden` for .git/ and .github/.",
                 },
                 .{
                     .name = "word_boundary",
@@ -1526,22 +1430,22 @@ pub const search_tool = AgentTool{
                 .{
                     .name = "literal",
                     .type = "boolean",
-                    .description = "Treat pattern as a literal string (-F flag). Regex metacharacters like '.', '*', '[' are matched verbatim. Default: false.",
+                    .description = "Treat pattern as a literal string (-F flag). Regex metacharacters like '.', '*', '[', '(' are matched verbatim. Default: false.",
                 },
                 .{
                     .name = "only_matching",
                     .type = "boolean",
-                    .description = "Return only the matched substring (-o flag), not the full surrounding line. Useful for short tokens in noisy lines. Default: false.",
+                    .description = "Return only the matched substring (-o flag), not the full surrounding line — for short tokens in noisy lines. Default: false.",
                 },
                 .{
                     .name = "snippet_max_chars",
                     .type = "number",
-                    .description = "Max bytes per snippet before it is windowed around the match (default 240). rg returns the WHOLE matching line, so a minified bundle line can be enormous. 0 disables windowing.",
+                    .description = "Max bytes per snippet before it is windowed around the match. Default 240; 0 disables windowing. rg returns the WHOLE matching line, so a minified bundle line can be enormous.",
                 },
                 .{
                     .name = "hidden",
                     .type = "boolean",
-                    .description = "Also search hidden files/dirs (.github/, .env, .gitignore) via --hidden. Default: false. NOTE: respect_ignore_files=false does NOT imply this — rg skips hidden entries either way.",
+                    .description = "Also search hidden files/dirs (.github/, .env, .gitignore) via --hidden. Default: false. respect_ignore_files=false does NOT imply this — rg skips hidden entries either way.",
                 },
                 .{
                     .name = "glob",

@@ -147,11 +147,7 @@ pub const read_file_tool = AgentTool{
         .description =
         \\Read a file by path. Returns content, total_lines, start_line, end_line.
         \\
-        \\- `cwd` is REQUIRED and must be an absolute path: it is the directory this call works in, and a relative `path` resolves against it.
-        \\- Omit offset and limit to read the whole file.
-        \\- Use offset + limit to paginate large files (recommended page: 500 lines).
-        \\- Never guess offsets — check total_lines from a prior call first.
-        \\- Content is raw without line-number prefixes; absolute 1-indexed line numbers are start_line + 1 + index.
+        \\Omit offset/limit to read the whole file; paginate large files with offset + limit (recommended page: 500 lines), checking total_lines from a prior call first — never guess offsets. Content is raw, with no line-number prefixes: absolute 1-indexed line numbers are start_line + 1 + index.
         ,
         .parameters = .{
             .type = "object",
@@ -174,7 +170,7 @@ pub const read_file_tool = AgentTool{
                 .{
                     .name = "cwd",
                     .type = "string",
-                    .description = "REQUIRED. Absolute path to the directory this call works in. A relative `path` resolves against it; an absolute `path` is used as-is. Pass the tree you are actually editing (your worktree root, NOT the server's directory).",
+                    .description = "REQUIRED. Absolute directory this call works in; a relative `path` resolves against it. Pass the tree you are editing (your worktree root, NOT the server's directory).",
                 },
             },
             .required = &.{ "path", "cwd" },

@@ -59,18 +59,14 @@ pub const preview_design_page_tool = AgentTool{
     .function = .{
         .name = "preview_design_page",
         .description =
-        \\Render a design page as an SVG in the side panel so the agent can SEE the design (the "screenshot" tool). Pass `page_id` (required) and an optional `scale` (default 1.0, max 4.0).
+        \\Render a design page as an SVG in the side panel so you can SEE the design (the "screenshot" tool). Requires `page_id`; `scale` is optional.
         \\
-        \\Each element renders as the matching SVG shape:
-        \\  - `rectangle` → `<rect>` with fill, stroke, corner_radius, rotation
-        \\  - `ellipse`   → `<ellipse>` with cx, cy, rx, ry
-        \\  - `text`      → `<text>` with x, y (baseline = y + height), text_content
-        \\  - `image`     → `<image>` with href from image_url
-        \\  - `frame`/`group` → `<g>` container; children render inside
+        \\Element → SVG shape: `rectangle`→`<rect>` (fill, stroke, corner_radius, rotation);
+        \\`ellipse`→`<ellipse>` (cx, cy, rx, ry); `text`→`<text>` (x, y, baseline = y + height,
+        \\text_content); `image`→`<image>` (href from image_url); `frame`/`group`→`<g>` container,
+        \\with children nested inside recursively.
         \\
-        \\Groups/frames nest recursively — a group inside a frame renders inside the frame's `<g>`, etc.
-        \\
-        \\Returns a JSON object (keys mirror the old `<show_preview>` tags, content_type="html") carrying the preview_id so the transcript can reference the render.
+        \\Returns a JSON object (keys mirror the old `<show_preview>` tags, content_type="html") carrying the `preview_id` the transcript references.
         ,
         .parameters = .{
             .type = "object",
@@ -78,12 +74,12 @@ pub const preview_design_page_tool = AgentTool{
                 .{
                     .name = "page_id",
                     .type = "string",
-                    .description = "The design page id to render. Find it from `get_design_context` output, or use `set_design_page` first to create one.",
+                    .description = "The design page id to render. From `get_design_context`, or create one with `set_design_page`.",
                 },
                 .{
                     .name = "scale",
                     .type = "number",
-                    .description = "Scale factor applied to the SVG viewBox and every element coordinate. Default 1.0 (matches the design viewport). Range: 0.1 to 4.0. Use smaller values to fit a large page, larger values to zoom in.",
+                    .description = "Scale applied to the SVG viewBox and every element coordinate. Default 1.0 (the design viewport). Range 0.1 to 4.0: smaller fits a large page, larger zooms in.",
                 },
             },
             .required = &.{"page_id"},

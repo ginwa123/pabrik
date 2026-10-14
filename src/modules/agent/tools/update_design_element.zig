@@ -88,19 +88,13 @@ pub const update_design_element_tool = AgentTool{
     .function = .{
         .name = "update_element",
         .description =
-        \\Partially update an existing element on a design page. ALL fields except `element_id` are OPTIONAL — only the fields you provide are updated; everything else is left unchanged.
+        \\Partially update one element on a design page. ALL fields except `element_id` are OPTIONAL: only the fields you provide change.
         \\
-        \\This is the tool for moving an element (`x`/`y`), resizing (`width`/`height`), changing properties (fill/rotation/opacity/corner_radius), changing the type, or rewriting the HTML body. For visual layout tweaks, you usually only need to set `x`, `y`, `width`, `height`.
+        \\Use it to move or resize (`x`, `y`, `width`, `height`), restyle (`fill`, `stroke`, `rotation`, `opacity`, `corner_radius`), change `type`, or rewrite `html` (written atomically to `file_path`; an orphan file is recreated).
         \\
-        \\Discover the `element_id` via `set_design_page` — the response includes element ids in each element object's `id` field.
+        \\`fill: ""` means "no fill", as in `add_element`. Returns the updated element (html body omitted).
         \\
-        \\If you set `html`, the on-disk HTML file at the element's `file_path` is rewritten atomically. If the file is missing (orphan), it's recreated automatically.
-        \\
-        \\Setting `fill` to an empty string "" is treated as "use the default (no fill)" — same as `add_element`.
-        \\
-        \\Returns the full updated element XML (same shape as `add_element`'s response, omits the html body to keep it compact).
-        \\
-        \\On error, recover by: (1) verify `element_id` from a fresh `set_design_page` call; (2) if you set `name`, ensure the new name is unique within the page (use `set_design_page` to check).
+        \\On error: re-read `element_id` via `set_design_page`; a changed `name` must be unique within the page.
         ,
         .parameters = .{
             .type = "object",
@@ -108,87 +102,87 @@ pub const update_design_element_tool = AgentTool{
                 .{
                     .name = "element_id",
                     .type = "string",
-                    .description = "The element id (NOT the page_id). Find it in the `id` field of an element object in a previous `set_design_page` response.",
+                    .description = "The element id (NOT the page_id), from an element object's `id` field in a previous `set_design_page` response.",
                 },
                 .{
                     .name = "name",
                     .type = "string",
-                    .description = "New name (optional). Must be unique within the page if changed.",
+                    .description = "Name (optional). Must be unique within the page.",
                 },
                 .{
                     .name = "type",
                     .type = "string",
-                    .description = "New element type (optional): one of 'rectangle', 'ellipse', 'text', 'image', 'frame', 'group'.",
+                    .description = "Element type (optional): rectangle, ellipse, text, image, frame, group.",
                 },
                 .{
                     .name = "html",
                     .type = "string",
-                    .description = "New HTML body (optional). Triggers atomic file rewrite at file_path. Orphan files are recreated.",
+                    .description = "HTML body (optional). Rewrites `file_path` atomically; orphan files are recreated.",
                 },
                 .{
                     .name = "x",
                     .type = "integer",
-                    .description = "New X position in CSS pixels (optional).",
+                    .description = "X position in CSS pixels (optional).",
                 },
                 .{
                     .name = "y",
                     .type = "integer",
-                    .description = "New Y position in CSS pixels (optional).",
+                    .description = "Y position in CSS pixels (optional).",
                 },
                 .{
                     .name = "width",
                     .type = "integer",
-                    .description = "New width in CSS pixels (optional).",
+                    .description = "Width in CSS pixels (optional).",
                 },
                 .{
                     .name = "height",
                     .type = "integer",
-                    .description = "New height in CSS pixels (optional).",
+                    .description = "Height in CSS pixels (optional).",
                 },
                 .{
                     .name = "rotation",
                     .type = "number",
-                    .description = "New rotation in degrees (optional).",
+                    .description = "Rotation in degrees (optional).",
                 },
                 .{
                     .name = "fill",
                     .type = "string",
-                    .description = "New fill color (optional). Empty string = no fill.",
+                    .description = "Fill color (optional). `\"\"` = no fill.",
                 },
                 .{
                     .name = "stroke",
                     .type = "string",
-                    .description = "New stroke color (optional).",
+                    .description = "Stroke color (optional).",
                 },
                 .{
                     .name = "stroke_width",
                     .type = "integer",
-                    .description = "New stroke width in pixels (optional).",
+                    .description = "Stroke width in pixels (optional).",
                 },
                 .{
                     .name = "corner_radius",
                     .type = "integer",
-                    .description = "New corner radius in pixels (optional, rectangle only).",
+                    .description = "Corner radius in pixels (optional, rectangle only).",
                 },
                 .{
                     .name = "opacity",
                     .type = "number",
-                    .description = "New opacity 0.0–1.0 (optional).",
+                    .description = "Opacity 0.0–1.0 (optional).",
                 },
                 .{
                     .name = "text_content",
                     .type = "string",
-                    .description = "New text content (optional, for type='text').",
+                    .description = "Text content (optional, for type='text').",
                 },
                 .{
                     .name = "text_style",
                     .type = "string",
-                    .description = "New text style as JSON (optional).",
+                    .description = "Text style as JSON (optional).",
                 },
                 .{
                     .name = "image_url",
                     .type = "string",
-                    .description = "New image URL (optional, for type='image').",
+                    .description = "Image URL (optional, for type='image').",
                 },
             },
             .required = &.{"element_id"},

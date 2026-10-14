@@ -305,50 +305,13 @@ pub const ask_user_tool = AgentTool{
         .description =
         \\Ask the human a question and END this turn until they answer.
         \\
-        \\WHEN TO USE:
-        \\- A decision is genuinely ambiguous: the repo and the conversation do not
-        \\  determine which path the human wants, and guessing wrong would waste work.
-        \\- You need a fact only the human has (an account id, a deployment target, a
-        \\  naming preference) and cannot read it from the environment.
-        \\
-        \\WHEN NOT TO USE:
-        \\- To confirm something you can verify yourself (read the file, run the command,
-        \\  check the plan). Do not ask for permission you already have.
-        \\- To report progress or ask for a review — that is just your final message.
-        \\- More than once for the same thing. If the answer was `"status":"skipped"`
-        \\  or `"status":"abandoned"`, do not guess and do not re-ask immediately.
-        \\
-        \\HOW IT WORKS:
-        \\- The call returns immediately with `"status":"pending"` and the turn
-        \\  ENDS. The human sees a question card in the transcript and answers whenever
-        \\  they like — there is no timeout.
-        \\- Your next turn starts with this tool's result rewritten to
-        \\  `{"status":"answered","answer":"…"}`, or `skipped` / `abandoned`.
-        \\- Call it ALONE in a batch: any other tool call in the same batch is discarded,
-        \\  because asking ends the turn.
-        \\
-        \\INPUT:
-        \\- question (required): the question itself. Markdown allowed. Ask exactly one.
-        \\- header (optional): ≤40-char card title, e.g. "Deploy target".
-        \\- options (optional): 2–6 short strings. Omit for a free-text-only question.
-        \\- allow_free_text (optional, default true): offer an "Other — type your own
-        \\  answer" box alongside the options.
-        \\- multi_select (optional, default false): let the human pick several options.
-        \\- recommended (optional): must exactly match one of `options`. Rendered as a
-        \\  "recommended" chip so the human can accept your suggestion in one click.
-        \\
-        \\EXAMPLE:
-        \\  { "header": "Deploy target",
-        \\    "question": "Which environment should I deploy to?",
-        \\    "options": ["staging", "production"],
-        \\    "recommended": "staging" }
-        \\
-        \\RETURNS (JSON data payload, wrapped in the standard <tool> envelope):
-        \\- pending:     {"status":"pending","question_id":"…",…}
-        \\- answered:    {"status":"answered","answer":"staging","answers_count":1}
-        \\- skipped:     {"status":"skipped","instruction":"Do not guess…"}
-        \\- abandoned:   {"status":"abandoned","instruction":"Do not guess…"}
-        \\- unavailable: {"status":"unavailable","instruction":"Decide yourself…"}
+        \\- Use it when a decision is genuinely ambiguous and guessing wrong would waste real work, or when you need a fact only the human has (an account id, a deployment target, a naming preference).
+        \\- Do NOT use it to confirm what you can verify yourself (read the file, run the command, check the plan), for permission you already have, or to report progress — your final message is for that.
+        \\- Ask ONE question, batched into `question` (Markdown allowed), and Call it ALONE in a batch: any other tool call in the same batch is discarded, because asking ends the turn.
+        \\- The call returns immediately with `"status":"pending"` and the turn ENDS. The human answers whenever they like — there is no timeout.
+        \\- Your next turn starts with this tool's result rewritten to `{"status":"answered","answer":"…"}`, or to `skipped` / `abandoned` carrying `{"instruction":"Do not guess…"}`: state what you are blocked on instead of guessing, and do not re-ask immediately.
+        \\- `"status":"unavailable"` means you are a sub-agent with no answer surface: choose the most reasonable option yourself, state the assumption, and continue.
+        \\- Prefer `options` (2–6 short strings) over free text; set `recommended` to the option you would pick — it must exactly match one of `options` and renders a one-click chip.
         ,
         .parameters = .{
             .type = "object",
@@ -356,32 +319,32 @@ pub const ask_user_tool = AgentTool{
                 .{
                     .name = "question",
                     .type = "string",
-                    .description = "Required. The question to ask. Ask exactly one; put any context in the text itself. Markdown allowed.",
+                    .description = "The question to ask. Ask exactly one; put context in the text itself. Markdown allowed.",
                 },
                 .{
                     .name = "header",
                     .type = "string",
-                    .description = "Optional short card title, 40 characters or fewer (e.g. \"Deploy target\"). Shown as the card's primary label.",
+                    .description = "Short card title, 40 characters or fewer, e.g. \"Deploy target\". Shown as the card's primary label.",
                 },
                 .{
                     .name = "options",
                     .type = "array",
-                    .description = "Optional list of 2 to 6 short answer strings. Each option IS the answer value. Omit entirely for a free-text-only question.",
+                    .description = "2 to 6 short answer strings. Each option IS the answer value. Omit for a free-text-only question.",
                 },
                 .{
                     .name = "allow_free_text",
                     .type = "boolean",
-                    .description = "Optional, default true. When options are present, also offer an \"Other — type your own answer\" box.",
+                    .description = "Default true. With options, also offer an \"Other — type your own answer\" box.",
                 },
                 .{
                     .name = "multi_select",
                     .type = "boolean",
-                    .description = "Optional, default false. When true the human may pick several options and the answer is a JSON array of strings.",
+                    .description = "Default false. When true the human may pick several options; the answer is a JSON array of strings.",
                 },
                 .{
                     .name = "recommended",
                     .type = "string",
-                    .description = "Optional. Must exactly match one of `options` — rendered as a \"recommended\" chip on that option so the human can accept it in one click.",
+                    .description = "Must exactly match one of `options`; renders a \"recommended\" chip on that option for one-click accept.",
                 },
             },
             .required = &.{"question"},

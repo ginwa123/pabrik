@@ -107,19 +107,18 @@ pub const command_tool = AgentTool{
         \\Host picks the shell: `bash -c` on Linux/macOS, `pwsh -NoProfile -NonInteractive -Command` on Windows (silent `cmd.exe /c` fallback when pwsh is missing; background=true fails there instead of detaching).
         \\
         \\## Rules (enforced in code — violations return errors)
-        \\- `timeout`: REQUIRED, the ONLY deadline (max 600). No shell `timeout` prefix — do not add one.
-        \\- `cwd`: REQUIRED absolute path — the directory the command runs in. Never omit it: without it the shell starts in the SERVER's directory, not your worktree, so the command silently acts on the wrong tree.
+        \\- `timeout`: REQUIRED, the ONLY deadline. No shell `timeout` prefix — do not add one.
         \\- Bound output: `| head -n <N>` / `| tail -n <N>` (bash) or `| Select-Object -First <N>` (pwsh); under cmd.exe use max_lines / findstr / more.
-        \\- Prefer `search` / `read_file` / `glob` over shell rg/grep/find; use `rg` over grep, `fd` over find, `tree` for directory structure.
-        \\- No unbounded output, no destructive commands. Long work goes in `mode`: `background` when you need to be told it finished (build, test, migration), `background_persistence` when it does not finish (dev server, watcher) and you will read its log yourself. A server in any other mode is a mistake: `foreground` blocks and then kills it, and `background` would queue you its death rather than its output.
+        \\- Prefer `search` / `read_file` / `glob` over shell rg/grep/find; inside a shell use `rg` / `fd` / `tree`.
+        \\- No unbounded output, no destructive commands. Long work goes in `mode`.
         \\- Web fetch: use the `agent-browser` CLI.
-        \\- End your turn: pass `is_stop=true`. It ends YOUR turn after this batch (`background` processes keep running) and is NOT a cancel — nothing is killed. Put your final answer in the message content, because a `tool_calls` turn normally has none.
+        \\- End your turn with `is_stop=true`; kills nothing.
         \\
         \\## Platform notes
-        \\Install pwsh via `winget install Microsoft.PowerShell` (Windows) or brew/snap (macOS/Linux); missing binary fails with `FileNotFound` at spawn (Windows retries under cmd.exe). Under cmd.exe: double-quote URLs, `%NAME%` env vars, `&&` chaining, `dir` / `where` / `type`.
+        \\Install pwsh via `winget install Microsoft.PowerShell` (Windows) or brew/snap (macOS/Linux); without it, spawning a command fails with `FileNotFound`. Under cmd.exe: double-quote URLs, `%NAME%` env vars, `&&` chaining, `dir` / `where` / `type`.
         \\
         \\## Lenient types
-        \\Numbers (`timeout`, `max_output`, `max_lines`) accept JSON numbers or numeric strings; a stray trailing `</fieldname>` is auto-stripped. Booleans accept JSON bool or `"true"` / `"false"`. Real mismatches return an `invalid field` error naming the field so you can self-correct.
+        \\Numbers (`timeout`, `max_output`, `max_lines`) accept JSON numbers or numeric strings; a stray trailing `</fieldname>` is auto-stripped. Booleans accept a JSON bool or `"true"` / `"false"`. A real mismatch returns an `invalid field` error naming the field.
         ,
         .parameters = .{
             .type = "object",
@@ -128,37 +127,31 @@ pub const command_tool = AgentTool{
                     .name = "command",
                     .type = "string",
                     .description =
-                    \\Command to execute. Do NOT prefix it with a shell `timeout N` — timeout is the deadline.
-                    \\Bound output (`| head -n 50`, `| Select-Object -First 30`); prefer `rg` / `fd` over grep/find.
+                    \\Command to execute. Do NOT prefix it with a shell `timeout N` — the `timeout` field is the deadline.
                     ,
                 },
                 .{
                     .name = "cwd",
                     .type = "string",
                     .description =
-                    \\REQUIRED. Absolute working directory — the directory the command runs IN.
-                    \\Omitting it returns `MandatoryCwdMissing` and a relative path returns `CwdNotAbsolute`, because without an absolute `cwd` the shell inherits the SERVER's working directory instead of the one you are working in — the command then silently acts on the wrong tree (a `background=true` build compiled the wrong checkout that way). Send the full path, e.g. "/home/you/project".
+                    \\REQUIRED. Absolute working directory — the directory the command runs IN, e.g. "/home/you/project".
+                    \\Omitting it returns `MandatoryCwdMissing`; a relative one returns `CwdNotAbsolute`. Without one the shell inherits the SERVER's directory and the command silently acts on the wrong tree.
                     ,
                 },
                 .{
                     .name = "timeout",
                     .type = "number",
                     .description =
-                    \\REQUIRED. Wall-clock seconds before the process is killed (SIGKILL / TerminateProcess). 1–600 only — no default (omitted or 0 returns `TimeoutMissing`), and above 600 returns `TimeoutTooLarge`.
-                    \\This is a FIELD, not a command prefix. The shell `timeout` utility does nothing useful here: putting it inside `command` (as in `timeout <N> ls`) is wrong twice over — it is not the deadline this field is, and the field already does the job. Send the seconds here.
-                    \\Match the value to the job: a few seconds for `ls` / `cat` / `git status`, a few minutes for a build or a test suite. Ten minutes is the ceiling, and reaching for it is usually a sign the work belongs in a detached `mode` instead — a foreground command holds your turn for exactly as long as this value, so prefer `mode="background"` for anything you would rather be told about when it finishes.
+                    \\REQUIRED. Wall-clock seconds before the process is killed (SIGKILL / TerminateProcess). 1–600 only: omitted or 0 returns `TimeoutMissing`, above 600 returns `TimeoutTooLarge`.
+                    \\This is a FIELD, not a command prefix: the shell `timeout` utility inside `command` does nothing useful — it is not the deadline this field is, and the field already does the job.
+                    \\Seconds for `ls` / `cat` / `git status`; minutes for a build or a test suite. A foreground command holds your turn exactly that long — use a detached `mode` for longer work.
                     ,
                 },
                 .{
                     .name = "max_output",
                     .type = "number",
                     .description =
-                    \\Maximum stdout+stderr bytes per stream. Default: 20480 (20 KiB).
-                    \\Output exceeding this limit is truncated at read-time
-                    \\to keep a single tool call from blowing up the LLM
-                    \\context window. Set this explicitly when you need more
-                    \\(e.g. when running `cat` on a large file or `head -n 1`
-                    \\of a minified file where each line can exceed 20 KiB).
+                    \\Maximum stdout+stderr bytes per stream. Default: 20480 (20 KiB). Output over the limit is truncated at read-time to protect the LLM context window. Raise it for `cat` of a large file or `head -n 1` of a minified one — a single line can exceed 20 KiB.
                     ,
                 },
                 .{
@@ -171,64 +164,40 @@ pub const command_tool = AgentTool{
                     .type = "string",
                     .description =
                     \\How this command relates to your turn. Default: "foreground".
-                    \\  "foreground"              — runs now, output comes back inline. REQUIRES
-                    \\                              timeout (1-600). For ls, cat, git status,
-                    \\                              rg — and any build that finishes inside a minute.
-                    \\  "background"              — detaches, and a message is QUEUED to you the
-                    \\                              moment it exits. For bounded work you must be told
-                    \\                              about: a long build, a test run, a migration.
-                    \\                              timeout is ignored. Returns PID + log path.
-                    \\  "background_persistence"  — detaches and stays SILENT: no message, ever. For a
-                    \\                              dev server (`pnpm run dev`, `vite`) or a watcher that
-                    \\                              runs until you or the user stop it. Read its output with
-                    \\                              a separate foreground `tail -n 50 <log path>` call.
-                    \\                              timeout is ignored. Returns PID + log path.
-                    \\Choosing wrong is expensive: a server in "foreground" blocks until the deadline
-                    \\kills it, and a server in "background" notifies you only when it dies — the one
-                    \\event you never wanted. A bounded job in "background_persistence" means you are
-                    \\never told it finished; you would have to poll.
+                    \\- "foreground": runs now, output inline; REQUIRES timeout (1-600). For short work (ls, cat, git status, rg, a quick build) — a server here is killed at the deadline.
+                    \\- "background": detaches; a message is QUEUED to you the moment it exits. For bounded work you must be told about — a long build, a test run, a migration. A server here reports only its death.
+                    \\- "background_persistence": detaches and stays SILENT. For a dev server (`pnpm run dev`, `vite`) or a watcher until you or the user stop it; read its output with a foreground `tail -n 50 <log path>`. A bounded job here is never reported as finished.
+                    \\Both detached modes ignore `timeout` (the process outlives the call — stopping it is on you) and return a PID + log path.
                     ,
                 },
                 .{
                     .name = "background",
                     .type = "boolean",
                     .description =
-                    \\LEGACY alias for mode="background" (true) / mode="foreground" (false).
-                    \\Prefer `mode`: it can also express "detach and stay silent", which this
-                    \\boolean cannot. Passing this together with mode="foreground" is rejected —
-                    \\say one thing or the other.
-                    \\Note: when detached, the timeout field is ignored (the process
-                    \\outlives the call — you are responsible for stopping it).
+                    \\LEGACY alias for mode="background" (true) / mode="foreground" (false). Prefer `mode`, which also expresses "detach and stay silent". Passing it with mode="foreground" is rejected.
                     ,
                 },
                 .{
                     .name = "is_stop",
                     .type = "boolean",
                     .description =
-                    \\End YOUR turn after this call. The command still runs — and a
-                    \\`background=true` process started by the same call keeps running.
-                    \\This is not a cancel: nothing is killed. The agent loop stops
-                    \\calling the model and hands control back to the user.
-                    \\Put your final answer in the message content of this same
-                    \\message: a `tool_calls` turn normally carries no prose, so
-                    \\without it the turn ends on a bare tool card.
-                    \\Use it for "start the dev server, then stop" or when the work is
-                    \\genuinely finished. Leave it false when you intend to keep going.
+                    \\End YOUR turn after this call. This is not a cancel: nothing is killed, and a `background=true` process from the same call keeps running.
+                    \\Put your final answer in the message content of this same message — a `tool_calls` turn carries no prose, so the turn would otherwise end on a bare tool card.
+                    \\Set it for "start the dev server, then stop" or when the work is finished; leave it false to keep going.
                     ,
                 },
                 .{
                     .name = "max_lines",
                     .type = "number",
-                    .description = "Maximum number of lines to capture from stdout/stderr. Default: 1000. Output exceeding this limit is truncated and stdout_lines/stderr_lines will report the true total.",
+                    .description = "Maximum lines captured from stdout/stderr. Default: 1000; beyond it output is truncated and stdout_lines/stderr_lines give the true total.",
                 },
                 .{
                     .name = "do_encoding",
                     .type = "boolean",
                     .description =
-                    \\Encode URLs in double quotes by converting to single quotes.
-                    \\Use this for curl/wget commands with URLs containing ? and & characters.
-                    \\Example: curl -sI "https://host/path?query=val&sig=xyz" will become curl -sI 'https://host/path?query=val&sig=xyz'
-                    \\Skipped under the cmd.exe fallback (single quotes are literal there).
+                    \\Encode URLs in double quotes by converting them to single quotes — for curl/wget URLs containing ? and &.
+                    \\Example: curl -sI "https://host/p?q=1&s=2" becomes curl -sI 'https://host/p?q=1&s=2'.
+                    \\Skipped under the cmd.exe fallback (single quotes are literal).
                     ,
                 },
             },

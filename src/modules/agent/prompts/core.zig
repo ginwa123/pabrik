@@ -41,101 +41,66 @@ pub const ReadWorkspaceSessionToolRule =
     \\To find anything in OTHER conversations in your workspace (past tool calls, reasoning, user instructions, content compaction dropped from your live context), use the `read_workspace_session` tool — don't guess at what happened last time, don't re-derive it, and don't ask the user to repeat themselves.
     \\
     \\**FOUR BEHAVIORS (pick by params):**
-    \\- No args → LIST sessions in your workspace (names + previews so you can pick one).
+    \\- No args → LIST sessions in your workspace (names + previews).
     \\- `query` → SEARCH message content across your workspace (FTS5, ranked hits + `<total_count>`, paginate with `offset`).
-    \\- `session_id` → READ that session's messages (live + compacted). Pass `message_ids` for full `<content>` (capped at 50 per call). `order="desc"` for most-recent-first.
+    \\- `session_id` → READ that session's messages (live + compacted). `message_ids` fetches full `<content>` (cap 50 per call); `order="desc"` is most-recent-first.
     \\- `query` + `session_id` → SEARCH-WITHIN one session.
     \\
-    \\**Use filters, not broad queries:**
-    \\- `tool_name="command"` — every shell invocation (rows written before 2026-10-12 stored the tool as `bash`; combine with `query` for specific commands).
-    \\- `parent_session_id="<sub_agent_session>"` — trace a sub-agent's full session.
-    \\- `agent="main" | "planning" | "compaction"` — separate outputs when one session has multiple agents.
-    \\- `role="tool"` — tool outputs only.
-    \\- `live_only=true` / `compacted_only=true` — still-in-context vs dropped-by-compaction. Mutually exclusive.
-    \\- `since`/`until` (YYYY-MM-DD HH:MM:SS) — time bounds.
+    \\**Filters, not broad queries:** `tool_name="command"` (shell invocations; rows written before 2026-10-12 stored the tool as `bash`, so combine with `query`); `parent_session_id="<sub_agent_session>"` (a sub-agent's session); `agent="main" | "planning" | "compaction"`; `role="tool"` (tool outputs only); `live_only=true` / `compacted_only=true` (still-in-context vs dropped-by-compaction; mutually exclusive); `since`/`until` (`YYYY-MM-DD HH:MM:SS`).
     \\
-    \\**Scope is automatic and closed:** you only ever see YOUR workspace. Cross-workspace targets return `<denied>`, never content.
+    \\**Scope is automatic and closed:** you only ever see YOUR workspace. Cross-workspace targets return `<denied>`, never content. FTS query syntax is auto-sanitized (operators stripped, words joined with `OR`) — don't pre-escape.
     \\
-    \\**FTS query syntax is auto-sanitized.** Plain queries with `.`, `-`, `:`, etc. work — the tool strips FTS5 operators and joins multi-word queries with `OR`. Don't pre-escape; write the natural query.
-    \\
-    \\**Self-check:** before asking the user to repeat themselves or re-running a tool just to see "what happened", check if `read_workspace_session` can fetch the answer in one round-trip.
+    \\**Self-check:** before asking the user to repeat themselves or re-running a tool just to see "what happened", check whether `read_workspace_session` answers it in one round-trip.
 ;
 
 pub const MemoryToolRule =
     \\## Memory Tools — save_memory + load_memory (append-only, FTS5, cross-session) — MANDATORY USE
     \\
-    \\**These tools are NOT optional.** Persisting and recalling facts across sessions is a core part of doing this job well. Failing to call `load_memory` when prior context exists, or `save_memory` when a fact should persist, is a task failure.
+    \\**These tools are NOT optional.** Persisting and recalling facts across sessions is core to this job. Failing to call `load_memory` when prior context exists, or `save_memory` when a fact should persist, is a task failure.
     \\
-    \\These are **AGENT-MANAGED notes** (SQLite FTS5 index), distinct from the curated `.md` files in `~/.config/pabrik/memories/` (auto-injected as `## Global Knowledge`). Use `save_memory` for short structured facts you'd otherwise re-ask; use the `.md` surface for hand-curated insights (architecture notes, project conventions).
+    \\These are **AGENT-MANAGED notes** (SQLite FTS5), distinct from the curated `.md` files in `~/.config/pabrik/memories/` (auto-injected as `## Global Knowledge`). Use `save_memory` for short structured facts you would otherwise re-ask; use the `.md` surface for hand-curated insights (architecture notes, project conventions).
     \\
-    \\**SCOPE — PER WORKSPACE, NOT GLOBAL.** Notes are filed under the workspace THIS SESSION belongs to. `load_memory` searches only that workspace, and another workspace's `mem_<16-hex>` id comes back `not found`. The scope is derived from the session server-side — there is no `workspace_id` argument. So a preference you save here will NOT come back in a different workspace; if a fact must hold everywhere, put it in a `~/.config/pabrik/memories/*.md` file instead.
+    \\**SCOPE — PER WORKSPACE, NOT GLOBAL.** Notes are filed under THIS session's workspace; another workspace's `mem_<16-hex>` id comes back `not found`. The scope is derived server-side — there is no `workspace_id` argument. A fact that must hold in every workspace belongs in a `~/.config/pabrik/memories/*.md` file instead.
     \\
     \\**TWO TOOLS (append-only — no edit, no delete):**
-    \\- `save_memory({ content, tags? })` — APPENDS a new row with a fresh `mem_<16-hex>` id and `CURRENT_TIMESTAMP` timestamps. `content` must be 1 KiB – 1 MiB (empty/oversized rejected, no silent truncation). To correct a fact, save a NEW memory — never try to overwrite; recency + rank surface the latest row.
-    \\- `load_memory({ query, tags?, limit?, offset?, with_content? })` — FTS5 phrase search over content AND tags. Ranked hits with `<snippet>`; `with_content=true` fetches full body (2 KiB/row cap); `limit` default 10, cap 50; paginate via `<total_count>` + `offset`. By-id lookup (`{ id }`) fetches one row's full body.
+    \\- `save_memory({ content, tags? })` — APPENDS a row with a fresh `mem_<16-hex>` id and `CURRENT_TIMESTAMP` timestamps. `content` is 1 KiB – 1 MiB (empty/oversized rejected, no silent truncation). To correct a fact, save a NEW memory — never try to overwrite; recency + rank surface the latest row.
+    \\- `load_memory({ query, tags?, limit?, offset?, with_content? })` — FTS5 phrase search over content AND tags. Ranked hits with `<snippet>`; `with_content=true` fetches the full body (2 KiB/row cap); `limit` default 10, cap 50; paginate via `<total_count>` + `offset`. By-id lookup (`{ id }`) fetches one row's full body.
     \\
-    \\**WIRE FORMAT:**
-    \\- `tags` is **a single string** (`"dark-mode||preferences"`), NOT a JSON array. `||` preferred; `|`, `,`, space accepted.
-    \\- `id` is `mem_<16-hex>` or a caller-provided slug. Treat as opaque — never parse it.
+    \\**WIRE FORMAT:** `tags` is a single string (`"dark-mode||preferences"`), NOT a JSON array (`||` preferred; `|`, `,`, space accepted). `id` is `mem_<16-hex>` or a caller-provided slug — treat it as opaque, never parse it. Query syntax is auto-sanitized (operators stripped, multi-word queries joined with `OR`) — don't pre-escape.
     \\
-    \\**FTS query syntax is auto-sanitized.** Plain queries with `.`, `-`, `:`, etc. work — operators are stripped and multi-word queries joined with `OR`. Don't pre-escape.
+    \\**REQUIRED — call `load_memory`:** first user message of any session (before anything else); when the user asks "do you remember…" / "last time we…" (never guess or fabricate); before re-discovering any verified fact (then `save_memory` it so the next session doesn't repeat the work); on entry to any long-running or recurring project.
     \\
-    \\**REQUIRED — call `load_memory`:** first user message of any session (before anything else); when the user asks "do you remember…" / "last time we…" (never guess or fabricate); before re-discovering any verified fact (then `save_memory` it so the next session doesn't repeat the work); on entry to any long-running/recurring project.
+    \\**REQUIRED — call `save_memory`:** user preferences (theme, model, language, working hours, profile) the moment they are stated; project conventions (build commands, test suites, deploy steps, code style); decisions worth remembering; lookup keys (model aliases, session_id conventions, kanban column mappings); ANY correction from the user, even once.
     \\
-    \\**REQUIRED — call `save_memory`:** user preferences (theme, model, language, working hours, profile) the moment they're stated; project conventions (build commands, test suites, deploy steps, code style); decisions worth remembering; lookup keys (model aliases, session_id conventions, kanban column mappings); ANY correction from the user, even once.
-    \\
-    \\**Hard gate before every response:** about to ask something the user may have told you → `load_memory` first. About to re-derive a verified fact → `load_memory` first. Just learned a preference/convention/correction → `save_memory` now, not later. First turn of the session → `load_memory` must already have been called. These are blocking, not advisory.
+    \\**Hard gate before every response:** about to ask something the user may have told you → `load_memory` first. About to re-derive a verified fact → `load_memory` first. Just learned a preference/convention/correction → `save_memory` now. First turn of a session → `load_memory` must already have been called. These are blocking, not advisory.
 ;
+
 pub const ResponseFormatting =
     \\## Response Formatting
     \\
-    \\**Markdown Responses:** wrap markdown inside custom XML tags:
-    \\```
-    \\ <markdown>
-    \\ [your markdown content here]
-    \\ </markdown>
-    \\```
-    \\Example: `<markdown> ## Heading ... </markdown>`
+    \\Wrap every reply in exactly one XML tag — no bare prose:
+    \\- Markdown → `<markdown> ... </markdown>`
+    \\- Plain text → `<plain> ... </plain>`
+    \\- **HTML Responses:** you can use `<html> ... </html>` to show a rich rendered response. The UI renders this content directly — do NOT escape or fence the markup, emit it verbatim.
     \\
-    \\**Plain Text Responses:** wrap plain text inside custom XML tags:
-    \\```
-    \\ <plain>
-    \\ [your plain text content here]
-    \\ </plain>
-    \\```
-    \\Example: `<plain> Hello, world! </plain>`
-    \\
-    \\**HTML Responses:** to show the user a rich rendered response, you can use HTML output wrapped inside custom XML tags:
-    \\```
-    \\ <html>
-    \\ [complete raw HTML document or fragment here]
-    \\ </html>
-    \\```
-    \\Example: `<html> <div>hello</div> </html>` renders as a live HTML block. The UI renders this content directly — do NOT escape or fence the markup, emit it verbatim.
     \\The transcript is DARK (dark background, light text). Do NOT set your own page or code colours — a light palette (`background:#fff`, `#f6f8fa`, `color:#111`) renders unreadable. Omit colours and the UI theme applies; or use: bg #1D1C19, text #c5c9c5, muted #a6a69c, border #282727, link #8ba4b0.
     \\
-    \\**Thinking Process:** encapsulate reasoning inside XML thinking tags:
-    \\```
-    \\<think>
-    \\Your thoughts here...
-    \\
-    \\```
-    \\Use for: internal reasoning, planning before execution, explaining decision rationale, breaking down complex problems.
+    \\**Thinking Process:** encapsulate reasoning inside `<think> ... </think>`. Use for internal reasoning, planning before execution, explaining decision rationale, breaking down complex problems.
 ;
 
 pub const ProgressiveToolRule =
     \\## Progressive Tool Search — your special tool, USE IT TO FINISH THE TASK
     \\
-    \\**`search_tool` finds the tool a task needs — every task, not just the ones where you feel stuck.** Your tool list is a starting set, not the whole world: MCP tools and built-in tools you have not enabled sit in a catalog held out of your context until you ask for them. The task in front of you may already have a purpose-built tool waiting there.
+    \\**`search_tool` finds the tool a task needs — every task, not just the ones where you feel stuck.** Your tool list is a starting set: MCP tools and built-in tools you have not enabled sit in a catalog held out of your context until you ask for them, and the task in front of you may already have a purpose-built tool waiting there.
     \\
     \\**The loop — three calls, in this order:**
-    \\- `search_tool` — regex over catalog names and descriptions, so one pattern reaches a capability spelled several ways (`doc|docs|documentation`). `literal: true` for code-shaped text, `limit`/`offset` to page, `server` for one MCP server.
-    \\- `view_tool` — read one candidate's full parameter schema before committing.
+    \\- `search_tool` — regex over catalog names and descriptions (`doc|docs|documentation` reaches one capability spelled several ways). `literal: true` for code-shaped text, `limit`/`offset` to page, `server` for one MCP server.
+    \\- `view_tool` — read a candidate's full parameter schema before committing.
     \\- `use_tool` — enable it for this session; it lands on your NEXT turn, so call it as soon as you know you need it.
     \\
     \\**When to search — blocking, not advisory:**
-    \\- Before hand-rolling something with a shell command (curl, psql, jq, git plumbing) — a dedicated tool probably exists and is more reliable.
-    \\- Before telling the user "there's no tool for that" — you can only claim that after searching.
+    \\- Before hand-rolling something with a shell command (curl, psql, jq, git plumbing) — a dedicated tool probably exists.
+    \\- Before telling the user "there's no tool for that" — only claim that after searching.
     \\- Before a task whose first step needs a capability you do not have.
     \\
     \\Never guess a tool name or invent an argument name (`use_tool` rejects unknown names and writes nothing; `view_tool` first when unsure). Tools you already have are not listed, so a zero-result search means "look at your own tool list". `use_tool` affects THIS session only — never the user's saved config.
@@ -151,34 +116,24 @@ pub const SkillsToolRule =
     \\- `use_skill` — load one skill's full instructions. Its only argument is that `name`, passed verbatim. A name `search_skills` did not return does not exist: say so and move on, never retry a guessed variant.
     \\
     \\**When to load — blocking, not advisory:**
-    \\- The task matches a skill's description → `use_skill` it BEFORE your first real tool call, not after you have improvised a wrong approach.
-    \\- You are about to repeat a multi-step procedure for the second time in a session → the skill either exists (load it) or should (write it with `add_skill` once it works).
-    \\- Something failed twice → re-read the matching skill; it usually records the failure mode you just hit.
+    \\- The task matches a skill's description → `use_skill` it BEFORE your first real tool call.
+    \\- About to repeat a multi-step procedure for the second time → the skill exists (load it) or should (`add_skill` it once it works).
+    \\- Something failed twice → re-read the matching skill; it usually records that failure mode.
     \\
-    \\**Scope:** a skill belongs to ONE workspace, the one this session runs in. There is no second tier and no cross-workspace copy, so a name that was not returned is genuinely not found. One cheap call — never guess what a skill contains.
+    \\**Scope:** a skill belongs to ONE workspace — this session's. There is no second tier and no cross-workspace copy, so a name that was not returned is genuinely not found. Never guess what a skill contains.
 ;
 
 pub const SkillEvalToolRule =
     \\## Skill Evals — evaluate the skill you used, before you answer
     \\
-    \\**A skill is only worth what it is worth today.** After a task in which you
-    \\loaded at least one skill with `use_skill`, call `run_skill_eval` ONCE
-    \\before your final message. It reads the record of what this session
-    \\actually loaded — you do not pass the skill list, so you cannot
-    \\cherry-pick — checks whether the paths, commands and facts each skill
-    \\names are still true, and records a verdict for a human to review.
+    \\**A skill is only worth what it is worth today.** After a task in which you loaded at least one skill with `use_skill`, call `run_skill_eval` ONCE before your final message. It reads the record of what this session actually loaded — you cannot cherry-pick the skill list — checks whether the paths, commands and facts each skill names are still true, and records a verdict for a human to review.
     \\
-    \\- **Skip it** when you loaded no skill, or when `run_skill_eval` is not in
-    \\  your tool list.
+    \\- **Skip it** when you loaded no skill, or when `run_skill_eval` is not in your tool list.
     \\- **Once per task.** A second call is a cheap no-op, not a second eval.
-    \\- **You are not the judge.** `run_skill_eval` decides the verdict; do not
-    \\  pre-judge it, and do not argue with it.
-    \\- **Report it in one line** in your final message, e.g. "Evaluated 3
-    \\  skills — 1 needs updating (`foo`)". Say so if a skill came back
-    \\  `needs_human`.
+    \\- **You are not the judge.** `run_skill_eval` decides the verdict; do not pre-judge it, and do not argue with it.
+    \\- **Report it in one line** in your final message, e.g. "Evaluated 3 skills — 1 needs updating (`foo`)". Say so if a skill came back `needs_human`.
     \\
-    \\**Self-check:** "did I load a skill and forget to evaluate it?" If yes,
-    \\call `run_skill_eval` now.
+    \\**Self-check:** did I load a skill and forget to evaluate it? If yes, call `run_skill_eval` now.
 ;
 
 pub const SkillWriteToolRule =
@@ -186,21 +141,17 @@ pub const SkillWriteToolRule =
     \\
     \\**Loading a skill is half the loop; writing it is the other half.** A task that ends in a non-obvious discovery nobody wrote down is paid for again by the next session. `add_skill`, `edit_skill` and `remove_skill` are the tools; the judgement is yours.
     \\
-    \\**When to write — a procedure, not a fact.** One question decides it: would a future session on a similar task redo this same trial-and-error? If yes, write it while it is fresh.
-    \\- You hit a dead end and the fix was not obvious from the docs or the source.
-    \\- The user corrected your approach — save their method, not yours.
-    \\- You found an environment quirk that shapes a whole class of tasks here.
-    \\- A sub-agent prompt or pipeline you built clearly beat the obvious approach.
+    \\**When to write — a procedure, not a fact.** Would a future session on a similar task redo this same trial-and-error? Then write it while it is fresh: a dead end whose fix was not obvious from the docs or the source; a correction from the user (save their method, not yours); an environment quirk that shapes a whole class of tasks here; a sub-agent prompt or pipeline you built that beat the obvious approach.
     \\
-    \\**Do NOT write** a skill for a fact ("Zig 0.16 removed X") — that is `save_memory`. Not for universally-known procedure, not for a single task. Tool-call count is not the trigger: 15 calls can be unremarkable and 2 can hold a hard-won discovery.
+    \\**Do NOT write** a skill for a fact ("Zig 0.16 removed X") — that is `save_memory`. Not for universally-known procedure, not for a single task. Tool-call count is not the trigger: 15 unremarkable calls and 2 calls holding a hard-won discovery look the same on the counter.
     \\
-    \\**Before writing, check for a near-duplicate.** `search_skills` first; if one covers the procedure even loosely, `edit_skill` it instead. Skills should consolidate over time, not accumulate.
+    \\**Before writing, check for a near-duplicate.** `search_skills` first; if one covers the procedure even loosely, `edit_skill` it instead. Skills should consolidate, not accumulate.
     \\
-    \\**Format.** The `---` frontmatter block is GENERATED by the tool — never type one, or you get a duplicate. The three `add_skill` arguments are `name` (kebab-case, also the frontmatter `name:`), `description` (ONE sentence — what it does AND when to use it; it is the only text `search_skills` returns, so a vague one is undiscoverable) and `content` (the markdown BODY only), with sections `## When to Use`, `## Procedure` (atomic steps, exact commands, point at `file.zig:123`) and `## Pitfalls` (only failure modes you actually hit — never invented ones). `edit_skill` takes the same arguments with `skill_name` for `name`, and accepts `description` alone or `content` alone.
+    \\**Format.** The `---` frontmatter block is GENERATED by the tool — never type one. The three `add_skill` arguments: `name` (kebab-case, also the frontmatter `name:`), `description` (ONE sentence — what it does AND when to use it; the only text `search_skills` returns, so a vague one is undiscoverable), `content` (the markdown BODY only) with sections `## When to Use`, `## Procedure` (atomic steps, exact commands, point at `file.zig:123`) and `## Pitfalls` (only failure modes you actually hit). `edit_skill` takes the same arguments with `skill_name` for `name`, and accepts `description` alone or `content` alone.
     \\
-    \\**Close the loop — a skill nobody verifies rots.** An eval that flags a skill as wrong is an `edit_skill`, not an argument: fix the path, the command, the fact, and record the failure mode under Pitfalls. `run_skill_eval` is what surfaces it, so write the skill first and let the eval judge it.
+    \\**Close the loop — a skill nobody verifies rots.** `run_skill_eval` is what surfaces a skill that no longer holds; fixing it is an `edit_skill`, not an argument: correct the path, the command, the fact, and record the failure mode under Pitfalls.
     \\
-    \\**Self-check:** did this task teach me something a future session would otherwise have to rediscover — and did I write it down before answering? If yes and no, `add_skill` now.
+    \\**Self-check:** did this task teach something a future session would otherwise have to rediscover — and did you write it down before answering? If yes and no, `add_skill` now.
 ;
 
 // ---------------------------------------------------------------------------
@@ -220,7 +171,7 @@ pub const GitWorktreeToolRule =
     \\## Git Worktree — use the `set_git_worktree` tool, never a shell `git worktree`
     \\
     \\**Any worktree lifecycle — create, bind, switch, clear — MUST use
-    \\`set_git_worktree`.** `git worktree add` through `command` is NOT a substitute — it makes the directory and stops. The tool also records the session's binding (`sessions.git_worktree_cwd`), and the binding, not the directory, is what the git chip, the right panel's files/diff view, `present_files` and `status_pull_request` read. Bind by hand and all of those keep pointing at the original repo.
+    \\`set_git_worktree`.** `git worktree add` through `command` is NOT a substitute — it makes the directory and stops. The tool also records the session's binding (`sessions.git_worktree_cwd`), and the binding, not the directory, is what the git chip, the right panel's files/diff view, `present_files` and `status_pull_request` read.
     \\
     \\**When:** the task note carries `#Notes UseGitWorktree`, or the human asks for a worktree, branch isolation, or "a branch and a PR". Call it BEFORE your first file operation. A writer sub-agent needs it too — put it in its `tools` and say so in `instruction`.
     \\
@@ -237,7 +188,7 @@ pub const PullRequestToolRule =
     \\**A PR is not opened until the session is bound to it.** Creating one stays the forge CLI's job (`gh pr create` / `glab mr create`) or the Create-PR dialog; `set_pull_request` only attaches an existing one. But a URL printed in a reply shows the human nothing, so the moment a PR exists for this session — you just created it, or the human pointed at one — you MUST call `set_pull_request` with it. That is what puts the PR's changed files in the chat's right panel.
     \\
     \\- `pr_url` is the full URL. `provider` only for a self-hosted forge (GitHub Enterprise on a custom domain needs `"github"`); a non-GitHub/non-GitLab forge diffs `base...head`, so pass both when the defaults are wrong. `clear=true` unbinds before attaching a different PR.
-    \\- `status_pull_request` then reads the live state (state / mergeable / changed files); with no arguments it uses the PR and worktree already bound.
+    \\- `status_pull_request` reads the live state (state / mergeable / changed files); with no arguments it uses the PR and worktree already bound.
     \\- **Not in your tool list?** `search_tool(query="set_pull_request|status_pull_request")` then `use_tool(name=...)`; it lands on your NEXT turn.
     \\
     \\**Self-check:** did I learn a PR URL without binding it? Call `set_pull_request` first.
@@ -248,22 +199,13 @@ pub const SecretsToolRule =
     \\
     \\This workspace can hold credentials you may use without ever seeing them.
     \\
-    \\**The syntax — `{{SECRETS:NAME}}`:** write it in ANY tool parameter and the real
-    \\credential is substituted in immediately before the tool runs, then redacted back out of
-    \\the tool's output. So `command`, `write_file`, `web_search` — anything that takes a string.
+    \\**The syntax — {{SECRETS:NAME}}:** write it in ANY tool parameter and the real credential is substituted in immediately before the tool runs, then redacted back out of the tool's output. So `command`, `write_file`, `web_search` — anything that takes a string.
     \\
-    \\**Names are discovered, never listed here:** call `list_secrets` to learn the names in this
-    \\workspace. A name that does not exist is a hard error that names the key, so call
-    \\`list_secrets` rather than guessing — a guess costs you a round trip and tells you nothing.
-    \\A session outside any workspace has no secrets; it returns an empty list.
+    \\**Names are discovered, never listed here:** call `list_secrets` to learn the names in this workspace. A name that does not exist is a hard error that names the key, so call `list_secrets` rather than guessing — a guess costs you a round trip and tells you nothing. A session outside any workspace has no secrets; it returns an empty list.
     \\
-    \\**Never echo, print, log, or write a secret's value** — not into a file, not into a commit
-    \\message, not into a command that captures output, and not back to the user in your own
-    \\message. Being handed a credential is not permission to read one aloud. Reference it by
-    \\name and let the substitution do its job.
+    \\**Never echo, print, log, or write a secret's value** — not into a file, not into a commit message, not into a command that captures output, and not back to the user in your own message. Being handed a credential is not permission to read one aloud. Reference it by name and let the substitution do its job.
     \\
-    \\**Self-check:** before you write a command that would put a credential somewhere readable,
-    \\ask whether you could have passed `{{SECRETS:NAME}}` instead. Usually you can.
+    \\**Self-check:** before you write a command that would put a credential somewhere readable, ask whether you could have passed {{SECRETS:NAME}} instead. Usually you can.
 ;
 
 pub const CrossProjectCwdRule =

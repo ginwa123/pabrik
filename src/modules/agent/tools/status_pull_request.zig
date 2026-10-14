@@ -55,7 +55,7 @@ pub const status_pull_request_tool = AgentTool{
     .function = .{
         .name = "status_pull_request",
         .description =
-        \\\\Report the live status of a pull/merge request via the forge CLI (gh for GitHub, glab for GitLab). Defaults to the session's bound PR (set_pull_request) looked up from the session's worktree (set_git_worktree), so call it with no arguments for the common case. Read-only: never creates, mutates, or (un)binds anything. Pass pr_url (URL, number/IID, or branch) to inspect a different PR/MR. Generic-provider forges have no CLI, so status is unavailable for them.
+        \\Report the live status of a pull/merge request via the forge CLI (gh for GitHub, glab for GitLab). Defaults to the session's bound PR (set_pull_request) looked up from the session's worktree (set_git_worktree), so call it with no arguments for the common case. Read-only: never creates, mutates, or (un)binds anything. Generic-provider forges have no CLI, so status is unavailable for them.
         ,
         .parameters = .{
             .type = "object",
@@ -63,12 +63,12 @@ pub const status_pull_request_tool = AgentTool{
                 .{
                     .name = "pr_url",
                     .type = "string",
-                    .description = "Which PR/MR to report on: a full URL, a number/IID (e.g. \"42\"), or a branch name. Empty = use the session's bound PR from set_pull_request.",
+                    .description = "Which PR/MR to report on: a full URL, a number/IID (e.g. \"42\"), or a branch name. Empty = the session's bound PR (set_pull_request).",
                 },
                 .{
                     .name = "provider",
                     .type = "string",
-                    .description = "Optional override: \"github\", \"gitlab\", or \"generic\". Empty = auto-detect from the URL, falling back to the session binding and the worktree's origin remote.",
+                    .description = "Optional override: \"github\", \"gitlab\", or \"generic\". Empty = auto-detect from the URL, then the session binding, then the worktree's origin remote.",
                 },
             },
             .required = &.{},

@@ -57,17 +57,13 @@ pub const group_design_element_tool = AgentTool{
     .function = .{
         .name = "group_elements",
         .description =
-        \\Wrap 2 or more existing elements into a new `group` (non-clipping container) or `frame` (clipping container) parent. The new parent's geometry is the UNION bounding box of its children: x = min(child.x), y = min(child.y), width = max(child.x + child.width) - min(child.x), height = max(child.y + child.height) - min(child.y).
+        \\Wrap 2 or more existing elements into a new `group` or `frame` parent whose geometry is the UNION bounding box of its children: x = min(child.x), y = min(child.y), width = max(child.x + child.width) - min(child.x), height = max(child.y + child.height) - min(child.y).
         \\
-        \\You must provide at least 2 child element ids. All children must live on the same `page_id` and none may already be parented to another group or frame (the model rejects nested re-parenting for the first cut).
+        \\All children must live on the same `page_id` and none may already be parented to another group or frame — nested re-parenting is rejected. Get `page_id` from a fresh `set_design_page` call; that response also carries each element's `id`.
         \\
-        \\Use `type="frame"` when children should be visually clipped to the parent's bounding box (e.g. a card with rounded corners and content overflow); use `type="group"` (the default) when children should render freely inside the parent's bbox without clipping (typical structural grouping like a topbar containing logo + nav + buttons).
+        \\Returns the new parent's element object plus one `{"id":...,"name":...,"parent_id":...}` object per child.
         \\
-        \\Discover the `page_id` by calling `set_design_page` first — the response includes the page id in the `id` field. Discover child element ids from the same `set_design_page` response — each element object carries an id in its `id` field.
-        \\
-        \\Returns the new parent's element object plus one `{"id":...,"name":...,"parent_id":...}` child object per child with the freshly assigned parent_id.
-        \\
-        \\On error, recover by: (1) verify `page_id` from a fresh `set_design_page` call; (2) verify each child_id appears in the same `set_design_page` response (and is not already nested in another group); (3) ensure at least 2 children are selected.
+        \\On error: re-read `page_id` via `set_design_page`, confirm each child_id is on that page and not already nested, and select at least 2 children.
         ,
         .parameters = .{
             .type = "object",
@@ -75,17 +71,17 @@ pub const group_design_element_tool = AgentTool{
                 .{
                     .name = "page_id",
                     .type = "string",
-                    .description = "The page id (NOT the item_id). Find it in the `id=\"...\"` attribute of a previous `set_design_page` response. All children must live on this page.",
+                    .description = "The page id (NOT the item_id), from the `id` field of a page object in a previous `set_design_page` response. All children must live on this page.",
                 },
                 .{
                     .name = "child_ids",
                     .type = "array",
-                    .description = "List of 2+ element ids to group together. Each id must reference an element on `page_id`, and none may already be parented. Discover ids via `set_design_page` (each element object has an `id` field).",
+                    .description = "List of 2+ element ids to group. Each must be on `page_id` and none may already be parented; discover them via `set_design_page` (each element object has an `id` field).",
                 },
                 .{
                     .name = "name",
                     .type = "string",
-                    .description = "Name for the new parent element (optional). Defaults to \"Group\". Must be unique within the page.",
+                    .description = "Name for the new parent (optional). Defaults to \"Group\"; must be unique within the page.",
                 },
                 .{
                     .name = "type",

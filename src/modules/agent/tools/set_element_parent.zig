@@ -40,13 +40,13 @@ pub const set_element_parent_tool = AgentTool{
     .function = .{
         .name = "set_element_parent",
         .description =
-        \\Re-parent an existing design element to a new `group` or `frame`, or back to top-level. This is the inverse of `add_element`'s `parent_id` parameter for existing elements — use it to FIX a previously-created element that landed at the wrong nesting level.
+        \\Re-parent an existing design element into a `group` or `frame`, or back to top-level — the inverse of `add_element`'s `parent_id`, for fixing an element that landed at the wrong nesting level.
         \\
-        \\The `element_id` must reference an element on the active page. The `new_parent_id` must reference a `group` or `frame` on the SAME page (leaf types like rectangle, ellipse, text, image cannot contain children — rejected with `ParentNotContainer`). Pass `new_parent_id = null` to move the element to top-level (clears parent_id).
+        \\The `element_id` must reference an element on the active page. The `new_parent_id` must reference a `group` or `frame` on the SAME page — leaf types (rectangle, ellipse, text, image) cannot contain children and are rejected with `ParentNotContainer`. Pass `new_parent_id = null` for top-level (clears parent_id).
         \\
-        \\Discover ids via `set_design_page` — each element object carries the id in its `id` field. The element object also carries `parent_id` (an element id, or null for top-level), so you can see the current hierarchy.
+        \\Discover ids via `set_design_page` (element objects carry `id` and `parent_id`).
         \\
-        \\On error, recover by: (1) verify `element_id` from a fresh `set_design_page` call; (2) verify `new_parent_id` is `group` or `frame` on the same page; (3) pass `null` to unparent.
+        \\On error, re-verify both ids with `set_design_page` — `ParentNotContainer` means `new_parent_id` is the wrong type or on another page.
         ,
         .parameters = .{
             .type = "object",
@@ -54,12 +54,12 @@ pub const set_element_parent_tool = AgentTool{
                 .{
                     .name = "element_id",
                     .type = "string",
-                    .description = "The element id to re-parent (NOT a page_id or workspace_id). Find it in the `id` field of an element object in a previous `set_design_page` response.",
+                    .description = "The element id to re-parent (NOT a page_id or workspace_id). From the `id` field of an element object in a previous `set_design_page` response.",
                 },
                 .{
                     .name = "new_parent_id",
                     .type = "string",
-                    .description = "The new parent's element id (a `group` or `frame` on the same page), or null to move to top-level. Pass null for top-level.",
+                    .description = "The new parent's element id (a `group` or `frame` on the same page), or null for top-level.",
                 },
             },
             .required = &.{"element_id"},
