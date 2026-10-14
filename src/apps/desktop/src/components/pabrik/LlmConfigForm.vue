@@ -35,10 +35,11 @@ export interface LlmConfig {
   temperature: string
   url_style: string
   api_key: string
-  /** Which TRANSPORT runs this profile's calls: `"http"` (default) or
+  /** Which TRANSPORT runs this profile's calls: `"http"` (default),
    * `"claude-code"` (the local `claude` CLI, subscription auth via
-   * `claude login`). Orthogonal to `url_style`, which keeps describing the
-   * HTTP body shape only.
+   * `claude login`), or `"opencode"` (the local `opencode` CLI, auth via
+   * `opencode login`). Orthogonal to `url_style`, which keeps describing
+   * the HTTP body shape only.
    *
    * Optional on purpose: an absent key IS the documented `"http"` default,
    * so a profile that predates this field needs no change. */
@@ -51,6 +52,12 @@ export interface LlmConfig {
   /** Claude Code only: agentic turn ceiling (`--max-turns`).
    * `null` = the CLI's own default. */
   max_turns?: number | null
+  /** OpenCode only: which of the CLI's agents runs the turn (`--agent`).
+   * `null` = the CLI's default agent. */
+  opencode_agent?: string | null
+  /** OpenCode only: whether to pass `--auto`. `null`/absent = on (the
+   * headless default); `false` = off. */
+  opencode_auto?: boolean | null
   /** Optional per-profile override for the context window (in tokens).
    * `null` = resolve from the catalog, then fall through to the built-in. */
   max_capacity_tokens: number | null
@@ -174,9 +181,9 @@ function chooseModel(entry: ModelCatalogEntry): void {
     ...props.modelValue,
     model: entry.model_id,
     // An empty base_url means "use the catalog's" — the field stays overrideable.
-    // NOT for claude-code: that backend has no endpoint at all, and setting one
+    // NOT for a CLI backend: those have no endpoint at all, and setting one
     // would trip the profile validator (base_url is rejected for the CLI).
-    base_url: isClaudeCodeBackend.value
+    base_url: isCliBackend.value
       ? props.modelValue.base_url
       : props.modelValue.base_url || entry.provider_name,
   })
@@ -230,13 +237,16 @@ const factWarning = computed<string | null>(() => {
 })
 
 // === Transport gating (`backend`, orthogonal to `url_style`) =============
-// A claude-code profile runs the local `claude` CLI: no base URL, no API key,
-// no HTTP body shape, and no request-body knobs. Those controls are HIDDEN
-// rather than shown-but-ignored, and the CLI's own knobs appear instead.
-// Hidden fields keep their values (never nulled) so flipping backends back
-// and forth does not discard what the user typed.
+// A CLI profile (claude-code, opencode) runs a local binary: no base URL, no
+// API key, no HTTP body shape, and no request-body knobs. Those controls are
+// HIDDEN rather than shown-but-ignored, and the CLI's own knobs appear
+// instead. Hidden fields keep their values (never nulled) so flipping
+// backends back and forth does not discard what the user typed.
 const isClaudeCodeBackend = computed<boolean>(() => props.modelValue.backend === 'claude-code')
-const isHttpBackend = computed<boolean>(() => !isClaudeCodeBackend.value)
+const isOpencodeBackend = computed<boolean>(() => props.modelValue.backend === 'opencode')
+/** True for any local-CLI backend — the set that hides every HTTP control. */
+const isCliBackend = computed<boolean>(() => isClaudeCodeBackend.value || isOpencodeBackend.value)
+const isHttpBackend = computed<boolean>(() => !isCliBackend.value)
 
 // === Temperature (free text: "auto" or 0–1) =============================
 
@@ -364,12 +374,15 @@ const overrideCount = computed<number>(() => {
       >
         <option value="http">HTTP (base URL + API key)</option>
         <option value="claude-code">Claude Code (local CLI)</option>
+        <option value="opencode">OpenCode (local CLI)</option>
       </select>
       <p class="text-dense mt-1" :style="helperStyle">
         {{
           isClaudeCodeBackend
             ? 'Runs the local claude CLI with your subscription — no API key or Base URL.'
-            : 'Calls an HTTP endpoint using the body shape below.'
+            : isOpencodeBackend
+              ? 'Runs the local opencode CLI — no API key or Base URL.'
+              : 'Calls an HTTP endpoint using the body shape below.'
         }}
       </p>
     </div>
@@ -629,6 +642,61 @@ const overrideCount = computed<number>(() => {
               :style="inputStyle()"
               data-testid="claude-max-turns-input"
             />
+          </div>
+        </template>
+
+        <!-- OpenCode knobs (CLI only). `agent` selects which of the CLI's
+             own agents runs the turn; `auto` is what makes a headless run
+             possible at all. -->
+        <template v-if="isOpencodeBackend">
+          <div class="font-mono text-micro uppercase tracking-wider pt-1" :style="helperStyle">
+            OpenCode
+          </div>
+          <div>
+            <label :class="labelBase" :style="labelStyle"
+              >Agent
+              <span class="block text-dense mt-0.5" :style="helperStyle">
+                Which opencode agent runs the turn (--agent). Blank = the CLI's default agent.
+              </span>
+            </label>
+            <input
+              :value="modelValue.opencode_agent ?? ''"
+              @input="
+                (e) => {
+                  const raw = (e.target as HTMLInputElement).value
+                  update('opencode_agent', raw === '' ? null : raw)
+                }
+              "
+              type="text"
+              placeholder="build"
+              :class="inputBase"
+              :style="inputStyle()"
+              data-testid="opencode-agent-input"
+            />
+          </div>
+          <div>
+            <label :class="labelBase" :style="labelStyle"
+              >Auto-approve
+              <span class="block text-dense mt-0.5" :style="helperStyle">
+                Pass --auto so the CLI does not block on an interactive permission prompt. Off
+                means the run stalls waiting for an answer nobody can give.
+              </span>
+            </label>
+            <select
+              :value="modelValue.opencode_auto === false ? 'off' : 'on'"
+              @change="
+                update(
+                  'opencode_auto',
+                  ($event.target as HTMLSelectElement).value === 'on' ? null : false,
+                )
+              "
+              :class="inputBase"
+              :style="inputStyle()"
+              data-testid="opencode-auto-select"
+            >
+              <option value="on">On (--auto)</option>
+              <option value="off">Off</option>
+            </select>
           </div>
         </template>
 

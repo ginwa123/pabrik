@@ -43,6 +43,7 @@ const android_chat_sse_contract_test = @import("android_chat_sse_contract_test.z
 const android_sidebar_contract_test = @import("android_sidebar_contract_test.zig");
 const android_workers_contract_test = @import("android_workers_contract_test.zig");
 const anthropic_chat_headers_test = @import("anthropic_chat_headers_test.zig");
+const openai_thinking_param_test = @import("openai_thinking_param_test.zig");
 const ask_user_multi_question_test = @import("ask_user_multi_question_test.zig");
 const ask_user_test = @import("ask_user_test.zig");
 const auth_config_source_test = @import("auth_config_source_test.zig");
@@ -196,6 +197,7 @@ pub const suites = .{
     android_sidebar_contract_test,
     android_workers_contract_test,
     anthropic_chat_headers_test,
+    openai_thinking_param_test,
     ask_user_multi_question_test,
     ask_user_test,
     auth_config_source_test,
