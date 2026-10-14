@@ -34,8 +34,6 @@ pub fn transformLLMHistoryToAgentMessage(allocator: std.mem.Allocator, message: 
 
     // Handle assistant/user/system messages - always create a message if role is valid
     // (but not tool role which is handled above)
-    // const finishReason = agent.FinishReason.from_str(message.finish_reason);
-    // const isToolCalls = finishReason == .tool_calls;
 
     // For assistant/user/system roles, always create a message (even if content is empty)
     // Tool role is handled separately above

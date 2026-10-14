@@ -1,19 +1,8 @@
-// Test runner for the `agentic_loop/` directory.
-//
-// IMPORTANT: Zig's test runner only auto-discovers `test "..." { ... }` blocks
-// in files that are **directly `@import`ed** here. A transitive import via
-// `mod.zig` does NOT count — `mod.zig` is reachable but its descendants'
-// `test` blocks are NOT automatically registered.
-//
-// Whenever you add a new `test "..." { ... }` block to an implementation file
-// in this directory, ALSO add `_ = @import("your_file.zig");` to the list
-// below. The README explains this in more detail.
+// Test runner for agentic_loop/: Zig only auto-discovers tests in directly @imported files.
 
 test {
     // ─── Files with inline tests ──────────────────────────────────────────
-    // web_search_config: per-session provider resolution. Registered because
-    // nothing else in the reachable graph imports it — its whole purpose is
-    // to be called from the two exec adapters, which do not yet exist.
+    // web_search_config: per-session provider resolution.
     _ = @import("web_search_config.zig");
 
     _ = @import("sse.zig");
@@ -65,13 +54,7 @@ test {
     _ = @import("design_model.zig"); // Phase 6 — inline updateElementsBatch + indexOf tests
     _ = @import("workflow_compact_message.zig"); // merged 2026-09-10 (ex-workflow_commpact_message.zig typo): url_style regression + envelope + prompt/envelope helpers
     _ = @import("handle_tool.zig"); // 2026-08-06-fix-refactor-zig-imports — 16 inline parseDiffViewFromResult tests
-    // (on_event_sent.zig, workflow.zig and tools_wrap_output.zig are
-    // already registered above; their tool_calls_json wire-shape lock,
-    // fetch-once MCP cache contracts and JSON tool-output envelope
-    // contract now live inline in those files. The project-wide
-    // "no literal /tmp file op" gate — run 36496521345 — moved into
-    // src/root.zig, which is the mod test root and so already discovers
-    // its own `test` blocks.)
+    // (on_event_sent.zig, workflow.zig, tools_wrap_output.zig already registered above.)
     _ = @import("workflow_compact_message.zig"); // merged single file — helpers + orchestration + all inline tests
     _ = @import("prompts_make_working_directory_context.zig"); // never-create-memory-md — makeWorkingDirectoryContext must never force-create AGENTS.md / CLAUDE.md / PABRIK.md (inline tests at the bottom of the impl file)
     _ = @import("prompts_make_cross_project_context.zig"); // sibling-cwd loop from workspace_items only (inline in-memory DB tests)

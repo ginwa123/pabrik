@@ -3586,7 +3586,7 @@ const handleVirtualScroll = (
   //
   //     domEdge    = scrollHeight - clientHeight       (the height MODEL)
   //     realBottom = topSpacer + content.offsetHeight  (the RENDERED rows)
-  //     if (domEdge - realBottom + clientHeight > HYSTERESIS_PX) use realBottom
+  // (removed dead commented-out scroll logic)
   //
   // The override engages only while the model overshoots by more than
   // `HYSTERESIS_PX` (50px). So when the model converges — or the rendered
@@ -3629,8 +3629,7 @@ const handleVirtualScroll = (
   // So: use the anchor when we have one, and fall back to the live read only
   // before anything has positioned the list. The widened tolerance below covers
   // the anchor being slightly stale; the live read stays the tight path.
-  const bottomEdge =
-    typeof settled === 'number' && Number.isFinite(settled) ? settled : liveEdge
+  const bottomEdge = typeof settled === 'number' && Number.isFinite(settled) ? settled : liveEdge
   const distanceFromBottom = Math.max(0, bottomEdge - actualScrollTop)
   const distanceFromTop = Math.max(0, actualScrollTop)
   // Widened only for the stable-anchor read; a live read keeps the tight
@@ -5602,8 +5601,7 @@ const compactSession = async () => {
                                 class="tool-payload text-dense font-mono whitespace-pre-wrap break-all px-2 py-1.5 m-0"
                                 :style="{ color: 'var(--semantic-text-dim)' }"
                                 data-testid="tool-payload-preview"
-                                >{{ toolPayloadPreview(msg.content) }}</pre
-                              >
+                                >{{ toolPayloadPreview(msg.content) }}</pre>
                             </div>
                           </div>
                         </div>
