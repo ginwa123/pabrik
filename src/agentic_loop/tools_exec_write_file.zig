@@ -8,25 +8,8 @@ const agent = pabrikcore.agent;
 const write_file_mod = pabrikcore.write_file;
 const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("tools_error_explain.zig");
+const path_validate = @import("helpers").path_validate;
 const testing = std.testing;
-
-/// Escape a string for inclusion as a JSON string literal value (between
-/// the quotes — caller supplies the surrounding `"..."` template).
-/// Escapes `\` → `\\` and `"` → `\"` (RFC 8259 §7). Other characters
-/// (including control codes / non-ASCII) are passed through verbatim;
-/// the test fixtures only contain ASCII so we don't bother with
-/// `\u00XX` sequences here. Caller must `deinit` the returned slice.
-fn jsonEscapeInto(allocator: std.mem.Allocator, input: []const u8) !std.ArrayList(u8) {
-    var out: std.ArrayList(u8) = .empty;
-    errdefer out.deinit(allocator);
-    for (input) |c| {
-        if (c == '\\' or c == '"') {
-            try out.append(allocator, '\\');
-        }
-        try out.append(allocator, c);
-    }
-    return out;
-}
 
 pub fn execWriteFile(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     const parsed = std.json.parseFromSlice(
@@ -42,9 +25,27 @@ pub fn execWriteFile(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     };
     defer parsed.deinit();
 
-    const write_result = write_file_mod.writeFile(ctx.allocator, ctx.io, parsed.value) catch |err| {
-        const inner = try write_file_mod.toJSONError(ctx.allocator, err, parsed.value.path);
-        const err_msg = try error_explain.explain(ctx.allocator, err, parsed.value.path);
+    // `cwd` is REQUIRED on every path-taking tool: it is the directory this
+    // call works in, and the base a relative `path` resolves against. See
+    // helpers/path_validate.zig for the one implementation of that rule.
+    path_validate.validateCwd(parsed.value.cwd) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "write_file", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    const path_abs = try path_validate.resolveAgainstCwd(ctx.allocator, parsed.value.cwd, parsed.value.path);
+    defer ctx.allocator.free(path_abs);
+
+    // The underlying writer works on the RESOLVED path, so the relative form
+    // the model sent never reaches `std.fs` (a relative path there would
+    // resolve against the SERVER's directory, not `cwd`).
+    var input = parsed.value;
+    input.path = path_abs;
+
+    const write_result = write_file_mod.writeFile(ctx.allocator, ctx.io, input) catch |err| {
+        const inner = try write_file_mod.toJSONError(ctx.allocator, err, path_abs);
+        const err_msg = try error_explain.explain(ctx.allocator, err, path_abs);
         defer ctx.allocator.free(err_msg);
         const output = try wrapToolOutput(ctx.allocator, "write_file", tc.function.arguments, false, err_msg, inner);
         return ToolExecResult{ .output = output, .output_allocated = true };
@@ -74,6 +75,23 @@ pub fn execWriteFile(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
 // `openFile` or drops `truncate: true` would slip through silently. These
 // tests close that gap.
 // ---------------------------------------------------------------------------
+
+/// Args JSON for one `write_file` call.
+///
+/// Built with `std.json.Stringify` rather than a hand-formatted string so a
+/// Windows `C:\...` target is escaped correctly (a raw backslash is invalid
+/// JSON, which would make these tests pass on Linux and fail on Windows).
+/// `cwd` is required by the tool — it is the directory the call works in —
+/// and these tests care only about the overwrite contract, so it points at
+/// the target's own directory.
+fn writeFileArgs(a: std.mem.Allocator, target_path: []const u8, content: []const u8) ![]u8 {
+    const dir = std.fs.path.dirname(target_path) orelse target_path;
+    return std.json.Stringify.valueAlloc(a, .{
+        .path = target_path,
+        .content = content,
+        .cwd = dir,
+    }, .{});
+}
 
 /// Helper: build a minimal ToolExecContext whose fields execWriteFile
 /// doesn't actually read (db, logger, config, etc.). Mirrors the pattern
@@ -147,14 +165,9 @@ test "execWriteFile: overwrites existing file (truncates to shorter content)" {
     }
     try testing.expectEqual(@as(u64, 100), fileSize(target_path));
 
-    // Call execWriteFile with a 5-byte payload. Escape `\` and `"`
-    // in the path so the resulting JSON parses on Windows hosts (where
-    // `realPath()` returns backslash-separated paths). Otherwise
-    // `std.json.parseFromSlice` rejects the malformed `{"path":"C:\..."}`.
+    // Call execWriteFile with a 5-byte payload.
     {
-        var escaped = try jsonEscapeInto(a, target_path);
-        defer escaped.deinit(a);
-        const args = try std.fmt.allocPrint(a, "{{\"path\":\"{s}\",\"content\":\"BBBBB\"}}", .{escaped.items});
+        const args = try writeFileArgs(a, target_path, "BBBBB");
         const tc = agent.ToolCall{
             .id = "call_ow1",
             .type = "function",
@@ -200,11 +213,8 @@ test "execWriteFile: overwrites existing file (extends to longer content)" {
     try testing.expectEqual(@as(u64, 5), fileSize(target_path));
 
     const longer_payload = "this is a much longer string than before";
-    // Escape `\` and `"` in the path (Windows JSON-parse fix).
     {
-        var escaped = try jsonEscapeInto(a, target_path);
-        defer escaped.deinit(a);
-        const args = try std.fmt.allocPrint(a, "{{\"path\":\"{s}\",\"content\":\"{s}\"}}", .{ escaped.items, longer_payload });
+        const args = try writeFileArgs(a, target_path, longer_payload);
         const tc = agent.ToolCall{
             .id = "call_ow2",
             .type = "function",
@@ -241,11 +251,9 @@ test "execWriteFile: two consecutive calls — second content wins, no append" {
     const target_name = "consecutive.txt";
     const target_path = try std.fs.path.join(a, &.{ root_abs, target_name });
 
-    // First call: 13 bytes. Escape the path (Windows JSON-parse fix).
+    // First call: 13 bytes.
     {
-        var escaped = try jsonEscapeInto(a, target_path);
-        defer escaped.deinit(a);
-        const args1 = try std.fmt.allocPrint(a, "{{\"path\":\"{s}\",\"content\":\"first version\"}}", .{escaped.items});
+        const args1 = try writeFileArgs(a, target_path, "first version");
         const tc1 = agent.ToolCall{
             .id = "call_seq1",
             .type = "function",
@@ -258,9 +266,7 @@ test "execWriteFile: two consecutive calls — second content wins, no append" {
 
     // Second call: longer, DIFFERENT content.
     {
-        var escaped = try jsonEscapeInto(a, target_path);
-        defer escaped.deinit(a);
-        const args2 = try std.fmt.allocPrint(a, "{{\"path\":\"{s}\",\"content\":\"second version wins\"}}", .{escaped.items});
+        const args2 = try writeFileArgs(a, target_path, "second version wins");
         const tc2 = agent.ToolCall{
             .id = "call_seq2",
             .type = "function",
@@ -302,11 +308,8 @@ test "execWriteFile: overwriting with empty content truncates to zero bytes" {
     }
     try testing.expectEqual(@as(u64, 26), fileSize(target_path));
 
-    // Escape `\` and `"` in the path (Windows JSON-parse fix).
     {
-        var escaped = try jsonEscapeInto(a, target_path);
-        defer escaped.deinit(a);
-        const args2 = try std.fmt.allocPrint(a, "{{\"path\":\"{s}\",\"content\":\"\"}}", .{escaped.items});
+        const args2 = try writeFileArgs(a, target_path, "");
         const tc = agent.ToolCall{
             .id = "call_empty",
             .type = "function",

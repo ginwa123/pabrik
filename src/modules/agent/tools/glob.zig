@@ -313,6 +313,11 @@ pub const GlobError = error{
 pub const GlobInput = struct {
     pattern: []const u8 = "*",
     path: []const u8 = ".",
+    /// REQUIRED on the wire. Absolute directory this call works in; `path`
+    /// (a directory) resolves against it. Empty by default so the struct
+    /// stays constructible in tests that do not exercise the `cwd` rule —
+    /// `path_validate.validateCwd` rejects the empty value at exec time.
+    cwd: []const u8 = "",
     max_results: ?usize = null,
     offset: ?usize = null,
     hidden: bool = false,
@@ -1125,6 +1130,7 @@ pub fn toJSONSuccess(allocator: std.mem.Allocator, result: GlobResult, pattern: 
 pub const glob_tool_system_prompt =
     \\## Glob Tool — Behavior
     \\Use `glob` to find files by pattern (e.g. `**/*.zig`, `*.ts`).
+    \\- `cwd` is REQUIRED: the absolute directory this call works in. `path` is the directory to search, absolute or relative to `cwd` (default: `cwd` itself).
     \\- Respects `.gitignore` by default. Set `respect_ignore_files=false` to include ignored files.
     \\- Use to discover files by name before reading them.
     \\
@@ -1165,7 +1171,12 @@ pub const glob_tool = AgentTool{
                 .{
                     .name = "path",
                     .type = "string",
-                    .description = "Directory to search. Default: \".\"",
+                    .description = "Directory to search. Absolute, or relative to `cwd`. Default: `cwd` itself.",
+                },
+                .{
+                    .name = "cwd",
+                    .type = "string",
+                    .description = "REQUIRED. Absolute path to the directory this call works in. A relative `path` resolves against it; an absolute `path` is used as-is. Pass the tree you are actually editing (your worktree root, NOT the server's directory).",
                 },
                 .{
                     .name = "max_results",
@@ -1202,8 +1213,13 @@ pub const glob_tool = AgentTool{
                     .type = "boolean",
                     .description = "Respect .gitignore/.ignore/.rgignore (glob's custom parser). Default: true. Set false to list gitignored paths (node_modules/, build/, .git/, etc.).",
                 },
+                .{
+                    .name = "cwd",
+                    .type = "string",
+                    .description = "REQUIRED. Absolute path to the directory this call works in. A relative `path` resolves against it; an absolute `path` is used as-is. Pass the tree you are actually editing (your worktree root, NOT the server's directory).",
+                },
             },
-            .required = &.{},
+            .required = &.{"cwd"},
         },
         .system_prompt = glob_tool_system_prompt,
     },

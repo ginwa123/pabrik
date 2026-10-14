@@ -15,16 +15,23 @@ const AgentTool = schemas.AgentTool;
 
 /// Input structure for remove_file tool
 pub const RemoveFileInput = struct {
-    /// Absolute path to the file or directory to delete
+    /// Path to the file or directory to delete. Absolute, or relative to
+    /// `cwd`.
     path: []const u8,
     /// If true, recursively delete directory and all contents inside
     recursive: bool = false,
+    /// REQUIRED on the wire. Absolute directory this call works in; a
+    /// relative `path` resolves against it. Empty by default so the struct
+    /// stays constructible in tests that do not exercise the `cwd` rule —
+    /// `path_validate.validateCwd` rejects the empty value at exec time.
+    cwd: []const u8 = "",
 };
 
 /// Tool definition for remove_file
 pub const remove_file_tool_system_prompt =
     \\## Remove File Tool — Behavior
     \\Use `remove_file` to delete a file or directory.
+    \\- `cwd` is REQUIRED: the absolute directory this call works in. A relative `path` resolves against it; an absolute `path` is used as-is.
     \\- Set `recursive=true` to delete directories with contents. This cannot be undone.
     \\- Verify the path is correct before deleting.
     \\
@@ -34,22 +41,28 @@ pub const remove_file_tool = AgentTool{
     .type = "function",
     .function = .{
         .name = "remove_file",
-        .description = "Delete a file or directory from the filesystem. Use recursive=true to delete folders with all contents inside. Warning: This cannot be undone!",
+        .description = "Delete a file or directory from the filesystem. `cwd` is REQUIRED and must be an absolute path: it is the directory this call works in, and a relative `path` resolves against it. Use recursive=true to delete folders with all contents inside. Warning: This cannot be undone!",
         .parameters = .{
             .type = "object",
             .properties = &.{
                 .{
                     .name = "path",
                     .type = "string",
-                    .description = "Absolute path to the file or directory to delete.",
+                    .description = "Path to the file or directory to delete. Absolute, or relative to `cwd`.",
                 },
+                .{
+                    .name = "cwd",
+                    .type = "string",
+                    .description = "REQUIRED. Absolute path to the directory this call works in. A relative `path` resolves against it; an absolute `path` is used as-is. Pass the tree you are actually editing (your worktree root, NOT the server's directory).",
+                },
+
                 .{
                     .name = "recursive",
                     .type = "boolean",
                     .description = "If true, recursively delete directory and all contents inside. Default: false.",
                 },
             },
-            .required = &.{ "path" },
+            .required = &.{ "path", "cwd" },
         },
         .system_prompt = remove_file_tool_system_prompt,
     },
@@ -105,7 +118,7 @@ fn isWindowsRoot(norm_path: []const u8) bool {
 /// Check if path is a directory.
 /// Callers must validate via invalidPathReason() first: on Windows an
 /// unchecked name panics inside openDir (OBJECT_NAME_INVALID -> ntstatusBug).
-fn isDirectory(io : std.Io, path: []const u8) bool {
+fn isDirectory(io: std.Io, path: []const u8) bool {
     _ = std.Io.Dir.cwd().openDir(io, path, .{}) catch return false;
     return true;
 }

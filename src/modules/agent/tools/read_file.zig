@@ -132,7 +132,8 @@ pub fn toJSONSuccess(allocator: std.mem.Allocator, result: ReadFileResult, path:
 
 pub const read_file_tool_system_prompt =
     \\## Read File Tool — Behavior
-    \\Use `read_file` to read file contents by absolute path.
+    \\Use `read_file` to read file contents.
+    \\- `cwd` is REQUIRED: the absolute directory this call works in. A relative `path` resolves against it; an absolute `path` is used as-is.
     \\- For large files, use `offset` + `limit` to paginate (500 lines per page). Check `total_lines` first.
     \\- Content is raw (no per-line number prefixes). Derive absolute 1-indexed line numbers as `start_line + 1 + index`.
     \\- Never guess offsets — read sequentially.
@@ -146,6 +147,7 @@ pub const read_file_tool = AgentTool{
         .description =
         \\Read a file by path. Returns content, total_lines, start_line, end_line.
         \\
+        \\- `cwd` is REQUIRED and must be an absolute path: it is the directory this call works in, and a relative `path` resolves against it.
         \\- Omit offset and limit to read the whole file.
         \\- Use offset + limit to paginate large files (recommended page: 500 lines).
         \\- Never guess offsets — check total_lines from a prior call first.
@@ -157,7 +159,7 @@ pub const read_file_tool = AgentTool{
                 .{
                     .name = "path",
                     .type = "string",
-                    .description = "Absolute path to the file.",
+                    .description = "Path to the file. Absolute, or relative to `cwd`.",
                 },
                 .{
                     .name = "offset",
@@ -169,8 +171,13 @@ pub const read_file_tool = AgentTool{
                     .type = "number",
                     .description = "Max lines to return. Default: entire file.",
                 },
+                .{
+                    .name = "cwd",
+                    .type = "string",
+                    .description = "REQUIRED. Absolute path to the directory this call works in. A relative `path` resolves against it; an absolute `path` is used as-is. Pass the tree you are actually editing (your worktree root, NOT the server's directory).",
+                },
             },
-            .required = &.{"path"},
+            .required = &.{ "path", "cwd" },
         },
         .system_prompt = read_file_tool_system_prompt,
     },

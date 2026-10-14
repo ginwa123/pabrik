@@ -43,15 +43,14 @@ const model_guard = @import("../../../agentic_loop/llm_history_model_guard.zig")
 
 /// Input structure for `create_kanban_task` tool.
 ///
-/// Required fields: `workspace_id`, `item_id`, `name`, `description`,
-/// `cwd`. The agent must pass `workspace_id` and `item_id` from the
+/// Required fields: `workspace_id`, `item_id`, `name`, `description`.
+/// The agent must pass `workspace_id` and `item_id` from the
 /// active chat context (see the "## Workspace Context" section of
 /// the system prompt). `name` is the card title. `description` is
 /// the card tooltip text (promoted from optional to required on
 /// 2026-08-18 so every card has enough context for human triage).
-/// `cwd` is the absolute path to the project's working directory
-/// (also promoted to required on 2026-08-18 — a cwd-less LLM session
-/// is useless because the agent has nothing to `bash` into).
+/// There is no `cwd`: the card's working directory is the kanban
+/// item's own `path`, read server-side by `lookupItemProjectPath`.
 ///
 /// `column_id` is optional — when omitted, the task is auto-assigned
 /// to the first column at `MAX(kanban_position) + 1` (append-to-bottom
@@ -98,16 +97,6 @@ pub const CreateKanbanTaskInput = struct {
     /// by `image_urls_validation.validateImageUrls`). Null/empty =
     /// no images. Matches the wire shape `TaskCreateRequest.image_urls`.
     image_urls: ?[]const u8 = null,
-    /// Required per-task project root — absolute path. Must start
-    /// with `/`, ≤4 KiB, no control chars. Promoted from optional
-    /// to required on 2026-08-18 so the agent always has a concrete
-    /// working directory to launch into (was previously allowed
-    /// empty = cwd-less task; that case is still supported by the
-    /// UI form `KanbanTaskDetailDialog` but the LLM tool now
-    /// requires it because a cwd-less LLM session is not useful —
-    /// the agent would have nothing to `bash` into).
-    /// Matches the wire shape `TaskCreateRequest.cwd`.
-    cwd: []const u8 = "",
     /// Optional unattended-mode flag. `"1"` enables the agent to
     /// retry past the 10-error TooManyRetries bail (overnight runs);
     /// any other value normalizes to `"0"`. A `sessions` row is
@@ -152,7 +141,7 @@ pub const CreateKanbanTaskInput = struct {
 pub const create_kanban_task_tool_system_prompt =
     \\## Create Kanban Task Tool — Behavior
     \\Use `create_kanban_task` to create a new kanban card.
-    \\- Requires `name`, `description`, and `cwd` (absolute path). Optionally set `column_id`, `tags`, `image_urls`.
+    \\- Requires `name` and `description`. Optionally set `column_id`, `tags`, `image_urls`.
     \\- Use when you discover follow-up work that should be tracked on the board.
     \\
 ;
@@ -166,7 +155,7 @@ pub const create_kanban_task_tool = AgentTool{
         \\
         \\The workspace_id and item_id must come from the chat context — see the "## Workspace Context" section of the system prompt. Each sibling item is rendered as `- **<name>** (id: <id>, item_type: <type>, path: <path>)` where the id is a backtick-quoted id (e.g. item_1782313125507292140). The id is the **canonical** lookup key — do NOT pass the human-readable name (e.g. "sprint 1"); the DB columns are indexed by id and a name lookup returns zero rows. The kanban item is the one with `item_type='kanban'` marked with `*(this task)*` in the Workspace Context.
         \\
-        \\REQUIRED fields (must be non-empty): name (card title shown on the board), description (card tooltip text — promoted to required on 2026-08-18 so the kanban view always has enough context for human triage), and cwd (absolute path to the task's project root — also promoted to required on 2026-08-18; a cwd-less LLM session is useless because the agent has nothing to `bash` into). column_id is OPTIONAL — when omitted, the task is auto-assigned to the first kanban column at MAX(kanban_position)+1; when supplied, the column must belong to the same kanban item. To set a specific position, call kanban_move_task after this tool returns.
+        \\REQUIRED fields (must be non-empty): name (card title shown on the board) and description (card tooltip text — promoted to required on 2026-08-18 so the kanban view always has enough context for human triage). No cwd is passed: the card's working directory is the kanban item's own `path`, which the server reads from `item_id`. column_id is OPTIONAL — when omitted, the task is auto-assigned to the first kanban column at MAX(kanban_position)+1; when supplied, the column must belong to the same kanban item. To set a specific position, call kanban_move_task after this tool returns.
         \\
         \\Optional fields (mirror the user-facing KanbanTaskDetailDialog form, Migration 062 / 067 / 069 / 071 — all four are persisted on create, not just on chat-spawn):
         \\  - tags: JSON-encoded array string like "[\"bug\",\"urgent\"]". Letters/digits/`_`/`-` only, ≤50 chars per tag, case-insensitive dedupe. Null/empty = no tags.
@@ -215,11 +204,6 @@ pub const create_kanban_task_tool = AgentTool{
                     .description = "Optional image attachments as a `||`-delimited string of `data:image/<mime>;base64,<payload>` URLs (10 MB cap, validated by image_urls_validation). Null or empty = no images.",
                 },
                 .{
-                    .name = "cwd",
-                    .type = "string",
-                    .description = "REQUIRED per-task project root as an absolute path (must start with `/`, ≤4 KiB, no control chars). Promoted to required on 2026-08-18 — the UI form (`KanbanTaskDetailDialog`) still supports cwd-less tasks, but the LLM tool now requires it because a cwd-less LLM session has no working directory for `bash`.",
-                },
-                .{
                     .name = "is_auto_retry_until_stop",
                     .type = "string",
                     .description = "Optional unattended-mode flag. `\"1\"` enables retrying past the 10-error TooManyRetries bail (overnight runs); any other value normalizes to `\"0\"`. A sessions row is always created keyed by the new task's id; this flag only sets its column.",
@@ -230,11 +214,12 @@ pub const create_kanban_task_tool = AgentTool{
                     .description = "Optional profile name from `LlmConfig.profiles` to bind on the new sessions row. Null or empty = backend default (top-level config).",
                 },
             },
-            // Five required fields (description + cwd promoted from
-            // optional on 2026-08-18). column_id, tags, image_urls,
+            // Four required fields (description promoted from optional on
+            // 2026-08-18; cwd dropped on 2026-10-14 — the card inherits the
+            // kanban item's path). column_id, tags, image_urls,
             // is_auto_retry_until_stop, selected_profile_model remain
             // optional.
-            .required = &.{ "workspace_id", "item_id", "name", "description", "cwd" },
+            .required = &.{ "workspace_id", "item_id", "name", "description" },
         },
         .system_prompt = create_kanban_task_tool_system_prompt,
     },
@@ -318,6 +303,37 @@ pub const CreateKanbanTaskOutput = struct {
     position: ?i64 = null,
     @"error": ?[]const u8 = null,
 };
+
+/// The working directory a new card gets: the kanban item's own `path`.
+///
+/// Read rather than asked for. The tool lost its `cwd` parameter on
+/// 2026-10-14 — the card is created on an item whose `path` is the project
+/// root by definition, so the model repeating it was one more chance to name
+/// the wrong tree. A DB failure falls back to `""` (the same value
+/// Migration 070's column defaults to, i.e. "inherit at launch") rather than
+/// failing a card creation whose only problem is a missing convenience.
+fn lookupItemProjectPath(
+    allocator: std.mem.Allocator,
+    db: *sqlite.SqliteBackend,
+    item_id: []const u8,
+) ![]u8 {
+    var q = db.query(
+        allocator,
+        "SELECT COALESCE(path, '') FROM workspace_items WHERE id = ?",
+        &[_][]const u8{item_id},
+    ) catch {
+        std.log.warn("create_kanban_task: could not read the item path for '{s}' — creating the card with no cwd override", .{item_id});
+        return allocator.dupe(u8, "");
+    };
+    defer q.deinit();
+
+    const row_opt = q.next() catch null;
+    if (row_opt) |row| {
+        defer row.deinit(allocator);
+        return allocator.dupe(u8, row.values[0]);
+    }
+    return allocator.dupe(u8, "");
+}
 
 /// Verify the parent `workspace_items` row exists and has
 /// `item_type='kanban'`. Returns null on success, or an error JSON
@@ -559,25 +575,16 @@ pub fn executeKanbanTaskToJSON(
         },
     };
 
-    // 6. Validate cwd (Migration 070, promoted to required on
-    //    2026-08-18) — absolute path string, ≤4 KiB, no control
-    //    chars. Matches the HTTP handler's inline block at
-    //    `task_create.zig:421-435`. Pre-2026-08-18, empty/null
-    //    meant cwd-less (DEFAULT '' applies) — that escape hatch
-    //    was removed because a cwd-less LLM session has no
-    //    working directory to launch into. The UI form
-    //    (`KanbanTaskDetailDialog`) still supports cwd-less tasks;
-    //    only the LLM tool requires it.
-    const validated_cwd = blk: {
-        const raw = input.cwd;
-        if (raw.len == 0) return errorJSON(allocator, "cwd is required (pass the absolute path to this task's project root — the UI form supports cwd-less tasks, but the LLM tool requires it because a cwd-less session has nothing to bash into)");
-        if (raw.len > 4096) return errorJSON(allocator, "cwd path too long (max 4 KiB)");
-        if (!std.fs.path.isAbsolute(raw)) return errorJSON(allocator, "cwd must be an absolute path");
-        for (raw) |c| {
-            if (c < 0x20 or c == 0x7f) return errorJSON(allocator, "cwd contains a control character");
-        }
-        break :blk raw;
-    };
+    // 6. The card's working directory comes from the KANBAN ITEM, not from an
+    //    argument. Dropped `cwd` on 2026-10-14: the card is created on an item
+    //    whose `path` already IS the project root, and `workspace_id`/`item_id`
+    //    pin the board — so the parameter was a second, weaker way to say
+    //    something the server already knows, and the one way to name the wrong
+    //    tree. Migration 070's per-task `cwd` column keeps its meaning for the
+    //    UI form (`KanbanTaskDetailDialog`), which still sets it by hand.
+    const owned_cwd = try lookupItemProjectPath(allocator, db, input.item_id);
+    defer allocator.free(owned_cwd);
+    const validated_cwd: []const u8 = owned_cwd;
 
     // 7. Generate task id.
     const timestamp_ns = @import("helpers").unixTimestampNanos();
@@ -846,7 +853,10 @@ fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
         \\  id TEXT PRIMARY KEY,
         \\  workspace_id TEXT,
         \\  item_type TEXT,
-        \\  name TEXT
+        \\  name TEXT,
+        \\  -- The card's working directory now comes from this column (the
+        \\  -- tool lost its `cwd` parameter on 2026-10-14).
+        \\  path TEXT NOT NULL DEFAULT ''
         \\)
     , &[_][]const u8{});
     try db.exec(alloc,
@@ -931,8 +941,8 @@ fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
     // Default seeded item — a kanban named 'Sprint' with 3 columns.
     try db.exec(
         alloc,
-        "INSERT INTO workspace_items (id, workspace_id, item_type, name) " ++
-            "VALUES ('item_k1', 'ws_1', 'kanban', 'Sprint')",
+        "INSERT INTO workspace_items (id, workspace_id, item_type, name, path) " ++
+            "VALUES ('item_k1', 'ws_1', 'kanban', 'Sprint', '/fixture/proj')",
         &[_][]const u8{},
     );
     try db.exec(
@@ -1008,7 +1018,6 @@ test "executeKanbanTaskToJSON returns success JSON on happy path" {
         .item_id = "item_k1",
         .name = "new task",
         .description = "happy path task",
-        .cwd = "/test",
     });
     defer alloc.free(json);
 
@@ -1032,7 +1041,6 @@ test "executeKanbanTaskToJSON inserts a row into workspace_item_tasks" {
         .item_id = "item_k1",
         .name = "insert me",
         .description = "insert me desc",
-        .cwd = "/test",
     });
     defer alloc.free(json);
 
@@ -1054,7 +1062,6 @@ test "executeKanbanTaskToJSON always inserts sessions row without flag or profil
         .item_id = "item_k1",
         .name = "plain card",
         .description = "no flag no profile",
-        .cwd = "/test",
     });
     defer alloc.free(json);
 
@@ -1068,7 +1075,7 @@ test "executeKanbanTaskToJSON always inserts sessions row without flag or profil
     try testing.expectEqualStrings("active", status);
     const cwd = try readColumn(alloc, &s.db, "SELECT cwd FROM sessions WHERE id = ?", &.{task_id});
     defer alloc.free(cwd);
-    try testing.expectEqualStrings("/test", cwd);
+    try testing.expectEqualStrings("/fixture/proj", cwd);
     const flag = try readColumn(alloc, &s.db, "SELECT is_auto_retry_until_stop FROM sessions WHERE id = ?", &.{task_id});
     defer alloc.free(flag);
     try testing.expectEqualStrings("0", flag);
@@ -1085,7 +1092,6 @@ test "executeKanbanTaskToJSON sessions row honors flag and profile" {
         .item_id = "item_k1",
         .name = "flagged card",
         .description = "with flag and profile",
-        .cwd = "/test",
         .is_auto_retry_until_stop = "1",
         .selected_profile_model = "code",
     });
@@ -1112,7 +1118,6 @@ test "executeKanbanTaskToJSON inserts initial user llm_history row" {
         .item_id = "item_k1",
         .name = "seed me",
         .description = "seed desc here",
-        .cwd = "/test",
     });
     defer alloc.free(json);
 
@@ -1157,7 +1162,6 @@ test "executeKanbanTaskToJSON appends at MAX(kanban_position)+1 when column has 
         .item_id = "item_k1",
         .name = "third",
         .description = "third desc",
-        .cwd = "/test",
     });
     defer alloc.free(json);
 
@@ -1177,7 +1181,6 @@ test "executeKanbanTaskToJSON returns error when workspace_id is empty" {
         .item_id = "item_k1",
         .name = "x",
         .description = "test desc",
-        .cwd = "/test",
     });
     defer alloc.free(json);
 
@@ -1197,7 +1200,6 @@ test "executeKanbanTaskToJSON returns error when item_id is empty" {
         .item_id = "",
         .name = "x",
         .description = "test desc",
-        .cwd = "/test",
     });
     defer alloc.free(json);
 
@@ -1217,7 +1219,6 @@ test "executeKanbanTaskToJSON returns error when name is empty" {
         .item_id = "item_k1",
         .name = "",
         .description = "test desc",
-        .cwd = "/test",
     });
     defer alloc.free(json);
 
@@ -1237,7 +1238,6 @@ test "executeKanbanTaskToJSON returns error when name is whitespace-only" {
         .item_id = "item_k1",
         .name = "   \t\n  ",
         .description = "test desc",
-        .cwd = "/test",
     });
     defer alloc.free(json);
 
@@ -1268,7 +1268,6 @@ test "executeKanbanTaskToJSON returns error when description is empty" {
         .item_id = "item_k1",
         .name = "no desc",
         .description = "",
-        .cwd = "/test",
     });
     defer alloc.free(json);
 
@@ -1288,33 +1287,12 @@ test "executeKanbanTaskToJSON returns error when description is whitespace-only"
         .item_id = "item_k1",
         .name = "whitespace desc",
         .description = "   \t\n  ",
-        .cwd = "/test",
     });
     defer alloc.free(json);
 
     try testing.expect(contains(json, "\"success\":false"));
     try testing.expect(contains(json, "\"error\":"));
     try testing.expect(contains(json, "description"));
-}
-
-test "executeKanbanTaskToJSON returns error when cwd is empty" {
-    const alloc = testing.allocator;
-    var s = try setupDb();
-    defer s.threaded.deinit();
-    defer s.db.deinit();
-
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
-        .workspace_id = "ws_1",
-        .item_id = "item_k1",
-        .name = "no cwd",
-        .description = "test desc",
-        .cwd = "",
-    });
-    defer alloc.free(json);
-
-    try testing.expect(contains(json, "\"success\":false"));
-    try testing.expect(contains(json, "\"error\":"));
-    try testing.expect(contains(json, "cwd"));
 }
 
 test "executeKanbanTaskToJSON returns error when parent item_type is not kanban" {
@@ -1335,7 +1313,6 @@ test "executeKanbanTaskToJSON returns error when parent item_type is not kanban"
         .item_id = "item_k1",
         .name = "x",
         .description = "test desc",
-        .cwd = "/test",
     });
     defer alloc.free(json);
 
@@ -1359,7 +1336,6 @@ test "executeKanbanTaskToJSON returns error when kanban has zero columns" {
         .item_id = "item_k1",
         .name = "x",
         .description = "test desc",
-        .cwd = "/test",
     });
     defer alloc.free(json);
 
@@ -1379,7 +1355,6 @@ test "executeKanbanTaskToJSON honors explicit column_id" {
         .item_id = "item_k1",
         .name = "explicit placement",
         .description = "explicit placement desc",
-        .cwd = "/test",
         .column_id = "col_ip",
     });
     defer alloc.free(json);
@@ -1417,7 +1392,6 @@ test "executeKanbanTaskToJSON rejects column_id that does not belong to the item
         .item_id = "item_k1",
         .name = "x",
         .description = "test desc",
-        .cwd = "/test",
         .column_id = "col_other",
     });
     defer alloc.free(json);
@@ -1446,7 +1420,6 @@ test "executeKanbanTaskToJSON persists tags when supplied" {
         .item_id = "item_k1",
         .name = "tagged",
         .description = "tagged desc",
-        .cwd = "/test",
         .tags = "[\"bug\",\"urgent\"]",
     });
     defer alloc.free(json);
@@ -1469,7 +1442,6 @@ test "executeKanbanTaskToJSON persists image_urls when supplied" {
         .item_id = "item_k1",
         .name = "with images",
         .description = "with images desc",
-        .cwd = "/test",
         .image_urls = "data:image/png;base64,abc||data:image/jpeg;base64,def",
     });
     defer alloc.free(json);
@@ -1481,7 +1453,10 @@ test "executeKanbanTaskToJSON persists image_urls when supplied" {
     try testing.expectEqualStrings("data:image/png;base64,abc||data:image/jpeg;base64,def", stored);
 }
 
-test "executeKanbanTaskToJSON persists cwd when supplied" {
+test "executeKanbanTaskToJSON takes the card's cwd from the kanban item's path" {
+    // The tool has no `cwd` parameter (dropped 2026-10-14): the card is
+    // created on an item whose own `path` IS the project root, so the stored
+    // value must come from `workspace_items.path` and nowhere else.
     const alloc = testing.allocator;
     var s = try setupDb();
     defer s.threaded.deinit();
@@ -1490,17 +1465,21 @@ test "executeKanbanTaskToJSON persists cwd when supplied" {
     const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
-        .name = "with cwd",
-        .description = "with cwd desc",
-        .cwd = "/home/me/proj",
+        .name = "inherits item path",
+        .description = "inherits item path desc",
     });
     defer alloc.free(json);
 
+    try testing.expect(contains(json, "\"success\":true"));
     const task_id = try extractTaskId(alloc, json);
     defer alloc.free(task_id);
     const stored = try readColumn(alloc, &s.db, "SELECT cwd FROM workspace_item_tasks WHERE id = ?", &.{task_id});
     defer alloc.free(stored);
-    try testing.expectEqualStrings("/home/me/proj", stored);
+    try testing.expectEqualStrings("/fixture/proj", stored);
+    // The session the tool seeds must agree with the card.
+    const session_cwd = try readColumn(alloc, &s.db, "SELECT cwd FROM sessions WHERE id = ?", &.{task_id});
+    defer alloc.free(session_cwd);
+    try testing.expectEqualStrings("/fixture/proj", session_cwd);
 }
 
 test "executeKanbanTaskToJSON stamps last_human_touched_at on happy path" {
@@ -1514,7 +1493,6 @@ test "executeKanbanTaskToJSON stamps last_human_touched_at on happy path" {
         .item_id = "item_k1",
         .name = "stamped",
         .description = "stamped desc",
-        .cwd = "/test",
     });
     defer alloc.free(json);
 
@@ -1540,7 +1518,6 @@ test "executeKanbanTaskToJSON creates sessions row when is_auto_retry_until_stop
         .item_id = "item_k1",
         .name = "unattended",
         .description = "unattended desc",
-        .cwd = "/test",
         .is_auto_retry_until_stop = "1",
     });
     defer alloc.free(json);
@@ -1563,7 +1540,6 @@ test "executeKanbanTaskToJSON persists selected_profile_model when supplied" {
         .item_id = "item_k1",
         .name = "with profile",
         .description = "with profile desc",
-        .cwd = "/test",
         .selected_profile_model = "fast-model",
     });
     defer alloc.free(json);
@@ -1586,7 +1562,6 @@ test "executeKanbanTaskToJSON writes both unattended and profile in single sessi
         .item_id = "item_k1",
         .name = "combined",
         .description = "combined desc",
-        .cwd = "/test",
         .is_auto_retry_until_stop = "1",
         .selected_profile_model = "my-profile",
     });
@@ -1628,7 +1603,6 @@ test "executeKanbanTaskToJSON persists sessions.name == trimmed task name (unatt
         .item_id = "item_k1",
         .name = "workspace item task nama and session name",
         .description = "sessions.name == trimmed desc",
-        .cwd = "/test",
         .is_auto_retry_until_stop = "1",
     });
     defer alloc.free(json);
@@ -1656,7 +1630,6 @@ test "executeKanbanTaskToJSON persists sessions.name == trimmed task name (profi
         // sessions.name must be the trimmed value.
         .name = "   my chatty task   ",
         .description = "sessions.name == trimmed profile desc",
-        .cwd = "/test",
         .selected_profile_model = "fast-model",
     });
     defer alloc.free(json);
@@ -1679,7 +1652,6 @@ test "executeKanbanTaskToJSON rejects malformed tags" {
         .item_id = "item_k1",
         .name = "bad tags",
         .description = "bad tags desc",
-        .cwd = "/test",
         .tags = "not-a-json-array",
     });
     defer alloc.free(json);
@@ -1700,7 +1672,6 @@ test "executeKanbanTaskToJSON rejects invalid image_urls" {
         .item_id = "item_k1",
         .name = "bad images",
         .description = "bad images desc",
-        .cwd = "/test",
         .image_urls = "not-a-data-url",
     });
     defer alloc.free(json);
@@ -1708,26 +1679,6 @@ test "executeKanbanTaskToJSON rejects invalid image_urls" {
     try testing.expect(contains(json, "\"success\":false"));
     try testing.expect(contains(json, "\"error\":"));
     try testing.expect(contains(json, "image_urls"));
-}
-
-test "executeKanbanTaskToJSON rejects relative cwd" {
-    const alloc = testing.allocator;
-    var s = try setupDb();
-    defer s.threaded.deinit();
-    defer s.db.deinit();
-
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
-        .workspace_id = "ws_1",
-        .item_id = "item_k1",
-        .name = "relative",
-        .description = "relative path desc",
-        .cwd = "relative/path",
-    });
-    defer alloc.free(json);
-
-    try testing.expect(contains(json, "\"success\":false"));
-    try testing.expect(contains(json, "\"error\":"));
-    try testing.expect(contains(json, "absolute"));
 }
 
 //

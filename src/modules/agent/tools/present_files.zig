@@ -65,13 +65,20 @@ pub const PresentFileRef = struct {
 /// Input structure for the `present_files` tool.
 pub const PresentFilesInput = struct {
     files: []PresentFileRef,
+    /// REQUIRED on the wire. Absolute directory this call works in; a
+    /// relative entry `path` resolves against it. Empty by default so the
+    /// struct stays constructible in tests that do not exercise the `cwd`
+    /// rule — `path_validate.validateCwd` rejects the empty value at exec
+    /// time.
+    cwd: []const u8 = "",
 };
 
 /// Top-level tool definition exposed to the LLM.
 pub const present_files_tool_system_prompt =
     \\## Present Files Tool — Behavior
     \\Use `present_files` to present workspace files (any type: text, images, pdf, zip, code, html, video, audio) as inline-preview cards in the chat.
-    \\- Provide `files` with ABSOLUTE `path` entries (1-10). Each file must exist, be ≤ 50 MiB, and live INSIDE the session working directory — the browser is only served files from there, so a path outside it (e.g. under ~/Downloads) is rejected. To show such a file, copy it into the working directory first (e.g. `bash cp "<path>" "<working-dir>/"`), then present the copy.
+    \\- `cwd` is REQUIRED: the absolute directory this call works in. A relative entry `path` resolves against it; an absolute `path` is used as-is.
+    \\- Provide `files` with `path` entries (1-10, absolute or relative to `cwd`). Each file must exist, be ≤ 50 MiB, and live INSIDE the session working directory — the browser is only served files from there, so a path outside it (e.g. under ~/Downloads) is rejected. To show such a file, copy it into the working directory first (e.g. `bash cp "<path>" "<working-dir>/"`), then present the copy.
     \\- The card renders each file inline: images full-width, html in a sandboxed iframe, text/markdown/code as fetched source, pdf embedded, video/audio with native players; anything else shows a file row with a download button.
     \\- To show generated content inline, first save it with `write_file`, then present the saved file.
     \\- Optional `label` overrides the displayed name; optional `caption` adds a note below the row.
@@ -85,7 +92,7 @@ pub const present_files_tool = AgentTool{
         .description =
         \\Present one or more workspace files as inline-preview cards in the chat transcript. Use this tool when the user asks to "share", "attach", "present", "send", "show", "preview", "render", or "download" a file — or when you just created/edited a file (report, image, export, notes, html page) and want the user to see it inline with one click to download.
         \\
-        \\INPUT: files (required, array of 1-10 objects). Each object: path (required, ABSOLUTE path to an existing file, e.g. "/home/user/report.md"), label (optional, short display name — defaults to the filename), caption (optional, note shown below the row).
+        \\INPUT: cwd (required, ABSOLUTE path to the directory this call works in) and files (required, array of 1-10 objects). Each object: path (required — absolute, or relative to `cwd`; e.g. "report.md" or "/home/user/report.md"), label (optional, short display name — defaults to the filename), caption (optional, note shown below the row).
         \\WORKING DIRECTORY: every path must live inside the session working directory — that is the only place the browser can be served the bytes from, so a file outside it is rejected (copy it into the working directory first with `bash cp`).
         \\
         \\BEHAVIOUR: The server stats each file (existence, size, mime) and returns metadata only — file bytes are served on demand via GET /api/files/download (disposition=inline for previews, attachment for downloads). The card renders each file inline: images (jpg/png/gif/webp/svg) full-width with click-to-fullscreen, html in a sandboxed iframe with an "open in new tab" action, text/markdown/code (md/txt/json/csv/log/zig/ts/py/js/css) as fetched source with syntax-aware rendering, pdf embedded, video/audio with native players; every other type (zip, etc.) renders a file row with a download button. Files must be ≤ 50 MiB each, must live inside the session working directory, and must not contain `..`; a path outside the working directory, a missing file, a directory, a relative path and an oversized file are all rejected with a structured error naming the offending path.
@@ -100,10 +107,15 @@ pub const present_files_tool = AgentTool{
                 .{
                     .name = "files",
                     .type = "array",
-                    .description = "1-10 file objects to present. Each: {path (absolute), label? (display name), caption? (note)}.",
+                    .description = "1-10 file objects to present. Each: {path (absolute, or relative to `cwd`), label? (display name), caption? (note)}.",
+                },
+                .{
+                    .name = "cwd",
+                    .type = "string",
+                    .description = "REQUIRED. Absolute path to the directory this call works in. A relative `path` resolves against it; an absolute `path` is used as-is. Pass the tree you are actually editing (your worktree root, NOT the server's directory).",
                 },
             },
-            .required = &.{"files"},
+            .required = &.{ "files", "cwd" },
         },
         .system_prompt = present_files_tool_system_prompt,
     },

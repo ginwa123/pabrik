@@ -8,12 +8,17 @@ const agent = pabrikcore.agent;
 const list_directory_mod = pabrikcore.list_directory;
 const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("tools_error_explain.zig");
+const path_validate = @import("helpers").path_validate;
 const testing = std.testing;
 
 const ListDirectoryInput = struct {
     path: []const u8 = ".",
     hidden: bool = false,
     respect_ignore_files: bool = true,
+    /// REQUIRED on the wire. Absolute directory this call works in; a
+    /// relative `path` resolves against it. Empty by default so this struct
+    /// stays constructible, but the exec rejects an empty value.
+    cwd: []const u8 = "",
 };
 
 pub fn execListDirectory(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
@@ -31,14 +36,23 @@ pub fn execListDirectory(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResu
     };
     defer parsed.deinit();
 
-    // 2. Resolve the model-supplied path against the session cwd.
+    // 2. `cwd` is required (see helpers/path_validate.validateCwd), and the
+    //    model's directory resolves against it.
+    path_validate.validateCwd(parsed.value.cwd) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "list_directory", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+
+    // 2b. Resolve the model-supplied path against the call's `cwd`.
     // `execute_list_directory` reaches `std.Io.Dir.openDirAbsolute`, whose
     // precondition is `assert(path.isAbsolute(...))` — in a Debug build that
     // becomes `unreachable`, which panics and aborts the WHOLE worker instead
     // of returning an error. Passing the raw relative path straight through
     // (what this wrapper used to do) crashed the process for the documented
     // `path: "frontend/src"` call.
-    const dir_path_abs = try resolveAgainstCwd(ctx, parsed.value.path);
+    const dir_path_abs = try path_validate.resolveAgainstCwd(ctx.allocator, parsed.value.cwd, parsed.value.path);
     defer ctx.allocator.free(dir_path_abs);
 
     // 3. Execute the listing.
@@ -66,30 +80,11 @@ pub fn execListDirectory(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResu
     return ToolExecResult{ .output = output, .output_allocated = true };
 }
 
-/// Resolve a model-supplied directory path to an absolute path.
-///
-/// Contract (mirrors the `list_directory` tool description):
-///   - `""` or `"."`    → the effective session cwd itself
-///   - already absolute → used as-is
-///   - anything else    → relative to the effective session cwd
-///
-/// The base is `ctx.cwd_override orelse ctx.cwd`: `cwd_override` is the worktree
-/// trust anchor when set (forward-compat — nothing assigns it today, so this is
-/// `ctx.cwd` in practice; keep consulting it so a future wiring of that field
-/// does not silently stop affecting path resolution). Caller owns the returned
-/// slice.
-fn resolveAgainstCwd(ctx: ToolExecContext, raw: []const u8) ![]u8 {
-    const effective_cwd = ctx.cwd_override orelse ctx.cwd;
-    const base = if (effective_cwd.len == 0) "." else effective_cwd;
-    if (raw.len == 0 or std.mem.eql(u8, raw, ".")) return ctx.allocator.dupe(u8, base);
-    if (std.fs.path.isAbsolute(raw)) return ctx.allocator.dupe(u8, raw);
-    return std.fs.path.join(ctx.allocator, &.{ base, raw });
-}
-
 // End-to-end proof that the list_directory exec wrapper resolves its
 // input BEFORE reaching the underlying tool. Absolute input is used
-// as-is; relative input is joined onto ctx.cwd (see the
-// "relative LLM path resolves against ctx.cwd" test below).
+// as-is; relative input is joined onto the call's required `cwd` (the
+// shared rule in helpers/path_validate.zig — see the "resolves against
+// the call's cwd" test below).
 test "execListDirectory: absolute path passes through and lists entries" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -142,8 +137,8 @@ test "execListDirectory: absolute path passes through and lists entries" {
     }
     const args_json = try std.fmt.allocPrint(
         a,
-        "{{\"path\":\"{s}\",\"respect_ignore_files\":false}}",
-        .{escaped_path.items},
+        "{{\"path\":\"{s}\",\"cwd\":\"{s}\",\"respect_ignore_files\":false}}",
+        .{ escaped_path.items, escaped_path.items },
     );
     const tc = agent.ToolCall{
         .id = "call_1",
@@ -228,17 +223,14 @@ test "execListDirectory: absolute path returns success envelope without validato
         .environment = null,
     };
 
-    // Splice the path into the arguments JSON. It MUST be escaped: on
-    // Windows `abs_dir` contains `\`, and `{"path":"C:\Users\..."}` is
-    // malformed JSON (`\U` is not a valid escape) — the same trap the
-    // test above already handles with an explicit escape pass.
-    var escaped: std.ArrayList(u8) = .empty;
-    defer escaped.deinit(a);
-    for (abs_dir) |c| {
-        if (c == '\\' or c == '"') try escaped.append(a, '\\');
-        try escaped.append(a, c);
-    }
-    const args = try std.fmt.allocPrint(a, "{{\"path\":\"{s}\"}}", .{escaped.items});
+    // `std.json.Stringify` escapes the Windows separators for us (a raw
+    // `C:\Users\...` inside a JSON string is malformed). `cwd` is a
+    // DIFFERENT absolute base on purpose: absolute input is used as-is, so a
+    // wrapper that joined `path` onto `cwd` would fail the assertion below.
+    const args = try std.json.Stringify.valueAlloc(a, .{
+        .path = abs_dir,
+        .cwd = "/home/user/proj",
+    }, .{});
 
     const tool_call = agent.ToolCall{
         .id = "call_1",
@@ -275,8 +267,10 @@ test "execListDirectory: absolute path returns success envelope without validato
 // model actually sends.
 // =====================================================================
 
-/// Build a ToolExecContext for the wrapper tests. `ctx.cwd` is the session
-/// (or worktree) cwd the LLM's relative paths are resolved against.
+/// Build a ToolExecContext for the wrapper tests. `session_cwd` stands in
+/// for the session's (or worktree's) directory: the tests pass it in the
+/// call's own required `cwd` argument, which is what a relative `path` now
+/// resolves against.
 fn testCtx(
     a: std.mem.Allocator,
     session_cwd: []const u8,
@@ -308,7 +302,7 @@ fn listDirectoryCall(id: []const u8, args: []const u8) agent.ToolCall {
     };
 }
 
-test "execListDirectory: relative 'frontend/src' resolves against ctx.cwd (crash regression)" {
+test "execListDirectory: relative 'frontend/src' resolves against the call's cwd (crash regression)" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
@@ -330,14 +324,16 @@ test "execListDirectory: relative 'frontend/src' resolves against ctx.cwd (crash
     var thinking: bool = false;
     const ctx = testCtx(a, root_abs, &temperature, &thinking);
 
-    // The EXACT arguments JSON the model emitted when the worker aborted.
-    const result = try execListDirectory(
-        ctx,
-        listDirectoryCall(
-            "call_crash",
-            "{\"path\":\"frontend/src\",\"hidden\":false,\"respect_ignore_files\":true}",
-        ),
-    );
+    // The EXACT arguments the model emitted when the worker aborted, plus the
+    // `cwd` the tool now requires. `std.json.Stringify` handles the Windows
+    // separators in `root_abs`.
+    const call_a = try std.json.Stringify.valueAlloc(a, .{
+        .path = "frontend/src",
+        .cwd = root_abs,
+        .hidden = false,
+        .respect_ignore_files = true,
+    }, .{});
+    const result = try execListDirectory(ctx, listDirectoryCall("call_crash", call_a));
     defer if (result.output_allocated) a.free(result.output);
 
     const parsed = try std.json.parseFromSlice(std.json.Value, a, result.output, .{});
@@ -364,14 +360,14 @@ test "execListDirectory: relative 'frontend/src' resolves against ctx.cwd (crash
     try testing.expectEqual(data.get("count").?.integer, @as(i64, @intCast(entries.len)));
 
     // Same relative path, gitignore filtering off — proves `frontend/src`
-    // resolved to <ctx.cwd>/frontend/src (and not the server process cwd).
-    const result2 = try execListDirectory(
-        ctx,
-        listDirectoryCall(
-            "call_crash_no_ignore",
-            "{\"path\":\"frontend/src\",\"hidden\":false,\"respect_ignore_files\":false}",
-        ),
-    );
+    // resolved to <cwd>/frontend/src (and not the server process cwd).
+    const call_b = try std.json.Stringify.valueAlloc(a, .{
+        .path = "frontend/src",
+        .cwd = root_abs,
+        .hidden = false,
+        .respect_ignore_files = false,
+    }, .{});
+    const result2 = try execListDirectory(ctx, listDirectoryCall("call_crash_no_ignore", call_b));
     defer if (result2.output_allocated) a.free(result2.output);
 
     const parsed2 = try std.json.parseFromSlice(std.json.Value, a, result2.output, .{});
@@ -388,7 +384,7 @@ test "execListDirectory: relative 'frontend/src' resolves against ctx.cwd (crash
     try testing.expect(!entries2[0].object.get("is_directory").?.bool);
 }
 
-test "execListDirectory: omitted path lists the session cwd (not the process cwd)" {
+test "execListDirectory: omitted path lists the call's cwd (not the process cwd)" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
@@ -407,10 +403,11 @@ test "execListDirectory: omitted path lists the session cwd (not the process cwd
     var thinking: bool = false;
     const ctx = testCtx(a, root_abs, &temperature, &thinking);
 
-    const result = try execListDirectory(
-        ctx,
-        listDirectoryCall("call_default", "{\"respect_ignore_files\":false}"),
-    );
+    const call = try std.json.Stringify.valueAlloc(a, .{
+        .cwd = root_abs,
+        .respect_ignore_files = false,
+    }, .{});
+    const result = try execListDirectory(ctx, listDirectoryCall("call_default", call));
     defer if (result.output_allocated) a.free(result.output);
 
     const parsed = try std.json.parseFromSlice(std.json.Value, a, result.output, .{});
@@ -427,7 +424,7 @@ test "execListDirectory: omitted path lists the session cwd (not the process cwd
     try testing.expectEqualStrings("only_here.txt", entries[0].object.get("name").?.string);
 }
 
-test "execListDirectory: empty path falls back to the session cwd" {
+test "execListDirectory: an empty path resolves to the call's cwd" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
@@ -446,10 +443,12 @@ test "execListDirectory: empty path falls back to the session cwd" {
     // omitting the field (same class of bug as the migrations' empty-slice
     // binding). `std.fs.path.isAbsolute("")` is false, so this used to be
     // another route into the same assertion.
-    const result = try execListDirectory(
-        ctx,
-        listDirectoryCall("call_empty", "{\"path\":\"\",\"respect_ignore_files\":false}"),
-    );
+    const call = try std.json.Stringify.valueAlloc(a, .{
+        .path = "",
+        .cwd = root_abs,
+        .respect_ignore_files = false,
+    }, .{});
+    const result = try execListDirectory(ctx, listDirectoryCall("call_empty", call));
     defer if (result.output_allocated) a.free(result.output);
 
     const parsed = try std.json.parseFromSlice(std.json.Value, a, result.output, .{});
@@ -475,10 +474,12 @@ test "execListDirectory: non-existent relative path returns an error envelope, n
     var thinking: bool = false;
     const ctx = testCtx(a, root_abs, &temperature, &thinking);
 
-    const result = try execListDirectory(
-        ctx,
-        listDirectoryCall("call_missing", "{\"path\":\"definitely/not/here\",\"respect_ignore_files\":false}"),
-    );
+    const call = try std.json.Stringify.valueAlloc(a, .{
+        .path = "definitely/not/here",
+        .cwd = root_abs,
+        .respect_ignore_files = false,
+    }, .{});
+    const result = try execListDirectory(ctx, listDirectoryCall("call_missing", call));
     defer if (result.output_allocated) a.free(result.output);
 
     const parsed = try std.json.parseFromSlice(std.json.Value, a, result.output, .{});
@@ -489,4 +490,3 @@ test "execListDirectory: non-existent relative path returns an error envelope, n
     // The error names the resolved native path so the LLM can self-correct.
     try testing.expect(std.mem.indexOf(u8, obj.get("error").?.string, missing_dir) != null);
 }
-

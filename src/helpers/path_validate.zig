@@ -38,6 +38,45 @@ fn isReservedDosName(seg: []const u8) bool {
     return false;
 }
 
+/// The ONE rule every path-taking agent tool applies to a model-supplied
+/// `cwd`.
+///
+/// Every file/folder tool requires `cwd`: it is the directory the call works
+/// in, and the base a relative `path` resolves against. Requiring it is what
+/// stops the model from guessing which tree it is editing — before this, a
+/// `search` or `read_file` could silently inherit the SERVER's working
+/// directory instead of the session's worktree and read or write the wrong
+/// checkout (`tools_exec_command.zig` found the same bug for the shell first).
+///
+/// The error names are deliberately `command`'s own
+/// (`error.MandatoryCwdMissing` / `error.CwdNotAbsolute`), because
+/// `tools_error_explain` already renders both as a sentence the model can act
+/// on. One rule, one message, nine tools.
+pub const CwdError = error{ MandatoryCwdMissing, CwdNotAbsolute };
+
+pub fn validateCwd(cwd: []const u8) CwdError!void {
+    if (cwd.len == 0) return error.MandatoryCwdMissing;
+    if (!std.fs.path.isAbsolute(cwd)) return error.CwdNotAbsolute;
+    // A `cwd` reaches `std.fs` / `spawn` exactly like `path` does, so it needs
+    // the same Windows NT-status guard. A name that fails it is not a usable
+    // absolute directory, which is what `CwdNotAbsolute` tells the model.
+    if (invalidPathReason(cwd) != null) return error.CwdNotAbsolute;
+}
+
+/// Resolve a model-supplied path against the `cwd` the same call supplied.
+///
+/// A relative `path` joins onto `cwd`; an absolute `path` is used as-is, so an
+/// agent that already knows the full path is never forced to rewrite it. An
+/// empty `path` — or `"."` — means "the cwd itself", which is the useful
+/// reading for the directory-taking tools (`glob`, `list_directory`, `search`).
+///
+/// Caller owns the returned slice.
+pub fn resolveAgainstCwd(allocator: std.mem.Allocator, cwd: []const u8, raw: []const u8) ![]u8 {
+    if (raw.len == 0 or std.mem.eql(u8, raw, ".")) return allocator.dupe(u8, cwd);
+    if (std.fs.path.isAbsolute(raw)) return allocator.dupe(u8, raw);
+    return std.fs.path.join(allocator, &.{ cwd, raw });
+}
+
 /// Windows NTSTATUS panic guard for a model-supplied path.
 ///
 /// std's Threaded Io backend maps OBJECT_NAME_INVALID / INVALID_PARAMETER /

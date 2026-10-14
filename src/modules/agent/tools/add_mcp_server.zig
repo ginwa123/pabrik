@@ -10,13 +10,11 @@
 //!     transport: "stdio" | "http", // v1 only accepts "stdio"
 //!     command:  string,            // required when transport == "stdio"
 //!     args:     string[]?,         // optional
-//!     cwd:      string?,           // optional
 //!     url:      string?,           // reserved for the HTTP follow-up
 //!     headers:  { key: value }[]?, // reserved for the HTTP follow-up
 //!   }
 //!   output: {"name":...,"transport":"stdio","command":...,
 //!            "args":[...],            // [] when none
-//!            "cwd":...|null,
 //!            "persisted":"false",      // placeholder; exec wrapper substitutes
 //!            "tools":null,             // exec wrapper fills in best-effort
 //!            "note":...}
@@ -59,9 +57,15 @@ pub const Header = struct {
 
 /// Input for `add_mcp_server`. The LLM fills in `name` + `transport`; the
 /// transport-specific fields (`command` for stdio, `url` for HTTP) are
-/// v1-required when the matching transport is selected. `args` / `cwd`
-/// are optional stdio fields. `url` / `headers` are reserved for the
-/// HTTP sibling task (plan 2026-08-28-mcp-streamable-http + agent-tool).
+/// v1-required when the matching transport is selected. `args` is the
+/// optional stdio field. `url` / `headers` are reserved for the HTTP
+/// sibling task (plan 2026-08-28-mcp-streamable-http + agent-tool).
+///
+/// There is deliberately no `cwd`: the parameter was dropped on 2026-10-14.
+/// It only ever reached the success envelope — nothing spawned a process
+/// with it — so it advertised a guarantee the tool did not honour, and the
+/// stdio child's working directory comes from the server's own config entry
+/// (which is stored with the rest of the workspace config).
 pub const AddMcpServerInput = struct {
     /// Server name (key in `mcp_servers`). Must be non-empty and must not
     /// collide with an existing server. Trailing whitespace is NOT
@@ -79,9 +83,6 @@ pub const AddMcpServerInput = struct {
     /// stdio argv. Optional.
     args: ?[]const []const u8 = null,
 
-    /// stdio working directory. Optional.
-    cwd: ?[]const u8 = null,
-
     /// HTTP URL. Reserved for the HTTP sibling task.
     url: []const u8 = "",
 
@@ -95,7 +96,7 @@ pub const AddMcpServerInput = struct {
 pub const add_mcp_server_tool_system_prompt =
     \\## Add MCP Server Tool — Behavior
     \\Use `add_mcp_server` to register a new MCP server at runtime.
-    \\- Provide `name`, `transport="stdio"`, `command`, and optional `args`/`cwd`. The new server's tools become discoverable with `search_tool` on the NEXT iteration; call `use_tool` to make one callable.
+    \\- Provide `name`, `transport="stdio"`, `command`, and optional `args`. The new server's tools become discoverable with `search_tool` on the NEXT iteration; call `use_tool` to make one callable.
     \\- The server's tools are NOT injected into your tool list automatically — MCP tools are progressive.
     \\- v1 supports `stdio` only; `http` will return an error.
     \\
@@ -115,7 +116,6 @@ pub const add_mcp_server_tool = AgentTool{
         \\  - `transport`: `"stdio"`.
         \\  - `command`  : the binary to spawn (e.g. `"npx"`, `"mcp-hello-world"`).
         \\  - `args`     : (optional) command-line args, e.g. `["-y", "@upstash/context7-mcp"]`.
-        \\  - `cwd`      : (optional) working directory for the child process.
         \\
         \\HTTP transport (`url` + `headers`) is reserved for a sibling task and will return a clear error today.
         \\
@@ -145,11 +145,6 @@ pub const add_mcp_server_tool = AgentTool{
                     .description = "stdio command-line args. Optional. Each entry is a single argv string.",
                 },
                 .{
-                    .name = "cwd",
-                    .type = "string",
-                    .description = "stdio working directory. Optional; defaults to inheriting from the parent.",
-                },
-                .{
                     .name = "url",
                     .type = "string",
                     .description = "HTTP URL. Reserved for the HTTP sibling task — currently ignored, returns an error.",
@@ -175,7 +170,6 @@ pub const add_mcp_server_tool = AgentTool{
 /// Returns a JSON string for the LLM. The success payload carries:
 ///   - `name`, `transport`, `command` — what was added
 ///   - `args` — array of argv strings ([] when none)
-///   - `cwd` — null when absent
 ///   - `persisted` — disk-write outcome (only the exec wrapper can
 ///     persist; pure fn reports `"false"` as a placeholder the wrapper
 ///     substitutes)
@@ -208,7 +202,6 @@ pub fn executeAddMcpServerToJSON(
         .name = input.name,
         .command = input.command,
         .args = input.args,
-        .cwd = input.cwd,
     }) catch |err| {
         // Free the per-error allocated msg (when present) before returning.
         // `jsonError` does NOT take ownership of the message slice; it
@@ -275,15 +268,11 @@ fn successJSON(
         for (a) |arg| try clean_args.append(allocator, try sanitize(allocator, arg));
     }
 
-    const clean_cwd: ?[]u8 = if (input.cwd) |c| try sanitize(allocator, c) else null;
-    defer if (clean_cwd) |c| allocator.free(c);
-
     return std.json.Stringify.valueAlloc(allocator, .{
         .name = clean_name,
         .transport = clean_transport,
         .command = clean_command,
         .args = clean_args.items,
-        .cwd = clean_cwd,
         .persisted = "false",
         .tools = @as(?[]const u8, null),
         .note = "MCP server registered in the live config. Its tools will appear as mcp_<server>_<tool> in your next system-prompt rebuild. Disk persistence + live-reload are performed by the exec wrapper.",
@@ -473,53 +462,15 @@ test "add_mcp_server_tool JSON schema: name=add_mcp_server, required includes na
     try testing.expect(std.mem.indexOf(u8, description, "add_mcp_server") != null);
     try testing.expect(std.mem.indexOf(u8, description, "stdio") != null);
 
-    // Required: name + transport + command. cwd/args/url/headers are optional.
+    // Required: name + transport + command. args/url/headers are optional.
     try testing.expectEqual(@as(usize, 3), tool.function.parameters.required.len);
     try testing.expectEqualStrings("name", tool.function.parameters.required[0]);
     try testing.expectEqualStrings("transport", tool.function.parameters.required[1]);
     try testing.expectEqualStrings("command", tool.function.parameters.required[2]);
 
-    // Properties: 7 fields (name, transport, command, args, cwd, url, headers).
-    try testing.expectEqual(@as(usize, 7), tool.function.parameters.properties.len);
-}
-
-// ─── Test 7: cwd emitted in the success envelope when provided ─────────
-
-test "executeAddMcpServerToJSON: cwd block emitted when provided" {
-    const alloc = testing.allocator;
-    var cfg = try fixtureConfig(alloc);
-    defer cfg.deinit();
-
-    const result = try add_mcp_server_mod.executeAddMcpServerToJSON(alloc, testing.io, &cfg, .{
-        .name = "in-cwd",
-        .transport = "stdio",
-        .command = "mcp-hello-world",
-        .cwd = "/opt/mcp",
-    });
-    defer alloc.free(result);
-
-    const parsed7 = try parseTestJson(alloc, result);
-    defer parsed7.deinit();
-    try testing.expectEqualStrings("/opt/mcp", parsed7.value.object.get("cwd").?.string);
-}
-
-// ─── Test 8: cwd block omitted when null ────────────────────────────────
-
-test "executeAddMcpServerToJSON: cwd block omitted when null" {
-    const alloc = testing.allocator;
-    var cfg = try fixtureConfig(alloc);
-    defer cfg.deinit();
-
-    const result = try add_mcp_server_mod.executeAddMcpServerToJSON(alloc, testing.io, &cfg, .{
-        .name = "no-cwd",
-        .transport = "stdio",
-        .command = "mcp-hello-world",
-    });
-    defer alloc.free(result);
-
-    const parsed8 = try parseTestJson(alloc, result);
-    defer parsed8.deinit();
-    try testing.expect(parsed8.value.object.get("cwd").? == .null);
+    // Properties: 6 fields (name, transport, command, args, url, headers).
+    // `cwd` was dropped on 2026-10-14 — see the input-struct doc comment.
+    try testing.expectEqual(@as(usize, 6), tool.function.parameters.properties.len);
 }
 
 // ─── Test 9: <args> block omitted when args is null ─────────────────────

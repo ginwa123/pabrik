@@ -35,6 +35,7 @@ const agent_present_files_test = @import("agent_present_files_test.zig");
 const agent_routines_test = @import("agent_routines_test.zig");
 const agent_system_prompt_test = @import("agent_system_prompt_test.zig");
 const agent_tools_defaults_test = @import("agent_tools_defaults_test.zig");
+const agent_tools_path_params_test = @import("agent_tools_path_params_test.zig");
 const agent_tools_toggle_test = @import("agent_tools_toggle_test.zig");
 const agent_video_upload_test = @import("agent_video_upload_test.zig");
 const agent_workspace_history_test = @import("agent_workspace_history_test.zig");
@@ -187,6 +188,7 @@ pub const suites = .{
     agent_routines_test,
     agent_system_prompt_test,
     agent_tools_defaults_test,
+    agent_tools_path_params_test,
     agent_tools_toggle_test,
     agent_video_upload_test,
     agent_workspace_history_test,

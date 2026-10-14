@@ -19,7 +19,6 @@ const read_workspace_session_mod = pabrikcore.read_workspace_session_tool;
 const document_mod = pabrikcore.document_tool;
 const use_skill_mod = pabrikcore.skill_tools;
 const remove_skill_mod = pabrikcore.skill_tools;
-const list_agents_mod = pabrikcore.list_agents;
 const add_skill_mod = pabrikcore.skill_tools;
 const edit_skill_mod = pabrikcore.skill_tools;
 const set_git_worktree_mod = pabrikcore.set_git_worktree;
@@ -37,9 +36,7 @@ const move_element_to_page_mod = pabrikcore.move_element_to_page;
 const present_files_mod = pabrikcore.ai_mod.present_files;
 const get_design_context_mod = pabrikcore.get_design_context;
 const preview_design_page_mod = pabrikcore.preview_design_page;
-const remove_agent_mod = pabrikcore.remove_agent;
 const remove_file_mod = pabrikcore.remove_file;
-const change_agent_mod = pabrikcore.change_agent;
 const web_search_mod = pabrikcore.web_search;
 const generate_image_mod = pabrikcore.generate_image;
 // Workspace credential discovery. Listed here so `filterAndMergeTools` can

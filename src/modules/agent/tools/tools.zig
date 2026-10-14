@@ -1,12 +1,9 @@
 // Re-export all public tool definitions for convenience
-pub const agents = @import("agents.zig");
-pub const list_agents = @import("list_agents.zig");
 pub const memories = @import("memories.zig");
 pub const list_memory = @import("list_memory.zig");
 pub const memory = @import("memory.zig");
 pub const save_memory = memory;
 pub const load_memory = memory;
-pub const change_agent = @import("change_agent.zig");
 pub const web_search = @import("web_search.zig");
 pub const skill_tools = @import("skill_tools.zig");
 pub const add_skill = skill_tools;
@@ -18,9 +15,7 @@ pub const set_pull_request = @import("set_pull_request.zig");
 pub const status_pull_request = @import("status_pull_request.zig");
 pub const pr_provider = @import("pr_provider.zig");
 
-pub const list_agents_tool = list_agents.list_agents_tool;
 pub const list_memory_tool = list_memory.list_memory_tool;
-pub const change_agent_tool = change_agent.change_agent_tool;
 pub const web_search_tool = web_search.web_search_tool;
 pub const add_skill_tool = skill_tools.add_skill_tool;
 pub const edit_skill_tool = skill_tools.edit_skill_tool;

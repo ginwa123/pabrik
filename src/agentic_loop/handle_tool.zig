@@ -2081,7 +2081,12 @@ fn readFileCall(allocator: std.mem.Allocator, path: []const u8) !agent.ToolCall 
     // that the tool arg parser rejects. No-op on POSIX paths.
     const escaped = try jsonEscapePath(allocator, path);
     defer allocator.free(escaped);
-    const args = try std.fmt.allocPrint(allocator, "{{\"path\":\"{s}\"}}", .{escaped});
+    // `cwd` is required by read_file (the directory the call works in); its
+    // own directory is the honest value for a test that only cares which
+    // file was read.
+    const escaped_dir = try jsonEscapePath(allocator, std.fs.path.dirname(path) orelse path);
+    defer allocator.free(escaped_dir);
+    const args = try std.fmt.allocPrint(allocator, "{{\"path\":\"{s}\",\"cwd\":\"{s}\"}}", .{ escaped, escaped_dir });
     return agent.ToolCall{ .id = "call_hook_dispatch", .function = .{ .name = "read_file", .arguments = args } };
 }
 
@@ -2175,7 +2180,12 @@ test "hook dispatch: pre modify rewrites args seen by exec" {
     // ([[...]] disables Lua escape processing, so the JSON arrives
     // verbatim and `\\` stays valid JSON for the tool arg parser).
     const escaped = try jsonEscapePath(dispatch_alloc, other_abs);
-    const lua_source = try std.fmt.allocPrint(dispatch_alloc, "function init(event, data) if event == 'pre_tool_use' then return {{ arguments = [[{{\"path\":\"{s}\"}}]] }} end return nil end\n", .{escaped});
+    // The hook REPLACES the whole arguments object, so the replacement has to
+    // carry every field the tool requires — including `cwd` (the directory
+    // the call works in). That makes this test strictly stronger: the
+    // rewritten body is the one the exec acted on.
+    const escaped_root = try jsonEscapePath(dispatch_alloc, path_buf[0..n]);
+    const lua_source = try std.fmt.allocPrint(dispatch_alloc, "function init(event, data) if event == 'pre_tool_use' then return {{ arguments = [[{{\"path\":\"{s}\",\"cwd\":\"{s}\"}}]] }} end return nil end\n", .{ escaped, escaped_root });
     var fx = try hookFixture(dispatch_alloc, lua_source, &path_buf);
     defer fx.deinit();
 
@@ -2454,7 +2464,11 @@ fn writeFileCall(
     defer allocator.free(abs);
     const escaped = try jsonEscapePath(allocator, abs);
     defer allocator.free(escaped);
-    const args = try std.fmt.allocPrint(allocator, "{{\"path\":\"{s}\",\"content\":{s}}}", .{ escaped, content_json });
+    // `cwd` is required by write_file; the target's directory is the value
+    // that keeps these tests about the SECRETS substitution, not about cwd.
+    const escaped_dir = try jsonEscapePath(allocator, path_buf[0..n]);
+    defer allocator.free(escaped_dir);
+    const args = try std.fmt.allocPrint(allocator, "{{\"path\":\"{s}\",\"cwd\":\"{s}\",\"content\":{s}}}", .{ escaped, escaped_dir, content_json });
     return agent.ToolCall{ .id = id, .function = .{ .name = "write_file", .arguments = args } };
 }
 
