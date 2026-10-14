@@ -35,6 +35,13 @@ pub const SkillEvalToolRule = core.SkillEvalToolRule;
 // tools it names (`add_skill` / `edit_skill`) are always equipped, so gating
 // on them would only fragment the cached prefix.
 pub const SkillWriteToolRule = core.SkillWriteToolRule;
+// Session VCS binding: a worktree and a pull request each have a tool that does
+// the git/filesystem half AND writes the session's binding — the shell command
+// only does the git half. Unconditional, like the mandates above, and each rule
+// names its own `search_tool` → `use_tool` hatch because neither tool is in
+// `DEFAULT_AGENT_TOOLS`.
+pub const GitWorktreeToolRule = core.GitWorktreeToolRule;
+pub const PullRequestToolRule = core.PullRequestToolRule;
 pub const ReadWorkspaceSessionToolRule = core.ReadWorkspaceSessionToolRule;
 // Workspace credentials: the `{{SECRETS:NAME}}` placeholder and the
 // never-echo-the-value rule. Unlike the four unconditional rules above this

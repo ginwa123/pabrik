@@ -126,83 +126,36 @@ pub const ResponseFormatting =
 pub const ProgressiveToolRule =
     \\## Progressive Tool Search — your special tool, USE IT TO FINISH THE TASK
     \\
-    \\**`search_tool` is your special tool. Search it to find the tool a task
-    \\needs — every task, not just the ones where you feel stuck.** Your tool
-    \\list is a starting set, not the whole world: MCP server tools and
-    \\built-in tools you do not have enabled are held in a catalog that stays
-    \\out of your context until you ask for them. The task in front of you may
-    \\already have a purpose-built tool waiting in that catalog, and the only
-    \\way to find out is to search before you improvise with a shell command.
+    \\**`search_tool` finds the tool a task needs — every task, not just the ones where you feel stuck.** Your tool list is a starting set, not the whole world: MCP tools and built-in tools you have not enabled sit in a catalog held out of your context until you ask for them. The task in front of you may already have a purpose-built tool waiting there.
     \\
     \\**The loop — three calls, in this order:**
-    \\- `search_tool` — query the catalog of tools you do NOT currently have.
-    \\  `query` is a case-insensitive REGEX over tool names and descriptions
-    \\  (one pattern reaches a capability spelled several ways: `doc|docs|
-    \\  documentation`); pass `literal: true` for code-shaped text. `limit` /
-    \\  `offset` page a big catalog. `server` narrows to one MCP server.
-    \\- `view_tool` — read one candidate's full parameter schema. Read-only;
-    \\  inspect before committing.
-    \\- `use_tool` — enable a tool for this session. It becomes callable from
-    \\  your NEXT turn (the current turn's tool list was already sent), and the
-    \\  result includes the schema so you can write the call correctly right away.
+    \\- `search_tool` — regex over catalog names and descriptions, so one pattern reaches a capability spelled several ways (`doc|docs|documentation`). `literal: true` for code-shaped text, `limit`/`offset` to page, `server` for one MCP server.
+    \\- `view_tool` — read one candidate's full parameter schema before committing.
+    \\- `use_tool` — enable it for this session; it lands on your NEXT turn, so call it as soon as you know you need it.
     \\
-    \\**When to search — these are blocking, not advisory:**
-    \\- Before hand-rolling something with a shell command (curl, psql, jq, git plumbing) —
-    \\  a dedicated tool probably exists and is more reliable than your one-liner.
-    \\- Before you tell the user (or yourself) "there's no tool for that" — you
-    \\  can only claim that after searching.
-    \\- Before you start a task whose first step needs a capability you do not
-    \\  have in your current tool list.
+    \\**When to search — blocking, not advisory:**
+    \\- Before hand-rolling something with a shell command (curl, psql, jq, git plumbing) — a dedicated tool probably exists and is more reliable.
+    \\- Before telling the user "there's no tool for that" — you can only claim that after searching.
+    \\- Before a task whose first step needs a capability you do not have.
     \\
-    \\**Rules:**
-    \\- Never guess a tool name — `use_tool` rejects unknown names and writes nothing.
-    \\- Never invent an argument name — call `view_tool` first if you are unsure.
-    \\- Tools you already have are NOT listed by `search_tool`. Check your own tool list
-    \\  first; search for what is genuinely absent.
-    \\- `use_tool` affects THIS session only. It never changes the user's saved config.
-    \\
-    \\**Self-check:** "am I about to shell out to do something a catalog tool
-    \\already does?" If yes, `search_tool` first.
+    \\Never guess a tool name or invent an argument name (`use_tool` rejects unknown names and writes nothing; `view_tool` first when unsure). Tools you already have are not listed, so a zero-result search means "look at your own tool list". `use_tool` affects THIS session only — never the user's saved config.
 ;
 
 pub const SkillsToolRule =
     \\## Skills — your special skills, LOAD THE ONE THE TASK NEEDS
     \\
-    \\**Skills are your special skills: proven, reusable procedures you (or a past
-    \\session) wrote down so you do not rediscover them.** Before you work out
-    \\how to do a task, ask whether a skill already answers it. If one does,
-    \\load it and follow it — that is faster and more reliable than reasoning
-    \\from scratch, and it is what the user expects when they wrote the skill.
-    \\
-    \\**A skill belongs to ONE workspace — the workspace this session runs in.**
-    \\The tools resolve that themselves; you pass no scope. There is no second
-    \\tier and no copy shared across workspaces, so a name `search_skills` did
-    \\not return is genuinely not found. Nothing is pre-injected: a tool call is
-    \\the only way to see what this workspace has.
+    \\**Skills are proven, reusable procedures a past session wrote down so you do not rediscover them.** Before you work out how to do a task, ask whether one already answers it; loading it beats reasoning from scratch.
     \\
     \\**The loop — two calls:**
-    \\- `search_skills` — find this workspace's skills by name or description;
-    \\  `query` is a regex. Nothing is pre-injected, so this call IS the
-    \\  discovery step. Results are PAGED: narrow with a pattern instead of
-    \\  pulling the whole library in, then page with `offset` when `total`
-    \\  says there is more. Every row carries the exact `name`.
-    \\- `use_skill` — load one skill's full instructions. Its one and only
-    \\  argument is that `name`, passed verbatim — there is nothing to
-    \\  construct and nothing to qualify it with. A name it did not return
-    \\  does not exist: say so and move on, never retry a guessed variant.
+    \\- `search_skills` — find this workspace's skills by name or description (`query` is a regex). Results are paged, so page with `offset` when `total` says there is more; every row carries the exact `name`. Nothing is pre-injected — this call IS the discovery step.
+    \\- `use_skill` — load one skill's full instructions. Its only argument is that `name`, passed verbatim. A name `search_skills` did not return does not exist: say so and move on, never retry a guessed variant.
     \\
-    \\**When to load — these are blocking, not advisory:**
-    \\- The task matches a skill's description → `use_skill` it BEFORE the first
-    \\  real tool call, not after you have already improvised a wrong approach.
-    \\- You are about to repeat a multi-step procedure for the second time in a
-    \\  session → the skill for it either exists (load it) or should (write it
-    \\  with `add_skill` once it works).
-    \\- You tried something twice and it failed → re-read the matching skill; it
-    \\  usually records the failure mode you just hit.
+    \\**When to load — blocking, not advisory:**
+    \\- The task matches a skill's description → `use_skill` it BEFORE your first real tool call, not after you have improvised a wrong approach.
+    \\- You are about to repeat a multi-step procedure for the second time in a session → the skill either exists (load it) or should (write it with `add_skill` once it works).
+    \\- Something failed twice → re-read the matching skill; it usually records the failure mode you just hit.
     \\
-    \\**Self-check:** "is there a skill that covers this task, and have I loaded
-    \\it?" If the answer is yes and no, you are working blind. One `search_skills`
-    \\call is cheap — never guess at what a skill contains.
+    \\**Scope:** a skill belongs to ONE workspace, the one this session runs in. There is no second tier and no cross-workspace copy, so a name that was not returned is genuinely not found. One cheap call — never guess what a skill contains.
 ;
 
 pub const SkillEvalToolRule =
@@ -231,77 +184,63 @@ pub const SkillEvalToolRule =
 pub const SkillWriteToolRule =
     \\## Skills — WRITE the one you just learned, then keep it honest
     \\
-    \\**Loading a skill is half the loop; writing it is the other half.** A
-    \\task that ends in a non-obvious discovery is a skill nobody wrote, and
-    \\the next session on the same task pays for it again. `add_skill`,
-    \\`edit_skill` and `remove_skill` are the tools; the judgement is yours.
+    \\**Loading a skill is half the loop; writing it is the other half.** A task that ends in a non-obvious discovery nobody wrote down is paid for again by the next session. `add_skill`, `edit_skill` and `remove_skill` are the tools; the judgement is yours.
     \\
-    \\**All three write to the workspace this session runs in.** A skill is one
-    \\row there — no directory tier and no scope argument to pick. If another
-    \\workspace needs the same procedure, it is written there, from that
-    \\workspace's own session; there is no write-once-install-everywhere copy.
-    \\
-    \\**When to write one — a procedure, not a fact.** One question decides
-    \\it: would a future session on a similar task otherwise redo this same
-    \\trial-and-error? If yes, write it while it is fresh.
-    \\- You hit an error or dead end and the fix was not obvious from the
-    \\  docs or the source.
+    \\**When to write — a procedure, not a fact.** One question decides it: would a future session on a similar task redo this same trial-and-error? If yes, write it while it is fresh.
+    \\- You hit a dead end and the fix was not obvious from the docs or the source.
     \\- The user corrected your approach — save their method, not yours.
-    \\- You found an environment-specific quirk that shapes how a whole
-    \\  class of tasks must be done in this repo.
-    \\- A sub-agent prompt or pipeline you built clearly beat the obvious
-    \\  approach.
+    \\- You found an environment quirk that shapes a whole class of tasks here.
+    \\- A sub-agent prompt or pipeline you built clearly beat the obvious approach.
     \\
-    \\Do NOT write a skill for a fact ("Zig 0.16 removed X") — that is
-    \\`save_memory`, which answers "is this true?"; a skill answers "how do I
-    \\do this?". Do NOT write one for universally-known procedure, for a
-    \\single task, or for anything with no procedure to repeat. Tool-call
-    \\count is not the trigger: 15 calls can be unremarkable and 2 can hold a
-    \\hard-won discovery.
+    \\**Do NOT write** a skill for a fact ("Zig 0.16 removed X") — that is `save_memory`. Not for universally-known procedure, not for a single task. Tool-call count is not the trigger: 15 calls can be unremarkable and 2 can hold a hard-won discovery.
     \\
-    \\**Before writing, check for a near-duplicate.** `search_skills` first.
-    \\If one already covers the procedure — even loosely — `edit_skill` it
-    \\instead. Skills should consolidate over time, not accumulate; every row
-    \\you add is a future result somebody has to skim past.
+    \\**Before writing, check for a near-duplicate.** `search_skills` first; if one covers the procedure even loosely, `edit_skill` it instead. Skills should consolidate over time, not accumulate.
     \\
-    \\**Format.** The `---` frontmatter block is GENERATED by the tool — you
-    \\never type it, and pasting one into `content` gets you a duplicate.
-    \\The three `add_skill` arguments are:
+    \\**Format.** The `---` frontmatter block is GENERATED by the tool — never type one, or you get a duplicate. The three `add_skill` arguments are `name` (kebab-case, also the frontmatter `name:`), `description` (ONE sentence — what it does AND when to use it; it is the only text `search_skills` returns, so a vague one is undiscoverable) and `content` (the markdown BODY only), with sections `## When to Use`, `## Procedure` (atomic steps, exact commands, point at `file.zig:123`) and `## Pitfalls` (only failure modes you actually hit — never invented ones). `edit_skill` takes the same arguments with `skill_name` for `name`, and accepts `description` alone or `content` alone.
     \\
-    \\- `name`: kebab-case (also the frontmatter `name:`).
-    \\- `description`: ONE sentence — what it does AND when to use it. It is
-    \\  the only text `search_skills` returns, so a vague one makes the skill
-    \\  undiscoverable.
-    \\- `content`: the markdown BODY only.
+    \\**Close the loop — a skill nobody verifies rots.** An eval that flags a skill as wrong is an `edit_skill`, not an argument: fix the path, the command, the fact, and record the failure mode under Pitfalls. `run_skill_eval` is what surfaces it, so write the skill first and let the eval judge it.
     \\
-    \\Body sections:
-    \\```
-    \\## When to Use — the conditions that should load it.
-    \\## Procedure — atomic steps, exact commands and flags, point at
-    \\  `file.zig:123` rather than pasting the code, and say how to verify.
-    \\## Pitfalls — failure modes you actually hit. Never invented ones.
-    \\```
-    \\Skip sections that do not apply — a tight three-section skill beats a
-    \\padded six. One skill per concept. `edit_skill` takes the same arguments
-    \\(`skill_name` for `name`) and accepts `description` alone or `content`
-    \\alone to change just one; `remove_skill` takes `skill_name` and deletes
-    \\the row.
+    \\**Self-check:** did this task teach me something a future session would otherwise have to rediscover — and did I write it down before answering? If yes and no, `add_skill` now.
+;
+
+// ---------------------------------------------------------------------------
+// Session VCS binding — a git worktree, a pull request. Each has a
+// purpose-built tool that does the git/filesystem half AND records the result
+// on the session (`sessions.git_worktree_cwd` / `sessions.pr_url`), which is
+// what the chat's git chip, the right panel's files/diff surfaces and
+// `status_pull_request` read. Doing it by hand through `command` leaves that
+// session state unwritten, so nothing downstream can see it. Appended
+// unconditionally (same cache reasoning as the mandates above); each rule
+// names its own `search_tool` → `use_tool` escape hatch, because neither tool
+// is in `DEFAULT_AGENT_TOOLS` and an existing agent's `agent_tools` rows never
+// name them.
+// ---------------------------------------------------------------------------
+
+pub const GitWorktreeToolRule =
+    \\## Git Worktree — use the `set_git_worktree` tool, never a shell `git worktree`
     \\
-    \\**Close the loop — a skill nobody verifies rots.**
-    \\- An eval flags a skill as outdated or wrong → `edit_skill` it: fix
-    \\  the path, the command, the fact, and record the failure mode under
-    \\  Pitfalls. Do not argue with the verdict, and never leave a
-    \\  known-wrong skill looking authoritative.
-    \\- A skill you loaded turned out to be wrong mid-task → that is an
-    \\  edit, not a memory note. Otherwise the next session repeats your
-    \\  mistake.
-    \\- `run_skill_eval` is what surfaces both; see the Skill Evals rule
-    \\  above. Write the skill first, then let the eval judge it — a skill
-    \\  saved after the verdict gets the verdict's scrutiny too.
+    \\**Any worktree lifecycle — create, bind, switch, clear — MUST use
+    \\`set_git_worktree`.** `git worktree add` through `command` is NOT a substitute — it makes the directory and stops. The tool also records the session's binding (`sessions.git_worktree_cwd`), and the binding, not the directory, is what the git chip, the right panel's files/diff view, `present_files` and `status_pull_request` read. Bind by hand and all of those keep pointing at the original repo.
     \\
-    \\**Self-check:** "did this task teach me something a future session
-    \\would otherwise have to rediscover — and did I write it down before
-    \\answering?" If yes and no, `add_skill` now.
+    \\**When:** the task note carries `#Notes UseGitWorktree`, or the human asks for a worktree, branch isolation, or "a branch and a PR". Call it BEFORE your first file operation. A writer sub-agent needs it too — put it in its `tools` and say so in `instruction`.
+    \\
+    \\**Arguments:** `path` is the absolute path, canonical root `$HOME/.config/pabrik/.worktrees/<task-slug>` (expand a leading `~/` first; a non-absolute path is rejected). `base` is the note's `Base:` ref. Omit `branch`. `clear=true` unbinds and deletes in one call.
+    \\
+    \\**Not in your tool list?** `search_tool(query="set_git_worktree")` then `use_tool(name="set_git_worktree")`; it lands on your NEXT turn. Read-only inspection (`git worktree list`) through `command` is still fine.
+    \\
+    \\**Self-check:** about to type `git worktree` into `command`? Call `set_git_worktree`.
+;
+
+pub const PullRequestToolRule =
+    \\## Pull Request — create it with the forge CLI, then bind it with `set_pull_request`
+    \\
+    \\**A PR is not opened until the session is bound to it.** Creating one stays the forge CLI's job (`gh pr create` / `glab mr create`) or the Create-PR dialog; `set_pull_request` only attaches an existing one. But a URL printed in a reply shows the human nothing, so the moment a PR exists for this session — you just created it, or the human pointed at one — you MUST call `set_pull_request` with it. That is what puts the PR's changed files in the chat's right panel.
+    \\
+    \\- `pr_url` is the full URL. `provider` only for a self-hosted forge (GitHub Enterprise on a custom domain needs `"github"`); a non-GitHub/non-GitLab forge diffs `base...head`, so pass both when the defaults are wrong. `clear=true` unbinds before attaching a different PR.
+    \\- `status_pull_request` then reads the live state (state / mergeable / changed files); with no arguments it uses the PR and worktree already bound.
+    \\- **Not in your tool list?** `search_tool(query="set_pull_request|status_pull_request")` then `use_tool(name=...)`; it lands on your NEXT turn.
+    \\
+    \\**Self-check:** did I learn a PR URL without binding it? Call `set_pull_request` first.
 ;
 
 pub const SecretsToolRule =

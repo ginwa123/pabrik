@@ -140,6 +140,15 @@ pub fn buildMessages(
     // the default equipped set, so a gate on them would be a constant that
     // costs a cacheable-prefix fragment and buys nothing.
     try final_system.appendSlice(allocator, prompts_const.SkillWriteToolRule);
+    // Session VCS binding: a worktree and a pull request. Unconditional like
+    // the mandates above — and necessarily so, because these two tools are NOT
+    // in `DEFAULT_AGENT_TOOLS`: a `hasTool` gate would show the rule only to
+    // the agent that already has the tool, never to the one about to
+    // hand-roll `git worktree add`. Each rule names its own `search_tool` →
+    // `use_tool` hatch, so an unconditional append cannot teach a call that
+    // dispatches to `error.UnknownTool`.
+    try final_system.appendSlice(allocator, prompts_const.GitWorktreeToolRule);
+    try final_system.appendSlice(allocator, prompts_const.PullRequestToolRule);
     // Workspace credentials. GATED, unlike the four rules above, and the
     // difference is the whole point: `list_secrets` is not in every agent's
     // tool list the way `read_workspace_session` is. It is injected past the
