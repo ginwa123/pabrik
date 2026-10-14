@@ -616,3 +616,29 @@ progress, twice, on different shards. Investigated rather than assumed:
 
 So the residual risk is a test-RUNNER stall in this environment, not a failing assertion. Worth its
 own investigation, and it is recorded here rather than papered over.
+
+---
+
+## 12. Follow-up — the ceiling is now 10 minutes
+
+At the maintainer's request, `MAX_TIMEOUT_SEC` is **600** (was 60, set by PR #916). The ceiling is a
+refusal threshold, not an expectation: the schema still asks for a few seconds for `ls`. What changed
+is that a real build or test suite no longer *has* to detach and be polled — it can run in the
+foreground inside one turn.
+
+The trade is stated in the constant's doc comment: a genuinely hung foreground command now holds the
+turn for up to ten minutes instead of one. The property that matters is preserved — there is still a
+deadline, still enforced before a child is spawned, and still far below "no deadline".
+
+Updated with it: the schema text (`1–600`, `above 600`, `max 600`) in `command.zig`, the two
+`tools_error_explain` messages, and the assertions in `tools_error_explain.zig` /
+`tools_exec_command.zig`.
+
+**Those two assertions had to change for a second reason.** They asserted the escape-hatch text
+`background=true` — the pre-`mode` spelling. The prose now names the current field and value,
+`mode="background"`, and the assertions follow it. That is the more useful message anyway: a model
+that cannot see the field *and* the value has nothing to send, whereas "use a detached mode" is a
+description of an escape hatch rather than one.
+
+Verified: `zig build test --summary all -Dtest-shards=2` → **14/14 steps, 4283/4293 passed
+(10 skipped), 0 failed, no leak lines**.

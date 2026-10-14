@@ -92,7 +92,7 @@ pub const command_result_to_json = shell.result_to_json;
 pub const command_tool_system_prompt =
     \\## Command Tool — Behavior
     \\Host picks the shell: `bash` on Linux/macOS, `pwsh` on Windows (silent `cmd.exe /c` fallback when pwsh is missing).
-    \\Do NOT prefix commands with a shell `timeout` utility — `timeout` (required, max 60) is the only deadline. Bound output with `| head -n <N>` / `| tail -n <N>` (bash) or `| Select-Object -First <N>` (pwsh).
+    \\Do NOT prefix commands with a shell `timeout` utility — `timeout` (required, max 600) is the only deadline. Bound output with `| head -n <N>` / `| tail -n <N>` (bash) or `| Select-Object -First <N>` (pwsh).
     \\Pick `mode` deliberately — it is the difference between blocking your turn and not: `foreground` (default, returns the output inline), `background` (detaches AND queues you a message when it exits — use it for a long build, a test run, a migration), `background_persistence` (detaches and stays SILENT — use it for a dev server or a long-lived watcher, then read its log yourself). Never start a dev server in `foreground` or `background`: a server does not exit, so the only thing `background` would ever queue you is its death, and `foreground` would block until the deadline kills it. Under cmd.exe: no `| head -n`, use cmd syntax (dir / where / type / %VAR% / && / double-quoted URLs).
     \\Set `is_stop=true` to end YOUR turn after this call: the command still runs and any `background=true` process keeps running, but the loop returns to the user instead of calling the model again. Put your final answer in the message content — a `tool_calls` turn normally carries none, so without it the turn ends on a bare tool card.
     \\
@@ -107,7 +107,7 @@ pub const command_tool = AgentTool{
         \\Host picks the shell: `bash -c` on Linux/macOS, `pwsh -NoProfile -NonInteractive -Command` on Windows (silent `cmd.exe /c` fallback when pwsh is missing; background=true fails there instead of detaching).
         \\
         \\## Rules (enforced in code — violations return errors)
-        \\- `timeout`: REQUIRED, the ONLY deadline (max 60). No shell `timeout` prefix — do not add one.
+        \\- `timeout`: REQUIRED, the ONLY deadline (max 600). No shell `timeout` prefix — do not add one.
         \\- `cwd`: REQUIRED absolute path — the directory the command runs in. Never omit it: without it the shell starts in the SERVER's directory, not your worktree, so the command silently acts on the wrong tree.
         \\- Bound output: `| head -n <N>` / `| tail -n <N>` (bash) or `| Select-Object -First <N>` (pwsh); under cmd.exe use max_lines / findstr / more.
         \\- Prefer `search` / `read_file` / `glob` over shell rg/grep/find; use `rg` over grep, `fd` over find, `tree` for directory structure.
@@ -144,9 +144,9 @@ pub const command_tool = AgentTool{
                     .name = "timeout",
                     .type = "number",
                     .description =
-                    \\REQUIRED. Wall-clock seconds before the process is killed (SIGKILL / TerminateProcess). 1–60 only — no default (omitted or 0 returns `TimeoutMissing`), and above 60 returns `TimeoutTooLarge`.
+                    \\REQUIRED. Wall-clock seconds before the process is killed (SIGKILL / TerminateProcess). 1–600 only — no default (omitted or 0 returns `TimeoutMissing`), and above 600 returns `TimeoutTooLarge`.
                     \\This is a FIELD, not a command prefix. The shell `timeout` utility does nothing useful here: putting it inside `command` (as in `timeout <N> ls`) is wrong twice over — it is not the deadline this field is, and the field already does the job. Send the seconds here.
-                    \\Match the value to the job: a few seconds for `ls` / `cat` / `git status`, up to 60 for a build or test run. Work that legitimately needs longer than a minute must NOT run in the foreground — pass a detached `mode` (returns a PID + log path), then read the log.
+                    \\Match the value to the job: a few seconds for `ls` / `cat` / `git status`, a few minutes for a build or a test suite. Ten minutes is the ceiling, and reaching for it is usually a sign the work belongs in a detached `mode` instead — a foreground command holds your turn for exactly as long as this value, so prefer `mode="background"` for anything you would rather be told about when it finishes.
                     ,
                 },
                 .{
@@ -172,7 +172,7 @@ pub const command_tool = AgentTool{
                     .description =
                     \\How this command relates to your turn. Default: "foreground".
                     \\  "foreground"              — runs now, output comes back inline. REQUIRES
-                    \\                              timeout (1-60). For ls, cat, git status,
+                    \\                              timeout (1-600). For ls, cat, git status,
                     \\                              rg — and any build that finishes inside a minute.
                     \\  "background"              — detaches, and a message is QUEUED to you the
                     \\                              moment it exits. For bounded work you must be told

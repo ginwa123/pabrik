@@ -44,7 +44,7 @@ const sanitizeControlChars = helpers.sanitize_control_chars;
 /// The three categories the product asks for, in the order a user meets them:
 ///
 ///   * `foreground`      — the call blocks, the result is returned inline, and
-///                         a `timeout` is REQUIRED (1–60 s).
+///                         a `timeout` is REQUIRED (1–600 s).
 ///   * `background`      — the command detaches and a QUEUE MESSAGE is written
 ///                         when it exits. For a long build, test run or
 ///                         migration — bounded work whose outcome the agent
@@ -183,15 +183,21 @@ pub const MandatoryCwdMissing = error{MandatoryCwdMissing};
 /// the caller believes it named a location.
 pub const CwdNotAbsolute = error{CwdNotAbsolute};
 
-/// Upper bound for a single foreground command: 1 minute.
+/// Upper bound for a single foreground command: 10 minutes.
 ///
-/// A foreground deadline longer than a minute is indistinguishable from a
-/// hung agent — the user watches a spinner while nothing reports progress —
-/// so anything longer is refused BEFORE a child is spawned and the caller is
-/// steered to `background=true` (which detaches and is exempt from this cap)
-/// or to splitting the work into smaller steps. It also turns absurd values
-/// like 120000 (33 h) into an instant, learnable error.
-pub const MAX_TIMEOUT_SEC: u32 = 60;
+/// This is the ceiling, not the expected value: the schema asks for a few
+/// seconds for `ls`, and a caller that reaches for ten minutes is usually
+/// about to block a turn for ten minutes. The cap exists to refuse exactly
+/// that BEFORE a child is spawned — the caller is steered to a detached
+/// `mode` (which outlives the call and is exempt from this cap) or to
+/// splitting the work. It also turns absurd values like 120000 (33 h) into an
+/// instant, learnable error.
+///
+/// It was 60 s. Ten minutes covers a real build or test run without the agent
+/// having to detach and poll for it — at the cost that a genuinely hung
+/// command now holds the turn for ten minutes instead of one. The ceiling is
+/// still far below "no deadline", which is the property that matters.
+pub const MAX_TIMEOUT_SEC: u32 = 600;
 
 // POSIX `nanosleep(req, rem)` — declared as `extern "c"` so the call
 // doesn't go through Zig 0.16's Io runtime. We deliberately avoid
@@ -1908,7 +1914,7 @@ test "shell.execute_shell rejects timeout above MAX_TIMEOUT_SEC" {
     // A huge deadline is the same as no deadline. The over-max guard
     // fires before any child is spawned, so these run on ALL platforms.
     // Boundary: MAX is accepted (validation passes), MAX+1 is rejected.
-    try testing.expectEqual(@as(u32, 60), shell.MAX_TIMEOUT_SEC);
+    try testing.expectEqual(@as(u32, 600), shell.MAX_TIMEOUT_SEC);
 
     const over_max = shell.execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
         .command = "echo should-never-run",

@@ -379,8 +379,8 @@ test "execCommand: an over-max timeout states the ceiling and the alternative" {
     defer if (err_msg) |m| allocator.free(m);
     try testing.expect(err_msg != null);
     // The ceiling, and the way out that is not "retry the same call".
-    try testing.expect(std.mem.indexOf(u8, err_msg.?, "60 seconds or fewer") != null);
-    try testing.expect(std.mem.indexOf(u8, err_msg.?, "background=true") != null);
+    try testing.expect(std.mem.indexOf(u8, err_msg.?, "600 seconds or fewer") != null);
+    try testing.expect(std.mem.indexOf(u8, err_msg.?, "mode=\"background\"") != null);
     try testing.expect(std.mem.indexOf(u8, err_msg.?, "TimeoutTooLarge") == null);
 }
 

@@ -67,11 +67,11 @@ pub fn explain(allocator: std.mem.Allocator, err: anyerror, context: ?[]const u8
         // ── command / shell ────────────────────────────────────────────
         error.TimeoutMissing => try allocator.dupe(
             u8,
-            "`timeout` is required and has no default. It is the only deadline for a foreground command — add \"timeout\": <seconds> (1–60) to the arguments. Use `background=true` instead for a long-running process that must not be killed.",
+            "`timeout` is required and has no default. It is the only deadline for a foreground command — add \"timeout\": <seconds> (1–600) to the arguments. Pass `mode=\"background\"` instead for a process that must outlive the call.",
         ),
         error.TimeoutTooLarge => try allocator.dupe(
             u8,
-            "`timeout` must be 60 seconds or fewer — one minute is the ceiling for a foreground command. Split the work into smaller steps, or pass `background=true` for a process that outlives the call.",
+            "`timeout` must be 600 seconds or fewer — ten minutes is the ceiling for a foreground command. Split the work into smaller steps, or pass `mode=\"background\"` for a process that outlives the call.",
         ),
         error.MandatoryCwdMissing => try allocator.dupe(
             u8,
@@ -792,8 +792,11 @@ test "explain: TimeoutMissing names the field and the fix" {
 test "explain: TimeoutTooLarge states the ceiling and the alternative" {
     const msg = try explain(testing.allocator, error.TimeoutTooLarge, null);
     defer testing.allocator.free(msg);
-    try testing.expect(std.mem.indexOf(u8, msg, "60 seconds or fewer") != null);
-    try testing.expect(std.mem.indexOf(u8, msg, "background=true") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "600 seconds or fewer") != null);
+    // The way out has to be NAMED, not merely alluded to: `mode="background"`
+    // is the current spelling of "detach and tell me when it finishes", and a
+    // model that cannot see the field and the value has nothing to send.
+    try testing.expect(std.mem.indexOf(u8, msg, "mode=\"background\"") != null);
 }
 
 test "explain: a path error interpolates the path it was given" {

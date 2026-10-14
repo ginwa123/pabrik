@@ -2652,9 +2652,9 @@ test "secrets: the shell echo case is scrubbed too (shell.zig puts the command i
     // without either the tool returns an error envelope and never runs a shell,
     // which would leave the leak one layer short and the test below passing for
     // the wrong reason.
-    // 60 also sits at exactly shell.zig's MAX_TIMEOUT_SEC, so an
-    // over-max deadline would short the leak the same way — the minted value
-    // must stay at or under one minute.
+    // 60 is comfortably under shell.zig's MAX_TIMEOUT_SEC (600), so the call
+    // actually reaches the shell — an over-max deadline would short the leak
+    // the same way a missing `cwd` would.
     const args = try std.fmt.allocPrint(
         allocator,
         "{{\"command\":\"echo {{{{SECRETS:TOK}}}}\",\"cwd\":\"/tmp\",\"timeout\":60}}",
