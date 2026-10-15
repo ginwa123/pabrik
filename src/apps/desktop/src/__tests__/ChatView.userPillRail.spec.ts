@@ -11,6 +11,15 @@
  * ChatView is a 4000-line SFC (hard to mount — see
  * ChatView.hiddenMessages.spec.ts). These tests lock the SOURCE-LEVEL
  * invariants so a refactor that reverts any fix is caught immediately.
+ *
+ * The pill-rail GUTTER lives here too. The rail is `position: absolute`,
+ * so it is out of flow and its pills paint straight over the message
+ * bubbles; the wrapper has to reserve the strip. That is a geometry
+ * claim jsdom cannot make (no layout engine, no custom-property
+ * resolution), so what is pinned is the class binding plus the CSS that
+ * consumes it — the two ends that must both exist for the gutter to
+ * appear. The painted result is asserted in a real browser by
+ * tests/functional_ui/chatview_pillrail_overlap_test.py.
  */
 import { describe, it, expect } from 'vitest'
 
@@ -89,5 +98,62 @@ describe('user-pill rail wiring', () => {
     expect(fn![0]).toContain('pill-jump-flash')
     // Index resolved by stable key at click time (SSE may shift positions).
     expect(fn![0]).toContain('findIndex((g) => groupKey(g) === key)')
+  })
+})
+
+describe('pill-rail gutter — the rail must not overlap the transcript', () => {
+  it('the wrapper carries has-pill-rail on the SAME condition as the rail', async () => {
+    // The gutter must exist exactly when the rail does. Two separate
+    // conditions would drift: a rail with no gutter paints over the
+    // messages, a gutter with no rail is dead space in a 1-user-group
+    // chat. Pin the binding to the rail's own `v-if` expression.
+    const source = await readChatViewSource()
+    const wrapper = source.match(
+      /class="relative flex-1 min-h-0 flex flex-col messages-scroll-hide-native"\s*\n\s*:class="\{[^}]*\}"/,
+    )
+    expect(wrapper).not.toBeNull()
+    expect(wrapper![0]).toContain("'has-pill-rail': userPills.length >= 2")
+  })
+
+  it('the gutter is declared as a custom property on the wrapper', async () => {
+    const source = await readChatViewSource()
+    expect(source).toMatch(
+      /\.messages-scroll-hide-native\.has-pill-rail\s*\{\s*--pill-rail-gutter:/,
+    )
+  })
+
+  it('the gutter is wide enough to clear the rail footprint', async () => {
+    // The rail sits at `right: 18px` with 4px padding and 24px pills, so
+    // its footprint reaches 46px in from the wrapper's right edge. A
+    // narrower gutter would leave the pills still overlapping the text.
+    // 48px also covers the pill's `scaleX(1.25)` hover growth (24 → 30px).
+    const source = await readChatViewSource()
+    const m = source.match(/--pill-rail-gutter:\s*(\d+)px/)
+    expect(m).not.toBeNull()
+    expect(Number(m![1])).toBeGreaterThanOrEqual(46)
+  })
+
+  it('the gutter is applied as padding-right on the transcript rows', async () => {
+    // `padding-right`, NOT a margin or a width on the scroller:
+    // VirtualScroller's `measureItems()` reads `el.offsetHeight`, so a
+    // horizontal padding is invisible to the height model. A
+    // `padding-bottom` would be folded into the height and shift every
+    // scroll anchor — the class of bug the floating-composer fix already
+    // fought once.
+    const source = await readChatViewSource()
+    const rule = source.match(
+      /\.messages-scroll-hide-native\.has-pill-rail :deep\(\[data-group-key\]\),[\s\S]*?\}/,
+    )
+    expect(rule).not.toBeNull()
+    expect(rule![0]).toContain('padding-right: var(--pill-rail-gutter')
+    expect(rule![0]).not.toContain('padding-bottom')
+  })
+
+  it('the agent-error band takes the same gutter', async () => {
+    // It is a sibling of the VirtualScroller, outside the height model,
+    // so it needs the padding in its own right — otherwise the strip
+    // breaks across that band and the pills overlap it.
+    const source = await readChatViewSource()
+    expect(source).toMatch(/\.messages-scroll-hide-native\.has-pill-rail \.agent-error-list\s*\{/)
   })
 })

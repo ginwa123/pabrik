@@ -3,16 +3,25 @@
      edge. Click (or Enter/Space) emits `jump` with the pill's group
      index + stable key; the host (ChatView) owns scrolling. Uniform
      vertical stack — NOT proportional to message height — so the rail
-     stays predictable under VirtualScroller height estimates. -->
+     stays predictable under VirtualScroller height estimates.
+
+     Hovering (or keyboard-focusing) a pill opens a message box with the
+     user's text, anchored to the LEFT of the pill so it reads over the
+     transcript instead of off-screen. The host reserves a right gutter
+     for the rail itself (see `--pill-rail-gutter` in ChatView.vue); this
+     box is a transient overlay and deliberately does NOT reserve space —
+     it is `pointer-events: none`, so it can never swallow a click meant
+     for the message underneath it. -->
 <script setup lang="ts">
+import { computed, ref } from 'vue'
+
 export interface UserPill {
   groupIndex: number
   key: string
   preview: string
-  title: string
 }
 
-defineProps<{
+const props = defineProps<{
   pills: UserPill[]
   activeGroupIndex: number | null
 }>()
@@ -20,6 +29,52 @@ defineProps<{
 const emit = defineEmits<{
   jump: [groupIndex: number, key: string]
 }>()
+
+// Which pill's message box is open. Keyed by the pill's STABLE key (not
+// its index) so an SSE append that shifts positions cannot leave the box
+// hanging off the wrong pill — the same reason `jumpToUserGroup` resolves
+// by key at click time.
+//
+// Hover and focus share one slot on purpose: a keyboard user tabbing
+// through the rail gets the same preview a mouse user does, and moving
+// from one pill to the next swaps the box rather than closing it.
+const openKey = ref<string | null>(null)
+
+const open = (key: string): void => {
+  openKey.value = key
+}
+
+const close = (key: string): void => {
+  // Guard on the key: `mouseleave` from the pill being LEFT can arrive
+  // after `mouseenter` on the next one, and an unguarded close would
+  // blank the box the user just moved to.
+  if (openKey.value === key) openKey.value = null
+}
+
+// The pill the box belongs to, so the template can read its text without
+// a second lookup. Null when nothing is open.
+const openPill = computed((): UserPill | null => {
+  if (openKey.value === null) return null
+  return props.pills.find((p) => p.key === openKey.value) ?? null
+})
+
+// The open pill's position in the stack. The rail is a UNIFORM vertical
+// stack (see the style block), so the index is enough to place the box
+// level with its pill — no measurement, no layout thrash. -1 when closed.
+const openPillIndex = computed((): number => {
+  if (openKey.value === null) return -1
+  return props.pills.findIndex((p) => p.key === openKey.value)
+})
+
+// Vertical centre of the open pill, measured from the rail's top edge.
+// Reads the SAME custom properties the rail's own layout uses
+// (`--pill-pad`, `--pill-pitch`, `--pill-h`), so the box cannot drift
+// away from its pill if the stack's spacing is ever retuned — the
+// geometry lives in exactly one place.
+const pillCentreTop = computed((): string => {
+  if (openPillIndex.value < 0) return '50%'
+  return `calc(var(--pill-pad) + ${openPillIndex.value} * var(--pill-pitch) + var(--pill-h) / 2)`
+})
 </script>
 
 <template>
@@ -27,6 +82,7 @@ const emit = defineEmits<{
     class="user-pill-rail"
     aria-label="Jump to user messages"
     data-testid="user-pill-rail"
+    @mouseleave="openKey = null"
   >
     <button
       v-for="pill in pills"
@@ -34,11 +90,33 @@ const emit = defineEmits<{
       type="button"
       class="user-pill"
       :class="{ 'user-pill--active': pill.groupIndex === activeGroupIndex }"
-      :title="pill.title"
       :aria-label="`Jump to message: ${pill.preview}`"
       data-testid="user-pill"
       @click="emit('jump', pill.groupIndex, pill.key)"
+      @mouseenter="open(pill.key)"
+      @mouseleave="close(pill.key)"
+      @focus="open(pill.key)"
+      @blur="close(pill.key)"
     />
+
+    <!-- Message box for the hovered/focused pill. A sibling of the pills
+         rather than a child of one: the rail is a 32px-wide flex column,
+         and a child would be clipped to it. Anchored to the rail's right
+         edge and grown leftwards, so it sits over the transcript.
+
+         `aria-hidden` because the button's `aria-label` already carries
+         the same text — announcing it twice would make a screen reader
+         read every message twice while tabbing the rail. -->
+    <div
+      v-if="openPill"
+      class="user-pill-message"
+      :class="{ 'user-pill-message--active': openPill.groupIndex === activeGroupIndex }"
+      :style="{ top: pillCentreTop }"
+      data-testid="user-pill-message"
+      aria-hidden="true"
+    >
+      {{ openPill.preview }}
+    </div>
   </nav>
 </template>
 
@@ -58,15 +136,22 @@ const emit = defineEmits<{
   transform: translateY(-50%);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  /* The stack's geometry, published as custom properties so the message
+     box can align itself to its pill from the same numbers (see
+     `pillCentreTop`). One source of truth for the rail's rhythm. */
+  --pill-h: 4px;
+  --pill-gap: 8px;
+  --pill-pad: 8px;
+  --pill-pitch: calc(var(--pill-h) + var(--pill-gap));
+  gap: var(--pill-gap);
   z-index: 20;
-  padding: 8px 4px;
+  padding: var(--pill-pad) 4px;
   border-radius: 999px;
 }
 
 .user-pill {
   width: 24px;
-  height: 4px;
+  height: var(--pill-h);
   border-radius: 999px;
   padding: 0;
   border: none;
@@ -90,6 +175,54 @@ const emit = defineEmits<{
 .user-pill--active {
   opacity: 1;
   background-color: var(--color-violet, #8b5cf6);
+}
+
+/* ─── Hover/focus message box ─────────────────────────────────────────────
+   Anchored to the rail's right edge and grown leftwards (`right: 0` +
+   `translateX(-100%)`), so it opens over the transcript and never off the
+   right side of the window. Vertically centred on the rail, which is
+   itself centred on the visible transcript — so the box appears level
+   with the pill that opened it.
+
+   `pointer-events: none` is load-bearing: the box overlaps real message
+   text, and without it the first click on a message under an open box
+   would hit the box instead. It also means the box needs no mouseleave
+   handling of its own — the pill's own leave closes it.
+
+   Capped at 3 lines with an ellipsis: a pill preview is 60 chars, but a
+   pasted wall of text can still be long, and an unbounded box would cover
+   half the transcript. */
+.user-pill-message {
+  position: absolute;
+  right: 0;
+  /* `top` is bound per-pill (see `pillCentreTop`) so the box opens level
+     with the pill that summoned it instead of always at the rail's
+     middle. The `-50%` on Y then centres the box on that point. */
+  transform: translate(-100%, -50%);
+  max-width: 280px;
+  margin-right: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border, #282727);
+  background-color: var(--semantic-card-bg, #1d1c19);
+  color: var(--semantic-text, #c5c9c5);
+  font-size: var(--text-dense);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  z-index: 21;
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.65);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+/* The active pill's box carries the same violet accent the pill does, so
+   the highlight and the preview read as one affordance. */
+.user-pill-message--active {
+  border-color: var(--color-violet, #8b5cf6);
 }
 
 @media (prefers-reduced-motion: reduce) {
