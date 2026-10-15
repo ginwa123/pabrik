@@ -153,49 +153,25 @@ const props = defineProps<{
   chatName: string
   type?: 'chat' | 'task'
   cwd?: string
-  /**
-   * When true, render the shared chat app bar (ChatAppBar.vue —
-   * chat name + `◫` sidebar toggle + `✕` close) above the
-   * messages. Every chat host sets this so all modes (kanban /
-   * agent / standard folder-chat / standalone `chat-<id>`)
-   * get the identical bar.
-   *
-   * Defaults to `false` so older call sites that don't supply it
-   * still compile — see the pabrik-frontend-task-literal-typing-rule
-   * memory for the broader pattern.
-   */
+  /** When true, render the shared chat app bar (ChatAppBar.vue — chat name +
+   * `◫` sidebar toggle + `✕` close) above the messages. Every chat host sets
+   * this so all modes get the identical bar. Defaults to `false`. */
   showHeader?: boolean
-  /**
-   * Embedded mode for SubAgentPeekPanel: hides ChatView's own header
-   * (the peek panel renders its own agent-name/status header above).
-   * ChatView still owns fetch + SSE for `chatId` — the panel only
-   * provides the slide-over chrome around it.
-   *
-   * Defaults to `false` so all existing call sites are unaffected.
-   */
+  /** Embedded mode for SubAgentPeekPanel: hides ChatView's own header (the
+   * peek panel renders its own). ChatView still owns fetch + SSE for
+   * `chatId`. Defaults to `false`. */
   embedded?: boolean
-  /**
-   * Hide the composer footer (FileInput + Compact/profile/tokens
-   * status bar). The peek panel passes this so the sub-agent view is
-   * read-only — sending messages into a sub-agent session from the
-   * peek would fork its tool loop mid-run.
-   *
-   * Defaults to `false` so all existing call sites are unaffected.
-   */
+  /** Hide the composer footer (FileInput + status bar). The peek panel passes
+   * this so the sub-agent view is read-only — sending into a sub-agent
+   * session from the peek would fork its tool loop mid-run. */
   hideInput?: boolean
 }>()
 
 const emit = defineEmits<{
   'update-chat-id': [oldId: string, newId: string]
-  /**
-   * Emitted when the user clicks the ✕ close button in the chat
-   * header. The host (AppLayout) handles this by clearing the
-   * active task and (optionally) navigating back to the kanban /
-   * workspace view. The ChatView itself does NOT call router
-   * directly — it just announces "user wants me gone" — so the
-   * layout composition (e.g. sidebar | kanban | chatview) stays
-   * the host's concern.
-   */
+  /** Emitted when the user clicks the ✕ close button. The host (AppLayout)
+   * clears the active task and optionally navigates back. ChatView does NOT
+   * call router directly — layout composition stays the host's concern. */
   close: []
 }>()
 
@@ -215,22 +191,15 @@ interface Message {
   tool_calls_json?: string
   finish_reason?: string
   tool_call_id?: string
-  /**
-   * JSON-stringified tool input arguments. Populated
-   * by the same `tryUnwrapToolOutput` pipeline that fills
-   * `unwrappedByMessageId`. Used by cards like `PresentFiles`
-   * (`parameters` passthrough) without re-fetching.
-   */
+  /** JSON-stringified tool input arguments, populated by the same
+   * `tryUnwrapToolOutput` pipeline that fills `unwrappedByMessageId`. Used
+   * by cards like `PresentFiles` without re-fetching. */
   parameters?: string
   is_input?: boolean
   is_output?: boolean
-  /**
-   * 2026-08-23 hidden-messages fix — thinking models' chain-of-thought
-   * returned by the LLM and stored in `llm_history.reasoning_content`.
-   * Populated by loadChatHistory (REST) and the SSE `full` handler.
-   * Rendered as a collapsible section in the assistant bubble; also
-   * keeps reasoning-only turns alive in filteredMessages.
-   */
+  /** Thinking models' chain-of-thought, stored in `llm_history.reasoning_content`.
+   * Populated by loadChatHistory (REST) and the SSE `full` handler; rendered
+   * as a collapsible section in the assistant bubble. */
   reasoning_content?: string
 }
 
@@ -275,23 +244,16 @@ const setupCodeBlockCopyButtons = () => {
   })
 }
 
-// NOTE (2026-08-27, task_1787761084050_0): renderResponse is no
-// longer defined here — it was extracted to
-// `src/apps/desktop/src/helpers/renderResponse.ts` and exported via
-// `@/helpers` (imported at the top of this file). The extraction
-// added module-scoped memoization (Map<string,string> keyed on
-// `${role}|${tool_name}|${trimmed}`) so a long chat's many messages
-// don't re-parse the same markdown on every Vue re-render. The
-// previous in-Vue implementation ran `marked.parse` synchronously
-// inside v-html — O(visible_messages × renders_per_second) parse
-// calls per second during SSE streaming. Memoization collapses that
-// to O(unique_messages) per content mutation.
+// NOTE: renderResponse is no longer defined here — it was extracted to
+// `helpers/renderResponse.ts` and exported via `@/helpers`. The extraction
+// added module-scoped memoization keyed on `${role}|${tool_name}|${trimmed}`,
+// so a long chat's messages don't re-parse the same markdown on every
+// re-render: O(unique_messages) per mutation instead of per render.
 
-// ─── <html> wrapper-tag rendering (2026-08-23 html-tag-support) ────────────
-// When the LLM wraps raw HTML in <html>...</html>, the chat UI renders
-// each block as a live sandboxed iframe (null origin — the security
-// boundary; inner scripts can't touch parent DOM/cookies). Mirrors the
-// proven PreviewContentRenderer.vue pattern (sandbox="allow-scripts").
+// ─── <html> wrapper-tag rendering ─────────────────────────────────────────
+// When the LLM wraps raw HTML in <html>...</html>, the chat UI renders each
+// block as a live sandboxed iframe (null origin — the security boundary;
+// inner scripts can't touch parent DOM/cookies).
 
 interface HtmlSegment {
   /** Text before this html block (markdown-rendered inline). */
@@ -306,13 +268,9 @@ const msgHasHtml = (content: string | undefined): boolean => {
   return isHtmlTags(content) || /<html>[\s\S]*?<\/html>/i.test(content)
 }
 
-/**
- * Split a message into segments: for each closed <html>...</html> block,
- * one segment carrying (a) the markdown text preceding it and (b) the
- * block's inner HTML. Trailing text after the last block is attached to
- * a final segment with html=''. Unclosed tags mid-stream match nothing
- * and fall through to the legacy v-html path (raw text until close).
- */
+/** Split a message into segments: for each closed <html>...</html> block, one
+ * segment carrying the preceding markdown and the block's inner HTML.
+ * Unclosed tags mid-stream fall through to the legacy v-html path. */
 const extractHtmlBlocks = (content: string): HtmlSegment[] => {
   const segments: HtmlSegment[] = []
   const regex = /<html>([\s\S]*?)<\/html>/gi
@@ -336,14 +294,9 @@ const extractHtmlBlocks = (content: string): HtmlSegment[] => {
   return segments
 }
 
-/**
- * The `<html>` frame is a separate document with a NULL origin, so the
- * app's CSS custom properties do NOT cascade into it — the theme values
- * have to be inlined into the srcdoc. Read them from the app's own tokens
- * (`src/style.css`) so the block always matches the surrounding transcript;
- * the literals below are the Kanagawa Dragon fallbacks for when there is no
- * DOM (vitest/jsdom, SSR) or a token is unavailable.
- */
+/** The `<html>` frame is a separate document with a NULL origin, so the app's
+ * CSS custom properties do NOT cascade in — theme values are inlined into the
+ * srcdoc. The literals below are Kanagawa Dragon fallbacks for no-DOM cases. */
 interface HtmlFramePalette {
   bg: string
   fg: string
@@ -394,28 +347,13 @@ const resolveHtmlFramePalette = (): HtmlFramePalette => {
 }
 
 /**
- * Build the srcdoc document for an html block.
+ * Build the srcdoc document for an html block. Full documents pass through
+ * verbatim; fragments get a shell carrying the app's THEME,
+ * `color-scheme: dark`, and the auto-resize reporter.
  *
- * Full documents (`<!doctype html>` / `<html ...>`) pass through verbatim.
- * Fragments get a minimal shell carrying three things the fragment itself
- * cannot know:
- *   1. The app's THEME (see resolveHtmlFramePalette) — a hardcoded white
- *      body turned an LLM's HTML report into a bright slab in the dark
- *      transcript.
- *   2. `color-scheme: dark` — otherwise native scrollbars and form
- *      controls inside the frame render light.
- *   3. The auto-resize reporter (helpers/iframeAutoResize.ts) — the parent
- *      grows the frame to its content instead of clipping it behind an
- *      inner scrollbar at the browser's 150 px default height.
- *
- * Text SURFACES are forced with `!important`. The model authors this HTML
- * blind — it has no idea the transcript is dark, so it writes for a light
- * page (real payload: `style="background:#f6f8fa"` on every `<pre>`, GitHub's
- * light code chip). An inline style beats this stylesheet, which left the
- * frame's light ink on the payload's own light chip: measured 1.57:1
- * contrast, i.e. washed out. Forcing the chip + ink keeps every block
- * readable while leaving the rest of the payload's styling (layout, spans,
- * callout colours) alone.
+ * Text surfaces are forced with `!important`: the model authors this HTML
+ * blind and writes for a light page, so an inline `background:#f6f8fa` on a
+ * `<pre>` would otherwise leave light ink on a light chip (measured 1.57:1).
  */
 const buildHtmlSrcdoc = (block: string): string => {
   const trimmed = block.trim()
@@ -462,12 +400,9 @@ const buildHtmlSrcdoc = (block: string): string => {
 
 /**
  * The reporter script inside each frame posts its content height; grow the
- * frame that sent it to its FULL content height (no upper cap) so no inner
- * scrollbar ever appears — the outer chat scroller owns scrolling.
- * Identity-matching on `contentWindow` is the only handle a null-origin
- * sandbox leaves the parent (see helpers/iframeAutoResize.ts). Without
- * this a long `<html>` block renders at the browser's 150 px default
- * inside its own scrollbar.
+ * frame to its FULL height (no cap) so no inner scrollbar appears — the
+ * outer chat scroller owns scrolling. `contentWindow` identity is the only
+ * handle a null-origin sandbox leaves the parent.
  */
 const onHtmlFrameResize = (event: MessageEvent): void => {
   const reported = readAutoResizeHeight(event, CHAT_HTML_FRAME_RESIZE_SOURCE)
@@ -477,17 +412,14 @@ const onHtmlFrameResize = (event: MessageEvent): void => {
   frame.style.height = `${growFrameToContent(reported)}px`
 }
 
-// Detect a compaction summary message — a user-role message whose
-// content is the `<compact_messages>` envelope written by
-// `compactMessageInMemoryNew` (workflow.zig). Used by the user bubble
-// to render the envelope as a structured `CompactionCard` instead of
-// a wall of escaped XML.
+// Detect a compaction summary message — a user-role message whose content is
+// the `<compact_messages>` envelope written by `compactMessageInMemoryNew`.
+// The user bubble renders it as a structured `CompactionCard` instead of a
+// wall of escaped XML.
 //
-// Detection is content-prefix based (rather than a dedicated DB field)
-// because the existing API doesn't carry a `is_compaction` flag. A user
-// who literally types "<compact_messages>" into chat would also match,
-// but that's vanishingly unlikely; the compactor writes this exact
-// prefix and no other message does.
+// Detection is content-prefix based because the API carries no
+// `is_compaction` flag; the compactor writes this exact prefix and nothing
+// else does.
 const isCompactionMessage = (msg: { role: string; content: string } | undefined): boolean => {
   if (!msg) return false
   if (msg.role !== 'user') return false
@@ -506,11 +438,9 @@ const isLLMProcessing = computed(() => !!processingState.value[sessionId.value])
 // Pagination state
 const messageCursor = ref<string | null>(null)
 // 2026-09-09 user-pill pagination fix: 1000 rows per page defeated
-// pagination (slow TTFB with base64 image_urls + tool JSON, memory
-// spike, VirtualScroller height-estimate blowup) — cut to 100 in #434,
-// raised to 500, then back to 1000 per user request. Large pages risk
-// the original TTFB/memory tradeoff; the load-more threshold still
-// drives the rest for histories beyond one page.
+// pagination (slow TTFB with base64 image_urls + tool JSON, memory spike,
+// VirtualScroller height-estimate blowup). Large pages risk that tradeoff;
+// the load-more threshold drives histories beyond one page.
 const PAGE_SIZE = 1000
 
 // ── Sub-agent peek ────────────────────────────────────────────────
@@ -695,11 +625,9 @@ const allCollapsed = computed(
   () => centerFiles.value.length > 0 && collapsedCount.value === centerFiles.value.length,
 )
 
-/**
- * Write one of the diff view's params, skipping stale writes during a chat
+/** Write one of the diff view's params, skipping stale writes during a chat
  * switch (the same guard `syncDiffParam` needs: ChatsList replaces the URL at
- * the same time, and a second replace from the dying view corrupts the patch).
- */
+ * the same time, and a second replace from the dying view corrupts the patch). */
 function syncDiffQuery(mutate: (query: LocationQueryRaw) => void) {
   // Same optional-router guard as `syncDiffParam`: a ChatView mounted outside
   // the router tree has no URL to write to.
@@ -769,11 +697,9 @@ function setDiffMode(next: 'unified' | 'split') {
  * file, so both can be true for one click.
  */
 const codeViewer = useInjectCodeViewer()
-/**
- * Plain (never-null) view model for the template: the injected session
+/** Plain (never-null) view model for the template: the injected session
  * unwrapped, or an empty model when there is no provider (unit tests) /
- * no open file. One object, so the template needs no null-narrowing.
- */
+ * no open file. One object, so the template needs no null-narrowing. */
 const codeViewerModel = computed<CodeViewerView>(() => ({
   file: codeViewer?.file.value ?? null,
   content: codeViewer?.content.value ?? '',
@@ -968,10 +894,8 @@ async function onChatSidebarRefresh() {
 // by sessionId). Never call useSubAgentPeek inside a computed — lifecycle hooks registered during
 // render are unreliable (fetch fired 0/N times → permanent empty panel).
 
-/**
- * Handler for the panel's `openFull` event — closes the peek and
- * navigates to the sub-agent's own chat view in the main panel.
- */
+/** Handler for the panel's `openFull` event — closes the peek and
+ * navigates to the sub-agent's own chat view in the main panel. */
 function onPeekOpenFull(sessionId: string) {
   nav.closePeek()
   router.replace({ path: '/app', query: { view: 'chat', session: sessionId } })
@@ -1045,11 +969,9 @@ interface VirtualScrollerExposed {
    * `atBottomEdge` below for why the live read is a moving target.
    */
   readonly settledBottom?: number | null
-  /**
-   * Whether a real height has replaced an estimate yet. False while the model
+  /** Whether a real height has replaced an estimate yet. False while the model
    * is pure `defaultItemHeight` guesswork, which is exactly the window the
-   * scroll-restore must not write into (see `waitForScrollerMeasured`).
-   */
+   * scroll-restore must not write into (see `waitForScrollerMeasured`). */
   readonly hasMeasuredItems?: boolean
   scrollToPosition: (scrollTop: number, behavior?: ScrollBehavior) => void
   scrollToItem: (index: number, behavior?: ScrollBehavior) => void
@@ -2946,11 +2868,9 @@ const maybeLoadOlder = async (trigger: 'edge' | 'manual') => {
   }
 }
 
-/**
- * Apply the session metadata piggybacked on the messages endpoint (cwd,
+/** Apply the session metadata piggybacked on the messages endpoint (cwd,
  * worktree, PR binding, profile, token budgets, skills). Shared by the
- * cached-mount delta path and the full-load path so the two can never drift.
- */
+ * cached-mount delta path and the full-load path so the two can never drift. */
 const applyDeltaExtra = (extra: {
   cwd?: string
   git_worktree_cwd?: string
