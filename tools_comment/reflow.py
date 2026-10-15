@@ -122,6 +122,11 @@ CONTINUATION_RE = re.compile(
     r'|[a-z]+\.[a-z]{2,4}\b'          # file.md, index.ts
     r')')
 
+# A `/` that is PRECEDED BY A SPACE is a prose separator, not a path break:
+# `search_tool / view_tool / use_tool` is three names, and joining it produced
+# `search_tool/view_tool`. Only a `/` with no space before it can be a break.
+PATH_BREAK_RE = re.compile(r'\S/$')
+
 
 def join_prose(prose):
     """Reassemble hard-wrapped lines into one string.
@@ -136,7 +141,11 @@ def join_prose(prose):
         s = l.strip()
         if not s:
             continue
-        if parts and parts[-1].endswith(NO_SPACE_JOIN) and CONTINUATION_RE.match(s):
+        joins = (parts
+                 and parts[-1].endswith(NO_SPACE_JOIN)
+                 and PATH_BREAK_RE.search(parts[-1])
+                 and CONTINUATION_RE.match(s))
+        if joins:
             parts[-1] = parts[-1] + s
         else:
             parts.append(s)
