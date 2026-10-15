@@ -1,20 +1,15 @@
-/**
- * Unit tests for the kanban store actions (Chunk 5 of the
- * workspace-item-kanban plan + the follow-up fetchKanbanColumns
- * action that fixes the "board renders empty after page reload"
- * bug). Covers: addKanbanItem, fetchKanbanColumns, addKanbanColumn,
- * updateKanbanColumn, deleteKanbanColumn, moveTaskToColumn.
- *
- * Each action is mocked at the api.* boundary (the apiFetch
- * wrappers in api/index.ts) and the test asserts that the
- * store's local state is updated correctly. Mirrors the
- * workspacesStoreTaskTypes.spec.ts pattern: a top-level
- * `seedStore()` helper, vi.spyOn(api, ...) per action, and
- * `setActivePinia(createPinia())` in beforeEach.
- *
- * Plan: docs/superpowers/plans/2026-06-21-workspace-item-kanban.md
- *   Chunk 5 / Task 5.1
- */
+/** Unit tests for the kanban store actions (Chunk 5 of the workspace-item-kanban plan + the
+ * follow-up fetchKanbanColumns action that fixes the "board renders empty after page reload" bug). */
+
+/** Covers: addKanbanItem, fetchKanbanColumns, addKanbanColumn, updateKanbanColumn,
+ * deleteKanbanColumn, moveTaskToColumn. */
+
+/** Each action is mocked at the api.* boundary (the apiFetch wrappers in api/index.ts) and the test
+ * asserts that the store's local state is updated correctly. */
+
+/** Mirrors the workspacesStoreTaskTypes.spec.ts pattern: a top-level `seedStore()` helper,
+ * vi.spyOn(api, ...) per action, and `setActivePinia(createPinia())` in beforeEach. Plan:
+ * docs/superpowers/plans/2026-06-21-workspace-item-kanban.md Chunk 5 / Task 5.1 */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -603,11 +598,12 @@ describe('useWorkspacesStore — kanban actions', () => {
     })
   })
 
-  // ─── fetchKanbanColumns ─────────────────────────────────────────────────
-  // The "board renders empty after page reload" fix. Without this
-  // action, item.kanban_columns stays undefined (the workspaces/items
-  // endpoint does not embed columns) and the user sees an empty
-  // board even though the seeded 3 default columns live in the DB.
+  // ─── fetchKanbanColumns ───────────────────────────────────────────────── The "board renders
+  // empty after page reload" fix.
+
+  // Without this action, item.kanban_columns stays undefined (the workspaces/items endpoint does
+  // not embed columns) and the user sees an empty board even though the seeded 3 default columns
+  // live in the DB.
 
   describe('fetchKanbanColumns', () => {
     it('calls api.listKanbanColumns and populates item.kanban_columns', async () => {
@@ -708,15 +704,15 @@ describe('useWorkspacesStore — kanban actions', () => {
     })
   })
 
-  // ─── updateKanbanItemName ───────────────────────────────────────────────
-  //
-  // The kanban header rename (from KanbanSettingsDialog's inline
-  // pencil or KanbanView's header pencil) hits the store via this
-  // action. The contract: optimistic-update item.name BEFORE the
-  // API call resolves so the UI updates immediately; roll back on
-  // error. The PUT handler accepts `{name}` and writes the column;
-  // when the API call throws, `item.name` must be restored to the
-  // pre-call value (so the UI doesn't lie about the rename).
+  // ─── updateKanbanItemName ─────────────────────────────────────────────── The kanban header
+  // rename (from KanbanSettingsDialog's inline pencil or KanbanView's header pencil) hits the store
+  // via this action.
+
+  // The contract: optimistic-update item.name BEFORE the API call resolves so the UI updates
+  // immediately; roll back on error.
+
+  // The PUT handler accepts `{name}` and writes the column; when the API call throws, `item.name`
+  // must be restored to the pre-call value (so the UI doesn't lie about the rename).
 
   describe('updateKanbanItemName', () => {
     it('calls api.updateWorkspaceItem with the new name and optimistic-updates the local store', async () => {

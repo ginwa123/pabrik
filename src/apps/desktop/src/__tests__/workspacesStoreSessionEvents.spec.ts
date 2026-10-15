@@ -1,18 +1,12 @@
-/**
- * Tests for the workspaces store's session-events handling.
- *
- * The backend cascade for task rename emits a `session.updated`
- * event on /api/sessions/stream. After the unify-frontend-sse
- * migration (Chunk 6), the workspaces store receives session
- * events through the global sseBus (opened once by App.vue)
- * rather than opening its own EventSource. We use the bus's
- * test injection point (`__dispatchSseBus`) to drive events
- * deterministically.
- *
- * task.id == session_id (per AppLayout.vue:651
- * `:chat-id="activeTask.id"`), so the lookup is a straight
- * equality match on task.id.
- */
+/** Tests for the workspaces store's session-events handling. The backend cascade for task rename
+ * emits a `session.updated` event on /api/sessions/stream. */
+
+/** After the unify-frontend-sse migration (Chunk 6), the workspaces store receives session events
+ * through the global sseBus (opened once by App.vue) rather than opening its own EventSource. */
+
+/** We use the bus's test injection point (`__dispatchSseBus`) to drive events deterministically.
+ * task.id == session_id (per AppLayout.vue:651 `:chat-id="activeTask.id"`), so the lookup is a
+ * straight equality match on task.id. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp } from 'vue'
@@ -324,14 +318,14 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
     expect(ws.activeTaskId).toBe('task_1')
   })
 
-  // ─── onSessionEvent fan-out (ChatsList regression fix) ───────────────────
-  //
-  // The internal handler mutates workspace tree state. External
-  // components (ChatsList.vue's `navItems` mirror) need to be
-  // notified too — they have their own shape (relativeTime,
-  // processing flag, etc.) that's not derived from the workspace
-  // tree. The fan-out fires after the internal handler so
-  // subscribers can safely re-fetch from the API.
+  // ─── onSessionEvent fan-out (ChatsList regression fix) ─────────────────── The internal handler
+  // mutates workspace tree state.
+
+  // External components (ChatsList.vue's `navItems` mirror) need to be notified too — they have
+  // their own shape (relativeTime, processing flag, etc.) that's not derived from the workspace
+  // tree.
+
+  // The fan-out fires after the internal handler so subscribers can safely re-fetch from the API.
   it('fan-outs session.updated events to onSessionEvent subscribers', async () => {
     const ws = await setupHandlersAndSeed()
 

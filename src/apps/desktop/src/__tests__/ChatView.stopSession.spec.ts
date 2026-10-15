@@ -1,19 +1,15 @@
-/**
- * Tests for ChatView's Stop button wiring.
- *
- * The Stop button lives in FileInput.vue (visible only when
- * `isLLMProcessing === true`). Clicking it emits a `stop-session`
- * event; ChatView's `handleStopSession` translates that into a
- * `api.stopSession(sessionId)` call against the backend's
- * `POST /api/llm/session/:session/stop` endpoint. The backend flips
- * `worker.cancelled=1`; the workflow breaks on the next iteration
- * boundary; `deleteWorker` fires a SSE `worker deleted` event;
- * `App.vue`'s worker-event listener removes the session from
- * `processingState`; `isLLMProcessing` becomes false; the button
- * auto-hides.
- *
- * Plan: docs/superpowers/plans/2026-08-06-chatview-stop-button.md
- */
+/** Tests for ChatView's Stop button wiring. The Stop button lives in FileInput.vue (visible only
+ * when `isLLMProcessing === true`). */
+
+/** Clicking it emits a `stop-session` event; ChatView's `handleStopSession` translates that into a
+ * `api.stopSession(sessionId)` call against the backend's `POST /api/llm/session/:session/stop`
+ * endpoint. */
+
+/** The backend flips `worker.cancelled=1`; the workflow breaks on the next iteration boundary;
+ * `deleteWorker` fires a SSE `worker deleted` event; `App.vue`'s worker-event listener removes the
+ * session from `processingState`; `isLLMProcessing` becomes false; the button auto-hides. */
+
+/** Plan: docs/superpowers/plans/2026-08-06-chatview-stop-button.md */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, ref, type App as VueApp, type Ref } from 'vue'
@@ -30,10 +26,10 @@ import {
 import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 import { makeLocalStorageStub } from './helpers'
 
-// jsdom 29 dropped `Element.prototype.scrollTo`. The VirtualScroller
-// calls `containerRef.value.scrollTo({top, behavior})` on every
-// render; without the polyfill the test log floods with
-// "containerRef.value.scrollTo is not a function" unhandled errors.
+// jsdom 29 dropped `Element.prototype.scrollTo`. The VirtualScroller calls
+// `containerRef.value.scrollTo({top, behavior})` on every render; without the polyfill the test log
+// floods with "containerRef.value.scrollTo is not a function" unhandled errors.
+
 // Mirrors the same polyfill in chatViewWorktree.spec.ts:62-71.
 if (
   typeof (globalThis as { HTMLElement?: { prototype: { scrollTo?: unknown } } }).HTMLElement
@@ -99,20 +95,20 @@ function installChatViewMocks() {
   } as any)
 }
 
-// ─── mount helper ─────────────────────────────────────────────────────────
-// Mounts ChatView with `processingState[chatId] === true` so the
-// `isLLMProcessing` computed is true and the Stop button (in
-// FileInput) renders. Returns the wrapper + a promise that resolves
-// once the component is fully mounted (awaiting the streaming
-// listener registration via the sseBus, the same pattern as
+// ─── mount helper ───────────────────────────────────────────────────────── Mounts ChatView with
+// `processingState[chatId] === true` so the `isLLMProcessing` computed is true and the Stop button
+// (in FileInput) renders.
+
+// Returns the wrapper + a promise that resolves once the component is fully mounted (awaiting the
+// streaming listener registration via the sseBus, the same pattern as
 // chatViewWorktree.spec.ts:150).
-//
-// IMPORTANT: `processingState` MUST be a Vue `ref()` (a reactive
-// proxy), not a plain `{ value: ... }` object. Vue's reactivity
-// tracks reassignments to the ref's `.value` via the proxy; plain
-// objects are invisible to the reactivity system, so mutations to
-// `.value` won't trigger re-renders even though the object identity
-// is preserved. Use `ref({})` from 'vue', never `{} as any`.
+
+// IMPORTANT: `processingState` MUST be a Vue `ref()` (a reactive proxy), not a plain `{ value: ...
+// }` object.
+
+// Vue's reactivity tracks reassignments to the ref's `.value` via the proxy; plain objects are
+// invisible to the reactivity system, so mutations to `.value` won't trigger re-renders even though
+// the object identity is preserved. Use `ref({})` from 'vue', never `{} as any`.
 async function mountChatViewProcessing(chatId = 'session_proc') {
   const processingState = ref<Record<string, boolean>>({})
   processingState.value[chatId] = true
@@ -182,10 +178,11 @@ describe('ChatView — Stop button (cancel running agent)', () => {
     await flushPromises()
 
     expect(stopSpy).toHaveBeenCalledTimes(1)
-    // The sessionId passed must be un-prefixed (no `chat-`) because
-    // the backend route uses the raw session_id. ChatView strips
-    // the prefix in onMounted (`sessionId.value = props.chatId.replace(/^chat-/, '')`,
-    // line 2001) so `sessionId.value` is the right thing to pass.
+    // The sessionId passed must be un-prefixed (no `chat-`) because the backend route uses the raw
+    // session_id.
+
+    // ChatView strips the prefix in onMounted (`sessionId.value = props.chatId.replace(/^chat-/,
+    // '')`, line 2001) so `sessionId.value` is the right thing to pass.
     expect(stopSpy).toHaveBeenCalledWith('session_proc')
    
   })

@@ -4,11 +4,11 @@ import { ref } from 'vue'
 
 import McpServerModal, { type McpServerModalValue } from '../components/pabrik/McpServerModal.vue'
 
-// Mock the `testMcpServer` API client so the modal's "Test" button
-// tests don't hit the network. The mock is per-test (vi.resetMocks)
-// so each test can shape its own response shape. We default to a
-// 2-tool success so the basic "button enabled + result renders" path
-// is exercised unless a test overrides.
+// Mock the `testMcpServer` API client so the modal's "Test" button tests don't hit the network. The
+// mock is per-test (vi.resetMocks) so each test can shape its own response shape.
+
+// We default to a 2-tool success so the basic "button enabled + result renders" path is exercised
+// unless a test overrides.
 const mockTestMcpServer = vi.fn(async () => ({
   ok: true as const,
   transport: 'stdio' as const,
@@ -52,12 +52,12 @@ const baseHttpServer: McpServerModalValue = {
   cwd: '',
 }
 
-/** Both branches of McpServerModal use <Teleport to="body">: the HTTP
- * branch delegates to <LlmConfigModal>, the stdio branch has its own
- * bespoke centered dialog with backdrop + close ✕. Tests MUST use
- * `document.body.querySelector` for teleported elements (NOT
- * `wrapper.find`) and `mount({ attachTo: document.body })` so the
- * teleported DOM lands on the same body the queries walk. */
+/** Both branches of McpServerModal use <Teleport to="body">: the HTTP branch delegates to
+ * <LlmConfigModal>, the stdio branch has its own bespoke centered dialog with backdrop + close ✕. */
+
+/** Tests MUST use `document.body.querySelector` for teleported elements (NOT `wrapper.find`) and
+ * `mount({ attachTo: document.body })` so the teleported DOM lands on the same body the queries
+ * walk. */
 function mountModal(
   value: McpServerModalValue,
   mode: 'add' | 'edit' = 'add',
@@ -308,12 +308,12 @@ describe('McpServerModal — stdio transport', () => {
     expect(last!.env).toEqual(['NODE_ENV=production', 'DEBUG=1'])
   })
 
-  // ── "Test" button tests ──────────────────────────────────────────────
-  // The Test button fires `POST /api/mcp/test` against the current
-  // form contents (NOT the parent-managed modelValue — the user
-  // tests what they see in the textareas). Result panel: green ✓ +
-  // tool list on success, red ✗ + error on failure. Both clear when
-  // any field changes.
+  // ── "Test" button tests ────────────────────────────────────────────── The Test button fires
+  // `POST /api/mcp/test` against the current form contents (NOT the parent-managed modelValue — the
+  // user tests what they see in the textareas).
+
+  // Result panel: green ✓ + tool list on success, red ✗ + error on failure. Both clear when any
+  // field changes.
 
   it('renders a Test button in the footer', async () => {
     wrapper = mountModal(baseStdioServer)
@@ -500,12 +500,12 @@ describe('McpServerModal — stdio transport', () => {
     expect(document.body.querySelectorAll('[data-testid="save-btn"]').length).toBe(1)
   })
 
-  // ── HTTP branch: bespoke dialog (no LLM fields) ────────────────────
-  // The HTTP branch previously delegated to LlmConfigModal, which
-  // renders the full LLM profile form (Model / Thinking / Temperature
-  // / URL style / API key / compaction overrides). An MCP HTTP server
-  // is just Name + URL + Headers — those profile fields confused
-  // users into filling LLM credentials into an MCP entry.
+  // ── HTTP branch: bespoke dialog (no LLM fields) ──────────────────── The HTTP branch previously
+  // delegated to LlmConfigModal, which renders the full LLM profile form (Model / Thinking /
+  // Temperature / URL style / API key / compaction overrides).
+
+  // An MCP HTTP server is just Name + URL + Headers — those profile fields confused users into
+  // filling LLM credentials into an MCP entry.
   it('http branch renders exactly one footer (1 Test + 1 Cancel + 1 Save)', async () => {
     wrapper = mountModal(baseHttpServer)
     await wrapper.vm.$nextTick()

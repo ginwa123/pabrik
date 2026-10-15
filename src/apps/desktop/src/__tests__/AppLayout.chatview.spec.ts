@@ -133,12 +133,12 @@ describe('AppLayout — ?view=chat&session=X renders <ChatView>, not <Chats/> (r
       absolute: '/',
       home: '/',
     })
-    // fetchChatSessionCwd (AppLayout.vue) fires from onMounted
-    // when the URL has a `session` query param. Stub the session
-    // detail read (getSession) plus getChatHistory (used by other
-    // mount paths). Without these, jsdom's fetch throws an
-    // ERR_INVALID_URL on every test (no test server) — the error
-    // is caught by AppLayout's own try/catch so the test still
+    // fetchChatSessionCwd (AppLayout.vue) fires from onMounted when the URL has a `session` query
+    // param. Stub the session detail read (getSession) plus getChatHistory (used by other mount
+    // paths).
+
+    // Without these, jsdom's fetch throws an ERR_INVALID_URL on every test (no test server) — the
+    // error is caught by AppLayout's own try/catch so the test still
 
     // passes, but it floods the output. Boot rewrite for ?view=chat resolves the owning workspace
     // via the session-detail endpoint. Mock it so the async rewrite completes within the test's
@@ -221,11 +221,11 @@ describe('AppLayout — ?view=chat&session=X renders <ChatView>, not <Chats/> (r
   })
 
   it('regression: activating a task STILL clears the chat (the opposite-direction invariant)', async () => {
-    // The 2026-07-14 original fix wanted this property: when the
-    // user clicks a task, any active chat should be cleared so
-    // subsequent SSE session_created events can't navigate back
-    // into the previous chat. Gating the clear on `taskId !== null`
-    // preserves this property for the activation path while
+    // The 2026-07-14 original fix wanted this property: when the user clicks a task, any active
+    // chat should be cleared so subsequent SSE session_created events can't navigate back into the
+    // previous chat.
+
+    // Gating the clear on `taskId !== null` preserves this property for the activation path while
     // fixing the null path.
     const ws = useWorkspacesStore()
     const nav = useNavigationStore()

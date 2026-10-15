@@ -59,11 +59,11 @@ import {
 import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 import { makeLocalStorageStub } from './helpers'
 
-// jsdom 29 dropped `Element.prototype.scrollTo`; the VirtualScroller
-// calls `containerRef.value.scrollTo({top, behavior})` on every render
-// and would log "containerRef.value.scrollTo is not a function" without
-// the polyfill. Mirrors chatViewWorktree.spec.ts:62-71 +
-// ChatView.stopSession.spec.ts:38-47.
+// jsdom 29 dropped `Element.prototype.scrollTo`; the VirtualScroller calls
+// `containerRef.value.scrollTo({top, behavior})` on every render and would log
+// "containerRef.value.scrollTo is not a function" without the polyfill.
+
+// Mirrors chatViewWorktree.spec.ts:62-71 + ChatView.stopSession.spec.ts:38-47.
 if (
   typeof (globalThis as { HTMLElement?: { prototype: { scrollTo?: unknown } } }).HTMLElement
     ?.prototype.scrollTo === 'undefined'
@@ -75,11 +75,11 @@ if (
   }
 }
 
-// ─── shared SSE stub ───────────────────────────────────────────────────────
-// Inert SseClient that satisfies the bus's interface (close / reconnect
-// / getState / onStateChange) without opening a real EventSource. Same
-// shape as ChatView.stopSession.spec.ts:50-63 and
-// chatViewWorktree.spec.ts:82-95.
+// ─── shared SSE stub ─────────────────────────────────────────────────────── Inert SseClient that
+// satisfies the bus's interface (close / reconnect / getState / onStateChange) without opening a
+// real EventSource.
+
+// Same shape as ChatView.stopSession.spec.ts:50-63 and chatViewWorktree.spec.ts:82-95.
 function makeStubClient(initial: SseState): SseClient {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const stub: any = {
@@ -94,12 +94,12 @@ function makeStubClient(initial: SseState): SseClient {
   return stub as SseClient
 }
 
-// ─── default mocks ─────────────────────────────────────────────────────────
-// Wire up the api.* calls ChatView makes in onMounted (getChatHistory,
-// getQueuedMessages, getSession, getGitStatus, getPabrikConfig). The
-// fields don't matter for these tests — only the SSE handler branches
-// we're exercising — but the calls themselves must resolve so onMounted's
-// async chain doesn't hang the mount loop.
+// ─── default mocks ───────────────────────────────────────────────────────── Wire up the api.*
+// calls ChatView makes in onMounted (getChatHistory, getQueuedMessages, getSession, getGitStatus,
+// getPabrikConfig).
+
+// The fields don't matter for these tests — only the SSE handler branches we're exercising — but
+// the calls themselves must resolve so onMounted's async chain doesn't hang the mount loop.
 function installChatViewMocks() {
   vi.spyOn(api, 'getChatHistory').mockResolvedValue({
     messages: [],
@@ -308,11 +308,12 @@ describe('ChatView agent-error card — persistence across remounts', () => {
     await nextTick()
     expect(wrapper.find('[data-testid="agent-error-card"]').exists()).toBe(true)
 
-    // Run-end marker fires (non-error chunk_final, no finish_reason,
-    // no renderable payload required) → card disappears. This covers
-    // the stuck-card case where the terminal `full` lacks
-    // finish_reason / renderable fields and skips the `full` clear
-    // gate — the token stream completing is itself proof of recovery.
+    // Run-end marker fires (non-error chunk_final, no finish_reason, no renderable payload
+    // required) → card disappears.
+
+    // This covers the stuck-card case where the terminal `full` lacks finish_reason / renderable
+    // fields and skips the `full` clear gate — the token stream completing is itself proof of
+    // recovery.
     __dispatchSseBus('llm', {
       session_id: 's1',
       type: 'chunk_final',

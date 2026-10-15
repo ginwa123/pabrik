@@ -37,17 +37,17 @@ export interface TaskComponentProps {
   task: Task
   workspaceId: string
   itemId: string
-  /** Where to render the 2px yellow drop indicator on this row/card.
-   * Set by the parent <WorkspaceItem> while the user is dragging
-   * another pinned row over this one — 'above' draws the line on the
-   * top edge (insert-before), 'below' on the bottom edge (insert-after),
-   * null means no indicator. */
+  /** Where to render the 2px yellow drop indicator on this row/card. */
+
+  /** Set by the parent <WorkspaceItem> while the user is dragging another pinned row over this one
+   * — 'above' draws the line on the top edge (insert-before), 'below' on the bottom edge
+   * (insert-after), null means no indicator. */
   dropIndicator?: 'above' | 'below' | null
-  /** Absolute path used as the root for `@`-trigger file pickers in
-   * descendant editors / markdown renderers. Optional — task-list
-   * callers in <WorkspaceItem> don't pass it (no kanban context). The
-   * kanban column passes it through so `@/path` references in the
-   * card's description resolve against the kanban's filesystem path. */
+  /** Absolute path used as the root for `@`-trigger file pickers in descendant editors / markdown
+   * renderers. Optional — task-list callers in <WorkspaceItem> don't pass it (no kanban context). */
+
+  /** The kanban column passes it through so `@/path` references in the card's description resolve
+   * against the kanban's filesystem path. */
   cwd?: string
 }
 
@@ -90,12 +90,11 @@ export function useTaskActions(
   props: TaskComponentProps,
   emit: EmitFn,
 ): UseTaskActionsReturn {
-  // Re-inject processingState from App.vue (same key WorkspaceItem and
-  // ChatsList consume). Keyed by task.id == session_id. Reading it
-  // here — even though the row/card templates also re-inject it
-  // directly — establishes the contract and matches the pre-split
-  // WorkspaceItemTask.vue behavior. The `void` keeps linters from
-  // flagging the unused binding.
+  // Re-inject processingState from App.vue (same key WorkspaceItem and ChatsList consume). Keyed by
+  // task.id == session_id. Reading it here — even though the row/card templates also re-inject it
+  // directly — establishes the contract and matches the pre-split WorkspaceItemTask.vue behavior.
+
+  // The `void` keeps linters from flagging the unused binding.
   const processingState = inject<Ref<Record<string, boolean>>>(
     'processingState',
     ref<Record<string, boolean>>({}),

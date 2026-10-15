@@ -103,11 +103,10 @@ describe('WorkspaceItemTaskCard data-attribute contract', () => {
     expect(wrapper.text()).toContain('Alpha')
   })
 
-  // The hover action strip (pin / rename / details / delete) was removed
-  // in favour of the card's right-click context menu. These assert the
-  // strip stays gone — a regression that re-adds a button costs ~100px of
-  // a 280px column and truncates the task name back to ~150px.
-  //
+  // The hover action strip (pin / rename / details / delete) was removed in favour of the card's
+  // right-click context menu. These assert the strip stays gone — a regression that re-adds a
+  // button costs ~100px of a 280px column and truncates the task name back to ~150px.
+
   // Plan: docs/superpowers/plans/2026-09-25-kanban-card-context-menu-move-to-column.md
   it('renders NO hover action buttons in the top row', () => {
     wrapper = mountCard({ id: 't1', name: 'Alpha' })
@@ -247,11 +246,11 @@ describe('WorkspaceItemTaskCard card-ux-v2 (richer card layout)', () => {
   })
 
   it('pinned indicator appears in TOP row (not meta row) when is_pinned is true', () => {
-    // card-ux-v2: pin indicator moved from the meta row (which is
-    // now reserved for "time + type label" only) to the top row,
-    // sitting right after the task name. This keeps the meta row
-    // minimal while still surfacing the pinned state in a visible
-    // location (the top row is the natural reading order).
+    // card-ux-v2: pin indicator moved from the meta row (which is now reserved for "time + type
+    // label" only) to the top row, sitting right after the task name.
+
+    // This keeps the meta row minimal while still surfacing the pinned state in a visible location
+    // (the top row is the natural reading order).
     wrapper = mountCard({ id: 't1', name: 'Alpha', is_pinned: true })
     expect(wrapper.find('[data-testid="task-pin-indicator"]').exists()).toBe(true)
     // Meta-row pin pill was REMOVED in card-ux-v2 — the top-row
@@ -395,19 +394,16 @@ describe('WorkspaceItemTaskCard card-ux-v3 (Jira-style type accent)', () => {
   })
 })
 
-/**
- * Static-contract test: WorkspaceItem.vue (the only non-KanbanCard
- * consumer) MUST import the Row variant, not the Card. The Card is
- * exclusively used by the kanban tree (KanbanCard → KanbanColumn).
- * If someone accidentally swaps the import, the sidebar list would
- * render as a kanban card and the layout would break.
- *
- * History: pre-split, this guard asserted that WorkspaceItem.vue did
- * NOT pass `variant="card"` to <WorkspaceItemTask>. After the split
- * the variant prop is gone — the consumer is now structurally
- * different (Row vs Card file). The new assertion checks the import
- * shape instead.
- */
+/** Static-contract test: WorkspaceItem.vue (the only non-KanbanCard consumer) MUST import the Row
+ * variant, not the Card. The Card is exclusively used by the kanban tree (KanbanCard →
+ * KanbanColumn). */
+
+/** If someone accidentally swaps the import, the sidebar list would render as a kanban card and the
+ * layout would break. History: pre-split, this guard asserted that WorkspaceItem.vue did NOT pass
+ * `variant="card"` to <WorkspaceItemTask>. */
+
+/** After the split the variant prop is gone — the consumer is now structurally different (Row vs
+ * Card file). The new assertion checks the import shape instead. */
 describe('WorkspaceItem.vue — task component invariant', () => {
   const SIDEBAR_PATH = resolve(__dirname, '..', 'components', 'workspace', 'WorkspaceItem.vue')
 

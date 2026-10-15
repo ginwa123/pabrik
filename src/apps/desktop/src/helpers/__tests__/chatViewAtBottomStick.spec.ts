@@ -117,12 +117,12 @@ function decideIsAtBottom(args: DecisionInput): boolean {
   return newIsAtBottom || retainedThroughGrowth
 }
 
-/** The SHIPPED decision once the gap is measured against the STABLE anchor
- * (`settledBottom`) rather than a live `bottomScrollTop()`.
- * The tolerance widens to `AT_BOTTOM_STABLE_TOLERANCE_PX` because the anchor is
- * written at the end of a measure pass and the model can still converge by up to
- * the tail gap before the next scroll event is handled. That residual is the
- * model's own movement, not the reader's. */
+/** The SHIPPED decision once the gap is measured against the STABLE anchor (`settledBottom`) rather
+ * than a live `bottomScrollTop()`. */
+
+/** The tolerance widens to `AT_BOTTOM_STABLE_TOLERANCE_PX` because the anchor is written at the end
+ * of a measure pass and the model can still converge by up to the tail gap before the next scroll
+ * event is handled. That residual is the model's own movement, not the reader's. */
 function decideIsAtBottomStableAnchor(args: DecisionInput): boolean {
   const newIsAtBottom = args.distanceFromBottom < AT_BOTTOM_STABLE_TOLERANCE_PX
   const retainedThroughGrowth =
@@ -411,12 +411,12 @@ describe('VirtualScroller publishes the bottom it actually lands on', () => {
 
     const anchor = vm(wrapper).bottomScrollTop()
     const domEdge = el.scrollHeight - el.clientHeight
-    // The invariant that must hold in EVERY configuration, asserted
-    // unconditionally so the test can never quietly pass by skipping: the
-    // published anchor is a position the container can actually be at, and it
-    // is never above the DOM max. An anchor past the max is unreachable — the
-    // browser clamps there — so every at-bottom comparison against it is
-    // permanently false. Which is the bug, wearing a different variable.
+    // The invariant that must hold in EVERY configuration, asserted unconditionally so the test can
+    // never quietly pass by skipping: the published anchor is a position the container can actually
+    // be at, and it is never above the DOM max.
+
+    // An anchor past the max is unreachable — the browser clamps there — so every at-bottom
+    // comparison against it is permanently false. Which is the bug, wearing a different variable.
     expect(anchor).toBeLessThanOrEqual(domEdge)
     expect(anchor).toBeGreaterThanOrEqual(0)
   })
@@ -707,18 +707,19 @@ describe('wiring — both sides really use the shared ruler', () => {
     const src = await readSource('../VirtualScroller.vue')
     expect(src).toMatch(/const bottomScrollTop = \(\): number =>/)
     expect(src).toMatch(/defineExpose\(\{[\s\S]*?bottomScrollTop,/)
-    // If scrollToBottom ever grows its own copy of the math, the two drift —
-    // which is the entire class of bug this spec exists for.
-    //
-    // Asserted on the FUNCTION BODY, not on one exact statement sequence. The
-    // body legitimately grew a line: it now records where it left the reader
-    // (`settledBottom`) so the next measure pass can tell that a bottom
-    // reader has not moved. A regex pinned to the old two-line shape failed on
-    // that bookkeeping even though the delegation never changed — a contract
-    // test that breaks on a rename of a local is not protecting the contract.
-    // What is pinned is the claim itself: the value scrolled to comes from
-    // `bottomScrollTop()`, and the arithmetic the shared ruler exists to
-    // eliminate is absent from the body.
+    // If scrollToBottom ever grows its own copy of the math, the two drift — which is the entire
+    // class of bug this spec exists for. Asserted on the FUNCTION BODY, not on one exact statement
+    // sequence.
+
+    // The body legitimately grew a line: it now records where it left the reader (`settledBottom`)
+    // so the next measure pass can tell that a bottom reader has not moved.
+
+    // A regex pinned to the old two-line shape failed on that bookkeeping even though the
+    // delegation never changed — a contract test that breaks on a rename of a local is not
+    // protecting the contract.
+
+    // What is pinned is the claim itself: the value scrolled to comes from `bottomScrollTop()`, and
+    // the arithmetic the shared ruler exists to eliminate is absent from the body.
     const body =
       /const scrollToBottom = \(behavior: ScrollBehavior = 'auto'\) => \{([\s\S]*?)\n\}/.exec(src)
     const fn = body?.[1] ?? ''
@@ -746,11 +747,11 @@ describe('wiring — both sides really use the shared ruler', () => {
     // The moving-target fix: `settledBottom` is read off the scroller and used
     // as the floor for the edge the decision measures against.
     expect(src).toMatch(/const settled = virtualScrollerRef\.value\?\.settledBottom/)
-    // The anchor REPLACES the live read; it is not max-ed with it. `settledBottom`
-    // comes from `bottomScrollTop()` at the end of a pass, and when the
-    // real-bottom override disengages that read returns the DOM edge — up to
-    // `maxTailGap` HIGHER than where the reader sits. Max-ing it in inflates the
-    // gap and disarms the very stick this protects.
+    // The anchor REPLACES the live read; it is not max-ed with it. `settledBottom` comes from
+    // `bottomScrollTop()` at the end of a pass, and when the real-bottom override disengages that
+    // read returns the DOM edge — up to `maxTailGap` HIGHER than where the reader sits.
+
+    // Max-ing it in inflates the gap and disarms the very stick this protects.
     expect(src).toMatch(
       /typeof settled === 'number' && Number\.isFinite\(settled\)\s*\?\s*settled\s*:\s*liveEdge/,
     )

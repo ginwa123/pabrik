@@ -61,12 +61,11 @@ import { parseItemIdWithChat } from '../helpers/buildItemIdWithChat'
 export type CurrentMainView =
   | { kind: 'chat'; sessionId: string; workspaceId?: string }
   | {
-      /** Document page (Migration 095). `/app/{ws}/doc/{id}` — a PAGE
-       *  shape, so the document REPLACES the main view and the chat is
-       *  not mounted underneath it. `workspaceId` is optional: a deep
-       *  link that resolves before a workspace is active still renders,
-       *  and an unresolvable one lets the view say so instead of
-       *  guessing. */
+      /** Document page (Migration 095). `/app/{ws}/doc/{id}` — a PAGE shape, so the document
+       * REPLACES the main view and the chat is not mounted underneath it. */
+
+      /** `workspaceId` is optional: a deep link that resolves before a workspace is active still
+       * renders, and an unresolvable one lets the view say so instead of guessing. */
       kind: 'document'
       documentId: string
       workspaceId?: string
@@ -96,21 +95,19 @@ export function useCurrentMainView(): ComputedRef<CurrentMainView> {
     // vue-router). Treat that as an empty query → `kind: 'none'`.
     const q = (route?.query ?? {}) as Record<string, string>
 
-    // Path-based contract first (plan: 2026-09-22-revamp-ui-chats).
-    // A project is a workspace item, so path projects map onto the
-    // existing `workspace` kind (itemId = projectId) — every
-    // row-highlight consumer keeps working unchanged. Legacy `?view=`
-    // URLs are handled below until the boot rewrite removes them.
+    // Path-based contract first (plan: 2026-09-22-revamp-ui-chats). A project is a workspace item,
+    // so path projects map onto the existing `workspace` kind (itemId = projectId) — every
+    // row-highlight consumer keeps working unchanged.
+
+    // Legacy `?view=` URLs are handled below until the boot rewrite removes them.
     const parsed = parseAppPath(route?.path ?? '')
 
-    // Document page (Migration 095). A PATH shape, so it is just another
-    // main view — no precedence fight with the other shapes, and no
-    // overlay to stack on top of whatever was open before.
-    //
-    // No `?doc=` fallback: Migration 095 shipped that overlay shape and
-    // was replaced by this path shape before it was in wide use, so there
-    // are no links in the wild to keep working and no second way for the
-    // URL to name a document.
+    // Document page (Migration 095). A PATH shape, so it is just another main view — no precedence
+    // fight with the other shapes, and no overlay to stack on top of whatever was open before.
+
+    // No `?doc=` fallback: Migration 095 shipped that overlay shape and was replaced by this path
+    // shape before it was in wide use, so there are no links in the wild to keep working and no
+    // second way for the URL to name a document.
     if (parsed.kind === 'doc') {
       return { kind: 'document', documentId: parsed.documentId, workspaceId: parsed.workspaceId }
     }
@@ -147,11 +144,11 @@ export function useCurrentMainView(): ComputedRef<CurrentMainView> {
     }
     if (view === 'workspace') {
       if (typeof q.itemId === 'string' && q.itemId.length > 0) {
-        // Parse the wire-shape itemId (may carry `/chat/<taskId>`
-        // suffix when the chat dialog is open). The bare id is
-        // exposed as `itemId`; the optional chat task id is exposed
-        // as `chatTaskId`. Consumers that need the raw wire value
-        // should read `route.query.itemId` directly.
+        // Parse the wire-shape itemId (may carry `/chat/<taskId>` suffix when the chat dialog is
+        // open). The bare id is exposed as `itemId`; the optional chat task id is exposed as
+        // `chatTaskId`.
+
+        // Consumers that need the raw wire value should read `route.query.itemId` directly.
         const parsed = parseItemIdWithChat(q.itemId)
         return {
           kind: 'workspace',
