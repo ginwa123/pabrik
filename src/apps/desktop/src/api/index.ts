@@ -424,15 +424,13 @@ export async function getWorkspacesItems(
   )
 }
 
-// Cold-start fallback for the "New Chat" action.
-//
-// The invariant is "every workspace has a default project, and a miss creates one" —
-// `GET /workspaces/:id/items` already enforces it server-side, so a client lookup is
-// normally a pure local find. This endpoint covers the one case the list cannot: the
-// app was open when Migration 094 ran, so the store's list predates `is_default`.
-//
-// Idempotent — 200 + `created: false` when it existed, 201 + `created: true` when this
-// call created it. Takes no body.
+// Cold-start fallback for the "New Chat" action. The invariant is "every workspace has a default
+// project, and a miss creates one" — `GET /workspaces/:id/items` already enforces it server-side,
+// so a client lookup is normally a pure local find.
+
+// This endpoint covers the one case the list cannot: the app was open when Migration 094 ran, so
+// the store's list predates `is_default`. Idempotent — 200 + `created: false` when it existed, 201
+// + `created: true` when this call created it. Takes no body.
 export async function getOrCreateDefaultProject(
   workspace_id: string,
 ): Promise<{ item: WorkspaceItem; created: boolean }> {
@@ -540,12 +538,12 @@ export async function getTasks(
   itemId: string,
   limit = 10,
   cursor?: string,
-  // NEW (2026-08-06): NO default values. Pass `undefined` for both when no sort is in
-  // play and let the backend's default (`updated_at desc`) handle it — same wire result,
-  // cleaner URL, less coupling.
-  //
-  // Both must be provided together: the backend's cursor format depends on the sort
-  // field, so sending only one falls back to "no sort params".
+  // NEW (2026-08-06): NO default values. Pass `undefined` for both when no sort is in play and let
+  // the backend's default (`updated_at desc`) handle it — same wire result, cleaner URL, less
+  // coupling.
+
+  // Both must be provided together: the backend's cursor format depends on the sort field, so
+  // sending only one falls back to "no sort params".
   sortBy?: 'created_at' | 'updated_at' | 'name',
   direction?: 'asc' | 'desc',
   columnId?: string,
@@ -668,14 +666,12 @@ export async function markTaskHumanTouched(
   )
 }
 
-/**
- * Create a task under a workspace item. The third arg is a single params object: for a
- * standard task pass `{ name, description?, taskType: 'standard' }`, for a memory pass
- * `{ name, taskType: 'memory', memory: { name, content } }`.
- *
- * `taskType: 'routine'` was deleted (Migration 084) — routines are now first-class
- * workspace items, see `createRoutineItem`.
- */
+/** Create a task under a workspace item. The third arg is a single params object: for a standard
+ * task pass `{ name, description?, taskType: 'standard' }`, for a memory pass `{ name, taskType:
+ * 'memory', memory: { name, content } }`. */
+
+/** `taskType: 'routine'` was deleted (Migration 084) — routines are now first-class workspace
+ * items, see `createRoutineItem`. */
 export async function createTask(
   workspaceId: string,
   itemId: string,
@@ -687,45 +683,39 @@ export async function createTask(
       name: string
       content: string
     }
-    // Auto-retry-until-stop (Migration 063, Option A fix): when the
-    // caller passes `'1'`, the backend ALSO inserts a `sessions`
-    // row (task.id == session.id per the project convention) so the
-    // unattended-mode flag has somewhere to land at create time.
-    // Only meaningful for `taskType: 'standard'` — memory tasks
-    // manage their own session lifecycle elsewhere.
-    // `'0'` and undefined/empty are treated equivalently (no
-    // session INSERT).
+    // Auto-retry-until-stop (Migration 063, Option A fix): when the caller passes `'1'`, the
+    // backend ALSO inserts a `sessions` row (task.id == session.id per the project convention) so
+    // the unattended-mode flag has somewhere to land at create time.
+
+    // Only meaningful for `taskType: 'standard'` — memory tasks manage their own session lifecycle
+    // elsewhere. `'0'` and undefined/empty are treated equivalently (no session INSERT).
     isAutoRetryUntilStop?: string
-    // Kanban task tags (Migration 067 — kanban task tags feature).
-    // Array of free-form tag strings. Empty array / undefined = no
-    // tags. Forwarded as a JSON-encoded array string on the wire.
-    // The backend validates (char whitelist [a-zA-Z0-9_-], length
-    // cap 50 chars per tag, case-insensitive dedupe). Plan:
-    // docs/superpowers/plans/2026-07-28-kanban-task-tags.md.
+    // Kanban task tags (Migration 067 — kanban task tags feature). Array of free-form tag strings.
+    // Empty array / undefined = no tags. Forwarded as a JSON-encoded array string on the wire.
+
+    // The backend validates (char whitelist [a-zA-Z0-9_-], length cap 50 chars per tag,
+    // case-insensitive dedupe). Plan: docs/superpowers/plans/2026-07-28-kanban-task-tags.md.
     tags?: string[]
-    // NEW (Migration 069 — kanban image urls column). Array of
-    // base64 data URLs (`data:image/<mime>;base64,<payload>`).
-    // Empty array / undefined = no images. Forwarded as a
-    // `||`-delimited string on the wire (matching the
-    // `llm_history.image_url` convention). The backend validates
-    // each segment's `data:image/...;base64,...` prefix + the
-    // total 10 MB byte cap. Plan: docs/superpowers/plans/
-    // 2026-08-06-kanban-image-urls-column.md.
-    // NOTE (Migration 090): may also carry `data:video/...` URLs —
-    // splitMediaUrls routes those to `video_urls` at send time.
+    // NEW (Migration 069 — kanban image urls column). Array of base64 data URLs
+    // (`data:image/<mime>;base64,<payload>`). Empty array / undefined = no images. Forwarded as a
+    // `||`-delimited string on the wire (matching the `llm_history.image_url` convention).
+
+    // The backend validates each segment's `data:image/...;base64,...` prefix + the total 10 MB
+    // byte cap. Plan: docs/superpowers/plans/2026-08-06-kanban-image-urls-column.md.
+
+    // NOTE (Migration 090): may also carry `data:video/...` URLs — splitMediaUrls routes those to
+    // `video_urls` at send time.
     imageUrls?: string[]
     // NEW (Migration 090 — kanban video urls column). Array of
     // base64 data URLs (`data:video/<mime>;base64,<payload>`).
     videoUrls?: string[]
-    // NEW (Migration 070 — kanban-cwd-session-optional plan).
-    // Per-task cwd override. Absolute path on disk or '' for
-    // cwd-less. When undefined, the backend stores NULL (cwd-less
-    // task — falls back to the kanban-level path + sandbox).
-    // The frontend's KanbanTaskDetailDialog passes the picked
-    // folder via this field on task-create. The session_create
-    // 3-level fallback chain reads the persisted value via the
-    // task fetch + threads it into `runAgentOnNewTask` →
-    // `api.sendChatMessage`'s `cwdSession` arg.
+    // NEW (Migration 070 — kanban-cwd-session-optional plan). Per-task cwd override. Absolute path
+    // on disk or '' for cwd-less. When undefined, the backend stores NULL (cwd-less task — falls
+    // back to the kanban-level path + sandbox).
+
+    // The frontend's KanbanTaskDetailDialog passes the picked folder via this field on task-create.
+    // The session_create 3-level fallback chain reads the persisted value via the task fetch +
+    // threads it into `runAgentOnNewTask` → `api.sendChatMessage`'s `cwdSession` arg.
     cwd?: string
   },
 ): Promise<Task> {
@@ -751,21 +741,21 @@ export async function createTask(
   if (params.tags && params.tags.length > 0) {
     body.tags = JSON.stringify(params.tags)
   }
-  // Migration 069 — image_urls. The wire shape is a `||`-delimited
-  // string (matching `llm_history.image_url`). The backend's
-  // image_urls_validation.validateImageUrls validates each segment's
-  // data URL prefix + the total 10 MB byte cap.
+  // Migration 069 — image_urls. The wire shape is a `||`-delimited string (matching
+  // `llm_history.image_url`). The backend's image_urls_validation.validateImageUrls validates each
+  // segment's data URL prefix + the total 10 MB byte cap.
+
   // Migration 090 — split data:video/... out to video_urls.
   {
     const { images, videos } = splitMediaUrls(params.imageUrls, params.videoUrls)
     if (images.length > 0) body.image_urls = joinMediaUrlsWire(images)
     if (videos.length > 0) body.video_urls = joinMediaUrlsWire(videos)
   }
-  // Migration 070 — per-task cwd override. Forward verbatim
-  // (the backend's `validated_cwd` block validates it — absolute
-  // path, ≤ 4 KiB, no control chars). Empty string forwards as
-  // the explicit "no per-task cwd" sentinel; undefined forwards
-  // as null (column omitted from INSERT, DEFAULT '' applies).
+  // Migration 070 — per-task cwd override. Forward verbatim (the backend's `validated_cwd` block
+  // validates it — absolute path, ≤ 4 KiB, no control chars).
+
+  // Empty string forwards as the explicit "no per-task cwd" sentinel; undefined forwards as null
+  // (column omitted from INSERT, DEFAULT '' applies).
   if (params.cwd !== undefined) {
     body.cwd = params.cwd
   }
@@ -822,12 +812,12 @@ export interface KanbanCreateAndRunPayload {
   selected_profile_model?: string
 }
 
-/** New mode (`create_session`) — inserts the sessions row keyed by
- * task.id + persists selected_profile_model + emits session_created
- * SSE, but does NOT call emit_run_agent. Returns
- * `session: { id, name, status: 'idle' }`. No `queue_message` field
- * (the agent never starts on this path).
- * Plan: docs/superpowers/plans/2026-08-19-kanban-create-task-inits-session.md */
+/** New mode (`create_session`) — inserts the sessions row keyed by task.id + persists
+ * selected_profile_model + emits session_created SSE, but does NOT call emit_run_agent. Returns
+ * `session: { id, name, status: 'idle' }`. */
+
+/** No `queue_message` field (the agent never starts on this path). Plan:
+ * docs/superpowers/plans/2026-08-19-kanban-create-task-inits-session.md */
 export interface KanbanCreateSessionOnlyPayload {
   mode: 'create_session'
   name: string
@@ -884,11 +874,11 @@ export async function createKanbanTask(
       body.selected_profile_model = payload.selected_profile_model
     }
   } else if (payload.mode === 'create_session') {
-    // Persists on the new sessions row. Path A (from the 2026-08-06
-    // kanban-task-profile-selector plan) used to skip this for plain
-    // create; with the new mode inserting the session row, persisting
-    // the profile is now free and the chatview reflects the choice
-    // immediately when the user clicks the card.
+    // Persists on the new sessions row.
+
+    // Path A (from the 2026-08-06 kanban-task-profile-selector plan) used to skip this for plain
+    // create; with the new mode inserting the session row, persisting the profile is now free and
+    // the chatview reflects the choice immediately when the user clicks the card.
     if (payload.selected_profile_model !== undefined) {
       body.selected_profile_model = payload.selected_profile_model
     }
@@ -977,17 +967,12 @@ export async function deleteTask(
   )
 }
 
-/**
- * Pin or unpin a task. The backend bumps the row's
- * `pinned_position` to MAX+1 (when pinning) so a newly-pinned task
- * lands at the BOTTOM of the pinned region; the user can drag it
- * to a different position afterwards. Returns the new
- * `pinned_position` so the store can confirm the row landed where
- * the user expects.
- *
- * 404: task not found
- * 500: DB write failed
- */
+/** Pin or unpin a task. The backend bumps the row's `pinned_position` to MAX+1 (when pinning) so a
+ * newly-pinned task lands at the BOTTOM of the pinned region; the user can drag it to a different
+ * position afterwards. */
+
+/** Returns the new `pinned_position` so the store can confirm the row landed where the user
+ * expects. 404: task not found 500: DB write failed */
 export async function pinTask(
   workspaceId: string,
   itemId: string,
@@ -1005,11 +990,11 @@ export async function pinTask(
   })
 }
 
-/** Reorder the pinned subset of a single workspace item. The
- * `orderedIds` array is the full top-to-bottom display order of
- * the pinned rows. The backend assigns `pinned_position =
- * count - 1 - i` so the rows render in the user's chosen order.
- * Plan: docs/superpowers/plans/2026-06-20-pinned-workspace-item-tasks.md */
+/** Reorder the pinned subset of a single workspace item. The `orderedIds` array is the full
+ * top-to-bottom display order of the pinned rows. The backend assigns `pinned_position = count - 1
+ * - i` so the rows render in the user's chosen order. */
+
+/** Plan: docs/superpowers/plans/2026-06-20-pinned-workspace-item-tasks.md */
 export async function reorderPinnedTasks(
   workspaceId: string,
   itemId: string,
@@ -1024,13 +1009,12 @@ export async function reorderPinnedTasks(
   )
 }
 
-/** Manually fire a workspace routine. Returns the session_id (which
- * equals the routine id — every fire appends to the same session
- * chat). The backend responds 200 + body as soon as the fire is
- * submitted — the actual LLM call happens asynchronously.
- * 404: routine does not exist (or doesn't belong to this item)
- * 409: routine is disabled or another fire is in progress
- * 500: fire failed */
+/** Manually fire a workspace routine. Returns the session_id (which equals the routine id — every
+ * fire appends to the same session chat). */
+
+/** The backend responds 200 + body as soon as the fire is submitted — the actual LLM call happens
+ * asynchronously. 404: routine does not exist (or doesn't belong to this item) 409: routine is
+ * disabled or another fire is in progress 500: fire failed */
 export async function runWorkspaceRoutine(
   workspaceId: string,
   itemId: string,
@@ -1163,11 +1147,11 @@ export interface Chat {
   /// badge). Computed per request by the backend (`session_list.zig`
   /// via `git -C <cwd>`, same helper as the kanban task badge).
   git_branch?: string
-  /// Backend wall-clock timestamp of the last `sessions.UPDATE` —
-  /// bumped by everything (agent loop, profile change, error, etc).
-  /// `ChatsList.vue` renders this as the time pill's fallback when
-  /// `last_human_touched_at` is empty (pre-Migration-082 legacy rows).
-  /// Plan: docs/superpowers/plans/2026-08-29-chat-sidebar-last-human-touched.md
+  // Backend wall-clock timestamp of the last `sessions.UPDATE` — bumped by everything (agent loop,
+  // profile change, error, etc). `ChatsList.vue` renders this as the time pill's fallback when
+  // `last_human_touched_at` is empty (pre-Migration-082 legacy rows).
+
+  // Plan: docs/superpowers/plans/2026-08-29-chat-sidebar-last-human-touched.md
   updated_at?: string
   /// Migration 063 — "0" / "1" opt-in for unattended mode. Always
   /// present in the GET /api/sessions response (ChatsList uses this
@@ -1225,21 +1209,23 @@ function parseTimestamp(ts: number | string): number {
   // If timestamp looks like nanoseconds (> 1e12), convert to seconds
   return num > 1e12 ? Math.floor(num / 1e9) : num
 }
-/** The transcript fetch failed — transport, non-2xx, or an abort.
- * Deliberately coarse: the UI acts on "the transcript is unavailable", not on
- * which kind of unavailable it is, and the retry policy is the same for all
- * three. The point of the tag is only that the failure is DISTINGUISHABLE
- * from an empty transcript — see the empty-state bug this replaced. */
+/** The transcript fetch failed — transport, non-2xx, or an abort. Deliberately coarse: the UI acts
+ * on "the transcript is unavailable", not on which kind of unavailable it is, and the retry policy
+ * is the same for all three. */
+
+/** The point of the tag is only that the failure is DISTINGUISHABLE from an empty transcript — see
+ * the empty-state bug this replaced. */
 export class ChatHistoryError extends Data.TaggedError('ChatHistoryError')<{
   readonly sessionId: string
   readonly reason: string
 }> {}
 
-/** An SSE frame that arrived on a named channel with a body that is not the
- * JSON its wire name promises.
- * Named so the failure is DISTINGUISHABLE from "the event never arrived": the
- * frame is dropped and the reason is logged, but a parse failure on one frame
- * must not take down the dispatcher that is delivering the rest. */
+/** An SSE frame that arrived on a named channel with a body that is not the JSON its wire name
+ * promises. */
+
+/** Named so the failure is DISTINGUISHABLE from "the event never arrived": the frame is dropped and
+ * the reason is logged, but a parse failure on one frame must not take down the dispatcher that is
+ * delivering the rest. */
 export class SseFrameError extends Data.TaggedError('SseFrameError')<{
   readonly eventType: string
   readonly reason: string
@@ -1291,25 +1277,20 @@ export type ChatHistoryResponse = {
   skills?: SkillInfo[]
 }
 
-/**
- * The transcript endpoint, WITH the failure in the type.
- *
- * Returns `Effect<ChatHistoryResponse, ChatHistoryError>`, so "the backend is
- * unreachable" is a value the caller must handle — it cannot be mistaken for
- * an empty transcript. That distinction is the whole fix: a slow or erroring
- * backend previously returned `messages: []`, the empty state's `v-if` went
- * true, and the chatview claimed a full session was empty ("How can I help
- * you?"). See AGENTS.md, "Frontend — No `try`/`catch` in the desktop app".
- *
- * `getChatHistory` (below) is the explicitly-named best-effort variant built
- * on this one, for the three metadata callers whose fallback chains depend on
- * degrading quietly.
- *
- * `timeoutMs` lets the transcript load outlive apiFetch's 15 s default: a
- * `limit=1000` page carrying base64 image_urls and tool JSON routinely needs
- * longer, and that abort is what turned a slow server into a phantom empty
- * session.
- */
+/** The transcript endpoint, WITH the failure in the type. Returns `Effect<ChatHistoryResponse,
+ * ChatHistoryError>`, so "the backend is unreachable" is a value the caller must handle — it cannot
+ * be mistaken for an empty transcript. */
+
+/** That distinction is the whole fix: a slow or erroring backend previously returned `messages:
+ * []`, the empty state's `v-if` went true, and the chatview claimed a full session was empty ("How
+ * can I help you?"). See AGENTS.md, "Frontend — No `try`/`catch` in the desktop app". */
+
+/** `getChatHistory` (below) is the explicitly-named best-effort variant built on this one, for the
+ * three metadata callers whose fallback chains depend on degrading quietly. */
+
+/** `timeoutMs` lets the transcript load outlive apiFetch's 15 s default: a `limit=1000` page
+ * carrying base64 image_urls and tool JSON routinely needs longer, and that abort is what turned a
+ * slow server into a phantom empty session. */
 export function fetchChatHistoryEffect(
   sessionId: string,
   limit = 50,
@@ -1368,11 +1349,11 @@ export function fetchChatHistoryEffect(
     git_worktree_cwd: data.git_worktree_cwd,
     pr_url: data.pr_url,
     pr_provider: data.pr_provider,
-    // 2026-08-07-profile-persist-read — read the per-session
-    // selected profile name so the chatview chip can show the
-    // persisted selection on page refresh. Empty string from the
-    // backend (= "no profile set") is preserved here; ChatView
-    // coerces empty → null before assigning to selectedProfile.
+    // 2026-08-07-profile-persist-read — read the per-session selected profile name so the chatview
+    // chip can show the persisted selection on page refresh.
+
+    // Empty string from the backend (= "no profile set") is preserved here; ChatView coerces empty
+    // → null before assigning to selectedProfile.
     selected_profile_model: data.selected_profile_model,
     max_total_tokens: data.max_total_tokens,
     max_capacity_total_tokens: data.max_capacity_total_tokens,
@@ -1391,17 +1372,16 @@ export function fetchChatHistoryEffect(
   }).pipe(Effect.map(toResponse))
 }
 
-/**
- * Best-effort transcript: a failure yields an EMPTY transcript rather than a
- * rejection, implemented on the Effect seam so no `try`/`catch` sits between
- * the failure and the value the caller gets.
- *
- * Correct ONLY for the three metadata callers — AppLayout's cwd fallback,
- * ChatView's `refreshWorktreeBinding` (`limit=1`), and the older-page
- * prefetch — whose fallback chains depend on degrading quietly. The initial
- * transcript load must use `fetchChatHistoryEffect`, so "the backend is
- * unreachable" can never be handed to the UI as "this session is empty".
- */
+/** Best-effort transcript: a failure yields an EMPTY transcript rather than a rejection,
+ * implemented on the Effect seam so no `try`/`catch` sits between the failure and the value the
+ * caller gets. */
+
+/** Correct ONLY for the three metadata callers — AppLayout's cwd fallback, ChatView's
+ * `refreshWorktreeBinding` (`limit=1`), and the older-page prefetch — whose fallback chains depend
+ * on degrading quietly. */
+
+/** The initial transcript load must use `fetchChatHistoryEffect`, so "the backend is unreachable"
+ * can never be handed to the UI as "this session is empty". */
 export function getChatHistory(
   sessionId: string,
   limit = 50,
@@ -1420,16 +1400,16 @@ export function getChatHistory(
   )
 }
 
-// Send a message to LLM
-//
-// Migration 063 — adds the optional `isAutoRetryUntilStop` flag.
-// "1" opts into unattended mode (the workflow re-reads this column
-// on entry and soft-bails past retry_count > 10). Default undefined
-// = today's behavior.
-// Default tools for a new chat session (created from a workspace item).
-// Minimal progressive-disclosure set: the agent discovers everything else
-// via search_tool / view_tool / use_tool. `command` for shell,
-// `load_memory` / `save_memory` for recall, `search_skills` + `use_skill` for skills.
+// Send a message to LLM Migration 063 — adds the optional `isAutoRetryUntilStop` flag. "1" opts
+// into unattended mode (the workflow re-reads this column on entry and soft-bails past retry_count
+// > 10). Default undefined = today's behavior.
+
+// Default tools for a new chat session (created from a workspace item). Minimal
+// progressive-disclosure set: the agent discovers everything else via search_tool / view_tool /
+// use_tool.
+
+// `command` for shell, `load_memory` / `save_memory` for recall, `search_skills` + `use_skill` for
+// skills.
 export const DEFAULT_CHAT_TOOLS = [
   'search_tool',
   'view_tool',
@@ -1448,11 +1428,11 @@ export const DEFAULT_CHAT_TOOLS = [
   // Seeded in every mode by default — without it here the tool would be
   // silently filtered out of plain chat sessions.
   'ask_user',
-  // Workspace-scoped documents (Migration 095). Both resolve their own
-  // workspace server-side from the calling session, so a plain chat is as
-  // safe as a project task: outside a workspace-linked session they refuse
-  // rather than guessing a scope. Seeded here because a chat is exactly
-  // where a user says "write that down".
+  // Workspace-scoped documents (Migration 095). Both resolve their own workspace server-side from
+  // the calling session, so a plain chat is as safe as a project task: outside a workspace-linked
+  // session they refuse rather than guessing a scope.
+
+  // Seeded here because a chat is exactly where a user says "write that down".
   'add_document',
   'edit_document',
   // Read-only counterpart: `edit_document` replaces the WHOLE body, so a
@@ -1548,13 +1528,12 @@ export async function updateSession(
   })
 }
 
-// POST /api/llm/session/:session_id/touched — stamp the human-touch
-// column when the user opens a chat (clears the amber stale-dot).
-// Contract: body {}, response { success, session_id }.
-// Silent: the caller (ChatsList fireSessionTouched) already logs failures
-// via console.error and retries by clearing its once-per-lifetime guard.
-// A toast here would spam "Session not found" on every New Chat open
-// while the session row is still being lazy-created.
+// POST /api/llm/session/:session_id/touched — stamp the human-touch column when the user opens a
+// chat (clears the amber stale-dot). Contract: body {}, response { success, session_id }.
+
+// Silent: the caller (ChatsList fireSessionTouched) already logs failures via console.error and
+// retries by clearing its once-per-lifetime guard. A toast here would spam "Session not found" on
+// every New Chat open while the session row is still being lazy-created.
 export async function markSessionTouched(
   sessionId: string,
 ): Promise<{ success: boolean; session_id: string }> {
@@ -1609,16 +1588,16 @@ export interface SseEvent {
   reasoning_content?: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; the surrounding type is intentionally opaque.
   tool_calls?: any
-  // 2026-08-24 (task_1787545088500_6, bug A) — backend
-  // SseEventLLMHistory (sse_on_event_send_llm_history.zig:150) sends
-  // the assistant row's serialized tool_calls array on the wire as
-  // `tool_calls_json`. ChatView.vue:groupToolNames walks
-  // `parsed[i].id` against the renderedToolCallIds set to suppress
-  // the redundant "tools" pill when every tool_call has a matching
-  // tool row. Without this field, the SSE-pushed message has
-  // tool_calls_json=undefined, the suppression check is bypassed,
-  // and the pill flashes between every tool card. Frontend parse is
-  // mirrored on the REST path at getChatHistory (~line 1198).
+  // 2026-08-24 (task_1787545088500_6, bug A) — backend SseEventLLMHistory
+  // (sse_on_event_send_llm_history.zig:150) sends the assistant row's serialized tool_calls array
+  // on the wire as `tool_calls_json`.
+
+  // ChatView.vue:groupToolNames walks `parsed[i].id` against the renderedToolCallIds set to
+  // suppress the redundant "tools" pill when every tool_call has a matching tool row.
+
+  // Without this field, the SSE-pushed message has tool_calls_json=undefined, the suppression check
+  // is bypassed, and the pill flashes between every tool card. Frontend parse is mirrored on the
+  // REST path at getChatHistory (~line 1198).
   tool_calls_json?: string
   tool_call_id?: string
   tool_name?: string
@@ -1643,26 +1622,26 @@ export interface SseEvent {
   // Diff view data for text_replace tool
   diffview_before?: string
   diffview_after?: string
-  // Pipe-separated image URLs (matches the REST SessionMessageResponse
-  // shape and the backend onEventSendLLMHistory payload). Frontend
-  // splits on '|' to populate Message.image_urls. Null for messages
-  // without attached images (most assistant responses, error paths,
-  // tool results that don't carry image data).
+  // Pipe-separated image URLs (matches the REST SessionMessageResponse shape and the backend
+  // onEventSendLLMHistory payload). Frontend splits on '|' to populate Message.image_urls.
+
+  // Null for messages without attached images (most assistant responses, error paths, tool results
+  // that don't carry image data).
   image_url?: string
   // Pipe-separated video URLs (Migration 090, backend
   // SseEventLLMHistory.video_url). Split on '|' into video_urls.
   video_url?: string
-  // Live session skills pushed on the SSE wire (backend:
-  // sse_on_event_send_llm_history.zig:45 SseEventLLMHistory.session_skills,
-  // next to is_error). REST-vs-SSE key note: the REST GET /messages path
-  // exposes these as `skills` (getChatHistory) while SSE uses
-  // `session_skills` — keep both keys, don't unify.
+  // Live session skills pushed on the SSE wire (backend: sse_on_event_send_llm_history.zig:45
+  // SseEventLLMHistory.session_skills, next to is_error).
+
+  // REST-vs-SSE key note: the REST GET /messages path exposes these as `skills` (getChatHistory)
+  // while SSE uses `session_skills` — keep both keys, don't unify.
   session_skills?: SkillInfo[]
-  // True when this event is an agentic-loop diagnostic (retry attempt or
-  // TooManyRetries bail) rather than a real chat turn. Backend:
-  // sse_on_event_send_llm_history.zig SseEventLLMHistory.is_error — set
-  // by workflow.zig's 3 diagnostic sites. ChatView routes these into
-  // AgentErrorCard instead of the message list.
+  // True when this event is an agentic-loop diagnostic (retry attempt or TooManyRetries bail)
+  // rather than a real chat turn. Backend: sse_on_event_send_llm_history.zig
+  // SseEventLLMHistory.is_error — set by workflow.zig's 3 diagnostic sites.
+
+  // ChatView routes these into AgentErrorCard instead of the message list.
   is_error?: boolean
 }
 
@@ -1799,14 +1778,15 @@ export async function deleteChat(id: string): Promise<{ success: boolean }> {
   return await apiFetch<{ success: boolean }>(`/chats/${id}`, { method: 'DELETE' })
 }
 
-// Session API - Fetch session info including cwd.
-// Lightweight detail read: GET /api/llm/session/:id returns the sessions
-// row (cwd, profile, worktree binding, PR binding, ...) with NO message
-// payload. Previously this used GET .../messages?limit=1, which returned
-// the oldest message (backend defaults to asc) — a single row carrying
-// full tool JSON / base64 that routinely weighed ~194 kB. Two mount-time
-// callers (AppLayout.fetchChatSessionCwd + ChatView.onSessionChanged) fired
-// it concurrently for the same session, doubling the waste.
+// Session API - Fetch session info including cwd. Lightweight detail read: GET /api/llm/session/:id
+// returns the sessions row (cwd, profile, worktree binding, PR binding, ...) with NO message
+// payload.
+
+// Previously this used GET .../messages?limit=1, which returned the oldest message (backend
+// defaults to asc) — a single row carrying full tool JSON / base64 that routinely weighed ~194 kB.
+
+// Two mount-time callers (AppLayout.fetchChatSessionCwd + ChatView.onSessionChanged) fired it
+// concurrently for the same session, doubling the waste.
 export interface Session {
   sessionId: string
   cwd: string
@@ -1850,12 +1830,13 @@ async function fetchSessionDetail(sessionId: string): Promise<Session | null> {
       name?: string
       cwd?: string
       created_at?: string
-      // 2026-08-07-profile-persist-read — extract the per-session
-      // selected profile name. Without this, the onSessionChanged load
-      // in ChatView that reads `selectedProfile` from `getSession()`
-      // would always see undefined and clobber any value loaded
-      // earlier from `getChatHistory()`. The detail endpoint returns it
-      // straight from the sessions row (no message JOIN needed).
+      // 2026-08-07-profile-persist-read — extract the per-session selected profile name.
+
+      // Without this, the onSessionChanged load in ChatView that reads `selectedProfile` from
+      // `getSession()` would always see undefined and clobber any value loaded earlier from
+      // `getChatHistory()`.
+
+      // The detail endpoint returns it straight from the sessions row (no message JOIN needed).
       selected_profile_model?: string
       sub_agent_name?: string
       parent_session_id?: string
@@ -1887,13 +1868,13 @@ async function fetchSessionDetail(sessionId: string): Promise<Session | null> {
   }
 }
 
-// Owning workspace of a session (plan: 2026-09-22-revamp-ui-chats).
-// `GET /api/llm/session/:session_id` resolves via the task link first,
-// then the cwd heuristic, and returns `workspace_id` (string) or null
-// when the session belongs to no workspace. Used by the AppLayout boot
-// rewrite to place legacy chat URLs (`/app/chat/:sid`,
-// `?view=chat&session=X`) under their workspace path. Null on 404 /
-// network failure — callers fail closed to `/app`.
+// Owning workspace of a session (plan: 2026-09-22-revamp-ui-chats). `GET
+// /api/llm/session/:session_id` resolves via the task link first, then the cwd heuristic, and
+// returns `workspace_id` (string) or null when the session belongs to no workspace.
+
+// Used by the AppLayout boot rewrite to place legacy chat URLs (`/app/chat/:sid`,
+// `?view=chat&session=X`) under their workspace path. Null on 404 / network failure — callers fail
+// closed to `/app`.
 export async function getSessionWorkspaceId(sessionId: string): Promise<string | null> {
   if (!sessionId) return null
   try {
@@ -1999,13 +1980,12 @@ export interface Worker {
   id: string
   session_id: string
   working_directory: string | null
-  /** Unix SECONDS of the last heartbeat, as a numeric string.
-   * The backend selects `w.last_activity_nano AS last_activity` and every
-   * `Row.values` entry is a `[]u8`, so the column is serialised as a JSON
-   * string even though the underlying column is INTEGER. The SSE
-   * `WorkerEvent.last_activity` is a bare number — the two wire shapes
-   * disagree, which is why consumers normalise both (see `toMillis` in
-   * App.vue). */
+  /** Unix SECONDS of the last heartbeat, as a numeric string. The backend selects
+   * `w.last_activity_nano AS last_activity` and every `Row.values` entry is a `[]u8`, so the column
+   * is serialised as a JSON string even though the underlying column is INTEGER. */
+
+  /** The SSE `WorkerEvent.last_activity` is a bare number — the two wire shapes disagree, which is
+   * why consumers normalise both (see `toMillis` in App.vue). */
   last_activity: string | null
   last_activity_description: string | null
   created_at: string | null
@@ -2038,18 +2018,12 @@ export async function createWorkspaceItem(
   })
 }
 
-/**
- * Create a new design workspace item (`item_type='design'`). The
- * `path` is REQUIRED because design elements live as HTML files
- * under `<path>/.pabrik/design/...` (the model layer rejects
- * element-add with `ItemPathMissing` if path is NULL — see
- * design_model.zig).
- *
- * Mirrors `createKanban(workspaceId, name, path)` but requires the
- * path (no cwd-less design). Returns the new `WorkspaceItem`.
- *
- * POST /api/workspaces/:workspaceId/items/design
- */
+/** Create a new design workspace item (`item_type='design'`). The `path` is REQUIRED because design
+ * elements live as HTML files under `<path>/.pabrik/design/...` (the model layer rejects
+ * element-add with `ItemPathMissing` if path is NULL — see design_model.zig). */
+
+/** Mirrors `createKanban(workspaceId, name, path)` but requires the path (no cwd-less design).
+ * Returns the new `WorkspaceItem`. POST /api/workspaces/:workspaceId/items/design */
 export async function createDesign(
   workspaceId: string,
   name: string,
@@ -2149,11 +2123,11 @@ export async function listKanbanColumns(
   )
 }
 
-/** Add a new column to a kanban. `position` is optional — when omitted
- * the backend appends at the end of the existing sequence
- * (max(position)+1). Returns the newly-created column (with its
- * server-assigned `id` and `position`).
- * POST /api/workspaces/:workspaceId/items/:itemId/kanban/columns */
+/** Add a new column to a kanban. `position` is optional — when omitted the backend appends at the
+ * end of the existing sequence (max(position)+1). Returns the newly-created column (with its
+ * server-assigned `id` and `position`). */
+
+/** POST /api/workspaces/:workspaceId/items/:itemId/kanban/columns */
 export async function addKanbanColumn(
   workspaceId: string,
   itemId: string,
@@ -2167,26 +2141,21 @@ export async function addKanbanColumn(
   })
 }
 
-/**
- * Copy a kanban's column spec (names + descriptions, preserving
- * order) from a source kanban to a target kanban. Tasks are NOT
- * copied — only the column "template". Destructive for the target:
- * in `replace` mode, the target's existing columns are deleted
- * (with task unassignment) and replaced with copies of the
- * source's. In `append` mode, the source's columns are appended
- * after the target's existing MAX(position).
- *
- * Returns the target's new full column list `{columns, count}`
- * (same envelope as `listKanbanColumns`). The frontend replaces
- * its local `kanban_columns` array with this list in one round
- * trip — backend's atomic emit/replace pattern matches every
- * other kanban mutation endpoint.
- *
- * POST /api/workspaces/:workspaceId/items/:itemId/kanban/copy_spec_from/:sourceItemId
- *
- * Plan: docs/superpowers/plans/2026-07-04-copy-kanban-spec.md
- *   (Chunk 3, Task 3.1)
- */
+/** Copy a kanban's column spec (names + descriptions, preserving order) from a source kanban to a
+ * target kanban. Tasks are NOT copied — only the column "template". */
+
+/** Destructive for the target: in `replace` mode, the target's existing columns are deleted (with
+ * task unassignment) and replaced with copies of the source's. In `append` mode, the source's
+ * columns are appended after the target's existing MAX(position). */
+
+/** Returns the target's new full column list `{columns, count}` (same envelope as
+ * `listKanbanColumns`). */
+
+/** The frontend replaces its local `kanban_columns` array with this list in one round trip —
+ * backend's atomic emit/replace pattern matches every other kanban mutation endpoint. */
+
+/** POST /api/workspaces/:workspaceId/items/:itemId/kanban/copy_spec_from/:sourceItemId Plan:
+ * docs/superpowers/plans/2026-07-04-copy-kanban-spec.md (Chunk 3, Task 3.1) */
 export async function copyKanbanSpec(
   workspaceId: string,
   targetItemId: string,
@@ -2202,22 +2171,18 @@ export async function copyKanbanSpec(
   )
 }
 
-/**
- * Patch a kanban column. Both `name` and `position` are optional;
- * pass only the fields you want to change. The backend applies the
- * patch and re-numbers sibling positions when `position` changes.
- *
- * Returns the FULL updated board (`{columns, count}`) — same envelope
- * as `listKanbanColumns`. The backend emits the full board on every
- * successful PATCH so the frontend never needs a follow-up GET to see
- * the post-rename ordering or sibling positions. The store replaces
- * its local `kanban_columns` array with the backend's returned list
- * (defensively re-sorted by position), so sibling columns (which the
- * backend may have renumbered when `position` changed) are mirrored
- * in the same round-trip.
- *
- * PATCH /api/workspaces/:workspaceId/items/:itemId/kanban/columns/:columnId
- */
+/** Patch a kanban column. Both `name` and `position` are optional; pass only the fields you want to
+ * change. The backend applies the patch and re-numbers sibling positions when `position` changes.
+ * Returns the FULL updated board (`{columns, count}`) — same envelope as `listKanbanColumns`. */
+
+/** The backend emits the full board on every successful PATCH so the frontend never needs a
+ * follow-up GET to see the post-rename ordering or sibling positions. */
+
+/** The store replaces its local `kanban_columns` array with the backend's returned list
+ * (defensively re-sorted by position), so sibling columns (which the backend may have renumbered
+ * when `position` changed) are mirrored in the same round-trip. */
+
+/** PATCH /api/workspaces/:workspaceId/items/:itemId/kanban/columns/:columnId */
 export async function updateKanbanColumn(
   workspaceId: string,
   itemId: string,
@@ -2233,11 +2198,11 @@ export async function updateKanbanColumn(
   )
 }
 
-/** Delete a kanban column. Tasks in the column are unassigned
- * (kanban_column_id set to NULL) — they remain visible in the
- * folder-list view as "Unassigned". Idempotent: a 200 is returned
- * whether the column existed or not (handled by the backend).
- * DELETE /api/workspaces/:workspaceId/items/:itemId/kanban/columns/:columnId */
+/** Delete a kanban column. Tasks in the column are unassigned (kanban_column_id set to NULL) — they
+ * remain visible in the folder-list view as "Unassigned". Idempotent: a 200 is returned whether the
+ * column existed or not (handled by the backend). */
+
+/** DELETE /api/workspaces/:workspaceId/items/:itemId/kanban/columns/:columnId */
 export async function deleteKanbanColumn(
   workspaceId: string,
   itemId: string,
@@ -2249,12 +2214,12 @@ export async function deleteKanbanColumn(
   )
 }
 
-/** Move a task to a new column and position within that column. The
- * backend's `moveTask` does the move + sibling re-numbering in a
- * single transaction. Returns the updated task with the new
- * `kanban_column_id` and `kanban_position` so the caller can confirm
- * the move landed where expected.
- * PATCH /api/workspaces/:workspaceId/items/:itemId/tasks/:taskId/move */
+/** Move a task to a new column and position within that column. The backend's `moveTask` does the
+ * move + sibling re-numbering in a single transaction. */
+
+/** Returns the updated task with the new `kanban_column_id` and `kanban_position` so the caller can
+ * confirm the move landed where expected. PATCH
+ * /api/workspaces/:workspaceId/items/:itemId/tasks/:taskId/move */
 export async function moveTask(
   workspaceId: string,
   itemId: string,
@@ -2431,12 +2396,12 @@ export async function addDesignElement(
   )
 }
 
-/** PUT /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/:elementId
- * Full update of an element. The body shape is `Partial<DesignElement>` —
- * any subset of fields can be patched. The backend applies the patch
- * as a sparse merge (omitted fields left unchanged).
- * Returns the full updated DesignElement record (so the frontend can
- * sync its local Pinia store from the response). */
+/** PUT /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/:elementId Full
+ * update of an element. The body shape is `Partial<DesignElement>` — any subset of fields can be
+ * patched. The backend applies the patch as a sparse merge (omitted fields left unchanged). */
+
+/** Returns the full updated DesignElement record (so the frontend can sync its local Pinia store
+ * from the response). */
 export async function updateDesignElement(
   workspaceId: string,
   itemId: string,
@@ -2467,18 +2432,13 @@ export interface GroupDesignElementsRequest {
   type?: 'group' | 'frame'
 }
 
-/**
- * POST /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/group
- *
- * NEW (Chunk 5 of grouped-layers plan). Wraps 2+ elements into a new
- * `group` (or `frame`) parent at the union bbox of the children. The
- * backend sets `parent_id` on each child to the new group's id in a
- * single transaction.
- *
- * Response 201: `{ parent: DesignElement, children: DesignElement[] }`.
- * Error shape: 400 (BadChildId / ChildAcrossDifferentPages), 404
- * (PageNotFound), 409 (ChildAlreadyParented).
- */
+/** POST /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/group NEW (Chunk 5
+ * of grouped-layers plan). Wraps 2+ elements into a new `group` (or `frame`) parent at the union
+ * bbox of the children. */
+
+/** The backend sets `parent_id` on each child to the new group's id in a single transaction.
+ * Response 201: `{ parent: DesignElement, children: DesignElement[] }`. Error shape: 400
+ * (BadChildId / ChildAcrossDifferentPages), 404 (PageNotFound), 409 (ChildAlreadyParented). */
 export async function groupDesignElements(
   workspaceId: string,
   itemId: string,
@@ -2529,24 +2489,16 @@ export async function reorderDesignElements(
   )
 }
 
-/**
- * POST /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/reparent-batch
- *
- * NEW (Chunk 1b of drag-to-reparent plan). Atomic N-element reparent
- * in a single transaction. Used by the LayersPanel drag-and-drop
- * affordance so dragging 1 or N selected rows into a group uses ONE
- * round-trip instead of N parallel PUTs. The whole batch is
- * all-or-nothing — if ANY element would close a cycle, the batch
- * fails with 400 BadReparent and no DB writes happen.
- *
- * Body shape: `{ element_ids: [...], new_parent_id: ... | null,
- *                reposition: 'last_in_parent' }`.
- *
- * Response 200: `{ updated: DesignElement[] }` in input order.
- *
- * Error shape: 400 (EmptyElementIds / BadElementId / BadNewParentId /
- * BadReparent), 404 (PageNotFound), 409 (CrossPageIds).
- */
+/** POST /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/reparent-batch NEW
+ * (Chunk 1b of drag-to-reparent plan). Atomic N-element reparent in a single transaction. */
+
+/** Used by the LayersPanel drag-and-drop affordance so dragging 1 or N selected rows into a group
+ * uses ONE round-trip instead of N parallel PUTs. The whole batch is all-or-nothing — if ANY
+ * element would close a cycle, the batch fails with 400 BadReparent and no DB writes happen. */
+
+/** Body shape: `{ element_ids: [...], new_parent_id: ... | null, reposition: 'last_in_parent' }`.
+ * Response 200: `{ updated: DesignElement[] }` in input order. Error shape: 400 (EmptyElementIds /
+ * BadElementId / BadNewParentId / BadReparent), 404 (PageNotFound), 409 (CrossPageIds). */
 export interface ReparentDesignElementsBatchRequest {
   element_ids: string[]
   /** null = top-level (leave any current group). */
@@ -2572,10 +2524,11 @@ export async function reparentDesignElementsBatch(
 }
 
 /** DELETE /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/:elementId
- * Idempotent delete. Returns `{ success: true }` whether the row
- * existed or not (the backend returns 200 either way — a missing
- * element is not a 404 here because the canonical "I want this gone"
- * semantic should be idempotent). */
+ * Idempotent delete. */
+
+/** Returns `{ success: true }` whether the row existed or not (the backend returns 200 either way —
+ * a missing element is not a 404 here because the canonical "I want this gone" semantic should be
+ * idempotent). */
 export async function deleteDesignElement(
   workspaceId: string,
   itemId: string,
@@ -2588,21 +2541,14 @@ export async function deleteDesignElement(
   )
 }
 
-/**
- * POST /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/ungroup
- *
- * Dissolve a `group` or `frame` element: reparent its direct children
- * to the group's parent (or top-level if the group had no parent), then
- * delete the group row. Children keep their absolute x/y — their geometry
- * is independent of the group's bbox.
- *
- * Body: `{ element_id: 'elem_g' }`.
- *
- * Response 200: `{ orphaned: DesignElement[] }` — the children in their
- * new post-reparent state.
- *
- * Error shape: 400 (BadGroupId / NotAGroup / EmptyGroup), 500 (DbError).
- */
+/** POST /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/ungroup Dissolve a
+ * `group` or `frame` element: reparent its direct children to the group's parent (or top-level if
+ * the group had no parent), then delete the group row. */
+
+/** Children keep their absolute x/y — their geometry is independent of the group's bbox. Body: `{
+ * element_id: 'elem_g' }`. Response 200: `{ orphaned: DesignElement[] }` — the children in their
+ * new post-reparent state. Error shape: 400 (BadGroupId / NotAGroup / EmptyGroup), 500
+ * (DbError). */
 export async function ungroupDesignElements(
   workspaceId: string,
   itemId: string,
@@ -2615,21 +2561,15 @@ export async function ungroupDesignElements(
   )
 }
 
-/**
- * DELETE /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId
- *
- * Delete a design page. The backend (design_model.deletePage) handles
- * the SQL DELETE on design_pages (FK ON DELETE CASCADE cleans up the
- * child design_page_elements rows) and recursively rmdirs the
- * on-disk `<item_path>/.pabrik/design/<sanitized_page_name>/` folder.
- *
- * UI-only — no LLM tool exposes this endpoint, only the DesignView
- * tab-strip × button. Returns 200 with `{success:true}`. 404 if the
- * page didn't exist (idempotent — caller treats 404 as success).
- *
- * Plan: docs/superpowers/plans/2026-07-25-design-page-delete-button.md
- *   (Chunk 2)
- */
+/** DELETE /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId Delete a design page. */
+
+/** The backend (design_model.deletePage) handles the SQL DELETE on design_pages (FK ON DELETE
+ * CASCADE cleans up the child design_page_elements rows) and recursively rmdirs the on-disk
+ * `<item_path>/.pabrik/design/<sanitized_page_name>/` folder. */
+
+/** UI-only — no LLM tool exposes this endpoint, only the DesignView tab-strip × button. Returns 200
+ * with `{success:true}`. 404 if the page didn't exist (idempotent — caller treats 404 as success).
+ * Plan: docs/superpowers/plans/2026-07-25-design-page-delete-button.md (Chunk 2) */
 export async function deleteDesignPage(
   workspaceId: string,
   itemId: string,
@@ -2656,10 +2596,10 @@ export async function getDesignElementHtml(
 }
 
 /** PATCH /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/:elementId/html
- * Persist a new HTML body for an element. Triggered by the
- * contenteditable / Monaco save flow — the content is the user-
- * edited inner HTML of the element's iframe.
- * Returns the full updated DesignElement record. */
+ * Persist a new HTML body for an element. Triggered by the contenteditable / Monaco save flow — the
+ * content is the user- edited inner HTML of the element's iframe. */
+
+/** Returns the full updated DesignElement record. */
 export async function updateDesignElementHtml(
   workspaceId: string,
   itemId: string,
@@ -2733,20 +2673,15 @@ export async function translateDesignElement(
   )
 }
 
-/**
- * POST /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/:elementId/resize
- *
- * NEW (2026-08-06) — single-element resize. The body carries
- * absolute `(x, y, width, height, rotation?)` fields. At least one
- * field is required. Resize NEVER cascades (Figma convention — only
- * the dragged element's bounding box changes; children keep their
- * own positions).
- *
- * Returns the single updated DesignElement.
- *
- * Replaces `updateDesignElementGeometry` for the resize use case.
- * See `docs/superpowers/plans/2026-08-06-split-move-resize.md`.
- */
+/** POST /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/:elementId/resize
+ * NEW (2026-08-06) — single-element resize. The body carries absolute `(x, y, width, height,
+ * rotation?)` fields. At least one field is required. */
+
+/** Resize NEVER cascades (Figma convention — only the dragged element's bounding box changes;
+ * children keep their own positions). Returns the single updated DesignElement. Replaces
+ * `updateDesignElementGeometry` for the resize use case. */
+
+/** See `docs/superpowers/plans/2026-08-06-split-move-resize.md`. */
 export async function resizeDesignElement(
   workspaceId: string,
   itemId: string,
@@ -2777,17 +2712,13 @@ export interface GeometryBatchUpdateResponse {
   updated: DesignElement[]
 }
 
-/**
- * Atomic N-element geometry update. Used by the canvas drag handler
- * when multiple elements are selected (multi-element drag, group /
- * frame being moved) so the N per-element PATCHes collapse into ONE
- * PATCH per pointermove. Combined with the trailing-edge debounce in
- * `useDesignDragDebounce`, this drops the request rate from ~200
- * req/sec to ~2 req/sec for a 5-element drag.
- *
- * Plan: docs/superpowers/plans/2026-07-30-design-drag-debounce-batch.md
- *   (Chunk 3, Task 3.1)
- */
+/** Atomic N-element geometry update. Used by the canvas drag handler when multiple elements are
+ * selected (multi-element drag, group / frame being moved) so the N per-element PATCHes collapse
+ * into ONE PATCH per pointermove. */
+
+/** Combined with the trailing-edge debounce in `useDesignDragDebounce`, this drops the request rate
+ * from ~200 req/sec to ~2 req/sec for a 5-element drag. Plan:
+ * docs/superpowers/plans/2026-07-30-design-drag-debounce-batch.md (Chunk 3, Task 3.1) */
 export async function updateDesignElementsGeometryBatch(
   workspaceId: string,
   itemId: string,
@@ -2800,13 +2731,12 @@ export async function updateDesignElementsGeometryBatch(
   )
 }
 
-/** Server-side cascade move. Each item's `(dx, dy)` applies to the
- * element AND every transitive descendant of that element via a
- * single recursive CTE inside one SQL transaction. Optional
- * `width`/`height`/`rotation` apply ONLY to the root element (Figma
- * convention — resize is per-element, not per-subtree).
- * Plan: docs/superpowers/plans/2026-08-06-move-element-with-descendants.md
- *   (Chunk 3, Task 3.1) */
+/** Server-side cascade move. Each item's `(dx, dy)` applies to the element AND every transitive
+ * descendant of that element via a single recursive CTE inside one SQL transaction. */
+
+/** Optional `width`/`height`/`rotation` apply ONLY to the root element (Figma convention — resize
+ * is per-element, not per-subtree). Plan:
+ * docs/superpowers/plans/2026-08-06-move-element-with-descendants.md (Chunk 3, Task 3.1) */
 export interface MoveBatchItem {
   element_id: string
   /** Translation delta in CSS px. Cascades to descendants. */
@@ -2838,18 +2768,13 @@ export async function moveDesignElementsBatch(
   )
 }
 
-/**
- * Move an element to a different page in the same design item.
- *
- * Mirrors the backend `POST .../elements/:element_id/move-to-page`
- * endpoint. Changes the element's `page_id` (and `position` on the
- * target page) instead of `x`/`y`. When `apply_to_children=true` (the
- * default), the move cascades to every transitive descendant via a
- * recursive CTE in one SQL transaction (same semantics as
- * `moveDesignElementsBatch` but cross-page).
- *
- * Plan: docs/superpowers/plans/2026-08-06-move-element-to-page.md (Chunk 4)
- */
+/** Move an element to a different page in the same design item. Mirrors the backend `POST
+ * .../elements/:element_id/move-to-page` endpoint. Changes the element's `page_id` (and `position`
+ * on the target page) instead of `x`/`y`. */
+
+/** When `apply_to_children=true` (the default), the move cascades to every transitive descendant
+ * via a recursive CTE in one SQL transaction (same semantics as `moveDesignElementsBatch` but
+ * cross-page). Plan: docs/superpowers/plans/2026-08-06-move-element-to-page.md (Chunk 4) */
 export interface MoveElementToPageInput {
   /** REQUIRED. The destination page id. Must be on the same design item. */
   new_page_id: string
@@ -2874,13 +2799,11 @@ export async function moveDesignElementToPage(
   )
 }
 
-// Skills API
-//
-// A skill is a ROW scoped to one workspace, and that scope is its whole
-// identity: no `is_global`, no `cwd`, no `path`. A skill wanted in two
-// workspaces is two rows. So every route here carries the workspace id in
-// the URL — the same shape `documents` uses — and "list the skills" is
-// never answerable without one.
+// Skills API A skill is a ROW scoped to one workspace, and that scope is its whole identity: no
+// `is_global`, no `cwd`, no `path`. A skill wanted in two workspaces is two rows.
+
+// So every route here carries the workspace id in the URL — the same shape `documents` uses — and
+// "list the skills" is never answerable without one.
 export interface Skill {
   name: string
   description: string
@@ -2941,11 +2864,11 @@ export interface SkillCreateResponse {
   skill: SkillDetail
 }
 
-/** POST /api/workspaces/:workspaceId/skills
- * 201 with the stored row, so the caller can render what it just wrote
- * without a second GET. A duplicate name in the SAME workspace is a 409 —
- * the store's `upsertSkill` is create-or-replace by design (the importer
- * runs on every start-up), so the refusal has to live on this route, where
+/** POST /api/workspaces/:workspaceId/skills 201 with the stored row, so the caller can render what
+ * it just wrote without a second GET. */
+
+/** A duplicate name in the SAME workspace is a 409 — the store's `upsertSkill` is create-or-replace
+ * by design (the importer runs on every start-up), so the refusal has to live on this route, where
  * the caller is a human who pressed a button. */
 export async function createSkill(
   workspaceId: string,
@@ -2961,18 +2884,14 @@ export interface SkillUpdateResponse {
   skill: SkillDetail
 }
 
-/**
- * PATCH /api/workspaces/:workspaceId/skills/:skillName
- *
- * The name is a path param and is IMMUTABLE: a rename would break every
- * `use_skill({ name })` call and every cached `skill_eval` verdict. A
- * `name` in the body is therefore a claim about which row is being
- * addressed, and a claim that does not match answers 404 — the same
- * answer a foreign workspace gets.
- *
- * An omitted field keeps its value; an explicit `''` clears it. That
- * distinction is why the body fields are optional rather than defaulted.
- */
+/** PATCH /api/workspaces/:workspaceId/skills/:skillName The name is a path param and is IMMUTABLE:
+ * a rename would break every `use_skill({ name })` call and every cached `skill_eval` verdict. */
+
+/** A `name` in the body is therefore a claim about which row is being addressed, and a claim that
+ * does not match answers 404 — the same answer a foreign workspace gets. An omitted field keeps its
+ * value; an explicit `''` clears it. */
+
+/** That distinction is why the body fields are optional rather than defaulted. */
 export async function updateSkill(
   workspaceId: string,
   skillName: string,
@@ -3046,15 +2965,14 @@ export async function deleteMemory(name: string): Promise<MemoryDeleteResponse> 
 }
 
 // Local Memories API (per-cwd memories at `<cwd>/.pabrik/memories/`).
-//
-// Distinct from the global memories above: local memories are scoped
-// to a specific project directory (the cwd) and are auto-injected
-// into every chat as the "Local Knowledge" section of the system
-// prompt (see `loadLocalKnowledge` in
-// `src/modules/agent/prompts.zig`). The `cwd` is passed in the body
-// (POST/PUT) or the query string (GET/DELETE) and is required for
-// the request to be useful. The backend falls back to the pabrik
-// server's CWD when no cwd is provided.
+
+// Distinct from the global memories above: local memories are scoped to a specific project
+// directory (the cwd) and are auto-injected into every chat as the "Local Knowledge" section of the
+// system prompt (see `loadLocalKnowledge` in `src/modules/agent/prompts.zig`).
+
+// The `cwd` is passed in the body (POST/PUT) or the query string (GET/DELETE) and is required for
+// the request to be useful. The backend falls back to the pabrik server's CWD when no cwd is
+// provided.
 
 /** Build the `cwd` query string for a local-memory request.
  * Returns the `?cwd=...` suffix, or `''` if `cwd` is empty. */
@@ -3150,12 +3068,12 @@ export async function getGitStatus(cwd: string): Promise<GitStatus> {
     writeGitStatusCache(cwd, status)
     return status
   } catch {
-    // Stale-while-revalidate: a failed refresh falls back to the
-    // last-known status for this cwd so the branch chip keeps showing
-    // something real instead of blanking on a transient backend error.
-    // Only when there is no cache at all do we return the empty
-    // non-repo status (apiFetch also fires a toast notification on
-    // non-2xx; the empty status fallback ensures the UI doesn't crash
+    // Stale-while-revalidate: a failed refresh falls back to the last-known status for this cwd so
+    // the branch chip keeps showing something real instead of blanking on a transient backend
+    // error.
+
+    // Only when there is no cache at all do we return the empty non-repo status (apiFetch also
+    // fires a toast notification on non-2xx; the empty status fallback ensures the UI doesn't crash
     // while the user sees the error).
     return (
       readGitStatusCache(cwd) ?? {
@@ -3203,11 +3121,11 @@ export interface GitBlameResponse {
   lines: GitBlameLine[]
 }
 
-/** The blame fetch failed — transport or non-2xx. Deliberately coarse:
- * blame is annotation, not content, so the viewer acts on "no chips",
- * and the only thing the tag must guarantee is that the failure is
- * distinguishable from an empty-but-successful blame (same contract as
- * `ChatHistoryError` above). */
+/** The blame fetch failed — transport or non-2xx. */
+
+/** Deliberately coarse: blame is annotation, not content, so the viewer acts on "no chips", and the
+ * only thing the tag must guarantee is that the failure is distinguishable from an
+ * empty-but-successful blame (same contract as `ChatHistoryError` above). */
 export class GitBlameError extends Data.TaggedError('GitBlameError')<{
   readonly cwd: string
   readonly file: string
@@ -3244,11 +3162,11 @@ export function getGitBlame(cwd: string, filePath: string): Promise<GitBlameResp
   )
 }
 
-// Git worktree info — used by the "Create a PR" dialog to pre-fill
-// the form. The optional `base` parameter is forwarded as
-// `?base=<branch>` to the backend (Chunk 2 design decision #12): when
-// the user changes the base branch and clicks Auto-fill, we want the
-// diff re-computed against the new base.
+// Git worktree info — used by the "Create a PR" dialog to pre-fill the form.
+
+// The optional `base` parameter is forwarded as `?base=<branch>` to the backend (Chunk 2 design
+// decision #12): when the user changes the base branch and clicks Auto-fill, we want the diff
+// re-computed against the new base.
 export interface GitWorktreeInfo {
   is_git_repo: boolean
   branch: string
@@ -3300,11 +3218,11 @@ export interface GitPrCreateResponse {
   provider?: string
 }
 
-/** Open a PR/MR on `worktreePath`.
- * `provider` is optional and forwarded verbatim: omitting it lets the
- * backend detect the forge from the worktree's `origin` remote, which is
- * the right answer whenever the caller never learned a provider (a board
- * badge, a worktree opened without an attached PR). */
+/** Open a PR/MR on `worktreePath`. */
+
+/** `provider` is optional and forwarded verbatim: omitting it lets the backend detect the forge
+ * from the worktree's `origin` remote, which is the right answer whenever the caller never learned
+ * a provider (a board badge, a worktree opened without an attached PR). */
 export async function createGitPr(
   worktreePath: string,
   base: string,
@@ -3348,11 +3266,11 @@ export interface GitBranchesResponse {
   branches: GitBranchEntry[]
 }
 
-/** List the local + remote-tracking branches of the repo at `repoPath`.
- * Never throws and never rejects: a missing/unreachable repo path, a
- * non-git directory (backend 404), or a backend that is down all degrade
- * to the empty response so the picker gracefully falls back to a plain
- * text input. The user can always type a ref by hand. */
+/** List the local + remote-tracking branches of the repo at `repoPath`. */
+
+/** Never throws and never rejects: a missing/unreachable repo path, a non-git directory (backend
+ * 404), or a backend that is down all degrade to the empty response so the picker gracefully falls
+ * back to a plain text input. The user can always type a ref by hand. */
 export async function listGitBranches(repoPath: string): Promise<GitBranchesResponse> {
   const empty: GitBranchesResponse = {
     is_git_repo: false,
@@ -3507,10 +3425,10 @@ export interface SessionEvent {
   // string when no worktree is bound, omitted for events that don't
   // carry session fields (e.g. delete).
   git_worktree_cwd?: string
-  // Mirrors sessions.is_auto_retry_until_stop (Migration 063). Only
-  // present on 'updated' events where the session row carries the
-  // flag. Used by the workspaces store's SSE handler to keep
-  // task.is_auto_retry_until_stop in sync so the
+  // Mirrors sessions.is_auto_retry_until_stop (Migration 063). Only present on 'updated' events
+  // where the session row carries the flag.
+
+  // Used by the workspaces store's SSE handler to keep task.is_auto_retry_until_stop in sync so the
   // KanbanTaskDetailDialog toggle shows the live value.
   is_auto_retry_until_stop?: string
   // Migration 082 — the touched POST's SSE echo carries the fresh stamp (unix-ms integer string,
@@ -3556,11 +3474,11 @@ export interface SkillEvalEvent {
   result_id: string
 }
 
-// File stage/unstage SSE event (see
-// src/agentic_loop/git_file_stage_events.zig). Both granular wire names
-// (`git_file_staged` / `git_file_unstaged`) share this payload; the consumer
-// filters by `cwd` and moves ONE row between Staged / Changes / Untracked
-// instead of re-fetching the whole git-status list.
+// File stage/unstage SSE event (see src/agentic_loop/git_file_stage_events.zig).
+
+// Both granular wire names (`git_file_staged` / `git_file_unstaged`) share this payload; the
+// consumer filters by `cwd` and moves ONE row between Staged / Changes / Untracked instead of
+// re-fetching the whole git-status list.
 export interface GitFileStageEvent {
   action: 'staged' | 'unstaged'
   /** Repo-relative path that moved. */
@@ -3648,12 +3566,13 @@ export async function getSkillEvalsSummary(sessionId = ''): Promise<SkillEvalsSu
   return await apiFetch<SkillEvalsSummaryResponse>(`/skill-evals/summary${suffix}`)
 }
 
-/** Record that a human accepted a verdict.
- * `result_id` is a QUERY parameter, not a path segment — the backend keeps
- * every route under this prefix a literal so no `:param` route can shadow a
- * later one. A 409 means either "already applied" or "the body changed since
- * this verdict was computed"; both are surfaced to the caller rather than
- * swallowed, because the UI must offer a re-evaluate in the second case. */
+/** Record that a human accepted a verdict. `result_id` is a QUERY parameter, not a path segment —
+ * the backend keeps every route under this prefix a literal so no `:param` route can shadow a later
+ * one. */
+
+/** A 409 means either "already applied" or "the body changed since this verdict was computed"; both
+ * are surfaced to the caller rather than swallowed, because the UI must offer a re-evaluate in the
+ * second case. */
 export async function applySkillEvalResult(
   resultId: string,
   action = 'apply',
@@ -3683,11 +3602,11 @@ export async function getQueuedMessages(sessionId: string): Promise<{
   )
 }
 
-// 2026-09-02 stream-resume-on-reselect (task_1787673548905_0) —
-// in-flight stream snapshot. When the user closes/re-selects a chat
-// session mid-stream, ChatView drops its streaming-* placeholder; this
-// endpoint returns the backend's authoritative partial text so the
-// re-mounted view can resume seamlessly.
+// 2026-09-02 stream-resume-on-reselect (task_1787673548905_0) — in-flight stream snapshot.
+
+// When the user closes/re-selects a chat session mid-stream, ChatView drops its streaming-*
+// placeholder; this endpoint returns the backend's authoritative partial text so the re-mounted
+// view can resume seamlessly.
 export interface StreamSnapshot {
   active: boolean
   content: string
@@ -3697,11 +3616,11 @@ export async function getStreamSnapshot(sessionId: string): Promise<StreamSnapsh
   return await apiFetch<StreamSnapshot>(`/llm/session/${sessionId}/stream`)
 }
 
-// 2026-09-04 spawn-subagent-refresh-persist (task_1788505292766_1) —
-// live spawn-batch snapshot. A page refresh mid-run wipes ChatView's
-// in-memory subAgentProgressMap with no SSE replay; this endpoint
-// returns the backend's authoritative rows so loadChatHistory can
-// rehydrate placeholder spawn cards.
+// 2026-09-04 spawn-subagent-refresh-persist (task_1788505292766_1) — live spawn-batch snapshot.
+
+// A page refresh mid-run wipes ChatView's in-memory subAgentProgressMap with no SSE replay; this
+// endpoint returns the backend's authoritative rows so loadChatHistory can rehydrate placeholder
+// spawn cards.
 export interface SubAgentProgressSnapshotRow {
   agent_name: string
   status: 'launched' | 'completed' | 'failed'
@@ -3763,10 +3682,10 @@ export interface KanbanTaskEvent {
   task_id: string
   new_column_id?: string | null
   new_position?: number | null
-  // After-action review state — present ONLY on `human_touched`
-  // events (task_mark_human_touched.zig sends `false`; null on
-  // assigned/moved/unassigned). Read by the kanbanSse handler to
-  // patch the local task in place instead of refetching every
+  // After-action review state — present ONLY on `human_touched` events (task_mark_human_touched.zig
+  // sends `false`; null on assigned/moved/unassigned).
+
+  // Read by the kanbanSse handler to patch the local task in place instead of refetching every
   // column (chatview-open api-spam fix, 2026-08-24).
   needs_human_review?: boolean | null
 }
@@ -3790,26 +3709,27 @@ export interface UnifiedChannels {
   workers?: (event: WorkerEvent) => void
   sessions?: (event: SessionEvent) => void
   kanban?: (event: KanbanColumnEvent | KanbanTaskEvent) => void
-  /** Subscribe to background-process lifecycle events. The backend emits
-   * two granular names (`background_process_created` on spawn,
-   * `background_process_completed` on exit) that share the same
-   * `BackgroundProcessEvent` payload. Both route on the central
-   * `background_process` key — the consumer filters by
+  /** Subscribe to background-process lifecycle events. The backend emits two granular names
+   * (`background_process_created` on spawn, `background_process_completed` on exit) that share the
+   * same `BackgroundProcessEvent` payload. */
+
+  /** Both route on the central `background_process` key — the consumer filters by
    * `event.session_id` JS-side and re-fetches the list. */
   backgroundProcess?: (event: BackgroundProcessEvent) => void
-  /** Subscribe to skill-eval lifecycle events. The backend emits three
-   * granular names (`skill_evals_run_started`, `skill_evals_run_finished`,
-   * `skill_evals_result_applied`) that share the same `SkillEvalEvent`
-   * payload. All three route on the central `skill_evals` key — the
-   * consumer filters by `event.session_id` JS-side and re-fetches the
-   * eval list for the Evals tab. */
+  /** Subscribe to skill-eval lifecycle events. The backend emits three granular names
+   * (`skill_evals_run_started`, `skill_evals_run_finished`, `skill_evals_result_applied`) that
+   * share the same `SkillEvalEvent` payload. */
+
+  /** All three route on the central `skill_evals` key — the consumer filters by `event.session_id`
+   * JS-side and re-fetches the eval list for the Evals tab. */
   skillEvals?: (event: SkillEvalEvent) => void
-  /** Subscribe to file stage/unstage events. The backend emits two granular
-   * names (`git_file_staged` on `git add`, `git_file_unstaged` on
-   * `git restore --staged`) that share the same `GitFileStageEvent`
-   * payload. Both route on the central `git_file_stage` key — the consumer
-   * filters by `event.cwd` JS-side and moves ONE row between Staged /
-   * Changes / Untracked instead of re-fetching the whole git-status list. */
+  /** Subscribe to file stage/unstage events. The backend emits two granular names
+   * (`git_file_staged` on `git add`, `git_file_unstaged` on `git restore --staged`) that share the
+   * same `GitFileStageEvent` payload. */
+
+  /** Both route on the central `git_file_stage` key — the consumer filters by `event.cwd` JS-side
+   * and moves ONE row between Staged / Changes / Untracked instead of re-fetching the whole
+   * git-status list. */
   gitFileStage?: (event: GitFileStageEvent) => void
   /** Subscribe to change-request state events. The backend emits two granular
    * names (`git_pr_state_merged` / `git_pr_state_closed`) that share the same
@@ -3818,21 +3738,19 @@ export interface UnifiedChannels {
    * PR-status cache entry for `event.branch`, so the badges that read it re-ask
    * the forge (see helpers/prStatusCache.ts `subscribePrStatusEvents`). */
   gitPrState?: (event: GitPrStateEvent) => void
-  /** Subscribe to design-mode element mutations. The backend emits
-   * three granular event names (`design_element_created`,
-   * `design_element_updated`, `design_element_deleted`) that share
-   * the same `DesignElementEvent` payload (the `action` discriminator
-   * tells them apart). All three route on the central `design_element`
-   * event_bus key — the consumer filters by `action` if it cares
-   * about the distinction (the `designSse` store treats all three
-   * uniformly: re-fetch the page's element list). */
+  /** Subscribe to design-mode element mutations. The backend emits three granular event names
+   * (`design_element_created`, `design_element_updated`, `design_element_deleted`) that share the
+   * same `DesignElementEvent` payload (the `action` discriminator tells them apart). */
+
+  /** All three route on the central `design_element` event_bus key — the consumer filters by
+   * `action` if it cares about the distinction (the `designSse` store treats all three uniformly:
+   * re-fetch the page's element list). */
   design?: (event: DesignElementEvent) => void
-  /** Subscribe to LLM streaming events. When `sessionId` is provided,
-   * the factory sends `llm:<sid>` (per-session routing — used by any
-   * future caller that wants server-side filtering). When omitted,
-   * the factory sends bare `llm` — the backend broadcasts ALL
-   * sessions' LLM events on the central key, and the consumer
-   * filters by `event.session_id` on the JS side. */
+  /** Subscribe to LLM streaming events. When `sessionId` is provided, the factory sends `llm:<sid>`
+   * (per-session routing — used by any future caller that wants server-side filtering). */
+
+  /** When omitted, the factory sends bare `llm` — the backend broadcasts ALL sessions' LLM events
+   * on the central key, and the consumer filters by `event.session_id` on the JS side. */
   llm?: { sessionId?: string; onEvent: (event: SseEvent) => void }
   /**    * Subscribe to queue-message events. Same pattern as `llm`: `sessionId` provided → per-session
    * routing; omitted → central key (consumer filters by `event.session_id`). */
@@ -3880,12 +3798,12 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
   if (opts.channels.gitFileStage) tokens.push('git_file_stage')
   if (opts.channels.gitPrState) tokens.push('git_pr_state')
 
-  // Empty subscriptions are meaningless; the backend would 400 anyway.
-  // Throw early with a developer-friendly message. The console.error
-  // before the throw matters: without it the only signal is an
-  // uncaught exception at the call site, which is easy to mistake for
-  // "SSE never receives data" when the real cause is "no EventSource
-  // was ever created because channels was empty".
+  // Empty subscriptions are meaningless; the backend would 400 anyway. Throw early with a
+  // developer-friendly message.
+
+  // The console.error before the throw matters: without it the only signal is an uncaught exception
+  // at the call site, which is easy to mistake for "SSE never receives data" when the real cause is
+  // "no EventSource was ever created because channels was empty".
   if (tokens.length === 0) {
     console.error(
       '[unifiedSSE] createUnifiedSseConnection: opts.channels is empty — no EventSource will be created',
@@ -3914,12 +3832,12 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
   return createSseClient({
     url: `${API_BASE}/events?channels=${tokens.join(',')}`,
     onConnected: opts.onConnected,
-    // Every named event type the backend can emit MUST be pre-registered
-    // — the browser's EventSource only dispatches each `event: <name>`
-    // to listeners registered for that exact name. See the SseClient
-    // JSDoc + the project memory browser-eventsource-named-events.md.
-    // Set names MUST match the `event_type` values emitted by
-    // on_event_sent.zig and llm_history.zig.
+    // Every named event type the backend can emit MUST be pre-registered — the browser's
+    // EventSource only dispatches each `event: <name>` to listeners registered for that exact name.
+    // See the SseClient JSDoc + the project memory browser-eventsource-named-events.md.
+
+    // Set names MUST match the `event_type` values emitted by on_event_sent.zig and
+    // llm_history.zig.
     additionalEventTypes: [
       'kanban_column',
       'kanban_task',
@@ -3930,13 +3848,12 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
       'worker_created',
       'worker_updated',
       'worker_deleted',
-      // Throw-isolation / forward-compat: the backend emits these
-      // fallback/granular names (see on_event_sent.zig +
-      // on_event_sent_design.zig). Without pre-registration the
-      // browser's EventSource drops them silently before onEvent
-      // ever fires — indistinguishable from "stream is dead".
-      // Registered here so they always reach the fan-out below,
-      // which routes (or explicitly ignores) each one.
+      // Throw-isolation / forward-compat: the backend emits these fallback/granular names (see
+      // on_event_sent.zig + on_event_sent_design.zig).
+
+      // Without pre-registration the browser's EventSource drops them silently before onEvent ever
+      // fires — indistinguishable from "stream is dead". Registered here so they always reach the
+      // fan-out below, which routes (or explicitly ignores) each one.
       'worker_unknown',
       'session_created',
       'session_deleted',
@@ -3960,11 +3877,11 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
       'design_element_updated',
       'design_element_deleted',
       'design_elements_geometry_batch_updated',
-      // Backend also emits `design_page_deleted` (routing key
-      // `design_page`) and `close` (server-shutdown frame). Neither
-      // has a dedicated frontend channel today — registered so the
-      // browser doesn't drop them silently; the fan-out below
-      // handles each explicitly (design page → design channel,
+      // Backend also emits `design_page_deleted` (routing key `design_page`) and `close`
+      // (server-shutdown frame).
+
+      // Neither has a dedicated frontend channel today — registered so the browser doesn't drop
+      // them silently; the fan-out below handles each explicitly (design page → design channel,
       // close → ignored).
       'design_page_deleted',
       'close',
@@ -3977,27 +3894,28 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
       // Without pre-registration the browser drops it before onEvent ever fires and the client sits
       // in 'connecting' until the stream closes — indistinguishable from a dead backend.
       'auth_error',
-      // Skill-eval lifecycle (see src/agentic_loop/skill_eval_events.zig).
-      // Three granular names share one payload; all route on the central
-      // `skill_evals` key. Without pre-registration the browser drops them
-      // before onEvent ever fires, so the Evals tab would never refresh
-      // after an eval finished — indistinguishable from a dead stream.
+      // Skill-eval lifecycle (see src/agentic_loop/skill_eval_events.zig). Three granular names
+      // share one payload; all route on the central `skill_evals` key.
+
+      // Without pre-registration the browser drops them before onEvent ever fires, so the Evals tab
+      // would never refresh after an eval finished — indistinguishable from a dead stream.
       'skill_evals_run_started',
       'skill_evals_run_finished',
       'skill_evals_result_applied',
-      // File stage/unstage (see src/agentic_loop/git_file_stage_events.zig).
-      // Two granular names share one payload; both route on the central
-      // `git_file_stage` key. Without pre-registration the browser drops
-      // them before onEvent ever fires, so the Files tab would keep
-      // re-fetching the whole git-status list on every +/− — the exact
-      // refresh this channel exists to remove.
+      // File stage/unstage (see src/agentic_loop/git_file_stage_events.zig). Two granular names
+      // share one payload; both route on the central `git_file_stage` key.
+
+      // Without pre-registration the browser drops them before onEvent ever fires, so the Files tab
+      // would keep re-fetching the whole git-status list on every +/− — the exact refresh this
+      // channel exists to remove.
       'git_file_staged',
       'git_file_unstaged',
-      // Change-request state (see src/agentic_loop/git_pr_state_events.zig).
-      // Two granular names share one payload; both route on the central
-      // `git_pr_state` key. Without pre-registration the browser drops them
-      // before onEvent ever fires, so a merge performed in another tab would
-      // never reach this one's badges — indistinguishable from a dead stream.
+      // Change-request state (see src/agentic_loop/git_pr_state_events.zig). Two granular names
+      // share one payload; both route on the central `git_pr_state` key.
+
+      // Without pre-registration the browser drops them before onEvent ever fires, so a merge
+      // performed in another tab would never reach this one's badges — indistinguishable from a
+      // dead stream.
       'git_pr_state_merged',
       'git_pr_state_closed',
     ],
@@ -4097,13 +4015,12 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
         return
       }
 
-      // LLM streaming chunks / full responses. The backend sets
-      // `event_type = "llm_chunk"` for content/reasoning/tool-call/final
-      // chunks (per `on_event_sent.zig` `sendStreamChunk*`) and
-      // `event_type = "llm_full"` for non-streaming full responses
-      // (`onEventSendLLMHistory`). Both shapes are the same `SseEvent`
-      // — the frontend doesn't need to distinguish them; the channel
-      // callback receives the object either way.
+      // LLM streaming chunks / full responses. The backend sets `event_type = "llm_chunk"` for
+      // content/reasoning/tool-call/final chunks (per `on_event_sent.zig` `sendStreamChunk*`) and
+      // `event_type = "llm_full"` for non-streaming full responses (`onEventSendLLMHistory`).
+
+      // Both shapes are the same `SseEvent` — the frontend doesn't need to distinguish them; the
+      // channel callback receives the object either way.
       if (eventType === 'llm_chunk' || eventType === 'llm_full') {
         if (!opts.channels.llm) return
         try {
@@ -4115,12 +4032,12 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
         return
       }
 
-      // Worker events. The backend sets `worker_created` |
-      // `worker_updated` | `worker_deleted` based on
-      // `OnEventInputWorkers.action` (see `on_event_sent.zig`), plus
-      // `worker_unknown` as a future-proofing fallback for new actions.
-      // Unknown actions are still forwarded — the consumer dispatches
-      // by `event.action` and can ignore what it doesn't know.
+      // Worker events. The backend sets `worker_created` | `worker_updated` | `worker_deleted`
+      // based on `OnEventInputWorkers.action` (see `on_event_sent.zig`), plus `worker_unknown` as a
+      // future-proofing fallback for new actions.
+
+      // Unknown actions are still forwarded — the consumer dispatches by `event.action` and can
+      // ignore what it doesn't know.
       if (
         eventType === 'worker_created' ||
         eventType === 'worker_updated' ||
@@ -4163,14 +4080,13 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
         return
       }
 
-      // File stage/unstage. Both granular names share the
-      // `GitFileStageEvent` payload — the consumer filters by `cwd` and
-      // moves ONE row between Staged / Changes / Untracked instead of
-      // re-fetching the whole git-status list. The pre-registration in
-      // `additionalEventTypes` above is what wires the browser's
-      // EventSource to fire onEvent for these names — without it the wire
-      // event is dropped on the floor (see project memory
-      // browser-eventsource-named-events.md).
+      // File stage/unstage. Both granular names share the `GitFileStageEvent` payload — the
+      // consumer filters by `cwd` and moves ONE row between Staged / Changes / Untracked instead of
+      // re-fetching the whole git-status list.
+
+      // The pre-registration in `additionalEventTypes` above is what wires the browser's
+      // EventSource to fire onEvent for these names — without it the wire event is dropped on the
+      // floor (see project memory browser-eventsource-named-events.md).
       if (eventType === 'git_file_staged' || eventType === 'git_file_unstaged') {
         if (!opts.channels.gitFileStage) return
         try {
@@ -4182,18 +4098,19 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
         return
       }
 
-      // Change-request state (merged / closed). Both granular names share the
-      // `GitPrStateEvent` payload — the consumer filters by `cwd` and drops the
-      // shared PR-status cache entry for `branch`, which is what makes the
-      // sidebar branch icon and the kanban badge re-read after a merge. The
-      // pre-registration in `additionalEventTypes` above is what wires the
-      // browser's EventSource to fire onEvent for these names — without it the
-      // wire event is dropped on the floor (see project memory
-      // browser-eventsource-named-events.md).
-      //
-      // The parse failure goes in the TYPE (local/no-try-catch): a malformed
-      // frame becomes a named `SseFrameError` carrying the reason, and only
-      // THAT frame is dropped — never a `catch` whose binding is `unknown`.
+      // Change-request state (merged / closed).
+
+      // Both granular names share the `GitPrStateEvent` payload — the consumer filters by `cwd` and
+      // drops the shared PR-status cache entry for `branch`, which is what makes the sidebar branch
+      // icon and the kanban badge re-read after a merge.
+
+      // The pre-registration in `additionalEventTypes` above is what wires the browser's
+      // EventSource to fire onEvent for these names — without it the wire event is dropped on the
+      // floor (see project memory browser-eventsource-named-events.md).
+
+      // The parse failure goes in the TYPE (local/no-try-catch): a malformed frame becomes a named
+      // `SseFrameError` carrying the reason, and only THAT frame is dropped — never a `catch` whose
+      // binding is `unknown`.
       if (eventType === 'git_pr_state_merged' || eventType === 'git_pr_state_closed') {
         if (!opts.channels.gitPrState) return
         const frame = Effect.runSyncExit(
@@ -4216,10 +4133,10 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
         return
       }
 
-      // Server-shutdown frame (`event: close`, see sse_manager.zig).
-      // Explicitly ignored — the browser fires `error` + the client
-      // reconnects via its own backoff. Without this branch the event
-      // would fall through to the default-message JSON buffer below
+      // Server-shutdown frame (`event: close`, see sse_manager.zig). Explicitly ignored — the
+      // browser fires `error` + the client reconnects via its own backoff.
+
+      // Without this branch the event would fall through to the default-message JSON buffer below
       // and pollute it with non-JSON bytes.
       if (eventType === 'close') {
         return
@@ -4300,21 +4217,20 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
         }
 
         const obj = parsed as Record<string, unknown>
-        // Order matters: check session BEFORE worker because both have
-        // `action`; the discriminator is `working_directory` (worker
-        // has it, session doesn't) plus `status` (session has it,
+        // Order matters: check session BEFORE worker because both have `action`; the discriminator
+        // is `working_directory` (worker has it, session doesn't) plus `status` (session has it,
         // worker doesn't). Either combination uniquely identifies.
-        // We dispatch to AT MOST ONE consumer — the first matching
-        // shape wins. If no shape matches, the event is silently
-        // dropped (after the buffer advance below) so the buffer
-        // stays bounded.
-        //
-        // Throw-isolation: each channel callback runs in its own
-        // try/catch so a throwing consumer can never skip the buffer
-        // advance below. Previously a throw here jumped straight to
-        // the outer catch, leaving the consumed bytes in the buffer —
-        // every subsequent default-message event then re-parsed the
-        // same stale bytes (unbounded growth + apparent stream stall).
+
+        // We dispatch to AT MOST ONE consumer — the first matching shape wins. If no shape matches,
+        // the event is silently dropped (after the buffer advance below) so the buffer stays
+        // bounded.
+
+        // Throw-isolation: each channel callback runs in its own try/catch so a throwing consumer
+        // can never skip the buffer advance below.
+
+        // Previously a throw here jumped straight to the outer catch, leaving the consumed bytes in
+        // the buffer — every subsequent default-message event then re-parsed the same stale bytes
+        // (unbounded growth + apparent stream stall).
         try {
           if (
             opts.channels.sessions &&
@@ -4359,13 +4275,13 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
       }
     },
     onStateChange: (state, info) => {
-      // Match the convention of the 5 old factories: terminal-failure
-      // only. Transient errors are retried internally by the SseClient.
-      // See memory pabrik-sse-incomplete-chunked-encoding.md for why
-      // ChatView's isStreaming flag flips ONLY on 'failed'.
-      // Throw-isolation: a throwing onError must never break emitState's
-      // per-subscriber loop (emitState already guards, but guard here too
-      // so the error is attributed to the right channel).
+      // Match the convention of the 5 old factories: terminal-failure only. Transient errors are
+      // retried internally by the SseClient. See memory pabrik-sse-incomplete-chunked-encoding.md
+      // for why ChatView's isStreaming flag flips ONLY on 'failed'.
+
+      // Throw-isolation: a throwing onError must never break emitState's per-subscriber loop
+      // (emitState already guards, but guard here too so the error is attributed to the right
+      // channel).
       if (state === 'failed') {
         try {
           opts.onError?.(info.lastError ?? new Event('error'))
@@ -4385,17 +4301,13 @@ export interface PabrikProfile {
   temperature?: string
   url_style?: string
   api_key?: string
-  /**
-   * Which TRANSPORT runs this profile's calls: `"http"` (default),
-   * `"claude-code"` (the local `claude` CLI, subscription auth via
-   * `claude login`), or `"opencode"` (the local `opencode` CLI, auth via
-   * `opencode login`). Mirrors the backend's `LlmProfile.backend`.
-   *
-   * Orthogonal to `url_style`, which keeps describing the HTTP wire
-   * format only — a CLI profile never builds a request body, so
-   * `base_url` / `api_key` / `url_style` do not apply to it. Absent =
-   * `"http"`, so existing configs need no migration.
-   */
+  /** Which TRANSPORT runs this profile's calls: `"http"` (default), `"claude-code"` (the local
+   * `claude` CLI, subscription auth via `claude login`), or `"opencode"` (the local `opencode` CLI,
+   * auth via `opencode login`). Mirrors the backend's `LlmProfile.backend`. */
+
+  /** Orthogonal to `url_style`, which keeps describing the HTTP wire format only — a CLI profile
+   * never builds a request body, so `base_url` / `api_key` / `url_style` do not apply to it. Absent
+   * = `"http"`, so existing configs need no migration. */
   backend?: string
   /**    * Claude Code only: `CLAUDE_CONFIG_DIR` for this profile. Two profiles pointing at two
    * directories are two different `claude login` sessions — the way per-profile identity works when
@@ -4407,25 +4319,25 @@ export interface PabrikProfile {
   /**    * Per-profile sub-agents. Same shape as the top-level `PabrikConfig.sub_agents` field — profiles
    * can override the default sub-agent set with their own. */
   sub_agents?: SubAgent[]
-  /** Optional override for this profile's context window (in tokens).
-   * When null (or omitted), the backend's built-in per-model default
-   * is used (e.g. 200_000 for MiniMax-M2.7, 500_000 for MiniMax-M3,
-   * 200_000 fallback). Useful for self-hosted models with a
-   * non-standard window.
-   * Mirrors the backend's `LlmProfile.max_capacity_tokens` field
-   * (added in the configurable-compaction Chunk 7 reshape). */
+  /** Optional override for this profile's context window (in tokens). When null (or omitted), the
+   * backend's built-in per-model default is used (e.g. 200_000 for MiniMax-M2.7, 500_000 for
+   * MiniMax-M3, 200_000 fallback). Useful for self-hosted models with a non-standard window. */
+
+  /** Mirrors the backend's `LlmProfile.max_capacity_tokens` field (added in the
+   * configurable-compaction Chunk 7 reshape). */
   max_capacity_tokens?: number | null
-  /** Compaction threshold as a percentage (0-100) of this profile's
-   * context window. When null (or omitted), defaults to 80. Out-of-range
-   * values are rejected by the backend with `error.InvalidThresholdPercent`.
-   * Mirrors the backend's `LlmProfile.compaction_threshold_percent`. */
+  /** Compaction threshold as a percentage (0-100) of this profile's context window. When null (or
+   * omitted), defaults to 80. Out-of-range values are rejected by the backend with
+   * `error.InvalidThresholdPercent`. */
+
+  /** Mirrors the backend's `LlmProfile.compaction_threshold_percent`. */
   compaction_threshold_percent?: number | null
-  /** Anthropic-only override for `thinking.budget_tokens`. Plan
-   * 2026-08-23-model-thinking. Mirrors `LlmProfile.thinking_budget_tokens`.
-   * Hidden when `thinking === "off"`. Range (0, 2_000_000] enforced
-   * server-side. When null/omitted, the backend uses the 50%-of-max
-   * heuristic (or Anthropic `type: "adaptive"` when
-   * `thinking === "auto"`). */
+  /** Anthropic-only override for `thinking.budget_tokens`. Plan 2026-08-23-model-thinking. Mirrors
+   * `LlmProfile.thinking_budget_tokens`. Hidden when `thinking === "off"`. Range (0, 2_000_000]
+   * enforced server-side. */
+
+  /** When null/omitted, the backend uses the 50%-of-max heuristic (or Anthropic `type: "adaptive"`
+   * when `thinking === "auto"`). */
   thinking_budget_tokens?: number | null
   /**    * OpenAI-style reasoning effort (o1/o3/GPT-5/DeepSeek-R1). Plan 2026-08-23-model-thinking.
    * Mirrors `LlmProfile.reasoning_effort`. Hidden when `thinking === "off"`. Server-side validation
@@ -4488,22 +4400,17 @@ export interface McpServer {
   enabled?: boolean
 }
 
-/**
- * One entry of the top-level `web_search` map in `config.json` — the
- * wire shape of a single web-search provider. The map key is the
- * provider name the agent passes to `web_search`; the agent discovers
- * the names through `list_web_search_providers`.
- *
- * `key` and `description` are OMITTED when absent, never sent as `""` —
- * a self-hosted provider has no credential and `"key": ""` is not the
- * same thing to the backend (an empty slice binds as SQL NULL, and
- * `isUsable` treats it as a declared-but-blank credential).
- *
- * `key` may come back MASKED rather than as the secret, so the value the
- * form holds is not necessarily the credential. Round-tripping it
- * unchanged is therefore required — replacing it with `""` would blank
- * the stored secret. See `components/pabrik/webSearchProviders.ts`.
- */
+/** One entry of the top-level `web_search` map in `config.json` — the wire shape of a single
+ * web-search provider. The map key is the provider name the agent passes to `web_search`; the agent
+ * discovers the names through `list_web_search_providers`. */
+
+/** `key` and `description` are OMITTED when absent, never sent as `""` — a self-hosted provider has
+ * no credential and `"key": ""` is not the same thing to the backend (an empty slice binds as SQL
+ * NULL, and `isUsable` treats it as a declared-but-blank credential). */
+
+/** `key` may come back MASKED rather than as the secret, so the value the form holds is not
+ * necessarily the credential. Round-tripping it unchanged is therefore required — replacing it with
+ * `""` would blank the stored secret. See `components/pabrik/webSearchProviders.ts`. */
 export interface PabrikWebSearchProvider {
   /** Host pin. The ONLY host whose requests may carry `key`. Must be
    *  `https` and must not name a loopback, private or link-local host. */
@@ -4522,11 +4429,11 @@ export interface PabrikWebSearchProvider {
   enabled?: boolean
 }
 
-/** The Skill Evals block of `config.json`, as the wire carries it
- * (snake_case, matching `SkillEvalsJson` in `Config.zig`).
- * `enabled` is the master switch the Settings toggle writes. The other
- * fields are the budgets around it and are sent back unchanged so a save
- * from the toggle can never reset a value the user hand-edited. */
+/** The Skill Evals block of `config.json`, as the wire carries it (snake_case, matching
+ * `SkillEvalsJson` in `Config.zig`). `enabled` is the master switch the Settings toggle writes. */
+
+/** The other fields are the budgets around it and are sent back unchanged so a save from the toggle
+ * can never reset a value the user hand-edited. */
 export interface PabrikSkillEvalsConfig {
   enabled?: boolean
   max_skills_per_run?: number
@@ -4538,22 +4445,24 @@ export interface PabrikSkillEvalsConfig {
 }
 
 export interface PabrikConfig {
-  // Plan 2026-08-24-config-simplify-remove-defaults: the top-level LLM
-  // defaults (api_endpoint/api_key/model/url_style/temperature/max_tokens/
-  // system_prompt) were REMOVED from config.json. LLM access is configured
-  // exclusively via `profiles`; the backend derives effective credentials
+  // Plan 2026-08-24-config-simplify-remove-defaults: the top-level LLM defaults
+  // (api_endpoint/api_key/model/url_style/temperature/max_tokens/system_prompt) were REMOVED from
+  // config.json.
+
+  // LLM access is configured exclusively via `profiles`; the backend derives effective credentials
   // from the active profile at load time.
   profiles?: Record<string, PabrikProfile>
   active_profile?: string
-  /**    * Map of MCP server name to its raw JSON config (snake_case). Each value follows the `{"url":
+  /** Map of MCP server name to its raw JSON config (snake_case). Each value follows the `{"url":
    * "...", "headers": {...}}` shape used by the LLM config. Sent verbatim to the backend on save. */
-  /** Raw wire shape of a single MCP server entry (snake_case, matches
-   * `mcp_servers` in config.json). Discriminated by which top-level
-   * field is present: `command` ⇒ stdio, `url` ⇒ http.
-   * Note: this type is also re-exported and re-used by the
-   * `PabrikConfigEditor.vue` parser/serializer pair so the frontend
-   * round-trips config.json unchanged. If you add a field here, add
-   * it to the `McpServer` interface above too (camelCase). */
+
+  /** Raw wire shape of a single MCP server entry (snake_case, matches `mcp_servers` in
+   * config.json). Discriminated by which top-level field is present: `command` ⇒ stdio, `url` ⇒
+   * http. */
+
+  /** Note: this type is also re-exported and re-used by the `PabrikConfigEditor.vue`
+   * parser/serializer pair so the frontend round-trips config.json unchanged. If you add a field
+   * here, add it to the `McpServer` interface above too (camelCase). */
   mcp_servers?: Record<
     string,
     | { url: string; headers?: Record<string, string>; enabled?: boolean }
@@ -4563,13 +4472,12 @@ export interface PabrikConfig {
    * backend treats those as "no change" on PUT and the built-in defaults apply. An array (including
    * `[]`) replaces the whole list. */
   tools?: string[] | null
-  /** Map of web-search provider name to its configuration — the
-   * top-level `web_search` key in config.json. Keys of this map are the
-   * names the agent passes to `web_search`'s `provider` argument; the
-   * agent discovers them through `list_web_search_providers`.
-   * `null` / absent = the key is not in config.json. Sent verbatim to
-   * the backend on save; see `PabrikWebSearchProvider` for the value
-   * shape and the rules the backend enforces on it. */
+  /** Map of web-search provider name to its configuration — the top-level `web_search` key in
+   * config.json. Keys of this map are the names the agent passes to `web_search`'s `provider`
+   * argument; the agent discovers them through `list_web_search_providers`. */
+
+  /** `null` / absent = the key is not in config.json. Sent verbatim to the backend on save; see
+   * `PabrikWebSearchProvider` for the value shape and the rules the backend enforces on it. */
   web_search?: Record<string, PabrikWebSearchProvider> | null
   /** @deprecated Per-profile only (plan 2026-09-04-subagents-per-profile).
    * The backend (`GET /api/config/pabrik`) always returns `sub_agents: null`
@@ -4581,51 +4489,48 @@ export interface PabrikConfig {
    * PowerShell when an LLM response completes with `finish_reason === 'stop'`. Defaults to `false`
    * when absent (matches the `LlmConfigJson` default in `Config.zig`). */
   notify_on_complete?: boolean
-  /** Plan 2026-08-25-notify-on-error — opt-in OS notification flag
-   * for the error path. When true, the backend fires a desktop
-   * notification when the workflow hits a transport error, exhausts
-   * retries (TooManyRetries), or fails the outer agentic loop.
-   * Defaults to `false` when absent (matches `LlmConfigJson`).
-   * Independent from `notify_on_complete` — toggling one doesn't
-   * affect the other. */
+  /** Plan 2026-08-25-notify-on-error — opt-in OS notification flag for the error path. When true,
+   * the backend fires a desktop notification when the workflow hits a transport error, exhausts
+   * retries (TooManyRetries), or fails the outer agentic loop. */
+
+  /** Defaults to `false` when absent (matches `LlmConfigJson`). Independent from
+   * `notify_on_complete` — toggling one doesn't affect the other. */
   notify_on_error?: boolean
-  /**
-   * Skill Evals block — the master switch for the `run_skill_eval` tool
-   * and the budget knobs around it. `enabled: true` injects the tool into
-   * the main agent's tool list and lets the agent evaluate the skills the
-   * session actually loaded; `false` (the default, and what a config with
-   * no `skill_evals` key reads as) removes the tool entirely.
-   *
-   * The backend always sends this object (never `null`), so the toggle
-   * can always render a real on/off rather than guessing. Sending it back
-   * in the PUT persists the switch; omitting it leaves the on-disk value
-   * untouched.
-   */
+  /** Skill Evals block — the master switch for the `run_skill_eval` tool and the budget knobs
+   * around it. */
+
+  /** `enabled: true` injects the tool into the main agent's tool list and lets the agent evaluate
+   * the skills the session actually loaded; `false` (the default, and what a config with no
+   * `skill_evals` key reads as) removes the tool entirely. */
+
+  /** The backend always sends this object (never `null`), so the toggle can always render a real
+   * on/off rather than guessing. Sending it back in the PUT persists the switch; omitting it leaves
+   * the on-disk value untouched. */
   skill_evals?: PabrikSkillEvalsConfig
   /**    * Compaction threshold in KB. Sessions whose DB-stored token estimate exceeds this value trigger
    * context compaction. Defaults to `100` when absent. Not exposed in the UI — power users can edit
    * `config.json` directly. */
   model_compaction_size_kb?: number
-  /** Optional top-level override for the model's context window (in
-   * tokens). `null` = fall through to per-profile override, then
-   * built-in default. Restored in plan 2026-07-07-compaction-inline
-   * so the Defaults tab can show + edit the top-level compaction
-   * defaults. Mirrors `LlmConfig.max_capacity_token_model`. */
+  /** Optional top-level override for the model's context window (in tokens). `null` = fall through
+   * to per-profile override, then built-in default. Restored in plan 2026-07-07-compaction-inline
+   * so the Defaults tab can show + edit the top-level compaction defaults. */
+
+  /** Mirrors `LlmConfig.max_capacity_token_model`. */
   max_capacity_token_model?: number | null
   /**    * Optional top-level compaction threshold as a percentage (0-100). `null` = fall through to
    * per-profile override, then built-in 80. Mirrors `LlmConfig.compaction_threshold_percent`. */
   compaction_threshold_percent?: number | null
-  /** Delay in milliseconds before the workflow retries a failed
-   * `callDynamicAgentNew` call. 0 = no delay (current behavior, the
-   * retry fires immediately on the next loop iteration). Range: 0–60 000.
-   * The backend clamps values > 60 000 to 60 000. Mirrors
-   * `LlmConfig.retry_delay_ms` in `Config.zig`. */
+  /** Delay in milliseconds before the workflow retries a failed `callDynamicAgentNew` call. 0 = no
+   * delay (current behavior, the retry fires immediately on the next loop iteration). Range: 0–60
+   * 000. The backend clamps values > 60 000 to 60 000. */
+
+  /** Mirrors `LlmConfig.retry_delay_ms` in `Config.zig`. */
   retry_delay_ms?: number
-  /** Plan 2026-09-10-web-launch-toggle — browser-mode flag. When true,
-   * the settings General tab advertises the same UI in the system
-   * browser (URL pill + auto-open) and the server defaults to a random
-   * local port at startup. Defaults to `false` when absent (matches
-   * `LlmConfigJson`). Lifecycle A: the server keeps running when false. */
+  /** Plan 2026-09-10-web-launch-toggle — browser-mode flag. When true, the settings General tab
+   * advertises the same UI in the system browser (URL pill + auto-open) and the server defaults to
+   * a random local port at startup. Defaults to `false` when absent (matches `LlmConfigJson`). */
+
+  /** Lifecycle A: the server keeps running when false. */
   web_launch_enabled?: boolean
   // Per-profile compaction overrides (`max_capacity_tokens` /
   // `compaction_threshold_percent`) live on `PabrikProfile` (Chunk
@@ -4647,14 +4552,13 @@ export async function savePabrikConfig(config: PabrikConfig): Promise<{ success:
   })
 }
 
-// ─── Per-workspace config overlay (Migration 105) ────────────────────────
-//
-// The workspace-scope twin of the pair above. Same wire shape: `GET` returns
-// the EFFECTIVE config (user config with the workspace's overlay merged over
-// it), so the page shows what actually runs here rather than a sparse diff the
-// user has to reconcile by hand. There is no reset/copy call: the boot seeding
-// IS the migration.
-//
+// ─── Per-workspace config overlay (Migration 105) ──────────────────────── The workspace-scope
+// twin of the pair above.
+
+// Same wire shape: `GET` returns the EFFECTIVE config (user config with the workspace's overlay
+// merged over it), so the page shows what actually runs here rather than a sparse diff the user has
+// to reconcile by hand. There is no reset/copy call: the boot seeding IS the migration.
+
 // `PUT` takes the same body as `savePabrikConfig`; the backend stores only the workspace-scoped
 // slice of it and 400s if the body carries none, so a save that would silently do nothing is
 // refused instead of reported as successful.
@@ -4676,11 +4580,11 @@ export async function saveWorkspaceConfig(
   )
 }
 
-/** Plan 2026-09-10-web-launch-toggle — browser-mode status.
- * `GET /api/web/status` is read-only (lifecycle A: no server-side
- * start/stop). `url` is always the live bound port
- * (`http://127.0.0.1:<port>/`, loopback-only). `null` on network/API
- * failure so the pill can render a waiting hint. */
+/** Plan 2026-09-10-web-launch-toggle — browser-mode status. `GET /api/web/status` is read-only
+ * (lifecycle A: no server-side start/stop). `url` is always the live bound port
+ * (`http://127.0.0.1:<port>/`, loopback-only). */
+
+/** `null` on network/API failure so the pill can render a waiting hint. */
 export interface WebStatus {
   enabled: boolean
   running: boolean
@@ -4696,12 +4600,12 @@ export async function getWebStatus(): Promise<WebStatus | null> {
   }
 }
 
-/** Response shape from `DELETE /api/config/pabrik/profiles/:name`.
- * `active_profile_was_cleared` is `true` when the deleted profile was
- * the active one (the backend also cleared `active_profile` on disk).
- * `error_message` is set when the request succeeded (HTTP 200) but a
- * downstream concern (live reload) failed — the deletion still
- * persisted. */
+/** Response shape from `DELETE /api/config/pabrik/profiles/:name`. `active_profile_was_cleared` is
+ * `true` when the deleted profile was the active one (the backend also cleared `active_profile` on
+ * disk). */
+
+/** `error_message` is set when the request succeeded (HTTP 200) but a downstream concern (live
+ * reload) failed — the deletion still persisted. */
 export interface ProfileDeleteResponse {
   success: boolean
   profile_name: string
@@ -4719,17 +4623,16 @@ export async function deleteProfile(name: string): Promise<ProfileDeleteResponse
   )
 }
 
-// ─── MCP server test probe ──────────────────────────────────────────────────
-// Wire shape mirrors the backend `POST /api/mcp/test` handler in
-// src/ai_workflow/tui/http_handlers/mcp_test.zig. The probe fires a
-// `tools/list` request against the candidate config without persisting
-// anything — used by the "Test" button in McpServerModal so the user
-// can verify command / args / env / cwd (or URL + headers) actually
-// work before clicking Save.
-//
-// Success: `{ ok: true, transport: 'stdio' | 'http', tools: McpToolPreview[] }`
-// Failure: `{ ok: false, error: <message>, details: <error-name> }`
-// Always HTTP 200 — failure is carried in the `ok` field, not the status.
+// ─── MCP server test probe ────────────────────────────────────────────────── Wire shape mirrors
+// the backend `POST /api/mcp/test` handler in src/ai_workflow/tui/http_handlers/mcp_test.zig.
+
+// The probe fires a `tools/list` request against the candidate config without persisting anything —
+// used by the "Test" button in McpServerModal so the user can verify command / args / env / cwd (or
+// URL + headers) actually work before clicking Save.
+
+// Success: `{ ok: true, transport: 'stdio' | 'http', tools: McpToolPreview[] }` Failure: `{ ok:
+// false, error: <message>, details: <error-name> }` Always HTTP 200 — failure is carried in the
+// `ok` field, not the status.
 export interface McpToolPreview {
   name: string
   description: string
@@ -4856,11 +4759,11 @@ export async function getGitFileDiffs(
   })
 }
 
-// Folder mode — one POST for a whole folder. The server enumerates the
-// changed paths itself (`git status --porcelain -uall -- <folder>`), so the
-// caller neither has to fetch `GET /api/git/changes` first nor send a
-// path-per-file body. Cost is 3 git spawns regardless of how many files
-// changed; `folder: ''` means the whole repo.
+// Folder mode — one POST for a whole folder. The server enumerates the changed paths itself (`git
+// status --porcelain -uall -- <folder>`), so the caller neither has to fetch `GET /api/git/changes`
+// first nor send a path-per-file body.
+
+// Cost is 3 git spawns regardless of how many files changed; `folder: ''` means the whole repo.
 export async function getGitFolderDiffs(
   cwd: string,
   folder: string = '',
@@ -4872,11 +4775,11 @@ export async function getGitFolderDiffs(
   })
 }
 
-// WHOLE-FILE mode — `git diff -U<all>` for exactly ONE path, so the caller can
-// render every line of the file with the changes still marked. One request per
-// file by construction (the server 400s on a folder or a multi-file body), and
-// all-or-nothing: `whole_file_refused` means "too big to serve in full", never
-// a partial file.
+// WHOLE-FILE mode — `git diff -U<all>` for exactly ONE path, so the caller can render every line of
+// the file with the changes still marked.
+
+// One request per file by construction (the server 400s on a folder or a multi-file body), and
+// all-or-nothing: `whole_file_refused` means "too big to serve in full", never a partial file.
 export async function getGitWholeFileDiff(
   cwd: string,
   filePath: string,
@@ -5035,19 +4938,16 @@ export async function closePr(
   })
 }
 
-/**
- * Merge a PR/MR (POST /api/git/pr/merge).
- *
- * `method` is REQUIRED: the backend refuses an empty one with a 400 rather
- * than spawning, because `gh pr merge` without a strategy flag prompts for the
- * method and a non-tty child cannot answer it.
- *
- * The response carries BOTH an outcome and the forge's own status payload,
- * re-read after the command ran. `success` is `status.status === 'merged'`, not
- * an exit code: `glab mr merge` can return 0 having only armed auto-merge, and
- * a GitHub merge queue accepts a PR without merging it. `pending` is that
- * middle state, and the UI must render it as "not merged yet".
- */
+/** Merge a PR/MR (POST /api/git/pr/merge). `method` is REQUIRED: the backend refuses an empty one
+ * with a 400 rather than spawning, because `gh pr merge` without a strategy flag prompts for the
+ * method and a non-tty child cannot answer it. */
+
+/** The response carries BOTH an outcome and the forge's own status payload, re-read after the
+ * command ran. `success` is `status.status === 'merged'`, not an exit code: `glab mr merge` can
+ * return 0 having only armed auto-merge, and a GitHub merge queue accepts a PR without merging
+ * it. */
+
+/** `pending` is that middle state, and the UI must render it as "not merged yet". */
 export interface GitPrMerge {
   success: boolean
   method: string
@@ -5093,19 +4993,15 @@ export async function mergePr(
   })
 }
 
-/**
- * PR CI checks (GET /api/git/pr/checks via `gh pr checks`).
- *
- * `checks` is one row per CI job; `steps` is filled in for failed and
- * cancelled jobs only — "which job failed" is already on the PR page,
- * "which process or task failed" is what the user comes here for.
- *
- * `steps_error` is the contract that matters: when the backend tried to
- * read a job's steps and could not, the reason lands here so the panel
- * can say so. An empty `steps` with an empty `steps_error` is a real
- * answer (an external check has no steps); an empty `steps` with a
- * message is a gap.
- */
+/** PR CI checks (GET /api/git/pr/checks via `gh pr checks`). `checks` is one row per CI job;
+ * `steps` is filled in for failed and cancelled jobs only — "which job failed" is already on the PR
+ * page, "which process or task failed" is what the user comes here for. */
+
+/** `steps_error` is the contract that matters: when the backend tried to read a job's steps and
+ * could not, the reason lands here so the panel can say so. */
+
+/** An empty `steps` with an empty `steps_error` is a real answer (an external check has no steps);
+ * an empty `steps` with a message is a gap. */
 export interface GitPrCheckStep {
   name: string
   number: number
@@ -5160,11 +5056,12 @@ export async function getPrChecks(
   return await apiFetch<GitPrChecks>(`/git/pr/checks?${params.toString()}`, { silent: true })
 }
 
-// Which-files-conflict API. `getPrStatus` tells us a PR is CONFLICTING but
-// not what blocks it — no forge API exposes that, so the backend runs the
-// same three-way merge locally (`git merge-tree --write-tree --name-only`)
-// and names the paths. Fetched only while a conflict is showing: a clean PR
-// costs zero extra spawns and renders exactly as before.
+// Which-files-conflict API. `getPrStatus` tells us a PR is CONFLICTING but not what blocks it — no
+// forge API exposes that, so the backend runs the same three-way merge locally (`git merge-tree
+// --write-tree --name-only`) and names the paths.
+
+// Fetched only while a conflict is showing: a clean PR costs zero extra spawns and renders exactly
+// as before.
 export interface GitPrConflicts {
   pr_url: string
   /** The ref the merge was computed against, e.g. `refs/remotes/origin/main`. */
@@ -5211,16 +5108,14 @@ export async function readFileContent(cwd: string, filePath: string): Promise<Re
   )
 }
 
-// File download URL builders for the `present_files` agent tool card
-// (PresentFiles.vue). Cookie-based auth like every other /api route,
-// so plain `<a href>` (download) and `<img src>` (thumbnail preview)
-// carry credentials — no fetch/blob/objectURL dance needed (unlike
-// the kanban thumbnail rehydrate in KanbanDescriptionEditor, which
-// needs File objects, not navigation).
-//
-// NOT via apiFetch: apiFetch only speaks JSON (`response.json()` +
-// 15s timeout + auto-toast). These return URL strings the template
-// binds directly.
+// File download URL builders for the `present_files` agent tool card (PresentFiles.vue).
+
+// Cookie-based auth like every other /api route, so plain `<a href>` (download) and `<img src>`
+// (thumbnail preview) carry credentials — no fetch/blob/objectURL dance needed (unlike the kanban
+// thumbnail rehydrate in KanbanDescriptionEditor, which needs File objects, not navigation).
+
+// NOT via apiFetch: apiFetch only speaks JSON (`response.json()` + 15s timeout + auto-toast). These
+// return URL strings the template binds directly.
 export function fileDownloadUrl(
   sessionId: string,
   filePath: string,
@@ -5270,25 +5165,22 @@ export async function commitGitChanges(
   )
 }
 
-// `uploadTaskAttachment` REMOVED 2026-08-06 (kanban-image-urls-column
-// plan). Task images now live inline on `workspace_item_tasks
-// .image_urls` as `||`-delimited base64 data URLs — no upload path,
-// no `GET` endpoint, no filesystem writes. The frontend converts
-// pasted/picked files to data URLs via `FileReader.readAsDataURL`
-// (in `KanbanView.handleCreateTaskSave` + the new editor
-// `pendingFiles` flow) and PATCHes the column with the joined
-// string via `api.updateTaskSimple`.
-//
+// `uploadTaskAttachment` REMOVED 2026-08-06 (kanban-image-urls-column plan). Task images now live
+// inline on `workspace_item_tasks .image_urls` as `||`-delimited base64 data URLs — no upload path,
+// no `GET` endpoint, no filesystem writes.
+
+// The frontend converts pasted/picked files to data URLs via `FileReader.readAsDataURL` (in
+// `KanbanView.handleCreateTaskSave` + the new editor `pendingFiles` flow) and PATCHes the column
+// with the joined string via `api.updateTaskSimple`.
+
 // Plan: docs/superpowers/plans/2026-08-06-kanban-image-urls-column.md.
 
-// =====================================================================
-// Agent Mode API (plan 2026-08-15-agent-mode, task_1786962724740_0)
-//
-// 12 endpoints exposed by the backend for the new `item_type='agent'`
-// workspace item. Mirrors the kanban wrappers above — same error
-// contract (ApiError on 4xx/5xx), same {item, agent} envelope shape
-// on create, same comma-joined tool_names semantics on the allowlist
-// CRUD.
+// ===================================================================== Agent Mode API (plan
+// 2026-08-15-agent-mode, task_1786962724740_0) 12 endpoints exposed by the backend for the new
+// `item_type='agent'` workspace item.
+
+// Mirrors the kanban wrappers above — same error contract (ApiError on 4xx/5xx), same {item, agent}
+// envelope shape on create, same comma-joined tool_names semantics on the allowlist CRUD.
 // =====================================================================
 
 export interface Agent {
@@ -5385,9 +5277,10 @@ export async function updateAgent(
   })
 }
 
-// =====================================================================
-// Workspace routines (Migration 084) — first-class `item_type='routine'`
-// items beside `agent`. Replaces the deleted per-task routines.
+// ===================================================================== Workspace routines
+// (Migration 084) — first-class `item_type='routine'` items beside `agent`. Replaces the deleted
+// per-task routines.
+
 // Plan: docs/superpowers/plans/2026-09-10-workspace-items-routines.md
 // =====================================================================
 
@@ -5792,12 +5685,11 @@ export async function disableAgentKanbanTool(
   })
 }
 
-// ─── Agent-Routines Mirror (Migration 088) ─────────────────────────────
-//
-// Mirrors the Agent-Kanbans block above onto routine items. Unlike kanbans,
-// the config row (`agent_routines`) is SEEDED on routine creation and
-// backfilled for pre-existing routines (Migration 088) — same silent-null
-// contract on 404 kept anyway.
+// ─── Agent-Routines Mirror (Migration 088) ───────────────────────────── Mirrors the Agent-Kanbans
+// block above onto routine items.
+
+// Unlike kanbans, the config row (`agent_routines`) is SEEDED on routine creation and backfilled
+// for pre-existing routines (Migration 088) — same silent-null contract on 404 kept anyway.
 
 export interface AgentRoutine {
   id: string
@@ -5991,17 +5883,19 @@ export async function disableAgentRoutineTool(
   })
 }
 
-// ─── Session background processes (bg-completion) ────────────────────────────
-// Backend: background_processes_list.zig + background_process_log_get.zig
-// (commit b69111f7). `running` is live per row (OS truth, not the status
-// column). Empty session -> `{ processes: [], count: 0 }` (200, not 404).
-// Log content is the TAIL; a missing log file returns 200 with the
-// `(log file not found)` marker content; unknown (session, pid) is 404.
-//
+// ─── Session background processes (bg-completion) ──────────────────────────── Backend:
+// background_processes_list.zig + background_process_log_get.zig (commit b69111f7). `running` is
+// live per row (OS truth, not the status column).
+
+// Empty session -> `{ processes: [], count: 0 }` (200, not 404). Log content is the TAIL; a missing
+// log file returns 200 with the `(log file not found)` marker content; unknown (session, pid) is
+// 404.
+
 // Both fns pass `silent: true` — the list is SSE-push driven
 // (`background_process_created/completed`) with manual + resync refetch, and the log tail polls
-// every 2s only while expanded, so a toast on every transient 404/5xx would be noise. Callers
-// render inline state (empty / error / marker) instead.
+// every 2s only while expanded, so a toast on every transient 404/5xx would be noise.
+
+// Callers render inline state (empty / error / marker) instead.
 
 export interface BackgroundProcess {
   pid: number
@@ -6051,11 +5945,11 @@ export async function getBackgroundProcessLog(
   )
 }
 
-// ─── Right-sidebar terminal (PTY over REST + poll) ───────────────────────────
-// Backend: terminal_create/input/output/resize/delete.zig (in-memory PTY
-// registry, no migration). All fns pass `silent: true` — output is a
-// ~300ms poll, so a toast on every transient failure would be noise.
-// Callers render inline state instead.
+// ─── Right-sidebar terminal (PTY over REST + poll) ─────────────────────────── Backend:
+// terminal_create/input/output/resize/delete.zig (in-memory PTY registry, no migration).
+
+// All fns pass `silent: true` — output is a ~300ms poll, so a toast on every transient failure
+// would be noise. Callers render inline state instead.
 
 export interface TerminalSession {
   id: string
@@ -6129,15 +6023,13 @@ export async function deleteTerminalSession(id: string): Promise<{ ok: boolean }
   })
 }
 
-// ─── Documents (Migration 095) ───────────────────────────────────────────
-// Workspace-scoped markdown documents. A document belongs to a workspace
-// directly — it is NOT a `workspace_items` row and never appears in the
-// project tree; the sidebar's Documents section is its only home.
-//
-// The backend scopes every read AND every write by `workspace_id` taken
-// from the path, so a workspace id that is not the active one returns 404
-// on detail and an empty list on collection. There is no client-side
-// filter doing that work, and adding one would be a false guarantee.
+// ─── Documents (Migration 095) ─────────────────────────────────────────── Workspace-scoped
+// markdown documents. A document belongs to a workspace directly — it is NOT a `workspace_items`
+// row and never appears in the project tree; the sidebar's Documents section is its only home.
+
+// The backend scopes every read AND every write by `workspace_id` taken from the path, so a
+// workspace id that is not the active one returns 404 on detail and an empty list on collection.
+// There is no client-side filter doing that work, and adding one would be a false guarantee.
 
 /** One row of the `documents` table. Mirrors `documents_store.DocumentRow`. */
 export interface Document {
@@ -6177,11 +6069,11 @@ export async function getDocument(
   )
 }
 
-/** POST /api/workspaces/:workspaceId/documents
- * Body: `{ title, content?, format? }`. `title` is required and must be
- * non-blank; `content` may be empty (a blank note is a legitimate
- * starting state and round-trips as `''` rather than tripping the
- * column's NOT NULL). Returns 201 with the stored row. */
+/** POST /api/workspaces/:workspaceId/documents Body: `{ title, content?, format? }`. `title` is
+ * required and must be non-blank; `content` may be empty (a blank note is a legitimate starting
+ * state and round-trips as `''` rather than tripping the column's NOT NULL). */
+
+/** Returns 201 with the stored row. */
 export async function createDocument(
   workspaceId: string,
   title: string,
@@ -6219,22 +6111,23 @@ export async function deleteDocument(
   )
 }
 
-// ─── Workspace secrets (Migration 101) ───────────────────────────────────
-// Named credentials scoped to one workspace: an API key the agent's tools
-// can substitute into a request, never displayed back to the browser.
-//
-// NO RESPONSE EVER CONTAINS THE VALUE. `listSecrets`, `createSecret` and
-// `updateSecret` all return rows with `{ id, name, created_at, updated_at }`
-// and nothing else — the backend stores an encrypted blob and does not
-// decrypt to answer a read. There is deliberately no `value` field on
-// `Secret` and no `key_hint`: a hint is a partial disclosure of the very
-// thing being stored, and the UI has no use for it that is not a leak.
-//
-// The write path DOES carry a value — `createSecret`/`updateSecret` take it
-// as the request body — but that value exists only for the duration of the
-// POST/PATCH. Nothing above this module should retain one: a value held in
-// a Pinia ref, a component ref or a `title=` attribute is exactly how a
-// write-only secret becomes a readable one.
+// ─── Workspace secrets (Migration 101) ─────────────────────────────────── Named credentials
+// scoped to one workspace: an API key the agent's tools can substitute into a request, never
+// displayed back to the browser. NO RESPONSE EVER CONTAINS THE VALUE.
+
+// `listSecrets`, `createSecret` and `updateSecret` all return rows with `{ id, name, created_at,
+// updated_at }` and nothing else — the backend stores an encrypted blob and does not decrypt to
+// answer a read.
+
+// There is deliberately no `value` field on `Secret` and no `key_hint`: a hint is a partial
+// disclosure of the very thing being stored, and the UI has no use for it that is not a leak.
+
+// The write path DOES carry a value — `createSecret`/`updateSecret` take it as the request body —
+// but that value exists only for the duration of the POST/PATCH.
+
+// Nothing above this module should retain one: a value held in a Pinia ref, a component ref or a
+// `title=` attribute is exactly how a write-only secret becomes a readable one.
+
 // Like documents, the backend scopes every read AND every write by the `workspace_id` taken from
 // the path, so there is no client-side filter doing that work — adding one would be a second,
 // weaker copy of a rule that already lives in SQL, and the kind of duplicate that drifts.
@@ -6261,11 +6154,12 @@ export async function listSecrets(
   )
 }
 
-/** POST /api/workspaces/:workspaceId/secrets
- * Body: `{ name, value }`. `name` must be non-blank and unique within the
- * workspace; `value` is write-only — the response carries the created row
- * WITHOUT it. The caller drops its copy of `value` on the floor once this
- * resolves; there is nothing to read back later. */
+/** POST /api/workspaces/:workspaceId/secrets Body: `{ name, value }`. `name` must be non-blank and
+ * unique within the workspace; `value` is write-only — the response carries the created row WITHOUT
+ * it. */
+
+/** The caller drops its copy of `value` on the floor once this resolves; there is nothing to read
+ * back later. */
 export async function createSecret(
   workspaceId: string,
   name: string,
@@ -6277,12 +6171,12 @@ export async function createSecret(
   )
 }
 
-/** PATCH /api/workspaces/:workspaceId/secrets/:secretId
- * Body: `{ name?, value? }`. Both fields are partial — send `{ value }` to
- * rotate a credential without touching its name, or `{ name }` to rename
- * without re-supplying a value. An omitted field keeps its current value;
- * `value: ''` is a rejected empty credential, not a clear operation. Like
- * the reads, the response never carries the value back. */
+/** PATCH /api/workspaces/:workspaceId/secrets/:secretId Body: `{ name?, value? }`. Both fields are
+ * partial — send `{ value }` to rotate a credential without touching its name, or `{ name }` to
+ * rename without re-supplying a value. */
+
+/** An omitted field keeps its current value; `value: ''` is a rejected empty credential, not a
+ * clear operation. Like the reads, the response never carries the value back. */
 export async function updateSecret(
   workspaceId: string,
   secretId: string,
@@ -6306,13 +6200,12 @@ export async function deleteSecret(
   )
 }
 
-// ─── models.dev catalog (Migration 106) ─────────────────────────────────
-//
-// The catalog is a machine-wide snapshot, cached in the DB and synced hourly in
-// the background. `resolveModel` is the one call the profile dialog makes: it
-// answers "what will this profile actually do", and — just as importantly —
-// WHERE the answer came from. `source: 'builtin'` means the number is pabrik's
-// 200k placeholder, not knowledge about the model.
+// ─── models.dev catalog (Migration 106) ───────────────────────────────── The catalog is a
+// machine-wide snapshot, cached in the DB and synced hourly in the background.
+
+// `resolveModel` is the one call the profile dialog makes: it answers "what will this profile
+// actually do", and — just as importantly — WHERE the answer came from. `source: 'builtin'` means
+// the number is pabrik's 200k placeholder, not knowledge about the model.
 
 export type ModelCatalogState = 'fresh' | 'stale' | 'absent'
 
@@ -6393,10 +6286,11 @@ export async function refreshModelCatalog(): Promise<{
   return await apiFetch('/models/refresh', { method: 'POST' })
 }
 
-/** Best-effort `resolveModel`. The failure is a DISCRIMINATED RESULT, not a
- * swallowed value: `{kind:'error', message}` is not something a caller can
- * mistake for `context_window: 0`, which is exactly the bug the Effect-style
- * rule exists to prevent. Mirrors `testLlmProfile`, which also never rejects. */
+/** Best-effort `resolveModel`. The failure is a DISCRIMINATED RESULT, not a swallowed value:
+ * `{kind:'error', message}` is not something a caller can mistake for `context_window: 0`, which is
+ * exactly the bug the Effect-style rule exists to prevent. */
+
+/** Mirrors `testLlmProfile`, which also never rejects. */
 export type ModelResolveOutcome =
   { kind: 'ok'; value: ModelResolve } | { kind: 'error'; message: string }
 
