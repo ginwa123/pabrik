@@ -102,7 +102,6 @@
  *     immediately on refresh / tab close / navigation. Set
  *     `closeOnUnload: false` to opt out (tests, SSR).
  */
-
 /**
  * State emitted by `SseClient`. See the state machine in the file
  * header for transitions.
@@ -231,7 +230,6 @@ export interface SseClientOptions {
   /** Fires once, after the server's first `connected` named event. This is the canonical "we are
    * live" signal. Do NOT treat the raw `open` event (HTTP 200 + headers) as live — the connection
    * can still be rejected at the protocol level by the server. */
-
   /** The 'connected' event is ALSO passed to `onEvent` with `eventType === 'connected'`, so
    * adapters that want the payload can read it from there. */
   onConnected?: () => void
@@ -247,7 +245,6 @@ export interface SseClientOptions {
   /** Hard cap on reconnect attempts. After this many failed retries (post-open), state becomes
    * `failed` and no further retries are scheduled. The first attempt does NOT count against this
    * cap (a 4xx on the first try already goes to `failed` immediately). */
-
   /** Default: `Infinity` (an SSE stream is expected to live the lifetime of the page). */
   maxAttempts?: number
   /**    * Random source for jitter. Override in tests to make the backoff schedule deterministic.
@@ -299,7 +296,6 @@ export interface SseClientOptions {
   /** Stall threshold in ms. While `state === 'open'`, if no event (message / heartbeat / connected)
    * arrives within this window, the client treats the stream as silently dead and reconnects (see
    * `stallRecovery`). */
-
   /** Default: 30_000 — well ABOVE the ~15s backend keep-alive (`sse_manager.sendHeartbeat`), with
    * margin for timer jitter. A threshold below the heartbeat interval guarantees false-positive
    * reconnects on every idle window. Tests may pass a smaller value for determinism. */
@@ -309,11 +305,9 @@ export interface SseClientOptions {
   stallRecovery?: boolean
   /** Max time in ms to wait for the server's `connected` handshake after (re)starting the
    * EventSource before treating the stream as dead. */
-
   /** Guards against streams that return HTTP 200 + valid SSE framing but never emit the handshake
    * (e.g. a backend rejection path that cannot change the already-sent status code) — without this
    * the client sits in 'connecting' forever. */
-
   /** Heartbeats do NOT reset this timer; only the handshake does. Default: 15_000. Firing routes
    * through the normal error path (`failed` on first attempt, backoff retry once ever open). */
   connectedTimeoutMs?: number
@@ -952,20 +946,15 @@ export function createSseClient(opts: SseClientOptions): SseClient {
     instance.addEventListener(connectedEventName, (e: Event) => {
       // Server explicitly confirmed the stream is live. This is the "open for business" signal —
       // distinct from the raw TCP/HTTP `open` event which only means the headers came back OK.
-
       // We mark the connection as "ever open" (so a 4xx/5xx on the *next* attempt is still treated
       // as recoverable and goes through the backoff loop) but we DO NOT reset `attempt` here.
-
       // `attempt` tracks "how many start() calls have we made" — the backoff formula `2 ** (attempt
       // - 1)` depends on it monotonically increasing across retries.
-
       // Resetting it in `connected` would cause the first retry after a successful open to compute
       // `2 ** -1 = 0.5` of the base delay, halving the backoff and breaking the exponential
       // schedule.
-
       // The right place to reset `attempt` is `reconnect()` (a user-driven retry) and construction
       // (a fresh client).
-
       // NEW (sse-disconnect-diagnosis): also reset `stallFiredAt` so the next stall-to-error gap is
       // computed against the fresh connection, not the previous (possibly long-dead) one. Same
       // reasoning as `eventCount` — the counter is per-open-window, not per-client-lifetime.

@@ -98,10 +98,8 @@ defineExpose({
 // most-frequently-touched UI surface.
 
 // Plan 2026-09-04-subagents-per-profile: 'sub-agents' tab removed — sub-agents live inside each
-// profile row (Profiles tab expand chevron).
-
-// Same key the shell's section state persists to — read here so the URL-backed
-// computed below can fall back to it when the URL has no `?section=`.
+// profile row (Profiles tab expand chevron). Same key the shell's section state persists to — read
+// here so the URL-backed computed below can fall back to it when the URL has no `?section=`.
 const TAB_STORAGE_KEY = 'pabrik-settings-active-tab'
 
 /**  * The section ids this editor accepts. Derived from the `sections` prop, so a URL or a stored value
@@ -124,7 +122,6 @@ const jsonApplied = ref(false)
 /** What is wrong with the textarea, or null when it is applicable. Live, not on-submit: the Apply
  * button is disabled and the reason is on screen while the user types, so an invalid paste never
  * looks like it worked. */
-
 /** Never reformats the text - rewriting what somebody is typing is the fastest way to lose an edit. */
 const jsonProblem = computed<string | null>(() => {
   const text = jsonText.value.trim()
@@ -251,7 +248,6 @@ function showJson() {
 
 /** Leave JSON mode. Refuses to leave when the textarea holds text that has NOT been applied and
  * cannot be - leaving would silently discard an edit the user is mid-way through. */
-
 /** EMPTY is not "unusable": there is nothing to lose, so leaving is allowed (which is what makes a
  * `?mode=json` deep link escapable before the textarea has been seeded). */
 function showForm() {
@@ -266,7 +262,6 @@ function onJsonInput() {
 /** Fold the textarea into the in-memory config, then re-hydrate the sections. Written straight to
  * `config` rather than through `setConfig`: `setConfig` re-snapshots, which would mark this edit as
  * already-saved and hide the save bar. */
-
 /** The snapshot must keep describing what the SERVER last gave us. Returns false (leaving the
  * config untouched) when the text is unusable. */
 function applyJson(): boolean {
@@ -976,8 +971,8 @@ async function setActiveProfile(name: string) {
 // failed). The empty-string sentinel works within the existing wire contract — the handler at
 // pabrik_config_put.zig:250 already maps `ap.len == 0` to "clear" exactly for this purpose.
 
-// Mirrors the existing `setActiveProfile` flow so the UI feedback
-// (success / error notification) is consistent.
+// Mirrors the existing `setActiveProfile` flow so the UI feedback (success / error notification) is
+// consistent.
 async function clearActiveProfile() {
   const previous = activeProfile.value
   activeProfile.value = null

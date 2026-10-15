@@ -18,7 +18,6 @@ export interface KanbanColumn {
   /** Free-text description of the column's meaning. Empty string when no description has been set.
    * Mirrors the `KanbanColumn` interface in `api/index.ts` so test fixtures that import this type
    * see the same shape. */
-
   /** Optional for backwards compat with legacy column literals in test files (see
    * pabrik-frontend-task-literal-typing-rule). */
   description?: string | null
@@ -384,7 +383,6 @@ function normalizeTaskVideoUrlsInPlace(task: Task): void {
 // Decode the `||`-delimited `image_urls` wire string into a `string[]`
 // (REMOVED — folded into normalizeTaskTags above. The InPlace
 // helper handles the imageUrls branch.)
-
 // ─── SSE local-mutation dedupe (Chunk 3 of design-drag-debounce-batch)
 // ─────────────────────────────────────────────────────────────────
 //
@@ -855,7 +853,6 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
   // memory — mutations and SSE events update the tree in place and
   // never invalidate the loaded mark. A re-init wipes the tree, so it
   // wipes the marks too (see init below).
-
   // The init() currently in flight (null before the first call and after it settles).
   // ensureWorkspaceItemsLoaded awaits it when called before the workspace list has been seeded (URL
   // restore racing boot) — otherwise its await would resolve without loading anything.
@@ -866,10 +863,8 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
   /** Fetch + attach ONE workspace's items: per-item tasks (kanban and design skip — kanban
    * populates per-column on mount, design has no task list), eager design pages, and kanban
    * column/task prefetch. */
-
   /** The workspace row must already be seeded into `workspaces.value` (init seeds with `items: []`
    * first); this mutates it in place. Throws only when the top-level items fetch fails. */
-
   /** Per-item tasks / design-pages / kanban fetches are best-effort (logged + skipped), so one bad
    * item never fails the load — same contract as the pre-lazy init(). Shared by init() and
    * ensureWorkspaceItemsLoaded so there is exactly one implementation of these rules. */
@@ -1038,7 +1033,6 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
   /** Idempotent loader for ONE workspace's items (lazy loading — plan above). Already loaded →
    * no-op; in flight → shares the same promise (dedupe); not yet loaded → loadWorkspaceItems +
    * mark. */
-
   /** Failures are logged, never rethrown: fire-and-forget callers (workspace switch, URL restore)
    * must not see unhandled rejections, and a failed id stays out of the loaded set so the NEXT
    * visit retries. */
@@ -1616,10 +1610,8 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
   // stale local state would be worse than no state.
 
   // A failed API call leaves the local store untouched; the caller's UI is expected to handle the
-  // rejection.
-
-  // Private helper: locate a single workspace item by id. Returns
-  // the live reference (Vue 3 reactivity is preserved) or undefined.
+  // rejection. Private helper: locate a single workspace item by id. Returns the live reference
+  // (Vue 3 reactivity is preserved) or undefined.
   function findItem(workspaceId: string, itemId: string): WorkspaceItem | undefined {
     const workspace = workspaces.value.find((ws) => ws.id === workspaceId)
     if (!workspace) return undefined
@@ -1679,11 +1671,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
 
   /** Create a new design workspace item and select it. `path` is REQUIRED — design elements live as
    * HTML files at `<path>/.pabrik/design/<page>/<element>.html`. */
-
   /** The backend's `POST /api/workspaces/:wid/items/design` rejects an empty `path` with 400
    * (PathRequired), and the model's `addElement` rejects `path IS NULL` with `ItemPathMissing` on
    * first use. So path is mandatory at both layers. */
-
   /** After the API call, the new item is pushed into the local store and `activeWorkspaceItemId` is
    * set to it (so the DesignView opens immediately). Returns the new item id or undefined on
    * failure. */
@@ -1811,7 +1801,6 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
   // Update kanban item name from the Settings dialog or KanbanView inline-rename pencil.
   // Optimistic: mutate `item.name` BEFORE the API call resolves so the UI updates immediately; roll
   // back on error.
-
   // Backend contract: PUT /items/:id accepts `{name}` and either writes it (200) or rejects empty
   // (400) — the API throws on non-2xx so we catch + restore + rethrow.
   async function updateKanbanItemName(
@@ -2327,7 +2316,6 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
   // by re-fetching via `fetchDesignElements` below. Page tracking is
   // wired in Chunk 7 (AppLayout sets the active page id); until then,
   // `fetchInitialDesign` in designSse.ts is a no-op.
-
   // Fetch a single design page (with all its elements) and populate
   // `item.design_elements`. Mirrors `fetchKanbanColumns`'s shape and
   // error semantics: silently no-ops if the item isn't in the local
@@ -3129,13 +3117,11 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     }
   }
 
-  // Manually fire a workspace routine. Returns the backend's
-  // `{ session_id }` on success, or `undefined` on failure (the
-  // caller's responsibility to navigate / show an error).
+  // Manually fire a workspace routine. Returns the backend's `{ session_id }` on success, or
+  // `undefined` on failure (the caller's responsibility to navigate / show an error). We
+  // deliberately do NOT navigate here — that's a UI concern owned by the RoutineView.
 
-  // We deliberately do NOT navigate here — that's a UI concern
-  // owned by the RoutineView. The store action is pure: it calls
-  // the API and returns the result.
+  // The store action is pure: it calls the API and returns the result.
   async function runRoutineItem(
     workspaceId: string,
     itemId: string,
@@ -3419,10 +3405,8 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
   /** Pin or unpin a task and persist the change via `POST /api/.../tasks/:task_id/pin`. Optimistic:
    * the local task's `is_pinned` flag is flipped immediately and the `pinned_position` is bumped to
    * MAX+1 (matching the backend's behavior). */
-
   /** On API failure, the previous pin state and position are restored and the error is logged. When
    * the user pins a task, the row is moved to the bottom of the pinned region. */
-
   /** The list lister's `ORDER BY is_pinned DESC, pinned_position DESC, ...` then surfaces it
    * correctly on the next render. */
   async function pinTask(
@@ -3478,10 +3462,8 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
   /** Reorder the pinned subset of a single workspace item and persist the new order via `POST
    * /api/.../tasks/reorder_pinned`. Optimistic: the item's pinned tasks are reordered in the local
    * array immediately so the UI snaps on drop. */
-
   /** On API failure, the snapshot is restored and the error is logged. The caller
    * (WorkspaceItem.vue's drag handler) sends the FULL ordered list of pinned task IDs, not a delta. */
-
   /** Unpinned tasks are not affected (they keep their position in the unpinned region below). */
   async function reorderPinnedTasks(workspaceId: string, itemId: string, orderedIds: string[]) {
     const workspace = workspaces.value.find((w) => w.id === workspaceId)
@@ -4265,11 +4247,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
   /** Reorder the workspaces array to match `orderedIds` and persist the new order via `POST
    * /api/workspaces/reorder`. Optimistic: the local array is reordered immediately so the UI snaps
    * to the new position on drop. */
-
   /** On API failure, the snapshot is restored and the error is logged (no toast/banner — matches
    * the project's silent-failure pattern in addTask/deleteTask/loadMoreTasks). No-op when
    * `orderedIds` is empty or matches the current order (same set of IDs in the same positions). */
-
   /** Length mismatch is rejected (the client is out of sync). Plan:
    * docs/plans/2026-06-12-workspace-drag-and-drop.md */
   async function reorderWorkspaces(orderedIds: string[]) {
@@ -4329,11 +4309,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
   /** Reorder the items of one workspace to match `orderedIds` and persist the new order via `POST
    * /api/workspaces/:workspace_id/items/reorder`. Mirrors `reorderWorkspaces` but scoped to a
    * single workspace's items. */
-
   /** Optimistic: the workspace's items array is reordered immediately so the UI snaps to the new
    * position on drop. On API failure, the snapshot is restored and the error is logged. No-op when
    * `orderedIds` is empty or matches the current order. */
-
   /** Length mismatch is rejected (the client is out of sync — drag handlers send the full list, not
    * a delta). Plan: docs/superpowers/plans/2026-06-16-workspace-item-position-reorder.md */
   async function reorderWorkspaceItems(workspaceId: string, orderedIds: string[]) {
@@ -4429,7 +4407,6 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
 
   /** Subscribe to session events. The callback fires once per session event (after the internal
    * workspacesStore handler runs). Returns an unsubscribe function. */
-
   /** Use this when you have a SEPARATE data structure that needs to stay in sync with session
    * renames/deletes/creates — for example, ChatsList.vue's `navItems` mirror. */
   function onSessionEvent(cb: (event: api.SessionEvent) => void): () => void {

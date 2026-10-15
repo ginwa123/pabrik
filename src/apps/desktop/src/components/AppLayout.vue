@@ -380,25 +380,19 @@ const activeWorkspaceId = computed(() => activeWorkspace.value?.id ?? '')
 // SSE subscription init lives in `initSseStores` (defined at the Design SSE
 // section below, merging both stores under one did-init guard). It runs
 // from onMounted + the store subscription pump at the bottom of this file.
-
 // ─── URL → activeWorkspaceItemId / activeDesignPageId restoration ───── When the user reloads
 // `/app?view=workspace&workspaceId=X&itemId=Y[&pageId=Z]`, the in-memory `activeWorkspaceItemId`
 // (and `activeDesignPageId`) is null.
-
 // We need to set them from the URL params, but only AFTER the workspaces array has loaded (so we
 // can validate the (workspaceId, itemId) pair actually exists).
-
 // The pageId restoration happens at the DesignView layer (it loads pages and reads
 // `activeDesignPageId` from the store before falling back to the first page) — we just stash the
 // URL value into the store here so DesignView can pick it up.
-
 // Setup reads the URL synchronously (it runs before any async API calls) and stashes the params
 // into `pendingUrlRestore`.
-
 // The `workspaces` watcher fires the moment initializeFromSystemFolder populates the array (or in
 // tests, the moment the test sets ws.workspaces = [...] before mount), validates the pair, calls
 // setActiveWorkspaceItem (+ setActiveDesignPage if pageId is set), and clears the pending slot.
-
 // If the pair no longer exists (deleted), we just leave the kanban blank.
 const pendingUrlRestore = ref<{
   workspaceId: string
@@ -508,15 +502,12 @@ void restoreUrlState()
 // IMPORTANT (2026-07-28 per-page chat scoping): When the user switches design pages
 // (activeDesignPageId changes in the store, mirrored from DesignView's activePageId sync), we DO
 // NOT swap the active chat task.
-
 // The chat is bound to the page that opened it (via `handleDesignOpenChat`'s per-page lookup);
 // switching tabs leaves that conversation alone. Closing the chat and reopening on a new page binds
 // to the new page's chat predictably via `handleDesignOpenChat`.
-
 // Any future "smart chat that follows the page" behavior must be opt-in, NOT implicit, to avoid
 // disorienting users mid-conversation. Plan:
 // docs/superpowers/plans/2026-07-28-design-per-page-chat-sessions.md
-
 // ─── activeWorkspaceItem / activeDesignPage → URL mirror (reverse sync) ──
 //
 // The forward direction (sidebar click → URL) is wired through
@@ -1286,11 +1277,9 @@ const chatSurfaceActive = computed(() => {
 // board tab and the chat tab are two different tab keys pointing at the
 // same item. Closing is handled by handleCloseTaskView, which closes the
 // owning tab when tab mode gives the chat one.
-
 // Captured from DesignView's `openChat` payload — the design page's own name (NOT the workspace
 // item name). The dialog's header uses it as "Design Chat: <pageName>". Mirrors the FK-plan naming
 // convention (2026-07-28-design-page-workspace-item-task-fk.md).
-
 // Cleared when activeTask is cleared so a stale pageName from a prior chat doesn't leak into the
 // next opened chat's header.
 const activeDesignChatPageName = ref<string>('')
@@ -1320,7 +1309,6 @@ const activeDesignChatTaskId = ref<string>('')
 // which reads `activeTaskId` directly (NOT the computed `activeTask`)
 // so it fires even when activeTask stays null the whole time (the case
 // for design items — see the bug comment above).
-
 // Synthetic Task for DesignChatDialog. ChatView's API expects a
 // Task object with at minimum `id` (chat-id) and `name` (for the
 // title fallback). Real design-chat tasks live in
@@ -1700,14 +1688,11 @@ async function handleAgentToggleTool(toolName: string, enabled: boolean) {
 
 /** Bulk-toggle multiple tools at once (fired by AgentView's "Select all" / "Clear" buttons in the
  * Tools panel). */
-
 /** Runs every tool through the same optimistic-then-server-confirm path as a single toggle so
  * failures are observable per-tool and the UI stays in sync with the server canonical list. */
-
 /** Concurrency: requests are fired in parallel (Promise.all) — the backend handler is per-tool
  * INSERT/DELETE so there is no cross-row contention. On any failure we re-fetch the canonical list
  * from the server, which collapses partial successes into a single coherent view. */
-
 /** On the wire, individual enable/disable failures are logged but don't abort the rest of the batch
  * — the user gets the best- effort outcome (everything they could enable was enabled) and a
  * re-fetch corrects any drift. */
@@ -1919,7 +1904,6 @@ const handleCloseTaskView = () => {
 // of the design-chat-as-dialog plan (2026-08-06). The design chat no longer sits in a 3-column
 // split — it's a centred modal dialog (DesignChatDialog) that opens on top of the full-width
 // canvas. The resize handle and collapse toggle are gone with the 3-column branch.
-
 // ─── Kanban main-content view (was inline in WorkspaceItem.vue;
 // now mounted here so the board lives in the main content area, not
 // in the sidebar). KanbanView consumes every event locally — the
@@ -1930,10 +1914,8 @@ const handleCloseTaskView = () => {
 // or to Sidebar for modal-opening handlers. AppLayout never wires
 // any kanban events through sidebarRef — that path was removed in
 // the kanban-add-task-via-detail-dialog feature. ──────────────
-
 // KanbanColumnEditor modal state. Three modes (add / rename / delete) share the same component; we
 // track the mode + the target column id + the initial name.
-
 // Lives at the AppLayout scope so the editor is mounted exactly once (any kanban view emits
 // request-rename- column / request-delete-column; we point them at this state).
 type KanbanEditorMode = 'add' | 'rename' | 'delete'
@@ -1973,7 +1955,6 @@ const handleKanbanRequestRenameColumn = (columnId: string) => {
 /** Forward a kanban rename (from either the Settings dialog header pencil or the KanbanView header
  * pencil) to the store. Both children emit `rename-item` with the trimmed new name; the store
  * action optimistic-updates + rolls back on error. */
-
 /** Plan: docs/superpowers/plans/2026-06-30-edit-workspace-item-name.md */
 const handleKanbanRenameItem = (newName: string) => {
   if (!activeWorkspaceItem.value) return
@@ -2110,7 +2091,6 @@ const handleCopyKanbanSpec = (sourceItemId: string, mode: 'replace' | 'append') 
 // in create mode, then calls workspacesStore.addTask +
 // moveTaskToColumn on submit. AppLayout doesn't wire this event
 // anymore — see the comment at the top of the kanban section.
-
 // Drag-and-drop task move between columns. Direct store call.
 const handleKanbanMoveTask = (payload: { taskId: string; columnId: string; position: number }) => {
   if (!activeWorkspaceItem.value) return
@@ -2169,7 +2149,6 @@ const handleKanbanReorderColumn = (payload: { columnId: string; targetColumnId: 
 
 // The sidebar ref is non-null at runtime (AppLayout always renders a Sidebar); the
 // optional-chaining + noop-on-miss is defensive for the initial-render / unmount edge case.
-
 // select-task: click a card → open the task's chat view.
 const handleKanbanSelectTask = (taskId: string) => {
   sidebarRef.value?.selectTask(taskId)
@@ -2770,11 +2749,9 @@ const retryEditorRestore = () => {
 // `replace`, never `push`: Back must keep meaning "go back inside the active tab" rather than
 // becoming a tab switcher. A normal navigation still uses `push`, so history stays about
 // navigation, not about tab switches.
-
 /** The store side of a navigation. The render chain reads the STORES
  * (`workspacesStore.activeWorkspaceItem`, `navigationStore.activeChatId`) — not the URL — so a
  * navigation that only rewrote the URL left the previous view on screen. */
-
 /** A sidebar click set both (WorkspaceItem → Sidebar.handleSelectItem → emit), which is why this
  * only showed up once tabs could be activated directly: switching between two workspace tabs kept
  * rendering the same item. */
@@ -2812,7 +2789,6 @@ function applyActiveTabToUrl() {
 /** The funnel. Every navigation in the app lands here — sidebar clicks, the chats list,
  * kanban/design chat dialogs, deep links, the Back button — so no call site has to know the tab
  * strip exists, and a view type added later becomes tabbable for free. */
-
 /** Gated on mount so it runs AFTER the restore block above: the deep link is resolved by the
  * existing code first, then normalised with its `tab=` name. */
 function syncFromRoute() {

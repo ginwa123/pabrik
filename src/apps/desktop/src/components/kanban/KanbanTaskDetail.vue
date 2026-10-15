@@ -698,7 +698,6 @@ const openDialog = async (): Promise<void> => {
 }
 
 // selectedColumnId sync lives at the end of the open handler above.
-
 // Open guard: run the open handler on mount-with-show plus any update
 // that changes show, the target task, the mode, or the column.
 const prevOpenKey = ref('')
@@ -823,13 +822,12 @@ const handleDocumentClickCommitMenu = (event: MouseEvent) => {
   }
 }
 
-// ─── Handlers ───────────────────────────────────────────────────────────
+// ─── Handlers ─────────────────────────────────────────────────────────── NEW (plan:
+// 2026-08-18-kanban-task-detail-start-agent). Edit-mode handler for the ▶ Start agent button.
 
-// NEW (plan: 2026-08-18-kanban-task-detail-start-agent). Edit-mode handler for the ▶ Start agent
-// button. Emits `start-agent` with the task id; KanbanView's handler calls
-// workspacesStore.startAgentOnTask, which POSTs to the new backend endpoint.
-
-// The dialog stays open on failure (host sets errorMessage); closes on success.
+// Emits `start-agent` with the task id; KanbanView's handler calls
+// workspacesStore.startAgentOnTask, which POSTs to the new backend endpoint. The dialog stays open
+// on failure (host sets errorMessage); closes on success.
 const handleStartAgent = () => {
   if (isWorkerRunning.value) return
   if (!props.task?.id) return

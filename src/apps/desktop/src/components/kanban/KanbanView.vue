@@ -98,7 +98,6 @@ const effectiveItemId = computed(() => props.itemId || props.item.id)
 // NOTE: KanbanView no longer owns a chat pane. The kanban task chat is a separate branch at
 // AppLayout level (its own tab), and the kanban renders only the full-width board. The
 // `workspacesStore.activeTask` getter is consumed by that chat branch, not by this component.
-
 // Per-column initial fetch (Option B, 2026-08-06): KanbanView
 // must load columns FIRST (their ids are needed to issue the
 // `?column_id=col_xxx` query per column), then fire one
@@ -284,7 +283,6 @@ onMounted(loadColumnsAndTasks)
 // Navigating to a different kanban remounts this component (AppLayout's
 // KanbanView branch carries `:key` on the item id), so `onMounted` above
 // is the only load trigger — no reload-on-prop-change subscription needed.
-
 // ─── Horizontal scroll position preservation ──────────────────────────
 //
 // KanbanView renders the kanban board full-width. The chat task is
@@ -373,7 +371,6 @@ useKanbanScrollRestore(kanbanRowsContainer, kanbanRowScrollStorageKey, 'y')
 // ─── Row-mode density (comfortable | compact) ───────────────────────────── The two-line row (name
 // + metadata) is right for most columns but a lot of scrolling for a 100+ row group like `merged`.
 // Compact drops the metadata line back to a single scannable line.
-
 // This is a density preference, not a view switch, so it is localStorage only — it does NOT go in
 // the URL (same reasoning as group collapse below). It applies to row mode only, so it is inert in
 // column mode and the toggle is hidden there.
@@ -400,11 +397,9 @@ const setRowDensity = (next: KanbanRowDensity) => {
   }
 }
 
-// ─── Row-mode group collapse ──────────────────────────────────────────────
-
-// Per board, persisted in localStorage as a JSON array of collapsed
-// column ids. Collapse is a density preference, not a view switch, so it
-// deliberately does NOT go in the URL.
+// ─── Row-mode group collapse ────────────────────────────────────────────── Per board, persisted
+// in localStorage as a JSON array of collapsed column ids. Collapse is a density preference, not a
+// view switch, so it deliberately does NOT go in the URL.
 const COLLAPSED_STORAGE_PREFIX = 'pabrik-kanban-row-collapsed:'
 
 const readCollapsedIds = (): string[] => {
@@ -479,11 +474,9 @@ const emit = defineEmits<{
   closeChat: []
 }>()
 
-// ─── Derived data ──────────────────────────────────────────────────────────
-
-// Columns sorted by position ascending (defensive — the backend already returns them in order, but
-// we sort again locally so a reorder never produces an out-of-order board even before the API
-// response lands).
+// ─── Derived data ────────────────────────────────────────────────────────── Columns sorted by
+// position ascending (defensive — the backend already returns them in order, but we sort again
+// locally so a reorder never produces an out-of-order board even before the API response lands).
 const sortedColumns = computed(() => {
   return (props.item.kanban_columns ?? []).slice().sort((a, b) => a.position - b.position)
 })
@@ -705,7 +698,6 @@ const handleColumnSortChange = (
 }
 
 // ─── Handlers ──────────────────────────────────────────────────────────────
-
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for diff readability.
 const _handleAddColumn = () => {
   emit('addColumn')
@@ -1113,15 +1105,13 @@ onBeforeRouteUpdate((to) => {
   }
 })
 
-// (The old ?detail= watcher lived here — now handled by the
-// `onBeforeRouteUpdate` guard above.)
+// (The old ?detail= watcher lived here — now handled by the `onBeforeRouteUpdate` guard above.)
+// (The old ?layout= watcher lived here — now handled by the `onBeforeRouteUpdate` guard above.)
+// Panel visibility handler (replaces the old showTaskDetail watcher).
 
-// (The old ?layout= watcher lived here — now handled by the
-// `onBeforeRouteUpdate` guard above.)
-
-// Panel visibility handler (replaces the old showTaskDetail watcher). When the panel closes via X /
-// Cancel / Esc inside the panel, drop the ?detail= param so the URL stays truthful, and clear the
-// id so a re-open always goes through handleViewTaskDetail's refresh path.
+// When the panel closes via X / Cancel / Esc inside the panel, drop the ?detail= param so the URL
+// stays truthful, and clear the id so a re-open always goes through handleViewTaskDetail's refresh
+// path.
 const onDetailShowUpdate = (open: boolean) => {
   if (open) {
     showTaskDetail.value = true
@@ -1567,11 +1557,11 @@ const handleCreateTaskSave = async (payload: {
     // follow-up updateTaskDetails call — the columns are populated server-side now.
 
     // The imageUrls forwarding on the wire is what makes them visible to the chatview's first user
-    // message.
+    // message. CHANGED: do NOT emit `selectTask` even on success.
 
-    // CHANGED: do NOT emit `selectTask` even on success. The user asked to stay on the kanban view
-    // after clicking "Create task & run agent" — the agent runs in the background; the user can
-    // click the task card to open the chat view any time. (Same UX as the pre-refactor flow.)
+    // The user asked to stay on the kanban view after clicking "Create task & run agent" — the
+    // agent runs in the background; the user can click the task card to open the chat view any
+    // time. (Same UX as the pre-refactor flow.)
 
     showCreateDialog.value = false
     activeCreateColumnId.value = null

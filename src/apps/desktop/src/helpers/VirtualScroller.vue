@@ -11,14 +11,11 @@ const props = withDefaults(
     /** The full list of items to virtualize. The scroller only mounts the items currently visible
      * in the viewport (plus a small buffer above and below), so passing thousands of items is fine
      * — the DOM stays small. */
-
     /** Each item is rendered via the default scoped slot, receiving `{ item, index }` so you can
      * render whatever you need. */
-
     /** Indexing is significant: the scroller uses the item's index in this array as its key and as
      * the height-measurement key. **Avoid splicing items into the middle of the array at runtime**
      * unless you also call `beginPreserve`/`endPreserve` to keep the visible range stable. */
-
     /** Appending to the end (e.g. chat messages, log lines) and prepending to the start (e.g.
      * paginated history, with `beginPreserve`/ `endPreserve`) are both well-supported. */
     items: T[]
@@ -82,40 +79,31 @@ const props = withDefaults(
     /** Distance in pixels from the load edge at which the scroller emits `loadMore`. If
      * `loadMoreAtTop` is `true` (paginating older items by prepending), this is measured from the
      * top of the scrollable area; otherwise from the bottom. */
-
     /** Acts as the **absolute floor** for the effective threshold. */
-
     /** The actual threshold used in the `loadMore` check is `max(loadMoreThreshold, containerHeight
      * * loadMoreThresholdRatio)`, so the scroller fires `loadMore` when the user is within EITHER
      * the floor OR the proportional distance of the load edge — whichever is larger. */
-
     /** Default 200px keeps the trigger safe on small viewports and during the 0×0 initial-mount
      * flicker. Raise it (e.g. 400-600px) for very slow APIs that need a longer fetch head-start. */
-
     /** The emit is debounced (~200ms) and is suppressed while `beginPreserve`/`endPreserve` is in
      * flight, so a single scroll-to-edge gesture won't fire `loadMore` multiple times. */
     loadMoreThreshold?: number
     /** Proportion of the container's visible height (`clientHeight`) that the effective threshold
      * should track. Combined with `loadMoreThreshold` as `effective = max(loadMoreThreshold,
      * containerHeight * loadMoreThresholdRatio)`. */
-
     /** Default `0.5` means "fire `loadMore` when the user is within half a screen of the load edge"
      * — the same heuristic used by Slack, Discord, and iMessage. On a 1000 px viewport this gives a
      * 500 px effective threshold; on a 600 px viewport, 300 px. */
-
     /** The absolute `loadMoreThreshold` floor (200 px) protects tiny viewports where the
      * proportional value would be smaller. Set to `0` to opt out of the proportional mode entirely
      * (floor only). */
-
     /** The threshold is computed in `computeLoadMoreThreshold` (a pure helper, unit-tested). */
     loadMoreThresholdRatio?: number
     /** If `true`, the scroller emits `loadMore` when the user scrolls within `loadMoreThreshold` of
      * the **top** — use this when you're prepending older items (chat history, activity feeds,
      * logs). */
-
     /** `loadMoreAtTop` should be paired with `beginPreserve`/`endPreserve` in the parent so the
      * user's scroll position doesn't jump when the new items are inserted at index 0. */
-
     /** If `false` (the default), the scroller emits `loadMore` when the user scrolls within
      * `loadMoreThreshold` of the **bottom** — use this for "load more on demand" patterns where new
      * content is appended past the visible area. */
@@ -123,22 +111,17 @@ const props = withDefaults(
     /** Stable identity function for items (2026-08-26 stable-keys fix). Returns a string that
      * uniquely identifies the item's CONTENT — e.g. a DB id — and survives position changes in the
      * array. WHY: the height cache was keyed by ARRAY INDEX. */
-
     /** ChatView renders `messageGroups`, a computed that re-merges/re-filters on every SSE event —
      * so a group count change (thinking-only row dropped, tool row arriving, streaming row swapped)
      * SHIFTS every later index. */
-
     /** The stored height for index k then described a different row: a 40px tool-card height landed
      * on a 2000px markdown message and vice versa. */
-
     /** The sizer became the sum of mismatched heights → wildly too tall → stick-to-bottom landed in
      * blank space (the "sizer 16034px vs real content 13720px" DevTools evidence). With `itemKey`,
      * heights are keyed by identity: a row keeps its own measured height wherever it moves. */
-
     /** Index shifts become harmless. Also used as the v-for key so Vue reuses the correct DOM node
      * per item (less re-render flicker during streaming). Default: `String(index)` — index-keyed,
      * the historical behavior. */
-
     /** Consumers with stable ids (ChatView: `group.messages[0].id`) SHOULD pass this prop. */
     itemKey?: (item: T, index: number) => string
     /**
@@ -167,11 +150,9 @@ const props = withDefaults(
      */
     maxTailGap?: number
     /** Debug chat id for VirtualScroller internal logging (2026-09-02). */
-
     /** When provided, the scroller creates its own scrollLogger and emits sizer-recomputed /
      * measure-compensation / scroll-to-bottom-target lines with the same chatId tag as ChatView, so
      * you can correlate sizerHeight flips with spacer-resize-stick in one grep. */
-
     /** When omitted, internal logging is silent (no perf cost). */
     debugChatId?: string
   }>(),
@@ -193,11 +174,9 @@ const emit = defineEmits<{
   /** Fired when one of the scroller's internal guards prevented `loadMore` from being emitted —
    * i.e. the user WAS within the load edge but the scroller still chose not to emit (because
    * `isPreservingScroll`, `!hasMore`, `!isScrollable`, or `items.length === 0`). */
-
   /** Lets the parent log "user reached top, but lazy load was blocked by X" so the "why didn't it
    * load?" question is answerable from the logs. The `guard` payload is a short identifier — see
    * the emit sites in `onScroll` below for the full list. */
-
   /** NOT emitted when the user simply isn't near the edge (that's normal scrolling, not a
    * suppression). */
   loadMoreSuppressed: [guard: string]
@@ -251,11 +230,9 @@ const emit = defineEmits<{
   /** Fired whenever the scroller's content positioning values change — i.e. when `topSpacer`,
    * `bottomSpacer`, or the total content height changes as a result of scrolling, measurement, or
    * item-list updates. */
-
   /** P2 (task_1787551495337_9): with transform-based positioning there are no spacer DIVs whose
    * `style.height` mutations a parent MutationObserver could watch (ChatView's previous
    * stick-to-bottom signal). */
-
   /** This event is the explicit replacement: parents that need to react to "the virtual layout
    * moved" (re-stick to bottom after measurement drift, etc.) listen here instead. Payload: `{
    * topSpacer, bottomSpacer, total }` in px. */
@@ -356,18 +333,14 @@ let maxMeasuredIndex = -1
 
 /** Estimated height for an item with no stored measurement. 2026-09-06 (task_1788648119245_5): uses
  * the adaptive running MEDIAN of measured heights instead of the static `defaultItemHeight` (64). */
-
 /** Real chat bubbles are ~400px; estimating the unmeasured tail at 64 collapsed the model total
  * (and sizer + scrollHeight) to less than half the real height with 100+ messages — the "list
  * becomes small" symptom. */
-
 /** The median is robust against single giant code-block rows; clampEstimate bounds it to a sane
  * bubble range. */
-
 // Bounds for the adaptive estimate (2026-09-06): the running median can overshoot fresh/short rows
 // (e.g. a 3000px code-block median applied to one-line tool cards) or undershoot after a
 // short-history chat.
-
 // Clamping keeps any single estimate within a sane chat-bubble range; measured heights (stored
 // above) are always exact and unaffected.
 const ESTIMATE_MIN_PX = 32
@@ -377,11 +350,9 @@ const clampEstimate = (px: number): number =>
 
 /** How many observations the estimator must hold before its estimate is frozen (see
  * `estimateHeight`). */
-
 /** At this count the rolling window is FULL, so the learned median describes a whole window of real
  * rows rather than the handful that happened to render first — and, because it was just fed by
  * those rows, freezing it is a no-op for the model: nothing moves at the moment of the freeze. */
-
 /** Only the LATER drift is prevented, which is the part that moves content. */
 const ESTIMATOR_FREEZE_SAMPLES = 64
 
@@ -458,10 +429,8 @@ const isScrollable = computed(() => {
 /** Effective distance (in px) from the load edge at which the scroller emits `loadMore`. Recomputed
  * whenever the container's height changes (via the `containerHeight` ref, which is updated in
  * `onScroll`). */
-
 /** Combines the absolute `loadMoreThreshold` floor (default 200 px) with the proportional
  * `loadMoreThresholdRatio` (default 0.5, i.e. half a screen). */
-
 /** Exposed on the instance so the parent can read it for logging ("effective threshold was 500 px
  * when loadMore fired") and so the integration tests can assert against a single value rather than
  * duplicating the max() logic. */
@@ -1089,15 +1058,12 @@ const measureItems = () => {
 
   // NOTE (2026-08-25): a "tail-exact clamp" (force-write rendered tail heights + shrink the sizer
   // to the real content bottom when the window shows the last item) was tried here and REMOVED.
-
   // It caused an oscillation loop — clamp shrinks sizer → window shifts → next pass reads different
   // heights → sizer grows → shifts again — which the user experienced as app freezes and bouncing
   // text during SSE streams.
-
   // Product decision (user): gaps below the last message are ACCEPTABLE; bouncing is NOT. The
   // anchor compensation above already keeps scrolled-up reading stable; the remeasure() calls in
   // ChatView keep the at-bottom case tight without any clamping.
-
   // ── Apply the anchor compensation ────────────────────────────────────
   //
   // v2 prefix-delta: the anchor's prefix sum moved by
@@ -1517,21 +1483,16 @@ const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
 /** Put the container at an arbitrary scrollTop, clamped to the DOM max. ── Why this clears
  * `settledBottom` ───────────────────────────────────────── `settledBottom` is "where the bottom
  * sat when the stick LAST acted". */
-
 /** It is what makes a stationary reader read as at-bottom while the model converges, and it is only
  * valid for a reader the scroller itself parked at the bottom. */
-
 /** An explicit reposition is the opposite gesture: the caller has put the reader somewhere
  * specific, and the previous anchor now describes a position they are not in. */
-
 /** Leaving it in place makes the next scroll event measure the reader against a bottom that has
  * already moved on — and because the anchor is BELOW the new position, `distanceFromBottom` clamps
  * to 0 and the reader reads as "past the bottom", i.e. at-bottom. */
-
 /** That is exactly how a restored position used to get overridden: the restore wrote the saved
  * scrollTop, the stale anchor from the pre-measure `scrollToBottom` reported the reader as
  * at-bottom, and `onContentShift` re-stuck them to the tail on the next layout shift. */
-
 /** Clearing the anchor makes the next judgement use the live `bottomScrollTop()`, which is the
  * tight path and the honest one for a reader who was just moved deliberately. */
 const scrollToPosition = (scrollTop: number, behavior: ScrollBehavior = 'auto') => {
@@ -1692,20 +1653,15 @@ defineExpose({
   bottomScrollTop,
   /** Where the bottom sat as of the END of the last pass (or the last `scrollToBottom`), or null
    * before anything has positioned the list. */
-
   /** Exposed so the parent can judge "is the reader at the bottom" against the bottom AS IT WAS
    * when the stick last acted, rather than against a freshly recomputed `bottomScrollTop()`. */
-
   /** The live read is a MOVING TARGET: its two inputs (`scrollHeight - clientHeight`, the height
    * model, and `topSpacer + content.offsetHeight`, the rendered rows) move independently, and the
    * real-bottom override engages only while the model overshoots by more than `HYSTERESIS_PX`. */
-
   /** So between two frames the same stationary reader can be measured 0px from the bottom and then
    * 43px from it, with no gesture in between — which flips `isAtBottom` false, shows the
    * jump-to-bottom arrow, and disarms every follow gate. */
-
   /** That is the "the stick dies mid-stream" flake, and it is timing-dependent by construction. */
-
   /** A getter, not a value: `settledBottom` is a plain `let` (deliberately not reactive — it is
    * written inside measure passes and must not schedule a render), so a snapshot in `defineExpose`
    * would be frozen at setup time. */
@@ -1713,11 +1669,9 @@ defineExpose({
     return settledBottom
   },
   /** Whether any real height has replaced an estimate yet. */
-
   /** A getter, not a value: `hasMeasuredItems` is a plain `let` written inside measure passes and
    * must not schedule a render, so a snapshot in `defineExpose` would freeze at setup time —
    * exactly the failure `settledBottom` above documents. */
-
   /** ChatView's scroll-restore waits on this before writing an absolute pixel position. Before the
    * first measurement the model is pure estimate, so the restore would be clamped to (and then
    * compensated away from) a bottom that does not exist. */

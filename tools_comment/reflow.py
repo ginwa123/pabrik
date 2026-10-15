@@ -28,6 +28,8 @@ import json, re, sys, textwrap
 from collections import Counter
 
 W = 100
+WT = '/home/ginwa/.config/pabrik/.worktrees/paydown-2548-comment-lines-1792080502826/'
+DESKTOP = WT + 'src/apps/desktop'
 
 ABBREV = ['e.g.', 'i.e.', 'etc.', 'vs.', 'cf.', 'Mr.', 'Mrs.', 'Dr.', 'No.',
           'Fig.', 'Chunk ', 'Task ', 'approx.', 'al.', 'Inc.', 'Ltd.']
@@ -306,21 +308,46 @@ def process(path, ranges, apply_changes):
     return edits, skipped
 
 
+def findings_for(path):
+    """Lint ONE file and return its `local/max-comment-lines` ranges.
+
+    The findings are read from a fresh lint rather than a cached report,
+    because the caller may have just edited the file (the rejoin step does)
+    and a stale report points at line numbers that no longer exist.
+    """
+    import subprocess
+    # Run from the desktop directory so the flat config is discovered the same
+    # way `pnpm run lint:check` discovers it. The path is made relative to that
+    # directory first: `target` arrives as `src/apps/desktop/src/...`, which
+    # eslint cannot resolve from inside `src/apps/desktop`.
+    rel = path
+    if rel.startswith('src/apps/desktop/'):
+        rel = rel[len('src/apps/desktop/'):]
+    r = subprocess.run(['npx', 'eslint', '--format', 'json', rel],
+                       capture_output=True, text=True, cwd=DESKTOP, timeout=600)
+    try:
+        data = json.loads(r.stdout)
+    except Exception:
+        return []
+    out = []
+    for f in data:
+        for m in f.get('messages', []):
+            if m.get('ruleId') != 'local/max-comment-lines':
+                continue
+            span = int(m['message'].split('spans ')[1].split(' ')[0])
+            out.append((m['line'], m['line'] - 1 + span))
+    return sorted(out)
+
+
 def main():
-    base = json.load(open('/tmp/eslint_base.json'))
     target = sys.argv[1]
     do_apply = len(sys.argv) > 2 and sys.argv[2] == '--apply'
-    for f in base:
-        if not f['filePath'].endswith(target):
-            continue
-        msgs = [m for m in f['messages'] if m.get('ruleId') == 'local/max-comment-lines']
-        ranges = sorted(
-            (m['line'], m['line'] - 1 + int(m['message'].split('spans ')[1].split(' ')[0]))
-            for m in msgs)
-        edits, skipped = process(f['filePath'], ranges, do_apply)
-        print(f'{target}: {len(ranges)} blocks -> {len(edits)} converted, {len(skipped)} skipped')
-        for k, v in Counter(s[1] for s in skipped).most_common():
-            print(f'   skip {k}: {v}')
+    path = WT + target
+    ranges = findings_for(target)
+    edits, skipped = process(path, ranges, do_apply)
+    print(f'{target}: {len(ranges)} blocks -> {len(edits)} converted, {len(skipped)} skipped')
+    for k, v in Counter(s[1] for s in skipped).most_common():
+        print(f'   skip {k}: {v}')
 
 
 if __name__ == '__main__':

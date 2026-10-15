@@ -232,11 +232,11 @@ async function handleDesignContextMenuDelete(targetIds: string[]): Promise<void>
 
 const effectiveItemId = computed(() => props.itemId || props.item.id)
 
-// ─── Pages state ───────────────────────────────────────────────────────
+// ─── Pages state ─────────────────────────────────────────────────────── NEW
+// (design-pages-in-workspace-tree plan, 2026-08-06): pages now live in the workspaces store's
+// `designPagesByItemId` cache, NOT in DesignView-local state.
 
-// NEW (design-pages-in-workspace-tree plan, 2026-08-06): pages now live in the workspaces store's
-// `designPagesByItemId` cache, NOT in DesignView-local state. The sidebar tree (WorkspaceItem.vue)
-// and the canvas header both read from the same map.
+// The sidebar tree (WorkspaceItem.vue) and the canvas header both read from the same map.
 
 // DesignView reads `activeDesignPageId` from the store through its single-source `activePageId`
 // computed; page activation (which fetches elements for the new page) runs from the explicit
@@ -342,7 +342,6 @@ const history = useDesignHistory(computed(() => activePageId.value))
 
 // ─── Snap guides state ──────────────────────────────────────────────── While a drag is in
 // progress, snap math (computeSnapDelta) emits the 1px violet alignment guides the user should see.
-
 // Rendered as an SVG overlay INSIDE the canvas div (above the elements but below the resize
 // handles). Cleared on drag-end (DesignElement emits `dragEnd` on pointerup; the parent listens via
 // @drag-end on the canvas's <DesignElement> invocation).
@@ -578,11 +577,9 @@ onUpdated(() => {
   claimAndActivatePage()
 })
 
-// ─── Keyboard shortcuts ────────────────────────────────────────────────
-
-// True while the user is holding the Space bar. Drives the body's
-// cursor (grab / grabbing) and gates the pointer-drag pan handler
-// on the canvas container.
+// ─── Keyboard shortcuts ──────────────────────────────────────────────── True while the user is
+// holding the Space bar. Drives the body's cursor (grab / grabbing) and gates the pointer-drag pan
+// handler on the canvas container.
 const isSpacePressed = ref(false)
 
 const handleKeydown = (event: KeyboardEvent): void => {
@@ -753,11 +750,11 @@ const handleKeydown = (event: KeyboardEvent): void => {
   // reaches the user unimpeded.
 
   // The composable's undo/redo + the internal `history.capture*()` calls below remain intact for a
-  // clean future re-enable — see DesignView.undoHidden.spec.ts.
+  // clean future re-enable — see DesignView.undoHidden.spec.ts. Fit-to-viewport shortcuts — F
+  // (Figma convention) or Shift+1.
 
-  // Fit-to-viewport shortcuts — F (Figma convention) or Shift+1.
-  // Both ignored when modifier keys (Ctrl/Cmd/Alt) are held to avoid
-  // colliding with browser / OS shortcuts.
+  // Both ignored when modifier keys (Ctrl/Cmd/Alt) are held to avoid colliding with browser / OS
+  // shortcuts.
   if (
     (event.key === 'f' || event.key === 'F' || (event.key === '1' && event.shiftKey)) &&
     !event.ctrlKey &&
@@ -1093,7 +1090,6 @@ const handleSelectPage = (pageId: string): void => {
 // Delete a design page. NEW (design-pages-in-workspace-tree plan, 2026-08-06): routes through the
 // store so the cache + `activeDesignPageId` fallback happen in one place. The store's
 // `deleteDesignPage` action picks the next-active page (same index as the deleted one, falling
-
 // back to the previous; or empty if the item now has no pages).
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for diff readability.
 const _handleDeletePage = async (pageId: string): Promise<void> => {
@@ -1142,7 +1138,6 @@ const handleElementToggle = (elementId: string, additive: boolean): void => {
 // Keep the legacy handler name around as an alias so LayersPanel's `@select="_handleElementSelect"`
 // (which emits a plain elementId with no additive flag) still works — LayersPanel gets the additive
 // flag from the Shift state on the row click and emits a structured
-
 // payload instead.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for diff readability.
 const _handleElementSelect = (elementId: string): void => {
@@ -1167,16 +1162,12 @@ const handleElementUpdate = (patch: Partial<DesignElementApi>): void => {
 /** NEW (2026-08-06, split-move-resize plan) — handler for the `translate` event fired by
  * DesignElement during a single-element drag (move mode). The payload is the cursor DELTA in
  * design-px PLUS the source element id. */
-
 /** Routes through `useDesignHandlers.translateElement` → POST /translate. The backend handles
  * cascade-to-descendants for groups, so we just forward the delta + the element id. */
-
 /** BUG FIX (2026-08-06): previously bailed with `selectedIds.size !== 1` — relying on the parent's
  * selectedIds state. */
-
 /** That was fragile: if the user shift-clicked to deselect (toggle removed the dragged id) or if a
  * stale multi-select from earlier wasn't cleared, the single-element drag would silently no-op. */
-
 /** Now we trust the elementId from the event payload and only fall back to `selectedIds` for
  * back-compat. */
 const handleElementTranslate = (payload: { elementId?: string; dx: number; dy: number }): void => {
@@ -1214,7 +1205,6 @@ const handleElementTranslate = (payload: { elementId?: string; dx: number; dy: n
 /** NEW (2026-08-06, split-move-resize plan) — handler for the `resize` event fired by DesignElement
  * during a resize gesture. The payload is the absolute target geometry after applying the cursor
  * delta. Routes through `useDesignHandlers.resizeElement` → POST /resize. */
-
 /** Resize never cascades (Figma convention). */
 const handleElementResize = (patch: Partial<DesignElementApi>): void => {
   if (selectedIds.value.size !== 1) {
@@ -1304,10 +1294,8 @@ const handleDesignGroupFromContextMenu = (targetIds: string[]): void => {
 // Expand a selection to include the transitive children of any group / frame in the selection. When
 // a user selects just the group (not its children), this lets them drag the group AND every
 // descendant in one motion — matching Figma's behaviour.
-
 // The expansion is per-call (does NOT mutate `selectedIds`) so the layers panel / context menu
 // still
-
 // show the user-selected set.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for diff readability.
 function _expandSelectionWithDescendants(
@@ -1705,7 +1693,6 @@ const zoomFit = (): void => {
 // compute zoom from the ratio of current finger-distance to the
 // distance at pinch-start. Mouse pointerType is intentionally ignored
 // — a single-mouse user can't physically pinch.
-
 // Pair this with `touch-action: pan-x pan-y` on the same container (set in the template below) so
 // the browser stops doing viewport-level pinch-zoom there — only the canvas scales, not the sidebar
 // / chrome.
