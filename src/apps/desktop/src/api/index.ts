@@ -29,30 +29,22 @@ export interface ApiFetchOptions extends Omit<RequestInit, 'body'> {
   /** When true, skip the error notification (caller handles UI inline). */
   silent?: boolean
   /**
-   * When false, skip the top loading bar for this request. Defaults to
-   * true — even `silent: true` requests show the bar (bar = network
-   * activity, toast = error visibility; orthogonal concerns). Pass
-   * `track: false` for background pollers (git status, stream snapshot)
-   * so the bar can idle while they keep polling.
+   * When false, skip the top loading bar. Defaults to true — the bar tracks
+   * network activity, orthogonal to error visibility. Pass false for
+   * background pollers so the bar can idle while they keep polling.
    */
   track?: boolean
   /**
-   * Timeout in ms for the request. Default: 15_000. Set 0 to disable.
-   * Uses `AbortSignal.timeout` when available, otherwise falls back to
-   * an `AbortController` + `setTimeout`. A caller-provided `signal`
-   * is respected and no timeout signal is added.
+   * Timeout in ms. Default 15_000; 0 disables. A caller-provided `signal` is
+   * respected and no timeout signal is added.
    */
   timeoutMs?: number
 }
 
 /**
- * Centralized HTTP wrapper. Auto-fires a toast notification on 4xx/5xx
- * responses (unless `silent: true`). Throws `ApiError` on non-OK so
- * callers can still implement fallback UI.
- *
- * Network failures (fetch rejects) propagate WITHOUT a notification —
- * those are covered by SseStatusBadge for SSE, and a global offline
- * toast is out of scope for v1.
+ * Centralized HTTP wrapper. Toasts on 4xx/5xx unless `silent: true`, and
+ * throws `ApiError` on non-OK so callers can implement fallback UI. Network
+ * failures propagate without a toast — SseStatusBadge covers SSE.
  */
 export async function apiFetch<T = unknown>(url: string, opts: ApiFetchOptions = {}): Promise<T> {
   const { body, silent, track = true, timeoutMs = 15_000, ...init } = opts
@@ -183,12 +175,9 @@ export interface KanbanColumn {
   workspace_item_id: string
   name: string
   /**
-   * Free-text description of the column's meaning (e.g. "Awaiting
-   * code review — tasks here must pass CI before merge"). Empty
-   * string when no description has been set. The Settings UI
-   * renders an "Add a description..." placeholder for empty
-   * values. Optional for backwards compat with legacy column
-   * literals in test files (see pabrik-frontend-task-literal-typing-rule).
+   * Free-text description of the column's meaning. Empty string when unset;
+   * the Settings UI renders an "Add a description..." placeholder. Optional
+   * for backwards compat with legacy column literals in test files.
    */
   description?: string | null
   position: number
@@ -196,35 +185,18 @@ export interface KanbanColumn {
 }
 
 /**
- * Wire shape for `GET /api/workspaces/:wsId/items/:itemId/design/pages`
- * (list envelope) and `POST .../design/pages` (single page response).
- *
- * The numeric fields are `number` here even though the backend uses
- * `i64` — JSON has no integer/float distinction on the wire, so a
- * loose `number` keeps call sites that do arithmetic (e.g. position
- * comparisons) from fighting the type system. The backend's
- * `http_response.DesignPageResponse` (see src/ai_workflow/tui/http_handlers/
- * http_response.zig) is the canonical wire contract.
- *
- * Plan: docs/superpowers/plans/2026-07-08-design-mode-redesign.md
- *   (Chunk 5, Task 5.1)
+ * Wire shape for `GET .../design/pages` (list envelope) and
+ * `POST .../design/pages` (single page). Numeric fields are `number`, not
+ * `i64` — JSON has no integer/float distinction on the wire.
  */
 export interface DesignPage {
   id: string
   workspace_item_id: string
   name: string
   /**
-   * 1:1 FK to `workspace_item_tasks.id`. Set at page-create time
-   * by the backend; the frontend uses this directly to resolve the
-   * page's chat task via `workspacesStore.setActiveTask(page.workspace_item_task_id)`
-   * — no name matching, no legacy migration, no `taskHasMessages` probe.
-   *
-   * Story: introduced 2026-07-28 (plan:
-   * docs/superpowers/plans/2026-07-28-design-page-workspace-item-task-fk.md).
-   * The previous design pattern-matched `"Design Chat: <page_name>"` against
-   * `item.tasks` — fragile, silently broke on page renames, and left
-   * orphan chat tasks when a page was deleted. The FK is the row-level
-   * binding we're after.
+   * 1:1 FK to `workspace_item_tasks.id`, set at page-create time. Resolves
+   * the page's chat task directly — no name matching, no legacy migration,
+   * no `taskHasMessages` probe.
    */
   workspace_item_task_id: string
   width: number
@@ -235,10 +207,9 @@ export interface DesignPage {
 }
 
 /**
- * Element types emitted by the backend's `ElementType` enum
- * (src/ai_workflow/tui/agentic_loop/design_model.zig). Wire form is the lowercase
- * `tagName` string; the backend maps it back to the enum at the
- * handler boundary.
+ * Element types emitted by the backend's `ElementType` enum. Wire form is
+ * the lowercase `tagName` string; the backend maps it back at the handler
+ * boundary.
  */
 /**
  * Normalize the `type` field on a design element from the wire.
@@ -272,21 +243,10 @@ export const normalizeDesignElementType = <
 export type DesignElementType = 'rectangle' | 'ellipse' | 'text' | 'image' | 'frame' | 'group'
 
 /**
- * Wire shape for design elements (the rows in
- * `design_page_elements`). Mirrors the backend's
- * `http_response.DesignElementResponse` struct — see
- * src/ai_workflow/tui/http_handlers/http_response.zig:709-734.
- *
- * Numeric fields are typed as `number` (not `i64`) because JSON has
- * no integer/float distinction; the backend serializes i64 values
- * as unquoted integers. `rotation` and `opacity` are f64 on the
- * backend; typed as `number` for the same reason.
- *
- * Optional string fields default to `''` on the backend (NOT NULL
- * DEFAULT ''), so an empty string is the "no value" sentinel for
- * `fill`, `stroke`, `text_content`, `text_style`, `image_url`,
- * `file_path`. The UI can therefore read these as truthy-or-empty
- * without nullability checks.
+ * Wire shape for design elements (rows in `design_page_elements`). Mirrors
+ * the backend's `http_response.DesignElementResponse`. Numeric fields are
+ * `number` because JSON has no integer/float distinction, and optional
+ * string fields use `''` as the "no value" sentinel.
  */
 export interface DesignElement {
   id: string
@@ -307,12 +267,9 @@ export interface DesignElement {
   text_style: string
   image_url: string
   file_path: string
-  // NEW (Chunk 5 of grouped-layers plan): FK to a `group`/`frame`
-  // element on the same page. Empty string `""` (NOT `null`) is the
-  // wire form for NULL (matches the backend's empty-slice convention).
-  // Optional because legacy elements returned by the API before this
-  // field existed won't have it; the LayersPanel tree builder treats
-  // `undefined` the same as `""` (top-level).
+  // NEW (Chunk 5 of grouped-layers plan): FK to a `group`/`frame` element
+  // on the same page. Empty string `""` (NOT `null`) is the wire form for
+  // NULL. Optional for legacy elements; `undefined` means top-level.
   parent_id?: string | null
   z_index: number
   position: number
@@ -322,10 +279,8 @@ export interface DesignElement {
 
 /**
  * Geometry-only patch payload for
- * `PATCH .../design/pages/:page_id/elements/:element_id/geometry`.
- * Every field is optional — the backend applies a sparse merge and
- * leaves omitted fields untouched. Used by the drag/resize
- * affordances in the canvas component (Chunk 7+).
+ * `PATCH .../design/pages/:page_id/elements/:element_id/geometry`. Every
+ * field is optional — the backend sparse-merges and leaves the rest alone.
  */
 export interface DesignElementGeometry {
   x?: number
@@ -336,18 +291,10 @@ export interface DesignElementGeometry {
 }
 
 /**
- * Wire shape for design-mode SSE events (the payload of
- * `design_element_created` / `design_element_updated` /
- * `design_element_deleted`).
- *
- * The backend emits all three with the same payload struct (see
- * `on_event_design.zig` — `DesignElement{Created,Updated,Deleted}Data`
- * are structurally identical). The `action` discriminator lets the
- * frontend route without needing separate interfaces.
- *
- * Field names match the backend's JSON keys: snake_case for ids
- * (matches the SSE wire format), `action` is the lowercase
- * discriminator string.
+ * Wire shape for design-mode SSE events (`design_element_created` /
+ * `_updated` / `_deleted`). All three share one payload struct; the
+ * `action` discriminator routes them. Field names are the backend's
+ * snake_case JSON keys.
  */
 export interface DesignElementEvent {
   action: 'created' | 'updated' | 'deleted' | 'reordered'
@@ -356,11 +303,9 @@ export interface DesignElementEvent {
   page_id: string
   element_id: string
   /**
-   * Batch event variant (design_elements_geometry_batch_updated,
-   * Chunk 3 of design-drag-debounce-batch). When set, the SSE
-   * handler reads `element_ids` instead of `element_id` to drive
-   * the local-mutation dedupe. Optional for backward compat with
-   * existing single-element events.
+   * Batch event variant (`design_elements_geometry_batch_updated`). When
+   * set, the SSE handler reads `element_ids` instead of `element_id` to
+   * drive the local-mutation dedupe.
    */
   element_ids?: string[]
 }
@@ -369,15 +314,10 @@ export interface WorkspaceItem {
   id: string
   name: string
   item_type: string
-  // The on-disk cwd for kanban items. Optional because:
-  //   (a) legacy kanbans created before this field existed have no path
-  //       (the API returns `null` from the DB, not `undefined`);
-  //   (b) folder items (item_type = 'folder') never have a path here
-  //       (their `path` lives on each FolderEntry child, not the item);
-  //   (c) test fixtures in 5+ test files omit the field entirely.
-  // Allow `null` so API responses with `path: null` (the SQLite NULL →
-  // JSON null round-trip) type-check; the runtime `v-if="!item.path"`
-  // already treats null AND undefined AND "" the same way.
+  // The on-disk cwd for kanban items. Optional: legacy kanbans predate the
+  // field, folder items keep their path on each child, and test fixtures
+  // omit it. `null` is allowed so the SQLite NULL → JSON null round-trip
+  // type-checks; `v-if="!item.path"` treats null/undefined/"" alike.
   path?: string | null
   entries?: FolderEntry[]
   isLoaded?: boolean
@@ -385,10 +325,8 @@ export interface WorkspaceItem {
   expanded?: boolean
   tasks?: Task[]
   // NEW (Chunk 4 of workspace-item-kanban plan). Populated for
-  // `item_type === 'kanban'`; omitted for folder/chat/memory items.
-  // Optional so legacy workspace-item literals (5+ test files
-  // construct WorkspaceItem without this field) keep type-checking —
-  // see the pabrik-frontend-task-literal-typing-rule memory.
+  // `item_type === 'kanban'`, omitted otherwise. Optional so legacy
+  // workspace-item literals in tests keep type-checking.
   kanban_columns?: KanbanColumn[]
 }
 
@@ -406,10 +344,8 @@ export interface Task {
   // getTasks() and used to sort/filter on the frontend. Backend stamps this
   // on every update (rename, complete, etc.).
   updatedAt?: Date
-  // NEW (pinned-tasks feature, plan: docs/superpowers/plans/2026-06-20-pinned-workspace-item-tasks.md).
-  // Both optional so legacy task literals (8+ test files construct Task
-  // without these fields) keep type-checking — see the
-  // pabrik-frontend-task-literal-typing-rule memory.
+  // NEW (pinned-tasks feature). Both optional so legacy task literals in
+  // tests keep type-checking.
   is_pinned?: boolean
   pinned_position?: number
   // NEW (Chunk 4 of workspace-item-kanban plan). Populated for tasks under `item_type === 'kanban'`
@@ -421,14 +357,9 @@ export interface Task {
   // Optional so legacy task literals in tests keep type-checking. On the wire the field is a
   // JSON-encoded array string; the store normalizes via `normalizeTaskTags` at every fetch site.
   tags?: string[]
-  // NEW (kanban image urls, Migration 069). Array of base64 data
-  // URLs (`data:image/<mime>;base64,<payload>`). Empty array = no
-  // images. Optional so legacy task literals in tests keep
-  // type-checking. On the wire the field is a `||`-delimited string
-  // (matching the `llm_history.image_url` convention); the store
-  // splits on `|` and filters empty segments on every fetch, and
-  // joins back with `||` before sending. Plan:
-  // docs/superpowers/plans/2026-08-06-kanban-image-urls-column.md.
+  // NEW (kanban image urls, Migration 069). Array of base64 data URLs;
+  // empty array = no images. Optional so legacy task literals in tests
+  // keep type-checking. On the wire it is a `||`-delimited string.
   imageUrls?: string[]
   // NEW (kanban video urls, Migration 090). Array of base64 data
   // URLs (`data:video/<mime>;base64,<payload>`). Empty array = no
@@ -439,40 +370,22 @@ export interface Task {
   // frontend fetches media only when the flag is true.
   is_have_image?: boolean
   is_have_video?: boolean
-  // NEW (Migration 070 — kanban-cwd-session-optional plan).
-  // Per-task cwd override (absolute path on disk, or '' for
-  // cwd-less). Optional so legacy task literals in tests keep
-  // type-checking. The frontend's KanbanView reads this on every
-  // task fetch and threads it into the 3-level cwd fallback chain
-  // (per-task cwd → kanban-level path → sandbox) at
-  // runAgentOnNewTask time. Empty string is the canonical
-  // "no per-task cwd" sentinel — falls back to the kanban's
-  // `path` + the per-session sandbox.
+  // NEW (Migration 070 — kanban-cwd-session-optional plan). Per-task cwd
+  // override (absolute path, or '' for cwd-less). Optional so legacy task
+  // literals in tests keep type-checking. Threaded into the 3-level cwd
+  // fallback chain: per-task cwd → kanban-level path → sandbox.
   cwd?: string
-  // NEW (kanban task git-branch badge, plan:
-  //   docs/superpowers/plans/2026-08-06-kanban-task-git-branch.md).
-  // The current git branch for the task's cwd — worktree cwd if
-  // bound (`session.git_worktree_cwd`), else the parent workspace
-  // item's `path`. Computed on-demand per request by the backend
-  // (`git -C <cwd> symbolic-ref --short HEAD` with rev-parse
-  // fallback for detached HEAD). `null` when the cwd is not a git
-  // repo or the HEAD is detached; UI omits the badge in that case.
-  // Mirrors the `git_branch` field on `WorkspaceItemTaskResponse`
-  // (see backend `src/ai_workflow/tui/http_handlers/http_response.zig`).
-  // snake_case matches the wire format and the existing convention
-  // in this interface (`task_type`, `is_pinned`, `kanban_column_id`,
-  // etc.) — the `api.getTasks` mapper returns `data.tasks` raw, so
-  // the wire name IS the TS name. No normalization needed.
+  // NEW (kanban task git-branch badge). The current git branch for the
+  // task's cwd — worktree cwd if bound, else the parent item's `path`.
+  // `null` when the cwd is not a git repo or HEAD is detached; the UI
+  // omits the badge. snake_case matches the wire format.
   git_branch?: string | null
 }
 
 /**
- * Split a mixed array of base64 data URLs into images vs videos
- * (Migration 090). Callers pass through whatever FileInput /
- * KanbanDescriptionEditor staged; `data:video/...` entries ride
- * `video_urls`, everything else rides `image_urls`. Explicit
- * `videoUrls` args are merged in (deduped by the backend's
- * empty-segment-tolerant split).
+ * Split a mixed array of base64 data URLs into images vs videos (Migration
+ * 090). `data:video/...` entries ride `video_urls`, everything else rides
+ * `image_urls`; explicit `videoUrls` args are merged in.
  */
 export function splitMediaUrls(
   urls?: string[],
@@ -508,13 +421,9 @@ export async function listFolder(path: string): Promise<FolderInfo> {
 }
 
 /**
- * Server-side recursive file search for the ChatView `@` picker
- * (plan: docs/superpowers/plans/2026-09-08-chatview-search-files-perf.md
- * Task 2). Single round-trip — replaces the old N-sequential-fetch
- * full-tree walk. Uses `apiFetch` (not raw fetch) for timeout/auth
- * handling. Backend: `GET /api/system/folder?action=search` returns
- * `{ entries: [{name, path, is_directory, is_symlink}] }` (snake_case,
- * length <= limit, fat dirs skipped server-side).
+ * Server-side recursive file search for the ChatView `@` picker. One
+ * round-trip replaces the old N-sequential-fetch full-tree walk; uses
+ * `apiFetch` for timeout/auth handling.
  */
 export async function searchFiles(
   cwd: string,
