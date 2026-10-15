@@ -118,6 +118,19 @@ const isStale = (human: string | undefined, updated: string | undefined): boolea
   return updated > human
 }
 
+// Single-badge rule: the orange awaiting-review dot already covers
+// the "AI is ahead" state, so the amber stale dot stays hidden then.
+// Without this both dots paint together (same SQL predicate).
+type StaleDotRow = StatusBadgeRow & {
+  last_human_touched_at?: string
+  updated_at?: string
+}
+
+const shouldShowStaleDot = (item: StaleDotRow): boolean => {
+  if (isAwaitingReview(item)) return false
+  return isStale(item.last_human_touched_at, item.updated_at)
+}
+
 // Inject processingState from App.vue
 const processingState = inject<Ref<Record<string, boolean>>>('processingState', ref({}))
 
@@ -1351,7 +1364,7 @@ defineExpose({
             class="text-micro opacity-60 shrink-0 ml-2 flex items-center gap-1"
           >
             <span
-              v-if="isStale(item.last_human_touched_at, item.updated_at)"
+              v-if="shouldShowStaleDot(item)"
               class="w-1 h-1 rounded-full bg-amber-400"
               title="AI is still working — your last touch was earlier"
               data-testid="chat-stale-dot"
@@ -1552,7 +1565,7 @@ defineExpose({
               class="text-micro opacity-60 shrink-0 ml-2 flex items-center gap-1"
             >
               <span
-                v-if="isStale(item.last_human_touched_at, item.updated_at)"
+                v-if="shouldShowStaleDot(item)"
                 class="w-1 h-1 rounded-full bg-amber-400"
                 title="AI is still working — your last touch was earlier"
                 data-testid="chat-stale-dot"
