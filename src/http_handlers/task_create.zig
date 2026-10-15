@@ -12,6 +12,7 @@ const memories_mod = pabrikcore.memories;
 const tags_validation = @import("tags_validation.zig");
 const image_urls_validation = @import("image_urls_validation.zig");
 const video_urls_validation = @import("video_urls_validation.zig");
+const kanban_deps = pabrikcore.ai_mod.kanban_deps;
 
 /// Process-local monotonic counter for task_id generation.
 var task_id_counter: std.atomic.Value(u64) = .init(0);
@@ -57,6 +58,13 @@ pub const TaskCreateError = error{
     CwdTooLong,
     CwdNotAbsolute,
     CwdContainsControlChar,
+    // 400 — `depends_on` validation (Migration 110): a task cannot depend on
+    // itself, on a task from another kanban, on a set that would close a
+    // cycle, or on more than 32 tasks.
+    DependencySelfReference,
+    DependencyNotInItem,
+    DependencyCycle,
+    DependencyCountExceeded,
     // Underlying I/O / alloc errors (required by the type system
     // even though they're unreachable on the per-request arena)
     OutOfMemory,
@@ -243,6 +251,34 @@ fn createStandardTask(
     input: TaskCreateInput,
     task_id: []const u8,
 ) TaskCreateError!StandardResult {
+    // Migration 110 — resolve the requested dependencies BEFORE the task row
+    // exists, so a rejected set (self-reference, a task from another board, a
+    // cycle, over the cap) cannot leave a half-created card behind.
+    const dep_ids: [][]const u8 = if (input.body.depends_on) |raw_ids|
+        kanban_deps.normalizeIds(allocator, task_id, raw_ids) catch |err| return switch (err) {
+            error.SelfDependency => error.DependencySelfReference,
+            error.DependencyNotInItem => error.DependencyNotInItem,
+            error.DependencyCycle => error.DependencyCycle,
+            error.TooManyDependencies => error.DependencyCountExceeded,
+            error.QueryFailed => error.StandardTaskCreateFailed,
+            error.OutOfMemory => error.OutOfMemory,
+        }
+    else
+        &.{};
+    // Freeing an empty slice is a no-op, so this is safe on both branches.
+    defer allocator.free(dep_ids);
+
+    if (dep_ids.len > 0) {
+        kanban_deps.validate(allocator, db, input.item_id, task_id, dep_ids) catch |err| return switch (err) {
+            error.SelfDependency => error.DependencySelfReference,
+            error.DependencyNotInItem => error.DependencyNotInItem,
+            error.DependencyCycle => error.DependencyCycle,
+            error.TooManyDependencies => error.DependencyCountExceeded,
+            error.QueryFailed => error.StandardTaskCreateFailed,
+            error.OutOfMemory => error.OutOfMemory,
+        };
+    }
+
     // Validate + normalize the tags payload (Migration 067). The helper
     // returns a heap-allocated JSON-encoded array string (or "" for "no
     // tags") — the right shape for the `tags` column.
@@ -403,6 +439,13 @@ fn createStandardTask(
         }
     }
 
+    // Migration 110 — the task row exists now, so the validated edges can be
+    // written.
+    if (dep_ids.len > 0) {
+        kanban_deps.replace(allocator, db, task_id, dep_ids) catch
+            return error.StandardTaskCreateFailed;
+    }
+
     // session_id is preserved for backward compatibility with the v1 wire
     // format.
 
@@ -533,6 +576,10 @@ pub fn tasksCreateHandler(
             error.CwdTooLong,
             error.CwdNotAbsolute,
             error.CwdContainsControlChar => 400,
+            error.DependencySelfReference,
+            error.DependencyNotInItem,
+            error.DependencyCycle,
+            error.DependencyCountExceeded => 400,
             error.MemoryNameRequired, error.InvalidMemoryName,
             error.MemoryContentRequired => 400,
             error.WorkspaceItemNotFound => 404,
@@ -554,6 +601,10 @@ pub fn tasksCreateHandler(
             error.CwdTooLong => "cwd path too long (max 4 KiB)",
             error.CwdNotAbsolute => "cwd must be an absolute path",
             error.CwdContainsControlChar => "cwd contains a control character",
+            error.DependencySelfReference => "depends_on: a task cannot depend on itself",
+            error.DependencyNotInItem => "depends_on: every id must be a task of the same kanban item",
+            error.DependencyCycle => "depends_on: that would create a dependency cycle",
+            error.DependencyCountExceeded => "depends_on: at most 32 dependencies per task",
             error.MemoryNameRequired => "memory_name is required for memory tasks",
             error.InvalidMemoryName => "Invalid memory name (must end in .md, no /, no ..)",
             error.MemoryContentRequired => "memory_content is required for memory tasks",

@@ -22,6 +22,8 @@ pub const KanbanTaskCreateBody = struct {
     cwd: ?[]const u8 = null,
     is_auto_retry_until_stop: ?[]const u8 = null,
     selected_profile_model: ?[]const u8 = null,
+    /// Migration 110 — tasks this new card waits for (ids on the same board).
+    depends_on: ?[]const []const u8 = null,
 };
 
 /// Thin orchestrator over `task_create.zig::useCase` + the create_and_run
@@ -133,6 +135,7 @@ pub fn kanbanTasksCreateHandler(
         .image_urls = parsed.image_urls,
         .video_urls = parsed.video_urls,
         .cwd = parsed.cwd,
+        .depends_on = parsed.depends_on,
     };
 
     const tc_handler = @import("task_create.zig");
@@ -153,6 +156,10 @@ pub fn kanbanTasksCreateHandler(
             error.InvalidVideoUrls => 400,
             error.VideoUrlsTooLarge => 413,
             error.CwdTooLong, error.CwdNotAbsolute, error.CwdContainsControlChar => 400,
+            error.DependencySelfReference,
+            error.DependencyNotInItem,
+            error.DependencyCycle,
+            error.DependencyCountExceeded => 400,
             error.StandardTaskCreateFailed => 500,
             error.OutOfMemory, error.Canceled => 500,
             else => 500, // catch-all for the memory variants that shouldn't fire here

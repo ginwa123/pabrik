@@ -20,6 +20,9 @@ pub const KanbanColumnResponse = struct {
     description: []const u8,
     position: i64,
     created_at: []const u8,
+    /// Migration 110 — a card that lands in this column has finished the work
+    /// it describes, so it stops blocking the tasks that depend on it.
+    is_done: bool = false,
 };
 
 /// Map a `kanban_model.KanbanColumn` (or any struct with the same fields)
@@ -32,6 +35,10 @@ pub fn makeKanbanColumnResponse(col: anytype) KanbanColumnResponse {
         .description = col.description,
         .position = col.position,
         .created_at = col.created_at,
+        // `anytype` callers that predate Migration 110 (and the test literals
+        // that copy them) have no `is_done`, and a field they cannot carry must
+        // not fail to compile.
+        .is_done = if (@hasField(@TypeOf(col), "is_done")) col.is_done else false,
     };
 }
 
@@ -126,6 +133,9 @@ pub const TaskCreateRequest = struct {
     /// Per-task cwd override (Migration 070 — kanban-cwd-session- optional
     /// plan, 2026-08-06).
     cwd: ?[]const u8 = null,
+    /// Migration 110 — the tasks this NEW task waits for. Optional; a real
+    /// JSON array of task ids belonging to the same kanban.
+    depends_on: ?[]const []const u8 = null,
 };
 
 pub const TaskUpdateRequest = struct {
@@ -144,6 +154,10 @@ pub const TaskUpdateRequest = struct {
     /// Per-task cwd override (Migration 070 — kanban-cwd-session- optional
     /// plan, 2026-08-06).
     cwd: ?[]const u8 = null,
+    /// Migration 110 — the tasks this task waits for. `null` (field absent)
+    /// leaves the existing set untouched; an array (including `[]`) REPLACES
+    /// it. A real JSON array of task ids, unlike `tags`.
+    depends_on: ?[]const []const u8 = null,
 };
 
 pub const GitStageResponse = struct {
@@ -455,7 +469,72 @@ pub const WorkspaceItemTaskResponse = struct {
     /// (`session.git_worktree_cwd` if bound, otherwise
     /// `workspace_items.path`).
     git_branch: ?[]const u8 = null,
+
+    /// Migration 110 — ids of the tasks this task waits for. Always present
+    /// (an empty array means "no dependencies").
+    depends_on: []const []const u8 = &.{},
+
+    /// The SUBSET of `depends_on` that has NOT completed, with enough context
+    /// for the UI to say which card is in the way. A dependency whose column
+    /// was deleted counts as incomplete.
+    blocked_by: []const TaskDependencyBlocker = &.{},
+
+    /// `blocked_by.len > 0`, mirrored so the client does not have to walk the
+    /// array to decide whether to render the badge.
+    is_blocked: bool = false,
 };
+
+/// One blocking dependency in a task payload (Migration 110).
+pub const TaskDependencyBlocker = struct {
+    task_id: []const u8,
+    name: []const u8,
+    /// `null` when the dependency is unassigned (its column was deleted).
+    column_id: ?[]const u8 = null,
+    column_name: ?[]const u8 = null,
+};
+
+/// The three dependency fields of a task payload.
+pub const TaskDependencyFields = struct {
+    depends_on: []const []const u8,
+    blocked_by: []const TaskDependencyBlocker,
+    is_blocked: bool,
+};
+
+/// Build the dependency fields for ONE task out of its board's flat edge list —
+/// one `listEdgesForItem` call serves a whole page. `edges` is `anytype` (any
+/// slice of structs with the same fields) so this module never names the type.
+pub fn makeTaskDependencyFields(
+    allocator: std.mem.Allocator,
+    edges: anytype,
+    task_id: []const u8,
+) !TaskDependencyFields {
+    var ids: std.ArrayList([]const u8) = .empty;
+    errdefer ids.deinit(allocator);
+    var blockers: std.ArrayList(TaskDependencyBlocker) = .empty;
+    errdefer blockers.deinit(allocator);
+
+    for (edges) |e| {
+        if (!std.mem.eql(u8, e.task_id, task_id)) continue;
+        try ids.append(allocator, e.depends_on_task_id);
+        if (e.is_done) continue;
+        try blockers.append(allocator, .{
+            .task_id = e.depends_on_task_id,
+            .name = e.name,
+            // "" from the JOIN means "unassigned" — report it as null so the
+            // client can tell "no column" from "a column with no name".
+            .column_id = if (e.column_id.len == 0) null else e.column_id,
+            .column_name = if (e.column_name.len == 0) null else e.column_name,
+        });
+    }
+
+    // `toOwnedSlice` resets the list, so read the count first.
+    const is_blocked = blockers.items.len > 0;
+    return .{
+        .depends_on = try ids.toOwnedSlice(allocator),
+        .blocked_by = try blockers.toOwnedSlice(allocator),
+        .is_blocked = is_blocked,
+    };
+}
 
 pub const WorkspaceItemTaskListResponse = struct {
     tasks: []const WorkspaceItemTaskResponse,

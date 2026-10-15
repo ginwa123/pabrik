@@ -7,6 +7,7 @@ const llm_history = pabrikcore.llm_history;
 const tags_validation = @import("tags_validation.zig");
 const image_urls_validation = @import("image_urls_validation.zig");
 const video_urls_validation = @import("video_urls_validation.zig");
+const kanban_deps = pabrikcore.ai_mod.kanban_deps;
 
 /// PUT /api/workspaces/tasks/:task_id - Update task by ID only (no
 /// workspace/item needed). Body: { name?, session_id?, description?, tags?,
@@ -48,6 +49,13 @@ pub const TaskUpdateError = error{
     /// a 25 MB cap.
     InvalidVideoUrls,
     VideoUrlsTooLarge,
+    /// Migration 110 — `depends_on` rejects a task that names itself, a task
+    /// from a DIFFERENT kanban, a set that would close a dependency cycle, and
+    /// a set over the 32-dependency cap.
+    DependencySelfReference,
+    DependencyNotInItem,
+    DependencyCycle,
+    DependencyCountExceeded,
 };
 
 /// Slice of optional fields the client may send. Mirrors
@@ -108,6 +116,7 @@ fn updateTaskHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: 
             error.InvalidVideoUrls => 400,
             error.VideoUrlsTooLarge => 413,
             error.CwdTooLong, error.CwdNotAbsolute, error.CwdContainsControlChar => 400,
+            error.DependencySelfReference, error.DependencyNotInItem, error.DependencyCycle, error.DependencyCountExceeded => 400,
             error.OutOfMemory => 500,
         };
         const message: []const u8 = switch (err) {
@@ -122,6 +131,10 @@ fn updateTaskHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: 
             error.CwdTooLong => "cwd path too long (max 4 KiB)",
             error.CwdNotAbsolute => "cwd must be an absolute path",
             error.CwdContainsControlChar => "cwd contains a control character",
+            error.DependencySelfReference => "depends_on: a task cannot depend on itself",
+            error.DependencyNotInItem => "depends_on: every id must be a task of the same kanban item",
+            error.DependencyCycle => "depends_on: that would create a dependency cycle",
+            error.DependencyCountExceeded => "depends_on: at most 32 dependencies per task",
             error.OutOfMemory => "Out of memory",
         };
         return res.jsonResponse(.{
@@ -294,6 +307,27 @@ fn useCase(allocator: std.mem.Allocator, input: TaskUpdateInput) TaskUpdateError
         input.db.exec(allocator, sql_buf.items, bind_values.items) catch return error.FailedToUpdateTask;
     }
 
+    // Dependencies branch (Migration 110 — kanban task dependencies).
+    // REPLACE-ALL semantics: a present array (including `[]`) replaces the
+    // whole set; an absent field leaves it untouched.
+    if (input.body.depends_on) |raw_ids| {
+        const item_id = fetchTaskItemId(allocator, input.db, task_id) catch
+            return error.FailedToUpdateTask;
+        defer allocator.free(item_id);
+        // Empty-slice-as-NULL binding rule: a missing parent would silently
+        // match nothing (`WHERE id = NULL`), so refuse it instead.
+        if (item_id.len == 0) return error.FailedToUpdateTask;
+
+        kanban_deps.validateAndReplace(allocator, input.db, item_id, task_id, raw_ids) catch |err| return switch (err) {
+            error.SelfDependency => error.DependencySelfReference,
+            error.DependencyNotInItem => error.DependencyNotInItem,
+            error.DependencyCycle => error.DependencyCycle,
+            error.TooManyDependencies => error.DependencyCountExceeded,
+            error.QueryFailed => error.FailedToUpdateTask,
+            error.OutOfMemory => error.OutOfMemory,
+        };
+    }
+
     // Conditional split: route name updates through the cascade
     // (updateTaskName → updateSessionName → SSE broadcast).
     if (input.body.name) |n| {
@@ -303,6 +337,23 @@ fn useCase(allocator: std.mem.Allocator, input: TaskUpdateInput) TaskUpdateError
     }
 
     return .{ .task_id = task_id };
+}
+
+/// The kanban (or other workspace item) that owns this task — '' when the task
+/// row is gone.
+fn fetchTaskItemId(
+    allocator: std.mem.Allocator,
+    db: *pabrikcore.sqlite.SqliteBackend,
+    task_id: []const u8,
+) ![]u8 {
+    var q = try db.query(allocator,
+        "SELECT COALESCE(workspace_item_id, '') FROM workspace_item_tasks WHERE id = ?",
+        &.{task_id});
+    defer q.deinit();
+
+    const row = (try q.next()) orelse return allocator.dupe(u8, "");
+    defer row.deinit(allocator);
+    return allocator.dupe(u8, row.values[0]);
 }
 
 // ===== Tests merged from task_update_test.zig (2026-09-11 flatten) ===== The

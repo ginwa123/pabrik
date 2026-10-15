@@ -65,6 +65,11 @@ pub fn makeKanbanContext(
                 try out.appendSlice(allocator, " — ");
                 try out.appendSlice(allocator, trimmed_desc);
             }
+            // Migration 110 — which columns finish a task, i.e. which ones
+            // unblock the cards that depend on this one.
+            if (c.is_done) {
+                try out.appendSlice(allocator, " — **a card here has COMPLETED its work** (it unblocks the cards that depend on it)");
+            }
             try out.appendSlice(allocator, "\n");
         }
         try out.appendSlice(allocator, "\n");
@@ -77,6 +82,7 @@ pub fn makeKanbanContext(
         \\- **MILESTONE — do NOT move:** When you reach a meaningful progress milestone but are not done, mention the milestone in your reply so the user sees progress. Keep the card in its current column.
         \\- **COMPLETE — MANDATORY, LAST TOOL CALL:** Before your final reply, you MUST call `kanban_move_task` to move this task to the last column (`done`, or whatever the user-defined last column is). **Do NOT skip this — your work is NOT complete until you do this. If you finish without moving to `done`, your work will be considered incomplete and will be rejected.**
         \\- **BLOCKED — do NOT move:** If you cannot make progress, do NOT move; explain the blocker in your reply. The card stays where it is until the user resolves the blocker.
+        \\- **DEPENDENCY-BLOCKED — finish the OTHER card, do NOT force:** When this card depends on tasks that have not completed, `kanban_move_task` REFUSES the move and names the blocking tasks and their columns. That refusal is the correct answer, not an obstacle: do NOT retry it, and do NOT pass `force: true` unless the blocker is genuinely obsolete — and then say why in your reply. A dependency counts as completed only when it sits in a column marked (**a card here has COMPLETED its work**) in the list above.
         \\
         \\**FAILURE TO CALL `kanban_list` AT START AND `kanban_move_task` AT START + COMPLETE WILL BE CONSIDERED A TASK FAILURE.**
         \\
@@ -391,6 +397,8 @@ const KanbanColumn = struct {
     description: []u8,
     position: i64,
     created_at: []u8,
+    /// Migration 110 — rendered as "a card here has COMPLETED its work".
+    is_done: bool = false,
 };
 
 /// Free the per-column strings and the backing slice in one call.
@@ -444,7 +452,7 @@ fn setupDb() !TestCtx {
     , &[_][]const u8{});
     try db.exec(alloc,
         \\CREATE TABLE kanban_columns (
-        \\    id TEXT PRIMARY KEY, workspace_item_id TEXT, name TEXT, description TEXT NOT NULL DEFAULT '', position INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        \\    id TEXT PRIMARY KEY, workspace_item_id TEXT, name TEXT, description TEXT NOT NULL DEFAULT '', position INTEGER, is_done INTEGER NOT NULL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         \\)
     , &[_][]const u8{});
     try db.exec(alloc,
