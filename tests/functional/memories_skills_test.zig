@@ -1,52 +1,5 @@
-// Functional tests for memories + skills.
-//
-// Zig port of `tests/functional/memories_skills_test.py` (same test
-// names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional tests for memories + skills.
-//
-//   Memories are full CRUD via HTTP (POST/GET/PUT/DELETE) and stay
-//   file-system-managed: they are .md files under
-//   `~/.config/pabrik/memories/`.
-//
-//   Skills are NOT file-system-managed any more. They are rows in the
-//   workspace-scoped `skills` table (Migration 101), reachable at
-//   `/api/workspaces/:workspace_id/skills[/:skill_name]`; the two
-//   `~/.config/pabrik/skills/` and `<cwd>/.pabrik/skills/` tiers and the
-//   `path` / `is_global` / `deleted_from` fields that described them are
-//   gone. Creation is an agent tool (`add_skill`), so this file seeds rows
-//   into the harness's isolated database directly. Plan:
-//   docs/plans/2026-10-04-skills-sqlite-table.md.
-//
-//   Plan: docs/superpowers/plans/2026-07-26-functional-tests-with-real-data.md (Chunk 6)
-//   """
-//
-// PORT NOTES
-//
-// * `_seed_skill_row` is seeded with the `sqlite3` COMMAND-LINE tool,
-//   not the stdlib module: this package links no SQLite and must stay
-//   portable to a runner with no `libsqlite3` dev package. Tests that
-//   seed SKIP when the CLI is absent (`requireSqlite3Cli`). The
-//   `COALESCE(NULLIF(?, ''), '')` guard the Python SQL carried is
-//   preserved verbatim - see the note on `seedSkillRow`.
-//
-// * `_seed_skill_row`'s DEFAULT `content` in Python was never
-//   `%`-formatted (a default arg, not an f-string), so the seeded body
-//   literally contains the two `%s` placeholders. `DEFAULT_SKILL_CONTENT`
-//   reproduces those bytes; the tests that assert on a body always pass
-//   `content` explicitly, so nothing reads the placeholders.
-//
-// * The `item_workspace_path` fixture is pytest's `tmp_path / "item"`.
-//   Zig's `std.testing.tmpDir` is NOT usable here (it lands inside this
-//   package's git worktree), so the port uses
-//   `harness.makeScratchDir` - a sibling of the harness tempdir under the
-//   OS temp root, deleted by `harness.cleanupExtraDir`.
-//
-// * `memoryDiskPath` reproduces the Python `_get_memory_disk_path`
-//   fallback chain exactly: XDG/`.config` first, then `%APPDATA%`, then
-//   the XDG path as the default for a not-yet-created file.
+// Functional tests for memories + skills. Zig port of
+// `tests/functional/memories_skills_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -55,11 +8,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// Python `_seed_skill_row`'s un-formatted default `content`.
-///
-/// A default argument is NOT a format string, so Python seeded the
-/// literal `%s` placeholders. Preserved byte-for-byte so the stored
-/// row - and therefore anything that hashes it - is unchanged.
+/// Python `_seed_skill_row`'s un-formatted default `content`. A default
+/// argument is NOT a format string, so Python seeded the literal `%s`
+/// placeholders.
 const DEFAULT_SKILL_CONTENT = "---\nname: %s\ndescription: %s\n---\n\nbody\n";
 
 // ============================================================================
@@ -73,11 +24,8 @@ fn exitCode(term: std.process.Child.Term) ?u8 {
     };
 }
 
-/// Skip unless a `sqlite3` CLI is present and speaks `-json`.
-///
-/// `-json` landed in SQLite 3.33 (2020). Probing it once, up front, is
-/// what lets every LATER non-zero exit be read as a real SQL failure
-/// instead of "this build of sqlite3 has no such flag".
+/// Skip unless a `sqlite3` CLI is present and speaks `-json`. `-json` landed
+/// in SQLite 3.33 (2020).
 fn requireSqlite3Cli() !void {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-json", ":memory:", "SELECT 1 AS probe;" },
@@ -121,9 +69,8 @@ fn sqlLit(s: []const u8) ![]u8 {
 }
 
 /// Run one statement against `db_path`, return the CLI's stdout (owned).
-///
-/// `.timeout 5000` is the `busy_timeout` the server's WAL connection
-/// needs; a bare CLI invocation would otherwise fail with SQLITE_BUSY.
+/// `.timeout 5000` is the `busy_timeout` the server's WAL connection needs; a
+/// bare CLI invocation would otherwise fail with SQLITE_BUSY.
 fn sqliteRun(db_path: []const u8, sql: []const u8) ![]u8 {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-cmd", ".timeout 5000", "-json", db_path, sql },
@@ -159,13 +106,9 @@ fn dbRun(temp_dir: []const u8, sql: []const u8) ![]u8 {
     return sqliteRun(db, sql);
 }
 
-/// Python `_seed_skill_row`.
-///
-/// There is no HTTP create route for skills - `add_skill` is an agent
-/// tool - so a test that needs a row to read writes one. Written the way
-/// `skills_store.upsertSkill` writes it, `COALESCE(NULLIF(?, ''), '')`
-/// included: `SqliteBackend.exec` binds an empty slice as SQL NULL, which
-/// would violate the NOT NULL constraint on `description`.
+/// Python `_seed_skill_row`. There is no HTTP create route for skills -
+/// `add_skill` is an agent tool - so a test that needs a row to read writes
+/// one.
 fn seedSkillRow(
     temp_dir: []const u8,
     workspace_id: []const u8,
@@ -213,14 +156,9 @@ fn readTextFile(path: []const u8) ![]u8 {
     return std.Io.Dir.cwd().readFileAlloc(io, path, gpa, .limited(1 << 20));
 }
 
-/// Python `_get_memory_disk_path`.
-///
-/// Memories live in $XDG_CONFIG_HOME/pabrik/memories/<name> or
+/// Python `_get_memory_disk_path`. Memories live in
+/// $XDG_CONFIG_HOME/pabrik/memories/<name> or
 /// $HOME/.config/pabrik/memories/<name> (Windows: %APPDATA%/pabrik).
-/// The harness isolates all three, but the file is at the XDG/.config
-/// location on Windows (where XDG_CONFIG_HOME is now isolated to
-/// temp_dir/.config). Use that path for assertions; fallback to
-/// APPDATA if not found (covers old harness without XDG isolation).
 fn memoryDiskPath(temp_dir: []const u8, name: []const u8) ![]u8 {
     // Check XDG/.config first (current Windows isolation), then APPDATA.
     const config_base = try harness.harnessPath(
@@ -311,11 +249,6 @@ fn namesContain(names: []const []u8, needle: []const u8) bool {
 }
 
 /// One entry of `GET /api/workspaces/:ws/skills` — `{name, description}`.
-///
-/// OWNED strings, because the entry is copied OUT of the parsed
-/// document: a `harness.Json` borrows the `Response` buffer and dies
-/// with it, so returning a `std.json.Array` from a helper would hand the
-/// caller a pointer into a freed arena.
 const SkillEntry = struct {
     name: []u8,
     description: ?[]u8,
@@ -324,11 +257,8 @@ const SkillEntry = struct {
     keys: [][]u8,
 };
 
-/// `GET /api/workspaces/:workspace_id/skills` — one flat array of
-/// `{name, description}`.
-///
-/// The old payload was two arrays (`global_skills` + `local_skills`) plus
-/// a `cwd`, which is the two-directory precedence this change removed.
+/// `GET /api/workspaces/:workspace_id/skills` — one flat array of `{name,
+/// description}`.
 const SkillList = struct {
     entries: []SkillEntry,
 
@@ -801,10 +731,7 @@ test "create_local_memory_under_cwd" {
     };
 
     // The Python `item_workspace_path` fixture: a directory OUTSIDE the
-    // harness tempdir that the test points the API at. `defer
-    // gpa.free` is registered BEFORE the cleanup defer so it runs
-    // AFTER it (LIFO) - the other way round the slice would already be
-    // freed when cleanupExtraDir reads it.
+    // harness tempdir that the test points the API at.
     const cwd = try harness.makeScratchDir(gpa);
     defer gpa.free(cwd);
     defer harness.cleanupExtraDir(io, gpa, cwd);
@@ -844,12 +771,9 @@ test "create_local_memory_under_cwd" {
 // Test 6: skill listing - a seeded row lists under its workspace
 // ============================================================================
 
-// A skill is a row in the workspace's `skills` table.
-//
-// It used to be a `SKILL.MD` file under `~/.config/pabrik/skills/`, which
-// the API re-walked on every request and merged with a project-local
-// copy. Writing a file to disk no longer makes a skill appear - the
-// directory is an input to the importer, not a source of truth.
+// A skill is a row in the workspace's `skills` table. It used to be a
+// `SKILL.MD` file under `~/.config/pabrik/skills/`, which the API re-walked
+// on every request and merged with a project-local copy.
 test "skill_list_is_workspace_scoped" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -894,11 +818,9 @@ test "skill_list_is_workspace_scoped" {
     try expectKeysExactly(entry.keys, &.{ "name", "description", "is_can_auto_improve" }, "listed skill");
 }
 
-// The workspace_id in the URL is the isolation boundary.
-//
-// A skill file used to be visible from every workspace that happened to
-// share a machine; a row is not. This is the assertion that would fail
-// first if a query ever dropped `workspace_id` from its WHERE clause.
+// The workspace_id in the URL is the isolation boundary. A skill file used to
+// be visible from every workspace that happened to share a machine; a row is
+// not.
 test "skill_list_does_not_leak_across_workspaces" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -940,12 +862,8 @@ test "skill_list_does_not_leak_across_workspaces" {
 // Test 7: skill detail + delete
 // ============================================================================
 
-// GET the body, DELETE the row - both under the workspace.
-//
-// The delete takes the name as a PATH SEGMENT now, not as
-// `?name=...&is_global=...&cwd=...`. Those three query parameters were
-// the directory decision, and a body that exists in one place cannot be
-// told apart from one that exists in another by query string alone.
+// GET the body, DELETE the row - both under the workspace. The delete takes
+// the name as a PATH SEGMENT now, not as `?name=...&is_global=...&cwd=...`.
 test "skill_detail_and_delete" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -1044,11 +962,9 @@ test "skill_detail_and_delete" {
 // Test 8: memory and skill namespaces don't collide
 // ============================================================================
 
-// A memory named 'foo.md' and a skill named 'foo' are independent rows.
-//
-// The memory is a file under `~/.config/pabrik/memories/`; the skill is a
-// row in the `skills` table. Same name, two stores - and deleting one
-// must not touch the other.
+// A memory named 'foo.md' and a skill named 'foo' are independent rows. The
+// memory is a file under `~/.config/pabrik/memories/`; the skill is a row in
+// the `skills` table.
 test "memory_and_skill_namespaces_dont_collide" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();

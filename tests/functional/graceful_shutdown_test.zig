@@ -1,44 +1,5 @@
-// Graceful shutdown: Ctrl+C (SIGINT) and SIGTERM drain cleanly.
-//
-// Zig port of `tests/functional/graceful_shutdown_test.py` (same test
-// names, same order).
-//
-// Regression test for "are we using graceful shutdown for backend":
-// before the fix, the foreground server installed no SIGINT/SIGTERM
-// handler, so Ctrl+C killed the process with the default disposition —
-// no listener close, no cron/SSE join, no SQLite deinit (rely on WAL
-// recovery), truncated in-flight responses.
-//
-// After the fix, `main` installs `signal_handlers.installShutdownHandlers`
-// which calls `GinwaServer.shutdown()` (stop accept + unblock `listen()`)
-// so the existing `cronjob_manager.stop() / sse_manager.stop() / defer`
-// unwind runs. A second signal force-exits (130).
-//
-// Method: boot a real binary via the functional harness (isolated tmpdir
-// HOME, random free port — never 8081), assert /health serves, send
-// SIGINT to the child pid, assert the process exits promptly with a
-// clean status (0, not -SIGINT/-SIGTERM/-SEGV), and assert the port stops
-// serving. SIGTERM path covered the same way (docker/systemd/`service
-// stop` send TERM).
-//
-// WHY THIS SUITE CALLS `waitpid` DIRECTLY
-//
-// The Python harness owned the `subprocess.Popen` and reaped it with
-// `os.waitpid(pid, WNOHANG)`. The Zig harness spawns the child with
-// `std.process.spawn` and keeps only the PID (`Harness.pid`) — the
-// `Child` handle is dropped, so nothing in `Harness` ever reaps it.
-// That is also why `kill(pid, 0)` is useless as an exit probe here: a
-// dead-but-unreaped child answers 0 (zombie), so a liveness poll would
-// spin the whole deadline and then report "did not exit" for a process
-// that exited in 50ms. `waitpid(WNOHANG)` is the only call that both
-// reaps AND reports EXITED-vs-SIGNALLED, which is precisely the
-// distinction this suite exists to assert.
-//
-// TODO(port): `std.posix` exposes no non-libc `waitpid`, and this
-// package deliberately links no libc (see build.zig), so the reaping is
-// spelled against `std.os.linux` and the suite skips on every other
-// OS. The macOS/Windows port is a `std.c.waitpid` call behind that
-// package's libc link.
+// Graceful shutdown: Ctrl+C (SIGINT) and SIGTERM drain cleanly. Zig port of
+// `tests/functional/graceful_shutdown_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -61,10 +22,9 @@ fn nowMs() i64 {
     return std.Io.Timestamp.now(io, .awake).toMilliseconds();
 }
 
-/// Signal `pid` and block until it exits (or `exit_timeout_ms` elapses),
-/// then assert the status word says "exited cleanly".
-///
-/// Returns `error.SkipZigTest` off Linux — see the file header.
+/// Signal `pid` and block until it exits (or `exit_timeout_ms` elapses), then
+/// assert the status word says "exited cleanly". Returns `error.SkipZigTest`
+/// off Linux — see the file header.
 fn awaitCleanExit(pid: u32, sig: std.posix.SIG, sig_name: []const u8) !void {
     if (comptime builtin.os.tag == .linux) {
         std.posix.kill(@intCast(pid), sig) catch |err| {
@@ -88,9 +48,7 @@ fn awaitCleanExit(pid: u32, sig: std.posix.SIG, sig_name: []const u8) !void {
                     std.Io.sleep(io, .fromMilliseconds(50), .awake) catch {};
                 },
                 // ECHILD: already reaped elsewhere, so there is no status
-                // word to read. Python's `_wait_exit` mapped the same
-                // `ChildProcessError` to "already reaped" and returned its
-                // still-`None` status, which failed the very next assert.
+                // word to read.
                 .CHILD => break,
                 else => {
                     std.debug.print("waitpid({d}) failed: {t}\n", .{ pid, std.posix.errno(rc) });
@@ -127,10 +85,9 @@ fn awaitCleanExit(pid: u32, sig: std.posix.SIG, sig_name: []const u8) !void {
             return error.TestUnexpectedResult;
         }
     } else {
-        // The `if`/`else` is comptime-resolved, but Zig still ANALYZES
-        // the untaken branch, so a plain `_ = x` is a "pointless
-        // discard" on Linux. `doNotOptimizeAway` is the idiomatic
-        // "genuinely dead on this platform" marker.
+        // The `if`/`else` is comptime-resolved, but Zig still ANALYZES the
+        // untaken branch, so a plain `_ = x` is a "pointless discard" on
+        // Linux.
         std.mem.doNotOptimizeAway(pid);
         std.mem.doNotOptimizeAway(sig);
         std.mem.doNotOptimizeAway(sig_name);
@@ -139,21 +96,6 @@ fn awaitCleanExit(pid: u32, sig: std.posix.SIG, sig_name: []const u8) !void {
 }
 
 /// Is `h`'s port still serving `/health`?
-///
-/// Python's `_port_serves` swallowed EVERY exception (including
-/// `ConnectionRefusedError`, which is the expected answer once the
-/// process is gone) and returned False. A failed request is therefore a
-/// "not serving", not a test failure.
-///
-/// WHY A RAW CLIENT AND NOT `Harness.http`
-///
-/// This is the one call in the suite that runs against a DEAD server,
-/// so `client.request(...)` fails with `ConnectionRefused` — and
-/// `Harness.http` only frees its `buildUrl` allocation on the two
-/// paths it wrote `gpa.free(url)` into. The early-error path leaks it,
-/// which `testing.allocator` reports as a leak against THIS test.
-/// Python reached for `urllib.request.urlopen` directly here for the
-/// same reason; this is the Zig spelling of that.
 fn portServes(h: *Harness) bool {
     var client: std.http.Client = .{ .allocator = gpa, .io = io };
     defer client.deinit();

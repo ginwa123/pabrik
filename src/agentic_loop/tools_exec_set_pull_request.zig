@@ -53,12 +53,8 @@ pub fn execSetPullRequest(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecRes
         return ToolExecResult{ .output = output, .output_allocated = true };
     }
 
-    // SUCCESS: persist the attached PR binding so the session (and its
-    // right panel) remembers it across tool calls. For CLEAR, pass
-    // nulls (updateSessionPrUrl treats null and "" identically as
-    // "clear the binding"). For SET, read `url` + `provider` from the
-    // inner JSON (slices borrow from `inner`, still alive here;
-    // updateSessionPrUrl only reads them).
+    // SUCCESS: persist the attached PR binding so the session (and its right
+    // panel) remembers it across tool calls.
     if (parsed.value.clear) {
         llm_history.updateSessionPrUrl(ctx.allocator, ctx.db, ctx.session_id, null, null) catch |err| {
             ctx.logger.errFmt("set_pull_request: failed to clear pr_url: {s}", .{@errorName(err)});

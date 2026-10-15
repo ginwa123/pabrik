@@ -1,43 +1,5 @@
-// SSE auth-rejection must terminate the stream, never hang it.
-//
-// Zig port of `tests/functional/sse_auth_test.py` (same test names,
-// same order).
-//
-// Wire regression for "SSE always connecting on app launch": kabelweb
-// sends the SSE 200 headers BEFORE the handler runs, so the handler's
-// `res.jsonResponse(401)` on auth failure never reached the wire. The
-// client stayed registered and received heartbeats forever without ever
-// seeing `event: connected` — SseClient sat in 'connecting' forever.
-//
-// Contract pinned here:
-//   * `--auth` on, no cookie: stream carries `event: auth_error`, then
-//     ENDS promptly (EOF). No immortal `data: ping` tail, no `connected`.
-//   * `--auth` on, valid cookie: `event: connected` arrives (happy path).
-//   * unknown `?channels=` token: stream ENDS promptly (same zombie
-//     pattern lived on the 400 paths).
-//
-// Boots a real binary against an isolated tmpdir HOME (never port 8081).
-//
-// ── WHY THERE IS A HAND-ROLLED SSE CLIENT HERE ─────────────────────────────
-// `Harness.http` CANNOT read this endpoint: it calls
-// `reader.streamRemaining(...)`, which on a `text/event-stream` response
-// blocks until the server closes the connection — and a healthy SSE
-// stream never closes, so `streamRemaining` never returns. The idiom
-// below is the one `background_process_sse_test.zig` established:
-// `std.http.Client` directly, `req.sendBodiless()`, `req.receiveHead`
-// for the status + Content-Type, then `resp.reader(&buf)` read LINE BY
-// LINE on a watchdog thread that `shutdown(.recv)`s the socket to
-// release a parked read.
-//
-// This suite needs one capability the background-process port does not:
-// it must distinguish EOF from a TIMEOUT (every assertion here is "the
-// stream ENDED"). So `readEvents` records `eof` separately from
-// `read_error`, and `waitForEnd` polls `done`.
-//
-// `SseStream` is heap-allocated, not returned by value: `std.http.Client`
-// embeds a `ConnectionPool` with an `Io.Mutex` and `Response.request`
-// points back at the request, so the trio is UNCOPYABLE — a by-value
-// return bit-copies the mutex state and leaves `resp.request` dangling.
+// SSE auth-rejection must terminate the stream, never hang it. Zig port of
+// `tests/functional/sse_auth_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -54,12 +16,6 @@ const reject_timeout_ms: i64 = 10_000;
 const authed_timeout_ms: i64 = 8_000;
 
 /// Transfer buffer for the response body reader.
-///
-/// NOT `&.{}`: `Response.reader(transfer_buffer)` uses that slice as the
-/// reader's own buffer for a chunked body, and `takeDelimiter` reports
-/// `error.StreamTooLong` the moment the buffer fills without a newline
-/// — which, on a stream with no `\n` yet, is immediately. An SSE frame
-/// is a few hundred bytes, so 8 KiB is generous.
 const transfer_buffer_len = 8 * 1024;
 
 /// Monotonic milliseconds (`.awake` = monotonic, not wall clock).
@@ -79,10 +35,9 @@ const SseEvent = struct {
     }
 };
 
-/// An open SSE connection plus the state the reader thread fills in.
-///
-/// The test thread owns the pointer; the reader thread writes into it.
-/// `stop` / `done` are the cross-thread handshake — see `readEvents`.
+/// An open SSE connection plus the state the reader thread fills in. The test
+/// thread owns the pointer; the reader thread writes into it. `stop` / `done`
+/// are the cross-thread handshake — see `readEvents`.
 const SseStream = struct {
     client: std.http.Client,
     req: std.http.Client.Request,
@@ -100,12 +55,6 @@ const SseStream = struct {
     /// Set by the reader thread once it has stopped touching `events`.
     done: std.atomic.Value(bool) = .init(false),
     /// Frames parsed so far.
-    ///
-    /// `events`, `eof` and `read_error` are guarded by `mutex`: the
-    /// reader thread appends while the test thread polls, and an
-    /// unsynchronised read of `events.items` during the reader's
-    /// `append` is a use-after-free. `Io.Mutex` is the equivalent of
-    /// Python's `queue.Queue`.
     mutex: std.Io.Mutex = .init,
     events: std.ArrayList(SseEvent) = .empty,
     /// Set by the reader thread when the stream ended cleanly. This is
@@ -134,21 +83,14 @@ fn openSse(port: u16, channels: []const u8, cookie: ?[]const u8) !*SseStream {
     errdefer gpa.destroy(s);
 
     // `gpa.create` returns UNINITIALIZED memory — it does NOT run the
-    // struct's field default initializers. `s.* = .{}` applies all of
-    // them in one shot; an uninitialised `Io.Mutex` is not a lock at
-    // all, and `lockUncancelable` on garbage state parks the test
-    // thread on a futex nobody will ever wake.
+    // struct's field default initializers.
     s.* = .{ .client = .{ .allocator = gpa, .io = io }, .req = undefined };
 
     const url = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/api/events?channels={s}", .{ port, channels });
     defer gpa.free(url);
 
-    // `extra_headers` borrows the array for the duration of the
-    // request, so the array must stay alive until `receiveHead`
-    // returns. A FIXED-SIZE array with a runtime length does that in
-    // one frame; an `if`-expression returning two differently-sized
-    // array literals would not compile (the if-else must agree on a
-    // single type).
+    // `extra_headers` borrows the array for the duration of the request, so
+    // the array must stay alive until `receiveHead` returns.
     var extra: [2]std.http.Header = undefined;
     extra[0] = .{ .name = "Accept", .value = "text/event-stream" };
     const header_count: usize = if (cookie) |c| blk: {
@@ -189,18 +131,8 @@ fn openSse(port: u16, channels: []const u8, cookie: ?[]const u8) !*SseStream {
     return s;
 }
 
-/// Read SSE frames from `s` until `stop` is set, the stream ends, or an
-/// error occurs. Runs on its own thread.
-///
-/// The SSE grammar (per unified_events_sse.zig `forwardToClients` and
-/// `terminateSseStream`):
-///
-///     event: <name>\n
-///     data: <line>\n
-///     \n            <- blank line dispatches the frame
-///
-/// `data:` lines are joined with `\n`; a frame with an `event:` but no
-/// `data:` dispatches with an empty payload.
+/// Read SSE frames from `s` until `stop` is set, the stream ends, or an error
+/// occurs. Runs on its own thread.
 fn readEvents(s: *SseStream) void {
     defer s.done.store(true, .release);
 
@@ -218,23 +150,6 @@ fn readEvents(s: *SseStream) void {
     while (!s.stop.load(.acquire)) {
         // ONE LINE, not the whole stream: this is what makes the read
         // incremental.
-        //
-        // `takeDelimiter` (NOT `takeDelimiterExclusive`) is the correct
-        // primitive, and the difference is load-bearing.
-        // `takeDelimiterExclusive` "advances the seek position up to
-        // (but NOT past) the delimiter" — it leaves the `\n` in the
-        // buffer. The next call therefore finds that same `\n`
-        // immediately and returns an EMPTY slice, forever. A reader
-        // built on it livelocks: it spins on empty strings, never sees
-        // `error.EndOfStream`, and a `waitForEnd` deadline expires with
-        // the stream long since closed. It "works" only when the first
-        // line of the stream is the event you were waiting for, which
-        // is why the background-process port never noticed.
-        //
-        // `takeDelimiter` consumes the delimiter and maps a clean
-        // end-of-stream to `null` — exactly Python's `readline()`
-        // returning `b""`. `raw_line` borrows the reader's buffer and
-        // is copied out below before the next read.
         const maybe_line = reader.takeDelimiter('\n') catch |err| {
             const msg = switch (err) {
                 error.ReadFailed => "read failed",
@@ -298,12 +213,6 @@ fn readEvents(s: *SseStream) void {
 
 /// Spawn the reader thread and register the defer that makes every
 /// early-return path safe.
-///
-/// `releaseReader` MUST precede `join`: a stream the server holds open
-/// parks the reader in `readv` forever, and `join` on a parked thread
-/// deadlocks the whole suite. Registering the pair as ONE defer means
-/// a `return error.TestUnexpectedResult` half way through a test cannot
-/// skip the shutdown.
 fn spawnReader(s: *SseStream) !std.Thread {
     const t = try std.Thread.spawn(.{}, readEvents, .{s});
     errdefer t.join();
@@ -311,9 +220,8 @@ fn spawnReader(s: *SseStream) !std.Thread {
 }
 
 /// Release a blocked `readEvents` by shutting the socket's read side.
-///
-/// `shutdown(SHUT_RD)` makes the pending `readv` return 0, which the
-/// net layer reports as `error.EndOfStream`, and the reader exits.
+/// `shutdown(SHUT_RD)` makes the pending `readv` return 0, which the net
+/// layer reports as `error.EndOfStream`, and the reader exits.
 fn releaseReader(s: *SseStream) void {
     s.stop.store(true, .release);
     s.req.connection.?.stream_reader.stream.shutdown(io, .recv) catch {};
@@ -325,9 +233,6 @@ fn waitForEvent(s: *SseStream, want: []const u8, timeout_ms: i64) bool {
     const deadline = nowMs() + timeout_ms;
     while (true) {
         // Snapshot under the lock, then RELEASE it before sleeping.
-        // Holding the mutex across the sleep starves the reader: the
-        // loop re-acquires the instant the sleep ends, so the reader —
-        // which needs the same lock to append — misses every window.
         s.mutex.lockUncancelable(io);
         const found = blk: {
             for (s.events.items) |e| {
@@ -386,11 +291,6 @@ fn bootAuth() !Harness {
 }
 
 /// Run `pabrik create-admin` against the harness HOME.
-///
-/// `runPabrikCommand` prepends the resolved binary itself, so `argv`
-/// starts at the SUBCOMMAND — passing the binary again would make the
-/// subcommand dispatch miss (it matches argv[1]) and boot a SERVER,
-/// which then tries to bind the default port.
 fn createAdmin(home: []const u8, email: []const u8, password: []const u8) !void {
     var r = try harness.runPabrikCommand(io, gpa, home, &.{
         "create-admin", "--email", email, "--password", password,
@@ -403,10 +303,6 @@ fn createAdmin(home: []const u8, email: []const u8, password: []const u8) !void 
 }
 
 /// Log in and return the raw session token (Python `_login`).
-///
-/// The login POST needs no cookie and no streaming, so it goes through
-/// the ordinary harness client with `.assert_status = false` — the
-/// status IS one of the assertions here (`assert status == 200`).
 fn login(h: *Harness, email: []const u8, password: []const u8) ![]u8 {
     const body = try std.fmt.allocPrint(
         gpa,
@@ -429,11 +325,8 @@ fn login(h: *Harness, email: []const u8, password: []const u8) ![]u8 {
         std.debug.print("login sent no pabrik_session cookie: {s}\n", .{set_cookie});
         return error.TestUnexpectedResult;
     }
-    // `split("pabrik_session=", 1)[1].split(";", 1)[0].strip()`:
-    // the token is the text BETWEEN the name and the next `;`. The
-    // harness's `afterFirst` returns the text AFTER a delimiter, which
-    // here would be the attribute list (`Path=/; HttpOnly`) — wrong
-    // tool for this direction, hence the manual split.
+    // `split("pabrik_session=", 1)[1].split(";", 1)[0].strip()`: the token is
+    // the text BETWEEN the name and the next `;`.
     var attrs = std.mem.splitSequence(u8, set_cookie, ";");
     const first_attr = attrs.next() orelse return error.TestUnexpectedResult;
     const raw_token = harness.afterFirst(first_attr, "pabrik_session=") orelse
@@ -527,10 +420,6 @@ test "authed_sse_gets_connected" {
 }
 
 // Unknown ?channels= token: stream ends promptly instead of hanging.
-//
-// NOTE the fixture difference from the two tests above: Python asked
-// for the shared `harness` fixture (a plain boot, NO `--auth`), so this
-// pins the 400-path zombie pattern in isolation from the auth gate.
 test "unknown_channel_terminates" {
     try harness.requirePabrikBin(io, gpa);
 

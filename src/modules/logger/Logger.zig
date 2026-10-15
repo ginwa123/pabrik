@@ -57,17 +57,6 @@ pub const LoggerConfig = struct {
 };
 
 /// Timber-style console debug print without per-site `if`s.
-///
-/// `zig build test` prints a `failed command:` block for ANY step (even a
-/// passing one) whose stderr is non-empty, so stray `std.debug.print` lines
-/// in test-reachable code show up as scary-looking noise on green runs.
-/// Call sites use this instead of `std.debug.print` directly; the silence
-/// decision lives HERE, once (the Android Timber pattern: call sites log
-/// unconditionally, the planted tree decides).
-///
-/// Production binaries print unconditionally — there is no runtime flag to
-/// forget (a flag defaulting to "loud" would leak noise into CI the first
-/// time someone forgets to set it; `builtin.is_test` cannot leak).
 pub fn debugPrint(comptime fmt: []const u8, args: anytype) void {
     if (builtin.is_test) return;
     std.debug.print(fmt, args);
@@ -140,10 +129,6 @@ pub const Logger = struct {
     }
 
     /// Ensure log file is open, creating parent directories if needed.
-    /// NOTE: Zig 0.16's `std.Io.File` has no `seekTo` API — after `createFile`,
-    /// the kernel's file position is always 0, even for an existing file. We
-    /// track the end-of-file offset ourselves in `self.current_file_size` and
-    /// use `writePositionalAll` in `writeEntry` to append at that offset.
     fn ensureLogFileOpen(self: *Logger) !void {
         if (self.log_file != null) return;
 
@@ -158,16 +143,8 @@ pub const Logger = struct {
         const file = try std.Io.Dir.cwd().createFile(self.io, path, .{ .truncate = false });
         errdefer file.close(self.io);
 
-        // Record the current end-of-file offset; this is where the next
-        // write will land (via writePositionalAll in writeEntry).
-        //
-        // Use `Dir.statFile(...)` (path-based stat) instead of
-        // `File.length(...)` (handle-based). On Windows, handle-based
-        // `length()` uses `NtQueryInformationFile(...All)` whose
-        // `StandardInformation.EndOfFile` can be stale (0) for a handle
-        // that was just opened on an existing file. Path-based stat goes
-        // through `dirStatFile`, which on Windows uses
-        // `NtQueryFullAttributesFile` (uncached on-disk size).
+        // Record the current end-of-file offset; this is where the next write
+        // will land (via writePositionalAll in writeEntry).
         const file_size: u64 = stat: {
             const s = std.Io.Dir.cwd().statFile(self.io, path, .{}) catch break :stat 0;
             break :stat s.size;
@@ -335,21 +312,13 @@ pub const Logger = struct {
             // Write to file
             if (self.log_file) |log_file| {
                 // Use writePositionalAll (pwrite) at the tracked end-of-file
-                // offset. The kernel's file position is 0 right after
-                // createFile, so writeStreamingAll would overwrite the
-                // beginning of the file. writePositionalAll is independent of
-                // the kernel's position and writes at the absolute offset we
-                // provide.
+                // offset.
                 try std.Io.File.writePositionalAll(log_file, self.io, output, self.current_file_size);
                 self.current_file_size += output.len;
             }
         }
 
-        // Handle stdout output if configured. Under `zig build test` the
-        // console branch stays silent: the build runner prints a
-        // `failed command:` block for ANY step (even passing) with
-        // non-empty stderr. File output is unaffected, so the tests that
-        // assert on log files keep exercising the real path.
+        // Handle stdout output if configured.
         if (!builtin.is_test and (self.config.output_mode == .stdout or self.config.output_mode == .both)) {
             try std.Io.File.writeStreamingAll(std.Io.File.stderr(), self.io, output);
         }

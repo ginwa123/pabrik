@@ -9,8 +9,7 @@ const WorktreeInfoError = error{ NotARepository };
 
 /// Result of gathering worktree info. Mirrors the `GitWorktreeInfoResponse`
 /// shape but with the HTTP layer stripped out (no status codes, no response
-/// struct). The use case does NOT set `is_git_repo` — the absence of
-/// `NotARepository` error is the success signal.
+/// struct).
 const WorktreeInfoResult = struct {
     branch: []const u8,
     last_commit_sha: []const u8,
@@ -20,17 +19,9 @@ const WorktreeInfoResult = struct {
     diff_summary: []const u8,
 };
 
-/// Use case — run all the git CLI commands to gather worktree metadata.
-///
-/// Takes primitive inputs (worktree path + optional base override), returns
-/// a domain struct. No HTTP types. On a non-git-repo path, returns
-/// `error.NotARepository`; on any other failure (git subprocess error,
-/// alloc failure, etc.), returns the underlying error.
-///
-/// All allocations are owned by the per-request arena the handler passes
-/// in; this function does NOT free any of the strings it returns — the
-/// arena reaps them when the request ends (see memory
-/// custom-http-server-per-request-arena).
+/// Use case — run all the git CLI commands to gather worktree metadata. Takes
+/// primitive inputs (worktree path + optional base override), returns a
+/// domain struct.
 fn getWorktreeInfoUseCase(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -69,11 +60,9 @@ fn getWorktreeInfoUseCase(
     } else {
         const bases = [_][]const u8{ "main", "master", "develop" };
         for (bases) |b| {
-            // Build "origin/<b>" at runtime — the `++` operator on
-            // string slices in Zig 0.16 requires comptime-known slices,
-            // and `b` is a loop variable. Use std.fmt.bufPrint to a
-            // stack buffer instead (no allocator needed, the buffer
-            // outlives the `run` call).
+            // Build "origin/<b>" at runtime — the `++` operator on string
+            // slices in Zig 0.16 requires comptime-known slices, and `b` is a
+            // loop variable.
             var origin_b_buf: [64]u8 = undefined;
             const origin_b = std.fmt.bufPrint(origin_b_buf[0..], "origin/{s}", .{b}) catch continue;
             const argv = [_][]const u8{ "git", "-C", path, "rev-parse", "--verify", origin_b };
@@ -126,20 +115,9 @@ fn getWorktreeInfoUseCase(
     };
 }
 
-/// HTTP handler for `GET /api/git/worktree/info`.
-///
-/// Query params:
-///   - `path` (required) — absolute worktree path
-///   - `base` (optional) — override the auto-detected base branch. When
-///     present, `commits_ahead` and `diff_summary` are computed against
-///     `origin/<base>` instead of the auto-detected default
-///     (origin/main → origin/master → origin/develop). See design
-///     decision #12 of the git-worktree-cwd-pr plan.
-///
-/// This handler is a thin wrapper: it parses query params, delegates to
-/// `getWorktreeInfoUseCase`, builds the HTTP response shape, and maps
-/// domain errors to status codes. All git CLI knowledge lives in the use
-/// case.
+/// HTTP handler for `GET /api/git/worktree/info`. Query params: - `path`
+/// (required) — absolute worktree path - `base` (optional) — override the
+/// auto-detected base branch.
 pub fn gitWorktreeInfoHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
     const io = ctx.io;

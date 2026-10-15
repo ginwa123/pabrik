@@ -1,34 +1,5 @@
-// Functional tests for design mode lifecycle.
-//
-// Zig port of `tests/functional/design_lifecycle_test.py` (same test
-// names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional tests for design mode lifecycle.
-//
-//   The on-disk HTML files are the differentiator: every design element
-//   has an .html file at `<item_path>/.pabrik/design/<page>/<element>.html`.
-//   This suite verifies that the disk state stays in sync with the DB
-//   state across page/element CRUD, atomic HTML rewrites, and
-//   geometry PATCHes.
-//
-//   Plan: docs/superpowers/plans/2026-07-26-functional-tests-with-real-data.md (Chunk 5)
-//   """
-//
-// THE `item_workspace_path` FIXTURE: pytest's `item_workspace_path`
-// returned `tmp_path / "item"` — a per-test directory that is NOT the
-// harness's `temp_dir` HOME and is cleaned by pytest. The Zig analogue
-// is `harness.makeScratchDir`, which allocates a SIBLING of the harness
-// tempdir under the `pabrik-fix-` prefix. It is deliberately NOT under
-// `pabrik-func-`, because `reapOrphanTestPids` runs on EVERY boot and
-// deletes any `pabrik-func-*` directory whose `.harness.pid` names a
-// dead process — which would delete this fixture mid-test.
-//
-// PATHS: every design item `path` is derived from the scratch dir via
-// `harness.harnessPath`, never a literal `/tmp/...`. The create handler
-// validates it with `std.fs.path.isAbsolute`, which is FALSE for a
-// leading-slash path on Windows.
+// Functional tests for design mode lifecycle. Zig port of
+// `tests/functional/design_lifecycle_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -59,10 +30,6 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
 }
 
 /// `POST .../items/design` → the new design item's id (owned).
-///
-/// The response is FLAT (`{id, workspace_id, item_type, name, path,
-/// position}`), not the `{item: …}` envelope the agent/kanban creates
-/// use — the design handler predates it.
 fn createDesign(h: *Harness, ws_id: []const u8, name: []const u8, path: []const u8) ![]u8 {
     const body = try std.fmt.allocPrint(
         gpa,
@@ -123,12 +90,6 @@ fn createPage(
 }
 
 /// The body for `POST .../elements`.
-///
-/// WHY `fill` IS ALWAYS SENT: the `design_page_elements.fill` column is
-/// NOT NULL and `db.exec` binds an empty `[]const u8` as SQL NULL,
-/// which trips the constraint. The frontend always sends an explicit
-/// fill, so the production path never hits this — but a functional test
-/// must mirror the frontend, not invent a shape the product never sends.
 const ElementSpec = struct {
     name: []const u8,
     element_type: []const u8,
@@ -214,11 +175,9 @@ fn getElementHtml(
     });
 }
 
-/// `GET .../design/pages/:pid` → an OWNED document.
-///
-/// `.alloc_always`, because the caller navigates it long after the
-/// `Response` body buffer is gone — a `harness.Json` borrows and cannot
-/// cross that boundary.
+/// `GET .../design/pages/:pid` → an OWNED document. `.alloc_always`, because
+/// the caller navigates it long after the `Response` body buffer is gone — a
+/// `harness.Json` borrows and cannot cross that boundary.
 fn getPage(h: *Harness, ws_id: []const u8, design_id: []const u8, page_id: []const u8) !std.json.Parsed(std.json.Value) {
     const url = try std.fmt.allocPrint(
         gpa,
@@ -232,10 +191,6 @@ fn getPage(h: *Harness, ws_id: []const u8, design_id: []const u8, page_id: []con
 }
 
 /// The `elements` array of a fetched page.
-///
-/// Python: `page.get("elements", [])` — a missing key (or a non-array)
-/// degrades to an EMPTY list, so "the page has no elements" is reported
-/// by the CALLER's length assertion rather than here.
 fn pageElements(page: *const std.json.Parsed(std.json.Value)) []const std.json.Value {
     const obj = switch (page.value) {
         .object => |o| o,
@@ -275,13 +230,9 @@ fn dirExists(path: []const u8) bool {
     return true;
 }
 
-/// The `*.html` files directly inside `dir`, as owned absolute paths,
-/// sorted by name (directory order is not defined, and the Python
-/// assertions index `candidates[0]`).
-///
-/// A missing directory yields an EMPTY list — that is what Python's
-/// `Path.glob` does, and `test_delete_element_removes_html_file`
-/// depends on it.
+/// The `*.html` files directly inside `dir`, as owned absolute paths, sorted
+/// by name (directory order is not defined, and the Python assertions index
+/// `candidates[0]`).
 fn listHtmlFiles(dir: []const u8) ![][]const u8 {
     var out: std.ArrayList([]const u8) = .empty;
     errdefer {
@@ -557,14 +508,8 @@ test "update_html_atomically_rewrites_file" {
 // Test 5: geometry PATCH does not touch the HTML file
 // ============================================================================
 
-// PATCH /geometry only updates x/y/width/height; the HTML file is
-// byte-equal afterwards.
-//
-// Python ALSO captured `st_mtime_ns` before and after but asserted
-// nothing on it ("We allow for filesystem mtime resolution noise; the
-// byte equality check above is the strong assertion"), so the port
-// asserts byte equality only — matching what the original actually
-// verified rather than adding a flakier check.
+// PATCH /geometry only updates x/y/width/height; the HTML file is byte-equal
+// afterwards.
 test "geometry_patch_does_not_touch_html" {
     try harness.requirePabrikBin(io, gpa);
     var h = try boot();
@@ -768,11 +713,6 @@ test "delete_page_removes_entire_directory" {
 
 // GET /html returns the body byte-equal to what was POSTed, across five
 // shapes of HTML (simple, newlines, double quotes, unicode, backslashes).
-//
-// The Zig bodies are built with `std.json.Stringify.encodeJsonString`
-// rather than string interpolation: the `with-quotes` case contains
-// `"` and the `with-backslashes` case contains `\`, both of which a
-// hand-written literal would corrupt.
 test "get_html_returns_stored_content" {
     try harness.requirePabrikBin(io, gpa);
     var h = try boot();

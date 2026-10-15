@@ -1,28 +1,5 @@
-// End-to-end smoke test for the functional Harness.
-//
-// Zig port of `tests/functional/smoke_boot_test.py` (same test names).
-//
-// Boots a real `pabrik` binary against an isolated tmpdir HOME,
-// exercises the basic API surface, and verifies (a) the data lives in
-// the tempdir and (b) the real $HOME is untouched.
-//
-// WHY THERE IS NO SHARED HARNESS HERE
-//
-// Python used a module-scoped `shared_harness` fixture: boot costs ~3-5 s
-// (the migration cascade plus the ready wait) and all seven tests drove
-// the same booted instance. Zig has no module-scoped fixture, and the
-// obvious port — a lazily-initialised file-scope `?Harness` — is WRONG
-// here for a reason the compiler cannot catch: `testing.allocator`
-// checks for leaks at the END OF EACH TEST, not at process exit. A
-// harness allocated in `boot_succeeds` and freed in a later test leaks
-// from the allocator's point of view, and the failure is reported
-// against whichever test happened to boot it.
-//
-// So every test in this file boots and tears down its own harness. That
-// costs ~3 s per test — which is precisely why `teardown_completes_
-// within_3s` matters: the suite is only affordable BECAUSE teardown is
-// fast. The perf assertion below is what pays for the correctness
-// choice above, and it is the test that would catch a regression in it.
+// End-to-end smoke test for the functional Harness. Zig port of
+// `tests/functional/smoke_boot_test.py` (same test names).
 
 const std = @import("std");
 const testing = std.testing;
@@ -38,11 +15,8 @@ fn bootOne() !Harness {
 }
 
 // ─── The module's own harness safety invariants ────────────────────────────
-//
-// These are NOT ports: they are the guards on `harness.zig` itself, and
-// they run without booting a binary (so they work on a clean checkout).
-// They have no Python counterpart because the Python equivalents live
-// in `harness_safety_test.py`.
+// These are NOT ports: they are the guards on `harness.zig` itself, and they
+// run without booting a binary (so they work on a clean checkout).
 
 test "is_safe_tmp_rejects_dangerous_paths" {
     const root = try harness.tmpRoot(gpa);
@@ -181,10 +155,8 @@ test "state_lives_in_temp_dir" {
         std.debug.print("agent.db not found at expected tempdir path {s}\n", .{db_path});
         return error.TestUnexpectedResult;
     };
-    // The real $HOME must NOT contain a `pabrik/agent.db` newly created
-    // by this test. Python noted that a stat-based "didn't write" claim
-    // is unreliable, and leaned on the temp_dir isolation proven above —
-    // the same reasoning applies here.
+    // The real $HOME must NOT contain a `pabrik/agent.db` newly created by
+    // this test.
 }
 
 // The real $HOME is captured intact by the harness.
@@ -193,16 +165,8 @@ test "orig_home_untouched_after_session" {
     var h = try bootOne();
     defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
 
-    // Python: `h.orig_home == os.environ["HOME"] or Path(h.orig_home).exists()`.
-    // In Zig the parent process env is NEVER shadowed — the child gets
-    // its own env block at spawn — so the captured `orig_home` must
-    // equal the ambient HOME exactly.
-    // `std.testing.environ` IS this process's environment (the test
-    // runner populates it from the real one), so reading HOME from it
-    // is the ambient value — the same source `harness.orig_home` is
-    // captured from. It also avoids reconstructing an `Environ`, whose
-    // `block` variant differs per OS (a `[:null]` slice on POSIX, a
-    // `GlobalBlock` on Windows).
+    // Python: `h.orig_home == os.environ["HOME"] or
+    // Path(h.orig_home).exists()`.
     const home = testing.environ.getAlloc(gpa, "HOME") catch try gpa.dupe(u8, "");
     defer gpa.free(home);
     try testing.expect(std.mem.eql(u8, h.orig_home, home));
@@ -214,12 +178,9 @@ test "teardown_restores_home_and_keeps_orig_dir" {
     var h = try bootOne();
     defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
 
-    // Python records this as a tautology: "the assertion is
-    // tautological; the real coverage is in
+    // Python records this as a tautology: "the assertion is tautological; the
+    // real coverage is in
     // harness_safety_test.py::test_teardown_with_safe_temp_dir_runs_rmtree".
-    // The Zig port keeps the meaningful half — orig_home is an absolute
-    // path that survived boot untouched — and says why the rest is a
-    // tautology rather than pretending it is a real check.
     try testing.expect(h.orig_home.len > 0);
     try testing.expect(std.fs.path.isAbsolute(h.orig_home));
 }
@@ -227,12 +188,6 @@ test "teardown_restores_home_and_keeps_orig_dir" {
 // Teardown must complete in <3s.
 test "teardown_completes_within_3s" {
     // Regression guard for the "10s wasted teardown per test" bug.
-    // Before the fix, `/test/shutdown` returned 200 but the process
-    // segfaulted 10s later (rc=-11) because the cronjob manager thread
-    // outlived main's defers; the harness then waited the full SIGTERM
-    // + SIGKILL deadline. 64 tests x 10s is ~10 min of CI waste.
-    // After the fix, teardown completes in ~0.2s. The 3s budget below
-    // leaves 15x headroom for a slow CI runner.
     try harness.requirePabrikBin(io, gpa);
 
     var h = try Harness.boot(io, gpa, .{});

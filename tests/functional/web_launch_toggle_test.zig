@@ -1,43 +1,6 @@
-// Functional tests for the web-launch toggle (browser mode, random port).
-//
-// Zig port of `tests/functional/web_launch_toggle_test.py` (same test
-// names, same order).
-//
-// Plan: docs/superpowers/plans/2026-09-10-web-launch-toggle.md
-// Task: task_1789052626064_0
-//
-// Lifecycle A: the server keeps running regardless of the flag — the
-// flag only drives the settings UI (URL pill + auto-open) and the
-// startup port default (random when on, 8081 when off). Covered here:
-//
-//   Test 1 — GET defaults `web_launch_enabled=false` on a fresh install.
-//   Test 2 — PUT true round-trips through GET + on-disk config.json.
-//   Test 3 — PUT false flips an existing true.
-//   Test 4 — Omitting the key on PUT preserves the on-disk value
-//            (the `?bool = null` "don't touch" sentinel).
-//   Test 5 — GET /api/web/status reports the live bound port + URL and
-//            reflects the flag (false → true across a PUT).
-//   Test 6 — Status URL is reachable (same origin serves the SPA).
-//
-// Lifecycle B: a taken default port falls back to a free one instead of
-// dying — on every platform. Covered here:
-//
-//   Test 7 — With 8081 held by another listener, a bare `pabrik` (no
-//            --port) boots on a different port, prints the real browser
-//            URL, and serves /health there. An explicit --port keeps
-//            failing loud (operator intent) — that path is not spawned
-//            here, it is the pre-existing exit(1) branch in main.zig.
-//
-// The harness boots pabrik on a random free port (never 8081), so Test 5
-// locks in that the status endpoint reports the LIVE port, not a
-// hardcoded default.
-//
-// WHY THE `config.json` READ IS PLATFORM-BRANCHED: the server resolves
-// its config directory per-OS (Config.zig `getDefaultConfigDir`):
-// `$XDG_CONFIG_HOME/pabrik` on Linux, `$HOME/Library/Application
-// Support/pabrik` on macOS, `$APPDATA/pabrik` on Windows. The harness
-// shadows all three inside its tempdir, so every branch resolves under
-// `h.temp_dir` and the delete stays inside the gate.
+// Functional tests for the web-launch toggle (browser mode, random port). Zig
+// port of `tests/functional/web_launch_toggle_test.py` (same test names, same
+// order).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -58,10 +21,9 @@ fn platformConfigDir(h: *Harness) ![]u8 {
     };
 }
 
-/// The owned, parsed `config.json` the server wrote on disk.
-///
-/// Python `_on_disk_config` returned `json.loads(path.read_text())`, so
-/// the analogue is a `harness.Json` the caller must `deinit`.
+/// The owned, parsed `config.json` the server wrote on disk. Python
+/// `_on_disk_config` returned `json.loads(path.read_text())`, so the analogue
+/// is a `harness.Json` the caller must `deinit`.
 fn onDiskConfig(h: *Harness) !harness.Json {
     const dir = try platformConfigDir(h);
     defer gpa.free(dir);
@@ -84,10 +46,6 @@ fn onDiskConfig(h: *Harness) !harness.Json {
 
 /// `PUT /api/config/pabrik` with the profiles scaffolding the backend
 /// expects.
-///
-/// `web_launch_enabled == null` OMITS the key — that omission is the
-/// assertion in Test 4, so it must stay an omission on the wire rather
-/// than becoming an explicit `false` (which is a different request).
 fn putWebLaunch(h: *Harness, web_launch_enabled: ?bool) !void {
     // A COMPILE-TIME literal, not a formatted string: `null` must put
     // NOTHING on the wire, and an empty string here is exactly that.
@@ -108,10 +66,6 @@ fn putWebLaunch(h: *Harness, web_launch_enabled: ?bool) !void {
 }
 
 /// `GET /api/config/pabrik` + assert `web_launch_enabled == want`.
-///
-/// The Zig analogue of `assert r.get("web_launch_enabled") is False`
-/// — identity against the JSON boolean, so a missing key or a string
-/// `"false"` both FAIL rather than silently coercing.
 fn expectWebLaunchFlag(h: *Harness, want: bool, context: []const u8) !void {
     var r = try h.http(io, .GET, "/api/config/pabrik", .{ .expect = &.{200} });
     defer r.deinit();
@@ -132,15 +86,8 @@ fn expectWebLaunchFlag(h: *Harness, want: bool, context: []const u8) !void {
     }
 }
 
-/// Boot the `web_harness` fixture: a harness with a stub LLM profile so
-/// the binary starts without a real API key.
-///
-/// The macOS arm of the Python fixture copied `.config/pabrik/config.json`
-/// to the macOS location when only the former existed, so the server
-/// found a config where `getDefaultConfigDir` looks. `writeStubLlmProfile`
-/// already writes all three locations, so the copy is belt-and-braces;
-/// it is kept because removing it would silently change what the macOS
-/// path is exercised against.
+/// Boot the `web_harness` fixture: a harness with a stub LLM profile so the
+/// binary starts without a real API key.
 fn bootWebHarness() !Harness {
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
     errdefer h.deinit(io) catch {};
@@ -334,10 +281,8 @@ fn expectWebStatus(h: *Harness, want_enabled: bool) !void {
     }
 }
 
-// The advertised URL origin is actually reachable (lifecycle A: the
-// same server serves the UI — no second listener needed). Note: `/`
-// itself 404s without `--static-dir` (the harness boots API-only), so we
-// assert on `/health`, which proves the origin is live.
+// The advertised URL origin is actually reachable (lifecycle A: the same
+// server serves the UI — no second listener needed).
 test "web_status_url_serves_http" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -355,18 +300,14 @@ test "web_status_url_serves_http" {
         std.debug.print("web/status has no `url`: {s}\n", .{r.body});
         return error.TestUnexpectedResult;
     };
-    // `urllib.parse.urljoin(url, "/health")` — the status url always
-    // ends in `/`, so trimming it and re-appending `"/health"` is the
-    // same string. Dropping the separator instead would yield
-    // `http://127.0.0.1:23456health`, which `std.Uri.parse` rejects with
-    // `InvalidPort` (the port becomes `23456health`).
+    // `urllib.parse.urljoin(url, "/health")` — the status url always ends in
+    // `/`, so trimming it and re-appending `"/health"` is the same string.
     const health_url = try std.fmt.allocPrint(gpa, "{s}/health", .{std.mem.trimEnd(u8, url, "/")});
     defer gpa.free(health_url);
 
-    // A FRESH `std.http.Client`, not the harness's pooled one: Python
-    // used `urllib.request.urlopen`, i.e. a new connection, so that the
-    // origin is proven live independently of whatever the harness
-    // client already has open.
+    // A FRESH `std.http.Client`, not the harness's pooled one: Python used
+    // `urllib.request.urlopen`, i.e. a new connection, so that the origin is
+    // proven live independently of whatever the harness client already has
     var client: std.http.Client = .{ .allocator = gpa, .io = io };
     defer client.deinit();
 
@@ -388,15 +329,9 @@ test "web_status_url_serves_http" {
     }
 }
 
-// A taken default port falls back to a free one instead of dying — on
-// every platform (no OS branches below: raw loopback sockets, child
-// spawn with an explicit env map, and std.http.Client are all portable).
-//
-// The occupant is a held listener, not a second server: what matters is
-// EADDRINUSE on the server's bind, and a raw socket is the lightest
-// deterministic way to produce it. If 8081 is already taken by the
-// environment, skip — the fallback needs a controlled occupant, and
-// asserting against an unknown listener would prove nothing.
+// A taken default port falls back to a free one instead of dying — on every
+// platform (no OS branches below: raw loopback sockets, child spawn with an
+// explicit env map, and std.http.Client are all portable).
 test "busy_default_port_falls_back_to_a_free_port_and_serves" {
     try harness.requirePabrikBin(io, gpa);
 

@@ -13,14 +13,8 @@ pub const LOCAL_MEMORIES_DIR = ".pabrik/memories";
 
 
 /// Concatenate `dir` and `name` into a forward-slash path and return it.
-///
-/// Cross-platform convention for "config path" helpers across this
-/// project: always use `/` as the separator, regardless of OS. On
-/// Windows the kernel accepts both `/` and `\`, so forward-slash
-/// paths work transparently with `Dir.openDir` / `File.openFile`.
-/// `std.fs.path.join` produces OS-native separators (on Windows that's
-/// `\\`) which then breaks tests/code that hardcode the `/` form.
-/// See project memory `zig-path-join-treats-suffix-as-component.md`.
+/// Cross-platform convention for "config path" helpers across this project:
+/// always use `/` as the separator, regardless of OS.
 fn joinPath(allocator: std.mem.Allocator, dir: []const u8, name: []const u8) ![]u8 {
     if (dir.len == 0) {
         return allocator.dupe(u8, name);
@@ -94,12 +88,6 @@ pub const MemoryInfo = struct {
 };
 
 /// Get the global memories directory path using XDG standards.
-/// Linux: $XDG_CONFIG_HOME/pabrik/memories/  (or ~/.config/pabrik/memories/)
-/// macOS: $HOME/Library/Application Support/pabrik/memories/
-/// Windows: %APPDATA%/pabrik/memories/
-///
-/// Returns an allocated string the caller must free, or null if neither
-/// XDG_CONFIG_HOME nor HOME is set in the environment.
 pub fn get_global_memories_path(
     allocator: std.mem.Allocator,
     environment: *const std.process.Environ.Map,
@@ -119,46 +107,19 @@ pub fn get_global_memories_path(
 }
 
 /// Get the local memories directory path for a specific cwd.
-///
-/// Returns an allocated `<cwd>/.pabrik/memories` (no realpath resolution —
-/// caller is responsible for passing an absolute cwd, which
-/// `buildMessages` already guarantees via `realPathFileAlloc`).
-///
-/// Returns `null` when:
-///   - `cwd` is empty (no project context to scope against)
-///   - the path join fails (alloc failure)
-///
-/// Mirrors `get_local_skills_path_for_dir` in tools/skills.zig so the
-/// "local config" convention is consistent across skills and memories.
 pub fn get_local_memories_path_for_dir(
     allocator: std.mem.Allocator,
     cwd: []const u8,
 ) ?[]const u8 {
     if (cwd.len == 0) return null;
-    // Note: std.fs.path.join produces OS-native separators (e.g. '\'
-    // on Windows), which breaks string-equality assertions in tests
-    // hardcoded with forward slashes. Use a manual `/`-separator
-    // joinPath helper instead — the Windows kernel accepts both.
-    // (See project memory zig-path-join-treats-suffix-as-component.md.)
+    // Note: std.fs.path.join produces OS-native separators (e.g. '\' on
+    // Windows), which breaks string-equality assertions in tests hardcoded
+    // with forward slashes.
     return joinPath(allocator, cwd, LOCAL_MEMORIES_DIR) catch null;
 }
 
-/// List all .md memory files in the global memories directory.
-///
-/// Returns a slice of `MemoryInfo`. Returns an empty slice (not null) when:
-///   - the environment is missing
-///   - the memories directory does not exist (first-run case)
-///   - the directory exists but contains no .md files
-///
-/// **No size cap.** Every `.md` file is listed regardless of size, and
-/// `listAllMemories` reads the full content of each file to extract the
-/// title. The de facto limit is the LLM's context window for callers
-/// that feed the results into a prompt.
-///
-/// All string fields in the returned slice are allocator-owned. The caller
-/// must free them with `freeMemoriesList`. Memory ownership is transferred
-/// on return; the caller does NOT need to free individual fields on error
-/// because we use errdefer internally.
+/// List all .md memory files in the global memories directory. Returns a
+/// slice of `MemoryInfo`.
 pub fn listAllMemories(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -209,10 +170,7 @@ pub fn listAllMemories(
         };
 
         // Read the full file to scan for the first H1. No size cap — every
-        // memory is loaded in full. The de facto limit is the LLM context
-        // window for downstream callers; we trust the user to keep memories
-        // reasonable. Pattern matches read_file.zig / use_skill.zig which
-        // also use maxInt(usize) to read the entire file.
+        // memory is loaded in full.
         const content = std.Io.Dir.cwd().readFileAlloc(
             io,
             full_path,
@@ -257,23 +215,6 @@ pub fn listAllMemories(
 }
 
 /// List all .md memory files in a specific directory (no XDG resolution).
-///
-/// Returns a slice of `MemoryInfo` with the same ownership contract as
-/// `listAllMemories` — every `MemoryInfo` has allocator-owned `name`,
-/// `title`, and `path` fields, and the slice itself is allocator-owned.
-/// Free with `freeMemoriesList` (shared with the global lister).
-///
-/// Returns an empty slice (not an error) when the directory does not
-/// exist. This is the expected first-run behaviour, identical to
-/// `listAllMemories`'s handling of a missing global dir.
-///
-/// **Body is intentionally a copy of the inner loop of `listAllMemories`.**
-/// Refactoring to a single shared core would require lifting
-/// `get_global_memories_path` to a `?[]const u8` parameter and threading
-/// it through the call sites (`list_memory` tool, HTTP handler) — more
-/// surgery than this feature warrants. Duplication is acceptable because
-/// both call sites use the same `MemoryInfo` struct and the same
-/// `extractTitle` helper.
 pub fn listMemoriesInDir(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -356,15 +297,8 @@ pub fn listMemoriesInDir(
     return list.toOwnedSlice(allocator) catch &.{};
 }
 
-/// Extract the title from memory file content.
-///
-/// Strategy:
-///   1. Scan the first TITLE_SCAN_LIMIT bytes line by line.
-///   2. Find the first line that starts with "# " (markdown H1).
-///   3. Strip the leading "# " and surrounding whitespace; that's the title.
-///   4. If no H1 is found, fall back to the filename stem (filename minus .md).
-///
-/// Returns an allocated string the caller owns.
+/// Extract the title from memory file content. Strategy: 1. Scan the first
+/// TITLE_SCAN_LIMIT bytes line by line. 2.
 fn extractTitle(
     allocator: std.mem.Allocator,
     filename: []const u8,
@@ -396,10 +330,8 @@ fn extractTitle(
     return allocator.dupe(u8, stem);
 }
 
-/// Free a `MemoryInfo` slice allocated by `listAllMemories`.
-///
-/// Frees every owned string and the backing slice itself. Safe to call
-/// on an empty slice.
+/// Free a `MemoryInfo` slice allocated by `listAllMemories`. Frees every
+/// owned string and the backing slice itself. Safe to call on an empty slice.
 pub fn freeMemoriesList(allocator: std.mem.Allocator, list: []MemoryInfo) void {
     for (list) |item| {
         allocator.free(item.name);
@@ -411,19 +343,9 @@ pub fn freeMemoriesList(allocator: std.mem.Allocator, list: []MemoryInfo) void {
 
 // -------------------------------------------------------------------------
 // CRUD helpers — used by the settings-menu HTTP handlers (Chunk 3) and
-// eventually by the `read_memory` / `write_memory` agent tools. Kept here
-// (next to the listers) so the file remains the single source of truth
-// for memory-file IO.
-// -------------------------------------------------------------------------
+// eventually by the `read_memory` / `write_memory` agent tools.
 
-/// Validate a memory filename. Rejects:
-///   - empty / whitespace-only
-///   - anything not ending in ".md"
-///   - path separators ("/", "\")
-///   - parent references ("..")
-///
-/// Does NOT check whether the file exists — only that the name is safe to
-/// use as a single path component under the global memories directory.
+/// Validate a memory filename.
 pub fn isValidMemoryName(name: []const u8) bool {
     const trimmed = std.mem.trim(u8, name, " \t\r\n");
     if (trimmed.len == 0) return false;
@@ -434,12 +356,7 @@ pub fn isValidMemoryName(name: []const u8) bool {
 }
 
 /// Read a single global memory file by name (e.g. "user-preferences.md").
-///
-/// Returns allocated content the caller owns and must free. Returns `null`
-/// when:
-///   - the name fails validation (empty, no `.md`, path sep, `..`)
-///   - the global memories dir cannot be resolved from the environment
-///   - the file does not exist or cannot be read
+/// Returns allocated content the caller owns and must free.
 pub fn readMemoryFile(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -461,20 +378,8 @@ pub fn readMemoryFile(
     ) catch null;
 }
 
-/// Write content to a global memory file. Creates the parent dir if it
-/// is missing. Overwrites an existing file with the same name.
-///
-/// Returns `true` on success, `false` on validation error, IO failure, or
-/// OOM. The write is atomic-ish: content is first written to a temp file
-/// (`<name>.md.tmp`) and then renamed onto the final path. This avoids
-/// leaving a half-written file behind if the process is killed mid-write.
-///
-/// Note: a stale `<name>.md.tmp` from a prior crashed write is NOT cleaned
-/// up here. `writeMemoryFile` always overwrites it before renaming, so
-/// the temp file is always either renamed away (success) or left
-/// untouched (we never partially wrote to the temp). For the settings
-/// menu's UX this is acceptable; if it ever matters, a sweeper can scan
-/// for `*.tmp` files older than N minutes and remove them.
+/// Write content to a global memory file. Creates the parent dir if it is
+/// missing. Overwrites an existing file with the same name.
 pub fn writeMemoryFile(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -494,16 +399,11 @@ pub fn writeMemoryFile(
     defer allocator.free(full_path);
 
     // `renameAbsolute` below asserts BOTH paths are absolute and ABORTS the
-    // whole process (Debug/ReleaseSafe) when they are not. The global memories
-    // root is `$XDG_CONFIG_HOME`/`$HOME`-derived and is not validated as
-    // absolute, so check the joined path here instead of risking the worker.
+    // whole process (Debug/ReleaseSafe) when they are not.
     if (!std.fs.path.isAbsolute(full_path)) return false;
 
     // Atomic-ish: write to a temp file then rename. The temp path is
-    // `<dir>/<name>.md.tmp` — an extra `.tmp` suffix on the final
-    // filename. We can't use `path.join(full_path, ".tmp")` because
-    // `join` treats its arguments as path components and would produce
-    // `<dir>/<name>.md/.tmp` (a `.tmp` entry inside the memory file).
+    // `<dir>/<name>.md.tmp` — an extra `.tmp` suffix on the final filename.
     const tmp_path = allocator.alloc(u8, full_path.len + 4) catch return false;
     defer allocator.free(tmp_path);
     @memcpy(tmp_path[0..full_path.len], full_path);
@@ -520,15 +420,9 @@ pub fn writeMemoryFile(
     return true;
 }
 
-/// Edit = overwrite an existing memory. Returns `false` if the file does
-/// not exist; callers should branch to `writeMemoryFile` for the "create
-/// new" case. Validation of the name follows the same rules as
-/// `writeMemoryFile`; an invalid name also returns `false`.
-///
-/// Returns `!bool` (error union) rather than `bool` to reserve the option
-/// of returning a richer error type in the future without breaking the
-/// call sites. Today no operation inside this function can fail in a way
-/// that bubbles out — every internal failure is mapped to `false`.
+/// Edit = overwrite an existing memory. Returns `false` if the file does not
+/// exist; callers should branch to `writeMemoryFile` for the "create new"
+/// case.
 pub fn editMemoryFile(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -548,10 +442,9 @@ pub fn editMemoryFile(
     return writeMemoryFile(allocator, io, environment, name, content);
 }
 
-/// Delete a global memory file by name. Returns `true` on success OR if
-/// the file did not exist (idempotent delete — caller does not need to
-/// distinguish "was there" from "removed"). Returns `false` on validation
-/// error, missing env, or an unexpected IO failure.
+/// Delete a global memory file by name. Returns `true` on success OR if the
+/// file did not exist (idempotent delete — caller does not need to
+/// distinguish "was there" from "removed").
 pub fn deleteMemoryFile(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -594,29 +487,8 @@ pub fn memoryExists(
 
 // -------------------------------------------------------------------------
 // LOCAL memories — scoped to a per-cwd `.pabrik/memories/` directory.
-//
-// The global CRUD helpers above operate on `~/.config/pabrik/memories/`
-// (resolved via env). The local helpers below operate on an explicit
-// `<cwd>/.pabrik/memories/` path supplied by the caller. They share the
-// `isValidMemoryName` validation (so the same `foo.md` rules apply
-// regardless of where the file lives) and the same atomic-rename write
-// pattern.
-//
-// Mirrors the design of `get_local_skills_path_for_dir` +
-// `read_skill_file_in_dir` in `tools/skills.zig` — the same pattern
-// ("global vs local" with cwd-scoping) is used across skills and
-// memories to keep the per-project config convention consistent.
-// -------------------------------------------------------------------------
 
 /// Resolve the local memories path from the process's CWD via `io`.
-///
-/// Mirrors `get_local_skills_path_from_io` (tools/skills.zig) — used
-/// by HTTP handlers that don't have an explicit cwd from the caller
-/// and want to fall back to the pabrik server's own working directory.
-///
-/// Returns `null` when:
-///   - `realPath` fails (cwd is unavailable, e.g. deleted)
-///   - the path join fails (alloc failure)
 pub fn get_local_memories_path_from_io(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -629,13 +501,8 @@ pub fn get_local_memories_path_from_io(
     return get_local_memories_path_for_dir(allocator, cwd_buf[0..cwd_len]);
 }
 
-/// Resolve the local memories path for a given name. The caller passes
-/// the full directory path (e.g. `<cwd>/.pabrik/memories/`) — typically
-/// obtained from `get_local_memories_path_from_io` or
-/// `get_local_memories_path_for_dir`.
-///
-/// Returns allocated full path `<dir_path>/<name>` (caller must free)
-/// or `null` on validation error, alloc failure, or `dir_path.len == 0`.
+/// Resolve the local memories path for a given name. The caller passes the
+/// full directory path (e.g.
 pub fn get_local_memory_file_path(
     allocator: std.mem.Allocator,
     dir_path: []const u8,
@@ -648,16 +515,9 @@ pub fn get_local_memory_file_path(
     return joinPath(allocator, dir_path, name) catch null;
 }
 
-/// Read a single local memory file by name. The dir is typically
-/// obtained from `get_local_memories_path_from_io` /
+/// Read a single local memory file by name. The dir is typically obtained
+/// from `get_local_memories_path_from_io` /
 /// `get_local_memories_path_for_dir`.
-///
-/// Returns allocated content the caller owns and must free, or `null`
-/// on:
-///   - validation failure
-///   - missing dir_path
-///   - file does not exist or cannot be read
-///   - alloc failure
 pub fn readLocalMemoryFile(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -675,14 +535,8 @@ pub fn readLocalMemoryFile(
     ) catch null;
 }
 
-/// Write content to a local memory file. Creates the parent
-/// `<dir_path>` (typically `<cwd>/.pabrik/memories/`) if missing.
-/// Overwrites an existing file with the same name. Uses the same
-/// atomic-rename pattern as `writeMemoryFile` (write to `.tmp` then
-/// rename).
-///
-/// Returns `true` on success, `false` on validation error, missing
-/// dir_path, IO failure, or OOM.
+/// Write content to a local memory file. Creates the parent `<dir_path>`
+/// (typically `<cwd>/.pabrik/memories/`) if missing.
 pub fn writeLocalMemoryFile(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -696,10 +550,7 @@ pub fn writeLocalMemoryFile(
     defer allocator.free(full_path);
 
     // `renameAbsolute` below asserts BOTH paths are absolute and ABORTS the
-    // whole process (Debug/ReleaseSafe) when they are not. `dir_path` is a
-    // request-supplied `cwd` (local_memories_create/update) with no
-    // absolute-path validation, so check the joined path here instead of
-    // letting a bad `cwd` kill the worker mid-write.
+    // whole process (Debug/ReleaseSafe) when they are not.
     if (!std.fs.path.isAbsolute(full_path)) return false;
 
     // Ensure the local memories directory exists. createDirPath is a
@@ -1038,19 +889,9 @@ test "listMemoriesInDir free contract: empty list is safe to free" {
 
 // -------------------------------------------------------------------------
 // CRUD helpers — Chunk 1 of the memories-settings-menu plan.
-//
-// The CRUD functions (readMemoryFile / writeMemoryFile / deleteMemoryFile /
-// memoryExists / editMemoryFile) all take a `*const std.process.Environ.Map`
-// and resolve the global memories dir from `HOME` (or `XDG_CONFIG_HOME`).
-// The tests below build a real `Environ.Map` with just `HOME` set to a
-// temp directory under `/tmp/`. The temp dir is created with a unique
-// name per test and torn down in a `defer` to keep the suite hermetic.
-// -------------------------------------------------------------------------
 
 /// Build a fresh `Environ.Map` with `HOME` set to `home_path`, plus a
-/// per-test scratch dir under `/tmp/`. The returned path is freshly
-/// created and must be removed with `deleteTree` by the caller. The
-/// returned env map must be `deinit`'d by the caller.
+/// per-test scratch dir under `/tmp/`.
 fn setupMemoryHomeEnv(alloc: std.mem.Allocator, io: std.Io, scratch_name: []const u8) !struct {
     env: std.process.Environ.Map,
     home_path: []u8,
@@ -1267,15 +1108,6 @@ test "editMemoryFile returns false when target does not exist" {
 // ===========================================================================
 // LOCAL memory helpers — get_local_memories_path_from_io,
 // get_local_memory_file_path, readLocalMemoryFile, writeLocalMemoryFile,
-// deleteLocalMemoryFile, localMemoryExists.
-//
-// These mirror the global CRUD helpers above but operate on an
-// explicit `<dir>/.pabrik/memories/` path. Tests use a fresh temp
-// directory for `dir_path` (no env / HOME involved) so the test is
-// hermetic — the helpers do NOT touch the user's actual local
-// memories. The structure mirrors the global tests above for
-// consistency.
-// ===========================================================================
 
 /// Build a unique empty temp dir and return its absolute path.
 /// Caller owns the returned slice.
@@ -1342,11 +1174,8 @@ test "writeLocalMemoryFile refuses a relative dir_path instead of aborting" {
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
-    // `dir_path` is a request-supplied `cwd` (local_memories_create/update) that
-    // nothing validates as absolute. The write ends in
-    // `std.Io.Dir.renameAbsolute`, whose `assert(path.isAbsolute(...))` ABORTS the
-    // whole process (Debug/ReleaseSafe) instead of returning an error, so the
-    // helper must refuse the write instead.
+    // `dir_path` is a request-supplied `cwd` (local_memories_create/update)
+    // that nothing validates as absolute.
     try std.testing.expect(!memories.writeLocalMemoryFile(alloc, io, "relative/dir", "m.md", "# Hi\n"));
 }
 

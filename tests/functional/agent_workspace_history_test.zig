@@ -1,42 +1,5 @@
 // Workspace-scoped chat history: `read_workspace_session` replaces
 // `search_history`.
-//
-// Zig port of `tests/functional/agent_workspace_history_test.py`
-// (same test names, same order).
-//
-// Background
-// ----------
-// The global `search_history` agent tool is deleted. Its replacement,
-// `read_workspace_session`, discovers (LIST), searches (SEARCH, FTS5),
-// reads (READ), and searches-within (SEARCH-WITHIN) other chat sessions
-// in the CALLER's workspace only — scope is derived server-side from the
-// calling session, cross-workspace targets get `<denied>`, never content.
-//
-// A full end-to-end LLM tool_call is not feasible here (no stub LLM emits
-// tool_calls — see `agent_add_mcp_server_test.py` / `command_tool_test.py`
-// for the precedent). The tool itself is covered by the Zig in-memory
-// SQLite tests in `read_workspace_session.zig` (list/search/read/denied,
-// workspace isolation) and `workspace_scope.zig` (resolution, ties,
-// fail-closed). These functional tests guard the wire-visible halves,
-// replaying the EXACT JSON bodies the frontend sends:
-//
-//   * REGISTRY — GET /api/agent-tools/registry exposes
-//     `read_workspace_session` and NOT `search_history` (proves the
-//     equipped surface swapped; the name must never appear again).
-//   * ENABLE/DISABLE — POST/DELETE /api/agents/:id/tools round-trips
-//     `read_workspace_session`; POST `search_history` now 400s (proves
-//     the old name is no longer equipped).
-//   * LINKAGE — workspace + kanban + task (mode='create_session') seeds
-//     session.id == task.id with a user message; a second workspace's
-//     task seeds a disjoint session. This is the exact task→session→
-//     workspace join the tool's SQL scopes on, verified over HTTP.
-//
-// PYTHON IDIOM THAT DID NOT SURVIVE THE PORT: `_user_messages` and
-// `_registry_names` returned LISTS built out of a response the helper had
-// already dropped. `harness.Json` borrows the bytes of the `Response`
-// body it was parsed from, so the helpers here return OWNED values —
-// joined message text, a count, or the bytes of the body for the caller
-// to parse locally.
 
 const std = @import("std");
 const testing = std.testing;
@@ -71,12 +34,6 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
 }
 
 /// `POST /api/workspaces/<ws>/items/agent` → the agent item's id. Owned.
-///
-/// `path` is derived from the harness's OWN tempdir rather than a
-/// hardcoded `/tmp/...`: the server rejects a relative path with 400
-/// `NotAbsolutePath`, and `isAbsolute` is platform-relative — a literal
-/// that is correct on Linux fails on Windows and reads there as a server
-/// regression that does not exist.
 fn createAgent(h: *Harness, workspace_id: []const u8, name: []const u8) ![]u8 {
     const agent_path = try harness.harnessPath(gpa, h.temp_dir, &.{"agent-workspace-history-test"});
     defer gpa.free(agent_path);
@@ -152,10 +109,9 @@ fn createKanban(h: *Harness, workspace_id: []const u8, name: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// `POST /api/workspaces/<ws>/items/<kanban>/kanban/tasks` with
-/// `mode: "create_session"` — mirrors the frontend's plain "Create task"
-/// button. Seeds session.id == task.id + one user message → the new
-/// task's id. Owned.
+/// `POST /api/workspaces/<ws>/items/<kanban>/kanban/tasks` with `mode:
+/// "create_session"` — mirrors the frontend's plain "Create task" button.
+/// Seeds session.id == task.id + one user message → the new task's id. Owned.
 fn createTask(
     h: *Harness,
     workspace_id: []const u8,

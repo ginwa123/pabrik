@@ -1,15 +1,6 @@
-//! `POST /api/workspaces/:workspace_id/secrets`.
-//!
-//! Creates one workspace-scoped secret and answers 201 with the stored
-//! row — id, name and timestamps, and NO VALUE. The caller wrote the value
-//! it cannot read back; that asymmetry is deliberate (Design Decision 9,
-//! docs/superpowers/plans/2026-10-02-workspace-secrets.md).
-//!
-//! The name is what a model types into a `{{SECRETS:NAME}}` placeholder, so
-//! it is validated against the placeholder grammar before it reaches
-//! SQLite: `SqliteBackend.exec` binds a zero-length slice as SQL NULL, which
-//! a `NOT NULL` column rejects as a constraint violation — an operator
-//! mistake answered with a 500 instead of the 400 the caller can act on.
+//! `POST /api/workspaces/:workspace_id/secrets`. Creates one workspace-scoped
+//! secret and answers 201 with the stored row — id, name and timestamps, and
+//! NO VALUE.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -66,9 +57,7 @@ fn useCase(
         error.InsertFailed => return error.InsertFailed,
         error.OutOfMemory => return error.OutOfMemory,
         // The rest of the store's shared error set belongs to the read and
-        // update paths, which `createSecret` cannot reach. Naming them keeps
-        // this switch exhaustive, so a variant added to `SecretsError`
-        // breaks the build here rather than reaching the client unmapped.
+        // update paths, which `createSecret` cannot reach.
         error.IdsRequired,
         error.NotFound,
         error.QueryFailed,
@@ -79,13 +68,9 @@ fn useCase(
     return .{ .secret = row };
 }
 
-// =====================================================================
-// Error mapping
-// =====================================================================
-//
-// Two exhaustive switches, one for the status and one for the message, so a
-// variant added to `SecretsCreateError` fails the build here rather than
-// surfacing as an unhandled error at runtime.
+// ===================================================================== Error
+// mapping
+// ===================================================================== Two
 
 fn statusFor(err: SecretsCreateError) u16 {
     return switch (err) {
@@ -323,10 +308,9 @@ test "useCase: value \"\" is ValueRequired, a 400 — never a 500 constraint err
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // `SqliteBackend.exec` binds a zero-length slice as SQL NULL, and
-    // `value TEXT NOT NULL` rejects NULL — so without the store's pre-check
-    // this exact request would answer 500 "DB error" for what is really a
-    // blank form field.
+    // `SqliteBackend.exec` binds a zero-length slice as SQL NULL, and `value
+    // TEXT NOT NULL` rejects NULL — so without the store's pre-check this
+    // exact request would answer 500 "DB error" for what is really a blank
     try testing.expectError(
         error.ValueRequired,
         useCase(alloc, &ctx.db, .{

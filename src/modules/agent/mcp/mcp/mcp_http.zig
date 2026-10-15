@@ -1,29 +1,6 @@
-//! MCP Streamable HTTP transport for the agent AI (Zig client).
-//!
-//! This file contains everything HTTP-specific for the agent's MCP
-//! client, mirroring the stdio transport's `mcp_stdio.zig`:
-//!   1. **SSE event parser** (Section A) — `readSseEvent` walks a
-//!      line-buffered stream and yields fully-parsed events. Used by
-//!      `HttpClient.callTool` and `HttpClient.listTools` to consume
-//!      `text/event-stream` responses per the Streamable HTTP spec.
-//!   2. **MCP request-header builder** (Section B) — `buildMcpHeaders`
-//!      emits the spec-mandated `MCP-Protocol-Version`, `Mcp-Method`,
-//!      and `Mcp-Name` headers (per spec revision 2025-11-25), merged
-//!      with the user-defined custom headers from
-//!      `mcp_servers[name].headers`.
-//!   3. **`HttpClient`** (Section C) — one POST, one response (JSON or
-//!      SSE), returns the final JSON-RPC body.
-//!   4. **`HttpRegistry`** (Section D) — process-global, one client
-//!      per server name, lazy init, no respawn needed.
-//!   5. **`ListTools` helper** (Section E) — sibling of `callTool` that
-//!      does `tools/list` instead of `tools/call`.
-//!
-//! Tests are inline at the bottom (per the user's "no need split code
-//! for zig, just one file with test" preference). Total expected size:
-//! ~700-900 lines including the 18 inline tests (12 for the helpers,
-//! 6 for HttpClient + HttpRegistry).
-//!
-//! Plan: docs/superpowers/plans/2026-08-28-mcp-streamable-http.md
+//! MCP Streamable HTTP transport for the agent AI (Zig client). This file
+//! contains everything HTTP-specific for the agent's MCP client, mirroring
+//! the stdio transport's `mcp_stdio.zig`: 1.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -35,15 +12,6 @@ const custom_http_client_mod = @import("kabelweb").client;
 // ============================================================================
 
 /// Current Streamable HTTP protocol revision we implement.
-/// Bump when the spec at
-///   https://modelcontextprotocol.io/specification/draft/basic/transports/streamable-http
-/// revises again. Sent as the `MCP-Protocol-Version` header on every POST.
-///
-/// 2025-11-25 is the latest revision `@modelcontextprotocol/sdk` v1.30.0
-/// (the canonical MCP TS SDK) actually implements. The spec page's
-/// "current" 2026-07-28 revision is not yet implemented by any SDK or
-/// client in the ecosystem; targeting it would mean our HTTP client
-/// can't talk to ANY real server today.
 pub const PROTOCOL_VERSION: []const u8 = "2025-11-25";
 
 /// Spec-mandated Accept header value (comma-separated, no spaces).
@@ -63,28 +31,9 @@ pub const HttpError = error{
 // ============================================================================
 // SECTION B — SSE event parser (private to this file)
 // ============================================================================
-//
-// Wire format (per SSE spec https://html.spec.whatwg.org/multipage/server-sent-events.html):
-//
-//   event: <event-type>\n
-//   data: <data-line-1>\n
-//   data: <data-line-2>\n    <- multi-line data is concatenated with \n
-//   id: <event-id>\n
-//   retry: <milliseconds>\n
-//   :<comment>\n            <- comment, ignored by clients
-//   \n                      <- blank line: event boundary; dispatch the event
-//
-// Multi-`data:` lines per event are concatenated with `\n` (per the
-// SSE spec: "the data field is then the concatenation of all the data
-// values, each separated by a single U+000A LINE FEED character").
-//
-// Field names are CASE-INSENSITIVE per the SSE spec — we use
-// `std.ascii.startsWithIgnoreCase` for the dispatch.
 
-/// One parsed SSE event. All fields are freshly allocated slices
-/// owned by the caller (free with `allocator.free`). `event` and `id`
-/// default to `""` per the SSE spec (the event type "message" is
-/// implicit when no `event:` field is present).
+/// One parsed SSE event. All fields are freshly allocated slices owned by the
+/// caller (free with `allocator.free`).
 pub const SseEvent = struct {
     event: []const u8 = "",
     data: []const u8 = "",
@@ -92,20 +41,12 @@ pub const SseEvent = struct {
     retry_ms: ?u64 = null,
 };
 
-/// Read one SSE event from a line-buffered reader. Returns null on
-/// EOF (clean stream end). Skips comment lines (starting with `:`),
-/// blank lines (event boundaries), and unknown field lines (per the
-/// SSE spec, clients ignore unknown fields).
-///
-/// The reader is `anytype` so tests can pass an in-memory mock — the
-/// only contract is a `next() !?[]const u8` method that returns the
-/// next line (without the trailing `\n`) or null on EOF. This matches
-/// `custom_http_client.stream.StreamScanner.next`'s shape.
+/// Read one SSE event from a line-buffered reader. Returns null on EOF (clean
+/// stream end).
 fn readSseEvent(allocator: std.mem.Allocator, reader: anytype) !?SseEvent {
-    // Per-event accumulators. Reset on every event boundary (blank
-    // line). On EOF, if we have any partial event (a `data:` line in
-    // flight), we flush it; otherwise we return null to signal clean
-    // stream end.
+    // Per-event accumulators. Reset on every event boundary (blank line). On
+    // EOF, if we have any partial event (a `data:` line in flight), we flush
+    // it; otherwise we return null to signal clean stream end.
     var event_buf = std.ArrayList(u8).empty;
     var id_buf = std.ArrayList(u8).empty;
     var data_buf = std.ArrayList(u8).empty;
@@ -196,27 +137,8 @@ fn readSseEvent(allocator: std.mem.Allocator, reader: anytype) !?SseEvent {
 // ============================================================================
 // SECTION C — MCP request-header builder (private to this file)
 // ============================================================================
-//
-// Spec (revision 2025-11-25) requires these headers on EVERY POST:
-//   - `MCP-Protocol-Version: 2025-11-25`
-//   - `Accept: application/json, text/event-stream`
-//   - `Content-Type: application/json`
-//   - `Mcp-Method: <method>` (e.g. "tools/call")
-//   - `Mcp-Name: <name>` (for tools/call, resources/read, prompts/get)
-//
-// We use `custom_http_client_mod.Header` here for the slice. The caller passes
-// `custom_headers` (a `[]const custom_http_client_mod.Header` from the user's
-// `mcp_servers[name].headers` config) which we MERGE with the spec
-// headers. Spec headers go FIRST in the slice because libcurl's
-// curl_slist uses the FIRST match for duplicate names, so the spec
-// value (e.g. `MCP-Protocol-Version: 2025-11-25`) wins over a user's
-// accidental custom value of the same name. The user CANNOT override
-/// spec values, even on purpose.
 
 /// Returns true iff every byte of `s` is in the ASCII range (0..127).
-/// Used by `buildMcpHeaders` to decide whether to emit `Mcp-Name` —
-/// non-ASCII tool names are dropped (the spec's Base64-sentinel
-/// encoding for non-ASCII header values is a v2).
 fn isAllAscii(s: []const u8) bool {
     for (s) |c| {
         if (c > 127) return false;
@@ -224,26 +146,17 @@ fn isAllAscii(s: []const u8) bool {
     return true;
 }
 
-/// Build the request headers for an MCP Streamable HTTP POST.
-///
-/// `tool_name` is only used for `tools/call` — pass "" for methods
-/// that don't take a name (initialize, ping, tools/list, etc.).
-///
-/// `custom_headers` is a `[]const custom_http_client_mod.Header` slice; we only
-/// read `.name` and `.value` fields. Null = no custom headers.
-///
-/// Returns a freshly-allocated `[]custom_http_client_mod.Header` slice the caller
-/// owns (frees with `allocator.free`).
+/// Build the request headers for an MCP Streamable HTTP POST. `tool_name` is
+/// only used for `tools/call` — pass "" for methods that don't take a name
+/// (initialize, ping, tools/list, etc.).
 fn buildMcpHeaders(
     allocator: std.mem.Allocator,
     method: []const u8,
     tool_name: []const u8,
     custom_headers: []const custom_http_client_mod.Header,
 ) ![]custom_http_client_mod.Header {
-    // 4 spec headers always present. We MAY add a 5th (Mcp-Name) if
-    // tool_name is non-empty AND ASCII. The slice order is critical:
-    // spec headers FIRST so libcurl's first-match-wins uses the spec
-    // value, not a user's accidental custom override of the same name.
+    // 4 spec headers always present. We MAY add a 5th (Mcp-Name) if tool_name
+    // is non-empty AND ASCII.
     const include_name = tool_name.len > 0 and isAllAscii(tool_name);
     const spec_count: usize = if (include_name) 5 else 4;
     const total = spec_count + custom_headers.len;
@@ -260,10 +173,9 @@ fn buildMcpHeaders(
         out[4] = .{ .name = "Mcp-Name", .value = tool_name };
     }
 
-    // User-supplied custom headers (LAST in the slice, after the spec
-    // ones). Note we don't dedupe — libcurl's first-match-wins handles
-    // duplicates. The spec headers above will always be the values the
-    // server sees.
+    // User-supplied custom headers (LAST in the slice, after the spec ones).
+    // Note we don't dedupe — libcurl's first-match-wins handles duplicates.
+    // The spec headers above will always be the values the server sees.
     for (custom_headers, 0..) |h, i| {
         out[spec_count + i] = h;
     }
@@ -274,15 +186,9 @@ fn buildMcpHeaders(
 // ============================================================================
 // SECTION D — HttpClient + HttpRegistry (arrives in Task 3)
 // ============================================================================
-//
-// Stubbed here so the file compiles. Task 3 adds the real impls
-// along with the 6 inline tests for these.
 
-/// One MCP Streamable HTTP client. Owns the base URL, the cached
-/// custom headers, and a `custom_http_client.Client` for connection
-/// pooling. Stateless across calls (no protocol-level session id per
-/// the 2025-11-25 spec's optional stateless mode + the 2026-07-28
-/// spec's removal of sessions). Allocated via `HttpRegistry`.
+/// One MCP Streamable HTTP client. Owns the base URL, the cached custom
+/// headers, and a `custom_http_client.Client` for connection pooling.
 pub const HttpClient = struct {
     allocator: std.mem.Allocator,
     url: []const u8,
@@ -307,31 +213,12 @@ pub const HttpClient = struct {
         self.allocator.free(self.url);
     }
 
-    /// Send a `tools/call` JSON-RPC request and return the raw
-    /// JSON-RPC response body (freshly allocated; caller owns).
-    /// `tool_name` is the bare tool name (e.g. "say_hello", NOT
-    /// "mcp_serverName_say_hello" — the dispatcher in
-    /// `handle_mcp_tool.zig` already strips the server prefix).
-    /// `arguments_json` is the JSON-encoded arguments object
-    /// (e.g. `{"name":"world"}`).
-    ///
-    /// Handles BOTH response shapes per the Streamable HTTP spec:
-    ///   - `application/json` (single JSON object) → return body verbatim
-    ///   - `text/event-stream` (SSE stream) → parse the stream, take
-    ///     the LAST event's `data:` field as the final response
-    ///
-    /// Error mapping:
-    ///   - 400 with HeaderMismatch error → ServerHeaderMismatch
-    ///   - 400 with UnsupportedProtocolVersion → UnsupportedProtocolVersion
-    ///   - 404 → ServerMethodNotFound
-    ///   - other 4xx/5xx → ServerReturnedError
+    /// Send a `tools/call` JSON-RPC request and return the raw JSON-RPC
+    /// response body (freshly allocated; caller owns).
     pub fn callTool(self: *Self, tool_name: []const u8, arguments_json: []const u8) ![]u8 {
         // Minimal JSON-RPC body (NO `_meta` envelope): servers on protocol
         // revision 2026-07-28 (e.g. context7) return `400 Invalid _meta
         // envelope ... clientCapabilities: missing` for a 2025-11-25-shaped
-        // `_meta.protocolVersion` envelope, but answer the lenient path
-        // with 200 when the body is bare (bisected 2026-09-10). The
-        // `MCP-Protocol-Version` header below still carries the version.
         const body = try std.fmt.allocPrint(self.allocator,
             \\{{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{{"name":"{s}","arguments":{s}}}}}
         , .{ tool_name, arguments_json });
@@ -360,15 +247,12 @@ pub const HttpClient = struct {
         };
     }
 
-    /// Internal: dispatch on Content-Type to extract the final JSON-RPC
-    /// body from a 200 response. Both `application/json` (single object)
-    /// and `text/event-stream` (SSE stream — last event's data) are
-    /// supported.
+    /// Internal: dispatch on Content-Type to extract the final JSON-RPC body
+    /// from a 200 response. Both `application/json` (single object) and
+    /// `text/event-stream` (SSE stream — last event's data) are supported.
     fn parseResponseBody(allocator: std.mem.Allocator, body: []const u8) ![]u8 {
-        // Heuristic: SSE bodies start with "event:" or "data:". JSON
-        // bodies start with "{". (We could check Content-Type but
-        // that's not surfaced by the buffered Response; the heuristic
-        // is reliable enough for the SDK's known output shapes.)
+        // Heuristic: SSE bodies start with "event:" or "data:". JSON bodies
+        // start with "{".
         const trimmed = std.mem.trim(u8, body, " \r\n");
         if (std.mem.startsWith(u8, trimmed, "event:") or std.mem.startsWith(u8, trimmed, "data:")) {
             // SSE: walk events, take the last one with a data: field.
@@ -384,9 +268,8 @@ pub const HttpClient = struct {
 /// with `\n` per the SSE spec.
 fn parseLastSseData(allocator: std.mem.Allocator, body: []const u8) ![]u8 {
     // NOTE: `data_lines` is per-event scratch freed at the end of each
-    // iteration, so `last_data` must NOT point into it (use-after-free:
-    // the final `dupe` can reuse the freed address and trip
-    // `@memcpy arguments alias`). Keep an owned copy instead.
+    // iteration, so `last_data` must NOT point into it (use-after-free: the
+    // final `dupe` can reuse the freed address and trip `@memcpy arguments
     var last_owned: ?[]u8 = null;
     defer if (last_owned) |b| allocator.free(b);
     var blocks = std.mem.splitSequence(u8, body, "\n\n");
@@ -419,10 +302,8 @@ fn parseLastSseData(allocator: std.mem.Allocator, body: []const u8) ![]u8 {
     return error.InvalidSseEvent;
 }
 
-/// Process-global cache of `HttpClient` instances, one per server
-/// name. Mirrors `mcp_stdio.StdioRegistry`'s shape — lazy init,
-/// clean shutdown. Threadsafe via `std.atomic.Mutex` (same pattern
-/// as `mcp_stdio.StdioRegistry`).
+/// Process-global cache of `HttpClient` instances, one per server name.
+/// Mirrors `mcp_stdio.StdioRegistry`'s shape — lazy init, clean shutdown.
 pub const HttpRegistry = struct {
     allocator: std.mem.Allocator,
     /// Keys (server names) and values (HttpClient pointers) are both
@@ -465,12 +346,9 @@ pub const HttpRegistry = struct {
         const alloc = self.arena.allocator();
         const client = try alloc.create(HttpClient);
         const key_dup = try alloc.dupe(u8, name);
-        // Deep-dupe the headers (structs AND strings): the caller's
-        // Header slice is per-run memory (stack buf + run-arena strings)
-        // that dies with the run, while the cached client must stay
-        // valid for the process lifetime. A shallow struct copy leaves
-        // dangling name/value pointers → segfault in buildMcpHeaders
-        // on the next run. Same lifetime rule as the registry itself.
+        // Deep-dupe the headers (structs AND strings): the caller's Header
+        // slice is per-run memory (stack buf + run-arena strings) that dies
+        // with the run, while the cached client must stay valid for the
         const hdrs_dup = try alloc.alloc(custom_http_client_mod.Header, custom_headers.len);
         for (custom_headers, 0..) |h, i| hdrs_dup[i] = .{
             .name = try alloc.dupe(u8, h.name),
@@ -482,9 +360,8 @@ pub const HttpRegistry = struct {
     }
 
     /// Evict one cached client by server name (plan: mcp-fetch-once-cache).
-    /// HTTP equivalent of `StdioRegistry.markStale`: the next
-    /// `getOrConnect` rebuilds the client with the new URL/headers.
-    /// No-op when the name isn't cached. Threadsafe.
+    /// HTTP equivalent of `StdioRegistry.markStale`: the next `getOrConnect`
+    /// rebuilds the client with the new URL/headers.
     pub fn evict(self: *HttpRegistry, name: []const u8) void {
         mutexLock(&self.mutex);
         defer self.mutex.unlock();
@@ -502,17 +379,7 @@ pub const HttpRegistry = struct {
     var global_registry: ?HttpRegistry = null;
     var global_init_mutex: std.atomic.Mutex = .unlocked;
 
-    /// Get the process-global registry. Lazily initialized on first
-    /// call. `allocator` is the long-lived allocator (typically
-    /// `di.allocator` from main.zig) — NOT `std.heap.page_allocator`.
-    ///
-    /// NOTE: first call wins. Production goes through the eager init
-    /// in main.zig (process-lifetime GPA) and the cached
-    /// `di.mcp_http_registry` handle, so the lazy path only serves
-    /// unit tests. Never pass a per-run/per-request arena here: it
-    /// would back the process-global cache with dead memory (segfault
-    /// in ArenaAllocator.loadBuf on the next run — see post-mortem in
-    /// getOrConnect below).
+    /// Get the process-global registry. Lazily initialized on first call.
     pub fn global(allocator: std.mem.Allocator) *HttpRegistry {
         mutexLock(&global_init_mutex);
         defer global_init_mutex.unlock();
@@ -544,17 +411,8 @@ fn mutexLock(m: *std.atomic.Mutex) void {
 // SECTION E — ListTools helper
 // ============================================================================
 
-/// Send a `tools/list` request to `client`, return the parsed
-/// `McpTool[]` from `result.tools`. Each `McpTool` is freshly
-/// allocated; the caller owns the returned slice AND each tool's
-/// owned strings.
-///
-/// POSTs a `tools/list` JSON-RPC body to the server's `/mcp`
-/// endpoint, parses the response, and returns the `result.tools`
-/// array. Returns an empty slice on a malformed/missing
-/// `result.tools`. The caller (typically
-/// `prompts_build_messages_for_agent_prompt.zig`) is responsible
-/// for converting `mcp_types.McpTool` to `AgentTool`.
+/// Send a `tools/list` request to `client`, return the parsed `McpTool[]`
+/// from `result.tools`.
 pub fn listTools(allocator: std.mem.Allocator, client: *HttpClient) ![]mcp_types.McpTool {
     // Minimal body (NO `_meta` envelope — same 2026-07-28 strictness
     // reason as `callTool` above: a bare body gets the lenient 200).
@@ -585,13 +443,8 @@ pub fn listTools(allocator: std.mem.Allocator, client: *HttpClient) ![]mcp_types
     }
 
     // Parse the response: unwrap SSE framing first (real servers like
-    // context7 answer `200 text/event-stream` with
-    // `event: message\ndata: {...}`), then extract `result.tools[]`.
-    // Errors are swallowed (return empty slice) — the caller logs a
-    // warning and the agent just doesn't see the server's tools.
-    // (Same heuristic as `HttpClient.parseResponseBody`: SSE bodies
-    // start with `event:`/`data:`, JSON bodies with `{`. Duplicated
-    // here because `parseResponseBody` is a struct-private method.)
+    // context7 answer `200 text/event-stream` with `event: message\ndata:
+    // {...}`), then extract `result.tools[]`.
     const trimmed_body = std.mem.trim(u8, result.body, " \r\n");
     const json_text: []u8 = if (std.mem.startsWith(u8, trimmed_body, "event:") or std.mem.startsWith(u8, trimmed_body, "data:"))
         parseLastSseData(allocator, result.body) catch return &[_]mcp_types.McpTool{}
@@ -601,10 +454,9 @@ pub fn listTools(allocator: std.mem.Allocator, client: *HttpClient) ![]mcp_types
     return parseToolsList(allocator, json_text) catch &[_]mcp_types.McpTool{};
 }
 
-/// Internal: parse a tools/list response body into a McpTool slice.
-/// Each tool's owned strings (name, description, inputSchema) are
-/// freshly allocated via `allocator`. On any parse error returns an
-/// empty slice (caller can log + skip).
+/// Internal: parse a tools/list response body into a McpTool slice. Each
+/// tool's owned strings (name, description, inputSchema) are freshly
+/// allocated via `allocator`.
 fn parseToolsList(allocator: std.mem.Allocator, body: []const u8) ![]mcp_types.McpTool {
     var parse_arena = std.heap.ArenaAllocator.init(allocator);
     defer parse_arena.deinit();
@@ -672,10 +524,8 @@ const testing = std.testing;
 
 // ── Mock line reader for SSE parser tests ──────────────────────────────
 
-/// In-memory line reader for `readSseEvent` tests. Holds a list of
-/// lines (without trailing `\n`); `next()` returns them one at a time
-/// then null. Mirrors the contract of `StreamScanner.next()` so the
-/// SSE parser is duck-type compatible with the real streaming reader.
+/// In-memory line reader for `readSseEvent` tests. Holds a list of lines
+/// (without trailing `\n`); `next()` returns them one at a time then null.
 const MockLineReader = struct {
     lines: []const []const u8,
     index: usize = 0,
@@ -690,10 +540,8 @@ const MockLineReader = struct {
 
 // ── readSseEvent tests (8 tests) ───────────────────────────────────────
 
-/// All readSseEvent tests must free ALL three freshly-allocated
-/// fields of the returned event (event / data / id). Most fields are
-/// empty for most tests but the parser allocates an empty slice for
-/// each non-empty field, so we always free defensively.
+/// All readSseEvent tests must free ALL three freshly-allocated fields of the
+/// returned event (event / data / id).
 const testing_allocator = testing.allocator;
 
 test "readSseEvent: single data-only event" {
@@ -903,10 +751,8 @@ test "buildMcpHeaders: Mcp-Name omitted for non-ASCII tool names" {
 }
 
 test "buildMcpHeaders: custom headers merged; spec headers win on conflict" {
-    // A custom `MCP-Protocol-Version: 1999-01-01` must NOT override the
-    // spec value `2025-11-25`. We assert this by putting spec headers
-    // FIRST in the slice (so libcurl's first-match-wins sees the spec
-    // value) and the malicious custom header LAST.
+    // A custom `MCP-Protocol-Version: 1999-01-01` must NOT override the spec
+    // value `2025-11-25`.
     const custom = [_]custom_http_client_mod.Header{
         .{ .name = "X-Trace-Id", .value = "abc" },
         .{ .name = "MCP-Protocol-Version", .value = "1999-01-01" },
@@ -918,10 +764,7 @@ test "buildMcpHeaders: custom headers merged; spec headers win on conflict" {
         &custom,
     );
     defer testing.allocator.free(hdrs);
-    // Total: 4 spec + 1 Mcp-Name + 2 custom = 7. (We don't dedupe
-    // duplicate names here — the FIRST one wins in libcurl, but we
-    // pass all of them through so the slice reflects the user's
-    // explicit request. Tests below verify ordering.)
+    // Total: 4 spec + 1 Mcp-Name + 2 custom = 7.
     try testing.expectEqual(@as(usize, 7), hdrs.len);
     // The FIRST MCP-Protocol-Version in the slice must be the spec
     // value (so libcurl uses it). The custom 1999-01-01 should appear
@@ -951,21 +794,7 @@ test "buildMcpHeaders: custom headers merged; spec headers win on conflict" {
 }
 
 // ── HttpClient + HttpRegistry tests (6 tests) ───────────────────────────
-//
-// These are pure in-memory tests (no network, no subprocess). The
-// wire-level integration is covered by tests/functional/mcp_http_test.py
-// (which spawns the mcp-http-hello-world binary and exercises the
-// full HTTP + SSE + JSON-RPC roundtrip against the real SDK).
-//
-// We test what we can in-process:
-//   1. HttpClient.init stores the URL + custom headers correctly
-//   2. HttpClient.init duplicate URL allocates a new client (no caching at init)
-//   3. HttpRegistry.getOrConnect returns the same client for the same name
-//   4. HttpRegistry.getOrConnect returns different clients for different names
-//   5. HttpRegistry.deinit frees the map + clients (no leak)
-//   6. listTools is a free function that takes a client pointer
-//      (we just assert the signature compiles + returns an empty
-//      slice for a stubbed client).
+// These are pure in-memory tests (no network, no subprocess).
 
 test "HttpClient.init: stores URL and custom headers" {
     const url = "http://127.0.0.1:1234/mcp";
@@ -1019,8 +848,6 @@ test "HttpRegistry: deinit cleans up registered clients without leaking" {
 test "listTools: returns an empty slice for a stubbed client (signature test)" {
     // The full listTools behavior is covered by the functional test
     // (tests/functional/mcp_http_test.py uses the real binary).
-    // Here we just assert the function signature compiles and the
-    // stubbed impl returns an empty slice.
     var client = try HttpClient.init(testing.allocator, "http://x/mcp", &.{});
     defer client.deinit();
     const tools = try listTools(testing.allocator, &client);
@@ -1029,10 +856,9 @@ test "listTools: returns an empty slice for a stubbed client (signature test)" {
 }
 
 test "parseLastSseData: single event returns its data (no alias panic)" {
-    // Regression: the old impl stored `last_data = data_lines.items`
-    // (freed at end of iteration) then `dupe`d it — the allocator
-    // reuses the freed address so src == dst and Debug panics with
-    // `@memcpy arguments alias`.
+    // Regression: the old impl stored `last_data = data_lines.items` (freed
+    // at end of iteration) then `dupe`d it — the allocator reuses the freed
+    // address so src == dst and Debug panics with `@memcpy arguments alias`.
     const body = "event: message\ndata: {\"hello\":1}\n\n";
     const out = try parseLastSseData(testing.allocator, body);
     defer testing.allocator.free(out);

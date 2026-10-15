@@ -1,10 +1,4 @@
-// RETIRED: `bash` is no longer a tool name. The unified `command` tool
-// (src/modules/agent/tools/command.zig) replaced it on 2026-09-04, and the
-// name was BANNED from dispatch on 2026-10-12 (see
-// agentic_loop/tools_equipped.zig :: RETIRED_TOOL_NAMES) — a model that emits
-// `bash` is refused and told to call `command`. This module survives only so
-// `bash_tool` and `execute_bash` keep compiling for non-LLM callers; nothing
-// offers `bash` to the model.
+// RETIRED: `bash` is no longer a tool name.
 const std = @import("std");
 const command = @import("command.zig");
 const schemas = @import("schemas.zig");
@@ -112,27 +106,9 @@ test "bash_tool: large output is truncated by byte count" {
 }
 
 test "bash_tool: many long lines (head -n 30) byte-truncated to max_output" {
-    // Regression test for the user report "bash tool truncated still too long":
-    //
-    // The agent ran `grep -rn 'invalid_id\|InvalidId\|invalid id' /home/.../src/ \
-    //   2>&1 | head -n 30`. `head -n 30` bounds the LINE count, but the BYTE
-    // count can still exceed max_output by an order of magnitude — the user's
-    // grep output included single-line minified JS in `node_modules/json5/
-    // dist/index.min.js` (one ~5000-char line per match). Total output was
-    // ~150 KB across only 30 lines. The truncated result was still huge.
-    //
-    // The expected contract:
-    //   1. result.truncated == true when output > max_output
-    //      (even when line count < max_lines — head -n 30 is NOT a guarantee
-    //      of small output).
-    //   2. result.stdout.len <= max_output (capped at the byte limit).
-    //   3. result.stdout_lines reports the TRUE pre-truncation count
-    //      so the LLM knows data was actually cut, not just blank.
-    //   4. NO FD LEAK after the truncated-by-byte path — a future refactor
-    //      that adds an early-return on truncation must still close both
-    //      reader-thread pipes (stdout + stderr) before returning, or the
-    //      agent accumulates 2 FDs per call until the OS hits the per-process
-    //      FD quota (`ulimit -n`, typically 1024 on Linux).
+    // Regression test for the user report "bash tool truncated still too
+    // long": The agent ran `grep -rn 'invalid_id\|InvalidId\|invalid id'
+    // /home/.../src/ \ 2>&1 | head -n 30`.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const allocator = testing.allocator;
@@ -141,9 +117,6 @@ test "bash_tool: many long lines (head -n 30) byte-truncated to max_output" {
     const fd_count_before = try countOpenFds();
 
     // Reproduce the user's pattern: 30 lines × ~200 bytes = ~6 KB output.
-    // `yes` echoes its argument + newline; with max_output=2048 (~10 lines),
-    // the byte cap MUST fire around the 10th-11th line.
-    // 200 'x' chars = 20 groups of 10.
     const long_line = "xxxxxxxxxx" ** 20;
     const result = try execute_bash(allocator, io, .{
         .command = "yes '" ++ long_line ++ "' | head -n 30",
@@ -182,33 +155,9 @@ test "bash_tool: many long lines (head -n 30) byte-truncated to max_output" {
 }
 
 test "bash_tool: default max_output is the safety cap, not 1 MiB" {
-    // Regression test for the user report "fix bash tool truncated" (2026-08-14):
-    //
-    // The agent ran `grep -rn 'kanban/copy_spec\|kanban/columns\|kanban_columns_create' \
-    //   /home/ginwa/ginwaaitoolbox/src --include='*.zig' 2>&1 | head -n 30`.
-    // `head -n 30` caps the LINE count but each `grep -n` line can be megabytes
-    // long when a match lands inside a minified JS blob embedded as a Zig
-    // source string — the ginwaaitoolbox repo's `webapp_assets.zig` contains
-    // a single ~1.7 MiB minified line. Total output was ~1.88 MiB.
-    //
-    // Root cause: `BashInput.max_output` defaulted to `1024 * 1024` (1 MiB)
-    // in schemas.zig. Because `std.json.parseFromSlice` fills missing JSON
-    // fields with the struct default, the LLM never had a reason to pass
-    // `max_output` explicitly, and bash.zig's defensive `orelse 20 * 1024`
-    // fallback was unreachable dead code. The byte cap that actually fired
-    // was 1 MiB per stream, and a single tool call flooded the LLM context.
-    //
-    // The fix is two-fold:
-    //   1. schemas.zig BashInput.max_output defaults to 20 KiB (this test).
-    //   2. bash.zig keeps the `orelse 20 * 1024` as defense-in-depth for
-    //      callers that construct BashInput programmatically.
-    //
-    // Contract verified by this test:
-    //   - Constructing BashInput{} (no max_output field) and parsing
-    //     `{"command": "...", "cwd": "...", "timeout": 5}`
-    //     produces max_output == 20 * 1024, not 1024 * 1024.
-    //   - When the LLM omits max_output, the reader caps the output to
-    //     ≤ 20 KiB even though head -n 30 returns 30 long lines.
+    // Regression test for the user report "fix bash tool truncated"
+    // (2026-08-14): The agent ran `grep -rn
+    // 'kanban/copy_spec\|kanban/columns\|kanban_columns_create' \
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const allocator = testing.allocator;
@@ -230,14 +179,7 @@ test "bash_tool: default max_output is the safety cap, not 1 MiB" {
         try testing.expectEqual(@as(usize, 20 * 1024), parsed.value.max_output.?);
     }
 
-    // 2. End-to-end: a command whose output would exceed 1 MiB if the
-    //    reader honored the old 1 MiB default is instead capped at
-    //    ≤ 20 KiB because of the schema default.
-    //
-    //    `yes 'AAAA...' | head -n 30` produces 30 lines of ~80 KiB each
-    //    (~2.4 MiB total). With the new 20 KiB schema default the bash
-    //    reader caps each stream at 20 KiB. The truncated=true flag fires
-    //    and stdout_lines reports the true pre-truncation line count.
+    // 2.
     {
         const fd_count_before = try countOpenFds();
 
@@ -264,11 +206,7 @@ test "bash_tool: default max_output is the safety cap, not 1 MiB" {
         // 1. The truncation flag MUST fire — 2.4 MiB was definitely
         //    capped at 20 KiB.
         try testing.expect(result.truncated == true);
-        // 2. Hard cap at the schema default (20 KiB). Allow up to a few
-        //    hundred bytes of slack because the reader caps at the
-        //    boundary of the most recent 4 KiB read buffer, not the
-        //    exact byte. Crucially we verify the cap is in the right
-        //    ballpark — the old 1 MiB default would fail this check.
+        // 2. Hard cap at the schema default (20 KiB).
         try testing.expect(result.stdout.len <= 22 * 1024);
         try testing.expect(result.stdout.len > 0);
         // 3. Line count reflects what head -n 30 actually produced, not
@@ -306,18 +244,7 @@ test "bash_tool: timeout fires on long-running command" {
 }
 
 test "bash_tool: timeout kills subshell descendants (no pipe-leak hang)" {
-    // Regression test for the macOS hang. When bash is killed but its
-    // descendants (subshells via `( )`, `|&`, backgrounded `&`, pipes)
-    // inherit the pipe FDs back to us, the reader threads block forever
-    // on pipe EOF that never arrives. The fix puts bash in its own
-    // process group (.pgid = 0) so the timeout path can kill the whole
-    // group with std.posix.kill(-pgid, .KILL).
-    //
-    // Without the fix this test hangs until the Zig test runner's
-    // per-test timeout kills it; with the fix it returns in ~1 s with
-    // timeout == true. We bound the wait with an overall deadline
-    // matching `timeout * 4` so a regression surfaces as a
-    // test failure rather than a process hang.
+    // Regression test for the macOS hang.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const allocator = testing.allocator;
@@ -342,12 +269,8 @@ test "bash_tool: timeout kills subshell descendants (no pipe-leak hang)" {
 }
 
 test "bash_tool: timeout kills descendants across all common subshell shapes" {
-    // Each of these exercises a distinct descendant topology that bash
-    // spawns before exec'ing into the long-running command. The pre-fix
-    // code (no .pgid, child.kill only) left each descendant holding the
-    // pipe FDs to us, so the reader thread blocked forever. With the
-    // process-group kill, the whole tree dies together and the pipes
-    // EOF cleanly.
+    // Each of these exercises a distinct descendant topology that bash spawns
+    // before exec'ing into the long-running command.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const allocator = testing.allocator;
@@ -361,10 +284,7 @@ test "bash_tool: timeout kills descendants across all common subshell shapes" {
         "( ( sleep 5 ) )", // nested subshells
         "bash -c 'sleep 5'", // inner bash inherits our pgid
         // The exact shape the AI hit in production (session-1783866771666):
-        // outer `timeout` + nested `bash -c` + subshell-in-pipe. If the
-        // process-group kill is incomplete this hangs for the full
-        // timeout duration and the reader-thread join never
-        // returns.
+        // outer `timeout` + nested `bash -c` + subshell-in-pipe.
         "timeout 3 bash -c '( sleep 10 ) | head -n 5'",
     };
 
@@ -380,13 +300,8 @@ test "bash_tool: timeout kills descendants across all common subshell shapes" {
             allocator.free(result.stderr);
         }
         // Verify the process tree died correctly: either OUR 3s deadline
-        // killed the bash process (result.timeout == true), or — for the
-        // one case with an inner `timeout 3 …` — the inner `timeout`
-        // command itself killed bash at the same 3s mark, propagating
-        // exit code 124 (the standard `timeout(1)` exit code for a
-        // killed command). Both outcomes prove the descendants were
-        // reaped and the reader-thread join did not hang. Either is a
-        // valid non-natural exit.
+        // killed the bash process (result.timeout == true), or — for the one
+        // case with an inner `timeout 3 …` — the inner `timeout` command
         const inner_timeout_killed_it = result.exit_code == 124 and !result.timeout;
         try testing.expect(result.timeout == true or inner_timeout_killed_it);
         try testing.expect(result.exit_code != 0);
@@ -423,8 +338,6 @@ test "bash_tool: timeout = 0 returns TimeoutMissing" {
 test "bash_tool: background mode ignores missing timeout" {
     // Background runs detach via nohup and have no deadline enforced by this
     // tool, so omitting timeout must NOT return TimeoutMissing.
-    // We don't actually verify the detached process behavior (CI is too flaky
-    // for that) — we only verify that the validation gate lets it through.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const allocator = testing.allocator;
@@ -449,60 +362,11 @@ test "bash_tool: background mode ignores missing timeout" {
 }
 
 // =========================================================================
-// Hang-prevention regression tests (2026-07-15 — worktree/bash-hang-d-state-fix)
-//
-// These tests cover the scenarios that the existing 8 tests miss:
-//
-//  1. The wall-clock bound — `execute_bash` MUST return within
-//     `timeout + KILL_GRACE_PERIOD_SECONDS + 2s slack` even when the
-//     bash process tree is misbehaving (subshell holding pipe FD open,
-//     process in D-state-like behavior, etc.).
-//
-//  2. No FD leak — after `execute_bash` returns, the count of open FDs
-//     in /proc/self/fd must equal the count BEFORE the call. No leaked
-//     pipe FDs from the child process group.
-//
-//  3. No memory leak — using `testing.allocator` which reports leaks.
-//
-//  4. The pipe FDs are actually closed — even after force-kill of a
-//     stuck process group, the parent-side pipe FDs are released so
-//     the reader threads can exit cleanly.
-//
-//  5. The reader-thread join has a deadline — pathological commands
-//     don't make `execute_bash` hang forever.
-//
-//  6. The child.wait() has a grace period — D-state descendants don't
-//     make `execute_bash` hang forever.
-//
-//  7. Repeated sequential calls don't accumulate FDs (long-running
-//     agent scenario).
-//
-// The actual "D-state" condition (process stuck in kernel I/O) cannot
-// be reliably reproduced in tests (you'd need to fake an unmountable
-// NFS share or a hung FUSE filesystem). Instead we simulate the
-// equivalent: a subshell that holds the pipe FD open AND keeps running
-// past the timeout. The pre-fix code would hang in this case because
-// `child.wait(io)` waits forever for the subshell to exit.
-// =========================================================================
+// Hang-prevention regression tests (2026-07-15 —
+// worktree/bash-hang-d-state-fix) These tests cover the scenarios that the
 
-/// Returns the count of open FDs in the TEST PROCESS (not the bash
-/// subshell). Linux/macOS only.
-///
-/// Implemented via `ls -1 /proc/$PPID/fd | wc -l` invoked through
-/// the bash tool itself. `$PPID` is bash's parent PID, which is the
-/// test process — so this measures the test process's actual FD
-/// table, NOT the bash subshell's (which is a fresh process with a
-/// tiny FD count that would mask parent-side leaks).
-///
-/// Why not `/proc/self/fd`? That's the bash subshell's FD count,
-/// which is ~10 (stdin/stdout/stderr + the bash exec pipes). The
-/// 2-FDs-per-call leak in `execute_bash`'s foreground path lives in
-/// the PARENT (test) process, so `self` reports a constant ~10 and
-/// the leak is invisible. Using `$PPID` (which expands to the parent
-/// of the bash subshell = the test process) gives the real FD count.
-///
-/// The `$PPID` expansion happens inside bash, which sees the
-/// immediate parent PID — exactly what we want.
+/// Returns the count of open FDs in the TEST PROCESS (not the bash subshell).
+/// Linux/macOS only.
 fn countOpenFds() !usize {
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return 0;
 
@@ -527,11 +391,9 @@ fn countOpenFds() !usize {
 }
 
 test "bash_tool: returns within bounded wall-clock time even when child hangs" {
-    // A bash command that runs forever, forcing the timeout path. The
-    // pre-fix code (child.wait(io) blocking forever) would hang this
-    // test until the Zig test runner's per-test timeout fires.
-    // The fix must ensure `execute_bash` returns within
-    // timeout + KILL_GRACE_PERIOD (e.g., timeout=1s, grace=2s, so ≤3s).
+    // A bash command that runs forever, forcing the timeout path. The pre-fix
+    // code (child.wait(io) blocking forever) would hang this test until the
+    // Zig test runner's per-test timeout fires.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const allocator = testing.allocator;
@@ -561,17 +423,9 @@ test "bash_tool: returns within bounded wall-clock time even when child hangs" {
 }
 
 test "bash_tool: pipe-FD-holding subshell does not hang (force-kill cleanup works)" {
-    // Simulates the D-state condition by spawning a subshell that holds
-    // the pipe FD open indefinitely via an `exec`-ed command that reads
-    // from a never-closing source.
-    //
-    // The pre-fix code's `child.wait(io)` blocks waiting for the entire
-    // process group to exit. With the process-group kill + grace-period
-    // bounded wait, the function must return within timeout + grace.
-    //
-    // We use `tail -f /dev/null` which reads forever from a file that
-    // never produces new data. SIGKILL kills it cleanly (not D-state),
-    // but the test verifies the cleanup path still works correctly.
+    // Simulates the D-state condition by spawning a subshell that holds the
+    // pipe FD open indefinitely via an `exec`-ed command that reads from a
+    // never-closing source.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const allocator = testing.allocator;
@@ -601,15 +455,9 @@ test "bash_tool: pipe-FD-holding subshell does not hang (force-kill cleanup work
 }
 
 test "bash_tool: subshell holding pipe FD open after parent death" {
-    // The closest reliable simulation of a "D-state-like" hang: bash
-    // spawns a subshell that takes the pipe FD via inheritance and
-    // runs forever (sleep 60). SIGKILL of the process group kills
-    // the subshell too (it's in the pgid). The test verifies that
-    // the post-kill cleanup doesn't hang waiting for descendants
-    // that may have escaped the group.
-    //
-    // A real D-state process (kernel I/O) cannot be reliably
-    // reproduced; this is the closest faithful test.
+    // The closest reliable simulation of a "D-state-like" hang: bash spawns a
+    // subshell that takes the pipe FD via inheritance and runs forever (sleep
+    // 60).
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const allocator = testing.allocator;
@@ -637,10 +485,9 @@ test "bash_tool: subshell holding pipe FD open after parent death" {
 }
 
 test "bash_tool: complex pipeline with multiple descendants is killed cleanly" {
-    // Multi-stage pipeline: `sleep 30 | sleep 30 | sleep 30`. Each
-    // `sleep` is a separate process in bash's pgid. The pgid kill
-    // must reach all three, and the cleanup must complete within
-    // bounded time.
+    // Multi-stage pipeline: `sleep 30 | sleep 30 | sleep 30`. Each `sleep` is
+    // a separate process in bash's pgid. The pgid kill must reach all three,
+    // and the cleanup must complete within bounded time.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const allocator = testing.allocator;
@@ -668,9 +515,7 @@ test "bash_tool: complex pipeline with multiple descendants is killed cleanly" {
 
 test "bash_tool: long-running inner command killed by outer bash timeout" {
     // The exact shape from production failure (session-1783866771666):
-    // `timeout 30 bash -c 'sleep 60'`. The outer `timeout` would kill
-    // at 30s, but our timeout=1s should fire first. After
-    // the kill, the inner bash should be reaped within the grace period.
+    // `timeout 30 bash -c 'sleep 60'`.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const allocator = testing.allocator;
@@ -696,10 +541,9 @@ test "bash_tool: long-running inner command killed by outer bash timeout" {
 }
 
 test "bash_tool: no FD leak after single call" {
-    // Verify that execute_bash closes all pipe FDs by the time it
-    // returns. The pre-fix code leaked pipe FDs because std.posix.kill
-    // didn't touch the Child struct (memory: process-fd-quota-exceed).
-    // The fix adds explicit pipe-FD closure in the cleanup paths.
+    // Verify that execute_bash closes all pipe FDs by the time it returns.
+    // The pre-fix code leaked pipe FDs because std.posix.kill didn't touch
+    // the Child struct (memory: process-fd-quota-exceed).
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const allocator = testing.allocator;
@@ -720,12 +564,7 @@ test "bash_tool: no FD leak after single call" {
 
     const fd_count_after = try countOpenFds();
 
-    // After the call returns, zero extra FDs should remain. The
-    // previous `diff <= 2` tolerance masked a per-call 2-FD leak in
-    // execute_bash's foreground success path (waitPidBounded does
-    // NOT call childCleanupPosix, so the parent's stdout + stderr
-    // read ends were never closed). The fix in bash.zig adds an
-    // explicit post-loop pipe close, so this test now expects 0.
+    // After the call returns, zero extra FDs should remain.
     const diff: usize = if (fd_count_after > fd_count_before)
         fd_count_after - fd_count_before
     else
@@ -765,12 +604,8 @@ test "bash_tool: no FD leak after timeout-forced kill" {
 }
 
 test "bash_tool: no FD accumulation across 20 sequential calls" {
-    // Long-running agent scenario: the LLM calls bash 20 times in
-    // succession. Each call must release all FDs from the previous
-    // call. Pre-fix code would leak ~5 FDs per call (the 3 pipe FDs
-    // + 2 stdio FDs), so 20 calls would leak 100 FDs total. The fix
-    // must close everything so the 21st call sees the same FD count
-    // as the 1st.
+    // Long-running agent scenario: the LLM calls bash 20 times in succession.
+    // Each call must release all FDs from the previous call.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const allocator = testing.allocator;
@@ -803,13 +638,8 @@ test "bash_tool: no FD accumulation across 20 sequential calls" {
 
 test "bash_tool: 100 sequential calls do not grow the open-fd count" {
     // Stress regression test for the foreground pipe-leak fix. Calls
-    // execute_bash 100 times (the long-running-agent scenario) and
-    // asserts zero FD growth. Pre-fix: 100 calls × 2 leaked FDs/call
-    // = 200 FDs accumulated over the loop.
-    //
-    // This is a more aggressive version of the 20-iteration test above
-    // — if a single FDs-per-call leak slipped back in, this catches
-    // it long before the 20-call test would.
+    // execute_bash 100 times (the long-running-agent scenario) and asserts
+    // zero FD growth.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const allocator = testing.allocator;
@@ -908,10 +738,8 @@ test "bash_tool: output is captured even when command is killed by timeout" {
 }
 
 test "bash_tool: background mode returns quickly even for hanging command" {
-    // Background mode detaches via nohup. The function returns the PID
-    // and log path. It must NOT wait for the detached command. This
-    // was the path that used `child.wait(io)` at line 207 — verify it
-    // still returns quickly.
+    // Background mode detaches via nohup. The function returns the PID and
+    // log path. It must NOT wait for the detached command.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const allocator = testing.allocator;
@@ -939,11 +767,7 @@ test "bash_tool: background mode returns quickly even for hanging command" {
 }
 
 test "bash_tool: stdin_data command completes cleanly" {
-    // A command that reads stdin and exits. Verifies the stdin
-    // write path doesn't leak FDs and that the input is delivered
-    // (we check exit_code == 0 + non-empty stdout rather than the
-    // exact bytes because the existing stdin_data plumbing predates
-    // this fix and may normalize trailing newlines).
+    // A command that reads stdin and exits.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const allocator = testing.allocator;
@@ -972,9 +796,7 @@ test "bash_tool: stdin_data command completes cleanly" {
     else
         0;
     // Tightened from `diff <= 2` to `diff == 0` after the foreground
-    // pipe-leak fix. Pre-fix: stdin_data path also leaked 2 FDs/call
-    // (stdout + stderr pipes; stdin pipe was properly closed by the
-    // parent after writing).
+    // pipe-leak fix.
     try testing.expect(diff == 0);
 }
 

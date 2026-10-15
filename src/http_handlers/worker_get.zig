@@ -1,7 +1,6 @@
-//! `GET /api/workers/:session_id` — fetch a worker by session_id.
-//!
-//! Layered as `useCase` (resolve singleton + DB query) and a thin
-//! handler that maps the outcome + errors to status codes / JSON.
+//! `GET /api/workers/:session_id` — fetch a worker by session_id. Layered as
+//! `useCase` (resolve singleton + DB query) and a thin handler that maps the
+//! outcome + errors to status codes / JSON.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -29,11 +28,7 @@ fn useCase(
 ) WorkerGetError!WorkerGetResult {
     const server = gserverz.global_server orelse return error.ServerNotInitialized;
     const server_ctx = server.ctx orelse return error.ServerNotInitialized;
-    // The singleton type is `pabrikcore.App` (src/app.zig). This cast used to
-    // read `ai_workflow.App`, and `pabrikcore.ai_workflow` never
-    // existed — the agent loop is exposed as `pabrikcore.ai_mod` — so the body
-    // never type-checked. It stayed unanalysed because this handler's route is
-    // not registered, which is why the bad name survived the rename to `App`.
+    // The singleton type is `pabrikcore.App` (src/app.zig).
     const ctxTui = @as(*pabrikcore.App, @ptrCast(@alignCast(server_ctx)));
     const sqlite_db = ctxTui.db;
 

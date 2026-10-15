@@ -1,15 +1,5 @@
 //! LLM tool: `update_element` — partial-update an existing element on a
-//! design page. Only fields that are explicitly set (non-null) are
-//! updated in the SQL UPDATE; null fields are left unchanged.
-//!
-//! If `html` is set, the element's on-disk HTML file is rewritten
-//! atomically. If the file is missing (orphan), `updateElement` will
-//! recreate it via the JOIN chain (design_page_elements → design_pages
-//! → workspace_items) — see design_model.zig `updateElement` for the
-//! recovery logic.
-//!
-//! Plan: docs/superpowers/plans/2026-07-08-design-mode-redesign.md (Chunk 4)
-//! Design: docs/plans/2026-07-08-design-mode-redesign-design.md §6.3
+//! design page.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -20,13 +10,8 @@ const design_model = pabrikcore.ai_mod.design_model;
 const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
 
-/// Input structure for `update_element` tool.
-///
-/// ALL fields except `element_id` are optional. When a field is set
-/// (non-null), the corresponding column is updated in the SQL
-/// UPDATE; null fields are left unchanged. The `type` field is a
-/// string that gets parsed to `ElementType` enum (same as
-/// `add_element`); null means "leave type unchanged".
+/// Input structure for `update_element` tool. ALL fields except `element_id`
+/// are optional.
 pub const UpdateElementInput = struct {
     /// The element id (NOT the page_id). The LLM discovers element
     /// ids via `set_design_page` (the response includes the element
@@ -70,11 +55,9 @@ pub const UpdateElementInput = struct {
     image_url: ?[]const u8 = null,
 };
 
-/// Top-level tool definition for the LLM.
-///
-/// The description emphasizes that ALL fields except `element_id`
-/// are optional, and that `set_design_page` is the way to discover
-/// element ids (no separate list tool exists).
+/// Top-level tool definition for the LLM. The description emphasizes that ALL
+/// fields except `element_id` are optional, and that `set_design_page` is the
+/// way to discover element ids (no separate list tool exists).
 pub const update_design_element_tool_system_prompt =
     \\## Update Design Element Tool — Behavior
     \\Use `update_element` to partially update an existing design element.
@@ -230,11 +213,7 @@ pub const ElementJSON = struct {
     updated_at: []const u8,
 };
 
-/// Render the canonical element JSON response shape. Mirrors the old
-/// `<element ... />` attributes from design §6.2 — `html` is intentionally
-/// omitted (the LLM doesn't need the body, and it can be 5+ KB).
-/// Free-text fields are sanitized (NUL/C0 → U+FFFD) before serialization;
-/// `std.json` handles the remaining escaping natively.
+/// Render the canonical element JSON response shape.
 pub fn elementToJSON(
     allocator: std.mem.Allocator,
     elem: design_model.DesignElement,
@@ -311,14 +290,7 @@ fn validateElementIdShape(allocator: std.mem.Allocator, element_id: []const u8) 
     return null;
 }
 
-/// Execute the `update_element` tool. Returns a JSON string for the
-/// LLM.
-///
-/// On success, the response is the element JSON object (same shape as
-/// `add_element`'s response).
-///
-/// On error (bad element_id, bad type, DB failure), the response is
-/// `{"error":...}`.
+/// Execute the `update_element` tool. Returns a JSON string for the LLM.
 pub fn executeUpdateElementToString(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -327,11 +299,9 @@ pub fn executeUpdateElementToString(
     // 0. Input validation (shape only — DB validation runs after).
     if (try validateElementIdShape(allocator, input.element_id)) |e| return e;
 
-    // 1. Parse the optional type string. parseOptionalElementType
-    //    returns:
-    //      null → "no change" (string was null)
-    //      enum value → parsed successfully
-    //      error.BadTypeString → malformed string (not one of the 6)
+    // 1. Parse the optional type string. parseOptionalElementType returns:
+    // null → "no change" (string was null) enum value → parsed successfully
+    // error.BadTypeString → malformed string (not one of the 6)
     const parsed_type = parseOptionalElementType(allocator, input.type) catch |err| {
         if (err == error.BadTypeString) {
             return try errorJSON(allocator, "type must be one of: rectangle, ellipse, text, image, frame, group");

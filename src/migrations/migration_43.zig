@@ -12,29 +12,13 @@ pub const Migration043AddPositionToWorkspaces = struct {
     pub const name = "add_position_to_workspaces";
 
     pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
-        // Adds the `position` column to the workspaces table. The
-        // column is the sort key for the sidebar's workspace list
-        // — see docs/plans/2026-06-12-workspace-drag-and-drop.md.
-        // New workspaces get position = MAX(position) + 1 (top of
-        // the list, since workspaces_list.zig orders by position
-        // DESC). The drag-and-drop reorder endpoint reassigns these
-        // values to reflect the user's chosen order.
+        // Adds the `position` column to the workspaces table. The column is
+        // the sort key for the sidebar's workspace list — see
+        // docs/plans/2026-06-12-workspace-drag-and-drop.md.
         try db.exec(allocator, "ALTER TABLE workspaces ADD COLUMN position INTEGER NOT NULL DEFAULT 0", &[_][]const u8{});
 
-        // Backfill. Assign position N-1 to the newest workspace, 0 to
-        // the oldest. With ORDER BY position DESC, the newest
-        // workspace appears at the top of the list — same UX as the
-        // previous ORDER BY created_at DESC. Uses a single UPDATE with
-        // a correlated subquery; SQLite handles this efficiently on
-        // the small workspaces table (handful of rows in practice).
-        //
-        // The formula: position = (number of workspaces OLDER than
-        // this one). For the newest, all N-1 others are older, so
-        // position = N-1 (top of the list). For the oldest, none are
-        // older, so position = 0 (bottom of the list). The id
-        // tiebreaker handles the rare case where two workspaces share
-        // the same created_at second — without it, the COUNT
-        // subquery would assign the same position to both rows.
+        // Backfill. Assign position N-1 to the newest workspace, 0 to the
+        // oldest.
         try db.exec(allocator,
             \\UPDATE workspaces
             \\SET position = (

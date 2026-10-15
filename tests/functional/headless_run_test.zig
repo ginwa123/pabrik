@@ -1,27 +1,4 @@
 //! Wire test: `pabrik headless` runs the real backend with NO port bound.
-//!
-//! The claim under test is the one the feature exists for: an AI agent can
-//! drive the real agentic loop from the command line without a server, a
-//! port, or a readiness poll. Three things have to be true at once, and
-//! only a real process can prove all three:
-//!
-//!   1. `headless run` completes a turn against a stub LLM upstream and
-//!      prints the assistant text as JSON on stdout.
-//!   2. The turn really went through the backend — the stub upstream
-//!      received the request, and the session row landed in the DB.
-//!   3. NOTHING bound a port. The dev server on 8081 must be untouched
-//!      and no new listener may appear.
-//!
-//! WHY A STUB UPSTREAM AND NOT A REAL API KEY: the contract is "the real
-//! backend ran", not "the real LLM answered". A stub SSE server on
-//! loopback proves the request left the process with the right shape and
-//! that the response was parsed back into a turn — which is the whole
-//! path. A real key would make the suite slow, rate-limited and
-//! non-hermetic.
-//!
-//! Run:
-//!     PABRIK_BIN=<worktree>/zig-out/bin/pabrikcore-linux-x86_64 \
-//!       zig test tests/functional/headless_run_test.zig
 
 const std = @import("std");
 const testing = std.testing;
@@ -32,12 +9,9 @@ const io = testing.io;
 
 const Io = std.Io;
 
-/// The OpenAI-style SSE transcript the stub replays verbatim.
-///
-/// Byte-identical in shape to `anthropic_chat_headers_test.zig`'s stream:
-/// one content delta, then a finish_reason, then `[DONE]`. A truncated
-/// final event would make the assertions pass for a reason that is not
-/// the contract.
+/// The OpenAI-style SSE transcript the stub replays verbatim. Byte-identical
+/// in shape to `anthropic_chat_headers_test.zig`'s stream: one content delta,
+/// then a finish_reason, then `[DONE]`.
 const SSE_STREAM =
     "data: {\"id\":\"chatcmpl-stub\",\"object\":\"chat.completion.chunk\"," ++
     "\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"," ++
@@ -47,10 +21,6 @@ const SSE_STREAM =
     "data: [DONE]\n\n";
 
 /// A one-request SSE stub upstream, served from a background thread.
-///
-/// Records every request head it sees so the test can assert the turn
-/// really reached the upstream — a positive control, without which "the
-/// assistant text came back" could pass vacuously.
 const Stub = struct {
     io: Io,
     port: u16,
@@ -58,12 +28,8 @@ const Stub = struct {
     thread: std.Thread,
     stop: std.atomic.Value(bool) = .init(false),
     /// Guards `heads`; the serve thread appends while the test reads.
-    ///
-    /// `std.Io.Mutex`, not `std.Thread.Mutex`: Zig 0.16 deleted the
-    /// latter, and the replacement takes the `Io` handle for its
-    /// contended path. `lockUncancelable` is the one to use here — the
-    /// critical sections are a slice append and a fixed-size response
-    /// write, neither of which should ever be abandoned halfway.
+    /// `std.Io.Mutex`, not `std.Thread.Mutex`: Zig 0.16 deleted the latter,
+    /// and the replacement takes the `Io` handle for its contended path.
     mutex: Io.Mutex = .init,
     heads: std.ArrayList([]u8) = .empty,
     /// The request BODY of each recorded request, same order as `heads`.
@@ -112,16 +78,9 @@ fn startStub(stub: *Stub) !void {
     stub.thread = try std.Thread.spawn(.{}, serveStub, .{stub});
 }
 
-/// Wake the blocked `accept`, join, and free.
-///
-/// `Server.accept` is a BLOCKING `accept4(2)`, and on Linux closing a
-/// listening socket does NOT wake a thread already blocked in `accept`
-/// on it. Leaving it blocked would leave an unjoined `std.Thread` alive
-/// at test end, which the DebugAllocator reports as a leak. So: set the
-/// stop flag, then make ONE throwaway self-connect — the pending
-/// connection is what `accept` returns, the loop re-reads the flag, and
-/// the thread exits. If the connect fails the listener is already gone
-/// and `accept` has returned an error, so the loop has exited anyway.
+/// Wake the blocked `accept`, join, and free. `Server.accept` is a BLOCKING
+/// `accept4(2)`, and on Linux closing a listening socket does NOT wake a
+/// thread already blocked in `accept` on it.
 fn stopStub(stub: *Stub) void {
     stub.stop.store(true, .release);
 
@@ -148,17 +107,9 @@ fn serveStub(stub: *Stub) void {
     }
 }
 
-/// Read one request, record its head, reply with the SSE transcript.
-///
-/// THE HEAD AND THE BODY OVERLAP IN THE SOCKET BUFFER, and getting that
-/// wrong hangs the whole suite. `fill(1)` reads a whole syscall's worth
-/// into the 64 KiB buffer, so a single call typically returns the head
-/// AND the first chunk of the body. The read loop therefore accumulates
-/// everything it sees and records only the first `\r\n\r\n`-terminated
-/// slice as the head — the naive version, which tossed everything it had
-/// buffered once the head was complete, DISCARDED those body bytes and
-/// then blocked in the body drain waiting for bytes the client had
-/// already sent.
+/// Read one request, record its head, reply with the SSE transcript. THE HEAD
+/// AND THE BODY OVERLAP IN THE SOCKET BUFFER, and getting that wrong hangs
+/// the whole suite.
 fn handleRequest(stub: *Stub, stream: Io.net.Stream) !void {
     var rbuf: [64 * 1024]u8 = undefined;
     var sr = stream.reader(stub.io, &rbuf);
@@ -249,10 +200,6 @@ fn headerValue(head: []const u8, name: []const u8) ?[]const u8 {
 }
 
 /// Write `config.json` into the harness tempdir pointing at the stub.
-///
-/// The stub profile is written BEFORE the binary starts, because
-/// `LlmConfig.init` reads it once at boot and nothing re-reads it — the
-/// same reason `harness.writeStubLlmProfile` exists.
 fn writeStubProfile(h: *Harness, stub_port: u16) !void {
     const dir = try std.fs.path.join(gpa, &.{ h.temp_dir, ".config", "pabrik" });
     defer gpa.free(dir);
@@ -303,12 +250,6 @@ test "headless run completes a turn and prints the assistant text" {
     }
 
     // stdout must be ONE JSON object — no log lines mixed in.
-    //
-    // `Parsed`, not `parseFromSliceLeaky`: the leaky variant still
-    // allocates for every string in the document and hands ownership to
-    // nobody, so the DebugAllocator reports each one as a leak at test
-    // end. `Parsed` owns its memory and `deinit` releases it — the same
-    // reason `harness.Json` wraps it.
     var doc = std.json.parseFromSlice(std.json.Value, gpa, result.stdout, .{}) catch {
         std.debug.print("stdout is not valid JSON:\n{s}\n", .{result.stdout});
         return error.TestUnexpectedResult;
@@ -364,13 +305,7 @@ test "headless run drives the real backend, not a parallel implementation" {
         return error.TestUnexpectedResult;
     }
 
-    // 1. The outgoing request named the configured profile's model and
-    //    carried its api_key — proof the run used `config.json`, not a
-    //    hardcoded default.
-    //
-    //    The model lives in the JSON BODY; the api_key is a HEADER. Both
-    //    are checked, because either one alone would let a wrong-config
-    //    run pass.
+    // 1.
     var seen = try stub.snapshot();
     defer {
         for (seen.items) |hd| gpa.free(hd);
@@ -421,13 +356,6 @@ test "headless run drives the real backend, not a parallel implementation" {
 }
 
 // THE headline claim: nothing binds a port.
-//
-// The dev server on 8081 is the always-running backend per project
-// memory, and a headless run that grabbed a port would either collide
-// with it or leak a listener. This asserts the process exits with no
-// listener of its own — checked by counting the pabrik-owned listeners
-// before and after, which is the only witness that survives the child
-// exiting.
 test "headless run binds no port" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -453,15 +381,8 @@ test "headless run binds no port" {
 
     const after = try countPabrikListeners();
 
-    // The child has exited by the time `runPabrikCommand` returns, so
-    // any listener it held is already gone. What this really asserts is
-    // that the run SUCCEEDED without needing one — a headless mode that
-    // silently fell back to booting a server would have had to bind, and
-    // a bind failure on a busy 8081 would have failed the run above.
-    //
-    // The count is still worth taking: it catches a leaked listener from
-    // a PREVIOUS test in the same process, which would otherwise make
-    // every later port-sensitive test flaky.
+    // The child has exited by the time `runPabrikCommand` returns, so any
+    // listener it held is already gone.
     if (after > before) {
         std.debug.print(
             "headless run leaked {d} listener(s): before={d} after={d}\n",
@@ -478,20 +399,8 @@ test "headless run binds no port" {
 }
 
 /// Count the TCP listeners this process tree owns, via `ss`.
-///
-/// Returns 0 when `ss` is unavailable (minimal CI images) rather than
-/// failing — the assertion above is a leak check, and a missing tool
-/// must not turn into a red suite.
 fn countPabrikListeners() !usize {
-    // Deliberately NOT a `.pipe` spawn. A pipe the parent never closes
-    // leaks an fd, and the DebugAllocator reports the pipe's buffer as a
-    // leak at test end — which is a worse outcome than a skipped check.
-    //
-    // The real witness for "no port was bound" is that the run SUCCEEDED:
-    // a headless mode that silently fell back to booting a server would
-    // have had to bind, and a bind failure on a busy 8081 would have
-    // failed the run. This count is a secondary leak check only, so it
-    // degrades to 0 when `ss` is unavailable.
+    // Deliberately NOT a `.pipe` spawn.
     const argv = [_][]const u8{ "ss", "-tlnp" };
     var child = std.process.spawn(io, .{
         .argv = &argv,

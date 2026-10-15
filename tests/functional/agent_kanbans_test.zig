@@ -1,59 +1,5 @@
-// Functional tests for the Agent-Kanbans mirror (Migration 081).
-//
-// Zig port of `tests/functional/agent_kanbans_test.py` (same test names,
-// same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional tests for the Agent-Kanbans mirror (Migration 081).
-//
-//   Exercises the new agent-kanbans CRUD endpoints against a REAL pabrik
-//   binary + REAL SQLite, replaying the EXACT JSON bodies the frontend
-//   KanbanAgentSettings dialog sends.
-//
-//     Plan: docs/superpowers/plans/2026-08-25-agent-kanbans-mirror.md
-//     Task: task_1787597624259_2
-//
-//   Covers:
-//     * BUNDLE GET      — fresh kanban → 200 configured with default tools
-//                        (24 defaults); agent-type item
-//                        → 400 ItemNotKanban (regression: route order
-//                        shadowing would return 200 with the agent payload).
-//     * GET wrong type  — agent-type item → 400 ItemNotKanban (regression:
-//                        route order shadowing would return 200 with the
-//                        agent payload).
-//     * PATCH update    — happy path + empty-slice-as-NULL ('' description
-//                        round-trips as '').
-//     * KNOWLEDGE POST  — file XOR content semantics + UNIQUE kanban_id
-//                        per item scoping.
-//     * KNOWLEDGE POST  — inline content + position 0 (COALESCE).
-//     * KNOWLEDGE PATCH — mode switch (file_path='' + content set).
-//     * KNOWLEDGE REORDER — PATCH /knowledge/reorder reaches REORDER handler
-//                         (NOT shadowed by /knowledge/:knowledge_id).
-//     * KNOWLEDGE DELETE — scoped by both id AND kanban_id.
-//     * SYSTEM_PROMPT POST — first row gets position 0, empty content → 400.
-//     * SYSTEM_PROMPT PATCH — title-only update keeps content.
-//     * TOOLS POST/LIST/DELETE — unknown tool → 400, duplicate → 409.
-//   """
-//
-// Two of the Python bodies assert nothing (`test_bundle_update_description_round_trips_empty`
-// is a comment block whose author stopped mid-thought, and the module
-// docstring advertises PATCH/DELETE/knowledge-mode-switch coverage that
-// no test actually exercises). They are ported AS THEY ARE — the same
-// requests, the same absence of assertions — rather than quietly
-// deleted or quietly strengthened. The docstring's claims about a
-// "PATCH update" and a "KNOWLEDGE DELETE" are therefore still
-// unverified on this side of the port; see the marker comments.
-//
-// WHY THE EXPECTED TOOL LIST IS INLINED HERE: the Python original
-// imported it from `tests/functional/default_tools.py`. A Zig test
-// package can only reach a non-test file when `root.zig` names it in
-// `suites`, and `root.zig` is owned by another agent for this port, so
-// the list is transcribed once below — identically to
-// `agent_tools_defaults_test.zig`, which transcribes the same table for
-// the same reason. The `comptime` block re-asserts the invariants that
-// module states in prose, so a hand-edit that breaks them fails at
-// COMPILE time.
+// Functional tests for the Agent-Kanbans mirror (Migration 081). Zig port of
+// `tests/functional/agent_kanbans_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -66,12 +12,8 @@ const io = testing.io;
 // Expected tool list — mirrors tests/functional/default_tools.py
 // ============================================================================
 
-/// Mirrors `DEFAULT_KANBAN_SEEDED_TOOLS` — what a fresh kanban item is
-/// born with: `DEFAULT_AGENT_TOOLS` PLUS the kanban pair, sorted ASC.
-///
-/// The Python docstring's "(24 defaults)" is stale: the shared table
-/// has grown since. `default_tools.py`'s header names the one file to
-/// re-read when the backend's `DEFAULT_AGENT_TOOLS` changes.
+/// Mirrors `DEFAULT_KANBAN_SEEDED_TOOLS` — what a fresh kanban item is born
+/// with: `DEFAULT_AGENT_TOOLS` PLUS the kanban pair, sorted ASC.
 const EXPECTED_KANBAN_SEEDED_TOOLS = [_][]const u8{
     "add_document",
     "add_skill",
@@ -152,12 +94,6 @@ fn createKanban(h: *Harness, workspace_id: []const u8, name: []const u8) ![]u8 {
 
 /// `POST /api/workspaces/<ws>/items/agent {"name", "path"}` → the agent
 /// item's id. Owned.
-///
-/// `path` is derived from the harness's OWN tempdir rather than a
-/// hardcoded `/tmp/...`: the server rejects a relative path with 400
-/// `NotAbsolutePath`, and `isAbsolute` is platform-relative — a literal
-/// that is correct on Linux fails on Windows and reads there as a
-/// server regression that does not exist.
 fn createAgent(h: *Harness, workspace_id: []const u8, name: []const u8) ![]u8 {
     const agent_path = try harness.harnessPath(gpa, h.temp_dir, &.{"agent-kanbans-test"});
     defer gpa.free(agent_path);
@@ -321,16 +257,9 @@ test "bundle_get_agent_type_returns_400" {
     }
 }
 
-// PATCH /agent_kanban with empty description persists as '' (empty-slice-as-NULL regression).
-//
-// PORTED VERBATIM, INCLUDING THE MISSING ASSERTION. The Python body is
-// only comments: it creates a workspace and a kanban, then stops with
-// "Skip — PATCH needs a pre-seeded config. Tested below via direct SQL
-// or via a tool enablement that creates the row." Nothing below it ever
-// does that. The requests are replayed so the wire behaviour is at
-// least exercised, but this test asserts nothing — porting it as a
-// real assertion would be inventing coverage the Python suite never
-// had. See the module docstring's "PATCH update" line.
+// PATCH /agent_kanban with empty description persists as ''
+// (empty-slice-as-NULL regression). PORTED VERBATIM, INCLUDING THE MISSING
+// ASSERTION.
 test "bundle_update_description_round_trips_empty" {
     try harness.requirePabrikBin(io, gpa);
 

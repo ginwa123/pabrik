@@ -17,12 +17,6 @@ pub const BlameLine = struct {
 };
 
 /// Parse `git blame --porcelain` output into per-line records.
-///
-/// Porcelain emits, per blamed line, a `<sha> <orig> <final> <count>`
-/// header, `author` / `author-time` / `summary` info lines, then one TAB
-/// content line. Headers may repeat per line or cover a run — the parser
-/// tracks the running final-line number, so both shapes parse. Stops
-/// after `max_lines` emitted lines.
 pub fn parseBlamePorcelain(allocator: std.mem.Allocator, output: []const u8, max_lines: usize) ![]BlameLine {
     var out = std.ArrayList(BlameLine).empty;
 
@@ -116,10 +110,8 @@ fn makeBlameResponse(allocator: std.mem.Allocator, is_repo: bool, lines: []const
 }
 
 /// Git blame endpoint — per-line author + time for one file, backing the
-/// CodeEditor's inline blame annotation (`You, 2 hours ago`).
-/// `GET /api/git/blame?path=<cwd>&file=<repo-relative path>`.
-/// Blame is best-effort annotation: untracked/unblamable files answer 200
-/// with empty `lines`, never an error — the viewer simply shows no chip.
+/// CodeEditor's inline blame annotation (`You, 2 hours ago`). `GET
+/// /api/git/blame?path=<cwd>&file=<repo-relative path>`.
 pub fn gitBlameHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
     const io = ctx.io;

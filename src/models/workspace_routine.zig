@@ -1,12 +1,5 @@
-//! Data model for the `workspace_routines` entity table.
-//!
-//! One row per Routine workspace item (`item_type='routine'`). The `id`
-//! is the same string as the `workspace_item_id` (1-1 enforced by
-//! `UNIQUE(workspace_item_id)` per spec D3 — they share the
-//! workspace_item's id space, mirroring `agents`).
-//!
-//! Schema: Migration 084 (`replace_routines_with_workspace_routines`).
-//! Replaces the deleted per-task `routines` table (Migration 044).
+//! Data model for the `workspace_routines` entity table. One row per Routine
+//! workspace item (`item_type='routine'`).
 
 const std = @import("std");
 
@@ -113,11 +106,6 @@ pub fn clone(self: *const Self, allocator: std.mem.Allocator) !Self {
 // ===== Tests merged from models_test.zig (2026-09-29 flatten) =====
 
 // Sanity tests for the `src/models/` entity models.
-//
-// Verifies that every model file compiles, that `init` populates the
-// struct as expected, that `deinit` releases its strings, and that
-// external callers can read the struct's fields directly (matching
-// the file-level struct pattern requested by the user).
 
 const testing = std.testing;
 

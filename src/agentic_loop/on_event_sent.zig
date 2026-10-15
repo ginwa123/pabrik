@@ -15,23 +15,6 @@ const helpers = @import("helpers");
 // ============================================================================
 // JSON Protocol Constants
 // ============================================================================
-// Note: All buffers are dynamic using heap allocation via std.ArrayList(u8).
-// No fixed size limits for chunk content or tool call deltas.
-//
-// SSE wire-format protocol contract (`event:` line names):
-// - workers:  worker_created | worker_updated | worker_deleted
-// - sessions: session_created | session_deleted
-// - llm:      llm_chunk | llm_full
-// - queue:    queue_queued | queue_deleted  (set by llm_history.zig)
-// - kanban:   kanban_column | kanban_task   (set by on_event_sent_kanban.zig)
-//
-// Every `event:` line is set on the SseEvent struct at emit time. The
-// handler (`unified_events_sse.zig` `forwardToClients`) writes
-// `event: <name>` from the `event_type` field when non-null. The
-// frontend's EventSource dispatches each name to a pre-registered
-// listener (see `api/index.ts` `createUnifiedSseConnection`'s
-// `additionalEventTypes` and project memory
-// browser-eventsource-named-events.md).
 
 // ============================================================================
 // Unified Response Types
@@ -104,25 +87,18 @@ pub const SkillInfo = struct {
     loaded_at: ?i64 = null,
 };
 
-/// JSON representation of a tool call
-///
-/// 2026-08-24 wire-shape fix: no longer used by the SSE payload
-/// (tool_calls_json is now serialized to a string via
-/// llm_history.serializeToolCalls before std.json.fmt). Kept because
-/// `ToolCallJson` is a public export other modules may reference.
+/// JSON representation of a tool call 2026-08-24 wire-shape fix: no longer
+/// used by the SSE payload (tool_calls_json is now serialized to a string via
+/// llm_history.serializeToolCalls before std.json.fmt).
 pub const ToolCallJson = struct {
     id: []const u8,
     name: []const u8,
     arguments: []const u8,
 };
 
-/// Input parameters for sending SSE session events
-/// Reflects the sessions table columns: id, name, status, cwd, created_at, updated_at, selected_profile_model, git_worktree_cwd, pr_url, pr_provider, is_auto_retry_until_stop, last_finish_reason
-///
-/// Migration 063 added the last two fields. Default values are `""` so
-/// existing callers that omit them continue to compile (the SSE payload
-/// still has the field present, just empty — predictable JSON shape for
-/// the frontend parser).
+/// Input parameters for sending SSE session events Reflects the sessions
+/// table columns: id, name, status, cwd, created_at, updated_at,
+/// selected_profile_model, git_worktree_cwd, pr_url, pr_provider,
 pub const OnEventInputSessions = struct {
     action: []const u8, // "created", "updated", "deleted"
     id: []const u8,
@@ -142,10 +118,9 @@ pub const OnEventInputSessions = struct {
     is_auto_retry_until_stop: []const u8 = "",
     /// Migration 063 — most recent finish_reason observed by the workflow.
     last_finish_reason: []const u8 = "",
-    /// Migration 082 - unix-ms of the last human touch, surfaced on
-    /// the SSE session_updated/created events so the ChatsList badge
-    /// and stale-dot update without a refetch. Empty default = no
-    /// human touch yet (frontend falls back to updated_at).
+    /// Migration 082 - unix-ms of the last human touch, surfaced on the SSE
+    /// session_updated/created events so the ChatsList badge and stale-dot
+    /// update without a refetch.
     last_human_touched_at: []const u8 = "",
 };
 
@@ -173,11 +148,9 @@ pub const OnEventInputWorkers = struct {
     created_at: []const u8,
 };
 
-/// Send worker events to all subscribed clients via SSE
-/// Broadcasts worker list updates (created, updated, deleted)
-///
-/// SSE event name (the value of `event:` in the wire format):
-/// - workers:  worker_created | worker_updated | worker_deleted
+/// Send worker events to all subscribed clients via SSE Broadcasts worker
+/// list updates (created, updated, deleted) SSE event name (the value of
+/// `event:` in the wire format): - workers: worker_created | worker_updated |
 pub fn onEventSendWorkers(allocator: std.mem.Allocator, input: OnEventInputWorkers) !void {
     const di = try tree1_mod.getSingleton();
     const event_bus = di.event_bus;
@@ -202,13 +175,9 @@ pub fn onEventSendWorkers(allocator: std.mem.Allocator, input: OnEventInputWorke
     // Duplicate the data so event owns its own copy (buf will be deallocated below)
     const data_copy = try allocator.dupe(u8, buf.items);
 
-    // Granular event name drives the SSE wire format `event:` line —
-    // the frontend's EventSource dispatches each named event to its
-    // registered listener without any JSON parsing (see project memory
-    // browser-eventsource-named-events.md).
-    //
-    // Zig 0.16 can't `switch` on `[]const u8`; use an if/else cascade
-    // (Zig's std.mem.eql returns the equality cheaply for short literals).
+    // Granular event name drives the SSE wire format `event:` line — the
+    // frontend's EventSource dispatches each named event to its registered
+    // listener without any JSON parsing (see project memory
     const event_type_name: []const u8 = if (std.mem.eql(u8, input.action, "created"))
         "worker_created"
     else if (std.mem.eql(u8, input.action, "updated"))
@@ -228,14 +197,9 @@ pub fn onEventSendWorkers(allocator: std.mem.Allocator, input: OnEventInputWorke
     event_bus.emit(SseEvent, "workers", event);
 }
 
-/// Send an SSE event to all clients connected to the given session
-///
-/// JSON Protocol:
-/// - Response events contain all message fields as JSON object
-/// - Tool result events include tool_call_id and tool_name
-///
-/// SSE event name (the value of `event:` in the wire format):
-/// - llm:      llm_full
+/// Send an SSE event to all clients connected to the given session JSON
+/// Protocol: - Response events contain all message fields as JSON object -
+/// Tool result events include tool_call_id and tool_name SSE event name (the
 pub fn onEventSendLLMHistory(allocator: std.mem.Allocator, input: OnEventInputLLMHistory) !void {
 
     // todo dirty code
@@ -262,16 +226,7 @@ pub fn onEventSendLLMHistory(allocator: std.mem.Allocator, input: OnEventInputLL
     }
 
     // Sanitize content + reasoning_content to valid UTF-8 before JSON
-    // serialization. Without this, Zig 0.16's std.json.fmt emits
-    // invalid-UTF-8 strings as ARRAYS of bytes (because
-    // emit_strings_as_arrays defaults to false but only applies when the
-    // slice is valid UTF-8 — see /usr/local/lib/zig/std/json/Stringify.zig:506).
-    // The bash tool's stdout can contain binary bytes (e.g. 0x89, 0x93
-    // from test programs printing raw bytes) that are invalid UTF-8 and
-    // would otherwise corrupt the SSE payload — the frontend would
-    // receive content as [60, 116, 111, ...] instead of "...". This is
-    // the same fix used by `sessionMessagesHandler` for the REST path
-    // (see http_handlers/session_messages_get.zig).
+    // serialization.
     const sanitized_content: ?[]u8 = blk: {
         const c = input.content orelse break :blk null;
         break :blk try helpers.sanitize.sanitizeUtf8(allocator, c);
@@ -284,17 +239,8 @@ pub fn onEventSendLLMHistory(allocator: std.mem.Allocator, input: OnEventInputLL
     };
     defer if (sanitized_reasoning) |s| allocator.free(s);
 
-    // 2026-08-24 wire-shape fix (task_1787590621966_10): tool_calls_json
-    // MUST be a JSON STRING on the wire, not an array. The frontend's
-    // ChatView.vue:1390 calls `msg.tool_calls_json?.trim()` — optional
-    // chaining guards null/undefined but NOT arrays, so the old array
-    // shape crashed every live-SSE assistant row that carried tool calls
-    // ("msg.tool_calls_json?.trim is not a function"). The REST path
-    // (session_messages_get.zig) and the insert path
-    // (sse_on_event_send_llm_history.zig) already emit a string — this
-    // emitter was the only array-shaped outlier. Serialize ONCE here via
-    // llm_history.serializeToolCalls (same helper saveMessage uses for
-    // the DB TEXT column) so SSE and REST agree byte-for-byte.
+    // 2026-08-24 wire-shape fix (task_1787590621966_10): tool_calls_json MUST
+    // be a JSON STRING on the wire, not an array.
     const serialized_tool_calls_json: ?[]u8 = blk: {
         const calls = input.tool_calls_json orelse break :blk null;
         break :blk try llm_history.serializeToolCalls(allocator, calls);
@@ -370,13 +316,9 @@ pub fn onEventSendLLMHistory(allocator: std.mem.Allocator, input: OnEventInputLL
     event_bus.emit(SseEvent, "llm", event);
 }
 
-/// Send session events to all subscribed clients via SSE
-/// Broadcasts session list updates (created, updated, deleted, list actions)
-///
-/// SSE event name (the value of `event:` in the wire format):
-/// - sessions: session_created | session_deleted
-///   (Only `created` is emitted today; the switch is written for both
-///   so a future `deleted` emitter drops in without protocol churn.)
+/// Send session events to all subscribed clients via SSE Broadcasts session
+/// list updates (created, updated, deleted, list actions) SSE event name (the
+/// value of `event:` in the wire format): - sessions: session_created |
 pub fn onEventSendSessions(allocator: std.mem.Allocator, input: OnEventInputSessions) !void {
     if (std.mem.indexOf(u8, input.id, "subagent")) |_| {
         return;
@@ -406,15 +348,8 @@ pub fn onEventSendSessions(allocator: std.mem.Allocator, input: OnEventInputSess
         .is_auto_retry_until_stop = input.is_auto_retry_until_stop,
         .last_finish_reason = input.last_finish_reason,
         // Migration 082 - propagate the chat-side stamp so the SSE
-        // session_updated event drives the sidebar's time pill +
-        // stale-dot without a refetch. NOTE: this is the unix-ms
-        // INTEGER string (raw column shape). The REST GET path
-        // (`llm_history.buildSessionListJson`) converts it to the
-        // SQLite datetime UTC format at the SELECT layer. The SSE
-        // emit path bypasses that conversion. Frontend consumers
-        // should treat either format as opaque and fall back to
-        // `updated_at` if the human-time string fails to parse -
-        // the format mismatch doesn't affect display correctness.
+        // session_updated event drives the sidebar's time pill + stale-dot
+        // without a refetch.
         .last_human_touched_at = input.last_human_touched_at,
     };
     try buf.print(allocator, "{f}", .{std.json.fmt(payload, .{
@@ -425,19 +360,6 @@ pub fn onEventSendSessions(allocator: std.mem.Allocator, input: OnEventInputSess
     const data_copy = try allocator.dupe(u8, buf.items);
 
     // Granular event name drives the SSE wire format `event:` line.
-    // Three actions are mapped:
-    //   - "created" → "session_created" (initial session row insert)
-    //   - "updated" → "session_updated" (auto-rename on first user message,
-    //     unattended-mode toggle, last_finish_reason refresh)
-    //   - "deleted" → "session_deleted"
-    // The frontend's createUnifiedSseConnection pre-registers all three
-    // names in additionalEventTypes (api/index.ts:2925-2926) so the
-    // browser's EventSource dispatches each to the JS handler. A new
-    // action NOT in this map still falls through to "session_unknown"
-    // (the future-proofing default), which is currently NOT registered
-    // by the frontend — by design, so unknown actions don't leak into
-    // the session channel callback without an explicit contract.
-    // (Zig 0.16 can't `switch` on `[]const u8`.)
     const event_type_name: []const u8 = if (std.mem.eql(u8, input.action, "created"))
         "session_created"
     else if (std.mem.eql(u8, input.action, "updated"))
@@ -465,10 +387,7 @@ pub fn onEventSendSessions(allocator: std.mem.Allocator, input: OnEventInputSess
 pub const ContentChunk = struct {
     index: usize,
     content: []const u8,
-    /// Session this chunk belongs to. Serialized into the llm_chunk
-    /// payload so the frontend's per-session filter
-    /// (`event.session_id !== sid`) can pass chunk events through —
-    /// without it every chunk is dropped at the ChatView gate.
+    /// Session this chunk belongs to.
     session_id: []const u8 = "",
 };
 
@@ -617,10 +536,8 @@ pub fn serializeToolCallDeltas(allocator: std.mem.Allocator, chunk: ToolCallDelt
 
 // ============================================================================
 
-/// Send content chunk during streaming response
-///
-/// SSE event name (the value of `event:` in the wire format):
-/// - llm:      llm_chunk
+/// Send content chunk during streaming response SSE event name (the value of
+/// `event:` in the wire format): - llm: llm_chunk
 pub fn sendStreamChunkContent(
     allocator: std.mem.Allocator,
     session_id: []const u8,
@@ -646,10 +563,8 @@ pub fn sendStreamChunkContent(
     event_bus.emit(SseEvent, "llm", event);
 }
 
-/// Send reasoning chunk during streaming response
-///
-/// SSE event name (the value of `event:` in the wire format):
-/// - llm:      llm_chunk
+/// Send reasoning chunk during streaming response SSE event name (the value
+/// of `event:` in the wire format): - llm: llm_chunk
 pub fn sendStreamChunkReasoning(
     allocator: std.mem.Allocator,
     session_id: []const u8,
@@ -675,10 +590,8 @@ pub fn sendStreamChunkReasoning(
     event_bus.emit(SseEvent, "llm", event);
 }
 
-/// Send final chunk with usage information during streaming
-///
-/// SSE event name (the value of `event:` in the wire format):
-/// - llm:      llm_chunk
+/// Send final chunk with usage information during streaming SSE event name
+/// (the value of `event:` in the wire format): - llm: llm_chunk
 pub fn sendStreamChunkFinal(
     allocator: std.mem.Allocator,
     session_id: []const u8,
@@ -704,10 +617,8 @@ pub fn sendStreamChunkFinal(
     event_bus.emit(SseEvent, "llm", event);
 }
 
-/// Send tool call delta chunk during streaming response
-///
-/// SSE event name (the value of `event:` in the wire format):
-/// - llm:      llm_chunk
+/// Send tool call delta chunk during streaming response SSE event name (the
+/// value of `event:` in the wire format): - llm: llm_chunk
 pub fn sendStreamToolCallDelta(
     allocator: std.mem.Allocator,
     session_id: []const u8,
@@ -734,13 +645,8 @@ pub fn sendStreamToolCallDelta(
 }
 
 // ─── Inline tests (formerly on_event_sent_sanitize_test.zig) ──────────────
-// Regression test for the "bash tool returns corrupt value" bug where
-// tool result content containing invalid UTF-8 bytes (e.g. \x89, \x93 from
-// a test binary that prints raw bytes) was serialized as an ARRAY of bytes
-// instead of a JSON string. Zig 0.16's std.json.fmt emits invalid-UTF-8
-// strings as arrays. The fix is in onEventSendLLMHistory which calls
-// helpers.sanitize.sanitizeUtf8 on both input.content and
-// input.reasoning_content before passing them to the payload struct.
+// Regression test for the "bash tool returns corrupt value" bug where tool
+// result content containing invalid UTF-8 bytes (e.g. \x89, \x93 from a test
 
 const testing_oes = std.testing;
 const pabrikcore_oes = tree1_mod;
@@ -839,12 +745,8 @@ test "SseEventLLMHistory emits is_input/is_output as JSON booleans" {
 }
 
 // ============================================================================
-// llm_chunk payload tests (2026-08-23 llm-chunk-streaming)
-//
-// The frontend's ChatView gate (`event.session_id !== sid`) drops every
-// chunk event whose JSON payload lacks a session_id field. These tests
-// lock in that field on all four chunk payload shapes.
-// ============================================================================
+// llm_chunk payload tests (2026-08-23 llm-chunk-streaming) The frontend's
+// ChatView gate (`event.session_id !== sid`) drops every chunk event whose
 
 test "serializeContentChunk includes session_id + type chunk" {
     const data = try serializeContentChunk(testing_oes.allocator, .{

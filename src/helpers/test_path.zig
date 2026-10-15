@@ -3,37 +3,8 @@
 
 const std = @import("std");
 
-/// `<cwd>/<name>`, written into `buf`; the result borrows `buf`.
-///
-/// ## Why this exists
-///
-/// The agent tools reject a relative `path` on Windows. See
-/// `invalidPathReason` in `path_validate.zig`: on a Windows host a
-/// model-supplied bare name (`"notes.txt"`), a drive-relative `C:notes`,
-/// or anything else that is not an absolute Windows name reaches
-/// `NtCreateFile` as a malformed NT name, which std's Io backend turns
-/// into `ntstatusBug()` — a panic that kills the whole process, not a
-/// failed tool call. That hardening is deliberate; the tools keep it.
-///
-/// The TESTS were written for POSIX, where `std.Io.Dir.cwd()` resolves a
-/// bare name implicitly, so `write_file` / `text_replace` / `glob` /
-/// `present_files` unit tests passed inputs like `"test_wf_basic.txt"`.
-/// Those pass on Linux and are correctly refused on Windows — which was
-/// invisible for years because the Windows test cell did not compile.
-///
-/// ## Lifetime
-///
-/// `buf` must outlive the returned slice. That is a compile-time
-/// property in Zig (the return is a plain borrow of the parameter, not a
-/// heap allocation), so a test cannot silently dangle its path. Declare
-/// the buffer immediately above the call, as every call site does:
-///
-///     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-///     const path = try absPath(&path_buf, "test_wf_basic.txt");
-///
-/// `name` is joined with the platform separator. A nested name such as
-/// `"docs/a/b.txt"` keeps its inner `/`, which both `std.fs` and
-/// `invalidPathReason` accept on Windows.
+/// `<cwd>/<name>`, written into `buf`; the result borrows `buf`. ## Why this
+/// exists The agent tools reject a relative `path` on Windows.
 pub fn absPath(buf: []u8, name: []const u8) ![]const u8 {
     var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
     // libc `getcwd` needs no `std.Io` handle, which is what keeps the
@@ -42,36 +13,22 @@ pub fn absPath(buf: []u8, name: []const u8) ![]const u8 {
     const raw = std.c.getcwd(cwd_buf[0..].ptr, cwd_buf.len) orelse
         return error.CwdUnavailable;
     const cwd = std.mem.sliceTo(@as([*:0]const u8, @ptrCast(raw)), 0);
-    // `fmtJoin` is the buffer-writing form of `std.fs.path.join` (whose
-    // Zig 0.16 signature takes an Allocator, not a buffer): it inserts
-    // the native separator and collapses a duplicated one, so a cwd that
-    // already ends in a separator cannot produce `//`.
+    // `fmtJoin` is the buffer-writing form of `std.fs.path.join` (whose Zig
+    // 0.16 signature takes an Allocator, not a buffer): it inserts the native
+    // separator and collapses a duplicated one, so a cwd that already ends in
     return std.fmt.bufPrint(buf, "{f}", .{std.fs.path.fmtJoin(&.{ cwd, name })});
 }
 
 /// Both path separators, on every platform — mirrors `isSep` in
-/// `path_validate.zig`. Duplicated rather than imported so this file
-/// stays std-only and therefore compiles standalone for a cross-target
-/// check.
+/// `path_validate.zig`. Duplicated rather than imported so this file stays
+/// std-only and therefore compiles standalone for a cross-target check.
 fn isSep(c: u8) bool {
     return c == '\\' or c == '/';
 }
 
-/// The subset of `invalidPathReason`'s Windows branch that a produced
-/// test path can plausibly violate, evaluated with the
-/// `builtin.os.tag != .windows` gate REMOVED so the assertions below run
-/// on every host.
-///
-/// `invalidPathReason` itself cannot serve this purpose: on POSIX it
-/// returns null for anything the OS accepts, so asserting on it would
-/// prove nothing about a path a Windows runner has to accept. Keeping the
-/// rules enumerated here (rather than importing the function) is the
-/// point — a change to the real validator that tightens one of these
-/// rules should show up as a failure below or in its own test file.
-///
-/// Extended-length (`\\?\`) and UNC (`\\server\share`) shapes are not
-/// modelled: `absPath` never produces either, and the paths under test
-/// come from `getcwd` plus a plain name.
+/// The subset of `invalidPathReason`'s Windows branch that a produced test
+/// path can plausibly violate, evaluated with the `builtin.os.tag !=
+/// .windows` gate REMOVED so the assertions below run on every host.
 fn reasonWindowsWouldReject(path: []const u8) ?[]const u8 {
     if (path.len == 0) return "path cannot be empty";
     if (path.len > 32767) return "path too long";
@@ -131,11 +88,7 @@ fn expectAcceptedByWindowsRule(path: []const u8) !void {
 }
 
 // ===========================================================================
-// Tests — every one of these runs on EVERY platform (no os.tag gate). That
-// is what lets the Windows verdict be reasoned about without a Windows
-// runner: `std.fs.path.isAbsoluteWindows` is a pure string function, so the
-// property under test is checkable on Linux.
-// ===========================================================================
+// Tests — every one of these runs on EVERY platform (no os.tag gate).
 
 test "absPath: produces a path the Windows branch of invalidPathReason accepts" {
     var buf: [std.fs.max_path_bytes]u8 = undefined;

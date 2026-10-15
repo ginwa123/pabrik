@@ -1,40 +1,10 @@
 //! Skill BODY helpers: frontmatter parsing and bundle materialisation.
-//!
-//! What used to live here — and what no longer does
-//! ─────────────────────────────────────────────────
-//! This file used to be the skills STORAGE layer: it resolved
-//! `~/.config/pabrik/skills/` vs `<cwd>/.pabrik/skills/`, walked those
-//! directories looking for `<skill>/SKILL.MD`, and returned `SkillInfo`
-//! rows carrying a `path`. All of that is gone. Skills are rows in the
-//! `skills` table now (Migration 101), read through
-//! `pabrikcore.skills_store`, and a skill's identity is `(workspace_id,
-//! name)` rather than a pathname. "Which directory did this come from?"
-//! no longer has an answer to give, so every function that existed only to
-//! produce one is deleted rather than left behind as dead glue.
-//!
-//! What remains is the part that has nothing to do with storage:
-//!
-//!   * `parseYamlFrontmatter` — still called by the three HTTP handlers
-//!     and by the importer, so its signature and its
-//!     `ParsedFrontmatter` struct are unchanged.
-//!   * `materializeAssetDir` — writes a bundle's `skill_assets` rows back
-//!     out as real files so the relative paths a skill body refers to
-//!     (`scripts/convert_pdf_to_images.py`) actually resolve when the
-//!     model follows them.
-//!
-//! The materialised directory is a MATERIALISATION, not a location of
-//! record: it is created per `use_skill` call and may be reaped. The row
-//! is the truth.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const skills_store = pabrikcore.skills_store;
 
-/// Root for materialised asset directories. `/tmp` is hardcoded for the
-/// same reason `run_skill_eval.zig`'s `makeTmpRoot` hardcodes it: these
-/// are short-lived scratch trees that must survive no reboot and must not
-/// sit inside a workspace (where an agent's `present_files` sweep would
-/// find them and a `deleteTree` would take user data with them).
+/// Root for materialised asset directories.
 const TMP_ROOT = "/tmp";
 
 /// Parsed YAML frontmatter from a skill file
@@ -43,16 +13,9 @@ pub const ParsedFrontmatter = struct {
     description: []const u8,
 };
 
-/// Parse YAML frontmatter from skill file content
-/// Expected format:
-/// ---
-/// name: skill-name
-/// description: "Skill description text"
-/// ---
-/// # Skill content follows...
-///
-/// Returns allocated ParsedFrontmatter with owned name and description strings
-/// Caller owns the returned memory and must free name and description.
+/// Parse YAML frontmatter from skill file content Expected format: --- name:
+/// skill-name description: "Skill description text" --- # Skill content
+/// follows...
 pub fn parseYamlFrontmatter(allocator: std.mem.Allocator, content: []const u8) ?ParsedFrontmatter {
     // Find the first --- marker
     const first_newline = std.mem.indexOf(u8, content, "\n") orelse return null;
@@ -110,11 +73,7 @@ pub fn parseYamlFrontmatter(allocator: std.mem.Allocator, content: []const u8) ?
 // Asset materialisation
 // ============================================================================
 
-/// Why a bundle could not be written out. Every arm is a REFUSAL: nothing
-/// here degrades to "skip that file and load the rest", because a skill
-/// body that says "run scripts/convert.py" and then silently has no
-/// scripts/convert.py is worse than a failed load — the model reports a
-/// script it never saw.
+/// Why a bundle could not be written out.
 pub const MaterializeError = error{
     /// The skill has no companion files. A skill with no assets must
     /// return `asset_dir: null`, not an empty directory.
@@ -131,23 +90,6 @@ pub const MaterializeError = error{
 };
 
 /// True when `rel_path` is safe to join onto a directory we just created.
-///
-/// Three shapes are refused outright, and refused as an ERROR rather than
-/// skipped:
-///
-///   * `..` anywhere — `../../etc/cron.d/x` and `scripts/../../escape`
-///     both leave the directory. The substring test is deliberately
-///     blunter than a path-component walk: it also rejects the legal-but-
-///     pointless `a..b`, which is the right trade for a guard that runs on
-///     untrusted input.
-///   * an absolute prefix — a leading `/`, or an NT drive prefix like
-///     `C:payload`, which `std.fs.path.join` would happily accept and
-///     resolve against the drive root.
-///   * a backslash — on Windows a backslash IS the separator, so a path
-///     that is a safe single-component string on Linux is a traversal on
-///     Windows. The materialised tree is written on whichever host the
-///     server runs, and a guard that only holds on one of them is not a
-///     guard.
 pub fn isSafeRelPath(rel_path: []const u8) bool {
     if (rel_path.len == 0) return false;
     if (std.mem.indexOf(u8, rel_path, "..") != null) return false;
@@ -160,11 +102,6 @@ pub fn isSafeRelPath(rel_path: []const u8) bool {
 
 /// Create a fresh, uniquely-named directory under `TMP_ROOT`. Returns an
 /// owned path the caller frees with `allocator.free`.
-///
-/// Uniqueness comes from a nanosecond stamp plus an attempt counter,
-/// mirroring `run_skill_eval.zig`'s `makeTmpRoot` — the two materialise
-/// short-lived trees per agent turn and must never collide, or one
-/// bundle's files would show up inside another's.
 fn createUniqueAssetDir(
     io: std.Io,
     alloc: std.mem.Allocator,
@@ -193,26 +130,8 @@ fn createUniqueAssetDir(
     return error.CannotCreateTempDir;
 }
 
-/// Write every companion file of one skill into a fresh directory and
-/// return it.
-///
-/// `rel_path` is honoured verbatim because a skill BODY refers to its
-/// companions by that exact string — `scripts/run_eval.py` in
-/// `skill-creator`, `scripts/convert_pdf_to_images.py` in `pdf` — so
-/// re-rooting, flattening or renames would all silently break the skill.
-/// Parent directories are created on demand; the store hands them back
-/// sorted by `rel_path`, so the write order is stable.
-///
-/// The returned `dir` is absolute and owned by the caller, who frees it
-/// with `allocator.free` (and owns the tree: `deleteTree` it when done).
-/// `file_count` is the number of files actually written, which equals
-/// `assets.len` — there is no partial-success path.
-///
-/// Refuses, never skips: `error.NoAssets` for an empty bundle,
-/// `error.InvalidSkillName` for a name that is not a single path-safe
-/// token, `error.UnsafeAssetPath` for any `rel_path` that would escape the
-/// directory. Validate BEFORE creating the directory so a hostile bundle
-/// cannot make the tool litter `/tmp` before it is rejected.
+/// Write every companion file of one skill into a fresh directory and return
+/// it.
 pub fn materializeAssetDir(
     io: std.Io,
     alloc: std.mem.Allocator,
@@ -251,14 +170,6 @@ pub fn materializeAssetDir(
 // ============================================================================
 // skills.zig — inline tests
 // ============================================================================
-//
-// The three tests this file used to carry were all about DIRECTORY
-// RESOLUTION (`parse_skill` picking the session repo over the process
-// cwd, the process-cwd resolvers agreeing with each other). There is no
-// directory resolution any more, so there was nothing to convert — they
-// are replaced by tests for the one thing here that has a contract:
-// materialising a bundle, and refusing to materialise one that would
-// escape the directory it was given.
 
 const testing = std.testing;
 
@@ -354,10 +265,9 @@ test "materializeAssetDir refuses a name that is not a single path-safe token" {
     const alloc = testing.allocator;
     const io = testing.io;
 
-    // `skill_name` is a path SEGMENT of the materialisation directory, so
-    // the same guard the store's `isValidSkillName` applies to the row key
-    // has to apply here. This is the traversal the old `remove_skill`
-    // `deleteTree` guard used to exist for.
+    // `skill_name` is a path SEGMENT of the materialisation directory, so the
+    // same guard the store's `isValidSkillName` applies to the row key has to
+    // apply here.
     try testing.expectError(error.InvalidSkillName, materializeAssetDir(io, alloc, "..", &.{
         fakeAsset("a.py", "x"),
     }));

@@ -1,66 +1,5 @@
-// Functional e2e for the terminal duplex WebSocket.
-//
-// Zig port of `tests/functional/terminal_ws_test.py` (same test names,
-// same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional e2e for the terminal duplex WebSocket.
-//
-//   Replays the EXACT wire bytes the frontend sends (no WS library — raw
-//   socket + RFC 6455 framing, so the handshake, masking, and opcodes are
-//   all exercised):
-//
-//     * GET /api/terminal/ws?id=<id> with Upgrade: websocket
-//       -> 101 Switching Protocols (accept key verified)
-//     * C→S masked text {"type":"input","data":"echo <MARK>\n"}
-//     * S→C binary PTY bytes polled until <MARK> arrives
-//     * C→S masked close -> server closes cleanly
-//
-//   Plus: unknown ?id= is rejected (close frame or EOF, no PTY bytes),
-//   and the REST output endpoint keeps working alongside the socket
-//   (fallback path from Phase 2 is untouched).
-//   """
-//
-// ─── WHY THE WEBSOCKET IS HAND-ROLLED ───────────────────────────────────────
-// Zig 0.16's stdlib has NO WebSocket client: `std.http.Client` cannot
-// upgrade, and `grep -ril websocket std/` finds nothing outside
-// `std.Build`'s own HTTP server. So the port does what the Python did
-// and speaks RFC 6455 by hand over a raw TCP stream —
-// `Io.net.IpAddress.connect(...)` returns an `Io.net.Stream`, whose
-// `Stream.reader(io, buffer)` / `Stream.writer(io, buffer)` expose the
-// same `Io.Reader` / `Io.Writer` interfaces the SSE suite uses. Every
-// byte on the wire is therefore the byte the Python sent: the same
-// handshake request line, the same header set, the same 4-byte mask on
-// every client frame (a server MUST reject unmasked client frames, so
-// this is the part most worth exercising), the same opcodes.
-//
-// Three Zig-specific hazards this file is written around:
-//
-//  1. `Io.Reader.take(n)` REBASES into a fixed buffer and ASSERTS when
-//     `n` exceeds it. So a frame is read length-first: two header
-//     bytes, then the extended-length bytes, and only then the payload
-//     — with an explicit capacity check, rather than "read whatever
-//     arrives" as `readVec` allows. The server caps PTY frames at
-//     16 KiB (`out_frame_chunk` in terminal_ws.zig) and the reader
-//     buffer is 128 KiB, so the check never fires in practice; it is
-//     there so a hostile or broken length fails loudly.
-//
-//  2. A blocking socket read cannot be interrupted from another thread
-//     in Zig — there is no `settimeout`. The only way to make one
-//     returnable is to `shutdown(SHUT_RD)` it, which makes the pending
-//     `readv` return 0. `ReadDeadline` is that watchdog: Python's
-//     `sock.settimeout(...)` / `read_frame(deadline_s=...)`, expressed
-//     as a thread that sleeps until the deadline and then shuts the
-//     read side down. It is joined on every path, before the socket is
-//     closed.
-//
-//  3. The `Sec-WebSocket-Key` and every client frame mask must be
-//     UNPREDICTABLE (RFC 6455 §5.3: the mask exists to defeat cache
-//     poisoning by an intermediary). A counter would satisfy the
-//     format and defeat the purpose, so both come from a PRNG seeded
-//     from the OS clock and the stack address — the same seeding the
-//     harness's own `entropyPrng` uses.
+// Functional e2e for the terminal duplex WebSocket. Zig port of
+// `tests/functional/terminal_ws_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -89,13 +28,8 @@ fn nowMs() i64 {
     return Io.Timestamp.now(io, .awake).toMilliseconds();
 }
 
-/// A file-local PRNG for the two places a test needs unpredictable
-/// bytes: the handshake key and the per-frame mask.
-///
-/// NOT `std.crypto.random` — Zig 0.16 removed it, and this package
-/// deliberately has no dependency on `pabrikcore`'s `helpers/random`.
-/// Only the test thread ever calls into it (the watchdog thread does
-/// nothing but sleep and shutdown), so no synchronisation is needed.
+/// A file-local PRNG for the two places a test needs unpredictable bytes: the
+/// handshake key and the per-frame mask.
 var prng: std.Random.DefaultPrng = undefined;
 var prng_ready = false;
 
@@ -109,36 +43,8 @@ fn randU64() u64 {
     return prng.random().int(u64);
 }
 
-/// A shutdown watchdog for ONE blocking read.
-///
-/// Python expressed the same budget with `sock.settimeout(remaining)`.
-/// Zig has no socket timeout on a connected `Stream`, so a thread
-/// sleeps in 20ms slices until the deadline and then `shutdown`s the
-/// read side, which unblocks the pending `readv` with EOF. `disarm`
-/// MUST be called before the socket is closed, and it joins — an
-/// unjoined thread would outlive the socket and outlive the
-/// DebugAllocator.
-///
-/// ─── WHY `start` RETURNS A POINTER ───────────────────────────────────────
-/// The obvious spelling —
-///
-///     fn start(...) !ReadDeadline {
-///         var self: ReadDeadline = .{ .stop = .init(false), ... };
-///         self.thread = try std.Thread.spawn(.{}, watch, .{ stream, &self.stop, ms });
-///         return self;
-///     }
-///
-/// — hands the thread the address of the CALLEE FRAME's `stop` and then
-/// returns a COPY. `disarm` writes the CALLER's copy, which the thread
-/// never reads, so the watchdog always burns its whole budget and fires
-/// `shutdown(SHUT_RD)` even when the read it was guarding finished in a
-/// millisecond. Two things then go wrong at once: `disarm`'s `join()`
-/// blocks for the full budget on every single frame, and — the part
-/// that made this look like a server bug — the socket's read side is
-/// shut down underneath a live connection, so the echoed PTY bytes can
-/// never arrive and the marker assertion fails with a healthy server
-/// sitting right there. `gpa.create` makes the address the thread polls
-/// and the address `disarm` writes the SAME one.
+/// A shutdown watchdog for ONE blocking read. Python expressed the same
+/// budget with `sock.settimeout(remaining)`.
 const ReadDeadline = struct {
     stop: std.atomic.Value(bool),
     thread: std.Thread,
@@ -147,10 +53,9 @@ const ReadDeadline = struct {
     fn start(stream: *const Io.net.Stream, ms: i64) !*ReadDeadline {
         const self = try gpa.create(ReadDeadline);
         errdefer gpa.destroy(self);
-        // `gpa.create` does not run field defaults, so `stop` is
-        // assigned explicitly — an uninitialised atomic the watchdog
-        // happens to read as "already fired" would shut the socket down
-        // on its first poll.
+        // `gpa.create` does not run field defaults, so `stop` is assigned
+        // explicitly — an uninitialised atomic the watchdog happens to read
+        // as "already fired" would shut the socket down on its first poll.
         self.* = .{ .stop = .init(false), .thread = undefined };
         self.thread = std.Thread.spawn(.{}, watch, .{ stream, &self.stop, ms }) catch |err| {
             gpa.destroy(self);
@@ -165,10 +70,9 @@ const ReadDeadline = struct {
             if (stop.load(.acquire)) return;
             Io.sleep(io, .fromMilliseconds(20), .awake) catch return;
         }
-        // Re-check: the read may have completed in the same window
-        // this loop last polled, and shutting down a socket that is
-        // about to be read again would turn a clean EOF into an error
-        // the caller mistakes for a protocol failure.
+        // Re-check: the read may have completed in the same window this loop
+        // last polled, and shutting down a socket that is about to be read
+        // again would turn a clean EOF into an error the caller mistakes for
         if (stop.load(.acquire)) return;
         stream.shutdown(io, .recv) catch {};
     }
@@ -181,29 +85,9 @@ const ReadDeadline = struct {
     }
 };
 
-/// A blocking raw-socket WebSocket client (test-only, IPv4).
-///
-/// The Python version was a class over `socket.create_connection` with a
-/// `self.buf` leftover buffer. There is no leftover buffer here
-/// because `Stream.reader` owns the unconsumed bytes: reading the
-/// handshake with `takeByte()` leaves any frame bytes that arrived in
-/// the same TCP segment sitting in the reader's buffer, where the very
-/// next `take()` picks them up. That is the same behaviour, with the
-/// bookkeeping done by the reader instead of by `self.buf`.
-///
-/// ─── WHY `connect` RETURNS A POINTER ─────────────────────────────────────
-/// `Stream.reader(stream, io, buffer)` and `Stream.writer(...)` store
-/// the `buffer` SLICE — i.e. a raw address — inside the returned
-/// `Stream.Reader` / `Stream.Writer`. So a `WsConn` built in a callee
-/// frame and returned BY VALUE has readers/writers pointing into the
-/// DEAD callee's `rd_buf` / `wr_buf`. The handshake appears to work
-/// (the bytes happen to still be on the stack) and then every write
-/// goes into memory nobody reads and every read comes from a buffer
-/// nobody fills: the client sends its masked input into the void and
-/// the marker the server echoes back never arrives. `gpa.create` gives
-/// every field a stable address for the whole life of the socket —
-/// the same reason `background_process_sse_test.zig` heap-allocates its
-/// `SseStream`.
+/// A blocking raw-socket WebSocket client (test-only, IPv4). The Python
+/// version was a class over `socket.create_connection` with a `self.buf`
+/// leftover buffer.
 const WsConn = struct {
     stream: Io.net.Stream,
     rd_buf: [rd_buf_len]u8 = undefined,
@@ -228,19 +112,6 @@ const WsConn = struct {
 
         const addr: Io.net.IpAddress = .{ .ip4 = .loopback(port) };
         // `.timeout = .none` IS DELIBERATE, not a dropped feature.
-        //
-        // Python's `socket.create_connection(..., timeout=10)` bounded
-        // the connect; Zig 0.16's `Io.net.IpAddress.connect` accepts a
-        // timeout but `Io.Threaded`'s POSIX implementation does NOT:
-        // `netConnectIpPosix` starts with
-        // `if (options.timeout != .none) @panic("TODO implement ...")`.
-        // So passing one crashes the whole test binary. The bound is
-        // instead provided by the environment — the connect target is
-        // the loopback listener the harness just booted and polled
-        // `/health` on, so a connect to it either succeeds immediately
-        // or the process is already gone. Every BLOCKING operation the
-        // Python bounded (the handshake read, each frame read) is
-        // bounded by `ReadDeadline` instead.
         self.stream = try addr.connect(io, .{ .mode = .stream });
         errdefer self.stream.close(io);
 
@@ -291,13 +162,9 @@ const WsConn = struct {
         gpa2.destroy(self);
     }
 
-    /// The status line + headers of the upgrade response.
-    ///
-    /// Python's `read_http_response` returned `(status_line, headers)`
-    /// with header NAMES lowercased. Both are returned here as OWNED
-    /// bytes; `headers` is the raw head, because the only header read
-    /// here is `sec-websocket-accept` and one linear scan is cheaper
-    /// and clearer than building a map to read one key.
+    /// The status line + headers of the upgrade response. Python's
+    /// `read_http_response` returned `(status_line, headers)` with header
+    /// NAMES lowercased.
     fn readHttpResponse(self: *WsConn, deadline_ms: i64) !HttpHead {
         var guard = try ReadDeadline.start(&self.stream, deadline_ms);
         defer guard.disarm();
@@ -352,12 +219,6 @@ const WsConn = struct {
     };
 
     /// Read the next frame, giving up after `deadline_ms`.
-    ///
-    /// Server frames are unmasked per RFC 6455 §5.1, but a mask bit is
-    /// honoured anyway rather than rejected: the Python ignored the bit
-    /// entirely, and a client that trusted that would silently read
-    /// garbage. Unmasking costs four lines and turns a wire bug into a
-    /// readable result.
     fn readFrame(self: *WsConn, deadline_ms: i64) !Frame {
         var guard = try ReadDeadline.start(&self.stream, deadline_ms);
         defer guard.disarm();
@@ -418,12 +279,6 @@ const WsConn = struct {
 
     /// Send one MASKED client frame. `fin` is always 1 — the Python's
     /// `send_text` / `send_close` did not fragment either.
-    ///
-    /// Payload lengths above 125 are rejected rather than mis-encoded:
-    /// the Python's `bytes([0x81, 0x80 | len(payload)])` truncated the
-    /// length into the header without switching to the extended form,
-    /// so it was already incapable of sending a frame this suite needs.
-    /// Both payloads here are under 125 bytes.
     fn sendFrame(self: *WsConn, opcode: u8, payload: []const u8) !void {
         if (payload.len > 125) {
             std.debug.print("client frame of {d} bytes exceeds the 125-byte single-byte length form\n", .{payload.len});
@@ -507,12 +362,6 @@ fn expectedAccept(key: []const u8) ![]u8 {
 
 /// `_create_session` — `POST /api/terminal/sessions`, return the OWNED
 /// terminal id.
-///
-/// `cwd` is the harness HOME (absolute on every platform and certain to
-/// exist) and `shell` is `/bin/sh` exactly as the Python sent it — the
-/// `echo MARK` round-trip below needs a POSIX shell. The suite is
-/// POSIX-only by construction: the WS handler has no PTY on Windows
-/// (`terminal_session.is_pty_os`).
 fn createSession(h: *Harness) ![]u8 {
     const body = try std.fmt.allocPrint(gpa, "{{\"cwd\":\"{s}\",\"shell\":\"/bin/sh\"}}", .{h.temp_dir});
     defer gpa.free(body);
@@ -528,15 +377,9 @@ fn createSession(h: *Harness) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// `_collect_until` — read frames until a binary payload contains
-/// `marker`. Returns the accumulated PTY bytes (OWNED), or null when
-/// the deadline passed / the stream closed first.
-///
-/// The Python returned `(seen, exit_event)`; `exit_event` was never
-/// asserted on, so only the bytes are carried over. `exit_event`
-/// existed to surface the server's `{"type":"exit","exit_code":N}`
-/// text frame in a diagnostic, which `readFailure`'s message plus the
-/// `seen` dump below already does.
+/// `_collect_until` — read frames until a binary payload contains `marker`.
+/// Returns the accumulated PTY bytes (OWNED), or null when the deadline
+/// passed / the stream closed first.
 fn collectUntil(ws: *WsConn, marker: []const u8, deadline_ms: i64) !?[]u8 {
     var seen: std.ArrayList(u8) = .empty;
     errdefer seen.deinit(gpa);
@@ -545,11 +388,8 @@ fn collectUntil(ws: *WsConn, marker: []const u8, deadline_ms: i64) !?[]u8 {
     while (nowMs() < deadline) {
         const remaining = deadline - nowMs();
         var frame = ws.readFrame(@max(remaining, 1_000)) catch |err| {
-            // The Python let a timeout/EOF out of the loop and then
-            // failed the marker assertion with `seen`. `errdefer` does
-            // NOT cover this: `return null` is a SUCCESS return, so the
-            // buffer has to be released explicitly or the suite leaks it
-            // on every failure.
+            // The Python let a timeout/EOF out of the loop and then failed
+            // the marker assertion with `seen`.
             std.debug.print("stopped collecting: {s}; seen {d} bytes so far\n", .{ @errorName(err), seen.items.len });
             seen.deinit(gpa);
             return null;
@@ -688,10 +528,7 @@ test "ws_unknown_id_rejected" {
     }
 
     // Python: `sock.settimeout(5.0)` then `read_frame(deadline_s=5.0)`,
-    // accepting EITHER a close frame OR a timeout/EOF — but never PTY
-    // bytes. Both acceptable outcomes are preserved here: the close
-    // frame is the strong assertion, and a read that fails because the
-    // watchdog fired counts as the weak one.
+    // accepting EITHER a close frame OR a timeout/EOF — but never PTY bytes.
     if (ws.readFrame(5_000)) |frame| {
         var f = frame;
         defer f.deinit();

@@ -3,16 +3,10 @@ const http_response = @import("http_response.zig");
 const pabrik_core = @import("pabrikcore");
 const gserverz = pabrik_core.gserverz;
 
-/// Domain error set for the branch-list use case. The handler maps
-/// `NotARepository` to HTTP 404; the use case only propagates the
-/// unexpected error union (alloc failures) for the GinwaServer to turn
-/// into a generic 500.
+/// Domain error set for the branch-list use case.
 const BranchListError = error{NotARepository};
 
-/// One branch row, HTTP-layer free. `name` is the short ref name —
-/// exactly the string the agent passes as `set_git_worktree`'s `base`
-/// argument and exactly what the kanban dialog bakes into the
-/// `Base:` line of the create-task message.
+/// One branch row, HTTP-layer free.
 pub const BranchEntry = struct {
     name: []const u8,
     is_remote: bool,
@@ -33,12 +27,8 @@ pub const RawRef = struct {
     is_remote: bool,
 };
 
-/// Validate the `path` query param before it is handed to `git -C`.
-/// Pure — no IO. Returns null on success, or an error message.
-///
-/// The path reaches `git` as an argv element (never as a shell string),
-/// so this is defence against a leading `-` being read as a flag, and
-/// against control characters polluting the process arguments.
+/// Validate the `path` query param before it is handed to `git -C`. Pure — no
+/// IO. Returns null on success, or an error message.
 pub fn validateRepoPath(path: []const u8) ?[]const u8 {
     if (path.len == 0) return "path is required";
     if (path.len > 4096) return "path exceeds 4096 characters";
@@ -52,22 +42,8 @@ pub fn validateRepoPath(path: []const u8) ?[]const u8 {
     return null;
 }
 
-/// Parse the tab-separated
-/// `%(refname)\t%(refname:short)\t%(symref)` output of
-/// `git for-each-ref refs/heads refs/remotes` into short-name rows.
-///
-/// Symbolic refs are dropped by two independent guards, because their
-/// short name (`origin`) is not a usable base branch:
-///   - a non-empty `%(symref)` field (the real git output for
-///     `refs/remotes/origin/HEAD` is `refs/remotes/origin/main`), and
-///   - a full refname ending in `/HEAD` (defensive: covers a build of
-///     git that reports the symref field as whitespace).
-/// Blank lines and malformed rows (fewer than two tab fields, empty
-/// short name) are skipped too.
-///
-/// `is_remote` is derived from the FULL refname living under
-/// `refs/remotes/`. Pure — no IO. The caller owns the returned slice and
-/// the duplicated names (release with `freeRawRefs`).
+/// Parse the tab-separated `%(refname)\t%(refname:short)\t%(symref)` output
+/// of `git for-each-ref refs/heads refs/remotes` into short-name rows.
 pub fn parseRefRows(allocator: std.mem.Allocator, raw: []const u8) ![]RawRef {
     var out: std.ArrayList(RawRef) = .empty;
     errdefer {
@@ -103,10 +79,7 @@ pub fn freeRawRefs(allocator: std.mem.Allocator, refs: []const RawRef) void {
     allocator.free(refs);
 }
 
-/// Pick the default base ref name from parsed rows. Prefers
-/// `origin/<main|master|develop>`, then a local `<main|master|develop>`,
-/// then the first remote-tracking ref, then "" when there are no rows.
-/// Pure — the returned slice borrows from `refs`.
+/// Pick the default base ref name from parsed rows.
 pub fn pickDefaultRef(refs: []const RawRef) []const u8 {
     const preferred = [_][]const u8{ "main", "master", "develop" };
     for (preferred) |name| {
@@ -127,12 +100,8 @@ pub fn pickDefaultRef(refs: []const RawRef) []const u8 {
     return "";
 }
 
-/// Stable ordering for the picker: `default_name` first (when present),
-/// then every remote-tracking ref, then every local branch. Within each
-/// group the input order is preserved — `git for-each-ref` emits
-/// refnames in lexicographic order, so both groups come out alphabetical
-/// without a comparator. Pure — the returned structs borrow the names
-/// owned by `refs`; the caller frees only the returned slice.
+/// Stable ordering for the picker: `default_name` first (when present), then
+/// every remote-tracking ref, then every local branch.
 pub fn orderRefs(
     allocator: std.mem.Allocator,
     refs: []const RawRef,
@@ -162,15 +131,8 @@ pub fn orderRefs(
     return out.toOwnedSlice(allocator);
 }
 
-/// Use case — ask git for the repo's branches at `path`.
-///
-/// Takes primitives, returns a domain struct. No HTTP types. Returns
-/// `error.NotARepository` when `path` is not inside a git repo (a bare
-/// repo counts as one: `rev-parse --git-dir` prints "." and exits 0).
-///
-/// All allocations come from the per-request arena the handler passes
-/// in; this function never frees (see the
-/// custom-http-server-per-request-arena memory).
+/// Use case — ask git for the repo's branches at `path`. Takes primitives,
+/// returns a domain struct. No HTTP types.
 fn listBranchesUseCase(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -220,19 +182,6 @@ fn listBranchesUseCase(
 }
 
 /// HTTP handler for `GET /api/git/branches?path=<repo>`.
-///
-/// Response 200:
-/// `{ "is_git_repo": true, "current_branch": "main", "branches": [
-///      { "name": "origin/main", "is_remote": true,
-///        "is_current": false, "is_default": true }, ... ] }`
-///
-/// 400 when `path` is missing or fails `validateRepoPath`; 404 when the
-/// path is not a git repository.
-///
-/// This handler is a thin wrapper: it parses + validates the query
-/// param, delegates to `listBranchesUseCase`, then maps the domain
-/// result to an HTTP response. All git CLI knowledge lives in the use
-/// case.
 pub fn gitBranchesListHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
 
@@ -322,8 +271,7 @@ test "parseRefRows skips blank lines, malformed rows, and whitespace symrefs" {
         "refs/heads/only-one-field\n" ++
         // The /HEAD full-refname guard catches this row even though the
         // symref column is whitespace-only (a build of git that did not
-        // report the symref target would otherwise surface a bogus
-        // branch named `origin`).
+        // report the symref target would otherwise surface a bogus branch
         "refs/remotes/origin/HEAD\torigin\t   \n" ++
         "refs/heads/main\tmain\t\n" ++
         "\n";

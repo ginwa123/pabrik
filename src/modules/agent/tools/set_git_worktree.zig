@@ -11,28 +11,15 @@ const sqlite = pabrik.sqlite;
 /// Input structure for set_git_worktree tool
 pub const SetGitWorktreeInput = struct {
     /// Absolute path to the worktree directory. The directory must NOT
-    /// already exist (git worktree add will create it). The parent
-    /// directory MUST exist. Canonical root (Option A):
-    ///   "/home/you/.config/pabrik/.worktrees/fix-login"
-    /// Ad-hoc paths elsewhere are accepted.
-    /// Required unless `clear=true`. Must be absolute, ≤ 4096 chars,
-    /// contain no `..` segments, no null bytes. The basename must
-    /// match `[A-Za-z0-9._-]{1,100}` (so the auto-derived branch name
-    /// `worktree/<basename>` is legal).
+    /// already exist (git worktree add will create it).
     path: []const u8 = "",
-    /// REQUIRED. Absolute path to the REPOSITORY the worktree is created
-    /// from — the directory `git worktree add` runs in. It is the call's
-    /// working directory, so it is required even though the value is not a
-    /// "target" path: without it the tool would pick the repository from the
-    /// session, which is exactly the guess this parameter removes.
+    /// REQUIRED. Absolute path to the REPOSITORY the worktree is created from
+    /// — the directory `git worktree add` runs in.
     cwd: []const u8 = "",
     /// Optional branch name override. Defaults to `worktree/<basename(path)>`.
     /// Rarely needed — the default is consistent and predictable.
     branch: []const u8 = "",
     /// Optional base ref the new branch is created FROM, e.g. `origin/main`.
-    /// The kanban task note carries it as the `Base:` line right after
-    /// `#Notes UseGitWorktree` / `Path:`. Empty (the default) = branch
-    /// from the repo's current HEAD, which is the pre-existing behavior.
     base: []const u8 = "",
     /// When true, remove the existing worktree binding for this session
     /// AND delete the worktree directory. `path` is ignored when true.
@@ -147,14 +134,8 @@ pub fn validateBasename(name: []const u8) ?[]const u8 {
     return null;
 }
 
-/// Validate an optional `base` ref (e.g. `origin/main`). Empty is valid
-/// and means "branch from the repo's current HEAD". Returns null on
-/// success, or an error message. Pure — no IO.
-///
-/// The ref reaches `git` as an argv element (never as a shell string),
-/// so this is defence against a leading `-` being read as a flag, plus
-/// git's own `check-ref-format` rules for the cases that produce a
-/// confusing raw stderr otherwise.
+/// Validate an optional `base` ref (e.g. `origin/main`). Empty is valid and
+/// means "branch from the repo's current HEAD".
 pub fn validateBaseRef(base: []const u8) ?[]const u8 {
     if (base.len == 0) return null;
     if (base.len > 255) return "base exceeds 255 characters";
@@ -174,12 +155,7 @@ pub fn validateBaseRef(base: []const u8) ?[]const u8 {
     return null;
 }
 
-/// Build the argv for `git worktree add`. With a non-empty `base` the new
-/// branch is created from that ref
-/// (`git worktree add -b <branch> <path> <base>`), otherwise from the
-/// repo's current HEAD (no trailing start-point). Pure — the caller owns
-/// the returned slice; the strings inside it are borrowed from the
-/// arguments.
+/// Build the argv for `git worktree add`.
 pub fn buildWorktreeAddArgv(
     allocator: std.mem.Allocator,
     branch: []const u8,
@@ -203,35 +179,21 @@ pub fn deriveBranchFromPath(
     return try std.fmt.allocPrint(allocator, "worktree/{s}", .{basename});
 }
 
-/// Classified state of a candidate worktree path. Returned by
-/// `classifyPath`. The strings inside `plain_directory`,
-/// `orphaned_worktree`, and `registered_worktree` are owned by the
-/// returned value — the caller is responsible for freeing them
-/// (typically by `classifyPath`'s `defer allocator.free` idiom or
-/// by extracting the slices and using them before the classifyPath
-/// scope exits).
+/// Classified state of a candidate worktree path. Returned by `classifyPath`.
 pub const PathState = union(enum) {
     /// Path does not exist on disk. Git worktree add will create it.
     not_found,
     /// Path exists but has no `.git` file — a plain leftover directory.
     plain_directory: []const u8,
     /// Path exists, has a worktree-shaped `.git` file, and the admin
-    /// directory that file points at is GONE — so git positively cannot
-    /// know about it. The string is the gitdir value with the trailing
-    /// newline removed, e.g. `/abs/repo/.git/worktrees/foo`.
-    ///
-    /// This verdict requires POSITIVE evidence (a missing admin dir).
-    /// It is never inferred from absence in a `git worktree list` that
-    /// may have failed or been truncated — that inference is what told
-    /// a model to `rm -rf` a live worktree on 2026-09-29.
+    /// directory that file points at is GONE — so git positively cannot know
+    /// about it.
     orphaned_worktree: []const u8,
     /// Path exists AND is a registered worktree. All strings are owned
     /// by this struct.
     registered_worktree: RegisteredWorktree,
     /// Path exists and has a `.git` file, but neither registration nor
-    /// orphanhood could be established. Rendering MUST stay
-    /// non-destructive: this directory may well be a live worktree
-    /// holding someone else's uncommitted work.
+    /// orphanhood could be established.
     unverified_worktree: UnverifiedWorktree,
 
     pub const RegisteredWorktree = struct {
@@ -241,10 +203,7 @@ pub const PathState = union(enum) {
         /// Short branch name (branch_ref minus the `refs/heads/` prefix),
         /// or empty string when detached.
         branch: []const u8,
-        /// HEAD commit SHA (40 hex chars). Empty when registration was
-        /// proven from the worktree's admin directory rather than from a
-        /// `git worktree list` entry — git stores the SHA in the ref, not
-        /// in `<admin>/HEAD`, so there is nothing honest to report there.
+        /// HEAD commit SHA (40 hex chars).
         commit: []const u8,
         /// Absolute path of the worktree.
         path: []const u8,
@@ -259,13 +218,8 @@ pub const PathState = union(enum) {
     };
 };
 
-/// Classify the state of `target` relative to the git worktree system
-/// rooted at `repo_root`. Pure (no side effects beyond the returned
-/// allocations). Errors only on allocation failure; on any unexpected
-/// git state, returns a best-effort classification.
-///
-/// `repo_root` must be the absolute path to the git repository root
-/// (NOT a worktree path — git worktree list is run from there).
+/// Classify the state of `target` relative to the git worktree system rooted
+/// at `repo_root`. Pure (no side effects beyond the returned allocations).
 pub fn classifyPath(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -318,13 +272,7 @@ pub fn classifyPath(
         ) };
     };
 
-    // ── 3. A worktree's admin directory IS its registration ─────────────
-    //
-    // `<repo>/.git/worktrees/<name>` is the record git itself reads back
-    // when it answers `git worktree list`. Consulting it directly makes
-    // classification independent of the session's working directory
-    // (which is legitimately "" for a kanban task that never resolved
-    // one — the 2026-09-29 incident) and immune to a truncated listing.
+    // ── 3.
     if (worktreeAdminDir(gitdir)) |admin_dir| {
         const admin_exists = directoryExists(io, admin_dir);
         if (admin_exists == true) {
@@ -394,13 +342,7 @@ fn directoryExists(io: std.Io, path: []const u8) ?bool {
     return true;
 }
 
-/// Parse the payload of a `.git` FILE (as opposed to a `.git`
-/// directory). Git writes `gitdir: <path>\n`; the newline is stripped
-/// here so it cannot leak into an error message — it did on
-/// 2026-09-29, which is how the tool output came to read
-/// "…/skill-evals-impl-1790542117855\n, but is not registered".
-/// Returns null when the contents are not a `gitdir:` pointer.
-/// Pure: the returned slice borrows from `contents`.
+/// Parse the payload of a `.git` FILE (as opposed to a `.git` directory).
 pub fn parseGitdirPointer(contents: []const u8) ?[]const u8 {
     const trimmed = std.mem.trim(u8, contents, " \t\r\n");
     if (!std.mem.startsWith(u8, trimmed, "gitdir: ")) return null;
@@ -411,19 +353,10 @@ pub fn parseGitdirPointer(contents: []const u8) ?[]const u8 {
 
 /// When `gitdir` is the admin directory of a LINKED WORKTREE
 /// (`<repo>/.git/worktrees/<name>`), return that slice. Otherwise null.
-///
-/// The `.git` file of a SUBMODULE is a `gitdir:` pointer too — to
-/// `<super>/.git/modules/<name>` — and that is not a worktree. So the
-/// match is anchored on the literal `.git` + `worktrees` component pair
-/// rather than on "some .git dir with a name after it". Both `/` and
-/// `\` are accepted as separators because git for Windows writes
-/// backslashes into the `.git` file.
-/// Pure: the returned slice borrows from `gitdir`.
 pub fn worktreeAdminDir(gitdir: []const u8) ?[]const u8 {
-    // `splitBackwardsAny` yields an EMPTY leading component for a
-    // trailing separator ("…/worktrees/foo/" → "", "foo", "worktrees"),
-    // so trim the trailing separators first and hand back the trimmed
-    // path — that is also the path `directoryExists` must be given.
+    // `splitBackwardsAny` yields an EMPTY leading component for a trailing
+    // separator ("…/worktrees/foo/" → "", "foo", "worktrees"), so trim the
+    // trailing separators first and hand back the trimmed path — that is also
     var end = gitdir.len;
     while (end > 0 and isPathSep(gitdir[end - 1])) end -= 1;
     if (end == 0) return null;
@@ -438,10 +371,8 @@ pub fn worktreeAdminDir(gitdir: []const u8) ?[]const u8 {
     return gitdir[0..end];
 }
 
-/// Build a `RegisteredWorktree` from a worktree's admin directory,
-/// reading `<admin>/HEAD` for the branch. `commit` is left empty —
-/// git resolves it from the ref, and inventing a value would be a lie.
-/// The caller owns the returned struct's strings.
+/// Build a `RegisteredWorktree` from a worktree's admin directory, reading
+/// `<admin>/HEAD` for the branch.
 fn registeredFromAdminDir(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -491,11 +422,8 @@ fn emptyRegistered(
     };
 }
 
-/// Scan a `git worktree list --porcelain` body for the block whose
-/// `worktree` path denotes `target`. Pure — the caller owns the result.
-/// A short (truncated) body is still parsed faithfully; deciding
-/// whether the body was short enough for absence to mean anything is
-/// `ListHealth`'s job, not this function's.
+/// Scan a `git worktree list --porcelain` body for the block whose `worktree`
+/// path denotes `target`. Pure — the caller owns the result.
 pub fn parseWorktreeList(
     allocator: std.mem.Allocator,
     list_output: []const u8,
@@ -526,33 +454,9 @@ pub fn parseWorktreeList(
     return null;
 }
 
-/// Parse one block of `git worktree list --porcelain` output and return
-/// the registered worktree if its `path` matches `target`. Returns
-/// `null` if the block is for a different worktree.
-///
-/// One block looks like:
-/// ```
-/// worktree /abs/path
-/// HEAD 0123456789abcdef...
-/// branch refs/heads/refactor/x
-/// ```
-/// (The `branch` line is absent for detached HEAD worktrees.)
-/// Do two strings denote the same directory, even though they were written
-/// with different separators or a trailing slash?
-///
-/// git for Windows prints worktree paths with FORWARD slashes
-/// (`worktree C:/Users/me/wt`) while the model, told to pass an absolute
-/// path, sends BACKSLASHES (`C:\Users\me\wt`). A raw `std.mem.eql`
-/// therefore never matches on Windows, so a live, registered worktree
-/// falls through to the `.orphaned_worktree` arm — whose error tells the
-/// model to run `git worktree prune && rm -rf <path>` on the very
-/// directory that holds its in-flight work.
-///
-/// Canonicalization (`realPath`) would be the ideal answer but is not
-/// always available: the not-found arm compares a path that does not exist
-/// yet. So this compares on the normalized form instead — separators
-/// unified, trailing separators dropped, and case ignored on Windows only
-/// (where the filesystem does; on Linux `wt` and `WT` are two directories).
+/// Parse one block of `git worktree list --porcelain` output and return the
+/// registered worktree if its `path` matches `target`. Returns `null` if the
+/// block is for a different worktree.
 pub fn pathsDenoteSameDir(a: []const u8, b: []const u8) bool {
     var i: usize = 0;
     var j: usize = 0;
@@ -604,10 +508,7 @@ pub fn parseAndMatchBlock(
     const wt_path = worktree_path orelse return null;
     // Not `std.mem.eql`: git's separator choice differs from the model's on
     // Windows, and a false negative here means advising `rm -rf` on a live
-    // worktree. See `pathsDenoteSameDir`.
-    // Not `std.mem.eql`: git's separator choice differs from the model's on
-    // Windows, and a false negative here means advising `rm -rf` on a live
-    // worktree. See `pathsDenoteSameDir`.
+    // worktree.
     if (!pathsDenoteSameDir(wt_path, target)) return null;
 
     const commit_owned = try allocator.dupe(u8, commit orelse "");
@@ -638,14 +539,9 @@ pub fn parseAndMatchBlock(
     };
 }
 
-/// How much of `git worktree list --porcelain` we actually obtained.
-///
-/// This type exists because "the target was not in the listing" only
-/// means "git does not know about it" when the listing was COMPLETE.
-/// A failed spawn, a non-zero exit, or a read cap each yield a shorter
-/// listing in which absence proves nothing — and reading that absence
-/// as proof is precisely what produced the false "orphaned worktree …
-/// rm -rf" verdict on 2026-09-29.
+/// How much of `git worktree list --porcelain` we actually obtained. This
+/// type exists because "the target was not in the listing" only means "git
+/// does not know about it" when the listing was COMPLETE.
 pub const ListHealth = enum {
     /// The whole listing was read: absence proves non-registration.
     complete,
@@ -670,27 +566,13 @@ pub const WorktreeList = struct {
     }
 };
 
-/// Read cap for `git worktree list --porcelain`.
-///
-/// The developer's own repository listed 272 worktrees / 59,257 bytes
-/// when the 2026-09-29 bug was reported — 90% of the old 64 KiB cap.
-/// Every worktree past the cap was silently unparseable and therefore
-/// reported as an orphan. 4 MiB is ~70x that, and crossing it now
-/// yields `ListHealth.truncated` (which proves nothing) rather than a
-/// silent false negative.
+/// Read cap for `git worktree list --porcelain`. The developer's own
+/// repository listed 272 worktrees / 59,257 bytes when the 2026-09-29 bug was
+/// reported — 90% of the old 64 KiB cap.
 pub const max_worktree_list_bytes = 4 * 1024 * 1024;
 
-/// Run `git worktree list --porcelain` in `repo_root` and report how
-/// much of the answer we actually got.
-///
-/// A failure here is NOT an error: it is a `WorktreeList` with
-/// `health == .unavailable` and a human-readable `reason`. That is the
-/// whole point of the type — the previous signature returned a
-/// *diagnostic string in place of a listing*, so the caller could not
-/// tell "git says there are no worktrees" from "git never ran" and
-/// treated the second as the first.
-///
-/// The caller owns the returned value; free it with `deinit`.
+/// Run `git worktree list --porcelain` in `repo_root` and report how much of
+/// the answer we actually got.
 fn runGitWorktreeList(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -819,11 +701,8 @@ fn failed(
 }
 
 /// "Are these two branches the same logical work?" Returns true if both
-/// branches share a known project-prefix family
-/// (`refactor/`, `feature/`, `fix/`, `feat/`). Empty branches are never
-/// compatible. Used by `executeSetGitWorktreeToString` to decide
-/// whether an existing worktree at the path is a reasonable auto-bind
-/// candidate for a new request.
+/// branches share a known project-prefix family (`refactor/`, `feature/`,
+/// `fix/`, `feat/`).
 pub fn isCompatibleBranchFamily(a: []const u8, b: []const u8) bool {
     if (a.len == 0 or b.len == 0) return false;
     const families = [_][]const u8{ "refactor/", "feature/", "fix/", "feat/" };
@@ -834,17 +713,8 @@ pub fn isCompatibleBranchFamily(a: []const u8, b: []const u8) bool {
     return false;
 }
 
-/// Rewrite a raw git stderr string into a tool-friendly error message
-/// that points the LLM at a recovery path. The default (no match) is
-/// to return the raw stderr verbatim — we never lose information that
-/// git provided, we only ADD context for the common cases.
-///
-/// `base` is the start-point the caller asked for (empty when the
-/// worktree branches from HEAD). It disambiguates the
-/// "invalid reference" case, where the unresolvable name is usually the
-/// base ref rather than the new branch.
-///
-/// Caller owns the returned slice.
+/// Rewrite a raw git stderr string into a tool-friendly error message that
+/// points the LLM at a recovery path.
 pub fn rewriteGitStderr(
     allocator: std.mem.Allocator,
     raw_stderr: []const u8,
@@ -882,11 +752,8 @@ pub fn rewriteGitStderr(
                 "(or a worktree of one).",
         );
     }
-    // 4. "fatal: invalid reference: X" — the branch name has bad
-    //    characters, or the start-point (`base`) does not resolve.
-    //    When a `base` was requested, that is the far more likely
-    //    culprit (typically an `origin/<branch>` that has not been
-    //    fetched yet), so point at it instead of at the new branch name.
+    // 4. "fatal: invalid reference: X" — the branch name has bad characters,
+    // or the start-point (`base`) does not resolve.
     if (std.mem.indexOf(u8, raw_stderr, "invalid reference") != null) {
         if (base.len > 0) {
             return try std.fmt.allocPrint(allocator, "the base ref '{s}' could not be resolved by git. " ++
@@ -921,21 +788,6 @@ fn readExistingWorktreeCwd(
 }
 
 /// Which repository should `git worktree add` run in?
-///
-/// `session_cwd` is the session's working directory, which is
-/// legitimately `""` for a kanban task that never resolved one — the
-/// 2026-09-29 session that produced the false "orphaned worktree" error
-/// had `sessions.cwd = ''` in the database. Handing that straight to
-/// `std.process.spawn` as a cwd fails with a bare `FileNotFound` that
-/// says nothing about why.
-///
-/// `null` therefore means "inherit the server process's own working
-/// directory" (`.cwd = .inherit`), which is the correct repository for a
-/// session that has no working directory of its own. A relative
-/// `session_cwd` is treated the same way: resolving it against the
-/// process cwd would silently pick a repository the user did not name.
-///
-/// Caller frees the returned slice; `null` needs no cleanup.
 pub fn resolveRepoRoot(
     allocator: std.mem.Allocator,
     session_cwd: []const u8,
@@ -951,15 +803,8 @@ pub fn resolveRepoRoot(
     return try allocator.dupe(u8, session_cwd);
 }
 
-/// Run `git worktree add -b <branch> <worktree_path> [<base>]` in the
-/// given repository root. On success, returns an empty string. On failure
-/// (non-zero exit, spawn failure, wait failure, signal), returns a
-/// diagnostic string suitable for surfacing to the user — usually
-/// git's own stderr (e.g. "fatal: '/foo' already exists"), or a
-/// descriptive fallback that includes the exit code when stderr is
-/// empty. The caller owns the returned slice.
-/// `repo_root` is the directory to run git in. `null` inherits the
-/// server process's working directory — see `resolveRepoRoot`.
+/// Run `git worktree add -b <branch> <worktree_path> [<base>]` in the given
+/// repository root. On success, returns an empty string.
 fn runGitWorktreeAdd(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -987,9 +832,8 @@ fn runGitWorktreeAdd(
     };
 
     // Short-lived command (worktree add is sub-second); use a bounded
-    // blocking read rather than the threaded + timeout pattern that
-    // bash.zig uses for arbitrary user commands. Cap the read to 64KB
-    // so a hostile/buggy git can't OOM the tool.
+    // blocking read rather than the threaded + timeout pattern that bash.zig
+    // uses for arbitrary user commands.
     const stderr_pipe = child.stderr orelse {
         // No stderr pipe (shouldn't happen with .pipe above); just wait
         // and return based on exit code.
@@ -1034,13 +878,7 @@ fn runGitWorktreeAdd(
             if (code == 0) return try allocator.dupe(u8, "");
             const stderr_text = stderr_buf.items;
             std.debug.print("git worktree add failed (exit={d}): {s}\n", .{ code, stderr_text });
-            // Surface git's own stderr to the user. Common messages:
-            //   - "fatal: '/abs/path' already exists"
-            //   - "fatal: not a git repository"
-            //   - "fatal: invalid reference: <branch>"
-            //   - "fatal: '<branch>' is already checked out at '<path>'"
-            // These tell the user EXACTLY what's wrong and how to fix it,
-            // which the previous generic "git worktree add failed" did not.
+            // Surface git's own stderr to the user.
             return if (stderr_text.len == 0)
                 try std.fmt.allocPrint(
                     allocator,
@@ -1101,10 +939,9 @@ fn runGitWorktreeRemove(
     switch (term) {
         .exited => |code| {
             if (code == 0) return;
-            // It's not an error if the directory was already gone (the
-            // user may have `rm -rf`d it manually between sessions).
-            // git returns 128 with "fatal: not a working tree" in that
-            // case — treat that as success.
+            // It's not an error if the directory was already gone (the user
+            // may have `rm -rf`d it manually between sessions). git returns
+            // 128 with "fatal: not a working tree" in that case — treat that
             const stderr_text = stderr_buf.items;
             if (std.mem.indexOf(u8, stderr_text, "not a working tree") != null) return;
             if (std.mem.indexOf(u8, stderr_text, "No such file or directory") != null) return;
@@ -1175,9 +1012,7 @@ pub fn executeSetGitWorktreeToString(
 
     // ── Precheck: classify the path before invoking git ──────────────────
     // Avoids the "fatal: '...' already exists" raw stderr the LLM has to
-    // guess about. If the path is already a worktree on a compatible
-    // branch, auto-bind (success) and let the session start working.
-    // If incompatible, surface the existing branch + recovery options.
+    // guess about.
     {
         const state = classifyPath(allocator, io, cwd, worktree_path) catch |err| blk: {
             // classifyPath only fails on alloc; fall through to git and
@@ -1232,19 +1067,11 @@ pub fn executeSetGitWorktreeToString(
     }
 
     // Which repository do we ask git to add this worktree to?
-    // `ctx.cwd` is the session's working directory, and it is
-    // legitimately "" for a kanban task that never resolved one — the
-    // 2026-09-29 session had `sessions.cwd = ''`. Handing "" to
-    // `std.process.spawn` as a cwd fails with a bare `FileNotFound`, so
-    // fall back to the server process's own working directory.
     const resolved_repo_root = try resolveRepoRoot(allocator, cwd);
     defer if (resolved_repo_root) |r| allocator.free(r);
 
     // runGitWorktreeAdd returns the captured git stderr on failure (or a
     // descriptive fallback including the exit code). Empty string = success.
-    // We surface this directly in the XML error so the user sees WHY git
-    // refused (e.g. "fatal: '/foo' already exists") instead of the previous
-    // generic "git worktree add failed" which left them guessing.
     const git_detail = runGitWorktreeAdd(allocator, io, resolved_repo_root, worktree_path, branch, base) catch |err| {
         // Alloc failure inside runGitWorktreeAdd — extremely rare.
         std.debug.print("set_git_worktree add dispatch failed: {s}\n", .{@errorName(err)});
@@ -1252,11 +1079,9 @@ pub fn executeSetGitWorktreeToString(
     };
     defer allocator.free(git_detail);
     if (git_detail.len > 0) {
-        // Precheck may have let git run (race or precheck failure);
-        // rewrite the raw stderr to add recovery guidance for the
-        // common cases (path collision, branch conflict, non-repo cwd,
-        // invalid branch name, unresolvable base ref). Unknown stderr
-        // patterns pass through unchanged.
+        // Precheck may have let git run (race or precheck failure); rewrite
+        // the raw stderr to add recovery guidance for the common cases (path
+        // collision, branch conflict, non-repo cwd, invalid branch name,
         const rewritten = rewriteGitStderr(allocator, git_detail, worktree_path, branch, base) catch |err| blk: {
             std.debug.print("set_git_worktree: rewriteGitStderr failed: {s}\n", .{@errorName(err)});
             break :blk git_detail;
@@ -1288,12 +1113,6 @@ pub fn freePathState(allocator: std.mem.Allocator, state: PathState) void {
 }
 
 /// The advice for a directory git no longer tracks.
-///
-/// `rm -rf` used to be in here, and it was the most dangerous string in
-/// the tool: a false orphan verdict (2026-09-29) sent a model off to
-/// delete a live worktree full of another session's uncommitted work.
-/// The safe recovery is to move the directory aside — nothing is lost,
-/// and the path becomes usable again — and then pick a different path.
 pub fn orphanedWorktreeMessage(
     allocator: std.mem.Allocator,
     worktree_path: []const u8,
@@ -1331,10 +1150,7 @@ pub fn unverifiedWorktreeMessage(
     );
 }
 
-/// JSON payload for set_git_worktree results. Matches the frontend's
-/// `parseSetGitWorktree` expectations (`path`/`branch`/`cleared`/`created`/
-/// `error`) plus `session_id`/`base`/`note` context. `std.json` handles all
-/// escaping — no manual XML layer.
+/// JSON payload for set_git_worktree results.
 pub const SetGitWorktreeJSON = struct {
     session_id: []const u8,
     created: bool = false,
@@ -1346,12 +1162,7 @@ pub const SetGitWorktreeJSON = struct {
     @"error": ?[]const u8 = null,
 };
 
-/// Guidance handed back after a successful worktree create. Forge-neutral
-/// on purpose: the repo may live on GitHub OR GitLab, and telling a
-/// GitLab user to run `gh pr create` sends them to a CLI that cannot
-/// work. Both spellings are named so the agent picks by the repo's
-/// remote, and `set_pull_request` auto-detects the provider from the URL
-/// either way.
+/// Guidance handed back after a successful worktree create.
 pub const worktree_pr_note =
     "If the user asks to open a pull request or a merge request, or you want to initialize one for this branch, create it with the forge CLI for this repo — `gh pr create` on GitHub, `glab mr create` on GitLab — or use the Create-PR dialog, then call the agent tool `set_pull_request` with the PR/MR URL to bind it to this session.";
 
@@ -1734,15 +1545,6 @@ test "jsonClear sets cleared flag" {
 // ─── Cross-separator worktree matching (Windows) ──────────────────────────
 // The bug: `parseAndMatchBlock` compared git's worktree path against the
 // model's with `std.mem.eql`. git for Windows prints FORWARD slashes
-// (`worktree C:/Users/me/wt`); the model sends BACKSLASHES. The compare
-// never matched, so a live registered worktree was classified
-// `.orphaned_worktree`, and that arm's error text instructs the model to
-// run `git worktree prune && rm -rf <path>` — on the directory holding the
-// work in flight.
-//
-// These tests run on EVERY platform: `pathsDenoteSameDir` is a pure string
-// comparison parameterised by host case-sensitivity, so the Windows-shaped
-// input can be exercised from Linux.
 test "pathsDenoteSameDir: git forward slashes match the model's backslashes" {
     try testing.expect(pathsDenoteSameDir(
         "C:/Users/ginwa/.config/pabrik/.worktrees/fix-login",
@@ -1821,53 +1623,10 @@ test "parseAndMatchBlock: a genuinely different worktree is not matched" {
 // ═══════════════════════════════════════════════════════════════════════
 // 2026-09-29 — the false "orphaned worktree" verdict
 // ═══════════════════════════════════════════════════════════════════════
-//
-// Session `task_1790705960891291926` got this back for a worktree that
-// git HAD registered on the very same machine:
-//
-//   Error: path '/…/.worktrees/skill-evals-impl-1790542117855' is an
-//   orphaned worktree directory (has .git file pointing at
-//   /…/.git/worktrees/skill-evals-impl-1790542117855\n, but is not
-//   registered with git). Run `git worktree prune && rm -rf /…` to
-//   clean up, then retry set_git_worktree.
-//
-// The agent then ran `git worktree list --porcelain` itself and found
-// the entry, one message later. Two things are wrong with that error:
-//
-//   1. It is FALSE. The session's `sessions.cwd` was the empty string
-//      (a kanban task with no resolved working directory), so
-//      `runGitWorktreeList` spawned `git worktree list --porcelain`
-//      with an empty cwd, the spawn failed, and the *diagnostic string
-//      it returns in place of a listing* got parsed as if it were the
-//      listing. Nothing matched, `classifyPath` fell through to the
-//      `.git` file, and "absent from a list that never ran" became
-//      "not registered with git".
-//
-//   2. It is DESTRUCTIVE. The recovery advice is `rm -rf` on a live
-//      worktree — the same advice that would delete a sibling
-//      session's uncommitted work. The `rm -rf` in the message is not
-//      git's; pabrik wrote it.
-//
-// The tests below pin the fix: a worktree's own admin directory
-// (`<repo>/.git/worktrees/<name>`) is the registration record git
-// itself reads, so it — not a possibly-failed listing — is what proves
-// registration or orphanhood.
 
-/// Spawn a git child with NO pipes and return its exit code. `null`
-/// when git could not be spawned or was killed.
-///
-/// This deliberately does not go through `helpers.run_captured`. That
-/// helper drains the child's stdout on a background thread via
-/// `std.Io.File.readStreaming`, and on Windows that path lands in
-/// stdlib's
-///     `.PENDING => unreachable, // unrecoverable: wrong File nonblocking flag`
-/// and takes the whole test binary down with it (it did, in CI run
-/// 36621808471: 6 crashes in this file, "wrong File nonblocking flag",
-/// run_captured.zig:235). Every other test here that shells out to git
-/// guards itself with `skipOnWindows()` for that reason; this fixture
-/// instead avoids the broken path, so the classification suite keeps
-/// running on Windows — which is where the separator handling it
-/// covers is most worth exercising at all.
+/// Spawn a git child with NO pipes and return its exit code. `null` when git
+/// could not be spawned or was killed. This deliberately does not go through
+/// `helpers.run_captured`.
 fn spawnGit(
     io: std.Io,
     argv: []const []const u8,
@@ -1978,18 +1737,9 @@ const GitFixture = struct {
         return self.join(&.{ self.repo, ".git", "worktrees", name });
     }
 
-    /// A directory that carries a worktree-shaped `.git` file pointing at
-    /// an admin directory that EXISTS, with a `HEAD` inside it — the exact
-    /// pair of files `git worktree add` leaves behind.
-    ///
-    /// Synthesised rather than shelled out for, because the whole point of
-    /// the check is `classifyPath`'s reading of that pair. One real-git
-    /// test further down proves git really does lay them out this way;
-    /// every test here that only needs the shape uses this instead of
-    /// paying for three process spawns each — which on Windows starved
-    /// the parallel `helpers` test roots until they timed out waiting for
-    /// their `--listen=-` handshake (CI run 36670946078,
-    /// "test runner failed to respond for 1m6s").
+    /// A directory that carries a worktree-shaped `.git` file pointing at an
+    /// admin directory that EXISTS, with a `HEAD` inside it — the exact pair
+    /// of files `git worktree add` leaves behind.
     fn makeRegisteredDirectory(self: *GitFixture, name: []const u8) ![]u8 {
         const dir = try self.join(&.{ self.root, name });
         errdefer self.allocator.free(dir);
@@ -2033,14 +1783,9 @@ const GitFixture = struct {
         });
     }
 
-    /// A directory that carries a worktree-shaped `.git` file pointing
-    /// at an admin directory that does not exist — the exact state
-    /// `git worktree prune` leaves behind, produced without having to
-    /// delete anything.
-    ///
-    /// This is the portable way to reach the orphaned branch: deleting a
-    /// real admin directory instead would have to fight git's read-only
-    /// files on Windows.
+    /// A directory that carries a worktree-shaped `.git` file pointing at an
+    /// admin directory that does not exist — the exact state `git worktree
+    /// prune` leaves behind, produced without having to delete anything.
     fn makeOrphanDirectory(self: *GitFixture, name: []const u8) ![]u8 {
         // `dir` is the value handed back, so it is owned by the CALLER:
         // errdefer (not defer) frees it on the failure paths only.
@@ -2102,10 +1847,9 @@ test "classifyPath: a worktree whose admin dir is gone IS an orphan (proven, not
     var fx = try GitFixture.init(allocator);
     defer fx.deinit();
 
-    // Stand in for `git worktree prune` (or an admin dir deleted out
-    // from under a live directory): the `.git` FILE still points at an
-    // admin directory that is not there. That is exactly the state the
-    // old code called "orphaned", and here it genuinely is one.
+    // Stand in for `git worktree prune` (or an admin dir deleted out from
+    // under a live directory): the `.git` FILE still points at an admin
+    // directory that is not there.
     const wt = try fx.makeOrphanDirectory("pruned");
     defer allocator.free(wt);
 
@@ -2126,20 +1870,8 @@ test "classifyPath: a worktree whose admin dir is gone IS an orphan (proven, not
 }
 
 test "classifyPath: a REAL git worktree registers, and deleting its admin dir orphans it" {
-    // The synthetic `makeRegisteredDirectory` / `makeOrphanDirectory`
-    // cases above are what the fast tests use. This is the one that keeps
-    // them honest: it runs the real `git init` + `git worktree add`, so
-    // git itself is the oracle for the layout `worktreeAdminDir` assumes.
-    //
-    // Both halves live in one test on purpose — this is the only place in
-    // the file that spawns git, and it costs exactly three processes.
-    // Split across two tests it was six, which on Windows starved the
-    // parallel `helpers` test roots until they timed out (CI run
-    // 36670946078, "test runner failed to respond for 1m6s").
-    //
-    // Deleting the admin directory is the half Windows refuses (git marks
-    // those files read-only), so the orphan half is POSIX-only. The
-    // registered half runs everywhere.
+    // The synthetic `makeRegisteredDirectory` / `makeOrphanDirectory` cases
+    // above are what the fast tests use.
     const allocator = testing.allocator;
     try requireGit();
     var fx = try GitFixture.init(allocator);
@@ -2237,11 +1969,9 @@ test "classifyPath: a path that does not exist is not_found regardless of repo_r
     }
 }
 
-// ─── The advice itself ────────────────────────────────────────────────
-//
-// `rm -rf` on a directory that may hold a sibling session's uncommitted
-// work is not a recovery step, it is a data-loss footgun, and pabrik — not
-// git — is the one writing it. Pin the wording.
+// ─── The advice itself ──────────────────────────────────────────────── `rm
+// -rf` on a directory that may hold a sibling session's uncommitted work is
+// not a recovery step, it is a data-loss footgun, and pabrik — not git — is
 
 test "orphanedWorktreeMessage is non-destructive and offers a preserving recovery" {
     const allocator = testing.allocator;

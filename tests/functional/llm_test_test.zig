@@ -1,59 +1,5 @@
-// End-to-end functional test for `POST /api/llm/test` (the "Test" button
-// on the Add/Edit profile modal).
-//
-// Zig port of `tests/functional/llm_test_test.py` (same test names, same
-// order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """
-//   End-to-end functional test for `POST /api/llm/test` (the "Test" button
-//   on the Add/Edit profile modal).
-//
-//   What this exercises (NO real api_key — every success case fires
-//   against a stub upstream HTTP server in this file):
-//     1. **openai-success** — stub returns a canned `choices[0].message`
-//        payload; assert `{ok: true, reply: "ok"}` + the stub saw the
-//        `Authorization: Bearer` header and the probe prompt.
-//     2. **anthropic-success** — stub returns a canned `content[]` payload;
-//        assert `{ok: true}` + the stub saw the `x-api-key` header.
-//     3. **responses-success** — stub returns a canned `output[]` payload;
-//        assert `{ok: true}`.
-//     4. **missing-model** — assert `{ok: false, error: "model is required"}`.
-//     5. **bad-style** — assert `{ok: false}` referencing `url_style`.
-//     6. **unreachable** — `http://127.0.0.1:1/x` (connection refused);
-//        assert `{ok: false}` fast (never port 8081).
-//     7. **upstream-401** — stub returns 401 JSON; assert `{ok: false}`
-//        with `details` containing "http 401".
-//
-//   Why this exists: the probe is the whole point of the kanban task
-//   ("test button llm"). Zig unit tests cover validation + body builders
-//   + reply parsers, but only a wire round-trip proves route registration,
-//   request auth headers per style, and the 200-always envelope.
-//
-//   Run:
-//       PABRIK_BIN=$(pwd)/zig-out/bin/pabrikcore-linux-x86_64 \
-//       pytest tests/functional/llm_test_test.py -v
-//   """
-//
-// THE STUB UPSTREAM BECAME AN `Io.net` SERVER ON A BACKGROUND THREAD,
-// the same shape `anthropic_chat_headers_test.zig` uses. Two differences
-// from that file are worth naming:
-//
-//   * The recorded body is COMPLETE, not just the head. Python's handler
-//     read exactly `Content-Length` bytes and three of these tests assert
-//     on the parsed body (`model`, `stream`, `max_tokens`, `input`), so
-//     the port accumulates the body bytes into their own writer instead
-//     of tossing them.
-//   * The record is appended BEFORE the response is written, so by the
-//     time the client's `POST` returns, the record exists. Appending
-//     after the write would leave the test reading a list the serve
-//     thread may not have grown yet.
-//
-// Shutdown needs the same non-obvious step as upstream: `Server.accept`
-// is a blocking `accept4(2)` and closing a listening socket does not
-// wake a thread already blocked in `accept` on it, so `Stub.deinit` sets
-// the stop flag and then makes ONE throwaway self-connect to wake it.
+// End-to-end functional test for `POST /api/llm/test` (the "Test" button on
+// the Add/Edit profile modal).
 
 const std = @import("std");
 const testing = std.testing;
@@ -93,33 +39,17 @@ const Stub = struct {
     thread: std.Thread,
     stop: std.atomic.Value(bool) = .init(false),
     /// Guards `reqs`; the serve thread appends while the test reads.
-    ///
-    /// `std.Io.Mutex`, not `std.Thread.Mutex`: Zig 0.16 deleted the
-    /// latter, and the replacement takes the `Io` handle for its
-    /// contended path. `lockUncancelable` is right here — the critical
-    /// sections are a slice append and a fixed-size response write,
-    /// neither of which should ever be abandoned halfway.
+    /// `std.Io.Mutex`, not `std.Thread.Mutex`: Zig 0.16 deleted the latter,
+    /// and the replacement takes the `Io` handle for its contended path.
     mutex: Io.Mutex = .init,
     reqs: std.ArrayList(Recorded) = .empty,
     /// REASONING-MODEL EMULATION. `0` (the default) answers every request
-    /// with `payload` — a plain canned stub. Non-zero = the model spends
-    /// that many tokens thinking before it writes anything visible, so a
-    /// request whose output budget does not EXCEED it is answered with
-    /// `reasoning_payload` instead: the reasoning-only body a real
-    /// provider returns when the budget runs out mid-thought.
+    /// with `payload` — a plain canned stub.
     reasoning_spend: u32 = 0,
     reasoning_payload: []const u8 = "",
 
-    /// Bind and start serving on `stub`.
-    ///
-    /// An OUT-PARAMETER, and that is load-bearing. The serve thread is
-    /// handed `stub`'s address, so the `Stub` must live at a stable
-    /// address — the caller's frame. Returning a `Stub` BY VALUE (the
-    /// obvious spelling) hands the thread a pointer to THIS function's
-    /// stack frame, which is dead the moment it returns; the very first
-    /// `accept` then reads a freed socket handle and the process
-    /// segfaults inside `Io.net.readVec`. This is the same shape
-    /// `anthropic_chat_headers_test.zig`'s `startStub` uses.
+    /// Bind and start serving on `stub`. An OUT-PARAMETER, and that is
+    /// load-bearing.
     fn start(stub: *Stub, status: u16, payload: []const u8) !void {
         stub.* = .{
             .io = io,
@@ -129,11 +59,9 @@ const Stub = struct {
             .server = undefined,
             .thread = undefined,
         };
-        // `Io.net` has no getsockname — `Server` exposes only the socket
-        // and the bound port is not readable back — so the port is picked
-        // the way `Harness.boot` picks one for the child and then bound.
-        // The same race the harness already accepts between its own
-        // probe and the child's bind.
+        // `Io.net` has no getsockname — `Server` exposes only the socket and
+        // the bound port is not readable back — so the port is picked the way
+        // `Harness.boot` picks one for the child and then bound.
         stub.port = try harness.findFreePortRandom(gpa);
         const addr: Io.net.IpAddress = .{ .ip4 = .loopback(stub.port) };
         stub.server = try addr.listen(io, .{ .reuse_address = true });
@@ -143,10 +71,7 @@ const Stub = struct {
 
     /// Start a stub that behaves like a REASONING model: it answers with
     /// `payload` only when the request's output budget is larger than
-    /// `reasoning_spend`, and with `reasoning_payload` otherwise. That one
-    /// rule is the whole provider contract the Edit-profile Test button was
-    /// tripping over — a reasoning model's hidden tokens come out of the
-    /// same budget as its visible ones.
+    /// `reasoning_spend`, and with `reasoning_payload` otherwise.
     fn startReasoning(
         stub: *Stub,
         reasoning_spend: u32,
@@ -189,10 +114,9 @@ const Stub = struct {
         self.reqs.deinit(gpa);
     }
 
-    /// Copy every recorded request out. Owned by the caller.
-    ///
-    /// Python read `server.state.last_*` — the LAST request — so the
-    /// tests take `.items[len - 1]` from this snapshot.
+    /// Copy every recorded request out. Owned by the caller. Python read
+    /// `server.state.last_*` — the LAST request — so the tests take
+    /// `.items[len - 1]` from this snapshot.
     fn snapshot(self: *Stub) !std.ArrayList(Recorded) {
         var out: std.ArrayList(Recorded) = .empty;
         errdefer {
@@ -229,10 +153,7 @@ fn handleRequest(stub: *Stub, stream: Io.net.Stream) !void {
     var sr = stream.reader(stub.io, &rbuf);
     const r = &sr.interface;
 
-    // HEAD AND BODY OVERLAP IN THE SOCKET BUFFER. `fill(1)` reads a whole
-    // syscall's worth, so one call typically returns the head AND the
-    // first chunk of the body — accumulate everything seen and treat the
-    // first `\r\n\r\n`-terminated slice as the head boundary.
+    // HEAD AND BODY OVERLAP IN THE SOCKET BUFFER.
     var head_acc: Io.Writer.Allocating = .init(gpa);
     defer head_acc.deinit();
     var head_len: usize = 0;
@@ -318,10 +239,6 @@ fn headerLines(head: []const u8) std.mem.SplitIterator(u8, .sequence) {
 }
 
 /// The value of `name` in a recorded head, or null.
-///
-/// Header names are case-insensitive per RFC 9110 and the client spells
-/// them however it likes; Python lowercased its whole dict before
-/// looking anything up, which is the same thing.
 fn headerValue(head: []const u8, name: []const u8) ?[]const u8 {
     var it = headerLines(head);
     while (it.next()) |line| {
@@ -490,12 +407,8 @@ const RESP_OK =
 ;
 
 /// What a reasoning model returns when its hidden reasoning consumed the
-/// whole output budget: `status: "incomplete"`, no `message` item, and so
-/// no `output_text` for the probe to show. Trimmed from the real body the
-/// Edit-profile Test button got back from a Responses-style gateway for a
-/// profile that works fine in a chat turn.
-/// The chat-completions spelling of the same truncation: the model wrote no
-/// text (`content: ""`) because it hit the output cap mid-reasoning.
+/// whole output budget: `status: "incomplete"`, no `message` item, and so no
+/// `output_text` for the probe to show.
 const CHATCMPL_TRUNCATED =
     \\{"id":"chatcmpl-1","choices":[{"message":{"role":"assistant","content":""},"finish_reason":"length"}]}
 ;
@@ -544,11 +457,7 @@ test "llm_test_openai_success_returns_reply" {
         }
     }
     try expectReply(&doc, "ok");
-    // Python: `isinstance(result.get("latency_ms"), int)`. A JSON float
-    // is accepted too because std.json parses `1.0` as `.float` while
-    // Python's `json.loads` would hand back an `int` for the same bytes
-    // only if there were no decimal point — the contract under test is
-    // "a NUMBER is present", not its Python class.
+    // Python: `isinstance(result.get("latency_ms"), int)`.
     switch (doc.get("latency_ms") orelse {
         std.debug.print("response has no `latency_ms`: {s}\n", .{r.body});
         return error.TestUnexpectedResult;
@@ -726,19 +635,9 @@ test "llm_test_openai_response_success_parses_output_items" {
 // Test 9: a reasoning model answers — the budget must cover the thinking
 // ============================================================================
 
-// REGRESSION, the reported bug: the Edit-profile Test button said
-// "LLM server response did not contain a reply" for a profile that works in
-// a real chat turn. The probe asked for a 16-token output budget, and a
-// reasoning model spends that budget on hidden reasoning before writing a
-// single visible token, so the reply came back `status: "incomplete"` with a
-// reasoning item and NO `output_text` item. The chat path budgets thousands,
-// which is the whole difference.
-//
-// The stub below is that provider: it writes visible text only when the
-// request's budget EXCEEDS the reasoning it wants to do. A probe that asks
-// for 16 tokens gets the reasoning-only body; one that leaves real room gets
-// the reply. Nothing here pins the budget to a literal — the property under
-// test is "the probe's budget is bigger than the model's thinking".
+// REGRESSION, the reported bug: the Edit-profile Test button said "LLM server
+// response did not contain a reply" for a profile that works in a real chat
+// turn.
 test "llm_test_reasoning_model_still_replies_when_probe_allows_for_thinking" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -767,12 +666,7 @@ test "llm_test_reasoning_model_still_replies_when_probe_allows_for_thinking" {
     try expectReply(&doc, "ok");
 }
 
-// The same bug one wire style over. `openai` (chat completions) has no
-// `status: incomplete`: a truncated reply is `content: ""` with
-// `finish_reason: "length"`, so the OLD probe returned `ok: true` with an
-// EMPTY reply — a green tick that proved nothing, because the model never
-// wrote a word. The budget argument and the truncation signal are shared by
-// both styles, so cover both.
+// The same bug one wire style over.
 test "llm_test_reasoning_model_still_replies_on_chat_completions_style" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -804,14 +698,8 @@ test "llm_test_reasoning_model_still_replies_on_chat_completions_style" {
 // ============================================================================
 
 // A model whose thinking always eats the budget (the stub is set to a spend
-// no probe budget can exceed) must not come back as the misleading
-// "LLM server response did not contain a reply" — that reads as "your key is
-// broken" for a profile that is fine in a chat turn.
-//
-// Two behaviours, both asserted on the wire:
-//   1. The probe RETRIES once with more room, instead of giving up on a
-//      budget the model never got to the end of.
-//   2. The error names the cause (reasoning / budget), not a missing reply.
+// no probe budget can exceed) must not come back as the misleading "LLM
+// server response did not contain a reply" — that reads as "your key is
 test "llm_test_reasoning_only_model_retries_then_names_the_budget" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -938,10 +826,9 @@ test "llm_test_unreachable_returns_send_failure" {
     const body = try probeBody("m", "http://127.0.0.1:1/x", "sk-test-stub", "openai");
     defer gpa.free(body);
 
-    // `Io.Timestamp.now(io, .awake)` is the monotonic clock — the
-    // analogue of `time.monotonic()`. `.real` would let an NTP step
-    // backwards produce a negative elapsed and pass the bound for the
-    // wrong reason.
+    // `Io.Timestamp.now(io, .awake)` is the monotonic clock — the analogue of
+    // `time.monotonic()`. `.real` would let an NTP step backwards produce a
+    // negative elapsed and pass the bound for the wrong reason.
     const started = Io.Timestamp.now(io, .awake).toMilliseconds();
 
     var r = try postTest(&h, body);
@@ -1005,9 +892,7 @@ test "llm_test_upstream_401_returns_status_in_details" {
 
 // Regression for the Edit-profile Test button 400
 // `{"type":"error","error":{"type":"MissingSessionID",...}}`: the
-// anthropic-style probe must carry `x-opencode-session` or Console Go
-// rejects it before routing. Replays the EXACT JSON body the frontend
-// sends (see LlmConfigModal.vue onTest).
+// anthropic-style probe must carry `x-opencode-session` or Console Go rejects
 test "llm_test_probe_sends_opencode_session_anthropic" {
     try harness.requirePabrikBin(io, gpa);
 

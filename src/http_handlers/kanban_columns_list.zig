@@ -1,18 +1,5 @@
-//! `GET /api/workspaces/:workspace_id/items/:item_id/kanban/columns`.
-//!
-//! Returns the kanban column list for a workspace item. Thin wrapper
-//! around `kanban_model.listColumns` — no body parsing, just path
-//! param validation, the DB call, and the response envelope.
-//!
-//! Response shape: `{"columns":[KanbanColumnResponse, ...], "count": N}`
-//! (built by `http_response.makeKanbanColumnListResponse`).
-//!
-//! Errors:
-//!   - 400 missing `item_id` path param
-//!   - 500 DB failure
-//!
-//! Plan: docs/superpowers/plans/2026-06-21-workspace-item-kanban.md
-//!   (Chunk 3, Task 3.3)
+//! `GET /api/workspaces/:workspace_id/items/:item_id/kanban/columns`. Returns
+//! the kanban column list for a workspace item.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -24,9 +11,7 @@ pub const KanbanColumnsListError = error{
     ItemIdRequired,
     QueryFailed,
     /// `makeKanbanColumnListResponse` returns `![]u8` (its body uses
-    /// `std.json.Stringify.valueAlloc` which can fail with
-    /// `OutOfMemory`). Effectively unreachable on the per-request
-    /// arena, but the type system requires the variant.
+    /// `std.json.Stringify.valueAlloc` which can fail with `OutOfMemory`).
     OutOfMemory,
 };
 

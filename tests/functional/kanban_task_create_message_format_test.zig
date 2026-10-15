@@ -1,64 +1,6 @@
-// Functional tests for the kanban create_and_run message format.
-//
-// Zig port of `tests/functional/kanban_task_create_message_format.py`
-// (same test names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional tests for the kanban create_and_run message format.
-//
-//   The frontend (KanbanView.handleCreateTaskSave via buildTaskCreateMessage)
-//   formats the create_and_run `queue_message` as:
-//
-//       Task : <name>
-//       Description: <description>   <- omitted when empty/whitespace
-//                                      <- blank line +
-//       #Notes UseGitWorktree         <- only when the worktree toggle is ON
-//       Path: <worktreePath>          <- only when the toggle is ON and a
-//                                        custom path was entered
-//       Base: <baseBranch>            <- only when the toggle is ON and a base
-//                                        ref was picked (e.g. origin/main)
-//
-//   The backend passes `queue_message` through verbatim (emit_run_agent ->
-//   insertQueueMessage -> queue-drain -> llm_history user row), so these tests
-//   replay the EXACT wire body the frontend sends and assert the drained
-//   user-role row matches byte-for-byte.
-//
-//   A 4th test locks the create_session scope limit: plain "Create task"
-//   still uses the server-side `name + "\n\n" + description` composition
-//   (frontend-only change — the card display shares the description field).
-//
-//   The trailing tests cover `GET /api/git/branches` — the endpoint feeding
-//   the base-branch dropdown — against a throwaway repo created inside the
-//   harness tmpdir. They exist because route order + response JSON shape are
-//   exactly the class of bug a unit test cannot see.
-//
-//   We use the plain `harness` fixture (no stub LLM needed): the worker
-//   drains the queue into the user-role llm_history row BEFORE any LLM
-//   call, so polling for that row works even though the subsequent LLM
-//   turn fails against the isolated tmpdir HOME.
-//   """
-//
-// PORT NOTES
-//
-// * `worker_harness` becomes `bootWorkerHarness()`: a `Harness.boot` with
-//   `.stub_llm_profile = true`, mirroring the Python fixture.
-//
-// * `_wait_for_user_message` is a POLL with a monotonic deadline
-//   (`Io.sleep(io, .fromMilliseconds(200), .awake)`, `time.sleep(0.2)` in
-//   Python). It returns the user-role rows as an OWNED copy of the
-//   response body, because a `harness.Json` borrows the `Response`'s
-//   buffer and must not outlive it.
-//
-// * The git fixture repo is created under `harness.makeScratchDir`, NOT
-//   inside the harness tempdir: `reapOrphanTestPids` runs on every boot
-//   and would delete a `pabrik-func-*` directory with no live pid, which
-//   would take the fixture repo with it mid-test.
-//
-// * The `Path: ~/.config/pabrik/.worktrees/isolated-work` payload is
-//   asserted byte-for-byte. It is the MESSAGE BODY, never a real path the
-//   server resolves, so it is the one string in this file that is
-//   allowed to stay verbatim.
+// Functional tests for the kanban create_and_run message format. Zig port of
+// `tests/functional/kanban_task_create_message_format.py` (same test names,
+// same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -75,14 +17,8 @@ const POLL_INTERVAL_MS: u32 = 200;
 // Fixtures
 // ============================================================================
 
-/// Python `worker_harness` fixture.
-///
-/// Own boot with a stub LLM profile so create_and_run workers drain. The
-/// shared `harness` fixture boots without any LLM profile, so a
-/// create_and_run worker never starts and the queue never drains. With a
-/// stub profile the worker starts, drains the queued user message into
-/// llm_history, then fails on the stubbed LLM call — the user row
-/// persists, which is all these tests assert.
+/// Python `worker_harness` fixture. Own boot with a stub LLM profile so
+/// create_and_run workers drain.
 fn bootWorkerHarness() !Harness {
     return Harness.boot(io, gpa, .{ .stub_llm_profile = true });
 }
@@ -238,12 +174,8 @@ fn taskIdFrom(create_body: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// The user-role rows of a session, as an OWNED body slice.
-///
-/// Python `_user_role_messages` returned a list of dicts. A Zig `Json`
-/// borrows the `Response`'s buffer, so the port returns the response body
-/// as owned bytes and re-parses it for each assertion instead of handing
-/// a `Json` across a function boundary.
+/// The user-role rows of a session, as an OWNED body slice. Python
+/// `_user_role_messages` returned a list of dicts.
 fn userRoleMessagesBody(h: *Harness, session_id: []const u8) ![]u8 {
     const path = try std.fmt.allocPrint(
         gpa,
@@ -265,10 +197,6 @@ fn userRoleMessagesBody(h: *Harness, session_id: []const u8) ![]u8 {
 }
 
 /// The `content` of the n-th user-role message. Owned.
-///
-/// `.alloc_always` on the parse is load-bearing: the value must outlive
-/// the buffer it was parsed from, and the default `.alloc_if_needed`
-/// leaves unescaped strings pointing INTO that buffer.
 fn nthUserContent(messages_body: []const u8, n: usize) ![]u8 {
     var doc: harness.Json = .{ .parsed = try std.json.parseFromSlice(
         std.json.Value,
@@ -337,9 +265,8 @@ fn countUserMessages(messages_body: []const u8) !usize {
 }
 
 /// Python `_wait_for_user_message`: poll until the queue-drained user row
-/// lands (create_and_run is async).
-///
-/// Returns the user-role CONTENT of the first drained row, owned.
+/// lands (create_and_run is async). Returns the user-role CONTENT of the
+/// first drained row, owned.
 fn waitForUserMessage(h: *Harness, session_id: []const u8, timeout_s: f64) ![]u8 {
     const deadline = std.Io.Timestamp.now(io, .awake).toMilliseconds() +
         @as(i64, @intFromFloat(timeout_s * 1000.0));
@@ -399,11 +326,9 @@ fn git(repo: []const u8, args: []const []const u8) !void {
     }
 }
 
-/// Python `_make_repo_with_branches`.
-///
-/// Create a throwaway repo with one local branch, two remote-tracking
-/// refs, and a symbolic `origin/HEAD` (the row the parser must drop).
-/// Returns the repo path (owned) under `root`.
+/// Python `_make_repo_with_branches`. Create a throwaway repo with one local
+/// branch, two remote-tracking refs, and a symbolic `origin/HEAD` (the row
+/// the parser must drop). Returns the repo path (owned) under `root`.
 fn makeRepoWithBranches(root: []const u8) ![]u8 {
     const repo = try std.fs.path.join(gpa, &.{ root, "branches-repo" });
     errdefer gpa.free(repo);
@@ -668,11 +593,9 @@ test "create_and_run_appends_worktree_path_when_provided" {
 // Test 6: toggle ON + path + base branch appends the Base line
 // ============================================================================
 
-// The base-branch picker lands as the `Base:` line after `Path:`.
-//
-// This is the wire half of the feature: the agent only knows which ref to
-// branch the worktree FROM because this line reaches llm_history
-// verbatim.
+// The base-branch picker lands as the `Base:` line after `Path:`. This is the
+// wire half of the feature: the agent only knows which ref to branch the
+// worktree FROM because this line reaches llm_history verbatim.
 test "create_and_run_appends_worktree_base_branch_when_provided" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootWorkerHarness();
@@ -761,10 +684,9 @@ test "git_branches_lists_refs_in_picker_order" {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
     };
 
-    // Scratch root: a sibling of the harness tempdir under the OS temp
-    // root, so the orphan reaper (which only matches `pabrik-func-*`)
-    // cannot take the fixture mid-test. The free is registered BEFORE
-    // the cleanup defer so it runs AFTER it (LIFO).
+    // Scratch root: a sibling of the harness tempdir under the OS temp root,
+    // so the orphan reaper (which only matches `pabrik-func-*`) cannot take
+    // the fixture mid-test.
     const scratch = try harness.makeScratchDir(gpa);
     defer gpa.free(scratch);
     defer harness.cleanupExtraDir(io, gpa, scratch);

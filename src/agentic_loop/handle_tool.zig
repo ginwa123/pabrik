@@ -31,11 +31,6 @@ const skill_evals_db = @import("skill_evals_db.zig");
 // ============================================================================
 // TOOL REGISTRY - Single source of truth: tools_equipped.zig
 // ============================================================================
-//
-// The registry used to live in `tool_registry.zig` (deleted). It is now
-// defined exclusively in `tools_equipped.zig` — every reference in this
-// file (and elsewhere) goes through there. Re-export the alias here for
-// downstream callers that still import `handle_tool.TOOL_REGISTRY`.
 
 /// Re-export from the canonical registry (`tools_equipped.zig`).
 pub const TOOL_REGISTRY = tools_equipped.UNIFIED_TOOL_REGISTRY;
@@ -75,9 +70,8 @@ pub const DiffViewParseResult = struct {
     /// Whether a diff_view section was found and removed
     diff_view_found: bool,
     /// The before content extracted from <before> tag, XML-unescaped
-    /// (`&quot;` → `"`, `&lt;` → `<`, `&gt;` → `>`, `&apos;` → `'`, `&amp;` → `&`).
-    /// Null if the tag wasn't found. If `diff_view_found` is true, this is
-    /// ALWAYS an allocated buffer that the caller MUST free.
+    /// (`&quot;` → `"`, `&lt;` → `<`, `&gt;` → `>`, `&apos;` → `'`, `&amp;` →
+    /// `&`).
     before: ?[]const u8,
     /// The after content extracted from <after> tag, XML-unescaped (see `before`).
     /// Null if the tag wasn't found. If `diff_view_found` is true, this is
@@ -105,13 +99,7 @@ pub fn parseDiffViewFromResult(allocator: std.mem.Allocator, content: []const u8
 
     const dv_content = content[dv_start.? + 10 .. dv_end.?]; // 10 = len("<diff_view>")
 
-    // Extract before content. Inner slices point into `content` which holds
-    // XML-encoded entities (`&quot;`, `&lt;`, ...); we MUST unescape them
-    // before returning so the consumer sees the original byte-level content.
-    // Without this, a source-code diff with `"` / `<` / `>` / `&` would
-    // render literally as `&quot;` / `&lt;` / `&gt;` / `&amp;` in the UI
-    // (bug: "diff view shows &quot; instead of ""). See parse_diff_view_test.zig
-    // for regression coverage.
+    // Extract before content.
     var before_val: ?[]const u8 = null;
     var before_allocated = false;
     if (std.mem.indexOf(u8, dv_content, "<before>")) |b_start| {
@@ -164,13 +152,6 @@ const ToolResult = struct {
     /// Secrets this dispatch resolved, so the caller can scrub them back out
     /// of `output` before it is persisted or streamed. Empty when the call
     /// carried no placeholder.
-    ///
-    /// OWNERSHIP: the CALLER owns this list and must release it with
-    /// `freeResolvedSecrets` once it has finished redacting with it. Unlike
-    /// `output` — which the agentic loop simply leaves to its request
-    /// allocator — these are live credential bytes, so they are freed
-    /// deterministically instead of at the end of a turn. The `&.{}` default
-    /// frees as a no-op.
     secrets: []const secrets_substitution.ResolvedSecret = &.{},
 };
 
@@ -200,22 +181,10 @@ const MainAgentToolResult = struct {
 };
 
 // ============================================================================
-// Workspace-secret substitution seam (plan 2026-10-02-workspace-secrets)
-//
-// The promise these helpers carry is two-sided. The executor gets the real
-// value (property A) and the model gets `{{SECRETS:NAME}}` back everywhere it
-// can read — in `llm_history`, in the persisted tool result, over SSE
-// (property B). Substitution alone only satisfies A.
-// ============================================================================
+// Workspace-secret substitution seam (plan 2026-10-02-workspace-secrets) The
+// promise these helpers carry is two-sided.
 
-/// The prefix every placeholder opens with. Used ONLY as a conservative fast
-/// path: `secrets_substitution.matchPlaceholder` cannot produce a match
-/// without this exact literal, so a negative answer here can never skip a real
-/// placeholder. If the grammar ever changes the only consequence is that we
-/// resolve a workspace for calls that did not need one — slower, still
-/// correct. It is deliberately NOT a placeholder detector: deciding what counts
-/// as a placeholder belongs to `substituteToolArguments` alone, and a second
-/// detector that can disagree with it is a correctness bug, not an optimization.
+/// The prefix every placeholder opens with.
 const secrets_placeholder_prefix = "{{SECRETS:";
 
 fn mayContainSecretPlaceholder(args: []const u8) bool {
@@ -234,10 +203,6 @@ fn freeResolvedSecrets(allocator: std.mem.Allocator, resolved: []const secrets_s
 }
 
 /// The failure envelope for a substitution that did not happen.
-///
-/// `args` must be the UN-substituted copy: on the error path
-/// `substituteToolArguments` never wrote to its output, so this embeds the
-/// placeholder and never a value.
 fn secretSubstitutionError(
     allocator: std.mem.Allocator,
     tool_name: []const u8,
@@ -267,14 +232,8 @@ fn secretSubstitutionError(
     return wrapToolOutput(allocator, tool_name, args, false, message, "");
 }
 
-/// Adapts `secrets_store` to `secrets_substitution.Resolver`, with a per-dispatch
-/// cache and no database dependency of its own.
-///
-/// Fail-closed by construction: a session that resolves to no workspace leaves
-/// `workspace_id` null, and `resolve` then answers null for every name, which
-/// `substituteToolArguments` reports as `error.UnknownSecretName`. There is no
-/// path on which an unresolved placeholder reaches an executor as literal text
-/// — "no workspace" is never treated as "no substitution needed".
+/// Adapts `secrets_store` to `secrets_substitution.Resolver`, with a
+/// per-dispatch cache and no database dependency of its own.
 const SecretResolver = struct {
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -286,9 +245,7 @@ const SecretResolver = struct {
     /// the resolver call that produced them because `redactOutput` runs later.
     cache: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// The most recent name this resolver refused. Read by the error envelope
-    /// so it can name the key. It comes from the resolver seam rather than a
-    /// second scan of the arguments for the same reason the fast path above
-    /// stops at the prefix: only one thing may decide what a placeholder is.
+    /// so it can name the key.
     missing_name: ?[]const u8 = null,
 
     fn init(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8) SecretResolver {
@@ -347,10 +304,6 @@ const SecretResolver = struct {
     }
 
     /// Record which placeholder could not be resolved, then report the miss.
-    /// Every allocation failure above lands here too: turning exhaustion into
-    /// "unknown secret" misreports the cause, but it never substitutes
-    /// something the workspace did not supply, which is the failure that would
-    /// actually matter.
     fn refuse(self: *SecretResolver, name: []const u8) ?[]const u8 {
         if (self.missing_name) |previous| self.allocator.free(previous);
         self.missing_name = self.allocator.dupe(u8, name) catch null;
@@ -366,24 +319,17 @@ const SecretResolver = struct {
     }
 };
 
-/// Lookup a tool by name and execute it using unified registry
-/// Refactored: Uses entry.exec() directly instead of double lookup
-///
-/// Lua hooks (`hooks/register_hook.lua :: init(event, data)`) wrap every
-/// dispatch: the pre hook may deny (error envelope, no exec), modify args,
-/// or mock the output (no exec); the post hook may replace the output.
-/// All hook failures degrade to the no-hook behavior (see hooks.zig).
+/// Lookup a tool by name and execute it using unified registry Refactored:
+/// Uses entry.exec() directly instead of double lookup Lua hooks
+/// (`hooks/register_hook.lua :: init(event, data)`) wrap every dispatch: the
 fn dispatchTool(ctx: ToolContext, tool_call: agent.ToolCall) !ToolResult {
     var effective_call = tool_call;
     var modified_args: ?[]const u8 = null;
     defer if (modified_args) |a| ctx.allocator.free(a);
 
-    // Translate a deprecated tool name to its current registry entry
-    // (`bash` → `command`) BEFORE the hooks run, so a pre-2026-09-04 name
-    // behaves like the tool it now means: same hooks, same exec, same
-    // envelope. Resolution is dispatch-only — `UNIFIED_TOOL_REGISTRY` stays
-    // the advertised list, so the model is never re-offered `bash`.
-    // For a name that needs no translation this is a no-op.
+    // Translate a deprecated tool name to its current registry entry (`bash`
+    // → `command`) BEFORE the hooks run, so a pre-2026-09-04 name behaves
+    // like the tool it now means: same hooks, same exec, same envelope.
     if (tools_equipped.resolveToolAlias(tool_call.function.name)) |canonical| {
         effective_call.function.name = canonical;
     }
@@ -397,15 +343,9 @@ fn dispatchTool(ctx: ToolContext, tool_call: agent.ToolCall) !ToolResult {
         .short_circuit => |out| return ToolResult{ .output = out },
     }
 
-    // ─── Workspace-secret substitution ───
-    //
-    // Deliberately AFTER the pre-hook: a user-authored Lua hook receives
-    // `arguments` and may log or rewrite them, so substituting first would
-    // hand plaintext to arbitrary user code with nothing downstream to scrub
-    // it. The hook therefore sees `{{SECRETS:NAME}}` and only the executor
-    // sees the value. It also runs on whatever the hook produced — a
-    // `.proceed_modified` replaced the arguments above, so the original
-    // string is not the right input.
+    // ─── Workspace-secret substitution ─── Deliberately AFTER the pre-hook:
+    // a user-authored Lua hook receives `arguments` and may log or rewrite
+    // them, so substituting first would hand plaintext to arbitrary user code
     var resolver: SecretResolver = undefined;
     var resolver_live = false;
     defer if (resolver_live) resolver.deinit();
@@ -428,10 +368,7 @@ fn dispatchTool(ctx: ToolContext, tool_call: agent.ToolCall) !ToolResult {
             &sub,
         ) catch |err| {
             // Never dispatch: an empty substitution would reach the tool and
-            // surface much later as an opaque third-party 401. The envelope
-            // carries `effective_call.function.arguments`, which
-            // `substituteToolArguments` left untouched on the error path, so
-            // `parameters` still shows the placeholder rather than a value.
+            // surface much later as an opaque third-party 401.
             const envelope = try secretSubstitutionError(ctx.allocator, effective_call.function.name, effective_call.function.arguments, &resolver, err);
             return ToolResult{ .output = envelope };
         };
@@ -526,10 +463,9 @@ fn dispatchFromRegistry(ctx: ToolContext, tool_call: agent.ToolCall, exec: tools
         .is_thinking = ctx.is_thinking,
         .environment = ctx.environment,
         .selected_profile_model = ctx.selected_profile_model,
-        // 2026-08-23 spawn-subagent-live-progress: thread the
-        // parent's tool_call.id through ToolExecContext so
-        // execSpawnSubAgent can emit progress events keyed by it
-        // (ChatView.vue's reducer filters on this exact value).
+        // 2026-08-23 spawn-subagent-live-progress: thread the parent's
+        // tool_call.id through ToolExecContext so execSpawnSubAgent can emit
+        // progress events keyed by it (ChatView.vue's reducer filters on this
         .tool_call_id = tool_call.id,
         // Progressive tool search: the exec-side catalog computes which
         // built-ins are NOT enabled, which needs the resolved allowlist.
@@ -595,14 +531,8 @@ pub fn isKnownTool(name: []const u8) bool {
     return false;
 }
 
-/// Check if a tool name is registered or is an MCP tool
-///
-/// Alias-aware on purpose. `isKnownTool` is the strict registry check;
-/// this gate additionally accepts a deprecated name whose target still
-/// exists (`bash` → `command`), because the call is going to run. If
-/// this function said no for `bash`, Phase 1 would stamp the call as an
-/// unknown-tool error and Phase 3 would `continue` past it — the exact
-/// silent-drop that made a dead tool call look like a flaky shell.
+/// Check if a tool name is registered or is an MCP tool Alias-aware on
+/// purpose.
 pub fn isKnownToolOrMCP(name: []const u8, config: *const config_mod.LlmConfig) bool {
     if (tools_equipped.isDispatchableToolName(name)) return true;
     return isMCPTool(config, name);
@@ -622,20 +552,7 @@ pub fn getToolNames() []const []const u8 {
 }
 
 /// Tool-result text for a call whose name is neither a registry entry nor an
-/// MCP tool. Replaces the bare `"unknown tools"` string, which named neither
-/// the offending tool nor any way forward, so the model had no correction to
-/// make and simply emitted the same name again on the next turn.
-///
-/// Two shapes, because the two misses need different answers:
-///   - a RETIRED name (`bash`, `pwsh`) gets the replacement named directly —
-///     the model reached for it because it was trained on it, and listing
-///     ~40 registry names buries the one line it needs;
-///   - a name nobody ever had gets the enumeration, since there is no single
-///     entry to point at.
-///
-/// Lists the registry names deliberately: dispatch is registry-scoped (there
-/// is no allowlist re-check in `dispatchTool`), so this list is exactly the
-/// set of names the dispatcher would accept.
+/// MCP tool.
 fn unknownToolMessage(allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
     if (tools_equipped.retiredToolSuggestion(name)) |replacement| {
         return std.fmt.allocPrint(
@@ -705,16 +622,6 @@ const worker_activity_desc_max = 120;
 
 /// Stamp `worker.last_activity_nano` + a short "what is it doing" label for
 /// the worker running `session_id`, and emit the SSE `worker_updated` event.
-///
-/// The worker row is keyed by `id == session_id` (see `update_worker.zig`),
-/// which is why the session id is the handle here rather than a separate
-/// worker id.
-///
-/// The description is `Tool call: <name>` plus the leading argument fragment
-/// when one is present, so the UI can say "Tool call: bash" rather than just
-/// "running". Arguments are truncated at `worker_activity_desc_max` bytes on a
-/// char boundary — never mid-codepoint, which would write invalid UTF-8 into
-/// a TEXT column.
 fn touchWorkerActivity(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -769,18 +676,11 @@ fn buildWorkerActivityDescription(
     return std.fmt.allocPrint(allocator, "{s}{s} {s}{s}", .{ prefix, tool_name, trimmed[0..end], ellipsis });
 }
 
-/// What `handle_tool` reports back to the workflow loop.
-///
-/// A plain `void` was enough while every tool was fire-and-forget. `is_stop`
-/// makes one tool's result a LOOP decision, and the workflow loop is the only
-/// place allowed to act on it — so the request travels back as data rather
-/// than as a side effect the loop would have to re-read from the DB.
+/// What `handle_tool` reports back to the workflow loop. A plain `void` was
+/// enough while every tool was fire-and-forget.
 pub const ToolBatchOutcome = struct {
-    /// At least one tool in the batch asked to end the turn
-    /// (`command`'s `is_stop`). OR-merged across the batch: the batch is
-    /// always dispatched and persisted in full first, because every
-    /// `tool_call_id` needs its `role=tool` row or the provider rejects the
-    /// next turn (see the Phase-1 placeholder note in `handle_tool`).
+    /// At least one tool in the batch asked to end the turn (`command`'s
+    /// `is_stop`).
     stop_loop: bool = false,
 };
 
@@ -811,37 +711,12 @@ pub fn handle_tool(
     var outcome: ToolBatchOutcome = .{};
 
     if (res_dynamic_agent.tool_calls) |tc| {
-        // ─── Phase 1: INSERT placeholder rows for ALL known tools ───
-        //
-        // This is the critical fix for the "Invalid function ID" bug.
-        // We pre-create every role=tool row BEFORE running any tool,
-        // so the OpenAI API contract (every tool_call_id must have a
-        // matching role=tool row) is satisfied even if the app
-        // crashes mid-execution. The dispatch loop in Phase 3 then
-        // UPDATEs each placeholder in place with the actual result.
-        //
-        // Unknown tools skip the placeholder (they're skipped below
-        // too — the original code's behaviour is preserved).
-        //
-        // Migrated from the old 2-phase pattern (assistant message
-        // INSERT then per-tool saveMessage) which left orphaned
-        // tool_call_ids on crash. See plan:
-        // docs/superpowers/plans/2026-08-06-tool-call-loading-placeholder.md
+        // ─── Phase 1: INSERT placeholder rows for ALL known tools ─── This
+        // is the critical fix for the "Invalid function ID" bug.
 
-        // ─── Phase 2: INSERT the assistant message (existing code) ───
-        //
-        // The assistant message declares tool_calls=[A, B, C] and has
-        // existing tool_call_id columns that match the placeholders
-        // by id. The DB now has 1 assistant row + N placeholder rows.
-        //
-        // NOTE: the conversation order is "placeholders first, then
-        // assistant message" by created_at. This is OK because the LLM
-        // API contract matches tool_call_ids by VALUE, not by row
-        // order. The LLM sees a complete set of (placeholder, assistant)
-        // records either way. The ordering matters for the LLM's
-        // understanding of the conversation flow, but an empty
-        // placeholder content followed by an assistant message is
-        // semantically equivalent to "the agent is mid-execution".
+        // ─── Phase 2: INSERT the assistant message (existing code) ─── The
+        // assistant message declares tool_calls=[A, B, C] and has existing
+        // tool_call_id columns that match the placeholders by id.
         var has_known_tools = false;
         for (tc) |tool_call| {
             if (isKnownToolOrMCP(tool_call.function.name, config)) {
@@ -900,35 +775,8 @@ pub fn handle_tool(
             // Phase 1 placeholder content: build the canonical
             // `<tool>...</tool>` envelope via `wrapToolOutput` so the
             // frontend's `tryUnwrapToolOutput` can parse it on
-            // page-refresh-mid-execution AND on the live-SSE path.
-            //
-            //  - Unknown tools (registry miss) → `success=false` envelope
-            //    with `<error>unknown tools</error>` so the chat card
-            //    shows a structured error block instead of a raw text
-            //    bubble. Previously the raw string "unknown tools" was
-            //    stored verbatim in `response_content`; the frontend
-            //    then tried to unwrap it as a `<tool>` envelope and
-            //    fell back to the `msg.content` legacy path, rendering
-            //    an empty card.
-            //  - Known tools (including MCP) → `success=true` envelope
-            //    with empty `<data></data>`. Phase 3 will UPDATE the
-            //    same row in place with the actual exec result. The
-            //    empty `<data>` block is intentional — it keeps the
-            //    envelope shape stable so the frontend never sees a
-            //    "raw text" / "envelope" branch flip mid-flight.
-            //
-            // `wrapToolOutput` always emits `<name>` + `<parameters>`,
-            // so any tool-output Vue component (the `v-else-if` chain
-            // at ChatView.vue:2857-3094) can render a sensible
-            // placeholder card (tool name + arguments) while it waits
-            // for Phase 3 to land. Previously the bare empty content
-            // caused `innerToolData()` to fall back to `msg.content`,
-            // which was `""` — the card rendered blank.
             const placeholder = if (!isKnownToolOrMCP(tool_call.function.name, config)) blk: {
-                // Same actionable text Phase 3 writes. The placeholder is what
-                // a crash-mid-flight or a stale-result sweep leaves behind, so
-                // a vague "unknown tools" here outlives the failure and is
-                // what the human sees on refresh.
+                // Same actionable text Phase 3 writes.
                 const msg = try unknownToolMessage(allocator, tool_call.function.name);
                 defer allocator.free(msg);
                 break :blk try wrapToolOutput(
@@ -947,10 +795,9 @@ pub fn handle_tool(
                 null,
                 "",
             );
-            // `insertLLMHistories` duplicates the content slice
-            // internally (line 123 of insert_llm_histories.zig), so
-            // we own and free the envelope string after the call
-            // returns — the DB row holds its own copy.
+            // `insertLLMHistories` duplicates the content slice internally
+            // (line 123 of insert_llm_histories.zig), so we own and free the
+            // envelope string after the call returns — the DB row holds its
             defer allocator.free(placeholder);
 
             const created_at = try std.fmt.allocPrint(allocator, "{}", .{std.Io.Timestamp.now(io, .real).nanoseconds});
@@ -992,15 +839,8 @@ pub fn handle_tool(
             try list_id_that_was_loaded.append(allocator, id_llm_history);
         }
 
-        // 2026-09-01 fix: emit placeholder SSE immediately so the
-        // frontend has a tool message to attach live progress to.
-        // Without this, spawn_sub_agent's `role="subagent_progress"`
-        // events arrive but there's no <SpawnSubAgent> component yet
-        // (it only mounts for tool messages), so the card stays at
-        // "0 sub-agents" until the final <results> envelope lands
-        // minutes later. Emitting here gives the card an empty-data
-        // envelope (agents.length==0) that flips to inLiveMode when
-        // progress arrives.
+        // 2026-09-01 fix: emit placeholder SSE immediately so the frontend
+        // has a tool message to attach live progress to.
         for (list_id_that_was_loaded.items) |pid| {
             sendSSEForMessageById(allocator, db, session_id, cwd, current_agent_for_save, parent_session_id, agent_temperature.*, isThinking.*, false, true, pid) catch |err| {
                 logger.warnFmt("Failed to emit placeholder SSE for {s}: {s}", .{ pid, @errorName(err) });
@@ -1028,43 +868,20 @@ pub fn handle_tool(
         };
 
         // ─── Phase 3: dispatch each tool & UPDATE placeholder in place ───
-        //
-        // For each tool_call, we run the tool (catching errors) and
-        // UPDATE the placeholder row with the actual result (or the
-        // error message). The placeholder's id is unchanged, so the
-        // SSE listener (which reads the latest message) sees an
-        // in-place update.
-        //
-        // If the app crashes mid-dispatch, the stranded placeholders
-        // are picked up by `resolveStaleLoadingToolResults` on the
-        // next worker loop start (called from workflow.zig).
+        // For each tool_call, we run the tool (catching errors) and UPDATE
+        // the placeholder row with the actual result (or the error message).
         var idx: usize = 0;
         for (tc) |tool_call| {
             const id_llm_history = list_id_that_was_loaded.items[idx];
             idx += 1;
             // Let the tool see its own result row — `ask_user` stores this id
-            // so the answer endpoint can rewrite it in place later. `ctx` is
-            // passed by value to the dispatchers, so this per-iteration
-            // mutation cannot leak into the next tool call.
+            // so the answer endpoint can rewrite it in place later.
             ctx.llm_history_id = id_llm_history;
             var tool_result: []const u8 = undefined;
             var toolAgentTemp: f32 = agent_temperature.*;
             var toolIsThinking: bool = isThinking.*;
 
             // Heartbeat the worker with what it is actually doing.
-            //
-            // `updateWorker` (the upsert behind `touchCheckpointWorkers`) only
-            // runs once before the loop and once per iteration, so a single
-            // long tool call left `last_activity_nano` frozen for its whole
-            // duration. The UI reads that column to decide whether a run is
-            // still alive, so a healthy worker mid-tool looked stalled — and
-            // the 600s stale-worker cron would reap a run that was working
-            // fine. Stamping per tool call is what makes "last activity" mean
-            // what the label promises.
-            //
-            // Best-effort by design: a failed heartbeat must never abort the
-            // tool call it is describing. The description is truncated because
-            // the column is a human-facing label, not a log.
             touchWorkerActivity(
                 allocator,
                 db,
@@ -1076,15 +893,6 @@ pub fn handle_tool(
             // A name that reaches here is genuinely unknown: the tolerated
             // alias (`run_command` → `command`) was already accepted by
             // `isKnownToolOrMCP` above, and the retired shell names (`bash`,
-            // `pwsh`) are deliberately NOT accepted so the correction below
-            // reaches the model. Write an ACTIONABLE result into the
-            // Phase 1 placeholder rather than `continue`-ing. The bare skip
-            // left the placeholder's `data:null` + a non-actionable
-            // "unknown tools" as the FINAL tool_result, so the model got
-            // nothing to correct against and re-emitted the same name four
-            // turns running — while the shell card, which renders `data` and
-            // never `error`, showed the human a blank bubble. This is the
-            // exact "the shell suddenly stopped working" report.
             if (!isKnownToolOrMCP(tool_call.function.name, config)) {
                 logger.warnFmt("[HANDLE_TOOL] unknown tool '{s}' — not in the registry or the MCP catalog", .{tool_call.function.name});
                 const err_msg = try unknownToolMessage(allocator, tool_call.function.name);
@@ -1121,14 +929,9 @@ pub fn handle_tool(
                     },
                 }
 
-                // ─── Workspace-secret substitution (MCP) ───
-                //
-                // MCP tools are intercepted here and `continue`d, so they NEVER
-                // reach `dispatchTool`. A hook placed only there would silently
-                // not cover them — and an API-key-authenticated MCP call is the
-                // most likely place a user reaches for a credential at all.
-                // Same position as in `dispatchTool`: after the pre-hook, on
-                // whatever the hook produced.
+                // ─── Workspace-secret substitution (MCP) ─── MCP tools are
+                // intercepted here and `continue`d, so they NEVER reach
+                // `dispatchTool`.
                 var mcp_resolver: SecretResolver = undefined;
                 var mcp_resolver_live = false;
                 defer if (mcp_resolver_live) mcp_resolver.deinit();
@@ -1150,10 +953,8 @@ pub fn handle_tool(
                         &mcp_resolver,
                         &mcp_sub,
                     ) catch |err| {
-                        // Never call the MCP server with a literal placeholder
-                        // or an empty credential. `mcp_call.function.arguments`
-                        // is untouched on the error path, so the envelope shows
-                        // the placeholder.
+                        // Never call the MCP server with a literal
+                        // placeholder or an empty credential.
                         const envelope = try secretSubstitutionError(allocator, mcp_call.function.name, mcp_call.function.arguments, &mcp_resolver, err);
                         tool_result = envelope;
                         errdefer allocator.free(tool_result);
@@ -1202,20 +1003,14 @@ pub fn handle_tool(
                 errdefer allocator.free(tool_result);
                 // `dispatchTool` reports a failed substitution as a result
                 // envelope rather than an error, so reaching here means it
-                // errored before or outside the substitution and `resolved` is
-                // empty. The envelope's `parameters` come from the raw
-                // `tool_call`, which keeps the placeholder in the DB (property
-                // B).
+                // errored before or outside the substitution and `resolved`
                 try persistRedacted(allocator, io, db, id_llm_history, session_id, cwd, tool_call, tool_result, &.{}, toolAgentTemp, toolIsThinking, current_agent_for_save, parent_session_id);
                 allocator.free(tool_result);
                 continue;
             };
 
             tool_result = exec_result.output;
-            // Loop control (`command`'s `is_stop`). Merged here, in Phase 3,
-            // so the value can only be set by a tool that ACTUALLY RAN — a
-            // call rejected as an unknown tool or denied by a hook cannot end
-            // the turn.
+            // Loop control (`command`'s `is_stop`).
             if (exec_result.stop_loop) outcome.stop_loop = true;
             // `exec_result.secrets` is ours to release once the result has been
             // scrubbed; the catch above `continue`s, so nothing registers it
@@ -1223,11 +1018,7 @@ pub fn handle_tool(
             defer freeResolvedSecrets(allocator, exec_result.secrets);
 
             // The skill-evals ledger below persists this same string, so the
-            // scrub has to happen here as well as at the persist site. Guarded
-            // on `resolved.len` so the overwhelmingly common no-placeholder
-            // call does not pay for a copy of its whole result. The `defer`
-            // is at loop scope, not block scope: `tool_result` keeps pointing
-            // at this buffer until the persist site at the bottom.
+            // scrub has to happen here as well as at the persist site.
             var ledger_scrubbed: ?[]u8 = null;
             defer if (ledger_scrubbed) |scrubbed| allocator.free(scrubbed);
             if (exec_result.secrets.len > 0) {
@@ -1246,13 +1037,7 @@ pub fn handle_tool(
                 };
             }
 
-            // Skill Evals usage ledger (Migration 095). Records what this
-            // session was OFFERED (`search_skills`) and what it actually READ
-            // (`use_skill`), with the hash of the body it read. `session_skills`
-            // cannot answer either of those: it keeps only the latest body per
-            // (session, skill), has no loop index, and is written by `use_skill`
-            // alone. Swallows its own errors — a tool turn must not fail because
-            // bookkeeping did (same posture as the two blocks above).
+            // Skill Evals usage ledger (Migration 095).
             skill_evals_db.recordSkillToolEvents(allocator, db, logger, .{
                 .io = io,
                 .session_id = session_id,
@@ -1270,10 +1055,7 @@ pub fn handle_tool(
             }
 
             // Progressive tool search: `use_tool` records the equip so the
-            // NEXT iteration's tool resolution includes it. Persisting here
-            // (rather than only inside the exec adapter) means a failure to
-            // write is visible as a log line instead of a tool that silently
-            // never becomes callable.
+            // NEXT iteration's tool resolution includes it.
             if (exec_result.progressive_tool_saved) |pt| {
                 _ = llm_history.saveProgressiveTool(allocator, db, logger, session_id, pt.name, pt.server_name) catch |err| {
                     logger.errFmt("Failed to equip progressive tool '{s}': {s}", .{ pt.name, @errorName(err) });
@@ -1293,19 +1075,8 @@ pub fn handle_tool(
 }
 
 /// Persist a tool result with every resolved secret put back behind its
-/// placeholder, then release the scrubbed copy.
-///
-/// This is the boundary that makes property B true. `shell.zig`'s
-/// `result_to_json` puts `result.command` — the fully substituted command —
-/// into the result `data`, so `curl -H "Auth: {{SECRETS:gh}}"` hands the real
-/// token straight back to the model and from there into `llm_history` and the
-/// next provider request. Redaction is the feature, not hardening.
-///
-/// EVERY Phase-3 persist site goes through here, including the ones where
-/// nothing was substituted: passing an empty `resolved` takes the fast path
-/// below, which avoids `redactOutput`'s copy of a result that has nothing to
-/// scrub. `updateAndSendToolResult` is called from exactly one place (this
-/// function) and the static contract test below pins that count.
+/// placeholder, then release the scrubbed copy. This is the boundary that
+/// makes property B true.
 fn persistRedacted(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -1362,15 +1133,7 @@ fn updateAndSendToolResult(
     }
 
     // UPDATE the placeholder row in place (created in Phase 1 of
-    // handle_tool's 3-phase pattern). The row's id is unchanged, so
-    // the SSE listener (which reads the latest message) sees an
-    // in-place update.
-    //
-    // If the placeholder doesn't exist (e.g. an unknown tool was
-    // dispatched anyway), updateToolResultById is a silent no-op
-    // (0 rows affected) — the old saveMessage would have created a
-    // new row, but with the placeholder pattern we prefer to drop
-    // the orphan rather than have an unmatched tool result.
+    // handle_tool's 3-phase pattern).
     try llm_history.updateToolResultById(allocator, io, db, id, .{
         .content = content_modified,
         .diffview_before = diffview_before,
@@ -1378,34 +1141,20 @@ fn updateAndSendToolResult(
     });
 
     // Free the allocated content_after_diff_view.
-    // `before` and `after` are also allocations owned by this caller (since
-    // parseDiffViewFromResult now always allocates them — so it can unescape
-    // XML entities like `&quot;` → `"` before returning the original byte
-    // content for storage). See handle_tool.zig parseDiffViewFromResult.
     if (content_modified_allocated) |allocated| {
         allocator.free(allocated);
     }
     if (diffview_before) |before| allocator.free(before);
     if (diffview_after) |after| allocator.free(after);
 
-    // 2026-08-23 B1 fix — emit the SSE for THIS tool's row by its known
-    // id. The old code called sendSSEForLatestMessage here, which reads
-    // getLatestMessage (last-created row in the session). With N
-    // parallel tool calls, completions 1..N-1 all emitted the LAST
-    // placeholder's data: empty content + wrong tool_call_id — the
-    // frontend showed stale loading cards and TOOLS-pill spam. The row
-    // id has been in hand all along (this function's `id` parameter);
-    // selecting by it emits each completion's OWN row.
+    // 2026-08-23 B1 fix — emit the SSE for THIS tool's row by its known id.
+    // The old code called sendSSEForLatestMessage here, which reads
+    // getLatestMessage (last-created row in the session).
     try sendSSEForMessageById(allocator, db, session_id, cwd, agent_name, parent_session_id, temperature, is_thinking, false, true, id);
 }
 
 /// 2026-08-23 B1 fix — emit the SSE for ONE specific llm_history row,
-/// selected by its exact id. This is the tool-result path: each
-/// placeholder row's id is known (list_id_that_was_loaded), so there is
-/// no reason to guess via getLatestMessage — which returns the
-/// last-created row in the session and, for multi-tool turns, emitted
-/// the WRONG row (empty content + wrong tool_call_id) for every
-/// completion except the newest.
+/// selected by its exact id.
 fn sendSSEForMessageById(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8, cwd: []const u8, agent_name: []const u8, parent_session_id: []const u8, temperature: f32, is_thinking: bool, is_input: bool, is_output: bool, id: []const u8) !void {
     const msgOpt = llm_history.getMessageById(allocator, db, session_id, id) catch |err| {
         logger_mod.debugPrint("SSE_DEBUG: getMessageById failed for session {s} id {s}: {s}\n", .{ session_id, id, @errorName(err) });
@@ -1465,14 +1214,9 @@ fn sendSSEForMessageById(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend
         // assistant message's wire format. The old code passed null here
         // too (via sendSSEForLatestMessage's `null` argument).
         .tool_calls_json = null,
-        // 2026-09-01 fix: tool_call_id on the wire is the ORIGINAL LLM
-        // id (e.g. "call_abc123"), NOT the row id. The row id is already
-        // in `msg.id` / `event.id`. Using the row id here broke
-        // spawn_sub_agent live progress: progress events are keyed by
-        // the original id, but the placeholder's SSE had the row id, so
-        // `subAgentProgressMap[msg.tool_call_id]` never matched and the
-        // card showed "0 sub-agents" while running. REST (get_llm_histories)
-        // already returns the original id; SSE must agree.
+        // 2026-09-01 fix: tool_call_id on the wire is the ORIGINAL LLM id
+        // (e.g. "call_abc123"), NOT the row id. The row id is already in
+        // `msg.id` / `event.id`.
         .tool_call_id = msg.tool_call_id orelse msg.id,
         .tool_name = msg.tool_name,
         .agent_name = agent_name,
@@ -1496,8 +1240,7 @@ fn sendSSEForMessageById(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend
 fn sendSSEForLatestMessage(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8, cwd: []const u8, agent_name: []const u8, parent_session_id: []const u8, temperature: f32, is_thinking: bool, is_input: bool, is_output: bool, tool_calls_json: ?[]agent.ToolCall) !void {
     // 2026-08-24 wire-shape fix (task_1787590621966_10): the raw array is
     // passed through unchanged — on_event_sent.onEventSendLLMHistory now
-    // serializes tool_calls to a JSON STRING internally (single
-    // serialization point, all callers fixed at once).
+    // serializes tool_calls to a JSON STRING internally (single serialization
 
     const latestMessage = getLatestMessage(allocator, db, session_id) catch |err| {
         logger_mod.debugPrint("SSE_DEBUG: getLatestMessage failed for session {s}: {s}\n", .{ session_id, @errorName(err) });
@@ -1775,9 +1518,7 @@ test "parseDiffViewFromResult - no entities, content unchanged (fast path)" {
 
 test "parseDiffViewFromResult - decodes &amp; LAST (no double-decoding)" {
     // `&amp;quot;` is the literal 6-byte sequence representing the entity
-    // `&quot;` — NOT a double-encoded `"`. The &amp; replacement must come
-    // last, otherwise the prior passes would convert `&amp;quot;` → `"`.
-    // Correct: `&amp;quot;` → `&quot;` (literal 6 chars).
+    // `&quot;` — NOT a double-encoded `"`.
     const content =
         "<diff_view><before>encoded &amp;quot;quote&amp;quot;</before></diff_view>";
     const result = try parseDiffViewFromResult(std.testing.allocator, content);
@@ -1816,19 +1557,8 @@ test "parseDiffViewFromResult - unescapes multiline content with entities" {
 }
 
 // =============================================================================
-// Phase 1 placeholder envelope.
-//
-// 2026-08-24-better-tool-placeholder: Phase 1 inserts used to store
-// raw text in `response_content` (`"unknown tools"` for unknown tools,
-// `""` for known tools). On page-refresh-mid-execution or restart the
-// frontend's `tryUnwrapToolOutput` couldn't parse the row, fell back
-// to `msg.content`, and rendered a blank/garbage card. The fix pipes
-// every Phase 1 placeholder through `wrapToolOutput` so the envelope
-// shape is stable across all 3 phases, and rejects an unknown tool with
-// the actionable `unknownToolMessage` rather than the bare
-// `"unknown tools"` string, which named neither the offending tool nor
-// the valid ones.
-// =============================================================================
+// Phase 1 placeholder envelope. 2026-08-24-better-tool-placeholder: Phase 1
+// inserts used to store raw text in `response_content` (`"unknown tools"` for
 
 test "unknownToolMessage names the offending tool and offers the real ones" {
     // A RETIRED name gets the targeted correction rather than the ~40-name
@@ -1858,12 +1588,8 @@ test "unknownToolMessage names the offending tool and offers the real ones" {
 }
 
 test "wrapToolOutput envelope is round-trip parseable (envelope shape vs frontend)" {
-    // Sanity: the known-tool branch envelope can be parsed by the
-    // frontend's `unwrapToolOutput` shape (name + parameters +
-    // success=true + data=""). Mirrors the wire contract that
-    // tools_wrap_output.zig's own tests pin — Phase 1 doesn't need
-    // to re-test `wrapToolOutput` itself, just the Phase 1 pick of
-    // arguments.
+    // Sanity: the known-tool branch envelope can be parsed by the frontend's
+    // `unwrapToolOutput` shape (name + parameters + success=true + data="").
     const envelope = try wrapToolOutput(
         std.testing.allocator,
         "read_file",
@@ -1904,12 +1630,6 @@ test "wrapToolOutput envelope is round-trip parseable (envelope shape vs fronten
 // ============================================================================
 // Lua hook seam tests (plan 2026-09-12-hook-lua-pre-post-tool-use, Phase 3)
 // ============================================================================
-//
-// These cover runPreHookAction / runPostHookOverride — the exact helpers
-// dispatchTool and the MCP branch call. The helpers only touch
-// allocator/logger/environment, so db/config/loops stay `undefined`
-// (never dereferenced on these paths; a future touch would crash loudly).
-// End-to-end exec-skipping is covered by tests/functional/hooks_lua_test.py.
 
 /// Minimal ToolContext for hook tests: only allocator/logger/environment
 /// (+ identity strings) are read by the hook path.
@@ -2056,10 +1776,6 @@ test "hook seam: broken hook file fails open to proceed/keep" {
 
 // ============================================================================
 // Lua hook dispatch tests: real registry + real read_file exec + real Lua.
-// A real in-memory DB is provided (read_file ignores it); config stays
-// undefined because read_file always hits the registry (config is only
-// read on registry miss). These prove the wiring, not just the helpers.
-// ============================================================================
 
 const HookDispatchCtx = struct {
     db: sqlite.SqliteBackend,
@@ -2210,8 +1926,7 @@ test "hook dispatch: pre modify rewrites args seen by exec" {
     const escaped = try jsonEscapePath(dispatch_alloc, other_abs);
     // The hook REPLACES the whole arguments object, so the replacement has to
     // carry every field the tool requires — including `cwd` (the directory
-    // the call works in). That makes this test strictly stronger: the
-    // rewritten body is the one the exec acted on.
+    // the call works in).
     const escaped_root = try jsonEscapePath(dispatch_alloc, path_buf[0..n]);
     const lua_source = try std.fmt.allocPrint(dispatch_alloc, "function init(event, data) if event == 'pre_tool_use' then return {{ arguments = [[{{\"path\":\"{s}\",\"cwd\":\"{s}\"}}]] }} end return nil end\n", .{ escaped, escaped_root });
     var fx = try hookFixture(dispatch_alloc, lua_source, &path_buf);
@@ -2266,20 +1981,8 @@ test "jsonEscapePath escapes backslashes and quotes for JSON embedding" {
     try std.testing.expectEqualStrings("a\\\"b", quoted);
 }
 // ============================================================================
-// Workspace-secret substitution tests (plan 2026-10-02-workspace-secrets)
-//
-// Two properties are under test and they pull in opposite directions. A —
-// the executor receives the real value. B — the model never does: the value
-// must not appear in `llm_history.tool_calls_json`, in a persisted tool
-// result, or anywhere else the model can read it back.
-//
-// The fixture is in-memory SQLite with the tables these paths actually read:
-// the three `resolveWorkspaceId` walks, `workspace_secrets`, and the
-// `llm_history` / `sessions` columns `saveMessage` and
-// `updateToolResultById` name. The DDL is spelled out here rather than
-// imported from the migrations on purpose — these tests pin the dispatch
-// wiring, not the schema.
-// ============================================================================
+// Workspace-secret substitution tests (plan 2026-10-02-workspace-secrets) Two
+// properties are under test and they pull in opposite directions.
 
 const secrets_test_workspace = "ws_secrets_test";
 /// Task-linked to a workspace item, so `resolveWorkspaceId` finds it through
@@ -2356,9 +2059,6 @@ fn secretsSetup(allocator: std.mem.Allocator) !SecretsFixture {
     , &.{});
 
     // Every column `saveMessage` inserts or `updateToolResultById` writes.
-    // Nullable on purpose: an empty slice binds as SQL NULL in this backend,
-    // so a NOT NULL column would turn a `null` argument into a constraint
-    // failure that has nothing to do with secrets.
     try db.exec(allocator,
         \\CREATE TABLE llm_history (
         \\  id TEXT PRIMARY KEY,
@@ -2476,9 +2176,6 @@ fn secretsEnvMap(allocator: std.mem.Allocator) !SecretsEnv {
 }
 
 /// A `write_file` call whose `content` is the given raw JSON fragment.
-/// Writing is how the tests observe the executor: the file on disk is proof of
-/// what the tool actually received, and its absence is proof the tool never
-/// ran.
 fn writeFileCall(
     allocator: std.mem.Allocator,
     tmp: *std.testing.TmpDir,
@@ -2517,7 +2214,6 @@ test "secrets: the executor receives the real value (property A)" {
     // Arena, like the `hook dispatch` tests above: `execWriteFile` hands the
     // `data` payload it built to `wrapToolOutput` without freeing it, so the
     // testing allocator would report a leak that has nothing to do with this
-    // feature.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -2546,8 +2242,7 @@ test "secrets: the executor receives the real value (property A)" {
 
     // `execWriteFile` embeds the arguments in the envelope's `parameters`, so
     // the value is in the result string too — which is precisely why
-    // redaction cannot be skipped. This assertion is what makes the redaction
-    // tests below meaningful rather than vacuous.
+    // redaction cannot be skipped.
     try std.testing.expect(std.mem.indexOf(u8, result.output, secrets_test_canary) != null);
 
     // The caller's own tool_call is untouched: substitution writes to a copy.
@@ -2658,17 +2353,7 @@ test "secrets: the shell echo case is scrubbed too (shell.zig puts the command i
     const ctx = secretsCtx(allocator, &fx, &lg, &env.map, secrets_test_session);
     // `shell.zig`'s `result_to_json` serializes `result.command` into the
     // result `data`, so the fully substituted command comes straight back —
-    // alongside the envelope's own `parameters` and the shell's stdout. This
-    // is the leak that survives when redaction is applied anywhere other than
-    // immediately before persistence.
-    //
-    // `timeout` and `cwd` are BOTH required by `execute_command`;
-    // without either the tool returns an error envelope and never runs a shell,
-    // which would leave the leak one layer short and the test below passing for
-    // the wrong reason.
-    // 60 is comfortably under shell.zig's MAX_TIMEOUT_SEC (600), so the call
-    // actually reaches the shell — an over-max deadline would short the leak
-    // the same way a missing `cwd` would.
+    // alongside the envelope's own `parameters` and the shell's stdout.
     const args = try std.fmt.allocPrint(
         allocator,
         "{{\"command\":\"echo {{{{SECRETS:TOK}}}}\",\"cwd\":\"/tmp\",\"timeout\":60}}",
@@ -2817,11 +2502,6 @@ test "secrets: the resolver queries the store once per distinct name and remembe
 // ============================================================================
 // Worker activity heartbeat tests
 // ============================================================================
-//
-// `touchWorkerActivity` is what makes the UI's "last activity" label mean
-// anything: without it the timestamp only moves once per loop iteration, so a
-// long tool call reads as a stalled worker. These tests drive the real DB
-// write through `updateWorkerActivityWithDescription` and read the row back.
 
 fn workerActivityDb(allocator: std.mem.Allocator) !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
     var threaded = std.Io.Threaded.init(allocator, .{});

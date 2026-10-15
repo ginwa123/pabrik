@@ -1,45 +1,4 @@
 //! Unified SSE stream endpoint for all server-pushed events.
-//!
-//! Replaces the 5 dedicated SSE routes registered in main.zig:
-//!   - GET /api/workers/stream
-//!   - GET /api/sessions/stream
-//!   - GET /api/llm/stream/:session_id
-//!   - GET /api/llm/session/:session_id/queue_messages/stream
-//!   - GET /api/kanban/events
-//!
-//! The client opens ONE EventSource and declares which channel families
-//! it cares about via the `?channels=` query parameter:
-//!
-//!   /api/events?channels=workers,sessions,kanban
-//!   /api/events?channels=llm
-//!   /api/events?channels=queue
-//!   /api/events?channels=workers,sessions,kanban,llm,queue
-//!
-//! Channel tokens and the event_bus routing keys they fan out to:
-//!   workers        → "workers"
-//!   sessions       → "sessions"
-//!   kanban         → "kanban_column", "kanban_task"
-//!   design_element → "design_element" (central key — all workspaces' design
-//!                    element create/update/delete events; the frontend
-//!                    filters by `data.workspace_id` JS-side)
-//!   llm            → "llm"          (central key — all sessions' LLM events)
-//!   queue          → "queue"        (central key — all sessions' queue events)
-//!   background_process → "background_process" (central key — all sessions'
-//!                    background-process created/completed events; the
-//!                    frontend filters by `data.session_id` JS-side)
-//!   git_file_stage → "git_file_stage" (central key — the `git_file_staged` /
-//!                    `git_file_unstaged` events emitted by
-//!                    POST /api/git/stage and /api/git/unstage; the frontend
-//!                    filters by `data.cwd` JS-side and moves ONE row instead
-//!                    of re-fetching the whole git-status list)
-//!   git_pr_state  → "git_pr_state" (central key — the `git_pr_state_merged` /
-//!                    `git_pr_state_closed` events emitted by
-//!                    POST /api/git/pr/merge and /api/git/pr/close; the
-//!                    frontend invalidates the shared PR-status cache for
-//!                    `data.cwd` + `data.branch`, so the sidebar branch icon and
-//!                    the kanban card badge re-read after a merge)
-//!
-//! Plan: docs/superpowers/plans/2026-06-30-unify-sse-endpoints.md
 
 const std = @import("std");
 const pabrik_core = @import("pabrikcore");
@@ -48,19 +7,7 @@ const ai_mod = pabrik_core.ai_mod;
 const auth_common = @import("auth_common.zig");
 
 /// Forward an SSE event to every client registered under `routing_key`.
-///
-/// Lifted verbatim from kanban_events_sse.zig:34-76. Subscription-lock-safe:
-/// `getListClientsForSession` returns an owned copy of the client list, so
-/// the SSE event loop can safely `unregisterSessionClient` on POLL.HUP
-/// while we are still iterating here.
-///
-/// Per-user isolation (plan 2026-09-25, W3): the bus fans out by *family*
-/// routing key, so without a filter every connected client receives every
-/// user's events. Each client's owner is recorded at connect
-/// (`registerClientOwner`); before sending, a client whose owner is a real
-/// user and who cannot see `data.session_id` is skipped. An empty
-/// `session_id` or an unknown owner (auth off) delivers, so the auth-off
-/// path stays byte-identical.
+/// Lifted verbatim from kanban_events_sse.zig:34-76.
 fn forwardToClients(routing_key: []const u8, data: ai_mod.on_event_sent.SseEvent) void {
     const di = pabrik_core.getSingleton() catch return;
     const allocator = di.allocator;
@@ -103,22 +50,6 @@ fn forwardToClients(routing_key: []const u8, data: ai_mod.on_event_sent.SseEvent
 
 /// True when the SSE client identified by `client_id` may receive an event
 /// about `session_id`.
-///
-/// Deliver when:
-///   - the client's owner is unknown (auth off / pre-registration), or
-///   - the owner is the shared/system user (sees everything by decision), or
-///   - the event's session cannot be resolved to a row the owner is denied.
-///
-/// Skip only for a real owner who is positively denied the event's session —
-/// the leak this closes.
-///
-/// `SseEvent.session_id` is the real session id on the `sessions`, `llm`,
-/// `queue` and `background_process` channels, but the *routing-key literal*
-/// on `workers` ("workers") and `design_element` ("design_element") — those
-/// publishers put the real id only in the JSON payload. So when the envelope
-/// id does not name a session row, fall back to the payload's `session_id`
-/// field before deciding; a payload that names no session either is
-/// delivered (nothing to scope on).
 fn clientMayReceive(di: *pabrik_core.App, client_id: [16]u8, data: ai_mod.on_event_sent.SseEvent) bool {
     const owner = pabrik_core.getClientOwner(client_id) orelse return true;
     if (auth_common.isSharedOwner(owner)) return true;
@@ -133,21 +64,6 @@ fn clientMayReceive(di: *pabrik_core.App, client_id: [16]u8, data: ai_mod.on_eve
 
 /// Resolve the session id an SSE event is about, or null when it cannot be
 /// attributed to one.
-///
-/// `SseEvent.session_id` is the real session id on the `sessions`, `llm`,
-/// `queue` and `background_process` channels, but the *routing-key literal*
-/// on `workers` ("workers") and `design_element` ("design_element") — those
-/// publishers put the real id only in the JSON payload, and the worker
-/// publishers leave the payload's `session_id` empty (the worker id is in
-/// `id`). So the resolution order is:
-///
-///   1. the envelope id, when it names a session row;
-///   2. the payload's `session_id`, when non-empty;
-///   3. the payload's `id`, when it names a session row (worker events carry
-///      the worker id there, and `worker.id` is not always the session id —
-///      so also try the `worker` table's `session_id` for that id).
-///
-/// Returns an owned-by-arena slice (the fan-out is a short-lived callback).
 fn resolveEventSessionId(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -267,61 +183,40 @@ pub fn parseChannels(allocator: std.mem.Allocator, raw: []const u8) ChannelParse
             // Background-process lifecycle (`background_process_created` /
             // `background_process_completed` on the central
             // "background_process" key — see background_process_events.zig).
-            // Single key covers both granular event types; the frontend
-            // filters by `data.session_id` JS-side.
             try routing_keys.append(allocator, try allocator.dupe(u8, "background_process"));
         } else if (std.mem.eql(u8, token, "skill_evals")) {
             // Skill-eval lifecycle (`skill_evals_run_started` /
             // `_run_finished` / `_result_applied` on the central
-            // "skill_evals" key — see skill_eval_events.zig). Single key
-            // covers all three granular event types; the frontend filters
-            // by `data.session_id` JS-side.
+            // "skill_evals" key — see skill_eval_events.zig).
             try routing_keys.append(allocator, try allocator.dupe(u8, "skill_evals"));
         } else if (std.mem.eql(u8, token, "git_file_stage")) {
             // File stage/unstage (`git_file_staged` / `git_file_unstaged` on
             // the central "git_file_stage" key — see
-            // git_file_stage_events.zig). Single key covers both granular
-            // event types; the frontend filters by `data.cwd` JS-side.
+            // git_file_stage_events.zig).
             try routing_keys.append(allocator, try allocator.dupe(u8, "git_file_stage"));
         } else if (std.mem.eql(u8, token, "git_pr_state")) {
             // Change-request state (`git_pr_state_merged` /
             // `git_pr_state_closed` on the central "git_pr_state" key — see
-            // git_pr_state_events.zig). Single key covers both granular event
-            // types; the frontend filters by `data.cwd` JS-side and drops the
-            // shared PR-status cache entry for `data.branch`.
+            // git_pr_state_events.zig).
             try routing_keys.append(allocator, try allocator.dupe(u8, "git_pr_state"));
         } else if (std.mem.eql(u8, token, "design_element")) {
-            // Design-mode element mutations. The frontend
-            // `createUnifiedSseConnection` sends this token; the
-            // backend's `on_event_sent_design.zig` emits
-            // `design_element_created/updated/deleted` on the central
-            // "design_element" routing key. The single key covers all
-            // three granular event types (the action discriminator
-            // tells them apart JS-side).
+            // Design-mode element mutations.
             try routing_keys.append(allocator, try allocator.dupe(u8, "design_element"));
         } else {
             return error.UnknownChannel;
         }
     }
 
-    // If the raw value was non-empty but every comma-delimited token
-    // was empty (e.g. ",,,"), we still need to error. The trim+skip
-    // path above would leave routing_keys empty without an explicit
-    // error here — guard against that.
+    // If the raw value was non-empty but every comma-delimited token was
+    // empty (e.g. ",,,"), we still need to error.
     if (routing_keys.items.len == 0) return error.MissingChannels;
 
     return ChannelList{ .routing_keys = try routing_keys.toOwnedSlice(allocator) };
 }
 
 // =============================================================================
-// Callback structs (top-level, NOT inline).
-//
-// Each routing key gets its own callback. The routing key itself is
-// hard-coded into the callback body — there's no closure capture of a
-// loop variable (Pitfall 1: inline-struct capture trap). The handler
-// picks the right callback by inspecting the routing-key SHAPE with
-// an if/else chain (mirrors kanban_events_sse.zig:79-90).
-// =============================================================================
+// Callback structs (top-level, NOT inline). Each routing key gets its own
+// callback.
 
 /// Callback for `kanban_column` routing key — fires on column create/update/delete.
 pub const CallbackUnifiedColumnStream = struct {
@@ -369,53 +264,35 @@ pub const CallbackUnifiedQueueBroadcast = struct {
     }
 };
 
-/// Callback for the central "design_element" routing key. Forwards
-/// to every client registered under "design_element" — the frontend
-/// listener (`designSse.ts` Pinia store) then filters by
-/// `data.workspace_id` on the JS side and dispatches to the
-/// `workspacesStore.fetchDesignElements` action.
+/// Callback for the central "design_element" routing key.
 pub const CallbackUnifiedDesignElementStream = struct {
     pub fn callback(data: ai_mod.on_event_sent.SseEvent) void {
         forwardToClients("design_element", data);
     }
 };
 
-/// Callback for the central "background_process" routing key. Forwards
-/// to every client registered under "background_process" — the frontend
-/// listener (`BackgroundCommandsPopup.vue`) then filters by
-/// `data.session_id` on the JS side and re-fetches the list.
+/// Callback for the central "background_process" routing key.
 pub const CallbackUnifiedBackgroundProcessStream = struct {
     pub fn callback(data: ai_mod.on_event_sent.SseEvent) void {
         forwardToClients("background_process", data);
     }
 };
 
-/// Callback for the central "skill_evals" routing key. Forwards to every
-/// client registered under "skill_evals" — the frontend listener then
-/// filters by `data.session_id` on the JS side and re-fetches the eval
-/// list for the Evals tab.
+/// Callback for the central "skill_evals" routing key.
 pub const CallbackUnifiedSkillEvalsStream = struct {
     pub fn callback(data: ai_mod.on_event_sent.SseEvent) void {
         forwardToClients("skill_evals", data);
     }
 };
 
-/// Callback for the central "git_file_stage" routing key. Forwards to every
-/// client registered under "git_file_stage" — the frontend listener
-/// (`SidebarDiffPanel.vue`) then filters by `data.cwd` on the JS side and
-/// moves the ONE row the event names, instead of re-fetching the whole
-/// git-status list.
+/// Callback for the central "git_file_stage" routing key.
 pub const CallbackUnifiedGitFileStageStream = struct {
     pub fn callback(data: ai_mod.on_event_sent.SseEvent) void {
         forwardToClients("git_file_stage", data);
     }
 };
 
-/// Callback for the central "git_pr_state" routing key. Forwards to every
-/// client registered under "git_pr_state" — the frontend listener then filters
-/// by `data.cwd` / `data.branch` on the JS side and drops the shared PR-status
-/// cache entry for that pair, so every badge (sidebar RECENT icon, kanban card)
-/// re-reads the forge after a merge or close, in every tab.
+/// Callback for the central "git_pr_state" routing key.
 pub const CallbackUnifiedGitPrStateStream = struct {
     pub fn callback(data: ai_mod.on_event_sent.SseEvent) void {
         forwardToClients("git_pr_state", data);
@@ -423,15 +300,8 @@ pub const CallbackUnifiedGitPrStateStream = struct {
 };
 
 /// Terminate an SSE stream the handler cannot serve (auth failure,
-/// missing/empty/unknown `?channels=`).
-///
-/// kabelweb sends the `200 text/event-stream` headers AND registers the
-/// fd BEFORE this handler runs, so a bare `return res.jsonResponse(...)`
-/// never reaches the wire — without this call the browser holds an
-/// immortal ping-only stream that never emits `event: connected`, and
-/// the frontend SseClient sits in 'connecting' forever. Sends an
-/// optional terminal named event, then removes the client so the
-/// browser's EventSource errors out promptly instead of hanging.
+/// missing/empty/unknown `?channels=`). kabelweb sends the `200
+/// text/event-stream` headers AND registers the fd BEFORE this handler runs,
 fn terminateSseStream(ctx: gserverz.HttpContext, event_name: ?[]const u8, data_json: []const u8) void {
     const cid = ctx.client_id orelse return;
     const di = pabrik_core.getSingleton() catch return;
@@ -443,12 +313,8 @@ fn terminateSseStream(ctx: gserverz.HttpContext, event_name: ?[]const u8, data_j
     di.server.sse_manager.removeClient(cid, .explicit_shutdown);
 }
 
-/// SSE stream endpoint — single endpoint for all server-pushed events.
-///
-/// The `?channels=` query parameter is REQUIRED. Missing/empty/unknown
-/// values terminate the stream (see `terminateSseStream` — a JSON error
-/// body can never reach the wire once kabelweb has sent the SSE
-/// headers).
+/// SSE stream endpoint — single endpoint for all server-pushed events. The
+/// `?channels=` query parameter is REQUIRED.
 pub fn unifiedEventsStreamHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -457,14 +323,6 @@ pub fn unifiedEventsStreamHandler(
     const allocator = ctx.allocator;
 
     // Manual auth gate: kabelweb sse() does not run middleware.
-    // The rejection paths terminate the stream explicitly — the 401
-    // JSON below is type-compat only and never reaches the wire
-    // (headers already sent); the `auth_error` event + removeClient
-    // in terminateSseStream are what the browser actually observes.
-    //
-    // The resolved owner is kept for the per-user fan-out filter (W3):
-    // it is recorded against this client_id below, so `forwardToClients`
-    // can drop events about sessions this user cannot see.
     var owner_buf: ?[]const u8 = null;
     defer {
         if (owner_buf) |o| allocator.free(o);
@@ -533,9 +391,8 @@ pub fn unifiedEventsStreamHandler(
         }
 
         // 2b. Register the client_id under EVERY routing key.
-        // registerSessionClient dupes the key internally, so we can
-        // pass each entry of channels.routing_keys (already-owned
-        // slices) directly.
+        // registerSessionClient dupes the key internally, so we can pass each
+        // entry of channels.routing_keys (already-owned slices) directly.
         for (channels.routing_keys) |rk| {
             ai_mod.registerSessionClient(rk, client_id_copy, true) catch {};
         }
@@ -583,49 +440,13 @@ pub fn unifiedEventsStreamHandler(
 
 // ===== Tests merged from sse_handshake_test.zig (2026-09-11 flatten) =====
 // Regression test for the SSE `connected` event handshake.
-//
-// Why this file exists
-// ────────────────────
-// The frontend `SseStatusBadge`
-// (src/apps/desktop/src/components/SseStatusBadge.vue) and the
-// `SseClient` state machine
-// (src/apps/desktop/src/helpers/sseClient.ts) only transition
-// from `'connecting'` to `'open'` when the server sends the SSE
-// `connected` named event:
-//
-//     event: connected\ndata: {"connected": true}\n\n
-//
-// Two of the four legacy backend SSE handlers used to skip this
-// handshake, leaving the badge stuck on "Connecting…" forever
-// (the stream was alive and streaming, but the badge had no
-// signal to hide). See docs/plans/2026-06-05-stuck-connecting-badge.md
-// for the full trace.
-//
-// After the 5→1 SSE endpoint unification (plan
-// docs/superpowers/plans/2026-06-30-unify-sse-endpoints.md),
-// only ONE backend SSE handler is registered
-// (`unified_events_sse.zig`), so its `sendToClient` of the
-// handshake is the single place the badge can get unstuck.
-//
-// The contract belongs in the python functional harness under
-// tests/functional/: connect to the SSE endpoint and assert the
-// first frame is `event: connected`. A source grep cannot fail for
-// a behaviour break here — it only fails for a rename.
 
 const pabrikcore = @import("pabrikcore");
 const testing = std.testing;
 
 // ─── Behavioral tests for parseChannels ────────────────────────────────
-//
-// Plan Reviewer finding #3: source-grep contracts only verify
-// the file's shape, not the parser's correctness. A typo in the
-// bare `llm`/`queue` token names, or an off-by-one in the kanban
-// expansion would silently drop events in production. These
-// behavioral tests pin the parser contract.
-//
-// To make `parseChannels` testable from this file, the production
-// code must expose it as `pub fn` (currently `fn`). Chunk 1.1's
-// implementation step promotes it to `pub`.
+// Plan Reviewer finding #3: source-grep contracts only verify the file's
+// shape, not the parser's correctness.
 
 test "parseChannels: workers → 1 routing key" {
     const allocator = testing.allocator;
@@ -685,10 +506,8 @@ test "parseChannels: mixed 5 channels (bare llm+queue) → 6 routing keys (kanba
 
 test "parseChannels: multiple bare tokens (llm+queue repeated) → 2 keys" {
     const allocator = testing.allocator;
-    // Bare 'llm' and 'queue' tokens each register once under their
-    // central key. The ChannelList does NOT deduplicate (see the
-    // ChannelList docstring); the SSE event_bus handles duplicate
-    // subscribers without error.
+    // Bare 'llm' and 'queue' tokens each register once under their central
+    // key.
     const list = try parseChannels(allocator, "llm,llm,queue,queue");
     defer list.deinit(allocator);
     try testing.expectEqual(@as(usize, 4), list.routing_keys.len);
@@ -754,16 +573,8 @@ test "parseChannels: trims whitespace around tokens" {
 }
 
 // ===== Per-user fan-out filter (plan 2026-09-25, W3) =====================
-//
 // The bus fans out by family routing key, so the fan-out must resolve which
 // session an event is about before deciding whether a client may see it.
-// `SseEvent.session_id` is the real session id on the `sessions`/`llm`/
-// `queue`/`background_process` channels but the routing-key literal on
-// `workers`/`design_element`, and the worker publishers leave the payload's
-// `session_id` empty (the worker id is in `id`). These tests pin the
-// resolution order so a future publisher change cannot silently reopen the
-// leak (an unresolvable event is delivered, so a wrong resolution is a leak,
-// not a dropped frame).
 
 fn testDb(alloc: std.mem.Allocator) !pabrikcore.sqlite.SqliteBackend {
     var db: pabrikcore.sqlite.SqliteBackend = .{};
@@ -812,8 +623,7 @@ test "resolveEventSessionId: worker event with empty payload session_id maps id 
 
     // `llm_history.updateWorkerActivity` emits exactly this shape: the
     // envelope id is "workers", the payload's session_id is empty, and the
-    // worker id is in `id`. Without the worker-table hop this event would be
-    // delivered to every user (the leak).
+    // worker id is in `id`.
     const ev = ai_mod.on_event_sent.SseEvent{
         .session_id = "workers",
         .data = "{\"action\":\"updated\",\"id\":\"w_a\",\"session_id\":\"\"}",

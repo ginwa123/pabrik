@@ -1,19 +1,10 @@
-// Test runner for the `agentic_loop/` directory.
-//
-// IMPORTANT: Zig's test runner only auto-discovers `test "..." { ... }` blocks
-// in files that are **directly `@import`ed** here. A transitive import via
-// `mod.zig` does NOT count — `mod.zig` is reachable but its descendants'
-// `test` blocks are NOT automatically registered.
-//
-// Whenever you add a new `test "..." { ... }` block to an implementation file
-// in this directory, ALSO add `_ = @import("your_file.zig");` to the list
-// below. The README explains this in more detail.
+// Test runner for the `agentic_loop/` directory. IMPORTANT: Zig's test runner
+// only auto-discovers `test "..." { ... }` blocks in files that are
+// **directly `@import`ed** here.
 
 test {
     // ─── Files with inline tests ──────────────────────────────────────────
-    // web_search_config: per-session provider resolution. Registered because
-    // nothing else in the reachable graph imports it — its whole purpose is
-    // to be called from the two exec adapters, which do not yet exist.
+    // web_search_config: per-session provider resolution.
     _ = @import("web_search_config.zig");
 
     _ = @import("sse.zig");
@@ -65,21 +56,14 @@ test {
     _ = @import("design_model.zig"); // Phase 6 — inline updateElementsBatch + indexOf tests
     _ = @import("workflow_compact_message.zig"); // merged 2026-09-10 (ex-workflow_commpact_message.zig typo): url_style regression + envelope + prompt/envelope helpers
     _ = @import("handle_tool.zig"); // 2026-08-06-fix-refactor-zig-imports — 16 inline parseDiffViewFromResult tests
-    // (on_event_sent.zig, workflow.zig and tools_wrap_output.zig are
-    // already registered above; their tool_calls_json wire-shape lock,
-    // fetch-once MCP cache contracts and JSON tool-output envelope
-    // contract now live inline in those files. The project-wide
-    // "no literal /tmp file op" gate — run 36496521345 — moved into
-    // src/root.zig, which is the mod test root and so already discovers
-    // its own `test` blocks.)
+    // (on_event_sent.zig, workflow.zig and tools_wrap_output.zig are already
+    // registered above; their tool_calls_json wire-shape lock, fetch-once MCP
+    // cache contracts and JSON tool-output envelope contract now live inline
     _ = @import("workflow_compact_message.zig"); // merged single file — helpers + orchestration + all inline tests
     _ = @import("prompts_make_working_directory_context.zig"); // never-create-memory-md — makeWorkingDirectoryContext must never force-create AGENTS.md / CLAUDE.md / PABRIK.md (inline tests at the bottom of the impl file)
     _ = @import("prompts_make_cross_project_context.zig"); // sibling-cwd loop from workspace_items only (inline in-memory DB tests)
     _ = @import("prompts_make_kanban_context.zig"); // kanban prompt — renders all columns at tail (no cap) so kanban_move_task is 1-call; in-memory DB tests
     // impl + tests are in the same .zig file for Agent Mode helpers.
-    // No separate _test.zig imports needed here — the test blocks
-    // inside agent_tools_allowed.zig and prompts_make_agent_knowledge.zig
-    // are discovered automatically by `zig build test`.
 
     // 2026-08-14 — list_directory exec wrapper (Task 5 of the same plan).
     _ = @import("tools_exec_list_directory.zig");
@@ -91,9 +75,7 @@ test {
     _ = @import("tools_exec_write_file.zig");
     _ = @import("tools_exec_text_replace.zig");
     // Windows absolute paths in tool-call `arguments`: models emit the
-    // separators as raw `\`, which is invalid JSON. Registered here per
-    // this directory's discovery rule (see README.md §"Discovery is NOT
-    // automatic").
+    // separators as raw `\`, which is invalid JSON.
     _ = @import("tools_args_repair.zig");
     _ = @import("tools_exec_remove_file.zig");
     _ = @import("tools_exec_glob.zig");
@@ -103,15 +85,8 @@ test {
     _ = @import("tools_exec_list_directory.zig");
 
     // task_1787855066467_8 — bash/pwsh lenient JSON argument parser.
-    // Recover LLM XML-fragment hallucinations like
-    // `timeout: "5</timeout>"` into the integer 5,
-    // or surface the offending field + value + expected type when
-    // coercion fails.
     _ = @import("tools_exec_bash_args.zig");
-    // Shared model-facing error explanations. Every `tools_exec_*.zig`
-    // adapter renders its failure envelope through this table, so a
-    // model that gets an error can repair its own next tool call
-    // instead of retrying the identical one.
+    // Shared model-facing error explanations.
     _ = @import("tools_error_explain.zig");
     _ = @import("tools_exec_bash.zig");
     _ = @import("tools_exec_pwsh.zig");
@@ -120,17 +95,12 @@ test {
     _ = @import("background_process_events.zig"); // bg-process SSE push (created/completed) — replaces 5s list poll
 
     // 2026-08-23 spawn-subagent-live-progress — `subagent_progress.zig`
-    // builds the wire payload that rides the EXISTING `llm_full` SSE
-    // channel with a NEW `role="subagent_progress"` value. Frontend
-    // ChatView.vue routes by role; inline tests at the bottom of the
-    // impl file guard the JSON shape.
+    // builds the wire payload that rides the EXISTING `llm_full` SSE channel
+    // with a NEW `role="subagent_progress"` value.
     _ = @import("subagent_progress.zig");
     // Static-contract tests live inline at the bottom of
-    // `tools_exec_spawn_sub_agent.zig` — they grep the impl source
-    // for the 3 lifecycle emission points (launched / completed /
-    // failed) and that `tool_call_id` is threaded through the
-    // per-thread struct. Drops of these regress user-visible
-    // progress to "0 sub-agents".
+    // `tools_exec_spawn_sub_agent.zig` — they grep the impl source for the 3
+    // lifecycle emission points (launched / completed / failed) and that
     _ = @import("tools_exec_spawn_sub_agent.zig");
     // present_files exec adapter — the sandbox root it resolves from the
     // session row is what keeps a card servable by /api/files/download

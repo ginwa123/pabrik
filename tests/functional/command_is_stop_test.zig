@@ -1,59 +1,5 @@
-// Functional wire verification for `command`'s `is_stop` parameter.
-//
-// Plan: docs/plans/2026-10-14-command-is-stop-persistence.md (§2).
-//
-// What only THIS file can prove
-// ============================
-// `is_stop` is a LOOP decision, not a shell option. Everything upstream of
-// `workflow.zig` is covered by unit tests in the same packages the change
-// touches:
-//
-//   * `tools_exec_bash_args.zig`  — `is_stop` is parsed (bool / string /
-//     garbage-names-the-field / absent-defaults-false);
-//   * `command.zig`               — the schema advertises it as an optional
-//     boolean and states the whole contract in the description.
-//
-// None of those can observe the thing the parameter exists for: that the
-// `while (true)` loop in `workflow.zig` takes its `break` instead of calling
-// the model again. That is only visible from a real run, so this file drives
-// one against a stub upstream and COUNTS THE REQUESTS.
-//
-// The two tests are a matched pair and neither is meaningful alone:
-//
-//   * `is_stop_true_ends_the_turn_after_one_model_call` asserts the loop
-//     stops — one model call, the worker row gone, `last_finish_reason` back
-//     to `stop`.
-//   * `without_is_stop_the_loop_calls_the_model_again` is the POSITIVE
-//     CONTROL. It is byte-for-byte the same run except the flag is absent, and
-//     it asserts the loop DOES call again. Without it, the first test would
-//     pass on an implementation that merely crashed the run early — "one
-//     model call" is also what a dead worker looks like.
-//
-// Both also assert the tool result row exists with the matching
-// `tool_call_id`, because the break is only legal AFTER the whole batch is
-// persisted: a mid-batch abort would leave a `tool_call_id` with no
-// `role=tool` row, and the provider rejects the next turn for it. That
-// assertion is what keeps this feature from breaking the transcript.
-//
-// ── HOW THE RUN IS DRIVEN ───────────────────────────────────────────────────
-// Same two pieces `session_auto_name_retry_test.zig` established:
-//   1. a stub OpenAI-compatible upstream on a free loopback port, with a
-//      request counter (`Stub`), reached by PUT /api/config/pabrik pointing
-//      the active profile's base_url at it;
-//   2. POST /api/llm/session to queue a turn, then poll.
-//
-// ── WHY THE ASSERTIONS READ THE DB THROUGH THE `sqlite3` CLI ────────────────
-// This package links no SQLite (see tests/functional/README.md), so a test can
-// never "pass" without crossing the wire. `requireSqlite3Cli` SKIPS — never
-// fails — when the CLI is absent or predates `-json`.
-//
-// ── PORTABILITY ─────────────────────────────────────────────────────────────
-// The tool's `cwd` is derived from `h.temp_dir` rather than a literal `/tmp`:
-// the server validates it with `std.fs.path.isAbsolute`, which is FALSE for a
-// leading-slash path on Windows, so a hardcoded literal would fail at the HTTP
-// door there. Nothing else in this file is host-specific — the whole suite is
-// one code path on every platform, which is the standard `CODING_STANDARDS.md`
-// §2 requires.
+// Functional wire verification for `command`'s `is_stop` parameter. Plan:
+// docs/plans/2026-10-14-command-is-stop-persistence.md (§2).
 
 const std = @import("std");
 const testing = std.testing;
@@ -81,16 +27,6 @@ const MAX_HEAD_BYTES = 1 << 18;
 
 /// An OpenAI-compatible upstream that, on the FIRST agent round, answers with
 /// one `command` tool call; on every later round, with a plain stop.
-///
-/// `is_stop` selects whether that tool call carries the parameter — the only
-/// difference between the guarded test and its positive control.
-/// One scripted assistant turn: the tool the stub calls and the RAW JSON it
-/// sends as arguments.
-///
-/// `args` may contain the literal `{PID}`, which the stub replaces with the most
-/// recent `"pid":<digits>` it saw in the incoming conversation. That is how a
-/// scripted model can act on a pid it could not know when the script was
-/// written — exactly as a real model reads it out of the previous tool result.
 pub const StubRound = struct {
     tool: []const u8,
     args: []const u8,
@@ -282,10 +218,6 @@ pub fn commandRound(allocator: std.mem.Allocator, cwd: []const u8, command: []co
 }
 
 /// The most recent `"pid":<digits>` anywhere in the request body.
-///
-/// Taking the LAST one is deliberate: this body is the whole conversation, so
-/// the newest tool result is the one the scripted "model" should be reading —
-/// which is exactly what it would do.
 fn lastPidInBody(body: []const u8) ?u32 {
     const needle = "\"pid\":";
     var found: ?u32 = null;
@@ -309,10 +241,6 @@ fn substitutePid(allocator: std.mem.Allocator, args: []const u8, pid: ?u32) ![]u
 }
 
 /// One tool-call round-trip, `finish_reason: "tool_calls"`.
-///
-/// The assistant message carries prose as well: an `is_stop` turn normally has
-/// none, which is exactly why the parameter's description tells the model to
-/// put its final answer here. Asserting the row keeps that guidance honest.
 fn toolCallSse(round: StubRound, call_id: []const u8) ![]u8 {
     const args_json = try jsonStringEscape(gpa, round.args);
     defer gpa.free(args_json);
@@ -616,9 +544,7 @@ test "is_stop ends the turn after one model call, with the batch persisted" {
     try waitForTurnEnd(&h, db_path, 60_000);
 
     // THE ASSERTION THIS FILE EXISTS FOR. The loop broke instead of calling
-    // the model again, so the stub saw exactly one agent round. Give the
-    // upstream a moment first: a second request, if one were coming, would
-    // already be in flight by the time the worker row is gone.
+    // the model again, so the stub saw exactly one agent round.
     sleepMs(1500);
     const calls = stub.agentCallCount();
     if (calls != 1) {
@@ -658,9 +584,6 @@ test "is_stop ends the turn after one model call, with the batch persisted" {
 
 test "without is_stop the loop calls the model again (positive control)" {
     // Byte-for-byte the same run as the test above, minus the parameter.
-    // Without this control, `calls == 1` would also be satisfied by a run
-    // that died early — which is precisely the failure a loop-control change
-    // is most likely to introduce.
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
 
@@ -714,10 +637,7 @@ test "without is_stop the loop calls the model again (positive control)" {
 
 test "background_persistence queues NOTHING when the service exits" {
     // THE contract of the third mode: the process detaches, runs, exits — and
-    // the agent is never told. It is enforced in two places (no watcher
-    // notification, and the cron's `kind = 'job'` filter); this watches the
-    // outer one from outside the process, which is the only vantage point from
-    // which both are visible at once.
+    // the agent is never told.
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
 
@@ -761,9 +681,7 @@ test "background_persistence queues NOTHING when the service exits" {
     try testing.expectEqualStrings("service", row.kind);
 
     // Wait for the process to exit AND for the reaper to notice — the row
-    // flipping to `exited` IS that notice. It doubles as the proof that the run
-    // really finished: without it, "no queue message" would equally describe a
-    // process still running, or a reaper that never started.
+    // flipping to `exited` IS that notice.
     var exited = false;
     const exit_deadline = nowMs() + 30_000;
     while (nowMs() < exit_deadline) {
@@ -786,13 +704,7 @@ test "background_persistence queues NOTHING when the service exits" {
     sleepMs(6000);
 
     // THE assertion, and it is deliberately about the WAKE rather than about
-    // the queue row. The completion path inserts a queue message and then
-    // starts a new run, and that run DRAINS the row almost immediately — so
-    // "no row is present" is also what a correctly-notified session looks like
-    // a moment later, and asserting on the row alone would be vacuous.
-    //
-    // A second model call is not: it is the observable consequence of "the
-    // agent was told", and it is exactly what a service must NOT produce.
+    // the queue row.
     const calls = stub.agentCallCount();
     if (calls != 1) {
         std.debug.print(
@@ -850,12 +762,8 @@ test "background DOES queue the completion — the control for the test above" {
     try testing.expectEqualStrings("job", row.kind);
 
     // This is the positive control: the SAME machinery must TALK here. The
-    // observable is the wake — a model call that the is_stop turn did not make.
-    // It is watched instead of the queue row because the wake drains that row
-    // as part of its own execution, which makes the row a race and the call
-    // count a fact.
-    //
-    // The watcher polls every 2 s, so allow it a few ticks.
+    // observable is the wake — a model call that the is_stop turn did not
+    // make.
     const deadline = nowMs() + 30_000;
     var calls = stub.agentCallCount();
     while (nowMs() < deadline and calls < 2) {
@@ -874,20 +782,6 @@ test "background DOES queue the completion — the control for the test above" {
 // ============================================================================
 // `process` — what the agent can see of what it started
 // ============================================================================
-//
-// `background_persistence` is SILENT by contract, so this tool is the only way
-// the agent can find out what it started. The script therefore runs the two
-// halves a wire test can pin: `command` starts a service, then `process` asks.
-//
-// The assertions read the PERSISTED tool result — the exact payload the model
-// was handed. `service-marker` is the service's own command text, so it can only
-// be in the payload if `list` resolved THIS session's row; the refusal prose is
-// the failure mode that would otherwise look like an empty answer.
-//
-// `read` and `stop` are covered at the unit level in `background_process.zig`
-// (the delta cursor, the EOF clamp, the missing log, the cross-session refusal,
-// the service-only sweep). Driving them through a scripted pid placeholder
-// here would mostly be testing the stub.
 
 /// Every `process` tool result this session persisted, concatenated.
 fn processToolRows(db_path: []const u8) ![]u8 {
@@ -898,11 +792,7 @@ fn processToolRows(db_path: []const u8) ![]u8 {
     );
 }
 
-/// True when the `sqlite3 -json` output carries no blob at all. `-json` prints
-/// an empty result set as `[{"blob":""}]`, NOT as an empty string — so the
-/// emptiness test has to look inside the envelope, which is the mistake that
-/// made an earlier version of this test pass its own guard and then assert on
-/// nothing.
+/// True when the `sqlite3 -json` output carries no blob at all.
 fn blobIsEmpty(json_out: []const u8) bool {
     const t = std.mem.trim(u8, json_out, " \t\r\n");
     return t.len == 0 or std.mem.indexOf(u8, t, "\"blob\":\"\"") != null;

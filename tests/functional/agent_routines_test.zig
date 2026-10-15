@@ -1,47 +1,5 @@
-// Functional tests for the Agent-Routines mirror (Migration 087).
-//
-// Zig port of `tests/functional/agent_routines_test.py` (same test
-// names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional tests for the Agent-Routines mirror (Migration 087).
-//
-//   Exercises the new agent-routines CRUD endpoints against a REAL
-//   pabrik binary + REAL SQLite, replaying the EXACT JSON bodies the
-//   frontend RoutineView Agent tab sends.
-//
-//     Routine mode task_1789505553300_1 (option A, mirror agent_kanban_*).
-//
-//   Covers:
-//     * BUNDLE GET      — fresh routine -> 200 configured with seeded row +
-//                        empty tools (no defaults; empty allowlist = all
-//                        tools, kanban D5 semantics).
-//     * GET wrong type  — kanban-type item -> 400 ItemNotRoutine (route
-//                        scoping).
-//     * PATCH update    — description round-trips, incl. empty string
-//                        (empty-slice-as-NULL regression).
-//     * KNOWLEDGE POST  — inline content (file_path='' + content) persists.
-//     * KNOWLEDGE PATCH — mode switch (file_path='' clears, content set).
-//     * KNOWLEDGE REORDER — PATCH /knowledge/reorder reaches REORDER
-//                         handler (NOT shadowed by /knowledge/:id).
-//     * KNOWLEDGE DELETE — scoped by both id AND routine_id.
-//     * SYSTEM_PROMPT POST/PATCH — first row position 0; title-only
-//                         update keeps content.
-//     * TOOLS POST/LIST/DELETE — unknown tool -> 400, duplicate -> 409,
-//                         list reflects enables.
-//   """
-//
-// PYTHON IDIOM THAT DID NOT SURVIVE THE PORT: every `_create_*` helper
-// parsed the response and returned a field, so a test held `dict`s that
-// had already been freed by the time the next statement ran. A
-// `harness.Json` aliases the `Response` body it was parsed from, so no
-// helper here may RETURN one. The helpers return OWNED ids or OWNED body
-// bytes and the tests parse locally.
-//
-// `file_path: ""` and `description: ""` are LOAD-BEARING and reach the
-// wire as literal empty strings — they are the empty-slice-as-NULL
-// regression this suite exists for, not paths.
+// Functional tests for the Agent-Routines mirror (Migration 087). Zig port of
+// `tests/functional/agent_routines_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -78,10 +36,6 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
 
 /// `POST /api/workspaces/<ws>/items/routine {"name", "path"}` → item id.
 /// Owned.
-///
-/// The `path` is derived from `h.temp_dir` via `harness.harnessPath` —
-/// NEVER a literal `/tmp/...` — because the server validates it with
-/// `std.fs.path.isAbsolute`, which is platform-relative.
 fn createRoutine(h: *Harness, workspace_id: []const u8, name: []const u8) ![]u8 {
     const routine_path = try harness.harnessPath(gpa, h.temp_dir, &.{"agent-routines-test"});
     defer gpa.free(routine_path);

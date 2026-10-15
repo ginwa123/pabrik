@@ -1,27 +1,5 @@
-//! `GET /api/agent-tools/registry`.
-//!
-//! Returns the canonical tool registry as
-//! `{tools: [{name, description, parameters}]}`. Each entry carries its full
-//! parameter list — name, JSON type and whether the schema REQUIRES it — so a
-//! consumer can answer "which tools take a file/folder path, and in which
-//! parameter?" without a second source of truth. That question is why the
-//! list exists: the path-taking tools now require an absolute `cwd`, and the
-//! only honest place to check that is the schema the model is actually
-//! handed.
-//! Sourced from `tools_equipped.UNIFIED_TOOL_REGISTRY()` — the same
-//! source of truth the runtime tool filter reads. When a tool is added
-//! or removed in that function, the registry endpoint automatically
-//! reflects it (no drift, no second list to maintain).
-//!
-//! Layered as:
-//!   - `useCase` — transforms the runtime registry into a
-//!     [{name, description}] list.
-//!   - `agentToolsRegistryHandler` — thin orchestrator over
-//!     `useCase`: delegates to `useCase`, marshals the result to
-//!     JSON.
-//!
-//! Memory: the per-request arena reaps all allocations at request
-//! end, so neither layer needs explicit `free`s.
+//! `GET /api/agent-tools/registry`. Returns the canonical tool registry as
+//! `{tools: [{name, description, parameters}]}`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -50,16 +28,9 @@ pub const RegistryEntry = struct {
     parameters: []const RegistryParameter,
 };
 
-/// Domain-level error set for `useCase`. The handler maps each
-/// variant to an HTTP status code + message via two exhaustive
-/// switches (intentional — adding a new variant fails to compile in
-/// the handler until both switches are updated, keeping status
-/// codes in lockstep with the error set).
+/// Domain-level error set for `useCase`.
 pub const RegistryError = error{
-    /// `allocator.dupe` failed while copying descriptions. In
-    /// production this is effectively unreachable (the per-request
-    /// arena reaps everything at request end) but the type system
-    /// requires the variant so the `try` propagates a typed error.
+    /// `allocator.dupe` failed while copying descriptions.
     OutOfMemory,
 };
 
@@ -73,10 +44,7 @@ pub const RegistryOutput = struct {
 // =====================================================================
 
 /// Transform the runtime registry into a slice of `{name,description}`
-/// entries. The use-case is transport-agnostic: it works for both
-/// the per-request arena (production HTTP handler) and
-/// `testing.allocator` (unit tests below) — all allocations go
-/// through the passed-in allocator.
+/// entries.
 fn useCase(allocator: std.mem.Allocator) RegistryError!RegistryOutput {
     const registry = tools_equipped.UNIFIED_TOOL_REGISTRY();
 
@@ -138,13 +106,8 @@ pub fn agentToolsRegistryHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-//
-// impl + tests in one file (project convention for Agent Mode).
-// 2 behavioural tests cover the use-case:
-//
-//   1. Registry is non-empty (sanity — if UNIFIED_TOOL_REGISTRY is
-//      accidentally emptied, the frontend's Tools panel dies)
-//   2. Every entry has a non-empty `name` and `description`
+// impl + tests in one file (project convention for Agent Mode). 2 behavioural
+// tests cover the use-case: 1.
 
 const testing = std.testing;
 
@@ -174,10 +137,7 @@ fn findParam(entry: RegistryEntry, name: []const u8) ?RegistryParameter {
 test "useCase: every path-taking tool REQUIRES an absolute cwd" {
     // This is the contract the 2026-10-14 change introduced: a call that
     // touches the filesystem must say which tree it works in, or it silently
-    // acts on the SERVER's directory instead of the one the model is
-    // editing. The registry is where the model's schema is published, so the
-    // requirement is asserted against the real output — a tool that quietly
-    // lost its `cwd` (or its `required` entry) fails here.
+    // acts on the SERVER's directory instead of the one the model is editing.
     const alloc = testing.allocator;
     const output = try useCase(alloc);
     defer freeOutput(alloc, output);

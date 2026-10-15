@@ -1,14 +1,5 @@
-//! `GET /api/workspaces/:workspace_id/documents`.
-//!
-//! Returns `{documents, count}` for one workspace, most-recently-updated
-//! first. This is the read behind the sidebar's Documents section, so it
-//! runs on every sidebar load — hence the `idx_documents_workspace_updated`
-//! index from Migration 098.
-//!
-//! Scoping: `workspace_id` is a path param and lands in the query's
-//! `WHERE` clause inside `documents_store.listDocuments`. There is no
-//! "all documents" mode, so there is no code path here that can return a
-//! row from another workspace.
+//! `GET /api/workspaces/:workspace_id/documents`. Returns `{documents,
+//! count}` for one workspace, most-recently-updated first.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -155,10 +146,5 @@ test "useCase: never returns another workspace's documents" {
 }
 
 // ─── Route contracts ────────────────────────────────────────────────────
-//
 // `matchRoute` walks one shared table in REGISTRATION ORDER, so whether a
 // literal segment is reachable is a property of that TABLE, not of this
-// file's text. All five documents verbs (plus the `:workspace_id/:param`
-// sibling invariant) are asserted where the table is built:
-// `http_routes.zig` calls `registerAllOn` on a bare `Router` and checks
-// what `matchRoute` returns for each path.

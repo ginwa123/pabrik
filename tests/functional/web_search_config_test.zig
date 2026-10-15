@@ -1,61 +1,5 @@
 // Functional tests for the `web_search` provider config (plan
 // 2026-10-02-web-search-tool.md, matrix rows 72-73 + the mask contract).
-//
-// Zig port of `tests/functional/web_search_config_test.py`
-// (same test names, same order; the Python `@pytest.mark.parametrize`
-// case becomes seven test blocks — see the mapping above that group).
-//
-// Covers the three things a unit test cannot see, because they only exist on
-// the wire:
-//
-//  1. PUT persists a two-provider map and GET reflects it.
-//  2. GET returns each `key` MASKED — the credential must not reach the
-//     browser, and this is the only place that proves it end to end.
-//  3. PUT of a whole config WITHOUT a `web_search` key (a Settings save
-//     from another tab) does NOT erase the providers from disk. This is the
-//     PUT-strip footgun `config_tools_test.py` already covers for `tools`;
-//     the same class of bug for the new key would silently delete a user's
-//     API key.
-//  4. PUT with a malformed provider → 400 naming the provider and the
-//     reason, disk untouched. Without this the entry would be `warn`-logged
-//     and DROPPED at load, and the symptom would be "Settings shows a
-//     provider, the agent says none are configured".
-//  5. PUT with an EMPTY key omits the field rather than storing "" —
-//     `SqliteBackend.exec` binds an empty slice as SQL NULL.
-//  6. PUT echoing the MASK back preserves the stored credential.
-//
-// Each test boots a fresh pabrik against an isolated tmpdir HOME via the
-// shared preboot fixture pattern. Ports come from the harness's random
-// picker (never 8081).
-//
-// ── THE `preboot` FIXTURE, AND WHAT REPLACED IT ───────────────────────────
-// The Python module imported `PROFILE`, `_on_disk`, `_platform_config_dir`
-// and the `preboot` fixture from `config_tools_test.py` ("imported rather
-// than redefined: it is the platform-correct seeding path, and a second copy
-// would drift"). Those are inlined here — `config_tools_test.py` has no Zig
-// port yet, and this worker owns only its own four files.
-//
-// `preboot(cfg)` wrote `config.json` into a fresh tempdir at the
-// PLATFORM-CORRECT path and THEN booted the binary. The Zig harness
-// allocates its tempdir INSIDE `Harness.boot`, so there is no "seed the file
-// first" hook — the only pre-boot seeding the harness exposes is
-// `BootOptions.stub_llm_profile`, which writes a fixed profile-only
-// payload.
-//
-// That payload is the right preboot for this file: one profile, and NO
-// `web_search` key — which is exactly `_base_config()` with no `extra`. The
-// tests that need `web_search` ON DISK seed it over the wire with a PUT of
-// the very `_settings_body` the Settings page sends, which is the path a
-// real provider takes anyway; every assertion below is unchanged. The
-// tests that assert "nothing about web_search landed on disk" boot with the
-// stub profile and read the file back, so the rejected-PUT check still sees
-// a file whose `web_search` key is genuinely absent (a PUT that had
-// succeeded would have re-serialised it as null).
-//
-// TODO(port): a `BootOptions.config_json: ?[]const u8` seam would let a
-// suite seed an arbitrary config.json BEFORE the binary starts, and would
-// let `config_tools_test` and this file share one preboot helper the way
-// the Python pair shares one import.
 
 const std = @import("std");
 const testing = std.testing;
@@ -97,14 +41,8 @@ const BRAVE_ENTRY =
 const TINYFISH_KEY = "sk-tinyfish-secret-value";
 const BRAVE_KEY = "sk-brave-secret-value";
 
-/// The EXACT whole-config shape `PabrikSettings.vue` sends on Save from
-/// any tab, with the `web_search` marker included verbatim.
-///
-/// `web_search_json = null` OMITS the key — which is what a Settings tab
-/// that does not render the search section sends, and the whole point of
-/// tests 4 and 5. (Python spelled this with an `Ellipsis` sentinel,
-/// because `None` is a legal VALUE for the key; the optional parameter
-/// plays the same role without a second sentinel.)
+/// The EXACT whole-config shape `PabrikSettings.vue` sends on Save from any
+/// tab, with the `web_search` marker included verbatim.
 fn settingsBody(web_search_json: ?[]const u8) ![]u8 {
     var buf: std.Io.Writer.Allocating = .init(gpa);
     errdefer buf.deinit();
@@ -127,14 +65,7 @@ fn settingsBody(web_search_json: ?[]const u8) ![]u8 {
     return buf.toOwnedSlice();
 }
 
-/// `writeAll` without the trailing newline a `\\` multiline literal
-/// carries.
-///
-/// A newline sitting between a value and the `,` that follows it is
-/// legal in JSON's grammar but is REJECTED by `std.json`'s scanner (and
-/// by Python's `json.loads`), so the fragments are joined tight. This is
-/// the same normalisation `skill_evals_config_toggle_test.zig` applies
-/// before its own substring assertions.
+/// `writeAll` without the trailing newline a `\\` multiline literal carries.
 fn writeChunk(w: *std.Io.Writer, chunk: []const u8) !void {
     try w.writeAll(std.mem.trimEnd(u8, chunk, "\n"));
 }
@@ -221,10 +152,9 @@ fn webSearchMap(doc: *const harness.Json) !std.json.ObjectMap {
     };
 }
 
-/// One provider entry inside a `web_search` map.
-///
-/// `std.json.ObjectMap` is an ArrayHashMap: it has `get`, not the
-/// `Json`-wrapper's `object(key)` sugar, so the value is unwrapped here.
+/// One provider entry inside a `web_search` map. `std.json.ObjectMap` is an
+/// ArrayHashMap: it has `get`, not the `Json`-wrapper's `object(key)` sugar,
+/// so the value is unwrapped here.
 fn provider(map: std.json.ObjectMap, name: []const u8) !std.json.ObjectMap {
     const v = map.get(name) orelse {
         std.debug.print("web_search has no provider '{s}'\n", .{name});
@@ -442,10 +372,8 @@ test "get_masks_a_short_key_without_leaking_it_entirely" {
             std.debug.print("the short key came back in cleartext\n", .{});
             return error.TestUnexpectedResult;
         }
-        // Python's `len()` counts CODE POINTS, `key.len` counts UTF-8
-        // BYTES — and the short mask is four U+2022 BULLETs, i.e. 8
-        // bytes. Counting bytes here would fail on the mask the server
-        // is CORRECTLY returning, so count what Python counted.
+        // Python's `len()` counts CODE POINTS, `key.len` counts UTF-8 BYTES —
+        // and the short mask is four U+2022 BULLETs, i.e. 8 bytes.
         if (try std.unicode.utf8CountCodepoints(key) > 8) {
             std.debug.print("mask should not reveal the length: '{s}'\n", .{key});
             return error.TestUnexpectedResult;
@@ -555,14 +483,9 @@ test "masked_key_round_trips_back_as_unchanged" {
 // (d) A malformed provider is a 400, not a silent drop
 // ============================================================================
 
-/// `PUT` a provider named `broken` whose body is `provider_json`, and
-/// assert the 400 names both the provider and `expect_in_message`, and
-/// that nothing reached disk.
-///
-/// This is the body of Python's parametrized
-/// `test_malformed_provider_is_rejected_with_a_useful_message`; the
-/// seven call sites below are its seven `@pytest.mark.parametrize` rows,
-/// in order.
+/// `PUT` a provider named `broken` whose body is `provider_json`, and assert
+/// the 400 names both the provider and `expect_in_message`, and that nothing
+/// reached disk.
 fn expectMalformedRejected(h: *Harness, provider_json: []const u8, expect_in_message: []const u8) !void {
     const body = try settingsBody(provider_json);
     defer gpa.free(body);

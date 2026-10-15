@@ -1,11 +1,4 @@
 // Exec wrapper for the `list_sub_agent` agent tool.
-//
-// `list_sub_agent` declares zero required parameters — profile_name is
-// implicit (pulled from `ctx.selected_profile_model` here, mirroring
-// how `get_plan` pulls `session_id` from `ctx.session_id`). The wrapper
-// calls the pure-fn layer (which returns an empty `sub_agents` list for
-// empty/unknown profiles or zero rows) and wraps the result in the
-// standard JSON envelope. Read-only, no side effects.
 
 const std = @import("std");
 const testing = std.testing;
@@ -59,10 +52,9 @@ fn setupDb() !TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
-/// Build a `ToolExecContext` carrying a live `LlmConfig` with one
-/// profile ("dev") holding a single sub-agent. `profile_name` selects
-/// what `ctx.selected_profile_model` points at. The returned context
-/// borrows `cfg` — the caller must keep `cfg` alive for the call.
+/// Build a `ToolExecContext` carrying a live `LlmConfig` with one profile
+/// ("dev") holding a single sub-agent. `profile_name` selects what
+/// `ctx.selected_profile_model` points at.
 fn makeTestCtx(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,

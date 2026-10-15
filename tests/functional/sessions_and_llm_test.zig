@@ -1,20 +1,5 @@
-// Functional tests for sessions + /test/shutdown + LLM stub.
-//
-// Zig port of `tests/functional/sessions_and_llm_test.py` (same test
-// names, same order).
-//
-// Uses the harness's `.stub_llm_profile = true` option, which writes a
-// stub config.json pointing at a port that never responds. Session
-// create will fail when it tries to call the LLM (which is fine —
-// we're not testing the LLM, we're testing the wire). Session list,
-// detail, and /test/shutdown work without a real LLM.
-//
-// Plan: docs/superpowers/plans/2026-07-26-functional-tests-with-real-data.md (Chunk 7)
-//
-// The Python module had a function-scoped `llm_harness` fixture. Zig
-// has no fixtures, so each test boots its own harness with the same
-// options and `defer h.deinit(io)` — which is what the fixture's
-// `try/finally` did.
+// Functional tests for sessions + /test/shutdown + LLM stub. Zig port of
+// `tests/functional/sessions_and_llm_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -24,11 +9,8 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// The fixed port the Python original passed for the shutdown test
-/// ("fixed port for shutdown test"). In the Zig harness an explicit
-/// port switches the picker to the SEQUENTIAL scan from that number
-/// upward (`findFreePortSequential`), so this binds 8090-or-the-first
-/// free port after it — never 8081, which the scan skips.
+/// The fixed port the Python original passed for the shutdown test ("fixed
+/// port for shutdown test").
 const shutdown_test_start_port: u16 = 8090;
 
 /// Python's `llm_harness` fixture: a harness booted with the stub LLM
@@ -37,14 +19,9 @@ fn bootLlmStub() !Harness {
     return Harness.boot(io, gpa, .{ .stub_llm_profile = true });
 }
 
-/// `POST /api/workspaces` → the new workspace's id (an owned copy).
-///
-/// The Python original had this helper but never called it — every test
-/// it wrote is session-scoped, which needs no workspace. It is kept
-/// here for the same reason the Python file kept it: it is the shape the
-/// suite's next test will want, and dropping it would make the port
-/// look like it lost a helper. Zig analyses unreferenced functions only
-/// through the `comptime` block at the bottom.
+/// `POST /api/workspaces` → the new workspace's id (an owned copy). The
+/// Python original had this helper but never called it — every test it wrote
+/// is session-scoped, which needs no workspace.
 fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
     const body = try std.fmt.allocPrint(gpa, "{{\"name\":\"{s}\"}}", .{name});
     defer gpa.free(body);
@@ -81,10 +58,6 @@ test "health_endpoint_returns_ok" {
 }
 
 // POST /api/llm/session creates a session and returns an id.
-//
-// Note: with the stub LLM profile, the LLM call inside session-create
-// will fail (port 1 doesn't respond), but the session row IS created in
-// the DB before the LLM is called. The id is in the 201 response.
 test "session_create_returns_session_id" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -99,10 +72,8 @@ test "session_create_returns_session_id" {
     });
     defer r.deinit();
 
-    // The session may be created (201) or the LLM call may fail causing
-    // 500. Either way, a successful 201 has an id. If 500, the wire may
-    // have a separate issue — either status is acceptable here: the
-    // endpoint is under test, not the LLM.
+    // The session may be created (201) or the LLM call may fail causing 500.
+    // Either way, a successful 201 has an id.
     if (r.status == 201) {
         var doc = try r.json();
         defer doc.deinit();
@@ -128,10 +99,8 @@ test "session_list_returns_200" {
     var doc = try r.json();
     defer doc.deinit();
 
-    // Response shape: `{sessions:[...]}` or a list directly. Accept
-    // both, plus the `{data: [...]}` fallback the Python original
-    // allowed. The contract under test is "it is a LIST", so a body
-    // that is neither shape is a failure — not an empty list.
+    // Response shape: `{sessions:[...]}` or a list directly. Accept both,
+    // plus the `{data: [...]}` fallback the Python original allowed.
     switch (doc.value().*) {
         .array => {},
         .object => |o| {
@@ -154,10 +123,9 @@ test "session_list_returns_200" {
     }
 }
 
-// GET /api/llm/session/<nonexistent>/messages returns 404 or empty.
-//
-// The endpoint may 404 for a non-existent session id, or return an
-// empty messages list. Both are acceptable.
+// GET /api/llm/session/<nonexistent>/messages returns 404 or empty. The
+// endpoint may 404 for a non-existent session id, or return an empty messages
+// list. Both are acceptable.
 test "session_messages_for_nonexistent_returns_404_or_empty" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -189,12 +157,8 @@ test "session_messages_for_nonexistent_returns_404_or_empty" {
     }
 }
 
-// POST /test/shutdown initiates a graceful shutdown. After it returns,
-// the server should stop accepting new connections.
-//
-// This test boots its OWN harness (separate from the other tests)
-// because once shutdown is called the server is dead and a shared
-// fixture's teardown would double-call.
+// POST /test/shutdown initiates a graceful shutdown. After it returns, the
+// server should stop accepting new connections.
 test "test_shutdown_stops_server" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -237,13 +201,8 @@ test "test_shutdown_stops_server" {
     }
 }
 
-// Belt-and-suspenders for the safety invariant: assert the real $HOME
-// does not contain a `pabrik/` dir newly created by the test.
-//
-// We can't easily diff directories, but we CAN assert that the real
-// HOME's agent.db is the SAME file (or absent) as it was before. If the
-// harness wrote to the real HOME, the agent.db mtime would be very
-// recent.
+// Belt-and-suspenders for the safety invariant: assert the real $HOME does
+// not contain a `pabrik/` dir newly created by the test.
 test "no_state_leaked_to_real_home" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -292,10 +251,8 @@ test "no_state_leaked_to_real_home" {
 }
 
 comptime {
-    // `createWorkspace` is unused by the current tests (the Python
-    // original carried it unused too). Reference it so Zig still
-    // type-checks its body — an unreferenced function is never
-    // analysed, so a stdlib rename inside it would stay invisible.
+    // `createWorkspace` is unused by the current tests (the Python original
+    // carried it unused too).
     _ = createWorkspace;
     _ = bootLlmStub;
 }

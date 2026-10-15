@@ -1,23 +1,4 @@
 // Functional tests for the branded app icons.
-//
-// The desktop web app ships the anakmagangweb brand mark — a `P` in
-// Kanagawa violet (#8992a7) on the Kanagawa Dragon background (#181616)
-// — as its tab/window icon. These tests pin the wire behaviour: a real
-// pabrik booted with a `--static-dir` holding the shipped icon files
-// must serve them back byte-identical with the right content types.
-//
-// Fixture strategy (same as desktop_webapp_404_test.zig): the test reads
-// the SHIPPED files from src/apps/desktop/public/ and copies them into
-// a scratch --static-dir, then asserts the wire bytes equal the file
-// bytes. That verifies the serving path end-to-end (route exists,
-// correct MIME, no transcoding), not just that a file exists on disk.
-//
-// The brand assertion is the first-pixel alpha: the brand mark is an
-// OPAQUE 32x32 ICO (background pixel alpha 0xFF), while the pre-brand
-// placeholder was transparent there (alpha 0x00). Pinning the alpha
-// byte — rather than the whole file — keeps the test green across
-// future re-renders of the same artwork while still catching a
-// regression to the transparent placeholder.
 
 const std = @import("std");
 const testing = std.testing;
@@ -37,10 +18,9 @@ fn readRepoFile(path: []const u8) ![]u8 {
     return try std.Io.Dir.cwd().readFileAlloc(io, path, gpa, .limited(1 << 20));
 }
 
-/// ICO pixel data starts at byte 62 for the single-image 32x32/32bpp
-/// brand file (6-byte header + 16-byte dir entry + 40-byte
-/// BITMAPINFOHEADER). The first pixel is the top-left background cell,
-/// stored BGRA.
+/// ICO pixel data starts at byte 62 for the single-image 32x32/32bpp brand
+/// file (6-byte header + 16-byte dir entry + 40-byte BITMAPINFOHEADER). The
+/// first pixel is the top-left background cell, stored BGRA.
 const ICO_PIXEL_OFF = 62;
 
 test "favicon_ico_serves_the_brand_icon_byte_identical" {

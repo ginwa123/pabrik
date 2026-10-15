@@ -1,32 +1,4 @@
 //! Matching + rendering for the `search_documents` agent tool.
-//!
-//! This is the documents-side twin of `skills_search.zig`: the same shape
-//! (collect rows → match a query → page → render JSON), the same
-//! `progressive_regex` engine, and the SAME `pattern_mode` /
-//! `pattern_warning` / `total` / `next_offset` / `hint` contract that the
-//! model already reads from `search_tool` and `search_skills`. One paging
-//! convention across three catalogs is the whole point — a tool that
-//! paginated differently would need its own mental model and would be
-//! learned wrong at least once.
-//!
-//! It lives HERE rather than in `src/modules/agent/tools/document.zig`
-//! because `progressive_regex` sits under `src/agentic_loop/` and a
-//! `modules → agentic_loop` import would close a cycle through the
-//! `pabrikcore` root. The tool schema + `SearchDocumentsInput` stay in
-//! `document.zig`; `tools_exec_document.zig` wires the two together.
-//!
-//! What is DIFFERENT from skills, and why
-//! ──────────────────────────────────────
-//! 1. Bounded memory. A skill row is a name and a description. A document
-//!    row carries a body capped at 4 MiB, so "read every row in the
-//!    workspace and regex it" is a real allocation, not a formality. The
-//!    fix is `literalPrefilter`: a SQL `LIKE` narrowing that runs before
-//!    the bodies are loaded, and which is applied ONLY when it is provably
-//!    a superset of what the regex would match. See that function.
-//! 2. Excerpts. A hit that returns no body is a hit the model cannot
-//!    act on when the next step is `edit_document` (a whole-body replace).
-//!    So every row carries a bounded window around the match, and
-//!    `include_content` opts into the real thing.
 
 const std = @import("std");
 const testing = std.testing;
@@ -34,9 +6,8 @@ const progressive_regex = @import("progressive_regex.zig");
 const documents_store = @import("documents_store.zig");
 
 /// Smaller than `skills_search`'s 40/200: a document excerpt is ~240 bytes
-/// against a skill row's ~80, so the same page size costs several times
-/// more context for a catalog where a single page is usually already the
-/// whole answer.
+/// against a skill row's ~80, so the same page size costs several times more
+/// context for a catalog where a single page is usually already the whole
 pub const DEFAULT_SEARCH_LIMIT: usize = 20;
 pub const MAX_SEARCH_LIMIT: usize = 100;
 
@@ -45,33 +16,11 @@ pub const MAX_SEARCH_LIMIT: usize = 100;
 /// asks for `include_content` and gets a deliberate, accounted-for cost.
 pub const EXCERPT_MAX_BYTES: usize = 240;
 
-/// Characters that give a pattern meaning in `progressive_regex`. A query
-/// containing none of them is a run of literals, so "does this string
-/// contain the query" answers "does the pattern match" exactly, and the
-/// two engines agree case-folding-wise as well (the engine folds with
-/// `std.ascii.toLower`, SQLite's default `LIKE` folds ASCII only).
-///
-/// `-` is deliberately absent: it is special only inside `[...]`, and `]`
-/// is already in the set. Adding it would just send more queries down the
-/// slow path.
+/// Characters that give a pattern meaning in `progressive_regex`.
 pub const REGEX_METACHARS = ".^$*+?()[]{}|\\";
 
 /// The needle to hand `documents_store.searchDocuments`, or `null` when SQL
 /// must NOT be allowed to narrow the candidate set.
-///
-/// A `LIKE '%needle%'` prefilter is only SOUND when the pattern is a run of
-/// literals — then the rows SQL returns are exactly the rows the regex
-/// matches. As soon as the query carries a metacharacter they diverge, and
-/// the divergence is silent: prefiltering `foo.bar` keeps only documents
-/// containing the literal text `foo.bar`, dropping every document whose
-/// title merely matched `foo` + any character, and the model is told
-/// "total: 0" rather than "I may have missed some". A wrong search result
-/// with no error is the failure mode this whole check exists to prevent.
-///
-/// So the rule is: narrow only when `literal` was set, or when the query
-/// has no metacharacters. Everything else — an anchored `^Q3`, an
-/// alternation, a pattern that turns out to be invalid — takes the full
-/// scan. A slower correct answer beats a fast wrong one.
 pub fn literalPrefilter(query: []const u8, literal: bool) ?[]const u8 {
     if (query.len == 0) return null;
     if (literal) return query;
@@ -103,12 +52,9 @@ fn modeStr(mode: QueryMode) []const u8 {
     };
 }
 
-/// One matching document.
-///
-/// Every string field BORROWSS from the `documents_store.DocumentRow` the
-/// matcher was handed — the slice must outlive these. Nothing here owns an
-/// allocation, which is why `matchQuery` frees only the `hits` slice header
-/// and the caller keeps the rows.
+/// One matching document. Every string field BORROWSS from the
+/// `documents_store.DocumentRow` the matcher was handed — the slice must
+/// outlive these.
 pub const Hit = struct {
     id: []const u8,
     title: []const u8,
@@ -121,11 +67,7 @@ pub const Hit = struct {
     /// Byte length of the body. Reported so the model can tell a 40-byte
     /// stub from a 4 MiB document before deciding to ask for the body.
     content_length: usize,
-    /// Byte offset into `content` of the first hit, when it could be
-    /// located. `null` in regex mode with metacharacters (the engine
-    /// reports WHETHER it matched, not WHERE), and for a title-only match,
-    /// which is why the renderer falls back to the title rather than
-    /// guessing an anchor into the body.
+    /// Byte offset into `content` of the first hit, when it could be located.
     content_anchor: ?usize,
     /// True when the TITLE matched. The renderer excerpts the title in
     /// that case — it is short, it is what the model searched for, and it
@@ -151,11 +93,7 @@ const WARNING_SUFFIX =
     " Supported: literals, '.', '[...]', '\\d \\w \\s \\b', '*', '+', '?', '{m,n}' ranges," ++
     " '( )' groups, '|', '^', '$'. Pass literal:true when the query is literal text.";
 
-/// Why a pattern was reinterpreted as a literal substring. One STATIC string
-/// per failure so the caller never has to free a warning; the `@errorName`
-/// is spelled out per arm so a compile failure tells the model which limit
-/// it hit (`PatternTooLong` means "shorten it", `InvalidPattern` means "fix
-/// or quote it") rather than lumping them under one message.
+/// Why a pattern was reinterpreted as a literal substring.
 fn invalidPatternWarningFor(err: progressive_regex.Error) []const u8 {
     return switch (err) {
         error.InvalidPattern => "query is not a valid regex (InvalidPattern) — matched as a case-insensitive literal substring instead." ++ WARNING_SUFFIX,
@@ -193,11 +131,6 @@ fn indexOfIgnoreCase(haystack: []const u8, needle: []const u8) ?usize {
 /// Match rows by `query`, a case-insensitive unanchored REGEX over each
 /// document's TITLE and CONTENT — the same contract `search_tool` uses, so
 /// the model needs only one mental model for "search a catalog".
-///
-/// A query that does not compile is never a hard error: it degrades to a
-/// case-insensitive substring match and the result carries the reason, so a
-/// stray `(` in a legitimate search costs nothing and teaches the syntax in
-/// the same turn.
 pub fn matchQuery(
     allocator: std.mem.Allocator,
     rows: []const documents_store.DocumentRow,
@@ -219,9 +152,7 @@ pub fn matchQuery(
     var warning: []const u8 = "";
 
     // A compiled pattern made only of literals matches exactly the strings
-    // containing it, so the hit can be located for the excerpt. True in
-    // regex mode too — the common `search_documents("budget")` case should
-    // show the model WHERE it matched, not just that it did.
+    // containing it, so the hit can be located for the excerpt.
     const anchorable = std.mem.indexOfAny(u8, query, REGEX_METACHARS) == null;
 
     if (!opts.literal) {
@@ -239,11 +170,8 @@ pub fn matchQuery(
             const in_title = re.isMatch(row.title);
             const in_content = re.isMatch(row.content);
             if (!in_title and !in_content) continue;
-            // A pattern with no metacharacters IS a substring, so the hit
-            // can be located and the excerpt centred on it. With a
-            // metacharacter the engine only reports WHETHER, and the
-            // renderer falls back to the title rather than inventing a
-            // position in the body.
+            // A pattern with no metacharacters IS a substring, so the hit can
+            // be located and the excerpt centred on it.
             const anchor = if (anchorable) indexOfIgnoreCase(row.content, query) else null;
             try matched.append(allocator, hitOf(row, anchor, in_title));
         } else {
@@ -308,11 +236,6 @@ pub const PageParams = struct {
 };
 
 /// Snap `i` forward to the next UTF-8 sequence boundary.
-///
-/// Slicing mid-codepoint does not corrupt the string — Zig slices are byte
-/// slices and nothing checks alignment — but it produces a replacement
-/// character in the JSON the model reads, i.e. the excerpt shows mojibake
-/// exactly where the search hit was. Every window edge goes through this.
 fn alignForwardToUtf8(text: []const u8, i: usize) usize {
     var j = @min(i, text.len);
     while (j < text.len and (text[j] & 0xC0) == 0x80) j += 1;
@@ -353,22 +276,13 @@ const DocumentRowJson = struct {
     updated_at: []const u8,
     content_length: usize,
     excerpt: []const u8,
-    /// Present only when `include_content` was set. A `null` on a row the
-    /// model asked for content on would read as "this document is empty",
-    /// which is a different and wrong fact — hence absent vs empty are
-    /// kept distinct.
+    /// Present only when `include_content` was set.
     content: ?[]const u8,
 };
 
 /// `search_documents` result: `{"query","pattern_mode","pattern_warning",
 /// "count","total","offset","limit","documents","truncated","next_offset",
-/// "hint"}`. Mirrors `search_tool`'s and `search_skills`'s envelope
-/// field-for-field so one paging convention serves all three catalogs.
-///
-/// `workspace_id` is deliberately ABSENT from every row, unlike
-/// `search_skills` which carries `scope`. The model never passes a
-/// workspace back — the tools resolve their own server-side — so the field
-/// would be noise the model has to learn to ignore.
+/// "hint"}`.
 pub fn renderSearchResult(
     allocator: std.mem.Allocator,
     page: []const Hit,
@@ -387,17 +301,8 @@ pub fn renderSearchResult(
     }
 
     for (page[0..shown], 0..) |hit, i| {
-        // Where the excerpt comes from, in order:
-        //  - the TITLE matched: show the title. Short, it is what was
-        //    searched for, and it is the label the human recognises.
-        //  - the hit was LOCATED in the body: show the window around it.
-        //  - the body matched but the engine only reported WHETHER (a
-        //    metacharacter-bearing regex), or there was no query at all:
-        //    show the head of the body. Falling back to the title here
-        //    would make `search_documents()` with no query return a list
-        //    of titles and nothing else — the model asked for a listing,
-        //    not a title roll call.
-        //  - nothing but a title to show: an empty body.
+        // Where the excerpt comes from, in order: - the TITLE matched: show
+        // the title.
         const source: []const u8 = if (hit.title_matched)
             hit.title
         else if (hit.content.len > 0)
@@ -575,10 +480,7 @@ test "matchQuery regex matches title OR content, case-insensitively" {
 
 test "matchQuery: an empty body is matchable by title and never crashes" {
     const alloc = testing.allocator;
-    // `doc_4` has a zero-length content column. The SQLite NOT NULL /
-    // empty-as-NULL trap does not apply here (it is a read), but a
-    // zero-length haystack reaching `isMatch` is exactly the input that
-    // hangs a naive matcher.
+    // `doc_4` has a zero-length content column.
     const by_title = try matchQuery(alloc, &test_rows, "Empty stub", .{});
     defer alloc.free(by_title.hits);
     try testing.expectEqual(@as(usize, 1), by_title.hits.len);
@@ -727,10 +629,8 @@ test "excerptOf: an empty body yields an empty string, not a slice error" {
 
 test "excerptOf: window edges never split a multi-byte codepoint" {
     const alloc = testing.allocator;
-    // "é" is two bytes; repeat it so the window lands mid-character no
-    // matter where EXCERPT_MAX_BYTES happens to fall. A split produces an
-    // invalid UTF-8 sequence, which std.json rejects at stringify time with
-    // an error that looks like a bug in the renderer.
+    // "é" is two bytes; repeat it so the window lands mid-character no matter
+    // where EXCERPT_MAX_BYTES happens to fall.
     var body: [1200]u8 = undefined;
     for (0..600) |i| {
         body[i * 2] = 0xC3;

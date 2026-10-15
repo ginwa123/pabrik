@@ -1,24 +1,6 @@
-// Functional wire tests for FOLDER mode of POST /api/git/file/diffs.
-//
-// LIST mode (`git_file_diffs_test.zig`) still needs the caller to fetch
-// `GET /api/git/changes` first and then post the file list. FOLDER mode drops
-// that round trip: the client sends a folder and the server enumerates the
-// changed paths itself, so a panel renders 50 changed files with ONE request
-// instead of 50 `GET /api/git/file/diff` calls.
-//
-// Fixture repo — under `pabrik-fix-` (see `git_file_diffs_test.zig` for why
-// neither the harness tempdir nor `std.testing.tmpDir` is usable):
-//   <repo>/src/committed.txt   committed, then modified        → unstaged
-//   <repo>/src/staged.txt      committed, modified, `git add`ed → staged
-//   <repo>/src/fresh.txt       untracked INSIDE src/  → synthetic new-file diff
-//   <repo>/docs/readme.txt     committed, then modified → unstaged, OUTSIDE src/
-//   <repo>/top.txt             committed, then modified → unstaged, at the root
-//   <repo>/clean/untouched.txt committed, never touched → no diff at all
-//
-// The `clean/` directory is the load-bearing one: a folder with nothing
-// changed must answer `{"diffs": []}` with 200. The old "empty request is a
-// 400" rule belongs to LIST mode; a 400 here pushes the frontend into its
-// per-file fallback and restarts the request flood.
+// Functional wire tests for FOLDER mode of POST /api/git/file/diffs. LIST
+// mode (`git_file_diffs_test.zig`) still needs the caller to fetch `GET
+// /api/git/changes` first and then post the file list.
 
 const std = @import("std");
 const testing = std.testing;
@@ -89,10 +71,7 @@ fn buildFolderCwd(scratch: []const u8) ![]u8 {
     try writeFileAt(repo_dir, "src/committed.txt", "keep\nnew\n");
     try writeFileAt(repo_dir, "src/staged.txt", "keep\nnew\n");
     try git(repo, &.{ "add", "src/staged.txt" });
-    // Staged AND THEN modified again -> porcelain `MM`. This is the row that
-    // makes "staged or not" a real question rather than a tautology: the two
-    // sides carry different content, so a test that only checked the flag
-    // would pass even if the handler swapped them.
+    // Staged AND THEN modified again -> porcelain `MM`.
     try writeFileAt(repo_dir, "src/both.txt", "keep\nstaged\n");
     try git(repo, &.{ "add", "src/both.txt" });
     try writeFileAt(repo_dir, "src/both.txt", "keep\nnew\n");
@@ -119,11 +98,6 @@ fn bootWithRepo(h: *Harness, scratch: *[]u8, repo: *[]u8) !void {
 }
 
 /// Boot + the LIFO `defer` ladder that owns the buffers.
-///
-/// Defer order is loads-bearing: `free(scratch)` must run AFTER
-/// `cleanupExtraDir(scratch)`, and `free(repo)` must run AFTER the HTTP calls
-/// that still read `repo`. Registering a free before its reader segfaults
-/// inside `isSafeTmp` on a dangling pointer.
 const Fixture = struct {
     h: Harness,
     scratch: []u8,
@@ -158,11 +132,6 @@ fn postFolder(h: *Harness, body: []const u8, expect: []const u16) !harness.Respo
 
 /// A borrowed-key index over a parsed `diffs` array, plus the OWNED keys it
 /// points into.
-///
-/// `StringHashMap.keyIterator` yields pointers INTO the map's own key
-/// storage, not into the caller's allocation — so freeing what it returns
-/// frees the wrong pointer and leaks the original. This struct keeps the
-/// dups in a list it can actually hand back to the allocator.
 const OwnedIndex = struct {
     map: std.StringHashMap([]const u8),
     owned: std.ArrayList([]u8),
@@ -178,11 +147,9 @@ fn initIndex() OwnedIndex {
     return .{ .map = std.StringHashMap([]const u8).init(gpa), .owned = .empty };
 }
 
-/// `(staged, path) -> diff_content`.
-///
-/// The python used `{d["staged"], d["path"]: d["diff_content"] ...}`. A
-/// `std.json.Value` cannot be a map key, so this keys on the FORMATTED
-/// `"{staged}:{path}"` string instead.
+/// `(staged, path) -> diff_content`. The python used `{d["staged"],
+/// d["path"]: d["diff_content"] ...}`. A `std.json.Value` cannot be a map
+/// key, so this keys on the FORMATTED `"{staged}:{path}"` string instead.
 fn indexBySideAndPath(diffs: []const std.json.Value) !OwnedIndex {
     var ix = initIndex();
     errdefer ix.deinit();
@@ -276,8 +243,7 @@ test "folder_mode_returns_every_changed_file_under_the_folder_in_one_call" {
     try testing.expect(std.mem.indexOf(u8, try expectRow(&by_key.map, true, "src/staged.txt"), "+new") != null);
     // Untracked under src/ — `git diff` shows nothing for it, so this only
     // works if the server enumerated the path AND fell back to the synthetic
-    // new-file diff. `-uall` on the status call is what surfaces the FILE
-    // rather than the directory.
+    // new-file diff.
     try testing.expect(std.mem.indexOf(u8, try expectRow(&by_key.map, false, "src/fresh.txt"), "+brand new") != null);
 }
 
@@ -438,10 +404,7 @@ test "folder_response_lists_each_file_with_its_staged_state" {
         try testing.expect(row.object.get("staged") != null);
     }
 
-    // And the two sides of `src/both.txt` are genuinely DIFFERENT diffs. The
-    // staged side is index-vs-HEAD, so it shows the edit that was `git add`ed
-    // (+staged); the unstaged side is worktree-vs-index, so it shows the edit
-    // made AFTER that (+new). Swapping them would fail here.
+    // And the two sides of `src/both.txt` are genuinely DIFFERENT diffs.
     var by_key = try indexBySideAndPath(diffs.items);
     defer by_key.deinit();
     const staged_diff = try expectRow(&by_key.map, true, "src/both.txt");

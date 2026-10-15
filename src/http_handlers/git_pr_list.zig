@@ -1,23 +1,5 @@
 //! `GET /api/git/pr/list` — the change requests of one repository, for the
 //! kanban board's PR surface (`KanbanPrList.vue`).
-//!
-//! ## Why this is its own endpoint and not N calls to `/status`
-//!
-//! `/api/git/pr/status` answers "what is the state of THIS change request",
-//! so it needs a ref. The board wants the opposite shape: every open PR/MR of
-//! the board's repo, including the ones whose card was deleted, and there is
-//! no way to enumerate those through `gh pr view`. `gh pr list` / `glab mr
-//! list` is that enumeration, and it is a different command with a different
-//! (search-backed) JSON field allow-list — hence a separate argv builder, a
-//! separate parser, and a separate endpoint.
-//!
-//! ## What the answer is not
-//!
-//! `truncated: true` means the cap bound and there may be more rows. An empty
-//! `changes` array means the FORGE said there are none — a CLI failure is a
-//! 4xx/5xx with a sentence, never an empty list, because "no open pull
-//! requests" and "we could not ask" are different facts and the UI renders
-//! them differently.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -84,10 +66,9 @@ fn listUseCase(
     return listUseCaseWithPrograms(allocator, io, .{}, path, state, limit, provider_override, detail);
 }
 
-/// The whole read path: repo gate → provider → argv → spawn → parse.
-///
-/// `pub` so the functional suite can drive it against fixture scripts through
-/// the same seam the status/merge paths expose.
+/// The whole read path: repo gate → provider → argv → spawn → parse. `pub` so
+/// the functional suite can drive it against fixture scripts through the same
+/// seam the status/merge paths expose.
 pub fn listUseCaseWithPrograms(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -165,10 +146,7 @@ pub fn listUseCaseWithPrograms(
     }
 
     const trimmed = std.mem.trim(u8, res.stdout, " \n\r\t");
-    // Exit 0 with no stdout is an empty RESULT, not a failure. The text mode
-    // of both CLIs prints prose when there is something to say (which the
-    // parsers below reject loudly, so a mis-passed JSON flag cannot masquerade
-    // as an empty repo); silence on the JSON flag means nothing matched.
+    // Exit 0 with no stdout is an empty RESULT, not a failure.
     if (trimmed.len == 0) {
         return .{
             .provider = try allocator.dupe(u8, provider.toString()),
@@ -199,11 +177,6 @@ pub fn listUseCaseWithPrograms(
 }
 
 /// `git -C <path> rev-parse --git-dir` exits 0 only inside a repository.
-///
-/// KNOWN LIMITATION, shared with `git_pr_status.zig`: git honours an ambient
-/// `GIT_DIR` / `GIT_WORK_TREE`, so a pabrik started from inside a git hook
-/// would answer "yes" for any path. Passing an explicit `environ_map` to this
-/// probe is the fix, tracked there rather than duplicated here.
 fn isGitRepository(allocator: std.mem.Allocator, io: std.Io, path: []const u8) bool {
     const check = std.process.run(allocator, io, .{ .argv = &.{ "git", "-C", path, "rev-parse", "--git-dir" } }) catch return false;
     defer {
@@ -213,10 +186,7 @@ fn isGitRepository(allocator: std.mem.Allocator, io: std.Io, path: []const u8) b
     return check.term.exited == 0;
 }
 
-/// `gh pr list --json <fields>` rows. The shape is pinned by the field list we
-/// pass (`pr_cli.GH_LIST_JSON_FIELDS`), so — unlike the glab parser — a rigid
-/// struct is correct here: a renamed field would mean gh changed its contract,
-/// not that our flag drifted.
+/// `gh pr list --json <fields>` rows.
 const GhPrRow = struct {
     number: i64 = 0,
     title: []const u8 = "",
@@ -242,8 +212,6 @@ fn parseGithubList(
     // `parseFromSlice`, deliberately NOT the Leaky variant: parsing an ARRAY
     // with the Leaky variant allocates the array and its element buffers and
     // offers no `deinit`, so it is only correct under an arena — every string
-    // below is copied into the caller's allocator before this returns, so the
-    // `defer` is safe and the function works with a plain GPA too.
     var parsed = std.json.parseFromSlice([]const GhPrRow, allocator, trimmed, .{ .ignore_unknown_fields = true }) catch {
         setParseDetail(allocator, detail, cli, trimmed.len);
         return error.FetchFailed;
@@ -268,21 +236,6 @@ fn parseGithubList(
 }
 
 /// `glab mr list --output json` rows.
-///
-/// Alias-tolerant on purpose, like `GlabMrView` in `git_pr_status.zig`:
-/// `glab` has no `--json <fields>` flag, so it renders whatever the installed
-/// version renders, and the keys have moved across releases (the identifier
-/// has been `iid` and `id`; draft has been `draft` and `work_in_progress`).
-/// A rigid struct here means a routine `glab` upgrade 502s the whole list for
-/// every GitLab user.
-///
-/// IMPLEMENTATION GATE: these key names were NOT verified against a live
-/// GitLab (this machine has no GitLab token — `glab auth status` is a 401), so
-/// the aliases above are the documented ones plus the ones `GlabMrView` already
-/// relies on. The response is honest either way — a field that moved renders as
-/// an empty string on that row, never as a wrong value — and the first person
-/// who runs this against a real GitLab MR should tighten the aliases to what it
-/// actually answered.
 const GlabMrRow = struct {
     iid: i64 = 0,
     id: i64 = 0,
@@ -306,9 +259,7 @@ fn parseGlabList(
 ) ![]http_response.GitPrListItem {
     // `parseFromSlice`, deliberately NOT the Leaky variant: `GlabMrRow` holds
     // a `std.json.Value` (the author object), and a Value duplicates itself
-    // into a parser-owned arena that the Leaky variant has no `deinit` to hand
-    // back. Every string below is copied into the caller's arena before this
-    // returns, so the `defer` is safe.
+    // into a parser-owned arena that the Leaky variant has no `deinit` to
     var parsed = std.json.parseFromSlice([]const GlabMrRow, allocator, trimmed, .{ .ignore_unknown_fields = true }) catch {
         setParseDetail(allocator, detail, cli, trimmed.len);
         return error.FetchFailed;
@@ -355,11 +306,9 @@ fn parseLimit(raw: ?[]const u8) ?u32 {
     return n;
 }
 
-/// GET /api/git/pr/list?path=<repo>[&state=open|closed|merged|all][&limit=30][&provider=github]
-///
+/// GET
+/// /api/git/pr/list?path=<repo>[&state=open|closed|merged|all][&limit=30][&provider=github]
 /// The kanban board's PR surface: every open change request of the board's
-/// repo, not just the one attached to a session. Errors name the program the
-/// user would have to fix ("gh", never a generic "the forge").
 pub fn gitPrListHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
     const io = ctx.io;
@@ -443,7 +392,6 @@ fn skipOnWindows() bool {
 /// A throwaway directory plus executable fixture scripts — the same shape the
 /// `git_pr_create.zig` / `git_pr_status.zig` suites use, so the whole path
 /// (argv → spawn → capture → parse) runs with no real `gh` on PATH and no
-/// network.
 const Fixture = struct {
     tmp: std.testing.TmpDir,
     root: []u8,
@@ -718,15 +666,7 @@ test "list: a missing CLI is CliMissing (422), not a fetch failure" {
 test "list: a non-repository path is refused before any CLI runs" {
     // Three guards, all copied from the status suite's repo-gate test rather
     // than invented here — each one is a way this assertion was already known
-    // to lie:
-    //  1. `std.testing.tmpDir` lands in `<cwd>/.zig-cache/tmp`, which is INSIDE
-    //     this repo, so `git -C` walks up and answers "yes, a repository" — the
-    //     fixture must live outside the repo, hence `makeNonRepoDir` (/tmp).
-    //  2. Windows skips the whole fixture dance (the fixtures are /bin/sh).
-    //  3. An environment that exports GIT_DIR makes git call ANY path a
-    //     repository, so the probe cannot distinguish anything and the test
-    //     has nothing to assert (see the KNOWN LIMITATION note on
-    //     `listUseCaseWithPrograms`).
+    // to lie: 1.
     if (skipOnWindows()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);

@@ -692,9 +692,8 @@ pub fn computeChunkHashes(chunks: []const ChunkInfo) []ChunkHash {
 
 pub fn getIndexDir(root_cwd: []const u8) ![]const u8 {
     // Everything built from this path is handed to `createFileAbsolute` /
-    // `openFileAbsolute`, which ASSERT the path is absolute and ABORT the whole
-    // process (Debug/ReleaseSafe) instead of returning an error. `path.join`
-    // cannot make a relative `root_cwd` absolute, so reject it here.
+    // `openFileAbsolute`, which ASSERT the path is absolute and ABORT the
+    // whole process (Debug/ReleaseSafe) instead of returning an error.
     if (!std.fs.path.isAbsolute(root_cwd)) return error.IndexRootNotAbsolute;
     return try std.fs.path.join(std.heap.page_allocator, &.{ root_cwd, ".pabrik", "semantic_index" });
 }
@@ -957,27 +956,15 @@ pub fn search(
     _ = query;
     _ = limit;
 
-    // Placeholder - actual implementation would:
-    // 1. Embed the query
-    // 2. Compute dot product with all embeddings
-    // 3. Return top-k results
+    // Placeholder - actual implementation would: 1. Embed the query 2.
+    // Compute dot product with all embeddings 3. Return top-k results
 
     return error.OutOfMemory;
 }
 
-// ===== Tests merged from indexing_semantic_search_test.zig (2026-09-29 flatten) =====
-// NOTE: this suite is still NOT registered (see
-// src/modules/agent/test_runner.zig). Unlike the two design tools above, no
-// `pub const` chain reaches this file, so it stays out of the test binary —
-// the same state it was in before the 2026-09-29 flatten. Register it once
-// `search` stops being a `!void` placeholder.
-//
-// NOT REGISTERED: no registrar imports this file, so these tests are not
-// discovered by `zig build test`. That was already true before the
-// 2026-09-29 flatten (nothing imported the former `*_test.zig`), and it
-// stays true here: the suite below has never been compiled, and compiling
-// it now fails because it still asserts the pre-2026-09-18 XML tool-output
-// envelope. Re-assert it against the JSON envelope in its own change.
+// ===== Tests merged from indexing_semantic_search_test.zig (2026-09-29
+// flatten) ===== NOTE: this suite is still NOT registered (see
+// src/modules/agent/test_runner.zig).
 const testing = std.testing;
 
 // ============================================================================
@@ -1202,12 +1189,7 @@ test "testFileEntryStructure" {
     try testing.expectEqual(@as(i64, 1234567890), entry.mtime);
 }
 
-// NOTE: the former `testSearchEmptyIndex` was dropped with the flatten. It
-// asserted that `search` returns zero results for an empty index, but
-// `search` is still the `!void` placeholder that always fails with
-// error.OutOfMemory, so the test described an API that does not exist yet
-// and had never been compiled. Re-add it when `search` returns
-// `[]const SearchResult`.
+// NOTE: the former `testSearchEmptyIndex` was dropped with the flatten.
 
 // ============================================================================
 // Test: Index Manifest Structure

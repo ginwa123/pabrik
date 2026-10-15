@@ -6,11 +6,7 @@ const sqlite = pabrikcore.sqlite;
 const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
 
-/// One column found by name in the local kanban. Used by the
-/// `target_column_name` resolution path so the LLM can address a
-/// column by human-readable name ("done") without first calling
-/// `kanban_list`. `id` is null when the column doesn't exist in the
-/// board.
+/// One column found by name in the local kanban.
 pub const ColumnMatch = struct {
     id: []u8,
     name: []u8,
@@ -25,14 +21,9 @@ pub fn freeColumnMatches(allocator: std.mem.Allocator, matches: []ColumnMatch) v
     allocator.free(matches);
 }
 
-/// Input structure for kanban_move_task tool.
-///
-/// The agent should pass `workspace_id` + `item_id` from the active
-/// chat context (injected by the frontend — see Sub-task 5 of the
-/// task plan). `task_id` is found via `kanban_list`. The
-/// destination column is given as either `target_column_id` (exact)
-/// or `target_column_name` (case-insensitive trimmed match — the
-/// tool calls `kanban_list` internally to resolve it).
+/// Input structure for kanban_move_task tool. The agent should pass
+/// `workspace_id` + `item_id` from the active chat context (injected by the
+/// frontend — see Sub-task 5 of the task plan).
 pub const KanbanMoveTaskInput = struct {
     /// The workspace that owns the kanban item. From chat context.
     workspace_id: []const u8 = "",
@@ -46,8 +37,6 @@ pub const KanbanMoveTaskInput = struct {
     target_column_id: ?[]const u8 = null,
     /// Target column — human-readable name (e.g. "done"). Matched
     /// case-insensitively after trim against the board's columns.
-    /// When both `target_column_id` and `target_column_name` are
-    /// supplied, the id wins (it's exact).
     target_column_name: ?[]const u8 = null,
     /// 0-based position within the target column. When null, the
     /// task is appended to the end (server picks a high position
@@ -55,10 +44,7 @@ pub const KanbanMoveTaskInput = struct {
     position: ?i64 = null,
 };
 
-/// Top-level tool definition for the LLM. The description is the
-/// agent's primary signal for WHEN to use this tool — it tells the
-/// LLM to call `kanban_list` first (to find the task_id and
-/// optionally the column id) and explains the name→id fallback.
+/// Top-level tool definition for the LLM.
 pub const kanban_move_task_tool_system_prompt =
     \\## Kanban Move Task Tool — MANDATORY for kanban tasks
     \\You are on a kanban board. Moving the card IS part of the job — not optional.
@@ -121,15 +107,9 @@ pub const kanban_move_task_tool = AgentTool{
     },
 };
 
-/// Resolve a column name to an id via a case-insensitive trimmed
-/// match against the board's columns. Returns the FIRST match (or
-/// an empty slice when no match). The agent is told in the
-/// description to fall back to `target_column_id` when the match
-/// is ambiguous (multiple columns share the same name when compared
-/// case-insensitively).
-///
-/// Caller owns the returned slice and must release it with
-/// `freeColumnMatches`.
+/// Resolve a column name to an id via a case-insensitive trimmed match
+/// against the board's columns. Returns the FIRST match (or an empty slice
+/// when no match).
 pub fn findColumnsByName(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -171,10 +151,9 @@ pub fn findColumnsByName(
     return try matches.toOwnedSlice(allocator);
 }
 
-/// Lowercase a string into a stack buffer when it fits, else heap.
-/// The pointer-equality on the returned slice tells the caller
-/// whether to free it. Trims nothing — the caller should trim
-/// first.
+/// Lowercase a string into a stack buffer when it fits, else heap. The
+/// pointer-equality on the returned slice tells the caller whether to free
+/// it. Trims nothing — the caller should trim first.
 fn toLowerInto(allocator: std.mem.Allocator, s: []const u8, buf: []u8) ![]const u8 {
     if (s.len > buf.len) {
         const out = try allocator.alloc(u8, s.len);
@@ -197,10 +176,9 @@ fn readTaskCurrentColumn(
     db: *sqlite.SqliteBackend,
     task_id: []const u8,
 ) !struct { column_id: []u8, column_name: []u8 } {
-    // After Migration 072, the task's current kanban column lives in
-    // the `kanban` join table. LEFT JOIN kanban so unassigned tasks
-    // (no kanban row) return column_id = '' + column_name = '' (the
-    // COALESCE fallback).
+    // After Migration 072, the task's current kanban column lives in the
+    // `kanban` join table. LEFT JOIN kanban so unassigned tasks (no kanban
+    // row) return column_id = '' + column_name = '' (the COALESCE fallback).
     var q = try db.query(allocator,
         \\SELECT COALESCE(k.kanban_column_id, ''), COALESCE(kc.name, '')
         \\FROM workspace_item_tasks t
@@ -219,24 +197,7 @@ fn readTaskCurrentColumn(
     return error.TaskNotFound;
 }
 
-/// Execute the kanban_move_task tool. Returns a JSON string for the
-/// LLM.
-///
-/// Response shape on success:
-///   {"success":true,"task_id":...,"task_name":...,
-///    "column_id":...,"column_name":...,"position":...}
-///
-/// Response shape on error:
-///   {"success":false,"error":...}
-///
-/// Common error variants (encoded as structured strings so the LLM
-/// can recognize them):
-///   - "Missing required field: workspace_id" (or item_id / task_id)
-///   - "Need at least one of target_column_id or target_column_name"
-///   - "Column not found: <name>" (name didn't match any column)
-///   - "Ambiguous column name: '<name>' matches N columns — pass target_column_id"
-///   - "TaskNotFound: <id>" (no row in workspace_item_tasks for task_id)
-///   - "DB: moveTask failed: <error_name>"
+/// Execute the kanban_move_task tool. Returns a JSON string for the LLM.
 pub fn executeKanbanMoveTaskToJSON(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -246,10 +207,8 @@ pub fn executeKanbanMoveTaskToJSON(
     if (input.item_id.len == 0) return errorJSON(allocator, "Missing required field: item_id");
     if (input.task_id.len == 0) return errorJSON(allocator, "Missing required field: task_id");
 
-    // Matches array (for target_column_name resolution) must outlive
-    // the use of `target_column_id` (which borrows from matches[0].id).
-    // Allocate it on the outer scope so its `defer free` fires AFTER
-    // the slice is done being used.
+    // Matches array (for target_column_name resolution) must outlive the use
+    // of `target_column_id` (which borrows from matches[0].id).
     var name_matches: ?[]ColumnMatch = null;
     defer if (name_matches) |m| freeColumnMatches(allocator, m);
 
@@ -294,18 +253,7 @@ pub fn executeKanbanMoveTaskToJSON(
     };
     defer if (task_name_slice.ptr != task_name_buf[0..].ptr) allocator.free(task_name_slice);
 
-    // 2. Compute the target position. Null → end-of-column: pick
-    //    a high sentinel that moveTask's sibling-shift logic will
-    //    compact to last on the next move (or use a high value
-    //    directly, since the renumber in step 3 of kanban_model.moveTask
-    //    only shifts tasks at position >= target_position up by 1;
-    //    a high value means "no siblings shift, the moved task
-    //    parks at the high position, and any subsequent move into
-    //    this column will re-renumber naturally").
-    //
-    //    We use a more explicit approach: pick MAX(existing) + 1
-    //    so the move is visibly "appended" rather than "parked at
-    //    sentinel 1_000_000".
+    // 2. Compute the target position.
     const position: i64 = input.position orelse blk: {
         var q = try db.query(
             allocator,
@@ -333,21 +281,8 @@ pub fn executeKanbanMoveTaskToJSON(
         return errorJSONOwned(allocator, try std.fmt.allocPrint(allocator, "DB: moveTask failed: {s}", .{@errorName(err)}));
     };
 
-    // 3a. Emit the `kanban_task` SSE event so connected KanbanView
-    //     clients refresh their board. Mirrors the emit in
-    //     `tasks_move.zig:105-117` (the HTTP drag-and-drop path) —
-    //     same payload shape, same non-fatal failure semantics.
-    //     The `target_column_id` and `position` here are the
-    //     resolved values (after the target_column_name → id
-    //     fallback at line 248 and the position-null → MAX+1
-    //     fallback at line 303). The frontend's SSE handler
-    //     (kanban_events_sse.zig) fans this out to every connected
-    //     client; the workspacesStore filters by workspace_id.
-    //
-    //     Bug history (2026-06-29): this emit was missing on the
-    //     LLM tool path. Drag-and-drop worked (HTTP handler
-    //     emits), AI-agent moves did not. Adding this single call
-    //     closes the gap.
+    // 3a. Emit the `kanban_task` SSE event so connected KanbanView clients
+    // refresh their board.
     pabrikcore.ai_mod.on_event_sent_kanban.onEventSendKanbanTask(allocator, .{
         .action = "moved",
         .workspace_id = input.workspace_id,
@@ -425,10 +360,8 @@ pub fn errorJSON(allocator: std.mem.Allocator, error_msg: []const u8) ![]u8 {
     }, .{});
 }
 
-/// Same as `errorJSON` but TAKES OWNERSHIP of `error_msg` and frees
-/// it after use. Used for `errorJSON(allocator, try std.fmt.allocPrint(...))`
-/// where the caller can't `defer` the allocPrint result across a
-/// `return errorJSON(...)` expression.
+/// Same as `errorJSON` but TAKES OWNERSHIP of `error_msg` and frees it after
+/// use.
 pub fn errorJSONOwned(allocator: std.mem.Allocator, error_msg: []u8) ![]u8 {
     defer allocator.free(error_msg);
     return errorJSON(allocator, error_msg);

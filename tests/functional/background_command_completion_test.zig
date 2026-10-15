@@ -1,61 +1,6 @@
-// Functional e2e for background-command completion (Tasks 1-3).
-//
-// Zig port of `tests/functional/background_command_completion_test.py`
-// (same test names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional e2e for background-command completion (Tasks 1-3).
-//
-//   Exercises the cron `cleanup_stale_background_process`
-//   (src/schedulers/cleanup_stale_background_process.zig — commits 7e39524c,
-//   30ab8253) against a REAL pabrik binary + REAL SQLite:
-//
-//     * A `session_background_process` row whose PID is dead gets notified
-//       into `session_queue_messages` with the JSON envelope from
-//       `background_process.buildCompletionMessage`:
-//         {pid,command,stdout,truncated,...}
-//       (role stays `user` — the frontend renders `<background_command>`
-//       rows with the shell tool card) and the row is DELETEd
-//       (notify-then-delete).
-//     * The cron fires every minute on the minute (main.zig:620-623), so the
-//       core test POLLS GET /api/llm/session/:id/queue_messages for up to ~90s.
-//
-//   Setup pattern (replay-frontend-wire-payload rule): sessions are created
-//   via PUT /api/llm/session/:id {"name": ...} (session_update.zig
-//   auto-creates via ensureSessionExists — same helper as
-//   session_human_touched_at_test.py::_create_session_via_update, no LLM
-//   profile needed). The bg row is inserted via direct sqlite3 into the
-//   isolated HOME's agent.db
-//   (Path(harness.temp_dir)/.config/pabrik/agent.db — WAL mode makes the
-//   concurrent open safe; same precedent as session_human_touched_at_test.py).
-//   The dead PID (999999999) can never be alive: it exceeds Linux's max PID
-//   so kill(pid, 0) returns ESRCH -> isProcessRunning == false.
-//
-//   Covers:
-//     * EMPTY-QUEUE — fresh session returns {messages: [], count: 0}.
-//     * COMPLETION — dead-PID row -> envelope in queue_messages (poll) +
-//       row deleted from session_background_process.
-//
-//   Plan: background-command-completion, Task 4.
-//   """
-//
-// ─── WHY THE SEED ROW GOES IN THROUGH THE `sqlite3` CLI ──────────────────────
-// There is no HTTP route that creates a `session_background_process` row:
-// the only production writer is the `command` agent TOOL, which needs a live
-// LLM tool call, and this suite deliberately runs without one (the row is
-// fabricated precisely so its PID can be guaranteed dead). The Python opened
-// `agent.db` with the stdlib `sqlite3` module; this package links no SQLite
-// and will not grow one (see `tests/functional/build.zig`'s header), so the
-// port spawns the `sqlite3` COMMAND-LINE tool instead — the same idiom
-// `chat_right_sidebar_git_test.zig` uses for `git`. `.timeout 5000` is the
-// CLI's spelling of Python's `busy_timeout`; the agent DB is WAL-mode and
-// the server holds a connection open for the whole test.
-//
-// Everything the assertions actually target is still crossed over the WIRE:
-// the cron that notifies, the queue row it writes, the JSON envelope it
-// builds, and the DELETE. Only the fixture row is seeded out-of-band, exactly
-// as in Python.
+// Functional e2e for background-command completion (Tasks 1-3). Zig port of
+// `tests/functional/background_command_completion_test.py` (same test names,
+// same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -85,13 +30,8 @@ const POLL_BUDGET_S: u32 = 90;
 /// envelope must carry it verbatim.
 const MARKER = "bg-completion-marker-7f3a9c";
 
-/// Skip unless a `sqlite3` CLI is present and speaks `-json`.
-/// Exit code for a finished child, or null if a signal stopped it.
-///
-/// `Child.Term` is a tagged union, NOT an optional: `.exited` is a `u8`
-/// field, so `res.term.exited orelse ...` does not compile and a bare
-/// `res.term.exited != 0` would silently read the wrong field on a
-/// signalled run.
+/// Skip unless a `sqlite3` CLI is present and speaks `-json`. Exit code for a
+/// finished child, or null if a signal stopped it.
 fn exitCode(term: std.process.Child.Term) ?u8 {
     return switch (term) {
         .exited => |c| c,
@@ -121,9 +61,6 @@ fn requireSqlite3Cli() !void {
 }
 
 /// `sqlite3 -json` prints ZERO BYTES for an empty result set — not `[]`.
-/// `countBgRows` always gets exactly one COUNT row, so this only matters as
-/// a guard against feeding a syntax error to the JSON parser and reporting
-/// it as a test failure.
 fn parseSqliteJson(allocator: std.mem.Allocator, out: []const u8) !std.json.Parsed(std.json.Value) {
     if (std.mem.trim(u8, out, " \t\r\n").len == 0) {
         return std.json.parseFromSlice(std.json.Value, allocator, "[]", .{});
@@ -194,13 +131,9 @@ fn getQueue(h: *Harness, session_id: []const u8) !harness.Json {
     return r.json();
 }
 
-/// Insert a `session_background_process` row WHILE the binary runs.
-///
-/// Schema mirrors migration 014: `(session_id, pid, command, log_path,
-/// started_at, status)` with composite PK `(session_id, pid)`. Python bound
-/// the values as parameters; the CLI has no parameter binding on a one-shot
-/// `-cmd`, so the literals are quoted here — `sqlLit` is the whole of that
-/// substitution.
+/// Insert a `session_background_process` row WHILE the binary runs. Schema
+/// mirrors migration 014: `(session_id, pid, command, log_path, started_at,
+/// status)` with composite PK `(session_id, pid)`.
 fn insertBgRow(
     temp_dir: []const u8,
     session_id: []const u8,
@@ -267,11 +200,9 @@ fn countBgRows(temp_dir: []const u8, session_id: []const u8) !u64 {
     };
 }
 
-/// The first queue message containing `needle`, dupe'd for the caller.
-///
-/// Python looped `for entry in body.get("messages", []): msg = entry.get("message",
-/// "")`. Dupe'd because it is found through a parsed document that is about
-/// to be deinit'd.
+/// The first queue message containing `needle`, dupe'd for the caller. Python
+/// looped `for entry in body.get("messages", []): msg = entry.get("message",
+/// "")`.
 fn findQueueMessage(doc: *const harness.Json, needle: []const u8) !?[]u8 {
     const arr = doc.array("messages") orelse return null;
     for (arr.items) |entry| {
@@ -328,11 +259,9 @@ test "queue_messages_empty_for_fresh_bg_session" {
     }
 }
 
-// A bg row with a dead PID is picked up by the per-minute cron:
-// the Task 1 envelope lands in queue_messages and the row is deleted.
-//
-// Polls (cron ticks on the minute; worst case ~60s wait). Fails after
-// ~90s with the row count attached for triage.
+// A bg row with a dead PID is picked up by the per-minute cron: the Task 1
+// envelope lands in queue_messages and the row is deleted. Polls (cron ticks
+// on the minute; worst case ~60s wait).
 test "dead_background_process_notifies_completion_queue" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -375,13 +304,6 @@ test "dead_background_process_notifies_completion_queue" {
     }
 
     // Poll for the envelope.
-    //
-    // LIFETIME: `findQueueMessage` dupes the message OUT of the parsed
-    // document it is found in (that document dies at the end of the
-    // iteration), so the survivor is the dupe. It is freed EXACTLY once,
-    // by the `defer` registered after the loop — a defer INSIDE the loop
-    // block would free a pointer the outer scope still holds, and a second
-    // `defer gpa.free(env)` on top of it is a double free.
     var envelope: ?[]u8 = null;
     {
         var attempt: usize = 0;
@@ -407,9 +329,8 @@ test "dead_background_process_notifies_completion_queue" {
     };
 
     // JSON envelope shape (background_process.zig: buildCompletionMessage):
-    // {pid,command,stdout,truncated,...} object. Role stays user — no tool_call_id,
-    // no prose header, no quote fence. `std.json.Stringify` emits compact
-    // JSON, so the exact substrings below are the wire bytes.
+    // {pid,command,stdout,truncated,...} object. Role stays user — no
+    // tool_call_id, no prose header, no quote fence.
     if (std.mem.indexOf(u8, env, "\"pid\":") == null) {
         std.debug.print("envelope missing pid key: {s}\n", .{env});
         return error.TestUnexpectedResult;

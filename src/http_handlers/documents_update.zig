@@ -1,9 +1,5 @@
-//! `PATCH /api/workspaces/:workspace_id/documents/:document_id`.
-//!
-//! Partial update. An absent field keeps its current value — a PATCH of
-//! `{title}` alone must not blank the body. That is enforced in
-//! `documents_store.updateDocument` (which loads the row first), not here,
-//! so the `edit_document` agent tool inherits the same rule.
+//! `PATCH /api/workspaces/:workspace_id/documents/:document_id`. Partial
+//! update.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");

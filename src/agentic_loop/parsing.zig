@@ -13,14 +13,8 @@ pub fn transformLLMHistoryToAgentMessage(allocator: std.mem.Allocator, message: 
 
     const role = agent.Role.from_str(message.role) orelse .assistant;
 
-    // Handle tool result messages (role == "tool")
-    // For tool messages, the tools column contains the tool_call_id string directly.
-    // The `response_content` for a tool result is the JSON envelope
-    // (`{"tool":…,"parameters":…,"success":…,"data":…,"error":…,"v":1}`)
-    // produced by `tool_registry.wrapToolOutput`.
-    // Strip the envelope and use only the inner payload (success: canonical
-    // `"data"` JSON, failure: `"error"` string) so the LLM sees the actual
-    // tool output rather than the envelope metadata.
+    // Handle tool result messages (role == "tool") For tool messages, the
+    // tools column contains the tool_call_id string directly.
     if (role == .tool) {
         const agentMessage = agent.AgentMessage{
             .id = try allocator.dupe(u8, message.id),
@@ -32,10 +26,9 @@ pub fn transformLLMHistoryToAgentMessage(allocator: std.mem.Allocator, message: 
         return messages.toOwnedSlice(allocator);
     }
 
-    // Handle assistant/user/system messages - always create a message if role is valid
-    // (but not tool role which is handled above)
-    // const finishReason = agent.FinishReason.from_str(message.finish_reason);
-    // const isToolCalls = finishReason == .tool_calls;
+    // Handle assistant/user/system messages - always create a message if role
+    // is valid (but not tool role which is handled above) const finishReason
+    // = agent.FinishReason.from_str(message.finish_reason); const isToolCalls
 
     // For assistant/user/system roles, always create a message (even if content is empty)
     // Tool role is handled separately above
@@ -59,13 +52,7 @@ pub fn transformLLMHistoryToAgentMessage(allocator: std.mem.Allocator, message: 
                                 if (a.string.len > 0) args_raw = a.string;
                             }
                         }
-                        // Repair before falling back to "{}". A model that
-                        // pastes a Windows path into `path` writes the
-                        // separators as raw `\`, which is invalid JSON —
-                        // and silently replacing that call with `{}` both
-                        // hides the real failure and feeds the model its own
-                        // call back as an empty object, so it retries the
-                        // same mistake.
+                        // Repair before falling back to "{}".
                         var safe_owned: ?[]u8 = null;
                         const safe_args = blk: {
                             if (args_raw.len == 0) break :blk "{}";
@@ -178,29 +165,11 @@ pub fn transformLLMHistoryToAgentMessage(allocator: std.mem.Allocator, message: 
 /// Strip the JSON tool envelope
 /// (`{"tool":…,"parameters":…,"success":…,"data":…,"error":…,"v":1}`)
 /// produced by `tool_registry.wrapToolOutput` and return just the inner
-/// payload.
-///
-/// On success envelopes (`"success":true`), returns the canonical JSON of
-/// `"data"`. On failure envelopes (`"success":false`), returns the
-/// `"error"` string. If the envelope parses but carries no payload
-/// (null data / null error), returns an empty string.
-///
-/// Returns the input UNCHANGED (heap-duplicated) when it is not a v1 JSON
-/// envelope — this keeps backwards compatibility with old
-/// `response_content` rows that pre-date the envelope format (pre-migration
-/// XML rows degrade to raw text).
-///
-/// Mirrors `apps/desktop/src/helpers/unwrapToolOutput.ts` (which uses
-/// `tryUnwrapToolOutput` for the same fallback semantics).
 fn stripToolEnvelope(allocator: std.mem.Allocator, raw: []const u8) ![]u8 {
     return stripToolEnvelopeImpl(allocator, raw) catch |err| {
         // Use the project's custom Logger (pabrikcore.loggermod) — it has its
         // own formatter and does NOT route through std.log, so it won't
-        // increment the test runner's `log_err_count`. Mirrors the
-        // `startup.zig` "Failed to ... {s}" convention for errFmt messages.
-        // `getGlobal()` returns null if the logger hasn't been initialized
-        // (e.g. inside a unit test) — guard with `if (...) |logger|` so we
-        // never crash in that case.
+        // increment the test runner's `log_err_count`.
         if (pabrikcore.loggermod.getGlobal()) |logger| {
             logger.warnFmt(
                 "[stripToolEnvelope] Agent Pabrik System error, the actual error is ->>>> {s} (input_len={d}, looks_like_json={any})",
@@ -241,13 +210,8 @@ fn stripToolEnvelopeImpl(allocator: std.mem.Allocator, raw: []const u8) ![]u8 {
 }
 
 // ─── Chat content envelopes (user + assistant) ────────────────────────────
-///
-/// Option A: `llm_history.response_content` holds a JSON object string for
-/// `role=user` (`{"user","name","msg"}`) and for non-empty `role=assistant`
-/// text (`{"model","msg"}`), including the screenshot case where an
-/// assistant row carries BOTH text and `tool_calls_json`. Never applied to
-/// `role=tool` (already has the v1 tool envelope) or `role=system`.
-/// Legacy plain-text rows fall back to raw on read — no backfill needed.
+// / / Option A: `llm_history.response_content` holds a JSON object string for
+// / `role=user` (`{"user","name","msg"}`) and for non-empty `role=assistant`
 pub const UserEnvelope = struct {
     user: []const u8,
     name: []const u8,
@@ -284,10 +248,8 @@ pub fn isChatEnvelope(allocator: std.mem.Allocator, raw: []const u8) bool {
     return false;
 }
 
-/// Unwrap a chat envelope to its `.msg` text. Returns a heap-dupe the
-/// caller owns. Falls back to `raw` unchanged for legacy plain-text rows,
-/// empty input, non-JSON, or JSON without the envelope shape — so old
-/// history keeps working with zero migration.
+/// Unwrap a chat envelope to its `.msg` text. Returns a heap-dupe the caller
+/// owns.
 pub fn unwrapChatContent(allocator: std.mem.Allocator, raw: []const u8) ![]u8 {
     const trimmed = std.mem.trim(u8, raw, &std.ascii.whitespace);
     if (trimmed.len == 0) return try allocator.dupe(u8, raw);
@@ -308,10 +270,6 @@ pub fn unwrapChatContent(allocator: std.mem.Allocator, raw: []const u8) ![]u8 {
 
 /// Identity for a `role=user` envelope: the session owner's id + display
 /// name, resolved via `sessions.user_id -> users.name`.
-///
-/// Errors (auth off, minimal test schemas without the tables, unknown
-/// session) propagate to the caller, which falls back to its legacy
-/// defaults — a failed identity lookup must never lose the message row.
 pub const ChatIdentity = struct {
     user_id: []u8,
     name: []u8,
@@ -353,9 +311,6 @@ pub fn resolveChatUser(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, 
 
 /// Profile name picked for the session (`sessions.selected_profile_model`,
 /// e.g. `"900ribu"`), for the assistant envelope's identity field.
-///
-/// Errors (auth off / Default profile / minimal test schemas) propagate to
-/// the caller, which falls back to the raw model id.
 pub fn resolveProfileName(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend, session_id: []const u8) ![]u8 {
     var prows = try db.query(allocator, "SELECT COALESCE(selected_profile_model,'') FROM sessions WHERE id=?", &.{session_id});
     defer prows.deinit();
@@ -369,15 +324,7 @@ pub fn resolveProfileName(allocator: std.mem.Allocator, db: *sqlite.SqliteBacken
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
 /// Build a minimal `LLMHistory` with `role = "tool"` and the given
-/// `response_content`. Every owned slice is heap-allocated so the test
-/// allocator's canary catches leaks / double-frees on `deinit`.
-///
-/// IMPORTANT: `LLMHistory.deinit` unconditionally frees `.agent`,
-/// `.session_name`, and `.tool_name` even when they're at their
-/// string-literal defaults (`"Agent"`, `""`, `""`). Calling `deinit`
-/// on a partially-initialized `LLMHistory` therefore crashes with
-/// `Invalid free`. This helper explicitly `dupe`s all three so the
-/// resulting struct is safe to deinit.
+/// `response_content`.
 fn makeToolMessage(allocator: std.mem.Allocator, response_content: []const u8) !LLMHistory {
     return LLMHistory{
         .id = try allocator.dupe(u8, "msg_test_001"),

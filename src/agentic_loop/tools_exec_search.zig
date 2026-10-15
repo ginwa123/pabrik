@@ -11,9 +11,7 @@ const error_explain = @import("tools_error_explain.zig");
 const path_validate = @import("helpers").path_validate;
 
 /// Parse the model-provided JSON and normalize zero-valued optional head/tail
-/// placeholders. Some providers emit every optional numeric field and use 0
-/// for "unused"; executeSearch intentionally keeps its direct API strict, so
-/// compatibility belongs at this tool-call boundary.
+/// placeholders.
 fn parseSearchInput(allocator: std.mem.Allocator, args: []const u8) !std.json.Parsed(search_tool_mod.SearchInput) {
     var raw = try std.json.parseFromSlice(
         std.json.Value,
@@ -54,9 +52,7 @@ pub fn execSearch(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
 
     // `cwd` is REQUIRED on every path-taking tool: it is the directory this
     // call works in, and it is ALSO the directory ripgrep is spawned in (see
-    // `executeSearch`'s `cwd` argument) — the two used to be able to disagree,
-    // which made an absolute `path` and a stale inherited cwd contradict each
-    // other and surface as a bare "could not access search path".
+    // `executeSearch`'s `cwd` argument) — the two used to be able to
     const cwd = parsed.value.cwd orelse "";
     path_validate.validateCwd(cwd) catch |err| {
         const err_msg = try error_explain.explain(ctx.allocator, err, null);
@@ -95,8 +91,6 @@ pub fn execSearch(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
                     // Naming the path AND the cwd it was resolved against is
                     // the whole fix for the failure this branch used to
                     // report: a bare "could not access search path" named
-                    // neither, so the model could not tell which of the two
-                    // was wrong. Owned here so the `defer` above frees it.
                     owned_err_msg = try std.fmt.allocPrint(
                         ctx.allocator,
                         "could not access search path \"{s}\" from cwd \"{s}\" — verify both exist and are readable. `cwd` is the directory ripgrep runs in; `path` is resolved against it.",

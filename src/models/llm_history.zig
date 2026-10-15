@@ -1,15 +1,5 @@
-//! Data model for the `llm_history` entity table.
-//!
-//! One row per chat message in a session. Backs the ChatView
-//! transcript, the FTS5 search index (`messages_fts`), and the
-//! compactor's token-cost accounting. Columns were added in many
-//! migrations — see the column table below.
-//!
-//! Schema: Migration 001 (`create_llm_history`) + many follow-ups.
-//! The most recent additions are Migration 071
-//! (`cache_creation_input_tokens` / `cache_read_input_tokens` for
-//! Anthropic profile parity) and Migration 071 (`is_loading` for
-//! streaming UX).
+//! Data model for the `llm_history` entity table. One row per chat message in
+//! a session.
 
 const std = @import("std");
 
@@ -220,11 +210,6 @@ pub fn clone(self: *const Self, allocator: std.mem.Allocator) !Self {
 // ===== Tests merged from models_test.zig (2026-09-29 flatten) =====
 
 // Sanity tests for the `src/models/` entity models.
-//
-// Verifies that every model file compiles, that `init` populates the
-// struct as expected, that `deinit` releases its strings, and that
-// external callers can read the struct's fields directly (matching
-// the file-level struct pattern requested by the user).
 
 const testing = std.testing;
 

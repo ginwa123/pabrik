@@ -1,25 +1,4 @@
 //! Random loopback port picker for browser mode (web launch).
-//!
-//! Plan: docs/superpowers/plans/2026-09-10-web-launch-toggle.md
-//! Task: task_1789052626064_0
-//!
-//! When `web_launch_enabled` is on and no explicit `--port` is given, the
-//! server binds a random free port instead of the historical 8081 default
-//! so the browser-mode URL never clashes with a desktop daemon, Vite's
-//! 5173 default, or another browser-mode instance.
-//!
-//! Strategy mirrors `tests/functional/harness.py::find_free_port_random`:
-//! N independent random picks in [RANGE_START, RANGE_END], skipping
-//! RESERVED_PORTS, first port that binds on 127.0.0.1 wins. The probe
-//! binds via `gserverz.Address.init` — the exact same
-//! createSocket → setReuseAddr → bindPort sequence the real server uses —
-//! then closes the fd, so probe and production share bind semantics on
-//! every host (including the Windows winsock path).
-//!
-//! Randomness is a hand-rolled xorshift64* seeded from the wall clock
-//! (ns). No `std.crypto.random` dependency — the picker needs uniform
-//! coverage of a 20k range, not cryptographic strength, and this keeps
-//! the module importable from unit tests without an Io context.
 
 const std = @import("std");
 const gserverz = @import("kabelweb").server;
@@ -84,11 +63,8 @@ pub fn pickFreePortSeeded(seed: u64) PickError!u16 {
     return error.PortExhausted;
 }
 
-/// Pick a random free loopback port, seeded from the wall clock (ns).
-/// This is the production entry point (`--port 0` resolution). Takes
-/// `io` for the clock read — same `std.Io.Clock.now(.real, io)` the
-/// health handler uses (there is no freestanding nanotime in this Zig
-/// version: `std.time` only exposes epoch + unit constants).
+/// Pick a random free loopback port, seeded from the wall clock (ns). This is
+/// the production entry point (`--port 0` resolution).
 pub fn pickFreePort(io: std.Io) PickError!u16 {
     const nanos: i96 = std.Io.Clock.now(.real, io).toNanoseconds();
     const seed: u64 = @truncate(@as(u96, @bitCast(nanos)));
@@ -132,6 +108,5 @@ test "web_port: different seeds spread across the range" {
 }
 
 // The `--port 0` wiring itself is asserted by the functional harness
-// (`tests/functional/`), which boots the real binary and reads the port
-// off the boot log — the only place `main.zig`'s argument parsing is
-// actually observable.
+// (`tests/functional/`), which boots the real binary and reads the port off
+// the boot log — the only place `main.zig`'s argument parsing is actually

@@ -1,49 +1,6 @@
-// Wire tests for GET /api/system/folder against a real per-platform host.
-//
-// Zig port of `tests/functional/system_folder_home_test.py` (same test
-// names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Wire tests for GET /api/system/folder against a real per-platform host.
-//
-//   Why this file exists next to the Zig unit tests
-//   -----------------------------------------------
-//   The endpoint's whole job is to hand the client the SERVER's home, so on
-//   Windows every path it puts on the wire is a backslash path
-//   (``C:\Users\ginwa\Documents``). That is the shape that breaks JSON: a
-//   lone backslash is an invalid escape, ``JSON.parse`` throws, and the
-//   folder picker renders empty instead of listing anything.
-//
-//   ``src/http_handlers/system_folder.zig`` covers that with synthetic
-//   ``C:\...`` strings -- fast, and enough to pin the escaping. What it
-//   cannot see is that ``std.fs.path`` reads a REAL Windows path differently:
-//   ``isAbsolute("C:\x")`` is true on windows-2022 and false on ubuntu, and
-//   ``dirname`` splits on ``\`` there and on ``/`` here. This file is the
-//   only place those two are exercised against the real thing.
-//
-//   It runs on all three CI cells (ubuntu-24.04 / macos-15 / windows-2022)
-//   with no platform gate, because every assertion is derived from
-//   ``harness.temp_dir`` or ``tmp_path`` -- both real ``mkdtemp`` outputs,
-//   absolute on every platform -- and from ``entries[].path``, which is the
-//   value the server itself emitted.
-//
-//   Note on shape: ``path`` / ``parent`` are relative to home ONLY when the
-//   directory is under home. A directory outside home (this fixture's
-//   ``tmp_path``) keeps its absolute path, and that is what the tests below
-//   assert.
-//   """
-//
-// FIXTURE CWD: a scratch dir OUTSIDE home (`harness.makeScratchDir`, the
-// `pabrik-fix-` namespace) so `path` / `parent` stay absolute — which is
-// exactly what the note above says these tests assert. Never the
-// harness's own `pabrik-func-` tempdir: `reapOrphanTestPids` deletes
-// those on every boot. See `git_pr_status_test.zig` for the long form.
-//
-// QUERY PARAMETERS RIDE IN `HttpOptions.params` AND THE HARNESS
-// PERCENT-ENCODES THEM. That matters for one of these tests and nowhere
-// else: `C|notes.txt` must reach the server as `C%7Cnotes.txt`, or the
-// server never sees the pipe it is supposed to reject.
+// Wire tests for GET /api/system/folder against a real per-platform host. Zig
+// port of `tests/functional/system_folder_home_test.py` (same test names,
+// same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -56,10 +13,8 @@ const io = testing.io;
 // Fixtures
 // ============================================================================
 
-/// Content chosen to exercise every branch of the handler's `jsonEscape`:
-/// a quote, a backslash, a tab and a newline. On Windows a file path also
-/// arrives with backslashes, so a dropped escape shows up here as a JSON
-/// parse failure rather than as a silently wrong string.
+/// Content chosen to exercise every branch of the handler's `jsonEscape`: a
+/// quote, a backslash, a tab and a newline.
 const TRICKY_CONTENT = "quote \" backslash \\ tab \t newline \nend";
 
 /// A scratch directory to hold the probe fixture tree, mirroring pytest's
@@ -90,13 +45,6 @@ fn writeFileAt(dir: std.Io.Dir, name: []const u8, contents: []const u8) !void {
 }
 
 /// `git init --initial-branch=main --quiet <root>`.
-///
-/// `git init` is for the same reason as in the Zig fixtures:
-/// `listDirectory` batches one `git check-ignore` per directory, and a
-/// directory that is not a work tree makes the call exit 128 — "nothing
-/// ignored", the same outcome but by accident. Initialising makes the
-/// fixture deterministic whether or not the scratch dir happens to sit
-/// inside a repo.
 fn gitInit(root: []const u8) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
@@ -126,13 +74,8 @@ fn gitInit(root: []const u8) !void {
     }
 }
 
-/// Python's `probe_root` fixture: a non-empty directory tree to point
-/// `path=` at.
-///
-/// `<root>/sub/child/`          — a nested directory
-/// `<root>/sub/note.txt`        — the tricky-content file (raw BYTES)
-/// `<root>/.hidden`             — must be filtered before the wire
-/// `<root>/.git/`               — so `git check-ignore` has rules to apply
+/// Python's `probe_root` fixture: a non-empty directory tree to point `path=`
+/// at.
 fn buildProbeRoot(s: *Scratch) ![]u8 {
     const root = try s.path(&.{"sf-probe"});
     errdefer gpa.free(root);
@@ -150,10 +93,8 @@ fn buildProbeRoot(s: *Scratch) ![]u8 {
         var dir = try std.Io.Dir.cwd().openDir(io, sub, .{});
         defer dir.close(io);
         // Raw bytes, not text: a text-mode write would apply newline
-        // translation, so the `\n` above would come back as `\r\n` on
-        // Windows and the content assertion would fail on the one cell
-        // this file exists to cover. The handler returns the file's bytes
-        // verbatim.
+        // translation, so the `\n` above would come back as `\r\n` on Windows
+        // and the content assertion would fail on the one cell this file
         try writeFileAt(dir, "note.txt", TRICKY_CONTENT);
     }
     {
@@ -256,12 +197,6 @@ fn entriesOf(doc: *const Doc) !std.json.Array {
 }
 
 /// Assert an entry flag is present AND a boolean with the expected value.
-///
-/// Written as a helper because `o.get(key) != std.json.Value{ .bool = … }`
-/// does not compile — Zig 0.16 forbids `!=` on an optional of a union —
-/// and because "absent" and "not a bool" are DIFFERENT failures here: a
-/// camelCase `isDirectory` reads as absent, which is the exact defect
-/// `entries_serialize_snake_case_flags` exists to catch.
 fn expectObjBool(o: std.json.ObjectMap, key: []const u8, want: bool) !void {
     const got = switch (o.get(key) orelse {
         std.debug.print("entry is missing `{s}`\n", .{key});
@@ -294,13 +229,9 @@ fn expectEqualStr(doc: *const Doc, key: []const u8, want: []const u8) !void {
 // Tests
 // ============================================================================
 
-// The call the sidebar, the kanban picker and Android all make first.
-//
-// On native Windows (cmd/pwsh) `HOME` is unset — `getHomeDirectory`
-// falls back to USERPROFILE then HOMEDRIVE+HOMEPATH. The harness sets
-// HOME and USERPROFILE to the same isolated tmpdir, so the answer must be
-// that directory either way, and it must be ABSOLUTE or the handler
-// rejects the request with 500 before it ever lists anything.
+// The call the sidebar, the kanban picker and Android all make first. On
+// native Windows (cmd/pwsh) `HOME` is unset — `getHomeDirectory` falls back
+// to USERPROFILE then HOMEDRIVE+HOMEPATH.
 test "action_list_with_no_path_reports_the_server_home" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -334,11 +265,9 @@ test "action_list_with_no_path_reports_the_server_home" {
     }
 }
 
-// `?path=<home>` must be indistinguishable from the no-path form.
-//
-// This is the round-trip the frontend relies on: it renders `absolute`
-// back into the next request. If the two forms disagreed, navigating to
-// "home" from anywhere would land somewhere else.
+// `?path=<home>` must be indistinguishable from the no-path form. This is the
+// round-trip the frontend relies on: it renders `absolute` back into the next
+// request.
 test "explicit_home_path_matches_the_implicit_listing" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -365,19 +294,9 @@ test "explicit_home_path_matches_the_implicit_listing" {
     }
 }
 
-// The "do not go above home" guard, on the wire.
-//
-// `getParentPath` compares the requested path against home so it can
-// refuse to hand out a parent that sits ABOVE home. It used to compare
-// raw bytes, so a second spelling of the same directory missed the
-// match: on Windows the frontend builds `C:/Users/ginwa` by string
-// concatenation while home is `C:\Users\ginwa`, and the guard then
-// returned `C:/` — one level too high. The picker renders that value as
-// its "up" target.
-//
-// `toPosix` is the identity on Linux — so the assertion is vacuous there
-// and only the Windows cell can fail it. That keeps the file
-// platform-gate-free, which is the whole point of this suite.
+// The "do not go above home" guard, on the wire. `getParentPath` compares the
+// requested path against home so it can refuse to hand out a parent that sits
+// ABOVE home.
 test "home_spelled_with_forward_slashes_has_no_parent_above_it" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -411,10 +330,8 @@ test "home_spelled_with_forward_slashes_has_no_parent_above_it" {
 }
 
 // The picker's actual walk: list, click an entry, list again.
-//
-// `FolderExplorer.vue` expands by sending back `entry.path` verbatim, so
-// that value has to be a path the handler accepts on the NEXT call. The
-// fixture lives outside home, so `path` / `parent` stay absolute here.
+// `FolderExplorer.vue` expands by sending back `entry.path` verbatim, so that
+// value has to be a path the handler accepts on the NEXT call.
 test "listing_a_subdirectory_navigates_by_entry_path" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -538,10 +455,6 @@ test "entries_serialize_snake_case_flags" {
 }
 
 // `action=read` escapes the body through the same `jsonEscape`.
-//
-// On Windows the file is reached through `\`-joined absolute paths, so
-// this is the branch where a missing escape turns into a parse error on
-// the client rather than into a wrong character.
 test "read_returns_content_that_survives_json_escaping" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -576,10 +489,9 @@ test "read_returns_content_that_survives_json_escaping" {
     try expectEqualStr(&doc, "content", TRICKY_CONTENT);
 }
 
-// `action=search` serializes entries through the SAME escaping.
-//
-// It used to carry a byte-identical copy of the list branch's loop; this
-// pins that the two shapes still agree on the wire.
+// `action=search` serializes entries through the SAME escaping. It used to
+// carry a byte-identical copy of the list branch's loop; this pins that the
+// two shapes still agree on the wire.
 test "search_hits_survive_json_escaping" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -651,10 +563,6 @@ test "search_hits_survive_json_escaping" {
 }
 
 // The no-action shape has no `entries` key and that is load-bearing.
-//
-// `buildFolderInfoJson` exists to keep this body byte-compatible with the
-// pre-refactor response; a client that does `body.entries.length` on it
-// is relying on the key being absent.
 test "request_without_an_action_returns_location_only" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -691,11 +599,9 @@ test "request_without_an_action_returns_location_only" {
     try expectEqualStr(&doc, "home", h.temp_dir);
 }
 
-// 400, not a crash and not a wrong directory.
-//
-// On Windows `C:notes.txt` parses as a path but is drive-RELATIVE, so it
-// must not be joined onto a base and opened — that would read the wrong
-// file. Same reason a bare relative path is refused.
+// 400, not a crash and not a wrong directory. On Windows `C:notes.txt` parses
+// as a path but is drive-RELATIVE, so it must not be joined onto a base and
+// opened — that would read the wrong file.
 test "drive_relative_and_relative_paths_are_rejected" {
     try harness.requirePabrikBin(io, gpa);
 

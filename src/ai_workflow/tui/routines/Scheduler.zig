@@ -1,40 +1,6 @@
-//! `Scheduler.zig` — the polling loop that drives workspace routines
-//! to fire.
-//!
-//! Retargeted from per-task routines (Migration 044) to
-//! `workspace_routines` (Migration 084).
-//!
-//! `start(allocator, db, di, io)` is the public entry point — call
-//! it via `di.group_emit_session_create.concurrent(io, ...)` from
-//! `startup.zig`. The function does NOT return; it runs
-//! the polling loop until the process exits. The polling interval is
-//! `TICK_INTERVAL_NS` (5 seconds).
-//!
-//! On startup the loop calls two restart-safety helpers:
-//!
-//!   - `resetStuckRunning`     — flip every `last_status='running'`
-//!                               row to `'failed'` with a "process
-//!                               killed" error. Recovers from a
-//!                               previous process crash.
-//!   - `recomputeDueNextRunAt` — recompute `next_run_at` for every
-//!                               enabled routine from the cron
-//!                               expression. Lets routines that were
-//!                               due during downtime fire within 5s of
-//!                               boot instead of waiting for their
-//!                               originally-scheduled `next_run_at`.
-//!
-//! Each tick calls `fireDueRoutines`, which lists every due routine
-//! via `model.listDueWorkspaceRoutineIds` and calls
-//! `fire.fireWorkspaceRoutine` for each. `fire.fireWorkspaceRoutine`
-//! submits the LLM work to the same Io group via
-//! `di.group_emit_session_create.concurrent(io, ...)` — the same
-//! pattern as `http_handlers/session_create.zig:161`. A slow LLM
-//! call in one routine cannot block polling of others: the
-//! fire-and-forget submit returns immediately, and the Io group
-//! runs the LLM in a worker thread.
-//!
-//! Plan: docs/superpowers/plans/2026-09-10-workspace-items-routines.md (Task 3)
-//! Task: task_1789032258828_0.
+//! `Scheduler.zig` — the polling loop that drives workspace routines to fire.
+//! Retargeted from per-task routines (Migration 044) to `workspace_routines`
+//! (Migration 084).
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -47,11 +13,8 @@ const fire = @import("fire.zig");
 /// Polling interval between `fireDueRoutines` ticks.
 pub const TICK_INTERVAL_NS: i128 = 5 * std.time.ns_per_s;
 
-/// Reset every routine whose `last_status = 'running'` to `'failed'`
-/// with a "process killed" error. Called once at startup to recover
-/// from a previous process crash (the previous process claimed the
-/// row, the sub-process was launched, but neither it nor the in-process
-/// worker wrote a terminal status before the process died).
+/// Reset every routine whose `last_status = 'running'` to `'failed'` with a
+/// "process killed" error.
 pub fn resetStuckRunning(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend) !void {
     const err_msg = "process killed (restart detected)";
     const copy = try allocator.dupe(u8, err_msg);
@@ -64,31 +27,14 @@ pub fn resetStuckRunning(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend
 }
 
 /// Recompute `next_run_at` for every enabled routine from the cron
-/// expression. Called once at startup so routines that were due
-/// during downtime fire within 5s of boot — without this pass, a
-/// routine with `next_run_at = 2000-01-01 00:00:00` would not be
-/// picked up by `listDueWorkspaceRoutineIds` (which compares against
-/// `now_sqlite`) until the clock naturally caught up. Wait — that
-/// would actually be fine since 2000-01-01 is in the past; the real
-/// use case is: a routine's `next_run_at` was advanced by a prior
-/// run to e.g. 2099-01-01 00:00:00, then the system clock got
-/// misconfigured and advanced past that. In that case the row
-/// becomes "due" naturally. The bigger motivation is consistency:
-/// if the cron expression is edited while the routine is idle, the
-/// new `next_run_at` reflects the edit, not the old expression.
-///
-/// Manual-only routines (empty schedule) are skipped — there is no
-/// cron to compute from and their `next_run_at` stays NULL.
+/// expression.
 pub fn recomputeDueNextRunAt(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
     io: std.Io,
 ) !void {
-    // Collect (id, schedule, next_run_at) for every enabled routine in
-    // a first pass; then UPDATE in a second pass. Doing it in two
-    // passes keeps us from holding a `Rows` cursor open across
-    // `db.exec` calls (which the SqliteBackend does not support — it
-    // serializes statements per connection).
+    // Collect (id, schedule, next_run_at) for every enabled routine in a
+    // first pass; then UPDATE in a second pass.
     var rows = try db.query(allocator,
         "SELECT id, schedule FROM workspace_routines WHERE enabled = 1 AND schedule != ''", &.{});
     defer rows.deinit();
@@ -144,12 +90,8 @@ pub fn recomputeDueNextRunAt(
 }
 
 /// Fire one routine per due id. Uses the main process's
-/// `di.group_emit_session_create` group via `fire.fireWorkspaceRoutine`
-/// (no thread, no sub-process). Returns the count of routines that
-/// were successfully fired. Errors from `fireWorkspaceRoutine` other
-/// than the three controlled `FireError` variants are logged and the
-/// routine is skipped — a single broken routine must not block
-/// polling of others.
+/// `di.group_emit_session_create` group via `fire.fireWorkspaceRoutine` (no
+/// thread, no sub-process).
 pub fn fireDueRoutines(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -210,42 +152,6 @@ pub fn start(
 // ===== Tests merged from scheduler_test.zig (2026-09-29 flatten) =====
 // Behavioral tests for `Scheduler.zig` (Task 3 of the
 // workspace-items-routines plan).
-//
-// `Scheduler` is the polling loop that drives workspace routines to
-// fire. It has two public helpers (tested here) and one public
-// `start` function (the infinite polling loop — the new
-// architecture uses `di.group_emit_session_create.concurrent`
-// which is too heavy to mock in a unit test):
-//
-//   - `resetStuckRunning`     — flip every `last_status='running'` row
-//                               to `'failed'` with a "process killed"
-//                               error. Called once at startup to
-//                               recover from a previous process crash.
-//   - `recomputeDueNextRunAt` — recompute `next_run_at` for every
-//                               enabled routine. Called once at
-//                               startup so routines that were due
-//                               during downtime fire within 5s of boot.
-//   - `start`                 — the polling loop. Exercised by the
-//                               runtime smoke test (manual UI flow).
-//
-// Both unit tests use the in-memory sqlite pattern from
-// `model.zig` / `fire.zig`. The actual SqliteBackend API is
-// `db.query(alloc, sql, args) → Rows → next() → ?Row{
-// values: [][]u8 }`. Column reads go through `row.values[i]` (a
-// `[]u8` text slice, empty string for NULLs); there is no `.scalar`
-// accessor in this codebase.
-//
-// The integration test that previously exercised `Scheduler.start`
-// end-to-end via the `pabrik-routine-fire` sub-process is gone. The
-// new architecture submits the LLM work to
-// `di.group_emit_session_create.concurrent` which requires a real
-// `pabrikcore.App` singleton with a wired event bus and a
-// live `CallbackAiWorkerFlow` subscription. That machinery is not
-// constructible inside a unit test. The runtime smoke test (firing
-// a routine via the desktop UI and watching it run) is the
-// integration coverage.
-//
-// Plan: docs/superpowers/plans/2026-09-10-workspace-items-routines.md (Task 3)
 
 const testing = std.testing;
 

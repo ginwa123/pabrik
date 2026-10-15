@@ -1,8 +1,6 @@
-//! `POST /api/terminal/sessions/:id/resize` — set the PTY window size.
-//!
-//! Body: `{ cols, rows }` (both required, integers in [2, 1000]).
-//! Success: 200 `{ ok: true, cols, rows }`. Unknown id: 404. Resize
-//! of an exited session: 410.
+//! `POST /api/terminal/sessions/:id/resize` — set the PTY window size. Body:
+//! `{ cols, rows }` (both required, integers in [2, 1000]). Success: 200 `{
+//! ok: true, cols, rows }`.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");

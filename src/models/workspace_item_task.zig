@@ -1,12 +1,6 @@
-//! Data model for the `workspace_item_tasks` entity table.
-//!
-//! Each task belongs to one `workspace_item` (typically a kanban). The
-//! table grew across many migrations — see the column table below.
-//!
-//! Schema: Migration 028 (`create_workspace_item_tasks`) + 044
-//! (`task_type`) + 045 (`is_pinned`/`pinned_position`) + 046
-//! (`last_human_touched_at`) + 062 (`description`) + 067 (`tags`) +
-//! 069 (`image_urls`) + 070 (`cwd`).
+//! Data model for the `workspace_item_tasks` entity table. Each task belongs
+//! to one `workspace_item` (typically a kanban). The table grew across many
+//! migrations — see the column table below.
 
 const std = @import("std");
 
@@ -113,11 +107,6 @@ pub fn clone(self: *const Self, allocator: std.mem.Allocator) !Self {
 // ===== Tests merged from models_test.zig (2026-09-29 flatten) =====
 
 // Sanity tests for the `src/models/` entity models.
-//
-// Verifies that every model file compiles, that `init` populates the
-// struct as expected, that `deinit` releases its strings, and that
-// external callers can read the struct's fields directly (matching
-// the file-level struct pattern requested by the user).
 
 const testing = std.testing;
 

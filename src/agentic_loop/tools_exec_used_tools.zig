@@ -1,17 +1,4 @@
 //! Exec wrapper for the `used_tools` agent tool.
-//!
-//! `used_tools` takes no parameters and lists the tools currently equipped
-//! for this session — the dispatch-time truth, computed with the SAME
-//! helpers the workflow uses to build the LLM's tool list
-//! (`tool_eligibility.allowlistFilter` + the session-equipped progressive
-//! rows), so the answer can never drift from what the model actually has.
-//! The prompt-time item-type strip is deliberately not applied:
-//! `handle_tool` dispatches by registry name without consulting it.
-//!
-//! Works in every mode (agent / kanban / routine / design / plain chat /
-//! sub-agent) because it reads the already-resolved `ctx.allowed_tools` +
-//! `ctx.is_sub_agent` that `handle_tool.dispatchFromRegistry` threads
-//! through, plus the `session_progressive_tools` rows for this session.
 
 const std = @import("std");
 const testing = std.testing;
@@ -33,9 +20,8 @@ const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("tools_error_explain.zig");
 
 /// Resolve the session's effective tool list (mirror of
-/// `workflow.filterAndMergeTools`, minus the MCP-null branch which is
-/// handled by the live cache lookup below). All allocations land on the
-/// per-request arena; the returned summaries borrow the registry defs.
+/// `workflow.filterAndMergeTools`, minus the MCP-null branch which is handled
+/// by the live cache lookup below).
 fn resolveEquipped(ctx: ToolExecContext) ![]used_tools_mod.ToolSummary {
     const registered = tools_equipped.equips(ctx.allocator);
     const enabled = try tool_eligibility.allowlistFilter(

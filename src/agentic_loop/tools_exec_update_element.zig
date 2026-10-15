@@ -23,10 +23,9 @@ pub fn execUpdateElement(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResu
     };
     defer parsed.deinit();
 
-    // updateElement doesn't need Io (no mkdir-p required). It uses
-    // the existing file_path and rewrites in place. If the file is
-    // missing (orphan), it internally looks up the path via JOIN
-    // and rebuilds it.
+    // updateElement doesn't need Io (no mkdir-p required). It uses the
+    // existing file_path and rewrites in place. If the file is missing
+    // (orphan), it internally looks up the path via JOIN and rebuilds it.
     const inner = update_design_element_mod.executeUpdateElementToString(
         ctx.allocator,
         ctx.db,

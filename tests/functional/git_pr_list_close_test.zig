@@ -1,43 +1,6 @@
-// Functional wire tests for the kanban board's PR surface:
-//   GET  /api/git/pr/list   — the repo's change requests
-//   POST /api/git/pr/close  — close one of them
-//
-// These are the two routes `KanbanPrList.vue` calls, so this suite is the
-// only place their status codes, their JSON keys and the route table's
-// resolution are exercised together.
-//
-// WHY EACH TEST EXISTS (the four failures a unit test cannot see):
-//
-//   1. Route resolution. `/api/git/pr/list` and `/api/git/pr/close` are
-//      literal paths, and the router walks registration order — so a
-//      future `:param` sibling added above them would silently capture
-//      both. The witness is behavioural, not a grep: a request with no
-//      `path` must answer the HANDLER's 400 ("Missing path parameter"),
-//      not the router's 404. That is what `list_missing_path_is_400`
-//      asserts, and it fails the moment the route stops resolving to this
-//      handler.
-//   2. Strict validators. `state` and `limit` are validated before any
-//      spawn; a bad `limit` that got clamped instead of refused would
-//      report `truncated` for a page nobody asked for.
-//   3. Empty vs unknown. A forge failure must be a 502 carrying the CLI's
-//      own sentence — never a 200 with `changes: []`, which is the PR #719
-//      bug class (an empty surface that cannot be told from a failed one).
-//   4. The close answer. `closed` must be the forge's RE-READ state, so a
-//      CLI that exits 0 without closing anything reports `false` plus a
-//      sentence instead of a success.
-//
-// HOW THE FAKE `gh` REACHES THE SERVER: PATH. The backend spawns `gh` by
-// bare name (`Programs.gh = "gh"`) and the only injection seam
-// (`listUseCaseWithPrograms`) is unit-test-only, invisible over HTTP — so
-// `PathShadow` prepends a bindir to `std.testing.environ`, which is the
-// exact block `Harness.boot` copies into the child env. The server is
-// booted AFTER the shadow is installed.
-//
-// WHERE THE FIXTURE LIVES: `harness.makeScratchDir`, never
-// `std.testing.tmpDir` — the `pabrik-func-` namespace is what
-// `reapOrphanTestPids` deletes on every boot, and `<cwd>/.zig-cache/tmp/`
-// is INSIDE a git worktree, where `git rev-parse` walks up and the fixture
-// repo would resolve to the worktree's own branch.
+// Functional wire tests for the kanban board's PR surface: GET
+// /api/git/pr/list — the repo's change requests POST /api/git/pr/close —
+// close one of them These are the two routes `KanbanPrList.vue` calls, so
 
 const std = @import("std");
 const testing = std.testing;
@@ -148,9 +111,7 @@ fn installFakeGh(s: *Scratch, dir_name: []const u8, body: []const u8) ![]u8 {
 }
 
 /// Prepend `prefix` to `PATH` in `std.testing.environ` — the exact block
-/// `Harness.boot` copies into the child env. Scoped by `restore`: the
-/// shadow must not outlive the test, or every later suite in the same
-/// process would spawn the fake `gh`.
+/// `Harness.boot` copies into the child env.
 const PathShadow = struct {
     gpa: std.mem.Allocator,
     saved: std.process.Environ,
@@ -200,9 +161,8 @@ const PathShadow = struct {
 };
 
 // ============================================================================
-// The fake `gh` payloads — literals, so what the CLI prints is visible in
-// the diff next to the assertion that reads it.
-// ============================================================================
+// The fake `gh` payloads — literals, so what the CLI prints is visible in the
+// diff next to the assertion that reads it.
 
 /// Two rows: one open PR on a worktree branch (the board join key) and one
 /// merged, draft PR, so `state` normalization and `is_draft` are both
@@ -238,7 +198,6 @@ const GH_AUTH_FAILURE_SCRIPT =
 // ============================================================================
 // JSON readers — every one of them FAILS on an absent key rather than
 // defaulting, so a renamed field cannot pass as a value.
-// ============================================================================
 
 fn asObject(v: std.json.Value) !std.json.ObjectMap {
     return switch (v) {
@@ -463,10 +422,7 @@ test "list_non_repo_is_404" {
     try requireError(&doc, "not a git repository");
 }
 
-// 5. The happy path, and the two fields the BOARD depends on: `head_ref`
-//    (matched against `task.git_branch`, exactly) and the normalized
-//    `state` (the UI switches on "open"/"merged"/"closed", never on the
-//    forge's own spelling).
+// 5.
 test "list_returns_rows_with_the_branch_the_board_joins_on" {
     try harness.requirePabrikBin(io, gpa);
 

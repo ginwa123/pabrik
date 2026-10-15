@@ -1,45 +1,6 @@
-// Functional tests for the `session_created` SSE gate.
-//
-// ─── THE BUG THIS FILE PINS ────────────────────────────────────────────────
-// The user's report: "when i queue message why i fetch sessions ?" — the
-// Network tab showed three requests for one send:
-//
-//   1. POST /api/llm/session                     (the send itself)
-//   2. GET  /api/llm/session/:sid/background_processes
-//   3. GET  /api/llm/session?sort_by=updated_at&direction=desc&limit=30
-//
-// Request 3 is the desktop sidebar (ChatsList.vue) re-fetching its whole
-// list. It fires because `App.insert_worker` — the concurrent task behind
-// `emit_run_agent`, i.e. behind EVERY send — ran
-// `INSERT OR IGNORE INTO sessions` and then emitted `session_created`
-// UNCONDITIONALLY. `INSERT OR IGNORE` is a no-op for a row that already
-// exists, which is every send into an existing chat, so the backend was
-// announcing "a session was created" for a session that was not.
-//
-// The frontend's `onSessionEvent` → `scheduleSseReload` (400 ms debounce)
-// → `loadChats()` treats that as "the list changed" and refetches page 1.
-//
-// ─── THE FIX ───────────────────────────────────────────────────────────────
-// `insert_worker` now reads `db.changes()` immediately after the INSERT
-// (per-connection state, and `exec` holds the backend mutex for the whole
-// statement, so nothing can interleave) and returns early when it is 0.
-// Same idiom as `llm_history.saveProgressiveTool` and every primitive in
-// `skill_evals_db.zig`.
-//
-// ─── WHY A FUNCTIONAL TEST AND NOT A UNIT TEST ────────────────────────────
-// `insert_worker` is a private method on the process-wide `App` singleton
-// and reaches the event bus through `getSingleton()`. A unit test would
-// have to build a whole `App` (db, Io, logger, event bus, server) and keep
-// every pointer alive across the call — the first attempt did exactly that
-// and died with a general-protection fault inside `db.exec`'s mutex,
-// because the `Io.Threaded` the backend captured had already been torn
-// down. The honest witness is the real binary over a real socket: boot it,
-// open an SSE stream on the `sessions` channel, send a message, and count
-// the `session_created` frames that arrive.
-//
-// The other two requests in the screenshot are legitimate and are NOT
-// asserted against here: `POST /api/llm/session` is the send itself, and
-// `background_processes` is BackgroundCommandsPopup's mount fetch.
+// Functional tests for the `session_created` SSE gate. ─── THE BUG THIS FILE
+// PINS ──────────────────────────────────────────────── The user's report:
+// "when i queue message why i fetch sessions ?" — the Network tab showed
 
 const std = @import("std");
 const testing = std.testing;
@@ -208,9 +169,7 @@ fn releaseReader(s: *SseStream) void {
 }
 
 /// Pop events until one is named `want`, the stream ends, or the deadline
-/// passes. Consuming (not scanning) is deliberate — see the file header of
-/// `sse_endtoend_test.zig` for why a "does the list contain a match?" check
-/// would pass on frames the trigger never produced.
+/// passes.
 fn drainMatching(s: *SseStream, want: []const u8, timeout_ms: i64) bool {
     const deadline = nowMs() + timeout_ms;
     while (true) {
@@ -256,11 +215,6 @@ fn seenNames(s: *SseStream) []u8 {
 
 /// `POST /api/llm/session` with a queue_message — the exact wire body the
 /// desktop app's `api.sendChatMessage` sends (minus the media fields).
-///
-/// The stub LLM profile points at a port that never answers, so the worker
-/// will fail its first LLM call. That is fine and is the point: the
-/// `session_created` emit happens in `insert_worker`, BEFORE any LLM call,
-/// so the frame under test is on the wire regardless of what the model does.
 fn sendMessage(h: *Harness, session_id: []const u8, message: []const u8) !void {
     const body = try std.fmt.allocPrint(
         gpa,
@@ -273,17 +227,14 @@ fn sendMessage(h: *Harness, session_id: []const u8, message: []const u8) !void {
         .json_body = body,
         // 201 = queued. 500 is accepted too: with the stub profile the
         // worker's LLM call fails, and some builds surface that as a 500
-        // AFTER the session row + SSE frame are already committed. The
-        // assertion is on the SSE frame, not on this status.
+        // AFTER the session row + SSE frame are already committed.
         .expect = &.{ 201, 500 },
     });
     r.deinit();
 }
 
 /// `PUT /api/llm/session/:id` — auto-creates the row via
-/// `ensureSessionExists`, so a session can exist before any message is
-/// sent. This is how the test sets up the "existing session" case without
-/// depending on a first send succeeding.
+/// `ensureSessionExists`, so a session can exist before any message is sent.
 fn ensureSession(h: *Harness, session_id: []const u8, name: []const u8) !void {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}", .{session_id});
     defer gpa.free(path);
@@ -297,15 +248,7 @@ fn ensureSession(h: *Harness, session_id: []const u8, name: []const u8) !void {
 // Test 1: a send into an EXISTING session emits NO session_created
 // ============================================================================
 
-// The regression. The session row already exists (created by the PUT), so
-// `insert_worker`'s `INSERT OR IGNORE` is a no-op — and pre-fix it emitted
-// `session_created` anyway, which is what made the sidebar refetch.
-//
-// The assertion is an ABSENCE, so it needs a positive control: the same
-// stream must have delivered the `connected` handshake, proving the
-// subscription is live and a missing frame means "not emitted" rather than
-// "never listened". Without that control this test would pass against a
-// server that emits nothing at all.
+// The regression.
 test "send_into_existing_session_emits_no_session_created" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -354,13 +297,8 @@ test "send_into_existing_session_emits_no_session_created" {
 // Test 2: a send that CREATES the session DOES emit session_created
 // ============================================================================
 
-// The other half of the contract, and the reason the gate is
-// `db.changes() > 0` rather than "never emit". A brand-new session must
-// still announce itself, or the sidebar would never show a new chat until
-// a manual refresh.
-//
-// No PUT here: the row does not exist yet, so `insert_worker`'s INSERT is
-// the one that creates it.
+// The other half of the contract, and the reason the gate is `db.changes() >
+// 0` rather than "never emit".
 test "send_that_creates_session_emits_session_created" {
     try harness.requirePabrikBin(io, gpa);
 

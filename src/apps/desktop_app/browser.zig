@@ -1,23 +1,11 @@
-// src/apps/desktop_app/browser.zig
-//
-// Browser-tab mode for pabrik-desktop (`--browser`).
-//
-// Reuses the exact same attach flow as the webview path (state file →
-// probe → auto-spawn detached pabrik), but instead of opening a native
-// webview window it opens the resolved URL in the OS default browser
-// (new tab/window — the browser decides) and exits 0 immediately.
-// The daemon keeps running; closing the browser tab does NOT stop it,
-// same decoupled lifecycle as closing the webview window.
+// src/apps/desktop_app/browser.zig Browser-tab mode for pabrik-desktop
+// (`--browser`).
 
 const std = @import("std");
 const builtin = @import("builtin");
 
-/// Build the OS opener argv for `url`. Returned slice borrows `url`
-/// (no allocation) — caller must keep `url` alive until spawn returns.
-///
-///   Linux:   xdg-open <url>
-///   macOS:   open <url>
-///   Windows: rundll32 url.dll,FileProtocolHandler <url>
+/// Build the OS opener argv for `url`. Returned slice borrows `url` (no
+/// allocation) — caller must keep `url` alive until spawn returns.
 pub fn buildOpenArgv(url: []const u8, out: *[3][]const u8) []const []const u8 {
     if (comptime builtin.os.tag == .windows) {
         out[0] = "rundll32";
@@ -52,11 +40,7 @@ pub fn openBrowser(io: std.Io, url: []const u8) !void {
         }
         return err;
     };
-    // Detach: do not wait. Reap handle without blocking — kill() in
-    // Zig 0.16 terminates + waits, which would kill the browser shim
-    // before it hands off to the real browser. Instead just drop the
-    // handle; the OS reaps the short-lived opener (xdg-open/open exit
-    // on their own after dispatching).
+    // Detach: do not wait.
     _ = &child;
     std.log.info("Opened browser at {s}", .{url});
 }
@@ -68,18 +52,7 @@ pub fn openBrowser(io: std.Io, url: []const u8) !void {
 const testing = std.testing;
 
 test "buildOpenArgv: this host's opener words, then the url" {
-    // One test, every host, no branch that declines to look. The opener
-    // table below covers each platform the SUT switches on, and an
-    // unknown host fails this test (it does not pass vacuously): the
-    // argv it produces has one word too few, so `expectEqual` on the
-    // length goes red and names the platform nobody handled.
-    //
-    // A per-platform test would have been the easy thing here — the
-    // Windows argv is `rundll32 url.dll,FileProtocolHandler <url>` and
-    // the unix one is `open|xdg-open <url>`, three words against two —
-    // and that is exactly the shape this suite is moving away from: a
-    // test that only asserts on the host it was written for reports
-    // green everywhere else without having checked anything.
+    // One test, every host, no branch that declines to look.
     var opener_words: []const []const u8 = &.{};
     switch (builtin.os.tag) {
         .windows => opener_words = &.{ "rundll32", "url.dll,FileProtocolHandler" },

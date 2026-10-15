@@ -1,46 +1,13 @@
 //! Storage layer for workspace-scoped secrets.
-//!
-//! ONE TABLE (Migration 103's `workspace_secrets`), and ONE rule that every
-//! function here obeys: `workspace_id` is a function parameter that appears
-//! in the `WHERE` clause, never a value the caller can choose to omit. That
-//! is the whole isolation story — a secret in workspace A is unreadable,
-//! unrotatable and undeletable from workspace B, and the guard lives in SQL
-//! rather than in a caller-side check somebody can forget.
-//!
-//! WHO MAY USE A WORKSPACE is a separate question, answered one level up:
-//! membership in `workspace_members` (Migration 100) via
-//! `auth_common.canSeeWorkspace`. That is why this table has no `user_id`
-//! column — an owner column would answer authorship rather than
-//! entitlement, and would start disagreeing with the middleware the moment a
-//! workspace is shared. Do not "fix" the missing owner column by adding one.
-//!
-//! ## The value column
-//!
-//! `value` is PLAINTEXT. It is never selected on any read path except
-//! `loadSecretValues`, which exists solely for the dispatch-time
-//! substitution in `secrets_substitution.zig`. `listSecretNames` is the only
-//! function the agent-facing paths may call, and it selects `name` alone.
-//!
-//! Ownership: every string in a returned `SecretRow` or `SecretValueRow` is
-//! allocator-owned. Free one row with `freeSecretRow` / a slice with
-//! `freeSecretRows` / `freeSecretNames` / `freeSecretValueRows`.
 
 const std = @import("std");
 const sqlite = @import("pabrikcore").sqlite;
 const helpers = @import("helpers");
 
-/// Longest legal secret name. The name is what a model types into a
-/// `{{SECRETS:NAME}}` placeholder, so the grammar is kept narrow on purpose:
-/// 64 characters covers `GITHUB_TOKEN`-shaped names with room to spare, and
-/// anything longer is a paste accident.
+/// Longest legal secret name.
 pub const MAX_NAME_LEN: usize = 64;
 
 /// One row in `workspace_secrets`, WITHOUT the value.
-///
-/// The absence of `value` here is the design, not an omission: every
-/// list/get path in the app renders or returns this shape, so a secret
-/// cannot reach the browser, the prompt or the tool registry by accident.
-/// Only `loadSecretValues` reads the value back, and only for substitution.
 pub const SecretRow = struct {
     id: []const u8,
     workspace_id: []const u8,
@@ -49,10 +16,9 @@ pub const SecretRow = struct {
     updated_at: []const u8,
 };
 
-/// A name paired with its value. Produced ONLY by `loadSecretValues`.
-///
-/// A caller holding one of these holds a live credential: never log it,
-/// never persist it, never put it in a tool result or an SSE frame.
+/// A name paired with its value. Produced ONLY by `loadSecretValues`. A
+/// caller holding one of these holds a live credential: never log it, never
+/// persist it, never put it in a tool result or an SSE frame.
 pub const SecretValueRow = struct {
     name: []const u8,
     value: []const u8,
@@ -66,10 +32,7 @@ pub const CreateSecretArgs = struct {
     value: []const u8 = "",
 };
 
-/// Rotation shape. `name` is deliberately absent and immutable: renaming a
-/// secret would silently break every prompt, skill and saved tool call that
-/// references `{{SECRETS:OLD_NAME}}`, so the only thing a PATCH can do is
-/// replace the value.
+/// Rotation shape.
 pub const UpdateSecretArgs = struct {
     workspace_id: []const u8,
     secret_id: []const u8,
@@ -100,9 +63,7 @@ const SELECT_COLUMNS =
     "FROM workspace_secrets";
 
 /// The agent's discovery path: NAMES ONLY, ordered so the list is stable
-/// across calls. Kept as a named constant rather than inlined so the test
-/// below can assert on the SQL itself — a future edit that helpfully adds
-/// the `value` column fails the test instead of leaking to the model.
+/// across calls.
 const SELECT_NAMES =
     "SELECT name FROM workspace_secrets WHERE workspace_id = ? ORDER BY name";
 
@@ -149,11 +110,6 @@ pub fn listSecrets(
 }
 
 /// One secret, scoped to `workspace_id`. Never selects `value`.
-///
-/// A secret that exists but belongs to another workspace reports
-/// `error.NotFound`, NOT a distinct "wrong workspace" error: telling a
-/// caller that an id exists but is foreign leaks the existence of another
-/// workspace's row, which is the exact thing the scoping exists to hide.
 pub fn getSecret(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -190,15 +146,10 @@ pub fn createSecret(
     if (!isValidName(name)) return error.InvalidName;
 
     // An empty value is rejected here rather than reaching the column.
-    // `SqliteBackend.exec` binds a zero-length slice as SQL NULL, so the
-    // COALESCE idiom below would quietly turn `value: ""` into a stored
-    // empty credential that reads back as "" and authenticates nothing.
     if (args.value.len == 0) return error.ValueRequired;
 
     // Pre-check so the ordinary duplicate is a clean NameTaken rather than a
-    // constraint violation surfacing as a 500 at the HTTP layer. The INSERT
-    // classifies its own failure below, which is what makes the loser's
-    // answer identical to the pre-check's.
+    // constraint violation surfacing as a 500 at the HTTP layer.
     if (nameExists(db, allocator, args.workspace_id, name)) return error.NameTaken;
 
     // Same id shape as `documents_store`: a nanosecond wall-clock string
@@ -208,9 +159,7 @@ pub fn createSecret(
     defer allocator.free(secret_id);
 
     // COALESCE(NULLIF(?, ''), '') on every NOT NULL text column, for the
-    // empty-slice-binds-as-NULL reason described above. `workspace_id` and
-    // `name` cannot be empty by this point, but the idiom is applied
-    // uniformly so no later edit has to remember which columns are guarded.
+    // empty-slice-binds-as-NULL reason described above.
     db.exec(allocator,
         \\INSERT INTO workspace_secrets (id, workspace_id, name, value, created_at, updated_at)
         \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
@@ -218,8 +167,6 @@ pub fn createSecret(
         error.ExecuteFailed => {
             // A failed INSERT is not automatically a taken name: it is also
             // what a same-nanosecond primary-key collision looks like.
-            // Re-read the state rather than assume, so the two failures
-            // cannot be reported as each other.
             if (nameExists(db, allocator, args.workspace_id, name)) {
                 return error.NameTaken;
             }
@@ -231,8 +178,6 @@ pub fn createSecret(
     // The re-read reports the full error set, so map it: a row that is not
     // there after a successful INSERT is the consistency error, and anything
     // else — including the guards that cannot trigger, since both ids are
-    // non-empty by this point — is a failed insert from the caller's point
-    // of view.
     return getSecret(allocator, db, args.workspace_id, secret_id) catch |err| switch (err) {
         error.NotFound, error.IdsRequired, error.QueryFailed => error.InsertFailed,
         error.OutOfMemory => error.InsertFailed,
@@ -241,7 +186,6 @@ pub fn createSecret(
 }
 
 /// Rotate a secret's value. `name` is immutable — see `UpdateSecretArgs`.
-///
 /// Scoped like every other read: a foreign id reports `error.NotFound` and
 /// updates nothing.
 pub fn updateSecret(
@@ -307,12 +251,8 @@ pub fn deleteSecret(
     ) catch return error.DeleteFailed;
 }
 
-/// The NAMES in one workspace, ordered, with no values attached.
-///
-/// This is the only function the agent-facing paths may call. A name like
-/// `GITHUB_TOKEN` tells a model nothing about the credential, which is
-/// exactly why discovery needs no special handling; the value is fetched
-/// later, by `loadSecretValues`, at dispatch time.
+/// The NAMES in one workspace, ordered, with no values attached. This is the
+/// only function the agent-facing paths may call.
 pub fn listSecretNames(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -339,17 +279,6 @@ pub fn listSecretNames(
 /// The values of the named secrets in one workspace — the ONLY function in
 /// this file that returns a value, and therefore the only one the
 /// substitution path may call.
-///
-/// `names` that are not stored in this workspace are simply absent from the
-/// result; resolving them to an empty string is the caller's error to
-/// report, because only it knows which placeholder went missing. Every name
-/// is BOUND, never interpolated, so a caller-supplied string cannot alter
-/// the query.
-///
-/// What comes back is a live credential: it must never be logged, persisted,
-/// returned in a tool result or sent over SSE. `secrets_substitution` holds
-/// it only for the duration of one tool execution and redacts it from the
-/// output on the way back.
 pub fn loadSecretValues(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -462,11 +391,6 @@ pub fn freeSecretValueRows(allocator: std.mem.Allocator, rows: []SecretValueRow)
 // ============================================================================
 // Tests
 // ============================================================================
-//
-// In-memory SQLite, same shape as `workspace_scope.zig`'s fixture. The DDL is
-// spelled out here rather than imported from `migrations/migration.zig` on
-// purpose: this module is a leaf, and a test that borrowed the migration
-// would pass even if the migration shipped a different table.
 
 const testing = std.testing;
 
@@ -803,9 +727,7 @@ test "a value with quotes, a backslash and a newline round-trips byte for byte" 
     defer teardown(&ctx);
 
     // The value is stored plaintext, so the only correctness question is
-    // whether the binder corrupts it. It is bound as a parameter, so it
-    // must come back exactly as it went in — the substitution layer is
-    // where JSON escaping is handled, not here.
+    // whether the binder corrupts it.
     const gnarly = "he said \"hi\" \\ path\\to\\x\nsecond line\ttabbed";
     const row = try createSecret(alloc, &ctx.db, .{
         .workspace_id = "ws_1",

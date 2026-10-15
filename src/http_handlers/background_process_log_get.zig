@@ -1,29 +1,6 @@
-//! `GET /api/llm/session/:session_id/background_processes/:pid/log?max_bytes=20480`
+//! `GET
+//! /api/llm/session/:session_id/background_processes/:pid/log?max_bytes=20480`
 //! — read the TAIL of one background process's log file.
-//!
-//! Wire shape: `{ pid, log_path, total_bytes, truncated, content }`
-//! where `content` is the LAST `max_bytes` bytes of the file,
-//! `total_bytes` the full on-disk size, and
-//! `truncated = total_bytes > max_bytes`.
-//!
-//! SECURITY: `log_path` is resolved ONLY from the DB row for
-//! (session_id, pid) — the client never supplies a path, so no
-//! traversal is possible.
-//!
-//! Missing-log decision (documented per spec): a missing log file
-//! returns 200 with `content = "(log file not found)"` and
-//! `total_bytes = 0` — the same marker convention the completion
-//! queue uses (`cleanup_stale_background_process.zig` queues a
-//! `(log file not found: {path})` marker instead of failing the
-//! tick). Unknown (session_id, pid) is a 404.
-//!
-//! `max_bytes` defaults to 20480 and is clamped to [1, 1048576].
-//! NUL bytes are stripped from `content` (SSE/JSON safety, same as
-//! `background_process.readLogTruncated`).
-//!
-//! Layered as `useCase` (DB lookup + tail read + build JSON) and a thin
-//! handler that maps errors to status codes. Mirrors
-//! `queue_messages_get.zig`.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -107,10 +84,9 @@ pub fn useCase(
     defer row.deinit(allocator);
 
     const log_path = allocator.dupe(u8, row.values[0]) catch return error.OutOfMemory;
-    // The JSON body deep-copies the path, so the dupe is freed here —
-    // it must NOT outlive the call (under testing.allocator it would
-    // report as a leak; under the per-request arena the free is a
-    // harmless no-op). Covers both return paths below.
+    // The JSON body deep-copies the path, so the dupe is freed here — it must
+    // NOT outlive the call (under testing.allocator it would report as a
+    // leak; under the per-request arena the free is a harmless no-op).
     defer allocator.free(log_path);
 
     // Missing file -> 200 not-found marker (documented above), NOT 404.
@@ -145,14 +121,8 @@ const TailLog = struct {
     truncated: bool,
 };
 
-/// Read the LAST `cap_bytes` bytes of the file at `log_path`, strip
-/// NUL bytes (SSE/JSON safety), and report the full size. Mirrors
-/// `background_process.readLogTruncated` except for TAIL (vs HEAD)
-/// semantics: offset reads start at `total - to_read`.
-///
-/// Missing file returns `error.FileNotFound` (the caller maps it to
-/// the 200 not-found marker). Empty file returns an empty (allocated)
-/// `content` with `truncated == false`.
+/// Read the LAST `cap_bytes` bytes of the file at `log_path`, strip NUL bytes
+/// (SSE/JSON safety), and report the full size.
 fn readLogTail(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -289,10 +259,8 @@ pub fn backgroundProcessLogGetHandler(
 }
 
 // =====================================================================
-// Inline tests (project convention — useCase directly against an
-// in-memory DB walked through ALL migrations, never hand-rolled
-// CREATE TABLE bodies; log files via testing.tmpDir).
-// =====================================================================
+// Inline tests (project convention — useCase directly against an in-memory DB
+// walked through ALL migrations, never hand-rolled CREATE TABLE bodies; log
 
 const testing = std.testing;
 const migration = @import("../migrations/migration.zig");

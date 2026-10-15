@@ -1,41 +1,5 @@
-// Functional tests for default agent tools seeded at creation.
-//
-// Zig port of `tests/functional/agent_tools_defaults_test.py`
-// (same test names).
-//
-// Plan: docs/superpowers/plans/2026-09-06-default-agent-tools-on-creation.md
-//
-// Covers:
-//   * AGENT — POST /api/workspaces/:ws/items/agent →
-//     GET /api/agents/:id/tools (as of 2026-09-16 this includes
-//     `ask_user`, seeded for every agent mode) returns
-//     EXPECTED_DEFAULTS (33 tools, sorted ASC).
-//   * KANBAN — POST /api/workspaces/:ws/items/kanban →
-//     GET /api/agent-kanbans/:id/tools returns the 33 agent defaults +
-//     2 kanban tools (kanban_list, kanban_move_task) — 33 total — and
-//     the bundle GET /api/workspaces/:ws/items/:id/agent_kanban is 200
-//     (configured, not 404 NotConfigured).
-//   * NO-BACKFILL — deleting all tools on a fresh agent leaves []
-//     (empty is stable; the seed runs once at creation, never on read).
-//
-// WHY THE EXPECTED LISTS ARE INLINED HERE (and what keeps them honest):
-// the Python original imported them from `tests/functional/default_tools.py`
-// — "one copy, because there used to be four" per that module's header.
-// A Zig test package can only reach a NON-test file if root.zig names it
-// in `suites`, and root.zig is owned by another agent for this port, so
-// the two lists are transcribed once each below. The `comptime` block
-// then re-asserts the invariants `default_tools.py` states in prose —
-// both lists sorted ASC, the kanban list exactly equal to the agent list
-// plus the kanban pair, and the pair absent from the agent list — so a
-// drift between the two fails at COMPILE time instead of in CI. It
-// cannot catch "someone added a backend tool and forgot to transcribe
-// it"; the header of `default_tools.py` names that one file to re-read
-// when the backend's `DEFAULT_AGENT_TOOLS` changes.
-//
-// Paths: the Python original passed a literal `"/tmp/defaults-agent"`.
-// The server validates an agent's `path` with `std.fs.path.isAbsolute`,
-// which is FALSE for a leading-slash path on Windows, so this port
-// derives every path from `h.temp_dir` — see `harness.harnessPath`.
+// Functional tests for default agent tools seeded at creation. Zig port of
+// `tests/functional/agent_tools_defaults_test.py` (same test names).
 
 const std = @import("std");
 const testing = std.testing;
@@ -49,12 +13,8 @@ const io = testing.io;
 // Expected tool lists — mirrors tests/functional/default_tools.py
 // ============================================================================
 
-/// Mirrors `DEFAULT_AGENT_TOOLS` — 33 names, sorted ASC, matching the
-/// wire order of `GET /api/agents/:agent_id/tools`.
-///
-/// `delete_document` is deliberately ABSENT: it is irreversible, so it is
-/// registered (and therefore one tick away in the Settings → Tools
-/// checklist, which reads the same registry) but never seeded.
+/// Mirrors `DEFAULT_AGENT_TOOLS` — 33 names, sorted ASC, matching the wire
+/// order of `GET /api/agents/:agent_id/tools`.
 const EXPECTED_DEFAULTS = [_][]const u8{
     "add_document",
     "add_skill",

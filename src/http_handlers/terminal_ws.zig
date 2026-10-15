@@ -1,28 +1,4 @@
 //! `WS /api/terminal/ws?id=<session-id>` — duplex PTY streaming.
-//!
-//! The session is still spawned via `POST /api/terminal/sessions`
-//! (cwd/shell/size validation lives there); this socket only
-//! ATTACHES to a live session id passed as `?id=`. Unknown id → the
-//! handler returns immediately and the server runs the close
-//! handshake (clean reject, no frames).
-//!
-//! Wire protocol (all client→server frames MUST be masked — browsers
-//! always mask; unmasked frames are a protocol error):
-//!
-//!   C→S text   {"type":"input","data":"ls\n"}   — keystrokes
-//!   C→S text   {"type":"resize","cols":100,"rows":40}
-//!   S→C binary <raw PTY bytes>                  — terminal output
-//!   S→C text   {"type":"exit","exit_code":0}    — shell ended (then close)
-//!
-//! Ping is answered with pong (RFC 6455 §5.5.3); binary C→S frames are
-//! ignored; on attach the server flushes the currently buffered output
-//! once, then streams only new bytes. The REST output endpoint stays
-//! available as a fallback (frontend polls only when the socket fails).
-//!
-//! The handler runs on the connection's thread (kabelweb contract) and
-//! multiplexes PTY + socket with a zero-alloc `poll()` loop — no extra
-//! threads. Returning ends the socket; the SESSION survives (a new WS
-//! can re-attach; `DELETE /api/terminal/sessions/:id` kills it).
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -155,10 +131,6 @@ pub fn terminalWsHandler(
 ) !void {
     _ = client_id;
     // Manual auth gate: kabelweb ws() does not run middleware.
-    //
-    // The resolved owner is kept for the attach check below (plan
-    // 2026-09-25, W2.5): a foreign terminal id must be rejected exactly like
-    // an unknown one, so B cannot stream A's shell.
     var owner_buf: [128]u8 = undefined;
     var owner: []const u8 = "";
     if (pabrikcore.getSingleton()) |di| {
@@ -183,12 +155,6 @@ pub fn terminalWsHandler(
     terminal_session.touchUser(session);
 
     // No PTY on this OS (Windows): close handshake runs on return.
-    // NOTE: this MUST be an if/else on the comptime condition — a bare
-    // `if (comptime !is_pty_os) return;` does NOT prune the code below
-    // for codegen (verified: lld-link still sees `poll`), only the
-    // untaken if/else branch is dropped. The raw `poll` extern is
-    // absent from msvcrt, so any live reference breaks the Windows
-    // build (CI run 35031625755).
     if (comptime terminal_session.is_pty_os) {
         return pumpPosix(server, allocator, client_fd, id, session);
     } else {
@@ -303,9 +269,8 @@ fn pumpPosix(
 }
 
 // ---------------------------------------------------------------------
-// Inline tests (framing + control parsing; the live socket is covered
-// by the functional WS harness test).
-// ---------------------------------------------------------------------
+// Inline tests (framing + control parsing; the live socket is covered by the
+// functional WS harness test).
 
 const testing = std.testing;
 

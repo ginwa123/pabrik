@@ -1,14 +1,5 @@
-//! `GET /api/git/pr/checks?path=<repo>[&pr=<n|url>][&provider=github]`
-//!
-//! Two hops, because the question has two levels:
-//!   1. `gh pr checks <ref> --json …` → one row per CI job ("which job failed").
-//!   2. `gh run view <run_id> --json jobs` → the steps inside a failed job
-//!      ("which process or task failed on the runner"). This is the point of
-//!      the feature; the first hop alone is already on the PR page.
-//!
-//! Hop 2 only runs for `fail` / `cancel` buckets, once per distinct run id.
-//! GitHub only — `pr_cli.checksArgv` returns null for gitlab, and that becomes
-//! a 422 rather than an empty 200, which a panel would read as "all passed".
+//! `GET /api/git/pr/checks?path=<repo>[&pr=<n|url>][&provider=github]` Two
+//! hops, because the question has two levels: 1.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -106,12 +97,6 @@ fn wantsSteps(bucket: []const u8) bool {
 
 /// A run we looked up (or failed to). `stdout` is the DUPED `gh run view`
 /// payload, parsed later in `buildResponse`.
-///
-/// Parsing inside this function and returning the parse's borrowed strings
-/// is the bug this shape avoids: `res.stdout` is freed by `defer` on the
-/// way out, and serializing a borrowed string after that emits freed memory.
-/// It shipped as step names arriving as `[170, 170, 170, …]` — 0xAA debug
-/// poison — so the parse is done by the caller, while the bytes live.
 const RunLookup = struct {
     run_id: []const u8,
     stdout: []u8 = "",

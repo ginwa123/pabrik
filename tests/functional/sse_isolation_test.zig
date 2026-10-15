@@ -1,54 +1,6 @@
 // Functional tests for per-user SSE channel isolation (plan 2026-09-25, W3).
-//
-// Zig port of `tests/functional/sse_isolation_test.py` (same test names,
-// same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional tests for per-user SSE channel isolation (plan
-//   2026-09-25, W3).
-//
-//   Boots a REAL pabrik binary + REAL SQLite via the harness (never a live dev
-//   server, never port 8081). Two authenticated admins share ONE database and
-//   BOTH open `/api/events?channels=sessions,workers`, so this is the wire-level
-//   proof that user A's live events never reach user B's EventSource.
-//
-//   Why a wire test and not only a unit test: the leak lives in the fan-out loop
-//   of `unified_events_sse.zig` — the bus broadcasts by *family routing key*
-//   (`sessions`, `workers`, `llm`, …), so every connected client receives every
-//   user's events. A unit test that calls the filter directly cannot catch a
-//   handler that forgets to record the client's owner at connect time, nor a
-//   fan-out that skips the filter. Only a real two-cookie round-trip exercises
-//   cookie -> auth_sessions -> users.id -> client registry -> fan-out.
-//
-//   Covers:
-//     * SESSIONS-CHANNEL — A renames its session; B's stream must see ZERO frames
-//                          mentioning A's session id, while A's own stream does.
-//     * OWN-EVENTS       — B still receives its OWN session events (guards against
-//                          an "everyone gets nothing" false pass).
-//     * AUTH-OFF-REGRESS — without `--auth` the same rename still reaches a
-//                          connected client (byte-identical legacy behaviour).
-//
-//   Both users are created with `create-admin`, so the isolation assertions here
-//   are also the admin-vs-admin assertions: `admin` grants NO cross-user
-//   visibility (user decision 2026-09-25).
-//   """
-//
-// ── WHY THE SSE READER ACCUMULATES RAW BYTES ─────────────────────────────
-// The Python `SseReader` is a raw socket that pumps bytes into a
-// `bytearray` and every assertion is a SUBSTRING test on that buffer
-// (`sess_a not in stream_b.text()`). That is deliberately weaker than
-// frame parsing: the leak is "A's session id appears anywhere in B's
-// byte stream", and a payload-level filter cannot scrub the id while
-// still delivering the frame. So the port keeps the shape — read raw
-// bytes into a growing buffer on a reader thread, poll it from the test
-// thread — rather than borrowing `sse_auth_test.zig`'s event parser,
-// which would answer a different (easier) question.
-//
-// `Harness.http` cannot do this at all: it calls
-// `reader.streamRemaining(...)`, which blocks until the server closes
-// the connection, and a healthy SSE stream never closes. Hence
-// `std.http.Client` directly, the idiom `sse_auth_test.zig` established.
+// Zig port of `tests/functional/sse_isolation_test.py` (same test names, same
+// order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -65,11 +17,6 @@ const Io = std.Io;
 // ============================================================================
 
 /// Issue a request WITHOUT a status assertion — the caller asserts.
-///
-/// The harness's `Harness.http` asserts on `expect` by default, and the
-/// STATUS ITSELF is the assertion in this suite's helpers (`assert status
-/// == 200`, `== 201`). The harness's `{ .assert_status = false }` flag
-/// exists for exactly that, so no suite needs a private HTTP client.
 fn rawHttp(
     h: *Harness,
     method: harness.HttpMethod,
@@ -95,11 +42,6 @@ fn bootAuth() !Harness {
 }
 
 /// Run `pabrik create-admin` against the harness HOME.
-///
-/// `runPabrikCommand` prepends the resolved binary itself, so `argv`
-/// starts at the SUBCOMMAND — passing the binary again would make the
-/// subcommand dispatch miss (it matches argv[1]) and boot a SERVER,
-/// which then tries to bind the default port.
 fn createAdmin(home: []const u8, email: []const u8, password: []const u8, force: bool) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
@@ -134,11 +76,8 @@ fn login(h: *Harness, email: []const u8, password: []const u8) ![]u8 {
         std.debug.print("login sent no pabrik_session cookie: {s}\n", .{set_cookie});
         return error.TestUnexpectedResult;
     }
-    // `split("pabrik_session=", 1)[1].split(";", 1)[0].strip()`: the
-    // token is the text BETWEEN the name and the next `;`. The
-    // harness's `afterFirst` returns the text AFTER a delimiter, which
-    // here would be the attribute list (`Path=/; HttpOnly`) — the
-    // wrong direction, hence the manual split.
+    // `split("pabrik_session=", 1)[1].split(";", 1)[0].strip()`: the token is
+    // the text BETWEEN the name and the next `;`.
     var attrs = std.mem.splitSequence(u8, set_cookie, ";");
     const first_attr = attrs.next() orelse return error.TestUnexpectedResult;
     const raw_token = harness.afterFirst(first_attr, "pabrik_session=") orelse
@@ -147,12 +86,6 @@ fn login(h: *Harness, email: []const u8, password: []const u8) ![]u8 {
 }
 
 /// Create a session with an EXPLICIT id (Python `_create_session`).
-///
-/// The auto-generated id is timestamp-based (`sess_<unix>_<rand>`), so
-/// two creates in the same second can collide — and a colliding second
-/// create is an `INSERT OR IGNORE` no-op on the first user's row, which
-/// then 404s for the second user. Explicit ids keep the two users'
-/// sessions distinct.
 fn createSession(h: *Harness, cookie: ?[]const u8, session_id: []const u8) ![]u8 {
     const body = try std.fmt.allocPrint(gpa, "{{\"session_id\":\"{s}\"}}", .{session_id});
     defer gpa.free(body);
@@ -169,15 +102,9 @@ fn createSession(h: *Harness, cookie: ?[]const u8, session_id: []const u8) ![]u8
     return gpa.dupe(u8, id);
 }
 
-/// Rename a session, waiting for its row to exist (Python
-/// `_rename_session`).
-///
-/// `POST /api/session` returns before the row is INSERTed: the insert
-/// runs in the concurrent `emit_run_agent` task (`root.zig` ::
-/// `insert_worker`). The `:session_id` middleware choke point 404s a
-/// not-yet-existing row, so a rename issued immediately after create
-/// can race the insert. Retry until the row lands (bounded), then
-/// require the rename to have succeeded.
+/// Rename a session, waiting for its row to exist (Python `_rename_session`).
+/// `POST /api/session` returns before the row is INSERTed: the insert runs in
+/// the concurrent `emit_run_agent` task (`root.zig` :: `insert_worker`).
 fn renameSession(h: *Harness, session_id: []const u8, name: []const u8, cookie: ?[]const u8) !void {
     const path = try std.fmt.allocPrint(gpa, "/api/session/{s}", .{session_id});
     defer gpa.free(path);
@@ -214,17 +141,9 @@ fn nowMs() i64 {
 // ============================================================================
 
 /// Transfer buffer for the response body reader.
-///
-/// NOT `&.{}`: `Response.reader(transfer_buffer)` uses that slice as
-/// the reader's own buffer, and a short buffer turns every heartbeat
-/// into `error.StreamTooLong`. 8 KiB is generous for an SSE frame.
 const transfer_buffer_len = 8 * 1024;
 
 /// An open SSE connection that pumps raw bytes into a growing buffer.
-///
-/// Heap-allocated, not returned by value: `std.http.Client` embeds a
-/// `ConnectionPool` with an `Io.Mutex` and `Response.request` points
-/// back at the request, so the trio is UNCOPYABLE.
 const RawSse = struct {
     client: std.http.Client,
     req: std.http.Client.Request,
@@ -253,16 +172,6 @@ const RawSse = struct {
 
     /// A PRINTABLE rendering of the bytes received so far. Owned by the
     /// caller.
-    ///
-    /// Only ever used for failure messages, and only in this form: the
-    /// raw buffer can hold non-UTF-8 bytes (a tool payload pasted into an
-    /// event), and `{s}` on invalid UTF-8 trips a debug assertion in the
-    /// test runner. Python sidestepped it with
-    /// `bytes.decode("utf-8", errors="replace")`; here every byte >= 0x80
-    /// becomes a `\xNN` escape instead, which keeps the output ASCII and
-    /// lossless. Assertions NEVER go through this function — they run
-    /// `waitFor` against the raw buffer, so a needle is matched against
-    /// the bytes the server actually sent.
     fn text(self: *RawSse) ![]u8 {
         self.mutex.lockUncancelable(io);
         defer self.mutex.unlock(io);
@@ -279,12 +188,6 @@ const RawSse = struct {
     }
 
     /// Wait until `needle` appears in the stream. False on timeout.
-    ///
-    /// Infallible on purpose: it only READS `buf` under the mutex and
-    /// allocates nothing, so a `try` at the call site could add no
-    /// information — but it would turn an OOM into a leaked reader
-    /// thread (its stack is DebugAllocator memory, so the NEXT test
-    /// would report the leak instead of this one).
     fn waitFor(self: *RawSse, needle: []const u8, timeout_ms: i64) bool {
         const deadline = nowMs() + timeout_ms;
         while (true) {
@@ -307,9 +210,8 @@ fn openSse(port: u16, channels: []const u8, cookie: ?[]const u8) !*RawSse {
     const s = try gpa.create(RawSse);
     errdefer gpa.destroy(s);
     // `gpa.create` returns UNINITIALIZED memory — it does NOT run the
-    // struct's field default initializers. `s.* = .{}` applies all of
-    // them in one shot; an uninitialised `Io.Mutex` is not a lock at
-    // all.
+    // struct's field default initializers. `s.* = .{}` applies all of them in
+    // one shot; an uninitialised `Io.Mutex` is not a lock at all.
     s.* = .{ .client = .{ .allocator = gpa, .io = io }, .req = undefined };
 
     const url = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/api/events?channels={s}", .{ port, channels });
@@ -350,16 +252,6 @@ fn pump(s: *RawSse) void {
 
     while (!s.stop.load(.acquire)) {
         // `fill(1)` + `buffered()` + `toss()`, NOT `readSliceShort`.
-        //
-        // `readSliceShort` goes through the reader's `readVec` vtable
-        // slot, and an HTTP body reader installed by
-        // `std.http.Reader.bodyReader` supplies only `stream` and
-        // `discard` — there is no `readVec`, and the read fails with a
-        // bare `error.ReadFailed` (with `body_err == null`, so the
-        // cause is not even recoverable). `fill` drives the `stream`
-        // slot, which every reader implements, and it is the same path
-        // `takeDelimiter` uses — so this is the idiom
-        // `sse_auth_test.zig` and the stub servers already rely on.
         s.body.fill(1) catch return; // EOF or a read error: the stream is over
 
         s.mutex.lockUncancelable(io);
@@ -374,12 +266,8 @@ fn pump(s: *RawSse) void {
     }
 }
 
-/// Spawn the reader thread. Caller owns the returned `std.Thread` and
-/// MUST join it.
-///
-/// `releaseReader` must precede `join`: a stream the server holds open
-/// parks the reader in `readv` forever, and `join` on a parked thread
-/// deadlocks the suite.
+/// Spawn the reader thread. Caller owns the returned `std.Thread` and MUST
+/// join it.
 fn startPump(s: *RawSse) !std.Thread {
     return std.Thread.spawn(.{}, pump, .{s});
 }
@@ -391,11 +279,6 @@ fn releaseReader(s: *RawSse) void {
 }
 
 /// An open stream plus the thread reading it, torn down together.
-///
-/// Python's `try/finally { stream_a.close(); stream_b.close() }` is
-/// the ONE teardown path for the pair, and Zig has no `finally` — so
-/// this pair of defers is what keeps an early `return` from leaking a
-/// thread and a socket.
 const Stream = struct {
     s: *RawSse,
     thread: std.Thread,
@@ -412,9 +295,8 @@ const Stream = struct {
 fn openStream(port: u16, cookie: ?[]const u8) !Stream {
     const s = try openSse(port, "sessions,workers", cookie);
     // No `errdefer s.deinit()`: the handshake-failure path below already
-    // tears the stream down explicitly, and an `errdefer` would fire a
-    // SECOND time on that `return` — a double `deinit` of the client,
-    // the reader and the buffer.
+    // tears the stream down explicitly, and an `errdefer` would fire a SECOND
+    // time on that `return` — a double `deinit` of the client, the reader and
     const t = startPump(s) catch |err| {
         s.deinit();
         return err;
@@ -472,12 +354,6 @@ fn twoUsers() !TwoUsers {
 // ============================================================================
 
 // A's session rename must never reach B's EventSource.
-//
-// This is the W3 leak: the bus fans out by family routing key, so
-// before the fix B's `?channels=sessions` stream received A's
-// `session_updated` frame verbatim. The assertion is on A's session id
-// appearing anywhere in B's stream — the payload carries `id`, so a
-// leak is unmistakable.
 test "sse_does_not_deliver_foreign_session_events" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -528,10 +404,9 @@ test "sse_does_not_deliver_foreign_session_events" {
     }
 }
 
-// Both users receive their OWN session events — no over-filtering.
-//
-// Guards the false pass where the filter drops everything: B must
-// still see B's rename, and A must still see A's.
+// Both users receive their OWN session events — no over-filtering. Guards the
+// false pass where the filter drops everything: B must still see B's rename,
+// and A must still see A's.
 test "sse_still_delivers_own_events_to_each_user" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -585,11 +460,9 @@ test "sse_still_delivers_own_events_to_each_user" {
     }
 }
 
-// Regression: without `--auth` the stream still delivers session events.
-//
-// With auth off there is no identity, so the system user sees
-// everything and the fan-out filter must be a no-op — the
-// pre-isolation behaviour.
+// Regression: without `--auth` the stream still delivers session events. With
+// auth off there is no identity, so the system user sees everything and the
+// fan-out filter must be a no-op — the pre-isolation behaviour.
 test "sse_auth_off_still_delivers_events" {
     try harness.requirePabrikBin(io, gpa);
 

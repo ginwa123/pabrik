@@ -1,32 +1,5 @@
-// `read_file` returns raw content (no per-line number prefixes).
-//
-// Zig port of `tests/functional/read_file_raw_content_test.py`
-// (same test name).
-//
-// Task: i-think-we-dont-need-line-number-in-content-output.
-//
-// The `read_file` tool used to prefix every line with a padded line
-// number (`"   1\t..."`). Positioning is already carried by
-// `start_line` / `end_line` / `total_lines`, so the prefix was
-// redundant token spend and a copy-paste hazard (the LLM copying
-// `"  12\tfoo"` into write_file / text_replace).
-//
-// A full end-to-end LLM agent run is too heavy for a wire test (it
-// needs a stub LLM returning a tool_call), so this file verifies the
-// wire-visible half — the same strategy as `command_tool_test.py` —
-// while the exec-level raw-content contract is pinned by the Zig tests
-// in `src/modules/agent/tools/read_file.zig` ("returns raw content
-// without line-number prefixes", "paginated slice is raw ...",
-// "toXMLSuccess envelope carries raw content ..."):
-//
-//   * REGISTRY — GET /api/agent-tools/registry exposes `read_file` whose
-//     description documents raw content (no "prefixed with its line
-//     number" promise). This is the exact JSON body the frontend
-//     receives for tool definitions.
-//
-// Run:
-//     PABRIK_BIN=<worktree>/zig-out/bin/pabrikcore-linux-x86_64 \
-//       zig build test --summary all     # from tests/functional/
+// `read_file` returns raw content (no per-line number prefixes). Zig port of
+// `tests/functional/read_file_raw_content_test.py` (same test name).
 
 const std = @import("std");
 const testing = std.testing;
@@ -36,10 +9,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// `GET /api/agent-tools/registry` → the `tools` array.
-///
-/// Python asserted `isinstance(tools, list)` and returned the list; the
-/// same check plus the array itself, borrowed from `doc`.
+/// `GET /api/agent-tools/registry` → the `tools` array. Python asserted
+/// `isinstance(tools, list)` and returned the list; the same check plus the
+/// array itself, borrowed from `doc`.
 fn registryTools(doc: *const harness.Json) !std.json.Array {
     const tools = doc.array("tools") orelse {
         std.debug.print("registry should be {{tools: list}}\n", .{});
@@ -65,10 +37,6 @@ fn toolDescription(tools: std.json.Array, name: []const u8) ![]const u8 {
         return switch (d) {
             .string => |s| s,
             // Python's `.get(key, "")` returned "" for a non-string too?
-            // No — it returned whatever was there and `assert` compared
-            // it; a non-string would already have failed the `"raw"`
-            // substring check. Treat it as "" so the caller's
-            // substring assertion reports the real problem.
             else => return "",
         };
     }
@@ -149,10 +117,7 @@ fn hasTool(tools: std.json.Array, name: []const u8) bool {
     return false;
 }
 
-/// `std.ascii.indexOfIgnoreCase` — Python's `desc.lower()` check for
-/// "raw". `std.ascii.indexOfIgnoreCase` is ASCII-only, which is exactly
-/// what `.lower()` on an ASCII sentence needs and what the registry
-/// description is.
+/// `std.ascii.indexOfIgnoreCase` — Python's `desc.lower()` check for "raw".
 fn indexOfIgnoreCase(haystack: []const u8, needle: []const u8) ?usize {
     return std.ascii.indexOfIgnoreCase(haystack, needle);
 }

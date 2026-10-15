@@ -18,31 +18,8 @@ pub const WorkspaceItemsGetError = error{
     DatabaseError,
 };
 
-/// GET /api/workspaces/:workspace_id/items - Get all workspace items
-///
-/// D12: this read also ENSURES the workspace's default project exists.
-///
-/// Both clients (the Vue sidebar and the Android drawer) already call this
-/// endpoint to render their project list, and the invariant is "every
-/// workspace has a default project, and a miss creates one". Enforcing it
-/// here means neither client needs a "does the default exist?" branch at
-/// all — their lookup is a pure find over this response. It also means a
-/// workspace that predates Migration 094 is healed the moment anyone opens
-/// it, with no data migration.
-///
-/// Two rules make writing on a read safe:
-///
-///  1. GATED ON EXISTENCE. `useCaseList` does NOT 404 for an unknown
-///     workspace — it returns `[]`. So there is no existing check to lean
-///     on, and an ungated ensure would create an ORPHAN workspace_items
-///     row for a workspace that never existed. `workspaceExists` gates it.
-///     The status code is deliberately unchanged (200 + []), because
-///     changing it would be a wire-contract change no caller asked for.
-///
-///  2. NON-FATAL. A read must not fail because the write failed — a
-///     read-only caller, an unwritable home, an unrecoverable race. One
-///     missing row beats a broken sidebar, and the very next read tries
-///     again. Every error is swallowed with a warn.
+/// GET /api/workspaces/:workspace_id/items - Get all workspace items D12:
+/// this read also ENSURES the workspace's default project exists.
 pub fn workspaceItemsListHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
 
@@ -56,10 +33,7 @@ pub fn workspaceItemsListHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRe
 
     // 1. Existence gate — see rule 1 above.
     if (workspace_default.workspaceExists(allocator, sqlite_db, workspace_id)) {
-        // 2. Non-fatal ensure — see rule 2 above. `if` on the error union
-        // so the failure branch can log without unwinding the handler.
-        // The checklist that seeds a fresh default project belongs to the
-        // requesting user under `--auth` (see `session_llm_config.zig`).
+        // 2. Non-fatal ensure — see rule 2 above.
         const config_tools = auth_common.requestUserConfig(allocator, di.db, di.auth_enabled, req.headers) orelse
             pabrikcore.getLlmConfig(di);
         const ensured = workspace_default.ensureDefaultProject(

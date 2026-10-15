@@ -1,58 +1,6 @@
-// Functional wire tests for sub-agent peek fetches.
-//
-// Zig port of `tests/functional/subagent_peek_test.py`.
-//
-// Task: task_1788551671819_5 (sub-agent peek always empty).
-//
-// The bug: clicking the eye icon always showed `No messages yet.`, even
-// after the sub-agent finished. Root causes fixed on branch
-// `worktree/fix-subagent-peek-realtime`:
-//
-//   P0 backend: child sid embedded the raw agent name
-//        (`subagent_{ns}_backend implementer`) — raw spaces break the HTTP
-//        request line, `/` breaks router segment matching even when
-//        encoded (http_parser decodes %2F before matchPathWithParams
-//        splits). Fixed by slugifying at spawn (spaces->'_', rest dropped).
-//   P0 frontend: peek fetched with the raw sid (no encodeURIComponent).
-//        Fixed in useSubAgentPeek + api.getChatHistory.
-//
-// These tests replay the wire round-trip against a real binary (no LLM
-// needed — the populated-sub-agent path is covered by zig unit tests for
-// slugify + vitest for encode/refetch):
-//
-//   1. unknown subagent-style sid → 200 `{ messages: [] }` (peek renders
-//      the empty state gracefully, never a 404 crash).
-//   2. percent-encoded sid (`%5F` for `_`) resolves to the same session
-//      (http_parser decodes the path before router matching — the decode
-//      half of the P0 transport fix).
-//   3. `%2F` (encoded slash) does NOT match a session route (decodes to
-//      `/` before segment split → no match → 404). This pins WHY the
-//      backend must slugify slashes away at spawn: no encoding can carry
-//      a `/` through this router.
-//
-// PERCENT-ESCAPES SURVIVE THE HARNESS'S HTTP CLIENT: `Harness.http`
-// formats the path into a URL string, `std.Uri.parse` stores the path as
-// a `percent_encoded` component (it does NOT decode), and the client
-// writes that component verbatim to the request line. So `%5F` / `%2F`
-// below reach the server exactly as written — which is the whole point
-// of these two tests.
-//
-// QUERY STRINGS ARE IN THE PATH, NOT IN `HttpOptions.params`.
-//
-// This is deliberate and wire-identical to the Python original (which
-// interpolated `?limit=N` straight into the path, or produced the same
-// string via `urlencode`). The harness's `buildUrl` LEAKS when
-// `opts.params` is non-empty: it allocates the base URL
-// `"http://127.0.0.1:<port><path>?"` and then, on the `i == 0`
-// iteration, overwrites `url` with a fresh `allocPrint` WITHOUT freeing
-// the old one (see harness.zig `buildUrl`, the `else` arm of the
-// `if (i > 0)` branch). `testing.allocator` reports that as a per-test
-// leak, so every suite that used `.params` would fail on memory even
-// though the request was fine.
-//
-// FIX PROPERLY IN `harness.zig` (free the previous `url` in the `i == 0`
-// arm), then these can move back to `.params`. Until then: keep the
-// query inlined.
+// Functional wire tests for sub-agent peek fetches. Zig port of
+// `tests/functional/subagent_peek_test.py`. Task: task_1788551671819_5
+// (sub-agent peek always empty).
 
 const std = @import("std");
 const testing = std.testing;
@@ -61,12 +9,8 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// `POST /api/llm/session` with `name`, returning an OWNED session id.
-///
-/// The caller frees the returned slice. Nothing here is a `defer`d
-/// borrow of the response body: `r.json()` parses into an arena that
-/// `doc.deinit()` destroys, so a slice pointing into it would dangle
-/// the moment the helper returned.
+/// `POST /api/llm/session` with `name`, returning an OWNED session id. The
+/// caller frees the returned slice.
 fn createSession(h: *Harness, name: []const u8) ![]u8 {
     const body = try std.fmt.allocPrint(gpa, "{{\"name\":\"{s}\"}}", .{name});
     defer gpa.free(body);
@@ -87,13 +31,8 @@ fn createSession(h: *Harness, name: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// Python's `s.replace(needle, replacement, 1)` — replace only the
-/// FIRST occurrence, and return an owned slice.
-///
-/// `std.mem.replace` replaces every occurrence, which is right for the
-/// `%5F` probe but wrong for the `%2F` one: that test deliberately
-/// keeps the second underscore intact so the "bad" id still looks like
-/// a session id.
+/// Python's `s.replace(needle, replacement, 1)` — replace only the FIRST
+/// occurrence, and return an owned slice.
 fn replaceFirstOwned(haystack: []const u8, needle: []const u8, replacement: []const u8) ![]u8 {
     const at = std.mem.indexOf(u8, haystack, needle) orelse
         return gpa.dupe(u8, haystack);
@@ -107,13 +46,9 @@ fn replaceFirstOwned(haystack: []const u8, needle: []const u8, replacement: []co
     return out.toOwnedSlice();
 }
 
-/// Deep-equality for two parsed JSON values.
-///
-/// Python wrote `decoded["messages"] == plain["messages"]`, which is a
-/// structural comparison of arbitrarily nested lists/dicts. Zig's
-/// `std.json.Value` has no `==` (its payloads are slices/maps), so this
-/// is the honest spelling of that assertion rather than a weakened
-/// "both lengths are zero".
+/// Deep-equality for two parsed JSON values. Python wrote
+/// `decoded["messages"] == plain["messages"]`, which is a structural
+/// comparison of arbitrarily nested lists/dicts.
 fn jsonValueEql(a: std.json.Value, b: std.json.Value) bool {
     if (std.meta.activeTag(a) != std.meta.activeTag(b)) return false;
     return switch (a) {
@@ -168,9 +103,8 @@ test "peek_unknown_subagent_sid_returns_empty_200" {
 }
 
 // `%5F` (`_`) in the path must decode before router matching, so the
-// frontend's new `encodeURIComponent(sid)` fetch hits the same rows as
-// the raw fetch. Session ids contain `_`, giving us a decode probe
-// without needing a space in the id.
+// frontend's new `encodeURIComponent(sid)` fetch hits the same rows as the
+// raw fetch.
 test "peek_percent_encoded_sid_decodes_to_same_session" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -223,10 +157,8 @@ test "peek_percent_encoded_sid_decodes_to_same_session" {
     );
 }
 
-// `%2F` decodes to `/` BEFORE the router splits on `/`, so the path
-// gains a segment and matches no route → 404. This is the invariant
-// that forces slugify-at-spawn (P0): a sid containing `/` can never be
-// fetched, however the frontend encodes it.
+// `%2F` decodes to `/` BEFORE the router splits on `/`, so the path gains a
+// segment and matches no route → 404.
 test "peek_encoded_slash_does_not_match_session_route" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});

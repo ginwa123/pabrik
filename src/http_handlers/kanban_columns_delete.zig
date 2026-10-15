@@ -1,41 +1,6 @@
-//! `DELETE /api/workspaces/:workspace_id/items/:item_id/kanban/columns/:column_id`.
-//!
+//! `DELETE
+//! /api/workspaces/:workspace_id/items/:item_id/kanban/columns/:column_id`.
 //! Delete a kanban column.
-//!
-//! Before calling `deleteColumn`, the use-case runs a `COUNT(*)`
-//! against `workspace_item_tasks.kanban_column_id` to refuse the
-//! delete when the column still has tasks. This protects against
-//! silently re-parenting tasks to "unassigned" without the user's
-//! consent — the user must first move the tasks to another column.
-//!
-//! On the success path (no tasks using the column), any tasks that
-//! WERE assigned to this column have their `kanban_column_id` set
-//! to NULL by `deleteColumn` (the tasks themselves are NOT removed);
-//! the frontend surfaces them in the "Unassigned" group of the
-//! folder-list view. In practice this only applies to a column whose
-//! tasks were all moved away earlier but the column was never
-//! deleted — the normal end-of-life path is "user moves tasks →
-//! user deletes column".
-//!
-//! No request body. Returns 200 with `{"success": true, column_id}`
-//! on success.
-//!
-//! Layered as:
-//!   - `useCase` — business logic (validate → pre-delete task-count
-//!     gate → delete → emit SSE → return tagged result).
-//!   - `kanbanColumnsDeleteHandler` — thin orchestrator over
-//!     `useCase`: reads path params, delegates to `useCase`, maps
-//!     the outcome + errors to an HTTP response (200 / 400 / 409 /
-//!     500).
-//!
-//! Errors:
-//!   - 400 missing `item_id` or `column_id` path param
-//!   - 409 column still has N task(s) assigned — caller must move
-//!     them first
-//!   - 500 DB failure (count check or delete)
-//!
-//! Plan: docs/superpowers/plans/2026-06-21-workspace-item-kanban.md
-//!   (Chunk 3, Task 3.6)
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -50,13 +15,9 @@ const DeleteColumnResponse = struct {
     column_id: []const u8,
 };
 
-/// Domain-level error set for `useCase`. The handler maps each
-/// variant to an HTTP status code + message via two exhaustive
-/// switches (one for status, one for the user-facing message).
-///
-/// Adding a new variant fails to compile in the handler until both
-/// switches are updated — that's intentional, to keep status codes
-/// in lockstep with the error set.
+/// Domain-level error set for `useCase`. The handler maps each variant to an
+/// HTTP status code + message via two exhaustive switches (one for status,
+/// one for the user-facing message).
 pub const KanbanColumnDeleteError = error{
     /// `:item_id` path param was missing or empty.
     ItemIdRequired,
@@ -66,11 +27,7 @@ pub const KanbanColumnDeleteError = error{
     CountFailed,
     /// `kanban_model.deleteColumn` failed (DB error, etc.).
     DeleteFailed,
-    /// `allocator` returned no memory. In production this is
-    /// effectively unreachable (the per-request arena reaps
-    /// everything at request end) but the type system requires the
-    /// variant so any `try` on the model functions propagates a
-    /// typed error if the inferred set widens.
+    /// `allocator` returned no memory.
     OutOfMemory,
 };
 
@@ -85,11 +42,7 @@ pub const DeleteColumnInput = struct {
     column_id: []const u8,
 };
 
-/// Tagged outcome of the delete-column use-case. The "has_tasks"
-/// branch carries the task count so the handler can surface the
-/// precise number in its 409 message ("Cannot delete column: 3
-/// tasks still assigned…"). Mirrors the `TaskDeleteOutcome`
-/// pattern in `task_delete.zig`.
+/// Tagged outcome of the delete-column use-case.
 pub const KanbanColumnDeleteResult = union(enum) {
     /// Column was deleted (it had no tasks assigned).
     deleted,
@@ -102,40 +55,20 @@ pub const KanbanColumnDeleteResult = union(enum) {
 // Use case
 // =====================================================================
 
-/// Delete a kanban column, gating on the pre-delete task-count
-/// check.
-///
-/// Steps:
-///   1. Validate `item_id` and `column_id`.
-///   2. Run `kanban_model.countTasksInColumn` (the pre-delete gate).
-///      If the count > 0, return `.has_tasks = N` (the handler maps
-///      this to a 409 response).
-///   3. Call `kanban_model.deleteColumn` (which NULLs out the
-///      `kanban_column_id` of any remaining tasks as a defense — in
-///      practice this only matters if a task was added between the
-///      count check and the delete, which the test in
-///      `kanban_columns_delete_test.zig` does not exercise).
-///   4. Emit a `kanban_column` SSE event with `action="deleted"`
-///      (fire-and-forget: SSE failures are logged but do not fail
-///      the request — the row is already deleted).
-///   5. Return `.deleted` on success, `.has_tasks = N` on the
-///      gate-tripped path.
+/// Delete a kanban column, gating on the pre-delete task-count check. Steps:
+/// 1. Validate `item_id` and `column_id`. 2.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
     input: DeleteColumnInput,
 ) KanbanColumnDeleteError!KanbanColumnDeleteResult {
-    // 1. Validate. Business rule: both ids are required to locate
-    // the column to delete (item_id is a defense — column_id alone
-    // is globally unique, but the model takes both for symmetry
-    // with the other column mutators).
+    // 1. Validate. Business rule: both ids are required to locate the column
+    // to delete (item_id is a defense — column_id alone is globally unique,
+    // but the model takes both for symmetry with the other column mutators).
     if (input.item_id.len == 0) return error.ItemIdRequired;
     if (input.column_id.len == 0) return error.ColumnIdRequired;
 
-    // 2. Pre-delete gate. We must NOT silently re-parent tasks to
-    // "unassigned" — the user must move them first via
-    // `kanbanMoveTaskHandler` (which emits a `kanban_task` SSE
-    // event, refreshing every connected client).
+    // 2. Pre-delete gate.
     const task_count = kanban_model.countTasksInColumn(
         allocator,
         db,
@@ -152,14 +85,7 @@ fn useCase(
         input.column_id,
     ) catch return error.DeleteFailed;
 
-    // 4. Emit the SSE event so other connected clients refresh
-    // their kanban view AND re-fetch unassigned tasks (tasks that
-    // were on this column get their `kanban_column_id` set to
-    // NULL). action="deleted" matches the frontend's
-    // `KanbanColumnEvent` union variant. The emit is
-    // fire-and-forget: any error from `valueAlloc` is logged and
-    // swallowed here — the column is already deleted, so we do NOT
-    // fail the request.
+    // 4.
     on_event_sent_kanban.onEventSendKanbanColumn(allocator, .{
         .action = "deleted",
         .workspace_id = input.workspace_id,
@@ -218,11 +144,7 @@ pub fn kanbanColumnsDeleteHandler(
         .workspace_id = ws_id,
         .column_id = column_id,
     }) catch |err| {
-        // 3. Map the use-case error to an HTTP response. Both
-        // switches are exhaustive over the inferred error set —
-        // adding a new `KanbanColumnDeleteError` variant will fail
-        // to compile here (intentional, to keep status codes in
-        // sync). No `else` prong needed.
+        // 3. Map the use-case error to an HTTP response.
         const status: u16 = switch (err) {
             error.ItemIdRequired => 400,
             error.ColumnIdRequired => 400,
@@ -243,10 +165,7 @@ pub fn kanbanColumnsDeleteHandler(
         });
     };
 
-    // 4. Map the use-case outcome to an HTTP response. The 409 path
-    // interpolates the task count into the user-facing message so
-    // the frontend can render "this column has N tasks — move them
-    // first" instead of a generic "cannot delete".
+    // 4. Map the use-case outcome to an HTTP response.
     switch (outcome) {
         .deleted => {
             return res.jsonResponse(.{
@@ -259,11 +178,9 @@ pub fn kanbanColumnsDeleteHandler(
             });
         },
         .has_tasks => |task_count| {
-            // The format string preserves the historical message
-            // shape exactly so the frontend's notification renderer
-            // (and the contract test in `kanban_columns_delete_test.zig`
-            // that grep-asserts on `"Cannot delete column"` +
-            // `"{d} task"`) keeps working.
+            // The format string preserves the historical message shape
+            // exactly so the frontend's notification renderer (and the
+            // contract test in `kanban_columns_delete_test.zig` that
             const msg = try std.fmt.allocPrint(
                 allocator,
                 "Cannot delete column: {d} task{s} still assigned. Move them to another column first.",

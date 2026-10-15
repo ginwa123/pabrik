@@ -1,30 +1,4 @@
 //! OpenCode v2 agent backend — Phase 1 (configuration + detection).
-//!
-//! Pabrik profiles have always been HTTP-only: a profile names a `model`,
-//! a `base_url`, an `api_key` and a `url_style` (the HTTP body shape), and
-//! the workflow POSTs to that endpoint. OpenCode does not fit that
-//! shape — it is a local `opencode` CLI authenticated by subscription
-//! (state under `~/.opencode/`), and it owns its own agentic loop.
-//!
-//! So the transport lives in its OWN profile field, `backend`
-//! (`"http"` default | `"opencode"`), and `url_style` keeps meaning
-//! exactly one thing: the HTTP wire format. Overloading `url_style` with a
-//! non-HTTP value would have left `base_url` / `api_key` present-but-dead
-//! and forced a "not applicable" arm into every wire-format dispatch site
-//! (`buildJson*Request`, the SSE parsers, the Settings probe).
-//!
-//! What this module owns:
-//!   * the backend predicates (`isOpencodeBackend`, `isKnownBackend`),
-//!   * profile validation for the CLI backend (`validateOpencodeProfile`),
-//!   * `opencode` binary discovery (`resolveBinaryPath`),
-//!   * `opencode run` argv construction (`buildPrintArgs`),
-//!   * the `opencode --version` probe (`buildVersionProbeArgs` +
-//!     `describeVersionProbe`), and
-//!   * minimal `--format json` line parsing (`parseResultLine`).
-//!
-//! What it does NOT do yet: execute the CLI or stream its output into the
-//! workflow. `Agent.callStreaming` fails fast with
-//! `error.OpencodeNotWired` until that wiring lands (Phase 2).
 
 const std = @import("std");
 const config_mod = @import("../modules/config/Config.zig");
@@ -50,21 +24,16 @@ pub fn isKnownBackend(backend: []const u8) bool {
         isOpencodeBackend(backend);
 }
 
-/// Validation for an OpenCode profile.
-///
-/// Unlike HTTP profiles, `base_url` and `api_key` are NOT required — auth
-/// comes from `opencode` login state, not from config. Only `model` must be
-/// non-empty (it becomes the CLI's `--model`).
+/// Validation for an OpenCode profile. Unlike HTTP profiles, `base_url` and
+/// `api_key` are NOT required — auth comes from `opencode` login state, not
+/// from config.
 pub fn validateOpencodeProfile(model: []const u8) error{MissingModel}!void {
     if (model.len == 0) return error.MissingModel;
 }
 
-/// Resolve the `opencode` binary to execute.
-///
-/// * Empty `configured` → `DEFAULT_BINARY` (`"opencode"`, via `PATH`).
-/// * Otherwise the configured value verbatim (absolute path or alias).
-/// The returned slice borrows from `configured` when set, else is the
-/// `DEFAULT_BINARY` constant — never free it.
+/// Resolve the `opencode` binary to execute. * Empty `configured` →
+/// `DEFAULT_BINARY` (`"opencode"`, via `PATH`). * Otherwise the configured
+/// value verbatim (absolute path or alias).
 pub fn resolveBinaryPath(configured: []const u8) []const u8 {
     if (configured.len == 0) return DEFAULT_BINARY;
     return configured;
@@ -87,15 +56,8 @@ pub const PrintOptions = struct {
     json_format: bool = true,
 };
 
-/// Build argv for a non-interactive OpenCode run:
-/// `opencode run [--model m] [--agent a] [--auto] [--format json] <prompt>`.
-///
-/// The caller owns the returned slice (each entry is duped; free with
-/// `freeArgs`). `prompt` is passed as a positional argument — the CLI reads
-/// the turn prompt from argv, not stdin.
-///
-/// NOTE: credentials never appear here. A key on argv is world-readable via
-/// `ps`; auth travels through the CLI's own login state.
+/// Build argv for a non-interactive OpenCode run: `opencode run [--model m]
+/// [--agent a] [--auto] [--format json] <prompt>`.
 pub fn buildPrintArgs(
     allocator: std.mem.Allocator,
     binary: []const u8,
@@ -147,14 +109,9 @@ pub const EnvVar = struct {
     value: []const u8,
 };
 
-/// Build the environment overlay for one OpenCode run.
-///
-/// OpenCode doesn't require special environment variables for authentication
-/// like Claude Code does with `CLAUDE_CONFIG_DIR`. It uses its own config
-/// directory under `~/.opencode/` by default. For now, we keep this function
-/// for consistency but return an empty overlay.
-///
-/// Caller owns the result; free with `freeEnvOverlay`.
+/// Build the environment overlay for one OpenCode run. OpenCode doesn't
+/// require special environment variables for authentication like Claude Code
+/// does with `CLAUDE_CONFIG_DIR`.
 pub fn buildEnvOverlay(
     _: std.mem.Allocator,
     _: ?[]const u8,
@@ -172,11 +129,6 @@ pub fn freeEnvOverlay(allocator: std.mem.Allocator, vars: []EnvVar) void {
 }
 
 /// argv for the health probe: `<binary> --version`.
-///
-/// This is why `backend` beats `url_style` for the Settings Test button:
-// an HTTP backend is probed with a real POST, and the CLI backend is
-/// probed with a real `--version` — an actual check that the binary exists
-/// and answers, instead of a stub that only confirms the field parses.
 pub fn buildVersionProbeArgs(allocator: std.mem.Allocator, binary: []const u8) ![][]const u8 {
     const args = try allocator.alloc([]const u8, 2);
     errdefer allocator.free(args);
@@ -187,10 +139,6 @@ pub fn buildVersionProbeArgs(allocator: std.mem.Allocator, binary: []const u8) !
 }
 
 /// Render the result of an `opencode --version` probe as one human line.
-///
-/// Pure (no spawning) so every branch is unit-testable: the interesting
-/// cases are "binary not on PATH" and "binary exists but not authenticated",
-// neither of which should require the real CLI to be installed.
 pub fn describeVersionProbe(
     allocator: std.mem.Allocator,
     binary: []const u8,
@@ -235,20 +183,8 @@ pub const ParsedLine = struct {
     is_result: bool = false,
 };
 
-/// Parse one `opencode run --format json` output line.
-///
-/// Returns `.is_result == true` only for the terminal
-/// `{"type":"result","result":"..."}` message. All other line types
-/// (assistant deltas, system init, tool uses) parse to
-/// `.is_result == false` so the caller can ignore-or-forward them. Invalid
-/// JSON shapes parse to a benign non-result rather than an error — stdout
-/// interleaves human-readable lines the parser must skip.
-///
-/// NOTE: the exact `--format json` envelope is not yet pinned against the
-/// real CLI (Phase 2). This parser mirrors the Claude Code `stream-json`
-/// shape, which is the closest documented analogue; it will be reconciled
-/// with a captured `opencode run --format json` transcript when execution
-/// wiring lands.
+/// Parse one `opencode run --format json` output line. Returns `.is_result ==
+/// true` only for the terminal `{"type":"result","result":"..."}` message.
 pub fn parseResultLine(
     parsed_value: std.json.Value,
 ) ParsedLine {
@@ -270,9 +206,7 @@ pub fn parseResultLine(
 }
 
 /// Actionable error text surfaced when an OpenCode profile reaches the
-/// workflow before Phase 2 execution wiring lands. Kept here (not inlined at
-/// the call site) so the message has one owner and tests pin its wording
-/// without importing the workflow.
+/// workflow before Phase 2 execution wiring lands.
 pub fn notWiredMessage(
     allocator: std.mem.Allocator,
     model: []const u8,

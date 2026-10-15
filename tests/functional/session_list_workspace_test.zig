@@ -1,64 +1,6 @@
-// Workspace-scoped session list + session-detail workspace_id (wire).
-//
-// Zig port of `tests/functional/session_list_workspace_test.py` (same
-// test names, same order).
-//
-// Background
-// ----------
-// `GET /api/llm/session` gained an optional `workspace_id` query param:
-// when present, the list is scoped to that workspace's sessions
-// (task-linked ∪ cwd-matched, resolved server-side by
-// `workspace_scope.workspaceSessionIds`) and `total` must carry the SAME
-// filter so pagination stays truthful. Semantics locked here over the
-// real wire:
-//
-//   * present + matching  -> only that workspace's sessions, total = N
-//   * present + unknown   -> sessions: [], total: 0 (fail closed)
-//   * present + EMPTY     -> sessions: [], total: 0 (fail closed —
-//                            never `IN ()`, never a global leak)
-//   * absent              -> all sessions (global back-compat guard)
-//
-// `GET /api/llm/session/:session_id` (a NEW endpoint from the same plan)
-// returns the session detail incl. `workspace_id` — the owning workspace
-// id, or null for a session outside every workspace.
-//
-// Also guards `items_count` on `GET /api/workspaces` (populated for
-// EVERY workspace regardless of `is_include_items`).
-//
-// Zig-side coverage lives in `src/http_handlers/session_list.zig`,
-// `session_get.zig`, `workspaces_list.zig`, and
-// `src/agentic_loop/llm_history.zig` (count-query contract).
-//
-// ── PORTING NOTES ───────────────────────────────────────────────────────
-// * PATH LITERALS MOVED UNDER THE HARNESS TEMPDIR. The Python file used
-//   `/proj/a` and `/proj/a/sub` as the kanban item path and the plain
-//   chat's cwd. The server validates the item path with
-//   `std.fs.path.isAbsolute`, which is platform-relative, so a literal
-//   that is correct on ubuntu-2022 400s on windows-2022. Both are
-//   derived from `h.temp_dir` through `harness.harnessPath` instead.
-//
-//   The SEPARATOR between them still matters: the scope resolver's
-//   `isPathPrefix` accepts a match only when the next byte is a literal
-//   `/` (`src/agentic_loop/workspace_scope.zig:203`), which is the
-//   same byte the Python literal used. So the two leaves are passed as
-//   `"proj/a"` and `"proj/a/sub"` — `harnessPath` joins them onto the
-//   tempdir with the native separator, and the `/` between `a` and
-//   `sub` is literally ours on every platform.
-//
-// * `_create_plain_session` generated `uuid4().hex[:24]` because the
-//   server-side default id derives its hex from (pid, second), so two
-//   plain sessions created within the same second collide and the
-//   second INSERT OR IGNORE silently reuses the first row. Zig has no
-//   stdlib uuid, so this uses `harness.randomSuffix` (OS entropy) for
-//   the same job.
-//
-// * `time.monotonic()` deadlines are `Io.Timestamp.now(io, .awake)`,
-//   and `time.sleep` is `Io.sleep(io, .fromMilliseconds(n), .awake)`.
-//
-// * `harness.Json` borrows the `Response` body it was parsed from, so
-//   `listSessions` hands back the OWNED `Response` and every caller
-//   parses it in place. Python's dict-returning helpers got this for
-//   free; returning a `Json` from a helper here would dangle.
+// Workspace-scoped session list + session-detail workspace_id (wire). Zig
+// port of `tests/functional/session_list_workspace_test.py` (same test names,
+// same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -173,10 +115,9 @@ fn createTask(
     });
 }
 
-/// Poll `GET /api/llm/session/:id` until the row exists (200).
-///
-/// Also exercises the detail route on every seed: 404 while the async
-/// insert is still in flight, 200 once landed.
+/// Poll `GET /api/llm/session/:id` until the row exists (200). Also exercises
+/// the detail route on every seed: 404 while the async insert is still in
+/// flight, 200 once landed.
 fn waitForSession(h: *Harness, session_id: []const u8, timeout_ms: i64) !void {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}", .{session_id});
     defer gpa.free(path);
@@ -212,16 +153,6 @@ fn waitForSession(h: *Harness, session_id: []const u8, timeout_ms: i64) !void {
 
 /// Plain chat via POST /api/llm/session. `cwd_session` is the body field
 /// `session_create.zig` reads for the working directory.
-///
-/// An explicit `session_id` is passed because the server-side default
-/// generator (`helpers.random.generateSessionId`) derives its hex from
-/// (pid, second) — two plain sessions created within the same second
-/// collide, and the second INSERT OR IGNORE silently reuses the first
-/// row. Unique ids sidestep that pre-existing generator weakness.
-///
-/// The sessions row is INSERTed by the async emit_run_agent task, so
-/// wait for it to exist (via the detail endpoint) before asserting on
-/// the list.
 fn createPlainSession(h: *Harness, name: []const u8, cwd: []const u8) ![]u8 {
     const suffix = try harness.randomSuffix(gpa);
     defer gpa.free(suffix);
@@ -273,10 +204,8 @@ fn listSessions(h: *Harness, params: []const harness.Harness.Param) !harness.Res
     return h.http(io, .GET, "/api/llm/session", .{ .params = params, .expect = &.{200} });
 }
 
-/// The `session_id` of every row in `sessions[]`, as OWNED strings.
-///
-/// Borrowed JSON cannot outlive the `Response` it was parsed from, so
-/// this duplicates.
+/// The `session_id` of every row in `sessions[]`, as OWNED strings. Borrowed
+/// JSON cannot outlive the `Response` it was parsed from, so this duplicates.
 fn collectSessionIds(doc: *const harness.Json) ![][]u8 {
     const sessions = doc.array("sessions") orelse {
         std.debug.print("session list has no `sessions` array\n", .{});
@@ -373,14 +302,9 @@ const Seed = struct {
     }
 };
 
-/// Two workspaces with disjoint sessions:
-///
-///   A: task_a1 + task_a2 (task-linked) + plain_a (cwd under A's item
-///      path)                       -> 3 sessions
-///   B: task_b1 (task-linked)       -> 1 session
-///
-/// The item paths are derived from `h.temp_dir`; see the header for why
-/// a literal `/proj/a` is not portable.
+/// Two workspaces with disjoint sessions: A: task_a1 + task_a2 (task-linked)
+/// + plain_a (cwd under A's item path) -> 3 sessions B: task_b1 (task-linked)
+/// -> 1 session The item paths are derived from `h.temp_dir`; see the header
 fn seed(h: *Harness) !Seed {
     const proj_a = try harness.harnessPath(gpa, h.temp_dir, &.{"proj/a"});
     defer gpa.free(proj_a);
@@ -738,10 +662,9 @@ fn workspaceItemsCount(doc: *const harness.Json, ws_id: []const u8) !i64 {
     return error.TestUnexpectedResult;
 }
 
-/// Cross-check the badge against the authoritative list rather than
-/// trusting it: `GET /api/workspaces/<id>/items` must report the same
-/// `count`, and exactly one of its rows must be the system default
-/// (`is_default == 1`, `item_type == "agent"`).
+/// Cross-check the badge against the authoritative list rather than trusting
+/// it: `GET /api/workspaces/<id>/items` must report the same `count`, and
+/// exactly one of its rows must be the system default (`is_default == 1`,
 fn assertWorkspaceItems(h: *Harness, ws_id: []const u8, expected: i64) !void {
     const path = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/items", .{ws_id});
     defer gpa.free(path);
@@ -799,15 +722,8 @@ fn assertWorkspaceItems(h: *Harness, ws_id: []const u8, expected: i64) !void {
     }
 }
 
-// Every workspace row carries `items_count` (its workspace_items row
-// count), whether or not is_include_items fetches the rows.
-//
-// Note the +1 everywhere: Migration 094 gives every workspace a DEFAULT
-// project (an `agent` item rooted at $HOME), created eagerly by
-// `POST /api/workspaces` and healed on read. So "a workspace with nothing
-// in it" is no longer a reachable state — it has the default and nothing
-// else. The numbers are named so the intent survives the next migration
-// that adds another system-owned row.
+// Every workspace row carries `items_count` (its workspace_items row count),
+// whether or not is_include_items fetches the rows.
 test "workspaces_list_carries_items_count" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});

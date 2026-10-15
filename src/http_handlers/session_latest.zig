@@ -1,7 +1,6 @@
 //! `GET /api/sessions/latest?cwd=...` — fetch the latest session for a cwd.
-//!
-//! Layered as `useCase` (resolve singleton + DB query) and a thin
-//! handler that maps the outcome + errors to status codes / JSON.
+//! Layered as `useCase` (resolve singleton + DB query) and a thin handler
+//! that maps the outcome + errors to status codes / JSON.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");

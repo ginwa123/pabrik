@@ -1,14 +1,5 @@
-//! `DELETE /api/agent-routines/:routine_id/system_prompt/:prompt_id`.
-//! Removes a system-prompt entry. Returns `{ok: true}` on success.
-//!
-//! Mirrors `agent_system_prompt_delete.zig` with substitutions:
-//! table `agent_routine_system_prompt`, parent col `routine_id`.
-//!
-//! Memory: the per-request arena reaps all allocations at request end,
-//! so neither layer needs explicit `free`s.
-//!
-//! Plan: Routine mode task_1789505553300_1 (option A, mirror agent_routine_*)
-//! Task: task_1789505553300_1
+//! `DELETE /api/agent-routines/:routine_id/system_prompt/:prompt_id`. Removes
+//! a system-prompt entry. Returns `{ok: true}` on success.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -92,12 +83,7 @@ pub fn agentRoutineSystemPromptDeleteHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-//
-// impl + tests in one file (project convention). Behavioural coverage:
-//
-//   1. Validation: empty routine_id OR prompt_id → IdsRequired
-//   2. Happy path: a matching row is removed (scoped by both ids)
-//   3. Idempotency: a non-existent prompt_id doesn't error
+// impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;

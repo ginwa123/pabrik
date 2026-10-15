@@ -1,22 +1,6 @@
-//! `PATCH /api/agents/:agent_id/system_prompt/reorder`.
-//!
-//! Body: `{ordered_ids: string[]}`. Reorders the agent's system-prompt
-//! rows to match the supplied order. `ordered_ids[0]` becomes position N
-//! (highest), `ordered_ids[N-1]` becomes position 0 (lowest).
-//!
-//! Layered as:
-//!   - `useCase` — tx transaction (db.begin/tx.exec/tx.commit), UPDATE each row's
-//!     position to `len - 1 - i` (so a 1-row ordering lands at
-//!     position 0).
-//!   - `agentSystemPromptReorderHandler` — thin orchestrator over
-//!     `useCase`: parses the body, delegates to `useCase`, maps the
-//!     use-case outcome to an HTTP response.
-//!
-//! Memory: the per-request arena reaps all allocations at request
-//! end, so neither layer needs explicit `free`s.
-//!
-//! Plan: docs/superpowers/plans/2026-08-21-agent-system-prompt.md
-//! Task: task_1787408958280_1
+//! `PATCH /api/agents/:agent_id/system_prompt/reorder`. Body: `{ordered_ids:
+//! string[]}`. Reorders the agent's system-prompt rows to match the supplied
+//! order.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -31,11 +15,7 @@ const ReorderBody = struct {
     ordered_ids: []const []const u8 = &.{},
 };
 
-/// Domain-level error set for `useCase`. The handler maps each
-/// variant to an HTTP status code + message via two exhaustive
-/// switches (intentional — adding a new variant fails to compile in
-/// the handler until both switches are updated, keeping status
-/// codes in lockstep with the error set).
+/// Domain-level error set for `useCase`.
 pub const SystemPromptReorderError = error{
     /// `agent_id` path param was missing or empty.
     AgentIdRequired,
@@ -57,11 +37,8 @@ pub const SystemPromptReorderInput = struct {
 // Use case
 // =====================================================================
 
-/// Reorder system-prompt rows for the given agent. All updates happen
-/// inside a single tx — all UPDATEs finalize together via tx.commit(). `ordered_ids[0]` becomes position
-/// `len - 1` (highest), `ordered_ids[len - 1]` becomes position 0
-/// (lowest). Using `len - 1 - i` ensures a 1-row ordering lands at
-/// position 0 (not position 1) — see the test below for the contract.
+/// Reorder system-prompt rows for the given agent. All updates happen inside
+/// a single tx — all UPDATEs finalize together via tx.commit().
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -136,13 +113,8 @@ pub fn agentSystemPromptReorderHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-//
-// impl + tests in one file (project convention for Agent Mode).
-// Behavioural tests cover the use-case:
-//
-//   1. Validation: empty agent_id OR ordered_ids → respective errors
-//   2. Position assignment: ordered_ids[0] gets the highest position
-//   3. 1-row ordering lands at position 0
+// impl + tests in one file (project convention for Agent Mode). Behavioural
+// tests cover the use-case: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;

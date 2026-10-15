@@ -1,27 +1,5 @@
-// Functional tests for the skills WRITE surface: `POST` (insert) and
-// `PATCH` (update).
-//
-// The read/delete surface is covered by `skills_sqlite_test.zig`. This
-// file exists because a write route has failure modes a unit test cannot
-// see, and all three of them are about the WIRE rather than the logic:
-//
-//   1. **Route-order shadowing.** `matchRoute` walks routes in
-//      registration order and returns on the first hit, so a
-//      `:skill_name` route registered BEFORE the collection route answers
-//      `POST /skills` with the detail handler — which reads a body it does
-//      not have and 404s. Every assertion below would pass against the
-//      wrong handler if the order were wrong, because the wrong handler
-//      also answers *something*.
-//   2. **Empty-slice-as-NULL.** `SqliteBackend.exec` binds `""` as SQL
-//      NULL, which `skills.description NOT NULL` rejects. A create that
-//      sends `description: ""` — the exact body the UI sends when the user
-//      fills only the name — must round-trip as `""`, not 500.
-//   3. **A patch that mentions one field must not blank the other.** The
-//      store loads the current row first, but only the wire proves the
-//      handler actually forwards both fields.
-//
-// So these are real HTTP round-trips against a booted binary, replaying
-// the EXACT JSON the frontend sends.
+// Functional tests for the skills WRITE surface: `POST` (insert) and `PATCH`
+// (update). The read/delete surface is covered by `skills_sqlite_test.zig`.
 
 const std = @import("std");
 const testing = std.testing;
@@ -233,11 +211,9 @@ fn findByName(arr: std.json.Array, name: []const u8) ?std.json.ObjectMap {
 // Tests
 // ============================================================================
 
-// The happy insert, asserted on the wire.
-//
-// `asset_count` is 0 because this route writes the body only — a bundled
-// skill's companions arrive through the importer. Claiming otherwise would
-// render a "0 bundled files" row the user never asked for.
+// The happy insert, asserted on the wire. `asset_count` is 0 because this
+// route writes the body only — a bundled skill's companions arrive through
+// the importer.
 test "create_inserts_a_skill_and_returns_the_stored_row" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -271,11 +247,8 @@ test "create_inserts_a_skill_and_returns_the_stored_row" {
     try expectStr(dskill, "content", BODY, "re-read skill");
 }
 
-// The empty-slice-as-NULL trap, on the wire.
-//
-// `SqliteBackend.exec` binds `""` as SQL NULL, and `skills.description` is
-// NOT NULL. The UI sends exactly this body when the user fills only the
-// name, so a handler without the guard answers 500 for a blank form field.
+// The empty-slice-as-NULL trap, on the wire. `SqliteBackend.exec` binds `""`
+// as SQL NULL, and `skills.description` is NOT NULL.
 test "create_with_an_empty_description_round_trips_as_empty_not_as_a_500" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -299,13 +272,8 @@ test "create_with_an_empty_description_round_trips_as_empty_not_as_a_500" {
     try expectStr(skill, "content", BODY, "created skill");
 }
 
-// A duplicate name in the SAME workspace is refused, and the stored body
-// is not replaced.
-//
-// `skills_store.upsertSkill` is create-or-replace BY DESIGN — the importer
-// runs on every start-up and a second run has to update in place. So the
-// refusal has to live on this route, where the caller is a human who
-// pressed a button and expects "that name is taken".
+// A duplicate name in the SAME workspace is refused, and the stored body is
+// not replaced.
 test "create_of_a_duplicate_name_is_409_and_does_not_overwrite" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -339,10 +307,9 @@ test "create_of_a_duplicate_name_is_409_and_does_not_overwrite" {
     try expectStr(skill, "content", "first body", "after duplicate");
 }
 
-// The same name in a SECOND workspace is not a duplicate.
-//
-// Names are unique per workspace, not per database — two workspaces are
-// two different tenants and each keeps its own `pdf`.
+// The same name in a SECOND workspace is not a duplicate. Names are unique
+// per workspace, not per database — two workspaces are two different tenants
+// and each keeps its own `pdf`.
 test "create_of_a_name_that_exists_in_another_workspace_succeeds" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -381,10 +348,9 @@ test "create_of_a_name_that_exists_in_another_workspace_succeeds" {
     try expectStr(askill, "content", "A's body", "ws_a skill");
 }
 
-// A name the grammar cannot spell is a 400, not a 500 and not a write.
-//
-// `name` is joined onto a materialisation directory by `use_skill`, so
-// `..` and `a/b` would escape it. The grammar is the guard.
+// A name the grammar cannot spell is a 400, not a 500 and not a write. `name`
+// is joined onto a materialisation directory by `use_skill`, so `..` and
+// `a/b` would escape it. The grammar is the guard.
 test "create_of_an_invalid_name_is_400_and_writes_nothing" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -436,10 +402,9 @@ test "create_with_a_blank_name_is_400" {
     try expectError(body, "name is required", "blank name");
 }
 
-// The happy patch, asserted on the wire.
-//
-// The edit form ALWAYS sends both fields, so this is also the proof that
-// the handler forwards both: a handler that dropped one would blank it.
+// The happy patch, asserted on the wire. The edit form ALWAYS sends both
+// fields, so this is also the proof that the handler forwards both: a handler
+// that dropped one would blank it.
 test "patch_updates_the_description_and_the_body" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -476,10 +441,6 @@ test "patch_updates_the_description_and_the_body" {
 }
 
 // A patch that clears a field is honoured, not treated as "keep".
-//
-// This is why the body fields are `?[]const u8` and not `[]const u8` with
-// a "" default: an omitted field keeps its value, an explicit empty one
-// does not. The wire is where that distinction is provable.
 test "patch_with_an_empty_description_clears_it_rather_than_keeping_it" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -530,10 +491,9 @@ test "patch_with_no_change_is_409" {
     try expectError(patched, "nothing to change — the skill already holds these values", "no change");
 }
 
-// A foreign name is 404, never 403, and nothing is written.
-//
-// A 403 would confirm the name exists, which is the one thing workspace
-// scoping exists to withhold.
+// A foreign name is 404, never 403, and nothing is written. A 403 would
+// confirm the name exists, which is the one thing workspace scoping exists to
+// withhold.
 test "patch_from_a_foreign_workspace_is_404_and_changes_nothing" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -586,12 +546,9 @@ test "patch_of_an_unknown_name_is_404" {
     try expectError(patched, "skill not found", "unknown patch");
 }
 
-// A rename attempt is refused, and the body is left as it was.
-//
-// The name is the `use_skill({ name })` argument and the `skill_eval`
-// identity, so a rename would break both silently. A `name` in the body is
-// a CLAIM about which row is being addressed, and a claim that does not
-// match gets the same answer as a row that is not there.
+// A rename attempt is refused, and the body is left as it was. The name is
+// the `use_skill({ name })` argument and the `skill_eval` identity, so a
+// rename would break both silently.
 test "patch_that_tries_to_rename_is_404_and_leaves_the_body" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -638,12 +595,8 @@ test "patch_that_tries_to_rename_is_404_and_leaves_the_body" {
     try expectStr(gone, "error_message", "skill not found", "renamed skill");
 }
 
-// The list reflects a create made over HTTP.
-//
-// The old handlers re-read a directory on every request, so a filesystem
-// change showed up immediately. The table has to keep that promise for the
-// HTTP write path too, or the sidebar and the model disagree about which
-// skills exist.
+// The list reflects a create made over HTTP. The old handlers re-read a
+// directory on every request, so a filesystem change showed up immediately.
 test "a_skill_created_over_http_is_visible_to_the_next_list" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -689,10 +642,9 @@ test "a_skill_created_over_http_is_visible_to_the_next_list" {
     try expectStr(row, "description", "Written over the wire.", "list row");
 }
 
-// A patch is visible to the list too.
-//
-// The description is the list row's second line, so an edit that changed
-// it has to show up there or the two halves disagree about the same skill.
+// A patch is visible to the list too. The description is the list row's
+// second line, so an edit that changed it has to show up there or the two
+// halves disagree about the same skill.
 test "a_patch_is_visible_to_the_next_list" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -724,12 +676,9 @@ test "a_patch_is_visible_to_the_next_list" {
     try expectStr(row, "description", "new description", "list row after patch");
 }
 
-// The write routes are scoped, and the OLD collection route is still gone.
-//
-// A bare `/api/skills` has no workspace to scope to, which is why it was
-// removed. It must keep 404-ing rather than answering with a legacy shape —
-// a client pinned to the old shape would otherwise keep working and never
-// learn the move happened.
+// The write routes are scoped, and the OLD collection route is still gone. A
+// bare `/api/skills` has no workspace to scope to, which is why it was
+// removed.
 test "the_write_routes_are_reachable_only_under_a_workspace" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});

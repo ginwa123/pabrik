@@ -1,18 +1,4 @@
 //! Automatic per-user workspace provisioning.
-//!
-//! Every row in `users` is an account that can log in, and an account with
-//! zero workspaces lands on "No workspace selected": an empty sidebar with no
-//! explanation, behind a single "+ New workspace" button. Provisioning a
-//! workspace named `Default` the moment the account becomes usable removes
-//! that dead end.
-//!
-//! The invariant this module owns is **one insert path**. `POST
-//! /api/workspaces` and the provisioning hook must not be able to drift,
-//! because the create handler's row shape is what makes a workspace usable at
-//! all: `position = MAX(position) + 1` so it lists first, the paired
-//! `workspace_members` row so its own creator can actually see it, and the
-//! attached default project so the sidebar is not empty inside it. So
-//! `workspaces_create.zig` delegates here rather than carrying its own copy.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -33,9 +19,7 @@ pub const ProvisionError = error{
 };
 
 /// An owned pair. `deinit` frees both fields unconditionally, so BOTH must
-/// come from `allocator` — never a comptime string. Freeing `DEFAULT_WORKSPACE_NAME`
-/// (which lives in rodata and was never handed out by the allocator) corrupts
-/// the free-list, and the clobbered memory later reads back as `0xAA` bytes.
+/// come from `allocator` — never a comptime string.
 pub const ProvisionedWorkspace = struct {
     id: []const u8,
     name: []const u8,
@@ -46,11 +30,7 @@ pub const ProvisionedWorkspace = struct {
     }
 };
 
-/// Process-local monotonic counter for workspace_id generation. The
-/// (PID ^ ts_ms)-only generator collided when 2+ workspaces were
-/// created in the same wall-clock millisecond from the same process
-/// — the 2nd and later hit a PRIMARY KEY violation. The atomic counter
-/// guarantees uniqueness within a single process; PIDs distinguish processes.
+/// Process-local monotonic counter for workspace_id generation.
 var workspace_id_counter: std.atomic.Value(u64) = .init(0);
 
 /// `ws_<ms>_<hex>` — ts_nanos (ms) + a process-unique hex suffix.
@@ -71,13 +51,7 @@ pub fn generateWorkspaceId(allocator: std.mem.Allocator, io: std.Io) ![]const u8
 }
 
 /// Insert one workspace row plus the membership row that makes it visible to
-/// its own creator. Both statements share a transaction: a workspace that
-/// exists without the grant that makes it visible is invisible to its own
-/// creator, which reads as "the create succeeded but nothing is there".
-///
-/// `owner` is normalised first because `workspace_members.user_id` is NOT NULL
-/// and `SqliteBackend.exec` binds an empty slice as SQL NULL — binding the raw
-/// "" would fail the insert instead of writing a row.
+/// its own creator.
 pub fn insertWorkspace(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -129,12 +103,6 @@ pub fn createWorkspaceRow(
     // Every workspace has a default project, so a brand-new one shows its
     // default in the Projects list on the very first paint instead of only
     // after a later read fills it in.
-    //
-    // Deliberately NON-FATAL, matching `workspaces_create.zig`: a workspace
-    // with no default is fully recoverable — the next
-    // `GET /api/workspaces/:ws/items` ensures it — whereas failing the whole
-    // create over a home directory we could not resolve would leave the user
-    // with NO workspace at all, which is strictly the worse outcome.
     const defaulted = workspace_default.ensureDefaultProject(allocator, db, id, environment, null);
     if (defaulted) |project| {
         defer project.deinit(allocator);
@@ -147,10 +115,9 @@ pub fn createWorkspaceRow(
     return .{ .id = id, .name = try allocator.dupe(u8, name) };
 }
 
-/// Give `user_id` a workspace of their own, when they have none.
-///
-/// Idempotent: returns null and writes nothing when the user already owns a
-/// workspace. Returns the created row otherwise.
+/// Give `user_id` a workspace of their own, when they have none. Idempotent:
+/// returns null and writes nothing when the user already owns a workspace.
+/// Returns the created row otherwise.
 pub fn ensureDefaultWorkspace(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -162,21 +129,8 @@ pub fn ensureDefaultWorkspace(
     return try createWorkspaceRow(allocator, db, io, DEFAULT_WORKSPACE_NAME, user_id, environment);
 }
 
-/// True when `user_id` has a membership row of its own.
-///
-/// The predicate is deliberately `user_id = ?` and NOT "can this user see any
-/// workspace". Those differ on exactly the case this function exists for: a
-/// real user passes `workspaceVisibilityClause` for every `user_system` member
-/// row, so on an installation that predates `--auth` a brand-new account can
-/// already SEE the machine owner's legacy workspaces without owning any of
-/// them. Being shown someone else's work is not the same as having a place of
-/// your own, so the shared bucket must not suppress provisioning.
-///
-/// A failed read returns false, i.e. this fails OPEN toward creating the
-/// workspace. That is the intended direction: if the check cannot run, the
-/// worst outcome is a spare `Default` the user can delete, whereas failing
-/// closed leaves them exactly where this whole feature exists to save them.
-/// The insert that follows surfaces the real database error if there is one.
+/// True when `user_id` has a membership row of its own. The predicate is
+/// deliberately `user_id = ?` and NOT "can this user see any workspace".
 fn ownsAnyWorkspace(db: *sqlite.SqliteBackend, allocator: std.mem.Allocator, user_id: []const u8) bool {
     var q = db.query(allocator,
         \\SELECT 1 FROM workspace_members WHERE user_id = ? LIMIT 1
@@ -359,10 +313,8 @@ test "ensureDefaultWorkspace: the new workspace lists above the existing ones" {
     defer ctx.deinit();
     const io = ctx.threaded.io();
 
-    // A legacy installation: shared rows already hold the whole position range.
-    // GET /api/workspaces orders by position DESC, so a new workspace sitting
-    // at position 0 would land at the BOTTOM of the sidebar — the brand-new
-    // user's first click target would be the last thing they see.
+    // A legacy installation: shared rows already hold the whole position
+    // range.
     try insertWorkspace(alloc, &ctx.db, "ws_legacy", "Legacy", auth_common.system_user_id);
     try ctx.db.exec(alloc, "UPDATE workspaces SET position = 7 WHERE id = 'ws_legacy'", &[_][]const u8{});
 
@@ -386,8 +338,7 @@ test "ensureDefaultWorkspace: the provisioned workspace already has its default 
 
     // A workspace with no project in it is the SAME dead end one level down:
     // the user lands in "Default" and immediately meets an empty Projects
-    // list. `POST /api/workspaces` already attaches the default project for
-    // this reason, so provisioning has to as well.
+    // list.
     try testing.expectEqual(
         @as(u32, 1),
         try countWorkspacesFmt(
@@ -417,8 +368,7 @@ test "ensureDefaultWorkspace: the legacy shared bucket is not a workspace of the
 
     // An installation that predates `--auth`: the machine owner's workspaces
     // sit in the `user_system` bucket, which `workspaceVisibilityClause` lets
-    // a real user SEE. Seeing them is not owning them — this user still has to
-    // be given a place of their own.
+    // a real user SEE.
     try insertWorkspace(alloc, &ctx.db, "ws_shared", "Shared Legacy", auth_common.system_user_id);
 
     const created = (try ensureDefaultWorkspace(alloc, &ctx.db, io, "user_a", &ctx.env)) orelse

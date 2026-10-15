@@ -1,29 +1,6 @@
 //! Agent-callable tool: `process` — look at, or stop, the processes this
-//! session started with the `command` tool's detached modes.
-//!
-//! ## Why this is a separate tool and not more `command` params
-//!
-//! `command` requires `command`, `cwd` and `timeout`. A "read my dev server's
-//! log" call would have to invent a dummy command and a dummy deadline on every
-//! poll — and the model would have to remember a `pid` AND a `log_path` across
-//! turns, which compaction is exactly the wrong thing for. Here the session is
-//! resolved server-side, `list` answers "what am I running" instead of
-//! "remember a path", and the pid is the only thing the model carries.
-//!
-//! ## The three actions
-//!
-//!   * `read`  — the log output since the LAST read, and nothing before it.
-//!               This is what makes polling a `background_persistence` service
-//!               affordable: a poll with no news costs a few tokens instead of
-//!               re-sending the head of a file that has only grown.
-//!   * `stop`  — kill it, tree included, and mark the row.
-//!   * `list`  — every process this session started, with live liveness and
-//!               each one's `kind`.
-//!
-//! `kind` is the thing the model needs to act sensibly: `job` means it WILL be
-//! told when the process exits (so reading is optional), `service` means it
-//! never will (so reading is the only way to find out anything, and stopping is
-//! the only way to end it).
+//! session started with the `command` tool's detached modes. `command`
+//! requires `command`, `cwd` and `timeout`.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");

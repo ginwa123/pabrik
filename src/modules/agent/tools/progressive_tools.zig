@@ -1,32 +1,12 @@
 //! Agent-callable tools for progressive tool search: `search_tool`,
-//! `view_tool`, `use_tool`.
-//!
-//! The agent does not receive every tool up front. These three let it
-//! browse a CATALOG of tools it does not currently have and enable one for
-//! the rest of the session:
-//!
-//!   search_tool  → query the catalog (regex over name/description)
-//!   view_tool    → read one entry's full parameter schema (read-only)
-//!   use_tool     → enable it for this session (`session_progressive_tool`)
-//!
-//! The catalog is defined in `src/agentic_loop/progressive_catalog.zig`.
-//! The RENDERERS for these three live there too, not here: this module sits
-//! under `src/modules/` and must not import from `src/agentic_loop/`
-//! (that would close an import cycle through the `pabrikcore` root). Keep
-//! this file pure data — AgentTool literals, prompts and input structs —
-//! exactly like the other `src/modules/agent/tools/*.zig` definitions.
-//!
-//! Plan: docs/superpowers/plans/2026-09-12-progressive-tool-search.md
+//! `view_tool`, `use_tool`. The agent does not receive every tool up front.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
 const AgentTool = schemas.AgentTool;
 
 /// Input for `search_tool`. Every field optional: no args returns the first
-/// page of the whole catalog. `query` is a regex unless `literal` is set —
-/// the same matching-mode contract as the `search` agent tool. `limit`/`offset`
-/// page the matches so a big catalog (or a broad pattern) cannot flood the
-/// context window.
+/// page of the whole catalog.
 pub const SearchToolInput = struct {
     query: ?[]const u8 = null,
     literal: ?bool = null,

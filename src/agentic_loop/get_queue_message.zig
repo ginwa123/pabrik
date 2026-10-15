@@ -172,9 +172,8 @@ test "getQueueMessages returns multiple messages in created_at ASC order" {
 
 test "getQueueMessages returns heap-owned slices that survive after the Rows cursor is gone" {
     // The contract says "Caller must free the returned slice". Verify the
-    // returned message/image bytes are independent of the underlying
-    // row buffer — they must remain valid after the Rows cursor is
-    // deinitialized.
+    // returned message/image bytes are independent of the underlying row
+    // buffer — they must remain valid after the Rows cursor is deinitialized.
     var s = try setupDb();
     defer s.db.deinit();
     defer s.threaded.deinit();

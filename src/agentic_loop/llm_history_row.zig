@@ -28,9 +28,6 @@ pub const LLMHistory = struct {
     /// Billed at ~1.25x input rate. 0 for OpenAI rows.
     cache_creation_input_tokens: u32 = 0,
     /// Anthropic-only: cache READ tokens (cache_read_input_tokens).
-    /// Billed at ~0.1x input rate, but already folded into
-    /// `prompt_tokens` + `total_tokens` by Agent.parse_anthropic_stream_chunk.
-    /// 0 for OpenAI rows.
     cache_read_input_tokens: u32 = 0,
     is_input: bool = false,
     is_output: bool = false,
@@ -145,19 +142,6 @@ test "LLMHistory.deinit frees every owned slice on a minimal-init history" {
 test "LLMHistory.deinit skips nullable fields when they are null" {
     // NOTE: `.agent`, `.session_name`, `.tool_name` have non-null defaults
     // ("Agent", "", "") that are string literals, not heap allocations.
-    // `LLMHistory.deinit` unconditionally calls `allocator.free` on each,
-    // so any test that uses the defaults would panic with "Invalid free".
-    // We set them to heap-owned copies here to keep this test focused on
-    // the nullable-fields branch (reasoning_content, parent_session_id,
-    // diffview_*, image_urls, tool_call_id, parent_id).
-    //
-    // TODO: the unconditional `allocator.free` of the default-literal
-    // strings is a latent production bug — see `zig-defer-allocator-free-
-    // on-string-literal` in project memory. Any code path that constructs
-    // an LLMHistory WITHOUT overriding `.agent`/`.session_name`/`.tool_name`
-    // will crash on deinit. `getLLMHistories.zig:73-77` happens to always
-    // heap-dupe these so the production path is safe, but a defensive
-    // fix here would be welcome.
     var h = LLMHistory{
         .id = try testing.allocator.dupe(u8, "x"),
         .session_id = try testing.allocator.dupe(u8, "y"),

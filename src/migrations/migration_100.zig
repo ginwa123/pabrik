@@ -34,19 +34,7 @@ pub const Migration100AddWorkspaceMembers = struct {
         // "which workspaces is this user in".
         try tx.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_workspace_members_user ON workspace_members(user_id, workspace_id)", &[_][]const u8{});
 
-        // Backfill. `user_id` is deliberately NOT NULL because
-        // `SqliteBackend.exec` collapses an empty slice to SQL NULL: an empty
-        // owner must hit the sentinel, not blow up the NOT NULL constraint.
-        // The create path gets the same guarantee from
-        // `auth_common.normaliseOwnerId`.
-        //
-        // Every legacy bucket lands on exactly one member row:
-        //   'user_a'    -> ('ws', 'user_a',     'owner')  private to Alice
-        //   'user_system' -> ('ws','user_system','owner')  shared
-        //   NULL / ''   -> ('ws', 'user_system', 'owner')  shared
-        //
-        // Literals, not binds — so the empty-slice-as-NULL rule does not
-        // apply here, and NULL and '' can be told apart.
+        // Backfill.
         try tx.exec(allocator,
             \\INSERT OR IGNORE INTO workspace_members (workspace_id, user_id, role, joined_at)
             \\SELECT id, COALESCE(NULLIF(user_id, ''), 'user_system'), 'owner', datetime('now')

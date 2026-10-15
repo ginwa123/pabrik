@@ -59,25 +59,8 @@ pub const MigrationManager = struct {
     }
 };
 
-/// Add a column to a table if it doesn't already exist.
-///
-/// SQLite's `ALTER TABLE ... ADD COLUMN` does NOT support
-/// `IF NOT EXISTS` (it errors at prepare time with
-/// "near 'EXISTS': syntax error"). This helper works around that by
-/// checking `pragma_table_info('<table>')` first.
-///
-/// Used by migrations that need to add a column to a table which may
-/// have been created by a newer migration (e.g. migration 020 adds
-/// columns that migration 019's CREATE TABLE already declares — for
-/// fresh-DB users, those columns are already there, and the helper
-/// makes the ADD COLUMN a no-op).
-///
-/// `definition` is the full `ADD COLUMN` clause AFTER the
-/// `ALTER TABLE <table>` prefix, e.g.
-/// `"working_directory TEXT"`. (Keeping the column name in the
-/// definition is intentional — the SQLite parser requires it, and
-/// `definition` is provided by the caller who already knows the
-/// full DDL line.)
+/// Add a column to a table if it doesn't already exist. SQLite's `ALTER TABLE
+/// ...
 pub fn addColumnIfMissing(
     db: pabrikcore.database.DbOrTx,
     allocator: std.mem.Allocator,
@@ -97,10 +80,8 @@ pub fn addColumnIfMissing(
     var q = try db.query(allocator, check_sql, &.{});
     defer q.deinit();
     if ((try q.next())) |row| {
-        // Row returned (column exists) — free the row's values
-        // (allocated via `allocator` per Sqlite.zig:267) before
-        // returning. Without this `defer`, the helper would
-        // leak the row's `[]u8` value slice on every call.
+        // Row returned (column exists) — free the row's values (allocated via
+        // `allocator` per Sqlite.zig:267) before returning.
         row.deinit(allocator);
         return;
     }
@@ -115,13 +96,7 @@ pub fn addColumnIfMissing(
     try db.exec(allocator, ddl, &.{});
 }
 
-/// Drop a column from a table if it exists. SQLite's
-/// `ALTER TABLE ... DROP COLUMN` errors with "no such column: X" if
-/// the column was never there (which is the case for fresh-DB users
-/// when an earlier migration had been edited to remove a redundant
-/// column from its CREATE TABLE). This helper makes the DROP a
-/// no-op for fresh-DB users while still removing the column for
-/// legacy users who do have it.
+/// Drop a column from a table if it exists. SQLite's `ALTER TABLE ...
 pub fn dropColumnIfExists(
     db: pabrikcore.database.DbOrTx,
     allocator: std.mem.Allocator,
@@ -153,29 +128,8 @@ pub fn dropColumnIfExists(
     try db.exec(allocator, ddl, &.{});
 }
 
-/// Rename a column on a table if the old column exists and the new
-/// column does NOT exist. SQLite's `ALTER TABLE … RENAME COLUMN`
-/// requires SQLite >= 3.25; this project ships 3.53.3 so it's always
-/// available.
-///
-/// Probe pattern (same as `addColumnIfMissing` / `dropColumnIfExists`):
-///   1. If the OLD column doesn't exist → no-op (fresh-DB install
-///      that already declares the NEW column name, or a re-run after
-///      the rename succeeded).
-///   2. If the NEW column already exists → no-op (defensive against
-///      a partial-failure recovery scenario where someone manually
-///      renamed the column outside this migration).
-///   3. Otherwise issue the RENAME.
-///
-/// SQLite's RENAME automatically updates:
-///   - All references to the column in views, triggers, and FK
-///     constraints on OTHER tables pointing AT this table (verified
-///     via `pragma_table_info` on the referencing table before/after
-///     the RENAME — see `migration_075_test.zig` Test 4 + Test 9).
-///   - The internal index columns that reference this column. The
-///     index's NAME does NOT auto-update; the caller must handle
-///     index renames separately via `DROP INDEX IF EXISTS old_name;
-///     CREATE INDEX IF NOT EXISTS new_name ON table(new_name);`.
+/// Rename a column on a table if the old column exists and the new column
+/// does NOT exist.
 pub fn renameColumnIfExists(
     db: pabrikcore.database.DbOrTx,
     allocator: std.mem.Allocator,

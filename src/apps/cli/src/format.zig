@@ -1,11 +1,4 @@
 //! Pretty-printer for CLI output.
-//!
-//! Wraps `std.json.Stringify` so the CLI's commands can hand in
-//! either a Zig struct or a `std.json.Value` (parsed via
-//! `parseFromSliceLeaky`) and get a stable indented JSON string
-//! back. All output goes through an `Io.Writer.Allocating`, which
-//! is allocation-only and works cross-platform (no file IO, no
-//! signals).
 
 const std = @import("std");
 
@@ -31,10 +24,9 @@ test "prettyJson: encodes a struct" {
 }
 
 test "prettyJson: encodes a std.json.Value" {
-    // `parseFromSliceLeaky` leaks the inner strings/slices — the
-    // test would crash the debug allocator. Switch to
-    // `parseFromSlice` + an arena so we can free everything in one
-    // shot via `Parsed.deinit`.
+    // `parseFromSliceLeaky` leaks the inner strings/slices — the test would
+    // crash the debug allocator. Switch to `parseFromSlice` + an arena so we
+    // can free everything in one shot via `Parsed.deinit`.
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const parsed = try std.json.parseFromSlice(

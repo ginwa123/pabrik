@@ -1,9 +1,6 @@
 //! Tool executor for `move_element_to_page` — wraps the tool's
 //! `executeMoveElementToPageToString` into the `ToolExecContext` /
 //! `ToolExecResult` shape used by the agentic loop's tool dispatcher.
-//!
-//! Plan: docs/superpowers/plans/2026-08-06-move-element-to-page.md
-//! (Chunk 3, Task 3.2)
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -37,17 +34,8 @@ pub fn execMoveElementToPage(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExec
     };
     defer parsed.deinit();
 
-    // The tool needs the *active* page_id — the agentic loop currently
-    // passes the page context through `ctx.cwd` or a similar channel.
-    // For now, call the model layer directly with the active page id
-    // that the LLM has previously set via set_design_page. The
-    // higher-level orchestration (page-context plumbing) is out of
-    // scope for this tool wrapper.
-    //
-    // TODO(2026-08-06 follow-up): wire ctx.active_page_id through the
-    // ToolExecContext so the tool knows which page the LLM is
-    // currently looking at. For now we require the caller to provide
-    // it via a dedicated field on ctx.
+    // The tool needs the *active* page_id — the agentic loop currently passes
+    // the page context through `ctx.cwd` or a similar channel.
     const active_page_id = ctx.active_page_id;
 
     const inner = move_element_to_page_mod.executeMoveElementToPageToString(

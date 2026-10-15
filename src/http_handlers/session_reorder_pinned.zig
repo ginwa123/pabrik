@@ -1,11 +1,5 @@
-//! `POST /api/llm/session/reorder_pinned`.
-//!
-//! Body: `{ "ordered_ids": ["id1", "id2", ...] }` (top-to-bottom display
-//! order of the pinned subset). Assigns `pinned_position = N-1-i` so the
-//! PINNED section renders in the user's chosen order.
-//!
-//! Idempotent + fail-soft: unpinned/unknown ids are silently skipped by
-//! the `is_pinned = 1` WHERE clause.
+//! `POST /api/llm/session/reorder_pinned`. Body: `{ "ordered_ids": ["id1",
+//! "id2", ...] }` (top-to-bottom display order of the pinned subset).
 
 const std = @import("std");
 const http_response = @import("http_response.zig");

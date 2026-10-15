@@ -1,35 +1,5 @@
-// Functional tests for kanban advanced (Tier 1.3).
-//
-// Zig port of `tests/functional/kanban_advanced_test.py` (same test
-// names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional tests for kanban advanced (Tier 1.3).
-//
-//   Exercises the kanban column / tags / copy-spec HTTP surface that's NOT
-//   covered by `kanban_lifecycle_test.py`:
-//
-//     - PATCH /api/workspaces/:ws/items/:item_id/kanban/columns/:col_id
-//       (rename + position reorder, empty-body rejection, empty-name behavior)
-//     - DELETE /api/workspaces/:ws/items/:item_id/kanban/columns/:col_id
-//       with tasks still assigned → 409 Conflict
-//     - GET  /api/workspaces/:ws/items/:item_id/kanban/tags
-//       (distinct tag set, empty kanban, frequency ordering)
-//     - POST /api/workspaces/:ws/items/:item_id/kanban/copy_spec_from/:source
-//       (merge/append mode preserves existing columns, 404 for nonexistent source)
-//
-//   Each test boots a fresh pabrik (function-scoped fixture).
-//   """
-//
-// NOTE ON THE DROPPED `_create_chat_item` HELPER: the Python module
-// defined one but no test called it, so there is no Zig counterpart. It
-// only created a plain `chat` workspace item — surface already covered
-// by `workspace_lifecycle_test.zig`.
-//
-// PATHS: the Python `_create_chat_item` (the one helper that sent a
-// `path`) used a literal `"/tmp/kanban-adv"`. Nothing in this suite
-// sends a `path`, so nothing here needs `harness.harnessPath`.
+// Functional tests for kanban advanced (Tier 1.3). Zig port of
+// `tests/functional/kanban_advanced_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -59,10 +29,8 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
     });
 }
 
-/// Create a kanban and return the ITEM id (owned).
-///
-/// The response envelope is `{item, columns}`; the id is unwrapped from
-/// `item` here.
+/// Create a kanban and return the ITEM id (owned). The response envelope is
+/// `{item, columns}`; the id is unwrapped from `item` here.
 fn createKanban(h: *Harness, ws_id: []const u8, name: []const u8) ![]u8 {
     const body = try std.fmt.allocPrint(gpa, "{{\"name\":{f}}}", .{std.json.fmt(name, .{})});
     defer gpa.free(body);
@@ -164,10 +132,8 @@ fn listColumns(h: *Harness, ws_id: []const u8, kanban_id: []const u8) ![]Column 
     return columnsFrom(&doc);
 }
 
-/// `POST .../kanban/columns` → the new column (owned).
-///
-/// `position` null omits the key, so the backend appends at
-/// `MAX(position) + 1`.
+/// `POST .../kanban/columns` → the new column (owned). `position` null omits
+/// the key, so the backend appends at `MAX(position) + 1`.
 fn addColumn(h: *Harness, ws_id: []const u8, kanban_id: []const u8, name: []const u8, position: ?i64) !Column {
     var body: std.Io.Writer.Allocating = .init(gpa);
     defer body.deinit();
@@ -196,10 +162,9 @@ fn addColumn(h: *Harness, ws_id: []const u8, kanban_id: []const u8, name: []cons
     return .{ .id = try gpa.dupe(u8, id), .name = try gpa.dupe(u8, doc.str("name") orelse "") };
 }
 
-/// `POST .../tasks` → the new task id (owned).
-///
-/// `tags` is a JSON STRING carrying a JSON array (`'["bug"]'`), which is
-/// why it goes through `encodeJsonString` rather than being interpolated.
+/// `POST .../tasks` → the new task id (owned). `tags` is a JSON STRING
+/// carrying a JSON array (`'["bug"]'`), which is why it goes through
+/// `encodeJsonString` rather than being interpolated.
 fn addTask(
     h: *Harness,
     ws_id: []const u8,
@@ -517,9 +482,8 @@ test "delete_column_with_tasks_returns_409" {
 // Test 5: DELETE column succeeds when empty
 // ============================================================================
 
-// DELETE /columns/:col_id on an EMPTY column → 200 {success, column_id}.
-//
-// This complements `test_delete_column_orphans_tasks` (in
+// DELETE /columns/:col_id on an EMPTY column → 200 {success, column_id}. This
+// complements `test_delete_column_orphans_tasks` (in
 // kanban_lifecycle_test.py) by pinning the SUCCESS path.
 test "delete_empty_column_succeeds" {
     try harness.requirePabrikBin(io, gpa);

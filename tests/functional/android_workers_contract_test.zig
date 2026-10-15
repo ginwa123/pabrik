@@ -1,56 +1,6 @@
 // Wire-contract test for the native Android "worker is running" indicator.
-//
-// Zig port of `tests/functional/android_workers_contract_test.py` (same
-// test names, same order).
-//
-// The Android client's loading indicator (`src/apps/android_mobile/.../worker/`)
-// is driven entirely by the backend's `worker` table: `GET /api/workers` for
-// the bootstrap and the `worker_created` / `worker_updated` / `worker_deleted`
-// SSE frames for everything after. Those frames now arrive on the app's ONE
-// shared connection, `?channels=llm,queue,sessions,workers` (see
-// `src/apps/android_mobile/.../chat/SseBus.kt`) — `WorkerActivityViewModel` is
-// the second subscriber to it rather than the owner of a second socket. Nothing
-// else in this repo's TypeScript reads the same two shapes for the *phone*, so
-// a rename or a re-shape here is invisible to the desktop tests and shows up
-// only as a spinner that never appears — or, worse, one that never goes away.
-//
-// Two assumptions in the Kotlin are load-bearing and are what this file exists
-// to pin:
-//
-//   1. `session_id` is EMPTY on `worker_updated` and `worker_deleted`; the
-//      session is in the `id` slot. `decodeChatFrame` resolves
-//      `session_id || id`. Read `session_id` alone and a `deleted` removes
-//      nothing, so the spinner is stuck on for a run that finished.
-//   2. `status` and `is_running` are hardcoded per row and carry no
-//      information. `WorkerApi.parseRunningSessionIds` projects the *presence*
-//      of a row down to the id set. Parse `is_running` instead and the client
-//      is right by accident until the backend stops hardcoding it.
-//   3. "Presence" means presence *of a row that is not cancelled*. Stopping a
-//      run does not delete its row -- `POST /api/llm/session/:session/stop`
-//      sets `worker.cancelled = 1` and the loop reads it back to break out of
-//      itself -- so `GET /api/workers` filters `cancelled = 0` itself. Without
-//      that filter a stopped run was reported as `status: "running"` and a phone
-//      keyed a spinner on it for as long as the row lived, which is how a
-//      client could claim an agent was working when nothing was. The filter
-//      itself is pinned by the in-memory-SQLite tests in
-//      `src/http_handlers/worker_list.zig`; the reason it cannot be
-//      re-derived from the wire here is that the stub LLM finishes a run
-//      inside a millisecond, so there is no window in which a stop is
-//      observable over HTTP.
-//
-// TWO PORTING NOTES:
-//
-//   * The Python suite shared ONE booted binary across the module
-//     (`@pytest.fixture(scope="module")`). Zig has no module fixture, so
-//     each test boots its own harness — the same shape every other ported
-//     suite uses. Each boot also gets its own random port from the harness's
-//     20000-32000 range, so 8081 is never touched.
-//
-//   * Python's `_open_sse` pumped frames through a `queue.Queue` on a
-//     background thread. The port keeps the same shape (reader thread,
-//     mutex-guarded event list, `stop`/`done` handshake) but drains rather
-//     than polls where it can: an SSE stream never ends, so a `queue.get`
-//     with a timeout would have to become a sleep loop anyway.
+// Zig port of `tests/functional/android_workers_contract_test.py` (same test
+// names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -74,10 +24,6 @@ fn nowMs() i64 {
 }
 
 /// One parsed SSE frame: the `event:` name plus the joined `data:` lines.
-///
-/// Multi-line `data:` frames are joined with a newline, because the server
-/// pretty-prints its payloads with `indent_4` — taking only the first `data:`
-/// line yields a JSON parse error for every worker event.
 const SseEvent = struct {
     name: []u8,
     data: []u8,
@@ -125,10 +71,6 @@ const SseStream = struct {
 
     /// A DEEP COPY of the frames collected so far. Caller owns the slice
     /// (free it with `freeSnapshot`).
-    ///
-    /// The copy has to be deep: `s.events` is freed by `deinit`, so a
-    /// shallow copy would hand the caller slices whose storage the stream
-    /// then frees — a use-after-free that reads as a garbage frame name.
     fn snapshot(self: *SseStream) ![]SseEvent {
         self.mutex.lockUncancelable(io);
         defer self.mutex.unlock(io);
@@ -178,11 +120,8 @@ const SseStream = struct {
         }
     }
 
-    /// Pop the FIRST frame named `want`, discarding everything before it,
-    /// and RETURN it (ownership passes to the caller). Python's
-    /// `_drain_until(events_q, lambda e, d: e == "worker_deleted", 8.0)`
-    /// followed by `_, data = found` — which needs the payload, so this
-    /// variant hands the frame over instead of swallowing it.
+    /// Pop the FIRST frame named `want`, discarding everything before it, and
+    /// RETURN it (ownership passes to the caller).
     fn drainUntilMatchingKeep(self: *SseStream, want: []const u8, timeout_ms: i64) ?SseEvent {
         const deadline = nowMs() + timeout_ms;
         while (true) {
@@ -256,14 +195,8 @@ fn openSse(port: u16, channels: []const u8) !*SseStream {
     return s;
 }
 
-/// Read SSE frames from `s` until `stop` is set, the stream ends, or an
-/// error occurs. Runs on its own thread.
-///
-/// The SSE grammar (per `unified_events_sse.zig`'s `forwardToClients`):
-///
-///     event: <name>\n
-///     data: <line>\n
-///     \n            <- blank line dispatches the frame
+/// Read SSE frames from `s` until `stop` is set, the stream ends, or an error
+/// occurs. Runs on its own thread.
 fn readEvents(s: *SseStream) void {
     defer s.done.store(true, .release);
 
@@ -280,9 +213,7 @@ fn readEvents(s: *SseStream) void {
 
     while (!s.stop.load(.acquire)) {
         // One LINE, not the whole stream — that is what makes the read
-        // incremental. `takeDelimiter` (NEVER `takeDelimiterExclusive`)
-        // consumes the delimiter and maps clean EOF to `null`, which is
-        // Python's `readline()` returning `b""`.
+        // incremental.
         const raw_line_opt = reader.takeDelimiter('\n') catch |err| {
             const msg = switch (err) {
                 error.ReadFailed => "read failed",
@@ -339,10 +270,9 @@ fn readEvents(s: *SseStream) void {
     }
 }
 
-/// Release a blocked `readEvents` by shutting the socket's read side.
-///
-/// Without this the reader thread parks in `readv` forever on an SSE stream
-/// that never ends.
+/// Release a blocked `readEvents` by shutting the socket's read side. Without
+/// this the reader thread parks in `readv` forever on an SSE stream that
+/// never ends.
 fn releaseReader(s: *SseStream) void {
     s.stop.store(true, .release);
     s.req.connection.?.stream_reader.stream.shutdown(io, .recv) catch {};
@@ -449,11 +379,6 @@ fn idsContain(hay: []const u8, needle: []const u8) bool {
 }
 
 /// Python `_read_workers_until_populated`: poll until a row shows up.
-///
-/// A queued turn registers its worker and the loop deregisters it again
-/// within a fraction of a second, so a single read has a real chance of
-/// landing in between. Returning the last (empty) payload on timeout keeps
-/// the caller's assertion honest instead of skipping the test.
 fn readWorkersUntilPopulated(h: *Harness, timeout_ms: i64) !OwnedDoc {
     const deadline = nowMs() + timeout_ms;
     var last = try getWorkers(h, &.{.{ .name = "limit", .value = "50" }});
@@ -467,10 +392,9 @@ fn readWorkersUntilPopulated(h: *Harness, timeout_ms: i64) !OwnedDoc {
     return last;
 }
 
-/// `POST /api/llm/session {"queue_message": ..., "allowed_tools": ""}`.
-///
-/// Used only to make a worker register/deregister; the run itself is
-/// answered by the harness's stub LLM.
+/// `POST /api/llm/session {"queue_message": ..., "allowed_tools": ""}`. Used
+/// only to make a worker register/deregister; the run itself is answered by
+/// the harness's stub LLM.
 fn queueLlmRun(h: *Harness, message: []const u8) !void {
     const body = try std.json.Stringify.valueAlloc(gpa, .{
         .queue_message = message,
@@ -485,17 +409,9 @@ fn queueLlmRun(h: *Harness, message: []const u8) !void {
     defer r.deinit();
 }
 
-/// Open the workers SSE channel, run `body` with the reader already
-/// spawned, then release + join + free the stream, and return whatever the
-/// body produced.
-///
-/// Zig has no closures, so `body` is a named fn that receives the harness
-/// explicitly — it needs it to queue the LLM run the frames describe. The
-/// return type is whatever that fn returns, so a collected frame list can
-/// come back out of the reader's lifetime without a capture.
-///
-/// The two defers are ordered LIFO on purpose: the reader must be stopped
-/// and joined BEFORE the stream's storage is freed.
+/// Open the workers SSE channel, run `body` with the reader already spawned,
+/// then release + join + free the stream, and return whatever the body
+/// produced.
 fn withWorkerStream(
     comptime T: type,
     h: *Harness,
@@ -515,9 +431,6 @@ fn withWorkerStream(
 
 /// The presence projection for ONE row: `session_id` preferred, `id` as the
 /// fallback, empty when neither is usable. Borrows `obj`.
-///
-/// Python: `row.get("session_id") or row.get("id") or ""`, then
-/// `_running_ids({"workers": [row]})`.
 fn projectedId(obj: std.json.ObjectMap) []const u8 {
     if (obj.get("session_id")) |v| switch (v) {
         .string => |s| {
@@ -537,10 +450,7 @@ fn projectedId(obj: std.json.ObjectMap) []const u8 {
 // ============================================================================
 
 // `workers` + `count`, and an array even with nothing running.
-//
-// `WorkerApi.parseRunningSessionIds` reads `workers` only. A payload that
-// carried just `count: 0` used to be a null-array crash on the phone's first
-// frame, so the empty case is asserted explicitly rather than left implicit.
+// `WorkerApi.parseRunningSessionIds` reads `workers` only.
 test "workers_list_carries_the_envelope_the_android_client_reads" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -560,18 +470,9 @@ test "workers_list_carries_the_envelope_the_android_client_reads" {
     try testing.expectEqual(@as(i64, @intCast(rows.items.len)), count);
 }
 
-// Every row must carry `id`, and `session_id` must be a string or null.
-//
-// `id` is the fallback the client uses whenever `session_id` is empty, so a
-// row missing it entirely is a session the client cannot key a spinner on.
-//
-// Skips when no run is in flight. The harness answers a queued turn with its
-// stub LLM, so the worker row is registered and deregistered inside a single
-// millisecond — there is no window in which `/api/workers` is reliably
-// non-empty here, and a poll loop just burns the timeout. Against a real
-// provider this test has teeth; against the stub the equivalent contract is
-// covered by `worker_frames_always_carry_the_id_the_android_client_falls_back_to`,
-// which does observe populated frames.
+// Every row must carry `id`, and `session_id` must be a string or null. `id`
+// is the fallback the client uses whenever `session_id` is empty, so a row
+// missing it entirely is a session the client cannot key a spinner on.
 test "workers_list_keeps_the_id_fields_the_android_client_reads" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -632,11 +533,8 @@ test "workers_list_keeps_the_id_fields_the_android_client_reads" {
 }
 
 // `status`/`is_running` are literals — which is why presence is the signal.
-//
 // This is not an assertion that the backend is right; it pins the behaviour
-// the Kotlin parser deliberately ignores. If a future change makes these
-// fields meaningful, this test fails and `WorkerApi.parseRunningSessionIds`
-// gets revisited rather than left quietly wrong.
+// the Kotlin parser deliberately ignores.
 test "every_returned_worker_row_reports_itself_as_running" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -693,10 +591,6 @@ test "every_returned_worker_row_reports_itself_as_running" {
 }
 
 // `limit` caps the list, and the client's default is the server's default.
-//
-// `WorkerApi.WORKERS_PAGE_LIMIT` is 50 because that is the server's
-// default; if one side changes without the other, a busy server silently
-// truncates the bootstrap and the omitted sessions never get a spinner.
 test "workers_limit_is_honoured" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -738,28 +632,8 @@ test "workers_limit_is_honoured" {
 // ============================================================================
 // GET /api/workers?session_id=…
 // ============================================================================
-//
-// The chat screen asks about ONE session, not the whole list: `limit=50`
-// truncates server-side and drops the tail, so a run past the cap answers
-// "not running" while it is very much running — and
-// `ChatViewModel.settleStreaming` acts on that answer by retiring a streaming
-// placeholder.
 
 // An idle session answers `workers: []`, never an absent field.
-//
-// `ChatClient.isSessionRunning` asks about ONE session rather than reading
-// the global list, because `limit=50` truncates server-side and drops the
-// tail. That the filter is honoured is pinned where it can be pinned with
-// teeth, by the in-memory-SQLite test `a session_id filter composes with the
-// cancelled filter` in `src/http_handlers/worker_list.zig`.
-//
-// What is pinned HERE, and only here, is the *envelope* the Kotlin parses:
-// `WorkerApi.parseRunningSessionIds` returns null when the array is missing,
-// and `ChatClient` turns that into `ChatResult.Unavailable` — which every
-// caller reads as "answer nothing, change nothing". That is the right
-// behaviour for an envelope it does not recognise, but it would silently
-// disable the reconciliation in `ChatViewModel.settleStreaming` if the server
-// ever stopped sending the field.
 test "workers_by_session_id_returns_an_empty_array_not_a_missing_key" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -790,11 +664,6 @@ test "workers_by_session_id_returns_an_empty_array_not_a_missing_key" {
 // ============================================================================
 
 // `channels=workers` returns 200 SSE and a `connected` frame.
-//
-// The Android client subscribes to this channel on its own connection, and
-// the pump treats any non-2xx handshake as terminal — it reports the failure
-// and never retries. A rejected handshake is therefore a spinner that never
-// lights up, for the life of the process, with no error on screen.
 test "workers_channel_handshake" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -825,13 +694,8 @@ test "workers_channel_handshake" {
 }
 
 // One connection, four channels, and a typo in it is silent.
-//
 // `SseChannels.eventsPath()` is `llm,queue,sessions,workers` and it is the
-// app's only subscription. `parseChannels` rejects an unknown token and the
-// handler's only response is to close the stream, so a channel-list typo is a
-// 200 that never emits `connected` — a spinner that never lights up and a
-// chat that never updates, with nothing in any log. Each channel is also
-// checked on its own so a failure names which one broke.
+// app's only subscription.
 test "the_shared_channel_set_carries_everything_the_app_needs" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -863,23 +727,8 @@ test "the_shared_channel_set_carries_everything_the_app_needs" {
     }
 }
 
-// `id` is always present, and `session_id` never disagrees with it.
-//
-// This is the invariant `decodeChatFrame` actually depends on. It resolves
-// `session_id || id`, because the two emitters disagree about which field to
-// populate:
-//
-//   * `updateWorker` (the upsert that emits `created`/`updated`) fills both.
-//   * `updateWorkerActivityWithDescription` emits `updated` with
-//     `session_id = ""` and the session in `id`.
-//   * all three delete emitters emit `deleted` with `session_id = ""` and
-//     the session in `id`.
-//
-// Asserting "every frame has an empty session_id" would be wrong, and
-// asserting "the upsert fills both" would only describe one of the three
-// paths. What must hold for the fallback to be correct is that `id` is always
-// there and that the two fields never name different sessions — which is
-// exactly the condition under which `session_id || id` is safe.
+// `id` is always present, and `session_id` never disagrees with it. This is
+// the invariant `decodeChatFrame` actually depends on.
 test "worker_frames_always_carry_the_id_the_android_client_falls_back_to" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -969,11 +818,6 @@ test "worker_frames_always_carry_the_id_the_android_client_falls_back_to" {
 }
 
 // The delete path specifically: `session_id` is `""`, not merely absent.
-//
-// This is the one frame where reading `session_id` alone is silently wrong —
-// the removal resolves to no session, the set never loses the entry, and the
-// spinner stays lit for a run that finished. Only observed when a delete
-// actually lands in the window; the emit path needs a live agentic loop.
 test "a_worker_delete_frame_ships_an_empty_session_id" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -1024,10 +868,6 @@ test "a_worker_delete_frame_ships_an_empty_session_id" {
 }
 
 // `worker_created` / `worker_updated` / `worker_deleted`, and nothing else.
-//
-// A rename on the server side reaches the phone as a permanently empty
-// spinner, because `decodeChatFrame`'s `else -> null` drops anything it does
-// not recognise and the stream carries no error.
 test "worker_frames_use_the_event_names_the_android_client_decodes" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});

@@ -1,11 +1,5 @@
-//! Data model for the `workspace_items` entity table.
-//!
-//! Each row is a project belonging to one `workspaces.id`. The `item_type`
-//! column has no CHECK constraint, so unknown values are stored verbatim.
-//!
-//! Schema: Migration 028 (`create_workspace_items`) + Migration 032
-//! (add `name` + `path`) + Migration 045 (add `position`) + Migration 094
-//! (add `is_default`).
+//! Data model for the `workspace_items` entity table. Each row is a project
+//! belonging to one `workspaces.id`.
 
 const std = @import("std");
 
@@ -18,13 +12,8 @@ item_type: []u8,
 created_at: ?[]u8 = null,
 updated_at: ?[]u8 = null,
 name: ?[]u8 = null,
-/// Absolute filesystem path the workspace item points at. NULL for
-/// legacy rows and for items created before Migration 025.
-///
-/// For a default project this is the server user's home directory, which
-/// is what makes a chat created inside it run with $HOME as its cwd —
-/// `session_create.zig::resolveCwdFromTaskOrItem` falls back to this
-/// column when the task has no cwd of its own.
+/// Absolute filesystem path the workspace item points at. NULL for legacy
+/// rows and for items created before Migration 025.
 path: ?[]u8 = null,
 /// Drag-and-drop sort key (Migration 045). Higher = higher in the
 /// workspace's item list.
@@ -89,11 +78,6 @@ pub fn clone(self: *const Self, allocator: std.mem.Allocator) !Self {
 // ===== Tests merged from models_test.zig (2026-09-29 flatten) =====
 
 // Sanity tests for the `src/models/` entity models.
-//
-// Verifies that every model file compiles, that `init` populates the
-// struct as expected, that `deinit` releases its strings, and that
-// external callers can read the struct's fields directly (matching
-// the file-level struct pattern requested by the user).
 
 const testing = std.testing;
 

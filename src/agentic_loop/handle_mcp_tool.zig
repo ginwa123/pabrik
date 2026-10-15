@@ -9,10 +9,9 @@ const config_mod = pabrik_mod.config;
 const mcp_stdio = pabrik_mod.mcp_stdio;
 const mcp_http = pabrik_mod.mcp_http;
 
-/// Handle an MCP tool call by forwarding it to the MCP server
-///
-/// IMPORTANT: This function allocates directly from parent_allocator to avoid
-/// nested arena issues that can cause @memcpy aliasing errors.
+/// Handle an MCP tool call by forwarding it to the MCP server IMPORTANT: This
+/// function allocates directly from parent_allocator to avoid nested arena
+/// issues that can cause @memcpy aliasing errors.
 pub fn handle_mcp_tool_run(
     parent_allocator: std.mem.Allocator,
     logger: *logger_mod.Logger,
@@ -69,10 +68,7 @@ pub fn handle_mcp_tool_run(
     };
 
     // MCP server toggle: reject calls to explicitly-disabled servers AFTER
-    // config lookup but BEFORE any spawn/connect. Only `.bool false`
-    // rejects — a missing or non-bool `enabled` means enabled (backward
-    // compat). The caller wraps this exactly like the unknown-server error
-    // ("MCP tool <name> failed: MCPServerDisabled").
+    // config lookup but BEFORE any spawn/connect.
     if (server_obj.get("enabled")) |enabled_val| {
         if (enabled_val == .bool and !enabled_val.bool) {
             logger.warnFmt("[MCP] Server '{s}' is disabled", .{server_name});
@@ -84,10 +80,9 @@ pub fn handle_mcp_tool_run(
     // precedence when both are present (the parser already rejects that
     // combo, but the runtime is defensive).
     if (server_obj.get("command")) |_| {
-        // 60s default per-call budget for tools/call (vs 30s for
-        // tools/list — mid-loop tool calls can legitimately take
-        // longer because the work itself is unbounded). Caller can
-        // pass a tighter deadline via a future v2 config field.
+        // 60s default per-call budget for tools/call (vs 30s for tools/list —
+        // mid-loop tool calls can legitimately take longer because the work
+        // itself is unbounded).
         const deadline_ns: u64 = 60 * std.time.ns_per_s;
         return callViaStdio(allocator, logger, server_name, actual_tool_name, tool_call.function.arguments, server_obj, deadline_ns);
     }
@@ -127,12 +122,9 @@ pub fn handle_mcp_tool_run(
     }
     const custom_headers = std_header_buf[0..header_count];
 
-    // Get or build a cached HTTP client for this server. The process-
-    // global registry keeps the client alive for the process lifetime
-    // (the arena memory is freed at process exit). A future v2 may
-    // wire main.zig's shutdown hook to call HttpRegistry.deinitGlobal() —
-    // for now, same pattern as mcp_stdio.StdioRegistry.
-    // Via the singleton struct (see root.zig `mcpHttpRegistry`).
+    // Get or build a cached HTTP client for this server. The process- global
+    // registry keeps the client alive for the process lifetime (the arena
+    // memory is freed at process exit).
     const http_registry = pabrik_mod.mcpHttpRegistry(allocator);
     const http_client = http_registry.getOrConnect(
         server_name,
@@ -186,20 +178,12 @@ pub fn handle_mcp_tool_run(
 }
 
 // ============================================================================
-// stdio transport: spawn a child process per server, send framed
-// JSON-RPC over its stdin, read the framed response from stdout.
-// ============================================================================
+// stdio transport: spawn a child process per server, send framed JSON-RPC
+// over its stdin, read the framed response from stdout.
 
-/// Call a tool via the stdio transport. Spawns (or reuses) a child
-/// process keyed by `server_name`, sends a framed `tools/call` JSON-RPC
-/// body, and reads the framed response. Returns the extracted text
-/// content (the `result.content[0].text` field, freshly allocated).
-///
-/// `deadline_ns` is forwarded to both send and recv. On
-/// `SendTimeout` / `RecvTimeout`, the lease is marked stale
-/// so the next `acquire` for `server_name` spawns a
-/// fresh child. Self-healing: a single hung tool call doesn't
-/// permanently brick subsequent calls.
+/// Call a tool via the stdio transport. Spawns (or reuses) a child process
+/// keyed by `server_name`, sends a framed `tools/call` JSON-RPC body, and
+/// reads the framed response.
 fn callViaStdio(
     allocator: std.mem.Allocator,
     logger: *logger_mod.Logger,
@@ -246,11 +230,9 @@ fn callViaStdio(
     var attempt: u8 = 0;
     var resp: []u8 = undefined;
     var resp_owned = false;
-    // `resp` is allocated from the client's arena, which dies with the
-    // child — so the lease that guards it has to outlive the retry loop
-    // (the parse below runs after it). A per-attempt `defer` releases on
-    // every retry / error path; the successful attempt parks its lease
-    // in `held` instead, and the function-scope defer hands it back.
+    // `resp` is allocated from the client's arena, which dies with the child
+    // — so the lease that guards it has to outlive the retry loop (the parse
+    // below runs after it).
     var held: ?mcp_stdio.Lease = null;
     defer {
         if (held) |*h| h.release();
@@ -299,12 +281,9 @@ fn callViaStdio(
         break;
     }
     if (!resp_owned) return last_err;
-    // NOTE: no errdefer free of `resp` here — it is owned by the client's
-    // own arena (client.allocator()), never transferred to the caller
-    // (every return below dupes into `allocator`), so that arena
-    // reclaims it. Freeing via `allocator` would be an invalid free under
-    // DebugAllocator (same bug class as fetchToolsFromServerStdio's
-    // `defer allocator.free(resp)`).
+    // NOTE: no errdefer free of `resp` here — it is owned by the client's own
+    // arena (client.allocator()), never transferred to the caller (every
+    // return below dupes into `allocator`), so that arena reclaims it.
 
     // Same JSON extraction as the HTTP branch: pull `result.content[0].text`.
     var parse_arena = std.heap.ArenaAllocator.init(allocator);
@@ -339,11 +318,9 @@ fn callViaStdio(
         logger.warnFmt("MCP tool result too large: {} bytes, truncating to {} bytes", .{ tool_result.len, MAX_TOOL_RESULT_BYTES });
         const truncated = try std.fmt.allocPrint(allocator, "{s}\n\n[truncated: original was {} bytes, showing first {} bytes]", .{ tool_result[0..MAX_TOOL_RESULT_BYTES], tool_result.len, MAX_TOOL_RESULT_BYTES });
         allocator.free(tool_result);
-        // resp is arena-allocated (per-iteration arena in workflow.zig),
-        // so it will be freed at iteration end — no need to free here.
-        // But if this is called outside workflow (e.g. Test), free it.
-        // We don't free resp here to avoid double-free with errdefer;
-        // the arena handles it. Just return truncated.
+        // resp is arena-allocated (per-iteration arena in workflow.zig), so
+        // it will be freed at iteration end — no need to free here. But if
+        // this is called outside workflow (e.g.
         return truncated;
     }
     return tool_result;
@@ -355,9 +332,7 @@ fn callViaStdio(
 
 /// Build a JSON-RPC `tools/call` request body for a given tool name + args.
 /// Returns a freshly-allocated slice the caller owns (frees with allocator).
-///
-/// This is the SHAPE the agent sends over the wire — same for HTTP and
-/// stdio. The transport just decides how to deliver it.
+/// This is the SHAPE the agent sends over the wire — same for HTTP and stdio.
 pub fn buildToolCallRequestBody(
     allocator: std.mem.Allocator,
     tool_name: []const u8,
@@ -398,12 +373,8 @@ test "buildToolCallRequestBody: empty arguments is a valid empty object" {
 
 test "handle_mcp_tool_run: disabled server returns MCPServerDisabled (no spawn)" {
     // MCP server toggle: an explicit `"enabled": false` entry must be
-    // rejected AFTER config lookup but BEFORE any spawn/connect — the
-    // same shape as the existing unknown-server error path (a Zig error
-    // the caller wraps as "MCP tool <name> failed: <err>").
-    //
-    // The bogus command proves no spawn is attempted: a spawn attempt
-    // would fail with FailedToCallMCPServer, not MCPServerDisabled.
+    // rejected AFTER config lookup but BEFORE any spawn/connect — the same
+    // shape as the existing unknown-server error path (a Zig error the caller
     const json_text =
         \\{"off": {"command": "/no/such/binary/should/exist/xyzzy", "args": [], "enabled": false}}
     ;

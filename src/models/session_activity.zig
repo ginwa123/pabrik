@@ -1,9 +1,6 @@
-//! Data model for the `session_activity` entity table.
-//!
-//! Append-only timeline of one-line "what did the agent just do?"
-//! entries, surfaced in the ChatView's "Thinking..." timeline panel.
-//!
-//! Schema: Migration 068 (`add_session_activity`).
+//! Data model for the `session_activity` entity table. Append-only timeline
+//! of one-line "what did the agent just do?" entries, surfaced in the
+//! ChatView's "Thinking..." timeline panel.
 
 const std = @import("std");
 
@@ -11,10 +8,9 @@ pub const EntityId = []u8;
 
 id: EntityId,
 session_id: []u8,
-/// One-line description like
-/// `"Implementing | Adding system-deps probe to custom_http_client/build.zig"`.
-/// Never empty — callers MUST supply a non-empty description on
-/// INSERT (the column is NOT NULL with no DEFAULT).
+/// One-line description like `"Implementing | Adding system-deps probe to
+/// custom_http_client/build.zig"`. Never empty — callers MUST supply a
+/// non-empty description on INSERT (the column is NOT NULL with no DEFAULT).
 description: []u8,
 created_at: []u8,
 
@@ -55,11 +51,6 @@ pub fn clone(self: *const Self, allocator: std.mem.Allocator) !Self {
 // ===== Tests merged from models_test.zig (2026-09-29 flatten) =====
 
 // Sanity tests for the `src/models/` entity models.
-//
-// Verifies that every model file compiles, that `init` populates the
-// struct as expected, that `deinit` releases its strings, and that
-// external callers can read the struct's fields directly (matching
-// the file-level struct pattern requested by the user).
 
 const testing = std.testing;
 

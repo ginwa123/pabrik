@@ -1,28 +1,6 @@
 //! Per-session resolution of the `web_search` provider map.
-//!
-//! ## Why this file exists
-//!
 //! `ToolExecContext.config` (`src/agentic_loop/tools.zig:101`) is the
-//! `LlmConfig` SINGLETON. In `--auth` mode that singleton never sees what
-//! the user saved: the config PUT returns early in the auth branch and does
-//! not swap it — its own comment says so (`pabrik_config_put.zig:522-538`,
-//! "the global singleton is NOT swapped (config is per-user)").
-//!
-//! So a tool reading `ctx.config.web_search` would find it EMPTY for every
-//! auth-mode user, while Settings saves perfectly. The symptom is the worst
-//! kind: the UI says yes, the tool says no, and nothing errors.
-//!
-//! `skill_evals_config.zig` exists for exactly this reason — its header
-//! records the original incident: *"the Settings checkbox reads the
-//! database (true) while the tool reads the singleton (false), so the toggle
-//! looks like it works and every call refuses."* Copying that shape is
-//! deliberate: a second hand-rolled resolution would be a second place to
-//! get the auth-mode branch wrong.
-//!
-//! **One resolver, two callers.** `list_web_search_providers` and
-//! `web_search` both read through here. Two sources would mean the model is
-//! shown provider A and then dispatched to provider B — the same class of
-//! bug as the Skill Evals trap, one layer over.
+//! `LlmConfig` SINGLETON.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -39,12 +17,6 @@ const UserConfigHolder = struct {
 };
 
 /// The providers in force for `session_id`.
-///
-/// Returns null in every case where the database is not authoritative:
-/// file mode (the PUT swaps the singleton there), no live singleton, a
-/// session with no owner, a user who never saved settings, or a config that
-/// failed to parse. Each of those falls back to the singleton, so the
-/// failure mode is the pre-existing one rather than a new breakage.
 pub fn resolve(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -63,15 +35,6 @@ pub fn resolve(
 }
 
 /// The providers stored for one user, or null when they have none.
-///
-/// Narrow parse (not a full `forOwner` delegate like skill_evals): the map
-/// owns heap strings, so returning it borrows nothing from a temp full
-/// config — cloning it out would add a deep-copy for no behaviour gain.
-/// Owner lookup is still shared via `session_llm_config.sessionOwner`.
-///
-/// Split from `resolve` so it can be tested without the process-global
-/// singleton — there is no `clearSingleton`, so a test that installed one
-/// would leak into every other test in the binary.
 pub fn resolveForOwner(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -125,10 +88,6 @@ fn deinitDb(t: *TestCtx, alloc: std.mem.Allocator) void {
 }
 
 /// Create a user + a session owned by them, and store a config document.
-///
-/// `password_hash` is a NOT NULL column, and `config_json` is written
-/// directly the way `skill_evals_config`'s own `insertUser` does it — going
-/// through `saveRaw` here would be a second write path to keep in step.
 fn seedUser(t: *TestCtx, alloc: std.mem.Allocator, user_id: []const u8, config: ?[]const u8) !void {
     t.db.exec(alloc,
         \\INSERT INTO users (id, email, password_hash, config_json)

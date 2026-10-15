@@ -1,37 +1,5 @@
-// Functional regression: a failed auto-name call must not strand the
-// session as "New Chat" forever.
-//
-// Zig port of `tests/functional/session_auto_name_retry_test.py` (same
-// test names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """
-//   Functional regression: a failed auto-name call must not strand the
-//   session as "New Chat" forever. [...] The fix gates the attempt on
-//   "the session still has a placeholder name" instead of on the loop
-//   counter, which makes the call both idempotent and retryable. [...]
-//   Port selection is the harness's (random 40000..60000), never 8081.
-//   """
-//
-// THE STUB LLM is an `Io.net` server on a background thread, the same
-// shape `llm_test_test.zig` uses, with one difference worth naming: the
-// response is DYNAMIC per request, not a fixed payload. The handler
-// classifies each body the way the Python stub did — a request carrying
-// `SessionNameGenerator` (or no `"tools"` key plus `SessionName`) is the
-// session-name call, everything else is the main agent turn — and answers
-// the name call with 503 once (or always, when `name_always_fails`) and
-// the agent turn with a tool-call or plain-text SSE round.
-//
-// Shutdown needs the same non-obvious step as upstream: `Server.accept`
-// is a blocking `accept4(2)` and closing a listening socket does not
-// wake a thread already blocked in `accept` on it, so `Stub.deinit` sets
-// the stop flag and then makes ONE throwaway self-connect to wake it.
-//
-// THE DB READ goes through the `sqlite3` CLI, not a linked SQLite —
-// this package declares no dependency on `pabrikcore` or any C library
-// (see `tests/functional/build.zig`), the same idiom
-// `background_processes_api_test.zig` uses for its seed rows.
+// Functional regression: a failed auto-name call must not strand the session
+// as "New Chat" forever.
 
 const std = @import("std");
 const testing = std.testing;
@@ -572,12 +540,7 @@ test "existing_name_is_never_overwritten_by_the_generator" {
     {
         // Best-effort wait, mirroring the Python original: its
         // `_wait_for_name(..., GENERATED_NAME, 60.0)` return value is
-        // DISCARDED (no assert). Turn 1's name call is the stub's first,
-        // so it 503s and the placeholder stays — the retry is CROSS-turn
-        // (workflow.zig: one attempt per worker run), so nothing can land
-        // here until turn 2. Failing when the name is absent would assert
-        // a retry the product deliberately does not do; the test's teeth
-        // are below (the hand rename sticks, the generator never re-runs).
+        // DISCARDED (no assert).
         const deadline = nowMs() + 60_000;
         while (nowMs() < deadline) {
             var n = try readNames(&h);

@@ -1,21 +1,5 @@
 //! `execWebSearch` — bridges the agentic loop's `ToolCall` to the search
 //! tool.
-//!
-//! 1. Parse the LLM's `{provider, curl}` arguments.
-//! 2. Resolve the providers for THIS session (never `ctx.config` — in
-//!    `--auth` mode that singleton does not hold what the user saved; see
-//!    `web_search_config.zig` for the full story).
-//! 3. Hand off to `execute_web_search`, which owns the pin check and the
-//!    `{key}` substitution.
-//! 4. Re-wrap so a payload carrying `error` reaches the model as
-//!    `success=false`.
-//!
-//!    NOTE: `wrapToolOutput` HARD-CODES `"data": null` on the failure path
-//!    (`tools_wrap_output.zig:60-66`) — it ignores the `data` argument
-//!    entirely. So the full envelope is passed as the ERROR MESSAGE
-//!    instead, which is the only channel that survives to the model. That
-//!    matters: D8's fallback depends on the model reading
-//!    `other_providers`, and with a bare sentence it could not retry.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -76,12 +60,9 @@ fn dispatch(
             if (value == .object) {
                 if (value.object.get("error")) |e| {
                     if (e == .string) {
-                        // `data` is nulled on the failure path, so the
-                        // WHOLE envelope goes into `error`: the model needs
+                        // `data` is nulled on the failure path, so the WHOLE
+                        // envelope goes into `error`: the model needs
                         // `other_providers` / `host_mismatch` / `exhausted`
-                        // to act, and a bare sentence leaves it stuck. The
-                        // human-readable sentence stays inside it under
-                        // `error.error`.
                         const output = try wrapToolOutput(
                             ctx.allocator,
                             "web_search",

@@ -1,49 +1,5 @@
-// Functional tests for per-user workspace isolation (plan 2026-09-25, W1 + W2.1).
-//
-// Zig port of `tests/functional/workspace_isolation_test.py` (same test
-// names, same order).
-//
-// Boots a REAL pabrik binary + REAL SQLite via the harness (never a live
-// dev server, never port 8081). Two authenticated admins share ONE
-// database, so this is the wire-level proof that user A cannot see user
-// B's workspaces.
-//
-// Why a wire test and not only a unit test: the isolation rule lives in
-// the route handler plus the SQL predicate, and only a real round-trip
-// exercises the server-derived owner end to end (cookie -> auth_sessions
-// -> users.id). A unit test that passes an owner string straight into the
-// query cannot catch a handler that forgets to resolve one, or a
-// predicate that binds the wrong parameter.
-//
-// Covers:
-//   * LIST-ISOLATION   — A's workspace never appears in B's GET /api/workspaces.
-//   * GET-ISOLATION    — B's GET of A's workspace id is 404 (not 403, so B
-//                       cannot probe for the existence of A's ids).
-//   * OWN-READ         — A can still read the workspace it created (guards
-//                       against an "empty list for everyone" false pass).
-//   * AUTH-OFF-REGRESS — without `--auth` the same routes still work and list
-//                       what was just created.
-//
-// Both users are created with `create-admin`, so the isolation assertions
-// here are also the admin-vs-admin assertions: `admin` grants NO
-// cross-user visibility (user decision 2026-09-25).
-//
-// ── PORTING NOTES ───────────────────────────────────────────────────────
-// Python's module-level `_raw` became `rawHttp` below: the harness's
-// `Harness.http` asserts on `expect` by default, but here the STATUS IS
-// the thing under test ("B must get 404, not 403"), so every call goes
-// out with `.assert_status = false` and the caller reads `r.status`.
-// Same reason `auth_test.zig` and `terminal_isolation_test.zig` grew the
-// same helper — no suite needs a private HTTP client.
-//
-// Python's `_create_admin` shelled out with `subprocess.run`; the Zig
-// equivalent is `harness.runPabrikCommand`, whose `argv` starts at the
-// SUBCOMMAND (the harness prepends the binary itself).
-//
-// Python's `_two_users` returned the harness alongside the tokens, which
-// forced every test into a `try/finally h.teardown()`. Here the harness
-// is a caller-owned local with `defer h.deinit(io)`, and the two tokens
-// come back in a `TwoTokens` the caller owns.
+// Functional tests for per-user workspace isolation (plan 2026-09-25, W1 +
+// W2.1).
 
 const std = @import("std");
 const testing = std.testing;
@@ -64,15 +20,9 @@ const PASSWORD = "supersecret123";
 // Helpers
 // ============================================================================
 
-/// Issue a request WITHOUT a status assertion — the caller asserts.
-///
-/// `cookie` is the raw `Cookie:` header value (`pabrik_session=<tok>`),
-/// or null for no cookie at all. Python's `_raw` omitted the header only
-/// when the argument was `None`; the auth-off test passed `""`, which is
-/// not `None`, so Python really did put an empty `Cookie: ""` on the
-/// wire. An empty header value and no header mean the same thing to this
-/// server, and sending no header is what an auth-off frontend does, so
-/// an empty `cookie` here sends nothing.
+/// Issue a request WITHOUT a status assertion — the caller asserts. `cookie`
+/// is the raw `Cookie:` header value (`pabrik_session=<tok>`), or null for no
+/// cookie at all.
 fn rawHttp(
     h: *Harness,
     method: harness.HttpMethod,
@@ -98,10 +48,8 @@ fn bootAuth() !Harness {
     return Harness.boot(io, gpa, .{ .extra_args = &.{"--auth"} });
 }
 
-/// Run `pabrik create-admin` against the harness HOME.
-///
-/// `runPabrikCommand` prepends the resolved binary itself, so `argv`
-/// starts at the SUBCOMMAND.
+/// Run `pabrik create-admin` against the harness HOME. `runPabrikCommand`
+/// prepends the resolved binary itself, so `argv` starts at the SUBCOMMAND.
 fn createAdmin(home: []const u8, email: []const u8, force: bool) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
@@ -142,10 +90,9 @@ fn login(h: *Harness, email: []const u8) ![]u8 {
         return error.TestUnexpectedResult;
     }
 
-    // The token is the SEGMENT between `pabrik_session=` and the next `;`
-    // — Python's `set_cookie.split("pabrik_session=", 1)[1].split(";", 1)[0].strip()`.
-    // `harness.afterFirst` on the WHOLE header would return the text
-    // AFTER the first `;`, i.e. `Path=/`.
+    // The token is the SEGMENT between `pabrik_session=` and the next `;` —
+    // Python's `set_cookie.split("pabrik_session=", 1)[1].split(";",
+    // 1)[0].strip()`.
     var attrs = std.mem.splitSequence(u8, set_cookie, ";");
     const first_attr = attrs.next() orelse return error.TestUnexpectedResult;
     const token = std.mem.trim(
@@ -203,13 +150,8 @@ fn createWorkspace(h: *Harness, name: []const u8, cookie: ?[]const u8) ![]u8 {
     });
 }
 
-/// `GET /api/workspaces?is_include_items=false` → the visible workspace
-/// ids, as OWNED strings.
-///
-/// Python returned `[w["id"] for w in ...["workspaces"]]` — a list that
-/// outlived the parsed response. `harness.Json` borrows its `Response`
-/// body, so this duplicates the ids; a returned `Json` here would
-/// dangle the moment the `defer doc.deinit()` ran.
+/// `GET /api/workspaces?is_include_items=false` → the visible workspace ids,
+/// as OWNED strings.
 fn listWorkspaceIds(h: *Harness, cookie: ?[]const u8) ![][]u8 {
     var r = try rawHttp(h, .GET, "/api/workspaces", null, cookie);
     defer r.deinit();
@@ -370,9 +312,7 @@ test "workspace_get_by_foreign_id_is_404" {
 }
 
 // AUTH-OFF-REGRESS: without `--auth` the create + list round-trip still
-// works.
-//
-// No identity means the shared sentinel owns the row, so the same
+// works. No identity means the shared sentinel owns the row, so the same
 // request that created it still sees it — the pre-isolation behaviour.
 test "auth_off_is_unchanged" {
     try harness.requirePabrikBin(io, gpa);
@@ -477,11 +417,6 @@ test "foreign_delete_and_rename_are_refused" {
 }
 
 // Session ownership end to end: stamp, read-by-id, and the LIST filter.
-//
-// This is the test that covers the list filter's REAL-OWNER branch —
-// every other list test passes the system user, which is now unscoped by
-// design, so none of them exercise filtering at all. It also proves the
-// create handler's owner stamp actually lands.
 test "sessions_are_owned_by_their_creator" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootAuth();
@@ -571,11 +506,6 @@ test "sessions_are_owned_by_their_creator" {
 }
 
 // B cannot list, create in, or delete inside A's workspace.
-//
-// These routes carry `:workspace_id` and previously never checked it, so
-// a workspace being invisible did NOT stop B from adding or deleting
-// items in it. The check now lives in one middleware choke point, which
-// is why a single assertion here covers every child route.
 test "items_of_a_foreign_workspace_are_refused" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootAuth();

@@ -1,10 +1,5 @@
-//! LLM tool: `set_design_page` — idempotent create/update for a design
-//! canvas page. Returns the page (with all elements, but no HTML bodies)
-//! so the LLM can discover existing state in a single call (the v6
-//! "no list_elements tool" simplification — see design §6.4).
-//!
-//! Plan: docs/superpowers/plans/2026-07-08-design-mode-redesign.md (Chunk 4)
-//! Design: docs/plans/2026-07-08-design-mode-redesign-design.md §6.1
+//! LLM tool: `set_design_page` — idempotent create/update for a design canvas
+//! page.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -15,21 +10,16 @@ const design_model = pabrikcore.ai_mod.design_model;
 const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
 
-/// Input structure for `set_design_page` tool.
-///
-/// The agent passes `item_id` from the active chat context (injected by
-/// the frontend via `BuildDesignCanvasPrompt` into the system prompt).
-/// `width` and `height` are optional and default to the v6 standard
-/// (1440 × 1024 — matches the standard design viewport).
+/// Input structure for `set_design_page` tool. The agent passes `item_id`
+/// from the active chat context (injected by the frontend via
+/// `BuildDesignCanvasPrompt` into the system prompt).
 pub const SetDesignPageInput = struct {
     /// The design workspace item id. From the chat's workspace context
     /// (system prompt's `## Workspace Context` section). Always starts
     /// with `item_` and has `item_type = 'design'`.
     item_id: []const u8 = "",
-    /// Human-readable page name (e.g. "Login", "Dashboard", "Settings").
-    /// Must be unique within the design item. Must NOT contain `/` or
-    /// null bytes (the v6 file-backed model stores pages under
-    /// `<item_path>/.pabrik/design/<sanitized_page_name>/`).
+    /// Human-readable page name (e.g. "Login", "Dashboard", "Settings"). Must
+    /// be unique within the design item.
     page_name: []const u8 = "",
     /// Page width in CSS pixels. Defaults to 1440 when null.
     width: ?i64 = null,
@@ -37,15 +27,7 @@ pub const SetDesignPageInput = struct {
     height: ?i64 = null,
 };
 
-/// Top-level tool definition for the LLM.
-///
-/// The description tells the LLM:
-/// 1. That `set_design_page` has dual semantics (create + list) — every
-///    call returns the full page including all elements.
-/// 2. That the operation is idempotent — re-issuing the same (item_id,
-///    page_name) updates width/height in place.
-/// 3. That `item_id` comes from the chat's workspace context (system
-///    prompt's `## Workspace Context` section).
+/// Top-level tool definition for the LLM. The description tells the LLM: 1.
 pub const set_design_page_tool_system_prompt =
     \\## Set Design Page Tool — Behavior
     \\Use `set_design_page` to create or update a design page (idempotent).
@@ -99,9 +81,6 @@ pub const set_design_page_tool = AgentTool{
 
 /// Generate an error JSON object (replaces the old per-tool XML escape +
 /// error envelope helpers).
-/// Generate an error JSON object `{"error":...}` so the exec wrapper can
-/// detect it via the top-level `error` key and surface the structured
-/// error to the LLM as `success=false`.
 pub fn errorJSON(allocator: std.mem.Allocator, error_msg: []const u8) ![]u8 {
     const clean = try sanitizeControlChars(allocator, error_msg);
     defer allocator.free(clean);
@@ -117,13 +96,7 @@ pub fn errorJSONOwned(allocator: std.mem.Allocator, error_msg: []u8) ![]u8 {
 }
 
 /// Detect the two known LLM id-confusion mistakes (task_id or column_id
-/// passed where item_id was expected). Returns null when the shape
-/// looks correct, or a structured error object describing the exact
-/// mistake + the canonical id source.
-///
-/// This runs BEFORE the DB query so the LLM gets a fast, typed error
-/// instead of a silent failure that produces an empty page object
-/// (which the LLM would interpret as "no elements yet" — wrong).
+/// passed where item_id was expected).
 pub fn validateItemIdShape(allocator: std.mem.Allocator, item_id: []const u8) !?[]u8 {
     if (item_id.len == 0) {
         return try errorJSON(allocator, "item_id is required (pass the design item's id from the Workspace Context listing)");
@@ -131,7 +104,6 @@ pub fn validateItemIdShape(allocator: std.mem.Allocator, item_id: []const u8) !?
     // The DB-generated ids use these prefixes (see workspace_items_create.zig
     // for item_, workspace_item_tasks_create.zig for task_,
     // kanban_model.generateColumnId for col_, workspaces_create.zig for ws_).
-    // Anything with the wrong prefix is a shape mistake.
     if (std.mem.startsWith(u8, item_id, "task_")) {
         return try errorJSONOwned(allocator, try std.fmt.allocPrint(allocator,
             \\item_id '{s}' looks like a TASK id (starts with 'task_'). Pass the DESIGN's item_id instead — find it next to the literal text `item_id: ` in the Workspace Context listing. The item_id always starts with 'item_'.
@@ -160,15 +132,7 @@ pub fn validateItemIdShape(allocator: std.mem.Allocator, item_id: []const u8) !?
     return null;
 }
 
-/// Execute the `set_design_page` tool. Returns a JSON string for the
-/// LLM.
-///
-/// On success, the response is the page object with an `elements` array:
-/// `{"id":"page_xxx","name":"Login","width":1440,"height":1024,
-///   "position":0,"elements":[{"id":"elem_yyy",...}, ...]}`.
-///
-/// On error (item_path missing, page name invalid, DB failure, id
-/// confusion), the response is `{"error":...}`.
+/// Execute the `set_design_page` tool. Returns a JSON string for the LLM.
 pub fn executeSetDesignPageToString(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -181,11 +145,7 @@ pub fn executeSetDesignPageToString(
         return err_xml;
     }
 
-    // 1. Verify the page_name is non-empty and has no illegal
-    //    characters. Empty page_name would create a row with `name=''`
-    //    that conflicts with subsequent pages; the v6 file-backed
-    //    model stores pages under `<item_path>/.pabrik/design/<name>/`,
-    //    so `/` would escape the parent directory.
+    // 1. Verify the page_name is non-empty and has no illegal characters.
     if (input.page_name.len == 0) {
         return try errorJSON(allocator, "page_name is required");
     }
@@ -230,12 +190,9 @@ pub fn executeSetDesignPageToString(
     return try toJSON(allocator, bundle.page, bundle.elements);
 }
 
-/// Serialize a page + its elements to the LLM-facing JSON string.
-///
-/// Element shape (per design §6.2 response, keys mirror the old
-/// `<element ... />` attributes 1:1; omitted-when-empty attributes become
-/// explicit nulls). `html` is intentionally omitted — the LLM doesn't need
-/// the body for layout decisions and the body can be 5+ KB.
+/// Serialize a page + its elements to the LLM-facing JSON string. Element
+/// shape (per design §6.2 response, keys mirror the old `<element ... />`
+/// attributes 1:1; omitted-when-empty attributes become explicit nulls).
 pub const PageElementJSON = struct {
     id: []const u8,
     name: []const u8,
@@ -499,14 +456,8 @@ test "errorJSON on missing field returns an error object" {
 
 // ─── DB integration behavioral tests (in-memory SQLite) ────────────────
 
-/// Set up an in-memory SQLite with the v6 design schema (workspace_items
-/// + design_pages + design_page_elements with the 11 Migration 057
-/// columns). Creates one workspace item with `path='/tmp'` so
-/// `setDesignPage` doesn't return `ItemPathMissing`.
-///
-/// Returns the db + threaded as a value (not a pointer) so the
-/// caller's `var s = try setupDb();` can pass `&s.db` to
-/// non-const-`*SqliteBackend` parameters.
+/// Set up an in-memory SQLite with the v6 design schema (workspace_items +
+/// design_pages + design_page_elements with the 11 Migration 057 columns).
 fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded, item_id: []u8, item_path: []u8 } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});

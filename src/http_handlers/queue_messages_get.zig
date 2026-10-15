@@ -1,8 +1,6 @@
-//! `GET /api/queue_messages/:session_id` — read all queued messages
-//! for a session, oldest first.
-//!
-//! Layered as `useCase` (resolve singleton + DB query + build JSON)
-//! and a thin handler that maps errors to status codes.
+//! `GET /api/queue_messages/:session_id` — read all queued messages for a
+//! session, oldest first. Layered as `useCase` (resolve singleton + DB query
+//! + build JSON) and a thin handler that maps errors to status codes.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -13,10 +11,9 @@ pub const QueueMessagesError = error{
     MissingSessionId,
     GlobalContextNotInitialized,
     QueryFailed,
-    /// `allocator.dupe` returned no memory. In production the
-    /// per-request arena makes this unreachable but the type
-    /// system requires the variant so `try allocator.dupe`
-    /// propagates a typed error.
+    /// `allocator.dupe` returned no memory. In production the per-request
+    /// arena makes this unreachable but the type system requires the variant
+    /// so `try allocator.dupe` propagates a typed error.
     OutOfMemory,
 };
 

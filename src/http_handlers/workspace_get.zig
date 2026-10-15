@@ -1,14 +1,6 @@
-//! `GET /api/workspaces/:id` — fetch a workspace by id.
-//!
-//! Layered as `useCase` (resolve singleton + read DB) and a thin
-//! handler that maps the outcome + errors to status codes / JSON.
-//!
-//! Database errors include the SQLite error message in the response
-//! body (e.g. "no such column: foo", "UNIQUE constraint failed:
-//! workspaces.id") so the frontend can surface something useful to
-//! the user instead of a bare "Database query failed" string. The
-//! message is captured by `Sqlite.Rows.getLastErrorMessage()` (see
-//! `src/modules/databases/src/sqlite/Sqlite.zig:303`).
+//! `GET /api/workspaces/:id` — fetch a workspace by id. Layered as `useCase`
+//! (resolve singleton + read DB) and a thin handler that maps the outcome +
+//! errors to status codes / JSON.
 
 const std = @import("std");
 const mod = @import("mod.zig");
@@ -18,12 +10,6 @@ const http_response = mod.http_response;
 const auth_common = @import("auth_common.zig");
 
 /// SQLite error info surfaced from the use-case to the handler.
-/// `sqlite_message` is the raw `sqlite3_errmsg(db)` string for the
-/// failing operation (e.g. "no such column: foo", "UNIQUE constraint
-/// failed: workspaces.id", "database is locked"). When the backend
-/// could not capture a message (e.g. the Rows object was never
-/// created), this is empty — the handler falls back to a generic
-/// "Database query failed" prefix.
 pub const DbErrorInfo = struct {
     sqlite_message: []const u8,
 };
@@ -62,21 +48,16 @@ fn useCase(
 ) WorkspaceGetResult {
     if (id.len == 0) return .id_required;
 
-    // `db.query` returns `Error!Rows`; on failure the Rows object is
-    // never created, so we can't capture the SQLite error message.
-    // We still map the well-known error codes to a tagged failure so
-    // the handler can return a 500 with a useful prefix.
+    // `db.query` returns `Error!Rows`; on failure the Rows object is never
+    // created, so we can't capture the SQLite error message.
     var rows = db.query(
         allocator,
         "SELECT id, name, created_at, updated_at FROM workspaces WHERE id = ? AND " ++ comptime auth_common.workspaceVisibilityClause("workspaces"),
         &.{ id, owner, owner },
     ) catch |err| {
-        // Build a best-effort message. The sqlite3_errmsg is not
-        // available here because Rows was never created; surface
-        // the error name as the fallback. The dupe can OOM, so we
-        // catch it and downgrade to .out_of_memory (the caller
-        // can't do anything useful with an error message inside
-        // an OOM anyway).
+        // Build a best-effort message. The sqlite3_errmsg is not available
+        // here because Rows was never created; surface the error name as the
+        // fallback.
         const fallback: []const u8 = @errorName(err);
         const duped = allocator.dupe(u8, fallback) catch return .out_of_memory;
         return switch (err) {
@@ -86,29 +67,16 @@ fn useCase(
     };
     defer rows.deinit();
 
-    // `rows.next()` calls `sqlite3_errmsg` on failure and caches the
-    // message in `Rows.last_error_msg`. We dup it before `rows.deinit`
-    // so the handler can render it. If the capture fails (db closed,
-    // OOM in the dupe), we fall back to an empty message — the
-    // handler will see the error tag and render a generic 500.
+    // `rows.next()` calls `sqlite3_errmsg` on failure and caches the message
+    // in `Rows.last_error_msg`. We dup it before `rows.deinit` so the handler
+    // can render it.
     const row = (rows.next() catch {
         const captured = rows.getLastErrorMessage() orelse "";
         const duped = allocator.dupe(u8, captured) catch return .out_of_memory;
         return .{ .row_fetch_failed = .{ .sqlite_message = duped } };
     }) orelse return .not_found;
 
-    // Dupe the strings BEFORE `rows.deinit()` fires below. Otherwise
-    // the returned `WorkspaceGetData` carries slice headers into the
-    // row's storage, and the handler's `std.fmt.allocPrint` reads
-    // freed memory (0xAA bytes) when it formats `{data.id}`/`{data.name}`.
-    // Pattern: `getWorkspaceItem` in `llm_history.zig` does the same
-    // dupes explicitly. See `zig-slice-headers-across-defer-lifetimes`
-    // skill for the rationale.
-    //
-    // `row.deinit(allocator)` is NOT called — `row.values[]` are
-    // arena-allocated (via `db.query(allocator, ...)` above), so the
-    // per-request arena frees them when its scope ends (see the
-    // AGENTS.md "Per-request arena cleanup" lesson).
+    // Dupe the strings BEFORE `rows.deinit()` fires below.
     return .{
         .found = .{
             .id = allocator.dupe(u8, row.values[0]) catch return .out_of_memory,
@@ -149,13 +117,8 @@ pub fn workspaceGetHandler(
 
     switch (outcome) {
         .found => |data| {
-            // The four strings are duped by useCase; the response body
-            // copies them into a fresh allocation. No manual
-            // `defer allocator.free(...)` is needed — `ctx.allocator`
-            // is a per-request `ArenaAllocator` (see
-            // `kabelweb/src/server/http_server.zig:349-362`); when
-            // the request scope ends the arena `deinit()`s and frees
-            // every arena-backed allocation in one shot.
+            // The four strings are duped by useCase; the response body copies
+            // them into a fresh allocation.
             const body = try std.fmt.allocPrint(
                 allocator,
                 "{{\"id\":\"{s}\",\"name\":\"{s}\",\"created_at\":\"{s}\",\"updated_at\":\"{s}\"}}",
@@ -182,10 +145,9 @@ pub fn workspaceGetHandler(
             });
         },
         .query_failed => |info| {
-            // `info.sqlite_message` is duped by useCase but lives in
-            // the per-request arena — freed when the request scope
-            // ends (no manual `defer allocator.free` needed; see the
-            // arena note on `.found` above).
+            // `info.sqlite_message` is duped by useCase but lives in the
+            // per-request arena — freed when the request scope ends (no
+            // manual `defer allocator.free` needed; see the arena note on
             return res.jsonResponse(.{
                 .status_code = 500,
                 .data = try std.fmt.allocPrint(

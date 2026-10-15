@@ -1,27 +1,6 @@
-// Functional test for the agent tools' `cwd` / path-parameter contract.
-//
-// Boots a real `pabrik` binary against an isolated tmpdir HOME and reads the
+// Functional test for the agent tools' `cwd` / path-parameter contract. Boots
+// a real `pabrik` binary against an isolated tmpdir HOME and reads the
 // published schema from `GET /api/agent-tools/registry`.
-//
-// WHY THE WIRE, NOT THE TOOL CONSTANTS: the registry handler is what turns
-// `UNIFIED_TOOL_REGISTRY` into the schema a consumer (the Settings → Tools
-// panel, the progressive-tool catalog, this test) actually sees. A unit test
-// on `read_file_tool.function.parameters` proves the constant is right; only a
-// round-trip proves the handler still publishes it.
-//
-// The contract under test (locked 2026-10-14):
-//   * every tool that touches the filesystem REQUIRES an absolute `cwd` —
-//     without it a call silently acts on the SERVER's working directory
-//     instead of the tree the model is editing, which is the bug the
-//     parameter exists to remove;
-//   * `create_kanban_task` and `add_mcp_server` have NO `cwd` (the card
-//     inherits the kanban item's `path`; the MCP child's directory comes from
-//     the server config);
-//   * the swept dead tools (`change_agent`, `list_agents`, `remove_agent`) are
-//     absent from the published registry entirely.
-//
-// Every absence assertion below is paired with a positive control, so it
-// cannot pass vacuously.
 
 const std = @import("std");
 const testing = std.testing;

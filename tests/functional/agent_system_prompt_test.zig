@@ -1,49 +1,4 @@
 // Functional tests for the agent_system_prompt CRUD wire.
-//
-// Zig port of `tests/functional/agent_system_prompt_test.py` (same test
-// names, same order; the Python `Test*` classes flatten to plain test
-// blocks here, since Zig has no test classes).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional tests for the agent_system_prompt CRUD wire.
-//
-//   Exercises the 4 new routes (Migration 080) against a real pabrik
-//   binary, replaying the exact JSON bodies the frontend sends:
-//
-//     Plan: docs/superpowers/plans/2026-08-21-agent-system-prompt.md
-//
-//   Covers:
-//     * CREATE   — POST /api/agents/:agent_id/system_prompt → 201 + row
-//     * VALIDATE — POST with empty content → 400
-//     * UNKNOWN  — POST against unknown agent_id → 404
-//     * UPDATE   — PATCH title+content → 200, fields changed
-//     * EMPTYSTR — PATCH with content:"" → 200 (empty string is legal,
-//                  NOT NULL — regression for empty-slice-binds-as-NULL)
-//     * DELETE   — DELETE → {ok:true}, GET bundle no longer lists it
-//     * REORDER  — PATCH /reorder → positions reflect new order
-//     * BUNDLE   — GET /api/workspaces/:ws/items/:id/agent includes
-//                  system_prompts: [] for a fresh agent
-//
-//   NOTE: port 8081 is RESERVED (never used here — the harness picks a
-//   free port in 8080..8199 excluding it).
-//   """
-//
-// Boots a REAL `pabrik` binary via the harness (never a live dev
-// server, never port 8081) and replays the exact wire bodies the
-// frontend's Settings → Agent → "System Prompt" editor sends.
-//
-// ─── WHY THE `path` IS DERIVED FROM `h.temp_dir` ──────────────────────────
-// The Python helper hard-coded `"/tmp/agent-system-prompt-test"`.
-// `std.fs.path.isAbsolute` is PLATFORM-relative: on windows-2022
-// `"/tmp/..."` is not absolute, so the literal that is correct on
-// ubuntu-24.04 fails at the HTTP door with `NotAbsolutePath` and the
-// test reports a server regression that does not exist (see
-// `harness.harnessPath`'s doc comment). Deriving from `h.temp_dir`
-// keeps the request identical on every platform: still an absolute
-// path, still one the suite never creates on disk — the create route
-// does not require it to exist, and that is part of what these tests
-// observe.
 
 const std = @import("std");
 const testing = std.testing;
@@ -67,14 +22,8 @@ const AgentBody = struct {
 // ============================================================================
 // Helpers (Python `_create_workspace` / `_create_agent` / `_create_prompt` /
 // `_get_bundle`)
-// ============================================================================
 
 /// `_create_workspace` — create a fresh workspace, return its OWNED id.
-///
-/// A helper cannot return a `harness.Json`: every accessor returns a
-/// slice that borrows from the owning parse, so returning one would
-/// hand the caller a dangling pointer the instant the response was
-/// deinit'd. Owned bytes are the only sound return value here.
 fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
     const body = try std.fmt.allocPrint(gpa, "{{\"name\":\"{s}\"}}", .{name});
     defer gpa.free(body);
@@ -129,12 +78,8 @@ fn createAgent(h: *Harness, workspace_id: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// `_create_prompt` — POST a create; the caller owns the `Response`.
-///
-/// The Python returned `r.json()`, which in Zig would be a borrowed
-/// `Json`. The response OWNS its body, so returning the `Response` and
-/// letting each test call `r.json()` + `defer doc.deinit()` keeps the
-/// parse inside the scope that frees it.
+/// `_create_prompt` — POST a create; the caller owns the `Response`. The
+/// Python returned `r.json()`, which in Zig would be a borrowed `Json`.
 fn createPrompt(
     h: *Harness,
     agent_id: []const u8,
@@ -165,12 +110,9 @@ fn getBundle(h: *Harness, workspace_id: []const u8, item_id: []const u8) !harnes
     return h.http(io, .GET, url, .{ .expect = &.{200} });
 }
 
-/// The `position` of the system-prompt row `prompt_id` inside a bundle
-/// body, or a test failure.
-///
-/// Python built `{p["id"]: p["position"] ...}` and indexed it. A helper
-/// cannot hand back that map (its keys borrow from the response), so
-/// this returns the single integer the assertions need instead.
+/// The `position` of the system-prompt row `prompt_id` inside a bundle body,
+/// or a test failure. Python built `{p["id"]: p["position"] ...}` and indexed
+/// it.
 fn bundlePosition(bundle_body: []const u8, prompt_id: []const u8) !i64 {
     var doc: harness.Json = .{
         .parsed = try std.json.parseFromSlice(std.json.Value, gpa, bundle_body, .{}),
@@ -408,10 +350,9 @@ test "patch_updates_title_and_content" {
     try testing.expectEqualStrings("new body", doc.str("content") orelse return error.TestUnexpectedResult);
 }
 
-// EMPTYSTR — `content: ""` is legal and must NOT become SQL NULL.
-//
-// Regression: `SqliteBackend.exec` binds `""` as SQL NULL, which trips
-// `content`'s NOT NULL constraint without `COALESCE(?, '')`.
+// EMPTYSTR — `content: ""` is legal and must NOT become SQL NULL. Regression:
+// `SqliteBackend.exec` binds `""` as SQL NULL, which trips `content`'s NOT
+// NULL constraint without `COALESCE(?, '')`.
 test "patch_empty_string_content_is_legal_not_null" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -555,11 +496,6 @@ test "delete_unknown_row_is_noop_200" {
 // ============================================================================
 
 // REORDER — reversing the list renumbers `position` to match.
-//
-// NOTE the route table registers `/system_prompt/reorder` BEFORE
-// `/system_prompt/:prompt_id` (http_routes.zig:418-419); if that order
-// ever flips, `matchRoute` would capture `reorder` as a prompt id and
-// this is the test that would catch it.
 test "reorder_updates_positions" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});

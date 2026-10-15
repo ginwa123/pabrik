@@ -1,36 +1,4 @@
 //! Tag input validation for the kanban task tags feature.
-//!
-//! ## What this does
-//!
-//! `validateAndNormalizeTags` takes a raw `?[]const u8` from the
-//! HTTP request body and returns a normalized JSON-encoded array
-//! string suitable for direct storage in the `workspace_item_tasks.tags`
-//! column (Migration 067).
-//!
-//! ## Validation rules
-//!
-//! | Input | Behavior |
-//! |---|---|
-//! | null / undefined | return `""` (no tags) |
-//! | `""` (empty string) | return `""` (no tags) |
-//! | non-empty, but not a JSON array | return `InvalidTags` |
-//! | JSON array of non-strings | return `InvalidTags` |
-//! | tag with empty value after trim | return `InvalidTags` |
-//! | tag with chars outside `[a-zA-Z0-9_-]` | return `InvalidTags` |
-//! | tag length > 50 chars | return `InvalidTags` |
-//! | duplicate tags (case-insensitive) | dedupe; preserve first casing |
-//! | array of all duplicates → empty | return `""` (no tags) |
-//!
-//! ## Why a static JSON-encode string (not a `[][]const u8`)
-//!
-//! The DB column is `TEXT`. The wire request body is a JSON value
-//! (homogeneous across the project's HTTP layer). Returning a
-//! JSON-encoded string keeps the call site a single `db.exec(...)`
-//! call with no `[]const u8` slicing — minimizing the chance of
-//! tripping the empty-slice-binds-as-NULL footgun (see project
-//! memory `sqlite-backend-empty-slice-binds-as-null`).
-//!
-//! Plan: docs/superpowers/plans/2026-07-28-kanban-task-tags.md (Task 7)
 
 const std = @import("std");
 
@@ -38,27 +6,15 @@ pub const TagValidationError = error{
     InvalidTags,
 };
 
-/// Validate and normalize a tag input from the wire.
-///
-/// Caller passes `raw: ?[]const u8` from the parsed request body.
-/// Returns a heap-allocated JSON-encode array string ready for the
-/// `tags` column. On validation failure, returns `error.InvalidTags`.
-/// `allocator` is used for all heap allocations; the returned slice
-/// must be freed by the caller.
+/// Validate and normalize a tag input from the wire. Caller passes `raw:
+/// ?[]const u8` from the parsed request body.
 pub fn validateAndNormalizeTags(allocator: std.mem.Allocator, raw: ?[]const u8) (TagValidationError || std.mem.Allocator.Error)![]u8 {
     // null or empty string → "no tags" sentinel.
     if (raw == null or raw.?.len == 0) {
         return allocator.dupe(u8, "");
     }
 
-    // Parse the JSON-encoded array. We use `parseFromSlice` (not
-    // `parseFromSliceLeaky`) here because the per-request arena
-    // reaps everything on request teardown — but the values we
-    // extract (string slices) need to outlive the parsed arena
-    // long enough to be copied into our output buffer. Since we
-    // OWN the output buffer (allocated via the request arena), the
-    // cleanest path is: parse with `parseFromSlice`, copy the strings
-    // into our output, then `deinit` the parsed arena.
+    // Parse the JSON-encoded array.
     var parsed = std.json.parseFromSlice(std.json.Value, allocator, raw.?, .{}) catch {
         return TagValidationError.InvalidTags;
     };
@@ -122,13 +78,7 @@ pub fn validateAndNormalizeTags(allocator: std.mem.Allocator, raw: ?[]const u8) 
 
         // First occurrence (case-insensitive) wins for casing.
         if (i > 0 and out.items.len > 1) {
-            // Comma separator between tags. The first char after '['
-            // is the first tag's opening quote, so we only need a
-            // comma if we've already appended at least one tag.
-            // We use the simpler "always comma before next tag"
-            // check: if we've already produced '[' + opening quote
-            // + tag + closing quote, we need a comma before the next
-            // tag. (Skipped on duplicate skips because we `continue`.)
+            // Comma separator between tags.
             try out.append(allocator, ',');
         }
         try out.append(allocator, '"');
@@ -211,12 +161,8 @@ test "validateAndNormalizeTags: rejects tag with forbidden chars" {
 
 test "validateAndNormalizeTags: rejects tag > 50 chars" {
     // Build a 51-char tag and wrap it as a JSON-encoded array. Use
-    // std.mem.concat (returns []const u8, sentinel-free) so the
-    // resulting buffer can be passed straight through to the
-    // validator. No std.fmt.bufPrint needed — the `{s}` format
-    // expects []const u8 (pointer+length, NO sentinel), and the
-    // NUL-terminated `*const [N:0]u8` from `"a" ** 51` would not
-    // unwrap.
+    // std.mem.concat (returns []const u8, sentinel-free) so the resulting
+    // buffer can be passed straight through to the validator.
     const too_long = "a" ** 51;
     const json = try std.mem.concat(testing.allocator, u8, &.{ "[\"", too_long[0..51], "\"]" });
     defer testing.allocator.free(json);

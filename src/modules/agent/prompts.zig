@@ -8,14 +8,6 @@ const tool_memories_mod = @import("tools/memories.zig");
 
 // =============================================================================
 // Re-exports only.
-//
-// As of 2026-08-23 (plan: docs/superpowers/plans/2026-08-23-move-build-agent-prompt-body.md),
-// the orchestrator-side prompt assembly file
-// (`src/agentic_loop/prompts_build_messages_for_agent_prompt.zig`)
-// owns `build_agent_prompt` and every helper it depends on. This file is
-// now a thin shim that re-exports the static prompt-template constants
-// below; rendering logic lives in the orchestrator file.
-// =============================================================================
 
 // Re-export all prompts for easy access
 pub const UniversalRules = prompts.UniversalRules;
@@ -37,23 +29,14 @@ pub const SearchToolRule = prompts.SearchToolRule;
 pub const ReadWorkspaceSessionToolRule = prompts.ReadWorkspaceSessionToolRule;
 pub const MemoryToolRule = prompts.MemoryToolRule;
 // The agent's special tool (search the catalog for the tool a task needs) and
-// its special skills (load the skill a task needs). Both are appended
-// unconditionally by `buildMessages` — never gated on the tool list, so the
-// block stays byte-identical for every agent and the shared prompt-cache
-// prefix keeps hitting.
+// its special skills (load the skill a task needs).
 pub const ProgressiveToolRule = prompts.ProgressiveToolRule;
 pub const SkillsToolRule = prompts.SkillsToolRule;
-// Skill Evals — evaluate the skills this session actually used. Appended
-// unconditionally for the same cache reason as the two above; it gates itself
-// on `run_skill_eval` being present in the tool list, and that tool is only
-// injected when config.json's `skill_evals.enabled` is true. So the switch
-// controls the tool, never the prompt bytes.
+// Skill Evals — evaluate the skills this session actually used.
 pub const SkillEvalToolRule = prompts.SkillEvalToolRule;
 // The write half of the skills loop — `add_skill` when a task taught
-// something a future session would otherwise rediscover, `edit_skill` when
-// an eval flags a skill as stale. Reads AFTER SkillEvalToolRule on purpose:
-// it closes that loop. Both tools are always equipped, so the block is
-// appended unconditionally and stays byte-identical for every agent.
+// something a future session would otherwise rediscover, `edit_skill` when an
+// eval flags a skill as stale.
 pub const SkillWriteToolRule = prompts.SkillWriteToolRule;
 // Session VCS binding — see the comment above the constants in
 // `prompts/core.zig`. Appended unconditionally by `buildMessages`, immediately
@@ -62,11 +45,8 @@ pub const GitWorktreeToolRule = prompts.GitWorktreeToolRule;
 pub const PullRequestToolRule = prompts.PullRequestToolRule;
 
 // ---------------------------------------------------------------------------
-// Thin delegating re-exports for the two pure helpers that
-// `prompts_test.zig` exercises directly. They now live next to
-// `build_agent_prompt` in the orchestrator file (see plan §5.4);
-// forwarding here keeps the test surface unchanged.
-// ---------------------------------------------------------------------------
+// Thin delegating re-exports for the two pure helpers that `prompts_test.zig`
+// exercises directly.
 pub const loadGlobalKnowledge = @import("../../agentic_loop/prompts_build_messages_for_agent_prompt.zig").loadGlobalKnowledge;
 pub const loadLocalKnowledge = @import("../../agentic_loop/prompts_build_messages_for_agent_prompt.zig").loadLocalKnowledge;
 pub const SubAgentListingRow = @import("../../agentic_loop/prompts_build_messages_for_agent_prompt.zig").SubAgentListingRow;
@@ -260,14 +240,7 @@ test "build_agent_prompt injects Local Knowledge section from <cwd>/.pabrik/memo
 
 // build_agent_prompt — Memory paths are rendered alongside filenames
 // -------------------------------------------------------------------------
-//
-// Every memory entry rendered in the `## Local Knowledge` /
-// `## Global Knowledge` sections must include its full absolute path as a
-// separate code-span line below the `### <title> (`<filename>`)` heading.
-// The agent uses this path verbatim when calling `read_file` /
-// `write_file` / `text_replace` / `remove_file` — reconstructing the path
-// from the basename alone is brittle (would require the agent to know
-// `~/.config/pabrik/memories` / `<cwd>/.pabrik/memories` exists).
+// Every memory entry rendered in the `## Local Knowledge` / `## Global
 
 test "build_agent_prompt Global Knowledge section emits each memory's absolute path" {
     const alloc = std.testing.allocator;
@@ -460,10 +433,7 @@ test "build_agent_prompt omits Local Knowledge when cwd is empty" {
 
 // build_agent_prompt — LocalMemorySystem static section (no gating)
 // -------------------------------------------------------------------------
-//
 // The LocalMemorySystem section is static — it appears in every prompt
-// regardless of tool list, because the local memory content is auto-injected
-// (no `list_memory` invocation needed). Same invariant as GlobalMemorySystem.
 
 test "build_agent_prompt omits Local Knowledge when <cwd>/.pabrik/memories has no .md files" {
     const alloc = std.testing.allocator;
@@ -497,13 +467,6 @@ test "build_agent_prompt omits Local Knowledge when <cwd>/.pabrik/memories has n
 // ---------------------------------------------------------------------------
 // appendSubAgentsListing — "Available Sub-Agents" section
 // ---------------------------------------------------------------------------
-//
-// PR review: inject the list of sub-agents from LlmConfig into the
-// system prompt so the LLM can discover what agent_names to pass
-// to spawn_sub_agent. These tests exercise the rendering format
-// (the integration with LlmConfig + selected_profile_model is
-// covered by manual smoke testing because the LlmConfig singleton
-// is hard to set up in a unit test).
 
 test "appendSubAgentsListing: empty rows slice is a no-op" {
     const alloc = std.testing.allocator;
@@ -625,17 +588,8 @@ test "build_agent_prompt with sub_agents_listing: section is omitted when empty"
 }
 
 // ---------------------------------------------------------------------------
-// build_agent_prompt with kanbanStatusContent — tests for the
-// `## Kanban Status Tracking` section (added by the 2026-06-27
-// kanban-status-prompt plan, Chunk 3).
-//
-// The section is rendered verbatim from the `kanbanStatusContent`
-// parameter; an empty string omits the section entirely. The
-// renderer (`BuildKanbanStatusPrompt`) is tested separately in
-// `build_messages_for_agent_prompt_test.zig` — these tests cover
-// the build_agent_prompt integration only (param threading +
-// conditional rendering).
-// ---------------------------------------------------------------------------
+// build_agent_prompt with kanbanStatusContent — tests for the `## Kanban
+// Status Tracking` section (added by the 2026-06-27 kanban-status-prompt
 
 test "build_agent_prompt renders Kanban Status Tracking when section is non-empty" {
     const alloc = std.testing.allocator;
@@ -702,19 +656,6 @@ test "build_agent_prompt omits Kanban Status Tracking when section is empty" {
 
 // ---------------------------------------------------------------------------
 // loadGlobalKnowledge — direct unit tests for the memory-file loader.
-//
-// The function is `pub` in `prompts.zig` solely for testability from this
-// file. The tests below set up a real `Environ.Map` with `HOME` pointing
-// at a temp directory under `/tmp/`, create real `.md` files in the
-// expected `~/.config/pabrik/memories/` subdir, then call
-// `loadGlobalKnowledge` directly and assert the returned markdown blob
-// matches the documented format:
-//
-//   ### <title> (`<filename>`)\n\n<full file content>\n\n
-//
-// Per-file errors (open / read / title extraction) skip the file and
-// continue — covered by the "corrupt file is skipped" test.
-// ---------------------------------------------------------------------------
 
 test "loadGlobalKnowledge returns empty string when env is null" {
     const alloc = std.testing.allocator;
@@ -779,11 +720,8 @@ test "loadGlobalKnowledge returns empty string when memories dir exists but is e
 }
 
 test "loadGlobalKnowledge loads a single memory file with H1 title" {
-    // The happy path: one .md file with an H1 heading. The function
-    // must emit `### <title> (`<filename>`)` followed by the full file
-    // content. The H1 line itself appears in the file content (the
-    // function does NOT strip the source H1 — it just renders a new
-    // `### <title> ...` heading derived from the H1).
+    // The happy path: one .md file with an H1 heading. The function must emit
+    // `### <title> (`<filename>`)` followed by the full file content.
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
@@ -858,10 +796,8 @@ test "loadGlobalKnowledge uses filename stem as title when no H1 is present" {
 }
 
 test "loadGlobalKnowledge concatenates multiple memory files" {
-    // Two .md files in the same dir → both rendered, separated by a
-    // blank line. We don't assert on file order (dir iteration is
-    // OS-dependent); we just verify both files appear with their
-    // headings and content somewhere in the output.
+    // Two .md files in the same dir → both rendered, separated by a blank
+    // line.
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
@@ -911,10 +847,8 @@ test "loadGlobalKnowledge concatenates multiple memory files" {
 }
 
 test "loadGlobalKnowledge skips a corrupt file and loads the rest" {
-    // Mirrors the "openFile/readFile errors skip-and-continue" contract
-    // from `loadGlobalKnowledge`. A file that's been replaced by a
-    // directory of the same name can't be opened as a regular file, so
-    // it's silently skipped. The other file must still load.
+    // Mirrors the "openFile/readFile errors skip-and-continue" contract from
+    // `loadGlobalKnowledge`.
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
@@ -959,16 +893,6 @@ test "loadGlobalKnowledge skips a corrupt file and loads the rest" {
 
 // ---------------------------------------------------------------------------
 // loadLocalKnowledge — direct unit tests for the per-project memory loader.
-//
-// Sibling of `loadGlobalKnowledge`, but scoped to `<cwd>/.pabrik/memories/`
-// instead of `<HOME>/.config/pabrik/memories/`. The function does NOT take
-// an environment — local knowledge is project-scoped, not user-scoped.
-//
-// The tests mirror the `loadGlobalKnowledge` suite (empty cwd, missing
-// subdir, empty dir, single H1, no-H1 fallback, multiple files, corrupt
-// skip) so the two loaders are tested in parallel and their contract
-// symmetry is enforced.
-// ---------------------------------------------------------------------------
 
 test "loadLocalKnowledge returns empty string when cwd is empty" {
     // No project context → no local knowledge. Mirrors the first-run
@@ -1026,11 +950,8 @@ test "loadLocalKnowledge returns empty string when memories dir exists but is em
 }
 
 test "loadLocalKnowledge loads a single memory file with H1 title" {
-    // Happy path: one .md file with an H1 heading. The function must
-    // emit `### <title> (<filename>)` followed by the full file
-    // content. The H1 line itself appears in the file content (the
-    // function does NOT strip the source H1 — it just renders a new
-    // `### <title> ...` heading derived from the H1).
+    // Happy path: one .md file with an H1 heading. The function must emit
+    // `### <title> (<filename>)` followed by the full file content.
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
@@ -1097,10 +1018,8 @@ test "loadLocalKnowledge uses filename stem as title when no H1 is present" {
 }
 
 test "loadLocalKnowledge concatenates multiple memory files" {
-    // Two .md files in the same dir → both rendered, separated by a
-    // blank line. We don't assert on file order (dir iteration is
-    // OS-dependent); we just verify both files appear with their
-    // headings and content somewhere in the output.
+    // Two .md files in the same dir → both rendered, separated by a blank
+    // line.
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
@@ -1146,10 +1065,8 @@ test "loadLocalKnowledge concatenates multiple memory files" {
 }
 
 test "loadLocalKnowledge skips a corrupt file and loads the rest" {
-    // Mirrors the "openFile/readFile errors skip-and-continue" contract
-    // from `loadLocalKnowledge`. A file that's been replaced by a
-    // directory of the same name can't be opened as a regular file, so
-    // it's silently skipped. The other file must still load.
+    // Mirrors the "openFile/readFile errors skip-and-continue" contract from
+    // `loadLocalKnowledge`.
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
@@ -1191,13 +1108,6 @@ test "loadLocalKnowledge skips a corrupt file and loads the rest" {
 // ---------------------------------------------------------------------------
 // build_agent_prompt — Workspace Context section
 // ---------------------------------------------------------------------------
-//
-// The Workspace Context section is a pre-rendered markdown block built by
-// `BuildWorkspaceContext` in `prompts_build_messages_for_agent_prompt.zig`. It is
-// threaded through `buildMessages` → `build_agent_prompt` as the new last
-// parameter. These tests verify the wiring: when the block is non-empty, it
-// is appended to the prompt verbatim between the cwd line and the OS info.
-// When empty, the section is silently omitted.
 
 test "build_agent_prompt renders Workspace Context when section is non-empty" {
     const alloc = std.testing.allocator;
@@ -1205,9 +1115,8 @@ test "build_agent_prompt renders Workspace Context when section is non-empty" {
 
     const tools = [_]AgentTool{};
     // Realistic Workspace Context block (the same shape produced by
-    // `BuildWorkspaceContext` in `prompts_build_messages_for_agent_prompt.zig`).
-    // The block starts with "\n\n## Workspace Context" and includes the
-    // self marker, item names, paths, and per-item task lists.
+    // `BuildWorkspaceContext` in
+    // `prompts_build_messages_for_agent_prompt.zig`).
     const workspaceContext =
         \\## Workspace Context
         \\
@@ -1286,11 +1195,6 @@ test "build_agent_prompt omits Workspace Context when section is empty" {
 
 // ---------------------------------------------------------------------------
 // build_agent_prompt — Search Tool Preference (MANDATORY) section.
-//
-// Added to enforce `search` tool usage over a shell `rg`/`grep`/`find` for
-// code/text search. The section is unconditional (no `requires_tool` gate),
-// so it appears in every agent's prompt regardless of tool list.
-// ---------------------------------------------------------------------------
 
 test "build_agent_prompt always renders Search Tool Preference (unconditional)" {
     const alloc = std.testing.allocator;
@@ -1442,10 +1346,8 @@ test "build_agent_prompt omits Memory Tools section when load_memory is absent" 
 }
 
 test "CompactionAgent constant teaches save_memory + load_memory (cross-session memory block)" {
-    // CompactionAgent is a comptime string literal (`pub const X = \\…`),
-    // so we read it directly without an allocator. The new block must
-    // teach the compaction step to forward save/load cues to the next
-    // agent rather than pasting the value verbatim.
+    // CompactionAgent is a comptime string literal (`pub const X = \\…`), so
+    // we read it directly without an allocator.
     const prompt: []const u8 = CompactionAgent;
 
     // The new block is present.
@@ -1467,8 +1369,7 @@ test "CompactionAgent constant teaches save_memory + load_memory (cross-session 
 test "ResponseFormatting teaches the <html> wrapper tag" {
     // The model must know it CAN wrap raw HTML in <html>...</html> so the
     // chat UI renders it as a live sandboxed-iframe block. Capability
-    // phrasing ("you can use"), not mandate. See plan:
-    // docs/superpowers/plans/2026-08-23-html-tag-support.md
+    // phrasing ("you can use"), not mandate.
     const prompt: []const u8 = ResponseFormatting;
 
     // The tag pair is present.
@@ -1479,44 +1380,18 @@ test "ResponseFormatting teaches the <html> wrapper tag" {
     try std.testing.expect(contains(prompt, "you can use"));
     // Verbatim-emission note (wire-format requirement).
     try std.testing.expect(contains(prompt, "verbatim"));
-    // Theme note (2026-09-13, task_1789312493325_7). The model authors the
-    // HTML blind: real payloads (llm_history 1789313976387498377) shipped
-    // GitHub's light `background:#f6f8fa` on every <pre>, which the dark
-    // transcript then rendered at 1.57:1 contrast — unreadable. The prompt
-    // has to state the theme, or the model keeps guessing "light page".
+    // Theme note (2026-09-13, task_1789312493325_7).
     try std.testing.expect(contains(prompt, "DARK"));
     try std.testing.expect(contains(prompt, "#1D1C19"));
 }
 
 // -------------------------------------------------------------------------
-// Regression: build_agent_prompt was moved from
-// src/modules/agent/prompts.zig into
-// src/agentic_loop/prompts_build_messages_for_agent_prompt.zig
-// on 2026-08-23 (plan:
-// docs/superpowers/plans/2026-08-23-move-build-agent-prompt-body.md).
-// This test pins the byte-level ordering of the rendered prompt so any
-// future re-ordering fails closed. Substrings are chosen to be stable
-// across rephrasings of section prose: we assert the HEADER for each
-// block is present and that the relative ordering matches the
-// `PROMPT_SECTIONS` declaration order + the post-loop block order.
-// -------------------------------------------------------------------------
+// Regression: build_agent_prompt was moved from src/modules/agent/prompts.zig
+// into src/agentic_loop/prompts_build_messages_for_agent_prompt.zig on
 
 // -------------------------------------------------------------------------
 // ProgressiveToolRule + SkillsToolRule + MemoryToolRule +
 // ReadWorkspaceSessionToolRule + GitWorktreeToolRule + PullRequestToolRule —
-// the "tools the agent must actually use" mandates wired into buildMessages.
-// Four properties are pinned:
-//   1. Content: each rule names its tools and states the mandate.
-//   2. No bloat: no rule pre-lists skills, and buildMessages never injects
-//      skill bodies — discovery stays a `search_skills` call so the cacheable
-//      system-prompt prefix does not grow with the user's skill library.
-//   3. Cache-stability: all eight are appended unconditionally (no hasTool
-//      gate), so the block is byte-identical for every agent and the shared
-//      prefix stays a cache hit instead of fragmenting per tool set.
-//   4. Live-path coverage: each rule must survive into the prompt
-//      buildMessages RETURNS, not merely be referenced by the test-only
-//      build_agent_prompt / PROMPT_SECTIONS path.
-// -------------------------------------------------------------------------
 
 test "ProgressiveToolRule names the special tool and the three-call loop" {
     const prompt: []const u8 = ProgressiveToolRule;
@@ -1546,11 +1421,7 @@ test "SkillsToolRule names the special skills and the search->use loop" {
     try std.testing.expect(contains(prompt, "When to load"));
     try std.testing.expect(contains(prompt, "blocking, not advisory"));
     // `use_skill` takes ONE argument — the name `search_skills` returned,
-    // verbatim. The rule used to teach a path contract on top of it ("ends in
-    // SKILL.MD", "never construct it from the skill name") for a tool that no
-    // longer takes a path; a model told never to construct a name, then handed
-    // a name-only argument, is the failure this pins shut. Negatives, so the
-    // wording cannot drift back.
+    // verbatim.
     try std.testing.expect(contains(prompt, "verbatim"));
     try std.testing.expect(!contains(prompt, "SKILL.MD"));
     try std.testing.expect(!contains(prompt, ".nalar/skills/"));
@@ -1572,16 +1443,7 @@ test "SkillsToolRule does not pre-list skills (no Available Skills listing)" {
 }
 
 // -------------------------------------------------------------------------
-// Live-path coverage for the six tool mandates. These drive the real
-// assembler (`buildMessages`, what workflow.zig and session_compact.zig
-// call) and assert on the prompt it RETURNS, so the guarantee is
-// behavioural — the bytes are in the message an agent actually receives —
-// rather than a claim about how the assembler is spelled.
-//
-// `build_agent_prompt` is NOT the live path: nothing in production calls
-// it, which is exactly how MemoryToolRule / ReadWorkspaceSessionToolRule
-// shipped as advice no real agent ever received.
-// -------------------------------------------------------------------------
+// Live-path coverage for the six tool mandates.
 
 const prompt_migration = @import("../../migrations/migration.zig");
 const prompt_sqlite = @import("pabrikcore").sqlite;
@@ -1717,10 +1579,8 @@ test "buildMessages: the mandates hold a byte-identical prefix across sessions" 
     const root = try std.testing.allocator.dupe(u8, path_buf[0..n]);
     defer std.testing.allocator.free(root);
 
-    // Two sessions that differ only in their working directory — the
-    // simplest per-session payload. The sub-directories deliberately do
-    // not exist, so no PABRIK.md / CLAUDE.md / AGENTS.md is picked up and
-    // the cwd block is the first place the two prompts can diverge.
+    // Two sessions that differ only in their working directory — the simplest
+    // per-session payload.
     const cwd_a = try std.fs.path.join(std.testing.allocator, &[_][]const u8{ root, "session-a" });
     defer std.testing.allocator.free(cwd_a);
     const cwd_b = try std.fs.path.join(std.testing.allocator, &[_][]const u8{ root, "session-b" });
@@ -1733,10 +1593,7 @@ test "buildMessages: the mandates hold a byte-identical prefix across sessions" 
     const b = try buildSystemPrompt(&ctx, cwd_b, "sess_prefix_b", &tools);
     defer std.testing.allocator.free(b);
 
-    // The tail is the LAST unconditional mandate. Everything after it (the
-    // gated Secrets rule onward) is where a per-session payload may start, so
-    // the shared prefix runs to the end of the last rule appended for every
-    // agent.
+    // The tail is the LAST unconditional mandate.
     const tail = std.mem.indexOf(u8, a, PullRequestToolRule) orelse
         return error.MandateMissingFromLivePrompt;
     const prefix_len = tail + PullRequestToolRule.len;
@@ -1758,10 +1615,8 @@ test "buildMessages: the mandates hold a byte-identical prefix across sessions" 
 }
 
 test "the tools the mandates name are really in the equipped set" {
-    // A mandate that names a tool the agent does not carry is a lie the
-    // model can do nothing about. Membership is checked against the table
-    // `filterAndMergeTools` actually iterates, not a source grep — which is
-    // how `run_skill_eval` shipped unreachable once already.
+    // A mandate that names a tool the agent does not carry is a lie the model
+    // can do nothing about.
     const tools_equipped = @import("../../agentic_loop/tools_equipped.zig");
     const equipped = tools_equipped.equips(std.testing.allocator);
     defer std.testing.allocator.free(equipped);
@@ -1842,16 +1697,7 @@ test "SkillEvalToolRule names the tool and its non-negotiable behaviors" {
 }
 
 // -------------------------------------------------------------------------
-// SkillWriteToolRule — the WRITE half of the skills loop. Until this rule
-// existed the live prompt told the agent how to LOAD a skill (SkillsToolRule,
-// 33 lines, three triggers, a self-check) and mentioned `add_skill` exactly
-// once, as a parenthetical clause inside a load bullet. The 155-line
-// `skills_system_prompt` in prompts/memory.zig carried all the write-side
-// guidance — WHEN TO WRITE, SKILL FORMAT, the add/edit/remove decision tree —
-// and is referenced by nothing in the tree. So the write path was fully
-// plumbed (add_skill/edit_skill exec, auto_save_skill → session_skills,
-// skill_evals_db logging both) and never driven by the prompt.
-// -------------------------------------------------------------------------
+// SkillWriteToolRule — the WRITE half of the skills loop.
 
 test "SkillWriteToolRule drives the create -> eval -> edit loop" {
     const prompt: []const u8 = SkillWriteToolRule;
@@ -1889,9 +1735,7 @@ test "SkillWriteToolRule states when NOT to write and what a skill body needs" {
     // Self-check, like every other mandate in this block.
     try std.testing.expect(contains(prompt, "Self-check"));
     // add_skill / edit_skill / remove_skill all land one row in THIS
-    // workspace. There is no directory tier to prefer and no scope flag to
-    // pass — and telling a model to reach for `is_global` buys an argument
-    // the tool rejects.
+    // workspace.
     try std.testing.expect(!contains(prompt, "SKILL.MD"));
     try std.testing.expect(!contains(prompt, ".nalar/skills/"));
     try std.testing.expect(!contains(prompt, "is_global"));
@@ -1900,18 +1744,7 @@ test "SkillWriteToolRule states when NOT to write and what a skill body needs" {
 
 // -------------------------------------------------------------------------
 // GitWorktreeToolRule + PullRequestToolRule — the session VCS-binding
-// mandates. Both tools exist, are dispatchable and are reachable, but neither
-// is in DEFAULT_AGENT_TOOLS, and before these rules the prompt mentioned
-// worktrees and pull requests nowhere at all. An agent told to work in a
-// worktree could only hand-roll `git worktree add` — which makes the directory
-// and writes none of the session state the rest of the product reads — and a
-// PR it opened reached the human as a bare URL with no panel behind it.
-//
-// Each rule is pinned on the three things it cannot work without: the tool
-// name, the shell/CLI prohibition with its reason, and the
-// `search_tool` → `use_tool` hatch, because a session that does not carry the
-// tool must be told how to get it instead of being left to guess.
-// -------------------------------------------------------------------------
+// mandates.
 
 test "GitWorktreeToolRule mandates the tool, forbids the hand-rolled command, names the hatch" {
     const prompt: []const u8 = GitWorktreeToolRule;

@@ -1,35 +1,6 @@
-//! POST /api/dev/sse/emit_llm — TEST-ONLY SSE event injection.
-//!
-//! Purpose: let functional UI tests drive the chatview's SSE streaming
-//! path WITHOUT a real LLM. The test seeds a session via DB, opens the
-//! chatview in a browser, then POSTs crafted `llm_chunk` / `llm_full`
-//! payloads here; this handler publishes them on the event bus's
-//! central "llm" routing key — exactly the same wire path a real
-//! agent loop uses (`on_event_sent.zig` `sendStreamChunkContent` /
-//! `onEventSendLLMHistory`).
-//!
-//! ⛔  GATED: the endpoint is INERT unless the server was started with
-//! `PABRIK_TEST_SSE_EMIT=1`. The functional UI harness sets that env var
-//! for the booted binary; production / developer desktop runs never do,
-//! so the endpoint returns 404 there. This keeps the attack surface at
-//! "test harness only".
-//!
-//! Wire (request):
-//! ```json
-//! {
-//!   "session_id": "sess_x",
-//!   "type": "chunk",              // chunk | chunk_final | full
-//!   "content": "delta text",      // for chunk / full
-//!   "finish_reason": "stop",      // for full
-//!   "role": "assistant",          // for full
-//!   "tool_call_id": "...",        // optional, for full
-//!   "tool_name": "bash"           // optional, for full
-//! }
-//! ```
-//!
-//! Wire (response): `{"ok": true}` on 200; `{"error": "..."}` otherwise.
-//! 404 when the gate is off (indistinguishable from an unknown route —
-//! deliberate: no information leak about the endpoint's existence).
+//! POST /api/dev/sse/emit_llm — TEST-ONLY SSE event injection. Purpose: let
+//! functional UI tests drive the chatview's SSE streaming path WITHOUT a real
+//! LLM.
 
 const std = @import("std");
 pub const pabrikcore = @import("pabrikcore");
@@ -97,10 +68,9 @@ pub fn emitLlmHandler(
     };
     const event_bus = di.event_bus;
 
-    // Build the same JSON payload shape the real emitters produce
-    // (see on_event_sent.zig ContentChunkJson / FinalChunkJson and
-    // sse_on_event_send_llm_history.zig SseEventLLMHistory). The
-    // frontend's api/index.ts llm dispatch parses this shape.
+    // Build the same JSON payload shape the real emitters produce (see
+    // on_event_sent.zig ContentChunkJson / FinalChunkJson and
+    // sse_on_event_send_llm_history.zig SseEventLLMHistory).
     var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(allocator);
 
@@ -153,11 +123,9 @@ pub fn emitLlmHandler(
 // ─── Static contract tests ──────────────────────────────────────────────────
 
 test "gate is off by default (no env var)" {
-    // Note: this asserts the DEFAULT state. If the developer's shell
-    // exports PABRIK_TEST_SSE_EMIT=1 the test would fail — that's
-    // intentional (the gate must be opt-in per-process).
-    // We can't unset env vars portably in Zig 0.16 tests, so this test
-    // only runs when the var is absent.
+    // Note: this asserts the DEFAULT state. If the developer's shell exports
+    // PABRIK_TEST_SSE_EMIT=1 the test would fail — that's intentional (the
+    // gate must be opt-in per-process).
     if (std.c.getenv("PABRIK_TEST_SSE_EMIT") == null) {
         try std.testing.expect(!gateEnabled());
     }

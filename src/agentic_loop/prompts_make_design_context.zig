@@ -9,20 +9,9 @@ const MAX_DESIGN_PAGES: u32 = 10;
 
 
 
-/// Render the "Design Canvas" markdown block — workflow expectations
-/// for the LLM when the session's parent item is a design canvas
-/// (`item_type === 'design'`). Mirrors `BuildKanbanStatusPrompt`:
-/// silently returns `""` (a 0-byte heap-owned slice) when the session
-/// is not bound to a design item, when the DB lookups fail, or when
-/// the session_id is empty.
-///
-/// The block teaches the LLM about the 3 design tools
-/// (`set_design_page`, `add_element`, `update_element`) and the 6
-/// element types (`rectangle`, `ellipse`, `text`, `image`, `frame`,
-/// `group`) so it can pick the right shape on first call without
-/// re-reading the tool schemas. It also lists the current pages (with
-/// their visible elements) so the agent has spatial context before
-/// deciding what to add/modify.
+/// Render the "Design Canvas" markdown block — workflow expectations for the
+/// LLM when the session's parent item is a design canvas (`item_type ===
+/// 'design'`).
 pub fn buildDesignCanvasPrompt(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,

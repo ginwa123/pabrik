@@ -9,12 +9,7 @@ pub const Cell = struct {
     char: u21 = ' ',
     fg: ?color.Color = null,
     /// Default to BLACK so the TUI looks consistent regardless of the
-    /// terminal emulator's default background. Without this, on a
-    /// light-themed terminal the viewport + input show the terminal's
-    /// default white background — visible in the user screenshot as
-    /// a big white block above the input. `writeText` preserves the
-    /// existing bg when the caller passes `style.bg = null`, so the
-    /// default stays applied unless explicitly overridden.
+    /// terminal emulator's default background.
     bg: ?color.Color = .black,
     bold: bool = false,
 };
@@ -49,15 +44,8 @@ pub const Frame = struct {
         self.cells[@as(usize, y) * self.width + x] = cell;
     }
 
-    /// Write `text` starting at (x, y), clipped to the frame bounds.
-    /// Returns the x position just past the last written char.
-    ///
-    /// When `style.bg` is null, the existing cell bg is PRESERVED
-    /// rather than reset to null. Combined with the `Cell.bg =
-    /// .black` default, this gives a consistent dark TUI: cells we
-    /// don't write stay black; cells we write without a style.bg
-    /// preserve the default black; cells we write WITH a style.bg
-    /// override per-cell (e.g. the status bar's `.brightBlack`).
+    /// Write `text` starting at (x, y), clipped to the frame bounds. Returns
+    /// the x position just past the last written char.
     pub fn writeText(self: *Frame, x: u16, y: u16, text: []const u8, style: Style) u16 {
         var cx = x;
         var it = std.unicode.Utf8View.initUnchecked(text).iterator();
@@ -84,15 +72,8 @@ pub const Style = struct {
     bold: bool = false,
 };
 
-/// Diff `next` against `prev`, returning an owned byte stream that
-/// repaints only what changed. The first draw (prev == null or
-/// dimensions changed) is a full repaint preceded by clear-screen.
-///
-/// The emitted stream uses:
-///   - `\x1b[<row>;<col>H`  — move cursor (1-based)
-///   - `\x1b[<n>m`          — SGR (bold / fg / bg), only on change
-///   - `\x1b[0m`            — reset when leaving a styled run
-///   - UTF-8 bytes          — the rune itself
+/// Diff `next` against `prev`, returning an owned byte stream that repaints
+/// only what changed.
 pub fn diff(
     allocator: std.mem.Allocator,
     prev: ?*const Frame,
@@ -261,10 +242,6 @@ test "diff: resize triggers full repaint" {
 }
 
 // Round-3 user-reported: "scrolling makes the background white".
-// The diff function MUST emit SGR bg codes so the TUI shows an
-// explicit dark background regardless of the terminal's default
-// (light-themed terminals default to white bg; without an explicit
-// bg, the TUI inherits that white and looks wrong).
 test "diff: emits bg=black SGR codes so terminal shows dark bg even on light themes" {
     var prev = try Frame.init(testing.allocator, 4, 1);
     defer prev.deinit(testing.allocator);
@@ -280,10 +257,8 @@ test "diff: emits bg=black SGR codes so terminal shows dark bg even on light the
     try testing.expect(std.mem.indexOf(u8, out, ";40m") != null);
 }
 
-// Scroll scenario: prev frame has OLD chat, next frame has NEW chat
-// (the result of scrolling). Every cell carries an explicit bg via
-// the default. Confirm the diff emits a black-bg SGR for each
-// changed row so the rolled-over chat area is dark.
+// Scroll scenario: prev frame has OLD chat, next frame has NEW chat (the
+// result of scrolling). Every cell carries an explicit bg via the default.
 test "diff: scroll scenario emits black bg for every changed cell" {
     var prev = try Frame.init(testing.allocator, 10, 4);
     defer prev.deinit(testing.allocator);

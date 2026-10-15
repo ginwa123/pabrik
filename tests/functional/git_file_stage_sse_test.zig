@@ -1,41 +1,4 @@
 // Functional e2e for the `git_file_stage` SSE push.
-//
-// The Files tab's `+` / `−` buttons used to answer with a full
-// `GET /api/git/changes` re-fetch (a `git status --porcelain -uall` plus
-// untracked-directory expansion, then a second folder-wide diff request) —
-// two git spawns and a re-render of every row, for a change that moved
-// exactly one path between two lists. The list visibly blanks and
-// repopulates.
-//
-// Now `POST /api/git/stage` and `POST /api/git/unstage` emit
-// `git_file_staged` / `git_file_unstaged` on the central `git_file_stage`
-// routing key (see src/agentic_loop/git_file_stage_events.zig) and the panel
-// moves ONE row locally.
-//
-// This file pins the transport so a future channel rename breaks HERE, not
-// in the browser:
-//   * GET /api/events?channels=git_file_stage -> 200 text/event-stream
-//     + `connected` handshake (unified_events_sse.zig parseChannels +
-//     CallbackUnifiedGitFileStageStream wiring).
-//   * POST /api/git/stage on a real fixture repo pushes an
-//     `event: git_file_staged` frame whose JSON payload carries the path,
-//     the cwd and `failed: false`.
-//   * POST /api/git/unstage pushes `event: git_file_unstaged`.
-//
-// The frontend's row-move behaviour is covered by the vitest spec
-// (src/apps/desktop/src/components/views/__tests__/SidebarDiffPanel.stage.spec.ts);
-// this file is the wire contract underneath it.
-//
-// WHY THERE IS A HAND-ROLLED SSE CLIENT HERE
-//
-// `Harness.http` CANNOT be used for the stream: it calls
-// `reader.streamRemaining(...)`, which on a `text/event-stream` response
-// blocks until the server closes the connection — and the server holds the
-// stream open forever, so `streamRemaining` never returns. So the stream is
-// opened with `std.http.Client` directly and drained line-by-line on a
-// watchdog-driven reader thread, exactly as background_process_sse_test.zig
-// does. See that file for the full rationale (uncopyable trio, heap-allocated
-// stream, `takeDelimiter` vs `takeDelimiterExclusive`).
 
 const std = @import("std");
 const testing = std.testing;
@@ -74,9 +37,6 @@ const SseEvent = struct {
 };
 
 /// An open SSE connection plus the state the reader thread fills in.
-/// Heap-allocated because `std.http.Client` embeds a `ConnectionPool` with
-/// an `Io.Mutex` and `Response.request` points back at the request — the
-/// trio is uncopyable, so returning it BY VALUE bit-copies the mutex.
 const SseStream = struct {
     client: std.http.Client,
     req: std.http.Client.Request,

@@ -1,34 +1,5 @@
-//! Exec wrappers for the `add_document` / `edit_document` /
-//! `delete_document` / `search_documents` agent tools (Migration 098).
-//!
-//! The wrapper's whole job is three things the pure tool module must not
-//! do: parse the model's JSON arguments, hand `ctx.session_id` down as a
-//! plain parameter (so the tool can resolve its own workspace), and wrap
-//! the inner payload in the `wrapToolOutput` envelope.
-//!
-//! Two details that are load-bearing, not boilerplate:
-//!
-//!  1. `.{ .allocate = .alloc_always, .ignore_unknown_fields = true }`.
-//!     `ignore_unknown_fields` is what makes a hallucinated
-//!     `"workspace_id": "ws_other"` harmless — it is dropped on the floor
-//!     rather than honoured. The tool module has no `workspace_id` field
-//!     for it to land in, and `static contract: document tools never
-//!     accept a workspace_id` in `document.zig` fails the build if one is
-//!     ever added.
-//!  2. The `InnerErrorProbe` re-parse. The tool returns
-//!     `{"error": "..."}` as its inner payload; without re-probing, that
-//!     would be wrapped as `success: true` and the model would read a
-//!     refused cross-workspace edit as a completed one.
-//!
-//! `search_documents` is the odd one out: its matching lives in
-//! `documents_search.zig` (next to `skills_search.zig`) because the regex
-//! engine is under `src/agentic_loop/` and `src/modules/` must not import
-//! it. That makes this file the seam between the two — the same seam
-//! `tools_exec_skills.zig` bridges for `search_skills`.
-//!
-//! `inner` is intentionally NOT freed here: it comes from the per-iteration
-//! arena, matching `execReadWorkspaceSession`. The parse scratch IS freed
-//! via `parsed.deinit()`.
+//! Exec wrappers for the `add_document` / `edit_document` / `delete_document`
+//! / `search_documents` agent tools (Migration 098).
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -45,9 +16,8 @@ const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("tools_error_explain.zig");
 
 /// Probe an inner JSON payload for a top-level `"error"` key. The returned
-/// slice borrows from `parsed` — keep it alive through the
-/// `wrapToolOutput` call, then `deinit`. A payload that fails to parse is
-/// treated as success (the producers always emit valid JSON).
+/// slice borrows from `parsed` — keep it alive through the `wrapToolOutput`
+/// call, then `deinit`.
 const InnerErrorProbe = struct {
     @"error": ?[]const u8 = null,
 };
@@ -198,10 +168,9 @@ pub fn execSearchDocuments(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecRe
     };
     defer parsed.deinit();
 
-    // ── Paging bounds ──
-    // Rejected, never silently clamped, for the same reason `search_skills`
-    // rejects them: the model pages by offset from the `total` it was
-    // shown, so a quiet clamp makes its next call land on the wrong window.
+    // ── Paging bounds ── Rejected, never silently clamped, for the same
+    // reason `search_skills` rejects them: the model pages by offset from the
+    // `total` it was shown, so a quiet clamp makes its next call land on the
     const limit: usize = blk: {
         const raw = parsed.value.limit orelse @as(i64, @intCast(documents_search.DEFAULT_SEARCH_LIMIT));
         if (raw < 1) {
@@ -233,10 +202,7 @@ pub fn execSearchDocuments(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecRe
         break :blk @intCast(raw);
     };
 
-    // Same fail-closed scope resolution `executeAddDocument` uses. An
-    // unresolvable session is a readable refusal, NOT an empty result set —
-    // "you have no workspace" and "you have no matching documents" are
-    // different facts and the model has to be able to tell them apart.
+    // Same fail-closed scope resolution `executeAddDocument` uses.
     if (ctx.session_id.len == 0) {
         const output = try wrapToolOutput(
             ctx.allocator,
@@ -266,10 +232,8 @@ pub fn execSearchDocuments(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecRe
     const query = parsed.value.query orelse "";
     const literal = parsed.value.literal orelse false;
 
-    // The SQL narrowing runs FIRST and only when it is provably a superset
-    // of the regex's matches — see `documents_search.literalPrefilter`. A
-    // metacharacter-bearing query skips it and scans every row instead of
-    // silently reporting zero.
+    // The SQL narrowing runs FIRST and only when it is provably a superset of
+    // the regex's matches — see `documents_search.literalPrefilter`.
     const rows = documents_store.searchDocuments(
         ctx.allocator,
         ctx.db,
@@ -377,25 +341,8 @@ fn fakeToolCall(name: []const u8, args: []const u8) agent.ToolCall {
     };
 }
 
-/// Flattened, OWNED view of a tool envelope.
-///
-/// Two things this deliberately does not do:
-///
-///  - Return `p.value` after `deinit()`. `std.json.parseFromSlice`
-///    allocates every string into an arena owned by `Parsed`, and
-///    `deinit` frees it — so a returned struct of those slices is a
-///    dangling-pointer farm that segfaults inside `std.mem.eql` on the
-///    first comparison, with nothing in the trace pointing at the
-///    lifetime bug. Hence: dup everything, free it in `deinit`.
-///  - Expose `data` as a `std.json.Value`. A Value is a TREE of arena
-///    slices; keeping it would mean keeping the whole arena alive and
-///    carefully not outliving it. The fields the assertions actually
-///    read are lifted to the top level instead.
-///
-/// `raw` is the untouched envelope string. Search assertions sometimes
-/// need "this substring is ABSENT from the whole response" — the only way
-/// to prove a leak did not happen through some field nobody thought to
-/// check — so the raw text is kept rather than reconstructed.
+/// Flattened, OWNED view of a tool envelope. Two things this deliberately
+/// does not do: - Return `p.value` after `deinit()`.
 const Envelope = struct {
     allocator: std.mem.Allocator,
     raw: []const u8 = "",
@@ -407,10 +354,7 @@ const Envelope = struct {
     title: []const u8 = "",
     content: []const u8 = "",
 
-    // search_documents envelope. `documents` is flattened into three
-    // parallel slices because most assertions want to index rows by
-    // position; a []struct would read better but every field would need
-    // its own owned copy in `deinit`.
+    // search_documents envelope.
     pattern_mode: []const u8 = "",
     pattern_warning: ?[]const u8 = null,
     count: usize = 0,
@@ -456,11 +400,8 @@ fn freeOptSlices(a: std.mem.Allocator, items: []const ?[]const u8) void {
 
 fn parseEnvelope(allocator: std.mem.Allocator, raw: []const u8) !Envelope {
     // The envelope nests the tool payload under `data` (see
-    // `wrapToolOutput`), so BOTH the write fields (add/edit/delete) and
-    // the search fields (count/total/documents) live one level down. Reading
-    // them off the top level yields a struct full of defaults that looks
-    // like "the search found nothing" — which is exactly the silent
-    // wrong-answer this file keeps testing for.
+    // `wrapToolOutput`), so BOTH the write fields (add/edit/delete) and the
+    // search fields (count/total/documents) live one level down.
     const DocumentRowWire = struct {
         id: []const u8 = "",
         title: []const u8 = "",
@@ -500,11 +441,8 @@ fn parseEnvelope(allocator: std.mem.Allocator, raw: []const u8) !Envelope {
     const rows = data.documents;
 
     // Five ArrayLists rather than five `alloc`s filled in place: on an OOM
-    // halfway through the row loop, a partially-initialised slice is a
-    // `free` of undefined pointers — which the testing allocator reports
-    // as a leak of a garbage address long after the real failure. An
-    // ArrayList unwinds to exactly what was appended, and `errdefer`
-    // cannot contain `try`, hence the explicit `for` + `deinit`.
+    // halfway through the row loop, a partially-initialised slice is a `free`
+    // of undefined pointers — which the testing allocator reports as a leak
     var ids: std.ArrayList([]const u8) = .empty;
     errdefer {
         for (ids.items) |s| allocator.free(s);
@@ -841,10 +779,6 @@ fn seedDoc(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, title: []const u
 }
 
 /// Seed a document whose id the test does not need to keep.
-///
-/// `defer alloc.free(try seedDoc(...))` does not compile — `try` is not
-/// allowed inside a defer expression — so the anonymous case gets its own
-/// name instead of every test writing the same two-line dance.
 fn seedAnon(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, title: []const u8, content: []const u8) !void {
     const id = try seedDoc(alloc, db, title, content);
     alloc.free(id);
@@ -921,9 +855,7 @@ test "execSearchDocuments: a metacharacter query is NOT narrowed by the SQL pref
     defer ctx.db.deinit();
 
     // `release.` as a regex is "release" + any one character, so "releaseX"
-    // matches while the literal substring "release." does not occur. A LIKE
-    // prefilter would keep only rows containing "release." and report
-    // total: 0 — a wrong answer with no error anywhere.
+    // matches while the literal substring "release." does not occur.
     try seedAnon(alloc, &ctx.db, "Zebra", "releaseX the thing\n");
 
     var env = try runSearch(alloc, &ctx.db, "s1", "{\"query\":\"release.\"}");
@@ -962,9 +894,6 @@ test "execSearchDocuments: a LIKE prefilter needle containing % or _ is matched 
     defer ctx.db.deinit();
 
     // SQLite's LIKE would treat `%` as "any run" and `_` as "any char".
-    // Unescaped, both of these rows come back for the query "%" — the
-    // classic "the prefilter is wider than the matcher" bug, in the
-    // opposite direction: a row that does not contain the needle at all.
     try seedAnon(alloc, &ctx.db, "Percent test", "100%% done\n");
     try seedAnon(alloc, &ctx.db, "Underscore test", "snake_case naming\n");
     try seedAnon(alloc, &ctx.db, "Decoy", "nothing special\n");
@@ -1106,9 +1035,7 @@ test "execSearchDocuments: malformed JSON arguments become a parse failure, not 
     defer env.deinit();
     try testing.expect(!env.success);
     // `search_documents` keeps its own hand-written schema hint (it names
-    // every field and its type, which the generic message cannot). What
-    // matters is that it tells the model what to SEND and never leaks the
-    // raw Zig error name.
+    // every field and its type, which the generic message cannot).
     try testing.expect(std.mem.indexOf(u8, env.err.?, "expected") != null);
     try testing.expect(std.mem.indexOf(u8, env.err.?, "query") != null);
     try testing.expect(std.mem.indexOf(u8, env.err.?, "SyntaxError") == null);
@@ -1296,9 +1223,7 @@ test "document tools are offered to the model and resolve to dispatchable regist
     const names = [_][]const u8{ "add_document", "edit_document", "delete_document", "search_documents" };
 
     // `equips()` is the list the workflow hands the LLM and
-    // UNIFIED_TOOL_REGISTRY() is the dispatcher's table. Both are required:
-    // a registry entry alone makes the tool dispatchable but invisible, an
-    // equips() entry alone makes it visible but undispatchable.
+    // UNIFIED_TOOL_REGISTRY() is the dispatcher's table.
     const equip = tools_equipped.equips(testing.allocator);
     defer testing.allocator.free(equip);
 

@@ -1,56 +1,5 @@
-// End-to-end functional tests for `POST /api/mcp/test` (the "Test"
-// button on the Add/Edit MCP server modal).
-//
-// Zig port of `tests/functional/mcp_test_test.py` (same test names,
-// same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """
-//   End-to-end functional test for `POST /api/mcp/test` (the "Test" button
-//   on the Add/Edit MCP server modal).
-//
-//   What this exercises:
-//     1. **stdio success** — fire `tools/list` against the `mcp-hello-world`
-//        binary (built by `zig build mcp-hello-world`), assert the response
-//        contains all 3 tools (print_hello, print_name, print_exit).
-//     2. **stdio bad command** — fire against a missing command binary,
-//        assert `{ok: false, ...}` with a "failed to spawn" error.
-//     3. **http no endpoint** — fire against `http://127.0.0.1:1/invalid`
-//        (connection refused), assert `{ok: false, ...}` with a
-//        "send failed" error. Doesn't depend on a real HTTP server.
-//     4. **invalid transport** — fire with `transport: "weird"`, assert
-//        `{ok: false, error: "transport must be 'stdio' or 'http'"}`.
-//     5. **missing body field** — stdio with no command, assert
-//        `{ok: false, error: "command is required for stdio transport"}`.
-//
-//   Why this exists: the "Test" probe was the entire reason the user
-//   filed the kanban task. Before this test, the only coverage was a
-//   config-round-trip test (no actual spawn / tools/list cycle). The
-//   timeout regression for the blocking-bug fix can also surface here —
-//   if the future 10s timeout regresses to no timeout, this test would
-//   hang the suite (caught by pytest's per-test timeout, but the user
-//   would lose time waiting).
-//
-//   Run:
-//       PABRIK_BIN=$(pwd)/zig-out/bin/pabrikcore-linux-x86_64 \
-//       pytest tests/functional/mcp_test_test.py -v
-//   """
-//
-// PORTING NOTES — two places where the Python could not be copied
-// literally, both documented at the call site:
-//
-//   * `sys.executable` (the bare Python interpreter, used by the
-//     empty-args timeout test) has no Zig equivalent and is not
-//     guaranteed to exist on a CI runner. The port writes its own
-//     `sh` script with the SAME observable behaviour — reads the probe's
-//     request off stdin, writes nothing to stdout, stays alive until its
-//     stdin closes — which is precisely the hang the user's report
-//     describes.
-//
-//   * `monkeypatch.setenv("PATH", …)` (the environment-inheritance
-//     regression guard) needs a seam `Harness.boot` does not have. See
-//     the TODO(port) on that test.
+// End-to-end functional tests for `POST /api/mcp/test` (the "Test" button on
+// the Add/Edit MCP server modal).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -84,13 +33,6 @@ fn requireMcpBin() ![]u8 {
 }
 
 /// `POST /api/mcp/test` → the parsed body (OWNED).
-///
-/// The endpoint ALWAYS answers HTTP 200 — a failed probe surfaces as
-/// `ok: false` in the body, so `.expect = &.{200}` is the correct
-/// assertion and a mismatch here is a genuinely different bug.
-///
-/// `.allocate = .alloc_always` so the returned document outlives the
-/// `Response` body buffer this function frees.
 fn postTest(h: *Harness, body: []const u8) !std.json.Parsed(std.json.Value) {
     var r = try h.http(io, .POST, "/api/mcp/test", .{
         .json_body = body,
@@ -252,23 +194,14 @@ const SSE_TOOLS_JSON =
     \\{"jsonrpc":"2.0","id":"1","result":{"tools":[{"name":"resolve-library-id","description":"Resolves a lib id"},{"name":"query-docs","description":"Queries docs"}]}}
 ;
 
-/// Byte-for-byte the context7 shape: an `event:` line, then a `data:`
-/// line, then the SSE terminator.
-///
-/// This is the WHOLE response body, not just the JSON — the stub's
-/// `Content-Length` is taken from this slice, so sending the JSON alone
-/// with this slice's length is the bug that truncates the reply and
-/// surfaces as a misleading `JsonParseFailed`.
+/// Byte-for-byte the context7 shape: an `event:` line, then a `data:` line,
+/// then the SSE terminator.
 const SSE_PAYLOAD = "event: message\n" ++
     \\data: {"jsonrpc":"2.0","id":"1","result":{"tools":[{"name":"resolve-library-id","description":"Resolves a lib id"},{"name":"query-docs","description":"Queries docs"}]}}
 ++ "\n\n";
 
-/// One-shot HTTP stub that records the probe's request and answers with
-/// a fixed `text/event-stream` body.
-///
-/// Modelled on `llm_test_test.zig`'s Stub: the serve thread is handed
-/// `stub`'s ADDRESS, so the `Stub` must live in the caller's frame —
-/// returning one by value would hand the thread a dead stack pointer.
+/// One-shot HTTP stub that records the probe's request and answers with a
+/// fixed `text/event-stream` body.
 const SseStub = struct {
     port: u16,
     payload: []const u8,
@@ -634,55 +567,6 @@ test "mcp_test_missing_command_for_stdio_returns_clear_error" {
 // ============================================================================
 // Regression: spawned MCP children must inherit the parent environment
 // ============================================================================
-//
-// Background (2026-08-31, PR #373): the process-global `StdioRegistry`
-// lazily builds its own `std.Io.Threaded` with DEFAULT options. In Zig
-// 0.16 the default `InitOptions.environ` is `.empty`, so the `StdioClient`
-// spawned via the global registry inherited an EMPTY environment — no
-// PATH. A child that resolves its executable by name then fell back to
-// libc's hard-coded default path (`/bin:/usr/bin`) and, in CI, could not
-// find `node`:
-//
-//   mcp-hello-world: line 11: exec: node: not found
-//
-// The fix gives that Threaded the live process environment, but a plain
-// "ok:true" assertion cannot prove the difference on a dev box where
-// node happens to live on the default fallback path. So the Python test
-// used a shim command reachable ONLY via a non-default PATH entry: with
-// the bug the child cannot resolve it (empty env → default path → not
-// found → SpawnFailed → ok:false); with the fix it inherits PATH,
-// resolves, and answers.
-//
-// TODO(port): `Harness.BootOptions.extra_env` (or a narrower
-// `path_prepend`) — a seam that injects extra key/value pairs into the
-// CHILD environment `Harness.boot` builds in step 9, which is the Zig
-// equivalent of pytest's `monkeypatch.setenv("PATH", …)`. Without it
-// there is no way to put the shim directory on the probe child's PATH,
-// and substituting an ABSOLUTE path for the bare command name would
-// delete the exact property under test (PATH resolution by the child),
-// i.e. weaken the test rather than port it. `Harness.boot` currently
-// copies `std.testing.environ` verbatim, and that snapshot is a POSIX
-// `block` (a raw `[:null]const ?[*:0]const u8`), not a mutable map, so
-// there is no supported way to override PATH from inside a test either.
-//
-// Everything below the skip is deliberately NOT written: a shim that is
-// spawned by ABSOLUTE path would pass for the wrong reason, which is
-// worse than an honest skip. The shim source itself is preserved so the
-// port is mechanical once the seam lands.
-//
-// Minimal in-shell MCP stdio shim (newline-delimited JSON, which
-// readFramed auto-detects). Responds to the probe's 3-message handshake
-// (initialize → init response, notifications/initialized + tools/list →
-// tools response) with one tool ("shim_tool").
-//
-// SEQUENCED, not batched (2026-09-04 CI fix): the shim reads ONE
-// request, prints the init response, sleeps 0.2s, THEN reads the
-// remaining two and prints the tools response. The sleep separates the
-// two writes in time so they never coalesce in the kernel pipe buffer.
-// Without it the backend's `readFramed` (a fresh 4 KiB `Io.Reader` per
-// call) buffered + dropped the second line and the next recv saw EOF —
-// flaky 1-in-3 on CI. Real MCP servers never coalesce, so this is a
-// test-only fidelity fix.
 const SHIM_SERVER =
     \\#!/bin/sh
     \\IFS= read -r l1
@@ -713,13 +597,9 @@ test "mcp_test_stdio_child_inherits_parent_path" {
 // Test 6: diagnostic details on child death
 // ============================================================================
 
-// A child that exits immediately (no MCP protocol) produces a
-// diagnostic `details` string containing the attempt count,
-// per-attempt outcome codes, and the child's stderr.
-//
-// `false` always exits 1 with no output, so it closes stdout right
-// after spawn and the cold-start retry path fires deterministically.
-// With 20 attempts × 500ms delay this takes ~12s on the first probe.
+// A child that exits immediately (no MCP protocol) produces a diagnostic
+// `details` string containing the attempt count, per-attempt outcome codes,
+// and the child's stderr.
 test "mcp_test_stdio_diagnostic_on_child_death" {
     if (builtin.os.tag == .windows) {
         // Python: "false command not available on Windows".
@@ -744,12 +624,9 @@ test "mcp_test_stdio_diagnostic_on_child_death" {
         return error.TestUnexpectedResult;
     }
 
-    // BOTH the write and the read leg can lose the race against a child
-    // that is already dead: the pipe may close before the request goes
-    // out (SendFailed) or after it lands but before the reply is read
-    // (RecvFailed). Which one surfaces depends on how far the probe got,
-    // so accept either — pinning a single message made this fail ~1 run
-    // in 3 on a loaded box.
+    // BOTH the write and the read leg can lose the race against a child that
+    // is already dead: the pipe may close before the request goes out
+    // (SendFailed) or after it lands but before the reply is read
     const msg = try errorOf(&result);
     const recv = "failed to receive response from MCP server";
     const send = "failed to send request to MCP server";
@@ -786,27 +663,6 @@ test "mcp_test_stdio_diagnostic_on_child_death" {
 // ============================================================================
 // Test 7: silent child with empty args returns Timeout, not a hang
 // ============================================================================
-//
-// The user's exact report (2026-09-03): editing an MCP server to have
-// EMPTY arguments and clicking Test left the backend blocking forever.
-// Empty args means argv=[command] only — the child reads stdin for
-// EOF (the probe must keep stdin open — real MCP servers need it for the
-// session) while writing ZERO stdout bytes and staying alive. `readFramed`'s
-// first-byte read blocked forever because the deadline was only polled
-// BETWEEN syscalls, never during a zero-byte blocking read.
-//
-// The fix (`waitReadable` posix.poll guard in mcp_stdio.zig +
-// non-blocking `drainStderr` in mcp_test.zig) makes the init recv time
-// out after 10s and surfaces `TestError.Timeout`.
-//
-// PORTING NOTE: the Python used `sys.executable` (a bare interpreter).
-// Zig has no equivalent and Python is not guaranteed on a CI runner, so
-// the port writes its own `sh` script with the SAME observable
-// behaviour: read the probe's request off stdin, write nothing to stdout,
-// stay alive until stdin closes. It additionally blocks on REPEATED
-// reads rather than a single one, so the backend's cold-start retry
-// (which may write more requests before giving up) cannot make the child
-// exit early and turn the timeout into an EOF.
 
 /// Consumes every line the probe writes, never writes to stdout, and
 /// only exits when stdin reaches EOF.
@@ -819,10 +675,8 @@ const SILENT_CHILD =
     \\done
 ;
 
-// A bare interpreter with no args stays silent → {ok:false} Timeout
-// within ~10s per probe, and the backend stays alive across both
-// probes. Pre-fix this test never completes (the handler thread blocks
-// forever on the first-byte read).
+// A bare interpreter with no args stays silent → {ok:false} Timeout within
+// ~10s per probe, and the backend stays alive across both probes.
 test "mcp_test_stdio_empty_args_silent_child_returns_timeout" {
     if (builtin.os.tag == .windows) {
         // The shim needs /bin/sh. Python had no explicit guard here
@@ -887,19 +741,6 @@ test "mcp_test_stdio_empty_args_silent_child_returns_timeout" {
 // ============================================================================
 // Test 8: http SSE `event:`-prefixed body parses (context7 shape)
 // ============================================================================
-//
-// The user's exact report (2026-09-10): editing an MCP server to
-// `https://mcp.context7.com/mcp` and clicking Test returned "Connection
-// failed / failed to parse MCP server response as JSON". Bisected with
-// curl: context7 answers `200 text/event-stream` with
-// `event: message\ndata: {"result":{"tools":[...]}}`. The old
-// `parseToolsList` only stripped a leading `data:` prefix, so
-// `event:`-prefixed bodies went to the JSON parser verbatim.
-//
-// The same bisect showed the `_meta` body envelope triggers
-// `400 Invalid _meta envelope for protocol revision 2026-07-28` while a
-// bare body + `MCP-Protocol-Version`/`Mcp-Method` headers gets the
-// lenient 200 — so the probe must send headers but NOT the envelope.
 test "mcp_test_http_sse_event_prefix_parses_tools" {
     try harness.requirePabrikBin(io, gpa);
 

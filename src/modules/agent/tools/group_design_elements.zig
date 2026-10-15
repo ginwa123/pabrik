@@ -1,12 +1,5 @@
-//! LLM tool: `group_elements` — wrap 2+ elements into a new `group`
-//! or `frame` parent at the union bounding box of the children.
-//!
-//! Delegates to `design_model.groupElements` (Phase A — Chunks 2/3 of
-//! the grouped-layers plan). The tool validates inputs up-front and
-//! re-fetches the parent + each child post-commit so the LLM gets the
-//! canonical state in the response.
-//!
-//! Plan: docs/superpowers/plans/2026-07-28-grouped-layers.md (Chunk 8)
+//! LLM tool: `group_elements` — wrap 2+ elements into a new `group` or
+//! `frame` parent at the union bounding box of the children.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -17,21 +10,14 @@ const design_model = pabrikcore.ai_mod.design_model;
 const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
 
-/// Input structure for `group_elements` tool.
-///
-/// `page_id` and `child_ids` are required. `name` defaults to
-/// `"Group"` and `type` defaults to `"group"` (non-clipping) — the
-/// Figma convention. The wire `type` string is one of `"group"` |
-/// `"frame"`; any other value is rejected with a self-correcting
-/// error object.
+/// Input structure for `group_elements` tool. `page_id` and `child_ids` are
+/// required.
 pub const GroupElementsInput = struct {
     /// The page id (NOT the item_id). The LLM discovers page_ids
     /// via `set_design_page` (the response includes the page id).
     page_id: []const u8 = "",
-    /// Child element ids. Must contain at least 2 ids; a single-element
-    /// group is not meaningful (and is rejected by the model layer).
-    /// All ids must reference elements on the SAME `page_id` and none
-    /// may already be parented.
+    /// Child element ids. Must contain at least 2 ids; a single-element group
+    /// is not meaningful (and is rejected by the model layer).
     child_ids: []const []const u8 = &.{},
     /// Name for the new parent element (optional). Defaults to
     /// `"Group"`. Must be unique within the page (the model's on-disk
@@ -110,12 +96,9 @@ pub fn errorJSONOwned(allocator: std.mem.Allocator, error_msg: []u8) ![]u8 {
     return try errorJSON(allocator, error_msg);
 }
 
-/// Parse the optional `type` string into an `ElementType` enum.
-/// Returns null when the string is null (use the default); returns
-/// the parsed enum on success. The string is restricted to
-/// `"group" | "frame"` — any other value, including the 4 leaf types
-/// (rectangle, ellipse, text, image), is rejected with
-/// `error.InvalidGroupType`.
+/// Parse the optional `type` string into an `ElementType` enum. Returns null
+/// when the string is null (use the default); returns the parsed enum on
+/// success.
 fn parseOptionalGroupType(type_str: ?[]const u8) !?design_model.ElementType {
     const t = type_str orelse return null;
     if (std.mem.eql(u8, t, "group")) return .group;
@@ -183,13 +166,7 @@ fn validateChildIdsShape(allocator: std.mem.Allocator, child_ids: []const []cons
     return null;
 }
 
-/// Render the parent element XML block. Same shape as
-/// `add_design_element.elementToJSON` but scoped to the parent fields
-/// the LLM needs (id, name, type, geometry + parent_id which is
-/// always empty for the new root parent).
-/// JSON parent object: `add_design_element.elementToJSON` scoped to the
-/// parent fields the LLM needs (id, name, type, geometry + parent_id which
-/// is always null for the new root parent).
+/// Render the parent element XML block.
 pub const ParentJSON = struct {
     id: []const u8,
     name: []const u8,
@@ -240,20 +217,7 @@ fn optClean(allocator: std.mem.Allocator, s: []const u8) !?[]u8 {
     return try sanitizeControlChars(allocator, s);
 }
 
-/// Render a single child block. Minimal shape (id, name, parent_id)
-/// — the LLM doesn't need the child's geometry here because that
-/// information is unchanged by the grouping operation (the child's
-/// x/y/width/height are preserved on disk; the parent is just a new
-/// container around them).
-/// Execute the `group_elements` tool. Returns a JSON string for the
-/// LLM.
-///
-/// On success, the response shape is:
-/// `{"parent":{"id":"elem_...","name":"...","type":"group|frame",
-///   "x":..,"y":..,"width":..,"height":..,"parent_id":null},
-///  "children":[{"id":"elem_...","name":"...","parent_id":"elem_NEW_ID"}, ...]}`.
-///
-/// On error, the response is `{"error":...}`.
+/// Render a single child block.
 pub fn executeGroupElementsToString(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -263,11 +227,7 @@ pub fn executeGroupElementsToString(
     if (try validatePageIdShape(allocator, input.page_id)) |e| return e;
     if (try validateChildIdsShape(allocator, input.child_ids)) |e| return e;
 
-    // 1. Parse the optional type string. parseOptionalGroupType
-    //    returns:
-    //      null → "use default" (string was null) → caller applies .group
-    //      enum value → parsed successfully
-    //      error.InvalidGroupType → not one of the 2 valid container types
+    // 1.
     const parsed_type = parseOptionalGroupType(input.type) catch |err| {
         if (err == error.InvalidGroupType) {
             return try errorJSON(allocator, "type must be one of: group, frame");
@@ -367,10 +327,9 @@ test "errorJSONOwned takes ownership and frees the message" {
 
 // ─── DB integration behavioral tests (in-memory SQLite) ────────────────
 
-/// Set up an in-memory SQLite with the v6 design schema + one page +
-/// three rectangle elements ("card-a", "card-b", "card-c") all on the
-/// same page. Returns the DB handle + page_id so tests can call
-/// group_elements on them.
+/// Set up an in-memory SQLite with the v6 design schema + one page + three
+/// rectangle elements ("card-a", "card-b", "card-c") all on the same page.
+/// Returns the DB handle + page_id so tests can call group_elements on them.
 fn setupDbWithThreeElements() !struct {
     db: sqlite.SqliteBackend,
     threaded: std.Io.Threaded,

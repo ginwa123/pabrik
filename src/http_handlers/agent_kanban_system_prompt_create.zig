@@ -1,17 +1,5 @@
-//! `POST /api/agent-kanbans/:kanban_id/system_prompt`.
-//!
-//! Adds a named system-prompt block to an agent-kanbans config. Body:
-//! `{title?, content}`. `content` is required (non-empty after trim);
-//! `title` optional ('' = untitled).
-//!
-//! Mirrors `agent_system_prompt_create.zig` with substitutions:
-//! table `agent_kanban_system_prompt`, parent col `kanban_id`.
-//!
-//! Memory: the per-request arena reaps all allocations at request end,
-//! so neither layer needs explicit `free`s.
-//!
-//! Plan: docs/superpowers/plans/2026-08-25-agent-kanbans-mirror.md
-//! Task: task_1787597624259_2
+//! `POST /api/agent-kanbans/:kanban_id/system_prompt`. Adds a named
+//! system-prompt block to an agent-kanbans config. Body: `{title?, content}`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -68,9 +56,6 @@ pub const SystemPromptCreateOutput = struct {
 // =====================================================================
 
 /// Create a system-prompt row for the given agent-kanbans config.
-/// Validates that the workspace_item is a kanban WITH an `agent_kanbans`
-/// row and that content is non-empty, then INSERTs with
-/// `position = MAX(position) + 1` (COALESCE so the first row gets 0).
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -167,14 +152,7 @@ pub fn agentKanbanSystemPromptCreateHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-//
-// impl + tests in one file (project convention). Behavioural coverage:
-//
-//   1. Validation: empty kanban_id → KanbanIdRequired
-//   2. Validation: empty/whitespace content → ContentRequired
-//   3. KanbanNotFound: wrong type / unconfigured board
-//   4. Happy path: first row gets position 0; second gets 1
-//   5. Empty title tolerated (COALESCE → '')
+// impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;

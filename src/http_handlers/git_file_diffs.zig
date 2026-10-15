@@ -3,13 +3,8 @@ const http_response = @import("http_response.zig");
 const pabrik_core = @import("pabrikcore");
 const gserverz = pabrik_core.gserverz;
 
-/// Batch file diff endpoint — collapses the SidebarDiffPanel N+1 fan-out
-/// (one `GET /api/git/file/diff` per changed file) into at most 2 git
-/// spawns. The panel's `loadFullList` used `Promise.allSettled` over N
-/// files, so 20 dirty files held 20 Io workers for 6-10s each and
-/// starved cheap routes like `queue_messages`. This endpoint runs one
-/// `git diff -- <unstaged...>` and one `git diff --cached -- <staged...>`
-/// then splits per file server-side.
+/// Batch file diff endpoint — collapses the SidebarDiffPanel N+1 fan-out (one
+/// `GET /api/git/file/diff` per changed file) into at most 2 git spawns.
 pub const MAX_BATCH_FILES: usize = 200;
 pub const MAX_PER_FILE_BYTES: usize = 512 * 1024;
 
@@ -18,23 +13,14 @@ pub const BatchFileItem = struct {
     staged: bool = false,
 };
 
-/// Request body. Two modes, picked by which field the client sends:
-///   - LIST mode  — `files` present: diff exactly those paths.
-///   - FOLDER mode — `folder` present (even `""`): the server enumerates
-///     every changed path under that folder itself, so the client does not
-///     have to call `GET /api/git/changes` first. `folder: ""` means the
-///     whole repo.
-/// `files` is optional so folder mode can omit it entirely; both absent is
-/// a 400 rather than a silent "no changes".
+/// Request body.
 pub const BatchDiffBody = struct {
     path: []const u8,
     files: ?[]BatchFileItem = null,
     folder: ?[]const u8 = null,
     /// WHOLE-FILE mode — `git diff -U<all>` for exactly ONE path, so the
     /// client can render every line of the file with the changes still
-    /// marked. Only valid with a single entry in `files` (never folder mode):
-    /// one request per file is the point, and a folder-wide whole-file diff
-    /// would be a multi-megabyte response nobody asked for.
+    /// marked.
     whole_file: ?bool = null,
 };
 
@@ -111,11 +97,6 @@ fn extractDiffPath(chunk: []const u8) ?[]const u8 {
 }
 
 /// True when `folder` is usable as a `git diff -- <pathspec>` argument.
-///
-/// It is spliced straight into argv, so it must not be absolute and must not
-/// walk out of the repo with `..` — `git diff -- ../../elsewhere` happily
-/// diffs a path the caller never named. Empty is allowed and means "the whole
-/// repo", which is why this returns true for `""` rather than short-circuiting.
 pub fn isSafeRelativeFolder(folder: []const u8) bool {
     if (std.fs.path.isAbsolute(folder)) return false;
     // Windows-style absolute ("C:\x", "\\server\share") is not isAbsolute on
@@ -130,11 +111,6 @@ pub fn isSafeRelativeFolder(folder: []const u8) bool {
 
 /// Turn `git status --porcelain` output into the same (file, staged) target
 /// list a LIST-mode caller would have sent.
-///
-/// A path that is staged AND further modified appears twice — once per side —
-/// exactly as `GET /api/git/changes` reports it, so a folder-mode caller sees
-/// the same shape it saw when it did the enumeration itself.
-/// Returns duped strings; the caller frees them with `freeTargetList`.
 pub fn parseStatusTargets(allocator: std.mem.Allocator, porcelain: []const u8) ![]BatchFileItem {
     var targets = std.ArrayList(BatchFileItem).empty;
     errdefer freeTargetList(allocator, targets.items);
@@ -179,32 +155,17 @@ pub fn freeTargetList(allocator: std.mem.Allocator, targets: []const BatchFileIt
 
 /// Whole-file mode is a DIFFERENT budget from the panel's diff view.
 /// `MAX_PER_FILE_BYTES` truncates a diff and marks the cut, which is fine for
-/// a hunk list — the reader scrolls and the diff keeps its meaning. The
-/// whole-file view has no such licence: its gutter numbers every line of the
-/// file, so a cut tail is indistinguishable from the end of the file. It is
-/// therefore all-or-nothing: over this cap the server REFUSES (serves nothing
-/// and sets `whole_file_refused`), and the client offers the code viewer
-/// instead.
+/// a hunk list — the reader scrolls and the diff keeps its meaning.
 pub const MAX_WHOLE_FILE_BYTES: usize = 2 * 1024 * 1024;
 
-/// `-U` for whole-file mode. Larger than any file we are willing to serve, so
-/// git clamps it to the file's length and every line arrives as context —
-/// removals and insertions included, which is what lets ONE request render
-/// the whole file in both unified and split.
+/// `-U` for whole-file mode.
 pub const WHOLE_FILE_UNIFIED_FLAG = "--unified=100000";
 
 /// Marker appended to a diff that exceeded MAX_PER_FILE_BYTES.
 pub const TRUNCATION_SUFFIX = "\n... [truncated]\n";
 
-/// Cap a per-file diff at MAX_PER_FILE_BYTES.
-///
-/// Every length below is derived from the literal itself. A hand-written
-/// slack constant silently drifts out of sync with the suffix whenever the
-/// suffix is reworded, and `@memcpy` then panics on its length check —
-/// which is an `abort()`, not an error, so it takes the whole process down.
-/// The buffer length is also what the caller sees, so it must be the exact
-/// written length; anything longer would serialize uninitialized heap bytes
-/// to the client.
+/// Cap a per-file diff at MAX_PER_FILE_BYTES. Every length below is derived
+/// from the literal itself.
 fn capDiff(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
     if (s.len <= MAX_PER_FILE_BYTES) return try allocator.dupe(u8, s);
     const total = MAX_PER_FILE_BYTES + TRUNCATION_SUFFIX.len;
@@ -214,12 +175,9 @@ fn capDiff(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
     return buf;
 }
 
-/// Cap a whole-file diff — ALL OR NOTHING.
-///
-/// Returns `null` when the body is over `MAX_WHOLE_FILE_BYTES`, in which case
-/// the caller serves an empty diff plus `whole_file_refused`. Truncating here
-/// (as `capDiff` does for the hunk list) would produce a file that LOOKS
-/// complete — the gutter still numbers every line it shows — and just stops.
+/// Cap a whole-file diff — ALL OR NOTHING. Returns `null` when the body is
+/// over `MAX_WHOLE_FILE_BYTES`, in which case the caller serves an empty diff
+/// plus `whole_file_refused`.
 pub fn capWholeFile(allocator: std.mem.Allocator, s: []const u8) !?[]const u8 {
     if (s.len > MAX_WHOLE_FILE_BYTES) return null;
     return try allocator.dupe(u8, s);
@@ -263,9 +221,8 @@ fn syntheticFallback(allocator: std.mem.Allocator, io: std.Io, repo_path: []cons
     const full = try std.fs.path.join(allocator, &.{ repo_path, file });
     defer allocator.free(full);
     // `openFileAbsolute` ASSERTS the path is absolute and ABORTS the whole
-    // process (Debug/ReleaseSafe) instead of returning an error, so never hand it
-    // a relative path — `repo_path` is validated at the handler boundary, this
-    // keeps the helper safe for any future caller.
+    // process (Debug/ReleaseSafe) instead of returning an error, so never
+    // hand it a relative path — `repo_path` is validated at the handler
     if (!std.fs.path.isAbsolute(full)) return try allocator.dupe(u8, "");
     const f = std.Io.Dir.openFileAbsolute(io, full, .{}) catch return try allocator.dupe(u8, "");
     defer f.close(io);
@@ -278,13 +235,6 @@ fn syntheticFallback(allocator: std.mem.Allocator, io: std.Io, repo_path: []cons
 }
 
 /// POST /api/git/file/diffs — batch diffs in a fixed number of git spawns.
-///
-/// LIST mode   — `{ "path": "<repo>", "files": [{ "file": "<rel>", "staged": bool }] }`
-/// FOLDER mode — `{ "path": "<repo>", "folder": "src/app" }` (`""` = whole repo).
-///   The server enumerates the changed paths itself, so the caller never has
-///   to fetch `GET /api/git/changes` first and never issues one request per
-///   file. FOLDER mode costs 3 spawns (status + cached diff + worktree diff)
-///   no matter how many files changed.
 pub fn gitFileDiffsHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
     const io = ctx.io;
@@ -300,9 +250,7 @@ pub fn gitFileDiffsHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest,
     }
     // `parsed.path` is the repo root used as the BASE of every
     // `std.fs.path.join` below, and the joined values reach
-    // `std.Io.Dir.openFileAbsolute` in `syntheticFallback`. That API asserts
-    // `path.isAbsolute(...)`, and a failed assertion ABORTS the whole process
-    // (Debug/ReleaseSafe) instead of returning an error — reject it here.
+    // `std.Io.Dir.openFileAbsolute` in `syntheticFallback`.
     if (!std.fs.path.isAbsolute(parsed.path)) {
         return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeGitStatusErrorResponse(allocator, "path must be an absolute directory") });
     }

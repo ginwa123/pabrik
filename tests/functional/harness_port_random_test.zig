@@ -1,43 +1,5 @@
-// Tests for the random-port selector in ``FunctionalHarness``.
-//
-// Zig port of `tests/functional/harness_port_random_test.py`.
-//
-// The functional-test boot story used to scan a sequential 8080..8199
-// range, which caused two CI failures:
-//
-//   1. Sequential consumption — long test suites filled the 120-port
-//      window and later tests errored with "No free port found".
-//   2. TIME_WAIT saturation — even with ``SO_REUSEADDR``, a CI runner
-//      holding 100+ TIME_WAITs could collide with the narrow scan range.
-//
-// This file pins the new contract: ``findFreePortRandom`` picks from a
-// wide range (20k-32k, clear of the kernel's ephemeral pool), skips
-// reserved ports, and exhausts gracefully.
-// The parallel regression for the sequential path
-// (``findFreePort`` with an explicit ``start``) lives in
-// `harness_orphan_reap_test.zig`.
-//
-// These tests run WITHOUT a real pabrik binary — they exercise the
-// port-finder primitives directly, so they run on a clean checkout.
-//
-// THREE TESTS HAVE NO ZIG EXPRESSION, AND NONE OF THEM IS DROPPED
-//
-// Python's `find_free_port_random` took `range_start=`, `range_end=`,
-// `reserved=` and `attempts=` keyword arguments, so four of the tests
-// below could pin a CUSTOM range or FORCE exhaustion. `harness.zig`'s
-// `findFreePortRandom(gpa)` takes none of them: the range, the
-// reserved set and the attempt count are compile-time constants
-// (`RANDOM_PORT_START` / `RANDOM_PORT_END`, `RESERVED_PORTS`,
-// `RANDOM_PORT_ATTEMPTS`). The tests that needed a caller-supplied
-// range are kept, keep their names, and return `error.SkipZigTest` with
-// a `TODO(port)` naming the missing seam — they are NOT rewritten to
-// assert something weaker, because a weakened port of a negative or
-// narrowing test is worse than an honest gap.
-//
-// The one positive consequence of the constants being comptime: the
-// "bad arguments" cases Python raised `ValueError` for are now
-// UNREPRESENTABLE rather than merely checked, and
-// `find_free_port_random_validates_arguments` asserts exactly that.
+// Tests for the random-port selector in ``FunctionalHarness``. Zig port of
+// `tests/functional/harness_port_random_test.py`.
 
 const std = @import("std");
 const testing = std.testing;
@@ -51,11 +13,9 @@ const Io = std.Io;
 // Helpers
 // ============================================================================
 
-/// The first port in `[start, end]` that can be bound, or null.
-///
-/// The Python loop probed with a bare `bind()`; this uses the harness's
-/// own probe so "free" means the same thing here as it does to the
-/// picker under test.
+/// The first port in `[start, end]` that can be bound, or null. The Python
+/// loop probed with a bare `bind()`; this uses the harness's own probe so
+/// "free" means the same thing here as it does to the picker under test.
 fn firstFreePortIn(start: u16, end: u16) ?u16 {
     var p = start;
     while (p <= end) : (p += 1) {
@@ -65,17 +25,8 @@ fn firstFreePortIn(start: u16, end: u16) ?u16 {
     return null;
 }
 
-/// The first port in `[start, end]` a BARE `bind` accepts, or null.
-///
-/// Distinct from `firstFreePortIn` on purpose. `portIsFreeWithReuse`
-/// probes with `reuse_address = true`, which on POSIX also sets
-/// SO_REUSEPORT, so it reports a port with a lingering server-side
-/// TIME_WAIT as FREE — and a plain `listen` on that same port then
-/// fails with `AddressInUse`. Python's two `port_is_free_with_reuse`
-/// tests bound port 0 (kernel-assigned, never TIME_WAIT), so they never
-/// hit that; a scan needs the stricter probe. A bare `listen` + close
-/// leaves nothing behind (no connection was ever made), so the port the
-/// caller binds afterwards is genuinely free.
+/// The first port in `[start, end]` a BARE `bind` accepts, or null. Distinct
+/// from `firstFreePortIn` on purpose.
 fn firstPlainBindablePort(start: u16, end: u16) ?u16 {
     var p = start;
     while (p <= end) : (p += 1) {
@@ -89,13 +40,6 @@ fn firstPlainBindablePort(start: u16, end: u16) ?u16 {
 }
 
 /// Put `target` into server-side TIME_WAIT and return true on success.
-///
-/// The dance, in order: listen, connect, accept, close the SERVER side
-/// first (the side that initiates the close is the one that ends in
-/// TIME_WAIT), then tear the rest down. A port is only genuinely in
-/// TIME_WAIT if a subsequent bind WITHOUT `SO_REUSEADDR` fails — the
-/// caller checks that, because a kernel that decided not to enter
-/// TIME_WAIT would otherwise make every downstream assertion vacuous.
 fn seedServerSideTimeWait(target: u16) !void {
     const addr: Io.net.IpAddress = .{ .ip4 = .loopback(target) };
 
@@ -127,18 +71,12 @@ fn timeWaitIsReal(target: u16) bool {
 // range + reserved-port contract
 // ============================================================================
 
-// The random-range constants must form a sensible non-empty interval.
-//
-// Guards against a future typo that would corrupt the picker (e.g.
-// start=60000, end=40000 — that's a silent no-op loop).
+// The random-range constants must form a sensible non-empty interval. Guards
+// against a future typo that would corrupt the picker (e.g. start=60000,
+// end=40000 — that's a silent no-op loop).
 test "random_port_constants_are_well_formed" {
-    // Python: `assert RANDOM_PORT_START < RANDOM_PORT_END` with the
-    // offending values in the message. In Zig the comparison of two
-    // `u16` CONSTANTS is a comptime expression, so a reversed range
-    // fails to COMPILE in `findFreePortRandom` itself
-    // (`RANDOM_PORT_END - RANDOM_PORT_START + 1` would underflow).
-    // The runtime form is kept so a reader sees the invariant named and
-    // so the failure message names the numbers.
+    // Python: `assert RANDOM_PORT_START < RANDOM_PORT_END` with the offending
+    // values in the message.
     if (harness.RANDOM_PORT_START >= harness.RANDOM_PORT_END) {
         std.debug.print(
             "RANDOM_PORT_START ({d}) must be < RANDOM_PORT_END ({d})\n",
@@ -173,10 +111,9 @@ test "random_port_constants_are_well_formed" {
     }
 }
 
-// The reserved-port list must include 8081 (the always-on dev backend).
-//
-// Per project memory: "Don't ever kill the process port 8081".
-// The random picker MUST skip it even if bind() succeeds.
+// The reserved-port list must include 8081 (the always-on dev backend). Per
+// project memory: "Don't ever kill the process port 8081". The random picker
+// MUST skip it even if bind() succeeds.
 test "reserved_ports_includes_8081_dev_backend" {
     var found = false;
     for (harness.RESERVED_PORTS) |r| {
@@ -198,10 +135,9 @@ test "reserved_ports_includes_8081_dev_backend" {
 // basic behaviour
 // ============================================================================
 
-// A single random pick lands in ``[RANDOM_PORT_START, RANDOM_PORT_END]``.
-//
-// The contract: callers don't need to validate the return — if we
-// return at all it's a port we can bind.
+// A single random pick lands in ``[RANDOM_PORT_START, RANDOM_PORT_END]``. The
+// contract: callers don't need to validate the return — if we return at all
+// it's a port we can bind.
 test "find_free_port_random_returns_port_in_default_range" {
     const port = try harness.findFreePortRandom(gpa);
     if (port < harness.RANDOM_PORT_START or port > harness.RANDOM_PORT_END) {
@@ -220,43 +156,21 @@ test "find_free_port_random_returns_port_in_default_range" {
     }
 }
 
-// A custom ``range_start=`` / ``range_end=`` is honoured exactly.
-//
-// Lets callers (e.g. a future test or a debugging harness) narrow the
-// window without redeclaring the function.
+// A custom ``range_start=`` / ``range_end=`` is honoured exactly. Lets
+// callers (e.g. a future test or a debugging harness) narrow the window
+// without redeclaring the function.
 test "find_free_port_random_respects_custom_range" {
-    // TODO(port): NOT EXPRESSIBLE. Python called
-    // `find_free_port_random(range_start=41000, range_end=41100)`;
-    // `harness.zig`'s `findFreePortRandom(gpa)` reads the range from
-    // the `RANDOM_PORT_START` / `RANDOM_PORT_END` constants and offers
-    // no override. The narrowing capability itself is gone, so the
-    // contract "a caller-supplied range is honoured exactly" has no
-    // guard in Zig.
-    //
-    // A seam that would restore it:
-    //     pub const PortRange = struct { start: u16, end: u16, reserved: []const u16, attempts: usize };
-    //     pub fn findFreePortRandomIn(gpa: Allocator, r: PortRange) !u16
-    // `findFreePortRandom(gpa)` would then be
-    // `findFreePortRandomIn(gpa, .{ .start = RANDOM_PORT_START, ... })`.
+    // TODO(port): NOT EXPRESSIBLE.
     return error.SkipZigTest;
 }
 
-// A call with extra reserved ports never returns them.
-//
-// The most important reserved port is 8081 (the dev backend). This test
-// pins the contract by reserving a tiny range and confirming the picker
-// always lands outside it.
+// A call with extra reserved ports never returns them. The most important
+// reserved port is 8081 (the dev backend). This test pins the contract by
+// reserving a tiny range and confirming the picker always lands outside it.
 test "find_free_port_random_avoids_reserved_ports" {
     // TODO(port): NOT EXPRESSIBLE for the same reason as
     // `find_free_port_random_respects_custom_range` — Python passed
     // `reserved=(42001,)` and `range_start=42000, range_end=42002`, and
-    // `harness.zig` hard-codes `RESERVED_PORTS`.
-    //
-    // The part that IS covered, and covered twice: `RESERVED_PORTS`
-    // contains 8081 (`reserved_ports_includes_8081_dev_backend`) and
-    // the picker never returns a member of it
-    // (`find_free_port_random_returns_port_in_default_range`). What is
-    // lost is the "arbitrary caller-supplied reserved set" half.
     return error.SkipZigTest;
 }
 
@@ -264,21 +178,6 @@ test "find_free_port_random_avoids_reserved_ports" {
 test "find_free_port_random_validates_arguments" {
     // Python asserted `ValueError` for `range_end < range_start` and for
     // `attempts <= 0`, i.e. the RUNTIME argument validation.
-    //
-    // In Zig those two inputs are `pub const` values, not parameters, so
-    // the rejection moved from runtime to COMPILE time:
-    //   * `range_end < range_start` makes
-    //     `RANDOM_PORT_END - RANDOM_PORT_START + 1` underflow a `u16`
-    //     inside `findFreePortRandom` — a build error, not a silent
-    //     no-op loop.
-    //   * `attempts <= 0` makes `for (0..0) |_|` produce an empty loop,
-    //     which Zig rejects ("range endpoint is unreachable") rather
-    //     than spinning forever.
-    //
-    // What is asserted here is that the SHIPPED constants are in the
-    // range those two compile-time checks accept, and that the picker
-    // actually terminates with a port. That is the observable
-    // consequence of the validation the Python test exercised.
     if (harness.RANDOM_PORT_START > harness.RANDOM_PORT_END) {
         std.debug.print("range_end ({d}) must be >= range_start ({d})\n", .{
             harness.RANDOM_PORT_END, harness.RANDOM_PORT_START,
@@ -298,12 +197,8 @@ test "find_free_port_random_validates_arguments" {
 // randomness
 // ============================================================================
 
-// Back-to-back random picks usually differ.
-//
-// With a 12,000-port range the collision probability per pick is
-// ~1/12000 ≈ 8e-5. Across 10 picks it's still ~8e-4 — vanishing.
-// If this test ever flakes we'd suspect the random seed has been
-// pinned somehow.
+// Back-to-back random picks usually differ. With a 12,000-port range the
+// collision probability per pick is ~1/12000 ≈ 8e-5.
 test "find_free_port_random_usually_varies_across_calls" {
     var picks: [10]u16 = undefined;
     for (&picks) |*slot| slot.* = try harness.findFreePortRandom(gpa);
@@ -336,33 +231,13 @@ test "find_free_port_random_usually_varies_across_calls" {
     try testing.expect(distinct > 1);
 }
 
-// A small sample distributes roughly evenly across the range.
-//
-// We don't assert an exact distribution (chi-squared is overkill for a
-// CI test), just that picks aren't all bunched in one quarter of the
-// range. A regression here would mean the picker's distribution
-// drifted, which we'd want to know about immediately.
-//
-// Python PINNED the seed (`random.seed(20261002)`) because the old
-// bound was a 2.8-sigma event that red-lined a real Linux shard on
-// `main`:
-//
-//     50 picks, p=0.25 → mean 12.5, sd 3.06; the old `5 <= in_q1` bound
-//     is P(under 5) ≈ 0.0035 per quarter, ~0.7% for the pair.
-//
-// `harness.zig` cannot seed the picker: `entropyPrng` is private and
-// `findFreePortRandom` takes no PRNG. So this is an unseeded
-// statistical assertion and carries that same ~0.7% flake rate, which
-// is stated here rather than dressed up as determinism. See the
-// TODO(port) in the body.
+// A small sample distributes roughly evenly across the range. We don't assert
+// an exact distribution (chi-squared is overkill for a CI test), just that
+// picks aren't all bunched in one quarter of the range.
 test "find_free_port_random_distribution_is_uniform" {
-    // TODO(port): the `random.seed(20261002)` / `random.setstate` pair
-    // has no Zig counterpart — `harness.entropyPrng` is module-private
-    // and `findFreePortRandom` accepts no PRNG parameter. Restoring the
-    // determinism the Python file paid for needs
-    // `findFreePortRandomFrom(gpa, prng)` (and, for the distribution
-    // test, the ability to draw from the raw PRNG rather than from a
-    // filtered port).
+    // TODO(port): the `random.seed(20261002)` / `random.setstate` pair has no
+    // Zig counterpart — `harness.entropyPrng` is module-private and
+    // `findFreePortRandom` accepts no PRNG parameter.
     const span = harness.RANDOM_PORT_END - harness.RANDOM_PORT_START;
     const quarter = span / 4;
 
@@ -396,11 +271,6 @@ test "find_free_port_random_distribution_is_uniform" {
 // ============================================================================
 
 // A TIME_WAIT port (reachable only with SO_REUSEADDR) is a valid pick.
-//
-// The whole point of ``SO_REUSEADDR`` in the probe is that pabrik (or
-// vite) can subsequently bind the same port despite lingering server-
-// side TIME_WAITs. If the picker rejected TIME_WAIT ports, rapid CI
-// runs would still saturate the 20k-port window.
 test "find_free_port_random_can_pick_time_wait_port" {
     // Seed a TIME_WAIT on a port inside our random range.
     const target_port = firstFreePortIn(harness.RANDOM_PORT_START, harness.RANDOM_PORT_START + 1000) orelse {
@@ -410,10 +280,8 @@ test "find_free_port_random_can_pick_time_wait_port" {
 
     try seedServerSideTimeWait(target_port);
 
-    // Positive control: the kernel really did put the port into
-    // TIME_WAIT — a bare `bind` is refused. Without this, the assertion
-    // below would pass on a host that never entered TIME_WAIT and prove
-    // nothing about SO_REUSEADDR.
+    // Positive control: the kernel really did put the port into TIME_WAIT — a
+    // bare `bind` is refused.
     if (!timeWaitIsReal(target_port)) {
         std.debug.print("could not seed a TIME_WAIT on {d}; the test would be vacuous\n", .{target_port});
         return error.SkipZigTest;
@@ -430,14 +298,8 @@ test "find_free_port_random_can_pick_time_wait_port" {
         return error.TestUnexpectedResult;
     }
 
-    // TODO(port): Python's second half drove the picker in a range of
-    // ±2 around the target and required it to return the TIME_WAIT port.
-    // `harness.zig`'s picker has no range parameter (see
-    // `find_free_port_random_respects_custom_range`), so the picker half
-    // is gone. The property it defended — "the probe the picker uses is
-    // SO_REUSEADDR-enabled, so a TIME_WAIT port is a legal candidate" —
-    // is asserted directly above, against the very same probe function
-    // the picker calls.
+    // TODO(port): Python's second half drove the picker in a range of ±2
+    // around the target and required it to return the TIME_WAIT port.
 }
 
 // ============================================================================
@@ -449,20 +311,6 @@ test "find_free_port_random_raises_after_exhaustion" {
     // Python synthesised exhaustion by reserving the whole range
     // 43000..43010, so every pick landed on a reserved port and the loop
     // terminated after `attempts` iterations with a message naming the
-    // attempt count and the range.
-    //
-    // TODO(port): NOT EXPRESSIBLE. Two independent blockers:
-    //   * the picker takes no `reserved=` set, so "reserve everything in
-    //     a tight range" cannot be staged;
-    //   * the exhaustion error is a bare `error.NoFreePort` with no
-    //     message, so "the message names the attempt count and the
-    //     range" has nothing to assert against — the operator hint
-    //     Python relied on to diagnose a pathological host is GONE.
-    //
-    // The forcing half (occupy every port in a narrow range) is also
-    // not reachable from a test: binding 12,000 listeners to exhaust the
-    // shipped range would need more file descriptors than the default
-    // 1024 limit allows.
     return error.SkipZigTest;
 }
 
@@ -470,17 +318,11 @@ test "find_free_port_random_raises_after_exhaustion" {
 // port_is_free_with_reuse (the shared probe helper)
 // ============================================================================
 
-// A fresh free port returns true; one held by another listener returns
-// false.
-//
-// Smoke test for the shared helper — exercised by both the random
-// picker and the sequential scan, so it must be correct.
+// A fresh free port returns true; one held by another listener returns false.
+// Smoke test for the shared helper — exercised by both the random picker and
+// the sequential scan, so it must be correct.
 test "port_is_free_with_reuse_basic" {
     // Python bound port 0 to get a kernel-assigned ephemeral port.
-    // `Io.net.IpAddress.listen` does not expose the assigned port, so
-    // this scans the legacy range for a free one instead; the contract
-    // under test (probe says false while bound, true once released) is
-    // identical either way.
     const chosen = firstPlainBindablePort(harness.RANDOM_PORT_START, harness.RANDOM_PORT_END) orelse {
         std.debug.print("no bindable port in [{d}, {d}]\n", .{ harness.RANDOM_PORT_START, harness.RANDOM_PORT_END });
         return error.SkipZigTest;
@@ -490,16 +332,9 @@ test "port_is_free_with_reuse_basic" {
         const addr: Io.net.IpAddress = .{ .ip4 = .loopback(chosen) };
         var s = try addr.listen(io, .{});
         defer s.deinit(io);
-        // While the socket is bound, port_is_free_with_reuse must say
-        // false.
-        //
-        // NOTE: the held listener deliberately does NOT set
-        // `reuse_address`. Python's `socket.bind()` in this test set no
-        // SO_REUSEADDR either. That matters: `reuse_address` sets
-        // SO_REUSEPORT as well on POSIX, and two sockets that BOTH set
-        // SO_REUSEPORT may share one addr:port — at which point the
-        // probe would report a port with a live LISTEN as free. See the
-        // defect note at the bottom of this file.
+        // While the socket is bound, port_is_free_with_reuse must say false.
+        // NOTE: the held listener deliberately does NOT set `reuse_address`.
+        // Python's `socket.bind()` in this test set no SO_REUSEADDR either.
         if (harness.portIsFreeWithReuse(io, chosen)) {
             std.debug.print("portIsFreeWithReuse({d}) said free while a listener held it\n", .{chosen});
             return error.TestUnexpectedResult;
@@ -530,18 +365,8 @@ test "port_is_free_with_reuse_handles_explicit_bound_port" {
 // sequential-path regression gate
 // ============================================================================
 
-// ``_find_free_port_sequential`` keeps its first-free behaviour in the
-// legacy range.
-//
-// The orphan-reap regression test (`harness_orphan_reap_test.zig`)
-// relies on this — it seeds a TIME_WAIT on `target_port` and asserts
-// `findFreePort(target_port) == target_port`. We pin the same contract
-// here with a fresh free port (no TIME_WAIT needed) so the sequential
-// path is regression-tested independently.
-//
-// Note: the legacy sequential scan is bounded to `[start,
-// PORT_SCAN_END]` (`PORT_SCAN_END = 8199`), so the test must pick a
-// start port inside the legacy range, not the new wide random range.
+// ``_find_free_port_sequential`` keeps its first-free behaviour in the legacy
+// range.
 test "sequential_path_still_works_via_explicit_start" {
     // Walk the legacy range looking for a free port. If 8080-8199 (minus
     // 8081) is fully consumed on a busy box, skip — the test isn't about
@@ -565,18 +390,7 @@ test "sequential_path_still_works_via_explicit_start" {
 // findFreePort(null) → random (the production path)
 // ============================================================================
 
-// ``_find_free_port()`` with no args picks a random port from the wide
-// range.
-//
-// Regression guard for the bug where the old default `port=DEFAULT_PORT`
-// (=8080) was passed through to `_find_free_port` and triggered the
-// legacy sequential path even when the caller didn't ask for 8080. The
-// fix: `start: ?u16 = null` defaults to null, and `findFreePort(null)`
-// → random pick.
-//
-// We can't easily mock-boot the harness here (no pabrik binary in this
-// test scope), so we exercise the function directly — but that has the
-// same shape as what `Harness.boot` calls.
+// ``_find_free_port()`` with no args picks a random port from the wide range.
 test "find_free_port_no_args_uses_random" {
     const port = try harness.findFreePort(null); // no args → random
     if (port < harness.RANDOM_PORT_START or port > harness.RANDOM_PORT_END) {
@@ -588,12 +402,7 @@ test "find_free_port_no_args_uses_random" {
     }
 }
 
-// ``_find_free_port(start)`` with an explicit int triggers the legacy
-// scan.
-//
-// Backward-compat contract: callers that pass an explicit port (e.g.
-// debugging, deterministic repros) still get the sequential scan from
-// that port to PORT_SCAN_END.
+// ``_find_free_port(start)`` with an explicit int triggers the legacy scan.
 test "find_free_port_explicit_int_uses_sequential" {
     // Find a free port in the legacy range
     const candidate = firstFreePortIn(harness.DEFAULT_PORT, harness.PORT_SCAN_END) orelse {
@@ -621,33 +430,8 @@ test "find_free_port_explicit_int_uses_sequential" {
 }
 
 // ============================================================================
-// DEFECT OBSERVED WHILE PORTING (not fixed here — harness.zig is not
-// this file's to edit)
-// ============================================================================
-//
-// `harness.portIsFreeWithReuse` probes with
-// `IpAddress.listen(io, .{ .reuse_address = true })`, and Zig 0.16
-// documents `ListenOptions.reuse_address` as:
-//
-//     Sets SO_REUSEADDR and SO_REUSEPORT on POSIX.
-//
-// SO_REUSEPORT lets two sockets bind the SAME addr:port simultaneously
-// as long as both set it. So the probe reports `true` for a port that a
-// live listener is holding — provided that listener also set
-// `reuse_address`.
-//
-// Reproduction (linux-x86_64, Zig 0.16.0):
-//
-//     var a = try addr.listen(io, .{ .reuse_address = true });   // 21077
-//     _ = addr.listen(io,   .{ .reuse_address = true });         // SUCCEEDS
-//
-// The test above deliberately binds its held listener WITHOUT
-// `reuse_address`, because that is what the Python test did and it is
-// the only way the assertion has teeth — see the inline note there.
-// Whether the real `pabrik` listener sets SO_REUSEPORT is not visible
-// from this package (`src/` reaches it through the HTTP server, which
-// only sets `setReuseAddr`), so this is reported as a weakened probe
-// rather than a demonstrated boot failure.
+// DEFECT OBSERVED WHILE PORTING (not fixed here — harness.zig is not this
+// file's to edit)
 
 comptime {
     // Body-analysis barrier: an unreferenced function is never

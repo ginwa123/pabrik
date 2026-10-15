@@ -9,15 +9,7 @@ pub const WorkspaceItemFullResponse = struct { id: []const u8, workspace_id: []c
 
 // ─── Kanban column types ───────────────────────────────────────────────────
 // Wire shape for `GET /api/workspaces/:wsId/items/:itemId/kanban/columns`
-// (and the PATCH/POST variants). Mirrors the `KanbanColumn` struct in
-// `src/ai_workflow/tui/kanban_model.zig` field-for-field so a future
-// contract change is one struct definition to update.
-//
-// `id` is generated server-side (e.g. `col_<unix_nanoseconds>`).
-// `position` is an `i64` because SQLite INTEGER can be 64-bit and the
-// kanban model layer stores positions as i64. The frontend reads it as
-// a JS number (up to 2^53 is safe; the kanban flow renumbers densely
-// so positions never approach that ceiling in practice).
+// (and the PATCH/POST variants).
 pub const KanbanColumnResponse = struct {
     id: []const u8,
     workspace_item_id: []const u8,
@@ -30,10 +22,8 @@ pub const KanbanColumnResponse = struct {
     created_at: []const u8,
 };
 
-/// Map a `kanban_model.KanbanColumn` (or any struct with the same
-/// fields) into a `KanbanColumnResponse`. The `anytype` parameter keeps
-/// this helper decoupled from the data-layer struct so the two can
-/// evolve independently without touching the response shape.
+/// Map a `kanban_model.KanbanColumn` (or any struct with the same fields)
+/// into a `KanbanColumnResponse`.
 pub fn makeKanbanColumnResponse(col: anytype) KanbanColumnResponse {
     return .{
         .id = col.id,
@@ -45,11 +35,9 @@ pub fn makeKanbanColumnResponse(col: anytype) KanbanColumnResponse {
     };
 }
 
-/// Build the `{"columns":[...], "count": N}` envelope used by
-/// `GET /kanban/columns` (and the success-path of PATCH/DELETE that
-/// returns the full updated board). The inner slice is allocated from
-/// the per-request arena and freed before this function returns; the
-/// outer envelope JSON is what the caller receives.
+/// Build the `{"columns":[...], "count": N}` envelope used by `GET
+/// /kanban/columns` (and the success-path of PATCH/DELETE that returns the
+/// full updated board).
 pub fn makeKanbanColumnListResponse(allocator: std.mem.Allocator, cols: anytype) ![]u8 {
     const KanbanColumnListResponse = struct {
         columns: []const KanbanColumnResponse,
@@ -112,21 +100,9 @@ pub const TaskCreateRequest = struct {
     name: []const u8,
     /// Free-form text the frontend attaches to every task (the
     /// `AddTaskDialog` and `AddRoutineDialog` both emit it).
-    /// Persisted on the `workspace_item_tasks.description` column
-    /// (Migration 062). Optional; the DB default '' is the
-    /// "no description" sentinel.
     description: ?[]const u8 = null,
     session_id: ?[]const u8 = null,
-    /// Task type. Defaults to 'standard' (preserves the existing flow).
-    ///   - 'standard': interactive chat task (default; creates a session).
-    ///   - 'routine':  DELETED (Migration 084) — rejected with 400
-    ///     `RoutineTasksRemoved`. Create a routine workspace item instead.
-    ///   - 'memory':   a local memory file scoped to the parent
-    ///                 workspace_item's directory. The .md file is
-    ///                 created at <workspace_item.path>/.pabrik/memories/
-    ///                 so `loadLocalKnowledge` picks it up on the
-    ///                 next chat. Requires `memory_name` and
-    ///                 `memory_content` in the body.
+    /// Task type.
     task_type: []const u8 = "standard",
     /// Filename for the memory file. Must end in `.md` and contain
     /// no path separators or `..` (validated by `memories.isValidMemoryName`).
@@ -135,49 +111,20 @@ pub const TaskCreateRequest = struct {
     /// Initial content of the memory file. Required iff task_type='memory'.
     memory_content: ?[]const u8 = null,
     /// Auto-retry-until-stop flag (Migration 063). Mirrors the
-    /// `sessions.is_auto_retry_until_stop` column for routine tasks
-    /// where task.id == session.id (project convention). When set
-    /// during standard-task creation, the handler ALSO inserts a
-    /// `sessions` row (task.id becomes session.id) so the flag has
-    /// somewhere to land. Accepts `"1"`, `"0"`, or null/absent.
-    /// Frontend's KanbanTaskDetailDialog toggle sends this on
-    /// create when the user flipped unattended-mode ON.
+    /// `sessions.is_auto_retry_until_stop` column for routine tasks where
+    /// task.id == session.id (project convention).
     is_auto_retry_until_stop: ?[]const u8 = null,
-    /// JSON-encoded array of tag strings (Migration 067 — kanban
-    /// task tags feature). Null/undefined means "no tags supplied",
-    /// which is the same as an empty array. The handler validates
-    /// the JSON shape, char whitelist, dedupe, and length caps
-    /// (see http_handlers/tags_validation.zig). Stored verbatim on
-    /// the row's `tags` column. Plan:
-    /// docs/superpowers/plans/2026-07-28-kanban-task-tags.md
+    /// JSON-encoded array of tag strings (Migration 067 — kanban task tags
+    /// feature).
     tags: ?[]const u8 = null,
-    /// `||`-delimited base64 data URLs (Migration 069 — kanban
-    /// image urls column). Null/undefined means "no images
-    /// supplied". The handler joins each URL with `||` before
-    /// persisting on the `image_urls` column. The frontend sends
-    /// raw base64 data URLs (`data:image/...;base64,...`) in the
-    /// same array order they want them rendered. Plan:
-    /// docs/superpowers/plans/2026-08-06-kanban-image-urls-
-    /// column.md.
+    /// `||`-delimited base64 data URLs (Migration 069 — kanban image urls
+    /// column). Null/undefined means "no images supplied".
     image_urls: ?[]const u8 = null,
-    /// `||`-delimited base64 data URLs (Migration 090 — kanban
-    /// video urls column). Null/undefined means "no videos
-    /// supplied". Validated via video_urls_validation.zig
-    /// (data:video/... prefix + allowlist + 25 MB cap).
+    /// `||`-delimited base64 data URLs (Migration 090 — kanban video urls
+    /// column). Null/undefined means "no videos supplied".
     video_urls: ?[]const u8 = null,
-    /// Per-task cwd override (Migration 070 — kanban-cwd-session-
-    /// optional plan, 2026-08-06). Null/undefined = no cwd
-    /// supplied (column omitted from INSERT, DEFAULT '' applies,
-    /// row is cwd-less — falls back to the kanban's `path` +
-    /// the per-session sandbox). Empty string = explicit "no
-    /// per-task cwd" sentinel. Non-empty string = absolute path on
-    /// disk that becomes the cwd for this task's chat sessions,
-    /// overriding the kanban-level cwd + the per-session sandbox.
-    /// Frontend sends the raw string from the FilePickerDialog in
-    /// the Add Task dialog; the backend stores it verbatim (no
-    /// validation beyond `len == 0` and existence checks happen
-    /// at agent-run time via the OS). The 3-level fallback chain
-    /// lives in `session_create.zig::useCase`.
+    /// Per-task cwd override (Migration 070 — kanban-cwd-session- optional
+    /// plan, 2026-08-06).
     cwd: ?[]const u8 = null,
 };
 
@@ -185,47 +132,17 @@ pub const TaskUpdateRequest = struct {
     name: ?[]const u8 = null,
     session_id: ?[]const u8 = null,
     /// Free-form description. Mirrors `TaskCreateRequest.description`.
-    /// When present (non-null), overwrites the existing value; the
-    /// empty string is the canonical "no description" sentinel and is
-    /// stored verbatim. UI uses an "Add a description…" placeholder for
-    /// empty values; the DB column has DEFAULT '' so legacy rows
-    /// without a description look identical.
     description: ?[]const u8 = null,
     /// JSON-encoded array of tag strings (Migration 067).
-    /// Semantics:
-    ///   - null/undefined  → don't change existing tags (no-op).
-    ///   - `""` (empty string) → clear all tags (sets `tags = ''`).
-    ///   - `'["a","b"]'` → replace existing tags with this array
-    ///     (after validation + dedupe via tags_validation.zig).
-    /// The handler validates the shape, char whitelist, length cap,
-    /// and dedupes case-insensitively. Plan:
-    /// docs/superpowers/plans/2026-07-28-kanban-task-tags.md.
     tags: ?[]const u8 = null,
-    /// `||`-delimited base64 data URLs (Migration 069 — kanban
-    /// image urls column). Semantics mirror tags:
-    ///   - null/undefined  → don't change existing images (no-op).
-    ///   - `""` (empty string) → clear all images (sets `image_urls = ''`).
-    ///   - `'data:image/png;base64,...||data:image/jpeg;base64,...'`
-    ///     → replace existing images with this list (after validation
-    ///     via image_urls_validation.zig — data URL prefix + 10 MB cap).
-    /// Plan: docs/superpowers/plans/2026-08-24-kanban-task-image-urls-read-path.md
+    /// `||`-delimited base64 data URLs (Migration 069 — kanban image urls
+    /// column).
     image_urls: ?[]const u8 = null,
-    /// `||`-delimited base64 data URLs (Migration 090 — kanban
-    /// video urls column). Semantics mirror image_urls:
-    ///   - null/undefined  → don't change existing videos (no-op).
-    ///   - `""` (empty string) → clear all videos (sets `video_urls = ''`).
-    ///   - `'data:video/mp4;base64,...||...'` → replace (validated
-    ///     via video_urls_validation.zig — prefix + 25 MB cap).
+    /// `||`-delimited base64 data URLs (Migration 090 — kanban video urls
+    /// column).
     video_urls: ?[]const u8 = null,
-    /// Per-task cwd override (Migration 070 — kanban-cwd-session-
-    /// optional plan, 2026-08-06). Semantics:
-    ///   - null/undefined  → don't change existing cwd (no-op).
-    ///   - `""` (empty string) → clear per-task cwd (sets `cwd = ''`,
-    ///     falls back to kanban-level path + sandbox).
-    ///   - `"/home/me/repo-A"` → replace per-task cwd with this path
-    ///     (validation: must be an absolute path; existence is
-    ///     checked at agent-run time via the OS).
-    /// Plan: docs/superpowers/plans/2026-08-06-kanban-cwd-session-optional.md
+    /// Per-task cwd override (Migration 070 — kanban-cwd-session- optional
+    /// plan, 2026-08-06).
     cwd: ?[]const u8 = null,
 };
 
@@ -248,12 +165,7 @@ pub const SessionMessage = struct {
     created_at: []const u8,
     /// Wire-format boolean. Emitted as JSON `true`/`false` by
     /// `std.json.Stringify.valueAlloc` (called from
-    /// `makeSessionMessagesResponse`). Matches the SSE
-    /// `SseEventLLMHistory.is_input` shape and the TypeScript
-    /// `is_input?: boolean` type. The DB column is `INTEGER` (0/1);
-    /// the conversion to bool happens in `llm_history.SessionMessage`
-    /// via `parseRowBool`. See
-    /// docs/plans/2026-07-01-is-input-output-bool-consistency.md.
+    /// `makeSessionMessagesResponse`).
     is_input: bool,
     is_output: bool,
     tool_name: []const u8,
@@ -273,9 +185,7 @@ pub const SessionMessagesResponse = struct {
     next_cursor: ?[]const u8,
     cwd: ?[]const u8 = null,
     /// Session's bound git worktree path (NULL/empty when no worktree is
-    /// bound). Mirrors `sessions.git_worktree_cwd`. Populated by
-    /// `sessionMessagesHandler` from `llm_history.SessionMessageResponse`.
-    /// See Chunk 1 of the git-worktree-cwd-pr plan.
+    /// bound). Mirrors `sessions.git_worktree_cwd`.
     git_worktree_cwd: ?[]const u8 = null,
     /// Attached PR URL (NULL/empty when no PR is bound). Mirrors
     /// `sessions.pr_url`. Populated by `sessionMessagesHandler` from
@@ -284,12 +194,7 @@ pub const SessionMessagesResponse = struct {
     /// Effective PR provider. Mirrors `sessions.pr_provider`.
     pr_provider: ?[]const u8 = null,
     /// Session's selected profile name (NULL/empty when no profile is
-    /// selected). Mirrors `sessions.selected_profile_model`. Populated by
-    /// `sessionMessagesHandler` from `llm_history.SessionMessageResponse`.
-    /// Without this field the frontend's profile chip resets to "Default"
-    /// on every page refresh because the read endpoint never returned
-    /// the value that PUT `/api/llm/session/:id` writes. Bug fix:
-    /// 2026-08-07-profile-persist-read.
+    /// selected). Mirrors `sessions.selected_profile_model`.
     selected_profile_model: ?[]const u8 = null,
     /// Migration 091 — resolved sub-agent name for sub-agent sessions.
     sub_agent_name: ?[]const u8 = null,
@@ -356,30 +261,21 @@ pub fn makeErrorResponse(allocator: std.mem.Allocator, response: ErrorResponse) 
 pub const PabrikConfigResponse = struct {
     // Plan 2026-08-24-config-simplify-remove-defaults: the top-level LLM
     // defaults (api_endpoint/api_key/model/url_style/temperature/
-    // max_tokens/system_prompt) were REMOVED from the wire. The backend
-    // derives effective credentials from the active profile at load time;
-    // profiles are the only config surface.
+    // max_tokens/system_prompt) were REMOVED from the wire.
     profiles: ?std.json.Value = null,
     active_profile: ?[]const u8 = null,
     /// Map of MCP server name to its raw JSON config (`{"url": "...", "headers": {...}}`).
     /// Sent as-is so the frontend gets full fidelity (header values, etc.).
     mcp_servers: ?std.json.Value = null,
-    /// Top-level sub-agents. Each entry carries the full LLM
-    /// configuration (model, base_url, thinking, temperature, url_style,
-    /// api_key) plus a `system_prompt`. Borrowed slices — the caller
-    /// must keep the source alive until the response is serialized.
+    /// Top-level sub-agents. Each entry carries the full LLM configuration
+    /// (model, base_url, thinking, temperature, url_style, api_key) plus a
+    /// `system_prompt`.
     sub_agents: ?[]const SubAgentResponse = null,
     /// Opt-in OS notification flag. When true, the backend fires
-    /// `notify-send` / osascript / PowerShell when an LLM response
-    /// completes with `finish_reason == "stop"`. Consumed by
-    /// `workflow.zig:483`.
+    /// `notify-send` / osascript / PowerShell when an LLM response completes
+    /// with `finish_reason == "stop"`. Consumed by `workflow.zig:483`.
     notify_on_complete: bool = false,
-    /// Opt-in OS notification flag for the error path. When true, the
-    /// backend fires a desktop notification when the workflow hits a
-    /// transport error, exhausts retries (TooManyRetries), or fails
-    /// the outer agentic loop. Default `false` so a brand-new install
-    /// is silent on errors. Consumed by `workflow.zig` at the same
-    /// sites as `notify_on_complete`.
+    /// Opt-in OS notification flag for the error path.
     notify_on_error: bool = false,
     /// Opt-in web-launch flag. When true, the agent may launch URLs in
     /// the user's web browser. Default `false` so a brand-new install
@@ -389,30 +285,22 @@ pub const PabrikConfigResponse = struct {
     /// estimate exceeds this value trigger context compaction.
     /// Consumed by `session_compact.zig:57`.
     model_compaction_size_kb: usize = 100,
-    /// Optional top-level override for the model's context window (in tokens).
-    /// `null` = fall through to per-profile override, then built-in default.
-    /// Restored in plan 2026-07-07-compaction-inline so the Defaults tab
-    /// can show + edit the top-level compaction defaults.
+    /// Optional top-level override for the model's context window (in
+    /// tokens). `null` = fall through to per-profile override, then built-in
+    /// default.
     max_capacity_token_model: ?u32 = null,
     /// Optional top-level compaction threshold as a percentage (0-100).
     /// `null` = fall through to per-profile override, then built-in 80.
     compaction_threshold_percent: ?u8 = null,
     /// Delay in milliseconds before the workflow retries a failed
-    /// `callDynamicAgentNew` call. 0 = no delay. Consumed by
-    /// `workflow.zig:513` (the `callDynamicAgentNew` retry catch) and
-    /// `workflow.zig:595` (the `else` finish_reason branch).
+    /// `callDynamicAgentNew` call. 0 = no delay.
     retry_delay_ms: u32 = 0,
     /// Default tool checklist (Tools tab, plan
-    /// 2026-09-22-tools-menu-config-default-tools). Serialized as-is —
-    /// `null` when the on-disk key is absent, so the frontend can tell
-    /// "legacy defaults" from an explicit `[]` (zero tools). Borrowed
-    /// slices — the caller keeps the parsed config alive until the
-    /// response is serialized.
+    /// 2026-09-22-tools-menu-config-default-tools).
     tools: ?[]const []const u8 = null,
     /// Configured web-search providers, keyed by provider name. The
     /// credential in each entry is MASKED on the way out (see
     /// `maskWebSearchProviders`), and `PUT` treats the mask as "unchanged".
-    /// Borrowed — the caller keeps the source alive until serialization.
     web_search: ?std.json.Value = null,
     /// Skill Evals switch + knobs, echoed so the Settings toggle can
     /// render the current state. Borrowed slices — the caller must keep
@@ -420,10 +308,7 @@ pub const PabrikConfigResponse = struct {
     skill_evals: SkillEvalsResponse = .{},
 };
 
-/// Wire format for a single sub-agent entry. Mirrors
-/// `LlmConfig.SubAgentJson` field-for-field; lives here as a separate
-/// type so the response boundary doesn't need to import the internal
-/// `LlmConfig` module just to serialize a list of sub-agents.
+/// Wire format for a single sub-agent entry.
 pub const SubAgentResponse = struct {
     name: []const u8,
     model: []const u8,
@@ -435,10 +320,9 @@ pub const SubAgentResponse = struct {
     system_prompt: []const u8,
 };
 
-/// Wire format for the Skill Evals block. Mirrors
-/// `LlmConfig.SkillEvalsJson` field-for-field, for the same reason
-/// `SubAgentResponse` lives here — the response boundary serializes
-/// without importing the internal config module.
+/// Wire format for the Skill Evals block. Mirrors `LlmConfig.SkillEvalsJson`
+/// field-for-field, for the same reason `SubAgentResponse` lives here — the
+/// response boundary serializes without importing the internal config module.
 pub const SkillEvalsResponse = struct {
     enabled: bool = false,
     max_skills_per_run: u32 = 8,
@@ -500,10 +384,9 @@ pub fn makeWorkspaceItemListResponse(allocator: std.mem.Allocator, items: anytyp
     return try list.toOwnedSlice(allocator);
 }
 
-/// Object-wrapped variant of `makeWorkspaceItemListResponse`.
-/// Returns `{"items":[...],"count":N}` to match the shape the desktop store's
-/// `getWorkspacesItems` frontend wrapper expects. Delegates the inner array
-/// build to the bare-array helper to avoid duplicating the item-shape logic.
+/// Object-wrapped variant of `makeWorkspaceItemListResponse`. Returns
+/// `{"items":[...],"count":N}` to match the shape the desktop store's
+/// `getWorkspacesItems` frontend wrapper expects.
 pub fn makeWorkspaceItemListObjectResponse(allocator: std.mem.Allocator, items: anytype) ![]u8 {
     const array_json = try makeWorkspaceItemListResponse(allocator, items);
     defer allocator.free(array_json);
@@ -511,11 +394,9 @@ pub fn makeWorkspaceItemListObjectResponse(allocator: std.mem.Allocator, items: 
     return std.fmt.allocPrint(allocator, "{{\"items\":{s},\"count\":{d}}}", .{ array_json, items.len });
 }
 
-// Workspace Item Task types
-// NOTE: RoutineMetaResponse deleted with the per-task `routines`
-// table (Migration 084, plan 2026-09-10-workspace-items-routines).
-// The `routine` inline field on WorkspaceItemTaskResponse is gone
-// with it.
+// Workspace Item Task types NOTE: RoutineMetaResponse deleted with the
+// per-task `routines` table (Migration 084, plan
+// 2026-09-10-workspace-items-routines).
 
 pub const WorkspaceItemTaskResponse = struct {
     id: []const u8,
@@ -546,83 +427,47 @@ pub const WorkspaceItemTaskResponse = struct {
     /// Position within the kanban column. `0` for non-kanban tasks.
     /// Mirrors `WorkspaceItemTaskInfo.kanban_position` (Migration 048).
     kanban_position: i64 = 0,
-    /// Unattended-mode flag, joined from `sessions` for tasks
-    /// (where `task.id == session.id` per the project
-    /// convention). `'0'` for standard tasks that have no
-    /// session row, and the literal session value otherwise.
-    /// Empty string when the join didn't find a row — the
-    /// frontend's KanbanTaskDetailDialog defaults to off in that
-    /// case.
+    /// Unattended-mode flag, joined from `sessions` for tasks (where `task.id
+    /// == session.id` per the project convention).
     is_auto_retry_until_stop: []const u8 = "",
 
-    /// Last `finish_reason` from the joined `sessions` row (Migration
-    /// 065 / kanban notification icon feature). Empty string when
-    /// the LEFT JOIN found no session row — the frontend treats this
-    /// as "AI never ran on this task". Drives the green checkmark
-    /// vs no-icon decision in the kanban card.
+    /// Last `finish_reason` from the joined `sessions` row (Migration 065 /
+    /// kanban notification icon feature).
     last_finish_reason: []const u8 = "",
 
-    /// Computed boolean for the kanban card "AI finished — awaiting
-    /// review" orange dot. SQL CASE produces 1 when the AI has
-    /// finished (last_finish_reason='stop') and no human has touched
-    /// the task since. The kanban card UI uses this directly:
-    ///   - true  → orange pulsing dot
-    ///   - false AND last_finish_reason==='stop' → green checkmark
-    ///   - false AND last_finish_reason==='' → no icon (never ran)
+    /// Computed boolean for the kanban card "AI finished — awaiting review"
+    /// orange dot.
     needs_human_review: bool = false,
 
-    /// JSON-encoded array of tag strings (Migration 067 — kanban
-    /// task tags feature). Empty string is the canonical "no tags"
-    /// sentinel (NOT NULL DEFAULT ''). Frontend decodes via
-    /// JSON.parse. Plan:
-    /// docs/superpowers/plans/2026-07-28-kanban-task-tags.md.
+    /// JSON-encoded array of tag strings (Migration 067 — kanban task tags
+    /// feature).
     tags: []const u8 = "",
 
-    /// Lightweight media-presence flags (media-flags change). List/get
-    /// return only these; the full `||`-delimited base64 TEXT columns
-    /// stay server-side for the lazy `GET .../tasks/:task_id/media`
-    /// endpoint. The frontend fetches media only when the flag is true.
+    /// Lightweight media-presence flags (media-flags change).
     is_have_image: bool = false,
     is_have_video: bool = false,
 
-    /// Per-task cwd override (Migration 070 — kanban-cwd-session-
-    /// optional plan, 2026-08-06). Empty string is the canonical
-    /// "no per-task cwd" sentinel (NOT NULL DEFAULT ''). Mirrors
-    /// `WorkspaceItemTaskInfo.cwd`. The frontend's
-    /// KanbanTaskDetailDialog (edit mode) renders this read-only
-    /// strip; KanbanView's `runAgentOnNewTask` flow uses it as the
-    /// per-task cwd in the 3-level fallback chain (per-task cwd →
-    /// kanban-level path → per-session sandbox).
+    /// Per-task cwd override (Migration 070 — kanban-cwd-session- optional
+    /// plan, 2026-08-06).
     cwd: []const u8 = "",
 
-    /// Computed `git rev-parse --abbrev-ref HEAD` output for the
-    /// task's cwd (`session.git_worktree_cwd` if bound, otherwise
-    /// `workspace_items.path`). Computed on-demand per task by the
-    /// handler — no DB column. Null when the cwd is empty, the path
-    /// is not a git repo, the HEAD is detached, or the subprocess
-    /// fails. Used by the frontend's kanban card to render the
-    /// GitHub-style fork/branch badge in the meta row. Plan:
-    /// docs/superpowers/plans/2026-08-06-kanban-task-git-branch.md
+    /// Computed `git rev-parse --abbrev-ref HEAD` output for the task's cwd
+    /// (`session.git_worktree_cwd` if bound, otherwise
+    /// `workspace_items.path`).
     git_branch: ?[]const u8 = null,
 };
 
 pub const WorkspaceItemTaskListResponse = struct {
     tasks: []const WorkspaceItemTaskResponse,
     count: u32,
-    // Pagination fields. `has_more` is true when at least one more page
-    // exists after this one; `next_cursor` is the `created_at` of the
-    // last task in this page, to be passed back as `?cursor=` for the
-    // next page. `next_cursor` is null when there are no more pages.
-    // Both default to "end of list" so older call sites that don't
-    // supply them still compile.
+    // Pagination fields.
     has_more: bool = false,
     next_cursor: ?[]const u8 = null,
 };
 
-// NOTE: RoutinesListEntry / RoutinesListResponse /
-// makeRoutinesListResponse deleted with the per-task `routines`
-// table + `GET /api/routines` (Migration 084, plan
-// 2026-09-10-workspace-items-routines).
+// NOTE: RoutinesListEntry / RoutinesListResponse / makeRoutinesListResponse
+// deleted with the per-task `routines` table + `GET /api/routines` (Migration
+// 084, plan 2026-09-10-workspace-items-routines).
 
 /// One entry in the kanban tag suggestions dropdown. Returned by
 pub fn makeWorkspaceItemTaskResponse(allocator: std.mem.Allocator, response: WorkspaceItemTaskResponse) ![]u8 {
@@ -644,10 +489,9 @@ pub fn makeWorkspaceItemTaskListResponse(
     return std.json.Stringify.valueAlloc(allocator, response, .{});
 }
 
-/// One entry in the kanban tag suggestions dropdown. Returned by
-/// `GET /api/workspaces/:ws/items/:item/kanban/tags` ordered by
-/// frequency DESC, last_used_at DESC.
-/// Plan: docs/superpowers/plans/2026-07-30-kanban-task-tags-autocomplete.md
+/// One entry in the kanban tag suggestions dropdown. Returned by `GET
+/// /api/workspaces/:ws/items/:item/kanban/tags` ordered by frequency DESC,
+/// last_used_at DESC.
 pub const KanbanTagSuggestionResponse = struct {
     name: []const u8,
     count: u32,
@@ -695,8 +539,6 @@ pub fn makeGitStageResponse(allocator: std.mem.Allocator, response: GitStageResp
 
 // ─── Git commit-create types ─────────────────────────────────────────────
 // Wire shape for `POST /api/git/commit/create?path=<repo>&message=<msg>`.
-// Answers the new HEAD SHA so the caller can refresh history without
-// another round-trip.
 pub const GitCommitCreateResponse = struct {
     success: bool,
     message: []const u8,
@@ -709,10 +551,7 @@ pub fn makeGitCommitCreateResponse(allocator: std.mem.Allocator, response: GitCo
 
 // ─── Git worktree info types ───────────────────────────────────────────────
 // Wire shape for `GET /api/git/worktree/info?path=<worktree>[&base=<branch>]`
-// consumed by the desktop app's CreatePrDialog. Mirrors the response
-// struct in `git_worktree_info.zig` so a future contract change is one
-// struct definition to update. See Chunk 2 of the
-// git-worktree-cwd-pr plan.
+// consumed by the desktop app's CreatePrDialog.
 pub const GitWorktreeInfoResponse = struct {
     is_git_repo: bool = false,
     branch: []const u8 = "",
@@ -735,10 +574,9 @@ pub fn makeGitWorktreeInfoResponse(allocator: std.mem.Allocator, response: GitWo
 pub const GitPrCreateResponse = struct {
     success: bool = false,
     pr_url: []const u8 = "",
-    /// Which forge the PR/MR was opened on ("github" / "gitlab").
-    /// Empty on failure, and on responses from a server predating
-    /// GitLab support — clients must treat "" as "unknown, assume
-    /// GitHub", not as an error.
+    /// Which forge the PR/MR was opened on ("github" / "gitlab"). Empty on
+    /// failure, and on responses from a server predating GitLab support —
+    /// clients must treat "" as "unknown, assume GitHub", not as an error.
     provider: []const u8 = "",
     // Renamed from `error_message` per PR review (line 60 of git_pr_create.zig).
     // `error` is a Zig keyword, so the field is `@"error"` here; it serializes
@@ -751,14 +589,10 @@ pub fn makeGitPrCreateResponse(allocator: std.mem.Allocator, response: GitPrCrea
 }
 
 // ─── Git PR status types ──────────────────────────────────────────────────
-// Wire shape for `GET /api/git/pr/status?path=<repo>[&pr=<n|url>][&provider=]`.
-// Wraps `gh pr view --json ...` so the CLI can show open/merged/closed
-// without shelling to `gh` itself.
+// Wire shape for `GET
+// /api/git/pr/status?path=<repo>[&pr=<n|url>][&provider=]`.
 pub const GitPrStatusResponse = struct {
-    /// Which forge answered: "github" or "gitlab". The frontend needs
-    /// this to label the item correctly (pull request vs merge request)
-    /// — without it a GitLab MR is rendered with GitHub's wording and
-    /// links to a GitHub-only `/conflicts` route.
+    /// Which forge answered: "github" or "gitlab".
     provider: []const u8 = "",
     pr_url: []const u8 = "",
     number: i64 = 0,
@@ -769,12 +603,8 @@ pub const GitPrStatusResponse = struct {
     status: []const u8 = "",
     mergeable: []const u8 = "",
     merge_state: []const u8 = "",
-    /// The commit the head branch pointed at when the forge answered.
-    /// GitHub: `headRefOid`. GitLab: `sha`. Empty when the forge did not
-    /// send one (the parser defaults every field, so this is not an error).
-    ///
-    /// Load-bearing for merging: it is the `--match-head-commit` / `--sha`
-    /// guard, so a merge cannot land on a commit the user never saw.
+    /// The commit the head branch pointed at when the forge answered. GitHub:
+    /// `headRefOid`. GitLab: `sha`.
     head_sha: []const u8 = "",
     head_ref: []const u8 = "",
     base_ref: []const u8 = "",
@@ -794,14 +624,6 @@ pub fn makeGitPrStatusResponse(allocator: std.mem.Allocator, response: GitPrStat
 
 // ─── Git PR merge types ───────────────────────────────────────────────────
 // Wire shape for `POST /api/git/pr/merge`.
-//
-// The response is the SAME status payload the 30 s poll returns, re-read
-// after the merge command ran — deliberately, and not just for convenience.
-// A forge CLI exiting 0 is not proof that anything merged: `glab mr merge`
-// can exit 0 having only ARMED auto-merge (its `--auto-merge` default), and a
-// GitHub merge queue accepts a PR without merging it. Returning the forge's
-// own post-merge answer is the only way the badge, the box and the user can
-// all be looking at the same truth.
 pub const GitPrMergeResponse = struct {
     /// True only when the forge reports the change request as merged NOW.
     /// False with `pending` true is the honest "accepted, not merged yet".
@@ -821,13 +643,8 @@ pub fn makeGitPrMergeResponse(allocator: std.mem.Allocator, response: GitPrMerge
 }
 
 // ─── Git PR list types ────────────────────────────────────────────────────
-// Wire shape for
-// `GET /api/git/pr/list?path=<repo>[&state=open|closed|merged|all][&limit=30][&provider=]`.
-//
-// This is a LIST of a repository's change requests, not the status of one:
-// the kanban board's PR surface shows every open PR/MR of the board's repo,
-// including the ones whose card was deleted. N calls to `/status` could not
-// answer that — there is no way to enumerate a repo through `gh pr view`.
+// Wire shape for `GET
+// /api/git/pr/list?path=<repo>[&state=open|closed|merged|all][&limit=30][&provider=]`.
 pub const GitPrListItem = struct {
     number: i64 = 0,
     title: []const u8 = "",
@@ -869,11 +686,6 @@ pub fn makeGitPrListResponse(allocator: std.mem.Allocator, response: GitPrListRe
 
 // ─── Git PR close types ───────────────────────────────────────────────────
 // Wire shape for `POST /api/git/pr/close`.
-//
-// `closed` is the FORGE's answer, re-read through the same path the 30 s
-// poll uses — not the CLI's exit code. A forge CLI can exit 0 having done
-// nothing (`glab` prints a warning and succeeds in several cases), so the
-// re-read is what makes `false` + `detail` expressible at all.
 pub const GitPrCloseResponse = struct {
     /// True only when the forge now reports the change request as closed.
     closed: bool = false,
@@ -892,9 +704,8 @@ pub fn makeGitPrCloseResponse(allocator: std.mem.Allocator, response: GitPrClose
 }
 
 // ─── Git PR checks types ──────────────────────────────────────────────────
-// Wire shape for `GET /api/git/pr/checks?path=<repo>[&pr=<n|url>][&provider=]`.
-// One row per CI job, plus the steps inside a failed one — "which job failed"
-// is already on the PR page; "which process or task failed" is not.
+// Wire shape for `GET
+// /api/git/pr/checks?path=<repo>[&pr=<n|url>][&provider=]`.
 pub const GitPrCheckStep = struct {
     name: []const u8 = "",
     /// Position in the job's step list. 0 when the CLI omitted it.
@@ -955,12 +766,8 @@ pub fn makeGitPrChecksResponse(allocator: std.mem.Allocator, response: GitPrChec
 }
 
 // ─── Git PR conflicts types ───────────────────────────────────────────────
-// Wire shape for
-// `GET /api/git/pr/conflicts?path=<repo>&pr_url=<url>[&provider=][&base=][&head=]`.
-// `mergeable: CONFLICTING` says a PR cannot merge but never says *what* blocks
-// it — no forge API exposes that — so the backend runs the same three-way
-// merge locally (`git merge-tree --write-tree --name-only`) and names the
-// files.
+// Wire shape for `GET
+// /api/git/pr/conflicts?path=<repo>&pr_url=<url>[&provider=][&base=][&head=]`.
 pub const GitPrConflictsResponse = struct {
     pr_url: []const u8 = "",
     /// The ref the merge was computed against, e.g. `refs/remotes/origin/main`.
@@ -983,9 +790,7 @@ pub fn makeGitPrConflictsResponse(allocator: std.mem.Allocator, response: GitPrC
 }
 
 // ─── Git branches list types ──────────────────────────────────────────────
-// Wire shape for `GET /api/git/branches?path=<repo>`. Consumed by the
-// kanban "New task" dialog's base-branch picker so the user can choose
-// which ref a fresh worktree branches from (e.g. `origin/main`).
+// Wire shape for `GET /api/git/branches?path=<repo>`.
 pub const GitBranchEntry = struct {
     /// Short ref name, e.g. `origin/main` (remote-tracking) or `main`
     /// (local). This is the exact string the agent passes as the
@@ -1008,9 +813,6 @@ pub fn makeGitBranchesResponse(allocator: std.mem.Allocator, response: GitBranch
 
 // ─── Git commits list types ───────────────────────────────────────────────
 // Wire shape for `GET /api/git/commits?path=<repo>[&limit=100][&skip=0]`.
-// Read-only lazygit-style history: short SHA + author + subject per row,
-// paged with skip/limit. `total_count` is best-effort (`rev-list --count
-// HEAD`, zero when unresolvable).
 pub const GitCommitEntry = struct {
     sha: []const u8 = "",
     short_sha: []const u8 = "",
@@ -1033,9 +835,7 @@ pub fn makeGitCommitsResponse(allocator: std.mem.Allocator, response: GitCommits
 }
 
 // ─── Git commit detail types ──────────────────────────────────────────────
-// Wire shape for `GET /api/git/commit?path=<repo>&sha=<sha>`. Full message
-// plus the touched-file list (`git diff-tree --name-status`); per-file
-// diffs reuse the existing file-diff flow.
+// Wire shape for `GET /api/git/commit?path=<repo>&sha=<sha>`.
 pub const GitCommitFileEntry = struct {
     status: []const u8 = "",
     path: []const u8 = "",
@@ -1057,9 +857,8 @@ pub fn makeGitCommitDetailResponse(allocator: std.mem.Allocator, response: GitCo
 }
 
 // ─── Git commit file-diff types ───────────────────────────────────────────
-// Wire shape for `GET /api/git/commit/file?path=<repo>&sha=<sha>&file=<path>`.
-// Unified diff of one file at one commit; powers the clickable file rows
-// in the commits view.
+// Wire shape for `GET
+// /api/git/commit/file?path=<repo>&sha=<sha>&file=<path>`.
 pub const GitCommitFileDiffResponse = struct {
     sha: []const u8 = "",
     path: []const u8 = "",
@@ -1100,11 +899,7 @@ pub fn makeProfilesListResponse(allocator: std.mem.Allocator, profiles: []const 
 }
 
 // ─── Workspaces reorder ────────────────────────────────────────────────────
-// Typed response for `POST /api/workspaces/reorder`. Uses the same
-// `std.json.Stringify.valueAlloc` pattern as every other response
-// in this file — never manual `std.fmt.allocPrint` of JSON strings
-// (those break on field names with special characters and drift
-// away from the struct definition on every refactor).
+// Typed response for `POST /api/workspaces/reorder`.
 pub const WorkspacesReorderResponse = struct {
     success: bool = true,
     count: usize,
@@ -1116,8 +911,7 @@ pub fn makeWorkspacesReorderResponse(allocator: std.mem.Allocator, count: usize)
 
 // Typed response for `POST /api/workspaces/:workspace_id/items/reorder`.
 // Mirrors WorkspacesReorderResponse — same shape, same std.json.Stringify
-// pattern. The frontend reads `{success, count}` to confirm the reorder
-// took effect.
+// pattern.
 pub const WorkspaceItemReorderResponse = struct {
     success: bool = true,
     count: usize,
@@ -1127,10 +921,9 @@ pub fn makeWorkspaceItemReorderResponse(allocator: std.mem.Allocator, count: usi
     return std.json.Stringify.valueAlloc(allocator, WorkspaceItemReorderResponse{ .count = count }, .{});
 }
 
-/// Typed response for `POST /api/.../tasks/:task_id/pin`. Returns the
-/// new `pinned_position` so the client can confirm the row landed at
-/// the bottom of the pinned region. `is_pinned` echoes the requested
-/// state.
+/// Typed response for `POST /api/.../tasks/:task_id/pin`. Returns the new
+/// `pinned_position` so the client can confirm the row landed at the bottom
+/// of the pinned region. `is_pinned` echoes the requested state.
 pub const TaskPinResponse = struct {
     success: bool = true,
     id: []const u8,
@@ -1155,11 +948,7 @@ pub fn makeTaskPinResponse(
     );
 }
 
-/// Typed response for `POST /api/.../tasks/reorder_pinned`. Returns
-/// the number of rows in the payload (a row that isn't currently
-/// pinned is silently skipped by the WHERE clause, but the count
-/// still reflects the input list size so the client can verify the
-/// request reached the server).
+/// Typed response for `POST /api/.../tasks/reorder_pinned`.
 pub const TasksReorderPinnedResponse = struct {
     success: bool = true,
     count: usize,
@@ -1201,32 +990,12 @@ pub fn makeSessionPinResponse(
 
 // ─── Design-mode response types ────────────────────────────────────────────
 // Wire shapes for `GET/POST/PUT/PATCH/DELETE /api/.../design/...`.
-// Mirrors the `DesignPage` and `DesignElement` structs in
-// `src/agentic_loop/design_model.zig` field-for-field so a future
-// contract change is one struct definition to update.
-//
-// `DesignElementResponse` deliberately omits the `html` body — the
-// full HTML is fetched lazily via a separate `GET .../elements/:eid/html`
-// endpoint (`DesignElement.loadElementHtml`). This keeps the page+elements
-// JSON payload small even for designs with 50+ elements, and lets the
-// iframe preview opt in to fetching bodies only when the element is
-// selected.
-//
-// The model's `elem_type` field is renamed to `type` on the wire (the
-// SQL column is `type` too — `elem_type` is a Zig-only name because
-// `type` is a Zig keyword).
-//
-// Plan: docs/superpowers/plans/2026-07-08-design-mode-redesign.md
-//   (Chunk 3, Task 3.1).
 pub const DesignPageResponse = struct {
     id: []const u8,
     workspace_item_id: []const u8,
     name: []const u8,
     /// 1:1 FK to `workspace_item_tasks.id`. Set atomically by
-    /// `design_model.setDesignPage` at create time. The frontend
-    /// uses this directly to resolve the page's chat task via
-    /// `workspacesStore.setActiveTask(page.workspace_item_task_id)`
-    /// — no name matching, no legacy migration.
+    /// `design_model.setDesignPage` at create time.
     workspace_item_task_id: []const u8,
     width: i64,
     height: i64,
@@ -1235,10 +1004,8 @@ pub const DesignPageResponse = struct {
     updated_at: []const u8,
 };
 
-/// Map a `design_model.DesignPage` (or any struct with the same
-/// fields) into a `DesignPageResponse`. The `anytype` parameter keeps
-/// this helper decoupled from the data-layer struct so the two can
-/// evolve independently without touching the response shape.
+/// Map a `design_model.DesignPage` (or any struct with the same fields) into
+/// a `DesignPageResponse`.
 pub fn makeDesignPageResponse(page: anytype) DesignPageResponse {
     return .{
         .id = page.id,
@@ -1253,10 +1020,8 @@ pub fn makeDesignPageResponse(page: anytype) DesignPageResponse {
     };
 }
 
-/// Build the `{"pages":[...], "count": N}` envelope used by
-/// `GET /design/pages`. The inner slice is allocated from the
-/// per-request arena and freed before this function returns; the
-/// outer envelope JSON is what the caller receives.
+/// Build the `{"pages":[...], "count": N}` envelope used by `GET
+/// /design/pages`.
 pub fn makeDesignPageListResponse(allocator: std.mem.Allocator, pages: anytype) ![]u8 {
     const DesignPageListResponse = struct {
         pages: []const DesignPageResponse,
@@ -1298,10 +1063,8 @@ pub const DesignElementResponse = struct {
     text_content: []const u8,
     text_style: []const u8,
     image_url: []const u8,
-    /// FK to a `group`/`frame` element on the same page (empty string
-    /// for top-level elements). Empty-slice convention matches the
-    /// data-layer (NULL parent_id round-trips to `""`). See the
-    /// 2026-07-28-grouped-layers plan (Chunk 1).
+    /// FK to a `group`/`frame` element on the same page (empty string for
+    /// top-level elements).
     parent_id: []const u8,
     z_index: i64,
     position: i64,
@@ -1309,10 +1072,8 @@ pub const DesignElementResponse = struct {
     updated_at: []const u8,
 };
 
-/// Map a `design_model.DesignElement` (or any struct with the same
-/// fields) into a `DesignElementResponse`. The model's `elem_type`
-/// field (renamed from SQL `type` because `type` is a Zig keyword)
-/// is exposed on the wire as `type`.
+/// Map a `design_model.DesignElement` (or any struct with the same fields)
+/// into a `DesignElementResponse`.
 pub fn makeDesignElementResponse(elem: anytype) DesignElementResponse {
     return .{
         .id = elem.id,
@@ -1341,11 +1102,9 @@ pub fn makeDesignElementResponse(elem: anytype) DesignElementResponse {
     };
 }
 
-/// Build the `{"elements":[...], "count": N}` envelope used by
-/// callers that want to return a flat element list (currently
-/// unused by the 9 HTTP handlers — all of them wrap the elements
-/// inside a `DesignPageWithElements` payload — but exported for
-/// future endpoints, e.g. a search-by-name route).
+/// Build the `{"elements":[...], "count": N}` envelope used by callers that
+/// want to return a flat element list (currently unused by the 9 HTTP
+/// handlers — all of them wrap the elements inside a `DesignPageWithElements`
 pub fn makeDesignElementListResponse(allocator: std.mem.Allocator, elements: anytype) ![]u8 {
     const DesignElementListResponse = struct {
         elements: []const DesignElementResponse,
@@ -1375,11 +1134,7 @@ pub const DesignPageWithElementsResponse = struct {
 };
 
 /// Build the `{"page":..., "elements":[...]}` envelope for
-/// `getPageWithElements`. Mirrors the `kanban_model.PageWithElements`
-/// pattern: the page is the parent, elements are the children, both
-/// in the same JSON object. The inner slices are allocated from the
-/// per-request arena and freed before this function returns; the
-/// outer envelope JSON is what the caller receives.
+/// `getPageWithElements`.
 pub fn makeDesignPageWithElementsResponse(
     allocator: std.mem.Allocator,
     page: anytype,
@@ -1400,14 +1155,8 @@ pub fn makeDesignPageWithElementsResponse(
 }
 
 // ─── Documents response types ─────────────────────────────────────────────
-// Wire shapes for `/api/workspaces/:wsId/documents[/:documentId]`
-// (Migration 098). Mirrors `src/agentic_loop/documents_store.DocumentRow`
-// field-for-field.
-//
-// The list envelope is `{documents, count}` rather than a bare array so a
-// future paginated variant can add `has_more` / `next_cursor` without a
-// breaking shape change — the same reason `DesignPageListResponse` and
-// `WorkspaceItemTaskListResponse` are objects.
+// Wire shapes for `/api/workspaces/:wsId/documents[/:documentId]` (Migration
+// 098).
 pub const DocumentResponse = struct {
     id: []const u8,
     workspace_id: []const u8,
@@ -1420,11 +1169,8 @@ pub const DocumentResponse = struct {
     updated_at: []const u8,
 };
 
-/// Map a `documents_store.DocumentRow` (or any struct with the same
-/// fields) into the wire shape. The `anytype` parameter keeps this
-/// helper decoupled from the data-layer struct so the two can evolve
-/// independently without touching the response shape — same pattern as
-/// `makeDesignPageResponse`.
+/// Map a `documents_store.DocumentRow` (or any struct with the same fields)
+/// into the wire shape.
 pub fn makeDocumentResponse(doc: anytype) DocumentResponse {
     return .{
         .id = doc.id,
@@ -1442,10 +1188,9 @@ pub const DocumentListResponse = struct {
     count: u32,
 };
 
-/// Build the `{"documents":[...], "count": N}` envelope. The inner
-/// slice is allocated from the per-request arena and freed before this
-/// function returns; the outer envelope JSON is what the caller
-/// receives.
+/// Build the `{"documents":[...], "count": N}` envelope. The inner slice is
+/// allocated from the per-request arena and freed before this function
+/// returns; the outer envelope JSON is what the caller receives.
 pub fn makeDocumentListResponse(allocator: std.mem.Allocator, documents: anytype) ![]u8 {
     const mapped = try allocator.alloc(DocumentResponse, documents.len);
     defer allocator.free(mapped);
@@ -1462,23 +1207,8 @@ pub fn makeDocumentListResponse(allocator: std.mem.Allocator, documents: anytype
 }
 
 // ─── Secrets response types ───────────────────────────────────────────────
-// Wire shapes for `/api/workspaces/:wsId/secrets[/:secretId]`
-// (Migration 103). Mirrors `src/agentic_loop/secrets_store.SecretRow`
-// field-for-field, and `SecretRow` has no `value` either — so this type
-// cannot carry one either.
-//
-// THERE IS NO `value` FIELD HERE, AND THAT IS THE DESIGN. A secret's value
-// travels in POST/PATCH request bodies and stops there: no read path
-// returns it, not masked, not as a `key_hint`, not truncated. A response
-// that carried it would put a live credential in the browser, where "we
-// chose not to render it" is one XSS away from a leak (Design Decision 9,
-// docs/superpowers/plans/2026-10-02-workspace-secrets.md). The cost is
-// that rotation cannot be read back — it is confirmed by having saved it.
-// DO NOT add a value field here to make some later feature easier.
-//
-// The list envelope is `{secrets, count}` rather than a bare array for the
-// same reason `DocumentListResponse` is an object: a future paginated
-// variant can add `has_more` / `next_cursor` without a breaking change.
+// Wire shapes for `/api/workspaces/:wsId/secrets[/:secretId]` (Migration
+// 103).
 pub const SecretResponse = struct {
     id: []const u8,
     name: []const u8,
@@ -1486,10 +1216,9 @@ pub const SecretResponse = struct {
     updated_at: []const u8,
 };
 
-/// Map a `secrets_store.SecretRow` (or any struct with the same fields)
-/// into the wire shape. `anytype` for the same reason as
-/// `makeDocumentResponse`: the data layer and the wire shape must be
-/// able to move independently.
+/// Map a `secrets_store.SecretRow` (or any struct with the same fields) into
+/// the wire shape. `anytype` for the same reason as `makeDocumentResponse`:
+/// the data layer and the wire shape must be able to move independently.
 pub fn makeSecretResponse(secret: anytype) SecretResponse {
     return .{
         .id = secret.id,
@@ -1523,11 +1252,8 @@ pub fn makeSecretListResponse(allocator: std.mem.Allocator, secrets: anytype) ![
 }
 
 // ─── Frontend error log response types ────────────────────────────────────
-// Wire shapes for `POST /api/logs` (no response body, 204 No Content)
-// and `GET /api/logs` (returns `{ logs: [...], count: N }`). Mirrors
-// the `logs` table column-for-column. `stack`/`source`/`line`/
-// `route_path`/`session_id` are nullable per the table schema.
-// Plan: docs/plans/2026-07-17-frontend-error-logs-design.md.
+// Wire shapes for `POST /api/logs` (no response body, 204 No Content) and
+// `GET /api/logs` (returns `{ logs: [...], count: N }`).
 pub const FrontendLogRow = struct {
     id: []const u8,
     created_at: i64,
@@ -1556,12 +1282,6 @@ pub fn makeFrontendLogListResponse(allocator: std.mem.Allocator, logs: []const F
 }
 
 /// One skill as it goes on the wire: the body plus the companion count.
-///
-/// `asset_count` rather than the asset list — the detail pane shows
-/// "11 companion files", and shipping every companion body to render that
-/// number would put the whole bundle in the response payload. Shared by
-/// `skill_detail.zig`, `skill_create.zig` and `skill_update.zig` so the
-/// three cannot drift into three shapes for the same row.
 pub const SkillDetailResponse = struct {
     name: []const u8,
     description: []const u8,

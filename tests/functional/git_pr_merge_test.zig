@@ -1,26 +1,5 @@
-// Functional wire tests for POST /api/git/pr/merge.
-//
-// This is the endpoint the PR tab's merge box calls. It is the only
-// MUTATING forge endpoint in the app, and it has three contracts that
-// only a real wire round-trip can prove:
-//
-//   1. The argv the frontend's body produces. `gh pr merge` without
-//      exactly one strategy flag prompts for the method, and a prompt in
-//      a non-tty child hangs until the timeout kills it; `glab mr merge`
-//      without `--yes` does the same. Neither is visible from a unit test
-//      that passes a program in.
-//   2. `success` is the FORGE's answer, not an exit code. A CLI can exit 0
-//      having only armed an auto-merge or joined a merge queue, and the
-//      response must say `pending` for that — never "Merged".
-//   3. A refusal is a 502 carrying the CLI's own words, so the box can
-//      render "Pull request is not mergeable" instead of an apology.
-//
-// The status re-read is exercised through the same fake `gh`: the fixture
-// answers `pr view` as well as `pr merge`, so a merge test also proves the
-// response is the payload the 30 s poll would return.
-//
-// WHERE THE FIXTURE LIVES: `harness.makeScratchDir`, shared with the other
-// git_pr_* suites. HOW IT REACHES THE SERVER: PATH — see `PathShadow`.
+// Functional wire tests for POST /api/git/pr/merge. This is the endpoint the
+// PR tab's merge box calls.
 
 const std = @import("std");
 const testing = std.testing;
@@ -190,16 +169,8 @@ const TITLE = "fix(chatview): land where the reader left it (#891)";
 /// `pr merge` records its argv (one arg per line) and exits 0.
 fn ghScript(argv_path: []const u8, view_json: []const u8) ![]u8 {
     // `for a in "$@"; do echo "$a"; done`, NOT `printf '%s\\n'`: a Zig `\\`
-    // multiline literal does not process escape sequences, so the printf format
-    // reaches /bin/sh as a literal backslash-n and the dump stops being
-    // one-argument-per-line. That is exactly how this assertion first failed.
-    // Each invocation records its OWN argv, because the handler makes two:
-    // the merge, and then the status re-read that turns the exit code into an
-    // answer. A single dump file would end up holding whichever ran last
-    // (the re-read), and the argv assertion would silently check the wrong
-    // command. The branch keys on `$1-$2` (noun-subcommand), so a change in
-    // argument position surfaces as `exit 7` with the argv on stderr rather
-    // than as a silent "merge succeeded".
+    // multiline literal does not process escape sequences, so the printf
+    // format reaches /bin/sh as a literal backslash-n and the dump stops
     return std.fmt.allocPrint(gpa,
         \\#!/bin/sh
         \\case "$1-$2" in
@@ -552,9 +523,8 @@ test "merge: gitlab forces --yes and --auto-merge=false over the wire" {
     defer gpa.free(argv);
 
     // -y/--yes: without it `glab mr merge` waits on a confirmation prompt
-    // that a non-tty child can never answer.
-    // --auto-merge=false: glab defaults auto-merge to TRUE when a pipeline
-    // is running, so without this a "merge" can return 0 having only armed.
+    // that a non-tty child can never answer. --auto-merge=false: glab
+    // defaults auto-merge to TRUE when a pipeline is running, so without this
     const wanted = try std.fmt.allocPrint(gpa, "mr\nmerge\n7\n--squash\n--sha\n{s}\n", .{HEAD_SHA});
     defer gpa.free(wanted);
     if (std.mem.indexOf(u8, argv, wanted) == null) {

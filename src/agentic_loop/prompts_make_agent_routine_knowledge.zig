@@ -1,24 +1,5 @@
-//! Builds the `## Routine Knowledge` system-prompt section for sessions
-//! bound to a routine workspace-item WITH an `agent_routines` row
-//! (Migration 081).
-//!
-//! Mirrors `prompts_make_agent_knowledge.zig` but reads from the
-//! `agent_routine_knowledges` table (keyed by routine_id) and only fires
-//! when:
-//!   - the session's workspace_item is of type 'routine', AND
-//!   - an `agent_routines` row exists for it (opt-in config)
-//!
-//! Unconfigured routines are completely unaffected — returns "".
-//!
-//! Behaviour:
-//!   - Empty for non-routine items → ""
-//!   - Empty for routines without an agent_routines row → ""
-//!   - Empty for configured routines with no knowledge rows → ""
-//!   - Missing / unreadable file paths: log + skip, continue
-//!   - Files > 100 MiB: log + skip, continue
-//!
-//! Plan: Routine mode task_1789505553300_1 (option A, mirror agent_routine_*)
-//! Task: task_1789505553300_1
+//! Builds the `## Routine Knowledge` system-prompt section for sessions bound
+//! to a routine workspace-item WITH an `agent_routines` row (Migration 081).
 
 const std = @import("std");
 const sqlite = @import("pabrikcore").sqlite;
@@ -28,13 +9,7 @@ const agent_routine_db = @import("../models/agent_routine.db.zig");
 /// the server from OOM-ing on a misconfigured path like `/dev/zero`.
 pub const MAX_FILE_BYTES_OOM_SAFETY: usize = 100 * 1024 * 1024;
 
-/// Resolve the workspace_item_id for a session. Two paths (in order):
-///   1. Normal chats: the session is a workspace_item_tasks row (covers
-///      chats opened under a routine item).
-///   2. Routine fires: the session id IS the routine id — fire.zig sets
-///      sid = routine.id and bypasses workspace_item_tasks entirely, so
-///      resolve straight through workspace_routines.
-/// Returns "" when neither path hits.
+/// Resolve the workspace_item_id for a session. Two paths (in order): 1.
 fn resolveWorkspaceItemId(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -63,14 +38,6 @@ fn resolveWorkspaceItemId(
 
 /// Read a single file's full contents. Caller owns the returned slice.
 /// Returns `null` (logged + skipped by caller) on failure.
-///
-/// `file_path` comes from the `agent_routine_knowledges.file_path` DB column.
-/// An empty or RELATIVE value is reachable (the create/update handlers accept
-/// `file_path = ""` and only validate non-empty values, and legacy rows may
-/// predate that validation), so the contract is enforced HERE:
-/// `std.Io.Dir.openFileAbsolute` asserts `path.isAbsolute(...)`, and a failed
-/// assertion ABORTS the whole process (Debug/ReleaseSafe) instead of returning
-/// an error — one bad knowledge row would kill the worker on every turn.
 fn readFileContents(
     io: std.Io,
     allocator: std.mem.Allocator,
@@ -294,12 +261,6 @@ var test_file_counter: std.atomic.Value(u64) = .init(0);
 
 /// Writes `contents` to a uniquely-named file inside `tmp` and returns its
 /// ABSOLUTE path (caller-owned: `alloc.free` it).
-///
-/// The path comes from `testing.tmpDir` (`.zig-cache/tmp/<random>/`) rather
-/// than a literal `/tmp/...`: on Windows `/tmp/x` resolves to `D:\tmp\x`,
-/// whose parent directory does not exist, so `createFileAbsolute` fails
-/// with `error.FileNotFound`. The knowledge reader asserts `isAbsolute`
-/// before `openFileAbsolute`, so the returned path must stay absolute.
 fn writeTestFile(tmp: *std.testing.TmpDir, allocator: std.mem.Allocator, io: std.Io, contents: []const u8) ![]u8 {
     const n = test_file_counter.fetchAdd(1, .seq_cst);
     var name_buf: [64]u8 = undefined;

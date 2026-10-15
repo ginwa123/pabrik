@@ -1,31 +1,4 @@
 // install_browser_url_test.zig — the curl-install user flow, end to end.
-//
-// A user on Linux/macOS runs:
-//
-//   curl -fsSL https://raw.githubusercontent.com/ginwa123/pabrik/main/install.sh | bash
-//
-// then types `pabrik` in a terminal and opens the printed URL in a browser.
-//
-// These tests replay that flow against an isolated staging dir instead of
-// the real GitHub release: the "release assets" are copies of the
-// just-built binary, install.sh installs them into an isolated bindir via
-// PABRIK_BASE_URL=file://..., and the installed binary is booted through
-// the real Harness (PABRIK_BIN shadow, PathShadow-style) to prove the
-// browser URL serves.
-//
-//   Test 1 — install.sh exits 0, the installed `pabrik --help` exits 0
-//            (the payload runs from its installed location), and the
-//            bindir is exported to PATH in the shell rc file.
-//   Test 2 — the installed binary boots and serves the browser URL:
-//            GET /health returns {"status":"ok",...} and
-//            GET /api/workspaces returns 200, both over the wire.
-//   Test 3 — with a shipped UI beside the installed binary (the html/
-//            tarball layout), GET / serves the app shell with no
-//            --static-dir flag (the "/app 404" report).
-//
-// Windows is skipped here: install.sh refuses Windows itself (it prints
-// the irm line), and install.ps1 gets the same install-then-URL coverage
-// from the install-windows CI job, which runs the real script.
 const std = @import("std");
 const builtin = @import("builtin");
 const testing = std.testing;
@@ -75,11 +48,8 @@ fn expectExitZero(term: std.process.Child.Term, what: []const u8) !void {
 }
 
 /// Shadow one NAME=VALUE pair into std.testing.environ — the exact block
-/// Harness.boot copies into the child env and resolvePabrikBin reads —
-/// so Harness.boot resolves the INSTALLED binary. Scoped by restore:
-/// the shadow must not outlive the test, or every later suite in the
-/// same process would boot the installed copy. Mirrors PathShadow in
-/// git_pr_checks_test.zig, generalized from PATH-prepend to set-or-add.
+/// Harness.boot copies into the child env and resolvePabrikBin reads — so
+/// Harness.boot resolves the INSTALLED binary.
 const EnvShadow = struct {
     saved: std.process.Environ,
     entries: [:null]const ?[*:0]const u8,
@@ -124,9 +94,7 @@ const EnvShadow = struct {
 
 /// Stage copies of the just-built binaries as fake release assets, run
 /// install.sh against them, and return the bindir holding the installed
-/// copies plus the isolated HOME the install ran under. The caller owns
-/// both returned slices; scratch cleanup stays with the caller's scratch
-/// dir.
+/// copies plus the isolated HOME the install ran under.
 const InstallDirs = struct { bindir: []u8, home: []u8, base_url: []u8 };
 
 fn installToIsolatedBindir(scratch: []const u8, triple: []const u8) !InstallDirs {
@@ -137,10 +105,9 @@ fn installToIsolatedBindir(scratch: []const u8, triple: []const u8) !InstallDirs
     const bindir = try harness.harnessPath(gpa, scratch, &.{"bin"});
     errdefer gpa.free(bindir);
 
-    // Isolated HOME with a pre-existing .bashrc: install.sh only appends
-    // its PATH export to rc files that already exist (never creates them),
-    // and the isolated HOME keeps the test from touching the developer's
-    // real ~/.bashrc.
+    // Isolated HOME with a pre-existing .bashrc: install.sh only appends its
+    // PATH export to rc files that already exist (never creates them), and
+    // the isolated HOME keeps the test from touching the developer's real
     const home = try harness.harnessPath(gpa, scratch, &.{"home"});
     errdefer gpa.free(home);
     try Io.Dir.cwd().createDirPath(io, home);
@@ -178,10 +145,7 @@ fn installToIsolatedBindir(scratch: []const u8, triple: []const u8) !InstallDirs
     errdefer gpa.free(base_url);
 
     // The user flow: pipe install.sh into a shell against the staged
-    // "release". PABRIK_SKIP_DESKTOP_ENTRY=1 keeps the test hermetic
-    // (no raw.githubusercontent fetch); the launcher step is covered
-    // by the install-linux CI job, which has network. HOME points at
-    // the isolated home dir (see above), never the developer's real one.
+    // "release".
     try expectExitZero(
         try runChild(
             &.{ "bash", "install.sh", "--dir", bindir },
@@ -293,10 +257,9 @@ test "installed pabrik serves the browser url" {
     const installed = try std.fs.path.join(gpa, &.{ bindir, "pabrik" });
     defer gpa.free(installed);
 
-    // Boot THROUGH the harness so the server gets the isolated-HOME
-    // treatment every other suite gets; the shadow is what steers
-    // binary resolution at the installed copy. Restore is registered
-    // first so it runs last, after harness teardown.
+    // Boot THROUGH the harness so the server gets the isolated-HOME treatment
+    // every other suite gets; the shadow is what steers binary resolution at
+    // the installed copy.
     const shadow = try EnvShadow.install("PABRIK_BIN", installed);
     defer shadow.restore();
 
@@ -335,12 +298,8 @@ test "installed pabrik serves the browser url" {
     }
 }
 
-// The installed server discovers the shipped UI next to itself and
-// serves the app with no --static-dir flag: this is the "/app 404"
-// report. The fixture stands in for the html/ tarball install.sh
-// extracts (tarball download+extract itself is asserted by the
-// install-* CI jobs against the real release, which have network;
-// here the server-side discovery is what's under test, over the wire).
+// The installed server discovers the shipped UI next to itself and serves the
+// app with no --static-dir flag: this is the "/app 404" report.
 test "installed pabrik serves the app from its bundled html dir" {
     const triple = try installTriple();
     try harness.requirePabrikBin(io, gpa);
@@ -355,10 +314,8 @@ test "installed pabrik serves the app from its bundled html dir" {
     defer gpa.free(dirs.base_url);
     const bindir = dirs.bindir;
 
-    // Fixture UI at <bindir>/html/index.html — the exact layout
-    // install.sh produces and the server's next-to-exe probe reads.
-    // Harness.boot passes the installed binary by absolute path, so
-    // argv[0] carries a dir and the probe engages.
+    // Fixture UI at <bindir>/html/index.html — the exact layout install.sh
+    // produces and the server's next-to-exe probe reads.
     const html_dir = try std.fs.path.join(gpa, &.{ bindir, "html" });
     defer gpa.free(html_dir);
     try Io.Dir.cwd().createDirPath(io, html_dir);
@@ -373,11 +330,8 @@ test "installed pabrik serves the app from its bundled html dir" {
     const installed = try std.fs.path.join(gpa, &.{ bindir, "pabrik" });
     defer gpa.free(installed);
 
-    // Spawn EXACTLY like the user does: bare `pabrik`, resolved through
-    // PATH — so argv[0] has no directory at all. This is the shape that
-    // broke Linux/macOS (the exe-dir probe must come from the real
-    // executable path, not argv[0]); a harness boot would pass argv[0]
-    // as an absolute path and hide the bug.
+    // Spawn EXACTLY like the user does: bare `pabrik`, resolved through PATH
+    // — so argv[0] has no directory at all.
     var env_map = try std.process.Environ.createMap(std.testing.environ, gpa);
     defer env_map.deinit();
     try env_map.put("HOME", dirs.home);
@@ -394,14 +348,8 @@ test "installed pabrik serves the app from its bundled html dir" {
     var log_file = try Io.Dir.cwd().createFile(io, log_path, .{});
     defer log_file.close(io);
 
-    // argv[0] is the BARE name, and cwd is the repo root — nothing ties
-    // this process to bindir except PATH.
-    // `bash -c 'exec pabrik'`, not a bare argv[0]: Zig's spawn resolves a
-    // bare argv[0] against the PARENT's PATH, so a developer machine with
-    // pabrik in ~/.local/bin would run THAT binary and hide the bug (the
-    // first version of this test did exactly that). A shell resolves
-    // `pabrik` against the child's PATH — which is the real user's
-    // behavior — and `exec` keeps argv[0] as the bare name.
+    // argv[0] is the BARE name, and cwd is the repo root — nothing ties this
+    // process to bindir except PATH.
     const argv = [_][]const u8{ "bash", "-c", "exec pabrik" };
     var child = try std.process.spawn(io, .{
         .argv = &argv,

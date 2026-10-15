@@ -8,29 +8,8 @@ const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
 
 /// Migration 084 — drop per-task routines, replace with workspace-level
-/// routines (`workspace_routines`, 1:1 with routine `workspace_items`).
-///
-/// ## Why this migration exists
-///
-/// Per-task routines (`routines` table from Migration 044, keyed
-/// `task_id UNIQUE FK → workspace_item_tasks`) are deleted by design
-/// decision: routines are a first-class workspace-item mode beside
-/// `agent` (`item_type='routine'`), not a flag on a chat task. There is
-/// no data carry-over — old per-task schedules are dropped (breaking
-/// change, announced in the plan + release notes).
-///
-/// ## What this does (order matters — FK)
-///
-/// 1. Normalizes leftover `task_type='routine'` rows to `'standard'`
-///    (the `task_type` column itself stays — `standard`/`memory` still
-///    use it).
-/// 2. Drops the old `routines` table + its indexes.
-/// 3. Creates `workspace_routines` (`id == workspace_item_id`, D3 copy
-///    from the `agents` table) holding `instruction` + `schedule` +
-///    `enabled` + fire state.
-///
-/// Plan: docs/superpowers/plans/2026-09-10-workspace-items-routines.md
-/// Task: task_1789032258828_0.
+/// routines (`workspace_routines`, 1:1 with routine `workspace_items`). ##
+/// Why this migration exists Per-task routines (`routines` table from
 pub const Migration084ReplaceRoutinesWithWorkspaceRoutines = struct {
     pub const version: u32 = 84;
     pub const name = "replace_routines_with_workspace_routines";

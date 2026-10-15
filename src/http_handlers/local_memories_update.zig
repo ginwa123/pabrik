@@ -1,26 +1,6 @@
 //! `PUT /api/local-memories/:name` — replace the body of a local memory file.
-//!
-//! Body: `{"content":"...","cwd":"/abs/path"}`.
-//! On success: 200 with `{"memory":{name,title,path,size}}`.
-//!
-//! Layered as:
-//!   - `useCase` — validates `:name`, resolves the local memories dir
-//!     (body `cwd` first, then io fallback), runs the existence check,
-//!     writes the file, re-lists to derive metadata, and returns a
-//!     heap-owned `MemoryInfo`.
-//!   - `localMemoryUpdateHandler` — thin orchestrator: parses `:name`
-//!     and the body, calls `useCase`, maps errors to status codes,
-//!     builds the JSON response.
-//!
-//! Preserves the static-contract assertions in `local_memories_crud_test.zig`:
-//!   - `get_local_memories_path_for_dir` + `get_local_memories_path_from_io`
-//!     substring checks
-//!   - `parsed.cwd` + `params.get("name")` substring checks
-//!   - `isValidMemoryName` validation
-//!   - `localMemoryExists` + `404` + `writeLocalMemoryFile` substring checks
-//!   - `parseFromSliceLeaky` + `Invalid JSON body` substring checks
-//!   - `std.json.Stringify.valueAlloc` substring check
-//!   - `500` + `no cwd available` substring checks
+//! Body: `{"content":"...","cwd":"/abs/path"}`. On success: 200 with
+//! `{"memory":{name,title,path,size}}`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -28,10 +8,9 @@ const gserverz = pabrikcore.gserverz;
 const memories_mod = pabrikcore.memories;
 const http_response = @import("http_response.zig");
 
-/// JSON request body for `PUT /api/local-memories/:name`.
-///
-/// `content` is the new file body (required). `cwd` is optional —
-/// when omitted, the handler falls back to the pabrik server's CWD.
+/// JSON request body for `PUT /api/local-memories/:name`. `content` is the
+/// new file body (required). `cwd` is optional — when omitted, the handler
+/// falls back to the pabrik server's CWD.
 const UpdateLocalMemoryBody = struct {
     content: []const u8,
     cwd: ?[]const u8 = null,
@@ -77,16 +56,8 @@ pub const LocalMemoryUpdateOutput = struct {
 // Use case
 // =====================================================================
 
-/// Replace the body of an existing local memory file.
-///
-/// Steps:
-///   1. Validate `name` (non-empty + `isValidMemoryName`).
-///   2. Resolve the local memories dir (body `cwd` → io fallback).
-///   3. 404 if the memory does not exist (via `localMemoryExists`).
-///   4. `writeLocalMemoryFile` to overwrite the file.
-///   5. Re-list via `listMemoriesInDir` to derive `title/path/size`.
-///   6. Locate the entry by name. Missing → 500 (consistency).
-///   7. Duplicate the matched slices for the response.
+/// Replace the body of an existing local memory file. Steps: 1. Validate
+/// `name` (non-empty + `isValidMemoryName`). 2.
 fn useCase(
     allocator: std.mem.Allocator,
     io: std.Io,

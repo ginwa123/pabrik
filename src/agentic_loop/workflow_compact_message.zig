@@ -1,29 +1,4 @@
 //! Compaction message helpers + LLM-call orchestration (merged).
-//!
-//! Single home for everything about the compaction-message payload:
-//!   - Part 1 (helpers): `buildCompactMessagePrompt` (pure-data prompt
-//!     builder, ex-`compaction.zig`), the DB-backed fetchers
-//!     (`fetchUserChatHistory`, `fetchReadFilePaths`,
-//!     `fetchRecentActivities`, `fetchSessionSkills`, `fetchSessionPlan`),
-//!     `enrichCompactionXml` + the `<compaction_context>` envelope
-//!     (ex-`compaction_context.zig`, deleted 2026-08-14), plus the row
-//!     types `UserTurn` / `ReadFileTurn` / `RecentActivity`.
-//!   - Part 2 (orchestrator): `callCompactAgent` +
-//!     `CallCompactAgentInput`, `maybeCompactMessagesNew` + `CompactDeps` /
-//!     `ThresholdCtx` / `shouldCompactDefault` / `defaultCompactDeps`,
-//!     `compactMessageInMemoryNew`, `buildCompactionEnvelope`
-//!     (ex-`workflow_commpact_message.zig` — typo filename with double-m,
-//!     merged here 2026-09-10, task_1789058399888_4).
-//!
-//! Public surface (re-exported by `workflow.zig` and therefore reachable
-//! as `pabrikcore.ai_mod.ai_workflow.agentic_loop.<name>`):
-//!   - `buildCompactMessagePrompt`, `parseReadFilePath`,
-//!     `fetchUserChatHistory`, `fetchReadFilePaths`,
-//!     `fetchRecentActivities`, `fetchSessionSkills`, `fetchSessionPlan`,
-//!     `enrichCompactionXml`, `UserTurn`, `ReadFileTurn`, `RecentActivity`
-//!   - `CallCompactAgentInput`, `callCompactAgent`, `ThresholdCtx`,
-//!     `CompactDeps`, `shouldCompactDefault`, `defaultCompactDeps`,
-//!     `maybeCompactMessagesNew`, `compactMessageInMemoryNew`
 
 const model_catalog = @import("model_catalog.zig");
 const std = @import("std");
@@ -53,12 +28,9 @@ const session_plan_mod = pabrikcore.session_plan;
 
 const testing = std.testing;
 
-// ─── Compaction-context types ────────────────────────────────────────────────
-//
-// One user-turn row from `llm_history`. Used to embed the full user
-// history into the compacted envelope so the next iteration of the
-// agent sees the original ask + every refinement, not just the
-// compactor's summary.
+// ─── Compaction-context types
+// ──────────────────────────────────────────────── One user-turn row from
+// `llm_history`.
 pub const UserTurn = struct {
     content: []const u8,
     created_at: []const u8,
@@ -70,10 +42,6 @@ pub const UserTurn = struct {
 };
 
 // One row from the `session_activity` per-session log (Migration 073).
-// Embedded into the compacted envelope so the next iteration of the
-// agent sees what the previous agent was thinking/doing at the tail
-// of the now-compacted-away messages — without these rows, the next
-// iteration has no signal about the recent internal-state context.
 pub const RecentActivity = struct {
     description: []const u8,
     created_at: []const u8,
@@ -84,10 +52,8 @@ pub const RecentActivity = struct {
     }
 };
 
-// One read_file tool-result row from `llm_history`. `path` is the
-// extracted value from the `<path>...</path>` tag in the XML envelope.
-// `raw_content` is kept for debugging and for tests that assert on the
-// full XML; production callers only consume `path`.
+// One read_file tool-result row from `llm_history`. `path` is the extracted
+// value from the `<path>...</path>` tag in the XML envelope.
 pub const ReadFileTurn = struct {
     path: []const u8,
     raw_content: []const u8,
@@ -103,14 +69,7 @@ pub const ReadFileTurn = struct {
 // ─── Compaction-context helpers ──────────────────────────────────────────────
 
 /// Extract the `<path>...</path>` value from the read_file XML envelope.
-/// Returns `null` if the open or close tag is missing. The returned
-/// slice borrows from `content` (no allocation) — the caller MUST keep
-/// `content` alive for the lifetime of the returned slice.
-///
-/// The first `<path>` tag wins. Production envelopes have two `<path>`
-/// occurrences — one in `<parameters>` (the agent's call args) and one
-/// in `<data>` (the tool's response) — but they hold the same value, so
-/// the first occurrence is always correct.
+/// Returns `null` if the open or close tag is missing.
 pub fn parseReadFilePath(content: []const u8) ?[]const u8 {
     const start_tag = "<path>";
     const end_tag = "</path>";
@@ -157,14 +116,8 @@ pub fn fetchUserChatHistory(
     return turns;
 }
 
-/// Fetch all read_file tool-result rows for a session, with the
-/// `<path>` already extracted from each row's XML envelope. Rows with
-/// missing or malformed `<path>` tags are SKIPPED with a `logger.warn`
-/// rather than failing the whole query — better to lose one row than
-/// abort the compaction.
-///
-/// Caller is responsible for deduping `path` values if desired; this
-/// helper returns one entry per row in insertion order.
+/// Fetch all read_file tool-result rows for a session, with the `<path>`
+/// already extracted from each row's XML envelope.
 pub fn fetchReadFilePaths(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -213,15 +166,8 @@ pub fn fetchReadFilePaths(
 }
 
 /// Fetch the most recent `limit` rows from `session_activity` for
-/// `session_id`, in chronological order (oldest first — same direction
-/// the agent reads them as a timeline).
-///
-/// `session_activity` is an append-only log written by the
-/// `update_activity` tool (Migration 073). It records what the agent
-/// was thinking/doing at each user message boundary, and the next
-/// iteration of the agent (after compaction) needs the tail of this
-/// log to recover the recent internal-state context that the
-/// compacted-away messages no longer carry.
+/// `session_id`, in chronological order (oldest first — same direction the
+/// agent reads them as a timeline).
 pub fn fetchRecentActivities(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -237,10 +183,9 @@ pub fn fetchRecentActivities(
     const limit_str = try std.fmt.allocPrint(allocator, "{d}", .{limit});
     defer allocator.free(limit_str);
 
-    // Two-step approach (vs. a single DESC+reverse): the production
-    // path is a small-N recent tail, so doing the LIMIT first then
-    // reversing in Zig is both correct and lets us reuse the existing
-    // `idx_session_activity_session_created` index.
+    // Two-step approach (vs. a single DESC+reverse): the production path is a
+    // small-N recent tail, so doing the LIMIT first then reversing in Zig is
+    // both correct and lets us reuse the existing
     var rows = try db.query(
         allocator,
         "SELECT description, created_at FROM session_activity " ++
@@ -266,22 +211,7 @@ pub fn fetchRecentActivities(
 }
 
 /// Fetch all session skills loaded for `session_id` via the `session_skills`
-/// table. Each row in that table is what the `add_skill` tool wrote during
-/// the session; embedding them into the compacted envelope gives the
-/// post-compaction agent continuity on guidance that may not appear in
-/// the compactor's summary (skill files are large, free-form reference
-/// material that the compactor is unlikely to summarize verbatim).
-///
-/// Returns an empty slice when `session_id` is empty OR the session has
-/// no skills — both `getSessionSkills` callers see the same shape,
-/// so the caller can elide the empty-session check.
-///
-/// Caller owns the returned slice AND each skill's `skill_name` /
-/// `content` fields. Cleanup pattern:
-///   defer {
-///       for (skills) |s| s.deinit(allocator);
-///       allocator.free(skills);
-///   }
+/// table.
 pub fn fetchSessionSkills(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -290,10 +220,9 @@ pub fn fetchSessionSkills(
     return llm_history.getSessionSkills(allocator, db, session_id);
 }
 
-/// Fetch the current session plan for the compaction envelope. Returns
-/// `null` when no plan exists (matches the convention used by the other
-/// compaction fetchers). Caller owns the returned `PlanRow` and must
-/// call `.deinit(allocator)` on it (or `null`).
+/// Fetch the current session plan for the compaction envelope. Returns `null`
+/// when no plan exists (matches the convention used by the other compaction
+/// fetchers).
 pub fn fetchSessionPlan(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -302,19 +231,9 @@ pub fn fetchSessionPlan(
     return session_plan_mod.getPlanOpt(allocator, db, session_id);
 }
 
-/// Embed the user history, read_file paths, recent session activities,
-/// and loaded session skills into the compacted XML. Returns a new
-/// `[]u8` allocated from `allocator`; caller owns it. The original
-/// `compacted_xml` is left untouched (the helper dups content during
-/// the embed).
-///
-/// Hard caps:
-///   - 100 user turns, 2000 chars per turn
-///   - 50 session skills, 10_000 chars per skill content
-///   - 20 recent activities (caller is expected to slice
-///     `recent_activities` to the desired limit before calling)
-///   - read_file paths are deduped (first occurrence wins, insertion order
-///     preserved); no explicit count cap on read_files
+/// Embed the user history, read_file paths, recent session activities, and
+/// loaded session skills into the compacted XML. Returns a new `[]u8`
+/// allocated from `allocator`; caller owns it.
 pub fn enrichCompactionXml(
     allocator: std.mem.Allocator,
     compacted_xml: []const u8,
@@ -378,11 +297,9 @@ pub fn enrichCompactionXml(
     }
     try out.appendSlice(allocator, "  </read_files>\n");
 
-    // ── recent_activities (omitted entirely when empty) ───────────
-    // Mirrors the user_history / read_files pattern: the section is
-    // useful for "what was the agent doing/thinking at the tail of the
-    // compacted-away messages" (Migration 073 / PR #226 — the agent's
-    // own activity log, NOT a metadata row for the compaction itself).
+    // ── recent_activities (omitted entirely when empty) ─────────── Mirrors
+    // the user_history / read_files pattern: the section is useful for "what
+    // was the agent doing/thinking at the tail of the compacted-away
     if (recent_activities.len > 0) {
         try out.appendSlice(allocator, "  <recent_activities");
         try out.print(allocator, " count=\"{d}\"", .{recent_activities.len});
@@ -399,12 +316,9 @@ pub fn enrichCompactionXml(
         try out.appendSlice(allocator, "  </recent_activities>\n");
     }
 
-    // ── session_skills (loaded-once guidance material) ────────────
-    // Skills are typically large, free-form reference material that the
-    // compactor is unlikely to summarize verbatim. Embedding them here
-    // keeps the post-compaction agent operating under the same guidance
-    // the pre-compaction agent had. Content is wrapped in CDATA so the
-    // raw `<`, `>`, `&` inside skill files can never break the envelope.
+    // ── session_skills (loaded-once guidance material) ──────────── Skills
+    // are typically large, free-form reference material that the compactor is
+    // unlikely to summarize verbatim.
     try out.appendSlice(allocator, "  <session_skills");
     if (session_skills.len > MAX_SKILLS) {
         try out.print(allocator, " truncated_by=\"{d}\"", .{session_skills.len - MAX_SKILLS});
@@ -424,11 +338,7 @@ pub fn enrichCompactionXml(
         else
             skill.content;
         // CDATA escape: XML CDATA sections cannot contain the literal
-        // sequence `]]>`. To embed a skill body that contains `]]>`, split
-        // it into adjacent CDATA sections: close the current section with
-        // `]]>` (the two `]` already in the data), then re-open with
-        // `<![CDATA[` and emit the literal `>` as content of the new
-        // section. On the wire this looks like `...]]><![CDATA[>...`.
+        // sequence `]]>`.
         try out.appendSlice(allocator, "      <content><![CDATA[\n");
         if (std.mem.indexOf(u8, truncated, "]]>") == null) {
             try out.appendSlice(allocator, truncated);
@@ -446,11 +356,9 @@ pub fn enrichCompactionXml(
     }
     try out.appendSlice(allocator, "  </session_skills>\n");
 
-    // ── plan (current task plan, when set) ─────────────────────────
-    // Mirrors the session_skills pattern: omitted entirely when absent
-    // so the envelope stays clean for sessions without a plan. Wrapped
-    // in CDATA so the raw `<`, `>`, `&` inside the plan markdown never
-    // breaks the envelope.
+    // ── plan (current task plan, when set) ───────────────────────── Mirrors
+    // the session_skills pattern: omitted entirely when absent so the
+    // envelope stays clean for sessions without a plan.
     if (plan) |p| {
         try out.appendSlice(allocator, "  <plan");
         if (p.updated_at.len > 0) {
@@ -487,28 +395,9 @@ fn resolvePath(allocator: std.mem.Allocator, path: []const u8, cwd: []const u8) 
     return std.fs.path.join(allocator, &.{ cwd, path });
 }
 
-// ─── buildCompactMessagePrompt ──────────────────────────────────────────────
-//
-// Build the compaction handoff prompt that gets sent to the CompactionAgent.
-//
-// Walks `messages[1..last_idx]` (excluding the system prompt at index 0 AND
-// the current/pending message at the last index) and renders each message
-// into a labeled row:
-// - `content` becomes `[<role>]: <content>`
-// - each `tool_calls[i]` becomes `[tool_call]: <name>(<arguments>)`
-//
-// The rows are joined with `\n` and embedded into a fixed handoff-package
-// template alongside `original_system_prompt`. The resulting string is what
-// the CompactionAgent sees as its user message.
-//
-// **Caller owns the returned string** and must free it with `allocator.free`.
-// Returns `null` on allocation failure (after logging via `logger`); the
-// caller is then expected to short-circuit the compaction flow.
-//
-// **Precondition:** `messages.items.len >= 2` (the caller — `callCompactAgent`
-// — enforces this). With only one message, `last_idx = 0` and the history
-// slice `messages.items[1..0]` is empty; the prompt is still produced but
-// has no conversation rows.
+// ─── buildCompactMessagePrompt
+// ────────────────────────────────────────────── Build the compaction handoff
+// prompt that gets sent to the CompactionAgent.
 pub fn buildCompactMessagePrompt(
     allocator: std.mem.Allocator,
     logger: ?*logger_mod.Logger,
@@ -631,16 +520,12 @@ pub fn buildCompactMessagePrompt(
     return compact_message;
 }
 
-// ─── Part 2: orchestration (ex-workflow_commpact_message.zig) ───────────────
-//
-// LLM-call orchestration: `callCompactAgent` + threshold decision +
-// `maybeCompactMessagesNew` + `compactMessageInMemoryNew` + envelope.
-// Merged here 2026-09-10 so the typo filename (double-m) is gone.
+// ─── Part 2: orchestration (ex-workflow_commpact_message.zig)
+// ─────────────── LLM-call orchestration: `callCompactAgent` + threshold
+// decision + `maybeCompactMessagesNew` + `compactMessageInMemoryNew` +
 
 /// Inputs to `callCompactAgent`. Moved here from the (now-deleted)
-/// `compaction.zig` (PR this file's task card) — same struct, same
-/// defaults. Kept as `pub` so the orchestrator's `CompactDeps.callCompactAgent`
-/// fn-pointer field and the workflow.zig re-export both still resolve.
+/// `compaction.zig` (PR this file's task card) — same struct, same defaults.
 pub const CallCompactAgentInput = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -650,28 +535,15 @@ pub const CallCompactAgentInput = struct {
     model: []const u8,
     base_url: []const u8,
     /// URL style of the calling profile (`"openai"` or `"anthropic"`).
-    /// The CompactionAgent must use the SAME wire format as the main
-    /// agent loop — otherwise an Anthropic-style base_url receives an
-    /// OpenAI-shaped JSON request and rejects it, silently dropping
-    /// the compaction. Mirrors the propagation pattern from
-    /// `effective_url_style` in workflow.zig. Defaults to `"openai"`
-    /// for callers that haven't been updated yet (back-compat with
-    /// existing in-flight sessions). Plan: this file's task card.
     url_style: []const u8 = "openai",
-    /// Stable per-conversation session id, forwarded to
-    /// `Agent.sessionId` so the compaction call sends the same
-    /// `x-opencode-session` header as the main loop (OpenCode Go
-    /// requires it — see Agent.sessionId doc). Empty = header omitted
-    /// (back-compat for callers/tests that don't set it).
+    /// Stable per-conversation session id, forwarded to `Agent.sessionId` so
+    /// the compaction call sends the same `x-opencode-session` header as the
+    /// main loop (OpenCode Go requires it — see Agent.sessionId doc).
     session_id: []const u8 = "",
 };
 
 /// Call the CompactionAgent to compress the conversation history into a
-/// handoff package. Best-effort: any failure (network, parse, agent
-/// construction) returns `null` and the orchestrator short-circuits
-/// without compacting. The orchestrator (`maybeCompactMessagesNew`) is
-/// the only production caller; tests stub the comptime fn-pointer field
-/// in `CompactDeps.callCompactAgent`.
+/// handoff package.
 pub fn callCompactAgent(obj: CallCompactAgentInput) ?[]const u8 {
     const allocator = obj.allocator;
     const messages = obj.messages;
@@ -722,14 +594,7 @@ pub fn callCompactAgent(obj: CallCompactAgentInput) ?[]const u8 {
     compaction_agent.apiKey = api_key;
     compaction_agent.model = model;
     compaction_agent.baseUrl = base_url;
-    // Wire format must match the upstream endpoint. Without this set,
-    // Agent defaults to "openai" — which means an `url_style: "anthropic"`
-    // profile (e.g. "900 ribu antropic") sends an OpenAI-shaped JSON
-    // body to https://api.minimax.io/anthropic, the upstream returns
-    // an error, `callStreaming` returns an error, and `callCompactAgent`
-    // silently returns null. The threshold check still fires (and the
-    // session still balloons to 497K+ tokens) — the compaction just
-    // never completes. This propagation fixes that.
+    // Wire format must match the upstream endpoint.
     compaction_agent.UrlStyle = url_style;
     compaction_agent.sessionId = obj.session_id;
 
@@ -764,30 +629,19 @@ pub fn callCompactAgent(obj: CallCompactAgentInput) ?[]const u8 {
 fn noopStreamCallbackNew(_: ?*anyopaque, _: agent.StreamChunk) void {}
 
 /// Bundle of inputs to `shouldCompactDefault` — the threshold decision that
-/// tests can swap via `CompactDeps.should_compact`. Carries enough context that
-/// a test can assert on what the production decision actually saw (force flag,
-/// total_tokens, model, llm_config).
+/// tests can swap via `CompactDeps.should_compact`.
 pub const ThresholdCtx = struct {
     force: bool,
     total_tokens: u32,
     model: []const u8,
     llm_config: *const LlmConfig,
     /// The session's selected profile, resolved by the caller from
-    /// `sessions.selected_profile_model`. Feeds cascade step 2 of
-    /// `maxCapacityForModel` / `compactionThresholdPercent` so a
-    /// profile's `max_capacity_tokens` / `compaction_threshold_percent`
-    /// overrides shape the compaction decision. 2026-08-21-fix-ui-
-    /// context-window: previously hardcoded null, so the backend compacted
-    /// at 80% of the built-in window even when the selected profile
-    /// overrode it — disagreeing with the (now profile-aware) chat footer.
-    /// `null` → fall through to Defaults-tab → built-in default.
+    /// `sessions.selected_profile_model`.
     profile: ?*const LlmConfig.LlmProfile = null,
 };
 
-/// All non-std-lib function dependencies of `maybeCompactMessagesNew`. Bundled
-/// into one struct so the function signature stays manageable. Each field is a
-/// `comptime fn` so tests can swap in stubs without touching production.
-/// Production callers should pass `defaultCompactDeps` (defined below).
+/// All non-std-lib function dependencies of `maybeCompactMessagesNew`.
+/// Bundled into one struct so the function signature stays manageable.
 pub const CompactDeps = struct {
     /// Decide whether compaction should run. Return `true` to compact, `false`
     /// to skip the function early. Production: `shouldCompactDefault`.
@@ -814,10 +668,7 @@ pub const CompactDeps = struct {
     ) anyerror!std.ArrayList(agent.AgentMessage),
 };
 
-/// Production default for `CompactDeps.should_compact`. Forces a compaction
-/// when `force=true` (manual endpoint), otherwise defers to the threshold
-/// check (`agent.LLMModels.shouldCompact` over the model's effective context
-/// window and the per-profile threshold percent).
+/// Production default for `CompactDeps.should_compact`.
 pub fn shouldCompactDefault(ctx: ThresholdCtx) bool {
     if (ctx.force) return true;
     return agent.LLMModels.shouldCompact(
@@ -834,16 +685,7 @@ pub const defaultCompactDeps: CompactDeps = .{
     .callCompactAgent = callCompactAgent,
     .compactMessagesInMemory = compactMessageInMemoryNew,
 };
-/// Conditionally compact `messages` in place. The compact-agent call is
-/// best-effort — if it returns null, the message list is left untouched and
-/// the caller continues with the original messages. Returns `true` if
-/// compaction was performed (caller should re-enter the loop with the now-
-/// compacted list), `false` if no compaction was done. Errors from
-/// `deps.compact_messages_in_memory` propagate to the caller.
-///
-/// `deps` is passed as a comptime value (a struct of comptime fn pointers) so
-/// tests can swap in stubs for every non-std-lib function call without
-/// touching this body. Production callers should pass `defaultCompactDeps`.
+/// Conditionally compact `messages` in place.
 pub fn maybeCompactMessagesNew(
     comptime deps: CompactDeps,
     allocator: std.mem.Allocator,
@@ -854,16 +696,8 @@ pub fn maybeCompactMessagesNew(
     api_key: []const u8,
     base_url: []const u8,
     /// URL style of the calling profile (`"openai"` or `"anthropic"`).
-    /// Propagated to `callCompactAgent` so the CompactionAgent sends
-    /// the SAME wire format as the main loop. Without this, an
-    /// `url_style: "anthropic"` profile (e.g. "900 ribu antropic")
-    /// sends an OpenAI-shaped JSON body to an Anthropic endpoint,
-    /// the upstream rejects it, and `callCompactAgent` silently
-    /// returns null — so the threshold check fires every iteration
-    /// but compaction never completes (sessions balloon past the
-    /// threshold forever). Defaults to `"openai"` for back-compat
-    /// with callers that haven't been updated. Plan: this file's
-    /// task card.
+    /// Propagated to `callCompactAgent` so the CompactionAgent sends the SAME
+    /// wire format as the main loop.
     url_style: []const u8,
     cwd: []const u8,
     session_id: []const u8,
@@ -871,18 +705,11 @@ pub fn maybeCompactMessagesNew(
     io: std.Io,
     logger: *Logger,
     /// Event bus for SSE side-effects (insertLLMHistory's
-    /// `onEventSendLLMHistory` path). Pass `null` when running
-    /// offline (tests, the manual `/session/compact` endpoint
-    /// without an open chat, etc.). The DB write happens
-    /// regardless — `null` only skips the SSE fanout.
+    /// `onEventSendLLMHistory` path).
     event_bus: ?*event_bus_mod.EventBus,
     llm_config: *const LlmConfig,
     /// The session's selected profile (resolved by the caller from
     /// `sessions.selected_profile_model` via `LlmConfig.getProfile`).
-    /// Threaded into `ThresholdCtx` so `shouldCompactDefault` honors the
-    /// profile's `max_capacity_tokens` / `compaction_threshold_percent`
-    /// overrides. `null` → Defaults-tab → built-in default (old behavior).
-    /// 2026-08-21-fix-ui-context-window.
     profile: ?*const LlmConfig.LlmProfile,
 ) !bool {
     if (!deps.shouldCompact(.{
@@ -916,9 +743,7 @@ pub fn maybeCompactMessagesNew(
     };
 
     // Fetch user chat history + read_file paths + recent activities BEFORE
-    // the mark_history_not_for_llmrun step takes them offline. The new
-    // INSERT into llm_history (inside compactMessagesInMemory) carries the
-    // enriched context forward to the next agent iteration.
+    // the mark_history_not_for_llmrun step takes them offline.
     var user_turns = fetchUserChatHistory(allocator, db, session_id) catch |err| blk: {
         logger.warnFmt("[COMPACTION] fetchUserChatHistory failed: {s}", .{@errorName(err)});
         break :blk std.ArrayList(UserTurn).empty;
@@ -935,13 +760,8 @@ pub fn maybeCompactMessagesNew(
         for (read_files.items) |rf| rf.deinit(allocator);
         read_files.deinit(allocator);
     }
-    // Recent activities: what the agent was thinking/doing at the tail of
-    // the now-compacted-away messages. Mirrors user_turns/read_files: an
-    // empty list is fine (the enrich helper omits the section entirely),
-    // a DB error is logged + skipped (better to lose the section than to
-    // abort the whole compaction). Capped at 20 rows so the envelope
-    // stays bounded on long sessions where the activity log could be
-    // thousands of rows — the agent only needs the most recent tail.
+    // Recent activities: what the agent was thinking/doing at the tail of the
+    // now-compacted-away messages.
     const RECENT_ACTIVITIES_LIMIT: u32 = 20;
     var recent_activities = fetchRecentActivities(allocator, db, session_id, RECENT_ACTIVITIES_LIMIT) catch |err| blk: {
         logger.warnFmt("[COMPACTION] fetchRecentActivities failed: {s}", .{@errorName(err)});
@@ -951,12 +771,8 @@ pub fn maybeCompactMessagesNew(
         for (recent_activities.items) |a| a.deinit(allocator);
         recent_activities.deinit(allocator);
     }
-    // Session skills (loaded via the `add_skill` tool) are stable
-    // guidance material the compactor is unlikely to summarize verbatim.
-    // Embedding them here gives the post-compaction agent continuity on
-    // what skills were active before compaction. Fetched before
-    // mark_history_not_for_llmrun so the next iteration's enriched
-    // INSERT can carry them forward alongside the rest of the context.
+    // Session skills (loaded via the `add_skill` tool) are stable guidance
+    // material the compactor is unlikely to summarize verbatim.
     const session_skills = fetchSessionSkills(allocator, db, session_id) catch |err| blk: {
         logger.warnFmt("[COMPACTION] fetchSessionSkills failed: {s}", .{@errorName(err)});
         break :blk &.{};
@@ -1004,12 +820,9 @@ pub fn maybeCompactMessagesNew(
     return true;
 }
 
-/// Compact messages in memory based on CompactionAgent output.
-/// Also persists to database: marks old messages as not for LLM, saves new compacted message.
-/// On success, consumes `messages` (frees its backing slice) and returns the new
-/// compacted list. On the `total <= 4` early return or any error before deinit,
-/// `messages` is left intact and returned unchanged — the caller must always use
-/// the return value.
+/// Compact messages in memory based on CompactionAgent output. Also persists
+/// to database: marks old messages as not for LLM, saves new compacted
+/// message.
 pub fn compactMessageInMemoryNew(
     allocator: std.mem.Allocator,
     messages: std.ArrayList(agent.AgentMessage),
@@ -1020,15 +833,8 @@ pub fn compactMessageInMemoryNew(
     db: *sqlite.SqliteBackend,
     io: std.Io,
     logger: *Logger,
-    /// Event bus for the SSE side-effect path inside
-    /// `insertLLMHistory` → `onEventSendLLMHistory`. Pass `null`
-    /// when no live chat is connected (tests, the manual
-    /// `/session/compact` endpoint without an SSE subscriber, etc.) —
-    /// the DB row is written either way; `null` only skips the
-    /// SSE fanout. Production callers should source this from
-    /// their already-in-scope `event_bus` parameter rather than
-    /// `pabrikcore.getSingleton()` so the function stays testable
-    /// without the global singleton being initialized.
+    /// Event bus for the SSE side-effect path inside `insertLLMHistory` →
+    /// `onEventSendLLMHistory`.
     event_bus: ?*event_bus_mod.EventBus,
 ) !std.ArrayList(agent.AgentMessage) {
     const total = messages.items.len;
@@ -1049,27 +855,17 @@ pub fn compactMessageInMemoryNew(
         logger,
     );
 
-    // `inserLLMHistories` returns a heap-allocated copy of the
-    // generated row id (`allocator.dupe(u8, id)` at the bottom of
-    // that function). The compaction flow doesn't need the id — the
-    // `read_workspace_session` tool fetches rows by session_id, not by the
-    // returned string — so capture it and free immediately to avoid
-    // a leak. (Same pattern as other call sites that don't use the
-    // return value: see workflow.zig:185.)
+    // `inserLLMHistories` returns a heap-allocated copy of the generated row
+    // id (`allocator.dupe(u8, id)` at the bottom of that function).
     const inserted_id = try insertLLMHistory(.{
         .allocator = allocator,
         .io = io,
         .db = db,
         .cwd = cwd,
         .entity = .{
-            // `insertLLMHistories` generates its own id and
-            // `created_at` internally (timestamp sampling — see
-            // insert_llm_histories.zig:53,55) and IGNORES these
-            // fields on the input entity. Passing placeholder
-            // values here would leak: each `allocPrint` allocates
-            // a fresh buffer that nothing frees. Use the empty
-            // strings the rest of the codebase passes for
-            // caller-don't-care timestamps (e.g. workflow.zig:185).
+            // `insertLLMHistories` generates its own id and `created_at`
+            // internally (timestamp sampling — see
+            // insert_llm_histories.zig:53,55) and IGNORES these fields on the
             .id = "",
             .session_id = session_id,
             .model = model,
@@ -1124,10 +920,6 @@ pub fn compactMessageInMemoryNew(
 
     // Free ALL old messages (including ones we "kept" - we have copies now).
     // The old list is consumed; the caller must use the returned list.
-    // Use a mutable local copy because the `messages` parameter is treated
-    // as `const` in Zig 0.16 when the function signature has matching
-    // parameter and return types (T → !T), and ArrayList.deinit requires
-    // `*Self` (not `*const Self`).
     var messages_owned = messages;
     for (messages_owned.items) |*msg| {
         msg.deinit(allocator);
@@ -1138,21 +930,8 @@ pub fn compactMessageInMemoryNew(
     return new_messages;
 }
 
-/// Build the structured `<compact_messages>` envelope that replaces
-/// the dropped messages after compaction. The envelope has three
-/// sections: <metadata> (compaction event facts), <message_index>
-/// (id+role+preview for every dropped message so the agent can
-/// reference them later via read_workspace_session), and <summary>
-/// (the compactor's output, preserved verbatim).
-///
-/// `dropped_messages` is the slice of messages that will be marked
-/// `is_feed_to_llm=0` — typically `messages.items[1..]` for the
-/// compactMessageInMemoryNew caller. We capture their metadata HERE
-/// (in memory) rather than re-querying the DB, because these messages
-/// still have their content/tool_call_id fields available in the
-/// in-memory struct.
-///
-/// Caller owns the returned string and must free with `allocator.free`.
+/// Build the structured `<compact_messages>` envelope that replaces the
+/// dropped messages after compaction.
 const MAX_INDEX_ENTRIES: usize = 50;
 
 fn buildCompactionEnvelope(
@@ -1187,13 +966,9 @@ fn buildCompactionEnvelope(
         \\
     , .{ session_id, model, now_iso, original_count });
 
-    // --- message_index ---
-    // Capped to MAX_INDEX_ENTRIES so a very long session (e.g. 360+
-    // dropped messages) can't blow up the envelope size on its own;
-    // we keep the most RECENT dropped messages since those are most
-    // likely to be relevant to what the agent does next, and note how
-    // many older entries were omitted (full content still recoverable
-    // from the DB via read_workspace_session / session_id).
+    // --- message_index --- Capped to MAX_INDEX_ENTRIES so a very long
+    // session (e.g. 360+ dropped messages) can't blow up the envelope size on
+    // its own; we keep the most RECENT dropped messages since those are most
     try env.appendSlice(allocator, "  <message_index>\n");
 
     const show_count = @min(dropped_messages.len, MAX_INDEX_ENTRIES);
@@ -1228,10 +1003,8 @@ fn buildCompactionEnvelope(
             \\
         , .{ msg_id, role_str });
 
-        // For tool-result messages, surface tool_call_id so the agent
-        // can match results back to calls. (tool_name is not available
-        // on the in-memory AgentMessage struct in this codebase; the
-        // read_workspace_session tool can fetch it from the DB row.)
+        // For tool-result messages, surface tool_call_id so the agent can
+        // match results back to calls.
         if (msg.role == .tool) {
             const tcid = msg.tool_call_id orelse "";
             const tcid_escaped = try xml_escape(allocator, tcid);
@@ -1248,17 +1021,13 @@ fn buildCompactionEnvelope(
 
     try env.appendSlice(allocator, "  </message_index>\n");
 
-    // --- summary (the compactor's output) ---
-    // Hard cap as a safety net — the real budget should be enforced via
-    // the compactor prompt itself, but we never want a misbehaving model
-    // response to produce an unbounded envelope.
+    // --- summary (the compactor's output) --- Hard cap as a safety net — the
+    // real budget should be enforced via the compactor prompt itself, but we
+    // never want a misbehaving model response to produce an unbounded
     const summary_to_embed = compacted_xml;
 
     // Wrapped in CDATA so embedded <, >, & in the summary (quoted file
     // contents, shell output, diffs, etc.) can never break the envelope.
-    // If the summary itself contains the CDATA close sequence "]]>", we
-    // split it into adjacent CDATA sections rather than escaping, so the
-    // model still sees natural punctuation everywhere else.
     try env.appendSlice(allocator, "  <summary><![CDATA[\n");
     if (std.mem.indexOf(u8, summary_to_embed, "]]>") == null) {
         try env.appendSlice(allocator, summary_to_embed);
@@ -1285,14 +1054,8 @@ fn buildCompactionEnvelope(
 }
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
-//
 // Convention: walk ALL migrations from scratch so the schema under test is
-// GUARANTEED to match production. No hand-rolled CREATE TABLE.
-// (Project memory `llm-history-test-use-migrations-module.md` — reviewer's
-// recurring "use migrations module" feedback pattern.)
-//
-// Plan: docs/superpowers/plans/2026-08-14-consolidate-compaction-message-helpers.md
-// Task: task_1786912658593_0
+// GUARANTEED to match production.
 
 
 fn setupDb() !struct {
@@ -1543,10 +1306,8 @@ test "fetchRecentActivities returns the most recent N rows in chrono order" {
         turns.deinit(alloc);
     }
 
-    // limit=3 → the SQL fetches the 3 newest (DESC) then the helper
-    // reverses in-place to chronological (oldest first). The 3 newest
-    // rows by created_at are a5, a4, a3; after reverse that's
-    // a3, a4, a5 → wiring it in, reviewing, shipping it.
+    // limit=3 → the SQL fetches the 3 newest (DESC) then the helper reverses
+    // in-place to chronological (oldest first).
     try testing.expectEqual(@as(usize, 3), turns.items.len);
     try testing.expectEqualStrings("wiring it in", turns.items[0].description);
     try testing.expectEqualStrings("reviewing", turns.items[1].description);
@@ -1691,10 +1452,9 @@ test "enrichCompactionXml deduplicates read_file on the same path" {
 }
 
 test "enrichCompactionXml embeds recent_activities inside <compaction_context>" {
-    // Regression: when recent_activities are non-empty, the enrich
-    // helper MUST emit a `<recent_activities>` section alongside
-    // <user_history> + <read_files>, with one <activity> per row,
-    // each row's description XML-escaped.
+    // Regression: when recent_activities are non-empty, the enrich helper
+    // MUST emit a `<recent_activities>` section alongside <user_history> +
+    // <read_files>, with one <activity> per row, each row's description
     const alloc = testing.allocator;
     const recent_activities = [_]RecentActivity{
         .{ .description = "[2026-08-13 10:00] planning the migration", .created_at = "2026-08-13 10:00:00" },
@@ -1945,7 +1705,6 @@ test "enrichCompactionXml adds truncated_by when session_skills exceeds the 50-c
     // Only free the underlying slices (owned_names/owned_contents) — the
     // SkillInfo structs themselves are stack-allocated and SkillInfo.deinit
     // would free the same memory again. skills[i].skill_name and
-    // skills[i].content are aliases for owned_names[i] / owned_contents[i].
     defer for (owned_names) |n| alloc.free(n);
     defer for (owned_contents) |c| alloc.free(c);
 
@@ -2021,11 +1780,9 @@ fn countSubstring(hay: []const u8, needle: []const u8) usize {
 const ToolCall = agent.ToolCall;
 const session_plan = @import("session_plan.zig");
 
-/// Build a 5-message list mimicking the production workflow shape:
-///   [0] system prompt, [1] user, [2] assistant, [3] user, [4] assistant (current/pending).
-/// Index 0 is treated as the "original system prompt"; index 4 is the "current"
-/// message excluded from history (per `messages.items[1..last_idx]` semantics in
-/// `buildCompactMessagePrompt`). Caller owns and must free via `freeMessages`.
+/// Build a 5-message list mimicking the production workflow shape: [0] system
+/// prompt, [1] user, [2] assistant, [3] user, [4] assistant
+/// (current/pending).
 fn buildSampleMessages(allocator: std.mem.Allocator) !std.ArrayList(AgentMessage) {
     var list: std.ArrayList(AgentMessage) = .empty;
     try list.append(allocator, .{ .role = .system, .content = try allocator.dupe(u8, "ORIG_SYS") });
@@ -2441,11 +2198,6 @@ test "compactionThresholdPercent: top-level defaults (cfg) cascade before built-
 // ════════════════════════════════════════════════════════════════════════════
 // Inlined from workflow_compaction_envelope_test.zig (Migration 076 tests)
 // ════════════════════════════════════════════════════════════════════════════
-// ─── Migration 076 — session_plan <plan> section in compaction envelope ──────
-//
-// When compaction fires, the current session_plan row is fetched BEFORE
-// mark_history_not_for_llmrun and embedded as a `<plan><content>` CDATA
-// section in the `<compaction_context>` envelope.
 
 test "enrichCompactionXml embeds <plan> when session_plan has a plan" {
     var s = try setupDb();
@@ -2516,10 +2268,7 @@ test "enrichCompactionXml omits <plan> when session_plan is absent" {
 
 test "enrichCompactionXml CDATA-splits plan content containing literal ]]>" {
     // Regression: XML CDATA sections cannot contain the literal sequence
-    // `]]>`. The plan body must be split into adjacent CDATA sections
-    // (close current with `]]>`, re-open with `<![CDATA[`, emit literal
-    // `>` as content of the new section) — same pattern session_skills
-    // uses for skill content.
+    // `]]>`.
     var s = try setupDb();
     defer teardownDb(&s);
     const alloc = testing.allocator;
@@ -2580,18 +2329,14 @@ const MockState = struct {
 
     // ─── compactMessagesInMemory mock ──────────────────────────────────
     compact_messages_in_memory_calls: u32 = 0,
-    /// Owned copy of the compacted XML the mock received. The caller frees
-    /// its buffer as soon as `compactMessagesInMemory` returns (defer in
-    /// `maybeCompactMessagesNew`), so the mock MUST dup before storing —
-    /// otherwise later test assertions would read freed memory.
+    /// Owned copy of the compacted XML the mock received.
     last_compacted_xml_owned: []u8 = "",
     last_compacted_xml: []const u8 = "", // alias — points into last_compacted_xml_owned
     last_compact_session_id: []const u8 = "",
     last_compact_model: []const u8 = "",
-    /// Event bus the most-recent `compactMessagesInMemory` call was
-    /// invoked with (production now passes it as a parameter, not
-    /// through the singleton — see the function's `event_bus` doc).
-    /// Tests assert `null` for the offline / no-subscriber path.
+    /// Event bus the most-recent `compactMessagesInMemory` call was invoked
+    /// with (production now passes it as a parameter, not through the
+    /// singleton — see the function's `event_bus` doc).
     last_event_bus: ?*event_bus_mod.EventBus = null,
     /// If `compact_returns_null` is true, the mock returns error.Skip to
     /// propagate as a test signal. (Mock returns the messages list unchanged
@@ -2605,10 +2350,8 @@ fn resetMockState() void {
     mock_state = .{};
 }
 
-/// Free the heap-owned copy of the last compacted XML and reset the
-/// pointer fields. Tests that read `mock_state.last_compacted_xml` MUST
-/// defer this call (BEFORE any leak detector runs) so the buffer isn't
-/// reported as leaked. Tests that don't read it can skip this call.
+/// Free the heap-owned copy of the last compacted XML and reset the pointer
+/// fields.
 fn releaseLastCompactedXml() void {
     if (mock_state.last_compacted_xml_owned.len > 0) {
         std.testing.allocator.free(mock_state.last_compacted_xml_owned);
@@ -2955,10 +2698,7 @@ test "compact_messages_in_memory error propagates to caller" {
 // ─── Better-compaction-context integration tests ──────────────────────────
 
 /// In-memory DB with just the columns `fetchUserChatHistory`,
-/// `fetchReadFilePaths`, and `fetchRecentActivities` read. The mock
-/// `compactMessagesInMemory` is `db`-agnostic, so we don't need the
-/// full sessions/llm_history schema the real
-/// `compactMessageInMemoryNew` requires.
+/// `fetchReadFilePaths`, and `fetchRecentActivities` read.
 fn setupDbForEnrichmentTest() !struct {
     db: sqlite.SqliteBackend,
     threaded: std.Io.Threaded,
@@ -3153,18 +2893,9 @@ test "compaction still proceeds when fetchUserChatHistory returns empty (no user
     try testing.expect(std.mem.indexOf(u8, mock_state.last_compacted_xml, "GOAL: ship X") != null);
 }
 
-// ─── Migration 073 — recent_activities integration tests ────────────────────
-//
-// Per PR #226 review feedback: the compaction flow must READ prior
-// session_activity rows (recorded by `update_activity`) and embed them
-// in a `<recent_activities>` section inside the <compaction_context>
-// enrichment, NOT record a new "[COMPACTION] Compacted..." row.
-//
-// After the refactor that lifted recent_activities fetch + embed from
-// buildCompactionEnvelope into maybeCompactMessagesNew, these tests
-// exercise the FULL path through maybeCompactMessagesNew so we
-// actually verify the DB fetch + enrich step, not just the envelope
-// builder.
+// ─── Migration 073 — recent_activities integration tests
+// ──────────────────── Per PR #226 review feedback: the compaction flow must
+// READ prior session_activity rows (recorded by `update_activity`) and embed
 
 test "happy path embeds prior session_activity rows in <recent_activities>" {
     resetMockState();
@@ -3288,44 +3019,11 @@ test "omits <recent_activities> when session has no prior activity" {
 }
 
 // ─── shouldCompactDefault unit tests (Anthropic + OpenAI styles) ───────────
-//
-// `shouldCompactDefault` is the production wiring inside `defaultCompactDeps`:
-//   1. if `ctx.force` is true, return true unconditionally (manual endpoint);
-//   2. otherwise defer to `agent.LLMModels.shouldCompact(total_tokens,
-//      max_capacity, threshold_percent)` — equivalent to
-//      `total_tokens >= max_capacity * threshold_percent / 100` (defaults to
-//      80% when threshold is null).
-//
-// These tests exercise the function directly (no CompactDeps mock plumbing)
-// against two style profiles:
-//
-//   * Anthropic style: url_style="anthropic", model="claude-sonnet-4-5"
-//     (200K context via the built-in fallback — there is no per-model entry
-//     for Claude today, so the function relies on the same 200_000 fallback
-//     any unknown model uses).
-//
-//   * OpenAI style: url_style="openai", model="gpt-4o" with a top-level
-//     `max_capacity_token_model` override of 128_000 (matches gpt-4o's real
-//     128K context window — without the override, the 200K fallback would
-//     over-provision and skip compaction past 128K).
-//
-// Together these cover the two real-world URL styles the production
-// workflow actually drives (`url_style` flows through `defaultCompactDeps`
-// unchanged — `shouldCompactDefault` does NOT branch on it, but the tests
-// assert the function is `url_style`-agnostic so a future regression that
-// tries to encode the style into the decision would be caught).
+// `shouldCompactDefault` is the production wiring inside
+// `defaultCompactDeps`: 1. if `ctx.force` is true, return true
 
 /// Build a stack-allocated `LlmConfig` suitable for direct
-/// `shouldCompactDefault` tests. Mirrors `buildTestConfig` but adds
-/// `model`, `max_capacity_token_model`, `compaction_threshold_percent`, and
-/// `url_style` overrides so a single test can target a specific
-/// profile-style scenario.
-///
-/// The returned value uses static-literal strings (no allocator-backed
-/// slices) and empty hashmaps, so it does NOT need `deinit` — `deinit`
-/// would try to `free` the static literals, which is undefined behaviour.
-/// Mirrors the no-deinit pattern used by `buildTestConfig` in the
-/// maybeCompactMessagesNew tests above.
+/// `shouldCompactDefault` tests.
 fn buildShouldCompactTestConfig(
     allocator: std.mem.Allocator,
     model: []const u8,
@@ -3447,10 +3145,8 @@ test "shouldCompactDefault: Anthropic claude-sonnet-4-5, custom threshold_percen
 // ─── OpenAI style: gpt-4o with override max_capacity=128_000, 80% default ───
 
 test "shouldCompactDefault: OpenAI gpt-4o (max_capacity=128K), 0 tokens → false" {
-    // gpt-4o's real context window is 128K, so the production workflow
-    // uses `max_capacity_token_model = 128_000` in the config. Without
-    // that override, the 200K fallback would let the session over-grow
-    // by 56% before compacting.
+    // gpt-4o's real context window is 128K, so the production workflow uses
+    // `max_capacity_token_model = 128_000` in the config.
     const cfg = buildShouldCompactTestConfig(testing.allocator, "gpt-4o", 128_000, null, "openai");
     try testing.expect(!shouldCompactDefault(.{
         .force = false,
@@ -3513,10 +3209,9 @@ test "shouldCompactDefault: OpenAI gpt-4o (max_capacity=128K), custom threshold=
 }
 
 test "shouldCompactDefault: OpenAI gpt-4o WITHOUT override (200K fallback), 130_000 → false" {
-    // If the user forgets to set max_capacity_token_model, the function
-    // falls back to getModelTokenCount("gpt-4o") which returns 200_000
-    // (the codebase's universal fallback). 130_000 < 200_000 * 80% = 160_000.
-    // This is the documented quirk that motivates the override.
+    // If the user forgets to set max_capacity_token_model, the function falls
+    // back to getModelTokenCount("gpt-4o") which returns 200_000 (the
+    // codebase's universal fallback). 130_000 < 200_000 * 80% = 160_000.
     const cfg = buildShouldCompactTestConfig(testing.allocator, "gpt-4o", null, null, "openai");
     try testing.expect(!shouldCompactDefault(.{
         .force = false,
@@ -3591,11 +3286,8 @@ test "shouldCompactDefault: threshold_percent=0 → total_tokens >= 0 always tri
 }
 
 test "shouldCompactDefault: url_style is ignored by the decision (Anthropic config + OpenAI-style model)" {
-    // Regression guard: `shouldCompactDefault` MUST NOT branch on `url_style`.
-    // It only feeds the model name into `getModelTokenCount` (and any
-    // max_capacity / threshold overrides). Mixing a claude-sonnet-4-5 model
-    // under url_style="openai" (an unusual config but a real one) must give
-    // the same result as the same model under url_style="anthropic".
+    // Regression guard: `shouldCompactDefault` MUST NOT branch on
+    // `url_style`.
     const cfg_openai = buildShouldCompactTestConfig(testing.allocator, "claude-sonnet-4-5", null, null, "openai");
     const cfg_anthropic = buildShouldCompactTestConfig(testing.allocator, "claude-sonnet-4-5", null, null, "anthropic");
     const ctx_openai: ThresholdCtx = .{
@@ -3618,26 +3310,9 @@ test "shouldCompactDefault: url_style is ignored by the decision (Anthropic conf
 }
 
 test "shouldCompactDefault: profile override shapes the decision (cap + threshold)" {
-    // 2026-08-21-fix-ui-context-window — the compaction decision must
-    // honor the session profile's `max_capacity_tokens` and
+    // 2026-08-21-fix-ui-context-window — the compaction decision must honor
+    // the session profile's `max_capacity_tokens` and
     // `compaction_threshold_percent` overrides, matching the (now
-    // profile-aware) chat footer. Previously `shouldCompactDefault`
-    // hardcoded a null profile, so a session with a 400k override +
-    // 50% threshold compacted at 80% of the built-in window instead of
-    // 50% of 400k.
-    //
-    // Setup: profile cap 400_000, threshold 50% → compact when
-    // total_tokens >= 200_000. claude-sonnet-4-5's built-in window is
-    // 200_000 with the 80% default → 160_000, so 210_000 tokens would
-    // NOT compact under the old null-profile code (210k < 80% of
-    // built-in? no — 210k > 160k... but with the profile it's 210k >=
-    // 200k → true). Use 190_000 to make the two paths disagree:
-    //   old (null profile): 190k < 160k? no → 190k >= 160k → TRUE
-    // Hmm — pick numbers where old=false, new=true instead:
-    //   profile: cap 400_000, threshold 50% → trigger at 200_000
-    //   built-in: cap 200_000, threshold 80% → trigger at 160_000
-    // 190_000: old → true (190k >= 160k), new → false (190k < 200k).
-    // So assert the NEGATIVE: with the profile, 190_000 must NOT compact.
     const profile = LlmConfig.LlmProfile{
         .model = "claude-sonnet-4-5",
         .max_capacity_tokens = 400_000,
@@ -3675,16 +3350,9 @@ test "shouldCompactDefault: profile override shapes the decision (cap + threshol
     }));
 }
 
-// ─── Inlined from workflow_compact_call_agent_test.zig ────────────────────────
-//
-// Regression test for the `effective_url_style` propagation bug:
-// `callCompactAgent` builds an `agent.Agent` to call the
-// CompactionAgent LLM, but it never set `compaction_agent.UrlStyle`.
-// `Agent.UrlStyle` defaulted to `"openai"` — Anthropic profiles got
-// OpenAI-shaped JSON bodies and the upstream rejected them. The fix
-// adds `url_style: []const u8 = "openai"` to `CallCompactAgentInput`
-// and threads it through. These tests guard against future refactors
-// dropping the field or changing its default.
+// ─── Inlined from workflow_compact_call_agent_test.zig
+// ──────────────────────── Regression test for the `effective_url_style`
+// propagation bug: `callCompactAgent` builds an `agent.Agent` to call the
 
 test "CallCompactAgentInput: url_style field exists with default \"openai\" (back-compat)" {
     const default = CallCompactAgentInput{
@@ -3715,10 +3383,9 @@ test "CallCompactAgentInput: url_style can be overridden to \"anthropic\"" {
 }
 
 test "callCompactAgent: returns null + logs when messages.items.len < 2 (early branch — bypasses agent.Agent)" {
-    // This proves the url_style parameter is recognized by the
-    // production function even when messages is too short to
-    // reach the actual LLM call. The earlier "field exists"
-    // tests prove the field shape.
+    // This proves the url_style parameter is recognized by the production
+    // function even when messages is too short to reach the actual LLM call.
+    // The earlier "field exists" tests prove the field shape.
     const alloc = testing.allocator;
 
     var lg = Logger.init(alloc, std.testing.io, .{});
@@ -3726,10 +3393,9 @@ test "callCompactAgent: returns null + logs when messages.items.len < 2 (early b
 
     var messages: std.ArrayList(AgentMessage) = .empty;
     defer messages.deinit(alloc);
-    // messages.items.len = 0 → triggers the early `Not enough
-    // messages` branch at workflow_compact_message.zig (Part 2: callCompactAgent early-return). This branch never
-    // touches `compaction_agent.UrlStyle`, so it's stable
-    // regardless of whether the bug is present.
+    // messages.items.len = 0 → triggers the early `Not enough messages`
+    // branch at workflow_compact_message.zig (Part 2: callCompactAgent
+    // early-return).
 
     const result = callCompactAgent(.{
         .allocator = alloc,
@@ -3745,27 +3411,19 @@ test "callCompactAgent: returns null + logs when messages.items.len < 2 (early b
     try testing.expect(result == null);
 }
 
-// Static contract: confirms the regression-protecting assertion
-// was added next to the existing `callCompactAgent`-receives-right-
-// fields test (above). If a future refactor drops
-// `mock_state.last_agent_url_style` or removes the
-// `try testing.expectEqualStrings("openai", mock_state.last_agent_url_style);`
-// assertion, this test fires.
+// Static contract: confirms the regression-protecting assertion was added
+// next to the existing `callCompactAgent`-receives-right- fields test
+// (above).
 test "PR regression: callCompactAgent mock asserts url_style propagation" {
-    // This is a marker test — the real assertion is inline above
-    // in the `shouldCompact returning true routes through callCompactAgent`
-    // test (the mock_state.last_agent_url_style check). A future
-    // refactor that drops the field + its assertion will break
-    // this PR's contract. This test just documents the dependency;
-    // it always passes.
+    // This is a marker test — the real assertion is inline above in the
+    // `shouldCompact returning true routes through callCompactAgent` test
+    // (the mock_state.last_agent_url_style check).
     try testing.expect(true);
 }
 
-// ─── Inlined from workflow_compaction_envelope_test.zig ───────────────────────
-//
-// Compaction envelope tests: cover `compactMessageInMemoryNew` and
-// `enrichCompactionXml` integration paths with a full-migrations
-// in-memory DB. Originally lived in `workflow_compaction_envelope_test.zig`.
+// ─── Inlined from workflow_compaction_envelope_test.zig
+// ─────────────────────── Compaction envelope tests: cover
+// `compactMessageInMemoryNew` and `enrichCompactionXml` integration paths
 
 fn envelopeSetupDb() !struct {
     db: sqlite.SqliteBackend,
@@ -3792,10 +3450,9 @@ fn envelopeTeardownDb(s: *@TypeOf(envelopeSetupDb() catch @panic("envelopeSetupD
     s.threaded.deinit();
 }
 
-/// Build a synthetic in-memory message list shaped like the agent's
-/// real messages: [system, user-1, assistant-1, tool-result-1, user-2, assistant-2].
-/// Uses allocator.dupe'd slices so compactMessageInMemoryNew can free
-/// them safely after compaction.
+/// Build a synthetic in-memory message list shaped like the agent's real
+/// messages: [system, user-1, assistant-1, tool-result-1, user-2,
+/// assistant-2].
 fn envelopeBuildMessages(allocator: std.mem.Allocator) !std.ArrayList(agent.AgentMessage) {
     var list: std.ArrayList(agent.AgentMessage) = .empty;
     try list.append(allocator, .{
@@ -3921,15 +3578,9 @@ test "compactMessageInMemoryNew: message_index lists every dropped message with 
     try testing.expect(std.mem.indexOf(u8, summary, "<role>assistant</role>") != null);
     try testing.expect(std.mem.indexOf(u8, summary, "<role>tool</role>") != null);
 
-    // Each index entry must include a message id and a preview.
-    // CURRENT IMPL: the envelope uses synthetic `adhoc_<i>` ids (where `i`
-    // is the index into `dropped_messages`, i.e. messages.items[1..]).
-    // Real DB primary keys are NOT embedded in the envelope — the full
-    // content is recovered from the DB via `read_workspace_session` using
-    // the session_id, not via the embedded id. (See workflow.zig:1144.)
-    //
-    // The 6-msg fixture drops 5 messages, so the tool-result is at
-    // dropped_messages[2] → `adhoc_2`.
+    // Each index entry must include a message id and a preview. CURRENT IMPL:
+    // the envelope uses synthetic `adhoc_<i>` ids (where `i` is the index
+    // into `dropped_messages`, i.e. messages.items[1..]).
     try testing.expect(std.mem.indexOf(u8, summary, "<id>adhoc_2</id>") != null);
     try testing.expect(std.mem.indexOf(u8, summary, "<preview>") != null);
 }
@@ -3937,12 +3588,6 @@ test "compactMessageInMemoryNew: message_index lists every dropped message with 
 test "compactMessageInMemoryNew: tool-role index entries include tool_call_id" {
     // Regression: a tool-result message has `tool_call_id`. The index must
     // surface it so the agent can match the result back to the call.
-    //
-    // CURRENT IMPL: only `tool_call_id` is surfaced for tool-role entries.
-    // `tool_name` is NOT emitted in the envelope (the in-memory AgentMessage
-    // struct has no `tool_name` field — that lives on the DB row and can
-    // be recovered via `read_workspace_session` with session_id). See
-    // workflow.zig:1163-1172.
     var s = try envelopeSetupDb();
     defer envelopeTeardownDb(&s);
     const alloc = testing.allocator;
@@ -4004,9 +3649,7 @@ test "compactMessageInMemoryNew: existing short-circuit (total <= 4) returns mes
 test "buildCompactionEnvelope: all previews are capped at 100 chars regardless of role" {
     // CURRENT IMPL: the envelope caps every preview at 100 bytes
     // (`preview.len > 100` → trim). There is no role-based 200/500
-    // distinction. (See workflow.zig:1152.) The 100-char cap is a safety
-    // net for ASCII; if non-English content is common, swap for a
-    // UTF-8-aware trim.
+    // distinction.
     var s = try envelopeSetupDb();
     defer envelopeTeardownDb(&s);
     const alloc = testing.allocator;
@@ -4083,13 +3726,7 @@ test "buildCompactionEnvelope: all previews are capped at 100 chars regardless o
 test "buildCompactionEnvelope: content=null yields empty preview (no content_parts extraction)" {
     // CURRENT IMPL: when `msg.content` is null (vision / multimodal messages
     // carry text in `content_parts`, not `content`), the preview falls
-    // through to "" via `msg.content orelse ""`. The text parts of
-    // `content_parts` are NOT extracted into the preview.
-    // (See workflow.zig:1148.)
-    //
-    // This is a known limitation: the agent has no signal in the envelope
-    // that an image attachment existed. The full content is still
-    // recoverable via `read_workspace_session` using session_id.
+    // through to "" via `msg.content orelse ""`.
     var s = try envelopeSetupDb();
     defer envelopeTeardownDb(&s);
     const alloc = testing.allocator;
@@ -4169,17 +3806,8 @@ test "buildCompactionEnvelope: content=null yields empty preview (no content_par
 }
 
 test "end-to-end: compacted rows are findable via getCompactedMessages after compaction" {
-    // CURRENT IMPL: the envelope uses synthetic `adhoc_<i>` ids, NOT the
-    // real DB primary keys. So you cannot pull an id out of the envelope
-    // and feed it back — `read_workspace_session` must be queried with
-    // the session_id alone (no message_ids filter), and it returns all
-    // rows for the session that have is_feed_to_llm=0.
-    //
-    // This test verifies the FULL round-trip: pre-seed rows with
-    // is_feed_to_llm=1, compact (which flips them to 0 and saves a new
-    // summary row with is_feed_to_llm=1), then query via getCompactedMessages
-    // using session_id. The pre-seeded rows must come back with their
-    // original content intact.
+    // CURRENT IMPL: the envelope uses synthetic `adhoc_<i>` ids, NOT the real
+    // DB primary keys.
     var s = try envelopeSetupDb();
     defer envelopeTeardownDb(&s);
     const alloc = testing.allocator;

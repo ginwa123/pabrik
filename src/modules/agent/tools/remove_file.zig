@@ -3,8 +3,7 @@ const builtin = @import("builtin");
 const schemas = @import("schemas.zig");
 /// The NTSTATUS guard is shared: the LLM controls `path` for EVERY
 /// path-taking tool, not just this one, and on Windows a malformed NT name
-/// panics the process inside std's Io backend rather than failing the
-/// call. See helpers/path_validate.zig.
+/// panics the process inside std's Io backend rather than failing the call.
 const path_validate = @import("helpers").path_validate;
 const invalidPathReason = path_validate.invalidPathReason;
 const isSep = path_validate.isSep;
@@ -21,9 +20,7 @@ pub const RemoveFileInput = struct {
     /// If true, recursively delete directory and all contents inside
     recursive: bool = false,
     /// REQUIRED on the wire. Absolute directory this call works in; a
-    /// relative `path` resolves against it. Empty by default so the struct
-    /// stays constructible in tests that do not exercise the `cwd` rule —
-    /// `path_validate.validateCwd` rejects the empty value at exec time.
+    /// relative `path` resolves against it.
     cwd: []const u8 = "",
 };
 
@@ -205,10 +202,9 @@ pub fn xmlErrorEmpty(allocator: std.mem.Allocator, error_msg: []const u8) []cons
     , .{error_msg}) catch "<path></path><deleted>false</deleted><error>UnknownError</error>";
 }
 
-// --- Regression tests: malformed names must return error XML, never panic ---
-// (Windows Threaded backend maps OBJECT_NAME_INVALID / INVALID_PARAMETER /
-// OBJECT_PATH_SYNTAX_BAD to ntstatusBug -> process abort. The validator above
-// is what stands between LLM input and that panic.)
+// --- Regression tests: malformed names must return error XML, never panic
+// --- (Windows Threaded backend maps OBJECT_NAME_INVALID / INVALID_PARAMETER
+// / OBJECT_PATH_SYNTAX_BAD to ntstatusBug -> process abort.
 
 test "remove_file validator rejects empty and NUL paths on all platforms" {
     try std.testing.expect(invalidPathReason("") != null);

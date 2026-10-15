@@ -1,36 +1,12 @@
-//! Returns the enabled tool names for the agent-kanbans config bound to
-//! a kanban workspace_item.
-//!
-//! Mirrors `agent_tools_allowed.zig` but probes the `agent_kanbans` +
-//! `agent_kanban_tools` tables (Migration 081) instead of `agents` +
-//! `agent_tools`.
-//!
-//! This is an **input** to the runtime tool filter wired into
-//! `workflow.zig:maybeOverrideAllowedToolsForKanban`. Semantics differ
-//! from the agent world (design decision D5 in the plan):
-//!
-//!   - Returns empty slice when the workspace_item is NOT a configured
-//!     kanban (no `agent_kanbans` row) → caller leaves tool defaults
-//!     untouched. Unconfigured boards are completely unaffected.
-//!   - Returns the enabled tool names when the board IS configured.
-//!     The CALLER decides what "configured but zero enabled tools"
-//!     means (currently: also leave defaults — see workflow.zig).
-//!
-//! Plan: docs/superpowers/plans/2026-08-25-agent-kanbans-mirror.md
-//! Task: task_1787597624259_2
+//! Returns the enabled tool names for the agent-kanbans config bound to a
+//! kanban workspace_item.
 
 const std = @import("std");
 const sqlite = @import("pabrikcore").sqlite;
 const agent_kanban_db = @import("../models/agent_kanban.db.zig");
 
 /// Resolve the enabled tool names for the agent-kanbans config bound to
-/// `workspace_item_id`. Returns an owned slice of `[]const u8`; caller
-/// must free each element AND the slice header.
-///
-/// Returns `&.{}` (zero-length slice) on any "not a configured kanban"
-/// condition:
-///   - `workspace_item_id` doesn't exist in `agent_kanbans`
-///   - DB error (non-fatal — silently no override)
+/// `workspace_item_id`.
 pub fn agentKanbanToolsAllowed(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,

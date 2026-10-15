@@ -1,14 +1,5 @@
-//! Data model for the `sessions` entity table.
-//!
-//! One row per active chat session. Sessions are created lazily when
-//! a task spawns an agent run; the session_id == task_id invariant
-//! holds for routine tasks.
-//!
-//! Schema: Migration 008 (`create_sessions_table`) + 012 (cwd) +
-//! 016 (workspace_id) + 029 (timestamps) + 035
-//! (selected_profile_model) + 046 (git_worktree_cwd) + 063
-//! (is_auto_retry_until_stop + last_finish_reason) + 086
-//! (pr_url + pr_provider).
+//! Data model for the `sessions` entity table. One row per active chat
+//! session.
 
 const std = @import("std");
 
@@ -123,11 +114,6 @@ pub fn clone(self: *const Self, allocator: std.mem.Allocator) !Self {
 // ===== Tests merged from models_test.zig (2026-09-29 flatten) =====
 
 // Sanity tests for the `src/models/` entity models.
-//
-// Verifies that every model file compiles, that `init` populates the
-// struct as expected, that `deinit` releases its strings, and that
-// external callers can read the struct's fields directly (matching
-// the file-level struct pattern requested by the user).
 
 const testing = std.testing;
 

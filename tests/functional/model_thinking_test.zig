@@ -1,49 +1,5 @@
 // Functional tests for the model-thinking knobs (plan
 // 2026-08-23-model-thinking).
-//
-// Zig port of `tests/functional/model_thinking_test.py` (same test
-// names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional tests for the model-thinking knobs (plan 2026-08-23-model-thinking).
-//
-//   Exercises the pabrik config HTTP surface for the new
-//   `thinking_budget_tokens` and `reasoning_effort` per-profile fields:
-//
-//     - PUT  /api/config/pabrik with profile-level thinking_budget_tokens
-//          + reasoning_effort round-trips through GET.
-//     - PUT  /api/config/pabrik rejects thinking_budget_tokens=0 with 400
-//          (InvalidThinkingBudgetTokens).
-//     - PUT  /api/config/pabrik rejects thinking_budget_tokens > 2_000_000
-//          with 400 (InvalidThinkingBudgetTokens).
-//     - PUT  /api/config/pabrik rejects garbage reasoning_effort ("super")
-//          with 400.
-//
-//   The harness boots pabrik with `stub_llm_profile=True` which pre-installs
-//   a `stub` profile at `<temp_dir>/.config/pabrik/config.json`. Each test
-//   boots a fresh pabrik (function-scoped fixture).
-//   """
-//
-// PORT NOTES
-//
-// * The `config_harness` fixture becomes `bootConfigHarness` below: a
-//   `Harness.boot` with `.stub_llm_profile = true`. The fixture's macOS
-//   dance (copy `<temp>/.config/pabrik/config.json` to
-//   `<temp>/Library/Application Support/pabrik/config.json`) is a no-op
-//   here: `harness.writeStubLlmProfile` already writes the stub config to
-//   ALL THREE platform layouts (`.config`, `AppData/Roaming`,
-//   `Library/Application Support`), which is strictly a superset of what
-//   the Python fixture copied.
-//
-// * `expect=400` on a request whose body the test then re-reads: the Zig
-//   port passes `.assert_status = false` and asserts on `r.status`
-//   itself where the status IS the assertion, per the harness contract.
-//
-// * `alpha.get("thinking_budget_tokens") is None` in Python is true for
-//   BOTH an absent key and an explicit JSON `null`. `expectNullOrAbsent`
-//   reproduces exactly that, and `expectNull` is used only where the
-//   Python comment insists the field IS present on the wire.
 
 const std = @import("std");
 const testing = std.testing;
@@ -163,8 +119,7 @@ fn expectStr(obj: std.json.ObjectMap, key: []const u8, want: []const u8, ctx: []
 
 /// Assert a PUT returned 200, printing the body when it did not — the
 /// handler's error text is the only thing that distinguishes the three
-/// validators (`InvalidThinkingBudgetTokens`,
-/// `InvalidReasoningEffort`, and the generic parse failure).
+/// validators (`InvalidThinkingBudgetTokens`, `InvalidReasoningEffort`, and
 fn expectPutOk(r: *const harness.Response, ctx: []const u8) !void {
     if (r.status == 200) return;
     const excerpt: []const u8 = if (r.body.len > 400) r.body[0..400] else r.body;
@@ -201,13 +156,7 @@ fn parseConfigDoc(config_body: []const u8) !harness.Json {
 }
 
 /// The named profile object out of a `GET /api/config/pabrik` document.
-///
 /// Python: `profiles = r.get("profiles") or {}` then `profiles["alpha"]`.
-///
-/// BORROWS `doc` — the caller owns it, and the returned `ObjectMap`
-/// dies with `doc.deinit()`. Returning the document instead would hand
-/// the caller the config ROOT, which looks like a profile only until the
-/// first missing-key assertion prints the top-level config keys.
 fn profileObject(doc: *const harness.Json, name: []const u8) !std.json.ObjectMap {
     const profiles = profilesMap(doc) orelse {
         std.debug.print("PUT'd profile missing from GET: no `profiles` object\n", .{});
@@ -285,10 +234,9 @@ comptime {
 // Test 1: PUT round-trips thinking_budget_tokens + reasoning_effort
 // ============================================================================
 
-// PUT a profile with both new knobs -> GET returns the same values.
-//
-// This is the core "the wire shape works" test for the feature. Without
-// it, a frontend save would silently drop the user's configuration.
+// PUT a profile with both new knobs -> GET returns the same values. This is
+// the core "the wire shape works" test for the feature. Without it, a
+// frontend save would silently drop the user's configuration.
 test "profile_thinking_budget_and_effort_round_trip" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootConfigHarness();
@@ -337,9 +285,8 @@ test "profile_thinking_budget_zero_rejected" {
         \\ "url_style":"anthropic","thinking_budget_tokens":0}}}
     ;
     // We don't pin the exact error code/message — the handler returns
-    // error.InvalidThinkingBudgetTokens which the HTTP layer maps
-    // to 400 with a body. We just verify it's a 400 and the body
-    // mentions either "InvalidThinkingBudgetTokens" or "thinking_budget".
+    // error.InvalidThinkingBudgetTokens which the HTTP layer maps to 400 with
+    // a body.
     var r = try putConfig(&h, put_body);
     defer r.deinit();
     if (r.status != 400) {
@@ -454,17 +401,6 @@ test "profile_thinking_knobs_default_to_null_when_omitted" {
 // ============================================================================
 // Test 6: explicit JSON null for the new fields is accepted
 // ============================================================================
-// Regression test for the "cannot save profile" bug (task_1787586032476_9)
-// where PUT /api/config/pabrik returned 400 InvalidThinkingBudgetTokens
-// for legitimate `null` values. Root cause: the on-disk shape validator
-// (`validateModelThinkingOnDiskProfileMap` in
-// pabrik_config_put.zig) used a `switch` whose `else` arm rejected any
-// non-integer JSON value, including `.null`. JSON `null` IS the
-// legitimate "no override" sentinel for both
-// `thinking_budget_tokens` (matches `LlmProfile.thinking_budget_tokens:
-// ?u32 = null` in Config.zig) and `reasoning_effort` (matches
-// `LlmProfile.reasoning_effort: ?[]const u8 = null`). The fix: a single
-// `.null => {}` arm added to each switch.
 
 // Single profile with `thinking_budget_tokens: null` (and a valid
 // `reasoning_effort` string) round-trips through PUT -> GET. Pre-fix
@@ -527,14 +463,8 @@ test "profile_reasoning_effort_null_is_accepted" {
 }
 
 // The user's exact bug case: 5 profiles where most have
-// `thinking_budget_tokens: null` (and `reasoning_effort: null`).
-// Only one profile sets non-null values. All 5 must be saved in one
-// PUT. Pre-fix this returned 400 on the first profile whose
-// `thinking_budget_tokens` was null, aborting the save entirely.
-//
-// This is the EXACT scenario the user reported — the curl in the
-// task ticket `task_1787586032476_9` had 5 profiles with these
-// shapes and the save was rejected.
+// `thinking_budget_tokens: null` (and `reasoning_effort: null`). Only one
+// profile sets non-null values.
 test "multiple_profiles_with_null_thinking_budget_is_accepted" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootConfigHarness();
@@ -562,12 +492,7 @@ test "multiple_profiles_with_null_thinking_budget_is_accepted" {
         try expectPutOk(&r, "PUT /api/config/pabrik");
     }
 
-    // All 5 user-supplied profiles survive the PUT. The harness-installed
-    // `stub` profile may also be present (PUT replaces the map, but
-    // the harness's pre-installed profile is read back into the merge
-    // target before the new map overwrites — see
-    // `pabrik_config_put.zig:179-187`). Either way the 5 user profiles
-    // MUST all be present.
+    // All 5 user-supplied profiles survive the PUT.
     const body = try getConfigBody(&h);
     defer gpa.free(body);
 

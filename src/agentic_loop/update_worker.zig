@@ -46,30 +46,8 @@ pub fn updateWorker(obj: UpsertWorkerInput) !void {
     defer if (maybe_row) |r| r.deinit(allocator);
     const exists = maybe_row != null;
 
-    // Insert or update the worker.
-    //
-    // `cancelled` is named in BOTH halves deliberately.
-    //
-    // This upsert is how a run registers itself *and* how it heartbeats, and it
-    // is also what a *new* run does after the user stopped the previous one.
-    // `POST /api/llm/session/:session/stop` stops a run by setting
-    // `cancelled = 1` and leaving the row: the loop reads the flag back to
-    // break out of itself, and `isWorkerCancelled` answers `false` for a row
-    // that is not there, so deleting the row would un-cancel the run. The row
-    // survives, so without the reset below the next run is *born cancelled*:
-    // it upserts, `isWorkerCancelled` still reads 1, and the loop breaks on
-    // its first iteration check. The user sends a message and the agent does
-    // nothing, while the row keeps reporting the session as running to every
-    // client.
-    //
-    // Ordering is already safe, and this is why: `touchCheckpointWorkers` runs
-    // before the loop in `runAgenticMultiStepnew` and again at the top of every
-    // iteration, and both reach this function, while the `isWorkerCancelled`
-    // check sits after them in the same iteration. The flag is 0 by the time
-    // anything reads it.
-    //
-    // Named in the INSERT as well, so the upsert does not depend on the column
-    // default surviving a future migration.
+    // Insert or update the worker. `cancelled` is named in BOTH halves
+    // deliberately.
     const worker_sql =
         \\INSERT INTO worker (
         \\    id,
@@ -105,24 +83,8 @@ pub fn updateWorker(obj: UpsertWorkerInput) !void {
         },
     );
 
-    // Ensure the session exists WITHOUT overwriting `name`.
-    //
-    // Pre-fix, this was `INSERT ... ON CONFLICT(id) DO UPDATE SET
-    // name = excluded.name` which overwrote `sessions.name` with the
-    // literal `session_id` on every worker iteration. For kanban
-    // tasks (`task.id == session.id` per Migration 052) that meant the
-    // sidebar's ChatsList showed "task_<timestamp>" instead of the
-    // user-typed title — the same class of bug closed by PR #225 for
-    // the create paths, but missed at the worker-entry path here.
-    //
-    // Post-fix: `INSERT OR IGNORE` is a no-op when the row already
-    // exists (the handler bound the title at create time), and a
-    // follow-up UPDATE bumps `updated_at` so the
-    // cleanup_stale_worker cron doesn't wipe a long-running workflow
-    // (see memory `cleanup-stale-worker-cron`). The `name` column is
-    // NEVER touched by this upsert — the kanban create handlers bind
-    // the title, and non-kanban handlers bind the user's chosen name;
-    // the worker has no business overwriting either.
+    // Ensure the session exists WITHOUT overwriting `name`. Pre-fix, this was
+    // `INSERT ...
     try db.exec(
         allocator,
         "INSERT OR IGNORE INTO sessions (id, name, status, created_at, updated_at) VALUES (?, '', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
@@ -134,11 +96,8 @@ pub fn updateWorker(obj: UpsertWorkerInput) !void {
         &.{session_id},
     );
 
-    // Inherit the session's owner onto this worker row (plan 2026-09-25, W2.4).
-    // The worker has no request context, so the session row -- stamped by the
-    // session-create handler -- is the authority. Only an OWNERLESS worker is
-    // claimed, so an existing owner is never overwritten. A session that has no
-    // owner yet copies NULL, i.e. stays in the shared bucket.
+    // Inherit the session's owner onto this worker row (plan 2026-09-25,
+    // W2.4).
     try db.exec(
         allocator,
         "UPDATE worker SET user_id = (SELECT user_id FROM sessions WHERE id = ?) WHERE id = ? AND (user_id IS NULL OR user_id = '' OR user_id = 'user_system')",
@@ -383,11 +342,7 @@ test "updateWorker names cancelled on INSERT, so a default-less column still sta
     defer db.deinit();
     try db.init(threaded.io(), ":memory:");
 
-    // `cancelled INTEGER NOT NULL` with NO default. An INSERT that omitted the
-    // column fails the constraint outright, so this schema distinguishes "the
-    // upsert names `cancelled`" from "the column default happened to be 0".
-    // Migration 0xx added the column as `DEFAULT 0`, and nothing guarantees a
-    // later migration keeps it.
+    // `cancelled INTEGER NOT NULL` with NO default.
     try db.exec(alloc,
         \\CREATE TABLE worker (
         \\    id TEXT PRIMARY KEY,

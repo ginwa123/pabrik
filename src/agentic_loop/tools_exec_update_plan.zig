@@ -1,18 +1,4 @@
 // Exec wrapper for the `update_plan` agent tool.
-//
-// The wrapper parses the JSON arguments emitted by the LLM, threads
-// `ctx.session_id` into the pure-fn layer (D3 — session_id is implicit
-// in the tool's input schema, never accepted as an argument), and wraps
-// the result in the standard `<tool>...</tool>` envelope via
-// `wrapToolOutput`.
-//
-// The inner success JSON (in `data`) carries the just-written plan
-// body as the `plan` field so the LLM AND the frontend
-// UI see the canonical plan back without depending on `parameters`
-// (the agent's input args). Mirrors `executeGetPlan`'s shape.
-//
-// Plan: docs/superpowers/plans/2026-08-19-session-plan-agent-tool.md
-// Task: task_1787073929852_8 (Task 4 of 9)
 
 const std = @import("std");
 const testing = std.testing;
@@ -56,16 +42,9 @@ pub fn execUpdatePlan(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult 
     };
     defer ctx.allocator.free(inner);
 
-    // Detect the `{"error":...}` shape and surface it as a tool failure
-    // (so the LLM sees success=false rather than a successful wrapper
-    // around an error body). The inner JSON is still surfaced in `data`
-    // so the LLM can see the per-tool detail (e.g. "content must be
-    // non-empty (1 byte minimum)").
-    //
-    // NOTE: parsed-field match, NOT a substring search — the success shape
-    // echoes user plan markdown in the `plan` field, so a plan containing
-    // the literal text "error" (e.g. "handle <error> case") must NOT
-    // false-trigger the error branch.
+    // Detect the `{"error":...}` shape and surface it as a tool failure (so
+    // the LLM sees success=false rather than a successful wrapper around an
+    // error body).
     var inner_parsed: ?std.json.Parsed(std.json.Value) = std.json.parseFromSlice(std.json.Value, ctx.allocator, inner, .{}) catch null;
     defer if (inner_parsed) |*par| par.deinit();
     if (inner_parsed) |par| {
@@ -104,10 +83,7 @@ fn setupDb() !TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
-/// Build a `ToolExecContext` that the exec wrapper can use. The exec
-/// wrapper only reads `allocator`, `db`, and `session_id`; the other
-/// fields (`logger`, `config`, etc.) are left
-/// `undefined` because the wrapper never dereferences them.
+/// Build a `ToolExecContext` that the exec wrapper can use.
 fn makeTestCtx(allocator: std.mem.Allocator, db: *sqlite.SqliteBackend) ToolExecContext {
     var dummy_f32: f32 = 0.0;
     var dummy_bool: bool = false;
@@ -190,9 +166,8 @@ test "execUpdatePlan: empty content returns wrapped error envelope" {
 
     try testing.expect(result.output_allocated);
     // Error path: success=false, `error` message, `data` null.
-    // (wrapToolOutput deliberately nulls `data` on the error branch —
-    // the inner pure-fn JSON is intentionally not surfaced. The LLM only
-    // sees the human-readable error message.)
+    // (wrapToolOutput deliberately nulls `data` on the error branch — the
+    // inner pure-fn JSON is intentionally not surfaced.
     const env2 = try std.json.parseFromSlice(std.json.Value, alloc, result.output, .{});
     defer env2.deinit();
     try testing.expect(!env2.value.object.get("success").?.bool);
@@ -238,9 +213,7 @@ test "execUpdatePlan: malformed JSON returns wrapped parse error" {
 }
 
 // ─── Test 4 (regression): plan mentioning "error" text still succeeds ─────
-// The success payload echoes plan markdown in the `plan` field. Error
-// detection is a parsed-field match on `{"error":...}`, so plan text like
-// "handle <error> case" must NOT false-trigger the error branch.
+// The success payload echoes plan markdown in the `plan` field.
 test "execUpdatePlan: plan containing error-like text does not misfire" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
@@ -266,8 +239,7 @@ test "execUpdatePlan: plan containing error-like text does not misfire" {
 
 // ─── Test 5 (regression): plan with error-like JSON text still succeeds ───
 // Even when the plan text contains an `"error":...`-looking fragment, the
-// payload is a success object without a top-level `error` string field,
-// so this must NOT be misclassified as a tool failure.
+// payload is a success object without a top-level `error` string field, so
 test "execUpdatePlan: plan containing error-like JSON text still succeeds" {
     const alloc = testing.allocator;
     var ctx = try setupDb();

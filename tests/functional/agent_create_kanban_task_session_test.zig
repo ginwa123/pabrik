@@ -1,43 +1,6 @@
 // Functional tests for agent-tool/HTTP parity on kanban task session seeding.
-//
 // Zig port of `tests/functional/agent_create_kanban_task_session_test.py`
 // (same test names, same order).
-//
-// Plan: docs/superpowers/plans/2026-09-09-fix-agent-create-kanban-task-session.md
-// (Task 6).
-//
-// Background
-// ----------
-// The `create_kanban_task` agent tool (`executeCreateKanbanTaskToString` in
-// `src/modules/agent/tools/create_kanban_task.zig`) only INSERTed a
-// `sessions` row when `is_auto_retry_until_stop` or `selected_profile_model`
-// was set — plain agent-created cards got NO session, NO initial user
-// message, and NO `session_created` SSE. The fix makes the tool mirror HTTP
-// `mode='create_session'` unconditionally.
-//
-// A full end-to-end LLM tool_call is not feasible here (no stub LLM emits
-// tool_calls — see `agent_add_mcp_server_test.py` for the precedent). The
-// tool itself is covered by the Zig unit tests in `create_kanban_task.zig`
-// (sessions-always-inserted, flag/profile honored, llm_history seed,
-// static-contract). These functional tests guard the HTTP reference
-// behavior the tool now mirrors, replaying the EXACT wire the frontend
-// sends:
-//
-//   1. plain create (no flag, no profile) → `session` envelope present
-//      with `status='idle'` and `id == task.id`.
-//   2. exactly ONE user-role `llm_history` row with content
-//      `name + "\n\n" + description` (the regression the tool had).
-//   3. create WITH flag + profile still seeds both rows with the flag
-//      and profile bound on the session.
-//
-// ONE PYTHON IDIOM THAT DOES NOT SURVIVE THE PORT: `_create_task`
-// returned the parsed response DICT, and the caller then read
-// `resp["task"]["id"]`. `harness.Json` cannot be returned that way — with
-// the stdlib's default `alloc_if_needed`, an unescaped JSON string is a
-// SLICE OF THE INPUT BUFFER, so a `Json` that outlives its `Response`
-// would dangle. `TaskCreate` below therefore carries owned copies of the
-// three fields these tests assert on, which is the same guarantee the
-// Python dict gave.
 
 const std = @import("std");
 const testing = std.testing;
@@ -51,11 +14,7 @@ const io = testing.io;
 // ============================================================================
 
 /// Owned copies of the fields the two tests read off the create response.
-///
-/// Python's `_create_task` handed the whole parsed body back to the
-/// caller. The Zig port cannot (see the file header), so this struct
-/// carries exactly what is asserted: the task id, and the `session`
-/// envelope's id + status when present.
+/// Python's `_create_task` handed the whole parsed body back to the caller.
 const TaskCreate = struct {
     task_id: []u8,
     session_id: ?[]u8,
@@ -70,10 +29,6 @@ const TaskCreate = struct {
 };
 
 /// The `content` of every user-role `llm_history` row, in wire order.
-///
-/// Python's `_user_role_messages` returned the filtered LIST of message
-/// dicts; only `len` and `[0]["content"]` were ever read, so this carries
-/// the contents alone.
 const UserMsgs = struct {
     items: [][]u8,
 
@@ -135,10 +90,8 @@ fn createKanban(h: *Harness, ws_id: []const u8, name: []const u8) ![]u8 {
     });
 }
 
-/// POST `mode='create_session'` — the frontend's plain `Create task`
-/// button (no agent run). `extra` is a raw JSON fragment appended after
-/// `description`, standing in for the Python `extra` dict's optional wire
-/// fields (`is_auto_retry_until_stop`, `selected_profile_model`).
+/// POST `mode='create_session'` — the frontend's plain `Create task` button
+/// (no agent run).
 fn createTask(
     h: *Harness,
     ws_id: []const u8,

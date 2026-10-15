@@ -1,22 +1,5 @@
-// src/apps/desktop_app/attach.zig
-//
-// Desktop's "find pabrik" logic (Chunk 4 of the decoupled-pabrik-service plan).
-//
-// On launch, the desktop probes for a running pabrik daemon that can serve
-// the webapp and attaches the webview. If none is found and --no-auto-start
-// is NOT set, the desktop spawns a detached pabrik via `subprocess.spawn`
-// and waits for it to come up.
-//
-// "Can serve the webapp" is deliberately stronger than "is running": a
-// daemon answers /health with 200 even when its --static-dir no longer
-// exists, and attaching to such a daemon opens the webview on
-// `404 Not Found`. Every candidate must pass `probeWebapp` (2xx on GET /
-// with an HTML body) before we hand it to the webview, and a freshly
-// spawned child must pass it too before we return it.
-//
-// The desktop never signals pabrik on close — closing the window does
-// NOT stop the daemon. Only `pabrik service stop` (a separate CLI
-// invocation) ends the daemon's life.
+// src/apps/desktop_app/attach.zig Desktop's "find pabrik" logic (Chunk 4 of
+// the decoupled-pabrik-service plan).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -39,31 +22,25 @@ pub const AttachOptions = struct {
     /// Optional — when null, we attempt to spawn using `path_resolve`
     /// against the desktop's own location.
     pabrik_path: ?[]const u8 = null,
-    /// The desktop's own executable path. Used by `path_resolve` to
-    /// check if `pabrik` lives next to the desktop binary. Optional —
-    /// when null, the auto-spawn path skips the "next-to-self"
-    /// resolution strategy and goes straight to $PATH lookup.
+    /// The desktop's own executable path. Used by `path_resolve` to check if
+    /// `pabrik` lives next to the desktop binary.
     self_exe_path: ?[]const u8 = null,
     /// $PATH string (colon-separated on Unix). Required for the $PATH
     /// resolution strategy when `pabrik_path` is null AND there's no
     /// pabrik next to the desktop binary.
     path_env: []const u8 = "",
-    /// Absolute path to the extracted webapp assets. When the auto-spawn
-    /// path fires, the spawned pabrik is started with `--static-dir <this>`
-    /// so it serves the desktop's webapp at `/`. When attaching to an
-    /// existing pabrik, this field is ignored (the user manages their
-    /// own pabrik's static-dir). Always provided by main.zig; treat as
-    /// non-null in the auto-spawn path.
+    /// Absolute path to the extracted webapp assets. When the auto-spawn path
+    /// fires, the spawned pabrik is started with `--static-dir <this>` so it
+    /// serves the desktop's webapp at `/`.
     static_dir: []const u8 = "",
 };
 
 pub const AttachTarget = struct {
     host: []const u8,
     port: u16,
-    /// Whether the desktop spawned a fresh daemon to satisfy this
-    /// attach. `we_spawned = true` means the daemon outlives the
-    /// desktop; `false` means we attached to one the user started
-    /// independently.
+    /// Whether the desktop spawned a fresh daemon to satisfy this attach.
+    /// `we_spawned = true` means the daemon outlives the desktop; `false`
+    /// means we attached to one the user started independently.
     we_spawned: bool,
 };
 
@@ -75,15 +52,7 @@ pub const AttachError = error{
 };
 
 /// Probe state.json, then the default port, then auto-spawn as needed.
-/// Returns the AttachTarget. Never returns "we_spawned=true" without
-/// having actually launched a daemon — the caller can trust this.
-///
-/// A server is only attachable when it serves the WEBAPP (`probeWebapp`),
-/// not merely when it answers `/health`. A daemon whose `--static-dir`
-/// vanished is still "healthy" while answering `GET /` with
-/// `404 Not Found`; attaching the webview to it is the blank-page bug
-/// this guards against. When the only daemon around is unusable we fall
-/// through to the auto-spawn path instead of giving up.
+/// Returns the AttachTarget.
 pub fn resolveAttachTarget(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -105,11 +74,7 @@ pub fn resolveAttachTarget(
             };
         }
     }
-    // 2. Fallback: probe the well-known port. The host string is
-    //    duped so the caller can free it with the same allocator it
-    //    would use for the state-file success path (matches the
-    //    ownership convention — the returned AttachTarget is always
-    //    caller-owned).
+    // 2. Fallback: probe the well-known port.
     if (isUsableWebappServer("127.0.0.1", opts.default_port, io)) {
         return .{
             .host = try allocator.dupe(u8, "127.0.0.1"),
@@ -122,10 +87,9 @@ pub fn resolveAttachTarget(
     return try autoSpawnAndWaitForHealth(allocator, io, opts);
 }
 
-/// True when `port` hosts a pabrik that actually serves the webapp.
-/// Logs (loudly) why a merely-healthy server was rejected, because the
-/// user's next question is always "my pabrik is running, why did it
-/// start a second one?".
+/// True when `port` hosts a pabrik that actually serves the webapp. Logs
+/// (loudly) why a merely-healthy server was rejected, because the user's next
+/// question is always "my pabrik is running, why did it start a second one?".
 fn isUsableWebappServer(host: []const u8, backend_port: u16, io: std.Io) bool {
     if (!probeHealth(host, backend_port, io)) return false;
     if (subprocess.probeWebapp(backend_port)) return true;
@@ -172,13 +136,7 @@ fn autoSpawnAndWaitForHealth(
     };
     defer allocator.free(pabrik_path);
 
-    // 2. Pick a port the child can actually bind. Prefer the well-known
-    //    one (keeps 8081 / --attach-port working), but if something else
-    //    holds it — typically a pabrik that does not serve the webapp,
-    //    which steps 1/2 above refused to attach to — take an ephemeral
-    //    port instead. Spawning into an occupied port would fail to bind
-    //    while the squatter's own `/health` kept answering our readiness
-    //    probe, so we'd report success for a port we don't own.
+    // 2. Pick a port the child can actually bind.
     const spawn_port = chooseSpawnPort(allocator, io, opts.default_port);
 
     std.log.info("No usable pabrik daemon found — spawning a new one at {s} --port {d} (static dir: {s})", .{
@@ -188,11 +146,7 @@ fn autoSpawnAndWaitForHealth(
     });
 
     // 3. Spawn the child process. Pass `opts.static_dir` so the spawned
-    //    pabrik serves the webapp at `/`. If static_dir is empty (caller
-    //    didn't provide one), `pabrik` only serves API endpoints and the
-    //    webapp check in step 5 below fails — which is the honest answer
-    //    for a desktop that exists to show the webapp. In practice
-    //    main.zig always populates this with a persistent dir.
+    // pabrik serves the webapp at `/`.
     var child = subprocess.spawn(
         allocator,
         io,
@@ -206,12 +160,7 @@ fn autoSpawnAndWaitForHealth(
         return error.AutoSpawnFailed;
     };
 
-    // 4. Wait for /health to respond with 200. The child is now running;
-    //    if the desktop closes, the child is NOT auto-terminated (that's
-    //    the chunk 4 architectural commitment — desktop doesn't signal
-    //    pabrik on close). The child becomes a long-lived daemon the user
-    //    has to stop manually via `pabrik service stop` — which is
-    //    precisely why its --static-dir must be a persistent directory.
+    // 4. Wait for /health to respond with 200.
     subprocess.waitForHealth(spawn_port, 5_000, 100) catch |err| {
         std.log.err("Spawned pabrik but /health never came up: {s}", .{@errorName(err)});
         // Don't leak the orphan: kill it before bailing.
@@ -219,10 +168,7 @@ fn autoSpawnAndWaitForHealth(
         return error.AutoSpawnFailed;
     };
 
-    // 5. Verify the child can serve the APP, not just /health. Handing
-    //    the webview a URL that 404s is exactly the bug this path exists
-    //    to prevent, so fail loudly (and don't leave a useless daemon
-    //    behind) instead of opening a blank window.
+    // 5. Verify the child can serve the APP, not just /health.
     if (!subprocess.probeWebapp(spawn_port)) {
         std.log.err(
             "Spawned pabrik on port {d} but it does not serve the webapp at / — refusing to open a 404 window.",
@@ -234,12 +180,7 @@ fn autoSpawnAndWaitForHealth(
     }
 
     // 6. Persist state.json so the NEXT launch finds this daemon via step 1
-    //    instead of spawning a duplicate. Without this, every launch that
-    //    lands on an ephemeral port is invisible to the next one (which
-    //    only probes the state file + the well-known port), so each
-    //    `--browser` click leaks another detached daemon — e.g. :51165
-    //    then :8081 side by side. Best-effort: the daemon is already
-    //    healthy and usable, so a write failure only warns.
+    // instead of spawning a duplicate.
     const state: pabrikcore.state_file.State = .{
         .pid = child.pid,
         .port = spawn_port,
@@ -273,11 +214,9 @@ fn chooseSpawnPort(allocator: std.mem.Allocator, io: std.Io, preferred: u16) u16
         return preferred;
     };
     if (free.port == preferred) return preferred;
-    // Tell the user how to get back to the well-known port — otherwise
-    // every launch keeps spawning a fresh daemon on a random port because
-    // the squatter never goes away. The spawned daemon's port is recorded
-    // in the state file (step 6 of the auto-spawn path) so the next launch
-    // attaches to it instead of spawning again.
+    // Tell the user how to get back to the well-known port — otherwise every
+    // launch keeps spawning a fresh daemon on a random port because the
+    // squatter never goes away.
     std.log.warn(
         "Port {d} is already in use by a server that does not serve the webapp; spawning on {d} instead",
         .{ preferred, free.port },
@@ -289,20 +228,8 @@ fn chooseSpawnPort(allocator: std.mem.Allocator, io: std.Io, preferred: u16) u16
     return free.port;
 }
 
-// ===== Tests merged from attach_test.zig (2026-09-29 flatten) =====
-// Tests for the desktop's "find pabrik" logic.
-//
-// These tests stand up a real loopback HTTP server on a kernel-picked port
-// whose responses are path-aware, plus a hand-rolled state.json, so the
-// resolve/probe plumbing is exercised over a real socket without depending
-// on whether a pabrik binary happens to exist on the host. See
-// subprocess.zig for the same pattern (kernel-picked port + accept
-// loop in a background thread).
-//
-// The regression these lock in: a server that answers `GET /health` with
-// 200 but `GET /` with 404 must NEVER be handed to the webview. That shape
-// is exactly what a daemon whose `--static-dir` was deleted looks like —
-// the desktop attached to it and rendered a blank "404 Not Found" page.
+// ===== Tests merged from attach_test.zig (2026-09-29 flatten) ===== Tests
+// for the desktop's "find pabrik" logic.
 
 const testing = std.testing;
 
@@ -465,14 +392,7 @@ fn writeStateFile(
     return path;
 }
 
-/// Fake `pabrik` binary used by the auto-spawn test. It binds the port in
-/// `--port`, answers every request with 200 + HTML (so both the health poll
-/// and the webapp check pass), and exits on its own after a few seconds so
-/// the test cannot leak a process.
-///
-/// Exposed as a script rather than a stub executable so the test exercises
-/// the real spawn path: argv shape, readiness polling, and the post-spawn
-/// "does it actually serve the app?" verification.
+/// Fake `pabrik` binary used by the auto-spawn test.
 const fake_pabrik_script =
     \\#!/usr/bin/env python3
     \\import socket, sys, time
@@ -621,10 +541,7 @@ test "resolveAttachTarget falls through to a fresh spawn when the only daemon 40
     const fake_pabrik = try writeFakePabrik(allocator, &tmp);
     defer allocator.free(fake_pabrik);
 
-    // Auto-start is ON and the only daemon around 404s `/`. The desktop must
-    // skip that daemon and spawn its own on a DIFFERENT port — the port the
-    // squatter holds can't be bound, and its /health would have masked the
-    // failure.
+    // Auto-start is ON and the only daemon around 404s `/`.
     const result = try resolveAttachTarget(allocator, testing.io, .{
         .state_path = state_path,
         .default_port = srv.port,
@@ -673,10 +590,8 @@ test "resolveAttachTarget returns AutoStartDisabled when --no-auto-start and no 
     if (builtin.os.tag == .windows) return;
     const allocator = testing.allocator;
 
-    // Use a tmp path that does NOT exist; the read returns null
-    // immediately. The fallback port (65535) is unreachable. With
-    // --no-auto-start, the helper returns AutoStartDisabled without
-    // ever consulting autoSpawnAndWaitForHealth.
+    // Use a tmp path that does NOT exist; the read returns null immediately.
+    // The fallback port (65535) is unreachable.
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     var dir_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -725,9 +640,7 @@ test "auto-spawn persists state.json so the next launch attaches instead of spaw
     try testing.expect(first.port != squatter.port);
 
     // The spawn must have recorded itself: the state file on disk points at
-    // the freshly spawned port. Without this, the next launch only probes
-    // the state file (stale/missing) + the well-known port and spawns a
-    // SECOND daemon (the :8081 half of the reported bug).
+    // the freshly spawned port.
     const recorded = try pabrikcore.state_file.readStateFile(allocator, testing.io, state_path);
     try testing.expect(recorded != null);
     const state = recorded.?;

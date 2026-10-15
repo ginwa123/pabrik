@@ -1,39 +1,6 @@
-//! `PATCH /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/geometry`.
-//!
-//! ⚠️  DEPRECATED — replaced by two distinct endpoints:
-//!   - `POST .../elements/:element_id/translate` — for moves (delta-based,
-//!     cascades to descendants for groups).
-//!   - `POST .../elements/:element_id/resize` — for resizes (absolute
-//!     fields, no cascade, per-element only by Figma convention).
-//!
-//! This handler is kept for back-compat with any client still wired
-//! to the old single endpoint. New code MUST use /translate or
-//! /resize. See `docs/superpowers/plans/2026-08-06-split-move-resize.md`.
-//!
-//! Update an element's geometry (x/y/width/height/rotation). Used
-//! by the canvas drag/resize handlers in `DesignElement.vue` —
-//! fires on every pointer-move tick during a drag (debounced on
-//! the frontend; this endpoint is the final SAVE on mouseup).
-//!
-//! Body: `{x?, y?, width?, height?, rotation?}` — all optional.
-//! At least one field must be present (a fully-empty body is
-//! treated as a client bug and rejected with 400).
-//!
-//! Response shape: `DesignElementResponse` for the post-update
-//! element. Built by `http_response.makeDesignElementResponse`
-//! and wrapped via `std.json.Stringify.valueAlloc`.
-//!
-//! Errors:
-//!   - 400 missing `element_id` path param, invalid JSON body, no
-//!     geometry fields provided (no-op)
-//!   - 404 `element_id` not found
-//!   - 500 DB failure
-//!
-//! Plan: docs/superpowers/plans/2026-07-08-design-mode-redesign.md
-//!   (Chunk 3, Task 3.4) — original endpoint.
-//! Plan: docs/superpowers/plans/2026-08-06-split-move-resize.md
-//!   (Task 2: deprecation — keep working but route new clients to
-//!   /translate + /resize).
+//! `PATCH
+//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/geometry`.
+//! ⚠️ DEPRECATED — replaced by two distinct endpoints: - `POST
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -69,10 +36,9 @@ pub const DesignElementGeometryUpdateError = error{
     ElementNotVisible,
     /// `allocator.dupe` failed while building the output struct.
     OutOfMemory,
-    // Note: `FileWriteFailed` is NOT in this set — geometry updates
-    // never rewrite the HTML file, so the model layer cannot surface
-    // that error here. The spec's "Error mapping" section for
-    // geometry does not list FileWriteFailed either.
+    // Note: `FileWriteFailed` is NOT in this set — geometry updates never
+    // rewrite the HTML file, so the model layer cannot surface that error
+    // here.
 };
 
 /// Output of the update-geometry use-case.

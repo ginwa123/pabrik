@@ -1,15 +1,4 @@
-//! `pabrikcli` entry point.
-//!
-//! Boot sequence:
-//!   1. Parse argv → split global flags (`--server`, `--session`,
-//!      `--profile`) from the verb + verb-args.
-//!   2. Load config (server URL + optional session/profile) from
-//!      the parsed flags + env vars via `config.load`.
-//!   3. Hand off to `commands.dispatch`.
-//!   4. Print either a pretty-printed JSON payload (success) or
-//!      print the help text and exit non-zero (failure).
-//!
-//! Help is printed for `help`, `--help`, `-h`, or any unknown verb.
+//! `pabrikcli` entry point. Boot sequence: 1.
 
 const std = @import("std");
 const cli = @import("cli");
@@ -26,12 +15,7 @@ pub fn main(init: std.process.Init) !void {
     const argv_full = try init.minimal.args.toSlice(allocator);
     const argv = if (argv_full.len > 0) argv_full[1..] else &[_][]const u8{};
 
-    // ----- 1. Strip global flags from argv ------------------------------
-    // Global flags recognised here: `--server <url>`, `--session <id>`,
-    // `--profile <name>`. They're consumed (and dropped from argv)
-    // BEFORE the verb parser sees the array, so command-level flags
-    // (e.g. `send --session foo`) take precedence over the global
-    // `--session` if both are set.
+    // ----- 1.
     var flag_server: ?[]const u8 = null;
     var flag_session: ?[]const u8 = null;
     var flag_profile: ?[]const u8 = null;
@@ -68,10 +52,7 @@ pub fn main(init: std.process.Init) !void {
         }
     }
 
-    // ----- 2. Parse the verb --------------------------------------------
-    // 32 KiB scratch — large enough for any verb the CLI accepts
-    // (longest is `--channels`, 10 chars). The buffer lives on the
-    // process arena so we don't need to free it.
+    // ----- 2.
     var scratch: [32 * 1024]u8 = undefined;
     const cmd = try cli.commands.parseCommand(allocator, stripped.items, &scratch);
 
@@ -87,21 +68,15 @@ pub fn main(init: std.process.Init) !void {
     stdout_file_writer.interface.flush() catch {};
 
     if (result == .err) {
-        // Failures inside a subcommand logged the error via std.log;
-        // emit a single trailing log line so wrappers can detect a
-        // non-zero exit. Process exit code is fixed at 0 (Zig 0.16's
-        // `std.process.Init.main` signature is `!void`; returning a
-        // non-zero exit would require `fn main() u8` which isn't
-        // compatible with `Init`).
+        // Failures inside a subcommand logged the error via std.log; emit a
+        // single trailing log line so wrappers can detect a non-zero exit.
         std.log.err("pabrikcli failed", .{});
     }
 }
 
 test "main: placeholder smoke test" {
-    // Real CLI behaviour is exercised by the subcommand tests
-    // (the inline tests in `commands/sessions.zig`, `commands/messages.zig`,
-    // `commands/send.zig`, `commands/events.zig`); the
-    // `main` symbol itself just glues them together and is tested
-    // by the human-run smoke check.
+    // Real CLI behaviour is exercised by the subcommand tests (the inline
+    // tests in `commands/sessions.zig`, `commands/messages.zig`,
+    // `commands/send.zig`, `commands/events.zig`); the `main` symbol itself
     try std.testing.expect(true);
 }

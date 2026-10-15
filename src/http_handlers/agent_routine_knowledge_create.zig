@@ -1,23 +1,5 @@
-//! `POST /api/agent-routines/:routine_id/knowledge`.
-//!
-//! Adds a knowledge entry to an agent-routines config. Body:
-//! `{file_path?, label?, content?}` — file XOR inline content (exactly
-//! one must be non-empty). `file_path` MUST be absolute when provided.
-//!
-//! Mirrors `agent_knowledge_create.zig` with substitutions:
-//! table `agent_routine_knowledges`, parent col `routine_id`, parent
-//! validation = workspace_item is a routine WITH an `agent_routines` row.
-//!
-//! Layered as:
-//!   - `useCase` — validate routine + XOR sources + absolute path →
-//!     INSERT with `position = MAX + 1` (COALESCE) → SELECT new row.
-//!   - `agentRoutineKnowledgeCreateHandler` — thin orchestrator.
-//!
-//! Memory: the per-request arena reaps all allocations at request end,
-//! so neither layer needs explicit `free`s.
-//!
-//! Plan: Routine mode task_1789505553300_1 (option A, mirror agent_routine_*)
-//! Task: task_1789505553300_1
+//! `POST /api/agent-routines/:routine_id/knowledge`. Adds a knowledge entry
+//! to an agent-routines config.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -80,11 +62,7 @@ pub const KnowledgeCreateOutput = struct {
 // Use case
 // =====================================================================
 
-/// Create a knowledge row for the given agent-routines config. Validates
-/// that the workspace_item is a routine WITH an `agent_routines` row, that
-/// exactly one of file_path/content is set, and that any non-empty
-/// file_path is absolute. INSERTs with `position = MAX(position) + 1`
-/// (COALESCE so the first row gets position 0).
+/// Create a knowledge row for the given agent-routines config.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -191,14 +169,7 @@ pub fn agentRoutineKnowledgeCreateHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-//
-// impl + tests in one file (project convention). Behavioural coverage:
-//
-//   1. Validation: empty routine_id → RoutineIdRequired
-//   2. Validation: both/neither source → respective errors
-//   3. Validation: relative file_path → NotAbsolutePath
-//   4. RoutineNotFound: missing item / wrong type / unconfigured routine
-//   5. Happy path: first row gets position 0; inline content round-trips
+// impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;

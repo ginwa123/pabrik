@@ -1,69 +1,5 @@
 // Functional tests for the Pabrik General settings (notify_on_error /
 // notify_on_complete / retry_delay_ms).
-//
-// Zig port of `tests/functional/notify_on_error_test.py` (same test
-// names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional tests for the Pabrik General settings
-//   (plan 2026-08-25-notify-on-error-and-retry-ms-in-settings, task_1787671269086_0).
-//
-//   These tests exercise the wire shape of three operational settings that
-//   the new "General" tab in Pabrik Settings writes through:
-//
-//     1. `notify_on_complete` (existing config.json field, but previously
-//        hidden from the UI) — opt-in OS notification on `finish_reason = "stop"`.
-//     2. `notify_on_error` (NEW field added by this plan) — opt-in OS
-//        notification on transport failure / TooManyRetries / outer catch.
-//     3. `retry_delay_ms` (existing field, hidden from the UI) — workflow
-//        backoff between failed LLM retries. Range 0–60 000; values > 60 000
-//        clamp to 60 000 at the PUT layer (see pabrik_config_put.zig:133-135).
-//
-//   The functional harness boots a real pabrik binary against an isolated
-//   tmpdir HOME (boilerplate from `pabrik_config_test.py`). Each test asserts
-//   on the EXACT wire payload the frontend sends (or would send) + the
-//   on-disk `config.json` to lock in the user-visible behavior.
-//
-//   Why this matters (recap of the 3 bugs the wire-rationalization skill
-//   calls out):
-//
-//     * **Route-order shadowing** — N/A here; /api/config/pabrik is the only
-//       handler that touches these three fields.
-//     * **Empty-slice-as-NULL binding** — the PUT body's `notify_on_error`
-//       is typed `?bool = null`; an absent key MUST be treated as "don't
-//       touch", not as "set to false". Functional test below locks this
-//       in by reading the on-disk JSON after an omit-key PUT.
-//     * **Strict validators treating "" as a value** — N/A; we never send
-//       an empty string for these three fields.
-//
-//   Test outline:
-//
-//     Test 1 — Defaults are seeded when the on-disk config is missing.
-//     Test 2 — PUT round-trips `notify_on_error` true → on-disk → GET.
-//     Test 3 — PUT with `notify_on_error: false` flips an existing true.
-//     Test 4 — Omitting `notify_on_error` on PUT does NOT touch the
-//              existing on-disk value (null = "don't touch" sentinel).
-//     Test 5 — Independent of `notify_on_complete` (write both, GET both,
-//              toggling one doesn't reset the other).
-//     Test 6 — `retry_delay_ms` is clamped to [0, 60_000] at the PUT layer.
-//     Test 7 — On-disk JSON shape preserves all three fields.
-//   """
-//
-// THE `config_harness` FIXTURE: pytest booted with
-// `stub_llm_profile=True` and then, on macOS, copied the Linux-style
-// `<HOME>/.config/pabrik/config.json` to
-// `<HOME>/Library/Application Support/pabrik/config.json` before the
-// server read it. `harness.writeStubLlmProfile` already writes the stub
-// to ALL THREE platform-correct locations
-// (`.config`, `AppData/Roaming`, `Library/Application Support`), so the
-// copy is a no-op here and is not reproduced.
-//
-// READING THE FILE THE SERVER ACTUALLY READS: `_platform_config_dir`
-// mirrors `pabrik_config_get.zig::getDefaultConfigDir`. It is derived
-// from the harness tempdir ALONE — never from the ambient environment —
-// so a runner's real `XDG_CONFIG_HOME` can never redirect the assertion
-// to a path the server never wrote.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -77,14 +13,9 @@ const io = testing.io;
 // Fixtures / helpers
 // ============================================================================
 
-/// Where `getDefaultConfigDir` writes config.json.
-///
-///   * macOS   — `~/Library/Application Support/pabrik`; `XDG_CONFIG_HOME`
-///     is NOT consulted on that branch.
-///   * Windows — `%APPDATA%/pabrik`, which the harness points at
-///     `<home>/AppData/Roaming`.
-///   * else    — `$XDG_CONFIG_HOME/pabrik` else `$HOME/.config/pabrik`;
-///     the harness points `XDG_CONFIG_HOME` at `<home>/.config`.
+/// Where `getDefaultConfigDir` writes config.json. * macOS —
+/// `~/Library/Application Support/pabrik`; `XDG_CONFIG_HOME` is NOT consulted
+/// on that branch.
 fn platformConfigDir(home: []const u8) ![]u8 {
     return switch (builtin.os.tag) {
         .macos => harness.harnessPath(gpa, home, &.{ "Library", "Application Support", "pabrik" }),
@@ -105,9 +36,8 @@ fn bootConfigHarness() !Harness {
 }
 
 /// The on-disk `config.json` the running server loaded at boot.
-///
-/// `.alloc_always` — the returned document must outlive the bytes buffer
-/// this helper frees.
+/// `.alloc_always` — the returned document must outlive the bytes buffer this
+/// helper frees.
 fn onDiskConfig(h: *Harness) !std.json.Parsed(std.json.Value) {
     const path = try platformConfigPath(h.temp_dir);
     defer gpa.free(path);
@@ -116,13 +46,9 @@ fn onDiskConfig(h: *Harness) !std.json.Parsed(std.json.Value) {
     return std.json.parseFromSlice(std.json.Value, gpa, bytes, .{ .allocate = .alloc_always });
 }
 
-/// One `PUT /api/config/pabrik` body.
-///
-/// A `null` setting is OMITTED from the wire, which is exactly the
-/// `?bool = null` / `?u32 = null` "don't touch" sentinel these tests are
-/// about. The Python `_put_general_settings` had the same shape; its
-/// `profiles` / `active_profile` arguments were never passed as `None`
-/// by any caller, so both are always sent here.
+/// One `PUT /api/config/pabrik` body. A `null` setting is OMITTED from the
+/// wire, which is exactly the `?bool = null` / `?u32 = null` "don't touch"
+/// sentinel these tests are about.
 const GeneralSettings = struct {
     notify_on_complete: ?bool = null,
     notify_on_error: ?bool = null,
@@ -313,10 +239,8 @@ test "put_notify_on_error_false_flips_an_existing_true" {
 // Test 4: omitting notify_on_error preserves the on-disk value
 // ============================================================================
 
-// A PUT body that omits `notify_on_error` leaves the on-disk value
-// untouched (`?bool = null` semantics). Without the
-// `if (input.notify_on_error) |n|` guard the apply block would assign
-// `null` — so this indirectly verifies the guard exists.
+// A PUT body that omits `notify_on_error` leaves the on-disk value untouched
+// (`?bool = null` semantics).
 test "omitting_notify_on_error_does_not_reset_it" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootConfigHarness();
@@ -410,15 +334,8 @@ test "notify_on_error_and_notify_on_complete_are_independent" {
 // Test 6: retry_delay_ms clamps to [0, 60_000] on PUT
 // ============================================================================
 
-// The backend's apply block clamps `retry_delay_ms` to 60 000: a larger
-// value would lock the user out of cancelable recovery. Boundary table
-// (each line is one PUT/GET round-trip, in this order):
-//
-//   0        -> 0
-//   30 000   -> 30 000
-//   60 000   -> 60 000
-//   60 001   -> 60 000 (just above → clamp)
-//   999 999  -> 60 000 (way above → clamp)
+// The backend's apply block clamps `retry_delay_ms` to 60 000: a larger value
+// would lock the user out of cancelable recovery.
 test "retry_delay_ms_clamps_to_60_000_on_put" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootConfigHarness();

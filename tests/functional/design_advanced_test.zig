@@ -1,22 +1,5 @@
-// Functional tests for design advanced (Tier 1.4).
-//
-// Zig port of `tests/functional/design_advanced_test.py` (same test
-// names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional tests for design advanced (Tier 1.4).
-//
-//   Exercises the design-mode HTTP surface that's NOT covered by
-//   `design_lifecycle_test.py`:
-//   ... (see the .py for the full list).
-//   Each test boots a fresh pabrik (function-scoped fixture).
-//   """
-//
-// THE `item_workspace_path` FIXTURE: pytest's `item_workspace_path`
-// returned `tmp_path / "item"` — a per-test directory cleaned by pytest.
-// The Zig analogue is `harness.makeScratchDir`, a SIBLING of the harness
-// tempdir under the `pabrik-fix-` prefix (see design_lifecycle_test.zig).
+// Functional tests for design advanced (Tier 1.4). Zig port of
+// `tests/functional/design_advanced_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;

@@ -1,36 +1,5 @@
-//! Agent-callable tool: `update_plan` — UPSERT the agent's task plan for
-//! the current session as markdown with a `- [ ]` / `- [x]` checklist.
-//!
-//! Plan: docs/superpowers/plans/2026-08-19-session-plan-agent-tool.md
-//! Task: task_1787073929852_8 (Task 2 of 9)
-//!
-//! Wire shape:
-//!   input:  { content: string }
-//!   output: {"session_id":...,"updated_at":...,"plan":"...markdown body..."}
-//!   or:     {"error":...}
-//!
-//! The `plan` field carries the just-written content so the LLM AND the
-//! frontend UI see the same canonical body back without depending on
-//! `parameters` (the agent's input args). Mirrors `get_plan`'s `plan`
-//! field exactly so the frontend can reuse the same parser.
-//!
-//! The actual UPSERT lives in `session_plan.savePlan`. This file is a
-//! thin JSON wrapper (mirrors the `memory.zig` save_memory pattern — same
-//! success/error shape, sanitized user-trusted content).
-//!
-//! Design choices:
-//!   - `session_id` is NOT in the input (D3 — implicit from
-//!     `ToolExecContext.session_id` in the exec adapter). The pure-fn
-//!     API takes `session_id` as an explicit parameter so the exec
-//!     adapter in Task 4 can wire `ctx.session_id` through.
-//!   - Hard cap is 256 KiB (`session_plan.MAX_PLAN_BYTES`) — see D7.
-//!   - Empty content is rejected (InvalidContent) — distinguishes
-//!     "no plan" (use `get_plan`, see `{"empty":true}`) from "explicitly
-//!     clear" (caller should not call update_plan with empty; use a final
-//!     marker like `# Plan complete\nAll steps done.` instead).
-//!   - Plain JSON strings (vs. CDATA) carry the user's markdown; the LLM
-//!     sees its own plan back with only JSON string escaping. Same
-//!     trade-off as `get_plan`.
+//! Agent-callable tool: `update_plan` — UPSERT the agent's task plan for the
+//! current session as markdown with a `- [ ]` / `- [x]` checklist.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -52,17 +21,13 @@ pub const MAX_PLAN_BYTES: usize = session_plan.MAX_PLAN_BYTES;
 
 /// Input for `update_plan`.
 pub const UpdatePlanInput = struct {
-    /// The markdown plan body. 1 byte – 256 KiB. Empty content is
-    /// rejected (use a final marker like `# Plan complete` to "close"
-    /// a plan instead of calling with empty). The plan body is plain
-    /// markdown with `- [ ]` for todo items and `- [x]` for done.
+    /// The markdown plan body. 1 byte – 256 KiB. Empty content is rejected
+    /// (use a final marker like `# Plan complete` to "close" a plan instead
+    /// of calling with empty).
     content: []const u8 = "",
 };
 
-/// Top-level tool definition for the LLM. The description is the
-/// agent's primary signal for WHEN to use this tool — it explicitly
-/// tells the agent to overwrite the plan after every checklist item,
-/// flipping `- [ ]` to `- [x]`.
+/// Top-level tool definition for the LLM.
 pub const update_plan_tool_system_prompt =
     \\## Update Plan Tool — Behavior
     \\Use `update_plan` to create or overwrite the session's markdown plan (checklist with `- [ ]` / `- [x]`).
@@ -101,17 +66,8 @@ pub const update_plan_tool = AgentTool{
     },
 };
 
-/// Execute update_plan. Returns a JSON string for the LLM.
-///
-/// Caller owns the returned slice and must free it with `allocator.free()`.
-///
-/// `session_id` is passed explicitly (NOT via `ToolExecContext`) so this
-/// pure fn is testable in isolation. The exec adapter in Task 4 will pull
-/// `session_id` from `ctx.session_id` and forward it here.
-///
-/// The success payload echoes the just-written `content` as the `plan`
-/// field so the LLM AND the frontend UI see the canonical body back.
-/// Mirrors `executeGetPlan`'s `plan` field.
+/// Execute update_plan. Returns a JSON string for the LLM. Caller owns the
+/// returned slice and must free it with `allocator.free()`.
 pub fn executeUpdatePlan(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -225,11 +181,8 @@ test "executeUpdatePlan: success returns payload with session_id + updated_at + 
 }
 
 // ─── Test 1b: JSON preserves raw special chars verbatim ───────────────────
-//
 // The agent may write `<`, `>`, `&` in their plan markdown (e.g. for
-// comparison prose like `arr[i] > 0`). JSON string encoding leaves these
-// untouched — no escape substitutions that would complicate the LLM's
-// regex/checklist matching.
+// comparison prose like `arr[i] > 0`).
 
 test "executeUpdatePlan: JSON preserves raw <, >, & inside plan body" {
     const alloc = testing.allocator;
@@ -258,10 +211,8 @@ test "executeUpdatePlan: JSON preserves raw <, >, & inside plan body" {
 }
 
 // ─── Test 1c: literal "]]>" inside the body round-trips through JSON ─────
-//
 // The literal `]]>` sequence needed CDATA splitting under the old XML
-// envelope. JSON strings have no such hazard — the content round-trips
-// byte-for-byte with no transformation.
+// envelope.
 
 test "executeUpdatePlan: ]]> inside plan body round-trips verbatim" {
     const alloc = testing.allocator;

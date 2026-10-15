@@ -9,15 +9,6 @@ const helpers = @import("helpers");
 const sanitize = helpers.sanitize_control_chars;
 
 /// Input for read_workspace_session.
-///
-/// ONE tool, four behaviors selected by which params are set:
-/// - neither `query` nor `session_id` → LIST sessions in my workspace.
-/// - `query` only → SEARCH message content across my workspace (FTS5).
-/// - `session_id` only → READ that session's messages (same-workspace gate).
-/// - BOTH → SEARCH-WITHIN: FTS restricted to that one session (still gated).
-///
-/// Scope is derived server-side from the calling session — there is no
-/// `workspace_id` param (a client-supplied id would be a spoofing vector).
 pub const ReadWorkspaceSessionInput = struct {
     /// Target session for READ / SEARCH-WITHIN. Must belong to the same
     /// workspace as the calling session or the call is denied.
@@ -53,36 +44,21 @@ pub const ReadWorkspaceSessionInput = struct {
     agent: []const u8 = "",
     /// Max rows to return. Defaults to 20; capped at 200 (LIST caps at 50).
     limit: u32 = 20,
-    /// Skip the first N results. SEARCH only — used to paginate through
-    /// FTS results when there are more than `limit` matches. Combine with
-    /// `<total_count>` to know when to stop. READ ignores this field (use
-    /// `since`/`until` to paginate chronologically).
+    /// Skip the first N results. SEARCH only — used to paginate through FTS
+    /// results when there are more than `limit` matches.
     offset: u32 = 0,
     /// Order direction for READ. "asc" (chronological forward, default) or
     /// "desc" (most-recent-first). SEARCH always orders by FTS rank.
     order: []const u8 = "asc",
     /// When true, the caller's OWN session is included in the results.
-    ///
-    /// Default false: the tool answers questions about OTHER sessions, so
-    /// the current session is filtered out of LIST and SEARCH, and READ /
-    /// SEARCH-WITHIN aimed at it is refused with a retry hint. Your live
-    /// context already holds the current session — echoing it back just
-    /// burns tokens. Pass true when you deliberately need it (e.g. pulling
-    /// your own messages that compaction dropped, via `compacted_only`).
     is_current_session: bool = false,
 };
 
-/// Hard cap on how many `message_ids` the LLM can request at once.
-/// Prevents a single call from dumping megabytes of full `content`
-/// into the context. If the LLM needs more, it should split into
-/// batches — the response includes `count` + `total_count` so it
-/// can paginate by hand.
+/// Hard cap on how many `message_ids` the LLM can request at once. Prevents a
+/// single call from dumping megabytes of full `content` into the context.
 pub const MAX_MESSAGE_IDS: u32 = 50;
 
-/// Hard cap on bytes of full `content` per individual message. When a
-/// requested message_id's content exceeds this, the response includes
-/// the first `MAX_FULL_CONTENT_BYTES` bytes plus `content_truncated=true`
-/// so the LLM knows there's more. Default: 16 KB.
+/// Hard cap on bytes of full `content` per individual message.
 pub const MAX_FULL_CONTENT_BYTES: u32 = 16 * 1024;
 
 /// Hard cap on LIST rows. Discovery should stay cheap — the LLM can
@@ -182,9 +158,7 @@ fn deniedJSON(allocator: std.mem.Allocator, session_id: []const u8) ![]u8 {
 }
 
 /// Refusal for READ / SEARCH-WITHIN aimed at the caller's own session while
-/// `is_current_session` is false. Carries the behavior name and zero counts
-/// so the frontend renders its existing error panel instead of a blank
-/// list, plus a hint the LLM can act on by adding one param.
+/// `is_current_session` is false.
 fn currentSessionRefusedJSON(allocator: std.mem.Allocator, behavior: []const u8) ![]u8 {
     return std.json.Stringify.valueAlloc(allocator, .{
         .behavior = behavior,
@@ -197,12 +171,6 @@ fn currentSessionRefusedJSON(allocator: std.mem.Allocator, behavior: []const u8)
 
 /// Owned copy of `ids` with the caller's own session removed, unless
 /// `include_caller`. Free with `workspace_scope.freeSessionIds`.
-///
-/// An EMPTY result means "no peer sessions at all" (e.g. the caller is the
-/// workspace's only session and is_current_session is false). Callers must
-/// treat that as an empty result set — handing an empty id list to the FTS
-/// query drops the `IN (...)` clause entirely and would leak every
-/// workspace's hits.
 fn withoutCallerSession(
     allocator: std.mem.Allocator,
     ids: []const []const u8,
@@ -255,11 +223,7 @@ pub fn execute_read_workspace_session(
         return executeList(allocator, db, caller_session_id, input);
     }
 
-    // Self-targeting is opt-in. The tool exists to answer questions about
-    // OTHER conversations, so READ / SEARCH-WITHIN aimed at the caller's own
-    // session is refused with a hint instead of echoing back the context the
-    // LLM already holds. Gated before the workspace lookup — self always
-    // passes `isSameWorkspace`, so this is the only place that catches it.
+    // Self-targeting is opt-in.
     if (want_read and !input.is_current_session and
         std.mem.eql(u8, input.session_id, caller_session_id))
     {
@@ -473,9 +437,6 @@ fn executeSearch(
     const hits = blk: {
         // An empty session-id set means "this workspace has no session other
         // than yours" (the caller is alone and is_current_session is false).
-        // `searchMessagesFts` treats an empty `session_ids` as "no IN-clause"
-        // and would return hits from EVERY workspace, so short-circuit to an
-        // empty result set here instead.
         if (ws_ids) |ids| {
             if (ids.len == 0) break :blk try allocator.alloc(llm_history.SearchHit, 0);
         }

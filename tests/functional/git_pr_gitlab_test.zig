@@ -1,56 +1,6 @@
-// Functional wire tests for GitLab support on the git PR/MR endpoints.
-//
-// Zig port of `tests/functional/git_pr_gitlab_test.py` (same test names,
-// same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional wire tests for GitLab support on the git PR/MR endpoints.
-//
-//   The Zig unit tests drive `runView` / `createPullRequestUseCaseWith` against
-//   fixture scripts, which proves the argv and the JSON parsing. They cannot see
-//   three things that only exist on the wire, and all three were GitHub-only in a
-//   way a GitLab user hits immediately:
-//
-//     1. `GET /api/git/pr/status?provider=gitlab` was a hard 400 ("only the github
-//        provider is supported for PR status in v1").
-//     2. `GitPrStatusResponse` had no `provider` field, so the frontend could not
-//        tell a merge request from a pull request and labelled it "PR".
-//     3. `POST /api/git/pr` took no `provider`, so it always ran `gh pr create`.
-//
-//   That third one was a bug this file found and the unit tests structurally
-//   could not: `createPullRequestUseCase` passed the `gh` program for EVERY
-//   provider, so `provider: "gitlab"` spawned `gh mr create` and gh replied
-//   `unknown command "mr"`. Only running the real handler surfaces it.
-//
-//   ## Why the fake CLIs are installed by an autouse fixture
-//
-//   The harness snapshots `os.environ` when it boots the server, and pytest
-//   instantiates the function-scoped `harness` fixture BEFORE the fixtures a test
-//   lists as arguments. Setting PATH inside a per-test fixture therefore lands too
-//   late — the server has already captured the old PATH, silently runs whatever
-//   real `gh` the host has (possibly making authenticated network calls), and
-//   reports "glab CLI not found".
-//
-//   An `autouse` fixture is instantiated before explicitly-requested fixtures of
-//   the same scope, so this one always wins the race. Each fake reads its stdout
-//   from a sibling `.payload` file, which lets a test choose the CLI's output
-//   after the server is already up.
-//   """
-//
-// THE AUTOUSE FIXTURE BECOMES AN EXPLICIT STEP IN EVERY TEST. Zig has no
-// fixture ordering, so the ordering guarantee the Python docstring
-// describes has to be written down in the sequence instead: every test
-// builds the fakes, writes its payload, installs the PATH shadow, and only
-// THEN boots. `PathShadow` below is the same trick as
-// `git_pr_status_test.zig`'s — a scratch bindir prepended to
-// `std.testing.environ`, which is the exact block `Harness.boot` copies
-// into the child env.
-//
-// The `pabrik-fake-forge-` prefix the Python `mkdtemp` used becomes
-// `harness.makeScratchDir`'s `pabrik-fix-`: same "outside the harness's
-// tempdir namespace" requirement, and the only prefix `isSafeTmp` accepts
-// for a suite-owned directory without `reapOrphanTestPids` claiming it.
+// Functional wire tests for GitLab support on the git PR/MR endpoints. Zig
+// port of `tests/functional/git_pr_gitlab_test.py` (same test names, same
+// order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -64,7 +14,6 @@ const io = testing.io;
 // ============================================================================
 
 /// `json.dumps(..., separators=(",", ":"))` of the open merge request.
-///
 /// `changes_count` is a numeric STRING on the wire — that is GitLab's REST
 /// API shape and the coercion to an integer is part of what this pins.
 const OPEN_MR_JSON =
@@ -91,10 +40,9 @@ const Scratch = struct {
         return .{ .root = try harness.makeScratchDir(gpa) };
     }
 
-    /// LIFO note: `cleanupExtraDir` READS `root`, so the free is
-    /// registered first — a defer that freed the slice before the
-    /// cleaner read it is a use-after-free that happens to read as a
-    /// plausible path.
+    /// LIFO note: `cleanupExtraDir` READS `root`, so the free is registered
+    /// first — a defer that freed the slice before the cleaner read it is a
+    /// use-after-free that happens to read as a plausible path.
     fn deinit(self: *Scratch) void {
         harness.cleanupExtraDir(io, gpa, self.root);
         gpa.free(self.root);
@@ -107,11 +55,7 @@ const Scratch = struct {
 
 /// The fake CLI body: prints whatever the test wrote into
 /// `<bindir>/<name>.payload`, so the same installed binary serves every
-/// test's payload. `$0`-relative, so it needs no env cooperation with
-/// the already-booted server.
-///
-/// `name` is substituted by `FakeForge.init`, which writes one script per
-/// CLI — the Python did this with `_FAKE_CLI.format(name=name)`.
+/// test's payload.
 fn fakeCliScript(name: []const u8) ![]u8 {
     return std.fmt.allocPrint(
         gpa,
@@ -131,15 +75,13 @@ fn writeExecScript(path: []const u8, contents: []const u8) !void {
     try f.writeStreamingAll(io, contents);
     // The portable spelling of Python's `chmod(st_mode | stat.S_IEXEC |
     // stat.S_IXGRP | stat.S_IXOTH)`, and it also makes the file READABLE,
-    // which OR-ing the exec bit into a fresh file's mode does not
-    // guarantee.
+    // which OR-ing the exec bit into a fresh file's mode does not guarantee.
     try std.Io.Dir.cwd().setFilePermissions(io, path, .executable_file, .{});
 }
 
 /// The fake forge CLIs: a bindir holding an executable `gh` and `glab`,
-/// installed on PATH BEFORE the harness boots.
-///
-/// This is the Python `fake_forge_clis` autouse fixture, made explicit.
+/// installed on PATH BEFORE the harness boots. This is the Python
+/// `fake_forge_clis` autouse fixture, made explicit.
 const FakeForge = struct {
     scratch: Scratch,
     bindir: []u8,
@@ -175,14 +117,8 @@ const FakeForge = struct {
         gpa.free(self.scratch.root);
     }
 
-    /// Python's `_write_payload`: choose what a fake CLI prints,
-    /// possibly after the server is already up.
-    ///
-    /// `std.fs.path.SEP`, not `std.fs.path.delimiter` — the latter is
-    /// the PATH-LIST separator (`:` on POSIX), so joining with it built
-    /// `/tmp/pabrik-fix-abc:glab.payload`, the fake printed nothing, and
-    /// every request failed downstream with "0 bytes stdout" from a
-    /// cause three layers away from the mistake.
+    /// Python's `_write_payload`: choose what a fake CLI prints, possibly
+    /// after the server is already up.
     fn writePayload(self: *FakeForge, name: []const u8, payload: []const u8) !void {
         const file = try std.fmt.allocPrint(gpa, "{s}{c}{s}.payload", .{
             self.bindir, std.fs.path.sep, name,
@@ -229,11 +165,6 @@ const FakeForge = struct {
 };
 
 /// Python's `_git`: `git` in `cwd` with the fixture identity baked in.
-///
-/// `-c commit.gpgsign=false` is an addition, not a port artifact: it
-/// stops a developer's global signing config from failing the commit on a
-/// box that has one. It is the `git -c` spelling of the
-/// `GIT_AUTHOR_*` / `GIT_COMMITTER_*` env the Python passed.
 fn git(cwd: []const u8, args: []const []const u8) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
@@ -263,19 +194,13 @@ fn git(cwd: []const u8, args: []const []const u8) !void {
 
 /// Prepend `prefix` to `PATH` in `std.testing.environ` — the exact block
 /// `Harness.boot` copies into the child env.
-///
-/// Scoped by `restore`: the shadow must not outlive the test, or every
-/// later suite in the same process would spawn the fake `gh`/`glab`.
 const PathShadow = struct {
     gpa: std.mem.Allocator,
     saved: std.process.Environ,
     entries: [:null]const ?[*:0]const u8,
 
     fn install(alloc: std.mem.Allocator, prefix: []const u8) !PathShadow {
-        // `Environ`'s block is a raw `KEY=VALUE` slice on POSIX. On
-        // Windows it is a PEB pointer read through `GlobalBlock`, which
-        // Zig offers no way to shadow — and the fake CLIs are `/bin/sh`
-        // scripts anyway, so this suite is POSIX-only.
+        // `Environ`'s block is a raw `KEY=VALUE` slice on POSIX.
         if (comptime @import("builtin").os.tag != .windows) {
             const saved = std.testing.environ;
             const orig = saved.block.slice;
@@ -315,14 +240,8 @@ const PathShadow = struct {
     }
 };
 
-/// Is a `glab` binary resolvable on the AMBIENT PATH (i.e. one this
-/// suite did not install)?
-///
-/// Probed with `std.process.run`, which inherits the real process
-/// environment — NOT the `std.testing.environ` shadow — so the answer is
-/// "would the server's `execLookPath` find a REAL glab if the fakes were
-/// removed". See the call site for why that decides whether an assertion
-/// is meaningful at all.
+/// Is a `glab` binary resolvable on the AMBIENT PATH (i.e. one this suite did
+/// not install)?
 fn hasRealGlab() bool {
     var child = std.process.spawn(io, .{
         .argv = &.{ "sh", "-c", "command -v glab >/dev/null 2>&1" },
@@ -559,21 +478,8 @@ test "generic_provider_is_rejected_with_a_reason" {
     }
 }
 
-// A GitLab user with no glab must not be told to install gh.
-//
-// HOST-DEPENDENT, AND THE PYTHON ORIGINAL IS TOO. The test removes both
-// fakes from the bindir, but the bindir is only the FIRST entry on PATH —
-// the server's `execLookPath` keeps scanning the rest of the inherited
-// PATH. On a machine with a real `glab` installed downstream, the CLI is
-// found and RUNS, so the handler takes the `FetchFailed` arm and answers
-// 502 instead of 422; the Python fails here with exactly that body.
-//
-// Following the precedent set by `gitlab_provider_is_not_rejected_up_front`
-// in `git_pr_status_test.zig`, this port SKIPS with a printed reason when
-// a real `glab` is on PATH rather than widening the assertion to accept
-// whichever message comes back. Widening would change the contract this
-// test exists to pin — "name the CLI the user is actually missing" — to
-// accommodate one developer's machine.
+// A GitLab user with no glab must not be told to install gh. HOST-DEPENDENT,
+// AND THE PYTHON ORIGINAL IS TOO.
 test "a_missing_glab_is_reported_as_glab_not_gh" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -635,11 +541,9 @@ test "a_missing_glab_is_reported_as_glab_not_gh" {
 // POST /api/git/pr
 // ============================================================================
 
-// POST /api/git/pr must honour `provider` and echo it back.
-//
-// This is the test that caught the real bug: with `gh` hardcoded as the
-// program for every provider, this returned
-// `unknown command "mr" for "gh"`.
+// POST /api/git/pr must honour `provider` and echo it back. This is the test
+// that caught the real bug: with `gh` hardcoded as the program for every
+// provider, this returned `unknown command "mr" for "gh"`.
 test "create_accepts_a_provider_and_returns_it" {
     try harness.requirePabrikBin(io, gpa);
 

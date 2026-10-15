@@ -133,23 +133,9 @@ test "sanitizeUtf8 invalid continuation byte" {
     try std.testing.expectEqualStrings("hello\xEF\xBF\xBDorld", result);
 }
 
-/// Sanitize an arbitrary string into a single safe filesystem path
-/// component (one folder/file name — never a multi-level path).
-///
-/// Replaces `/ \ < > : " | ? *` and control bytes (< 0x20) with `_`
-/// (the Windows-reserved set; `/` is the POSIX separator), rewrites
-/// trailing `.`/space (rejected by the Windows API), and prefixes
-/// Windows-reserved device names (CON, PRN, AUX, NUL, COM1-9, LPT1-9)
-/// with `_`. A no-op for already-safe names (e.g. generated
-/// `sess_<ts>_<hex>` session ids).
-///
-/// Returns `error.InvalidPathComponent` when nothing usable remains
-/// (empty input). Caller must free the returned slice.
-///
-/// Used by `session_create.zig::createSandbox`, where the session_id
-/// is caller-supplied (frontend / curl / LLM tool) and becomes a
-/// folder name under `data/apps/`. Using it raw breaks mkdir on
-/// Windows and is a `../` path-traversal risk on every platform.
+/// Sanitize an arbitrary string into a single safe filesystem path component
+/// (one folder/file name — never a multi-level path). Replaces `/ \ < > : " |
+/// ?
 pub fn sanitizePathComponent(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     if (input.len == 0) return error.InvalidPathComponent;
 

@@ -1,57 +1,6 @@
-// Regression tests for the MULTI-`ask_user` stall.
-//
-// Zig port of `tests/functional/ask_user_multi_question_test.py`
-// (same test names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Regression tests for the MULTI-`ask_user` stall.
-//
-//   `ask_user_test.py` seeds exactly ONE question per session, so the whole
-//   "the model asked two questions in one assistant turn" shape has never been
-//   exercised. The tool's own prompt tells the model to *"Call it ALONE"* and to
-//   *"Ask ONE question"*, but a prompt is a request, not an invariant: models emit
-//   parallel `ask_user` calls routinely, and the backend had no guard.
-//
-//   ## The bug this pins
-//
-//   The answer endpoint resumed the run after EVERY answer. With two questions open:
-//
-//   1. Answering Q1 started a run that hit the `hasPendingQuestion` guard at the top
-//      of `workflow.zig`'s loop and aborted before the LLM was ever called — so the
-//      answer sat in the transcript unread while the response claimed
-//      `resumed: true`.
-//   2. That aborted run held the `worker` row for the length of its own startup, and
-//      `resumeSession` refuses to start while one exists — so the answer to the
-//      SECOND question could be committed with `resumed: false` and then never be
-//      delivered by anything. A permanent stall.
-//
-//   ## The fix
-//
-//   Resume only when the LAST question is settled (`questions_remaining == 0`).
-//   The last answer resumes once, and the model reads every answer in the turn
-//   together. See the step-4 comment in `src/http_handlers/ask_user_answer.zig`.
-//
-//   Wire fidelity matters here: both questions must hang off ONE assistant row with
-//   BOTH tool_call_ids in its `tool_calls_json`, because that is what the provider
-//   returned and what `handle_tool` Phase 2 persists. Seeding two assistant rows
-//   would model a shape the backend can never produce.
-//   """
-//
-// ── PORTING NOTES ───────────────────────────────────────────────────────
-// * The one-question seeders are IMPORTED from `ask_user_test.zig` (which
-//   exposes them `pub`) instead of being copied, exactly as the Python did
-//   with `from ask_user_test import _connect, _create_session,
-//   _pending_envelope, _tool_envelope`. Copying them is what would let the
-//   two files drift, which is the stated reason the Python imports.
-//
-// * `_pending_ids` returns `[]row_id` in `created_at ASC` order. Zig has no
-//   "list of borrowed strings" out of a JSON parse that can safely outlive
-//   it, so the helper returns a list of OWNED dupe'd ids and the caller
-//   frees them.
-//
-// * `_wait_until(lambda: _worker_exists(...))` has exactly one predicate in
-//   this file, so it is `ask_user.waitForWorker` — same poll, same 8s.
+// Regression tests for the MULTI-`ask_user` stall. Zig port of
+// `tests/functional/ask_user_multi_question_test.py` (same test names, same
+// order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -270,10 +219,9 @@ fn pendingIds(temp_dir: []const u8, session_id: []const u8) !PendingIds {
     return .{ .items = items };
 }
 
-/// Assert the session's pending set is EXACTLY `want`, in order.
-///
-/// Python's `== [q1, q2]` is a list equality; there is no `std.json.Value`
-/// analogue for that, so the length plus the order are compared directly.
+/// Assert the session's pending set is EXACTLY `want`, in order. Python's `==
+/// [q1, q2]` is a list equality; there is no `std.json.Value` analogue for
+/// that, so the length plus the order are compared directly.
 fn expectPendingIds(temp_dir: []const u8, session_id: []const u8, want: []const []const u8) !void {
     var got = try pendingIds(temp_dir, session_id);
     defer got.deinit();
@@ -318,10 +266,9 @@ fn queuedMessageCount(temp_dir: []const u8, session_id: []const u8) !i64 {
     return ask.scalarCount(temp_dir, sql);
 }
 
-/// `_answer(...)` — POST one answer and return the parsed response body.
-///
-/// The `Response` is consumed and freed here, so nothing borrows across
-/// the return: the caller gets an OWNING `harness.Json`.
+/// `_answer(...)` — POST one answer and return the parsed response body. The
+/// `Response` is consumed and freed here, so nothing borrows across the
+/// return: the caller gets an OWNING `harness.Json`.
 fn answerJson(h: *Harness, session_id: []const u8, question_id: []const u8, answer: []const u8) !harness.Json {
     var r = try ask.postAnswer(h, session_id, .{
         .question_id = question_id,
@@ -342,10 +289,9 @@ fn expectCount(got: i64, want: i64, what: []const u8) !void {
 // Tests
 // ============================================================================
 
-// Control: the two-question shape is seedable and both rows are live.
-//
-// Without this the other tests could pass for the wrong reason (e.g. the
-// second question silently deduplicated onto the first).
+// Control: the two-question shape is seedable and both rows are live. Without
+// this the other tests could pass for the wrong reason (e.g. the second
+// question silently deduplicated onto the first).
 test "two_pending_questions_are_seeded_and_independent" {
     try harness.requirePabrikBin(io, gpa);
     const sqlite = try ask.requireSqlite3Cli();
@@ -385,10 +331,6 @@ test "two_pending_questions_are_seeded_and_independent" {
 }
 
 // The regression. Answering Q1 must NOT start a run.
-//
-// It used to: the run hit the `hasPendingQuestion` guard at the top of
-// `workflow.zig`'s loop and aborted before the LLM was called, so the answer
-// was never delivered — while the response still claimed `resumed: true`.
 test "answering_the_first_of_two_defers_the_resume" {
     try harness.requirePabrikBin(io, gpa);
     const sqlite = try ask.requireSqlite3Cli();
@@ -440,10 +382,9 @@ test "answering_the_first_of_two_defers_the_resume" {
     try expectPendingIds(h.temp_dir, session_id, &.{seeded.q2.question_id});
 }
 
-// The positive half: the LAST answer resumes, and the model reads both.
-//
-// This is what the old code failed to do for the first answer — it now
-// happens once, at the end, instead of never.
+// The positive half: the LAST answer resumes, and the model reads both. This
+// is what the old code failed to do for the first answer — it now happens
+// once, at the end, instead of never.
 test "answering_the_last_question_resumes_once_with_both_answers" {
     try harness.requirePabrikBin(io, gpa);
     const sqlite = try ask.requireSqlite3Cli();
@@ -501,10 +442,9 @@ test "answering_the_last_question_resumes_once_with_both_answers" {
     }
 }
 
-// Answering Q2 first must defer exactly like answering Q1 first.
-//
-// The old stall was reachable from the second POST whichever question it was,
-// because the guard is session-scoped, not question-scoped.
+// Answering Q2 first must defer exactly like answering Q1 first. The old
+// stall was reachable from the second POST whichever question it was, because
+// the guard is session-scoped, not question-scoped.
 test "the_answer_order_does_not_matter" {
     try harness.requirePabrikBin(io, gpa);
     const sqlite = try ask.requireSqlite3Cli();
@@ -552,9 +492,8 @@ test "the_answer_order_does_not_matter" {
 }
 
 // N == 1 must be untouched — the common path cannot afford a regression.
-//
-// `questions_remaining` is the new signal the fix branches on, so an off-by-one
-// there would silently stop every ordinary question from resuming.
+// `questions_remaining` is the new signal the fix branches on, so an
+// off-by-one there would silently stop every ordinary question from resuming.
 test "a_single_question_still_resumes_immediately" {
     try harness.requirePabrikBin(io, gpa);
     const sqlite = try ask.requireSqlite3Cli();
@@ -593,9 +532,8 @@ test "a_single_question_still_resumes_immediately" {
 }
 
 // Skip is a resolution like any other, so it must defer identically.
-//
-// Otherwise "skip question 1" would start the doomed run that "answer question
-// 1" no longer does.
+// Otherwise "skip question 1" would start the doomed run that "answer
+// question 1" no longer does.
 test "skipping_one_of_two_also_defers_the_resume" {
     try harness.requirePabrikBin(io, gpa);
     const sqlite = try ask.requireSqlite3Cli();
@@ -645,11 +583,9 @@ test "skipping_one_of_two_also_defers_the_resume" {
     try expectCount(try queuedMessageCount(h.temp_dir, session_id), 0, "session_queue_messages count");
 }
 
-// The stall itself: nothing may be left holding an undelivered answer.
-//
-// The old failure mode was an answer committed with `resumed:false` and no
-// run, queue, or retry left to deliver it. Answering the last question is now
-// always what delivers the turn, so the pair must end with zero pending.
+// The stall itself: nothing may be left holding an undelivered answer. The
+// old failure mode was an answer committed with `resumed:false` and no run,
+// queue, or retry left to deliver it.
 test "a_deferred_answer_is_never_stranded" {
     try harness.requirePabrikBin(io, gpa);
     const sqlite = try ask.requireSqlite3Cli();
@@ -695,10 +631,6 @@ test "a_deferred_answer_is_never_stranded" {
 }
 
 // The frontend has to learn the count from the response, not a list route.
-//
-// `AskUser.vue` counts its own pending cards out of the transcript, so this is
-// a deliberate non-goal rather than an oversight — pinned so nobody adds a
-// second source of truth for "is another question open".
 test "no_endpoint_lists_the_remaining_questions" {
     try harness.requirePabrikBin(io, gpa);
     const sqlite = try ask.requireSqlite3Cli();

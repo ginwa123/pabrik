@@ -1,40 +1,4 @@
 //! `POST /api/logs` — persist a frontend error event to the `logs` table.
-//!
-//! Body (JSON):
-//!   {
-//!     "level":      "error" | "warn" | "info" | "debug",         (required)
-//!     "kind":       "window_error" | "unhandled_rejection"
-//!                 | "console_error" | "console_warn",              (required)
-//!     "message":    "<human readable>",                            (required)
-//!     "stack":      "<stack trace>",                               (optional)
-//!     "source":     "<file URL>",                                  (optional)
-//!     "line":       <line number>,                                 (optional)
-//!     "route_path": "<current Vue route>",                         (optional)
-//!     "session_id": "<active chat session_id>"                     (optional)
-//!   }
-//!
-//! On success:  204 No Content (no body)
-//! On 400:      `{ "error": "..." }` for missing/invalid fields
-//! On 500:      `{ "error": "..." }` for DB failure or OOM in id alloc
-//!
-//! Layered as:
-//!   - `useCase` — fetches the singleton + db handle, validates fields,
-//!     generates the row id, runs the 1-second dedup check, then either
-//!     `UPDATE logs SET count = count + 1 WHERE id = ?` (dedup hit) or
-//!     `INSERT INTO logs (...)` (new row). Returns `void` — success is
-//!     a silent 204, not a JSON body.
-//!   - `frontendLogPostHandler` — thin orchestrator: parses the HTTP
-//!     body, calls `useCase`, maps errors to status codes, builds the
-//!     empty-body 204 response.
-//!
-//! Plan: docs/plans/2026-07-17-frontend-error-logs-design.md
-//!       docs/superpowers/plans/2026-07-17-frontend-error-logs.md
-//!
-//! Parses each event with `parseFromSliceLeaky` (NOT
-//! `parseFromSlice`, which would need an explicit deinit), answers
-//! every error branch with `makeErrorResponse` so the wire shape
-//! stays `{"error": "..."}`, and returns `status_code = 204` on
-//! success, `400` on a missing/invalid field, `500` on a DB failure.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -43,18 +7,6 @@ const sqlite = pabrikcore.sqlite;
 const http_response = @import("http_response.zig");
 
 /// JSON request body for `POST /api/logs`.
-///
-/// The wire format is a BATCH (`{"events": [event, event, ...]}`) — this
-/// matches the front-end `helpers/frontendLogClient.ts` which debounces
-/// multiple console.error / window.error / unhandledrejection events into
-/// one POST every 250ms. The handler loops `useCase` over each event and
-/// returns the SAME status code (204 on full success, 400 on the first
-/// validation failure, 500 on the first DB failure) — the frontend treats
-/// any 4xx/5xx as "drop the batch", so partial-success isn't useful.
-///
-/// Required per event: `level`, `kind`, `message`. Everything else is
-/// optional and maps 1:1 to the `logs` table column (nullable columns
-/// are nullable in the struct too).
 const FrontendLogBody = struct {
     events: []const FrontendLogEvent = &.{},
 
@@ -70,13 +22,8 @@ const FrontendLogBody = struct {
     };
 };
 
-/// Domain-level error set for `useCase`. Each variant maps to a
-/// distinct HTTP status code. The 5 validation variants
-/// (`MissingLevel`/`InvalidLevel`, `MissingKind`/`InvalidKind`,
-/// `MissingMessage`) split "field is absent" from "field value
-/// is wrong" so the error messages can be precise. The "missing
-/// required field: <name>" message form matches what an LLM needs
-/// to know about which field was absent (vs. just plain "invalid").
+/// Domain-level error set for `useCase`. Each variant maps to a distinct HTTP
+/// status code.
 pub const FrontendLogPostError = error{
     /// `getSingleton()` failed — server not initialised. Maps to 500.
     ServerNotInitialized,
@@ -117,18 +64,8 @@ const VALID_KINDS = [_][]const u8{
 // Use case
 // =====================================================================
 
-/// Persist one frontend log event.
-///
-/// Steps:
-///   1. Validate required fields and enum values.
-///   2. Generate row id = `"log_<microseconds>"` (matches project
-///      convention; microsecond timestamps are unique enough for this
-///      error-event volume).
-///   3. Dedup check: SELECT id FROM logs WHERE kind = ? AND message = ?
-///      AND IFNULL(stack,'') = IFNULL(?,'') AND created_at_nano >= ?.
-///      If a row matches within the last second, UPDATE count + 1
-///      and return success (no second row created).
-///   4. Otherwise INSERT a new row.
+/// Persist one frontend log event. Steps: 1. Validate required fields and
+/// enum values. 2.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -148,11 +85,8 @@ fn useCase(
 
     const now_us: i64 = microsecondsNow();
 
-    // `db.exec` only binds text — integer values must be formatted
-    // as decimal strings before binding. SQLite's INTEGER-affinity
-    // columns coerce a numeric-looking text literal back to an
-    // INTEGER on read, so the round-trip is type-preserving.
-    // See `kanban_model.zig:177` for the same pattern (`pos_str`).
+    // `db.exec` only binds text — integer values must be formatted as decimal
+    // strings before binding.
     const now_us_str = std.fmt.allocPrint(allocator, "{d}", .{now_us}) catch return error.IdAllocationFailed;
     defer allocator.free(now_us_str);
     const dedup_cutoff_str = std.fmt.allocPrint(allocator, "{d}", .{now_us - 1_000_000}) catch return error.IdAllocationFailed;
@@ -160,11 +94,9 @@ fn useCase(
     const line_str = std.fmt.allocPrint(allocator, "{d}", .{body.line orelse 0}) catch return error.IdAllocationFailed;
     defer allocator.free(line_str);
 
-    // Dedup check: same kind + message + stack within the last 1 second.
-    // The `IFNULL(stack,'') = IFNULL(?,'')` form treats NULL and ""
-    // as equivalent dedup keys (matches the design doc contract).
-    // Column is `created_at_nano` since Migration 075 renamed
-    // `logs.created_at` (same unit, self-documenting name).
+    // Dedup check: same kind + message + stack within the last 1 second. The
+    // `IFNULL(stack,'') = IFNULL(?,'')` form treats NULL and "" as equivalent
+    // dedup keys (matches the design doc contract).
     const dedup_sql =
         \\SELECT id FROM logs
         \\WHERE kind = ?
@@ -209,14 +141,7 @@ fn useCase(
     ;
     // For nullable TEXT columns (stack/source/route_path/session_id),
     // `db.exec` binds empty slice as NULL (project memory
-    // `sqlite-backend-empty-slice-binds-as-null`). The INSERT column
-    // list matches the table schema exactly — including stack/source/
-    // route_path/session_id, which are nullable in the table.
-    // The line column is INTEGER but gets the textual `line_str`
-    // binding (SQLite coerces numeric-looking text to integer under
-    // INTEGER affinity, verified against :memory: at
-    // dev time: `INSERT INTO t (created_at INTEGER) VALUES ('123')`
-    // → `typeof() == 'integer'`).
+    // `sqlite-backend-empty-slice-binds-as-null`).
     db.exec(
         allocator,
         insert_sql,
@@ -261,10 +186,7 @@ pub fn frontendLogPostHandler(
     }
 
     // Per-request arena owns the parsed value (Leaky variant — see
-    // `memories_create.zig:181` for the precedent). Allocated slices
-    // for `stack`/`source`/`message`/`route_path`/`session_id` live
-    // for the duration of the request and are reaped when
-    // `GinwaServer.handle` tears down the per-request arena.
+    // `memories_create.zig:181` for the precedent).
     const parsed = std.json.parseFromSliceLeaky(FrontendLogBody, allocator, req.body, .{}) catch {
         return res.jsonResponse(.{
             .status_code = 400,
@@ -273,21 +195,16 @@ pub fn frontendLogPostHandler(
     };
 
     if (parsed.events.len == 0) {
-        // Frontend client always sends a non-empty batch (it's
-        // wrapping its in-memory queue), so an empty `events` array
-        // is user-error or caller misconfiguration — surface as 400
-        // with a clear message.
+        // Frontend client always sends a non-empty batch (it's wrapping its
+        // in-memory queue), so an empty `events` array is user-error or
+        // caller misconfiguration — surface as 400 with a clear message.
         return res.jsonResponse(.{
             .status_code = 400,
             .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "missing required field: events" }),
         });
     }
 
-    // Run the use case once per event. The first failure aborts the
-    // batch (the frontend treats any 4xx/5xx as "drop the batch", so
-    // partial-success isn't useful — the client either retries the
-    // whole batch or moves on). This matches the dedup-checks-one-
-    // at-a-time model from Chunk 2.
+    // Run the use case once per event.
     for (parsed.events) |event| {
         useCase(allocator, di.db, event) catch |err| {
         const status: u16 = switch (err) {
@@ -315,10 +232,9 @@ pub fn frontendLogPostHandler(
             error.DedupQueryFailed => "Failed to dedup log",
             error.PersistFailed => "Failed to persist log",
         };
-        // Use `std.log.warn` (NOT `std.log.err`) so this handler's
-        // error-path doesn't trigger `log_err_count > 0` in
-        // `zig build test`. User-input errors are warnings, not
-        // programmer errors.
+        // Use `std.log.warn` (NOT `std.log.err`) so this handler's error-path
+        // doesn't trigger `log_err_count > 0` in `zig build test`. User-input
+        // errors are warnings, not programmer errors.
         std.log.warn("frontend_log_post: {s}", .{message});
         return res.jsonResponse(.{
             .status_code = status,
@@ -327,16 +243,7 @@ pub fn frontendLogPostHandler(
     };
     }
 
-    // 204 No Content — empty body. Build via
-    // `gserverz.HttpResponse.init(...)` + `.withBody("")` because the
-    // helper `rawResponse` doesn't exist on `HttpResponse` (only
-    // `jsonResponse` does). Note: `init` is a static method on
-    // `HttpResponse` (no self param) so it's called via the type,
-    // not via `res.init(...)`. The `withBody("")` path adds
-    // Content-Length: 0 — what an empty 204 needs. (Note:
-    // `cors.zig:8` has the same phantom-method bug but is currently
-    // dead code; the CORS OPTIONS route is commented out in
-    // `main.zig:279`.)
+    // 204 No Content — empty body.
     return gserverz.HttpResponse.init(204, "No Content", allocator).withBody("");
 }
 
@@ -360,61 +267,31 @@ fn isValidKind(kind: []const u8) bool {
     return false;
 }
 
-/// Generate the canonical `log_<microseconds>` id for a new row.
-///
-/// On OOM, propagates the alloc error to the caller (the useCase
-/// catches it as `error.IdAllocationFailed` and the handler returns
-/// 500). There is no silent fallback to a non-unique id — a malformed
-/// id would risk a PRIMARY KEY collision, which is worse than a 500
-/// (the client can retry the POST after the OOM clears).
+/// Generate the canonical `log_<microseconds>` id for a new row. On OOM,
+/// propagates the alloc error to the caller (the useCase catches it as
+/// `error.IdAllocationFailed` and the handler returns 500).
 fn idForRow(allocator: std.mem.Allocator) ![]u8 {
     const us = microsecondsNow();
     return std.fmt.allocPrint(allocator, "log_{d}", .{us});
 }
 
-/// Current Unix time in microseconds.
-///
-/// `std.time.microTimestamp()` was REMOVED in Zig 0.16. We use the
-/// project's `helpers.unixTimestampNanos()` (POSIX `clock_gettime` /
-/// Win32 `GetSystemTimeAsFileTime`) and divide. Returns i64 — fits
-/// until the year ~294276 (microsecond precision, 64-bit signed).
-///
-/// Negative values are clamped to 0 — we use this as a DB column
-/// value, never as an arithmetic input.
+/// Current Unix time in microseconds. `std.time.microTimestamp()` was REMOVED
+/// in Zig 0.16.
 fn microsecondsNow() i64 {
     const ns = @import("helpers").unixTimestampNanos();
     const us: i64 = @intCast(@divTrunc(ns, std.time.ns_per_us));
     return if (us < 0) 0 else us;
 }
 
-// ===== Tests merged from frontend_log_post_test.zig (2026-09-11 flatten) =====
-// Behavioural SQL dedup tests (Task 2.3) for `frontend_log_post`
-// (POST /api/logs, Chunk 2 of
-// `docs/superpowers/plans/2026-07-17-frontend-error-logs.md`).
-//
-// The handler is a thin wrapper over the SQL insert + dedup-update in
-// `src/migrations/migration.zig`'s `logs` table (Migration 063). Standing
-// up a real server + singleton + Io + SQLite + env to exercise the HTTP
-// path is too much integration infra for a single endpoint, so these
-// tests exercise the dedup SQL directly. They lock in the dedup contract
-// from the design doc: same (kind, message, stack) within 1s → UPDATE
-// count + 1 (no second row); different stack OR > 1s apart → fresh row is
-// INSERTed.
-//
-// Plan: docs/plans/2026-07-17-frontend-error-logs-design.md
-//       docs/superpowers/plans/2026-07-17-frontend-error-logs.md
+// ===== Tests merged from frontend_log_post_test.zig (2026-09-11 flatten)
+// ===== Behavioural SQL dedup tests (Task 2.3) for `frontend_log_post` (POST
+// /api/logs, Chunk 2 of
 
 const testing = std.testing;
 
 // =============================================================================
-// Behavioural SQL dedup tests (Task 2.3)
-//
-// These exercise the SAME SQL the use-case runs against an in-memory
-// SQLite DB with the logs table loaded. They lock in the dedup
-// contract from the design doc: same (kind, message, stack) within 1s
-// → UPDATE count + 1 (no second row); different stack OR > 1s apart
-// → fresh row is INSERTed.
-// =============================================================================
+// Behavioural SQL dedup tests (Task 2.3) These exercise the SAME SQL the
+// use-case runs against an in-memory SQLite DB with the logs table loaded.
 
 
 /// Open a fresh in-memory sqlite DB with the `logs` table loaded.
@@ -434,15 +311,8 @@ fn setupDbWithLogs() !struct {
     try db.init(io, ":memory:");
 
     try pabrikcore.migrations_mod.migration.Migration064AddFrontendLogs.up(&db, alloc);
-    // Production DBs also run Migration 075, which renames
-    // `logs.created_at` → `logs.created_at_nano`. Mirror that rename
-    // here so these tests exercise the post-rename schema the live
-    // useCase targets (missing this is what let the stale `created_at`
-    // dedup SELECT pass tests while failing in production).
-    // We inline the logs half of Migration 075 instead of calling
-    // `Migration075...up` directly because the full migration also
-    // CREATEs an index on `worker`, which doesn't exist in this
-    // logs-only :memory: DB.
+    // Production DBs also run Migration 075, which renames `logs.created_at`
+    // → `logs.created_at_nano`.
     try db.exec(alloc, "ALTER TABLE logs RENAME COLUMN created_at TO created_at_nano", &.{});
     try db.exec(alloc, "DROP INDEX IF EXISTS idx_logs_created_at", &.{});
     try db.exec(
@@ -460,10 +330,9 @@ test "dedup SQL: same kind+message+stack within 1s increments count" {
     defer s.db.deinit();
 
     const now_us: i64 = 1_784_226_123_456_789;
-    // The `db.exec` / `db.query` helpers only bind TEXT — microsecond
-    // values are formatted as decimal strings (the project convention;
-    // SQLite coerces the numeric-looking text to INTEGER under INTEGER
-    // affinity, verified via :memory: round-trip).
+    // The `db.exec` / `db.query` helpers only bind TEXT — microsecond values
+    // are formatted as decimal strings (the project convention; SQLite
+    // coerces the numeric-looking text to INTEGER under INTEGER affinity,
     const now_us_str = try std.fmt.allocPrint(alloc, "{d}", .{now_us});
     defer alloc.free(now_us_str);
     const dedup_cutoff_str = try std.fmt.allocPrint(alloc, "{d}", .{now_us - 1_000_000});

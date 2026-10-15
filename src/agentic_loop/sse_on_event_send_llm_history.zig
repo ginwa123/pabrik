@@ -44,11 +44,8 @@ const SseEventLLMHistory = struct {
     image_url: ?[]const u8 = null,
     video_url: ?[]const u8 = null,
     session_skills: ?[]const SkillInfo = null,
-    /// True when this event is an agentic-loop diagnostic (retry attempt
-    /// or TooManyRetries bail) rather than a real chat turn. The frontend
-    /// routes these into a dedicated AgentErrorCard instead of the normal
-    /// message list. Default false — only workflow.zig's 3 diagnostic
-    /// sites set it.
+    /// True when this event is an agentic-loop diagnostic (retry attempt or
+    /// TooManyRetries bail) rather than a real chat turn.
     is_error: bool = false,
 };
 
@@ -113,16 +110,7 @@ pub fn onEventSendLLMHistory(
     }
 
     // Sanitize content + reasoning_content to valid UTF-8 before JSON
-    // serialization. Without this, Zig 0.16's std.json.fmt emits
-    // invalid-UTF-8 strings as ARRAYS of bytes (because
-    // emit_strings_as_arrays defaults to false but only applies when the
-    // slice is valid UTF-8 — see /usr/local/lib/zig/std/json/Stringify.zig:506).
-    // The bash tool's stdout can contain binary bytes (e.g. 0x89, 0x93
-    // from test programs printing raw bytes) that are invalid UTF-8 and
-    // would otherwise corrupt the SSE payload — the frontend would
-    // receive content as [60, 116, 111, ...] instead of "...". This is
-    // the same fix used by `sessionMessagesHandler` for the REST path
-    // (see http_handlers/session_messages_get.zig).
+    // serialization.
     const sanitized_content: ?[]u8 = blk: {
         const c = input.content orelse break :blk null;
         break :blk try helpers.sanitize.sanitizeUtf8(allocator, c);
@@ -190,10 +178,7 @@ pub fn onEventSendLLMHistory(
     })});
 
     // The owned skills slice has served its purpose (serialized into buf
-    // above) — free it now. Guarded on len > 0: a zero-length toOwnedSlice
-    // result may not be a live allocation, and freeing it would trip the
-    // allocator. Production callers use a per-request arena (no-op here),
-    // but tests run on testing.allocator where an unfreed slice leaks.
+    // above) — free it now.
     if (session_skills_json) |sk| {
         if (sk.len > 0) allocator.free(sk);
     }
@@ -215,12 +200,9 @@ pub fn onEventSendLLMHistory(
     event_bus.emit(SseEvent, "llm", event);
 }
 
-// ─── Tests ──────────────────────────────────────────────────────────────────
-//
+// ─── Tests
+// ──────────────────────────────────────────────────────────────────
 // `onEventSendLLMHistory` dereferences `logger.?` at line 89, so passing
-// `null` for the logger crashes. Tests construct a real Logger via
-// `Logger.init(alloc, io, .{})`. We only assert on the captured event's
-// type + JSON shape — the trace logging itself is incidental.
 
 var captured_llm_event: ?SseEvent = null;
 
@@ -347,10 +329,9 @@ test "onEventSendLLMHistory: JSON payload includes the standard field set" {
 }
 
 test "onEventSendLLMHistory: invalid UTF-8 in content is sanitized (no byte-array in JSON)" {
-    // Regression guard for the bug documented at sse_on_event_send_llm_history.zig:101
-    // — without sanitizeUtf8, std.json.fmt emits invalid-UTF-8 strings as
-    // ARRAYS of bytes. The test passes a known-invalid byte sequence and
-    // asserts the JSON contains a string (not an array) for `content`.
+    // Regression guard for the bug documented at
+    // sse_on_event_send_llm_history.zig:101 — without sanitizeUtf8,
+    // std.json.fmt emits invalid-UTF-8 strings as ARRAYS of bytes.
     var s = try setupLlmBusAndIo();
     defer teardownLlmBus(&s);
     defer freeCapturedLlmEventData();
@@ -511,11 +492,8 @@ test "onEventSendLLMHistory: emits on both session_id and 'llm' keys (central br
 }
 
 // ─── is_error flag (agent error card, task_1787663566535_2) ────────────────
-//
 // Agentic-loop diagnostics (retry attempts + TooManyRetries bails) are
-// emitted over the SAME `llm_full` event as normal messages. The frontend
-// needs an explicit marker to route them into a dedicated AgentErrorCard
-// instead of rendering them as a plain user chat bubble.
+// emitted over the SAME `llm_full` event as normal messages.
 
 test "onEventSendLLMHistory: is_error=true serializes into the JSON payload" {
     var s = try setupLlmBusAndIo();

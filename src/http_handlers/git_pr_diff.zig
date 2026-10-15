@@ -18,12 +18,8 @@ pub const DiffStrategy = enum {
     git_local_range,
 };
 
-/// Pick the diff strategy. `cli_available` = whether the provider's
-/// CLI (`gh` / `glab`) is on PATH. `generic` never has a CLI and
-/// always diffs locally. When the CLI is missing for github/gitlab we
-/// fall back to fetching the forge's well-known refspec over the
-/// repo's existing remote credentials (`pull/N/head`,
-/// `merge-requests/IID/head`).
+/// Pick the diff strategy. `cli_available` = whether the provider's CLI (`gh`
+/// / `glab`) is on PATH. `generic` never has a CLI and always diffs locally.
 pub fn resolveStrategy(provider: pr_provider.PrProvider, cli_available: bool) DiffStrategy {
     return switch (provider) {
         .github => if (cli_available) .gh_cli else .git_fetch_pr_ref,
@@ -36,8 +32,7 @@ const PrDiffError = error{ NotARepository, FetchFailed, DiffFailed };
 
 /// Every strategy returns OWNED slices — `diff_content` may be up to
 /// MAX_DIFF_BYTES, so leaking it per request is not an option, and `base` /
-/// `head` must outlive the `defer`s that built them. Callers must
-/// `deinit` once the response body is serialized.
+/// `head` must outlive the `defer`s that built them.
 const PrDiffResult = struct {
     diff_content: []const u8,
     truncated: bool,
@@ -72,11 +67,8 @@ fn runGit(allocator: std.mem.Allocator, io: std.Io, argv: []const []const u8) ![
     return res.stdout;
 }
 
-/// Auto-detect the base branch: origin/main → origin/master →
-/// origin/develop → "main" fallback. Same probe order as
-/// git_worktree_info.zig (duplicated: that helper is not exported).
-/// Always returns an OWNED string — the caller stores it in
-/// `PrDiffResult.base`.
+/// Auto-detect the base branch: origin/main → origin/master → origin/develop
+/// → "main" fallback.
 fn detectBase(allocator: std.mem.Allocator, io: std.Io, path: []const u8) ![]const u8 {
     const bases = [_][]const u8{ "main", "master", "develop" };
     for (bases) |b| {
@@ -114,12 +106,6 @@ pub const FORGE_MAX_DIFF_FILES: u32 = 300;
 /// Try the forge CLI (`gh pr diff` / `glab mr diff`). Returns null when the
 /// CLI is absent, exits nonzero, or produced nothing usable — every case
 /// where the caller must fall back to the git refspec.
-///
-/// A nonzero exit is NOT only "gh is not authed". GitHub serves the PR diff
-/// only while the PR stays under `FORGE_MAX_DIFF_FILES` files, so a repo-wide
-/// rename (a 1285-file PR) makes the installed CLI exit 1 and print
-/// `PullRequest.diff too_large`. Having `gh` on PATH is therefore no promise
-/// that it can answer, and only the refspec path below handles such PRs.
 fn tryForgeCli(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -157,10 +143,8 @@ fn tryForgeCli(
 }
 
 /// Fetch the forge's well-known head ref over the repo's own `origin`
-/// (`pull/N/head` on GitHub, `merge-requests/IID/head` on GitLab) and diff
-/// it against the base. Needs neither the forge CLI nor the forge API, so it
-/// is both the no-CLI strategy AND the rescue path when the CLI refuses.
-/// Handles arbitrarily large PRs; output is capped by `capDiff`.
+/// (`pull/N/head` on GitHub, `merge-requests/IID/head` on GitLab) and diff it
+/// against the base.
 fn fetchRefRange(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -169,11 +153,7 @@ fn fetchRefRange(
     is_pr: bool,
     base_override: ?[]const u8,
 ) !PrDiffResult {
-    // `+` forces the update. The destination is our own scratch ref, and a PR
-    // head is force-pushed as a matter of course (rebase, "update branch"), so
-    // the second fetch of a PR whose head was rewritten is a non-fast-forward.
-    // Without the `+` git rejects it, exits nonzero, and the endpoint 502s
-    // forever on a ref nobody ever deletes.
+    // `+` forces the update.
     const refspec = if (is_pr)
         try std.fmt.allocPrint(allocator, "+pull/{s}/head:refs/pabrik-pr/{s}", .{ number, number })
     else
@@ -269,9 +249,8 @@ fn useCase(
 
     switch (strategy) {
         // The CLI is a fast path, not a guarantee: it exits nonzero on auth
-        // failure AND on the forge's oversized-PR refusal (GitHub caps the
-        // PR diff at FORGE_MAX_DIFF_FILES files). Any nonzero exit falls
-        // through to the refspec fetch, which has no such ceiling.
+        // failure AND on the forge's oversized-PR refusal (GitHub caps the PR
+        // diff at FORGE_MAX_DIFF_FILES files).
         .gh_cli, .glab_cli => {
             if (try tryForgeCli(allocator, io, provider, normalized)) |cli_result| {
                 return cli_result;

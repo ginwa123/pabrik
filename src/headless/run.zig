@@ -1,57 +1,5 @@
-//! `pabrik headless run` — one agentic turn, no server.
-//!
-//! ## The rule this file exists to obey
-//!
-//! Headless mode must not contain a second implementation of the
-//! backend. Every decision the HTTP path makes — cwd resolution, the
-//! profile snapshot, the tool allowlist, the pending-ask_user
-//! abandonment, slash-skill expansion, the session upsert, and which
-//! function actually runs the loop — is made by the SAME function the
-//! browser reaches.
-//!
-//! Concretely, `run` calls
-//! `pabrikcore.http_handlers.sessionCreateUseCase`, which is the exact
-//! `useCase` behind `POST /api/llm/session`. That function ends in
-//! `App.emit_run_agent`, which schedules the turn on
-//! `ctx.group_emit_session_create` and emits `RunParamsNew` on the event
-//! bus; `boot` installs the `ai_worker_flow` subscriber that calls
-//! `runAgenticMultiStepnew`. So a headless turn and a browser turn
-//! execute the same code, and neither can drift from the other.
-//!
-//! An earlier draft of this file re-implemented the cwd resolution, the
-//! profile snapshot and the session upsert by hand, and drove
-//! `runAgenticMultiStepnew` directly. That was the bug: it would have
-//! run TWO turns for one message, and the hand-rolled SQL would have
-//! drifted from `App.insert_worker` on the next schema change. Both are
-//! gone.
-//!
-//! ## What headless mode adds
-//!
-//! Exactly one thing the HTTP path does not need: a way to WAIT for the
-//! turn and read its result. `emit_run_agent` is fire-and-forget — the
-//! handler returns as soon as the work is scheduled. A CLI that printed
-//! nothing would be useless, so `run` subscribes to the completion
-//! signal the loop already emits and blocks on it, bounded by
-//! `--timeout-ms`.
-//!
-//! ## How completion is detected
-//!
-//! The loop writes every assistant message through
-//! `insertLLMHistories(..., .is_emit_sse = true)`, which emits an
-//! `SseEvent` on the event bus under the session id and under `"llm"`.
-//! `run` subscribes to both keys and watches for an assistant row whose
-//! `finish_reason` is `stop`.
-//!
-//! This is the same signal the frontend renders from, so a headless run
-//! and a browser run agree on when a turn is over.
-//!
-//! ## The one global
-//!
-//! `EventBus.subscribe` takes a bare `*const fn (T) void` with no closure
-//! context, so the watch state has to live in a module-level `var`. That
-//! is safe here because a headless process runs exactly one turn: there is
-//! no second session to interleave with. The mutex is what makes the
-//! handoff between the loop task and the polling task well-defined.
+//! `pabrik headless run` — one agentic turn, no server. Headless mode must
+//! not contain a second implementation of the backend.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -162,10 +110,8 @@ fn onLlmEvent(ev: SseEvent) void {
     }
 }
 
-/// Run one turn and wait for it.
-///
-/// The returned `TurnResult` borrows `session_id` from `allocator`, which
-/// the caller owns.
+/// Run one turn and wait for it. The returned `TurnResult` borrows
+/// `session_id` from `allocator`, which the caller owns.
 pub fn run(
     allocator: std.mem.Allocator,
     backend: *boot_mod.Backend,
@@ -174,32 +120,12 @@ pub fn run(
     const io = backend.io;
     const ctx = backend.ctx;
 
-    // ─── Subscribe BEFORE the turn starts ───
-    // Subscribing after would miss the first `llm_full` and hang until the
-    // timeout. Both keys: the loop emits per-session and on the `"llm"`
-    // broadcast, and either one carries the completion signal.
-    //
-    // The session id is not known until the usecase mints one, so the
-    // per-session subscription is added after it returns — the `"llm"`
-    // broadcast is subscribed here and already covers the window, because
-    // `onLlmEvent` filters on `Watch.session_id`, which is set below.
+    // ─── Subscribe BEFORE the turn starts ─── Subscribing after would miss
+    // the first `llm_full` and hang until the timeout.
     try backend.event_bus.subscribe(SseEvent, "llm", onLlmEvent);
 
-    // ─── Drive the REAL session-create funnel ───
-    // This is the same `useCase` the POST /api/llm/session handler calls.
-    // It resolves the cwd (including the relative-path and DB-fallback
-    // chains), snapshots the active profile, abandons a pending ask_user
-    // question, expands slash-skills, upserts the session row and calls
-    // `emit_run_agent` — which dupes its strings, upserts the row and
-    // emits `RunParamsNew` on the bus.
-    //
-    // Headless mode deliberately does NOT re-implement any of that. A
-    // second copy would drift from the browser on the next change to this
-    // function, and the drift would only surface as "the CLI behaves
-    // differently". See the doc comment on `useCase`.
-    //
-    // `owner` is empty: there is no request and no cookie, which is the
-    // same identity the server uses with `--auth` off.
+    // ─── Drive the REAL session-create funnel ─── This is the same `useCase`
+    // the POST /api/llm/session handler calls.
     const created = try pabrikcore.http_handlers.sessionCreateUseCase(
         allocator,
         io,
@@ -218,24 +144,13 @@ pub fn run(
     // the per-call arena — so take our own copy before it goes away.
     const session_id = try allocator.dupe(u8, created.id);
 
-    // Now that the id is known, watch this session specifically too. The
-    // broadcast subscription above already caught anything emitted before
-    // this point, but `Watch.session_id` was empty then, so those events
-    // were dropped — which is fine, because the turn has not started yet.
+    // Now that the id is known, watch this session specifically too.
     Watch.reset(io, session_id);
     try backend.event_bus.subscribe(SseEvent, session_id, onLlmEvent);
 
-    // ─── Wait for the loop ───
-    // The turn is already running: `emit_run_agent` (inside the usecase
-    // above) scheduled it on `ctx.group_emit_session_create` and emitted
-    // `RunParamsNew`, and `boot` installed the `ai_worker_flow`
-    // subscriber that calls `runAgenticMultiStepnew`. Headless mode does
-    // NOT drive the loop itself — doing so would run two turns for one
-    // message, and the second would be a parallel implementation of the
-    // first.
-    //
-    // So all that is left is to watch for the completion signal the loop
-    // already emits, bounded by `--timeout-ms`.
+    // ─── Wait for the loop ─── The turn is already running: `emit_run_agent`
+    // (inside the usecase above) scheduled it on
+    // `ctx.group_emit_session_create` and emitted `RunParamsNew`, and `boot`
     const deadline_ms: ?i64 = if (a.timeout_ms == 0)
         null
     else
@@ -266,10 +181,9 @@ pub fn run(
         .finish_reason = if (Watch.finish_len > 0) Watch.finish_reason[0..Watch.finish_len] else "",
         .iterations = Watch.iterations,
         .timed_out = timed_out,
-        // The loop reports its own failures as an `is_error` llm_history
-        // row rather than a returned error, so there is no error name to
-        // forward here. A turn that produced no assistant text is the
-        // signal, and the dispatcher already treats that as exit 1.
+        // The loop reports its own failures as an `is_error` llm_history row
+        // rather than a returned error, so there is no error name to forward
+        // here.
         .error_name = null,
     };
 }

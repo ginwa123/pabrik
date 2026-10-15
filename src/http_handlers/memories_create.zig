@@ -1,23 +1,6 @@
-//! `POST /api/memories` — create a global memory file.
-//!
-//! Body: `{"name":"foo.md","content":"..."}`.
-//! On success: 201 with `{"memory":{name,title,path,size}}`.
-//!
-//! Layered as:
-//!   - `useCase` — parses the body, validates the name, resolves the
-//!     env, runs the duplicate check, writes the file, re-lists to
-//!     derive metadata, and returns a heap-owned `MemoryInfo`.
-//!   - `memoryCreateHandler` — thin orchestrator: parses the HTTP
-//!     body, calls `useCase`, maps errors to status codes, builds
-//!     the JSON response.
-//!
-//! Preserves the static-contract assertions in `memories_crud_test.zig`:
-//!   - `getSingleton` + `500` substring checks
-//!   - `memoryExists` + `409` (conflict) + `writeMemoryFile` + `201`
-//!     substring checks
-//!   - `isValidMemoryName` validation
-//!   - `parseFromSliceLeaky` + `Invalid JSON body` substring checks
-//!   - `std.json.Stringify.valueAlloc` substring check
+//! `POST /api/memories` — create a global memory file. Body:
+//! `{"name":"foo.md","content":"..."}`. On success: 201 with
+//! `{"memory":{name,title,path,size}}`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -25,10 +8,9 @@ const gserverz = pabrikcore.gserverz;
 const memories_mod = pabrikcore.memories;
 const http_response = @import("http_response.zig");
 
-/// JSON request body for `POST /api/memories`.
-///
-/// Both fields are required. `name` must be a single filename (no `/`,
-/// no `..`, must end in `.md`) — see `memories.isValidMemoryName`.
+/// JSON request body for `POST /api/memories`. Both fields are required.
+/// `name` must be a single filename (no `/`, no `..`, must end in `.md`) —
+/// see `memories.isValidMemoryName`.
 const CreateMemoryBody = struct {
     name: []const u8,
     content: []const u8,
@@ -63,11 +45,9 @@ pub const MemoryCreateInput = struct {
     content: []const u8,
 };
 
-/// Output of the create use-case. `memory` is HEAP-OWNED by the
-/// use-case (duplicated from `listAllMemories` so it survives the
-/// internal `freeMemoriesList` defer). The handler is responsible
-/// for freeing each slice — typically a `defer` block does
-/// per-field `allocator.free(output.memory.name)` etc.
+/// Output of the create use-case. `memory` is HEAP-OWNED by the use-case
+/// (duplicated from `listAllMemories` so it survives the internal
+/// `freeMemoriesList` defer).
 pub const MemoryCreateOutput = struct {
     memory: memories_mod.MemoryInfo,
 };
@@ -76,17 +56,7 @@ pub const MemoryCreateOutput = struct {
 // Use case
 // =====================================================================
 
-/// Create a global memory file.
-///
-/// Steps:
-///   1. Get the singleton + env.
-///   2. Validate `name` (non-empty + `isValidMemoryName`).
-///   3. 409 on duplicate (via `memoryExists`).
-///   4. `writeMemoryFile` to create the file.
-///   5. Re-list via `listAllMemories` to derive `title/path/size`.
-///   6. Locate the entry by name. Missing → 500 (consistency
-///      violation).
-///   7. Duplicate the matched slices for the response.
+/// Create a global memory file. Steps: 1. Get the singleton + env. 2.
 fn useCase(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -98,10 +68,7 @@ fn useCase(
     if (input.name.len == 0) return error.NameRequired;
     if (!memories_mod.isValidMemoryName(input.name)) return error.InvalidName;
 
-    // 409 on duplicate. `memoryExists` is the helper-side check; it
-    // also validates the name (defense in depth) so a bad name here
-    // returns 400 from the `isValidMemoryName` branch above and
-    // would never reach `memoryExists`.
+    // 409 on duplicate.
     if (memories_mod.memoryExists(allocator, io, environment, input.name)) {
         return error.AlreadyExists;
     }

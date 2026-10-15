@@ -1,40 +1,5 @@
-//! `POST /api/session/:session_id/touched`.
-//! `POST /api/llm/session/:session_id/touched`.
-//!
-//! Marks a chat session as seen by the human: stamps
-//! `sessions.last_human_touched_at_nano = <unix_ms>` (Migration 082) and
-//! emits a `session.updated` SSE event so connected clients clear the
-//! yellow "AI is ahead of you" stale dot without a manual page reload.
-//!
-//! Why this endpoint exists
-//! ─────────────────────────
-//! The sidebar's per-chat time pill is sourced from
-//! `last_human_touched_at ?? updated_at` and the amber stale dot shows
-//! when `updated_at > last_human_touched_at`. Opening a chat to "just
-//! read" the AI's output previously never bumped the column, so the
-//! yellow dot stuck around until some other edit (rename / profile
-//! switch / retry) happened to stamp it. The frontend fires this POST
-//! the moment a user opens a session's chat — opening a chat to read
-//! counts as a review, mirroring the kanban sibling
-//! (`task_mark_human_touched.zig`, human_touched action).
-//!
-//! Idempotent: re-stamping the timestamp is harmless. Multiple clients
-//! firing the POST simultaneously just produce the same DB write.
-//!
-//! Wire shape
-//! ──────────
-//! Request: empty body or `{}` (no fields required — the body is ignored).
-//! Response: `200 { "success": true, "session_id": "sess_..." }`.
-//! Errors:
-//!   - 400 `session_id required` — path param missing or empty
-//!   - 500 `Out of memory` — `std.json.Stringify.valueAlloc` failure
-//!
-//! Route registration (src/http_routes.zig, next to the sibling PUT routes):
-//!   - `POST /api/session/:session_id/touched`
-//!   - `POST /api/llm/session/:session_id/touched`
-//! No shadowing: POST differs in method from the existing PUT/GET on the
-//! overlapping prefixes, and the literal `touched` tail differs from the
-//! sibling `messages` / `queue_messages` / `stream` tails.
+//! `POST /api/session/:session_id/touched`. `POST
+//! /api/llm/session/:session_id/touched`.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -76,9 +41,7 @@ fn useCase(
     const now_ms = llm_history.unixMillisNow();
 
     // 2. Ensure the row exists before any UPDATE (mirrors
-    //    session_update.zig:66). The user can land here by opening a
-    //    brand-new chat: the session_id is in the URL but the row
-    //    hasn't been INSERTed yet (no message queued).
+    // session_update.zig:66).
     _ = llm_history.ensureSessionExists(allocator, db, session_id) catch {
         // Collapse storage errors to a single caller-handled variant
         // (matches the sibling pattern at
@@ -93,20 +56,12 @@ fn useCase(
     };
 
     // 4. Re-read for the SSE payload (mirrors the update_session_status
-    //    pattern in llm_history.zig). Unreachable after a successful
-    //    ensure, but fail closed rather than emitting a half payload.
-    //    NOTE: no `defer session.deinit(allocator)` — the per-request
-    //    arena reclaims the duped strings when the request scope ends.
+    // pattern in llm_history.zig).
     const session = (llm_history.getSession(allocator, db, session_id) catch {
         return error.SessionIdRequired;
     }) orelse return error.SessionIdRequired;
 
-    // 5. Emit SSE so connected sidebar clients clear the stale dot
-    //    live. Best-effort (matches tasks_move.zig and
-    //    task_mark_human_touched.zig): SSE failures log a warning but
-    //    don't fail the request — the DB write is already committed
-    //    and the sidebar picks up the new state on its next refetch.
-    //    NOTE: no `defer allocator.free` — arena-owned.
+    // 5. Emit SSE so connected sidebar clients clear the stale dot live.
     const touched_at_str = std.fmt.allocPrint(allocator, "{d}", .{now_ms}) catch {
         return error.OutOfMemory;
     };
@@ -177,9 +132,8 @@ pub fn sessionMarkTouchedHandler(
     };
 
     // Claim an ownerless row created by ensureSessionExists above. Without
-    // this, a brand-new chat opened in auth-on mode leaves its session row
-    // in the shared bucket (visible to every user). Only claims ownerless
-    // rows, so a real owner is never overwritten.
+    // this, a brand-new chat opened in auth-on mode leaves its session row in
+    // the shared bucket (visible to every user).
     if (di.auth_enabled) {
         const stamp_owner = auth_common.resolveRequestUserId(allocator, di.db, di.auth_enabled, req.headers) catch null;
         defer if (stamp_owner) |o| allocator.free(o);

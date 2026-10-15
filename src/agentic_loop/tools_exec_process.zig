@@ -25,8 +25,7 @@ const Args = struct {
 
 /// Lenient parse — same posture as the `command` tool's: the model's JSON is
 /// coerced per field where that is unambiguous (a numeric string, a trailing
-/// XML close tag), and a real mismatch is reported as a field error rather than
-/// guessed at.
+/// XML close tag), and a real mismatch is reported as a field error rather
 fn parseArgs(allocator: std.mem.Allocator, arguments: []const u8) !union(enum) {
     ok: struct { args: Args, owned_action: ?[]u8 },
     bad: []const u8, // error prose, caller-owned
@@ -87,14 +86,8 @@ fn parseArgs(allocator: std.mem.Allocator, arguments: []const u8) !union(enum) {
     return .{ .ok = .{ .args = out, .owned_action = owned_action } };
 }
 
-/// Run one `process` call and return the INNER JSON payload (the caller wraps it
-/// in the tool envelope).
-///
-/// EXPECTED failures come back as a payload with `"ok": false` and prose in
-/// `"error"`, not as a Zig error: this is a tool whose errors are all things the
-/// model can fix on the next call (a bad action name, a missing pid, a pid from
-/// another session), and `dispatchTool`'s catch-all would reduce that to
-/// `process failed: ErrorName` — which names no field and no fix.
+/// Run one `process` call and return the INNER JSON payload (the caller wraps
+/// it in the tool envelope).
 pub fn executeProcess(
     allocator: std.mem.Allocator,
     io: std.Io,

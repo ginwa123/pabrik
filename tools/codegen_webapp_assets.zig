@@ -1,36 +1,6 @@
-// tools/codegen_webapp_assets.zig
-//
-// Comptime codegen: walk the Vue webapp's built dist/ tree and emit a Zig
-// source file with the byte-for-byte contents of every asset embedded as
-// string literals. The generated file (src/apps/desktop_app/embedded/
-// webapp_assets.zig) is imported by main.zig (in a later chunk) and the
-// `pub const assets: []const Asset` value it provides is what gets written
-// to a per-user temp dir at runtime by extraction.zig.
-//
-// Usage (from the project root, after `zig build build:webapp`):
-//
-//     zig build codegen:webapp-assets
-//
-// The build step wires this up; you can also run the binary directly:
-//
-//     zig run tools/codegen_webapp_assets.zig -- \
-//         src/apps/desktop/dist \
-//         src/apps/desktop_app/embedded/webapp_assets.zig
-//
-// Zig 0.16 API notes:
-//   * `std.heap.GeneralPurposeAllocator` was replaced by
-//     `std.heap.DebugAllocator`; the codegen tool uses
-//     `std.heap.page_allocator` instead since it's a one-shot CLI tool
-//     that exits within a few hundred ms.
-//   * `std.process.args()` is gone; args are delivered via
-//     `std.process.Init.minimal.args` and consumed through
-//     `std.process.Args.Iterator`.
-//   * This file uses std.c.* (libc, cross-platform) for all filesystem
-//     syscalls instead of std.os.linux.* so the binary runs on both
-//     Linux and macOS CI cells. Std.c.faccessat / mkdir / open / close /
-//     read / write / fstat / opendir / readdir / closedir all resolve
-//     to libc via std.c, which dispatches to the right syscall per
-//     platform at compile time.
+// tools/codegen_webapp_assets.zig Comptime codegen: walk the Vue webapp's
+// built dist/ tree and emit a Zig source file with the byte-for-byte contents
+// of every asset embedded as string literals.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -48,11 +18,7 @@ pub fn main(init: std.process.Init) !void {
     const dist_path = args_iter.next() orelse return error.MissingDistPath;
     const out_path = args_iter.next() orelse return error.MissingOutPath;
 
-    // Check if dist_path exists. If not, emit a stub webapp_assets.zig
-    // (empty assets array) so the pabrik-desktop build doesn't fail when
-    // `bun run build` hasn't been run yet (e.g., on a fresh checkout).
-    // Use std.c.access (POSIX, cross-platform via libc) instead of
-    // std.os.linux.faccessat (Linux syscall only — would SIGSYS on macOS).
+    // Check if dist_path exists.
     var dist_path_buf: [8192:0]u8 = undefined;
     const dist_path_z = copyToNull(&dist_path_buf, dist_path);
     const acc_rc = std.c.access(dist_path_z, 0); // F_OK = 0
@@ -155,14 +121,6 @@ pub fn main(init: std.process.Init) !void {
     try mkdirsRecursive(out_dir_path);
 
     // Write the accumulated buffer to disk.
-    //
-    // Why we don't use `std.c.write` directly on Windows: `openCreateTruncWindows`
-    // returns a Win32 HANDLE (cast to `std.c.fd_t` via `@ptrFromInt(@intFromPtr(h))`),
-    // but the C runtime's `write()` (which `std.c.write` calls on Windows) expects
-    // a CRT fd INDEX — not a HANDLE. Passing a HANDLE address silently writes
-    // 0 bytes, and the C runtime's `_write` doesn't error in a way our error
-    // checks catch. So on Windows, call `WriteFile` from kernel32.dll directly
-    // with the HANDLE; on POSIX, use the normal `open(2)` + `write(2)` path.
     if (builtin.os.tag == .windows) {
         try writeAllWindows(out_path, out_buf.items);
     } else {
@@ -191,24 +149,18 @@ fn lessThan(_: void, a: []const u8, b: []const u8) bool {
     return std.mem.lessThan(u8, a, b);
 }
 
-/// Recursively walk a directory tree and append every regular file's
-/// path (relative to `root`) to `out`. Directories are recursed;
-/// symlinks are skipped to avoid cycles. Cross-platform: uses
-/// POSIX `opendir/readdir/closedir` on Linux + macOS (mirroring the
-/// historical POSIX-only implementation), and Win32
-/// `FindFirstFileW/FindNextFileW/FindClose` on Windows. (`std.c.readdir`
-/// is exposed as `void` on Windows in Zig 0.16 — see the matching
-/// `helpers/mod.zig:PosixTimespec` comment for the same pattern.)
+/// Recursively walk a directory tree and append every regular file's path
+/// (relative to `root`) to `out`. Directories are recursed; symlinks are
+/// skipped to avoid cycles.
 fn walkDir(
     allocator: std.mem.Allocator,
     root: []const u8,
     prefix: []const u8,
     out: *std.ArrayList([]const u8),
 ) !void {
-    // `try switch (...) { ... }` propagates the error union
-    // returned by both branches. (`switch` is a non-void expression
-    // here, so the function body's trailing value needs `try`-ing
-    // when the inner returns `!T`.)
+    // `try switch (...) { ... }` propagates the error union returned by both
+    // branches. (`switch` is a non-void expression here, so the function
+    // body's trailing value needs `try`-ing when the inner returns `!T`.)
     return switch (builtin.os.tag) {
         .windows => walkDirWindows(allocator, root, prefix, out),
         else => walkDirPosix(allocator, root, prefix, out),
@@ -239,11 +191,9 @@ fn walkDirPosix(
         if (name.len > 0 and !(name.len == 1 and name[0] == '.') and
             !(name.len == 2 and name[0] == '.' and name[1] == '.'))
         {
-            // `std.fs.path.join` on Windows uses `\` as the separator,
-            // but the generated Zig string literal needs forward slashes
-            // (otherwise `"/assets\foo.js"` is an invalid escape sequence
-            // — `\f` is a form-feed in Zig string literals). Normalize
-            // the separator BEFORE emitting the string literal.
+            // `std.fs.path.join` on Windows uses `\` as the separator, but
+            // the generated Zig string literal needs forward slashes
+            // (otherwise `"/assets\foo.js"` is an invalid escape sequence —
             const rel_raw = try std.fs.path.join(allocator, &.{ prefix, name });
             defer allocator.free(rel_raw);
             // Manual replace: copy + swap `\` to `/`. (Zig 0.16 has
@@ -264,11 +214,8 @@ fn walkDirPosix(
     }
 }
 
-// Win32 directory walking — uses `FindFirstFileW`/`FindNextFileW`
-// from kernel32.dll. These are reachable on Windows only; the
-// `extern` decl below is dead-code-eliminated by Zig's
-// `builtin.os.tag == .windows` checker at comptime so the symbol
-// isn't referenced on Linux/macOS hosts.
+// Win32 directory walking — uses `FindFirstFileW`/`FindNextFileW` from
+// kernel32.dll.
 extern "kernel32" fn FindFirstFileW(
     lpFileName: [*:0]const u16,
     lpFindFileData: *WIN32_FIND_DATAW,
@@ -281,12 +228,7 @@ extern "kernel32" fn FindClose(
     hFindFile: std.os.windows.HANDLE,
 ) callconv(.winapi) std.os.windows.BOOL;
 
-/// Win32's FIND_DATA structure. The Zig 0.16 stdlib doesn't expose
-/// it via `std.os.windows`; we need the raw layout because the
-/// `WIN32_FIND_DATAW.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY`
-/// bit is the only reliable way to distinguish directories from
-/// regular files (the naming convention `name == ".."`-prefix
-/// doesn't apply on Windows — directory names are bare).
+/// Win32's FIND_DATA structure.
 const WIN32_FIND_DATAW = extern struct {
     dwFileAttributes: u32,
     ftCreationTime: std.os.windows.FILETIME,
@@ -314,9 +256,8 @@ fn walkDirWindows(
     defer allocator.free(full_dir);
 
     // Convert the UTF-8 absolute path + an `\*` wildcard (Win32's
-    // FindFirstFileW wants the search pattern to include a wildcard
-    // to enumerate the directory itself) into a WTF-16 buffer. We
-    // size for 2 additional u16 units (`\`, `*`) plus the NUL.
+    // FindFirstFileW wants the search pattern to include a wildcard to
+    // enumerate the directory itself) into a WTF-16 buffer.
     var full_w: [std.fs.max_path_bytes:0]u16 = undefined;
     // `wtf8ToWtf16Le` returns the count of `u16` units WRITTEN into
     // the destination buffer (`usize`), not a slice. Pre-allocate
@@ -358,10 +299,7 @@ fn walkDirWindows(
             );
             defer allocator.free(rel_raw);
             // On Windows, `std.fs.path.join` produces backslash-separated
-            // paths. The generated Zig string literal needs forward
-            // slashes — otherwise `"/assets\foo.js"` is an invalid
-            // escape sequence (`\f` is form-feed in Zig). Normalize
-            // BEFORE emitting the string literal.
+            // paths.
             const rel = try allocator.alloc(u8, rel_raw.len);
             for (rel_raw, 0..) |c, i| {
                 rel[i] = if (c == '\\') '/' else c;
@@ -384,9 +322,7 @@ fn walkDirWindows(
 }
 
 /// Return the integer `DT_*` value for `kind` (REG | DIR) on the current
-/// platform. DT_REG and DT_DIR are values inside `<dirent.h>` and are
-/// stable across Linux/macOS (both descend from BSD), so we just match by
-/// name. Computed at comptime.
+/// platform.
 fn dtValue(comptime kind: enum { REG, DIR }) u8 {
     return switch (kind) {
         .REG => 8, // DT_REG
@@ -394,10 +330,8 @@ fn dtValue(comptime kind: enum { REG, DIR }) u8 {
     };
 }
 
-/// Copy a path into a caller-provided NUL-terminated stack buffer and
-/// return a pointer to the start. The caller must keep `buf` alive for
-/// the lifetime of the returned pointer (so the buffer must be in the
-/// caller's stack frame, not a separate function).
+/// Copy a path into a caller-provided NUL-terminated stack buffer and return
+/// a pointer to the start.
 fn copyToNull(buf: *[8192:0]u8, path: []const u8) [*:0]const u8 {
     if (path.len >= buf.len) @panic("path too long for null-terminated buffer");
     @memcpy(buf[0..path.len], path);
@@ -430,15 +364,6 @@ fn mkdirsRecursive(path: []const u8) !void {
 }
 
 /// Open (or create + truncate) a file for writing. Returns the raw fd.
-/// Cross-platform: POSIX uses libc `open(2)`; Windows uses Win32
-/// POSIX: open + write + close. We don't use `openCreateTrunc` on
-/// Windows because the C runtime's `write()` expects a CRT fd INDEX,
-/// not a Win32 HANDLE — see `writeAllWindows` below for the Windows
-/// path that uses `WriteFile` directly. The `openCreateTrunc` +
-/// `openCreateTruncPosix`/`openCreateTruncWindows` dispatch below is
-/// kept for `readFileAll` (which does work with std.c on Windows because
-/// ReadFile is what the C runtime's `read()` invokes on a real CRT fd
-/// obtained via `_open_osfhandle`).
 fn openCreateTrunc(dir_path: []const u8, basename: []const u8) !std.c.fd_t {
     const full = try std.fs.path.join(std.heap.page_allocator, &.{ dir_path, basename });
     defer std.heap.page_allocator.free(full);
@@ -466,19 +391,9 @@ fn openCreateTruncPosix(full: []const u8) !std.c.fd_t {
     return rc;
 }
 
-// Win32 CreateFileW + CloseHandle — declared locally because
-// std.os.windows 0.16 doesn't expose `kernel32!CreateFileW` or
-// `kernel32!CloseHandle` (the std wraps them per-file under
-// different names, e.g. ntdll!ZwCloseHandle for the close path).
-// Magic constants from winbase.h:
-//
-//   GENERIC_WRITE = 0x40000000
-//   GENERIC_READ  = 0x80000000
-//   FILE_SHARE_READ = 0x1  (allow other readers so dev-server
-//                          reloads don't break the build)
-//   CREATE_ALWAYS = 2
-//   OPEN_EXISTING = 3
-//   FILE_ATTRIBUTE_NORMAL = 0x80
+// Win32 CreateFileW + CloseHandle — declared locally because std.os.windows
+// 0.16 doesn't expose `kernel32!CreateFileW` or `kernel32!CloseHandle` (the
+// std wraps them per-file under different names, e.g. ntdll!ZwCloseHandle for
 extern "kernel32" fn CreateFileW(
     lpFileName: [*:0]const u16,
     dwDesiredAccess: std.os.windows.DWORD,
@@ -494,10 +409,6 @@ extern "kernel32" fn CloseHandle(hObject: std.os.windows.HANDLE) callconv(.winap
 // Win32 WriteFile — declared locally because std.os.windows 0.16 doesn't
 // expose `kernel32!WriteFile` (the std wraps it under a different name).
 // `lpOverlapped` is `LPOVERLAPPED` (a pointer to the OVERLAPPED struct).
-// The OVERLAPPED struct itself is opaque in std.os.windows 0.16 — only
-// its size/layout via `std.os.windows.OVERLAPPED_size` is exposed — so we
-// pass `*anyopaque` here and pass `null` at the call site (synchronous I/O
-// never uses the overlapped field).
 extern "kernel32" fn WriteFile(
     hFile: std.os.windows.HANDLE,
     lpBuffer: [*]const u8,
@@ -532,10 +443,8 @@ fn openCreateTruncWindows(full: []const u8) !std.c.fd_t {
     return @ptrFromInt(@intFromPtr(h));
 }
 
-/// Windows: open the file via CreateFileW, write `data` via WriteFile,
-/// close the handle. Avoids `std.c.write` (the C runtime's `_write`
-/// takes a CRT fd index, NOT a HANDLE — passing a HANDLE address
-/// silently writes 0 bytes and returns "success").
+/// Windows: open the file via CreateFileW, write `data` via WriteFile, close
+/// the handle.
 fn writeAllWindows(path: []const u8, data: []const u8) !void {
     var path_w: [std.fs.max_path_bytes:0]u16 = undefined;
     const written = std.unicode.wtf8ToWtf16Le(&path_w, path) catch
@@ -554,10 +463,8 @@ fn writeAllWindows(path: []const u8, data: []const u8) !void {
     const h = h_opt orelse return error.OpenOutFailed;
     defer _ = CloseHandle(h);
 
-    // WriteFile can return fewer bytes than requested only on a pipe
-    // or async handle. We're synchronous and on a regular file, so
-    // either it writes everything or errors out. Loop defensively to
-    // match the POSIX `write(2)` semantics.
+    // WriteFile can return fewer bytes than requested only on a pipe or async
+    // handle.
     var total_written: usize = 0;
     while (total_written < data.len) {
         var chunk_written: std.os.windows.DWORD = 0;
@@ -577,15 +484,8 @@ fn writeAllWindows(path: []const u8, data: []const u8) !void {
     }
 }
 
-/// Read the entire contents of a file into a fresh allocation. Returns
-/// the buffer; caller owns it. A safety cap of `max_bytes` is enforced
-/// Read the entire contents of a file into a fresh allocation. Returns
-/// the buffer; caller owns it. A safety cap of `max_bytes` is enforced
-/// to catch runaway inputs. We don't call fstat (Zig 0.16 has no
-/// cross-platform fstat — std.c.fstat is `void` on Linux and the stdlib
-/// recommends statx instead). Instead, we read incrementally into a
-/// growing ArrayList, doubling the read buffer each round and stopping
-/// at EOF. Works on every platform the build tool runs on.
+/// Read the entire contents of a file into a fresh allocation. Returns the
+/// buffer; caller owns it.
 fn readFileAll(allocator: std.mem.Allocator, path: []const u8, max_bytes: usize) ![]u8 {
     return switch (builtin.os.tag) {
         .windows => readFileAllWindows(allocator, path, max_bytes),
@@ -620,14 +520,9 @@ fn readFileAllPosix(allocator: std.mem.Allocator, path: []const u8, max_bytes: u
     return buf.toOwnedSlice(allocator);
 }
 
-// Windows counterpart — declared locally because std.os.windows 0.16
-// doesn't expose `kernel32!ReadFile` or `kernel32!CloseHandle` (the
-// std wraps them per-file under different names). Magic constants
-// from winbase.h / winnt.h:
-//   GENERIC_READ  = 0x80000000
-//   FILE_SHARE_READ = 0x1
-//   OPEN_EXISTING = 3
-//   FILE_ATTRIBUTE_NORMAL = 0x80
+// Windows counterpart — declared locally because std.os.windows 0.16 doesn't
+// expose `kernel32!ReadFile` or `kernel32!CloseHandle` (the std wraps them
+// per-file under different names).
 extern "kernel32" fn ReadFile(
     hFile: std.os.windows.HANDLE,
     lpBuffer: [*]u8,

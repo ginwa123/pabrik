@@ -1,10 +1,6 @@
-//! Notify server that the client is disconnecting from an SSE stream.
-//!
-//! This removes ALL SSE connections for the session (forceful
-//! disconnect of the entire session).
-//!
-//! Layered as `useCase` (resolve server + remove session) and a thin
-//! handler that maps the outcome + errors to status codes / JSON.
+//! Notify server that the client is disconnecting from an SSE stream. This
+//! removes ALL SSE connections for the session (forceful disconnect of the
+//! entire session).
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -14,10 +10,7 @@ pub const SseDisconnectError = error{
     ServerNotAvailable,
 };
 
-/// Outcome of the SSE-disconnect use-case. The `removed_clients`
-/// field carries the count of connections that were closed — the
-/// handler surfaces it in the response so the frontend can log
-/// "removed N stale connections" without a follow-up query.
+/// Outcome of the SSE-disconnect use-case.
 pub const SseDisconnectResult = struct {
     removed_clients: u32,
 };

@@ -1,32 +1,4 @@
 //! Claude Code agent backend — Phase 1 (configuration + detection).
-//!
-//! Pabrik profiles have always been HTTP-only: a profile names a `model`,
-//! a `base_url`, an `api_key` and a `url_style` (the HTTP body shape), and
-//! the workflow POSTs to that endpoint. Claude Code does not fit that
-//! shape — it is a local `claude` CLI authenticated by subscription
-//! (`claude login`, state under `~/.claude/`), and it owns its own agentic
-//! loop.
-//!
-//! So the transport lives in its OWN profile field, `backend`
-//! (`"http"` default | `"claude-code"`), and `url_style` keeps meaning
-//! exactly one thing: the HTTP wire format. Overloading `url_style` with a
-//! non-HTTP value would have left `base_url` / `api_key` present-but-dead
-//! and forced a "not applicable" arm into every wire-format dispatch site
-//! (`buildJson*Request`, the SSE parsers, the Settings probe).
-//!
-//! What this module owns:
-//!   * the backend predicates (`isClaudeCodeBackend`, `isKnownBackend`),
-//!   * profile validation for the CLI backend (`validateClaudeCodeProfile`),
-//!   * `claude` binary discovery (`resolveBinaryPath`),
-//!   * `claude -p` argv construction (`buildPrintArgs`),
-//!   * the `CLAUDE_CONFIG_DIR` env overlay (`buildEnvOverlay`),
-//!   * the `claude --version` probe (`buildVersionProbeArgs` +
-//!     `describeVersionProbe`), and
-//!   * minimal `stream-json` line parsing (`parseResultLine`).
-//!
-//! What it does NOT do yet: execute the CLI or stream its output into the
-//! workflow. `Agent.callStreaming` fails fast with
-//! `error.ClaudeCodeNotWired` until that wiring lands (Phase 2).
 
 const std = @import("std");
 const config_mod = @import("../modules/config/Config.zig");
@@ -51,21 +23,16 @@ pub fn isKnownBackend(backend: []const u8) bool {
         isClaudeCodeBackend(backend);
 }
 
-/// Validation for a Claude Code profile.
-///
-/// Unlike HTTP profiles, `base_url` and `api_key` are NOT required — auth
-/// comes from `claude login`, not from config. Only `model` must be
-/// non-empty (it becomes the CLI's `--model`).
+/// Validation for a Claude Code profile. Unlike HTTP profiles, `base_url` and
+/// `api_key` are NOT required — auth comes from `claude login`, not from
+/// config. Only `model` must be non-empty (it becomes the CLI's `--model`).
 pub fn validateClaudeCodeProfile(model: []const u8) error{MissingModel}!void {
     if (model.len == 0) return error.MissingModel;
 }
 
-/// Resolve the `claude` binary to execute.
-///
-/// * Empty `configured` → `DEFAULT_BINARY` (`"claude"`, via `PATH`).
-/// * Otherwise the configured value verbatim (absolute path or alias).
-/// The returned slice borrows from `configured` when set, else is the
-/// `DEFAULT_BINARY` constant — never free it.
+/// Resolve the `claude` binary to execute. * Empty `configured` →
+/// `DEFAULT_BINARY` (`"claude"`, via `PATH`). * Otherwise the configured
+/// value verbatim (absolute path or alias).
 pub fn resolveBinaryPath(configured: []const u8) []const u8 {
     if (configured.len == 0) return DEFAULT_BINARY;
     return configured;
@@ -86,16 +53,9 @@ pub const PrintOptions = struct {
     stream_json: bool = true,
 };
 
-/// Build argv for a non-interactive Claude Code run:
-/// `claude -p <prompt> [--model m] [--add-dir dir] [--max-turns n]
-/// [--verbose --output-format stream-json]`.
-///
-/// The caller owns the returned slice (each entry is duped; free with
-/// `freeArgs`). `prompt` is passed as the `-p` value — the CLI reads the
-/// turn prompt from argv, not stdin.
-///
-/// NOTE: credentials never appear here. A key on argv is world-readable via
-/// `ps`; auth travels through the environment (see `buildEnvOverlay`).
+/// Build argv for a non-interactive Claude Code run: `claude -p <prompt>
+/// [--model m] [--add-dir dir] [--max-turns n] [--verbose --output-format
+/// stream-json]`.
 pub fn buildPrintArgs(
     allocator: std.mem.Allocator,
     binary: []const u8,
@@ -146,21 +106,6 @@ pub const EnvVar = struct {
 };
 
 /// Build the environment overlay for one Claude Code run.
-///
-/// `config_dir` (the profile's `CLAUDE_CONFIG_DIR`) is what makes
-/// per-profile identity work without an API key: two profiles pointing at
-/// two directories are two DIFFERENT `claude login` sessions, so "which
-/// account is this?" is answered by the profile rather than by whatever the
-/// server process happens to have exported.
-///
-/// Phase 2 adds the credential vars (`ANTHROPIC_API_KEY` /
-/// `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL`) keyed on a per-profile
-/// `auth_mode`, plus the env ALLOWLIST that unsets every `ANTHROPIC_*` the
-/// profile did not ask for — without that scrub, a server started with
-/// `ANTHROPIC_API_KEY` exported would silently bill that account for a
-/// profile configured to use its subscription instead.
-///
-/// Caller owns the result; free with `freeEnvOverlay`.
 pub fn buildEnvOverlay(
     allocator: std.mem.Allocator,
     config_dir: ?[]const u8,
@@ -187,11 +132,6 @@ pub fn freeEnvOverlay(allocator: std.mem.Allocator, vars: []EnvVar) void {
 }
 
 /// argv for the health probe: `<binary> --version`.
-///
-/// This is why `backend` beats `url_style` for the Settings Test button:
-/// an HTTP backend is probed with a real POST, and the CLI backend is
-/// probed with a real `--version` — an actual check that the binary exists
-/// and answers, instead of a stub that only confirms the field parses.
 pub fn buildVersionProbeArgs(allocator: std.mem.Allocator, binary: []const u8) ![][]const u8 {
     const args = try allocator.alloc([]const u8, 2);
     errdefer allocator.free(args);
@@ -202,10 +142,6 @@ pub fn buildVersionProbeArgs(allocator: std.mem.Allocator, binary: []const u8) !
 }
 
 /// Render the result of a `claude --version` probe as one human line.
-///
-/// Pure (no spawning) so every branch is unit-testable: the interesting
-/// cases are "binary not on PATH" and "binary exists but not logged in",
-/// neither of which should require the real CLI to be installed.
 pub fn describeVersionProbe(
     allocator: std.mem.Allocator,
     binary: []const u8,
@@ -250,14 +186,9 @@ pub const ParsedLine = struct {
     is_result: bool = false,
 };
 
-/// Parse one `claude -p --output-format stream-json` output line.
-///
-/// Returns `.is_result == true` only for the terminal
-/// `{"type":"result","result":"..."}` message. All other line types
-/// (assistant deltas, system init, tool uses) parse to
-/// `.is_result == false` so the caller can ignore-or-forward them. Invalid
-/// JSON shapes parse to a benign non-result rather than an error — stdout
-/// interleaves human-readable lines the parser must skip.
+/// Parse one `claude -p --output-format stream-json` output line. Returns
+/// `.is_result == true` only for the terminal
+/// `{"type":"result","result":"..."}` message.
 pub fn parseResultLine(
     parsed_value: std.json.Value,
 ) ParsedLine {
@@ -279,9 +210,7 @@ pub fn parseResultLine(
 }
 
 /// Actionable error text surfaced when a Claude Code profile reaches the
-/// workflow before Phase 2 execution wiring lands. Kept here (not inlined at
-/// the call site) so the message has one owner and tests pin its wording
-/// without importing the workflow.
+/// workflow before Phase 2 execution wiring lands.
 pub fn notWiredMessage(
     allocator: std.mem.Allocator,
     model: []const u8,

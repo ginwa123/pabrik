@@ -1,30 +1,6 @@
-//! `GET /api/workspaces/:workspace_id/items/:item_id/agent_kanban`.
-//!
-//! Returns `{agent_kanban, knowledges, tools, system_prompts}` for the
-//! agent-kanbans config bound to this kanban workspace_item. The
-//! frontend's KanbanAgentSettings consumes this payload to populate all
-//! three panels in one round-trip.
-//!
-//! - `agent_kanban` — the `agent_kanbans` row (description, timestamps)
-//! - `knowledges` — array of `AgentKanbanKnowledgeRow` ordered position DESC
-//! - `tools` — array of `string` (tool_names) ordered by tool_name ASC,
-//!             filtered to `enabled = 1` only
-//! - `system_prompts` — array of `AgentKanbanSystemPromptRow`, position DESC
-//!
-//! Returns 400 when the workspace_item's `item_type` is not `'kanban'`,
-//! 404 when the workspace_item doesn't exist, and 404 `NotConfigured`
-//! when no `agent_kanbans` row exists yet (the frontend treats this as
-//! "empty settings" — unlike agents, the config row is opt-in).
-//!
-//! Layered as:
-//!   - `useCase` — orchestrates the reads (config + 3 child collections)
-//!     and validates the workspace_item is a kanban. Returns a typed
-//!     `AgentKanbansGetOutput` with all owned slices.
-//!   - `agentKanbansGetHandler` — thin orchestrator over `useCase`.
-//!
-//! Memory: the per-request arena reaps all allocations at request end,
-//! so the handler does NOT free anything. Tests using
-//! `testing.allocator` MUST free the slices themselves (see tests).
+//! `GET /api/workspaces/:workspace_id/items/:item_id/agent_kanban`. Returns
+//! `{agent_kanban, knowledges, tools, system_prompts}` for the agent-kanbans
+//! config bound to this kanban workspace_item.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -41,10 +17,9 @@ pub const AgentKanbanSystemPromptRow = agent_kanban_db.SystemPromptRow;
 /// Wire shape for the agent-kanbans config row in the GET response.
 pub const AgentKanbanRow = agent_kanban_db.AgentKanbanRow;
 
-/// Domain-level error set for `useCase`. The handler maps each variant
-/// to an HTTP status code + message via two exhaustive switches
-/// (intentional — adding a new variant fails to compile until both are
-/// updated).
+/// Domain-level error set for `useCase`. The handler maps each variant to an
+/// HTTP status code + message via two exhaustive switches (intentional —
+/// adding a new variant fails to compile until both are updated).
 pub const AgentKanbansGetError = error{
     /// `workspace_id` or `item_id` path param was missing or empty.
     IdsRequired,
@@ -80,9 +55,8 @@ pub const AgentKanbansGetOutput = struct {
 // =====================================================================
 
 /// Resolve the agent-kanbans config row + children for a workspace_item.
-/// Validates the workspace_item exists + is of type `'kanban'`, then
-/// loads the config row and its 3 sub-collections. Transport-agnostic:
-/// works under both the request arena and `testing.allocator`.
+/// Validates the workspace_item exists + is of type `'kanban'`, then loads
+/// the config row and its 3 sub-collections.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -204,14 +178,7 @@ pub fn agentKanbansGetHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-//
-// impl + tests in one file (project convention). Behavioural coverage:
-//
-//   1. Validation: empty workspace_id OR item_id → IdsRequired
-//   2. ItemNotFound: workspace_item doesn't exist
-//   3. ItemNotKanban: workspace_item exists but item_type != 'kanban'
-//   4. NotConfigured: kanban without an agent_kanbans row
-//   5. Happy path: config + knowledges DESC + tools enabled ASC + prompts
+// impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;

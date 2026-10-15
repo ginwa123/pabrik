@@ -1,49 +1,5 @@
 //! Wire test: an anthropic-style CHAT turn sends `x-api-key` +
 //! `anthropic-version` (and `x-opencode-session`), not Bearer.
-//!
-//! Regression for the follow-up to the Test-button fix (PR #542): the
-//! probe worked ("Connected — ok") but a real chat turn against
-//! `https://opencode.ai/zen/go/v1/messages` failed with
-//! `StreamInterrupted (callDynamicAgentNew)` ... `{"type":"error",
-//! "error":{"type":"AuthError","message":"Missing API key."}}`.
-//! `Agent.callStreaming` sent only `Authorization: Bearer`, which
-//! Anthropic-style upstreams ignore.
-//!
-//! Zig port of `tests/functional/anthropic_chat_headers_test.py` (same
-//! test name, same order).
-//!
-//! Plan: boot the harness, PUT an anthropic profile pointing at a stub
-//! SSE server, POST /api/llm/session with a queue_message (the exact
-//! `sendChatMessage` wire), poll until the assistant reply lands, then
-//! assert EVERY stub request carried the Anthropic auth headers.
-//!
-//! Run:
-//!     PABRIK_BIN=<worktree>/zig-out/bin/pabrikcore-linux-x86_64 \
-//!       zig test tests/functional/anthropic_chat_headers_test.zig
-//!
-//! THE STUB UPSTREAM
-//! -----------------
-//! Python ran a `ThreadingHTTPServer` bound to `127.0.0.1:0` in a
-//! daemon thread, appending `{headers, body}` per POST under a
-//! `threading.Lock`. The port had to be discovered from
-//! `server.server_address[1]`.
-//!
-//! Zig's `Io.net` has no getsockname — `Server` exposes only the
-//! `Socket`, and the bound port is not readable back — so the port is
-//! picked the way the harness picks one for the child
-//! (`findFreePortRandom` + probe) and then bound. The same race the
-//! harness already accepts between its own probe and the child's bind.
-//!
-//! Shutdown needs one non-obvious step. `Server.accept` is a BLOCKING
-//! `accept4(2)`, and on Linux closing a listening socket does NOT wake
-//! a thread already blocked in `accept` on it; leaving it blocked would
-//! leave an unjoined `std.Thread` alive at test end, which the
-//! DebugAllocator reports as a leak. So `stopStub` sets the stop flag
-//! and then makes ONE throwaway self-connect to the listener: the
-//! pending connection is what `accept` returns, the loop re-reads the
-//! flag, and the thread exits. If that connect fails, the listener is
-//! already gone and `accept` has returned an error, so the loop has
-//! exited anyway — both branches converge.
 
 const std = @import("std");
 const testing = std.testing;
@@ -55,11 +11,6 @@ const io = testing.io;
 const Io = std.Io;
 
 /// The Anthropic SSE transcript the stub replays verbatim.
-///
-/// Byte-identical to the Python `SSE_STREAM`, including the trailing
-/// blank line after `message_stop`: the parser under test consumes
-/// event/data pairs, and a truncated final event would make the
-/// assertions pass for a reason that is not the header contract.
 const SSE_STREAM =
     "event: message_start\n" ++
     "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"type\":\"message\"," ++
@@ -85,14 +36,8 @@ const SSE_STREAM =
     "data: {\"type\":\"message_stop\"}\n" ++
     "\n";
 
-/// A recorded upstream request head. Owned by the Stub; copied by the
-/// test before the server is stopped.
-///
-/// Only the HEAD is kept. Python recorded `{"headers", "body"}` and
-/// the body key was never read — the whole contract under test is
-/// request HEADERS — but Python had to read the body off the socket
-/// anyway to keep the client from writing into a half-answered frame,
-/// and so does this.
+/// A recorded upstream request head. Owned by the Stub; copied by the test
+/// before the server is stopped. Only the HEAD is kept.
 const MAX_HEAD_BYTES = 1 << 18;
 
 /// A one-request-headers stub Anthropic SSE upstream, served from a
@@ -104,21 +49,10 @@ const Stub = struct {
     thread: std.Thread,
     stop: std.atomic.Value(bool) = .init(false),
     /// Guards `heads`; the serve thread appends while the test reads.
-    ///
-    /// `std.Io.Mutex`, not `std.Thread.Mutex`: Zig 0.16 deleted the
-    /// latter, and the replacement takes the `Io` handle for its
-    /// contended path (a futex wait). `lockUncancelable` is the one
-    /// to use here — the critical sections are a slice append and a
-    /// fixed-size response write, neither of which should ever be
-    /// abandoned halfway.
     mutex: Io.Mutex = .init,
     heads: std.ArrayList([]u8) = .empty,
 
     /// Copy every recorded head out. Owned by the caller.
-    ///
-    /// Reads under the mutex rather than after the join, because the
-    /// Python made its header assertions while `server.shutdown()` had
-    /// not run yet — and a live worker turn can still be appending.
     fn snapshot(self: *Stub) !std.ArrayList([]u8) {
         var out: std.ArrayList([]u8) = .empty;
         errdefer {
@@ -171,19 +105,9 @@ fn serveStub(stub: *Stub) void {
     }
 }
 
-/// Read one request, record its head, reply with the SSE transcript.
-///
-/// THE HEAD AND THE BODY OVERLAP IN THE SOCKET BUFFER, and getting that
-/// wrong hangs the whole suite. `fill(1)` reads a whole syscall's worth
-/// into the 64 KiB buffer, so a single call typically returns the head
-/// AND the first chunk of the body. The read loop below therefore
-/// accumulates everything it sees and records only the first
-/// `\r\n\r\n`-terminated slice as the head — the naive version, which
-/// tossed everything it had buffered once the head was complete,
-/// DISCARDED those body bytes, and then blocked in the body drain
-/// waiting for bytes the client had already sent. The symptom was a
-/// 60-second stall ending in `Connected with HTTP 0`, which reads
-/// exactly like "the profile never pointed at the stub".
+/// Read one request, record its head, reply with the SSE transcript. THE HEAD
+/// AND THE BODY OVERLAP IN THE SOCKET BUFFER, and getting that wrong hangs
+/// the whole suite.
 fn handleRequest(stub: *Stub, stream: Io.net.Stream) !void {
     var rbuf: [64 * 1024]u8 = undefined;
     var sr = stream.reader(stub.io, &rbuf);
@@ -252,10 +176,6 @@ fn headerLines(head: []const u8) std.mem.SplitIterator(u8, .sequence) {
 }
 
 /// The value of `name` in a recorded head, or null.
-///
-/// Header names are case-insensitive per RFC 9110 and the client spells
-/// them however it likes; Python lowercased its whole dict before
-/// looking anything up, which is the same thing.
 fn headerValue(head: []const u8, name: []const u8) ?[]const u8 {
     var it = headerLines(head);
     while (it.next()) |line| {
@@ -287,13 +207,8 @@ const POLL_BUDGET_MS: i64 = 60_000;
 /// `time.sleep(0.5)` between polls.
 const POLL_INTERVAL_MS: i64 = 500;
 
-/// Poll `GET /api/llm/session/<id>/messages` until an assistant message
-/// with content lands. Returns an OWNED copy of its text.
-///
-/// Python kept `assistant_text` as a reference into the response dict
-/// and asserted on it afterwards. That cannot be carried across a
-/// Zig `Json`, which borrows from its `Response` body — so the text is
-/// duped here and freed by the caller.
+/// Poll `GET /api/llm/session/<id>/messages` until an assistant message with
+/// content lands. Returns an OWNED copy of its text.
 fn waitForAssistantReply(h: *Harness, stub: *Stub, session_id: []const u8) ![]u8 {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}/messages", .{session_id});
     defer gpa.free(path);
@@ -324,11 +239,8 @@ fn waitForAssistantReply(h: *Harness, stub: *Stub, session_id: []const u8) ![]u8
             return gpa.dupe(u8, content.string);
         }
 
-        // Sleep the Python's `time.sleep(0.5)` INTERVAL, capped by what
-        // is left of the budget — never the whole remainder. Sleeping
-        // the remainder turns a 60s budget into two polls (t=0 and
-        // t=60) and reports "the worker turn never produced an
-        // assistant message" for a turn that finished in one second.
+        // Sleep the Python's `time.sleep(0.5)` INTERVAL, capped by what is
+        // left of the budget — never the whole remainder.
         const remaining = deadline - std.Io.Timestamp.now(io, .awake).toMilliseconds();
         if (remaining > 0) {
             const nap = @min(remaining, POLL_INTERVAL_MS);
@@ -336,13 +248,9 @@ fn waitForAssistantReply(h: *Harness, stub: *Stub, session_id: []const u8) ![]u8
         }
     }
 
-    // The Python's message ("the stub may not have been hit or the SSE
-    // did not parse") named two very different failures and gave the
-    // reader nothing to tell them apart. Say WHICH one it was: zero
-    // recorded requests means the profile never pointed at the stub; a
-    // non-zero count means the turn reached the upstream and the SSE
-    // transcript is what failed to parse. The harness log tail goes
-    // with it because that is where the LLM error surfaces.
+    // The Python's message ("the stub may not have been hit or the SSE did
+    // not parse") named two very different failures and gave the reader
+    // nothing to tell them apart.
     const tail = try h.tailLog(io, gpa, 40);
     defer gpa.free(tail);
     std.debug.print(
@@ -355,12 +263,6 @@ fn waitForAssistantReply(h: *Harness, stub: *Stub, session_id: []const u8) ![]u8
 }
 
 // Full worker turn against a stub Anthropic SSE upstream.
-//
-// Pre-fix every chat POST carried `Authorization: Bearer ...` and no
-// `x-api-key`, so the upstream answered `AuthError: Missing API key`
-// with 0 chunks. Post-fix every POST carries `x-api-key` +
-// `anthropic-version` (+ `x-opencode-session`) and the turn completes
-// with the stub's text.
 test "anthropic_chat_turn_sends_x_api_key_not_bearer" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -377,9 +279,8 @@ test "anthropic_chat_turn_sends_x_api_key_not_bearer" {
     defer stopStub(&stub);
 
     // `stub_llm_profile` is load-bearing, not a convenience: without a
-    // configured profile the binary has no model to run the turn with,
-    // so nothing ever reaches the stub. The profile written here is
-    // replaced by the anthropic one in step 1.
+    // configured profile the binary has no model to run the turn with, so
+    // nothing ever reaches the stub.
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
     defer h.deinit(io) catch |err| {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
@@ -388,13 +289,7 @@ test "anthropic_chat_turn_sends_x_api_key_not_bearer" {
     const stub_url = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/v1/messages", .{stub.port});
     defer gpa.free(stub_url);
 
-    // 1. Install an anthropic profile pointing at the stub (mirrors
-    // the pabrik_config PUT shape; url_style is what selects the
-    // Anthropic body + header path in Agent.callStreaming).
-    //
-    // Hand-written rather than `std.json.Stringify`d: the nested
-    // `profiles` map has no struct spelling, and `stub_url` is a
-    // loopback URL with nothing to escape.
+    // 1.
     const cfg_body = try std.fmt.allocPrint(gpa,
         \\{{"api_endpoint":"{s}","api_key":"sk-ant-test","model":"stub-claude","url_style":"anthropic","profiles":{{"ant-stub":{{"model":"stub-claude","base_url":"{s}","api_key":"sk-ant-test","url_style":"anthropic"}}}},"active_profile":"ant-stub"}}
     , .{ stub_url, stub_url });
@@ -407,13 +302,8 @@ test "anthropic_chat_turn_sends_x_api_key_not_bearer" {
         defer r.deinit();
     }
 
-    // 2. Send the first chat message — the exact sendChatMessage
-    // wire (session_id + queue_message + profile selection).
-    //
-    // The empty-string fields the Python sent (`cwd_session`,
-    // `image_urls`, `is_auto_retry_until_stop`) are kept verbatim: they
-    // are what `sendChatMessage` puts on the wire, and an omitted key
-    // would exercise a different deserialization path.
+    // 2. Send the first chat message — the exact sendChatMessage wire
+    // (session_id + queue_message + profile selection).
     const session_id = try std.fmt.allocPrint(gpa, "sess_anthropic_hdr_{d}", .{
         std.Io.Timestamp.now(io, .real).toSeconds(),
     });

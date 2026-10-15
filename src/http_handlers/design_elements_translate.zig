@@ -1,48 +1,6 @@
-//! `POST /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/translate`.
-//!
-//! Translate (move) a single element by a `(dx, dy)` delta. Replaces
-//! the older "PATCH .../geometry" endpoint, which conflated move
-//! with resize.
-//!
-//! ## Cascade behavior
-//!
-//! If the target element is a `group` or `frame`, the server cascades
-//! the delta to every transitive descendant of the element via the
-//! existing recursive CTE (the same code path used by `move-batch`).
-//! This matches Figma's group-drag UX: dragging a group moves its
-//! whole subtree, including nested groups.
-//!
-//! For leaves (rectangle/ellipse/text/image) the cascade is a no-op
-//! because leaves have no children — only the leaf itself is
-//! translated.
-//!
-//! ## Body
-//!
-//! `{ "dx": <int>, "dy": <int> }` — both required. The delta is in
-//! design-px (CSS pixels at zoom = 1). Caller is responsible for any
-//! zoom conversion (the frontend computes `dx = (clientX - startX) / zoom`).
-//!
-//! ## Response
-//!
-//! `{ "updated": [DesignElement, ...] }` — `updated` is an array with
-//! either:
-//!   - 1 element (leaf translation), OR
-//!   - 1 + N elements (group/frame translation: root + every cascadee).
-//!
-//! Always an array (never a single object) so the frontend's
-//! local-mirror loop has uniform shape — the cascade case and the
-//! leaf case iterate the same way.
-//!
-//! ## Errors
-//!
-//!   - 400 missing `:element_id` path param
-//!   - 400 invalid JSON body
-//!   - 400 missing `dx` or `dy` field
-//!   - 404 `:element_id` not found on the page
-//!   - 500 DB failure
-//!
-//! Plan: docs/superpowers/plans/2026-08-06-split-move-resize.md
-//!   (Task 1.1: split /geometry into /translate + /resize)
+//! `POST
+//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/translate`.
+//! Translate (move) a single element by a `(dx, dy)` delta.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -92,12 +50,9 @@ pub fn useCase(
         };
     defer design_model.freeElement(allocator, target);
 
-    // Cascade if the target is a group/frame. The recursive CTE walks
-    // DOWN through `parent_id` and updates the whole subtree in one
-    // SQL transaction. For leaves, the cascade CTE returns just the
-    // leaf itself (no children to visit), so the UPDATE applies the
-    // delta to a single row — identical behaviour to the leaf-only
-    // path, just with one extra SELECT.
+    // Cascade if the target is a group/frame. The recursive CTE walks DOWN
+    // through `parent_id` and updates the whole subtree in one SQL
+    // transaction.
     if (std.mem.eql(u8, target.elem_type, "group") or
         std.mem.eql(u8, target.elem_type, "frame"))
     {
@@ -133,10 +88,8 @@ pub fn useCase(
     const element = design_model.getElement(allocator, db, updated_id) catch
         return error.DbError;
 
-    // Wrap the single element in a 1-element slice so the response
-    // shape is uniform with the cascade path. (SSE event for OTHER
-    // tabs/clients is emitted by the handler — keeping the useCase
-    // pure-model and free of the singleton dependency.)
+    // Wrap the single element in a 1-element slice so the response shape is
+    // uniform with the cascade path.
     const wrapped = try allocator.alloc(design_model.DesignElement, 1);
     wrapped[0] = element;
     return .{ .updated = wrapped };
@@ -240,11 +193,8 @@ fn makeErrorJson(allocator: std.mem.Allocator, message: []const u8) ![]u8 {
     );
 }
 
-// ===== Tests merged from design_elements_translate_test.zig (2026-09-11 flatten) =====
-// Behavioural tests for the `POST .../translate` handler.
-// 
-// Plan: docs/superpowers/plans/2026-08-06-split-move-resize.md
-//   (Task 1.1: split /geometry into /translate + /resize)
+// ===== Tests merged from design_elements_translate_test.zig (2026-09-11
+// flatten) ===== Behavioural tests for the `POST .../translate` handler.
 
 const http_handlers = @import("mod.zig");
 const migration = @import("../migrations/migration.zig");
@@ -271,9 +221,7 @@ fn teardownTranslateCtx(ctx: *TestCtx) void {
 }
 
 /// Open a fresh in-memory DB and walk every migration in
-/// `src/migrations/migration.zig` so the schema matches production
-/// exactly. We then seed one design item + page and return the
-/// handles — tests insert their own elements from there.
+/// `src/migrations/migration.zig` so the schema matches production exactly.
 fn setupTranslateCtx() !TestCtx {
     var threaded = std.Io.Threaded.init(testing_alloc, .{});
     errdefer threaded.deinit();
@@ -383,10 +331,9 @@ test "useCase translates a group and CASCADES the delta to its descendants (the 
     var ctx = try setupTranslateCtx();
     defer teardownTranslateCtx(&ctx);
 
-    // Layout:
-    //   group G (x=50, y=100) — type='group'
-    //     child1 c1 (x=60, y=110, parent=G) — type='rectangle'
-    //     child2 c2 (x=200, y=200, parent=G) — type='rectangle'
+    // Layout: group G (x=50, y=100) — type='group' child1 c1 (x=60, y=110,
+    // parent=G) — type='rectangle' child2 c2 (x=200, y=200, parent=G) —
+    // type='rectangle'
     const group = try insertTranslateElement(alloc, &ctx.db, ctx.page_id, "g", "group", 50, 100, 200, 200, "");
     defer alloc.free(group);
     const child1 = try insertTranslateElement(alloc, &ctx.db, ctx.page_id, "c1", "rectangle", 60, 110, 30, 30, group);

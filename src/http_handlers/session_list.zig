@@ -1,14 +1,4 @@
 //! `GET /api/sessions` — list sessions with cursor pagination.
-//!
-//! Optional query params: `limit` (default 50), `cursor` (pagination),
-//! `cwd` (filter by working directory), `workspace_id` (scope the list
-//! to one workspace's sessions — task-linked ∪ cwd-matched, resolved
-//! via `workspace_scope`; fail-closed on empty/unknown ids),
-//! `sort_by` (`created_at` or `updated_at`), `direction` (`asc` or
-//! `desc`).
-//!
-//! Layered as `useCase` (resolve singleton + parse query + DB call +
-//! build JSON) and a thin handler that maps errors to status codes.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -19,9 +9,7 @@ const llm_history = pabrikcore.llm_history;
 pub const SessionListError = error{
     QueryFailed,
     /// `buildSessionListJson` returns `![]u8` (its body uses
-    /// `std.json.Stringify.valueAlloc` which can fail with
-    /// `OutOfMemory`). Effectively unreachable on the per-request
-    /// arena, but the type system requires the variant.
+    /// `std.json.Stringify.valueAlloc` which can fail with `OutOfMemory`).
     OutOfMemory,
 };
 
@@ -75,11 +63,8 @@ fn useCase(
     io: std.Io,
     input: SessionListInput,
 ) SessionListError!SessionListResult {
-    // Workspace scope: resolve `workspace_id` into the concrete
-    // session-id set (task-linked ∪ cwd-matched). An empty or
-    // unknown workspace resolves to an EMPTY set, which
-    // `getSessionListWithCursor` fails closed on (`1 = 0`) — the
-    // endpoint never leaks another workspace's sessions.
+    // Workspace scope: resolve `workspace_id` into the concrete session-id
+    // set (task-linked ∪ cwd-matched).
     var scoped_ids: ?[][]u8 = null;
     defer if (scoped_ids) |ids| pabrikcore.workspace_scope.freeSessionIds(allocator, ids);
 
@@ -115,14 +100,9 @@ fn useCase(
         allocator.free(result.sessions);
     }
 
-    // Sidebar git badge (mirrors the kanban tasks_list.zig badge).
-    // Resolve the current branch per session via `git -C <cwd>` where
-    // cwd prefers the bound worktree path and falls back to the
-    // session cwd. Best-effort: non-repo / detached / no git yields
-    // "" and the frontend omits the badge. resolveGitBranch returns
-    // an owned dupe (or static "" when empty); freed after assigning
-    // into the session so testing.allocator stays leak-clean
-    // (production uses the per-request arena either way).
+    // Sidebar git badge (mirrors the kanban tasks_list.zig badge). Resolve
+    // the current branch per session via `git -C <cwd>` where cwd prefers the
+    // bound worktree path and falls back to the session cwd.
     for (result.sessions) |*s| {
         const effective_cwd = if (s.git_worktree_cwd.len > 0) s.git_worktree_cwd else s.cwd;
         const branch = if (effective_cwd.len == 0) "" else resolveGitBranch(allocator, io, effective_cwd);
@@ -180,10 +160,8 @@ pub fn sessionListHandler(
     defer allocator.free(owner);
 
     var input = parseInput(req.query) catch |err| {
-        // Today `parseInput` never returns an error (parseInt with
-        // catch defaults; enumFromString with catch defaults). Kept
-        // for forward compatibility — if a future field gains a
-        // strict parse, surface it as 400.
+        // Today `parseInput` never returns an error (parseInt with catch
+        // defaults; enumFromString with catch defaults).
         return res.jsonResponse(.{
             .status_code = 400,
             .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = @errorName(err) }),
@@ -210,15 +188,9 @@ pub fn sessionListHandler(
     return res.jsonResponse(.{ .status_code = 200, .data = response });
 }
 
-// =====================================================================
-// Tests — workspace-scoped list end-to-end through the useCase
-// =====================================================================
-//
-// The useCase is private, so same-file tests exercise the FULL path:
-// workspace_id param → workspaceSessionIds resolution →
-// getSessionListWithCursor (main + count) → buildSessionListJson.
-// In-memory SQLite, mirroring workspace_scope.zig's setupDb style plus
-// the column set the list SELECT expects.
+// ===================================================================== Tests
+// — workspace-scoped list end-to-end through the useCase
+// ===================================================================== The
 
 const testing = std.testing;
 
@@ -336,14 +308,8 @@ test "useCase: workspace_id=A returns exactly task-linked + cwd-matched sessions
 
 test "useCase: each row carries the project it belongs to, and is empty when it belongs to none" {
     // Why this exists: `workspace_id` is resolved down to a set of *task ids*
-    // and the project is then thrown away, so a client holding this list cannot
-    // tell which project a session came from. That is the one fact it needs to
-    // answer "which project has work in flight" without a second request per
-    // project — the question a mobile drawer asks on every paint.
-    //
-    // Parsed rather than grepped: the claim is a *pairing* between two fields
-    // of the same row, and `indexOf` over the whole blob cannot tell
-    // `task_a1`'s project from `task_b1`'s.
+    // and the project is then thrown away, so a client holding this list
+    // cannot tell which project a session came from.
     var ctx = try setupDb();
     defer teardown(&ctx);
 
@@ -431,19 +397,8 @@ test "useCase: workspace scoping is fail-closed and param-absent stays global" {
 // Git branch resolution (sidebar git badge, mirrors tasks_list.zig)
 // =====================================================================
 
-/// Run `git -C <path> symbolic-ref --short HEAD` and fall back to
-/// `git -C <path> rev-parse --abbrev-ref HEAD` for detached HEAD.
-/// Returns an OWNED dupe of the trimmed branch name, or static ""
-/// for non-repo / detached ("HEAD" literal) / spawn failure. The
-/// caller frees the result when `len > 0` (static "" must not be
-/// freed). Never surfaces a 500 — the sidebar badge is best-effort
-/// decoration.
-///
-/// Leak-cleanliness: `std.process.run` allocates stdout/stderr via
-/// the given allocator, so every spawn path frees both buffers
-/// before returning (the kanban tasks_list.zig twin leaks stderr
-/// into the per-request arena instead — fine in production, but
-/// this handler's tests run under testing.allocator).
+/// Run `git -C <path> symbolic-ref --short HEAD` and fall back to `git -C
+/// <path> rev-parse --abbrev-ref HEAD` for detached HEAD.
 fn resolveGitBranch(
     allocator: std.mem.Allocator,
     io: std.Io,

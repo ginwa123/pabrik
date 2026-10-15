@@ -1,10 +1,5 @@
-//! Data model for the `agent_knowledge` entity table.
-//!
-//! One row per markdown knowledge file attached to an Agent. The
-//! backend re-reads file contents from disk on every chat start (no
-//! content is ever duplicated into SQLite — just the path).
-//!
-//! Schema: Migration 076 (`add_agents_and_agent_knowledge_and_agent_tools`).
+//! Data model for the `agent_knowledge` entity table. One row per markdown
+//! knowledge file attached to an Agent.
 
 const std = @import("std");
 

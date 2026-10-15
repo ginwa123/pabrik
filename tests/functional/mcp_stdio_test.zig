@@ -1,62 +1,5 @@
 // End-to-end functional test for the MCP stdio transport (plan
 // 2026-08-27-mcp-stdio, Task 5 / PR #365).
-//
-// Zig port of `tests/functional/mcp_stdio_test.py` (same test names,
-// same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """
-//   End-to-end functional test for the MCP stdio transport (plan
-//   2026-08-27-mcp-stdio, Task 5 / PR #365).
-//
-//   This module exercises the full wire path:
-//
-//     1. **Direct MCP roundtrip** (no pabrik involved). Spawn
-//        `mcp-hello-world` (built by `zig build mcp-hello-world`) via
-//        `subprocess.Popen`, send it a Content-Length-framed JSON-RPC
-//        `tools/list` request, parse the response, and assert all 3 tools
-//        are present. Then send `tools/call print_hello` with a name and
-//        assert the response contains `"Hello <name>"`.
-//
-//        This proves the self-test binary + Content-Length framing +
-//        JSON-RPC dispatch all work end-to-end. It does NOT depend on a
-//        real LLM.
-//
-//     2. **pabrik accepts stdio mcp_servers config**. Boot pabrik with a
-//        stub LLM profile, PUT a PabrikConfig body that includes a
-//        `mcp_servers` map with one stdio entry (pointing at the
-//        mcp-hello-world binary), GET the config back, and assert the
-//        stdio entry round-trips byte-for-byte.
-//
-//        This proves the backend's `parseMcpServerConfig` accepts the
-//        stdio shape and the wire round-trips through PUT → on-disk
-//        JSON → GET. No LLM call is needed because we never send a chat
-//        message.
-//
-//     3. **Multi-server**. Add TWO stdio MCP servers with different
-//        commands + args; assert both round-trip independently through
-//        the GET path. Proves the registry keys by-name, not by a global
-//        single-child assumption.
-//
-//   Run:
-//       pytest tests/functional/mcp_stdio_test.py -v
-//   """
-//
-// ── WHY THE CHILD'S STDIN/STDOUT ARE FILES, NOT PIPES ────────────────────
-// `_send_jsonrpc` was `subprocess.Popen(stdin=PIPE, stdout=PIPE,
-// stderr=PIPE)` + `communicate(input=framed, timeout=5)`. Zig 0.16 has
-// no `communicate`: `std.process.run` hardcodes `.stdin = .ignore` (see
-// `std/process.zig` — `RunOptions` has no `stdin` field at all), so the
-// only way to feed the child is a hand-rolled spawn, and a hand-rolled
-// spawn with pipes means draining two of them concurrently or
-// deadlocking on the 64 KiB pipe buffer. The suite already owns that
-// answer (see `mcp_stdio_hang_test.zig` and the "WHY FILES AND NOT
-// PIPES" note on `harness.runPabrikCommand`): write the frame into a
-// FILE, hand the file to the child as stdin, read the answer back out
-// of another file. The wire bytes are identical — a file's EOF is a
-// pipe's EOF — and the trailing `\n` the Python added is preserved,
-// which is what keeps the SDK alive long enough to flush its reply.
 
 const std = @import("std");
 const testing = std.testing;
@@ -78,13 +21,9 @@ const EXPECTED_TOOLS = [_][]const u8{ "print_hello", "print_name", "print_exit" 
 /// `_send_jsonrpc(..., timeout_s=5.0)`'s budget, in ms.
 const JSONRPC_TIMEOUT_MS: u32 = 5_000;
 
-/// Locate the `mcp-hello-world` binary, or skip.
-///
-/// The Python wrapper turned `harness.mcp_hello_world_bin`'s raise into
-/// `pytest.skip`; the Zig idiom is `error.SkipZigTest`. EVERY test in
-/// this suite needs the binary — including the three config
-/// round-trips, which put its real path in the body — so a missing
-/// build step skips the whole suite rather than failing six tests.
+/// Locate the `mcp-hello-world` binary, or skip. The Python wrapper turned
+/// `harness.mcp_hello_world_bin`'s raise into `pytest.skip`; the Zig idiom is
+/// `error.SkipZigTest`.
 fn requireMcpBin() ![]u8 {
     if (builtin.os.tag == .windows) {
         // Python: `if sys.platform == "win32": pytest.skip("mcp-hello-world
@@ -99,15 +38,6 @@ fn requireMcpBin() ![]u8 {
 
 /// The canonical MCP stdio `tools/list` frame, plus the extra newline the
 /// Python wrote.
-///
-/// WHY THE TRAILING `\n` (from the Python docstring): the
-/// @modelcontextprotocol/sdk writes its response asynchronously after
-/// parsing the request, and the parent closes stdin the moment the body
-/// is written. The Node child sees stdin EOF, dispatches a
-/// transport-close handler, and exits BEFORE flushing its stdout buffer
-/// — so the response never arrives. One extra `\n` keeps stdin open for
-/// an extra read-cycle. Without it the SDK returns nothing — a silent
-/// failure with no error message.
 fn frameRpc(body: []const u8) ![]u8 {
     var out: std.Io.Writer.Allocating = .init(gpa);
     errdefer out.deinit();
@@ -119,16 +49,8 @@ fn frameRpc(body: []const u8) ![]u8 {
     return out.toOwnedSlice();
 }
 
-/// Spawn `binary`, feed it ONE Content-Length-framed JSON-RPC body, read
-/// ONE response, terminate.
-///
-/// Returns the PARSED JSON-RPC response. Errors on timeout / parse
-/// failure, printing the captured stderr plus the partial output the way
-/// the Python's `pytest.fail` did.
-///
-/// WHY A WATCHDOG THREAD: `Child.wait` blocks with no deadline, and the
-/// subject under test is a child that may never answer. Same shape as
-/// `harness.runPabrikCommand`.
+/// Spawn `binary`, feed it ONE Content-Length-framed JSON-RPC body, read ONE
+/// response, terminate. Returns the PARSED JSON-RPC response.
 fn sendJsonRpc(binary: []const u8, body: []const u8, timeout_ms: u32) !std.json.Parsed(std.json.Value) {
     const scratch = try harness.makeScratchDir(gpa);
     defer gpa.free(scratch); // LAST
@@ -149,23 +71,6 @@ fn sendJsonRpc(binary: []const u8, body: []const u8, timeout_ms: u32) !std.json.
 
     // THE SPACER IS LOAD-BEARING, AND IT FIXES A HAZARD THAT IS INVISIBLE
     // UNTIL IT BITES.
-    //
-    // `Io.Threaded` opens EVERY file with `O_CLOEXEC` (see
-    // `dirOpenFile`: `if (@hasField(posix.O, "CLOEXEC")) flags.CLOEXEC =
-    // true`), and the Zig test runner CLOSES its own stdin. So the first
-    // file a test opens is handed fd 0.
-    //
-    // `setUpChildIo` in `Io/Threaded.zig` then does `dup2(0, 0)` for a
-    // `.file` stdin — and POSIX says `dup2` with `oldfd == newfd` is a
-    // NO-OP that does NOT clear `FD_CLOEXEC`. The child therefore
-    // `exec`s with NO stdin at all: `mcp-hello-world` sees immediate
-    // EOF, exits 0, and prints nothing. The symptom is an empty
-    // response body, which reads like "the MCP server is broken".
-    //
-    // Claiming the lowest free descriptor with a throwaway file first
-    // makes all three real handles land strictly above their own
-    // target (0/1/2), so each `dup2` is a real dup that clears
-    // CLOEXEC. Works whether or not the runner's std fds are open.
     const spacer_path = try std.fs.path.join(gpa, &.{ scratch, "rpc-fd-spacer" });
     defer gpa.free(spacer_path);
     var spacer = try std.Io.Dir.cwd().createFile(io, spacer_path, .{});
@@ -174,25 +79,6 @@ fn sendJsonRpc(binary: []const u8, body: []const u8, timeout_ms: u32) !std.json.
     // The frame is on disk BEFORE the spawn, so the child's first read
     // returns immediately rather than racing the parent's write — the
     // ordering guarantee `communicate(input=...)` gave for free.
-    //
-    // ALL THREE HANDLES STAY OPEN ACROSS THE SPAWN: `SpawnOptions
-    // .stdin/.stdout = .{ .file = h }` hands the CHILD its own dup of
-    // the descriptor, so closing early would leave the child reading
-    // and writing nothing.
-    //
-    // `writePositionalAll(.., 0)`, NOT `writeStreamingAll`: the child's
-    // stdin is a `dup2` of this handle, so the two SHARE one file
-    // description and therefore ONE file offset. A sequential
-    // `writeStreamingAll` leaves that offset at end-of-file and the
-    // child reads a stream that starts at EOF — again nothing comes
-    // back. A positional write (`pwrite`) leaves the offset at 0,
-    // which is what a fresh `open()` would have given.
-    //
-    // `.read = true` IS NOT OPTIONAL: `CreateFileOptions.read` defaults
-    // to FALSE, so a plain `createFile` is WRITE-ONLY and the child
-    // gets EBADF the moment it tries to read its own stdin (`cat: -:
-    // Bad file descriptor`). The stdout/stderr files below are the
-    // other way round and stay at the default.
     var in_file = try std.Io.Dir.cwd().createFile(io, stdin_path, .{ .read = true });
     defer in_file.close(io);
     try in_file.writePositionalAll(io, framed, 0);
@@ -249,12 +135,8 @@ fn sendJsonRpc(binary: []const u8, body: []const u8, timeout_ms: u32) !std.json.
     defer gpa.free(stderr_bytes);
 
     // The @modelcontextprotocol/sdk v1.x writes NEWLINE-DELIMITED JSON
-    // (`JSON.stringify(msg) + "\n"`), NOT Content-Length framed
-    // responses — see
-    // `src/apps/mcp_hello_world/node_modules/@modelcontextprotocol/sdk/
-    // dist/cjs/shared/stdio.js:37`. Our Zig client (`mcp_stdio.zig`
-    // readFramed) accepts both formats for this reason; the test mirrors
-    // that flexibility.
+    // (`JSON.stringify(msg) + "\n"`), NOT Content-Length framed responses —
+    // see `src/apps/mcp_hello_world/node_modules/@modelcontextprotocol/sdk/
     var payload = stdout_bytes;
     if (std.mem.startsWith(u8, stdout_bytes, "Content-Length:")) {
         const sep = std.mem.indexOf(u8, stdout_bytes, "\n\n") orelse {
@@ -277,13 +159,8 @@ fn sendJsonRpc(binary: []const u8, body: []const u8, timeout_ms: u32) !std.json.
     };
 }
 
-/// `GET /api/config/pabrik`, re-parsed into an OWNED `std.json.Parsed`
-/// the caller can MUTATE and re-serialize.
-///
-/// Python spelled this as `{**initial, "mcp_servers": {...}}`: read the
-/// whole config, override one key. `std.json.parseFromSlice` copies
-/// every string into the `Parsed`'s own arena, so the document outlives
-/// the `Response` it came from — unlike `harness.Json`, which borrows.
+/// `GET /api/config/pabrik`, re-parsed into an OWNED `std.json.Parsed` the
+/// caller can MUTATE and re-serialize.
 fn fetchConfig(h: *Harness) !std.json.Parsed(std.json.Value) {
     var r = try h.http(io, .GET, "/api/config/pabrik", .{ .expect = &.{200} });
     defer r.deinit();
@@ -301,14 +178,7 @@ fn putConfig(h: *Harness, cfg: *const std.json.Parsed(std.json.Value)) !void {
 /// One `"K": "V"` header pair.
 const HeaderPair = struct { key: []const u8, value: []const u8 };
 
-/// One `mcp_servers.<name>` entry, in the shape Python's dict literal
-/// used.
-///
-/// A `null` field is OMITTED from the wire, not serialised as null —
-/// which is what makes the `assert "url" not in hello` / `assert
-/// "command" not in ctx` assertions meaningful. (`std.json.Stringify`
-/// emits null optionals by default; these are plain optionals on a
-/// hand-built tree, and `putStr` simply skips a null.)
+/// One `mcp_servers.<name>` entry, in the shape Python's dict literal used.
 const ServerSpec = struct {
     name: []const u8,
     command: ?[]const u8 = null,
@@ -320,15 +190,6 @@ const ServerSpec = struct {
 };
 
 /// Build the `mcp_servers` object for a PUT body.
-///
-/// EVERY allocation goes into `a` — the config document's OWN arena
-/// (`cfg.arena.allocator()`), so the caller's `cfg.deinit()` is the
-/// single owner. That sidesteps the hazard
-/// `mcp_server_toggle_test.zig` documents at length: `ObjectMap.put`
-/// stores the value BY VALUE and shares the inner map's backing array,
-/// so a separately-freed inner map is a use-after-free (or, on the
-/// error path, a double free). Inside one arena there is nothing to
-/// double-free.
 fn buildServers(a: std.mem.Allocator, specs: []const ServerSpec) !std.json.Value {
     var outer: std.json.ObjectMap = .{};
     for (specs) |spec| {
@@ -373,11 +234,9 @@ fn putServers(h: *Harness, specs: []const ServerSpec) !void {
     try putConfig(h, &cfg);
 }
 
-/// The `mcp_servers` object of a GET response, or an error.
-///
-/// Python: `servers = got.get("mcp_servers") or {}` then a named lookup.
-/// A missing block and a missing server both ended at the same assert,
-/// so both land here.
+/// The `mcp_servers` object of a GET response, or an error. Python: `servers
+/// = got.get("mcp_servers") or {}` then a named lookup. A missing block and a
+/// missing server both ended at the same assert, so both land here.
 fn serversOf(doc: *const harness.Json) !std.json.ObjectMap {
     return doc.object("mcp_servers") orelse {
         std.debug.print("stdio MCP servers missing from the GET response (no `mcp_servers` block)\n", .{});
@@ -571,10 +430,9 @@ test "mcp_hello_world_call_print_name" {
         .string => |s| s,
         else => "",
     };
-    // Python indexed `resp["result"]["content"][0]["text"]` DIRECTLY, so
-    // a missing key raised rather than degrading to "" — `text` here is
-    // never empty for a well-formed reply and the prefix test catches
-    // that.
+    // Python indexed `resp["result"]["content"][0]["text"]` DIRECTLY, so a
+    // missing key raised rather than degrading to "" — `text` here is never
+    // empty for a well-formed reply and the prefix test catches that.
     if (!std.mem.startsWith(u8, text, "i am ")) {
         std.debug.print("unexpected server identity: {s}\n", .{text});
         return error.TestUnexpectedResult;
@@ -590,11 +448,6 @@ test "mcp_hello_world_call_print_name" {
 // ============================================================================
 
 // PUT a PabrikConfig with stdio mcp_servers -> GET preserves the entry.
-//
-// This proves the backend's parseMcpServerConfig accepts the stdio
-// shape (command + args) AND the wire round-trips through PUT ->
-// on-disk JSON -> GET without losing fields. No LLM call involved —
-// the binary boots with a stub profile.
 test "pabrik_config_round_trips_stdio_mcp_servers" {
     const binary = try requireMcpBin();
     defer gpa.free(binary);
@@ -641,7 +494,6 @@ test "pabrik_config_round_trips_stdio_mcp_servers" {
 }
 
 // Two stdio MCP servers with different commands round-trip independently.
-//
 // Proves the mcp_servers map is keyed by name (each entry is its own
 // child-spawn config) — not by a global single-child assumption.
 test "pabrik_config_round_trips_multiple_stdio_mcp_servers" {
@@ -694,11 +546,9 @@ test "pabrik_config_round_trips_multiple_stdio_mcp_servers" {
     }
 }
 
-// A config with both HTTP and stdio servers round-trips correctly.
-//
-// Proves the discriminator (presence of `command` => stdio, presence of
-// `url` => http) is honored through the wire — neither branch collides
-// with the other.
+// A config with both HTTP and stdio servers round-trips correctly. Proves the
+// discriminator (presence of `command` => stdio, presence of `url` => http)
+// is honored through the wire — neither branch collides with the other.
 test "pabrik_config_mixes_http_and_stdio_mcp_servers" {
     const binary = try requireMcpBin();
     defer gpa.free(binary);
@@ -725,10 +575,7 @@ test "pabrik_config_mixes_http_and_stdio_mcp_servers" {
 
     const servers = try serversOf(&doc);
 
-    // HTTP entry preserved. Python wrote
-    // `servers.get("context7") or {}` — an absent entry and a present
-    // one are distinguished by the assertions that follow, so an absent
-    // entry becomes an empty map rather than an error here.
+    // HTTP entry preserved.
     const ctx = servers.get("context7") orelse std.json.Value{ .object = .{} };
     const ctx_obj = switch (ctx) {
         .object => |o| o,

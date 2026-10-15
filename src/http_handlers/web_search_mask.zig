@@ -1,24 +1,4 @@
 //! Web-search provider masking for the config HTTP handlers.
-//!
-//! ## Why the key is masked on the way OUT
-//!
-//! `GET /api/config/pabrik` is what populates the Settings form, and the
-//! browser is not a trusted place for a credential: it lands in devtools, in
-//! a shared screenshot, in a HAR file someone pastes into a bug report. LLM
-//! profile keys still ride through raw (`pabrik_config_get.zig:60`, `:147`),
-//! and this deliberately does NOT extend that to the search key: a new
-//! feature is the right place to start the stronger default, and it is ~20
-//! lines.
-//!
-//! `PUT` treats the mask as "unchanged", so a user who edits some other
-//! field and saves does not overwrite their own credential with asterisks.
-//!
-//! ## Why an empty key is never stored
-//!
-//! `SqliteBackend.exec` binds `""` as SQL NULL, and an empty string is
-//! exactly the shape that survives a JSON round-trip while meaning "unset".
-//! `Config.zig`'s parser already normalises it to absent; this module keeps
-//! that invariant on the write path too.
 
 const std = @import("std");
 const json = std.json;
@@ -31,14 +11,6 @@ pub const SHORT_MASK = "••••";
 
 /// Mask a credential for display: first 3 + last 3 when there is enough to
 /// make that meaningful, otherwise a fixed-length marker.
-///
-/// A 4-character secret would otherwise round-trip to `sk…` and tell an
-/// attacker nothing — but a 6-character one would leak 6 of 6 characters,
-/// which is worse than leaking none. So anything under 10 characters gets
-/// the fixed mask.
-/// The mask for `key`, or null when the caller should build the
-/// `abc…xyz` form itself (the two forms have different lengths, so a single
-/// `[]const u8` cannot express both).
 pub fn maskKey(key: []const u8) ?[]const u8 {
     if (key.len < 10) return SHORT_MASK;
     return null;
@@ -72,12 +44,8 @@ pub const ValidationError = error{
 };
 
 /// Validate one provider entry, returning a human-readable reason on failure.
-///
 /// Called on the PUT path so a bad paste is reported WHILE THE USER IS
-/// LOOKING AT IT. Without this, `parseWebSearchProviderEntry` would `warn`
-/// and drop the entry at load time, and the symptom would be "Settings
-/// shows a provider, the agent says none are configured" — the exact
-/// indistinguishable-failure class this repo keeps fighting.
+/// LOOKING AT IT.
 pub fn validateProvider(name: []const u8, entry: json.Value) ValidationError!?[]const u8 {
     if (name.len == 0) return error.BadProviderName;
     if (entry != .object) return "must be an object";
@@ -139,17 +107,8 @@ pub fn validateProvider(name: []const u8, entry: json.Value) ValidationError!?[]
     return null;
 }
 
-/// Replace every provider's `key` with its mask.
-///
-/// The result is allocated from `allocator` and owned by it. Callers pass
-/// the per-request arena (or a testing allocator that will report a leak),
-/// so there is nothing to free by hand — the same convention as
-/// `makePabrikConfigResponse`.
-///
-/// Building the masked map as text and re-parsing it avoids `std.json`'s
-/// `ObjectMap` being a `StringArrayHashMap` with a different `init` than the
-/// unmanaged form people expect — and it means the output is provably valid
-/// JSON, because it was parsed.
+/// Replace every provider's `key` with its mask. The result is allocated from
+/// `allocator` and owned by it.
 pub fn maskProviders(
     allocator: std.mem.Allocator,
     body: ?json.Value,
@@ -297,15 +256,13 @@ test "web_search_mask: a name-less provider is rejected" {
 test "web_search_mask: maskProviders masks every key and leaves the rest alone" {
     // An arena, not testing.allocator: `maskProviders` parses LEAKY into the
     // allocator it is given, because production hands it the per-request
-    // arena where nothing is freed by hand. Using the testing allocator here
-    // would report every one of those as a leak.
+    // arena where nothing is freed by hand.
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
     // Single-line literals throughout: a multiline `\\` literal needs a
     // different escape depth for the nested quotes, and getting it wrong
-    // produced malformed JSON that failed as a parse error rather than as
-    // the assertion it looked like.
+    // produced malformed JSON that failed as a parse error rather than as the
     var parsed = try json.parseFromSlice(json.Value, alloc,
         "{\"tinyfish\":{\"url\":\"https://api.search.tinyfish.ai\",\"key\":\"sk-secret-1234\",\"curl\":\"https://api.search.tinyfish.ai?q=X -H \\\"X-Api-Key: {key}\\\"\",\"description\":\"Best for news\",\"enabled\":true},\"searxng\":{\"url\":\"https://search.example.net\",\"curl\":\"https://search.example.net?q=X\"}}",
         .{},

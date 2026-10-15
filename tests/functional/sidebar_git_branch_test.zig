@@ -1,26 +1,6 @@
-// Sidebar git branch badge wire contract (kanban parity).
-//
-// Zig port of `tests/functional/sidebar_git_branch_test.py` (same test
-// names, same order).
-//
-// `GET /api/llm/session` must carry the two fields the sidebar's
-// kanban-style branch badge reads:
-//
-//   * `git_branch` — current branch of the session's effective cwd
-//     (bound worktree path when set, else the session cwd), resolved
-//     per request via `git -C <cwd> symbolic-ref --short HEAD`
-//     (same helper as the kanban `tasks_list.zig` badge).
-//     "" when the cwd is not a git repo / HEAD is detached.
-//   * `git_worktree_cwd` — bound worktree path ("" = none).
-//
-// The frontend (`ChatsList.vue`) renders an icon-only PR branch badge
-// with status colors (green = open, violet = merged, red = closed) only
-// after a pull request is found. Worktree bindings and branches without
-// a pull request render no git badge.
-//
-// Run:
-//     PABRIK_BIN=<worktree>/zig-out/bin/pabrikcore-linux-x86_64 \
-//       zig build test
+// Sidebar git branch badge wire contract (kanban parity). Zig port of
+// `tests/functional/sidebar_git_branch_test.py` (same test names, same
+// order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -30,25 +10,13 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// The branch the fixture repo is parked on. Deliberately a
-/// `worktree/...` name with a slash — that is the shape the kanban card
-/// sends as `?pr=<branch>`, so the fixture is realistic rather than a
-/// bare `main`.
+/// The branch the fixture repo is parked on. Deliberately a `worktree/...`
+/// name with a slash — that is the shape the kanban card sends as
+/// `?pr=<branch>`, so the fixture is realistic rather than a bare `main`.
 const BRANCH = "worktree/sidebar-badge-test";
 
-/// A scratch directory to hold fixture repos, mirroring pytest's
-/// `tmp_path`. Removed on the way out.
-///
-/// WHY NOT `std.testing.tmpDir`
-///
-/// `std.testing.tmpDir` allocates under `<cwd>/.zig-cache/tmp/`, and
-/// this package's cwd IS the git worktree. `git -C <plain dir>
-/// symbolic-ref --short HEAD` walks UP the directory tree until it
-/// finds a `.git`, so a "non-repo" fixture placed there resolves to the
-/// WORKTREE's branch (`worktree/replace-code-python-test-functional-
-/// 1791135502013`), and the empty-branch assertion fails for a reason
-/// that has nothing to do with the code under test. pytest's `tmp_path`
-/// lands in the OS temp root, outside any repository — so this does too.
+/// A scratch directory to hold fixture repos, mirroring pytest's `tmp_path`.
+/// Removed on the way out.
 const Scratch = struct {
     dir: std.Io.Dir,
     root: []u8,
@@ -64,11 +32,9 @@ const Scratch = struct {
         const name = try std.fmt.allocPrint(gpa, "zigtest-sidebar-branch-{x}", .{@as(u64, @bitCast(stamp))});
         defer gpa.free(name);
 
-        // A plain `defer`, not `errdefer`: on the SUCCESS path this
-        // function still owns `dir_path` (the caller gets the
-        // `real_path` dupe, not this buffer), so it must be freed
-        // unconditionally. `errdefer` here leaks on exactly the path
-        // that succeeds — the one that matters.
+        // A plain `defer`, not `errdefer`: on the SUCCESS path this function
+        // still owns `dir_path` (the caller gets the `real_path` dupe, not
+        // this buffer), so it must be freed unconditionally.
         const dir_path = try std.fs.path.join(gpa, &.{ root, name });
         defer gpa.free(dir_path);
         try std.Io.Dir.cwd().createDirPath(io, dir_path);
@@ -115,14 +81,6 @@ fn writeFileAt(path: []const u8, contents: []const u8) !void {
 
 /// Run `git` with the fixture identity baked in, in `cwd`, returning its
 /// trimmed stdout (`check=True` in the Python `_git`).
-///
-/// `-c user.email/-c user.name` is what makes `git commit` work without
-/// a global config; `-C` replaces the Python fixture's `cwd=` kwarg
-/// (Python's `subprocess.run(cwd=...)` has no Zig 1:1 that also
-/// survives a spawn failure, and `-C` is what the server itself uses).
-///
-/// A spawn failure skips the test — the endpoint under test needs a
-/// real `git` to do anything meaningful.
 fn gitOut(cwd: []const u8, args: []const []const u8) ![]u8 {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
@@ -202,13 +160,6 @@ fn buildBranchRepo(s: *Scratch) ![]u8 {
 
 /// `POST /api/llm/session` with a caller-chosen id, then poll until the
 /// session is readable.
-///
-/// Mirrors Python's `_create_session`: a random `sess_test_<hex>` id, the
-/// create echoing it back, then `GET /api/llm/session/<id>` polled to
-/// 200 within 5s. Zig has no `uuid` in std, so the id is a fixed
-/// per-test literal — each test boots its OWN harness against a fresh
-/// tempdir HOME and therefore its own empty database, so the literal
-/// cannot collide the way a process-wide uuid could not have.
 fn createSession(h: *Harness, session_id: []const u8, name: []const u8, cwd: []const u8) !void {
     const body = try std.json.Stringify.valueAlloc(gpa, .{
         .session_id = session_id,
@@ -253,10 +204,9 @@ fn nowMs() i64 {
     return std.Io.Timestamp.now(io, .awake).toMilliseconds();
 }
 
-/// `GET /api/llm/session?limit=50` → the row for `session_id`.
-///
-/// Python's `_list_sessions` asserted the list shape, then both tests
-/// did `next(s for s in body["sessions"] if s["session_id"] == sid)`.
+/// `GET /api/llm/session?limit=50` → the row for `session_id`. Python's
+/// `_list_sessions` asserted the list shape, then both tests did `next(s for
+/// s in body["sessions"] if s["session_id"] == sid)`.
 fn sessionRow(h: *Harness, session_id: []const u8) !harness.Json {
     var r = try h.http(io, .GET, "/api/llm/session", .{
         .params = &.{.{ .name = "limit", .value = "50" }},

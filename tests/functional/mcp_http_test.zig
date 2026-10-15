@@ -1,67 +1,5 @@
 // End-to-end functional test for the MCP Streamable HTTP transport (plan
 // 2026-08-28-mcp-streamable-http, Task 5 / PR #TBD).
-//
-// Zig port of `tests/functional/mcp_http_test.py` (same test names,
-// same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """
-//   End-to-end functional test for the MCP Streamable HTTP transport (plan
-//   2026-08-28-mcp-streamable-http, Task 5 / PR #TBD).
-//
-//   This module exercises the full wire path against a live
-//   `mcp-http-hello-world` binary (the test fixture from Task 1):
-//
-//     1. **Direct MCP roundtrip** (no pabrik involved). Spawn
-//        `mcp-http-hello-world` (built by `zig build mcp-http-hello-world`)
-//        via `subprocess.Popen` on a free port, wait for the "listening on"
-//        stderr line, POST a `tools/list` request to `/mcp` with the
-//        spec-mandated `MCP-Protocol-Version: 2025-11-25` header, parse the
-//        SSE response, and assert all 3 tools are present. Then POST
-//        `tools/call` for `print_hello` with `name=world` and assert the
-//        response text is `"Hello world"`.
-//
-//        This proves the self-test binary + Streamable HTTP wire + JSON-RPC
-//        dispatch all work end-to-end. It does NOT depend on pabrik's HTTP
-//        client (which lands in Tasks 2-4 of the plan).
-//
-//     2. **(Future) pabrik accepts http mcp_servers config** — added when
-//        Tasks 2-4 land. Boot pabrik with a stub LLM profile, PUT a
-//        PabrikConfig body that includes `mcp_servers.http_test = { url }`,
-//        GET the config back, and assert the url round-trips.
-//
-//     3. **(Future) Multi-server** — added when Tasks 2-4 land. Two HTTP
-//        servers with different commands, both round-trip independently.
-//
-//   Run:
-//       PABRIK_BIN=$(pwd)/zig-out/bin/pabrikcore-linux-x86_64 \\
-//         python3 -m pytest tests/functional/mcp_http_test.py -v
-//   """
-//
-// ── PORTING NOTES ───────────────────────────────────────────────────────
-// * `Harness.http` CANNOT be used for the MCP requests: they go to the
-//   FIXTURE's port, not the harness's. `postMcp` is the same client shape
-//   the harness uses (raw `std.http.Client`, headers collected BEFORE the
-//   body reader, `streamRemaining` into an allocating writer), pointed at a
-//   caller-supplied port. `streamRemaining` terminates here because the
-//   Streamable-HTTP transport CLOSES the response after the JSON-RPC reply —
-//   unlike the app's own `/api/events` SSE stream, which never ends and
-//   needs the line-by-line reader in `background_process_sse_test.zig`.
-//
-// * `_spawn_mcp_http_hello_world` drained the child's stderr on a daemon
-//   thread. Zig gets the same readiness signal with a FILE: the child's
-//   stderr is a file handle, and the poll reads that file until "listening
-//   on" appears. No thread, no pipe buffer, no Windows `select()` on an fd.
-//
-// * The early-exit check Python got for free from `proc.poll()` is a
-//   `waitpid(WNOHANG)` here, and its result is remembered (`reaped`) so
-//   teardown never calls `Child.kill` on an already-reaped pid.
-//
-// * The config round-trips go through the HARNESS (`h.boot` + `h.http`) and
-//   reuse the fetch-mutate-PUT shape `mcp_stdio_test.zig` uses. The live
-//   fixture server is only the URL the config points at; nothing in these
-//   two tests makes the server talk to it.
 
 const std = @import("std");
 const testing = std.testing;
@@ -75,10 +13,9 @@ const posix = std.posix;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// Generous, exactly as the Python comment explains: the full
-/// `zig build functional-test` run saturates the box (zig compiling +
-/// parallel pnpm), and cold node + MCP-SDK import can exceed 5s with an
-/// alive-but-silent process.
+/// Generous, exactly as the Python comment explains: the full `zig build
+/// functional-test` run saturates the box (zig compiling + parallel pnpm),
+/// and cold node + MCP-SDK import can exceed 5s with an alive-but-silent
 const MCP_STARTUP_TIMEOUT_MS: i64 = 15_000;
 
 /// The spec revision `@modelcontextprotocol/sdk` v1.30.0 implements.
@@ -104,16 +41,9 @@ const McpArgv = struct {
     }
 };
 
-/// Resolve the fixture's argv, or SKIP.
-///
-/// POSIX: `zig-out/bin/mcp-http-hello-world` is a `#!/bin/sh` +
-/// `exec node …/dist/index.js` wrapper and is directly executable.
-///
-/// Windows: that wrapper is a POSIX shell script, which neither
-/// CreateProcess nor `std.process.spawn` can execute (WinError 193). Its
-/// only job is `exec node <repo>/src/apps/mcp_http_hello_world/dist/index.js`,
-/// so invoke that file with `node` directly — same interpreter, same
-/// entrypoint, no shell involved.
+/// Resolve the fixture's argv, or SKIP. POSIX:
+/// `zig-out/bin/mcp-http-hello-world` is a `#!/bin/sh` + `exec node
+/// …/dist/index.js` wrapper and is directly executable.
 fn resolveMcpHttpArgv() !McpArgv {
     const bin = harness.mcpHttpHelloWorldBin(io, gpa) catch |err| switch (err) {
         error.BinaryNotFound => {
@@ -176,11 +106,6 @@ fn whichOnPath(name: []const u8) ?[]u8 {
 }
 
 /// A spawned fixture server plus the scratch dir holding its stderr.
-///
-/// HEAP-ALLOCATED (`gpa.create`) rather than returned by value: the struct
-/// owns a `std.process.Child` whose `stdin`/`stdout`/`stderr` handles are
-/// read back in `deinit`, and a copy of that would be a second owner of the
-/// same descriptors.
 const McpServer = struct {
     child: std.process.Child,
     scratch: []u8,
@@ -189,10 +114,7 @@ const McpServer = struct {
     /// Set once `waitpid` reaped the child, so `deinit` does not `kill` a
     /// pid the kernel may already have recycled.
     reaped: bool = false,
-    /// True once `spawn` returned. `gpa.create` does NOT run field
-    /// initialisers, and `Child` has NO defaults for `id`, so the error
-    /// path cannot read `child.id` to decide whether to kill — this flag
-    /// is the only safe way to ask.
+    /// True once `spawn` returned.
     spawned: bool = false,
 
     fn deinit(self: *McpServer) void {
@@ -238,20 +160,6 @@ fn spawnMcpHttpHelloWorld(argv: *const McpArgv, port: u16, timeout_ms: i64) !*Mc
     errdefer gpa.free(s.stderr_path);
 
     // THE SPACER IS LOAD-BEARING, AND IT FAILS SILENTLY.
-    //
-    // `Io.Threaded` opens EVERY file with `O_CLOEXEC`, and the Zig test
-    // runner closes its own stdio, so the first file a test opens can be
-    // handed fd 2. `setUpChildIo` then does `dup2(2, 2)` for a `.file`
-    // stderr — and POSIX says `dup2` with `oldfd == newfd` is a NO-OP
-    // that does NOT clear `FD_CLOEXEC`. The child therefore `exec`s with
-    // NO stderr at all: node's "listening on" line goes to a closed fd
-    // and the readiness poll sees an empty file forever. The symptom is
-    // a 15s timeout that reports `stderr: <nothing>`.
-    //
-    // Claiming the lowest free descriptor with a throwaway file FIRST
-    // makes the real handle land strictly above its target, so the
-    // `dup2` is a real dup that clears CLOEXEC. Works whether or not the
-    // runner's std fds are open.
     const spacer_path = try std.fs.path.join(gpa, &.{ s.scratch, "fd-spacer" });
     defer gpa.free(spacer_path);
     var spacer = try std.Io.Dir.cwd().createFile(io, spacer_path, .{});
@@ -347,11 +255,6 @@ const McpExchange = struct {
 
 /// POST a JSON-RPC body to `<port>/mcp` and capture (status, content type,
 /// body) WITHOUT asserting anything about them.
-///
-/// The status IS an assertion in one of the five tests (the bogus-protocol
-/// 400), and the content type is an assertion in all of them, so the helper
-/// reports and the caller decides — the same split
-/// `Harness.HttpOptions.assert_status` exists for.
 fn postMcp(port: u16, payload: []const u8, headers: []const std.http.Header, out: *McpExchange) !void {
     const url = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/mcp", .{port});
     defer gpa.free(url);
@@ -402,18 +305,10 @@ fn postMcp(port: u16, payload: []const u8, headers: []const std.http.Header, out
 }
 
 /// The LAST event's `data:` payload of an SSE body.
-///
-/// Same algorithm as the Python helper and the JS `server.test.ts` it was
-/// mirrored from: blank-line-separated events, `:` comment lines dropped,
-/// `data:` lines joined with `\n`, and the LAST event that carried data
-/// wins (a Streamable-HTTP reply follows any keep-alive event).
 fn sseLastData(body: []const u8) ![]u8 {
-    // NO `defer` here: the returned slice IS `last`, so a deferred free
-    // would hand the caller 0xaa-poisoned memory the moment it returned —
-    // and the JSON parse two frames later then fails with a SyntaxError
-    // that reads like a wire bug. Ownership transfers on RETURN; only an
-    // ERROR frees, and only the previous candidate is freed when it is
-    // replaced.
+    // NO `defer` here: the returned slice IS `last`, so a deferred free would
+    // hand the caller 0xaa-poisoned memory the moment it returned — and the
+    // JSON parse two frames later then fails with a SyntaxError that reads
     var last: ?[]u8 = null;
     errdefer if (last) |l| gpa.free(l);
 
@@ -451,7 +346,6 @@ fn sseLastData(body: []const u8) ![]u8 {
 }
 
 /// The parsed JSON-RPC response, from JSON or from an SSE stream.
-///
 /// `.alloc_always`: the caller deinits the `McpExchange` before it is done
 /// with the parsed document, so nothing may borrow the response buffer.
 fn parseMcpResponse(x: *const McpExchange) !std.json.Parsed(std.json.Value) {
@@ -553,9 +447,6 @@ fn roundTrip(port: u16, payload: []const u8, headers: []const std.http.Header) !
 
 /// `GET /api/config/pabrik`, re-parsed into an OWNING `std.json.Parsed` the
 /// caller can MUTATE and re-serialize.
-///
-/// `.alloc_always` for the same reason as `fetchConfig` in
-/// `mcp_stdio_test.zig`: the document outlives the `Response` it came from.
 fn fetchConfig(h: *Harness) !std.json.Parsed(std.json.Value) {
     var r = try h.http(io, .GET, "/api/config/pabrik", .{ .expect = &.{200} });
     defer r.deinit();
@@ -571,12 +462,6 @@ fn putConfig(h: *Harness, cfg: *const std.json.Parsed(std.json.Value)) !void {
 }
 
 /// One `mcp_servers.http_test` entry: `url` plus optional `headers`.
-///
-/// Built inside the config document's OWN arena, which sidesteps the
-/// hazard `mcp_server_toggle_test.zig` documents at length: `ObjectMap.put`
-/// stores the value BY VALUE and shares the inner map's backing array, so a
-/// separately-freed inner map is a use-after-free. Inside one arena there
-/// is nothing to double-free.
 fn putHttpServer(
     h: *Harness,
     name: []const u8,
@@ -614,14 +499,8 @@ const HeaderPair = struct { key: []const u8, value: []const u8 };
 // ============================================================================
 
 // Direct MCP wire roundtrip — no pabrik involved. Spawn the
-// mcp-http-hello-world binary, POST a tools/list + a tools/call,
-// assert the responses match what the SDK server would return.
-//
-// This is the test fixture's wire contract smoke test. The same
-// algorithm runs in the Zig vitest test
-// (src/apps/mcp_http_hello_world/server.test.ts); this Python
-// version exercises the BUILT binary as installed by
-// `zig build mcp-http-hello-world` at zig-out/bin/.
+// mcp-http-hello-world binary, POST a tools/list + a tools/call, assert the
+// responses match what the SDK server would return.
 test "http_mcp_direct_roundtrip_no_pabrik" {
     var argv = try resolveMcpHttpArgv();
     defer argv.deinit();
@@ -717,21 +596,9 @@ test "http_mcp_direct_roundtrip_no_pabrik" {
     }
 }
 
-// Spec (revision 2025-11-25) says: 'A server that supports
-// clients implementing protocol versions earlier than 2025-06-18
-// (which did not define the MCP-Protocol-Version header) MAY treat
-// a request that omits the header as protocol version 2025-03-26.'
-//
-// The @modelcontextprotocol/sdk v1.30.0 implements the lenient
-// path: requests without MCP-Protocol-Version succeed (it treats
-// them as 2025-03-26). We document this here so future pabrik
-// client code knows the wire behavior.
-//
-// IMPORTANT for our pabrik HTTP client: while the server is LENIENT,
-// we should still ALWAYS send the header (it's spec-required for
-// protocol versions >= 2025-06-18). Sending the header is the
-// correct client behavior; not sending it is a legacy fallback
-// that may go away in a future spec revision.
+// Spec (revision 2025-11-25) says: 'A server that supports clients
+// implementing protocol versions earlier than 2025-06-18 (which did not
+// define the MCP-Protocol-Version header) MAY treat a request that omits the
 test "http_mcp_missing_protocol_version_is_lenient" {
     var argv = try resolveMcpHttpArgv();
     defer argv.deinit();
@@ -789,15 +656,9 @@ test "http_mcp_unsupported_protocol_version_returns_400" {
     }
 }
 
-// Boot pabrik, configure mcp_servers with a real url pointing at a
-// live mcp-http-hello-world server, fetch the config back, assert
-// the url round-trips.
-//
-// This proves the backend's parseMcpServerConfig accepts the http
-// shape (url + headers) AND the wire round-trips through PUT →
-// on-disk JSON → GET without losing fields. The server is live
-// but pabrik never connects to it during this test — we just verify
-// the config layer.
+// Boot pabrik, configure mcp_servers with a real url pointing at a live
+// mcp-http-hello-world server, fetch the config back, assert the url
+// round-trips.
 test "pabrik_config_round_trips_http_mcp_server" {
     var argv = try resolveMcpHttpArgv();
     defer argv.deinit();
@@ -879,16 +740,7 @@ test "pabrik_config_round_trips_http_mcp_server" {
     }
 }
 
-// End-to-end:hee we're not driving the agent loop (no real LLM). This test
-// only proves the config layer is wired correctly — the wire itself is
-// covered by the direct-MCP tests above + the manual
-// zig-out/bin/pabrikcore run.
-//
-// (Python's docstring named the whole chain, `pabrik agent loop ->
-// handle_mcp_tool.zig -> mcp_http.HttpRegistry.getOrConnect() -> …`; the
-// body computed `workspace_id` / `agent_id` from the fetched config and
-// then never used them. Those two dead locals are dropped here; the PUT
-// they followed is kept, because it IS the assertion.)
+// End-to-end:hee we're not driving the agent loop (no real LLM).
 test "pabrik_http_client_calls_real_mcp_server" {
     var argv = try resolveMcpHttpArgv();
     defer argv.deinit();
@@ -907,17 +759,9 @@ test "pabrik_http_client_calls_real_mcp_server" {
     defer gpa.free(url);
     try putHttpServer(&h, "http_test", url, null);
 
-    // TODO(port): the agent-loop invocation the Python docstring
-    // describes (`initial["active_workspace_id"]` + `active_agent_id`
-    // driving a chat turn through `handle_mcp_tool.zig`) was NOT
-    // implemented in the Python test either — it stopped after the PUT
-    // with a comment saying the stub-llm chat invocation "depends on the
-    // harness's stub-llm behavior; for now this test only proves the
-    // config layer is wired correctly". Porting it needs a stub LLM that
-    // emits a `mcp_http_test_print_hello` tool call; the harness's
-    // `stub_llm_profile` points at a black-hole base_url and cannot.
-    // Re-verify the config round-trip landed, so this test still asserts
-    // something.
+    // TODO(port): the agent-loop invocation the Python docstring describes
+    // (`initial["active_workspace_id"]` + `active_agent_id` driving a chat
+    // turn through `handle_mcp_tool.zig`) was NOT implemented in the Python
     var r = try h.http(io, .GET, "/api/config/pabrik", .{ .expect = &.{200} });
     defer r.deinit();
     var doc = try r.json();

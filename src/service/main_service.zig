@@ -1,18 +1,5 @@
-// src/service/main_service.zig
-//
-// Implements the `pabrik service {start,stop,status,restart}` subcommand.
-// The CLI dispatch lives in src/main.zig — when argv[1] == "service",
-// main.zig routes the rest of the args into parseServiceSubcommand and
-// then calls the corresponding function below.
-//
-// Lifecycle:
-//   service start   → daemonize + write state.json + run server
-//   service stop    → read state.json → SIGTERM(pid) → poll exit
-//   service status  → read state.json + check pid alive
-//   service restart → service stop + service start
-//
-// The server run-loop is provided by pabrik's main() — see `runPabrikServer`
-// in src/main.zig (extracted from the original monolithic main body).
+// src/service/main_service.zig Implements the `pabrik service
+// {start,stop,status,restart}` subcommand.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -24,18 +11,12 @@ const helpers = @import("helpers");
 
 pub const Subcommand = union(enum) {
     start: struct {
-        /// 0 = auto-pick a random free loopback port (browser mode,
-        /// plan 2026-09-10-web-launch-toggle). Recorded in state.json by
-        /// the caller after resolution — the daemon skeleton below only
-        /// persists the value, the real bind happens in runPabrikServer.
+        /// 0 = auto-pick a random free loopback port (browser mode, plan
+        /// 2026-09-10-web-launch-toggle).
         port: u16 = 8081,
         no_static_dir: bool = false,
         /// Absolute path to a static file directory to serve at `/`. When
-        /// null, the daemon serves only API endpoints (no webapp). When
-        /// set, GET requests that don't match an API route fall back to
-        /// serving files from this dir (with index.html as the dir index).
-        /// This is the path the pabrik-desktop webview points at when in
-        /// "attach to user-started pabrik" mode.
+        /// null, the daemon serves only API endpoints (no webapp).
         static_dir: ?[]const u8 = null,
         /// Opt-in auth enforcement (mirrors top-level `--auth`).
         auth_enabled: bool = false,
@@ -134,7 +115,6 @@ pub fn parseServiceSubcommand(
                 // The usage text has always advertised this flag, but the
                 // parser used to reject it with UnknownSubcommand — so a
                 // restarted daemon silently lost its webapp dir (and
-                // state.json's static_dir stayed null).
                 i += 1;
                 if (i >= args.len) return error.MissingValue;
                 static_dir = args[i];
@@ -164,31 +144,11 @@ pub const StartOptions = struct {
     state_path: []const u8,
     log_path: []const u8,
     /// Injectable shutdown callback. Called from the SIGTERM signal handler
-    /// to gracefully close the server and remove the state file. The
-    /// production wiring passes a function that closes `gs` (the
-    /// GinwaServer) and writes `state_path` removal. Tests can pass a
-    /// no-op or a counter.
+    /// to gracefully close the server and remove the state file.
     on_shutdown: *const fn () void,
 };
 
-/// Start the pabrik service. The actual server run-loop is provided by
-/// `on_run_server` (called AFTER daemonization + state-file write so the
-/// server PID matches the state file's pid). The caller wires this to
-/// main.zig's `runPabrikServer`.
-///
-/// POSIX daemonization is permanent — once `serviceStart` returns to the
-/// caller, the daemon is running and the caller (the foreground
-/// `pabrik service start` invocation) has exited via daemonize.
-///
-/// Windows daemonization is implemented in daemon.zig via CreateProcessW
-/// with DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP. The spawned child
-/// (the daemon) sees `PABRIK_DAEMON_CHILD=1` and continues; the parent
-/// (the foreground process) exits with code 0.
-///
-/// On both platforms the shutdown callback is wired up to the
-/// platform-appropriate shutdown signal (SIGTERM on POSIX, console-ctrl
-/// events on Windows) so `pabrik service stop` / Ctrl-C / system logoff
-/// all trigger graceful shutdown.
+/// Start the pabrik service.
 pub fn serviceStart(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -202,17 +162,11 @@ pub fn serviceStart(
         std.Io.Dir.cwd().deleteFile(io, opts.state_path) catch {};
     }
 
-    // 2. Daemonize. Cross-platform: POSIX double-fork + setsid, or
-    //    Windows CreateProcessW with DETACHED_PROCESS. The POSIX parent
-    //    / Windows parent exits inside `daemonize`; the function only
-    //    returns to the grandchild (POSIX) or spawned child (Windows).
+    // 2. Daemonize.
     try daemon.daemonize(allocator);
     try daemon.redirectStdioToLog(opts.log_path);
 
-    // 3. Write our state.json (with the just-allocated PID).
-    //    static_dir is persisted so the desktop can confirm the URL it
-    //    attached to is the same pabrik that's serving files (and so a
-    //    future `service status` can show it).
+    // 3.
     const state: state_file.State = .{
         .pid = helpers.process_status.getCurrentProcessIdInt(),
         .port = opts.port,
@@ -223,10 +177,7 @@ pub fn serviceStart(
     };
     try state_file.writeStateFile(allocator, io, opts.state_path, state);
 
-    // 4. Install the shutdown-signal handler. Cross-platform:
-    //    POSIX = SIGTERM via std.posix.sigaction
-    //    Windows = console-ctrl events via SetConsoleCtrlHandler
-    //    Both invoke opts.on_shutdown to close the server gracefully.
+    // 4. Install the shutdown-signal handler.
     signal_handlers.installSigtermHandler(opts.on_shutdown);
 
     // 5. Hand off to the caller-supplied server run-loop. This blocks
@@ -261,16 +212,6 @@ pub fn serviceStop(
     }
 
     // Cross-platform terminate-with-grace.
-    //
-    // POSIX path: send SIGTERM (15) — daemon gets a chance to run its
-    // signal handler (signal_handlers.installSigtermHandler) which calls
-    // opts.on_shutdown to close the GinwaServer and flush state. After
-    // up to opts.graceful_timeout_ms, escalation to SIGKILL (9) via
-    // helpers.process_status.killProcess (which wraps SIGKILL on POSIX
-    // and TerminateProcess on Windows).
-    //
-    // Windows path: no SIGTERM concept. Just TerminateProcess directly
-    // and fall through to state-file cleanup (same end state).
     if (builtin.os.tag == .windows) {
         _ = helpers.process_status.killProcess(state.pid);
     } else {
@@ -368,8 +309,6 @@ test "parseServiceSubcommand accepts restart --static-dir (webapp survives a res
     // Regression: the usage text advertised --static-dir for `restart` but
     // the parser rejected it with UnknownSubcommand, and main.zig never
     // forwarded the value either — so a restarted daemon silently lost its
-    // webapp dir (and state.json's static_dir stayed null). The desktop's
-    // webview then showed `404 Not Found` after a restart.
     const cmd = try parseServiceSubcommand(&.{
         "restart", "--port", "9999", "--static-dir", "/tmp/webapp",
     });

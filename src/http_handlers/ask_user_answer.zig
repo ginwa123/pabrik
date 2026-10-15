@@ -1,26 +1,6 @@
-//! `POST /api/llm/session/:session_id/answer` — resolve a pending
-//! `ask_user` question and resume the conversation.
-//!
-//! ## The order is load-bearing
-//!
-//! 1. validate the request (see `AnswerError` for the status mapping);
-//! 2. mark the `session_pending_question` row resolved;
-//! 3. **rewrite the tool-result `llm_history` row in place** with the
-//!    resolved JSON payload, and push its `llm_full` frame so an
-//!    open `ChatView` flips the card without a reload;
-//! 4. start a new run so the model continues with the answer in context.
-//!
-//! Steps 3 and 4 must not swap. Tool-result rows are written with
-//! `is_feed_to_llm = 1`, so a run started first would hand the model
-//! `"status":"pending"` — and it might guess. If step 3 fails we return
-//! an error and leave the row `pending`, which keeps a Retry safe; the
-//! reverse order would fail *silently* into a wrong answer.
-//!
-//! ## Idempotency
-//!
-//! A double-click, a browser retry or a late Retry after a 200-that-was-lost
-//! must never 4xx — resolving an already-resolved question returns 200 with
-//! the stored status. Only genuinely bad input is a 400/403/404.
+//! `POST /api/llm/session/:session_id/answer` — resolve a pending `ask_user`
+//! question and resume the conversation. resolved JSON payload, and push its
+//! `llm_full` frame so an open `ChatView` flips the card without a reload;
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -58,11 +38,6 @@ pub const AnswerBody = struct {
 };
 
 /// The outcome of resolving one question.
-///
-/// `status` / `answer` are OWNED by the outcome — `resolveQuestion` frees the
-/// `PendingQuestion` row it read them from, so returning borrowed slices would
-/// hand the caller freed memory (which JSON-serialises as 0xAA undefined
-/// bytes in debug builds). Call `deinit` once done.
 pub const AnswerOutcome = struct {
     /// The status stored on the question row: answered | skipped | abandoned.
     status: []u8,
@@ -80,15 +55,6 @@ pub const AnswerOutcome = struct {
 
 /// Validate the wire shape of `answer` against the question's own
 /// `multi_select` flag.
-///
-/// The option-membership rule (`allow_free_text = false` ⇒ the answer must be
-/// one of `options`) is deliberately NOT enforced here: the options live in
-/// the tool-call arguments, and recovering them would mean re-reading the
-/// tool-call arguments — fragile machinery guarding a path the UI
-/// cannot produce (radios and checkboxes can only emit valid values). What IS
-/// enforced is the integrity-critical part: a non-empty value, and an array
-/// for a multi-select question, because a scalar there would reach the model
-/// in a shape it cannot read.
 pub fn validateAnswerShape(answer: []const u8, multi_select: bool, skip: bool) AnswerError!void {
     if (skip) return;
 
@@ -288,22 +254,6 @@ pub fn askUserAnswerHandler(
     };
 
     // Step 4 — resume. Only after the row rewrite has definitely landed.
-    // Best-effort by design: if the emit fails the ANSWER is still recorded,
-    // so the user can recover by sending any message (which the
-    // `session_create` guard turns into a normal run).
-    //
-    // Resume ONLY when this was the last open question. The model asks two
-    // questions in one turn often enough that resuming after the first is not
-    // an edge case — and when it happened the run would hit the
-    // `hasPendingQuestion` guard at the top of `workflow.zig`'s loop and abort
-    // before the LLM was ever called, so the answer sat in the transcript
-    // unread while the HTTP response claimed `resumed: true`. Worse, that
-    // aborted run holds the worker row for the length of its own startup and
-    // `resumeSession` refuses to start while one exists, so the answer to the
-    // SECOND question could be committed with `resumed: false` and then never
-    // delivered by anything at all. Deferring the resume removes both: the last
-    // answer resumes once, and the model reads every answer in the turn
-    // together rather than one turn at a time.
     var resumed = false;
     var questions_remaining: usize = 0;
     if (outcome.resumed) {
@@ -327,10 +277,7 @@ pub fn askUserAnswerHandler(
         .status = outcome.status,
         .answer = outcome.answer,
         .resumed = resumed,
-        // How many questions the human still owes an answer to. Lets a card say
-        // "1 of 2 answered — waiting on the rest" instead of showing a turn that
-        // looks dead. 0 whenever no resume was attempted (an already-resolved
-        // question, or an error path).
+        // How many questions the human still owes an answer to.
         .questions_remaining = questions_remaining,
     }, .{});
     // `payload` copied the strings, so the outcome is done.
@@ -342,15 +289,9 @@ pub fn askUserAnswerHandler(
     });
 }
 
-/// How many questions for this session are still `pending`.
-///
-/// Zero is the signal to resume: this answer was the last one the human owed,
-/// so the model can be given the whole turn at once. A nonzero count means the
-/// resume must be deferred — see the step-4 comment in the handler.
-///
-/// A failed read reports 0, i.e. it resumes. That is the safe direction: the
-/// alternative is a run that never starts, which is the bug this exists to
-/// remove, so a transient DB error must not trade it for a stuck session.
+/// How many questions for this session are still `pending`. Zero is the
+/// signal to resume: this answer was the last one the human owed, so the
+/// model can be given the whole turn at once.
 fn remainingQuestions(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -534,6 +475,5 @@ test "ask_user_answer: parameters is mandatory in the envelope" {
     // The frontend's `unwrapToolOutput` throws unless tool AND parameters AND
     // success are all present — a rewrite without parameters made the card
     // fall back to an empty pending render, so every resolved question looked
-    // unanswered. An empty object still satisfies the parser.
     try testing.expect(std.mem.indexOf(u8, envelope, "\"parameters\":{}") != null);
 }

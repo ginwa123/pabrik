@@ -1,12 +1,6 @@
 //! Static-file HTTP fallback (`--static-dir`): resolve a request path to a
-//! file under the root dir and buffer a complete HTTP response
-//! (status + headers + body) for the listen loop to write to the socket.
-//!
-//! Hand-rolled over `static_files.resolve` + `static_files.parseRange`
-//! instead of `static_files.serve()`, whose by-value `Writer` parameter
-//! cannot compile against its own non-const body. If upstream fixes that
-//! signature (`Writer` -> `*Writer`), this file collapses to one call.
-//! TODO(upstream): replace with `static_files.serve()` once fixed.
+//! file under the root dir and buffer a complete HTTP response (status +
+//! headers + body) for the listen loop to write to the socket.
 
 const std = @import("std");
 const gserverz = @import("kabelweb").server;
@@ -29,16 +23,8 @@ pub fn tlsDataDir(allocator: std.mem.Allocator, env: *const std.process.Environ.
 }
 
 /// Every static response MUST say this, because every static connection is
-/// closed right after it (`http_server.zig`, `.hijack_static` arm:
-/// "static responses are unframed: never reuse"). HTTP/1.1 is persistent by
-/// default, so a response that stays silent about the close is a promise the
-/// server does not keep: the client is entitled to reuse the socket
-/// (RFC 9112 §9.3) and Chromium does — it picks the doomed socket for the
-/// next asset, the server has already closed it, and the request comes back
-/// as `net::ERR_EMPTY_RESPONSE` with zero bytes. One such asset is enough to
-/// stop a production bundle from mounting, which is what kept
-/// tests/functional_ui/code_editor_viewer_ui_test.py red for a week on
-/// whichever test happened to be loading files when it struck.
+/// closed right after it (`http_server.zig`, `.hijack_static` arm: "static
+/// responses are unframed: never reuse").
 const CLOSE_HEADER = "Connection: close\r\n";
 
 /// `GinwaServer` static-dir callback: buffers the response in a per-request
@@ -245,13 +231,9 @@ test "static_serve: existing file round-trips its bytes with a 200" {
     try std.testing.expect(std.mem.startsWith(u8, out, "HTTP/1.1 200 OK\r\n"));
     try std.testing.expect(std.mem.indexOf(u8, out, "Content-Length: 11\r\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "Content-Type: text/plain; charset=utf-8\r\n") != null);
-    // The connection is closed right after this response, so the response
-    // has to SAY so — HTTP/1.1 is persistent by default and a client that is
-    // not told otherwise may reuse the socket for the next asset, which
-    // surfaces as `net::ERR_EMPTY_RESPONSE` (zero bytes) when the server has
-    // already closed it. Regression guard: this header was missing on the
-    // 200/206 paths only, and that omission is what kept
-    // tests/functional_ui/code_editor_viewer_ui_test.py red for a week.
+    // The connection is closed right after this response, so the response has
+    // to SAY so — HTTP/1.1 is persistent by default and a client that is not
+    // told otherwise may reuse the socket for the next asset, which surfaces
     try std.testing.expect(std.mem.indexOf(u8, out, "Connection: close\r\n") != null);
     try std.testing.expect(std.mem.endsWith(u8, out, "\r\n\r\nhello world"));
 }
@@ -273,13 +255,9 @@ test "static_serve: valid range yields a 206 with the requested slice" {
     const out = aw.writer.buffered();
     try std.testing.expect(std.mem.startsWith(u8, out, "HTTP/1.1 206 Partial Content\r\n"));
     try std.testing.expect(std.mem.indexOf(u8, out, "Content-Range: bytes 0-4/11\r\n") != null);
-    // The connection is closed right after this response, so the response
-    // has to SAY so — HTTP/1.1 is persistent by default and a client that is
-    // not told otherwise may reuse the socket for the next asset, which
-    // surfaces as `net::ERR_EMPTY_RESPONSE` (zero bytes) when the server has
-    // already closed it. Regression guard: this header was missing on the
-    // 200/206 paths only, and that omission is what kept
-    // tests/functional_ui/code_editor_viewer_ui_test.py red for a week.
+    // The connection is closed right after this response, so the response has
+    // to SAY so — HTTP/1.1 is persistent by default and a client that is not
+    // told otherwise may reuse the socket for the next asset, which surfaces
     try std.testing.expect(std.mem.indexOf(u8, out, "Connection: close\r\n") != null);
     try std.testing.expect(std.mem.endsWith(u8, out, "\r\n\r\nhello"));
 }
@@ -288,10 +266,8 @@ test "static_serve: tlsDataDir honors XDG_DATA_HOME" {
     const allocator = std.testing.allocator;
     var env = std.process.Environ.Map.init(allocator);
     defer env.deinit();
-    // Windows never consults XDG_DATA_HOME (see tlsDataDir): the scope
-    // is %LOCALAPPDATA%, joined with native separators. Assert that
-    // precedence explicitly so a POSIX-only expectation can never go
-    // red on Windows again.
+    // Windows never consults XDG_DATA_HOME (see tlsDataDir): the scope is
+    // %LOCALAPPDATA%, joined with native separators.
     if (comptime @import("builtin").os.tag == .windows) {
         try env.put("XDG_DATA_HOME", "C:\\xdg-test");
         try env.put("LOCALAPPDATA", "C:\\Users\\testuser\\AppData\\Local");

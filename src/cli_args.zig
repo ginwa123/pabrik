@@ -1,23 +1,5 @@
-// src/cli_args.zig
-//
-// Parses the TOP-LEVEL `pabrik` command-line flags: --port, --static-dir,
-// --http2, --tls, --tls-selfsigned, --auth and -h/--help.
-//
-// Lives here, not inline in `main`, for the reason the comment in main.zig
-// spells out: `LlmConfig.init` starts the routine scheduler on a background
-// thread, so ANY error returned after that point exits the process while
-// the thread is mid-query — which segfaults and buries the real error
-// message in a crash dump. Parsing therefore has to be complete, and unit
-// testable, BEFORE any subsystem is initialised. As a pure function over
-// an argument list it can be tested without booting the server.
-//
-// `parse` does NOT log. It returns a `Failure` describing what it rejected
-// and lets the caller print it (`reportFailure`), which keeps the parser
-// pure and keeps the negative-path unit tests from tripping Zig's test
-// runner, which fails any test that emits an `std.log.err` line.
-//
-// The `pabrik service …` subcommand is parsed by
-// `service/main_service.zig:parseServiceSubcommand`, not here.
+// src/cli_args.zig Parses the TOP-LEVEL `pabrik` command-line flags: --port,
+// --static-dir, --http2, --tls, --tls-selfsigned, --auth and -h/--help.
 
 const std = @import("std");
 const logger_mod = @import("modules/logger/Logger.zig");
@@ -32,18 +14,12 @@ pub const CliArgs = struct {
     /// Ignored when `no_static_dir` is set (see that field).
     static_dir: ?[]const u8 = null,
     /// `--no-static-dir`: serve the API only, no static files at `/`.
-    /// Exists so an API-only run can opt out of the `--static-dir` default
-    /// that `zig build run` passes (see build.zig) without having to spell
-    /// out a different directory. Wins over `--static-dir` regardless of
-    /// order on the argv.
     no_static_dir: bool = false,
     /// `--http2 h2c`. OFF by default; there is deliberately no TLS here, so
     /// browsers keep using HTTP/1.1 unless TLS is also enabled.
     enable_h2c: bool = false,
     /// `--tls <cert.pem> <key.pem>` (allocator-owned, process lifetime), or
     /// the pair `tls_selfsigned` generates / reuses in the app data dir.
-    /// Browsers only speak HTTP/2 over TLS+ALPN, so this is what unlocks
-    /// browser multiplexing — see docs/http2-tls.md.
     tls_cert_path: ?[]const u8 = null,
     tls_key_path: ?[]const u8 = null,
     /// `--tls-selfsigned` generates (first run) or reuses a self-signed
@@ -81,19 +57,7 @@ pub const Failure = struct {
 pub const ParseError = error{OutOfMemory};
 
 /// Parse `args` (argv WITHOUT argv[0]) into `out`, which is reset to its
-/// defaults first. Returns `null` on success, or a `Failure` describing the
-/// first bad flag (in argv order).
-///
-/// Ownership: `static_dir`, `tls_cert_path` and `tls_key_path` end up
-/// `allocator`-owned and live for the whole process. They are consumed by
-/// long-lived state — `ctxParent.static_dir_path` and the TLS context — and
-/// `main` never frees them, so callers must not free them either. That is why
-/// they are duped here rather than aliasing `args`: on Windows the
-/// `Args.Iterator` buffer those slices point into is freed on `deinit`.
-///
-/// Unrecognised arguments are ignored, not rejected: subcommand dispatch
-/// (`service`, `create-admin`) has already consumed its own words by the time
-/// this runs, and rejecting here would break any future pass-through flag.
+/// defaults first.
 pub fn parse(
     allocator: std.mem.Allocator,
     args: []const []const u8,
@@ -115,10 +79,8 @@ pub fn parse(
         } else if (std.mem.eql(u8, arg, "--no-static-dir")) {
             out.no_static_dir = true;
         } else if (std.mem.eql(u8, arg, "--http2")) {
-            // `--http2` on its own means h2c; an explicit value keeps room for
-            // future modes (e.g. `--http2=off`). It consumes the next word
-            // POSITIONALLY, so `pabrik --http2 --auth` reads `--auth` as the
-            // mode and fails — pre-existing behaviour, pinned by a test.
+            // `--http2` on its own means h2c; an explicit value keeps room
+            // for future modes (e.g. `--http2=off`).
             i += 1;
             if (i < args.len) {
                 if (std.mem.eql(u8, args[i], "h2c")) {
@@ -158,10 +120,7 @@ pub fn parse(
     return null;
 }
 
-/// Print the user-facing message for a `Failure`. Kept out of `parse` so the
-/// parser stays pure — and so the unit tests, which deliberately feed it
-/// malformed input, do not emit `std.log.err` lines (Zig's test runner fails
-/// any test that logs an error).
+/// Print the user-facing message for a `Failure`.
 pub fn reportFailure(f: Failure) void {
     switch (f.kind) {
         .missing_port_value => std.log.err("Error: --port requires a value", .{}),
@@ -282,8 +241,6 @@ test "parse: --no-static-dir is independent of --static-dir, in either order" {
     // `zig build run` appends `--static-dir src/apps/desktop/dist`, so the
     // opt-out has to be readable from the same argv — and has to win
     // regardless of where it lands. main.zig resolves the precedence from
-    // these two fields; this pins that the parser reports BOTH rather than
-    // collapsing the flag into a cleared/overwritten static_dir.
     var flag_first: CliArgs = .{};
     defer freeParsed(testing.allocator, flag_first);
     try ok(&.{ "--no-static-dir", "--static-dir", "/tmp/webapp" }, &flag_first);

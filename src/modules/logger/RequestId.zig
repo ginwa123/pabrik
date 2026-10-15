@@ -2,10 +2,8 @@ const std = @import("std");
 const builtin = @import("builtin");
 const timing = @import("Timing.zig");
 
-// `getentropy` is not exposed by std.c on macOS — declare it locally
-// so the macOS CI test suite can use the kernel CSPRNG. The Zig
-// compiler prunes unused extern declarations at link time, so this
-// is safe on Linux/Windows (where the function is never referenced).
+// `getentropy` is not exposed by std.c on macOS — declare it locally so the
+// macOS CI test suite can use the kernel CSPRNG.
 extern "c" fn getentropy(buffer: [*]u8, size: usize) c_int;
 
 /// Request ID format: REQ-YYYYMMDD-HHMMSS-XXXX (24 characters)
@@ -72,13 +70,8 @@ pub fn generateRequestId() RequestId {
 pub const SessionId = struct {
     value: [12]u8,
 
-    /// Initialize a new SessionId with random hex.
-    /// Uses libc `getrandom` on Linux, `getentropy` on macOS for
-    /// guaranteed entropy. On Windows, falls back to a timestamp +
-    /// pointer-derived value. The previous timestamp + pointer-PRNG
-    /// seeding on POSIX could collide when two `init()` calls happened
-    /// in the same nanosecond with the same stack address (common on
-    /// macOS under fast tests; failed CI run 28568881975).
+    /// Initialize a new SessionId with random hex. Uses libc `getrandom` on
+    /// Linux, `getentropy` on macOS for guaranteed entropy.
     pub fn init() SessionId {
         var self: SessionId = undefined;
         var random_bytes: [4]u8 = undefined;
@@ -93,11 +86,9 @@ pub const SessionId = struct {
             const truncated_val: u32 = @truncate(seed);
             std.mem.writeInt(u32, random_bytes[0..4], truncated_val, .little);
         } else {
-            // POSIX: pull 4 fresh bytes from the kernel CSPRNG.
-            // - Linux: libc `getrandom` (loops on partial reads).
-            // - macOS: libc `getentropy` (always fills in one call,
-            //   max 256 bytes; we ask for 4).
-            // Both return 0 on success; -1 on failure.
+            // POSIX: pull 4 fresh bytes from the kernel CSPRNG. - Linux: libc
+            // `getrandom` (loops on partial reads). - macOS: libc
+            // `getentropy` (always fills in one call, max 256 bytes; we ask
             var ok = false;
             if (builtin.os.tag == .linux) {
                 var filled: usize = 0;
@@ -216,17 +207,9 @@ test "SessionIds are unique" {
 }
 
 test "SessionIds are unique across 1000 back-to-back calls" {
-    // Regression for the macOS CI failure where two back-to-back calls
-    // in the same nanosecond produced identical SessionIds (CI run
-    // 28568881975). Now uses libc `getrandom` for guaranteed entropy.
-    //
-    // IMPORTANT: store OWNED COPIES of the 12-byte value, not slices.
-    // `id.toString()` returns `&id.value` — a pointer into the stack
-    // slot of the local `id` variable. Each loop iteration reuses the
-    // same stack address, so all `seen[i]` slice aliases point at the
-    // same memory and appear "identical" even when the IDs differ.
-    // Using `[N][12]u8` (fixed arrays) makes each entry an independent
-    // copy of the bytes at the moment of insertion.
+    // Regression for the macOS CI failure where two back-to-back calls in the
+    // same nanosecond produced identical SessionIds (CI run 28568881975). Now
+    // uses libc `getrandom` for guaranteed entropy.
     const N: usize = 1000;
     var seen: [N][12]u8 = undefined;
     var unique_count: usize = 0;

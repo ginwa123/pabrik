@@ -1,31 +1,5 @@
-//! `POST /api/git/pr/close` — close a pull/merge request through the forge CLI
-//! (`gh pr close` / `glab mr close`).
-//!
-//! Body:
-//! ```json
-//! { "path": "<repo>", "pr": "<n|url|branch>", "provider": "github" }
-//! ```
-//!
-//! ## Why the answer is a re-read of the status, not an exit code
-//!
-//! The same reason `git_pr_merge.zig` re-reads: a forge CLI exiting 0 is not
-//! proof that anything happened. `gh pr close` succeeds on a PR that is
-//! already closed, and several `glab` subcommands exit 0 while printing a
-//! warning about work they skipped. So this handler runs the close, then asks
-//! the forge what it now thinks — through `git_pr_status.useCaseWithPrograms`,
-//! the same path the 30 s poll uses — and reports that. A close we cannot
-//! confirm is `closed: false` with a sentence, never a success.
-//!
-//! ## What this endpoint deliberately does not do
-//!
-//! - **No closing comment.** `gh pr close -c` has no `glab` counterpart, so a
-//!   shared field would silently do nothing for every GitLab user.
-//! - **No branch deletion.** `-d` / `--remove-source-branch` deletes the local
-//!   and remote branch; on a pabrik board that branch is a live session
-//!   worktree, i.e. a directory an agent may be standing in.
-//! - **No bulk close.** One row, one write, one answer.
-//! - **No card move.** Closing a PR does not move the kanban card: the board's
-//!   contract is that a human moves a card into `merged`.
+//! `POST /api/git/pr/close` — close a pull/merge request through the forge
+//! CLI (`gh pr close` / `glab mr close`).
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -158,11 +132,9 @@ pub fn closeUseCaseWithPrograms(
         },
     }
 
-    // Exit code 0. That is not the answer — ask the forge.
-    //
-    // A failure to re-read is CloseFailed rather than a success: we cannot
-    // prove the close happened, and "I do not know" must never render as
-    // "Closed".
+    // Exit code 0. That is not the answer — ask the forge. A failure to
+    // re-read is CloseFailed rather than a success: we cannot prove the close
+    // happened, and "I do not know" must never render as "Closed".
     var status_detail: ?[]u8 = null;
     const status = pr_status.useCaseWithPrograms(
         allocator,
@@ -198,14 +170,9 @@ pub fn closeUseCaseWithPrograms(
     return .{ .closed = closed, .provider = provider, .status = status };
 }
 
-/// Tell every client that this branch's change request moved, so the sidebar's
-/// RECENT icon and the kanban card badge re-read the forge instead of keeping
-/// the colour they cached before the close.
-///
-/// Never fails the caller — a confirmed close must not be reported as a failure
-/// because the UI could not be told about it. The board's own local invalidate
-/// is the path that cannot be lost; this one is what carries the news to a
-/// second tab (see agentic_loop/git_pr_state_events.zig).
+/// Tell every client that this branch's change request moved, so the
+/// sidebar's RECENT icon and the kanban card badge re-read the forge instead
+/// of keeping the colour they cached before the close.
 fn emitPrStateEvent(ctx: gserverz.HttpContext, cwd: []const u8, branch: []const u8, action: []const u8) void {
     const di = pabrik_core.getSingleton() catch return;
     pabrik_core.git_pr_state_events.emitGitPrStateEvent(ctx.allocator, di.event_bus, .{
@@ -215,12 +182,9 @@ fn emitPrStateEvent(ctx: gserverz.HttpContext, cwd: []const u8, branch: []const 
     });
 }
 
-/// POST /api/git/pr/close
-///
-/// Body: `{ "path": "<repo>", "pr": "<n|url|branch>", "provider": "github" }`
-///
-/// A thin wrapper: parse + validate, delegate to the use case, map the domain
-/// result onto HTTP. All forge-CLI knowledge lives in the use case.
+/// POST /api/git/pr/close Body: `{ "path": "<repo>", "pr": "<n|url|branch>",
+/// "provider": "github" }` A thin wrapper: parse + validate, delegate to the
+/// use case, map the domain result onto HTTP.
 pub fn gitPrCloseHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
 
@@ -266,12 +230,8 @@ pub fn gitPrCloseHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, r
         },
     };
 
-    // A close MOVED this branch's change request, and every badge reads a shared
-    // 60s cache that still holds the pre-close answer. Only for a CONFIRMED
-    // close: an exit-0 that left the change request open is not a move.
-    //
-    // Free of extra forge work: the status re-read above already carries
-    // `head_ref`, which is exactly the branch half of the frontend's cache key.
+    // A close MOVED this branch's change request, and every badge reads a
+    // shared 60s cache that still holds the pre-close answer.
     if (outcome.closed and outcome.status.head_ref.len > 0) {
         emitPrStateEvent(ctx, parsed.path, outcome.status.head_ref, "closed");
     }
@@ -322,12 +282,6 @@ const Fixture = struct {
 
 /// A script that answers like `gh`: `close` records the whole argv and exits
 /// with `close_code`; anything else (the `view` re-read) prints `view_json`.
-///
-/// The recorded line is `basename $0` followed by `$@` for a reason: `$@` holds
-/// the ARGUMENTS only, so a dump built from it alone can never contain the
-/// program — and an assertion naming `argv[0]` would then fail for a fixture
-/// that is behaving perfectly. The dump lives inside the `close` branch so the
-/// follow-up `view` cannot clobber it.
 fn ghScript(fx: *Fixture, argv_file: []const u8, close_code: u8, close_stderr: []const u8, view_json: []const u8) ![]u8 {
     // The script text is owned only until it has been written to the file.
     const script = try std.fmt.allocPrint(fx.allocator,

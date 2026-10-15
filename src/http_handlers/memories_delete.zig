@@ -1,23 +1,5 @@
-//! `DELETE /api/memories/:name` — delete a global memory file.
-//!
-//! No body. On success: 200 with `{"success":true,"name":"..."}`.
-//! Idempotent: deleting a memory that does not exist still returns 200.
-//!
-//! Layered as:
-//!   - `useCase` — resolves the singleton + env, validates the name,
-//!     calls `deleteMemoryFile`, and returns a heap-owned `name` slice
-//!     (the path param is borrowed; duping it makes the handler
-//!     independently own the response data).
-//!   - `memoryDeleteHandler` — thin orchestrator: parses `:name`,
-//!     calls `useCase`, maps errors to status codes, builds the JSON
-//!     response.
-//!
-//! Preserves the static-contract assertions in `memories_crud_test.zig`:
-//!   - `getSingleton` + `500` substring checks
-//!   - `params.get("name")` + `400` substring checks
-//!   - `isValidMemoryName` validation
-//!   - `deleteMemoryFile` + `200` (idempotent success) substring checks
-//!   - `std.json.Stringify.valueAlloc` substring check
+//! `DELETE /api/memories/:name` — delete a global memory file. No body. On
+//! success: 200 with `{"success":true,"name":"..."}`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -25,12 +7,9 @@ const gserverz = pabrikcore.gserverz;
 const memories_mod = pabrikcore.memories;
 const http_response = @import("http_response.zig");
 
-/// Response shape for `DELETE /api/memories/:name`.
-///
-/// Idempotent: `deleteMemoryFile` returns true when the file is
-/// deleted OR was already missing (see `src/modules/agent/tools/memories.zig`).
-/// The handler therefore always returns 200 with `success=true` on a
-/// valid name.
+/// Response shape for `DELETE /api/memories/:name`. Idempotent:
+/// `deleteMemoryFile` returns true when the file is deleted OR was already
+/// missing (see `src/modules/agent/tools/memories.zig`).
 pub const DeleteMemoryResponse = struct {
     success: bool = true,
     name: []const u8,
@@ -61,10 +40,9 @@ pub const MemoryDeleteInput = struct {
     name: []const u8,
 };
 
-/// Output of the delete use-case. `name` is HEAP-OWNED by the
-/// use-case (the path param is borrowed; duping it lets the
-/// handler hand the response to the JSON serializer without keeping
-/// the request alive).
+/// Output of the delete use-case. `name` is HEAP-OWNED by the use-case (the
+/// path param is borrowed; duping it lets the handler hand the response to
+/// the JSON serializer without keeping the request alive).
 pub const MemoryDeleteOutput = struct {
     name: []u8,
 };
@@ -73,13 +51,8 @@ pub const MemoryDeleteOutput = struct {
 // Use case
 // =====================================================================
 
-/// Delete a global memory file (idempotent).
-///
-/// Steps:
-///   1. Get the singleton + env.
-///   2. Validate `name` (non-empty + `isValidMemoryName`).
-///   3. `deleteMemoryFile` to delete (or no-op if already missing).
-///   4. Duplicate `name` so the handler can return it in the response.
+/// Delete a global memory file (idempotent). Steps: 1. Get the singleton +
+/// env. 2.
 fn useCase(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -92,10 +65,8 @@ fn useCase(
     if (!memories_mod.isValidMemoryName(input.name)) return error.InvalidName;
 
     if (!memories_mod.deleteMemoryFile(allocator, io, environment, input.name)) {
-        // `deleteMemoryFile` only returns false on validation error,
-        // missing environment, or a non-`FileNotFound` IO error.
-        // Validation already passed and the environment is set, so
-        // 400 is the right "we could not fulfill this request" status.
+        // `deleteMemoryFile` only returns false on validation error, missing
+        // environment, or a non-`FileNotFound` IO error.
         return error.DeleteFailed;
     }
 

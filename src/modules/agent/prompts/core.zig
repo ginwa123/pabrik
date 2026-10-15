@@ -157,17 +157,7 @@ pub const SkillWriteToolRule =
 ;
 
 // ---------------------------------------------------------------------------
-// Session VCS binding — a git worktree, a pull request. Each has a
-// purpose-built tool that does the git/filesystem half AND records the result
-// on the session (`sessions.git_worktree_cwd` / `sessions.pr_url`), which is
-// what the chat's git chip, the right panel's files/diff surfaces and
-// `status_pull_request` read. Doing it by hand through `command` leaves that
-// session state unwritten, so nothing downstream can see it. Appended
-// unconditionally (same cache reasoning as the mandates above); each rule
-// names its own `search_tool` → `use_tool` escape hatch, because neither tool
-// is in `DEFAULT_AGENT_TOOLS` and an existing agent's `agent_tools` rows never
-// name them.
-// ---------------------------------------------------------------------------
+// Session VCS binding — a git worktree, a pull request.
 
 pub const GitWorktreeToolRule =
     \\## Git Worktree — use the `set_git_worktree` tool, never a shell `git worktree`

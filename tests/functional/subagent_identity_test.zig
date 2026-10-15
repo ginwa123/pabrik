@@ -1,48 +1,7 @@
-// Sub-agent identity columns (Migration 091, task_1789909961925_0).
-//
-// Zig port of `tests/functional/subagent_identity_test.py`.
-//
-// A sub-agent session keeps its parent's selected_profile_model (for
-// thinking inheritance, #554) but now also records its own identity in
-// sessions.sub_agent_name + parent_session_id. The messages endpoint
-// exposes both so DB inspection and the UI show who actually ran
-// (e.g. "implementator") instead of only the parent profile.
-//
-// Wire contract over HTTP (harness boots a fresh pabrik per test):
-//
-//   - GET /api/llm/session/:id/messages includes sub_agent_name and
-//     parent_session_id keys (null/empty for main sessions).
-//   - sessions table has the new columns (migration ran).
-//
-// A real spawn_sub_agent round-trip needs a live LLM and is covered
-// by the Zig unit test in llm_history.zig
-// ("updateSessionSubAgentInfo: stamps sub-agent name and parent").
-//
-// WHY THE "KEY IS PRESENT" ASSERTION MATTERS IN ZIG TOO: the server
-// serialises with `std.json.Stringify.valueAlloc(..., .{})`, whose
-// `emit_null_optional_fields` defaults to TRUE — an unset optional
-// becomes an explicit `null` on the wire rather than being dropped.
-// So `doc.get("sub_agent_name")` returns a non-null optional holding
-// `.null` for a main session, and a null optional would mean the key
-// genuinely disappeared from the payload.
+// Sub-agent identity columns (Migration 091, task_1789909961925_0). Zig port
+// of `tests/functional/subagent_identity_test.py`.
 
-//
 // QUERY STRINGS ARE IN THE PATH, NOT IN `HttpOptions.params`.
-//
-// This is deliberate and wire-identical to the Python original (which
-// interpolated `?limit=N` straight into the path, or produced the same
-// string via `urlencode`). The harness's `buildUrl` LEAKS when
-// `opts.params` is non-empty: it allocates the base URL
-// `"http://127.0.0.1:<port><path>?"` and then, on the `i == 0`
-// iteration, overwrites `url` with a fresh `allocPrint` WITHOUT freeing
-// the old one (see harness.zig `buildUrl`, the `else` arm of the
-// `if (i > 0)` branch). `testing.allocator` reports that as a per-test
-// leak, so every suite that used `.params` would fail on memory even
-// though the request was fine.
-//
-// FIX PROPERLY IN `harness.zig` (free the previous `url` in the `i == 0`
-// arm), then these can move back to `.params`. Until then: keep the
-// query inlined.
 
 const std = @import("std");
 const testing = std.testing;
@@ -52,12 +11,6 @@ const gpa = testing.allocator;
 const io = testing.io;
 
 /// Assert the wire value at `v` is one of `(None, "")`.
-///
-/// The Zig spelling of Python's `assert body[k] in (None, "")`: an
-/// absent optional is a FAILURE here, because the test is also
-/// asserting the key exists (checked by the caller before calling
-/// this). Anything that is neither JSON `null` nor a string is a
-/// shape regression and is reported by name.
 fn expectNullOrEmpty(v: std.json.Value, key: []const u8) !void {
     switch (v) {
         .null => {},

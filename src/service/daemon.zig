@@ -1,58 +1,6 @@
-// src/service/daemon.zig
-//
-// Cross-platform daemonization for the pabrik service.
-//
-// ## POSIX (Linux/macOS)
-//
-// Uses the classic double-fork + setsid pattern (per Linux daemon(7)).
-// `std.c.fork` / `std.c.setsid` are libc wrappers (cross-platform via
-// glibc/macOS libc) — the `std.os.linux.*` equivalents are Linux-syscall-only
-// and fail on macOS where the syscall numbers differ.
-//
-// After `daemonize()` returns, the CALLER is the grandchild (the actual
-// daemon). The original process and the intermediate child have already
-// exited (via `std.process.exit(0)`). Callers must NOT depend on
-// receiving a return value to do post-fork work in the parent.
-//
-// ## Windows
-//
-// Windows has no `fork`, so the daemonization is implemented by
-// re-launching the current process via `CreateProcessW` with
-// `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP` flags. The parent
-// (the original foreground process) exits; the spawned child has no
-// console window and no parent terminal, mirroring the POSIX
-// "detached from controlling terminal" invariant.
-//
-// The parent/child dispatch is via an environment-variable sentinel
-// `PABRIK_DAEMON_CHILD=1`:
-//   - Parent (foreground `service start`): sentinel NOT set → re-exec
-//     SELF with `PABRIK_DAEMON_CHILD=1` and the two flags, then `exit(0)`.
-//   - Child (the spawned daemon): sentinel IS set → just return.
-//
-// ## Cross-platform contract
-//
-// `daemonize()` is the public cross-platform entry point. On any
-// supported OS, after this function returns to the caller, the caller
-// IS the daemon (or the daemon-compat foreground process on Windows).
-// Callers (e.g. `main_service.zig::serviceStart`) chain
-// `redirectStdioToLog(path)` immediately after to wire up stdio.
-//
-// ## Layout
-//
-//   * `daemonize()` — cross-platform entry point (comptime dispatch)
-//   * `daemonizePosix()` — POSIX keep-alive alias (comptime-redirects
-//     to `daemonize()` on Windows for backward compat)
-//   * `mkdirP(path)` — cross-platform (POSIX: mkdirat; Windows: CreateDirectoryW)
-//   * `redirectStdioToLog(path)` — cross-platform (POSIX: dup2; Windows: SetStdHandle)
-//
-// ## Zig 0.16 API notes
-//
-//   * `std.c.fork` returns `c_int`: child PID in parent, 0 in child,
-//     -1 on error.
-//   * `std.c.setsid` returns 0 on success, -1 on error.
-//   * Win32 `CreateProcessW` flags are at the top of the file (NOT
-//     inside an `if (builtin.os.tag == .windows)` block — we want
-//     compile-time errors if Zig 0.16 silently renames them).
+// src/service/daemon.zig Cross-platform daemonization for the pabrik service.
+// ## POSIX (Linux/macOS) Uses the classic double-fork + setsid pattern (per
+// Linux daemon(7)).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -73,20 +21,8 @@ pub const DaemonError = error{
 // Public cross-platform entry points
 // =============================================================================
 
-/// Cross-platform daemonization. POSIX uses double-fork + setsid.
-/// Windows re-execs the current process with DETACHED_PROCESS.
-///
-/// CONTRACT: this function NEVER returns to the POSIX parent path
-/// (the intermediate fork makes the parent exit). It only returns in
-/// the grandchild (POSIX) or the spawned child (Windows). Callers
-/// MUST NOT depend on receiving a return value to do post-fork work
-/// in the parent.
-///
-/// On POSIX, doesn't redirect stdio or change cwd — call
-/// `redirectStdioToLog` afterwards.
-///
-/// Comptime-dispatches on `builtin.os.tag` so the unused platform's
-/// code is fully eliminated by the compiler (no runtime check).
+/// Cross-platform daemonization. POSIX uses double-fork + setsid. Windows
+/// re-execs the current process with DETACHED_PROCESS.
 pub fn daemonize(allocator: std.mem.Allocator) DaemonError!void {
     switch (builtin.os.tag) {
         .linux, .macos => return daemonizePosixImpl(),
@@ -103,11 +39,8 @@ pub fn daemonizePosix(allocator: std.mem.Allocator) DaemonError!void {
 }
 
 /// Walk the parent directory chain of `path` and create each missing
-/// component (idempotent: ignores EEXIST on POSIX, ERROR_ALREADY_EXISTS
-/// on Windows). Used by the daemon's redirectStdioToLog to make a
-/// fresh `$HOME` work without manual `mkdir -p`. Extracted as a
-/// separate function so it can be unit-tested without the stdio
-/// redirection side effect.
+/// component (idempotent: ignores EEXIST on POSIX, ERROR_ALREADY_EXISTS on
+/// Windows).
 pub fn mkdirP(path: []const u8) !void {
     switch (builtin.os.tag) {
         .linux, .macos => return mkdirPPosix(path),
@@ -116,12 +49,8 @@ pub fn mkdirP(path: []const u8) !void {
     }
 }
 
-/// Redirect stdin from /dev/null and stdout/stderr to a log file. Call
-/// AFTER `daemonize()` returns. The log file is opened with append
-/// mode so multiple daemon lifetimes (restart cycles) preserve history.
-/// Walks the parent directory chain and creates each missing component
-/// (idempotent) so that a fresh `$HOME` (no `~/.local/share/pabrik/` yet)
-/// works.
+/// Redirect stdin from /dev/null and stdout/stderr to a log file. Call AFTER
+/// `daemonize()` returns.
 pub fn redirectStdioToLog(log_path: []const u8) !void {
     switch (builtin.os.tag) {
         .linux, .macos => return redirectStdioToLogPosix(log_path),
@@ -157,14 +86,7 @@ fn mkdirPPosix(path: []const u8) !void {
     if (parent_dir.len == 0) return;
     // std.fs.path.componentIterator yields `Component{ .name, .path }` where
     // `.path` is the CUMULATIVE path-so-far (e.g. for "/a/b/c", second
-    // component is `.name="b" .path="/a/b"`). Use `.path` directly so we
-    // don't have to reconstruct the slash-joined string ourselves.
-    //
-    // Use std.c.mkdirat (libc wrapper, cross-platform) instead of
-    // std.os.linux.mkdirat (Linux syscall number only — wrong on macOS).
-    // On Linux AT.FDCWD == -100; on macOS it is -2. The libc layer
-    // resolves the value at compile time via the switch in std.c.AT.
-    // std.c.mkdirat returns 0 on success, -1 on failure (with errno set).
+    // component is `.name="b" .path="/a/b"`).
     var iter = std.fs.path.componentIterator(parent_dir);
     while (iter.next()) |component| {
         var prefix_z: [std.fs.max_path_bytes:0]u8 = undefined;
@@ -190,13 +112,8 @@ fn redirectStdioToLogPosix(log_path: []const u8) !void {
     // no ~/.local/share/pabrik/ and the open() below fails.
     try mkdirP(log_path);
 
-    // stdin → /dev/null. std.c.open returns fd_t (i32) on success,
-    // -1 on failure (with errno set). We discard the error here —
-    // a missing /dev/null is "weird but not fatal" for the daemon.
-    //
-    // The mode argument must be explicitly typed to std.c.mode_t because
-    // std.c.open is variadic (libc `int open(const char*, int, ...)`);
-    // Zig 0.16 rejects bare integer literals in variadic positions.
+    // stdin → /dev/null. std.c.open returns fd_t (i32) on success, -1 on
+    // failure (with errno set).
     const devnull_fd: std.c.fd_t = std.c.open(
         "/dev/null",
         .{ .ACCMODE = .RDONLY },
@@ -223,24 +140,14 @@ fn redirectStdioToLogPosix(log_path: []const u8) !void {
 // =============================================================================
 // Windows implementations
 // =============================================================================
-//
-// Compile-time gated: only the active platform's struct is materialised.
-// On Linux/macOS the `win32_apis` const is replaced with `struct {}`
-// so the extern decls are never visible to the linker (no
-// undefined-symbol errors for `CreateProcessW` etc. on non-Windows).
 
 const win32_apis = if (builtin.os.tag == .windows) struct {
     const HANDLE = *anyopaque;
     const INVALID_HANDLE_VALUE_PTR: usize = std.math.maxInt(usize);
     const INVALID_HANDLE_VALUE: HANDLE = @ptrFromInt(INVALID_HANDLE_VALUE_PTR);
 
-    // CreateProcessW dwCreationFlags.
-    // DETACHED_PROCESS (0x00000008): no console window inherited.
-    // CREATE_NEW_PROCESS_GROUP (0x00000200): new process group, so
-    //   Ctrl-C / Ctrl-Break events don't propagate to us.
-    // CREATE_UNICODE_ENVIRONMENT (0x00000400): lpEnvironment is wide
-    //   strings (we use a wide env block).
-    // EXTENDED_STARTUPINFO_PRESENT (0x00080000): reserved for future.
+    // CreateProcessW dwCreationFlags. DETACHED_PROCESS (0x00000008): no
+    // console window inherited.
     const DETACHED_PROCESS: u32 = 0x00000008;
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
     const CREATE_UNICODE_ENVIRONMENT: u32 = 0x00000400;
@@ -370,13 +277,9 @@ fn daemonizeWindows(allocator: std.mem.Allocator) DaemonError!void {
     var cmd_line: [std.fs.max_path_bytes * 2]u16 = undefined;
     const cmd_w = buildCommandLine(cmd_line[0..], app_path_w) catch return error.SpawnFailed;
 
-    // Build the env block: copy current env + PABRIK_DAEMON_CHILD=1.
-    // Env block is a sequence of NUL-terminated wide strings, terminated
-    // by an empty wide string (double NUL). We append CWD parent's env
-    // via GetEnvironmentStringsW (1) — but to keep this self-contained
-    // we just set the sentinel explicitly via the lpEnvironment arg.
-    // CreateProcessW with a wide-string env block requires
-    // CREATE_UNICODE_ENVIRONMENT flag.
+    // Build the env block: copy current env + PABRIK_DAEMON_CHILD=1. Env
+    // block is a sequence of NUL-terminated wide strings, terminated by an
+    // empty wide string (double NUL).
     var env_block: [std.fs.max_path_bytes * 4]u16 = undefined;
     const env_w = buildEnvBlock(env_block[0..]) catch return error.SpawnFailed;
 
@@ -412,12 +315,9 @@ fn daemonizeWindows(allocator: std.mem.Allocator) DaemonError!void {
 /// component using Win32 `CreateDirectoryW` (idempotent on
 /// `ERROR_ALREADY_EXISTS`).
 fn mkdirPWindows(path: []const u8) !void {
-    // Walk component by component, creating each. Use UTF-16 wide
-    // strings because CreateDirectoryW requires them.
-    //
-    // Strategy: scan the path for `\` separators and accumulate each
-    // prefix. For each prefix, call CreateDirectoryW. If it returns
-    // nonzero OR the error is ERROR_ALREADY_EXISTS, treat as success.
+    // Walk component by component, creating each. Use UTF-16 wide strings
+    // because CreateDirectoryW requires them. Strategy: scan the path for `\`
+    // separators and accumulate each prefix.
     var path_w_buf: [std.fs.max_path_bytes]u16 = undefined;
     const path_w = pathToWideZ(path, &path_w_buf) catch return error.PathTooLong;
 
@@ -447,9 +347,8 @@ fn mkdirPWindows(path: []const u8) !void {
         }
     }
     // Finally create the deepest directory (everything after the last
-    // separator is the leaf filename; the parent directory is what's
-    // already created). If the path is a directory itself, this also
-    // creates it.
+    // separator is the leaf filename; the parent directory is what's already
+    // created). If the path is a directory itself, this also creates it.
     var full: [std.fs.max_path_bytes:0]u16 = undefined;
     if (path_w.len >= full.len) return error.PathTooLong;
     @memcpy(full[0..path_w.len], path_w);
@@ -602,58 +501,13 @@ fn buildEnvBlock(buf: []u16) ![:0]u16 {
     return buf[0..needed :0];
 }
 
-// `pidAlive` was REMOVED from this file on 2026-07-24. Callers now use
-// the cross-platform helper `helpers.process_status.isProcessRunning(pid)`
-// from `src/helpers/process_status.zig`, which handles `pid <= 0`
-// early-return plus the Windows `OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)`
-// path. The old POSIX implementation here used libc `kill(pid, 0)`
-// which doesn't compile on Windows in Zig 0.16 (`std.c.pid_t` is
-// `*anyopaque`).
-//
-// Previous call sites (now routed via the helper):
-//   src/service/main_service.zig::serviceStart  (1 site)
-//   src/service/main_service.zig::serviceStop   (3 sites)
-//   src/service/main_service.zig::serviceStatus (1 site)
-//   src/service/daemon.zig                      (4 tests, renamed)
-//
-// Do NOT re-add `pub fn pidAlive(...)` here — it would re-introduce the
-// Windows compile blocker.
+// `pidAlive` was REMOVED from this file on 2026-07-24.
 
 // ===== Tests merged from daemon_test.zig (2026-09-29 flatten) =====
 
-// Tests for src/service/daemon.zig (cross-platform daemonization).
-//
-// ## POSIX daemonize
-//
-// The POSIX daemonize test forks a child process and verifies the
-// grandchild's PPID differs from the original process (which is the
-// daemon(7) invariant for "detached from controlling terminal / parent
-// process group").
-//
-// ## Windows daemonize
-//
-// On Windows, `daemonize()` re-launches the current process via
-// `CreateProcessW` with `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP`
-// flags, then the parent exits. The detection that "we are the
-// detached daemon, not the parent" uses an environment-variable
-// sentinel (`PABRIK_DAEMON_CHILD=1`). The static-contract test verifies
-// the sentinel-based dispatch is in place; the behavioral test
-// (forking the executable) only runs on POSIX.
-//
-// ## Zig 0.16 API notes
-//
-//   * std.c.pipe(&pipe_fds) returns 0 on success; -1 on error.
-//   * std.c.fork returns the new child's PID (c_int) in the parent,
-//     0 in the child, or -1 on error.
-//   * std.c.write / read / close are libc wrappers returning
-//     isize / c_int; -1 (with errno) on error.
-//
-// As of 2026-07-24, `daemon.zig::pidAlive` was deleted in favour of the
-// cross-platform helper `helpers.process_status.isProcessRunning` —
-// which already handles `pid <= 0` early-return plus the Windows
-// `OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)` path (see
-// `src/helpers/process_status.zig`). The four pidAlive tests now
-// exercise that helper directly.
+// Tests for src/service/daemon.zig (cross-platform daemonization). ## POSIX
+// daemonize The POSIX daemonize test forks a child process and verifies the
+// grandchild's PPID differs from the original process (which is the daemon(7)
 
 const testing = std.testing;
 // helpers/ lives at src/helpers/, one directory up from src/service/.
@@ -690,12 +544,9 @@ test "isProcessRunning returns false for nonexistent pid" {
 // Cross-platform daemonize() tests
 // ============================================================================
 
-// Static contract: a cross-platform `daemonize()` function must exist.
-// On POSIX it wraps the double-fork + setsid; on Windows it re-execs
-// via CreateProcessW with DETACHED_PROCESS. The function is referenced
-// here so the compiler must type-check it on every platform — if the
-// function is missing OR throws @compileError on a target, this test
-// fails to compile.
+// Static contract: a cross-platform `daemonize()` function must exist. On
+// POSIX it wraps the double-fork + setsid; on Windows it re-execs via
+// CreateProcessW with DETACHED_PROCESS.
 test "daemon.daemonize is callable cross-platform" {
     // Just take the address — if this compiles, the function exists.
     const function_pointer = &daemonize;
@@ -811,10 +662,8 @@ test "mkdirP is idempotent on an already-existing parent dir" {
 test "Windows mkdirP creates all parent dirs of a fresh nested path" {
     if (builtin.os.tag != .windows) return;
 
-    // The system temp dir on Windows is %TEMP% (typically C:\Users\<user>\AppData\Local\Temp).
-    // We can't depend on std.testing.tmpDir returning a cross-platform
-    // realpath on Windows (the underlying realpath uses posix symlinks
-    // semantics). Instead we build a unique path under the temp dir.
+    // The system temp dir on Windows is %TEMP% (typically
+    // C:\Users\<user>\AppData\Local\Temp).
     var tmp_buf: [std.fs.max_path_bytes]u8 = undefined;
     const tmp_z = std.c.getenv("TEMP") orelse std.c.getenv("TMP") orelse return;
     const tmp = std.mem.sliceTo(tmp_z, 0);

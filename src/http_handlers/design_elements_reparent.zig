@@ -1,23 +1,6 @@
-//! `POST /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/reparent-batch`.
-//!
-//! Atomic N-element reparent. Used by the drag-to-reparent UX so
-//! dragging 1 or N selected rows into a group uses one round-trip
-//! instead of N parallel PUTs.
-//!
-//! Body: `{ element_ids: ["a","b","c"], new_parent_id: "group_x" | null,
-//!          reposition: "last_in_parent" }`.
-//!
-//! Response 200: `{ updated: DesignElementResponse[] }` in input order.
-//!
-//! Errors:
-//!   - 400 EmptyElementIds, BadElementId, BadNewParentId (leaf type,
-//!     missing, or cross-page), BadReparent (cycle)
-//!   - 404 PageNotFound
-//!   - 409 CrossPageIds
-//!   - 500 DbError, OutOfMemory
-//!
-//! Plan: docs/superpowers/plans/2026-07-30-design-layer-drag-join-or-leave-group.md
-//! (Chunk 1b Tasks 1b.2 + 1b.3)
+//! `POST
+//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/reparent-batch`.
+//! Atomic N-element reparent.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -203,7 +186,6 @@ pub fn designElementsReparentBatchHandler(
 }
 
 // ─── Behavioural tests for `useCase` (Chunk 1b Tasks 1b.2 + 1b.3) ─────────
-//
 // Pulled in from design_elements_reparent_test.zig — one-file-per-impl
 // convention.
 

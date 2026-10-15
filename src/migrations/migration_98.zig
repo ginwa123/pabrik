@@ -26,9 +26,8 @@ pub const Migration098CreateDocuments = struct {
         , &[_][]const u8{});
 
         // Every read is `WHERE workspace_id = ?` — the sidebar section, the
-        // cross-workspace guard on every single-document read, and the
-        // agent tools' own scope check. This index is the isolation
-        // boundary's hot path, not just a list read.
+        // cross-workspace guard on every single-document read, and the agent
+        // tools' own scope check.
         try db.exec(allocator,
             "CREATE INDEX IF NOT EXISTS idx_documents_workspace_id ON documents(workspace_id)",
             &[_][]const u8{});

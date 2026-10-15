@@ -1,17 +1,6 @@
-//! `PATCH /api/workspaces/:workspace_id/items/:item_id/agent`.
-//!
-//! Body: `{description}`. Updates the description of the agent
-//! bound to this workspace_item. Returns 200 with the updated agent
-//! row, or 400/404 for validation errors (same as `agents_get.zig`).
-//!
-//! Layered as:
-//!   - `useCase` — validate workspace_item is an agent → UPDATE
-//!     description → SELECT updated row → return Agent row.
-//!   - `agentsUpdateHandler` — thin orchestrator over `useCase`:
-//!     parses path params + body, delegates, maps outcome to HTTP.
-//!
-//! Memory: the per-request arena reaps all allocations at request
-//! end, so neither layer needs explicit `free`s.
+//! `PATCH /api/workspaces/:workspace_id/items/:item_id/agent`. Body:
+//! `{description}`. Updates the description of the agent bound to this
+//! workspace_item.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -19,10 +8,9 @@ const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const agent_db = @import("../models/agent.db.zig");
 
-/// HTTP request body for agent-update. Decoupled from the
-/// `AgentUpdateInput` domain struct so the wire format can evolve
-/// independently (e.g. adding `?` optional fields) without touching
-/// the use-case.
+/// HTTP request body for agent-update. Decoupled from the `AgentUpdateInput`
+/// domain struct so the wire format can evolve independently (e.g. adding `?`
+/// optional fields) without touching the use-case.
 const UpdateAgentBody = struct {
     description: []const u8 = "",
 };
@@ -31,11 +19,7 @@ const UpdateAgentBody = struct {
 /// are owned by the caller (lifetime = request arena).
 pub const Agent = agent_db.AgentRow;
 
-/// Domain-level error set for `useCase`. The handler maps each
-/// variant to an HTTP status code + message via two exhaustive
-/// switches (intentional — adding a new variant fails to compile in
-/// the handler until both switches are updated, keeping status
-/// codes in lockstep with the error set).
+/// Domain-level error set for `useCase`.
 pub const AgentUpdateError = error{
     /// `workspace_id` or `item_id` path param was missing or empty.
     IdsRequired,
@@ -74,11 +58,8 @@ pub const AgentUpdateOutput = struct {
 // Use case
 // =====================================================================
 
-/// Update an agent's description. Validates that the workspace_item
-/// exists and is of type `'agent'`. The use-case is
-/// transport-agnostic: it works for both the per-request arena
-/// (production HTTP handler) and `testing.allocator` (unit tests
-/// below) — all allocations go through the passed-in allocator.
+/// Update an agent's description. Validates that the workspace_item exists
+/// and is of type `'agent'`.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -177,14 +158,8 @@ pub fn agentsUpdateHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-//
-// impl + tests in one file (project convention for Agent Mode).
-// 4 behavioural tests cover the use-case:
-//
-//   1. Validation: empty workspace_id OR item_id → IdsRequired
-//   2. ItemNotFound: workspace_item doesn't exist
-//   3. NotAnAgent: workspace_item exists but item_type != 'agent'
-//   4. Happy path: description is updated and the response reflects it
+// impl + tests in one file (project convention for Agent Mode). 4 behavioural
+// tests cover the use-case: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;

@@ -1,25 +1,5 @@
-// Functional tests for opt-in `--auth` mode.
-//
-// Zig port of `tests/functional/auth_test.py` (same test names).
-//
-// Boots a REAL pabrik binary + REAL SQLite via the harness (never a live
-// dev server, never port 8081). Replays the EXACT wire flows the login
-// page uses: unauthenticated API -> 401, login -> Set-Cookie, authed
-// request -> 200, logout -> clear, empty cookie -> 401.
-//
-// Covers:
-//   * OPEN-BY-DEFAULT — no `--auth` flag: /api/workspaces 200, no cookie.
-//   * GATE — with `--auth`: /api/workspaces without cookie -> 401.
-//   * LOGIN-FLOW — create-admin -> login -> Set-Cookie (HttpOnly) ->
-//     authed GET works -> /api/auth/me 200 -> logout clears.
-//   * EMPTY-COOKIE — `Cookie:EOabrik_session=` -> 401 (not 500).
-//   * EXEMPT — /health + /api/auth/login reachable without cookie when on.
-//
-// The suite's own helper `_raw` became `rawHttp` below: the harness's
-// `Harness.http` deliberately asserts on `expect`, but these tests need
-// the raw (status, headers, body) triple WITHOUT a status assertion,
-// because "expect 401" is the thing under test. `rawHttp` returns the
-// triple and lets the caller decide.
+// Functional tests for opt-in `--auth` mode. Zig port of
+// `tests/functional/auth_test.py` (same test names).
 
 const std = @import("std");
 const testing = std.testing;
@@ -30,11 +10,8 @@ const gpa = testing.allocator;
 const io = testing.io;
 
 /// Issue a request WITHOUT a status assertion — the caller asserts.
-///
-/// `Harness.http` asserts on `expect` by default, which is the wrong
-/// tool where the STATUS ITSELF is the assertion under test. The
-/// harness's own `{ .assert_status = false }` flag exists for exactly
-/// this shape, so no suite needs a private HTTP client.
+/// `Harness.http` asserts on `expect` by default, which is the wrong tool
+/// where the STATUS ITSELF is the assertion under test.
 fn rawHttp(
     h: *Harness,
     method: harness.HttpMethod,
@@ -59,15 +36,8 @@ fn bootAuth() !Harness {
     return Harness.boot(io, gpa, .{ .extra_args = &.{"--auth"} });
 }
 
-/// Run `pabrik create-admin` against the harness HOME.
-///
-/// `runPabrikCommand` prepends the resolved binary itself, so `argv`
-/// starts at the SUBCOMMAND. Passing the binary here as well produced
-/// `[bin, bin, "create-admin", ...]`, which made `dispatchCreateAdmin`
-/// miss (it matches argv[1]) and fall through to booting a SERVER —
-/// which then tried to bind the default port 8081 and failed. The
-/// symptom was "create-admin failed: cannot bind 127.0.0.1:8081",
-/// pointing at a port problem when the real cause was a doubled argv[0].
+/// Run `pabrik create-admin` against the harness HOME. `runPabrikCommand`
+/// prepends the resolved binary itself, so `argv` starts at the SUBCOMMAND.
 fn createAdmin(home: []const u8, email: []const u8, password: []const u8) !void {
     var r = try harness.runPabrikCommand(io, gpa, home, &.{
         "create-admin", "--email", email, "--password", password,
@@ -177,12 +147,8 @@ test "login_flow" {
     try testing.expect(std.mem.indexOf(u8, set_cookie, "pabrik_session=") != null);
     try testing.expect(std.mem.indexOf(u8, set_cookie, "HttpOnly") != null);
 
-    // 2. Extract the raw token for the subsequent requests.
-    // The token is the SEGMENT between `pabrik_session=` and the next
-    // `;`. `afterFirst(x, ";")` is the WRONG tool — it returns the text
-    // AFTER that `;`, i.e. `Path=/`. Splitting on `;` and taking the
-    // first piece, then stripping the name prefix, is what
-    // Python's `split(";", 1)[0]` did.
+    // 2. Extract the raw token for the subsequent requests. The token is the
+    // SEGMENT between `pabrik_session=` and the next `;`.
     var attrs = std.mem.splitSequence(u8, set_cookie, ";");
     const first_attr = attrs.next() orelse return error.TestUnexpectedResult;
     const token = std.mem.trim(u8, harness.afterFirst(first_attr, "pabrik_session=") orelse

@@ -1,24 +1,4 @@
 //! Storage layer for the `update_plan` + `get_plan` agent tools.
-//!
-//! Three public functions:
-//!   - `savePlan` — UPSERT a plan row (insert-or-replace by `session_id`)
-//!   - `getPlan` — fetch the plan markdown (returns "" when absent)
-//!   - `getPlanOpt` — fetch the full PlanRow (returns null when absent)
-//!
-//! Backed by Migration 076's `session_plan` table. UPSERT via
-//! `INSERT … ON CONFLICT(session_id) DO UPDATE` so calling `update_plan`
-//! repeatedly replaces the prior plan, matching the user spec "the tool
-//! is overwrite the plan everytime".
-//!
-//! Plan: docs/superpowers/plans/2026-08-19-session-plan-agent-tool.md
-//! Task: task_1787073929852_8
-//!
-//! Why a dedicated module (NOT extending llm_history.zig or sessions model)
-//! ──────────────────────────────────────────────────────────────────────
-//! `sessions` is for chat session metadata; adding plan_md there would dilute
-//! it (D1 in the plan). `llm_history` is for chat messages, not durable
-//! session-scoped state. A dedicated module matches the project pattern
-//! (`agent_memories.zig`, `session_skills.zig`).
 
 const std = @import("std");
 const testing = std.testing;
@@ -51,13 +31,6 @@ pub const SavePlanArgs = struct {
 pub const MAX_PLAN_BYTES: usize = 256 * 1024;
 
 /// Save (UPSERT) a plan. Overwrites any existing row for `session_id`.
-/// Returns the row's `updated_at` timestamp (a freshly-allocated copy
-/// the caller must free).
-///
-/// Errors:
-///   - `error.InvalidContent` — content is empty
-///   - `error.ContentTooLarge` — content exceeds `MAX_PLAN_BYTES`
-///   - DB errors propagate verbatim
 pub fn savePlan(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -86,10 +59,7 @@ pub fn savePlan(
     return ts;
 }
 
-/// Fetch the plan markdown for `session_id`. Returns an allocated copy
-/// of `""` when the row is absent (canonical "no plan" sentinel —
-/// matches the `description` / `tags` convention of empty-string-on-absent).
-/// Caller owns the returned slice and must free with `allocator.free()`.
+/// Fetch the plan markdown for `session_id`.
 pub fn getPlan(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,

@@ -12,10 +12,7 @@ pub const Migration046AddGitWorktreeCwdToSessions = struct {
     pub const name = "add_git_worktree_cwd_to_sessions";
 
     pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
-        // Nullable: NULL means "no worktree bound". The application code
-        // maps NULL → "" via COALESCE for the API surface, matching the
-        // convention used for `cwd`, `created_at`, `updated_at`, and
-        // `selected_profile_model` (see llm_history.zig:1802).
+        // Nullable: NULL means "no worktree bound".
         try db.exec(allocator,
             "ALTER TABLE sessions ADD COLUMN git_worktree_cwd TEXT",
             &[_][]const u8{});

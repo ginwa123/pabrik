@@ -1,31 +1,5 @@
-// Functional tests for Migration 092 — lightweight task list/get
-// payload + lazy media endpoint.
-//
-// Zig port of `tests/functional/kanban_task_image_urls_test.py`
-// (same test names, same order).
-//
-// PYTHON DOCSTRING, PRESERVED:
-//
-//   """Migration 092 — lightweight task list/get payload + lazy media
-//   endpoint.
-//
-//   List/get return only `is_have_image` / `is_have_video` flags so board
-//   fetches stay small; the full `||`-delimited base64 TEXT columns stay
-//   server-side for `GET .../tasks/:task_id/media`, which the frontend
-//   calls only when a flag is true.
-//
-//   These tests replay the EXACT wire bodies the frontend sends:
-//     1. create (mode='create_session') with image_urls → response carries
-//        is_have_image=true (no image_urls field); list/get carry the flag;
-//        the media endpoint returns the persisted column.
-//     2. PUT /api/workspaces/tasks/:task_id with image_urls → flag flips;
-//        PUT with '' → flag clears.
-//   """
-//
-// NO IMAGE FILES ON DISK: `image_urls` is a `data:` URL — the bytes are
-// base64 INSIDE the JSON body, not a path the server reads. So this
-// suite never creates a scratch directory; there is no fixture tree to
-// reap and nothing to clean up beyond `h.deinit`.
+// Functional tests for Migration 092 — lightweight task list/get payload +
+// lazy media endpoint.
 
 const std = @import("std");
 const testing = std.testing;
@@ -48,12 +22,9 @@ const JPEG_DATA_URL = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD//2Q=="
 // Helpers
 // ============================================================================
 
-/// Parse OWNED bytes into a `harness.Json`.
-///
-/// A `harness.Json` aliases the `Response` body it was parsed from, so a
-/// helper may not RETURN one (the body dies with the response). The
-/// helpers below therefore return owned bytes and each test parses
-/// locally — the same split `kanban_task_get_test.zig` uses.
+/// Parse OWNED bytes into a `harness.Json`. A `harness.Json` aliases the
+/// `Response` body it was parsed from, so a helper may not RETURN one (the
+/// body dies with the response).
 fn parseJson(bytes: []const u8) !harness.Json {
     return .{ .parsed = try std.json.parseFromSlice(std.json.Value, gpa, bytes, .{}) };
 }
@@ -274,10 +245,6 @@ fn requireStr(obj: std.json.ObjectMap, key: []const u8, ctx: []const u8) ![]u8 {
 }
 
 /// Python `obj.get(key) is True` / `is False`.
-///
-/// The strictness is the assertion: an ABSENT key is `None`, which is
-/// neither `True` nor `False`, so `orelse` (rather than a defaulted
-/// `false`) is what makes "the flag is missing" fail here.
 fn expectBool(obj: std.json.ObjectMap, key: []const u8, want: bool, ctx: []const u8) !void {
     const v = obj.get(key) orelse {
         std.debug.print("{s}: `{s}` is absent (must be the bool {any})\n", .{ ctx, key, want });

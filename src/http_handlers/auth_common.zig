@@ -1,8 +1,6 @@
-//! Shared auth helpers for opt-in `--auth` mode.
-//!
-//! `users` (Migration 077) stores identity; `auth_sessions` (Migration 089)
-//! stores one row per active `pabrik_session` cookie (SHA-256 hash -> user).
-//! When `--auth` is off, middleware passes everything through.
+//! Shared auth helpers for opt-in `--auth` mode. `users` (Migration 077)
+//! stores identity; `auth_sessions` (Migration 089) stores one row per active
+//! `pabrik_session` cookie (SHA-256 hash -> user).
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -102,30 +100,10 @@ pub fn freeSessionLookup(allocator: std.mem.Allocator, s: SessionLookup) void {
 
 /// Sentinel owner id: Migration 077's backfill target for every row that
 /// predates `--auth`, and the answer `resolveRequestUserId` gives whenever
-/// identity cannot be established. Because legacy rows carry this same
-/// value, such rows stay visible and scoping is a no-op in auth-off mode.
+/// identity cannot be established.
 pub const system_user_id = "user_system";
 
 /// SQL predicate for "rows that `alias` may see".
-///
-/// Two rules, in one constant:
-///   1. the **system user sees everything** — with `--auth` off there is no
-///      identity, and the system user IS the installation itself, so it sees
-///      every workspace (user decision 2026-09-25);
-///   2. otherwise: the shared legacy bucket (NULL / empty / the sentinel)
-///      plus rows owned by the viewer.
-///
-/// The bound owner must therefore be passed **twice** (the sentinel test and
-/// the ownership test), e.g. `WHERE id = ? AND <clause>` binds
-/// `{ id, owner, owner }`.
-///
-/// Safety depends on one invariant: in auth-ON mode a handler only ever sees a
-/// real user id, because `authMiddleware` 401s an invalid/missing cookie before
-/// the handler runs. The sentinel reaches a handler only when `--auth` is off,
-/// where "see everything" is the intended meaning.
-///
-/// Compile-time formatted, so it concatenates into a constant SQL string at no
-/// runtime cost: `"SELECT ... WHERE " ++ ownerVisibilityClause("w")`.
 pub fn ownerVisibilityClause(comptime alias: []const u8) []const u8 {
     return std.fmt.comptimePrint(
         "(? = '{s}' OR {s}.user_id IS NULL OR {s}.user_id = '' OR {s}.user_id = '{s}' OR {s}.user_id = ?)",
@@ -134,28 +112,8 @@ pub fn ownerVisibilityClause(comptime alias: []const u8) []const u8 {
 }
 
 /// SQL predicate for "workspaces `alias` may see", backed by the
-/// `workspace_members` join table (Migration 100).
-///
-/// This is the successor to `ownerVisibilityClause` for WORKSPACES ONLY.
-/// The old helper still serves `worker_list` and `llm_history`, which filter
-/// rows that are not workspace-scoped and therefore have no membership row.
-///
-/// Two rules, in one constant — the same two the column-based clause carried:
-///   1. the **system user sees everything** — with `--auth` off there is no
-///      identity and the system user IS the installation (decision
-///      2026-09-25). Written FIRST so it short-circuits before the subquery;
-///   2. otherwise: the caller is a member, OR the workspace carries the
-///      sentinel member row — i.e. it is shared. That second arm is what
-///      keeps every pre-`--auth` workspace visible to everybody, and it is
-///      why "add the `user_system` member" IS the share operation.
-///
-/// The bound owner must still be passed **twice** (sentinel test, then
-/// membership test), so all eight existing call sites keep binding
-/// `{ …, owner, owner }` with no parameter-order edit.
-///
-/// `alias` is the caller's table alias for `workspaces`. Note the
-/// subquery aliases the join table as `m`, so a caller passing "m" would
-/// shadow it — no current caller does.
+/// `workspace_members` join table (Migration 100). This is the successor to
+/// `ownerVisibilityClause` for WORKSPACES ONLY.
 pub fn workspaceVisibilityClause(comptime alias: []const u8) []const u8 {
     return std.fmt.comptimePrint(
         "(? = '{s}' OR EXISTS (SELECT 1 FROM workspace_members m WHERE m.workspace_id = {s}.id AND (m.user_id = ? OR m.user_id = '{s}')))",
@@ -164,14 +122,6 @@ pub fn workspaceVisibilityClause(comptime alias: []const u8) []const u8 {
 }
 
 /// Map an owner id onto something safe to bind into a NOT NULL column.
-///
-/// `SqliteBackend.exec` binds an empty slice as SQL NULL, so writing a raw
-/// owner into `workspace_members.user_id` would raise a constraint violation
-/// rather than store an empty string. `resolveRequestUserId` can legitimately
-/// hand back "" on an allocation failure (see `workspaces_reorder`), and the
-/// legacy data model treats "" as the shared bucket, so the correct
-/// destination is the sentinel — which `isSharedOwner("")` already agrees
-/// with. Returns a borrowed slice; no allocation, nothing to free.
 pub fn normaliseOwnerId(user_id: []const u8) []const u8 {
     return if (user_id.len == 0) system_user_id else user_id;
 }
@@ -184,11 +134,7 @@ pub fn isSharedOwner(user_id: []const u8) bool {
 }
 
 /// True when a `sessions` row with this id exists at all, regardless of
-/// owner. Used by the middleware choke point to distinguish "missing row"
-/// (let the handler run — it may lazy-create via ensureSessionExists) from
-/// "existing row owned by someone else" (404). Without this, opening a
-/// brand-new chat (task row exists, session row not yet INSERTed) 404s with
-/// "Session not found" before the handler's ensure can run.
+/// owner.
 pub fn sessionExistsById(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -210,11 +156,6 @@ pub fn sessionExistsById(
 }
 
 /// True when `workspace_id` exists AND the given owner may see it.
-///
-/// This is the predicate behind the middleware choke point for every route
-/// whose path carries a `:workspace_id` (`/api/workspaces/:workspace_id/items…`
-/// and its kanban/design/agent/routine children). Centralising it means a
-/// newly added child route cannot forget the check.
 pub fn canSeeWorkspace(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -236,12 +177,8 @@ pub fn canSeeWorkspace(
     return false;
 }
 
-/// Session counterpart of `canSeeWorkspace`: true when `session_id` exists AND
-/// the given owner may see it.
-///
-/// Same rule as workspaces: the system user sees everything (auth off), while
-/// a real user sees the shared legacy bucket plus their own sessions. Used by
-/// the middleware choke point for every route carrying `:session_id`.
+/// Session counterpart of `canSeeWorkspace`: true when `session_id` exists
+/// AND the given owner may see it.
 pub fn canSeeSession(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -264,19 +201,6 @@ pub fn canSeeSession(
 }
 
 /// Resolve the owner id for the current request, server-side.
-///
-/// The ONLY accepted source is the `pabrik_session` cookie — never a body
-/// field, query param, or header, all of which the client controls.
-///
-/// - auth disabled                            -> `system_user_id`
-/// - cookie missing / invalid / expired / inactive user -> `system_user_id`
-/// - valid session                            -> that user's `users.id`
-///
-/// Note the deliberate fallback for the middle case: an unauthenticated
-/// request in auth-on mode keeps seeing the shared legacy bucket, exactly
-/// what it saw before isolation existed. It never becomes a real user.
-///
-/// Returns an owned slice — free it with `allocator.free`.
 pub fn resolveRequestUserId(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -296,10 +220,6 @@ pub fn resolveRequestUserId(
 /// Buffer-writing variant of `resolveRequestUserId` for callers that want to
 /// avoid a heap allocation (the terminal handlers, whose owner is a short
 /// per-request string).
-///
-/// Returns the owner slice inside `buf`, or null when the singleton is not
-/// initialised (unit tests) or the id does not fit — callers treat null as
-/// "no identity", which is the auth-off behaviour.
 pub fn resolveOwnerInto(buf: []u8, headers: anytype) ?[]const u8 {
     const di = pabrikcore.getSingleton() catch return null;
     const owner = resolveRequestUserId(di.allocator, di.db, di.auth_enabled, headers) catch return null;
@@ -311,18 +231,6 @@ pub fn resolveOwnerInto(buf: []u8, headers: anytype) ?[]const u8 {
 
 /// The `LlmConfig` for the user behind `headers`, or null when the
 /// process-global singleton is authoritative.
-///
-/// The single entry point for HTTP handlers that need a user-scoped config
-/// but have no session row (workspace seeding, web status, kanban task
-/// creation). All resolution logic lives in
-/// `agentic_loop/session_llm_config.zig`; handlers must not read
-/// `getLlmConfig(di)` for user-scoped data themselves. Null covers auth-off,
-/// a missing/unknown cookie, a user who never saved settings and a corrupt
-/// row — every one of them falls back to the singleton, i.e. to the
-/// pre-`--auth` behaviour.
-///
-/// The returned config is allocated with `allocator` (a request arena in
-/// production) — do not free or mutate it.
 pub fn requestUserConfig(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -368,10 +276,9 @@ pub fn clearCookieValue(allocator: std.mem.Allocator) ![]u8 {
     return std.fmt.allocPrint(allocator, "{s}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0", .{cookie_name});
 }
 
-// =====================================================================
-// Tests (in-memory SQLite via useCase-adjacent helpers is covered in
+// ===================================================================== Tests
+// (in-memory SQLite via useCase-adjacent helpers is covered in
 // auth_login_test; here we test pure helpers with no DB).
-// =====================================================================
 
 test "isAuthExempt allows login/logout/health only" {
     try std.testing.expect(isAuthExempt("/api/auth/login"));
@@ -519,11 +426,6 @@ test "resolveRequestUserId maps a valid cookie to the owning user" {
 // ============================================================================
 // workspace_members — visibility clause + owner normalisation
 // ============================================================================
-//
-// See docs/plans/2026-10-02-workspace-members-shared-workspaces.md.
-// Migration 100 moved workspace ownership from a column on `workspaces` to a
-// many-to-many `workspace_members` table. These tests pin the SQL contract
-// that all eight call sites depend on.
 
 fn countByte(haystack: []const u8, needle: u8) usize {
     var n: usize = 0;
@@ -536,11 +438,7 @@ fn countByte(haystack: []const u8, needle: u8) usize {
 test "workspaceVisibilityClause keeps the two-bind arity the call sites already use" {
     const sql = workspaceVisibilityClause("workspaces");
 
-    // THE load-bearing assertion. All 8 workspaces call sites bind
-    // `{ ..., owner, owner }` because the pre-Migration-100 clause needed the
-    // owner twice (sentinel test + ownership test). The membership clause
-    // must consume exactly two binds too, or every one of those sites
-    // silently shifts its parameters.
+    // THE load-bearing assertion.
     try std.testing.expectEqual(@as(usize, 2), countByte(sql, '?'));
 
     // The sentinel test comes FIRST and short-circuits before the subquery,

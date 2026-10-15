@@ -1,22 +1,6 @@
-// Functional wire tests for workspace-scoped secrets (Migration 103).
-//
-// Zig port of `tests/functional/workspace_secrets_test.py` (same test
-// names minus the `test_` prefix, same order).
-//
-// WRITE-ONLY GUARANTEE: every "must not be in the response" assertion
-// reads the RAW body text (`r.body`), never the parsed JSON. A
-// parsed-JSON key check can only see keys it thinks to look for; a
-// raw-text check sees a stray field, a duplicated key, and prose that
-// mentions the value in a diagnostic string.
-//
-// PYTHON IDIOM THAT DID NOT SURVIVE THE PORT: the helpers returned the
-// already-parsed dict. A `harness.Json` borrows the bytes of the
-// `Response` body it was parsed from, so helpers return OWNED values
-// instead — an id string, the raw body — and tests parse locally.
-//
-// NOTE: this file never spells a placeholder literally (the
-// double-brace SECRETS form). Placeholder strings are built at runtime
-// by `placeholderFor` so the source carries no contiguous marker.
+// Functional wire tests for workspace-scoped secrets (Migration 103). Zig
+// port of `tests/functional/workspace_secrets_test.py` (same test names minus
+// the `test_` prefix, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -28,11 +12,8 @@ const io = testing.io;
 const Io = std.Io;
 
 // ─── Canaries ──────────────────────────────────────────────────────────────
-//
-// Distinctive, JSON-safe, and different from every secret NAME used
-// below — a name is not a secret and is echoed by the 409 conflict
-// message, so reusing one would make a leak indistinguishable from a
-// legitimate disclosure.
+// Distinctive, JSON-safe, and different from every secret NAME used below — a
+// name is not a secret and is echoed by the 409 conflict message, so reusing
 const FIRST_VALUE = "sk_live_CANARY_4f1c9a_Zx7Q_DO_NOT_LEAK";
 const SECOND_VALUE = "sk_live_CANARY_be02d8_Mm4R_ROTATED_DO_NOT_LEAK";
 
@@ -988,22 +969,7 @@ test "patch_name_is_a_claim_not_a_rename" {
 }
 
 // ============================================================================
-// 8. Placeholder error, through the real agentic loop
-// ============================================================================
-//
-// `handle_tool.zig` unit-tests the substitution seam in-process. That
-// cannot show what the MODEL sees: the envelope after persistence,
-// after redaction, in a real worker thread, in a real process. Only a
-// stub LLM upstream serving the tool call over the actual wire does
-// that.
-//
-// Two turns against the same workspace:
-//   A. the UNKNOWN name — error envelope naming it, target file never
-//      created.
-//   B. the PRESENT_KEY name — positive CONTROL. Same machinery, a name
-//      the workspace really has. Must SUCCEED and write the file.
-// B is what makes A mean something: without it A's failure could be a
-// resolver that refuses everything rather than an unknown NAME.
+// 8.
 
 const UNKNOWN_NAME = "UNKNOWN";
 const PRESENT_NAME = "PRESENT_KEY";
@@ -1023,11 +989,8 @@ fn placeholderFor(name: []const u8) ![]u8 {
     return std.fmt.allocPrint(gpa, "{s}{s}:{s}{s}", .{ "{{", "SECRETS", name, "}}" });
 }
 
-/// A stateful stub LLM upstream serving a fixed queue of tool calls,
-/// one per agentic turn — the Zig analogue of the Python stub state +
-/// handler pair. Same shape as `llm_test_test.zig`'s `Stub`: an
-/// `Io.net` server on a background thread, woken for shutdown with one
-/// throwaway self-connect.
+/// A stateful stub LLM upstream serving a fixed queue of tool calls, one per
+/// agentic turn — the Zig analogue of the Python stub state + handler pair.
 const Stub = struct {
     port: u16,
     server: Io.net.Server,
@@ -1087,11 +1050,9 @@ fn serve(stub: *Stub) void {
     }
 }
 
-/// A request is a FOLLOW-UP turn (plain stop reply) as soon as it
-/// carries an already-served call id; anything else carrying a
-/// `tools` array consumes the next queued call. The session
-/// auto-naming request carries no `tools` array, so it never consumes
-/// one.
+/// A request is a FOLLOW-UP turn (plain stop reply) as soon as it carries an
+/// already-served call id; anything else carrying a `tools` array consumes
+/// the next queued call.
 fn handleStubRequest(stub: *Stub, stream: Io.net.Stream) !void {
     var rbuf: [64 * 1024]u8 = undefined;
     var sr = stream.reader(io, &rbuf);

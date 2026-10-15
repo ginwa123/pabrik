@@ -1,30 +1,5 @@
-//! `GET /api/workspaces/:workspace_id/items/:item_id/agent`.
-//!
-//! Returns `{agent, knowledge, tools}` for the agent bound to this
-//! workspace_item. The frontend's AgentView consumes this payload to
-//! populate both the Knowledge panel and the Tools panel in one
-//! round-trip.
-//!
-//! - `agent` — the `agents` row (description, timestamps)
-//! - `knowledge` — array of `AgentKnowledgeRow` ordered by position DESC
-//! - `tools` — array of `string` (tool_names) ordered by tool_name ASC,
-//!             filtered to `enabled = 1` only
-//!
-//! Returns 400 when the workspace_item's `item_type` is not `'agent'`,
-//! 404 when the workspace_item doesn't exist.
-//!
-//! Layered as:
-//!   - `useCase` — orchestrates the 3 reads (agent, knowledge, tools)
-//!     + validates the workspace_item is an agent. Returns a typed
-//!     `AgentGetOutput` with all owned slices.
-//!   - `agentsGetHandler` — thin orchestrator over `useCase`:
-//!     resolves the singleton DB handle, delegates, marshals the
-//!     output to JSON, maps errors to status codes.
-//!
-//! Memory: the per-request arena reaps all allocations at request
-//! end, so the handler does NOT free anything. Tests using
-//! `testing.allocator` MUST free the slices themselves (see the
-//! test block below).
+//! `GET /api/workspaces/:workspace_id/items/:item_id/agent`. Returns `{agent,
+//! knowledge, tools}` for the agent bound to this workspace_item.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -41,11 +16,7 @@ pub const AgentSystemPromptRow = agent_db.SystemPromptRow;
 /// Wire shape for the agent row in the GET response.
 pub const AgentRow = agent_db.AgentRow;
 
-/// Domain-level error set for `useCase`. The handler maps each
-/// variant to an HTTP status code + message via two exhaustive
-/// switches (intentional — adding a new variant fails to compile in
-/// the handler until both switches are updated, keeping status
-/// codes in lockstep with the error set).
+/// Domain-level error set for `useCase`.
 pub const AgentGetError = error{
     /// `workspace_id` or `item_id` path param was missing or empty.
     IdsRequired,
@@ -82,12 +53,9 @@ pub const AgentGetOutput = struct {
 // Use case
 // =====================================================================
 
-/// Resolve the agent row + knowledge + tools for a workspace_item.
-/// Validates the workspace_item exists + is of type `'agent'`, then
-/// loads the 3 sub-collections. The use-case is transport-agnostic:
-/// it works for both the per-request arena (production HTTP handler)
-/// and `testing.allocator` (unit tests below) — all allocations go
-/// through the passed-in allocator.
+/// Resolve the agent row + knowledge + tools for a workspace_item. Validates
+/// the workspace_item exists + is of type `'agent'`, then loads the 3
+/// sub-collections.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -184,14 +152,8 @@ pub fn agentsGetHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-//
-// impl + tests in one file (project convention for Agent Mode).
-// 4 behavioural tests cover the use-case:
-//
-//   1. Validation: empty workspace_id OR item_id → IdsRequired
-//   2. ItemNotFound: workspace_item doesn't exist
-//   3. ItemNotAgent: workspace_item exists but item_type != 'agent'
-//   4. Happy path: returns agent + knowledge + tools
+// impl + tests in one file (project convention for Agent Mode). 4 behavioural
+// tests cover the use-case: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;

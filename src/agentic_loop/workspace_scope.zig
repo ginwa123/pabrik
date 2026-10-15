@@ -2,18 +2,8 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
 
-/// Resolve which workspace a chat session belongs to.
-///
-/// Resolution order (first hit wins):
-/// 1. Exact task link: `workspace_item_tasks.id` IS the session id for
-///    kanban / routine tasks, so a single JOIN yields the workspace.
-/// 2. Cwd heuristic: longest-prefix match of `sessions.cwd` against
-///    `workspace_items.path`. Ties between different workspaces, or no
-///    match at all, resolve to null (fail closed — never guess).
-///
-/// Returns an owned slice, or null when the session has no workspace.
-/// Caller frees with `allocator.free`. Empty `session_id` returns null
-/// without touching the DB (avoids binding "" into a query).
+/// Resolve which workspace a chat session belongs to. Resolution order (first
+/// hit wins): 1.
 pub fn resolveWorkspaceId(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -63,12 +53,9 @@ pub fn isSameWorkspace(
     return std.mem.eql(u8, a.?, b.?);
 }
 
-/// Every session id belonging to `workspace_id`: task-linked sessions
-/// plus cwd-matched sessions (longest-prefix-wins per session, so a
-/// session can never appear in two workspaces).
-///
-/// Returns an owned list of owned slices. Free with `freeSessionIds`.
-/// Empty `workspace_id` returns an empty list.
+/// Every session id belonging to `workspace_id`: task-linked sessions plus
+/// cwd-matched sessions (longest-prefix-wins per session, so a session can
+/// never appear in two workspaces).
 pub fn workspaceSessionIds(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -131,10 +118,8 @@ pub fn freeSessionIds(allocator: std.mem.Allocator, ids: [][]u8) void {
     allocator.free(ids);
 }
 
-/// The `cwd` recorded on a session, or null when the row is gone or the column
-/// is empty. This is the session's repo — NOT the server process's cwd, which
-/// is routinely a worktree. Anything that resolves a project-local path for a
-/// session (skills, files) must use this instead of `std.Io.Dir.cwd()`.
+/// The `cwd` recorded on a session, or null when the row is gone or the
+/// column is empty.
 pub fn sessionCwd(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -152,10 +137,8 @@ pub fn sessionCwd(
     return null;
 }
 
-/// Longest-prefix match of `cwd` against `workspace_items.path`.
-/// A path matches when it equals `cwd` or is a `/`-bounded prefix of
-/// it. The longest match wins; a tie between different workspaces, or
-/// no match, returns null. Trailing slashes on item paths are ignored.
+/// Longest-prefix match of `cwd` against `workspace_items.path`. A path
+/// matches when it equals `cwd` or is a `/`-bounded prefix of it.
 fn matchWorkspaceByPath(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,

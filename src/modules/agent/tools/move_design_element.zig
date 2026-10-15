@@ -1,15 +1,5 @@
-//! LLM tool: `move_design_element` — translates an existing design
-//! element by a `(dx, dy)` delta. When `apply_to_children = true`
-//! (the default), the delta cascades to every transitive descendant
-//! of the element via the backend's recursive CTE in one SQL
-//! transaction — so the LLM can say "move Group 2 by 50 right" and
-//! every nested child follows (Figma parity).
-//!
-//! Optional `width` / `height` / `rotation` apply ONLY to the root
-//! element (resize is per-element, Figma convention).
-//!
-//! Plan: docs/superpowers/plans/2026-08-06-move-element-with-descendants.md
-//! (Chunk 5, Task 5.1)
+//! LLM tool: `move_design_element` — translates an existing design element by
+//! a `(dx, dy)` delta.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -21,15 +11,6 @@ const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
 
 /// Input structure for `move_design_element` tool.
-///
-/// All fields except `element_id`, `dx`, `dy` are optional.
-/// - `apply_to_children` defaults to `true` — matches the user's
-///   "move element parent will be move all child" mental model.
-///   Pass `false` to move a single element only (rare — used for
-///   "I want to move a leaf out from inside a group without taking
-///   the group with it").
-/// - `width` / `height` / `rotation` apply ONLY to the root element
-///   when `apply_to_children = true` — they never cascade.
 pub const MoveDesignElementInput = struct {
     /// The element id to translate. Must exist on the active page.
     element_id: []const u8 = "",
@@ -151,25 +132,7 @@ fn validateElementIdShape(allocator: std.mem.Allocator, element_id: []const u8) 
     return null;
 }
 
-/// Execute the `move_design_element` tool. Returns a JSON string for
-/// the LLM.
-///
-/// The tool supports two modes:
-/// - `apply_to_children = true` (default): calls
-///   `design_model.moveElementsWithDescendantsBatch` which cascades
-///   the (dx, dy) delta to every transitive descendant of
-///   `element_id` in one SQL transaction.
-/// - `apply_to_children = false`: calls `design_model.setElementParent`'s
-///   single-element translation via the existing
-///   `updateElement` path with explicit x/y values. Less common —
-///   used when the LLM wants to move a leaf out from inside a
-///   group without taking the group with it.
-///
-/// On success, the response shape is:
-/// `{"updated":[{"id":...,"x":...,"y":...}, ...]}` where `updated`
-/// contains the cascaded element ids.
-///
-/// On error, the response is `{"error":...}`.
+/// Execute the `move_design_element` tool. Returns a JSON string for the LLM.
 pub fn executeMoveDesignElementToString(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -247,12 +210,8 @@ pub fn executeMoveDesignElementToString(
     return try renderSuccessJSON(allocator, single);
 }
 
-/// Render the success JSON response. Lists every cascaded element id
-/// + their new x/y. Heap-borrows the input slice; the caller is
-/// responsible for the input's lifetime.
-/// Render the success JSON response. Lists every cascaded element id
-/// + their new x/y. Heap-borrows the input slice; the caller is
-/// responsible for the input's lifetime.
+/// Render the success JSON response. Lists every cascaded element id + their
+/// new x/y.
 pub const UpdatedElementJSON = struct {
     id: []const u8,
     x: i64,

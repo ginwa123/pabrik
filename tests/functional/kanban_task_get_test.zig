@@ -1,34 +1,5 @@
-// Functional tests for the single-task GET endpoint.
-//
-// Zig port of `tests/functional/kanban_task_get_test.py`
-// (same test names, same order).
-//
-// Plan: docs/superpowers/plans/2026-08-24-kanban-task-detail-single-fetch.md
-// (Task 2).
-//
-// The bug: opening the kanban Task details dialog refetched the WHOLE
-// task list (`GET .../tasks?limit=100`) and plucked one task — on a
-// 270+ task board that means every task's routine JOINs, tags, and
-// base64 image_urls cross the wire to update one row.
-//
-// The fix: `GET /api/workspaces/:ws/items/:item/tasks/:task_id` returns
-// `{ task: {...} }` (same WorkspaceItemTaskResponse shape as the list
-// endpoint). These tests replay the wire round-trip against a real
-// binary:
-//
-//  1. create a task → GET it by id → 200 with the full task shape.
-//  2. unknown task_id → 404 `task not found`.
-//  3. task under a DIFFERENT item → 404 (item scoping).
-//  4. empty task_id in the path → 400 (empty-slice-as-NULL guard).
-//  5. the list route still works (route-order shadowing guard).
-//
-// PYTHON IDIOM THAT DID NOT SURVIVE THE PORT: `_get_task` returned the
-// already-parsed dict and every caller read a field out of it. A
-// `harness.Json` borrows the bytes of the `Response` body it was parsed
-// from, so a helper may NOT return one (the body would be freed with
-// the response). The helpers here return OWNED values instead — an id
-// string, the `error` string — and the tests that need several fields
-// off one response parse it locally.
+// Functional tests for the single-task GET endpoint. Zig port of
+// `tests/functional/kanban_task_get_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -160,11 +131,9 @@ fn getTaskError(
     return gpa.dupe(u8, msg);
 }
 
-/// The single-task GET body, parsed in the CALLER's scope.
-///
-/// Returns owned bytes — the caller parses them itself, because a
-/// `harness.Json` built here would alias a `Response` body this frame
-/// already freed.
+/// The single-task GET body, parsed in the CALLER's scope. Returns owned
+/// bytes — the caller parses them itself, because a `harness.Json` built here
+/// would alias a `Response` body this frame already freed.
 fn getTaskBody(h: *Harness, workspace_id: []const u8, kanban_id: []const u8, task_id: []const u8, expect: []const u16) ![]u8 {
     const path = try std.fmt.allocPrint(
         gpa,
@@ -251,11 +220,6 @@ fn renderKeys(obj: std.json.ObjectMap) ![]u8 {
 }
 
 /// Parse owned bytes into a `harness.Json`.
-///
-/// `harness.Response.json` is the same call against a live response; a
-/// helper cannot return the result (the parsed document aliases the
-/// response body), so the helpers above return OWNED bytes and the test
-/// parses them locally.
 fn parseJson(bytes: []const u8) !harness.Json {
     return .{ .parsed = try std.json.parseFromSlice(std.json.Value, gpa, bytes, .{}) };
 }
@@ -325,11 +289,7 @@ test "get_task_by_id_returns_full_task" {
         "needs_human_review",
     }, "the single-task response");
 
-    // media-flags change: the task body is flag-only. The full
-    // `||`-delimited strings moved to the lazy
-    // `GET .../tasks/:task_id/media` route so a board fetch of 50 tasks
-    // does not carry 50 sets of base64 data URLs. Assert the flags ARE
-    // here and the payload is NOT — that is the contract.
+    // media-flags change: the task body is flag-only.
     try expectKeysPresent(task, &.{ "is_have_image", "is_have_video" }, "the single-task response");
     try expectKeysAbsent(task, &.{ "image_urls", "video_urls" }, "the single-task response");
 }

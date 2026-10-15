@@ -1,10 +1,5 @@
-//! Stop/cancel an LLM session by setting the `cancelled` flag in the DB.
-//!
-//! The workflow's loop checks this flag and breaks out, stopping the
-//! async IO.
-//!
-//! Layered as `useCase` (cancel in DB) and a thin handler that maps
-//! the outcome + errors to status codes / JSON.
+//! Stop/cancel an LLM session by setting the `cancelled` flag in the DB. The
+//! workflow's loop checks this flag and breaks out, stopping the async IO.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");

@@ -1,41 +1,5 @@
 //! `POST /api/git/pr/merge` — merge a pull/merge request through the forge
 //! CLI (`gh pr merge` / `glab mr merge`).
-//!
-//! Body:
-//! ```json
-//! { "path": "<repo>", "pr": "<n|url|branch>", "provider": "github",
-//!   "method": "squash", "title": "...", "body": "...",
-//!   "delete_branch": false, "head_sha": "<40-hex>" }
-//! ```
-//!
-//! ## Why the response is a re-read of the status, not an exit code
-//!
-//! A forge CLI exiting 0 does not mean a pull request merged. It can mean:
-//!   - `glab mr merge` accepted the command and merely ARMED auto-merge
-//!     (its `--auto-merge` default is true whenever a pipeline is running),
-//!   - a GitHub merge queue accepted the PR and has not merged it yet.
-//!
-//! Both are "plausible-looking successes", and a merge button cannot afford
-//! one. So this handler runs the merge, then re-reads the status through
-//! `git_pr_status.useCaseWithPrograms` — the same path the 30 s poll uses —
-//! and reports the forge's own answer. `pending` is the honest middle state:
-//! accepted, not merged.
-//!
-//! ## Why a method is mandatory
-//!
-//! `gh pr merge` with no strategy flag drops into an interactive prompt
-//! ("What merge method would you like to use?"). A non-tty child cannot
-//! answer it, so the request would hang until the timeout killed the child.
-//! `pr_cli.MergeMethod` makes exactly one flag mandatory on GitHub, and the
-//! handler refuses an empty or unknown method with a 400 before spawning
-//! anything.
-//!
-//! ## Auto-merge is deliberately not implemented
-//!
-//! There is no `--auto` / `--auto-merge` path and no fallback to one. The
-//! GitLab arm nonetheless passes `--auto-merge=false` explicitly, so a
-//! future change to glab's own default cannot turn "merge now" back into
-//! "arm it and say it worked".
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -94,9 +58,7 @@ pub const MergeOutcome = struct {
 };
 
 /// `detail` receives the CLI's own stderr (or a synthesized hint) on failure,
-/// capped and trimmed by `pr_status.setFetchDetail`. The HTTP layer renders it
-/// verbatim so the user sees "Pull request is not mergeable" instead of a
-/// generic apology.
+/// capped and trimmed by `pr_status.setFetchDetail`.
 fn mergeUseCase(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -172,10 +134,6 @@ fn mergeUseCaseWithPrograms(
     }
 
     // Exit code 0. That is not the answer — ask the forge.
-    //
-    // A failure to re-read is reported as MergeFailed rather than as a
-    // success: we cannot prove the merge happened, and "I do not know" must
-    // never render as "Merged".
     var status_detail: ?[]u8 = null;
     const status = pr_status.useCaseWithPrograms(
         allocator,
@@ -198,14 +156,9 @@ fn mergeUseCaseWithPrograms(
     };
 }
 
-/// Tell every client that this branch's change request moved, so the sidebar's
-/// RECENT icon and the kanban card badge re-read the forge instead of keeping
-/// the colour they cached before the mutation.
-///
-/// Never fails the caller — a successful merge must not be reported as a
-/// failure because the UI could not be told about it. The merge box's own
-/// local invalidate is the path that cannot be lost; this one is what carries
-/// the news to a second tab (see agentic_loop/git_pr_state_events.zig).
+/// Tell every client that this branch's change request moved, so the
+/// sidebar's RECENT icon and the kanban card badge re-read the forge instead
+/// of keeping the colour they cached before the mutation.
 fn emitPrStateEvent(ctx: gserverz.HttpContext, cwd: []const u8, branch: []const u8, action: []const u8) void {
     const di = pabrik_core.getSingleton() catch return;
     pabrik_core.git_pr_state_events.emitGitPrStateEvent(ctx.allocator, di.event_bus, .{
@@ -282,13 +235,7 @@ pub fn gitPrMergeHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, r
     };
 
     // A merge MOVED this branch's change request, and every badge reads a
-    // shared 60s cache that still holds the pre-merge answer. Emitted only for
-    // a REAL merge: an accepted-but-pending one (a merge queue, an armed
-    // auto-merge) leaves the change request `open`, so there is no state change
-    // to show.
-    //
-    // Free of extra forge work: the status re-read above already carries
-    // `head_ref`, which is exactly the branch half of the frontend's cache key.
+    // shared 60s cache that still holds the pre-merge answer.
     if (!outcome.pending and outcome.status.head_ref.len > 0) {
         emitPrStateEvent(ctx, parsed.path, outcome.status.head_ref, "merged");
     }

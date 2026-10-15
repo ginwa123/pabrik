@@ -15,12 +15,8 @@ pub const Migration009RemoveCreatedColumn = struct {
         // Rename old table
         try db.exec(allocator, "ALTER TABLE llm_history RENAME TO llm_history_old", &[_][]const u8{});
 
-        // Create new table with `created_at` (the column this migration
-        // was supposed to consolidate). Columns added by later migrations
-        // (e.g. `temperature` / `is_thinking` from migration 011) MUST
-        // NOT be inlined here — that forward-projects the schema and
-        // causes a "duplicate column name" error when those migrations
-        // later try to `ALTER TABLE ... ADD COLUMN` on a fresh DB.
+        // Create new table with `created_at` (the column this migration was
+        // supposed to consolidate). Columns added by later migrations (e.g.
         try db.exec(allocator,
             \\CREATE TABLE IF NOT EXISTS llm_history (
             \\    id TEXT PRIMARY KEY,
@@ -43,29 +39,6 @@ pub const Migration009RemoveCreatedColumn = struct {
         , &[_][]const u8{});
 
         // Copy data from old table.
-        //
-        // NOTE on `created_at`: this migration's rename-and-copy dance
-        // assumes the old table had a `created` column to convert into
-        // `created_at`, but Migration 001 has always created
-        // `llm_history` with `created_at` directly (no historical
-        // `created` column ever existed in this codebase). Reading
-        // `created` from `llm_history_old` therefore crashes the
-        // migration on a fresh DB:
-        //
-        //   sqlite3_prepare_v2 error: no such column: created
-        //
-        // We use `COALESCE(created_at, CURRENT_TIMESTAMP)` instead. On
-        // the (only) schema that actually exists, `created_at` is the
-        // column on `llm_history_old`; the COALESCE fallback guards
-        // against the (hypothetical) empty-table case where every
-        // column is NULL — there are no rows to copy, but the function
-        // still needs a well-typed projection.
-        //
-        // Columns added by later migrations (`temperature`,
-        // `is_thinking` from migration 011; etc.) MUST NOT appear in
-        // the INSERT column list or the SELECT projection — they're
-        // not on `llm_history_old` (only added by their own migrations)
-        // and the new `llm_history` no longer declares them either.
         try db.exec(allocator,
             \\INSERT INTO llm_history (id, session_id, model, response_content, tool_calls_json,
             \\    tool_results_json, finish_reason, usage_json, created_at, role,

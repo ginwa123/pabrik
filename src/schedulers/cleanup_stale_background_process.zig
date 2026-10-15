@@ -1,39 +1,5 @@
-//! Cronjob — delete stale rows from `session_background_process` whose PID
-//! is no longer alive.
-//!
-//! Per the user spec, the only criterion for "stale" is "is the process
-//! actually running?". The `status` column is deliberately ignored — it
-//! can be stale (e.g. a `kill -9` left the row at `status='running'`
-//! because the defer that updates it never ran), and a process can be
-//! alive while the row says otherwise. The cross-platform
-//! `helpers.process_status.isProcessRunning(pid)` helper is the source
-//! of truth.
-//!
-//! Architecture: pure helper `cleanupStaleBackgroundProcesses(input) !CleanupResult`
-//! does the work; thin `handle(ctx, now_unix) void` wrapper pulls
-//! `*App` from the singleton and calls the helper. Per row:
-//! parse (session_id, pid, command, log_path), call `isProcessRunning`,
-//! keep if alive, otherwise queue the completion message via
-//! `insertQueueMessage` (notify) and DELETE (only if notified).
-//!
-//! Cron registration is in `src/main.zig` right after the
-//! `cleanup_stale_worker` registration, fired every minute on the minute.
-//!
-//! Schema (mirrors migration 014 — `src/migrations/migration.zig:218`):
-//! ```sql
-//! CREATE TABLE session_background_process (
-//!     session_id TEXT NOT NULL,
-//!     pid INTEGER NOT NULL,
-//!     command TEXT NOT NULL,
-//!     log_path TEXT NOT NULL,
-//!     started_at INTEGER NOT NULL,
-//!     status TEXT NOT NULL DEFAULT 'running',
-//!     PRIMARY KEY (session_id, pid)
-//! )
-//! ```
-//!
-//! The DELETE must use BOTH (session_id, pid) because the PRIMARY KEY
-//! is composite.
+//! Cronjob — delete stale rows from `session_background_process` whose PID is
+//! no longer alive.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -41,24 +7,13 @@ const sqlite = pabrikcore.sqlite;
 const process_status = @import("helpers").process_status;
 const logger_mod = pabrikcore.loggermod;
 const event_bus_mod = pabrikcore.event_bus;
-// Route the bg-completion helpers + queue insert through `pabrikcore`
-// (the `root` module) instead of @import'ing the agentic_loop files
-// directly — same pattern as cleanup_stale_worker.zig's
-// `pabrikcore.ai_mod.delete_worker`. The exe module compiles `main.zig`
-// which reaches this file via the `pabrikcore` re-export; a direct
-// relative @import here would put those files in TWO modules and fire
-// Zig's "file exists in two modules" error. `insertQueueMessage` is
-// re-exported by workflow.zig so no mod.zig change is needed for it;
-// `background_process` has its own `pub const` in ai_workflow/tui/mod.zig.
+// Route the bg-completion helpers + queue insert through `pabrikcore` (the
+// `root` module) instead of @import'ing the agentic_loop files directly —
+// same pattern as cleanup_stale_worker.zig's
 const bg_proc = pabrikcore.ai_mod.background_process;
 const ai_workflow = pabrikcore.ai_mod.ai_workflow;
 // `migration.zig` lives in `src/migrations/` — one `..` up from
-// `src/schedulers/`. Per project memory `project-test-use-migrations-module`:
-// test setupDb MUST use `MigrationManager.registerAllMigrations +
-// runMigrations()` to spin up an in-memory DB that walks ALL migrations
-// from 001 → latest, never hand-roll CREATE TABLE bodies. The migration
-// chain is the single source of truth; hand-rolled schemas drift from
-// production the moment a new column or trigger lands.
+// `src/schedulers/`.
 const migration = @import("../migrations/migration.zig");
 const testing = std.testing;
 
@@ -75,25 +30,13 @@ pub const CleanupResult = struct {
     kept_count: usize = 0,
     notified_count: usize = 0,
     deleted_count: usize = 0,
-    /// Deduped session_ids that were successfully notified this tick
-    /// (one entry per session, even if several of its PIDs completed).
-    /// Caller-owned: allocated with `input.allocator` (the per-tick arena
-    /// in `handle`, `testing.allocator` in tests). Free with
-    /// `freeNotifiedSessions` when done — or let the tick arena drop it.
-    /// Empty (`&.{}`) when nothing was notified; never free the empty case.
+    /// Deduped session_ids that were successfully notified this tick (one
+    /// entry per session, even if several of its PIDs completed).
     notified_sessions: [][]const u8 = &.{},
 };
 
-/// Pure seam for the Task 3 wake decision: wake the session iff no worker
-/// is currently running on it. A running worker will drain the queued
-/// completion message on its own loop iteration (`hasQueuedMessages ->
-/// continue` in workflow.zig); an idle session needs an explicit
-/// `emit_run_agent` kick or the queue row sits forever.
-///
-/// Kept as a named function (rather than inlining `!running` at the call
-/// site) so the decision is unit-testable without a DB/singleton — the
-/// live `emit_run_agent` path itself is covered by the Task 4 functional
-/// test, which boots a real binary + tmpdir HOME.
+/// Pure seam for the Task 3 wake decision: wake the session iff no worker is
+/// currently running on it.
 pub fn shouldWake(is_running: bool) bool {
     return !is_running;
 }
@@ -107,43 +50,10 @@ pub fn freeNotifiedSessions(allocator: std.mem.Allocator, result: *CleanupResult
 }
 
 // ─── Production helper ────────────────────────────────────────────────────
-//
-// Three-phase notify-then-delete. Pass 1: SELECT every
-// (session_id, pid, command, log_path) row and check the actual OS
-// process via `helpers.process_status.isProcessRunning`. Dead processes
-// are collected. Pass 1.5 (notify): for each dead pair, read the log
-// (capped at `bg_proc.completion_log_cap_bytes`), build the completion
-// envelope via `bg_proc.buildCompletionMessage`, and queue it with
-// `insertQueueMessage` (SSE `queue_queued`, same as any queued user
-// message — no new event name). Pass 2: batch DELETE only the pairs
-// that were successfully notified. A pair whose notify fails (log
-// unreadable for a reason OTHER than FileNotFound, or queue INSERT
-// error) is left in the table for the next tick to retry. A missing
-// log file is NOT a failure — the queue message carries a
-// `(log file not found: {path})` marker and the row is still deleted.
-//
-// The `status` column is deliberately IGNORED — it can drift from
-// reality (a `kill -9` leaves it at `'running'` because the defer that
-// updates it never ran; or a process can be alive while the row says
-// otherwise).
-//
-// Batching is chunked at `max_pairs_per_stmt` pairs per DELETE
-// statement because SQLite's default `SQLITE_MAX_VARIABLE_NUMBER` is
-// 999 and each pair binds 2 params — 499 pairs max per statement.
-// Anything more becomes a second DELETE.
-//
-// Per-row isolation: if one row's log read / queue insert fails, log
-// via `logger.?errFmt` and continue to the next row — the cron tick
-// must NOT abort the whole cleanup on a single bad row. Per-chunk
-// isolation for the DELETEs likewise: one bad batch logs and the tick
-// continues to the next chunk.
+// Three-phase notify-then-delete.
 
-/// Args for `notifySingleBackgroundCompletion` — one dead
-/// (session_id, pid) pair plus the shared request-scoped handles.
-/// All slices are borrowed (caller-owned); all message buffers are
-/// allocated with `allocator` and only need to live for the call
-/// (`insertQueueMessage` binds/copies synchronously — per-request
-/// arena rule, no defer-free here).
+/// Args for `notifySingleBackgroundCompletion` — one dead (session_id, pid)
+/// pair plus the shared request-scoped handles.
 pub const NotifySingleBackgroundCompletionArgs = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -159,14 +69,6 @@ pub const NotifySingleBackgroundCompletionArgs = struct {
 
 /// Notify one dead background pair: read the log (capped), build the
 /// completion envelope, queue it with `is_emit_sse=true`.
-///
-/// Moved verbatim out of the `cleanupStaleBackgroundProcesses` pass-1.5
-/// loop so the immediate watcher thread (`background_watcher.zig`) can
-/// reuse the exact same path. Returns true iff notified (caller deletes).
-/// FileNotFound on the log → not-found marker (still notify). Any OTHER
-/// log-read error, message-build error, or queue-INSERT error → false
-/// (caller leaves the row for the next tick to retry). Never panics —
-/// every failure is caught and logged via `logger.?errFmt`.
 pub fn notifySingleBackgroundCompletion(args: NotifySingleBackgroundCompletionArgs) bool {
     const allocator = args.allocator;
     const io = args.io;
@@ -250,10 +152,8 @@ pub fn notifySingleBackgroundCompletion(args: NotifySingleBackgroundCompletionAr
         return false;
     };
 
-    // Push the list change so the frontend drops its 5s poll and relies
-    // on SSE. Emitted AFTER the queue insert succeeds (same tick that
-    // deletes the row) — covers both the immediate watcher thread and
-    // the per-minute cron fallback, which share this function.
+    // Push the list change so the frontend drops its 5s poll and relies on
+    // SSE.
     pabrikcore.ai_mod.background_process_events.emitCompleted(
         allocator,
         event_bus,
@@ -267,12 +167,7 @@ pub fn notifySingleBackgroundCompletion(args: NotifySingleBackgroundCompletionAr
 
 /// Wake one notified session: if no worker is running on it, resolve the
 /// session row (safe defaults on miss) and kick an agent run via
-/// `emit_run_agent` with `skip_initial_queue_message=true` so the run
-/// drains the queued completion without duplicating a user message.
-///
-/// Moved verbatim out of the `handle()` wake loop so the immediate
-/// watcher thread can reuse the exact same path. All errors are caught
-/// and logged — never panics, never propagates.
+/// `emit_run_agent` with `skip_initial_queue_message=true` so the run drains
 pub fn wakeSessionForCompletion(di: *pabrikcore.App, allocator: std.mem.Allocator, sid: []const u8) void {
     const logger = di.logger;
 
@@ -280,10 +175,7 @@ pub fn wakeSessionForCompletion(di: *pabrikcore.App, allocator: std.mem.Allocato
     if (!shouldWake(running)) return;
 
     // Resolve the session row for the emit fields (same shape as
-    // `startAgentUseCase` step 3). Missing row → safe defaults;
-    // `emit_run_agent.insert_worker` upserts the session anyway.
-    // Slices are duped into `allocator` BEFORE the row is released so they
-    // outlive `row.deinit`.
+    // `startAgentUseCase` step 3).
     var sname: []const u8 = "";
     var scwd: []const u8 = "";
     var sprofile: []const u8 = "";
@@ -343,13 +235,7 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
 
     var result = CleanupResult{};
 
-    // Per-call arena for the dead-rows collection. The slice pointers
-    // we collect from `row.values[0]` / `row.values[1]` are owned by
-    // the row and freed on `row.deinit`; without the arena, we'd have
-    // to dupe each one (or worse, use-after-free). Using a per-call
-    // arena gives us "borrow the row's slice memory" semantics with
-    // zero per-row alloc/free overhead — the arena frees everything
-    // in one shot when this function returns.
+    // Per-call arena for the dead-rows collection.
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const a = arena.allocator();
@@ -369,12 +255,7 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
     defer dead.deinit(a);
 
     // `kind = 'job'` is not an optimization — it is the OTHER HALF of
-    // `mode="background_persistence"`'s contract. The immediate watcher is not
-    // scheduled for a service, so this cron is the only remaining thing that
-    // could notify one; without the filter it would queue "your dev server
-    // exited" a month later, which is exactly the message the mode exists to
-    // suppress. A row whose `kind` is NULL or anything else matches NOTHING and
-    // would leak, so the column is NOT NULL DEFAULT 'job' (migration 107).
+    // `mode="background_persistence"`'s contract.
     const select_sql =
         \\SELECT session_id, pid, command, log_path
         \\FROM session_background_process
@@ -407,15 +288,8 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
             continue;
         }
 
-        // Process is dead — collect the row for the notify (pass 1.5)
-        // + batch DELETE (pass 2).
-        //
-        // CRITICAL: row.values[i] is freed by `row.deinit(a)` (which
-        // fires at the end of this iteration block). Without duping,
-        // the slices stored in `dead` would dangle by the time passes
-        // 1.5 / 2 run. Duping into the arena gives us stable copies
-        // that outlive every row.deinit() and live until arena.deinit()
-        // at the end of this function.
+        // Process is dead — collect the row for the notify (pass 1.5) + batch
+        // DELETE (pass 2).
         const sid_copy = a.dupe(u8, session_id) catch |err| {
             if (logger) |log| {
                 log.errFmt(
@@ -472,17 +346,7 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
     if (dead.items.len == 0) return result;
 
     // Pass 1.5 (notify): for each dead pair, read the log + queue the
-    // completion message. Per-row isolation — one bad log or failed
-    // INSERT logs and leaves that pair un-notified (it stays in the
-    // table for the next tick); the loop always continues.
-    //
-    // All message buffers are arena-allocated (`a`): `insertQueueMessage`
-    // binds/copies them into SQLite synchronously, so they only need to
-    // live for the duration of the call. No defer-free of arena memory
-    // here per the per-request arena rule.
-    //
-    // Body lives in `notifySingleBackgroundCompletion` (shared with the
-    // immediate watcher thread) — this loop is just the per-pair call.
+    // completion message.
     for (dead.items) |*pair| {
         if (notifySingleBackgroundCompletion(.{
             .allocator = a,
@@ -502,16 +366,7 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
     }
 
     // Task 3: expose the deduped notified session_ids for the wake loop in
-    // `handle()`. Built from `dead` (not `doomed`) so a session is woken
-    // even if its DELETE chunk below fails — the queue message already
-    // exists, so the agent run must still drain it.
-    //
-    // Ownership: duped into `input.allocator` (NOT the per-call arena `a`,
-    // which is freed on return and would dangle the slices). In `handle()`
-    // that allocator IS the per-tick arena, so the list lives exactly as
-    // long as the wake loop needs it. In tests it is `testing.allocator`,
-    // so each test must `freeNotifiedSessions` (DebugAllocator leaks
-    // otherwise).
+    // `handle()`.
     {
         var uniq: std.ArrayListUnmanaged([]const u8) = .empty;
         defer uniq.deinit(allocator);
@@ -585,18 +440,9 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
 
     if (doomed.items.len == 0) return result;
 
-    // Pass 2: batch DELETE all successfully-notified rows in chunks.
-    // Each chunk builds ONE statement of the form
-    //   DELETE FROM session_background_process
-    //   WHERE (session_id = ? AND pid = ?)
-    //      OR (session_id = ? AND pid = ?)
-    //      OR ...
-    // The OR-chain form is the simplest portable SQLite pattern; it
-    // binds exactly 2 params per pair and avoids the version-fuss of
-    // row-value `IN ((?, ?), ...)` syntax. Composite PK means we MUST
-    // match both session_id AND pid — the same PID can exist under
-    // multiple sessions and deleting only by pid would clobber
-    // unrelated rows.
+    // Pass 2: batch DELETE all successfully-notified rows in chunks. Each
+    // chunk builds ONE statement of the form DELETE FROM
+    // session_background_process WHERE (session_id = ?
     var chunk_start: usize = 0;
     while (chunk_start < doomed.items.len) {
         const chunk_end = @min(chunk_start + max_pairs_per_stmt, doomed.items.len);
@@ -660,12 +506,7 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
     return result;
 }
 
-/// Cron callback. Signature is fixed by
-/// `cronjob_manager.register` (`kabelweb repo src/server/cronjob_manager.zig:87`):
-/// `*const fn (ctx: ?*anyopaque, now_unix: i64) void`.
-///
-/// Returns `void` (not `!void`) — DB errors are caught and logged
-/// inside, never propagated. The cron thread MUST NOT panic.
+/// Cron callback.
 pub fn handle(ctx: ?*anyopaque, now_unix: i64) void {
     _ = ctx;
     _ = now_unix;
@@ -674,10 +515,9 @@ pub fn handle(ctx: ?*anyopaque, now_unix: i64) void {
     const allocator = di.allocator;
     const logger = di.logger;
 
-    // Per-tick arena — all SQL string allocations live for the
-    // duration of the cleanupStaleBackgroundProcesses call. Cheaper
-    // than per-row alloc/free and the arena frees them in one shot
-    // when this scope exits.
+    // Per-tick arena — all SQL string allocations live for the duration of
+    // the cleanupStaleBackgroundProcesses call. Cheaper than per-row
+    // alloc/free and the arena frees them in one shot when this scope exits.
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const a = arena.allocator();
@@ -693,26 +533,8 @@ pub fn handle(ctx: ?*anyopaque, now_unix: i64) void {
         return;
     };
 
-    // Task 3: wake idle workers so the queued completion actually triggers
-    // an agent run. `workflow.zig` drains `session_queue_messages` only
-    // while a worker is running (`hasQueuedMessages -> continue`); when the
-    // background job outlived the agent run, the queue row would sit idle
-    // forever. For each notified session with NO running worker, kick one
-    // via `emit_run_agent` with `skip_initial_queue_message=true` (the
-    // kanban Start-agent pattern in `start_agent.zig`) so the run starts
-    // and drains the completion output without duplicating a user message.
-    // A session that already has a worker needs nothing — its loop will
-    // drain the queue on the next iteration.
-    //
-    // Never crashes the tick: every per-session failure (worker check is
-    // infallible by design; session lookup + emit are caught) is logged
-    // and the loop continues. `result.notified_sessions` is arena-owned
-    // (`a`) — no free needed (per-request arena rule).
-    //
-    // Body lives in `wakeSessionForCompletion` (shared with the immediate
-    // watcher thread) — this loop is just the per-session call. `woken`
-    // counts attempted wakes (emit failures are logged inside and still
-    // count — they are rare and the next tick retries via cron fallback).
+    // Task 3: wake idle workers so the queued completion actually triggers an
+    // agent run.
     var woken_count: usize = 0;
     for (result.notified_sessions) |sid| {
         const running = ai_workflow.isWorkerRunning(a, di.db, sid);
@@ -728,10 +550,8 @@ pub fn handle(ctx: ?*anyopaque, now_unix: i64) void {
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────
-//
-// Inline tests, matching the project convention for files that have
-// impl + tests (delete_worker.zig, cleanup_stale_worker.zig).
-// Aggregated into the test module graph via src/root.zig's test block.
+// Inline tests, matching the project convention for files that have impl +
+// tests (delete_worker.zig, cleanup_stale_worker.zig).
 
 const TestCtx = struct {
     db: sqlite.SqliteBackend,
@@ -753,13 +573,7 @@ fn setupCtx() !TestCtx {
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
-    // Walk every production migration (001 → latest). After this returns,
-    // the schema is exactly what a production DB looks like — including
-    // the `session_background_process` table created by Migration 014.
-    // No hand-rolled CREATE TABLE — that's the project convention
-    // (see project-test-use-migrations-module memory; reviewer note on
-    // PR #172: "when setup db, use from migrations module, migrations
-    // module will load all table").
+    // Walk every production migration (001 → latest).
     var manager = migration.MigrationManager.init(alloc, &db);
     defer manager.deinit();
     try migration.registerAllMigrations(&manager);
@@ -771,11 +585,8 @@ fn setupCtx() !TestCtx {
     };
 }
 
-/// Insert a background-process row. `pid` is passed as an `i64` so SQLite
-/// can coerce it to INTEGER (matching the production column type).
-///
-/// Uses `bufPrint` with a stack buffer so the test doesn't leak through
-/// the DebugAllocator (PIDs fit easily in 32 bytes — i64 max is 19 chars).
+/// Insert a background-process row. `pid` is passed as an `i64` so SQLite can
+/// coerce it to INTEGER (matching the production column type).
 fn seedRow(
     db: *sqlite.SqliteBackend,
     alloc: std.mem.Allocator,
@@ -793,10 +604,9 @@ fn seedRow(
     try db.exec(alloc, sql, &.{ session_id, pid_str, status });
 }
 
-/// Insert a background-process row with an explicit command + log_path
-/// (for the notify-then-delete tests, which need a real temp log file
-/// or a deliberately missing path). `seedRow` delegates with the
-/// historical `'echo hi'` / `'/tmp/log'` defaults.
+/// Insert a background-process row with an explicit command + log_path (for
+/// the notify-then-delete tests, which need a real temp log file or a
+/// deliberately missing path).
 fn seedRowFull(
     db: *sqlite.SqliteBackend,
     alloc: std.mem.Allocator,
@@ -1114,19 +924,7 @@ test "cleanupStaleBackgroundProcesses returns the DB error when the session_back
 }
 
 test "cleanupStaleBackgroundProcesses batch-chunks deletes when more than max_pairs_per_stmt dead rows exist" {
-    // Verify the chunking logic at the 499-pair boundary. We seed 600
-    // dead rows (PID 999_999_990..999_999_999 is more than enough
-    // distinct dead PIDs at i64 magnitudes no real system would have).
-    // 600 > 499 means the helper MUST issue at least 2 batch DELETEs
-    // — the first 499-pair statement + a 101-pair statement. If the
-    // chunking regressed to a single unbounded statement, SQLite would
-    // either accept it (newer SQLite, variable limit 32766) or reject
-    // it (older SQLite, limit 999). Either way, the externally
-    // observable contract — "every dead row is gone, every alive row
-    // stays, counts are accurate" — must still hold.
-    //
-    // We also seed 2 live rows (self PID × 2 distinct sessions) and
-    // confirm they survive the cleanup.
+    // Verify the chunking logic at the 499-pair boundary.
     var ctx = try setupCtx();
     defer ctx.deinit();
 
@@ -1178,13 +976,8 @@ test "cleanupStaleBackgroundProcesses batch-chunks deletes when more than max_pa
 }
 
 // ─── Task 3: notified_sessions + shouldWake ───────────────────────────────
-//
 // The wake loop in `handle()` needs the deduped session_ids that were
-// notified this tick. The live `emit_run_agent` kick itself is NOT
-// unit-tested here — it needs the process singleton (`getSingleton`) and
-// an Io group, which only exist in a running binary. That path is covered
-// by the Task 4 functional test (fresh binary + tmpdir HOME, real cron
-// tick, assert the agent run drains the queued completion).
+// notified this tick.
 
 test "shouldWake wakes idle sessions and skips running ones" {
     try testing.expect(shouldWake(false));

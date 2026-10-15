@@ -1,11 +1,4 @@
 //! `GET /api/workers` — list all workers.
-//!
-//! Query params:
-//!   - `limit`: max workers to return (default 50)
-//!   - `session_id`: filter by session_id (optional)
-//!
-//! Layered as `useCase` (resolve singleton + build query + walk rows +
-//! build response) and a thin handler that maps errors to status codes.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -39,35 +32,17 @@ fn useCase(
     owner: []const u8,
 ) WorkerListError!WorkerListResult {
     // Only the query string lives in the arena — it is dead the moment
-    // `db.query` returns. The rows and the JSON keep the caller's allocator
-    // because `WorkerInfo` borrows the row values and serialises them after
-    // the iterator has moved on.
+    // `db.query` returns.
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const q = arena.allocator();
 
-    // Build query with optional session_id filter. SQL convention:
-    // alias the table (`w`) so the column references stay
-    // unambiguous when filters grow (see project memory
-    // pabrik-sql-alias-tables.md).
+    // Build query with optional session_id filter. SQL convention: alias the
+    // table (`w`) so the column references stay unambiguous when filters grow
+    // (see project memory pabrik-sql-alias-tables.md).
     const base_sql = "SELECT w.id, w.session_id, w.working_directory, w.last_activity_nano AS last_activity, w.last_activity_description, w.created_at FROM worker w";
 
     // `cancelled = 0` is the whole reason a client can trust this list.
-    //
-    // `POST /api/llm/session/:session/stop` cannot delete the row: the loop
-    // reads `cancelled` back to break out of itself (`isWorkerCancelled` in
-    // `agentic_loop/workflow.zig`), and that helper answers `false` for a
-    // row that is not there, so deleting it would silently un-cancel the run
-    // the user just stopped. The row therefore outlives the stop request and
-    // arrives here, where `status`/`is_running` are hardcoded for every row
-    // returned — so a stopped run was reported as a live one to every client,
-    // and a phone that keys a spinner on the list kept spinning with nothing
-    // to clear it. `Worker.cancelled`'s own doc comment already specifies
-    // this filter; no code implemented it.
-    //
-    // The loop's `defer deleteWorker` still removes the row once the run
-    // actually winds down. This predicate covers the window in between, plus
-    // a row orphaned by a process that will never run its defer again.
     var where_sql: []const u8 = "WHERE w.cancelled = 0";
 
     if (input.session_id_filter != null) {
@@ -177,11 +152,9 @@ pub fn workerListHandler(
     return res.jsonResponse(.{ .status_code = 200, .data = outcome.json });
 }
 
-// ─── Tests ──────────────────────────────────────────────────────────────────
-//
+// ─── Tests
+// ──────────────────────────────────────────────────────────────────
 // Registered in `src/root.zig`'s `test { }` block — the same lazy-compilation
-// workaround `schedulers/cleanup_stale_worker.zig` uses. Without that import
-// these tests exist but `zig build test` never discovers them.
 
 const testing = std.testing;
 const sqlite = pabrikcore.sqlite;
@@ -224,10 +197,9 @@ fn seedWorker(
     , &.{ id, session_id, cancelled });
 }
 
-/// `useCase` allocates its rows and its JSON from the allocator it is handed and
-/// never frees either, so the tests hand it an arena instead of
+/// `useCase` allocates its rows and its JSON from the allocator it is handed
+/// and never frees either, so the tests hand it an arena instead of
 /// `testing.allocator` — otherwise every test would fail on a leak that the
-/// production call path owns (a per-request arena, supplied by the caller).
 fn listAs(
     db: *sqlite.SqliteBackend,
     arena_alloc: std.mem.Allocator,
@@ -333,10 +305,9 @@ test "every listed row still reports itself as running (the Android parser's pre
 
     const result = try listAs(&s.db, a, .{ .limit = 50, .session_id_filter = null }, "");
 
-    // `WorkerApi.parseRunningSessionIds` projects the *presence* of a row down
-    // to the id set and never reads these two fields, precisely because they
-    // are literals. The moment that stops being true, this fails and the
-    // Kotlin has to be revisited rather than left quietly wrong.
+    // `WorkerApi.parseRunningSessionIds` projects the *presence* of a row
+    // down to the id set and never reads these two fields, precisely because
+    // they are literals.
     try testing.expect(std.mem.indexOf(u8, result.json, "\"status\":\"running\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.json, "\"is_running\":true") != null);
 }
@@ -383,10 +354,6 @@ test "repeated listings hand their pooled reader back instead of exhausting the 
     // FILE-BACKED, deliberately: `initWithConfig` skips pooling for
     // `:memory:` (a second connection would see an empty database), so the
     // in-memory `setupDb` above cannot observe this at all.
-    //
-    // A leaked cursor would also stay invisible to a leak-checking allocator,
-    // because the row bytes are freed by the arena — what leaks is the
-    // pooled reader, which `ReaderPool` owns, not the caller.
     const alloc = testing.allocator;
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -405,8 +372,7 @@ test "repeated listings hand their pooled reader back instead of exhausting the 
     defer db.deinit();
     // ONE reader, and a budget short enough to fail fast: with a single
     // reader, a second listing that finds the pool empty has no way to grow
-    // it, so it waits and then falls back onto the write connection. That
-    // fallback is the leak, made countable.
+    // it, so it waits and then falls back onto the write connection.
     try db.initWithConfig(threaded.io(), path, .{
         .read_conns = 1,
         .max_read_conns = 1,
@@ -441,15 +407,11 @@ test "repeated listings hand their pooled reader back instead of exhausting the 
         try testing.expectEqual(@as(u32, 1), result.count);
     }
 
-    // Every listing found a reader waiting for it. Had the cursor leaked its
-    // reader, the second call onwards would have found the pool empty, waited
-    // out `reader_wait_ms`, and served the read on the WRITE connection —
-    // which serializes that read against every concurrent write.
+    // Every listing found a reader waiting for it.
     try testing.expectEqual(@as(u64, 0), db.readFallbackCount());
 
     // And nothing is still checked out. This catches the leak on its own,
     // without relying on the pool filling up: a deinited cursor returns its
-    // reader, and a drained one does not. No allocator can see this — the row
-    // bytes belong to the arena, the connection to the pool.
+    // reader, and a drained one does not.
     try testing.expectEqual(@as(usize, 0), db.outstandingClaims());
 }

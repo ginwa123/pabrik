@@ -1,20 +1,5 @@
-//! `GET /api/workspaces/:workspace_id/skills`.
-//!
-//! One workspace, one list, no filesystem walk. Migration 101's `skills`
-//! table is the source of truth; this handler only projects rows onto the
-//! wire.
-//!
-//! The route moved under `/api/workspaces/:workspace_id` because
-//! `skills_store.listSkills` REQUIRES a workspace id — it is a function
-//! parameter that lands in the `WHERE` clause, never a value a caller can
-//! choose to omit. The old collection route had no source for one, which
-//! is why it had to merge two directories on the way in and why "which
-//! directory won" was decided by walking the filesystem.
-//!
-//! Wire shape: `{ "skills": [{ "name", "description" }] }`. The body is
-//! deliberately absent from the list — a workspace can hold dozens of
-//! skills and the sidebar only renders a picker. One name's body comes from
-//! the detail route.
+//! `GET /api/workspaces/:workspace_id/skills`. One workspace, one list, no
+//! filesystem walk.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -37,15 +22,9 @@ pub const SkillsListOutput = struct {
     skills: []skills_store.SkillRow,
 };
 
-// =====================================================================
-// Use case
-// =====================================================================
-//
-// Takes the allocator and the database handle as ARGUMENTS and never
-// calls `getSingleton()` itself. That is the whole reason the handler and
-// the use case are separate: resolving the singleton inside would force
-// every test below to boot the whole application, and the tests below run
-// against an in-memory SQLite database instead.
+// ===================================================================== Use
+// case =====================================================================
+// Takes the allocator and the database handle as ARGUMENTS and never calls
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -55,11 +34,9 @@ fn useCase(
     if (input.workspace_id.len == 0) return error.WorkspaceIdRequired;
     return .{
         .skills = skills_store.listSkills(allocator, db, input.workspace_id) catch |err| switch (err) {
-            // `WorkspaceIdRequired` is unreachable behind the guard above, but
-            // it is mapped rather than propagated with `try`: that would widen
-            // this function's error set to whatever the store declares, and the
-            // handler's exhaustive status-code switch would then break on a
-            // rename inside a file this handler does not own.
+            // `WorkspaceIdRequired` is unreachable behind the guard above,
+            // but it is mapped rather than propagated with `try`: that would
+            // widen this function's error set to whatever the store declares,
             error.WorkspaceIdRequired => return error.WorkspaceIdRequired,
             error.QueryFailed => return error.QueryFailed,
             error.OutOfMemory => return error.OutOfMemory,
@@ -226,10 +203,8 @@ test "useCase: an empty description round-trips as empty, not as a missing field
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // A model routinely writes the body first and the one-line
-    // description second, so "" is a legal skill state. If it round-tripped
-    // as NULL the JSON would carry `null` and the picker would show a
-    // blank row with no way to tell it apart from a bug.
+    // A model routinely writes the body first and the one-line description
+    // second, so "" is a legal skill state.
     try seed(&ctx, "ws_1", "half-written", "");
 
     const output = try useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1" });
@@ -267,8 +242,4 @@ test "useCase: the auto-improve lock travels with each list row" {
     try testing.expect(!output.skills[1].is_can_auto_improve);
 }
 // Registration ORDER is load-bearing: `matchRoute` returns on the first hit,
-// so the collection route must precede `:skill_name`. That is asserted
-// against the real route table by `route table: the three skills verbs
-// resolve to their handlers` in `http_routes.zig`, which builds the table and
-// asks `matchRoute` what it RESOLVES. Asserting it against the text of
-// `http_routes.zig` could only ever compare two byte offsets.
+// so the collection route must precede `:skill_name`.

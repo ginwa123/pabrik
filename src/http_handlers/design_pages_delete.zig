@@ -1,25 +1,6 @@
-//! `DELETE /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id`.
-//!
-//! Delete a design page. The on-disk `<item_path>/.pabrik/design/<page>/`
-//! folder is recursively unlinked AFTER the SQL DELETE succeeds
-//! (defer-pattern) via `design_model.deletePage`. The DB FK
-//! `ON DELETE CASCADE` on `design_page_elements.page_id` cleans up
-//! the child element rows in the same transaction. UI-only — no LLM
-//! tool exposes this endpoint, only the DesignView tab-strip × button.
-//!
-//! Response shape: `{"success": true}` on a successful delete.
-//! Returns 404 if the page did not exist (so the frontend can
-//! distinguish "already gone" from "deleted right now"). The frontend
-//! treats both as success (idempotent — no need to surface a toast
-//! for an already-deleted page).
-//!
-//! Errors:
-//!   - 400 missing `page_id` path param
-//!   - 404 page not found
-//!   - 500 DB failure
-//!
-//! Plan: docs/superpowers/plans/2026-07-25-design-page-delete-button.md
-//!   (Chunk 1)
+//! `DELETE
+//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id`.
+//! Delete a design page.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");

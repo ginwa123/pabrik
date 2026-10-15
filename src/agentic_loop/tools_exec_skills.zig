@@ -1,44 +1,6 @@
 //! Exec wrappers for the skill agent tools (`search_skills` / `use_skill` /
 //! `remove_skill` / `add_skill` / `edit_skill`) — merged 2026-09-11
-//! skills-merge refactor: one file, five exec fns. The public names
-//! (`execSearchSkills` / `execUseSkill` / `execRemoveSkill` / `execAddSkill` /
-//! `execEditSkill`) and behavior are unchanged.
-//!
-//! `search_skills` replaced the old `list_skills`: same skill library, but the
-//! agent now narrows with a regex query and pages through the matches instead
-//! of pulling every row into context. Matching + rendering live in
-//! `skills_search.zig` (next to `progressive_catalog.zig`), because the regex
-//! engine is under `src/agentic_loop/` and `src/modules/` must not import it.
-//!
-//! What this wrapper threads, and why
-//! ────────────────────────────────────
-//! The tool modules take `(allocator, db, caller_session_id, input)`. The
-//! FIRST of those is a straight port; the second is the point of the change.
-//! Until now each wrapper passed `ctx.cwd` and `ctx.environment` down so the
-//! tool could pick a skills DIRECTORY out of the two it used to have. There is
-//! no directory any more, so what is passed down instead is the pair that
-//! decides which rows are even visible: `ctx.db` and `ctx.session_id`.
-//!
-//! Two details that are load-bearing, not boilerplate:
-//!
-//!  1. `ignore_unknown_fields`. A model that still says `"is_global": true`
-//!     or `"scope": "global"` — from a prompt it was trained on, or a habit —
-//!     has the key dropped rather than costing the call. The store's
-//!     `workspace_id` scope is not something the model gets to name; a
-//!     hallucinated `"workspace_id": "ws_other"` is dropped the same way, and
-//!     the static contract test in `skill_tools.zig` fails the build if a real
-//!     one ever appears in a schema.
-//!  2. The `InnerErrorProbe` re-parse. The tools return `{"error": "..."}`
-//!     as their inner payload; without re-probing, that would be wrapped as
-//!     `success: true` and the model would read a refused edit as a completed
-//!     one.
-//!
-//! `search_skills` composes more here than in its siblings, and that is not
-//! an accident: its matcher lives under `src/agentic_loop/`, so the listing →
-//! rows → match → page → render chain cannot live in `skill_tools.zig` without
-//! a `modules → agentic_loop` import cycle. It calls
-//! `skill_tools.resolveWorkspaceScope` for the same reason its document
-//! sibling does — one resolver, one pair of refusal messages.
+//! skills-merge refactor: one file, five exec fns.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -56,23 +18,14 @@ const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("tools_error_explain.zig");
 
 /// Probe an inner JSON payload for a top-level `"error"` key. The returned
-/// slice borrows from `parsed` — keep it alive through the
-/// `wrapToolOutput` call, then `deinit`. A payload that fails to parse is
-/// treated as success (the producers always emit valid JSON).
+/// slice borrows from `parsed` — keep it alive through the `wrapToolOutput`
+/// call, then `deinit`.
 const InnerErrorProbe = struct {
     @"error": ?[]const u8 = null,
 };
 
-/// Turn a JSON parse failure into a message the model can act on.
-///
-/// The old form was `"add_skill failed: MissingField"` — an error NAME.
-/// It named no field, showed none of what was received, and gave nothing
-/// to correct itself from, so a model that omitted `description` simply
-/// emitted the same call again. With every `*SkillInput` field defaulted
-/// this path is now only reachable for genuinely malformed JSON or a
-/// wrong-typed field; it still has to say WHICH and show the payload.
-///
-/// Caller owns the returned slice.
+/// Turn a JSON parse failure into a message the model can act on. The old
+/// form was `"add_skill failed: MissingField"` — an error NAME.
 fn describeParseFailure(
     allocator: std.mem.Allocator,
     arguments: []const u8,
@@ -107,10 +60,9 @@ pub fn execSearchSkills(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResul
     };
     defer parsed.deinit();
 
-    // ── Paging bounds ──
-    // Rejected, never silently clamped: the model pages by offset from the
-    // `total` it was shown, so a quiet clamp would make its next call land on
-    // the wrong window. The messages name the accepted range.
+    // ── Paging bounds ── Rejected, never silently clamped: the model pages
+    // by offset from the `total` it was shown, so a quiet clamp would make
+    // its next call land on the wrong window.
     const limit: usize = blk: {
         const raw = parsed.value.limit orelse @as(i64, @intCast(skills_search.DEFAULT_SEARCH_LIMIT));
         if (raw < 1) {
@@ -141,11 +93,9 @@ pub fn execSearchSkills(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResul
         }
         break :blk @intCast(raw);
     };
-    // ── Workspace scope ──
-    // Fail-closed, exactly as `document.zig` does it: an unresolvable
-    // session is a readable refusal, NOT an empty result set. "this
-    // workspace has no matching skills" and "you have no workspace" are
-    // different facts and the model has to be able to tell them apart.
+    // ── Workspace scope ── Fail-closed, exactly as `document.zig` does it:
+    // an unresolvable session is a readable refusal, NOT an empty result set.
+    // "this workspace has no matching skills" and "you have no workspace" are
     const workspace_id = (skill_tools_mod.resolveWorkspaceScope(ctx.allocator, ctx.db, ctx.session_id) catch null) orelse {
         const msg = try skill_tools_mod.scopeErrorJSON(ctx.allocator, "search_skills", ctx.session_id);
         defer ctx.allocator.free(msg);
@@ -225,9 +175,7 @@ pub fn execUseSkill(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     const output = try wrapToolOutput(ctx.allocator, "use_skill", tc.function.arguments, true, null, inner);
 
     // Check if skill was successfully loaded and extract skill info for
-    // auto-save. The inner payload is JSON
-    // (`{skill_name, content, loaded, ...}`); parse it and key off `loaded`
-    // instead of substring-matching tags.
+    // auto-save.
     if (std.json.parseFromSlice(skill_tools_mod.UseSkillOutput, ctx.allocator, inner, .{ .allocate = .alloc_always, .ignore_unknown_fields = true })) |parsed_inner| {
         defer parsed_inner.deinit();
         if (parsed_inner.value.loaded) {
@@ -253,11 +201,8 @@ pub fn execUseSkill(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
 // ─── remove_skill ───
 
 pub fn execRemoveSkill(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
-    // `ignore_unknown_fields`, same reason as execAddSkill: a stray key
-    // must not cost the call. `session_id` and `is_global` are BOTH gone
-    // from the schema — the first was always unused, the second described
-    // a tier that no longer exists — but a model trained on the old schema
-    // will still send them, and they must be dropped rather than fatal.
+    // `ignore_unknown_fields`, same reason as execAddSkill: a stray key must
+    // not cost the call.
     const parsed = std.json.parseFromSlice(
         skill_tools_mod.RemoveSkillInput,
         ctx.allocator,
@@ -300,12 +245,9 @@ pub fn execRemoveSkill(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult
 // ─── add_skill ───
 
 pub fn execAddSkill(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
-    // `ignore_unknown_fields` — the sibling `execSearchSkills` has always
-    // had it, and without it a model that volunteers one extra key
-    // (`is_global`, `scope`, `session_id`, …) gets `UnknownField` and the
-    // write is lost. Every `*SkillInput` field now carries a default, so
-    // an OMITTED field also parses; `executeAddSkillToString` is where the
-    // "which argument is missing" message is produced.
+    // `ignore_unknown_fields` — the sibling `execSearchSkills` has always had
+    // it, and without it a model that volunteers one extra key (`is_global`,
+    // `scope`, `session_id`, …) gets `UnknownField` and the write is lost.
     const parsed = std.json.parseFromSlice(
         skill_tools_mod.AddSkillInput,
         ctx.allocator,
@@ -344,10 +286,7 @@ pub fn execAddSkill(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
 
     // The registry entry has auto_save_skill = true → the dispatcher in
     // handle_tool.zig reads the wrapped JSON `data` (`skill_name`/`content`
-    // keys), then saves to session_skills. We return skill_save (not used
-    // directly here, but kept for symmetry with execUseSkill's auto-save
-    // contract — both rely on the dispatcher's parsing pass over the
-    // wrapped output).
+    // keys), then saves to session_skills.
     _ = SkillSaveInfo;
     return ToolExecResult{ .output = output, .output_allocated = true };
 }
@@ -382,10 +321,7 @@ pub fn execEditSkill(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     };
     defer ctx.allocator.free(inner);
 
-    // If the inner JSON carries an `error`, treat as failure. This is the
-    // arm that matters most for `edit_skill`: a patch that changed nothing
-    // comes back as `{"updated": false, "error": "…"}`, and wrapping that
-    // as `success: true` would teach the model that an empty edit works.
+    // If the inner JSON carries an `error`, treat as failure.
     if (std.json.parseFromSlice(skill_tools_mod.EditSkillOutput, ctx.allocator, inner, .{ .allocate = .alloc_always, .ignore_unknown_fields = true })) |parsed_inner| {
         defer parsed_inner.deinit();
         if (parsed_inner.value.@"error") |err_msg| {
@@ -401,16 +337,6 @@ pub fn execEditSkill(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
 // ============================================================================
 // tools_exec_skills.zig — inline tests
 // ============================================================================
-//
-// These are ENVELOPE tests, and they exist for one reason: what used to make
-// the scope decision was `ctx.cwd` and `ctx.environment`, and both are still
-// on `ToolExecContext` — a future edit that reaches for `ctx.cwd` again would
-// compile fine and silently resolve nothing. Pinning the behaviour at this
-// layer is what makes the refactor observable rather than merely intended.
-//
-// Rows are seeded through the STORE. A test that INSERTs SQL bypasses the
-// `COALESCE(NULLIF(?, ''), '')` write path and would pass while the real
-// tool fails.
 
 const sqlite = pabrikcore.sqlite;
 const migration = @import("../migrations/migration.zig");
@@ -673,9 +599,7 @@ test "execAddSkill: a stale is_global from the old schema does not cost the call
     defer ctx.db.deinit();
 
     // The pre-refactor schema had `is_global`. A model trained on it (or
-    // working from an old prompt) still sends it. Under the old parser
-    // shape this key existed on the struct; now it is simply unknown, and
-    // the write must still happen.
+    // working from an old prompt) still sends it.
     const result = try execAddSkill(makeTestCtx(alloc, &ctx.db, "s1"), fakeToolCall(
         "add_skill",
         "{\"name\":\"legacy\",\"description\":\"d\",\"content\":\"body\",\"is_global\":true}",

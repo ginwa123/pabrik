@@ -1,22 +1,5 @@
-//! `POST /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/ungroup`.
-//!
-//! Dissolve a `group` or `frame` element: reparent its children to
-//! the group's parent (or NULL if the group was top-level), then
-//! delete the group row. Children keep their absolute x/y — their
-//! geometry is independent of the group's bbox.
-//!
-//! Body: `{ element_id: "elem_g" }`.
-//!
-//! Response 200: `{ orphaned: <DesignElementResponse>[] }` (the
-//! newly-top-level children in their new state).
-//!
-//! Errors:
-//!   - 400 BadGroupId, NotAGroup, EmptyGroup
-//!   - 404 PageNotFound
-//!   - 500 DbError, OutOfMemory
-//!
-//! Plan: docs/superpowers/specs/2026-07-29-design-right-click-group-menu.md
-//! (Chunk 9 deferred item, now landing)
+//! `POST
+//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/ungroup`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -111,11 +94,9 @@ pub fn designElementsUngroupHandler(
     });
 }
 
-// ===== Tests merged from design_elements_ungroup_test.zig (2026-09-11 flatten) =====
-// Behavioural tests for `design_model.ungroupElements` and the
+// ===== Tests merged from design_elements_ungroup_test.zig (2026-09-11
+// flatten) ===== Behavioural tests for `design_model.ungroupElements` and the
 // `POST /ungroup` HTTP handler contract.
-// 
-// Plan: docs/superpowers/specs/2026-07-29-design-right-click-group-menu.md
 
 const testing = std.testing;
 const sqlite = pabrikcore.sqlite;

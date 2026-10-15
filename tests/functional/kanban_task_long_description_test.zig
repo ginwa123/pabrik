@@ -1,16 +1,6 @@
-// Kanban task descriptions are unlimited (no 5000-char cap).
-//
-// Zig port of `tests/functional/kanban_task_long_description_test.py`
-// (same test names, same order).
-//
-// The frontend used to enforce `maxlength=5000` on the description
-// editor (KanbanDescriptionEditor `maxLength` default +
-// KanbanTaskDetailDialog `DESCRIPTION_MAX`). The backend never had a
-// length check — the column is TEXT — so these tests lock in the wire
-// contract: a 20 000-char description round-trips byte-for-byte
-// through create → single-task GET → update.
-//
-// Mirrors the `kanban_task_get_test.py` helpers.
+// Kanban task descriptions are unlimited (no 5000-char cap). Zig port of
+// `tests/functional/kanban_task_long_description_test.py` (same test names,
+// same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -20,10 +10,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// The cap the frontend used to enforce. Every description below must
-/// exceed it — Python asserted `len(long_desc) > 5000` as a "test bug"
-/// guard so a typo'd multiplier cannot silently turn the suite into a
-/// test of nothing.
+/// The cap the frontend used to enforce. Every description below must exceed
+/// it — Python asserted `len(long_desc) > 5000` as a "test bug" guard so a
+/// typo'd multiplier cannot silently turn the suite into a test of nothing.
 const OLD_FRONTEND_CAP: usize = 5000;
 
 /// `text` repeated `times` times, owned by the caller.
@@ -123,10 +112,8 @@ fn createTask(h: *Harness, workspace_id: []const u8, kanban_id: []const u8, name
     return gpa.dupe(u8, id);
 }
 
-/// `GET /api/workspaces/<ws>/items/<kanban>/tasks/<task>` → the
-/// description field, owned. Python compared the whole field against
-/// the string it sent; this hands the borrowed slice back dupe'd so the
-/// caller can compare after the response is dropped.
+/// `GET /api/workspaces/<ws>/items/<kanban>/tasks/<task>` → the description
+/// field, owned.
 fn taskDescription(h: *Harness, workspace_id: []const u8, kanban_id: []const u8, task_id: []const u8) ![]u8 {
     const path = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/items/{s}/tasks/{s}", .{ workspace_id, kanban_id, task_id });
     defer gpa.free(path);

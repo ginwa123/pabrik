@@ -15,8 +15,6 @@ pub const Migration042AddWorkspaceItemTasksUpdatedAtIndex = struct {
         // Hot read path for the workspace-item tasks endpoint when
         // sort_by=updated_at (the new default). Mirrors
         // idx_workspace_item_tasks_item_created (Migration 041).
-        // Compound (workspace_item_id, updated_at DESC) matches the
-        // query's WHERE + ORDER BY so SQLite does a forward index scan.
         try db.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_workspace_item_tasks_item_updated ON workspace_item_tasks(workspace_item_id, updated_at DESC)", &[_][]const u8{});
 
         // ANALYZE so the query planner sees the new index on existing

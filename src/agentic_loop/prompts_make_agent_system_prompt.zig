@@ -1,17 +1,5 @@
 //! Builds the `## Agent System Prompt` system-prompt section for sessions
 //! bound to an Agent workspace-item.
-//!
-//! Reads every `agent_system_prompt` row (Migration 080) and concatenates
-//! them into a section appended BEFORE `## Agent Knowledge` (persona
-//! instructions precede reference data).
-//!
-//! Behaviour:
-//!   - Empty for non-agent items (item_type != 'agent') → returns ""
-//!   - Empty for agents with no system-prompt rows → returns ""
-//!   - Rows whose content trims to empty are skipped
-//!
-//! Plan: docs/superpowers/plans/2026-08-21-agent-system-prompt.md
-//! Task: task_1787408958280_1
 
 const std = @import("std");
 const sqlite = @import("pabrikcore").sqlite;

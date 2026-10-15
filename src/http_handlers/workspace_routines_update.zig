@@ -1,15 +1,6 @@
-//! `PATCH /api/workspaces/:workspace_id/items/:item_id/routine`.
-//!
-//! Body: `{description?, instruction?, schedule?, enabled?}` — all
-//! optional (absent = keep existing). A present `schedule` is
-//! validated by `routines/cron.zig`; any schedule/enabled change
-//! recomputes `next_run_at` (empty schedule or disabled → NULL =
-//! manual-run only). Mirrors `agents_update.zig` (validate → UPDATE
-//! → refetch) plus the recompute pattern from the deleted
-//! `task_update.zig` routine branch.
-//!
-//! Plan: docs/superpowers/plans/2026-09-10-workspace-items-routines.md
-//! Task: task_1789032258828_0.
+//! `PATCH /api/workspaces/:workspace_id/items/:item_id/routine`. Body:
+//! `{description?, instruction?, schedule?, enabled?}` — all optional (absent
+//! = keep existing).
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");

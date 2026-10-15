@@ -7,10 +7,8 @@ pub const hex_digits = "0123456789abcdef";
 pub fn generateSessionId(allocator: std.mem.Allocator, io: std.Io) ![]u8 {
     const ts = std.Io.Clock.now(.real, io);
     const timestamp: i64 = ts.toSeconds();
-    // `process.getCurrentProcessId()` returns `i32` on all platforms
-    // (POSIX and Windows). It used to return `std.c.pid_t` which is
-    // `*anyopaque` on Windows — comparing that to an `i32` parsed from a
-    // shell command would fail to compile cross-platform.
+    // `process.getCurrentProcessId()` returns `i32` on all platforms (POSIX
+    // and Windows).
     const pid = process.getCurrentProcessId();
     // Use timestamp + PID + pointer for pseudo-random entropy
     const entropy: u64 = (@as(u64, @intCast(pid)) << 32) ^ @as(u64, @intCast(timestamp));

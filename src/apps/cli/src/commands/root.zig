@@ -1,8 +1,6 @@
-//! CLI command dispatch.
-//!
-//! Each command lives in its own submodule and is re-exported here
-//! so the CLI's `main.zig` can call `commands.run(...)` without
-//! reaching into the subdirectory.
+//! CLI command dispatch. Each command lives in its own submodule and is
+//! re-exported here so the CLI's `main.zig` can call `commands.run(...)`
+//! without reaching into the subdirectory.
 
 const std = @import("std");
 const config = @import("../config.zig");
@@ -59,10 +57,8 @@ pub const help_text =
     \\
 ;
 
-/// Dispatch a parsed command to its subcommand. Returns `.ok` on
-/// success, `.err` on a fatal failure (network down, parse error,
-/// non-2xx, etc.). Help / unknown-verb calls also return `.ok`
-/// after printing the help text — they're not errors.
+/// Dispatch a parsed command to its subcommand. Returns `.ok` on success,
+/// `.err` on a fatal failure (network down, parse error, non-2xx, etc.).
 pub fn dispatch(cmd: Command, cfg: config.Config, io: std.Io) DispatchResult {
     switch (cmd.kind) {
         .help => {
@@ -233,10 +229,7 @@ pub fn parseCommand(
     if (argv.len == 0) return .{ .kind = .help, .args = &.{} };
     const verb = argv[0];
 
-    // Case-insensitive compare against a small allow-list. The
-    // lower-cased slice is either backed by `scratch` (no free
-    // needed) or a fresh heap allocation that the defer cleans
-    // up — `maybeOwnedLower` captures which path we took.
+    // Case-insensitive compare against a small allow-list.
     const OwnedLower = struct {
         slice: []const u8,
         owns: bool,

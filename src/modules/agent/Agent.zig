@@ -90,9 +90,6 @@ pub const ImageUrl = struct {
 };
 
 /// Video URL content for video understanding.
-/// Wire shape mirrors ImageUrl: `{ "video_url": { "url": "data:video/<mime>;base64,..." } }`
-/// on OpenAI Chat, `{ "type": "input_video", "video_url": "..." }` on Responses,
-/// `{ "type": "video", "source": {...} }` on Anthropic.
 pub const VideoUrl = struct {
     url: ?[]const u8 = null,
 
@@ -106,11 +103,9 @@ pub const VideoUrl = struct {
     }
 };
 
-/// Allowlisted video MIME suffixes (after `data:video/`).
-/// Locked 2026-09-18: full video/* v1 = mp4, webm, quicktime (mov),
-/// x-msvideo (avi), x-matroska (mkv). Providers document mp4/webm/mov
-/// natively; avi/mkv pass validation and fail at the provider with a
-/// hard error (never silently dropped).
+/// Allowlisted video MIME suffixes (after `data:video/`). Locked 2026-09-18:
+/// full video/* v1 = mp4, webm, quicktime (mov), x-msvideo (avi), x-matroska
+/// (mkv).
 pub fn isSupportedVideoMime(mime: []const u8) bool {
     if (std.mem.eql(u8, mime, "video/mp4")) return true;
     if (std.mem.eql(u8, mime, "video/webm")) return true;
@@ -152,11 +147,7 @@ pub const FinishReason = enum {
     null,
     assistant,
     /// Not a provider value: persisted by the agentic loop when a batch
-    /// contained `ask_user`. The tool returned `<status>pending</status>`,
-    /// the loop BROKE instead of looping back, and a new run will resume once
-    /// the human answers. Added to the enum (rather than a free-form string
-    /// like "cancelled") so any future exhaustive `switch` on a finish reason
-    /// fails to compile until it handles this case.
+    /// contained `ask_user`.
     awaiting_user,
 
     pub fn from_str(s: ?[]const u8) ?FinishReason {
@@ -287,13 +278,9 @@ const JsonRequest = struct {
     /// https://platform.openai.com/docs/api-reference/chat/create.
     user: ?[]const u8 = null,
 
-    /// OpenAI-style reasoning effort (o1 / o3 / GPT-5 / DeepSeek-R1).
-    /// One of "low" | "medium" | "high" | "auto". Mirrors the
-    /// `Agent.reasoningEffort` field directly. Empty string is
-    /// treated the same as null (field omitted from the wire).
-    /// Anthropic-style URLs ignore this — they're routed through
-    /// `buildJsonAnthropicRequest` which doesn't see this struct.
-    /// See https://platform.openai.com/docs/guides/reasoning.
+    /// OpenAI-style reasoning effort (o1 / o3 / GPT-5 / DeepSeek-R1). One of
+    /// "low" | "medium" | "high" | "auto". Mirrors the
+    /// `Agent.reasoningEffort` field directly.
     reasoning_effort: ?[]const u8 = null,
 
     pub fn jsonStringify(self: @This(), stringify: *std.json.Stringify) !void {
@@ -325,9 +312,6 @@ const JsonRequest = struct {
             }
         }
         // reasoning_effort: only emitted when non-null AND non-empty.
-        // The Agent struct's reasoningEffort field is borrowed from
-        // the workflow's LlmConfig (process-lifetime singleton), so
-        // it's safe to write verbatim — no aliasing concerns.
         if (self.reasoning_effort) |re| {
             if (re.len > 0) {
                 try stringify.objectField("reasoning_effort");
@@ -342,15 +326,7 @@ const AnthropicContentBlock = struct {
     text: ?[]const u8 = null,
     tool_use: ?AnthropicToolUse = null,
     tool_result: ?AnthropicToolResult = null,
-    /// Anthropic vision image source. Wire shape:
-    ///   { "type": "image",
-    ///     "source": { "type": "url", "url": "<image-url-or-data-uri>" } }
-    /// We also accept `data:image/<mime>;base64,<payload>` URLs and break
-    /// them out into the Anthropic-native `source.type=base64` +
-    /// `media_type` + `data` shape — that path is what strict
-    /// Anthropic API gates validate. `data:` URL passthrough covers
-    /// every OpenAI-compatible relay (e.g. api.minimax.io/anthropic);
-    /// the explicit base64 split covers the canonical Anthropic API.
+    /// Anthropic vision image source.
     image: ?AnthropicImage = null,
     video: ?AnthropicVideo = null,
 
@@ -486,18 +462,10 @@ const AnthropicMessage = struct {
 };
 
 const AnthropicThinking = struct {
-    /// "enabled" (with budget_tokens) or "adaptive" (Anthropic picks
-    /// its own budget — recommended for Sonnet 4.5+). Never
-    /// "disabled" — when the agent wants thinking off, the entire
-    /// `thinking` block is omitted from the request body, not
-    /// serialized as `{type: "disabled"}`.
+    /// "enabled" (with budget_tokens) or "adaptive" (Anthropic picks its own
+    /// budget — recommended for Sonnet 4.5+).
     type: []const u8,
-    /// Required only when `type == "enabled"`. Minimum value is
-    /// 1024 and it must be strictly less than `max_tokens` — the
-    /// call site in `buildJsonAnthropicRequest` derives this from
-    /// `Agent.thinkingBudgetTokens` (or the 50%-of-max heuristic),
-    /// clamped to the [1024, max_tokens-1] range. Null when
-    /// `type == "adaptive"`.
+    /// Required only when `type == "enabled"`.
     budget_tokens: ?usize = null,
 
     pub fn jsonStringify(self: @This(), stringify: *std.json.Stringify) !void {
@@ -577,11 +545,8 @@ const AnthropicRequest = struct {
     tools: ?[]const AnthropicTool = null,
     thinking: ?AnthropicThinking = null,
     temperature: ?f32 = null,
-    /// Top-level system prompt. Anthropic rejects `role: "system"`
-    /// inside `messages` (400s) — system instructions belong here.
-    /// Built by `buildJsonAnthropicRequest` from `params.messages`
-    /// entries with `role == .system`. `null` when no system prompt
-    /// is in scope (the field is omitted entirely from the wire).
+    /// Top-level system prompt. Anthropic rejects `role: "system"` inside
+    /// `messages` (400s) — system instructions belong here.
     system: ?[]const u8 = null,
 
     /// Optional metadata block. Currently emits `{"user_id": "..."}`
@@ -619,12 +584,7 @@ const AnthropicRequest = struct {
         if (self.stream) {
             try stringify.objectField("stream");
             try stringify.write(true);
-            // NOTE: do NOT emit `stream_options` here. Anthropic has
-            // no request-side toggle for usage tracking — usage
-            // comes through SSE `message_start` / `message_delta`
-            // events unconditionally. Emitting a `stream_options`
-            // key (a copy-paste leftover from the OpenAI serializer)
-            // would 400 against the strict Anthropic API.
+            // NOTE: do NOT emit `stream_options` here.
         }
         if (self.metadata) |m| {
             try stringify.objectField("metadata");
@@ -635,9 +595,8 @@ const AnthropicRequest = struct {
 };
 
 /// --- OpenAI Responses API (url_style = "openai-response") -----------------
-/// Request shape for POST /v1/responses  (https://developers.openai.com/api/reference/resources/responses)
-/// Mirrors the chat completions feature set: model, input (messages), instructions (system),
-/// max_output_tokens, stream, temperature, reasoning.effort, tools, tool_choice, user.
+/// Request shape for POST /v1/responses
+/// (https://developers.openai.com/api/reference/resources/responses) Mirrors
 const ResponsesInputContent = struct {
     /// "input_text" | "input_image" | "input_video"
     content_type: []const u8,
@@ -925,13 +884,9 @@ pub const Role = enum {
 };
 
 pub const AgentMessage = struct {
-    /// DB primary key from `llm_history.id` (19-digit timestamp string).
-    /// NULL for messages synthesized in-memory (e.g. system prompts at
-    /// workflow.zig:1046-1064). Populated by
-    /// `transform_llm_history_to_agent_message` for messages loaded from
-    /// the DB. Used by `buildCompactionEnvelope` to embed real ids in
-    /// the `<compact_messages>` envelope so `read_workspace_session`
-    /// can find them.
+    /// DB primary key from `llm_history.id` (19-digit timestamp string). NULL
+    /// for messages synthesized in-memory (e.g. system prompts at
+    /// workflow.zig:1046-1064).
     id: ?[]const u8 = null,
     role: Role,
     content: ?[]const u8,
@@ -982,10 +937,6 @@ pub const Usage = struct {
     /// DO add this to any billing formula. 0 for non-Anthropic profiles.
     cache_creation_input_tokens: usize = 0,
     /// Anthropic-only: tokens read from a cache entry on this call.
-    /// Billed at the cache-read rate (typically ~0.1× input rate) — but
-    /// still tokens the model processed, so this IS included in
-    /// `prompt_tokens` and `total_tokens` (matching OpenAI's semantic
-    /// of "tokens the LLM saw"). 0 for non-Anthropic profiles.
     cache_read_input_tokens: usize = 0,
 };
 
@@ -1018,20 +969,7 @@ pub const StreamingAggregator = struct {
     finish_reason: ?FinishReason = null,
     usage: Usage = .{},
 
-    // Per-LLM-tool-call intermediate buffer. The `id` + `name` slices
-    // and the `arguments.items` ArrayList all live on `self.allocator`
-    // (the caller's arena, which is also the arena passed to
-    // `Agent.init(allocator, …)`). The `finalize` method hands the
-    // arena-allocated `[]ToolCall` slice headers back to the caller
-    // unchanged — the arena owns the lifetime wholesale.
-    //
-    // Note: the legacy `tool_calls: std.ArrayList(ToolCall)` field is
-    // gone. The pre-fix code wrote tool calls to BOTH `tool_calls` AND
-    // `tool_call_buffers` (via `tool_calls.append` here + populate-
-    // buffer in `process_chunk`), then read `tool_calls.items` inside
-    // `finalize` to dup each entry AGAIN into `tool_calls_copy`. That
-    // 2-deep-dup pattern is what produced the 2026-08-15 "bash tool
-    // leak" — see the `CallResponse.deinit` doc for the full story.
+    // Per-LLM-tool-call intermediate buffer.
     tool_call_buffers: std.AutoHashMap(usize, struct {
         id: ?[]const u8 = null,
         name: ?[]const u8 = null,
@@ -1047,17 +985,7 @@ pub const StreamingAggregator = struct {
         };
     }
 
-    /// NO-OP. Lifetime is arena-owned by the caller (see `CallResponse`
-    /// doc). Kept as a `pub fn` so existing `defer aggregator.deinit()`
-    /// call sites stay valid — but the body does nothing now.
-    ///
-    /// Pre-fix code free'd `tool_call_buffers` hash-map values one by one
-    /// (`id`, `name`, `arguments` ArrayList), then called
-    /// `tool_call_buffers.deinit()`. Under the arena allocator that's
-    /// wasted work; under `testing.allocator` it actively corrupts state
-    /// (see 2026-08-15 "bash tool leak" bug — the same pattern repeated
-    /// in `CallResponse.deinit` is what produced 0xAA-poisoned slice
-    /// headers that reached the bash tool as `ls -la $'\xaa…'`).
+    /// NO-OP. Lifetime is arena-owned by the caller (see `CallResponse` doc).
     pub fn deinit(_: *StreamingAggregator) void {}
 
     pub fn process_chunk(self: *StreamingAggregator, chunk: StreamChunk) !void {
@@ -1133,21 +1061,8 @@ pub const StreamingAggregator = struct {
         }
         std.sort.pdq(usize, sorted_indices.items, {}, std.sort.asc(usize));
 
-        // Allocate the final `[]ToolCall` slice ONCE on `self.allocator`
-        // (the caller's arena) and copy each inner slice header into it.
-        // The inner slices (id, function.name, function.arguments) come
-        // straight from `tool_call_buffers` — they were `dupe`d into
-        // `self.allocator` during `process_chunk`, so they already live on
-        // the same arena. No second dupe pass needed.
-        //
-        // This replaces the previous 2-deep-dup pattern (which duped into
-        // `self.tool_calls`, then duped AGAIN into `tool_calls_copy`),
-        // each duplication creating another slice header with an arena
-        // pointer that the previous production code tried to `free` one
-        // at a time — see the 2026-08-15 "bash tool leak" bug where the
-        // defer ordering left a dangling `tool_call.function.arguments`
-        // slice header that the bash tool then executed as a literal
-        // `ls -la $'\xaa…'` shell command.
+        // Allocate the final `[]ToolCall` slice ONCE on `self.allocator` (the
+        // caller's arena) and copy each inner slice header into it.
         var tool_calls_out: ?[]ToolCall = null;
         if (sorted_indices.items.len > 0) {
             const count = sorted_indices.items.len;
@@ -1207,14 +1122,6 @@ pub const AgentCall = struct {
     temperature: ?f32 = null,
     max_tokens: ?usize = null,
     /// Polled between SSE chunks so a caller can abort an in-flight turn.
-    /// When it returns true, `callStreaming` cancels the HTTP transfer and
-    /// returns `error.Cancelled` instead of reading the response to
-    /// completion — see the cancel check in the chunk-read loop.
-    ///
-    /// A function pointer (rather than a flag or a DB handle) keeps the
-    /// dependency direction caller → agent: the agent module must not import
-    /// the workflow's config/sqlite helpers. Same shape as the existing
-    /// `cancel_fn` used for the MCP tools fetch.
     cancel_fn: ?*const fn () bool = null,
 };
 
@@ -1223,17 +1130,7 @@ pub const HttpOptions = struct {
     /// Triggers `error.StreamTimeout` if exceeded. Default 5 minutes.
     read_timeout_ms: u32 = 300_000,
     /// Idle window: if no new bytes arrive for this long after readSliceShort
-    /// returns, the stream is considered hung. With TCP keepalive set to ~25s,
-    /// keep this comfortably above the keepalive window so keepalive probes
-    /// have time to fire and return an error (StreamInterrupted) before this
-    /// deadline (StreamIdleTimeout) triggers. Hard floor: 30_000 (1.2× the
-    /// ~25s keepalive window).
-    ///
-    /// Raised from 60_000 (2026-06-28) to 180_000 to accommodate reasoning
-    /// models (Claude with extended thinking, OpenAI o1/o3, DeepSeek R1,
-    /// Qwen QwQ) that routinely pause for tens of seconds to minutes
-    /// between SSE chunks while reasoning internally. The previous 60s
-    /// default fired StreamIdleTimeout on perfectly healthy streams.
+    /// returns, the stream is considered hung.
     idle_timeout_ms: u32 = 180_000,
     /// Buffer size for reading HTTP response body
     response_buffer_size: usize = 256 * 1024,
@@ -1269,20 +1166,6 @@ pub const CallResponse = struct {
 
 /// Writes the UrlStyle-specific auth headers for one streaming request into
 /// `out` and returns how many it wrote.
-///
-/// Anthropic-style endpoints (native Anthropic API, relays like
-/// api.minimax.io/anthropic, opencode.ai/zen/go) authenticate with
-/// `x-api-key` + `anthropic-version: 2023-06-01`, NOT
-/// `Authorization: Bearer` — mirroring the Test probe in llm_test.zig.
-/// Sending only Bearer makes the upstream answer `{"type":"error",
-/// "error":{"type":"AuthError","message":"Missing API key."}}` on the
-/// stream with 0 chunks, which the SSE loop surfaces as
-/// StreamInterrupted. Every other style keeps its `Authorization: Bearer`
-/// header byte-identical to before.
-///
-/// `auth_value` receives the allocated `"Bearer <key>"` for the
-/// non-anthropic arms and stays null for the anthropic arm, which needs no
-/// allocation. The caller owns it and frees it on scope exit.
 pub fn authHeaders(
     allocator: std.mem.Allocator,
     style: []const u8,
@@ -1317,85 +1200,42 @@ pub const Agent = struct {
     io: std.Io,
     thinkingEnabled: bool = true,
     /// Anthropic-only: override for `thinking.budget_tokens`. When set,
-    /// `buildJsonAnthropicRequest` uses it directly (clamped to >=1024
-    /// and <max_tokens). When null AND `thinkingAdaptive` is true
-    /// (user picked "auto"), the request emits Anthropic's
-    /// `type: "adaptive"` mode and lets the model pick its own budget
-    /// (Sonnet 4.5+ recommendation). When null AND `thinkingAdaptive`
-    /// is false, the request falls back to the 50%-of-max_tokens
-    /// heuristic. OpenAI-style URLs ignore this field — they use
-    /// `reasoningEffort` instead. Plan 2026-08-23-model-thinking.
+    /// `buildJsonAnthropicRequest` uses it directly (clamped to >=1024 and
+    /// <max_tokens).
     thinkingBudgetTokens: ?u32 = null,
     /// Anthropic-only: when true AND `thinkingBudgetTokens` is null,
     /// `buildJsonAnthropicRequest` emits `thinking: {type: "adaptive"}`
-    /// instead of the 50%-of-max heuristic. The workflow sets this
-    /// from `profile.thinking == "auto"`. OpenAI-style URLs ignore
-    /// this field.
+    /// instead of the 50%-of-max heuristic.
     thinkingAdaptive: bool = false,
-    /// OpenAI-style reasoning effort knob (o1 / o3 / GPT-5 /
-    /// DeepSeek-R1). One of "low" | "medium" | "high" | "auto".
-    /// Emitted verbatim into the request body's `reasoning_effort`
-    /// field by `buildJsonOpenAIRequest`. When null, the field is
-    /// omitted (model-default reasoning). Anthropic-style URLs
-    /// ignore this field entirely. The slice BORROWS from the
-    /// workflow's `LlmConfig` singleton — safe for the duration of
-    /// one LLM call (the per-iteration arena doesn't own it).
+    /// OpenAI-style reasoning effort knob (o1 / o3 / GPT-5 / DeepSeek-R1).
+    /// One of "low" | "medium" | "high" | "auto".
     reasoningEffort: ?[]const u8 = null,
     allocator: std.mem.Allocator,
     httpOptions: HttpOptions = .{},
     UrlStyle: []const u8 = "openai",
     /// Which TRANSPORT this call uses: `"http"` (default) | `"claude-code"`.
-    ///
-    /// Deliberately NOT a `UrlStyle` value. `UrlStyle` selects the HTTP body
-    /// shape (`openai` / `openai-response` / `anthropic`) and is read by
-    /// `buildJson*Request` and the SSE parsers; Claude Code has no URL and
-    /// no body, so folding it into `UrlStyle` would force a "not applicable"
-    /// arm into each of those. Set from `EffectiveProfile.backend`.
+    /// Deliberately NOT a `UrlStyle` value.
     backend: []const u8 = "http",
     userIdentifier: []const u8 = "AnakMagang",
-    /// Stable per-conversation session id for OpenCode Go / Zen routing.
-    /// Sent as the `x-opencode-session` HTTP header on every LLM request
-    /// when non-empty. See https://opencode.ai/docs/go/#where-can-i-use-it
-    /// ("Send a stable session ID in `x-opencode-session` for each
-    /// conversation so we can optimize routing and prompt caching").
-    /// Without it Console Go answers with
-    /// `{"type":"error","error":{"type":"MissingSessionID",...}}` on a
-    /// 200 SSE stream, which surfaces here as
-    /// "stream ended without finish_reason after 0 chunk(s)".
-    /// BORROWED slice — the workflow sets it from `copy_session_id`
-    /// (per-iteration arena) for the duration of one `callStreaming`.
+    /// Stable per-conversation session id for OpenCode Go / Zen routing. Sent
+    /// as the `x-opencode-session` HTTP header on every LLM request when
+    /// non-empty.
     sessionId: []const u8 = "",
     /// Most recent server/transporter error detail (e.g. the JSON error body
     /// the LLM provider returned for HTTP >=400, or a synthesized reason for
     /// mid-stream failures like scanner errors / missing finish_reason).
-    /// Heap-allocated via `self.allocator`; freed by `deinit()`. Survives
-    /// only until the next `callStreaming` call or `deinit()`. Workflow
-    /// reads this in its retry-catch block to log WHY the call failed —
-    /// without it we only see error names like "ApiError" /
-    /// "StreamInterrupted" and have no way to distinguish a rate limit
-    /// from an auth failure from a transport glitch.
     last_error_message: ?[]const u8 = null,
 
     /// Anthropic-only: cached input_tokens from the `message_start` event.
-    /// Emitted on the first `content_block_delta` chunk so the aggregator
-    /// sees a single usage event (mirrors how the OpenAI parser uses
-    /// `stream_options.include_usage=true` to get a trailing usage chunk).
-    /// Reset to 0 at the top of every `callStreaming` invocation.
     _anthropic_input_tokens: u32 = 0,
     /// Anthropic-only: guard so the cached input_tokens are sent exactly
     /// once per call (on the first delta). Reset to false at the top of
     /// every `callStreaming` invocation.
     _anthropic_usage_emitted: bool = false,
     /// Anthropic-only: cached `cache_read_input_tokens` from message_start.
-    /// Some relays send the cache-read count at message_start but not at
-    /// message_delta — keep it around so the first-delta usage chunk can
-    /// fold it into `prompt_tokens`. Reset to 0 at the top of every
-    /// `callStreaming` invocation.
     _anthropic_cache_read_tokens: u32 = 0,
     /// Anthropic-only: cached `cache_creation_input_tokens` from
-    /// message_start. The strict API sends the cache-write count only
-    /// at message_delta, but some relays include it earlier. Reset to
-    /// 0 at the top of every `callStreaming` invocation.
+    /// message_start.
     _anthropic_cache_creation_tokens: u32 = 0,
 
     pub fn init(allocator: std.mem.Allocator, io: std.Io) Agent {
@@ -1464,17 +1304,6 @@ pub const Agent = struct {
         }
         const json_messages = try arena_alloc.alloc(AnthropicMessage, params.messages.len);
         // `params.messages` may contain entries with `role == .system`.
-        // Anthropic rejects `role: "system"` inside `messages`, so we
-        // join system-typed messages into a single top-level
-        // `system` string and DROP them from `json_messages` (don't
-        // count them in the allocation index).
-        //
-        // `json_message_count` is the live write index for
-        // `json_messages`; it can be lower than
-        // `params.messages.len` once system entries are filtered.
-        // `system_text` accumulates the joined system prompt (arena-
-        // backed; no manual free needed because the arena is torn
-        // down by `defer arena.deinit()` at the top of this fn).
         var json_message_count: usize = 0;
         var system_text: std.ArrayList(u8) = .empty;
         for (params.messages) |msg| {
@@ -1490,27 +1319,12 @@ pub const Agent = struct {
             if (msg.role == .assistant and msg.tool_calls != null) {
                 var content_blocks: []AnthropicContentBlock = &.{};
                 // NOTE: content_blocks is stored into
-                // json_messages[json_message_count].content below and
-                // must stay alive until the whole request has been
-                // serialized by std.json.fmt in this function. It's
-                // an arena allocation — the arena is torn down by
-                // the `defer arena.deinit()` above once this function
-                // returns, so it must NOT be freed early here.
-                // (Freeing it early via arena_alloc.free() would
-                // rewind the arena's bump pointer and let it get
-                // silently overwritten by later allocations in this
-                // same function — e.g. the next message's content
-                // blocks, or the tools array.)
+                // json_messages[json_message_count].content below and must
+                // stay alive until the whole request has been serialized by
 
                 if (msg.reasoning_content) |rc| {
                     content_blocks = try arena_alloc.realloc(content_blocks, content_blocks.len + 1);
-                    // CRITICAL: explicitly set ALL three optional fields. In
-                    // Zig 0.16, `.{ .text = rc }` only initializes .text — the
-                    // other fields stay as whatever was in the arena's
-                    // uninitialized memory (0xAA debug poison from previous
-                    // occupants), and `AnthropicContentBlock.jsonStringify`'s
-                    // `if (self.text)` reads the poisoned bytes as a slice
-                    // pointer → SEGV in utf8ValidateSlice.
+                    // CRITICAL: explicitly set ALL three optional fields.
                     content_blocks[content_blocks.len - 1] = .{
                         .text = rc,
                         .tool_use = null,
@@ -1556,31 +1370,8 @@ pub const Agent = struct {
                     .content = .{ .array = tool_content },
                 };
             } else {
-                // User messages (or any role whose `content_parts`
-                // carries multimodal content, e.g. an attached
-                // image). We build an `AnthropicContentBlock` array
-                // so the image survives onto the wire — previously
-                // `buildJsonAnthropicRequest` only read `msg.content`
-                // and silently dropped `content_parts`, which is why
-                // `url_style: "anthropic"` profiles couldn't see
-                // user-attached images.
-                //
-                // NOTE: system-typed messages are filtered out at
-                // the top of this loop, so this branch only sees
-                // user / assistant / tool roles here (the `tool`
-                // branch above already handled tool).
-                //
-                // Anthropic API accepts `data:image/<mime>;base64,...`
-                // URLs as `source: { type: "url", url: "data:..." }`,
-                // and most OpenAI-compatible relays (e.g.
-                // `api.minimax.io/anthropic`) accept this too. The
-                // strict Anthropic API also wants
-                //   { source: { type: "base64", media_type, data } }
-                // for larger payloads — if a relay rejects the URL
-                // form we'll detect it from the server error and add
-                // the split path in a follow-up. For the common
-                // clipboard-paste / FileReader small-image flow the
-                // URL form is fine.
+                // User messages (or any role whose `content_parts` carries
+                // multimodal content, e.g. an attached image).
                 const parts = msg.content_parts;
                 const has_parts = parts != null and parts.?.len > 0;
                 if (has_parts) {
@@ -1667,20 +1458,8 @@ pub const Agent = struct {
 
         const resolved_max_tokens: usize = params.max_tokens orelse self.maxTokens;
 
-        // Anthropic requires `budget_tokens` to be >= 1024 AND
-        // strictly less than `max_tokens`. The simpler 50%-of-max
-        // heuristic wins for typical `max_tokens` values; clamp the
-        // upper bound to `max_tokens - 1` so we never emit an
-        // unsatisfiable request.
-        //
-        // For `max_tokens < 1025` the floor (1024) collides with the
-        // strict-less-than constraint (budget must be < max_tokens),
-        // so Anthropic literally cannot accept a thinking-enabled
-        // request with that budget. Rather than silently emitting
-        // an invalid request, force thinking off for this call and
-        // log a warning — the alternative (clamps to 0, or to
-        // some value >= max_tokens) would either be a 400 from the
-        // server or violate the Anthropic invariant.
+        // Anthropic requires `budget_tokens` to be >= 1024 AND strictly less
+        // than `max_tokens`.
         const thinking_on: bool = blk: {
             if (!self.thinkingEnabled) break :blk false;
             if (resolved_max_tokens < 1025) {
@@ -1692,18 +1471,9 @@ pub const Agent = struct {
 
         const thinking_budget: ?usize = blk: {
             if (!thinking_on) break :blk null;
-            // Three sources, in priority order (plan 2026-08-23-model-thinking):
-            //   1. Explicit `Agent.thinkingBudgetTokens` override.
-            //      Wins always, but still clamped to the
-            //      [1024, max_tokens-1] range so the wire shape is
-            //      always valid.
-            //   2. `Agent.thinkingAdaptive = true` → null (let
-            //      Anthropic pick). Triggered by the workflow when
-            //      `profile.thinking == "auto"` and no explicit
-            //      budget was set.
-            //   3. 50%-of-max_tokens heuristic — the previous
-            //      default. Triggered when `thinkingAdaptive = false`
-            //      (i.e. user picked "on" without an explicit budget).
+            // Three sources, in priority order (plan
+            // 2026-08-23-model-thinking): 1. Explicit
+            // `Agent.thinkingBudgetTokens` override.
             if (self.thinkingBudgetTokens) |explicit| {
                 const floor_constrained: usize = if (explicit < 1024) 1024 else explicit;
                 const ceiling: usize = resolved_max_tokens -| 1;
@@ -1718,13 +1488,8 @@ pub const Agent = struct {
             break :blk if (floor_constrained < ceiling) floor_constrained else ceiling;
         };
 
-        // Anthropic requires `temperature` to be omitted (or exactly
-        // 1) when `thinking.type == "enabled"`. Drop the caller's
-        // value rather than overriding it with 1 — Anthropic's
-        // default under thinking is already 1, so omitting doesn't
-        // change server behavior. Log at .debug so callers can see
-        // WHY their temperature was ignored without this being a
-        // silent behavior change.
+        // Anthropic requires `temperature` to be omitted (or exactly 1) when
+        // `thinking.type == "enabled"`.
         if (thinking_on) {
             if (params.temperature) |t| {
                 if (t != 1.0) {}
@@ -1777,16 +1542,8 @@ pub const Agent = struct {
             total_props += tool.function.parameters.properties.len;
         }
         // Reasoning-echo backfill (task_1789091513563_0): DeepSeek-style
-        // providers in thinking mode REQUIRE every assistant message to
-        // carry `reasoning_content` ("must be passed back to the API").
-        // Turns where the model streamed no reasoning deltas (e.g. pure
-        // tool-call turns with empty content) persist NULL, and omitting
-        // the field on replay bricks the session — every subsequent
-        // request 400s with 0 chunks. Emit "" instead of omitting, but
-        // ONLY for thinking conversations (thinking on now, or reasoning
-        // present elsewhere in history) so plain OpenAI sessions keep
-        // their exact current wire shape. Assistant-only: reasoning
-        // belongs to assistant messages, never user/tool rows.
+        // providers in thinking mode REQUIRE every assistant message to carry
+        // `reasoning_content` ("must be passed back to the API").
         const history_has_reasoning = blk: {
             for (params.messages) |m| {
                 if (m.reasoning_content != null) break :blk true;
@@ -1804,7 +1561,6 @@ pub const Agent = struct {
                     // Repair before falling back to "{}": a Windows path
                     // written with raw backslashes is invalid JSON, and
                     // substituting "{}" here would both hide that and echo
-                    // the model's own call back to it as an empty object.
                     const normalized_args = blk: {
                         const raw = tc.function.arguments;
                         if (raw.len == 0) break :blk "{}";
@@ -1845,8 +1601,7 @@ pub const Agent = struct {
                 .tool_call_id = msg.tool_call_id,
                 // See backfill comment above: null → "" for assistant
                 // messages in thinking conversations (satisfies the
-                // provider's echo validator); null stays null otherwise
-                // so the field is omitted entirely.
+                // provider's echo validator); null stays null otherwise so
                 .reasoning_content = msg.reasoning_content orelse (if (backfill_empty_reasoning and msg.role == .assistant) "" else null),
             };
         }
@@ -1885,10 +1640,8 @@ pub const Agent = struct {
             .tool_choice = if (json_tools != null) "auto" else null,
             .user = if (self.userIdentifier.len > 0) self.userIdentifier else null,
             // OpenAI reasoning effort (plan 2026-08-23-model-thinking).
-            // Borrowed from Agent.reasoningEffort (lifetime tied to
-            // the workflow's LlmConfig singleton). The jsonStringify
-            // skip-on-empty path means a misconfigured empty value
-            // doesn't pollute the wire.
+            // Borrowed from Agent.reasoningEffort (lifetime tied to the
+            // workflow's LlmConfig singleton).
             .reasoning_effort = self.reasoningEffort,
         };
 
@@ -1897,12 +1650,8 @@ pub const Agent = struct {
         return aw.toOwnedSlice();
     }
 
-    /// Build JSON body for OpenAI Responses API (`url_style = "openai-response"`).
-    /// POST /v1/responses — see https://developers.openai.com/api/reference/resources/responses
-    /// Feature parity with `buildJsonOpenAIRequest`: model, instructions (system),
-    /// input (user/assistant/tool messages + vision content_parts), max_output_tokens,
-    /// temperature, reasoning.effort, tools, tool_choice, store, user. Stateless
-    /// (store=false, no previous_response_id) — history is replayed via `input`.
+    /// Build JSON body for OpenAI Responses API (`url_style =
+    /// "openai-response"`).
     pub fn buildJsonResponsesRequest(self: Agent, params: AgentCall, stream: bool) ![]u8 {
         const allocator = self.allocator;
         var arena = std.heap.ArenaAllocator.init(allocator);
@@ -1926,12 +1675,7 @@ pub const Agent = struct {
         }
         const instructions: ?[]const u8 = if (instructions_buf.items.len > 0) instructions_buf.items else null;
 
-        // Build heterogeneous `input` array. Each AgentMessage can expand to 1..N items:
-        //   user        -> 1 message item
-        //   assistant+tool_calls -> 1 message (if content) + N function_call items
-        //   tool        -> 1 function_call_output item
-        //   assistant (no tools) -> 1 message item
-        // Worst case: every message spawns 1 + tool_calls, so capacity = messages.len * 2 + total tool_calls.
+        // Build heterogeneous `input` array.
         var total_tool_calls: usize = 0;
         for (params.messages) |msg| {
             if (msg.tool_calls) |tcs| total_tool_calls += tcs.len;
@@ -2001,14 +1745,8 @@ pub const Agent = struct {
                 const has_enc = msg.reasoning_encrypted_content != null and msg.reasoning_encrypted_content.?.len > 0;
                 const has_reasoning = has_rc or has_rid or has_enc;
                 if (has_reasoning) {
-                    // Provider (Console Go → upstream) requires `summary` to be present
-                    // on every `type:"reasoning"` item. When `reasoning_content` is
-                    // NULL (summary was empty or never streamed), we still persist
-                    // `id`+`encrypted_content` for `store:false` replay — so we
-                    // must emit an empty `summary:[]` to satisfy the schema.
-                    // Omitting it produces:
-                    //   `input[1]` missing required field `summary`
-                    // and the stream terminates with 0 chunks.
+                    // Provider (Console Go → upstream) requires `summary` to
+                    // be present on every `type:"reasoning"` item.
                     var summary: ?[]const ResponsesReasoningSummary = null;
                     if (has_rc) {
                         var s = try arena_alloc.alloc(ResponsesReasoningSummary, 1);
@@ -2057,18 +1795,9 @@ pub const Agent = struct {
                     }
                 }
             } else if (msg.role == .tool) {
-                // Gateway (Console Go → upstream, url_style="openai-response")
-                // validates `function_call_output` strictly: it rejects the
-                // request with `input[N].output[0] did not match any supported
-                // type` when `output` is not a valid UTF-8 JSON string (e.g. a
-                // `bash` tool output containing `cat` of an ELF binary embeds
-                // 0x80-0xFF bytes that std.json emits raw) or when `call_id`
-                // is empty and can never pair with a `function_call`.
-                // Sanitize + truncate HERE (not at persistence) so already
-                // poisoned rows in llm_history are fixed on replay.
-                // OpenAI Responses reference (POST /v1/responses):
-                // `function_call_output.output` is a plain string — keep the
-                // string shape, just make it valid + bounded.
+                // Gateway (Console Go → upstream,
+                // url_style="openai-response") validates
+                // `function_call_output` strictly: it rejects the request
                 const raw_output = msg.content orelse "";
                 const clean_output = helpers.sanitize.sanitizeUtf8(arena_alloc, raw_output) catch raw_output;
                 // Bound oversize outputs (ls -R + binary dumps). Cap is
@@ -2127,11 +1856,7 @@ pub const Agent = struct {
         if (self.reasoningEffort) |eff| {
             if (eff.len > 0) reasoning = .{ .effort = eff };
         }
-        // Do NOT auto-map `thinkingEnabled` → reasoning. The chat
-        // completions body has no thinking flag of its own; Responses
-        // `reasoning` should only be sent when the user explicitly set
-        // `reasoning_effort`. Auto-sending `medium` for every
-        // `thinking:auto` profile was making muse-spark not call tools.
+        // Do NOT auto-map `thinkingEnabled` → reasoning.
 
         const req = ResponsesRequest{
             .model = self.model,
@@ -2166,14 +1891,8 @@ pub const Agent = struct {
         NoChoices,
         AllocFailed,
         /// Profile selects url_style="claude-code" (local CLI backend).
-        /// Phase 1 models the backend (config + validation + CLI argv);
-        /// execution wiring lands in Phase 2, so streaming fails fast
-        /// with this error plus an actionable `last_error_message`.
         ClaudeCodeNotWired,
         /// Profile selects backend="opencode" (local CLI backend).
-        /// Phase 1 models the backend (config + validation + CLI argv);
-        /// execution wiring lands in Phase 2, so streaming fails fast
-        /// with this error plus an actionable `last_error_message`.
         OpencodeNotWired,
         WriteFailed,
         OutOfMemory,
@@ -2200,11 +1919,7 @@ pub const Agent = struct {
 
     pub fn parse_stream_chunk(self: *Agent, data: []const u8, arena: std.mem.Allocator) ?StreamChunk {
         // Anthropic uses a different SSE event shape (`event:` + `data:`
-        // pairs with a `type` field, not `choices[0].delta`). Dispatch on
-        // UrlStyle so the rest of the pipeline (StreamingAggregator,
-        // CallResponse, the workflow loop) sees the same StreamChunk shape
-        // regardless of provider.
-        // Responses API (openai-response) also uses typed events `response.*`.
+        // pairs with a `type` field, not `choices[0].delta`).
         if (std.mem.eql(u8, self.UrlStyle, "openai-response")) {
             return self.parse_responses_stream_chunk(data, arena);
         }
@@ -2303,30 +2018,9 @@ pub const Agent = struct {
         return chunk;
     }
 
-    /// Anthropic streaming-SSE → StreamChunk mapper.
-    ///
-    /// Anthropic's /v1/messages streams `event:` + `data:` pairs (the wire
-    /// shape the OpenAI parser doesn't understand). We translate the events
-    /// the workflow cares about into the same `StreamChunk` shape the
-    /// OpenAI parser produces, so the rest of the pipeline
-    /// (StreamingAggregator, CallResponse, the workflow loop) doesn't need
-    /// to know which provider it's talking to.
-    ///
-    /// Event → StreamChunk mapping (see
-    /// docs/superpowers/plans/2026-08-13-anthropic-profile-sse-parsing.md
-    /// for the full spec):
-    ///   message_start           → caches input_tokens (no chunk emitted)
-    ///   content_block_delta     → text_delta|thinking_delta|input_json_delta
-    ///   content_block_start     → tool_use → tool_calls_delta[i] with id+name
-    ///   message_delta           → finish_reason + output_tokens (usage chunk)
-    ///   message_stop            → no-op (signal-only)
-    ///   content_block_stop      → no-op (signal-only)
-    ///   anything else           → return null
-    ///
-    /// Per-call scratch state lives on the Agent struct (reset at the top
-    /// of `callStreaming`): `_anthropic_input_tokens` (cached from
-    /// message_start) and `_anthropic_usage_emitted` (guard so the cached
-    /// input_tokens are emitted on the first delta only).
+    /// Anthropic streaming-SSE → StreamChunk mapper. Anthropic's /v1/messages
+    /// streams `event:` + `data:` pairs (the wire shape the OpenAI parser
+    /// doesn't understand).
     fn parse_anthropic_stream_chunk(
         self: *Agent,
         data: []const u8,
@@ -2426,13 +2120,7 @@ pub const Agent = struct {
             }
 
             // Emit a usage chunk on the FIRST delta so the aggregator sees
-            // the cached input_tokens count. Mirrors the OpenAI parser's
-            // use of `stream_options.include_usage=true`. We include the
-            // cached cache_creation + cache_read tokens too (from
-            // message_start), so the first-delta chunk has the same
-            // shape as the final message_delta chunk — which matters when
-            // the message_delta never fires (rare but possible on
-            // mid-stream death).
+            // the cached input_tokens count.
             if (self._anthropic_input_tokens > 0 and !self._anthropic_usage_emitted) {
                 const cached_creation = self._anthropic_cache_creation_tokens;
                 const cached_read = self._anthropic_cache_read_tokens;
@@ -2455,39 +2143,7 @@ pub const Agent = struct {
                 }
             }
             // Anthropic's `message_delta.usage` carries the AUTHORITATIVE
-            // token counts for the call. The strict Anthropic API sends
-            // `output_tokens` + `cache_creation_input_tokens` here
-            // (input_tokens was already cached from `message_start`).
-            //
-            // Some relays (e.g. api.minimax.io/anthropic) ALSO send
-            // `input_tokens` here — and may return 0 at `message_start`
-            // before delivering the real value here. Always prefer the
-            // `message_delta` value when present, falling back to the
-            // cached `message_start` value (via `_anthropic_input_tokens`)
-            // otherwise. This makes the parser robust to BOTH the strict
-            // API shape and the relay quirk without code branches.
-            //
-            // `prompt_tokens` includes ALL input-shaped tokens the model
-            // processed — input_tokens + cache_creation_input_tokens +
-            // cache_read_input_tokens — so that `total_tokens = prompt +
-            // completion` matches OpenAI's semantic ("tokens the LLM
-            // saw"). Cache reads are billed at a discounted rate (so
-            // they're NOT included in any future billing formula that
-            // multiplies by the input rate), but they ARE tokens the
-            // model still had to attend to — dropping them from
-            // `prompt_tokens` made Anthropic totals ~5× lower than
-            // equivalent OpenAI calls.
-            //
-            // We do NOT override `self._anthropic_input_tokens` /
-            // `_anthropic_cache_*_tokens` here even when message_delta
-            // supplies them — those cached fields are used by the
-            // first-delta usage chunk above and would race with this
-            // later message_delta usage chunk for the aggregator if
-            // mutated. The fresh value wins for the final message_delta
-            // usage emission, which is what `CallResponse.usage`
-            // actually persists (the aggregator's
-            // StreamingAggregator.process_chunk uses the LAST seen usage
-            // chunk for `total_tokens` only when total > 0).
+            // token counts for the call.
             if (root.object.get("usage")) |usage_val| {
                 if (usage_val == .object) {
                     var input_tokens: u32 = self._anthropic_input_tokens;
@@ -2528,13 +2184,7 @@ pub const Agent = struct {
         return chunk;
     }
 
-    /// Anthropic's stop_reason strings don't match OpenAI's. Map them so
-    /// the workflow's finish_reason handling stays provider-agnostic:
-    ///   end_turn       → "stop"
-    ///   tool_use       → "tool_calls"
-    ///   max_tokens     → "length"
-    ///   stop_sequence  → "stop"
-    ///   refusal        → "content_filter"
+    /// Anthropic's stop_reason strings don't match OpenAI's.
     fn map_anthropic_stop_reason(s: []const u8) ?[]const u8 {
         if (std.mem.eql(u8, s, "end_turn")) return "stop";
         if (std.mem.eql(u8, s, "tool_use")) return "tool_calls";
@@ -2545,19 +2195,6 @@ pub const Agent = struct {
     }
 
     /// OpenAI Responses API streaming-SSE → StreamChunk mapper.
-    /// Event types per https://developers.openai.com/api/reference/resources/responses
-    /// We translate typed `response.*` events into the same StreamChunk shape the
-    /// chat completions parser produces.
-    ///   response.output_text.delta           → content
-    ///   response.output_text.done            → (ignore, already deltas)
-    ///   response.reasoning_text.delta        → reasoning_content
-    ///   response.reasoning_summary_text.delta→ reasoning_content
-    ///   response.output_item.added (function_call) → tool_calls_delta id+name
-    ///   response.function_call_arguments.delta-> tool_calls_delta arguments
-    ///   response.function_call_arguments.done  -> (finalized via aggregator)
-    ///   response.completed                    → finish_reason + usage
-    ///   response.failed / response.incomplete → finish_reason + usage
-    ///   others (response.created, in_progress, content_part.added/done, output_item.done, queued) → no-op
     fn parse_responses_stream_chunk(self: *Agent, data: []const u8, arena: std.mem.Allocator) ?StreamChunk {
         const parsed = json.parseFromSlice(json.Value, arena, data, .{}) catch |err| {
             const max_data_len = 200;
@@ -2617,10 +2254,6 @@ pub const Agent = struct {
         {
             // `done` carries the final `text` for the part — use it as
             // fallback when deltas were not emitted or were dropped.
-            // This complements the terminal `response.completed` summary
-            // fallback. Without it, a stream that only emits `done` with
-            // no prior `delta` leaves `reasoning_content` NULL (seen on
-            // opencode.ai/zen muse-spark via Console Go).
             const text = root.object.get("text") orelse return null;
             if (text != .string) return null;
             if (text.string.len == 0) return null;
@@ -2704,11 +2337,7 @@ pub const Agent = struct {
             return chunk;
         }
         // Reasoning item done — the per-item finalization carries the
-        // complete summary + id + encrypted_content for that reasoning
-        // item. This fires before `response.completed`, so capturing here
-        // gives us the same fallback that `response.completed` uses, but
-        // earlier. If the stream never reaches `completed` (e.g. truncated
-        // due to max_output_tokens), this is the last chance to capture.
+        // complete summary + id + encrypted_content for that reasoning item.
         if (std.mem.eql(u8, event_type, "response.output_item.done")) {
             const item = root.object.get("item") orelse return null;
             if (item != .object) return null;
@@ -2776,15 +2405,9 @@ pub const Agent = struct {
                 chunk.finish_reason = .stop;
             }
 
-            // FIX: The Responses API has NO distinct terminal status for
-            // tool calls — `status` stays "completed" even when the model
-            // emitted one or more function_call items. Chat Completions
-            // signals this via `finish_reason: "tool_calls"`, but Responses
-            // only tells you via the shape of `response.output[]`. Without
-            // this override, `chunk.finish_reason` stays `.stop` even
-            // though `CallResponse.tool_calls` is populated — so any
-            // workflow logic gated on `finish_reason == .tool_calls` never
-            // fires and the model's tool calls are silently dropped.
+            // FIX: The Responses API has NO distinct terminal status for tool
+            // calls — `status` stays "completed" even when the model emitted
+            // one or more function_call items.
             if (response.object.get("output")) |output_val| {
                 if (output_val == .array) {
                     for (output_val.array.items) |item| {
@@ -2898,10 +2521,6 @@ pub const Agent = struct {
         });
 
         // Claude Code profiles select the local CLI backend, not HTTP.
-        // Phase 1 fails fast here (before any URL/auth handling) so the
-        // user gets an actionable message instead of a confusing
-        // InvalidUri from the empty base_url. Phase 2 will dispatch to
-        // `agentic_loop/claude_code.zig` execution from this point.
         if (std.mem.eql(u8, self.backend, "claude-code")) {
             const detail = std.fmt.allocPrint(
                 self.allocator,
@@ -2917,10 +2536,6 @@ pub const Agent = struct {
         }
 
         // OpenCode profiles select the local CLI backend, not HTTP.
-        // Phase 1 fails fast here (before any URL/auth handling) so the
-        // user gets an actionable message instead of a confusing
-        // InvalidUri from the empty base_url. Phase 2 will dispatch to
-        // `agentic_loop/opencode.zig` execution from this point.
         if (std.mem.eql(u8, self.backend, "opencode")) {
             const detail = std.fmt.allocPrint(
                 self.allocator,
@@ -2976,12 +2591,9 @@ pub const Agent = struct {
         const json_ellipsis = if (json_body.len > 500) "..." else "";
         self.log_fmt(.debug, "[STREAM REQUEST] JSON body ({} bytes): {s}{s}", .{ json_body.len, json_body[0..json_preview_len], json_ellipsis });
 
-        // 2. Compose URL: baseUrl + endpoint.
-        // Anthropic's correct API path is /v1/messages.
-        // const endpoint = if (std.mem.eql(u8, self.UrlStyle, "anthropic"))
-        //     "/v1/messages"
-        // else
-        //     "/chat/completions";
+        // 2. Compose URL: baseUrl + endpoint. Anthropic's correct API path is
+        // /v1/messages. const endpoint = if (std.mem.eql(u8, self.UrlStyle,
+        // "anthropic")) "/v1/messages" else "/chat/completions";
         const uri_str = std.mem.concat(self.allocator, u8, &.{self.baseUrl}) catch |err| {
             self.log_error("concat URI", err, null);
             return error.OutOfMemory;
@@ -2990,12 +2602,7 @@ pub const Agent = struct {
 
         // Validate the URL scheme BEFORE handing it to libcurl. libcurl
         // returns CURLE_UNSUPPORTED_PROTOCOL (LocalError.UnsupportedProtocol)
-        // for any URL it can't parse a scheme out of — which surfaces to
-        // the workflow as `scanner.next failed ...: UnsupportedProtocol`
-        // with no hint about *why*. Catching it here lets us name the
-        // actual misconfiguration (empty base_url, missing scheme, typo
-        // like "htttps://") instead of forcing the user to dig through
-        // libcurl docs.
+        // for any URL it can't parse a scheme out of — which surfaces to the
         const has_http_scheme = std.mem.startsWith(u8, uri_str, "http://") or
             std.mem.startsWith(u8, uri_str, "https://");
         if (!has_http_scheme) {
@@ -3019,13 +2626,6 @@ pub const Agent = struct {
         defer if (auth_value) |v| self.allocator.free(v);
 
         // 4. Build the custom_http_client.Request.
-        // OpenCode Go / Zen routing requires a stable per-conversation
-        // `x-opencode-session` header (see Agent.sessionId doc). Without
-        // it Console Go returns 200 + `{"type":"error",
-        // "error":{"type":"MissingSessionID",...}}`, which the SSE loop
-        // below surfaces as "stream ended without finish_reason after
-        // 0 chunk(s)". Only emit when non-empty so non-Go providers
-        // see a byte-identical request to before.
         var header_buf: [8]custom_http_client.Header = undefined;
         var header_count: usize = 0;
         header_buf[header_count] = .{ .name = "content-type", .value = "application/json" };
@@ -3055,12 +2655,6 @@ pub const Agent = struct {
         };
 
         // 5. Build Options. Standard libcurl timeouts — no custom watchdog.
-        // CURLOPT_TIMEOUT_MS covers the total deadline; libcurl will fire it
-        // when the server stalls without sending bytes.
-        // user_agent is our own client id (not the generic
-        // "custom_http_client/0.1.0" default) — OpenCode Go asks clients
-        // to "identify itself with its own user agent ... rather than a
-        // generic SDK or HTTP-library name".
         const options = custom_http_client.Options{
             .timeout_ms = self.httpOptions.read_timeout_ms,
             .connect_timeout_ms = 30_000,
@@ -3083,9 +2677,7 @@ pub const Agent = struct {
             self.log_fmt(.err, "[STREAM] HTTP error status: {d}", .{status});
             // Drain the error body so the workflow catch block can log the
             // server's actual reason (rate limit, auth, model not found,
-            // context length, etc.) instead of just `error.ApiError`. Cap at
-            // 4 KiB to avoid blowing up logs on a runaway server response;
-            // truncated payloads get a trailing "..." marker.
+            // context length, etc.) instead of just `error.ApiError`.
             var body_buf: std.ArrayList(u8) = .empty;
             defer body_buf.deinit(self.allocator);
             const max_body_len: usize = 4096;
@@ -3124,12 +2716,7 @@ pub const Agent = struct {
         var line_arena = std.heap.ArenaAllocator.init(self.allocator);
         defer line_arena.deinit();
 
-        // Raw SSE sample buffer. Populated when parse_stream_chunk returns null
-        // AND chunk_count stays at 0 — lets us surface the server's actual
-        // payload in the StreamInterrupted error message instead of hiding
-        // everything behind "0 chunk(s)". Capped at 2 KiB; we keep the FIRST
-        // bytes so the user sees the start of the stream (auth errors and
-        // framework-specific envelopes tend to appear there).
+        // Raw SSE sample buffer.
         var raw_sse_sample: std.ArrayList(u8) = .empty;
         defer raw_sse_sample.deinit(self.allocator);
         const max_raw_sse_sample_len: usize = 2048;
@@ -3137,44 +2724,11 @@ pub const Agent = struct {
         var chunk_count: usize = 0;
         var stream_ended_cleanly = false;
 
-        // 9. SSE loop. The scanner's inferred error set is wider than
-        // CallError (it includes libcurl's LocalError variants like
-        // DnsError / TlsError / OperationTimedOut), so we use a
-        // `catch` that maps any scanner error to a CallError variant
-        // and returns — instead of `try`, which would fail to propagate
-        // errors outside CallError.
-        //
-        // `scanner.next()` can return null for two reasons:
-        //   (a) the worker has finished cleanly (clean EOF); or
-        //   (b) the polling budget elapsed without a chunk arriving.
-        // `StreamScanner` does NOT distinguish the two — both return
-        // null. Reasoning-model LLMs (Claude extended thinking, OpenAI
-        // o1/o3, DeepSeek R1) routinely pause 30-60s+ between chunks,
-        // so a polling-budget return would otherwise produce a spurious
-        // `StreamInterrupted` on a healthy stream.
-        //
-        // Mitigations:
-        //   - `custom_http_client.StreamScanner.next()` was bumped from
-        //     5s to 300s in commit `…` (matches libcurl's
-        //     CURLOPT_TIMEOUT_MS) — fixes the common case.
-        //   - This loop treats a null as "give the worker one more
-        //     chance" — call next() again. If the worker has truly
-        //     finished, the second call returns null immediately. If
-        //     the worker is still going, the second call blocks until
-        //     the next chunk or the libcurl timeout.
+        // 9. SSE loop.
         var scanner_null_count: u32 = 0;
         while (true) {
             // Cancellation check — the only place a MID-stream stop can be
-            // observed. The workflow's loop-top check
-            // (`runAgenticMultiStepnew`) runs after this function returns, so
-            // without this the cancel is not noticed until the response has
-            // finished; that delay is the "Stop still waits ~1s" symptom.
-            //
-            // `stream.cancel()` is essential, not belt-and-braces: the
-            // `defer stream.deinit()` below joins the libcurl worker, and the
-            // worker only samples the cancelled flag while it is being handed
-            // body bytes. Cancelling here makes the worker abort on the very
-            // next chunk instead of after the 64-slot response queue fills.
+            // observed.
             if (params.cancel_fn) |should_cancel| {
                 if (should_cancel()) {
                     stream.cancel();
@@ -3183,13 +2737,7 @@ pub const Agent = struct {
                 }
             }
             const next_result = scanner.next() catch |err| {
-                // Classify cancellation BEFORE anything else. A cancel aborts
-                // the transfer, which libcurl reports as a transport error
-                // (CURLE_WRITE_ERROR → WriteError → StreamInterrupted). The
-                // workflow's generic catch turns every non-Cancelled error into
-                // a RETRY with a fresh request — silently re-running a turn the
-                // user explicitly stopped is far worse than the latency being
-                // fixed here.
+                // Classify cancellation BEFORE anything else.
                 if (err == error.Cancelled) return error.Cancelled;
                 if (params.cancel_fn) |should_cancel| {
                     if (should_cancel()) {
@@ -3200,14 +2748,7 @@ pub const Agent = struct {
                 self.log_fmt(.err, "[STREAM] scanner.next failed: {s}", .{@errorName(err)});
                 // Surface the underlying scanner error name to the workflow
                 // catch block so it can tell apart a parse failure from a
-                // network drop from an EOF mid-line, instead of all collapsing
-                // into "StreamInterrupted". Special-case `UnsupportedProtocol`
-                // when the URL was https:// — the vendored libcurl in
-                // kabelweb repo vendor/curl/ is built with
-                // --disable-ssl (see scripts/build-vendor-curl.sh:8-18), so
-                // the only way an https URL produces CURLE_UNSUPPORTED_PROTOCOL
-                // is that the vendored libcurl literally doesn't know the
-                // scheme. A bare `UnsupportedProtocol` is otherwise opaque.
+                // network drop from an EOF mid-line, instead of all
                 const detail: ?[]u8 = if (err == error.UnsupportedProtocol and
                     std.mem.startsWith(u8, uri_str, "https://"))
                     std.fmt.allocPrint(
@@ -3239,23 +2780,15 @@ pub const Agent = struct {
                         self.log_fmt(.err, "[STREAM] parse_stream_chunk returned null for: {s}", .{data});
                         // Capture the raw SSE data line for the final-error
                         // message — only while chunk_count == 0 (i.e. the
-                        // server's first lines are still unparsed). Once we
-                        // successfully parse ANY chunk we know the format
-                        // is one we understand, so additional raw samples
-                        // would just be noise.
+                        // server's first lines are still unparsed).
                         if (chunk_count == 0 and raw_sse_sample.items.len < max_raw_sse_sample_len) {
                             raw_sse_sample.appendSlice(self.allocator, data) catch {};
                             raw_sse_sample.append(self.allocator, '\n') catch {};
                         }
                     }
                 } else {
-                    // parse_sse_line returned null: this line isn't a `data: …`
-                    // payload. Could be `event: …` (Anthropic) or `id:`/`retry:`
-                    // (SSE boilerplate) or — more importantly for diagnosis —
-                    // a non-SSE response the server returned anyway (e.g. a
-                    // 404 HTML body when the URL was wrong). Capture the full
-                    // raw line so the final error message reveals the actual
-                    // server output, not just "0 chunk(s)".
+                    // parse_sse_line returned null: this line isn't a `data:
+                    // …` payload.
                     if (chunk_count == 0 and raw_sse_sample.items.len < max_raw_sse_sample_len) {
                         raw_sse_sample.appendSlice(self.allocator, line) catch {};
                         raw_sse_sample.append(self.allocator, '\n') catch {};
@@ -3263,22 +2796,15 @@ pub const Agent = struct {
                 }
                 continue;
             }
-            // next() returned null. The worker MIGHT have finished
-            // (clean EOF) OR the polling budget might have elapsed
-            // (worker still going). One more call lets us tell apart
-            // the two: a clean EOF returns null immediately on the
-            // second call, a polling timeout blocks until the next
-            // chunk. We cap at 2 nulls in a row to be defensive —
-            // if the second call also returns null, the worker
-            // definitely finished.
+            // next() returned null. The worker MIGHT have finished (clean
+            // EOF) OR the polling budget might have elapsed (worker still
+            // going).
             scanner_null_count += 1;
             if (scanner_null_count >= 2) break;
         }
 
-        // A cancel can also land in the window between the final chunk and the
-        // loop exit above. Classify it before the "ended without
-        // finish_reason" diagnostics below, which would otherwise turn a
-        // user-initiated stop into a StreamEmpty/StreamInterrupted retry.
+        // A cancel can also land in the window between the final chunk and
+        // the loop exit above.
         if (params.cancel_fn) |should_cancel| {
             if (should_cancel()) {
                 stream.cancel();
@@ -3292,17 +2818,8 @@ pub const Agent = struct {
         if (aggregator.finish_reason == null) {
             self.log_fmt(.err, "[STREAM] stream ended without finish_reason (chunks={})", .{chunk_count});
             // Tell the workflow catch block HOW the stream died and roughly
-            // how far it got, so the user can distinguish "the server cut
-            // us off after a few tokens" from "it never started streaming
-            // at all" — both surface as StreamInterrupted today.
-            //
-            // When chunk_count stayed at 0 BUT we received SOME SSE lines,
-            // the server is speaking a format we don't understand (most
-            // commonly: a profile configured with the wrong `url_style`,
-            // e.g. an OpenAI-compatible relay configured as `anthropic`).
-            // In that case we fold a truncated raw sample into the error
-            // message so the user can SEE what the server actually sent,
-            // instead of staring at an opaque "0 chunk(s)".
+            // how far it got, so the user can distinguish "the server cut us
+            // off after a few tokens" from "it never started streaming at
             const sample_truncated = raw_sse_sample.items.len >= max_raw_sse_sample_len;
             const sample_for_msg: []const u8 = if (raw_sse_sample.items.len > 0)
                 if (sample_truncated)
@@ -3350,16 +2867,6 @@ pub const Agent = struct {
         };
 
         // 12. Cost tracking (matches Agent.zig's pricing).
-        // NOTE (2026-08-13, fix-anthropic-total-tokens plan): this
-        // formula treats `prompt_tokens` as if it were billed at the
-        // full input rate. After Task 2 of that plan, Anthropic
-        // `prompt_tokens` now ALSO includes `cache_read_input_tokens`
-        // (billed at ~0.1× input rate) and `cache_creation_input_tokens`
-        // (billed at ~1.25× input rate), so this formula overcharges
-        // Anthropic cached-read calls by ~10× and undercharges cache
-        // writes by ~25%. The breakdown is preserved on
-        // `Usage.cache_*_input_tokens` so a future PR can fix the
-        // formula properly. OUT OF SCOPE for this plan.
         const prompt_cost = @as(f64, @floatFromInt(stream_response.usage.prompt_tokens)) * 0.000003;
         const completion_cost = @as(f64, @floatFromInt(stream_response.usage.completion_tokens)) * 0.000015;
         const total_cost = prompt_cost + completion_cost;
@@ -3493,24 +3000,9 @@ test "buildJsonAnthropicRequest omits metadata entirely when userIdentifier is e
     try testing.expect(std.mem.indexOf(u8, body, "\"metadata\"") == null);
 }
 
-// ===== Tests merged from anthropic_adaptive_test.zig (2026-09-29 flatten) =====
-// Tests for the new Anthropic `thinking_budget_tokens` override +
-// `type: "adaptive"` mode in `buildJsonAnthropicRequest`. Plan
-// 2026-08-23-model-thinking.
-//
-// The pre-existing tests at `anthropic_request_test.zig` cover the
-// default 50%-of-max_tokens heuristic; this file covers the NEW
-// paths:
-//   1. Explicit budget override (`Agent.thinkingBudgetTokens` set) →
-//      emitted verbatim (still clamped to >=1024 and <max_tokens).
-//   2. Explicit budget override below the 1024 floor → clamped to 1024.
-//   3. Explicit budget override at the ceiling → clamped to max_tokens - 1.
-//   4. No override + `thinkingAdaptive` = true → `type: "adaptive"`,
-//      no `budget_tokens` field.
-//   5. No override + `thinkingAdaptive` = false → falls back to the
-//      50%-of-max heuristic (existing behavior, NOT covered here).
-//   6. `thinkingEnabled` = false (regardless of override) → entire
-//      `thinking` field omitted (existing behavior).
+// ===== Tests merged from anthropic_adaptive_test.zig (2026-09-29 flatten)
+// ===== Tests for the new Anthropic `thinking_budget_tokens` override +
+// `type: "adaptive"` mode in `buildJsonAnthropicRequest`.
 
 const AnthropicAdaptiveMakeOpts = struct {
     thinkingEnabled: bool = true,
@@ -3602,10 +3094,8 @@ test "buildJsonAnthropicRequest: thinkingBudgetTokens above ceiling clamps to ma
 }
 
 test "buildJsonAnthropicRequest: thinkingBudgetTokens=null + thinkingAdaptive=true emits type:adaptive" {
-    // User picked "auto" in the UI → workflow sets
-    // thinkingAdaptive=true and leaves thinkingBudgetTokens=null.
-    // The request body MUST emit type:adaptive with NO budget_tokens
-    // field (Anthropic picks its own budget).
+    // User picked "auto" in the UI → workflow sets thinkingAdaptive=true and
+    // leaves thinkingBudgetTokens=null.
     var a = makeAgentAnthropicAdaptive(.{ .thinkingBudgetTokens = null, .thinkingAdaptive = true });
     defer a.deinit();
 
@@ -3680,26 +3170,9 @@ test "buildJsonAnthropicRequest: thinkingBudgetTokens wins over thinkingAdaptive
     try testing.expect(std.mem.indexOf(u8, body, "\"type\":\"adaptive\"") == null);
 }
 
-// ===== Tests merged from anthropic_request_test.zig (2026-09-29 flatten) =====
-// Regression tests for the Anthropic request-builder bugs documented in
+// ===== Tests merged from anthropic_request_test.zig (2026-09-29 flatten)
+// ===== Regression tests for the Anthropic request-builder bugs documented in
 // `docs/superpowers/plans/<anthropic-request-fixes>.md`.
-//
-// These are unit tests of `Agent.buildJsonAnthropicRequest` — we exercise
-// the request body that hits the wire, but without doing any actual
-// network I/O. Companion to the SSE-parser tests in
-// `parse_anthropic_sse_test.zig`.
-//
-// Why each test exists:
-//   - System messages must move to a top-level `"system"` field
-//     (Anthropic rejects `role: "system"` inside `messages` and 400s).
-//   - `thinking: {type: "enabled"}` is missing the required
-//     `budget_tokens` field — every call with thinkingEnabled=true 400s.
-//   - `temperature` must be omitted (or exactly `1`) when
-//     `thinking.type == "enabled"` — Anthropic 400s otherwise.
-//   - The Anthropic serializer was emitting a bogus `stream_options`
-//     block (copy-pasted from OpenAI). Anthropic has no such request
-//     key — we already get usage on `message_start` / `message_delta`
-//     SSE events unconditionally.
 
 fn makeAgentAnthropicRequest(opts: struct {
     model: []const u8 = "claude-test",
@@ -3737,9 +3210,6 @@ fn sysMsgAnthropicRequest(text: []const u8) AgentMessage {
 }
 
 // Build and return the body. Caller frees with `freeAnthropicBody`.
-// Don't bother parsing here — most assertions are simpler against the
-// raw JSON text (substring match + length). One helper, `parseBody`,
-// covers the cases that need parsed-shape inspection.
 fn buildAnthropicBodyRawAnthropicRequest(
     a: *Agent,
     messages: []const AgentMessage,
@@ -3935,10 +3405,7 @@ test "buildJsonAnthropicRequest: temperature is emitted when thinkingEnabled=fal
     defer testing.allocator.free(raw);
 
     try testing.expect(std.mem.indexOf(u8, raw, "\"thinking\"") == null);
-    // `temperature` is emitted. Match the wire shape exactly:
-    //   - `std.json.fmt` renders `f32` 0.7 as `0.699999988079071`
-    //     (0.7 is not exactly representable in IEEE-754 binary32), so
-    //     we accept either "0.699999988079071" or a literal "0.7".
+    // `temperature` is emitted.
     const temp_present = std.mem.indexOf(u8, raw, "\"temperature\":") != null;
     try testing.expect(temp_present);
     const temp_value_ok =
@@ -3993,12 +3460,9 @@ test "regression: buildJsonOpenAIRequest keeps 'stream_options.include_usage' ve
 // ============================================================================
 
 test "callStreaming: anthropic style sends x-api-key + anthropic-version (not only Bearer)" {
-    // Regression for `AuthError: Missing API key` on anthropic-style
-    // chat (e.g. opencode.ai/zen/go/v1/messages): callStreaming sent
-    // only `Authorization: Bearer`, which Anthropic-style upstreams
-    // ignore. Assert the header list that actually reaches libcurl —
-    // the wire shape — rather than the spelling of the branch that
-    // builds it.
+    // Regression for `AuthError: Missing API key` on anthropic-style chat
+    // (e.g. opencode.ai/zen/go/v1/messages): callStreaming sent only
+    // `Authorization: Bearer`, which Anthropic-style upstreams ignore.
     var buf: [4]custom_http_client.Header = undefined;
     var auth_value: ?[]u8 = null;
     defer if (auth_value) |v| testing.allocator.free(v);
@@ -4037,29 +3501,8 @@ test "callStreaming: an anthropic request with no key omits x-api-key but keeps 
 }
 
 // ===== Tests merged from call_streaming_test.zig (2026-09-29 flatten) =====
-// Regression tests for `Agent.callStreaming` deadline / error-propagation behavior.
-//
-// Background (audit, 2026-01-15):
-//   - `HttpOptions.read_timeout_ms` was defined but never read.
-//   - Read errors were caught and silently `break`-en out of the loop.
-//   - The `n == 0` retry path had no max retry count and no deadline.
-//   - `callback(ctx, .{ .done = true })` was sent unconditionally, even after errors.
-//   - The function returned a `CallResponse` with `finish_reason = null` on the
-//     error path, which the workflow treated as a generic failure and silently
-//     retired. Net effect: a Wi-Fi drop mid-stream left the AI agent "stuck".
-//
-// Fix: the read loop now enforces an overall deadline, an idle window, and
-// surfaces read errors via new `CallError` variants. These tests pin the new
-// behavior so it can't silently regress.
-//
-// Manual integration test (for real-world verification, run by hand):
-//   1. Start pabrik-dev on port 8080.
-//   2. Begin an agent turn that streams a long response.
-//   3. Mid-stream: `sudo tc qdisc add dev lo root netem loss 100%` (drops
-//      all loopback packets, simulating a Wi-Fi drop on localhost).
-//   4. Confirm the worker log emits "[STREAM] idle for {N}ms" and the
-//      workflow retries within 30s, instead of spinning for minutes.
-//   5. Cleanup: `sudo tc qdisc del dev lo root`.
+// Regression tests for `Agent.callStreaming` deadline / error-propagation
+// behavior.
 
 const posix = std.posix;
 const linux = std.posix.system;
@@ -4082,7 +3525,6 @@ const testing_allocatorCallStreaming = std.testing.allocator;
 // ============================================================================
 // Structural tests — pin the new error variants and HttpOptions field so the
 // fix can't be silently removed by a future refactor.
-// ============================================================================
 
 test "CallError has the four new streaming variants" {
     // Compile-time + runtime check: each new error must be assignable to CallError.
@@ -4101,11 +3543,8 @@ test "CallError has the four new streaming variants" {
     try expectEqualStringsCallStreaming("StreamEmpty", @errorName(d));
 }
 
-// Pinned 2026-06-28 when idle_timeout_ms was raised from 60_000 to 180_000
-// to support reasoning models. The hard floor is 30_000ms (1.2× the ~25s
-// TCP keepalive window) — below that, the idle deadline fires before
-// keepalive can return ECONNRESET, and we conflate StreamInterrupted
-// (dead conn) with StreamIdleTimeout (hung stream). Don't drop below this.
+// Pinned 2026-06-28 when idle_timeout_ms was raised from 60_000 to 180_000 to
+// support reasoning models.
 test "HttpOptions.idle_timeout_ms default stays above TCP keepalive window" {
     const defaults = HttpOptions{};
     try expectCallStreaming(defaults.idle_timeout_ms >= 30_000);
@@ -4144,10 +3583,7 @@ test "callStreaming with opencode backend fails fast with actionable error" {
 }
 
 test "callStreaming ignores a claude-code UrlStyle when backend is http" {
-    // The discriminator is `backend`, NOT `UrlStyle`. A profile that names
-    // an unknown url_style but keeps backend="http" must take the HTTP path
-    // (and fail on the empty base_url), never the CLI guard — this pins the
-    // separation the whole design rests on.
+    // The discriminator is `backend`, NOT `UrlStyle`.
     var a = Agent.init(testing_allocatorCallStreaming, std.testing.io);
     defer a.deinit();
     a.baseUrl = "";
@@ -4163,7 +3599,6 @@ test "callStreaming ignores a claude-code UrlStyle when backend is http" {
 // ============================================================================
 // Real network test — spins up a fake HTTP server, points the agent at it,
 // and verifies the idle-timeout fix actually fires on a stalled connection.
-// ============================================================================
 
 const ServerBehavior = enum {
     /// Accept one connection, send only the HTTP head, then sleep forever.
@@ -4278,10 +3713,8 @@ fn serve(
         "\r\n";
 
     // Loop accepting connections so the FD-leak regression tests can drive
-    // multiple callStreaming calls against the same port (the original single-
-    // accept server returned after one connection, so subsequent agent calls
-    // got ECONNREFUSED — a different code path that doesn't exercise the
-    // leak). Each iteration handles one connection according to `behavior`.
+    // multiple callStreaming calls against the same port (the original
+    // single- accept server returned after one connection, so subsequent
     while (!stop.load(.acquire)) {
         const conn_rc = linux.accept(listener_fd, null, null);
         if (conn_rc > std.math.maxInt(i32)) {
@@ -4386,31 +3819,8 @@ fn runStreamingWithTimeout(
 }
 
 test "callStreaming returns StreamIdleTimeout within idle window when server stalls after head" {
-    // The watchdog thread force-cancels the in-flight recv via shutdown(SHUT_RD)
-    // when no body bytes arrive for `idle_timeout_ms`. The recv returns 0 (EOF)
-    // per Linux's "may unblock pending receives" semantics for SHUT_RD, and the
-    // watchdog's dup2-to-/dev/null trick leaves the fd valid for the Io
-    // runtime's later close(). Without the watchdog, the worker would hang in
-    // recv() indefinitely (the previous skip-rationale that this test replaced).
-    //
-    // The watchdog polls every ~250ms, so the test's wall-clock time is bounded
-    // by the next poll boundary after idle_timeout_ms elapses. We use a small
-    // idle_timeout_ms (50ms) to keep the test fast; the upper bound
-    // (idle_ms + 750ms) gives one full extra poll cycle of slack for scheduling
-    // jitter. read_timeout_ms is short so the test fails fast if the watchdog
-    // doesn't fire on idle.
-    //
-    // NOTE: this test is currently skip-listed. The watchdog's idle check fires
-    // correctly (callStreaming returns within ~250ms with elapsed_ms ~252ms in
-    // debug runs), but subsequent Agent.deinit / httpClient.deinit cleanup
-    // hangs in std.Io.Threaded.closeFd when the connection was half-closed by
-    // the watchdog's dup2-to-/dev/null trick. The full callStreaming stack
-    // returns, but the deferred client deinit never completes — the test
-    // process hangs past `read_timeout_ms` and is killed by the test runner's
-    // outer timeout. Marking the test as skipped keeps `zig build test` fast
-    // (the watchdog timing is verified by the structural `CallError has the
-    // four new streaming variants` test above). Re-enable this test once the
-    // Io runtime's close path handles the dup2-replaced fd correctly.
+    // The watchdog thread force-cancels the in-flight recv via
+    // shutdown(SHUT_RD) when no body bytes arrive for `idle_timeout_ms`.
     if (true) return error.SkipZigTest;
     var server = try FakeServer.start(.head_only_then_stall);
     defer server.shutdown();
@@ -4420,9 +3830,7 @@ test "callStreaming returns StreamIdleTimeout within idle window when server sta
     const outcome = try runStreamingWithTimeout(server.port, idle_ms, 30_000);
 
     // Detection must happen between [idle_ms, idle_ms + ~750ms] (one watchdog
-    // poll cycle of slack). The previous 500ms idle + 30s read_timeout values
-    // made each test take ~30s end-to-end; lower bounds make the test
-    // ~10x faster while still pinning the same behavior.
+    // poll cycle of slack).
     try expectCallStreaming(outcome.elapsed_ms >= @as(i64, @intCast(idle_ms)) - 50);
     try expectCallStreaming(outcome.elapsed_ms <= @as(i64, @intCast(idle_ms)) + 750);
 
@@ -4449,12 +3857,6 @@ test "callStreaming returns StreamIdleTimeout within idle window when server sta
 /// Portable fixture for the cancellation test: a listener that accepts ONE
 /// connection, answers with an HTTP/1.1 SSE head plus a single `data:` chunk,
 /// then holds the connection open without sending anything else.
-///
-/// Deliberately NOT the `FakeServer` the other tests in this file use: that one
-/// is built on raw `std.os.linux` syscalls (socket/bind/listen/accept/write) and
-/// is therefore Linux-only. This uses `std.Io.net`, which works on Linux, macOS
-/// and Windows alike, so the cancel contract is covered on every platform we
-/// ship instead of being skipped on two of them.
 const StallServer = struct {
     allocator: std.mem.Allocator,
     listener: std.Io.net.Server,
@@ -4522,27 +3924,15 @@ const StallServer = struct {
 };
 
 test "callStreaming reports a mid-stream cancel as error.Cancelled, never as a retryable error" {
-    // The workflow treats EVERY non-Cancelled error as a transient failure: it
-    // increments retry_count, saves a retry diagnostic to history, sleeps, and
-    // re-issues the request (workflow.zig, the callDynamicAgentNew catch). So
-    // the most damaging way to get this wrong is for a user's Stop to arrive as
-    // StreamInterrupted/StreamEmpty — the turn the user just cancelled would
-    // silently re-run.
-    //
-    // `cancel_fn` answers false on its FIRST poll and true afterwards, which
-    // walks the real sequence: the loop enters the read (and the stream
-    // genuinely delivers one chunk), the transfer then fails, and only THEN is
-    // the cancel consulted. That reaches the classification branch in the
-    // scanner `catch` — returning true immediately would only ever exercise the
-    // pre-read check and would leave the branch below untested.
+    // The workflow treats EVERY non-Cancelled error as a transient failure:
+    // it increments retry_count, saves a retry diagnostic to history, sleeps,
+    // and re-issues the request (workflow.zig, the callDynamicAgentNew
     var server = try StallServer.start(testing_allocatorCallStreaming);
     defer server.deinit();
 
-    // `callStreaming` is arena-scoped BY CONTRACT: `StreamingAggregator.deinit`
-    // is a documented no-op because production hands it the per-iteration
-    // arena (see `workflow.zig`'s loop), so its buffers are reclaimed wholesale.
-    // Using `testing.allocator` here would report the aggregator's own
-    // content buffer as a leak — a property of the contract, not a bug.
+    // `callStreaming` is arena-scoped BY CONTRACT:
+    // `StreamingAggregator.deinit` is a documented no-op because production
+    // hands it the per-iteration arena (see `workflow.zig`'s loop), so its
     var arena = std.heap.ArenaAllocator.init(testing_allocatorCallStreaming);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -4563,7 +3953,6 @@ test "callStreaming reports a mid-stream cancel as error.Cancelled, never as a r
         // Small: after the cancel the deferred `stream.deinit()` join still
         // waits for the parked worker (no bytes are arriving — see the
         // kabelweb `openStream` comment on XFERINFOFUNCTION), and this bounds
-        // that wait.
         .read_timeout_ms = 1_500,
     });
     defer a.deinit();
@@ -4589,11 +3978,9 @@ test "callStreaming reports a mid-stream cancel as error.Cancelled, never as a r
     try expectCallStreaming(CancelState.polls >= 2);
 }
 
-// Note: the original third skipped test ("head_then_close") was a pre-existing
-// flaky test unrelated to the watchdog (its skip comment said "the std.testing.io
-// event loop scheduling is not deterministic in this environment"). The watchdog
-// fix doesn't change that path's behavior, so we omit the test rather than
-// resurrect a flaky one.
+// Note: the original third skipped test ("head_then_close") was a
+// pre-existing flaky test unrelated to the watchdog (its skip comment said
+// "the std.testing.io event loop scheduling is not deterministic in this
 
 test "callStreaming returns within idle_timeout when server is silent (watchdog timing)" {
     // Same hang-on-cleanup issue as the first streaming test — see the
@@ -4619,34 +4006,6 @@ test "callStreaming returns within idle_timeout when server is silent (watchdog 
 
 // ============================================================================
 // FD-leak regression tests (2026-07-15).
-//
-// Symptom (production pabrik, 9-hour uptime, 8081):
-//   - Total FDs: ~820
-//   - Of which: ~818 anonymous pipes (self-pipes held entirely by pabrik,
-//     appearing in only 1 process in /proc)
-//   - Burst pattern: created in a 6-minute window concurrent with retry storm
-//   - Source: each `callStreaming` that fails (HttpRequestFailed) leaks
-//     internal pipe FDs that `req.deinit()` / `httpClient.deinit()` don't
-//     fully close in Zig 0.16 std.http. After ~10 retries, +800 FDs.
-//
-// Diagnosis:
-//   - sse_manager.zig::notify_pipe is process-global (2 FDs total, not per-call)
-//   - bash.zig already has the kill+wait pipe-cleanup pattern from PR #91
-//   - HttpClient.zig already has the defer-pipe-close pattern from PR #91
-//   - The remaining leak is in `Agent.callStreaming` itself: on the error
-//     path (e.g. server closes before any response is read), the connection's
-//     underlying socket + internal stdlib pipes are not fully cleaned up by
-//     `req.deinit()`.
-//
-// These tests verify that bounded N callStreaming calls leave the process
-// FD table bounded — i.e. the leak is closed.
-//
-// Implementation note: tests use the FakeServer's `head_then_close` behavior
-// (server closes the TCP connection immediately after accepting), which
-// reliably triggers the error path that historically leaked. The server
-// runs in a worker thread; the test process exits cleanly because we
-// always `defer server.shutdown()`.
-// ============================================================================
 
 /// Count anonymous pipes currently open in the test process via /proc/self/fd.
 /// Returns 0 on non-Linux (the leak is Linux-only) and on any proc access error.
@@ -4692,18 +4051,12 @@ test "callStreaming does not leak pipe FDs across many failed calls (TDD: RED �
 
     // Skipped: same std.Io.Threaded.closeFd hang as the 3 tests above (see
     // the comment on the first "StreamIdleTimeout" test for the full
-    // diagnosis). The dup2-to-/dev/null trick added in PR #117 prevents
-    // the kernel panic on closeFd, but the Io runtime's worker thread,
-    // parked in recv() on the original socket file description, never
-    // observes the dup2 and stays blocked. Re-enable when std.Io.Threaded
-    // properly handles dup2-replaced fds, OR when Agent.callStreaming
-    // uses a dedicated single-use http.Client for failure paths.
+    // diagnosis).
     if (true) return error.SkipZigTest;
 
     // The pre-fix leak rate is so severe (~100 pipes per failed call) that
-    // running N≥3 iterations in the shared test-runner process hits the
-    // 1024 FD limit. Keep N tiny (2) and add an early-bail baseline check:
-    // if the test runner's own pipe count is already near the limit, skip.
+    // running N≥3 iterations in the shared test-runner process hits the 1024
+    // FD limit.
 
     const pipes_baseline = countPipes();
     // Default Linux FD soft limit is 1024. Leave 200 FDs of headroom for the
@@ -4763,9 +4116,7 @@ test "callStreaming does not leak pipe FDs across many failed calls (TDD: RED �
 
 test "callStreaming zero-pipe-budget: even one failed call must not grow pipes" {
     // Stronger assertion: a single failed callStreaming MUST not grow the
-    // pipe count at all. Any growth is a leak. Skipped if countPipes() is
-    // unavailable on this platform, or if the shared test runner already
-    // has too many open pipes to safely run another iteration.
+    // pipe count at all. Any growth is a leak.
     if (builtin.os.tag != .linux) return error.SkipZigTest;
 
     // Skipped: same std.Io.Threaded.closeFd hang as the test above.
@@ -4803,9 +4154,7 @@ test "callStreaming zero-pipe-budget: even one failed call must not grow pipes" 
 
 test "callStreaming recovers cleanly after a failed call (success path)" {
     // Regression guard: when the server closes immediately (head_then_close),
-    // the agent should remain usable for the next call. This catches a class
-    // of bugs where the Agent's internal state is corrupted after a failed
-    // HTTP attempt (e.g. partial parse, leftover stream state).
+    // the agent should remain usable for the next call.
     if (builtin.os.tag != .linux) return error.SkipZigTest;
 
     // Skipped: same std.Io.Threaded.closeFd hang as the test above.
@@ -5003,10 +4352,9 @@ test "AgentMessage - legacy content field still works" {
     try expectEqualImageContent(@as(?[]const ContentPart, null), msg.content_parts);
 }
 
-// ===== Tests merged from openai_reasoning_test.zig (2026-09-29 flatten) =====
-// Tests for the new OpenAI `reasoning_effort` field on the request
-// body built by `buildJsonOpenAIRequest`. Plan
-// 2026-08-23-model-thinking.
+// ===== Tests merged from openai_reasoning_test.zig (2026-09-29 flatten)
+// ===== Tests for the new OpenAI `reasoning_effort` field on the request body
+// built by `buildJsonOpenAIRequest`. Plan 2026-08-23-model-thinking.
 
 const OpenaiReasoningMakeOpts = struct {
     reasoningEffort: ?[]const u8 = null,
@@ -5101,9 +4449,8 @@ test "buildJsonOpenAIRequest: reasoning_effort coexists with tools + temperature
 
     try testing.expect(std.mem.indexOf(u8, body, "\"reasoning_effort\":\"medium\"") != null);
     // temperature is serialized as a JSON float — Zig emits e.g.
-    // "0.699999988079071" for 0.7, so we only check the field name
-    // exists, not the exact value. The jsonStringify uses std.json
-    // default float formatting which preserves full f32 precision.
+    // "0.699999988079071" for 0.7, so we only check the field name exists,
+    // not the exact value.
     try testing.expect(std.mem.indexOf(u8, body, "\"temperature\":") != null);
     try testing.expect(std.mem.indexOf(u8, body, "\"get_weather\"") != null);
 }
@@ -5124,10 +4471,9 @@ test "buildJsonOpenAIRequest: each reasoning_effort value passes through verbati
     }
 }
 
-// Reasoning-echo backfill (task_1789091513563_0): DeepSeek-style
-// providers in thinking mode reject replays where an assistant message
-// lacks `reasoning_content`. Turns with no reasoning deltas persist
-// NULL — the builder must emit "" instead of omitting the field.
+// Reasoning-echo backfill (task_1789091513563_0): DeepSeek-style providers in
+// thinking mode reject replays where an assistant message lacks
+// `reasoning_content`.
 
 fn assistantMsgNoReasoningOpenaiReasoning(text: ?[]const u8) AgentMessage {
     return .{ .role = .assistant, .content = text };
@@ -5136,25 +4482,6 @@ fn assistantMsgNoReasoningOpenaiReasoning(text: ?[]const u8) AgentMessage {
 // ============================================================================
 // Regression: the openai chat-completions body must NOT carry the
 // non-standard `thinking` / `enable_thinking` params.
-//
-// Symptom (task_1791915284771_3): a profile with Thinking = "Off" against
-// `https://opencode.ai/inference/go/v1/chat/completions` failed every turn
-// with
-//   {"error":{"param":"thinking","type":"invalid_request_error",
-//     "message":"Upstream request failed: [unsupported_parameter]
-//               Unrecognized request argument supplied: thinking."}}
-// and, after that was worked around, the same for `enable_thinking`.
-//
-// Root cause: `JsonRequest` emitted `thinking: {"type":"disabled"}` when
-// thinking was OFF and `enable_thinking: <bool>` unconditionally. Neither
-// is an OpenAI chat-completions parameter — they are vendor extensions
-// that strict gateways reject outright. The logic was also inverted
-// (thinking ON emitted neither field).
-//
-// Fix: drop both fields from the openai wire body. `reasoning_effort` is
-// the only thinking knob on this shape; Anthropic-style URLs go through
-// `buildJsonAnthropicRequest`, which owns its own `thinking` block.
-// ============================================================================
 
 test "buildJsonOpenAIRequest: thinking off emits NEITHER thinking NOR enable_thinking" {
     var a = makeAgentOpenaiReasoning(.{ .thinkingEnabled = false });
@@ -5276,13 +4603,9 @@ test "buildJsonOpenAIRequest: assistant with reasoning keeps verbatim value" {
     try testing.expect(std.mem.indexOf(u8, body, "\"reasoning_content\":\"model's reasoning...\"") != null);
 }
 
-// ===== Tests merged from openai_responses_test.zig (2026-09-29 flatten) =====
-// Behavioural tests for OpenAI Responses API (url_style = "openai-response").
-// Covers buildJsonResponsesRequest + parse_responses_stream_chunk parity
-// with the legacy chat-completions stack. Mirrors the shape of
-// openai_reasoning_test.zig / parse_anthropic_sse_test.zig /
-// anthropic_request_test.zig — arena allocator, substring + parsed JSON
-// asserts, no network I/O.
+// ===== Tests merged from openai_responses_test.zig (2026-09-29 flatten)
+// ===== Behavioural tests for OpenAI Responses API (url_style =
+// "openai-response").
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -6854,14 +6177,9 @@ test "StreamingAggregator: end-to-end DB round-trip simulation via builder repla
 }
 
 test "buildJsonResponsesRequest: regression task_1788204837101_1 — reasoning_id+encrypted persisted even when reasoning_content is NULL" {
-    // Real DB row from task_1788204837101_1 (2026-09-01 03:17:31):
-    // assistant: content="Reasoning ID saved but content empty — tracing the summary extraction."
-    //   tool_calls=[bash call_01a05af8ce...], reasoning_content=NULL,
-    //   reasoning_id="rs_6a9643abdb33701b240b4ff4:rs_01a05af855327e6083af347abb5c682e",
-    //   reasoning_encrypted_content="Q-PaDgH1f..." (87k, truncated in test)
-    // tool: role=tool, call_id=call_01a05..., output={"tool":"bash",...} (JSON envelope)
-    // Builder must emit a separate reasoning item even when reasoning_content is NULL
-    // so that store:false replay can reconstruct the reasoning block verbatim.
+    // Real DB row from task_1788204837101_1 (2026-09-01 03:17:31): assistant:
+    // content="Reasoning ID saved but content empty — tracing the summary
+    // extraction." tool_calls=[bash call_01a05af8ce...],
     var a = makeResponsesAgentOpenaiResponses(.{});
     defer a.deinit();
 
@@ -7163,11 +6481,6 @@ test "buildJsonResponsesRequest: iterates output — not output[0] reasoning ass
 // ---------------------------------------------------------------------------
 // Builder: function_call_output sanitization (input[N].output[M] rejection)
 // ---------------------------------------------------------------------------
-// Regression for: `input[20].output[0] did not match any supported type`
-// (muse-spark via Console Go, url_style="openai-response"). A `bash` tool
-// output containing a `cat` of an ELF binary embedded invalid UTF-8 bytes
-// into `function_call_output.output`; std.json emits those bytes raw, so the
-// request body was not valid UTF-8 JSON and the gateway rejected the item.
 
 test "buildJsonResponsesRequest: tool output with invalid UTF-8 is sanitized" {
     var a = makeResponsesAgentOpenaiResponses(.{});
@@ -7241,32 +6554,9 @@ test "buildJsonResponsesRequest: oversize tool output is truncated with marker" 
     try testing.expect(found);
 }
 
-// ===== Tests merged from parse_anthropic_sse_test.zig (2026-09-29 flatten) =====
-// Tests for the Anthropic /v1/messages SSE parser + the raw-SSE sample
-// capture added to Agent.callStreaming. Companion to
-// `docs/superpowers/plans/2026-08-13-anthropic-profile-sse-parsing.md`.
-//
-// Why these are unit tests (not network tests): the existing
-// `call_streaming_test.zig` has 3 tests that actually instantiate
-// `Agent.callStreaming` and ALL THREE are marked
-// `if (true) return error.SkipZigTest;` — `Agent.deinit` hangs in
-// `std.Io.Threaded.closeFd` after a real HTTP roundtrip, which is a
-// pre-existing issue unrelated to this plan. So end-to-end network
-// tests for callStreaming can't run in this CI.
-//
-// To still get real coverage, we test the units that ARE reachable:
-//   1. `Agent.parse_stream_chunk(data, arena)` — the public
-//      SSE-line → StreamChunk mapper. We pass crafted JSON data
-//      strings directly. No network, no hang.
-//   2. `Agent.parse_anthropic_stream_chunk(...)` — the new sibling
-//      parser, reached via the public dispatcher on
-//      `parse_stream_chunk` when `UrlStyle = "anthropic"`.
-//   3. Part A (raw SSE capture) is verified by a static-contract
-//      test that inspects the source for the three required sites
-//      (buffer declaration, append on null parse, surface in final
-//      error message).
-//
-// All tests are deterministic and run in <1s.
+// ===== Tests merged from parse_anthropic_sse_test.zig (2026-09-29 flatten)
+// ===== Tests for the Anthropic /v1/messages SSE parser + the raw-SSE sample
+// capture added to Agent.callStreaming.
 
 const expectParseAnthropicSse = std.testing.expect;
 const expectEqualParseAnthropicSse = std.testing.expectEqual;
@@ -7274,25 +6564,9 @@ const expectErrorParseAnthropicSse = std.testing.expectError;
 const expectEqualStringsParseAnthropicSse = std.testing.expectEqualStrings;
 const testing_allocatorParseAnthropicSse = std.testing.allocator;
 
-// ===== Regression test for 2026-08-15 "bash tool leak" ===============
-//
-// The user posted a leaked tool_call record with a bash `arguments`
-// payload of literally `$'\xaa\xaa\xaa...'` (22 bytes of 0xAA — Zig's
-// DebugAllocator free-fill byte, octal 252). Fix: make `CallResponse`
-// arena-owned. Caller passes the per-iteration arena's allocator to
-// `Agent.init`. The SSE parser allocates everything on that arena.
-// `StreamingAggregator.finalize` returns slice headers that point
-// straight at the arena — no copy, no separate `deinit`. Any
-// accidental `free`-then-read under DebugAllocator would have
-// produced the 0xAA poison the user observed.
-//
-// Pins the contract:
-//   1. `process_chunk` stores inner bytes on the caller's arena.
-//   2. `finalize` returns slice headers that point at the SAME arena
-//      bytes (no second dupe).
-//   3. Reading the returned bytes BEFORE the arena is destroyed
-//      returns the real arguments — not 0xAA.
-//   4. `CallResponse.deinit` is a documented no-op.
+// ===== Regression test for 2026-08-15 "bash tool leak" =============== The
+// user posted a leaked tool_call record with a bash `arguments` payload of
+// literally `$'\xaa\xaa\xaa...'` (22 bytes of 0xAA — Zig's DebugAllocator
 test "CallResponse arena ownership: tool_call.function.arguments points at caller's arena (no .deinit needed)" {
     var arena = std.heap.ArenaAllocator.init(testing_allocatorParseAnthropicSse);
     defer arena.deinit();
@@ -7310,10 +6584,8 @@ test "CallResponse arena ownership: tool_call.function.arguments points at calle
         }},
     });
 
-    // Stage 2: two input_json_delta chunks concatenate to the bash
-    // arguments JSON. Real Anthropic / OpenAI streams could carry
-    // any byte sequence (including legitimate binary data with
-    // 0xAA); the contract must hold regardless of payload content.
+    // Stage 2: two input_json_delta chunks concatenate to the bash arguments
+    // JSON.
     const args_payload =
         \\{"command":"cd /tmp && echo hello","cwd":"/tmp"}
     ;
@@ -7339,11 +6611,8 @@ test "CallResponse arena ownership: tool_call.function.arguments points at calle
     try expectEqualStringsParseAnthropicSse("toolu_leak_test", tc.id);
     try expectEqualStringsParseAnthropicSse("bash", tc.function.name);
 
-    // CRITICAL: `tc.function.arguments` points at the same arena
-    // memory the aggregator's internal `arguments` ArrayList holds.
-    // Pre-fix the bytes would have been 0xAA (DebugAllocator free-
-    // fill) because a per-inner-slice `free` fired before the
-    // consumer read the bytes.
+    // CRITICAL: `tc.function.arguments` points at the same arena memory the
+    // aggregator's internal `arguments` ArrayList holds.
     try expectEqualStringsParseAnthropicSse(args_payload, tc.function.arguments);
 
     // Belt-and-suspenders: pin the contract by asserting no
@@ -7611,10 +6880,7 @@ test "parse_stream_chunk (anthropic): usage emitted exactly once across multiple
 
 // ============================================================================
 // Anthropic usage handling — make total_tokens match OpenAI's semantic
-// (prompt_tokens + completion_tokens) so llm_history / compaction
-// code that consumes CallResponse.usage gets the same numbers it would
-// from an OpenAI profile.
-// ============================================================================
+// (prompt_tokens + completion_tokens) so llm_history / compaction code that
 
 test "parse_stream_chunk (anthropic): message_delta usage emits total = input + output (strict API shape — no input in message_delta)" {
     var a: Agent = .init(testing_allocatorParseAnthropicSse, std.testing.io);
@@ -7710,13 +6976,7 @@ test "parse_stream_chunk (anthropic): message_delta includes cache_creation_inpu
 test "parse_stream_chunk (anthropic): cache_read_input_tokens IS added to prompt + total (cache reads ARE tokens processed)" {
     // Mirrors the spec TL;DR: cache_read counts as tokens the model
     // processed, so prompt = input + cache_read and total = prompt +
-    // completion. The cache breakdown is preserved separately on
-    // `Usage` so billing code can still apply the discounted rate.
-    //
-    // Pre-fix: this test asserted prompt=54, total=77 (cache_read=128 was
-    // dropped on the floor, matching the sibling-branch contract labelled
-    // "FREE"). Post-fix: prompt=182 (54+128), total=205 (182+23). The
-    // cache_read count is still 128 on the breakdown for billing.
+    // completion.
     var a: Agent = .init(testing_allocatorParseAnthropicSse, std.testing.io);
     defer a.deinit();
     a.UrlStyle = "anthropic";
@@ -7750,10 +7010,7 @@ test "parse_stream_chunk (anthropic): cache_read_input_tokens IS added to prompt
 }
 
 // ============================================================================
-// Task 1 contract — Agent.Usage struct surface area. Pin the new
-// Anthropic cache field names so Tasks 2 + 4 + 5 + 6 can lean on them.
-// (OpenAI rows always carry 0 in both fields.)
-// ============================================================================
+// Task 1 contract — Agent.Usage struct surface area.
 
 test "Agent.Usage struct has cache_creation_input_tokens + cache_read_input_tokens fields (structural contract)" {
     const u: Usage = .{};
@@ -7901,12 +7158,6 @@ test "Agent.Usage can be constructed with explicit cache values (regression pin 
 // ============================================================================
 // Regression test — reproduce the iter-2 SEGV in buildJsonAnthropicRequest
 // (the slice-header 0xAA-poisoning crash seen when an Anthropic chat hits
-// iter 2 after the model emits tool_calls in iter 1). Build the request
-// body directly with a synthetic assistant message that mirrors the shape
-// loadHistoryFromDb produces, and assert the body is well-formed UTF-8 JSON.
-// If this test crashes (segfault in utf8ValidateSlice) the underlying bug
-// is reproduced without needing the full workflow + DB stack.
-// ============================================================================
 
 test "buildJsonAnthropicRequest: assistant message with tool_calls + null reasoning_content survives" {
     var a: Agent = .init(testing_allocatorParseAnthropicSse, std.testing.io);
@@ -7960,33 +7211,14 @@ test "buildJsonAnthropicRequest: assistant message with tool_calls + null reason
     defer testing_allocatorParseAnthropicSse.free(body);
 
     // If we got here without a SEGV, the slice-pointer corruption didn't
-    // happen for this synthetic input. If this assertion never fires but
-    // the workflow still crashes, the bug needs MORE than just an
-    // assistant-with-tool-calls message to trigger — likely tied to
-    // specific allocator lifetimes that only manifest under the real
-    // workflow's arena setup.
+    // happen for this synthetic input.
     try expectParseAnthropicSse(body.len > 100);
     try expectParseAnthropicSse(std.mem.startsWith(u8, body, "{"));
 }
 
 // ============================================================================
-// Part C — Anthropic request body preserves `image_url` content_parts
-// (smoke test 2026-08-13: "i cannot send image" with profile `url_style:
-// "anthropic"`. Symptom: model says "Sepertinya belum ada gambar yang
-// masuk di percakapan ini — saya hanya melihat pesan teks saja" while
-// the image is correctly stored in `llm_history.image_urls` and is
-// displayed in the frontend UI.
-// Root cause: `buildJsonAnthropicRequest` only emits `content` as a
-// single-text string OR content_blocks (for assistant tool_use). It
-// never reads `msg.content_parts`, so user-attached images are silently
-// dropped before the wire.
-// Fix: when `msg.content_parts` is set, build `AnthropicContentBlock`
-// entries for each part — `text` → `{type:"text", text:...}` and
-// `image_url` → `{type:"image", source:{type:"url", url:"data:..."}}`
-// (Anthropic accepts the OpenAI-flavored `data:image/...;base64,...`
-// URL via its `source.url` field; this matches what every OpenAI-
-// compatible Anthropic relay like api.minimax.io/anthropic expects).
-// ============================================================================
+// Part C — Anthropic request body preserves `image_url` content_parts (smoke
+// test 2026-08-13: "i cannot send image" with profile `url_style:
 
 test "buildJsonAnthropicRequest: user message with image content_parts preserves the image URL" {
     var a: Agent = .init(testing_allocatorParseAnthropicSse, std.testing.io);
@@ -8033,11 +7265,9 @@ test "buildJsonAnthropicRequest: user message with image content_parts preserves
     const body = try a.buildJsonAnthropicRequest(params, true);
     defer testing_allocatorParseAnthropicSse.free(body);
 
-    // The body MUST include the user-attached image (otherwise the LLM
-    // — and `api.minimax.io/anthropic` — sees an empty user message and
-    // replies "i don't see an image"). Before the fix, the only
-    // `"type"` strings in the body are `text` / `tool_use` /
-    // `tool_result`; the image was silently dropped.
+    // The body MUST include the user-attached image (otherwise the LLM — and
+    // `api.minimax.io/anthropic` — sees an empty user message and replies "i
+    // don't see an image").
     try expectParseAnthropicSse(std.mem.indexOf(u8, body, "\"type\":\"image\"") != null);
     try expectParseAnthropicSse(std.mem.indexOf(u8, body, url_dup) != null);
     try expectParseAnthropicSse(std.mem.indexOf(u8, body, text_dup) != null);
@@ -8109,22 +7339,16 @@ test "buildJsonAnthropicRequest: user message with plain text (no image) still e
     const body = try a.buildJsonAnthropicRequest(params, true);
     defer testing_allocatorParseAnthropicSse.free(body);
 
-    // No images: `content` MUST serialize as a top-level string (the
-    // legacy shape Anthropic accepts), not as an array. We assert that
-    // by checking the substring `"content":"halo dunia"` is in the
-    // body. (It would be `"content":["text:..."]` if we'd broken the
-    // backwards-compat path.)
+    // No images: `content` MUST serialize as a top-level string (the legacy
+    // shape Anthropic accepts), not as an array.
     try expectParseAnthropicSse(std.mem.indexOf(u8, body, "\"content\":\"halo dunia\"") != null);
     try expectParseAnthropicSse(std.mem.indexOf(u8, body, "\"type\":\"image\"") == null);
 }
 
 test "buildJsonAnthropicRequest: image content uses Anthropic-native source.url wrapper" {
-    // The OpenAI wire format puts the data URL straight under
-    // `image_url: { url: "data:..." }`; Anthropic wraps it under
-    // `source: { type: "url", url: "data:..." }` inside an
-    // `image`-typed content block. This test pins that exact shape
-    // so a future refactor can't accidentally emit OpenAI-style
-    // blocks onto Anthropic.
+    // The OpenAI wire format puts the data URL straight under `image_url: {
+    // url: "data:..." }`; Anthropic wraps it under `source: { type: "url",
+    // url: "data:..." }` inside an `image`-typed content block.
     var a: Agent = .init(testing_allocatorParseAnthropicSse, std.testing.io);
     defer a.deinit();
     a.model = "claude-test";
@@ -8153,9 +7377,7 @@ test "buildJsonAnthropicRequest: image content uses Anthropic-native source.url 
     defer testing_allocatorParseAnthropicSse.free(body);
 
     // The Anthropic-native wrapper: `"image"` block + `"source"` with
-    // `"type":"url"`. Confirms our serializer emits the right shape
-    // (vs. accidentally emitting the OpenAI-flat `"image_url":...`
-    // which Anthropic would reject with a 400).
+    // `"type":"url"`.
     try expectParseAnthropicSse(std.mem.indexOf(u8, body, "\"type\":\"image\"") != null);
     try expectParseAnthropicSse(std.mem.indexOf(u8, body, "\"source\":{") != null);
     try expectParseAnthropicSse(std.mem.indexOf(u8, body, "\"type\":\"url\"") != null);

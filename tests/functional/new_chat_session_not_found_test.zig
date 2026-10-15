@@ -1,37 +1,6 @@
-// New Chat "Session not found" regression.
-//
-// Zig port of `tests/functional/new_chat_session_not_found_test.py`
-// (same test names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """New Chat "Session not found" regression.
-//
-//   Replays the EXACT wire the frontend sends when opening a brand-new chat:
-//   the task row exists (sidebar navigates with task_xxx in the URL) but no
-//   session row exists yet. The sidebar fires:
-//
-//     POST /api/llm/session/:session_id/touched  body {}
-//
-//   and the profile dropdown may fire:
-//
-//     PUT /api/llm/session/:session_id  body {selected_profile_model, name, ...}
-//
-//   Before the fix, the auth_middleware choke point 404'd with
-//   {"error": "Session not found"} for the missing row BEFORE the handler's
-//   ensureSessionExists could run — every New Chat open toasted twice.
-//
-//   Covers:
-//     * TOUCHED-LAZY-CREATE — POST touched on a never-seen id is 200 in auth-on
-//       mode (handler ensure-creates), not 404.
-//     * UPDATE-LAZY-CREATE — PUT update on a never-seen id is 200, not 404.
-//     * ISOLATION-PRESERVED — B touching A's EXISTING session is still 404
-//       (missing rows pass through, foreign rows do not).
-//   """
-//
-// All three run against an `--auth` server, so the auth case is the one the
-// regression lived in: the choke point is what used to 404 before the
-// handler's `ensureSessionExists` could run.
+// New Chat "Session not found" regression. Zig port of
+// `tests/functional/new_chat_session_not_found_test.py` (same test names,
+// same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -41,13 +10,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// Issue a request WITHOUT a status assertion — the caller asserts.
-///
-/// Python's `_raw` returned `(status, headers, body)` and caught
-/// `HTTPError` so a 401/404 could be inspected. `Harness.http` asserts on
-/// `expect` by default, which is the wrong tool when the STATUS ITSELF is the
-/// assertion under test; its `{ .assert_status = false }` flag is exactly
-/// this shape, so no suite needs a private HTTP client.
+/// Issue a request WITHOUT a status assertion — the caller asserts. Python's
+/// `_raw` returned `(status, headers, body)` and caught `HTTPError` so a
+/// 401/404 could be inspected.
 fn raw(
     h: *Harness,
     method: harness.HttpMethod,
@@ -72,11 +37,8 @@ fn bootAuth() !Harness {
     return Harness.boot(io, gpa, .{ .extra_args = &.{"--auth"} });
 }
 
-/// Run `pabrik create-admin` against the harness HOME.
-///
-/// `runPabrikCommand` prepends the resolved binary itself, so `argv` starts
-/// at the SUBCOMMAND. `force` maps to `--force`, which the third test needs to
-/// add a SECOND admin.
+/// Run `pabrik create-admin` against the harness HOME. `runPabrikCommand`
+/// prepends the resolved binary itself, so `argv` starts at the SUBCOMMAND.
 fn createAdmin(home: []const u8, email: []const u8, password: []const u8, force: bool) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
@@ -95,18 +57,6 @@ fn createAdmin(home: []const u8, email: []const u8, password: []const u8, force:
 }
 
 /// `POST /api/auth/login` and return the RAW session token.
-///
-/// Python returned the token and the caller wrapped it in
-/// `pabrik_session=<tok>`; same split here so a test can hold one token per
-/// user. Caller frees the returned slice.
-///
-/// The token is the segment between `pabrik_session=` and the next `;`.
-/// `harness.afterFirst(cookie, ";")` on the WHOLE header would return the
-/// attribute list (`Path=/; HttpOnly`) — the split has to happen on the value
-/// part first. And on that value part the token is the BEFORE half of the
-/// `;` split, which is `splitSequence(...).next()`, not `afterFirst`: that
-/// helper returns the text AFTER the delimiter, so it hands back `Path=/` —
-/// a token that authenticates nobody and comes back 401.
 fn login(h: *Harness, email: []const u8, password: []const u8) ![]u8 {
     const body = try std.json.Stringify.valueAlloc(gpa, .{ .email = email, .password = password }, .{});
     defer gpa.free(body);
@@ -134,12 +84,9 @@ fn login(h: *Harness, email: []const u8, password: []const u8) ![]u8 {
     return try gpa.dupe(u8, token);
 }
 
-/// Poll `GET /api/llm/session/:id` until it stops 404.
-///
-/// `POST /api/llm/session` returns 201 before the row exists — the insert is
-/// handed to a concurrent worker. The third test only makes sense once A's
-/// session is a REAL row, so the poll is part of the setup, not the
-/// assertion. Same 10s deadline / 0.2s interval as the Python original.
+/// Poll `GET /api/llm/session/:id` until it stops 404. `POST
+/// /api/llm/session` returns 201 before the row exists — the insert is handed
+/// to a concurrent worker.
 fn waitForSessionRow(h: *Harness, cookie: []const u8, session_id: []const u8) !void {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}", .{session_id});
     defer gpa.free(path);

@@ -1,31 +1,5 @@
 //! Functional test: a chat's DEFAULT model is the ACTIVE PROFILE OF ITS
 //! WORKSPACE (Settings -> Workspace -> "Set active"), not the user-level one.
-//!
-//! Why this has to be functional: three seams have to agree on "which config
-//! does this session run on", and two of them are only observable on the wire.
-//!
-//!   1. `session_llm_config.sessionWorkspace` — which workspace the session is
-//!      in. The `sessions.workspace_id` column exists but NOTHING writes it (no
-//!      INSERT sets it, no `UPDATE sessions SET workspace_id` exists), so
-//!      reading only that column answered "" for every session, the overlay
-//!      lookup never ran, and every turn resolved `users.config_json` while the
-//!      Settings screen showed the workspace overlay.
-//!   2. `session_create::activeProfileForSession` — the "the caller sent no
-//!      explicit profile" snapshot (the composer's Default chip).
-//!   3. `kanban_tasks_create` — a new task's session row, seeded from the
-//!      request scope.
-//!
-//! Method (same shape as `kanban_task_auth_config_test.zig`): the user config
-//! and the workspace overlay point at DIFFERENT endpoints and models.
-//!
-//!   * user level:   profile `user-default`  -> `http://127.0.0.1:1` (never answers)
-//!   * overlay:      active_profile `ws-default` -> the recording stub
-//!   * overlay only: profile `explicit`      -> the recording stub
-//!
-//! A turn that runs on the workspace default hits the stub with
-//! `ws-default`'s model. A turn that runs on the user-level default (the bug)
-//! cannot reach the stub at all, and names its model in the log's
-//! `[STREAM START] model=...` line — which is why both witnesses are asserted.
 
 const std = @import("std");
 const testing = std.testing;

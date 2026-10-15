@@ -1,45 +1,6 @@
-//! Functional service-level verification for single-file Lua hooks.
-//!
-//! Branch: worktree/hook2312maspodmp2131 (plan
+//! Functional service-level verification for single-file Lua hooks. Branch:
+//! worktree/hook2312maspodmp2131 (plan
 //! docs/superpowers/plans/2026-09-12-hook-lua-pre-post-tool-use.md).
-//!
-//! What this covers
-//! ================
-//! Hooks (`<config>/.hooks/register_hook.lua :: init(event, data)`) wrap
-//! tool *dispatch*, which only happens inside an LLM-driven agent loop.
-//! A full end-to-end run (stub LLM returning a tool_call) is too heavy
-//! for a wire test — the same call command_tool_test.py makes — so this
-//! file verifies the service-level halves and leaves execution behavior
-//! to the Zig dispatch tests in src/agentic_loop/handle_tool.zig
-//! ("hook dispatch: ..." — real registry + real read_file exec + real
-//! Lua: baseline, pre-deny skips exec, pre-modify rewrites args,
-//! post-replace swaps output):
-//!
-//!   * BOOT-SAFE — service boots and serves with a valid hook present,
-//!     with a syntactically broken hook present (fail-open: a broken
-//!     hook can never break the service), and with no hook at all.
-//!   * NON-INTERFERENCE — workspace/agent creation (non-tool paths)
-//!     still 201 with a deny-all hook installed (hooks only wrap tool
-//!     dispatch, nothing else).
-//!   * PATH CONVENTION — the hook resolves under the isolated HOME's
-//!     config dir (<tmp>/.config/pabrik/hooks/register_hook.lua).
-//!   * EXAMPLE VALIDITY — the shipped examples/hooks/register_hook.lua
-//!     parses as Lua (via system lua5.4 when available, skipped otherwise).
-//!
-//! Zig port of `tests/functional/hooks_lua_test.py` (same test names,
-//! same order).
-//!
-//! Run:
-//!     PABRIK_BIN=<worktree>/zig-out/bin/pabrikcore-linux-x86_64 \
-//!       zig test tests/functional/hooks_lua_test.zig
-//!
-//! NOTE ON WRITE-AFTER-BOOT. Python's `harness` fixture booted the
-//! service and the test body wrote the hook file afterwards, so the
-//! port does the same. That is not an accident of fixture ordering:
-//! the project hook's own header says "pabrik loads this file fresh on
-//! every tool call", so a hook that appears after the process started
-//! is still live, and writing it before the boot would test a
-//! different (also valid) path.
 
 const std = @import("std");
 const testing = std.testing;
@@ -51,16 +12,6 @@ const io = testing.io;
 const builtin = @import("builtin");
 
 /// The shipped example, relative to the repo root.
-///
-/// Python: `REPO_ROOT / "examples" / "hooks" / "register_hook.lua"`,
-/// where `REPO_ROOT` came from `Path(__file__).resolve().parents[2]` —
-/// absolute by construction. Zig has no `__file__` whose module root is
-/// knowable at runtime (`@src().file` is relative to the MODULE root,
-/// which is `tests/functional/` under `zig build test` and the repo root
-/// under a bare `zig test`), so the port follows the convention this
-/// package already relies on: `harness.resolvePabrikBin` resolves
-/// `zig-out/bin/...` relative to the CWD, and
-/// `tests/functional/build.zig` pins that CWD to the repo root.
 const EXAMPLE_HOOK_REL = "examples/hooks/register_hook.lua";
 
 /// A hook that denies EVERY `pre_tool_use`. Installed to prove that a
@@ -75,20 +26,13 @@ const DENY_ALL_HOOK =
     \\
 ;
 
-/// Deliberately unparseable Lua: `function init(((` never closes.
-///
-/// The BOOT-SAFE point is that a file the Lua runtime cannot even
-/// compile must not stop the SERVICE from serving. A hook that merely
-/// returned an error at call time would not prove that.
+/// Deliberately unparseable Lua: `function init(((` never closes. The
+/// BOOT-SAFE point is that a file the Lua runtime cannot even compile must
+/// not stop the SERVICE from serving.
 const BROKEN_HOOK = "function init(((\n";
 
 /// Mirror the binary's `getDefaultConfigDir` per OS (see
 /// `config_simplify_test.py::_platform_config_dir`).
-///
-/// The three spellings differ in more than cosmetics: on Linux
-/// `getDefaultConfigDir` resolves `$XDG_CONFIG_HOME/pabrik` BEFORE
-/// `$HOME/.config/pabrik`, and `Harness.boot` points `XDG_CONFIG_HOME`
-/// at `<temp_dir>/.config` — so this spelling is also the harness's.
 fn configDir(temp_dir: []const u8) ![]u8 {
     const parts: []const []const u8 = switch (builtin.os.tag) {
         .macos => &.{ "Library", "Application Support", "pabrik" },
@@ -179,11 +123,6 @@ fn luaString(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
 }
 
 /// Absolute path of a repo-root-relative file. Owned.
-///
-/// `realpath` rather than cwd-relative concatenation: the Lua driver
-/// has no `cwd` override here, so it runs in the test runner's CWD,
-/// which `tests/functional/build.zig` pins to the repo root — an
-/// absolute path makes that dependence disappear for this one call.
 fn repoFileAbs(rel: []const u8) ![]u8 {
     var buf: [std.fs.max_path_bytes]u8 = undefined;
     const n = std.Io.Dir.cwd().realPathFile(io, rel, &buf) catch |err| switch (err) {
@@ -197,11 +136,6 @@ fn repoFileAbs(rel: []const u8) ![]u8 {
 }
 
 /// Exit code of a finished child, or null if a signal stopped it.
-///
-/// `Child.Term` is a tagged union, NOT an optional: `.exited` is a `u8`
-/// field, so `res.term.exited orelse ...` does not compile and a bare
-/// `res.term.exited != 0` would silently read the wrong field on a
-/// signalled run.
 fn exitCode(term: std.process.Child.Term) ?u8 {
     return switch (term) {
         .exited => |c| c,
@@ -210,11 +144,6 @@ fn exitCode(term: std.process.Child.Term) ?u8 {
 }
 
 /// `shutil.which("lua5.4") or shutil.which("lua")`, or null.
-///
-/// `which()` answers "is there an executable by this name on PATH", so
-/// the probe is "does spawning it succeed" and NOT "does it exit 0":
-/// `lua -v` writes its banner to stderr on some builds, and the exit
-/// status is not the question being asked.
 fn whichLua() ?[]const u8 {
     for ([_][]const u8{ "lua5.4", "lua" }) |name| {
         const res = std.process.run(gpa, io, .{ .argv = &.{ name, "-v" } }) catch continue;
@@ -289,12 +218,7 @@ test "non_tool_paths_unaffected_by_deny_all_hook" {
         return error.TestUnexpectedResult;
     };
 
-    // The agent's `path`. Python hard-coded "/tmp/hook-test"; the port
-    // derives it from the harness tempdir instead, because the server
-    // validates with `std.fs.path.isAbsolute` and on windows-2022 a
-    // literal "/tmp/..." is NOT absolute — the same value that is
-    // correct on linux would fail at the HTTP door and read as a server
-    // regression. Same shape, right place.
+    // The agent's `path`.
     const agent_path = try harness.harnessPath(gpa, h.temp_dir, &.{"hook-test"});
     defer gpa.free(agent_path);
 
@@ -313,10 +237,7 @@ test "non_tool_paths_unaffected_by_deny_all_hook" {
 
     var doc = try r.json();
     defer doc.deinit();
-    // Python: `assert body.get("item") is not None`. `orelse` on the
-    // object accessor is the same test: a missing key AND a
-    // wrong-typed key both fail, which is what the Python's `.get(...)`
-    // followed by `is not None` did.
+    // Python: `assert body.get("item") is not None`.
     if (doc.object("item") == null) {
         std.debug.print("missing 'item' envelope: {s}\n", .{r.body});
         return error.TestUnexpectedResult;

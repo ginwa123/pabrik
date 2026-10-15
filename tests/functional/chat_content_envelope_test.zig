@@ -1,10 +1,6 @@
-// Functional: chat content envelopes (Option A) stay wire-compatible.
-//
-// POST /api/llm/session with a plain `queue_message`, then poll
-// GET /api/llm/session/:id/messages until the user row lands.
-// Wire contract: `content` is the plain human text (`.msg`), never raw
-// JSON — the envelope lives only in the DB column. Legacy rows without
-// envelopes keep rendering for the same reason (fallback path).
+// Functional: chat content envelopes (Option A) stay wire-compatible. POST
+// /api/llm/session with a plain `queue_message`, then poll GET
+// /api/llm/session/:id/messages until the user row lands.
 
 const std = @import("std");
 const testing = std.testing;

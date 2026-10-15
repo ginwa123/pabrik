@@ -1,20 +1,4 @@
 //! `GET /api/web/status` — browser-mode (web launch) status.
-//!
-//! Plan: docs/superpowers/plans/2026-09-10-web-launch-toggle.md
-//! Task: task_1789052626064_0
-//!
-//! Lifecycle A: the server keeps running regardless of the flag. The
-//! `web_launch_enabled` flag only controls whether the settings UI
-//! advertises + auto-opens the browser URL — there is no server-side
-//! start/stop action, so this endpoint is read-only (no body, no
-//! mutation). The reported port is the LIVE bound port
-//! (`di.server.address.port`), which is the explicit `--port`, the
-//! 8081 default, or a random pick from `--port 0` resolution.
-//!
-//! Response: 200 `{"enabled":bool,"running":true,
-//!             "url":"http://127.0.0.1:<port>/","port":<port>}`
-//! Loopback-only by construction — the server never binds 0.0.0.0 in
-//! production, so the URL is only reachable from this machine.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");

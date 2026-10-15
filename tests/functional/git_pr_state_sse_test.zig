@@ -1,49 +1,6 @@
-// Functional e2e for the `git_pr_state` SSE push.
-//
-// The bug this channel closes: merging a change request from the PR tab's merge
-// box recoloured the PR tab's own badge and told nobody else. The sidebar's
-// RECENT branch icon and the kanban card badge read a shared 60s cache
-// (src/apps/desktop/src/helpers/prStatusCache.ts), so they kept the pre-merge
-// `open` green — and a second tab (or another machine) had no signal at all.
-//
-// `POST /api/git/pr/merge` and `POST /api/git/pr/close` now emit
-// `git_pr_state_merged` / `git_pr_state_closed` on the central `git_pr_state`
-// routing key (see src/agentic_loop/git_pr_state_events.zig) and every client
-// invalidates the cache entry for `cwd` + `branch`.
-//
-// This file pins the transport, so a future channel rename breaks HERE rather
-// than silently in the browser:
-//   * GET /api/events?channels=git_pr_state -> 200 text/event-stream +
-//     `connected` handshake (unified_events_sse.zig parseChannels + the
-//     CallbackUnifiedGitPrStateStream wiring).
-//   * POST /api/git/pr/merge against a fake `gh` pushes
-//     `event: git_pr_state_merged` whose JSON carries the action, the cwd and
-//     the head branch — the exact pair the cache is keyed on.
-//   * A merge the forge ACCEPTED but did not perform (merge queue / armed
-//     auto-merge) pushes NO state event: the change request is still open, so
-//     there is no state change for a badge to show. Asserting the absence needs
-//     a positive control — the `connected` handshake on the same stream — or it
-//     would pass on a dead stream.
-//
-// The frontend's re-read behaviour is covered by
-// src/apps/desktop/src/__tests__/unifiedSseGitPrState.spec.ts (registration +
-// dispatch) and the `prStatusCache.invalidation` spec; this is the wire
-// contract underneath them.
-//
-// WHY THERE IS A HAND-ROLLED SSE CLIENT HERE
-//
-// `Harness.http` CANNOT be used for the stream: it calls
-// `reader.streamRemaining(...)`, which on a `text/event-stream` response blocks
-// until the server closes — and the server holds the stream open forever. So
-// the stream is opened with `std.http.Client` directly and drained line-by-line
-// on a watchdog-driven reader thread, exactly as git_file_stage_sse_test.zig
-// does. See that file for the full rationale (uncopyable trio, heap-allocated
-// stream, `takeDelimiter` vs `takeDelimiterExclusive`).
-//
-// WHERE THE FIXTURE LIVES: `harness.makeScratchDir`, shared with the other
-// git_pr_* suites — the fake `gh` is one script answering both `pr merge` and
-// the status re-read `pr view`. HOW IT REACHES THE SERVER: PATH — see
-// `PathShadow`.
+// Functional e2e for the `git_pr_state` SSE push. The bug this channel
+// closes: merging a change request from the PR tab's merge box recoloured the
+// PR tab's own badge and told nobody else.
 
 const std = @import("std");
 const testing = std.testing;
@@ -85,9 +42,6 @@ const SseEvent = struct {
 };
 
 /// An open SSE connection plus the state the reader thread fills in.
-/// Heap-allocated because `std.http.Client` embeds a `ConnectionPool` with
-/// an `Io.Mutex` and `Response.request` points back at the request — the
-/// trio is uncopyable, so returning it BY VALUE bit-copies the mutex.
 const SseStream = struct {
     client: std.http.Client,
     req: std.http.Client.Request,
@@ -442,12 +396,8 @@ const PathShadow = struct {
 const HEAD_SHA = "4f21c9e4f21c9e4f21c9e4f21c9e4f21c9e4f21c9e";
 const TITLE = "fix(chatview): land where the reader left it (#891)";
 
-/// `gh` as the merge box uses it: `pr view` answers `view_json`, and
-/// `pr merge` records its argv (one arg per line) and exits 0.
-///
-/// The branch keys on `$1-$2` (noun-subcommand) and each invocation records
-/// its OWN argv, because the handler makes two calls — the merge, and the
-/// status re-read that turns the exit code into an answer.
+/// `gh` as the merge box uses it: `pr view` answers `view_json`, and `pr
+/// merge` records its argv (one arg per line) and exits 0.
 fn ghScript(argv_path: []const u8, view_json: []const u8) ![]u8 {
     return std.fmt.allocPrint(gpa,
         \\#!/bin/sh

@@ -11,12 +11,9 @@ pub const MemoriesListData = struct {
     memories: []const MemoryInfo,
 };
 
-/// Tool definition for `list_memory`.
-///
-/// This tool is intentionally parameter-less: memories live in a single
-/// global config folder and there is no per-session or per-cwd variant.
-/// The LLM is told (in the description) where the folder lives on each
-/// platform so it can make sense of the returned paths.
+/// Tool definition for `list_memory`. This tool is intentionally
+/// parameter-less: memories live in a single global config folder and there
+/// is no per-session or per-cwd variant.
 pub const list_memory_tool = AgentTool{
     .type = "function",
     .function = .{
@@ -31,21 +28,12 @@ pub const list_memory_tool = AgentTool{
 };
 
 /// Serialize a `MemoryInfo` slice to JSON for the HTTP endpoint.
-///
-/// Output shape: `{"memories":[{"name":"...","title":"...","path":"...","size":N}, ...]}`
-///
-/// Caller owns the returned memory and must free it with `allocator.free()`.
 pub fn toJson(allocator: std.mem.Allocator, list: []const MemoryInfo) ![]const u8 {
     const data = MemoriesListData{ .memories = list };
     return std.json.Stringify.valueAlloc(allocator, data, .{});
 }
 
 /// Execute the `list_memory` tool. Returns a JSON string for the LLM.
-///
-/// Returns `{"memories":[],"error":"MissingEnvironment"}` when
-/// the environment is not available (matches search_skills behavior).
-///
-/// Caller owns the returned memory and must free it with `allocator.free()`.
 pub fn execute_list_memory(
     allocator: std.mem.Allocator,
     io: std.Io,

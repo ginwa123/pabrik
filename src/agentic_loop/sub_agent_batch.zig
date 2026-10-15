@@ -1,38 +1,5 @@
 //! The ONE batch runner for sub-agents: launch N concurrently, collect N
 //! results.
-//!
-//! ## Why this is a module and not a tool
-//!
-//! Two features need "run these sub-agents at the same time and give me the
-//! text back": the `spawn_sub_agent` tool, and the Skill Evals LLM judge tier
-//! (`skill_eval_judge.zig`). The second is not a tool — it is CODE fanning out
-//! from `runEval`, and it must not be reachable by a model. When the fan-out
-//! lived inline in `execSpawnSubAgent` there would be two copies of the
-//! concurrency, the progress-event protocol and the allowlist policy, and they
-//! would drift. So the runner is here and the tool is a caller.
-//!
-//! ## The payload is code, not a model-authored string
-//!
-//! `runBatch` takes `[]const BatchJob` — a typed struct the caller built. The
-//! tool's JSON front door (`runBatchFromJson`) exists only because a tool call
-//! IS a JSON string; it parses and then delegates, so the two paths cannot
-//! diverge on policy.
-//!
-//! ## The policy lives here, not in the caller
-//!
-//! `validateJobs` enforces the three rules that keep a fan-out bounded and
-//! safe: at most `MaxBatch` items, a non-empty explicit tool allowlist (never
-//! `"all"`), and no main-agent-only tool. A caller that forgets a check cannot
-//! widen the blast radius, because the check is in `runBatch` rather than
-//! beside it.
-//!
-//! ## Ownership
-//!
-//! `BatchOutcome` owns every string in it. Callers must call
-//! `BatchOutcome.deinit`; nothing borrows from `BatchArgs` or `BatchJob` after
-//! `runBatch` returns. The per-thread code below therefore DUPES the values it
-//! stores rather than aliasing its arguments, which is also what makes the
-//! `ThreadResult.deinit` below safe to run unconditionally.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -47,10 +14,7 @@ const spawn_sub_agent_tool = pabrikcore.spawn_sub_agent;
 const main_agent_only = @import("../modules/agent/tools/ask_user.zig");
 const subagent_progress = @import("subagent_progress.zig");
 
-/// Hard ceiling on one batch. Twenty is the value the tool has always used
-/// and the value the tool schema advertises; a fan-out larger than this is
-/// refused, not truncated, so a caller can never silently evaluate a subset
-/// and report it as the whole set.
+/// Hard ceiling on one batch.
 pub const MaxBatch = 20;
 
 /// One unit of work. Built by the caller as CODE — never parsed out of a
@@ -126,9 +90,6 @@ pub const BatchOutcome = struct {
 };
 
 /// Enforce the batch policy. Called by `runBatch` — never by a caller alone.
-///
-/// The error names are the ones `spawn_sub_agent`'s parse path already returns,
-/// so the tool's `<error>` envelope is unchanged by routing it through here.
 pub fn validateJobs(jobs: []const BatchJob) !void {
     if (jobs.len == 0) return error.NoSubAgents;
     if (jobs.len > MaxBatch) return error.TooManySubAgents;
@@ -192,10 +153,6 @@ fn elapsedMs(a: *SubAgentThreadArgs) i64 {
 
 /// Record a failure on this thread's slot and emit `failed` so the frontend
 /// row never strands as `running`.
-///
-/// `err_msg` may be a static fallback literal, so it is DUPED rather than
-/// stored: that keeps every string in a `ThreadResult` owned, which is what
-/// lets `BatchOutcome.deinit` free them unconditionally.
 fn failSubAgent(a: *SubAgentThreadArgs, err_msg: []const u8, ms: i64) void {
     a.shared_results.results[a.thread_idx].error_message =
         a.allocator.dupe(u8, err_msg) catch null;
@@ -232,9 +189,7 @@ fn setError(a: *SubAgentThreadArgs, err_msg: []const u8) void {
 }
 
 // Top-level function required by group.concurrent — takes a single
-// *SubAgentThreadArgs. The signature must NOT return an error union if you
-// want `group.await` not to propagate individual task errors; handle them
-// internally and write into shared_results instead.
+// *SubAgentThreadArgs.
 fn runSubAgent(args_ptr: *SubAgentThreadArgs) void {
     args_ptr.logger.debugFmt("Concurrent task started for '{s}'", .{args_ptr.agent_name});
 
@@ -263,11 +218,8 @@ fn runSubAgent(args_ptr: *SubAgentThreadArgs) void {
         args_ptr.agent_name;
 
     // 2026-09-04 subagent-peek P0: child session ids embed the agent name
-    // verbatim, so `backend implementer` produced a session id containing a raw
-    // space — which breaks the HTTP request line, and where `/` or `%` break
-    // router segment matching even when percent-encoded (the parser decodes
-    // %2F before splitting). Slugify to [A-Za-z0-9_-] so the id is always one
-    // URL-safe path segment. Uniqueness still comes from the nanosecond prefix.
+    // verbatim, so `backend implementer` produced a session id containing a
+    // raw space — which breaks the HTTP request line, and where `/` or `%`
     const slugged_name = slugifySubAgentName(sub_agent_allocator, resolved_display_name) catch resolved_display_name;
     const sess_id = std.fmt.allocPrint(
         sub_agent_allocator,
@@ -348,14 +300,9 @@ fn runSubAgent(args_ptr: *SubAgentThreadArgs) void {
         .sub_agent_overrides = args_ptr.sub_agent_overrides,
         .selected_profile_model = args_ptr.selected_profile_model,
     }) catch |err| {
-        // Mirror the diagnostic pattern used by workflow.zig so the parent LLM
-        // and the user see an actionable message rather than a bare error name.
-        //
-        // For TooManyRetries specifically, the inner workflow bail has already
-        // saved a rich diagnostic to the SUB-AGENT's chat history, but the
-        // parent LLM never sees that history — it only sees the error returned
-        // from this call. Without this message the parent would have no idea
-        // WHY it retried.
+        // Mirror the diagnostic pattern used by workflow.zig so the parent
+        // LLM and the user see an actionable message rather than a bare error
+        // name.
         const err_name: []const u8 = @errorName(err);
         const diagnostic: []const u8 = if (std.mem.eql(u8, err_name, "TooManyRetries"))
             std.fmt.allocPrint(args_ptr.allocator,
@@ -442,11 +389,8 @@ fn runSubAgent(args_ptr: *SubAgentThreadArgs) void {
 }
 
 // 2026-09-04 subagent-peek fix (P0): child session ids embed the agent name
-// verbatim, so `backend implementer` produced
-// `subagent_{ns}_backend implementer` — a raw space in the REST path breaks the
-// HTTP request line (`GET <path> HTTP/1.1` splits on ' ') and `/`/`%` break
-// router segment matching even when encoded (the parser decodes %2F to '/'
-// BEFORE it splits). Empty result falls back to "agent".
+// verbatim, so `backend implementer` produced `subagent_{ns}_backend
+// implementer` — a raw space in the REST path breaks the HTTP request line
 pub fn slugifySubAgentName(allocator: std.mem.Allocator, name: []const u8) ![]u8 {
     var out = std.ArrayList(u8).empty;
     errdefer out.deinit(allocator);
@@ -464,12 +408,8 @@ pub fn slugifySubAgentName(allocator: std.mem.Allocator, name: []const u8) ![]u8
     return out.toOwnedSlice(allocator);
 }
 
-/// Run `jobs` concurrently and return their results.
-///
-/// The caller owns nothing afterwards: every string in the returned outcome is
-/// a fresh allocation. Errors from the policy check propagate; per-job failures
-/// do NOT — they land in `ThreadResult.error_message`, because one sub-agent
-/// failing must not hide the other nineteen.
+/// Run `jobs` concurrently and return their results. The caller owns nothing
+/// afterwards: every string in the returned outcome is a fresh allocation.
 pub fn runBatch(args: BatchArgs, jobs: []const BatchJob) !BatchOutcome {
     // In the runner, not beside it: a caller that forgets the check cannot
     // widen the blast radius.
@@ -556,10 +496,8 @@ pub fn runBatch(args: BatchArgs, jobs: []const BatchJob) !BatchOutcome {
 }
 
 /// Tool front door: parse a `spawn_sub_agent` tool-call payload and run it.
-///
 /// The parse is the only reason a JSON string ever reaches the runner, and it
-/// exists because a tool call IS a JSON string. It delegates to `runBatch`, so
-/// the policy (`MaxBatch`, the allowlist rules) is enforced in one place.
+/// exists because a tool call IS a JSON string.
 pub fn runBatchFromJson(args: BatchArgs, input_json: []const u8, max_agents: usize) !BatchOutcome {
     const parsed = try spawn_sub_agent_tool.parse_sub_agents(args.allocator, input_json, max_agents);
     defer parsed.deinit(args.allocator);
@@ -630,10 +568,9 @@ test "validateJobs accepts a well-formed batch at any size up to the cap" {
 }
 
 test "runBatch enforces the cap before touching the singleton" {
-    // The point of the ordering: policy is checked first, so an oversized batch
-    // fails without ever reaching `pabrikcore.getSingleton()` (which is
-    // `unreachable` in a unit test). If the cap were checked after the launch
-    // loop this test would crash rather than return an error.
+    // The point of the ordering: policy is checked first, so an oversized
+    // batch fails without ever reaching `pabrikcore.getSingleton()` (which is
+    // `unreachable` in a unit test).
     const alloc = testing.allocator;
     const jobs = try alloc.alloc(BatchJob, MaxBatch + 1);
     defer alloc.free(jobs);

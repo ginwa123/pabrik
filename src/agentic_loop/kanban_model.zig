@@ -1,26 +1,6 @@
-//! Data layer for the kanban workspace item (item_type='kanban').
-//!
-//! Each kanban workspace item has N user-defined columns (the default
-//! seed is `todo / in progress / done`). Tasks assigned to a kanban
-//! item get a `kanban_column_id` + `kanban_position` and are
-//! drag-and-drop reorderable within and across columns.
-//!
-//! Schema: see Migration 051 (`Migration051AddKanban` in
-//! `src/migrations/migration.zig`).
-//!
-//! SQL convention: every SELECT aliases its tables (`kc` for
-//! `kanban_columns`, `t` for `workspace_item_tasks`) and qualifies
-//! every column reference with the alias. See the project memory
-//! `pabrik-sql-alias-tables.md`.
-//!
-//! Row ownership: each `db.query()` row's `values[i]` slices are
-//! owned by the `Row` and freed by `row.deinit(allocator)`. To keep
-//! a value past the loop iteration, the field is duplicated with
-//! `allocator.dupe(u8, row.values[i])`. Strings returned by
-//! `listColumns` are owned by the caller and must be released with
-//! `freeColumns`.
-//!
-//! Plan: docs/superpowers/plans/2026-06-21-workspace-item-kanban.md (Chunk 2)
+//! Data layer for the kanban workspace item (item_type='kanban'). Each kanban
+//! workspace item has N user-defined columns (the default seed is `todo / in
+//! progress / done`).
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -49,11 +29,9 @@ pub fn freeColumns(allocator: std.mem.Allocator, cols: []KanbanColumn) void {
     allocator.free(cols);
 }
 
-/// List the columns of a kanban workspace item in `position` order.
-///
-/// Returns an owned slice; the caller must release it with
-/// `freeColumns(allocator, slice)`. If the item has no columns, the
-/// slice has length 0 (not an error).
+/// List the columns of a kanban workspace item in `position` order. Returns
+/// an owned slice; the caller must release it with `freeColumns(allocator,
+/// slice)`.
 pub fn listColumns(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -94,22 +72,6 @@ pub fn listColumns(
 }
 
 /// Generate a unique column id of the form `col_<unix_nanoseconds>`.
-///
-/// Uses libc `clock_gettime` for nanosecond precision so that 3
-/// `addColumn` calls inside `seedDefaultColumns` (which all run in
-/// the same millisecond during tests) get distinct IDs. The
-/// project-wide convention for ID generation is the same nanosecond
-/// timestamp — see `workspace_items_create.zig:generateItemId`
-/// which uses `std.Io.Clock.now(.real, io)`.
-///
-/// `std.time.timestamp()` was removed in Zig 0.16 — see the project
-/// memory `zig-0.16-crypto-time-stdlib-removals.md`.
-/// Uses a monotonic atomic counter XORed with a stack address for
-/// uniqueness. The counter alone is sufficient (it's process-global
-/// and monotonically increasing), but the address mix-in adds
-/// additional entropy if a future refactor ever threads the same
-/// allocator across threads. Avoids `std.c.clock_gettime` which
-/// doesn't compile on Windows (clockid_t is void there).
 fn generateColumnId(allocator: std.mem.Allocator) ![]u8 {
     const counter = nextColumnIdCounter();
     var entropy: [8]u8 = undefined;
@@ -125,12 +87,9 @@ fn generateColumnId(allocator: std.mem.Allocator) ![]u8 {
     return std.fmt.allocPrint(allocator, "col_{s}", .{&hex});
 }
 
-/// Process-global monotonic counter for `generateColumnId`. Every call
-/// to `generateColumnId` advances the counter by one, guaranteeing a
-/// unique ID per call regardless of how fast the caller invokes it.
-/// Uses `std.atomic.Value(u64)` for lock-free thread safety (the
-/// counter may be touched from any worker thread that creates a
-/// kanban column).
+/// Process-global monotonic counter for `generateColumnId`. Every call to
+/// `generateColumnId` advances the counter by one, guaranteeing a unique ID
+/// per call regardless of how fast the caller invokes it.
 var column_id_counter: std.atomic.Value(u64) = .init(0);
 
 fn nextColumnIdCounter() u64 {
@@ -138,19 +97,6 @@ fn nextColumnIdCounter() u64 {
 }
 
 /// Append a new column to the end of the kanban's column sequence.
-///
-/// `position` may be `null` (default) to place the column at
-/// `MAX(kanban_columns.position) + 1` for this item, or a concrete
-/// integer to insert at a specific position (the renumbering
-/// behavior of an explicit position is the caller's responsibility
-/// — see `reorderColumn`).
-///
-/// `description` is the free-text "meaning" of the column (Migration
-/// 053); pass `""` for "no description" (the column will render with
-/// the "Add a description…" placeholder in the frontend).
-///
-/// Returns a freshly-allocated id of the form `col_<unix_seconds>`.
-/// Caller owns the returned slice.
 pub fn addColumn(
     allocator: std.mem.Allocator,
     db: pabrikcore.database.DbOrTx,
@@ -177,11 +123,8 @@ pub fn addColumn(
     const pos_str = try std.fmt.allocPrint(allocator, "{d}", .{pos});
     defer allocator.free(pos_str);
 
-    // SQLiteBackend.exec binds `arg.len == 0` as SQL NULL (see
-    // `ruangsql src/sqlite/Sqlite.zig (github.com/ginwa123/ruangsql):73-74`). The
-    // `description` column is `NOT NULL DEFAULT ''`, so binding
-    // NULL would violate the constraint. Omit the column from the
-    // INSERT when description is empty so the DEFAULT '' applies.
+    // SQLiteBackend.exec binds `arg.len == 0` as SQL NULL (see `ruangsql
+    // src/sqlite/Sqlite.zig (github.com/ginwa123/ruangsql):73-74`).
     if (description.len == 0) {
         try db.exec(allocator,
             "INSERT INTO kanban_columns (id, workspace_item_id, name, position) " ++
@@ -196,14 +139,8 @@ pub fn addColumn(
     return allocator.dupe(u8, id);
 }
 
-/// Seed the canonical 3-column default flow `todo / in progress /
-/// done` for a freshly-created kanban item. Idempotent only at the
-/// "called once at item-creation time" granularity — re-calling on a
-/// board that already has columns appends a second set.
-///
-/// All seeded columns get `description = ""` (the "no description"
-/// sentinel). Users can set per-column descriptions via the Kanban
-/// Settings dialog (Chunk 3).
+/// Seed the canonical 3-column default flow `todo / in progress / done` for a
+/// freshly-created kanban item.
 pub fn seedDefaultColumns(
     allocator: std.mem.Allocator,
     db: pabrikcore.database.DbOrTx,
@@ -226,22 +163,8 @@ pub fn seedDefaultColumns(
     }
 }
 
-/// Update an existing column. `name` and `description` are both
-/// optional; at least one must be non-null (validated at the HTTP
-/// handler layer). Field semantics:
-///   - `null` → "leave the field unchanged" (absent from PATCH body)
-///   - `""` (empty string) → "clear the field" (the user explicitly
-///      sent `""` to remove the existing value)
-///   - non-empty → "set the field to this value"
-///
-/// These three states are distinct: the frontend's Settings UI sends
-/// an explicit `""` when the user clears the description (saves an
-/// empty textarea), distinct from omitting the field entirely (the
-/// user only wants to rename, not touch the description).
-///
-/// `workspace_item_id` is accepted for symmetry with the other
-/// column-mutators but the WHERE clause matches only on `id`
-/// (column ids are globally unique within the schema).
+/// Update an existing column. `name` and `description` are both optional; at
+/// least one must be non-null (validated at the HTTP handler layer).
 pub fn updateColumn(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -256,16 +179,9 @@ pub fn updateColumn(
             "UPDATE kanban_columns SET name = ? WHERE id = ?",
             &.{ n, column_id });
     }
-    // Three distinct states for `description`:
-    //   null     → don't change (field absent from PATCH body)
-    //   ""       → clear (user explicitly sent empty string)
-    //   non-empty → overwrite with the new value
-    // The "clear" branch binds the empty literal directly in SQL
-    // rather than passing `""` as a parameter, because
-    // SqliteBackend.exec treats `arg.len == 0` as SQL NULL (see
-    // project memory `sqlite-backend-empty-slice-binds-as-null.md`)
-    // which would violate the NOT NULL constraint on
-    // `kanban_columns.description`.
+    // Three distinct states for `description`: null → don't change (field
+    // absent from PATCH body) "" → clear (user explicitly sent empty string)
+    // non-empty → overwrite with the new value The "clear" branch binds the
     if (description) |d| {
         if (d.len > 0) {
             try db.exec(allocator,
@@ -279,17 +195,7 @@ pub fn updateColumn(
     }
 }
 
-/// Delete a column. Tasks that were assigned to this column have
-/// their `kanban_column_id` set to `NULL` (so they show in the
-/// "Unassigned" group of the folder-list view); the tasks themselves
-/// are NOT removed.
-///
-/// IMPORTANT: callers MUST first verify the column has no tasks via
-/// `countTasksInColumn` before calling this. The model layer does
-/// NOT enforce the "no orphan tasks" invariant — that decision
-/// belongs at the HTTP handler layer (see
-/// `kanban_columns_delete.zig`), which surfaces it as a 409 Conflict
-/// so the frontend can prompt the user to move the tasks first.
+/// Delete a column.
 pub fn deleteColumn(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -297,23 +203,9 @@ pub fn deleteColumn(
     column_id: []const u8,
 ) !void {
     _ = workspace_item_id;
-    // Tasks that were assigned to this column have their `kanban`
-    // card row DELETED (so the LEFT JOIN in list queries surfaces
-    // them as "task exists but is unassigned" — the same observable
-    // wire format as before). The tasks themselves
-    // (`workspace_item_tasks`) are NOT removed.
-    //
-    // IMPORTANT: this codebase does NOT enable `PRAGMA foreign_keys`
-    // (FK enforcement is off — see
-    // `src/ai_workflow/tui/design_model_delete_parent_test.zig:8`),
-    // so the `kanban.workspace_item_task_id ON DELETE CASCADE` from workspace_item_tasks
-    // works in reverse ONLY if we explicitly DELETE here. We DELETE
-    // the kanban rows before the kanban_columns row to preserve the
-    // "task unassigned" semantics.
-    //
-    // Note: we DELETE the kanban row (not NULL the column FK) because
-    // `kanban.kanban_column_id` is NOT NULL — a kanban row exists IFF
-    // its task is assigned to a specific column.
+    // Tasks that were assigned to this column have their `kanban` card row
+    // DELETED (so the LEFT JOIN in list queries surfaces them as "task exists
+    // but is unassigned" — the same observable wire format as before).
     try db.exec(allocator,
         "DELETE FROM kanban WHERE kanban_column_id = ?",
         &.{column_id});
@@ -322,30 +214,8 @@ pub fn deleteColumn(
         &.{column_id});
 }
 
-/// Replace the target kanban's columns with copies of the source
-/// kanban's columns. The target's existing columns are deleted (tasks
-/// assigned to them get `kanban_column_id = NULL` per the existing
-/// `deleteColumn` contract); the source's columns are then inserted
-/// on the target with positions 0..N-1 matching the source's order.
-///
-/// Used by the `POST /kanban/copy_spec_from` endpoint (Chunk 2 of
-/// the copy-kanban plan) in "Replace" mode. The destructive delete
-/// + insert sequence is performed in three SQL statements without an
-/// explicit transaction wrapper — SQLite auto-commits each statement,
-/// and the consequence of an interrupted copy (target emptied, source
-/// not yet copied) is recoverable by re-running the endpoint.
-///
-/// Self-copy (`source_item_id == target_item_id`) is undefined:
-/// the function deletes the target's columns (which IS the source)
-/// before copying from the (now-empty) source. The HTTP handler
-/// rejects this case before reaching the helper.
-///
-/// Both `workspace_item_id` arguments are validated by the caller
-/// (HTTP handler); this helper assumes they exist in the
-/// `workspace_items` table.
-///
-/// SQL convention: every inner-table reference is aliased (`kc`) per
-/// the project memory `pabrik-sql-alias-tables.md`.
+/// Replace the target kanban's columns with copies of the source kanban's
+/// columns.
 pub fn replaceColumnsWith(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -356,20 +226,7 @@ pub fn replaceColumnsWith(
     const source_cols = try listColumns(allocator, db, source_item_id);
     defer freeColumns(allocator, source_cols);
 
-    // Step 2: Delete every existing column on the target. We collect
-    // the ids first (so we don't hold the query open while doing
-    // per-id DELETEs that would race against the open cursor), then
-    // call `deleteColumn` per id so the task-unassign semantics stay
-    // consistent with the per-column delete handler.
-    //
-    // Ownership: `target_column_ids` is built with an `errdefer` for
-    // OOM-during-append safety, then `toOwnedSlice` transfers the
-    // heap-owned ids to `owned_ids` BEFORE the per-id DELETE loop.
-    // This pattern (mirrors `listColumns` above) makes the errdefer a
-    // no-op on the success path and isolates the cleanup: a failure
-    // inside `deleteColumn` (e.g. the source item being deleted under
-    // us) surfaces the error while `owned_ids` is still freed exactly
-    // once by the defer.
+    // Step 2: Delete every existing column on the target.
     {
         var existing = try db.query(allocator,
             \\SELECT kc.id FROM kanban_columns kc WHERE kc.workspace_item_id = ?
@@ -411,20 +268,8 @@ pub fn replaceColumnsWith(
     }
 }
 
-/// Append copies of the source kanban's columns to the end of the
-/// target kanban's column sequence. Unlike `replaceColumnsWith`, this
-/// does NOT delete the target's existing columns — they keep their
-/// positions 0..M-1 and the source's columns are appended at
-/// M, M+1, M+2, … (where M is the target's MAX(position) + 1).
-///
-/// Used by the `POST /kanban/copy_spec_from` endpoint in "Append"
-/// mode. Like `replaceColumnsWith`, no transaction wrapper is used
-/// — SQLite auto-commits each INSERT. The append-only semantics mean
-/// partial failures leave a few extra columns at the end of the
-/// target, which the user can manually delete.
-///
-/// SQL convention: every inner-table reference is aliased (`kc`) per
-/// the project memory `pabrik-sql-alias-tables.md`.
+/// Append copies of the source kanban's columns to the end of the target
+/// kanban's column sequence.
 pub fn appendColumnsFrom(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -468,28 +313,15 @@ pub fn appendColumnsFrom(
 }
 
 /// Count how many tasks currently reference `column_id` as their
-/// `kanban_column_id`. Used by `kanbanColumnsDeleteHandler` to refuse
-/// deletion when the column still has tasks (the user must move them
-/// to another column first).
-///
-/// Returns `0` when the column has no tasks. Note: this is just a
-/// `COUNT(*)` against the FK column — there is no separate
-/// existence check for the column row itself, so a non-existent
-/// column id also returns `0` (caller doesn't need to distinguish
-/// "no tasks" from "no such column" for the delete-gate purpose).
-///
-/// SQL convention: every inner-table reference is aliased (`t`) per
-/// the project memory `pabrik-sql-alias-tables.md`.
+/// `kanban_column_id`.
 pub fn countTasksInColumn(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
     column_id: []const u8,
 ) !u32 {
-    // After Migration 072, "tasks in this column" is read from `kanban`
-    // (the 1:1 join table where a row exists iff a task is assigned to
-    // a kanban column). A row in `kanban` with `kanban_column_id = X`
-    // is equivalent to the legacy `workspace_item_tasks.kanban_column_id
-    // = X` query.
+    // After Migration 072, "tasks in this column" is read from `kanban` (the
+    // 1:1 join table where a row exists iff a task is assigned to a kanban
+    // column).
     var q = try db.query(allocator,
         \\SELECT COUNT(*) FROM kanban k WHERE k.kanban_column_id = ?
     , &.{column_id});
@@ -499,47 +331,9 @@ pub fn countTasksInColumn(
     return try std.fmt.parseInt(u32, row.values[0], 10);
 }
 
-/// Reorder a column to a new position with list-insertion
-/// semantics: the column is removed from its current slot and
-/// re-inserted at `new_position`, shifting the OTHER columns
-/// around it. The result is a dense 0..N-1 sequence that reflects
-/// the user's intended visual order.
-///
-/// Algorithm (4 SQL statements; the simplest correct implementation
-/// that handles both forward and backward moves symmetrically):
-///
-///   1. Temporarily park the moved column at a sentinel position
-///      (well above any realistic column count) so it's sorted to
-///      the end and won't disturb the renumber in step 2.
-///   2. Compact the OTHER columns into a dense 0..N-2 sequence
-///      ranked by their current position (with ties broken by id
-///      for determinism).
-///   3. Shift every OTHER column at position >= new_position up by
-///      1, opening a slot for the moved column.
-///   4. Place the moved column at new_position.
-///
-/// Worked examples (initial state dense 0..N-1):
-///
-///   start [todo=0, ip=1, rev=2, done=3], reorder("done", 0)
-///     step 1 → [todo=0, ip=1, rev=2, done=∞]
-///     step 2 → [todo=0, ip=1, rev=2, done=∞]
-///     step 3 → [todo=1, ip=2, rev=3, done=∞]  (everyone else shifts up)
-///     step 4 → [done=0, todo=1, ip=2, rev=3]   ✓
-///
-///   start [done=0, todo=1, ip=2, rev=3], reorder("todo", 2)
-///     step 1 → [done=0, todo=∞, ip=2, rev=3]
-///     step 2 → [done=0, ip=1, rev=2, todo=∞]
-///     step 3 → [done=0, ip=1, rev=3, todo=∞]  (only rev at >=2 shifts)
-///     step 4 → [done=0, ip=1, todo=2, rev=3]   ✓
-///
-/// The sentinel value 1_000_000 is well above any realistic
-/// per-item column count (the product spec caps custom columns at
-/// a handful; typical N ≤ 10).
-///
-/// SQL convention: every inner-table reference is aliased (`kc2`)
-/// per the project memory `pabrik-sql-alias-tables.md`. The outer
-/// UPDATE target is NOT aliased — SQLite disallows aliases on the
-/// UPDATE target.
+/// Reorder a column to a new position with list-insertion semantics: the
+/// column is removed from its current slot and re-inserted at `new_position`,
+/// shifting the OTHER columns around it.
 pub fn reorderColumn(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -561,12 +355,8 @@ pub fn reorderColumn(
         "UPDATE kanban_columns SET position = ? WHERE id = ?",
         &.{ sentinel_str, column_id });
 
-    // Step 2: compact the OTHER columns (everyone except the
-    // parked one) into 0..N-2 by current position order. The
-    // subquery counts siblings at position < this column's
-    // position, with id-tiebreak for deterministic ordering of
-    // siblings that share a position (which can happen if a prior
-    // renumber was skipped).
+    // Step 2: compact the OTHER columns (everyone except the parked one) into
+    // 0..N-2 by current position order.
     try db.exec(allocator,
         \\UPDATE kanban_columns
         \\SET position = (
@@ -594,14 +384,7 @@ pub fn reorderColumn(
 }
 
 /// Move a task from its current column to `target_column_id` at
-/// `target_position`. Shifts the other tasks in the target column
-/// that are at >= target_position down by one; if the column
-/// changed, compacts the source column's remaining tasks back into
-/// 0..N-1.
-///
-/// Note: uses the correlated-subquery approach for compacting the
-/// source column (see step 4 below) — it's one atomic UPDATE per
-/// call which is fine for v1 boards (typical N ≤ 50 tasks).
+/// `target_position`.
 pub fn moveTask(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -612,10 +395,8 @@ pub fn moveTask(
 ) !void {
     _ = workspace_item_id;
 
-    // Step 1: read the current column for the task (needed to renumber
-    // the source column after the move). After Migration 072, the
-    // task's current column lives in the `kanban` join table, not on
-    // `workspace_item_tasks` directly.
+    // Step 1: read the current column for the task (needed to renumber the
+    // source column after the move).
     const current_col_id = blk: {
         var q = try db.query(allocator,
             "SELECT COALESCE(k.kanban_column_id, '') FROM kanban k WHERE k.workspace_item_task_id = ?",
@@ -631,10 +412,6 @@ pub fn moveTask(
     defer allocator.free(pos_str);
 
     // Step 2: move the task to the target column at the target position.
-    // INSERT OR REPLACE handles both first-move (no kanban row yet) and
-    // subsequent-move (existing kanban row updated) atomically: the
-    // PRIMARY KEY collision on re-inserts triggers a delete-then-insert
-    // which is the same observable behavior as the legacy UPDATE.
     try db.exec(allocator,
         "INSERT OR REPLACE INTO kanban (workspace_item_task_id, kanban_column_id, kanban_position) VALUES (?, ?, ?)",
         &.{ task_id, target_column_id, pos_str });
@@ -670,10 +447,8 @@ const testing = std.testing;
 
 
 /// Open a fresh in-memory sqlite DB with the bare minimum tables the
-/// kanban_model functions need: `workspace_items` (for the FK
-/// reference) and `kanban_columns` (the table being queried). Tests
-/// that exercise task movement additionally `CREATE TABLE
-/// workspace_item_tasks` after calling this helper.
+/// kanban_model functions need: `workspace_items` (for the FK reference) and
+/// `kanban_columns` (the table being queried).
 fn setupDb() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
@@ -1029,15 +804,8 @@ test "moveTask changes column and renumbers positions" {
 }
 
 // ─── Test: reorderColumn shifts siblings to keep positions dense ─────────
-//
-// Mirrors the two-step drag scenario from the plan:
-//   - move "done" from slot 3 to slot 0  →  [done, todo, ip, rev]
-//   - move "todo" from slot 1 to slot 2  →  [done, ip, todo, rev]
-//
-// Verifies that the 4-statement algorithm in `reorderColumn` (park
-// the moved column at a sentinel, compact the others, shift the
-// ones >= new_position, place the moved column) produces the
-// expected visual order in both cases.
+// Mirrors the two-step drag scenario from the plan: - move "done" from slot 3
+// to slot 0 → [done, todo, ip, rev] - move "todo" from slot 1 to slot 2 →
 test "reorderColumn shifts siblings to a dense sequence matching the user's intent" {
     const alloc = testing.allocator;
     var s = try setupDb();
@@ -1053,10 +821,9 @@ test "reorderColumn shifts siblings to a dense sequence matching the user's inte
     , &.{});
     try s.db.exec(alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('item_1', 'ws_1', 'kanban')", &.{});
-    // Seed 4 columns at dense positions 0..3. The names (todo, ip,
-    // rev, done) and ids (c1..c4) don't match — the renumber uses
-    // CURRENT position order, not lex-id, so the id labels are
-    // arbitrary.
+    // Seed 4 columns at dense positions 0..3. The names (todo, ip, rev, done)
+    // and ids (c1..c4) don't match — the renumber uses CURRENT position
+    // order, not lex-id, so the id labels are arbitrary.
     try s.db.exec(alloc,
         "INSERT INTO kanban_columns (id, workspace_item_id, name, position) VALUES ('c1', 'item_1', 'todo', 0)", &.{});
     try s.db.exec(alloc,
@@ -1148,10 +915,7 @@ fn setupDbDescription() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Thr
     errdefer db.deinit();
     try db.init(io, ":memory:");
     // Migration 051 needs `workspace_items` (FK target) and
-    // `workspace_item_tasks` (ALTER TABLE target). Mirror
-    // migration_051_test.zig's setup; 051 assumes these tables
-    // exist (the production migrator walks 001 → 051 in order, so
-    // by the time 051 runs they are already there).
+    // `workspace_item_tasks` (ALTER TABLE target).
     try db.exec(alloc,
         "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)",
         &.{});
@@ -1261,14 +1025,9 @@ test "seedDefaultColumns writes empty descriptions" {
 }
 
 test "updateColumn with empty-string description clears existing description" {
-    // Regression test for the 2026-06-30 PATCH bug:
-    //   curl -X PATCH .../kanban/columns/col_X \
-    //        --data-raw '{"name":"in_review_planning","description":""}'
-    // The old code treated `""` identically to `null` (both
-    // skipped the UPDATE), so the existing description stayed in
-    // the DB and the response echoed the old value back. After the
-    // fix, `""` clears the description while `null` leaves it
-    // unchanged — three distinct states.
+    // Regression test for the 2026-06-30 PATCH bug: curl -X PATCH
+    // .../kanban/columns/col_X \ --data-raw
+    // '{"name":"in_review_planning","description":""}' The old code treated
     const alloc = testing.allocator;
     var ctx = try setupDbDescription();
     defer ctx.threaded.deinit();
@@ -1299,10 +1058,9 @@ test "updateColumn with empty-string description clears existing description" {
 }
 
 test "updateColumn with null description leaves existing description unchanged" {
-    // Companion to the empty-clear test above. Verifies that
-    // `null` still means "leave unchanged" (field absent from
-    // PATCH body), distinct from `""` (clear). If this test ever
-    // starts clearing too, the branch logic has regressed.
+    // Companion to the empty-clear test above. Verifies that `null` still
+    // means "leave unchanged" (field absent from PATCH body), distinct from
+    // `""` (clear).
     const alloc = testing.allocator;
     var ctx = try setupDbDescription();
     defer ctx.threaded.deinit();
@@ -1323,10 +1081,8 @@ test "updateColumn with null description leaves existing description unchanged" 
 }
 
 test "updateColumn with both empty description and new name writes both" {
-    // Mixed PATCH: rename the column AND clear its description in
-    // the same call. Verifies the empty-description branch and the
-    // name branch compose correctly without one stomping the other.
-    // Mirrors the user's exact curl from the bug report.
+    // Mixed PATCH: rename the column AND clear its description in the same
+    // call.
     const alloc = testing.allocator;
     var ctx = try setupDbDescription();
     defer ctx.threaded.deinit();
@@ -1361,16 +1117,7 @@ fn setupDbCopy() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded }
     errdefer db.deinit();
     try db.init(io, ":memory:");
     // Migration 051 needs `workspace_items` (FK target) and
-    // `workspace_item_tasks` (ALTER TABLE target). Mirror the
-    // existing `kanban_model_test_description.zig` setup: the
-    // production migrator walks 001 → 051 in order, so by the time
-    // 051 runs these tables are already there.
-    //
-    // After Migration 072 (extract kanban table plan, 2026-08-15),
-    // the kanban_column_id + kanban_position columns are no longer on
-    // workspace_item_tasks — they live on the new `kanban` join table.
-    // We apply 051 + 053 (legacy column-add) + 072 (legacy column-drop
-    // + kanban table create) to get the post-Migration-072 schema.
+    // `workspace_item_tasks` (ALTER TABLE target).
     try db.exec(alloc,
         "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)",
         &.{});
@@ -1384,13 +1131,7 @@ fn setupDbCopy() !struct { db: sqlite.SqliteBackend, threaded: std.Io.Threaded }
     return .{ .db = db, .threaded = threaded };
 }
 
-/// Seed a column and immediately free the returned id. Tests that
-/// only care about the column existing (not its id) use this helper
-/// to avoid the boilerplate of `const id = try addColumn(...);
-/// defer alloc.free(id);` at every call site — and to prevent leaks
-/// when `_ = try addColumn(...)` is used naively (the returned id
-/// is heap-allocated and the caller owns it; see `zig`
-/// `addColumn` line 196).
+/// Seed a column and immediately free the returned id.
 fn seedColumn(
     alloc: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -1491,18 +1232,15 @@ test "replaceColumnsWith unassigns tasks on the deleted target columns" {
     defer ctx.db.deinit();
 
     try seedColumn(alloc, &ctx.db, "wi_src", "todo", "", 0);
-    // Capture the legacy column id before the replace — we'll verify
-    // the task referencing it was unassigned. addColumn returns a
-    // heap-allocated id that we must free (see seedColumn's doc on
-    // why an explicit `defer alloc.free` is needed for the returned
-    // id to avoid a leak).
+    // Capture the legacy column id before the replace — we'll verify the task
+    // referencing it was unassigned. addColumn returns a heap-allocated id
+    // that we must free (see seedColumn's doc on why an explicit `defer
     const legacy_id = try addColumn(alloc, .{ .db = &ctx.db }, "wi_tgt", "legacy", "", 0);
     defer alloc.free(legacy_id);
 
-    // Create a task assigned to the target's "legacy" column. After
-    // Migration 072, the task→column mapping lives in the `kanban`
-    // join table (1:1 row per assigned task), not on
-    // workspace_item_tasks directly.
+    // Create a task assigned to the target's "legacy" column. After Migration
+    // 072, the task→column mapping lives in the `kanban` join table (1:1 row
+    // per assigned task), not on workspace_item_tasks directly.
     try ctx.db.exec(alloc,
         "INSERT INTO workspace_item_tasks (id, workspace_item_id) VALUES ('task_1', 'wi_tgt')",
         &.{});
@@ -1512,10 +1250,9 @@ test "replaceColumnsWith unassigns tasks on the deleted target columns" {
 
     try replaceColumnsWith(alloc, &ctx.db, "wi_src", "wi_tgt");
 
-    // Verify the kanban card row was DELETED when the column was
-    // replaced (FK CASCADE simulation — PRAGMA foreign_keys is off in
-    // this codebase, so we explicitly DELETE the kanban rows in
-    // deleteColumn). The task itself is NOT removed.
+    // Verify the kanban card row was DELETED when the column was replaced (FK
+    // CASCADE simulation — PRAGMA foreign_keys is off in this codebase, so we
+    // explicitly DELETE the kanban rows in deleteColumn).
     {
         var q = try ctx.db.query(alloc,
             "SELECT COUNT(*) FROM kanban k WHERE k.workspace_item_task_id = 'task_1'",

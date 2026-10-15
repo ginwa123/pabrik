@@ -1,58 +1,5 @@
-// Functional wire test: REST `skills` + SSE `session_skills` agree after skill equip.
-//
-// Zig port of `tests/functional/session_skills_live_test.py`
-// (same test names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional wire test: REST `skills` + SSE `session_skills` agree after skill equip.
-//
-//   Plan Task 5: docs/superpowers/plans/2026-09-08-live-session-skills-sse.md
-//
-//   Flow:
-//     1. PUT /api/llm/session/:id creates the session row (no LLM needed).
-//     2. Seed one session_skills row, then REST GET messages asserts
-//        body["skills"][0]["skill_name"].
-//     3. Open SSE /api/events?channels=llm, POST one agent turn, drain until
-//        llm_full with matching session_id, assert
-//        data["session_skills"][0]["skill_name"].
-//     4. Explicit key-name contract: REST key is `skills`, SSE key is
-//        `session_skills` (locks the mismatch so future renames fail loudly).
-//
-//   Seed method: direct sqlite3 INSERT into session_skills (NOT the real
-//   get_skill/add_skill tool path — that path needs a live LLM plus skill .md
-//   files on disk; the contract under test here is DB -> REST/SSE
-//   serialization, and the inserted row is byte-identical to what
-//   handle_tool.zig SaveSkill writes: INSERT OR REPLACE INTO session_skills
-//   (session_id, skill_name, content, loaded_at_nano) with
-//   strftime('%s','now')).
-//   """
-//
-// ─── WHY THERE IS A HAND-ROLLED SSE CLIENT HERE ──────────────────────────────
-// `Harness.http` cannot serve this test. It calls `reader.streamRemaining`,
-// which on a `text/event-stream` response blocks until the server closes the
-// connection — and the server holds the stream open for the life of the
-// session, so `streamRemaining` never returns. Python's `urllib.request.urlopen`
-// returned as soon as the RESPONSE HEAD parsed and drained the body line by
-// line on a daemon thread with a deadline; this port keeps that shape:
-// `std.http.Client` directly, `sendBodiless`, `receiveHead`, then a reader
-// thread doing line-at-a-time `takeDelimiterInclusive('\n')` until a `stop`
-// flag or a `shutdown(.recv)` releases it.
-//
-// The stream is HEAP-ALLOCATED because `std.http.Client` embeds a
-// `ConnectionPool` with an `Io.Mutex` and `Response.request` is a `*Request`
-// into the frame that produced it — both make the trio uncopyable, so
-// returning it by value would bit-copy a mutex and leave a dangling
-// `resp.request`.
-//
-// ─── WHY THE SEED GOES IN THROUGH THE `sqlite3` CLI ─────────────────────────
-// Python used the stdlib `sqlite3` MODULE. This package links no SQLite and
-// will not grow one (`tests/functional/build.zig` has no dependency on
-// `pabrikcore` precisely so a suite can never "pass" without crossing the
-// wire), so the port spawns the `sqlite3` COMMAND-LINE tool — the same idiom
-// `chat_right_sidebar_git_test.zig` uses for `git`. The SQL is byte-identical
-// to `llm_history.saveSkill`'s, so the seeded row is still byte-identical to
-// what `handle_tool.zig` writes, which is the whole premise of the seed.
+// Functional wire test: REST `skills` + SSE `session_skills` agree after
+// skill equip.
 
 const std = @import("std");
 const testing = std.testing;
@@ -72,11 +19,6 @@ const SESSION_ID = "sess_skills_live_001";
 const SSE_DRAIN_TIMEOUT_MS: i64 = 60_000;
 
 /// Transfer buffer for the response body reader.
-///
-/// NOT `&.{}`: `Response.reader(transfer_buffer)` uses that slice as the
-/// reader's own buffer for a chunked body, and the delimiter read reports
-/// `error.StreamTooLong` the instant it fills without a newline — which, on a
-/// stream with no `\n` yet, is immediately.
 const transfer_buffer_len = 8 * 1024;
 
 /// Monotonic milliseconds (`.awake` = monotonic, not wall clock).
@@ -86,13 +28,8 @@ fn nowMs() i64 {
 
 // ─── sqlite3 CLI helpers ────────────────────────────────────────────────────
 
-/// Skip unless a `sqlite3` CLI is present and speaks `-json`.
-/// Exit code for a finished child, or null if a signal stopped it.
-///
-/// `Child.Term` is a tagged union, NOT an optional: `.exited` is a `u8`
-/// field, so `res.term.exited orelse ...` does not compile and a bare
-/// `res.term.exited != 0` would silently read the wrong field on a
-/// signalled run.
+/// Skip unless a `sqlite3` CLI is present and speaks `-json`. Exit code for a
+/// finished child, or null if a signal stopped it.
 fn exitCode(term: std.process.Child.Term) ?u8 {
     return switch (term) {
         .exited => |c| c,
@@ -222,11 +159,6 @@ const SseStream = struct {
     /// Set by the reader thread once it has stopped touching `events`.
     done: std.atomic.Value(bool) = .init(false),
     /// Frames parsed so far.
-    ///
-    /// Guarded by `mutex`: the reader appends while the test thread polls,
-    /// and an unsynchronised read of `events.items` during the reader's
-    /// `append` is a use-after-free (the ArrayList realloc frees the old
-    /// buffer). Python's `queue.Queue` was this lock.
     mutex: Io.Mutex = .init,
     events: std.ArrayList(SseEvent) = .empty,
     /// Set by the reader thread when the stream errored or ended.
@@ -250,10 +182,7 @@ fn openSse(port: u16, channels: []const u8) !*SseStream {
     errdefer gpa.destroy(s);
 
     // `gpa.create` returns UNINITIALIZED memory — it does NOT run the
-    // struct's field default initializers. Every field with a default
-    // (`mutex`, `stop`, `done`, `events`, `read_error`) must be assigned
-    // here or it stays garbage, and an uninitialised `Io.Mutex` is not a
-    // lock at all. `s.* = .{...}` applies all the defaults in one shot.
+    // struct's field default initializers.
     s.* = .{ .client = .{ .allocator = gpa, .io = io }, .req = undefined };
 
     const url = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/api/events?channels={s}", .{ port, channels });
@@ -296,13 +225,8 @@ fn openSse(port: u16, channels: []const u8) !*SseStream {
     return s;
 }
 
-/// Read SSE frames until `stop` is set, the stream ends, or an error
-/// occurs. Runs on its own thread.
-///
-/// The grammar (per `unified_events_sse.zig` `forwardToClients`):
-///     event: <name>\n
-///     data: <line>\n
-///     \n            <- blank line dispatches the frame
+/// Read SSE frames until `stop` is set, the stream ends, or an error occurs.
+/// Runs on its own thread.
 fn readEvents(s: *SseStream) void {
     defer s.done.store(true, .release);
 
@@ -320,16 +244,6 @@ fn readEvents(s: *SseStream) void {
     while (!s.stop.load(.acquire)) {
         // One LINE, not the whole stream: this is what makes the read
         // incremental. `error.EndOfStream` is a clean server close.
-        //
-        // `takeDelimiterINCLUSIVE`, never `takeDelimiterExclusive`. The
-        // exclusive form advances "up to (but not past) the delimiter" —
-        // it leaves the `\n` in the buffer. The next call therefore sees a
-        // delimiter at position 0 and returns a ZERO-LENGTH slice, for
-        // ever: the reader spins at full speed, every line reads as the
-        // blank-line frame terminator, and every frame after the first is
-        // dispatched as an EMPTY one. The first frame still dispatches,
-        // which is exactly why a handshake-only assertion passes against
-        // this and a push assertion does not.
         const raw_line = reader.takeDelimiterInclusive('\n') catch |err| {
             const msg = switch (err) {
                 error.EndOfStream => "stream ended",
@@ -385,10 +299,6 @@ fn readEvents(s: *SseStream) void {
 }
 
 /// Release a blocked `readEvents` by shutting the socket's read side.
-///
-/// Without this the reader thread parks in `readv` forever on a stream that
-/// never ends; `shutdown(SHUT_RD)` makes the pending read return 0, which
-/// surfaces as `error.EndOfStream`.
 fn releaseReader(s: *SseStream) void {
     s.stop.store(true, .release);
     s.req.connection.?.stream_reader.stream.shutdown(io, .recv) catch {};
@@ -396,11 +306,6 @@ fn releaseReader(s: *SseStream) void {
 
 /// True iff `data` is an `llm_full` payload for `session_id` carrying a
 /// NON-EMPTY `session_skills` array.
-///
-/// Python's predicate:
-///   ev == "llm_full" and isinstance(data, dict)
-///     and data.get("session_id") == SESSION_ID
-///     and isinstance(data.get("session_skills"), list) and len(...) > 0
 fn llmFullHasSkills(data: []const u8, session_id: []const u8) bool {
     var parsed = std.json.parseFromSlice(std.json.Value, gpa, data, .{}) catch return false;
     defer parsed.deinit();
@@ -422,15 +327,7 @@ fn llmFullHasSkills(data: []const u8, session_id: []const u8) bool {
 }
 
 /// Wait for an `llm_full` frame for `session_id` with non-empty
-/// `session_skills`. Returns an OWNED copy of the event's `data` payload
-/// (the caller frees it), or `null` if the deadline or the stream ends
-/// first.
-///
-/// A monotonic CURSOR over the append-only event list is the analogue of
-/// Python's `queue.Queue.get(timeout=0.5)` drain: frames already rejected
-/// by the predicate are never re-examined, and the mutex is released before
-/// each sleep (holding it across the sleep starves the reader, which needs
-/// the same lock to append).
+/// `session_skills`.
 fn drainUntilLlmFull(s: *SseStream, session_id: []const u8, timeout_ms: i64) !?[]u8 {
     const deadline = nowMs() + timeout_ms;
     var cursor: usize = 0;
@@ -518,11 +415,6 @@ test "rest_and_sse_skills_agree" {
     try seedSessionSkill(h.temp_dir);
 
     // 3. REST: top-level `skills` carries the seeded skill.
-    //
-    // The RESPONSE is held alongside the parsed document, not dropped in a
-    // nested block: the failure messages below print the raw wire body (a
-    // `std.json.Value` has no `{s}` formatter), so `r.body` has to still be
-    // alive when one of them fires.
     const rest_path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}/messages", .{SESSION_ID});
     defer gpa.free(rest_path);
     var rest_resp = try h.http(io, .GET, rest_path, .{
@@ -654,10 +546,8 @@ test "rest_and_sse_skills_agree" {
         return error.TestUnexpectedResult;
     }
 
-    // 5. Cross-wire agreement: REST and SSE carry the same skill set.
-    // Python: `set(names) == rest_names` with `rest_names == {SKILL_NAME}`.
-    // The REST side was pinned to exactly one entry named SKILL_NAME above,
-    // so equality holds iff every SSE name is SKILL_NAME and it appears once.
+    // 5. Cross-wire agreement: REST and SSE carry the same skill set. Python:
+    // `set(names) == rest_names` with `rest_names == {SKILL_NAME}`.
     for (sse_skills.items, 0..) |_, i| {
         const name = skillNameAt(sse_skills, i).?;
         if (!std.mem.eql(u8, name, SKILL_NAME)) {

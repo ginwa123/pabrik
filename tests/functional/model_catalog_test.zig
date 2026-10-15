@@ -1,20 +1,5 @@
-//! Functional tests for the models.dev model catalog (Migration 106).
-//!
-//! WHY THIS SUITE EXISTS. `model_catalog.zig` and `model_catalog_store.zig`
-//! already prove the parsing and the storage in isolation. What they cannot
-//! prove is the WIRE: that `GET /api/models/resolve` reports the catalog's
-//! window instead of pabrik's built-in guess, and — just as important — that it
-//! SAYS WHICH ONE IT USED. A user looking at `200000` has to be able to tell
-//! "this model really is 200k" from "we have no idea".
-//!
-//! Both halves matter, and the SECOND one is the one that rots silently:
-//!
-//!   1. a seeded snapshot  -> context_window 1_000_000, source "catalog"
-//!   2. no snapshot at all -> context_window   200_000, source "builtin",
-//!                            catalog "absent"
-//!
-//! Each test boots a real binary against an isolated tmpdir HOME (the harness
-//! picks a random port in 20000..32000 and never touches 8081).
+//! Functional tests for the models.dev model catalog (Migration 106). WHY
+//! THIS SUITE EXISTS.
 
 const std = @import("std");
 const testing = std.testing;
@@ -48,10 +33,9 @@ const SEED_SQL =
     \\  VALUES (1, 1, 'https://models.dev/api.json', 4102444800000, 1, 1);
 ;
 
-/// Seed a pre-migrated catalog before the binary starts.
-///
-/// `fetched_at_ms` above is deliberately in the FAR FUTURE so the freshness
-/// check cannot call the snapshot stale as the years roll by.
+/// Seed a pre-migrated catalog before the binary starts. `fetched_at_ms`
+/// above is deliberately in the FAR FUTURE so the freshness check cannot call
+/// the snapshot stale as the years roll by.
 fn seedCatalog(seed_io: std.Io, allocator: std.mem.Allocator, temp_dir: []const u8) anyerror!void {
     const dir = try harness.harnessPath(allocator, temp_dir, &.{ ".config", "pabrik" });
     defer allocator.free(dir);

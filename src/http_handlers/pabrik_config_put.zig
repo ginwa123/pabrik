@@ -12,13 +12,6 @@ const tools_equipped = @import("../agentic_loop/tools_equipped.zig");
 const LlmConfig = config.LlmConfig;
 
 /// Parse the PUT body into a `ConfigInput`.
-///
-/// Public so the test file can exercise the same parse path the HTTP
-/// handler uses — important because the handler's wire format has
-/// evolved (array-of-changes → object-map-and-array, see
-/// plan 2026-07-07) and tests are the only way to lock in the
-/// parser's tolerance of the on-disk shape that `PabrikSettings.vue`
-/// actually sends.
 pub fn parseConfigInput(
     allocator: std.mem.Allocator,
     body: []const u8,
@@ -92,12 +85,8 @@ pub fn pabrikConfigPutHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
     // Read request body
     const body = req.body;
 
-    // Parse input — delegate to the shared pub helper so the test
-    // file can exercise the same parse path with the user's exact
-    // body shape. The helper returns a tagged-union error set so
-    // the test can assert the specific failure mode (e.g. JSON
-    // syntax error vs wire-format mismatch) without coupling to the
-    // HTTP response shape.
+    // Parse input — delegate to the shared pub helper so the test file can
+    // exercise the same parse path with the user's exact body shape.
     const input = parseConfigInput(allocator, body) catch |err| {
         std.log.err("Failed to parse input: {s}", .{@errorName(err)});
         return res.jsonResponse(.{
@@ -139,13 +128,6 @@ pub fn pabrikConfigPutHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
     }
 
     // Update with new values.
-    //
-    // Plan 2026-08-24-config-simplify-remove-defaults: the top-level LLM
-    // defaults (api_key / model / base_url / url_style / max_tokens /
-    // system_prompt) are NO LONGER persisted. The write struct below
-    // doesn't declare them, so Stringify.valueAlloc never re-emits them
-    // to disk. Bodies that still send them (old frontends, curl scripts)
-    // are tolerated via `ignore_unknown_fields` and silently dropped.
     if (input.notify_on_complete) |n| {
         config_json.notify_on_complete = n;
     }
@@ -164,9 +146,8 @@ pub fn pabrikConfigPutHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
         config_json.model_compaction_size_kb = kb;
     }
     // Top-level compaction defaults — restored in plan
-    // 2026-07-07-compaction-inline. `null` is a legitimate value (the
-    // cascade wildcard); clients opt out of the top-level override by
-    // sending null.
+    // 2026-07-07-compaction-inline. `null` is a legitimate value (the cascade
+    // wildcard); clients opt out of the top-level override by sending null.
     if (input.max_capacity_token_model) |mc| {
         config_json.max_capacity_token_model = mc;
     }
@@ -174,29 +155,14 @@ pub fn pabrikConfigPutHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
         if (tp > 100) return error.InvalidThresholdPercent;
         config_json.compaction_threshold_percent = tp;
     }
-    // retry_delay_ms: clamp to [0, 60_000]. Values > 60_000 would let a
-    // user lock themselves out of cancelable recovery (one cancellation
-    // attempt would have to wait the full delay). Values < 0 are
-    // impossible at the type level (u32). `null` means "no change" so
-    // an omit-from-PUT doesn't reset the existing value.
+    // retry_delay_ms: clamp to [0, 60_000]. Values > 60_000 would let a user
+    // lock themselves out of cancelable recovery (one cancellation attempt
+    // would have to wait the full delay).
     if (input.retry_delay_ms) |ms| {
         config_json.retry_delay_ms = if (ms > 60_000) 60_000 else ms;
     }
     // Handle the `tools` default checklist (plan
-    // 2026-09-22-tools-menu-config-default-tools, D2). Absent key AND
-    // explicit JSON `null` both parse to `null` (the desired collapse) →
-    // no change, so a Settings save from another tab never erases the
-    // on-disk list. A present array — including `[]` — replaces the
-    // whole list, but only after every name is checked against
-    // `UNIFIED_TOOL_REGISTRY` (the load path stays tolerant of
-    // hand-edited names; PUT is the validation gate).
-    // Web-search providers are validated HERE, at save time, rather than
-    // being tolerated at load time. Without this,
-    // `parseWebSearchProviderEntry` would `warn` and DROP a bad entry, and
-    // the symptom would be "Settings shows a provider, the agent says none
-    // are configured" — the exact indistinguishable-failure class this
-    // repo keeps fighting. A 400 naming the offending provider is the
-    // difference between a five-second fix and a bug report.
+    // 2026-09-22-tools-menu-config-default-tools, D2).
     if (try applyWebSearchInput(allocator, &config_json, input.web_search)) |bad| {
         return res.jsonResponse(.{
             .status_code = 400,
@@ -216,12 +182,7 @@ pub fn pabrikConfigPutHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
         });
     }
 
-    // Skill Evals. `null` (absent key, or explicit JSON null — both parse
-    // to `null`) means "no change", so the on-disk block parsed into
-    // `config_json` above survives a save from any Settings tab that does
-    // not render the Evals section. A present object replaces it wholesale,
-    // duping `apply_mode` because the parsed input slice dies with this
-    // function's scope.
+    // Skill Evals.
     if (input.skill_evals) |se| {
         config_json.skill_evals = .{
             .enabled = se.enabled,
@@ -234,13 +195,7 @@ pub fn pabrikConfigPutHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
     }
 
     // Handle profiles - accept BOTH the on-disk shape (object map) and the
-    // granular change-list shape (array of ProfileChange). The frontend's
-    // main settings panel sends the on-disk shape (Record<name, profile>);
-    // the sub-agent add/edit/delete UIs send the array shape. Plan
-    // 2026-07-07 inline-compaction + PUT 400 bug fix: previously the
-    // handler only accepted the array shape, causing the main settings
-    // save to 400 with "Invalid JSON input" because parseFromSliceLeaky
-    // rejected the on-disk object map.
+    // granular change-list shape (array of ProfileChange).
     if (input.profiles) |profiles_value| {
         // Create new profiles object
         var profiles_obj = try json.ObjectMap.init(allocator, &.{}, &.{});
@@ -260,12 +215,9 @@ pub fn pabrikConfigPutHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
             // Granular change-list shape: array of ProfileChange entries.
             .array => |arr| {
                 for (arr.items) |item| {
-                    // Re-serialize the item to JSON text first: `item`
-                    // is an already-parsed `json.Value`, and parsing
-                    // its raw struct bytes (the old `asBytes` trick)
-                    // is a guaranteed SyntaxError → 500. The
-                    // stringify round-trip is the correct bridge into
-                    // the typed `ProfileChange` struct.
+                    // Re-serialize the item to JSON text first: `item` is an
+                    // already-parsed `json.Value`, and parsing its raw struct
+                    // bytes (the old `asBytes` trick) is a guaranteed
                     const item_str = try std.json.Stringify.valueAlloc(allocator, item, .{});
                     defer allocator.free(item_str);
                     const profile_change = try json.parseFromSliceLeaky(
@@ -286,10 +238,7 @@ pub fn pabrikConfigPutHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
                             try profile_obj.put(allocator, "temperature", json.Value{ .string = try allocator.dupe(u8, profile_change.temperature) });
                             try profile_obj.put(allocator, "url_style", json.Value{ .string = try allocator.dupe(u8, profile_change.url_style) });
                             try profile_obj.put(allocator, "api_key", if (profile_change.api_key.len > 0) json.Value{ .string = try allocator.dupe(u8, profile_change.api_key) } else json.Value{ .string = "" });
-                            // Per-profile compaction overrides (Chunk 7). When
-                            // the input omits them, we omit the JSON key so an
-                            // "update" doesn't clobber the existing on-disk
-                            // value. When present, validate the threshold range.
+                            // Per-profile compaction overrides (Chunk 7).
                             if (profile_change.max_capacity_tokens) |mct| {
                                 try profile_obj.put(allocator, "max_capacity_tokens", json.Value{ .integer = mct });
                             }
@@ -297,16 +246,9 @@ pub fn pabrikConfigPutHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
                                 if (tp > 100) return error.InvalidThresholdPercent;
                                 try profile_obj.put(allocator, "compaction_threshold_percent", json.Value{ .integer = tp });
                             }
-                            // === Model-thinking knobs (plan 2026-08-23-model-thinking) ===
-                            // Validate inline (NOT at JSON-parse time) so a
-                            // single error path serves both the granular
-                            // change-list shape (this branch) and the
-                            // on-disk object-map shape (validated via
-                            // validateModelThinkingOnDiskProfileMap
-                            // below). We return early with a 400 + a
-                            // structured body so the caller sees a
-                            // descriptive message (the gserverz error
-                            // path returns a generic "Handler error" 500).
+                            // === Model-thinking knobs (plan
+                            // 2026-08-23-model-thinking) === Validate inline
+                            // (NOT at JSON-parse time) so a single error path
                             if (profile_change.thinking_budget_tokens) |t| {
                                 if (t == 0 or t > 2_000_000) {
                                     return res.jsonResponse(.{
@@ -331,12 +273,9 @@ pub fn pabrikConfigPutHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
                                 };
                                 try profile_obj.put(allocator, "reasoning_effort", json.Value{ .string = try allocator.dupe(u8, re) });
                             }
-                            // === Per-profile sub_agents (plan 2026-09-04-subagents-per-profile) ===
-                            // When the change provides a list, validate +
-                            // serialize it onto the profile object. When
-                            // omitted on "update", preserve the existing
-                            // on-disk list so a profile edit doesn't wipe
-                            // the profile's subagents.
+                            // === Per-profile sub_agents (plan
+                            // 2026-09-04-subagents-per-profile) === When the
+                            // change provides a list, validate + serialize it
                             if (profile_change.sub_agents) |sas| {
                                 for (sas) |sa| {
                                     if (sa.thinking_budget_tokens) |t| {
@@ -382,17 +321,11 @@ pub fn pabrikConfigPutHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
                 }
             },
             // On-disk shape: object map. Each entry is the full profile
-            // metadata for a single profile. Deep-copy each entry so
-            // the borrowed slice from the parsed request stays valid
-            // across the `parsed.deinit()` at scope exit.
+            // metadata for a single profile.
             .object => |obj| {
                 // Validate model-thinking fields before copying. The
-                // validation must reject bad values BEFORE we write
-                // anything to disk. Plan 2026-08-23-model-thinking.
-                // We translate the error variant into a 400 + a
-                // structured body inline so the caller sees a
-                // descriptive message (the gserverz error path returns
-                // a generic "Handler error" 500).
+                // validation must reject bad values BEFORE we write anything
+                // to disk.
                 validateModelThinkingOnDiskProfileMap(obj) catch |err| switch (err) {
                     error.InvalidThinkingBudgetTokens => {
                         return res.jsonResponse(.{
@@ -438,8 +371,7 @@ pub fn pabrikConfigPutHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
 
     // Handle MCP servers: if the input provides an `mcp_servers` map, replace
     // the existing list wholesale (whole-list replace matches the UI's
-    // add/edit/delete workflow). The input map is deep-copied so the parsed
-    // struct can safely go out of scope.
+    // add/edit/delete workflow).
     if (input.mcp_servers) |servers_value| {
         switch (servers_value) {
             .object => |obj| {
@@ -463,21 +395,10 @@ pub fn pabrikConfigPutHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
 
     // Handle top-level sub_agents (DEPRECATED — plan
     // 2026-09-04-subagents-per-profile: subagents are per-profile now).
-    // Kept as a compat write path: old clients may still send it, and
-    // the next load migrates it into profiles with empty lists. New
-    // clients must use per-profile `sub_agents` via `ProfileChange`.
-    // If the input provides a `sub_agents`
-    // array, replace the existing list wholesale (whole-list replace matches
-    // the UI's add/edit/delete workflow). Each entry's 8 string fields are
-    // duped onto the allocator so the new array is independent of the
-    // parsed input slice (which goes out of scope after this function).
     if (input.sub_agents) |sas| {
         // === Model-thinking validation (plan 2026-08-23-model-thinking) ===
         // Validate each sub-agent's `thinking_budget_tokens` and
-        // `reasoning_effort` BEFORE any dup'ing so a bad value is
-        // rejected at the HTTP layer rather than silently written
-        // to disk. Translate the error into a 400 + structured body
-        // inline so the caller sees a descriptive message.
+        // `reasoning_effort` BEFORE any dup'ing so a bad value is rejected at
         for (sas) |sa| {
             if (sa.thinking_budget_tokens) |t| {
                 if (t == 0 or t > 2_000_000) {
@@ -524,9 +445,6 @@ pub fn pabrikConfigPutHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
     }
 
     // Plan 2026-09-04-subagents-per-profile: disk-side migration.
-    // Fold any deprecated top-level `sub_agents` into profiles that
-    // lack their own list, then strip the key so the file on disk
-    // is per-profile-only after this save.
     try migrateTopLevelSubAgentsOnDisk(allocator, &config_json);
 
     // Write config
@@ -534,10 +452,9 @@ pub fn pabrikConfigPutHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
         .whitespace = .indent_tab,
     });
 
-    // Auth mode: persist to users.config_json and return early.
-    // config.json is untouched and the global singleton is NOT swapped
-    // (config is per-user). Still invalidate the MCP tools cache so the
-    // next workflow run refetches.
+    // Auth mode: persist to users.config_json and return early. config.json
+    // is untouched and the global singleton is NOT swapped (config is
+    // per-user).
     if (auth_user_id) |uid| {
         user_config_store.saveRaw(allocator, di.db, uid, config_str) catch |err| {
             std.log.err("Failed to save user config: {s}", .{@errorName(err)});
@@ -563,11 +480,9 @@ pub fn pabrikConfigPutHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
     try writer.interface.writeAll(config_str);
     try writer.flush();
 
-    // === Live-reload App.llm_config ===
-    // Reload from disk so the running workflow picks up the new API key,
-    // model, base_url, mcp_servers, and profiles without a server restart.
-    // On any failure we still respond 200 (disk is already authoritative)
-    // but log the error and skip the swap so the running config is stable.
+    // === Live-reload App.llm_config === Reload from disk so the running
+    // workflow picks up the new API key, model, base_url, mcp_servers, and
+    // profiles without a server restart.
     {
         const env_for_reload: *std.process.Environ.Map = @ptrCast(@constCast(di.environment orelse environment));
 
@@ -604,12 +519,8 @@ pub fn pabrikConfigPutHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
         pabrikcore.setLlmConfig(di, new_ptr);
         std.log.info("PUT /api/config/pabrik: live-reloaded llm_config (model={s}, base_url={s})", .{ new_ptr.model, new_ptr.base_url });
 
-        // Fetch-once cache (plan: mcp-fetch-once-cache): lazy-invalidate
-        // so the next workflow run refetches once. Also force registry
-        // clients to rebuild on next fetch — otherwise an edited URL /
-        // command with the same server name would keep serving the old
-        // cached client (HTTP has no self-healing; stdio only heals on
-        // error). Config saves are rare; one reconnect per save is fine.
+        // Fetch-once cache (plan: mcp-fetch-once-cache): lazy-invalidate so
+        // the next workflow run refetches once.
         di.clearMcpToolsCache();
         if (new_ptr.mcpServers()) |servers_val| {
             if (servers_val == .object) {
@@ -628,16 +539,11 @@ pub fn pabrikConfigPutHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
     });
 }
 
-/// Wire format for the PUT body. Public so the test file
-/// (`pabrik_config_put.zig`) can re-parse the same body the
-/// HTTP handler would parse and assert the wire format matches the
-/// frontend's actual `PabrikSettings.vue` shape.
+/// Wire format for the PUT body.
 pub const ConfigInput = struct {
     // Plan 2026-08-24-config-simplify-remove-defaults: the old
-    // api_endpoint/api_key/model/url_style/max_tokens/system_prompt
-    // fields were REMOVED. Bodies that still send them are tolerated
-    // via `ignore_unknown_fields` (silently dropped — the top-level
-    // defaults are no longer persisted to config.json).
+    // api_endpoint/api_key/model/url_style/max_tokens/system_prompt fields
+    // were REMOVED.
     temperature: f64 = 0.7,
     profiles: ?json.Value = null,
     active_profile: ?[]const u8 = null,
@@ -645,16 +551,13 @@ pub const ConfigInput = struct {
     /// When present, replaces the existing MCP servers entirely.
     /// When absent, existing MCP servers are preserved.
     mcp_servers: ?json.Value = null,
-    /// When true, fire an OS-level notification when an LLM response
-    /// finishes with `finish_reason == "stop"`. Absent = preserve
-    /// existing on-disk value. Mirrors the `LlmConfigJson` default
-    /// (`false`) so a brand-new config has notifications off.
+    /// When true, fire an OS-level notification when an LLM response finishes
+    /// with `finish_reason == "stop"`. Absent = preserve existing on-disk
+    /// value.
     notify_on_complete: ?bool = null,
-    /// When true, fire an OS-level notification when the LLM workflow
-    /// hits an error (transport failure, TooManyRetries, outer catch).
-    /// Absent = preserve existing on-disk value. Mirrors the
-    /// `LlmConfigJson` default (`false`) so a brand-new config has
-    /// error notifications off.
+    /// When true, fire an OS-level notification when the LLM workflow hits an
+    /// error (transport failure, TooManyRetries, outer catch). Absent =
+    /// preserve existing on-disk value.
     notify_on_error: ?bool = null,
     /// When true, the agent may launch URLs in the user's web browser.
     /// Absent = preserve existing on-disk value. Mirrors the
@@ -665,46 +568,26 @@ pub const ConfigInput = struct {
     /// value. Mirrors the `LlmConfigJson` default (`100`).
     model_compaction_size_kb: ?usize = null,
     /// Optional top-level override for the context window (in tokens).
-    /// Restored in plan 2026-07-07-compaction-inline. `null` = fall
-    /// through to per-profile override, then built-in default. Per-profile
-    /// overrides (`ProfileChange.max_capacity_tokens`) coexist independently.
+    /// Restored in plan 2026-07-07-compaction-inline. `null` = fall through
+    /// to per-profile override, then built-in default.
     max_capacity_token_model: ?u32 = null,
-    /// Optional top-level compaction threshold percentage (0-100).
-    /// Restored in plan 2026-07-07-compaction-inline. `null` = fall
-    /// through to per-profile override, then built-in 80. Values > 100
-    /// are rejected with `error.InvalidThresholdPercent`.
+    /// Optional top-level compaction threshold percentage (0-100). Restored
+    /// in plan 2026-07-07-compaction-inline. `null` = fall through to
+    /// per-profile override, then built-in 80.
     compaction_threshold_percent: ?u8 = null,
     /// Delay in milliseconds before retrying a failed workflow call.
-    /// Range-validated at apply time: 0 ≤ value ≤ 60_000. `null` means
-    /// "no change" so an omit-from-PUT doesn't reset the existing
-    /// value. Matches `LlmConfig.retry_delay_ms` (Config.zig) and the
-    /// GET handler's `ConfigJson` shape.
+    /// Range-validated at apply time: 0 ≤ value ≤ 60_000.
     retry_delay_ms: ?u32 = null,
     // Note: per-profile compaction overrides (max_capacity_tokens,
     // compaction_threshold_percent) live on `ProfileChange` below.
-    // Both layers coexist: top-level for Defaults tab, per-profile for
-    // profile-specific overrides.
-    /// Whole-list replace for the top-level `sub_agents` array.
-    /// When present, replaces the existing sub-agents entirely.
-    /// When absent, existing sub-agents are preserved. Borrowed slices
-    /// from the request body — the handler dupes each entry's strings
-    /// before assigning to `config_json.sub_agents`.
     sub_agents: ?[]const LlmConfig.SubAgentJson = null,
     /// Whole-list replace for the `tools` default checklist (plan
-    /// 2026-09-22-tools-menu-config-default-tools, D2). Absent OR
-    /// explicit JSON `null` → no change (both parse to `null` — the
-    /// desired collapse, so a Settings save that omits `tools` preserves
-    /// the on-disk value). A present array (including `[]`) replaces the
-    /// list after registry validation at apply time. Borrowed slices from
-    /// the request body — the handler dupes them before writing.
+    /// 2026-09-22-tools-menu-config-default-tools, D2).
     tools: ?[]const []const u8 = null,
     web_search: ?json.Value = null,
-    /// Skill Evals master switch + knobs. Absent OR explicit JSON `null`
-    /// → no change, so a Settings save from a tab that never rendered
-    /// the Evals section preserves the on-disk block. A present object
-    /// replaces it wholesale. Mirrors `config.SkillEvalsJson` — the
-    /// tolerant shape, so an unrecognised `apply_mode` degrades on the
-    /// next load rather than making config.json unloadable.
+    /// Skill Evals master switch + knobs. Absent OR explicit JSON `null` → no
+    /// change, so a Settings save from a tab that never rendered the Evals
+    /// section preserves the on-disk block.
     skill_evals: ?config.SkillEvalsJson = null,
 };
 
@@ -718,43 +601,27 @@ const ProfileChange = struct {
     url_style: []const u8 = "openai",
     api_key: []const u8 = "",
     /// Optional override for the per-profile context window (in tokens).
-    /// Mirrors `LlmProfile.max_capacity_tokens` in Config.zig. When
-    /// non-null, the JSON write below sets the `max_capacity_tokens`
-    /// key on the profile object. When null, the key is omitted
-    /// (preserves existing on-disk value if the action is "update").
+    /// Mirrors `LlmProfile.max_capacity_tokens` in Config.zig.
     max_capacity_tokens: ?u32 = null,
-    /// Optional per-profile compaction threshold percentage (0-100).
-    /// Mirrors `LlmProfile.compaction_threshold_percent`. Values > 100
-    /// are rejected with `error.InvalidThresholdPercent` at the apply
-    /// block above (per-profile validation is layered on top of the
-    /// top-level model_compaction_size_kb check).
+    /// Optional per-profile compaction threshold percentage (0-100). Mirrors
+    /// `LlmProfile.compaction_threshold_percent`.
     compaction_threshold_percent: ?u8 = null,
     /// Anthropic-only override for `thinking.budget_tokens`. Plan
-    /// 2026-08-23-model-thinking. Must be in (0, 2_000_000] when
-    /// present — values outside that range are rejected with
-    /// `error.InvalidThinkingBudgetTokens`.
+    /// 2026-08-23-model-thinking.
     thinking_budget_tokens: ?u32 = null,
-    /// OpenAI-style reasoning effort (o1/o3/GPT-5/DeepSeek-R1).
-    /// One of "low" | "medium" | "high" | "auto". Invalid values
-    /// are rejected with `error.InvalidReasoningEffort` via the
-    /// parse_thinking helper (so the validation logic lives in
-    /// exactly one place — see parse_thinking.zig).
+    /// OpenAI-style reasoning effort (o1/o3/GPT-5/DeepSeek-R1). One of "low"
+    /// | "medium" | "high" | "auto".
     reasoning_effort: ?[]const u8 = null,
-    /// Per-profile sub-agents (plan 2026-09-04-subagents-per-profile).
-    /// Each profile owns its list — there is no global list anymore.
-    /// When non-null on add/update, replaces the profile's list
-    /// wholesale. When null on update, the existing on-disk list is
-    /// preserved (same omit-doesn't-clobber rule as
-    /// `max_capacity_tokens` above).
+    /// Per-profile sub-agents (plan 2026-09-04-subagents-per-profile). Each
+    /// profile owns its list — there is no global list anymore. When non-null
+    /// on add/update, replaces the profile's list wholesale.
     sub_agents: ?[]const LlmConfig.SubAgentJson = null,
 };
 
 const ConfigJson = struct {
     // Plan 2026-08-24-config-simplify-remove-defaults: the top-level LLM
     // defaults (api_key/model/base_url/url_style/max_tokens/system_prompt)
-    // were REMOVED from the on-disk shape. This struct is the serializer
-    // for `Stringify.valueAlloc` — fields absent here are never written
-    // to config.json.
+    // were REMOVED from the on-disk shape.
     profiles_models: ?json.Value = null,
     active_profile: ?[]const u8 = null,
     /// Configured MCP servers (snake_case, matches PABRIK.md JSON convention).
@@ -785,41 +652,20 @@ const ConfigJson = struct {
     /// [0, 60_000] by the apply block. Default 0 = no delay.
     retry_delay_ms: u32 = 0,
     /// Top-level sub-agents array (snake_case, matches PABRIK.md JSON
-    /// convention). Parsed into the typed `LlmConfig.SubAgentJson` shape
-    /// (borrowed from the parsed file content), or replaced by an
-    /// owned copy (duped from the request body) when the input provides
-    /// a new list.
+    /// convention).
     sub_agents: ?[]LlmConfig.SubAgentJson = null,
     /// Default tool checklist (Tools tab, plan
-    /// 2026-09-22-tools-menu-config-default-tools). Parsed from the
-    /// on-disk file so an input that omits `tools` round-trips the
-    /// existing value instead of erasing it; replaced wholesale by an
-    /// owned copy when the input provides a new list. `null` emits JSON
-    /// `null`, which every reader treats as "key absent".
+    /// 2026-09-22-tools-menu-config-default-tools).
     tools: ?[]const []const u8 = null,
-    /// Web-search providers, keyed by name. Parsed from the on-disk document
-    /// so an input that omits `web_search` round-trips the existing value
-    /// instead of erasing it; replaced wholesale when the input provides a
-    /// new map. Same contract as `tools` directly above.
+    /// Web-search providers, keyed by name.
     web_search: ?json.Value = null,
-    /// Skill Evals block. NON-OPTIONAL so it is always re-emitted: a
-    /// `?… = null` here would serialize to JSON `null`, which the
-    /// runtime parser rejects for this struct and which would erase a
-    /// user's opt-in on every save. Absent on disk → the field defaults
-    /// (`enabled = false`), which is the same value the runtime would
-    /// have used anyway, so materializing it changes no behaviour.
+    /// Skill Evals block.
     skill_evals: config.SkillEvalsJson = .{},
 };
 
-/// Apply the optional `tools` input onto the on-disk write struct.
-/// Returns the first unknown name (the caller turns it into a 400)
-/// WITHOUT touching `config_json`. A `null` input — absent key or
-/// explicit JSON `null`, which std.json collapses to the same thing —
-/// leaves the on-disk list untouched, so a Settings save from another
-/// tab never erases the checklist. A present list (including `[]`)
-/// replaces it wholesale with owned copies (validated first, so a
-/// rejected name can never half-apply).
-/// A rejected provider: which one, and why.
+/// Apply the optional `tools` input onto the on-disk write struct. Returns
+/// the first unknown name (the caller turns it into a 400) WITHOUT touching
+/// `config_json`.
 const WebSearchRejection = struct {
     provider: []const u8,
     reason: []const u8,
@@ -827,14 +673,8 @@ const WebSearchRejection = struct {
     allocator: std.mem.Allocator,
 };
 
-/// Validate and store `web_search`. Returns a rejection the caller turns
-/// into a 400, or null on success / when the field is absent.
-///
-/// An entry with a blank `key` has the field REMOVED rather than stored as
-/// `""`: `SqliteBackend.exec` binds an empty slice as SQL NULL, and `""` is
-/// exactly the shape that survives a JSON round-trip while meaning "unset".
-/// A masked key (`sk…7f2`) is also removed here — it means "unchanged", and
-/// the stored secret is restored from the existing document further down.
+/// Validate and store `web_search`. Returns a rejection the caller turns into
+/// a 400, or null on success / when the field is absent.
 fn applyWebSearchInput(
     allocator: std.mem.Allocator,
     config_json: *ConfigJson,
@@ -945,10 +785,9 @@ fn firstUnknownToolName(names: []const []const u8) ?[]const u8 {
     return null;
 }
 
-/// Serialize a borrowed `[]SubAgentJson` slice into an owned
-/// `json.Value` array for writing onto a profile object (plan
-/// 2026-09-04-subagents-per-profile). All strings are duped onto
-/// the allocator so the value outlives the parsed request body.
+/// Serialize a borrowed `[]SubAgentJson` slice into an owned `json.Value`
+/// array for writing onto a profile object (plan
+/// 2026-09-04-subagents-per-profile).
 fn subAgentsJsonToValue(allocator: std.mem.Allocator, sas: []const LlmConfig.SubAgentJson) error{OutOfMemory}!json.Value {
     var arr = json.Array.init(allocator);
     errdefer arr.deinit();
@@ -982,13 +821,6 @@ fn subAgentsJsonToValue(allocator: std.mem.Allocator, sas: []const LlmConfig.Sub
 
 /// Disk-side twin of the load migration in `Config.zig`
 /// (`migrateTopLevelSubAgentsIntoEmptyProfiles`).
-///
-/// When the on-disk config still carries the deprecated top-level
-/// `sub_agents` array, copy it into every profile object that lacks
-/// a non-empty `sub_agents` array, then strip the top-level key so
-/// fresh writes are per-profile-only. Profiles with their own list
-/// are untouched. When there are no profiles to migrate into, the
-/// top-level key is kept (nowhere to move the entries).
 fn migrateTopLevelSubAgentsOnDisk(
     allocator: std.mem.Allocator,
     config_json: *ConfigJson,
@@ -1057,16 +889,7 @@ fn deepCopyJsonValue(allocator: std.mem.Allocator, value: json.Value) error{OutO
 }
 
 /// Validate every profile in the on-disk object-map shape for the
-/// model-thinking fields (`thinking_budget_tokens`,
-/// `reasoning_effort`). The granular change-list shape (array of
-/// `ProfileChange`) is validated inline at its apply block above;
-/// this helper covers the on-disk shape because that path deep-
-/// copies the raw `json.Value` directly to disk without parsing
-/// through `ProfileChange`.
-///
-/// Returns `error.InvalidThinkingBudgetTokens` /
-/// `error.InvalidReasoningEffort` for any bad value, mirroring the
-/// change-list validation's error contract.
+/// model-thinking fields (`thinking_budget_tokens`, `reasoning_effort`).
 fn validateModelThinkingOnDiskProfileMap(obj: json.ObjectMap) !void {
     var iter = obj.iterator();
     while (iter.next()) |entry| {
@@ -1074,12 +897,8 @@ fn validateModelThinkingOnDiskProfileMap(obj: json.ObjectMap) !void {
         if (profile_value != .object) continue; // malformed entry, but the parser will catch it
         const profile_obj = profile_value.object;
 
-        // thinking_budget_tokens: must be a positive integer in
-        // (0, 2_000_000]. Type-check the raw JSON value because the
-        // on-disk shape bypasses the `ProfileChange` parse struct.
-        // JSON `.null` is the legitimate "no override" sentinel
-        // (matches `LlmProfile.thinking_budget_tokens: ?u32 = null`
-        // in Config.zig) — must be accepted, not rejected.
+        // thinking_budget_tokens: must be a positive integer in (0,
+        // 2_000_000].
         if (profile_obj.get("thinking_budget_tokens")) |tbt| {
             switch (tbt) {
                 .null => {},
@@ -1105,37 +924,15 @@ fn validateModelThinkingOnDiskProfileMap(obj: json.ObjectMap) !void {
     }
 }
 
-// ===== Tests merged from pabrik_config_put_parse_test.zig (2026-09-11 flatten) =====
-// Tests for the `parseConfigInput` helper used by
-// `PUT /api/config/pabrik`.
-//
-// These tests exercise the PARSE step of the PUT handler — the
-// call into `std.json.parseFromSliceLeaky` that historically rejected
-// the on-disk object-map shape and returned 400 "Invalid JSON input"
-// to the user. Plan 2026-07-07 + PUT-400 bug fix: `ConfigInput.profiles`
-// was changed from `?[]const ProfileChange` (array of granular
-// changes) to `?json.Value` (accepts BOTH the array and the on-disk
-// object map). This test locks in the new behavior so a future
-// refactor can't regress it.
-//
-// Convention: handler internals stay scoped under
-// `pabrikcore.http_handlers.*` (see `pabrik_config_profile_delete_test.zig`'s
-// header comment for the rationale).
+// ===== Tests merged from pabrik_config_put_parse_test.zig (2026-09-11
+// flatten) ===== Tests for the `parseConfigInput` helper used by `PUT
+// /api/config/pabrik`.
 
 const testing = std.testing;
 
 // ---------- Helpers ----------
 
 /// The exact body shape the user's main settings panel sends on save.
-/// Reproduces the real-world PUT body that triggered the 400 error:
-///   - top-level `profiles` is a Record<name, PabrikProfile> (on-disk shape)
-///   - top-level `sub_agents` is an array of SubAgentJson (with non-ASCII
-///     bytes in `system_prompt` from the agent spec text — em-dash + arrow)
-///   - top-level `max_capacity_token_model` + `compaction_threshold_percent`
-///     are present (new top-level defaults, plan 2026-07-07)
-///   - per-profile `max_capacity_tokens` + `compaction_threshold_percent`
-///     are present as `null` (cascading wildcards)
-///   - per-profile `sub_agents` is `[]` (empty array, not omitted)
 const USER_BODY =
     \\{"api_endpoint":"https://api.minimax.io/v1","api_key":"sk-test","model":"MiniMax-M3","url_style":"openai","temperature":0,"max_tokens":"","system_prompt":"","profiles":{"profile1":{"model":"MiniMax-M2.723223233","base_url":"https://api.minimax.io/v122","thinking":"on","temperature":"0","url_style":"anthropic","api_key":"sk-cp-0","sub_agents":[],"max_capacity_tokens":null,"compaction_threshold_percent":null},"profile2":{"model":"MiniMax-M2.7","base_url":"https://api.minimax.io/v1","thinking":"auto","temperature":"auto","url_style":"openai","api_key":"sk-cp-1","sub_agents":[],"max_capacity_tokens":null,"compaction_threshold_percent":null}},"active_profile":null,"mcp_servers":null,"sub_agents":[{"name":"CodeImplementationAgent","model":"MiniMax-M3","base_url":"https://api.minimax.io/v1","thinking":"false","temperature":"auto","url_style":"openai","api_key":"sk-cp-x","system_prompt":"em-dash here: \u2014, arrow here: \u2192, fully valid UTF-8."},{"name":"DebuggingAgent","model":"MiniMax-M3","base_url":"https://api.minimax.io/v1","thinking":"true","temperature":"auto","url_style":"openai","api_key":"sk-cp-x","system_prompt":"another agent with binary-search comment out halves \u2014 fully valid UTF-8."}],"notify_on_complete":true,"model_compaction_size_kb":100,"max_capacity_token_model":500000,"compaction_threshold_percent":95}
 ;
@@ -1144,35 +941,22 @@ const USER_BODY =
 
 test "parseConfigInput: accepts the on-disk object-map shape (user's main settings panel body)" {
     // `parseFromSliceLeaky` does allocate (slice headers for the
-    // `[]SubAgentJson`, internal ObjectMap storage for `?json.Value`),
-    // so we back it with an arena. Production handlers don't need
-    // this because the per-request arena in GinwaServer reaps all
-    // request allocations (see project memory
-    // `custom-http-server-per-request-arena`).
+    // `[]SubAgentJson`, internal ObjectMap storage for `?json.Value`), so we
+    // back it with an arena.
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
 
-    // `parseConfigInput` uses `std.json.parseFromSliceLeaky` — the
-    // returned struct's string slices borrow from the input body
-    // (no copies made). The user must keep `USER_BODY` alive for
-    // the lifetime of the parsed struct. USER_BODY is at module
-    // scope, so it's alive for the whole test function.
+    // `parseConfigInput` uses `std.json.parseFromSliceLeaky` — the returned
+    // struct's string slices borrow from the input body (no copies made).
     const input = try parseConfigInput(arena.allocator(), USER_BODY);
 
     // Sanity: the top-level scalars parsed.
-    // Plan 2026-08-24-config-simplify-remove-defaults: the old
-    // model/url_style/api_endpoint/max_tokens assertions are gone —
-    // those fields no longer exist on ConfigInput (silently dropped
-    // via ignore_unknown_fields).
     try testing.expectEqual(@as(?u32, 500000), input.max_capacity_token_model);
     try testing.expectEqual(@as(?u8, 95), input.compaction_threshold_percent);
     try testing.expect(input.notify_on_complete == true);
     try testing.expectEqual(@as(usize, 100), input.model_compaction_size_kb);
 
     // The fix: `profiles` is a json.Value object map (NOT an array).
-    // Pre-fix the type was `?[]const ProfileChange` and this test would
-    // fail with `error.InvalidCharacter` because the object map doesn't
-    // match the array shape.
     const profiles_value = input.profiles orelse return error.ProfilesFieldMissing;
     try testing.expect(profiles_value == .object);
     try testing.expectEqual(@as(usize, 2), profiles_value.object.count());
@@ -1267,19 +1051,8 @@ test "parseConfigInput: rejects malformed JSON with SyntaxError (not InvalidChar
 }
 
 // ─── active_profile wire contract (Reset button regression) ────────────────
-//
-// The Reset button previously sent `active_profile: undefined` (stripped
-// to no key) which the parser + handler treated as "don't touch".
-// The fix is for the frontend to send `active_profile: ""` (empty
-// string) — the existing handler at pabrik_config_put.zig:246-252
-// already interprets an empty string as "clear". These tests lock
-// in the parser's contract for both wire states.
-//
-// (The empty-string sentinel is slightly less explicit than a JSON
-// null, but it works within the existing `?[]const u8` type. Using
-// `null` would require a type change to `?json.Value` to distinguish
-// absent vs present-null in std.json — not worth the migration cost
-// for one optional field.)
+// The Reset button previously sent `active_profile: undefined` (stripped to
+// no key) which the parser + handler treated as "don't touch".
 
 test "parseConfigInput: active_profile absent in body → null (don't touch)" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
@@ -1324,12 +1097,8 @@ test "parseConfigInput: active_profile explicit non-empty string → Some(\"work
 }
 
 // ─── notify_on_error wire contract (task_1787671269086_0) ──────────────────
-//
-// The General settings tab in PabrikSettings.vue toggles this field
-// alongside `notify_on_complete`. The wire parser must accept both
-// `true` and `false` values, and must leave the field at `null` when
-// omitted (so omitting on a PUT doesn't accidentally reset the
-// existing on-disk value — same convention as `notify_on_complete`).
+// The General settings tab in PabrikSettings.vue toggles this field alongside
+// `notify_on_complete`.
 test "parseConfigInput: notify_on_error true → Some(true)" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -1384,16 +1153,8 @@ test "parseConfigInput: notify_on_complete + notify_on_error in same body parse 
     try testing.expectEqual(true, input.notify_on_error.?);
 }
 
-// ===== Tests merged from pabrik_config_put_test.zig (2026-09-11 flatten) =====
-// Tests for the live-reload `LlmConfigHolder` semantics on `App`.
-//
-// These tests verify the swap-and-hold pattern that keeps in-flight
-// workflows (which captured the old `*const LlmConfig` into a local)
-// dereferencing valid memory until the next swap or shutdown.
-//
-// They do NOT exercise the full HTTP handler — that requires a running
-// GinwaServer. The handler-level "reload from disk" path is covered by
-// manual smoke test against `pabrik-dev` (see the plan's §4).
+// ===== Tests merged from pabrik_config_put_test.zig (2026-09-11 flatten)
+// ===== Tests for the live-reload `LlmConfigHolder` semantics on `App`.
 
 const App = pabrikcore.App;
 const LlmConfigHolder = pabrikcore.LlmConfigHolder;
@@ -1432,10 +1193,9 @@ fn makeConfig(allocator: std.mem.Allocator, model: []const u8) !*LlmConfig {
     return ptr;
 }
 
-/// Build a minimal `App` carrying the given `LlmConfigHolder`.
-/// Other fields are left `undefined` — the holder tests only touch
-/// `llm_config_holder` and `allocator`. We must build on the heap because
-/// `App` contains a `std.Io.Group` which is not copyable.
+/// Build a minimal `App` carrying the given `LlmConfigHolder`. Other fields
+/// are left `undefined` — the holder tests only touch `llm_config_holder` and
+/// `allocator`.
 fn makeCtx(allocator: std.mem.Allocator, holder: LlmConfigHolder) !*App {
     const ctx = try allocator.create(App);
     ctx.* = .{
@@ -1583,15 +1343,7 @@ test "setLlmConfig: long swap sequence holds only the most recent two configs" {
 }
 
 // ---------------------------------------------------------------------------
-// 5b. Live-reload-per-iteration semantics (plan 2026-08-06-live-config-reload)
-//
-// The workflow's `runAgenticMultiStepnew` reads
-// `pabrikcore.getLlmConfig(di.di)` at the top of every loop iteration.
-// These tests verify the holder contract that makes that work:
-//   - `getLlmConfig` returns the most recently swapped pointer
-//   - in-flight readers of the old pointer keep working (held in `previous`)
-//   - the swap is visible WITHOUT waiting for any background task
-// ---------------------------------------------------------------------------
+// 5b.
 
 test "live-reload: getLlmConfig returns the latest pointer immediately after setLlmConfig" {
     // This is the property that makes the per-iteration re-read in
@@ -1622,10 +1374,9 @@ test "live-reload: getLlmConfig returns the latest pointer immediately after set
 }
 
 test "live-reload: swapping the same model name twice returns the new pointer each time" {
-    // The model string is the same in both configs (e.g. user clicked
-    // "Save" without changing the value), but the holder still swaps
-    // the pointer — the workflow's per-iteration `getProfile()` etc.
-    // picks up any sub-field change too (e.g. updated API key).
+    // The model string is the same in both configs (e.g. user clicked "Save"
+    // without changing the value), but the holder still swaps the pointer —
+    // the workflow's per-iteration `getProfile()` etc. picks up any sub-field
     const allocator = testing.allocator;
     const cfg_a = try makeConfig(allocator, "model-same");
     const cfg_b = try makeConfig(allocator, "model-same");
@@ -1656,14 +1407,8 @@ test "pabrikcore exposes LlmConfigHolder, getLlmConfig, setLlmConfig, freeAllLlm
     try testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(PtrType));
 }
 
-// ===== tools checklist: parse + apply semantics (plan 2026-09-22-tools-menu, D2) =====
-//
-// The PUT body's `tools` field is the Settings Tools tab save. Contract:
-//   - absent key AND explicit JSON `null` both parse to `null` → NO change
-//     (a Settings save from another tab must not erase the on-disk list),
-//   - a present array (including `[]`) → whole-list replace after registry
-//     validation,
-//   - an unknown name → the bad name is returned so the handler can 400.
+// ===== tools checklist: parse + apply semantics (plan 2026-09-22-tools-menu,
+// D2) ===== The PUT body's `tools` field is the Settings Tools tab save.
 
 test "parseConfigInput: tools absent → null (don't touch on-disk)" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);

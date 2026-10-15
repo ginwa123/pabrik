@@ -60,9 +60,6 @@ pub const Migration077AddUsersAndRbacSchema = struct {
         , &[_][]const u8{});
 
         // 4. workspaces.user_id — additive, nullable, no FK.
-        //    `addColumnIfMissing` probes pragma_table_info before ALTER,
-        //    so re-running is a no-op (the canonical pattern from
-        //    Migrations 020 / 052 / 065 / 066 / 067 / 074).
         try addColumnIfMissing(
             .{ .tx = &tx },
             allocator,
@@ -114,12 +111,8 @@ pub const Migration077AddUsersAndRbacSchema = struct {
                 "VALUES ('user_system', 'system@local', 'System', '!disabled', 'admin', 0)",
             &[_][]const u8{});
 
-        // 8. Backfill — convert every legacy row (workspaces,
-        //    sessions) WHERE user_id IS NULL to user_id='user_system'.
-        //    WHERE user_id IS NULL makes the UPDATE idempotent on
-        //    re-run: rows that already have user_id set are not
-        //    touched. On a fresh DB with zero legacy rows, both UPDATEs
-        //    are no-ops.
+        // 8. Backfill — convert every legacy row (workspaces, sessions) WHERE
+        // user_id IS NULL to user_id='user_system'.
         try tx.exec(allocator,
             "UPDATE workspaces SET user_id = 'user_system' WHERE user_id IS NULL",
             &[_][]const u8{});

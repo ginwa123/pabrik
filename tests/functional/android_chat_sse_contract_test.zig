@@ -1,47 +1,6 @@
-// Wire-contract test for the native Android chat event stream.
-//
-// Zig port of `tests/functional/android_chat_sse_contract_test.py` (same
-// test names, same order).
-//
-// The app opens ONE connection for the whole process. `RootSseBus`
-// subscribes to `?channels=llm,queue,sessions,workers` and fans the frames
-// out to `ChatViewModel` and `WorkerActivityViewModel`, which each decode
-// with `decodeChatFrame` and filter by `event.session_id`. This file closes
-// the gap from the other side: it asks a real `pabrik` for the frames and
-// asserts the exact fields the Kotlin reads.
-//
-// Two sources of frames, deliberately:
-//
-//   * A real turn (`POST /api/llm/session` on the stub profile) for the
-//     `llm_full` / `session_*` / `queue_*` frames. Only a real run emits
-//     `llm_full`, and the shapes below — in particular `finish_reason:
-//     "null"` as a four-character *string* — are the ones a fixture would
-//     have got wrong.
-//   * The test-only emitter (`POST /api/dev/sse/emit_llm`, gated behind
-//     `PABRIK_TEST_SSE_EMIT=1`, 404 otherwise) for `llm_chunk`, because the
-//     stub LLM does not stream deltas. It always labels its frames
-//     `llm_chunk` regardless of the `type` in the body, so it is only used
-//     where that label is the one being asserted.
-//
-// Auth rejection is deliberately NOT tested here: the harness runs with auth
-// off, and the `sse_auth` suite already boots an `--auth` instance and pins
-// the `auth_error`-then-close contract.
-//
-// TWO PORTING NOTES:
-//
-//   * The Python suite shared ONE booted binary across the module
-//     (`@pytest.fixture(scope="module")`). Zig has no module fixture, so
-//     each test boots its own harness — the same shape every other ported
-//     suite uses. Each boot also gets its own random port from the harness's
-//     range, so 8081 is never touched.
-//
-//   * Python's `_open_sse` pumped frames through a `queue.Queue` on a
-//     background thread. The port keeps the same shape (reader thread,
-//     mutex-guarded event list, `stop`/`done` handshake) but drains rather
-//     than polls where it can: an SSE stream never ends, so a `queue.get`
-//     with a timeout would have to become a sleep loop anyway. The SSE
-//     decode idiom (multi-line `data:` join, `event:`/`data:` parsing,
-//     blank-line dispatch) is shared with `android_workers_contract_test.zig`.
+// Wire-contract test for the native Android chat event stream. Zig port of
+// `tests/functional/android_chat_sse_contract_test.py` (same test names, same
+// order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -54,10 +13,6 @@ const Io = std.Io;
 /// `SseChannels.eventsPath()`, minus the `/api/events?` prefix. Spelled out
 /// rather than imported, because the point is to fail when one side moves and
 /// the other does not.
-///
-/// One set for the whole app, and deliberately NOT a per-session routing key.
-/// Every session's traffic arrives here and each subscriber filters by
-/// `event.session_id`.
 const chat_channels = "llm,queue,sessions,workers";
 
 /// The names `decodeChatFrameUnsafe` has a branch for on these channels. A
@@ -120,10 +75,6 @@ fn nowMs() i64 {
 }
 
 /// One parsed SSE frame: the `event:` name plus the joined `data:` lines.
-///
-/// Multi-line `data:` frames are joined with a newline, because the server
-/// pretty-prints its payloads with `indent_4` — taking only the first `data:`
-/// line yields a JSON parse error for every frame the phone cares about.
 const SseEvent = struct {
     name: []u8,
     data: []u8,
@@ -277,14 +228,9 @@ fn openSse(port: u16, channels: []const u8) !*SseStream {
     return s;
 }
 
-/// Read SSE frames from `s` until `stop` is set, the stream ends, or an
-/// error occurs. Runs on its own thread.
-///
-/// The SSE grammar:
-///
-///     event: <name>\n
-///     data: <line>\n
-///     \n            <- blank line dispatches the frame
+/// Read SSE frames from `s` until `stop` is set, the stream ends, or an error
+/// occurs. Runs on its own thread. The SSE grammar: event: <name>\n data:
+/// <line>\n \n <- blank line dispatches the frame
 fn readEvents(s: *SseStream) void {
     defer s.done.store(true, .release);
 
@@ -356,10 +302,9 @@ fn readEvents(s: *SseStream) void {
     }
 }
 
-/// Release a blocked `readEvents` by shutting the socket's read side.
-///
-/// Without this the reader thread parks in `readv` forever on an SSE stream
-/// that never ends.
+/// Release a blocked `readEvents` by shutting the socket's read side. Without
+/// this the reader thread parks in `readv` forever on an SSE stream that
+/// never ends.
 fn releaseReader(s: *SseStream) void {
     s.stop.store(true, .release);
     s.req.connection.?.stream_reader.stream.shutdown(io, .recv) catch {};
@@ -377,10 +322,6 @@ fn collectFrames(s: *SseStream, window_ms: i64) ![]SseEvent {
 
 /// Open the chat SSE channel, spawn the reader, run `body`, then release +
 /// join + free the stream, and return whatever the body produced.
-///
-/// Zig has no closures, so `body` is a named fn that receives the harness
-/// explicitly. The two defers are ordered LIFO on purpose: the reader must
-/// be stopped and joined BEFORE the stream's storage is freed.
 fn withChatStream(
     comptime T: type,
     h: *Harness,
@@ -530,9 +471,7 @@ fn runATurn(h: *Harness) ![]u8 {
 }
 
 /// POST `inner` (a JSON object literal) to the test-only emitter with
-/// `session_id` merged in. The gate (`PABRIK_TEST_SSE_EMIT=1` in the
-/// server's env) makes this a 404 without the var — deliberately, so a
-/// developer or production run can never be driven through it.
+/// `session_id` merged in.
 fn emit(h: *Harness, sid: []const u8, inner: []const u8) !void {
     // `inner` starts with `{`; splice the session id in after it.
     const req_body = try std.fmt.allocPrint(gpa, "{{\"session_id\":\"{s}\",{s}", .{ sid, inner[1..] });
@@ -545,24 +484,17 @@ fn emit(h: *Harness, sid: []const u8, inner: []const u8) !void {
     defer r.deinit();
 }
 
-// The test-only emitter gate (`PABRIK_TEST_SSE_EMIT=1`) reaches the child
-// via `BootOptions.extra_env` — never via the parent process env, which
-// `boot` must leave untouched so one suite cannot leak a gate into the next.
-// (Zig 0.16 has neither `std.posix.setenv` nor `std.process.setenv`; the
-// `PathShadow`-style `std.testing.environ` rewrite in `git_pr_checks_test.zig`
-// is the alternative, but a child-only map entry is exact here.)
+// The test-only emitter gate (`PABRIK_TEST_SSE_EMIT=1`) reaches the child via
+// `BootOptions.extra_env` — never via the parent process env, which `boot`
+// must leave untouched so one suite cannot leak a gate into the next.
 
 // ============================================================================
 // The subscription itself
 // ============================================================================
 
 // The app's one channel set returns 200 SSE, not a terminated stream.
-//
 // `parseChannels` rejects an unknown token and the handler's only response to
-// that is to close the stream — a 200 that never emits `connected`. The
-// Android pump reads the status code, not the handshake, so it would sit
-// reporting "Connecting…" over a socket the server has already torn down, for
-// the life of the process.
+// that is to close the stream — a 200 that never emits `connected`.
 test "the_chat_channel_set_is_accepted" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
@@ -580,12 +512,8 @@ test "the_chat_channel_set_is_accepted" {
     }
 }
 
-// `event: connected` is the only liveness signal the server offers.
-//
-// The web's `SseClient` stays in `connecting` without it. On the phone the
-// pump reads the HTTP 200 instead and reports `Live`, and the ViewModel's
-// reconnect refetch hangs off that transition — so this pins the frame both
-// clients need even though only one of them blocks on it.
+// `event: connected` is the only liveness signal the server offers. The web's
+// `SseClient` stays in `connecting` without it.
 test "the_chat_stream_handshakes" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
@@ -625,11 +553,8 @@ test "the_chat_stream_handshakes" {
     });
 }
 
-// `Transfer-Encoding: chunked`, because the body never ends.
-//
-// The reader has to see frames as the server writes them. A framing that
-// waited for a length — or a `Content-Length` that never arrives — turns
-// every live chat into a chat that renders only when the socket closes.
+// `Transfer-Encoding: chunked`, because the body never ends. The reader has
+// to see frames as the server writes them.
 test "the_stream_is_chunked_with_no_content_length" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
@@ -657,11 +582,6 @@ test "the_stream_is_chunked_with_no_content_length" {
 // ============================================================================
 
 // Every frame a turn produces is one `decodeChatFrame` has a branch for.
-//
-// The decoder's `else -> null` is a silent drop, so an event the backend
-// gained and the phone did not turns into a working chat that quietly stops
-// showing the newest turn. The channel set is the *chat's* one, so a turn is
-// the cheapest way to see everything it puts on the wire.
 test "a_real_turn_emits_only_frames_the_client_decodes" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
@@ -693,12 +613,6 @@ test "a_real_turn_emits_only_frames_the_client_decodes" {
 }
 
 // `llm_full` is the frame the client upserts into the transcript.
-//
-// Every key the row mapper touches has to be on the wire, *including the
-// empty ones*: the Kotlin reads each with a nullable getter and cannot tell
-// an absent key from an absent value, so a payload that omits a key rather
-// than sending it empty is a different document as far as the client is
-// concerned.
 test "a_real_turn_delivers_a_canonical_full_row" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
@@ -756,13 +670,6 @@ test "a_real_turn_delivers_a_canonical_full_row" {
 }
 
 // `finish_reason` is `"null"`, not a JSON null, on a real row.
-//
-// This is the single most surprising field in the envelope, and it is the
-// reason `optNullableString` exists: `JSONObject.optString` renders a JSON
-// null as the four-character text `"null"`, so reading the key with the plain
-// getter makes every message look like it ended with a finish reason called
-// "null" — which is not nothing, and the client's `is_real_turn` test reads
-// it.
 test "a_null_finish_reason_reaches_the_wire_as_the_string_null" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
@@ -805,12 +712,9 @@ test "a_null_finish_reason_reaches_the_wire_as_the_string_null" {
     }
 }
 
-// A real row spans several `data:` lines, and the client rejoins them.
-//
-// The server serialises with `.whitespace = .indent_4` and then prefixes
-// *each* resulting line. A reader that took only the first line gets
-// un-parseable JSON for every canonical row — which is the difference
-// between a chat that updates and one that does not, with the same pump.
+// A real row spans several `data:` lines, and the client rejoins them. The
+// server serialises with `.whitespace = .indent_4` and then prefixes *each*
+// resulting line.
 test "every_llm_full_row_is_pretty_printed_across_data_lines" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
@@ -832,9 +736,8 @@ test "every_llm_full_row_is_pretty_printed_across_data_lines" {
     defer frame.deinit();
 
     // The reader only produces a parsed document when the whole payload was
-    // rejoined and parsed, so reaching here at all is the assertion — and
-    // the newline pins the pretty-printing explicitly rather than
-    // incidentally.
+    // rejoined and parsed, so reaching here at all is the assertion — and the
+    // newline pins the pretty-printing explicitly rather than incidentally.
     switch (frame.doc.value().*) {
         .object => {},
         else => {
@@ -849,12 +752,6 @@ test "every_llm_full_row_is_pretty_printed_across_data_lines" {
 }
 
 // `session_created` names the session in `id`; `queue_*` in `session_id`.
-//
-// The two are read from different fields by the same decoder
-// (`SessionChanged` takes `id`, `QueueChanged` takes `session_id`), so a
-// swap is a frame that arrives and resolves to no session — dropped before
-// the transcript ever sees it, which is why a queued turn can look like it
-// vanished.
 test "a_turn_announces_its_session_and_its_queue" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
@@ -896,13 +793,8 @@ test "a_turn_announces_its_session_and_its_queue" {
 // llm_chunk, through the test-only emitter
 // ============================================================================
 
-// `type: "chunk"` + `content` + `session_id` + `index`.
-//
-// The backend sends *raw provider deltas*, so the client appends rather than
-// replaces. A frame with neither `content` nor `reasoning_content` is
-// dropped outright, and one with no `session_id` is filtered out by the
-// ViewModel before the transcript sees it — both of which read on the phone
-// as "the agent said nothing".
+// `type: "chunk"` + `content` + `session_id` + `index`. The backend sends
+// *raw provider deltas*, so the client appends rather than replaces.
 test "a_chunk_frame_carries_the_fields_the_phone_appends" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true, .extra_env = &.{.{ "PABRIK_TEST_SSE_EMIT", "1" }} });
@@ -939,12 +831,9 @@ test "a_chunk_frame_carries_the_fields_the_phone_appends" {
     }
 }
 
-// A chunk with empty `content` is a chunk, not something to discard.
-//
-// The decoder drops a frame only when BOTH `content` and
-// `reasoning_content` are absent. An omitted `content` therefore reads as
-// "no payload at all", which is the same code path a thinking delta would
-// otherwise take.
+// A chunk with empty `content` is a chunk, not something to discard. The
+// decoder drops a frame only when BOTH `content` and `reasoning_content` are
+// absent.
 test "an_empty_delta_still_carries_the_content_key" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true, .extra_env = &.{.{ "PABRIK_TEST_SSE_EMIT", "1" }} });
@@ -980,11 +869,9 @@ test "an_empty_delta_still_carries_the_content_key" {
     });
 }
 
-// `type: "chunk_final"` ends the turn; `type: "chunk"` continues it.
-//
-// The ViewModel calls `finishStreaming()` on the former and appends a delta
-// on the latter. If the two ever collapsed into one `type`, a turn would end
-// on its first word and the placeholder would freeze there.
+// `type: "chunk_final"` ends the turn; `type: "chunk"` continues it. The
+// ViewModel calls `finishStreaming()` on the former and appends a delta on
+// the latter.
 test "a_chunk_final_frame_is_distinguishable_from_a_chunk" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true, .extra_env = &.{.{ "PABRIK_TEST_SSE_EMIT", "1" }} });
@@ -1036,12 +923,8 @@ test "a_chunk_final_frame_is_distinguishable_from_a_chunk" {
     };
 }
 
-// `is_error: true` has to survive the trip, or a retry notice is a turn.
-//
-// The client renders a diagnostic as an error card and never persists it.
-// If the flag stopped being emitted, the frame would take the branch that
-// upserts a row, and the retry notice would be written into the transcript
-// for good.
+// `is_error: true` has to survive the trip, or a retry notice is a turn. The
+// client renders a diagnostic as an error card and never persists it.
 test "a_diagnostic_delta_is_flagged_is_error" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true, .extra_env = &.{.{ "PABRIK_TEST_SSE_EMIT", "1" }} });

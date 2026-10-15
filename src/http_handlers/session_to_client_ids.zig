@@ -1,9 +1,5 @@
-//! `GET /api/sessions/to-client-ids` — map every active session to
-//! the SSE client IDs currently listening on it.
-//!
-//! Layered as `useCase` (resolve singleton + acquire lock + walk the
-//! session→client-ids map + hex-encode each [16]u8 client id + build
-//! JSON) and a thin handler that maps errors to status codes.
+//! `GET /api/sessions/to-client-ids` — map every active session to the SSE
+//! client IDs currently listening on it.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");

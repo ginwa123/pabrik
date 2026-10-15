@@ -57,33 +57,10 @@ pub fn execWriteFile(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
 }
 
 // ---------------------------------------------------------------------------
-// Overwrite-contract regression tests (added 2026-08-15)
-//
-// PR #261 reverted the absolute-path ban from PR #259. After the revert the
-// underlying `writeFile` is still expected to OVERWRITE existing files (the
-// default `truncate: bool = true` on `std.Io.Dir.CreateFileOptions` is what
-// guarantees this). These tests pin that contract end-to-end through the
-// exec wrapper — the same path the agentic loop invokes when the LLM calls
-// `write_file` with an already-existing target.
-//
-// Why the exec wrapper (not just writeFile): the underlying function had 3
-// overwrite tests already (write_file_test.zig lines 91, 118, 296), and all
-// pass — so the contract was already pinned at the function level. But after
-// the revert removed the `tools_exec_write_file.zig` inline tests, there was
-// NO coverage for the path that the LLM actually exercises (parse JSON →
-// call writeFile → wrap XML). A future refactor that swaps `createFile` for
-// `openFile` or drops `truncate: true` would slip through silently. These
-// tests close that gap.
-// ---------------------------------------------------------------------------
+// Overwrite-contract regression tests (added 2026-08-15) PR #261 reverted the
+// absolute-path ban from PR #259.
 
 /// Args JSON for one `write_file` call.
-///
-/// Built with `std.json.Stringify` rather than a hand-formatted string so a
-/// Windows `C:\...` target is escaped correctly (a raw backslash is invalid
-/// JSON, which would make these tests pass on Linux and fail on Windows).
-/// `cwd` is required by the tool — it is the directory the call works in —
-/// and these tests care only about the overwrite contract, so it points at
-/// the target's own directory.
 fn writeFileArgs(a: std.mem.Allocator, target_path: []const u8, content: []const u8) ![]u8 {
     const dir = std.fs.path.dirname(target_path) orelse target_path;
     return std.json.Stringify.valueAlloc(a, .{
@@ -93,10 +70,8 @@ fn writeFileArgs(a: std.mem.Allocator, target_path: []const u8, content: []const
     }, .{});
 }
 
-/// Helper: build a minimal ToolExecContext whose fields execWriteFile
-/// doesn't actually read (db, logger, config, etc.). Mirrors the pattern
-/// used by `tools_exec_list_directory.zig` test (the only surviving
-/// inline exec-wrapper test after the revert).
+/// Helper: build a minimal ToolExecContext whose fields execWriteFile doesn't
+/// actually read (db, logger, config, etc.).
 fn minimalCtx(allocator: std.mem.Allocator) ToolExecContext {
     var dummy_f32: f32 = 0.0;
     var dummy_bool: bool = false;

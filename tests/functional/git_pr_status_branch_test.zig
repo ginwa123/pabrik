@@ -1,19 +1,5 @@
-// Branch-name round-trip for GET /api/git/pr/status.
-//
-// Zig port of `tests/functional/git_pr_status_branch_test.py` (same
-// test name).
-//
-// The kanban card sends `pr=<git_branch>` where worktree branches
-// contain slashes (`worktree/foo-123`). This proves the value survives
-// URL encoding (frontend `URLSearchParams` / `urllib urlencode` emit
-// `%2F`) + server query parsing intact, all the way into the `gh pr
-// view` argv — using a fake `gh` that records what it received.
-//
-// The fake `gh` reaches the booted server the only way it can over the
-// wire: by being first on the server's `PATH`. The Python original got
-// there with `monkeypatch.setenv("PATH", ...)`; the Zig harness builds
-// the child env from `std.testing.environ`, so the equivalent is the
-// `PathShadow` below — a scoped, restorable prepend of that one var.
+// Branch-name round-trip for GET /api/git/pr/status. Zig port of
+// `tests/functional/git_pr_status_branch_test.py` (same test name).
 
 const std = @import("std");
 const testing = std.testing;
@@ -24,17 +10,6 @@ const gpa = testing.allocator;
 const io = testing.io;
 
 // THE QUERY STRING RIDES IN `path`, NOT IN `HttpOptions.params`.
-//
-// `HttpOptions.params` is the obvious spelling and it is wrong today:
-// `harness.buildUrl` reassigns its `url` and then frees the NEW value,
-// so the previous allocation is orphaned (and a third parameter frees
-// the very pointer the function is about to return). Under
-// `testing.allocator` that turns every param-carrying request into a
-// leak failure. `Harness.http` appends `path` to `http://127.0.0.1:<port>`
-// verbatim, so a path carrying `?a=b&c=d` produces the identical
-// request line — which is exactly what this suite needs, since the
-// percent-encoded spelling has to reach the server unmangled either
-// way. The bug is in the helper, not the contract.
 
 /// What the fake `gh` prints on stdout: a realistic `gh pr view --json`
 /// payload for a MERGED pull request, authored by a human, on a
@@ -44,17 +19,7 @@ const GH_PAYLOAD =
 ;
 
 /// The fake `gh`: record every argv entry, one per line, then print the
-/// payload.
-///
-/// `{0}` is the absolute path of the args file, `{1}` the payload.
-///
-/// The redirect sits on the `done` of the `for` loop, exactly as in
-/// the Python original: a redirection attached to a compound command
-/// is applied ONCE when the compound command starts, so every
-/// `printf` appends at the file's running offset instead of
-/// truncating on each iteration. Putting the `>` inside the loop body
-/// would leave the file holding only the LAST argument — which is the
-/// `--json` field list, not the branch under test.
+/// payload. `{0}` is the absolute path of the args file, `{1}` the payload.
 const FAKE_GH_SCRIPT =
     \\#!/bin/sh
     \\for a in "$@"; do printf '%s\n' "$a"; done > '{s}'
@@ -99,30 +64,16 @@ const Scratch = struct {
     }
 };
 
-/// Prepend `prefix` to `PATH` in `std.testing.environ` — the exact
-/// block `Harness.boot` copies into the child env — so the booted
-/// `pabrik` resolves `gh` to the fixture script.
-///
-/// WHY THE PROCESS ENV AND NOT A HARNESS OPTION: `git_pr_status.zig`
-/// spawns `gh` by bare name (`Programs.gh = "gh"`); the only injection
-/// seam (`useCaseWithPrograms`) is a unit-test-only function, invisible
-/// over HTTP. PATH is therefore the whole of the wire-level seam, which
-/// is exactly how the Python original faked it too.
-///
-/// Scoped by `restore`: the shadow must not outlive the test, or every
-/// later suite in the same process would spawn the fake `gh`.
+/// Prepend `prefix` to `PATH` in `std.testing.environ` — the exact block
+/// `Harness.boot` copies into the child env — so the booted `pabrik` resolves
+/// `gh` to the fixture script.
 const PathShadow = struct {
     gpa: std.mem.Allocator,
     saved: std.process.Environ,
     entries: [:null]const ?[*:0]const u8,
 
     fn install(alloc: std.mem.Allocator, prefix: []const u8) !PathShadow {
-        // `Environ`'s block is a raw `KEY=VALUE` slice on POSIX. On
-        // Windows it is a PEB pointer read through `GlobalBlock`, which
-        // Zig offers no way to shadow — and the fixture `gh` is a
-        // `/bin/sh` script anyway, so this suite is POSIX-only (the
-        // same guard the app's own `git_pr_status.zig` behavioural
-        // suite uses).
+        // `Environ`'s block is a raw `KEY=VALUE` slice on POSIX.
         if (comptime @import("builtin").os.tag != .windows) {
             const saved = std.testing.environ;
             const orig = saved.block.slice;
@@ -219,10 +170,6 @@ fn git(cwd: []const u8, args: []const []const u8) !void {
 }
 
 /// Build the `pr-branch-proj` fixture: one committed file on `main`.
-///
-/// The repo needs a commit and a HEAD — `git_pr_status.zig`'s repo gate
-/// is `git -C <path> rev-parse --git-dir`, so an `init` alone would do,
-/// but the committed file keeps the fixture honest (a real worktree).
 fn buildRepo(s: *Scratch) ![]u8 {
     const cwd = try s.path(&.{"pr-branch-proj"});
     errdefer gpa.free(cwd);
@@ -259,9 +206,8 @@ test "branch_with_slashes_reaches_gh_intact" {
     try std.Io.Dir.cwd().createDirPath(io, bindir);
 
     // The args file is BAKED into the script rather than passed via
-    // `GH_ARGS_FILE`: a second env var the server would have to
-    // inherit is a second thing that can go wrong, and the script
-    // already has to be written per-test anyway.
+    // `GH_ARGS_FILE`: a second env var the server would have to inherit is a
+    // second thing that can go wrong, and the script already has to be
     const args_file = try s.path(&.{"gh-args.txt"});
     defer gpa.free(args_file);
 

@@ -1,73 +1,5 @@
 // Wire test: the agent loop must not read a PER-TURN-ARENA MCP snapshot on a
 // turn that no longer owns it.
-//
-// Crash being locked down
-// =======================
-//   === CRASH: received signal SEGV (signal number 11) ===
-//   Fault address: 0x0 (NULL dereference)
-//   std/mem.zig:783 in eqlBytes
-//   src/agentic_loop/workflow.zig:1352 in runAgenticMultiStepnew
-//       const catalog = try progressive_catalog.buildCatalog(
-//   src/agentic_loop/sub_agent_batch.zig:319 in runSubAgent
-//
-// `runAgenticMultiStepnew` snapshots the process-wide fetch-once MCP cache and
-// then reads that snapshot on EVERY iteration (the progressive catalog, the
-// merged tool list, the resolution checkpoint log). The per-turn arena is reset
-// at the TOP of each iteration (`arenaAllocatorWhileLoop.reset(.free_all)`), so
-// a snapshot stored in a variable declared OUTSIDE the loop is freed before the
-// turn that reads it. `mcp_tools` was exactly that variable:
-//
-//   var mcp_tools = getMcpToolsCached(parent_allocator);   // before the loop
-//   while (true) {
-//       _ = arena.reset(.free_all);                        // frees LAST turn
-//       if (!isMcpToolsInit()) {
-//           ...
-//           mcp_tools = getMcpToolsCached(allocator);       // TURN arena
-//       }
-//       buildCatalog(..., mcp_tools, ...);                  // ← reads it
-//   }
-//
-// The refresh branch only runs while the cache is uninitialized, so the
-// sequence that arms it is: one turn refreshes after a mid-run config mutation
-// (PUT /api/config/pabrik and the `add_mcp_server` tool both call
-// `clearMcpToolsCache()`), and the NEXT turn reads the freed snapshot. What that
-// read yields depends on what reused the buffer — which is why the same bug
-// reaches one crash report as a NULL deref in `eqlBytes` and another as a
-// silently truncated tool list (a `std.mem.eql` against a garbage name is false
-// far more often than it faults).
-//
-// Why a wire test and not a unit test
-// ===================================
-// The lifetime violation lives inside a ~2600-line loop and its pre-fix symptom
-// is memory corruption, so the honest witness is a real process round-trip:
-// boot `pabrik` against an isolated HOME with a real MCP server configured, run
-// a real agent turn loop, mutate the config mid-run (the production trigger),
-// and assert that the loop KEEPS SEEING the MCP tool the session equipped. A
-// snapshot read from freed memory cannot match the equipped name, so the turn
-// after the refresh silently drops the tool — and, in the field, sometimes
-// crashes instead. Asserting on the model's own tool list makes the regression
-// detectable without depending on whether the garbage happened to fault.
-//
-// Method
-// ======
-//   1. Boot with the harness stub profile, then PUT a profile whose `base_url`
-//      is our in-test OpenAI-shaped SSE upstream.
-//   2. PUT an `mcp_servers` entry whose `command` is a small python stdio MCP
-//      server written into the harness tmpdir, so the fetch-once cache is
-//      non-empty and `isMcpToolsInit()` is true — the refresh branch is only
-//      taken once a LATER mutation invalidates it.
-//   3. Seed the session row + a `session_progressive_tool` row equipping the MCP
-//      tool, so that tool must appear in the model's tool list on every turn.
-//   4. POST the real `/api/llm/session` body. The stub upstream answers every
-//      tool-bearing request with a `used_tools` tool call, so the loop iterates.
-//   5. After 2 tool turns, PUT the config again — the production trigger. The
-//      cache goes uninitialized, so the next turn refreshes the snapshot into
-//      the per-turn arena and the turn after that used to read freed memory.
-//   6. Keep the loop running for at least 2 MORE turns, then let it stop.
-//   7. Assert: alive, no crash markers, the MCP cache was fetched before AND
-//      after the mutation (`mcp_count=3` in the log), at least one turn ran
-//      after the mutation, and the equipped MCP tool was still in the tool list
-//      the model received on that turn.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -79,10 +11,9 @@ const gpa = testing.allocator;
 const io = testing.io;
 const Io = std.Io;
 
-/// The MCP server name in the config, the tool the python stub advertises, and
-/// the name the model actually sees: pabrik namespaces MCP tools as
-/// `mcp_<server>_<tool>` (see `convertMcpToolsToAgentTools`), and that wire name
-/// is what `session_progressive_tool` must equip.
+/// The MCP server name in the config, the tool the python stub advertises,
+/// and the name the model actually sees: pabrik namespaces MCP tools as
+/// `mcp_<server>_<tool>` (see `convertMcpToolsToAgentTools`), and that wire
 const MCP_SERVER_NAME = "stub";
 const MCP_TOOL_NAME = "stub_tool_0";
 const MCP_WIRE_NAME = "mcp_" ++ MCP_SERVER_NAME ++ "_" ++ MCP_TOOL_NAME;
@@ -98,19 +29,10 @@ const MCP_TOOL_COUNT = 3;
 const TOOL_TURNS_BEFORE_CLEAR: usize = 2;
 const TOOL_TURNS_TOTAL: usize = 7;
 
-/// Per-turn pacing for the stub upstream. The mutation has to land BETWEEN
-/// turns, so each tool turn costs a short delay: without it the whole loop
-/// (a local stub answers in microseconds) finishes before the test can send its
-/// PUT, and the refresh branch under test never runs.
+/// Per-turn pacing for the stub upstream.
 const TURN_PACING_MS: i64 = 400;
 
-/// Python stdio MCP server, written into the harness tmpdir. Newline-delimited
-/// JSON-RPC (what `mcp_stdio.readFramed` accepts): answer `initialize` and
-/// `tools/list`, stay silent on notifications, echo the request id.
-///
-/// It also appends a trace to `<script>.log`, which the test reads into its
-/// failure diagnostics: "the MCP fetch never returned" is a different bug from
-/// "the child never started", and the server log alone cannot tell them apart.
+/// Python stdio MCP server, written into the harness tmpdir.
 const MCP_STUB_PY =
     \\#!/usr/bin/env python3
     \\"""Minimal stdio MCP server: initialize + tools/list, 3 tools."""
@@ -166,11 +88,6 @@ const MCP_STUB_PY =
 ;
 
 /// Tool call the stub upstream returns for a tool-bearing request.
-///
-/// The `tool_calls[].id` MUST be unique per turn: `llm_history.tool_call_id` is
-/// UNIQUE, so serving the same id twice fails the second turn's assistant-row
-/// insert and the workflow dies with `ExecuteFailed` before the snapshot path is
-/// reached. The id is built per request.
 fn toolCallSse(alloc: std.mem.Allocator, turn: usize) ![]u8 {
     return std.fmt.allocPrint(alloc,
         \\data: {{"id": "chatcmpl-stub-toolcall", "object": "chat.completion.chunk", "model": "stub-model", "choices": [{{"index": 0, "delta": {{"role": "assistant", "content": null, "tool_calls": [{{"index": 0, "id": "call_stub_{d}", "type": "function", "function": {{"name": "used_tools", "arguments": "{{}}"}}}}]}}, "finish_reason": null}}]}}
@@ -283,11 +200,6 @@ fn serveStub(stub: *Stub) void {
 }
 
 /// Read one request, decide the reply, send it.
-///
-/// THE HEAD AND THE BODY OVERLAP IN THE SOCKET BUFFER, so the read loop
-/// accumulates everything it sees and records only the first
-/// `\r\n\r\n`-terminated slice as the head; discarding the body bytes that
-/// arrived in the same syscall would block the body drain forever.
 fn handleRequest(stub: *Stub, stream: Io.net.Stream) !void {
     var rbuf: [64 * 1024]u8 = undefined;
     var sr = stream.reader(io, &rbuf);
@@ -416,9 +328,6 @@ fn dbPath(temp_dir: []const u8) ![]u8 {
 
 /// Run one statement against `db_path` through the sqlite3 CLI, returning the
 /// CLI's stdout (caller owns it).
-///
-/// `.timeout 5000` is the CLI's spelling of Python's `busy_timeout`; the agent
-/// DB is WAL-mode and the server holds a connection open for the whole test.
 fn sqliteRunOut(alloc: std.mem.Allocator, db_path: []const u8, sql: []const u8) ![]u8 {
     const res = std.process.run(alloc, io, .{
         .argv = &.{ "sqlite3", "-cmd", ".timeout 5000", db_path, sql },
@@ -584,7 +493,6 @@ test "mcp snapshot survives a mid-run config mutation" {
     // Read the row back: `INSERT OR IGNORE` swallows a constraint violation
     // silently, and a missing row would make the assertion below pass for the
     // wrong reason (an unseeded equip set fails on EVERY turn, not just the
-    // post-mutation ones).
     {
         const check = try std.fmt.allocPrint(gpa, "SELECT COUNT(*) FROM session_progressive_tool WHERE session_id = '{s}' AND tool_name = '{s}';", .{ session_id, MCP_WIRE_NAME });
         defer gpa.free(check);
@@ -651,10 +559,8 @@ test "mcp snapshot survives a mid-run config mutation" {
         }
     }
 
-    // Positive control 1: the MCP cache really was populated AND refetched after
-    // the mutation. `mcp_count=3` twice = the pre-mutation fetch plus the
-    // post-mutation one; with a dead stub this is 0 and the refresh path under
-    // test never executes.
+    // Positive control 1: the MCP cache really was populated AND refetched
+    // after the mutation.
     const resolved_marker = try std.fmt.allocPrint(gpa, "mcp_count={d} ", .{MCP_TOOL_COUNT});
     defer gpa.free(resolved_marker);
     const resolved_hits = countOccurrences(log, resolved_marker);
@@ -676,10 +582,7 @@ test "mcp snapshot survives a mid-run config mutation" {
     }
 
     // Positive control 3: the equipped MCP tool WAS in the tool list on a
-    // pre-mutation turn. Without this, the assertion below could pass "for the
-    // right reason by accident" only if the seeds both worked AND the snapshot
-    // held — and it could fail for the wrong reason if the equip row never took
-    // effect.
+    // pre-mutation turn.
     if (!stub.turn_before_clear_has_tool.load(.acquire)) {
         std.debug.print(
             "the equipped MCP tool `{s}` never appeared in a pre-mutation tool list, so this run did not exercise the path (check the equip seed + the MCP fetch).\n--- log ---\n{s}\n",
@@ -689,10 +592,7 @@ test "mcp snapshot survives a mid-run config mutation" {
     }
 
     // THE REGRESSION: the equipped MCP tool must still be in the model's tool
-    // list on a turn that ran after the refresh. Pre-fix, those turns read a
-    // snapshot the per-turn arena reset had already freed, so the name could not
-    // match and the tool silently vanished — and the same read is what crashed
-    // with a NULL deref in `eqlBytes`.
+    // list on a turn that ran after the refresh.
     if (!stub.mcp_tool_after_clear.load(.acquire)) {
         std.debug.print(
             "the equipped MCP tool `{s}` is missing from the tool list of every turn after the config mutation — the loop is reading a stale per-turn snapshot.\n--- log ---\n{s}\n",

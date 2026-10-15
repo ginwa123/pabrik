@@ -1,63 +1,6 @@
-// `llm_history.model` is never empty — wire-level proof.
-//
-// Zig port of `tests/functional/llm_history_model_not_empty_test.py`
-// (same test names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """`llm_history.model` is never empty — wire-level proof.
-//
-//   Background
-//   ----------
-//   A blank `model` landed in `llm_history` for a kanban-created session
-//   (reproduced on live data: `agent.db` row `1791057639139594690`, where
-//   `typeof(model)='text'` and `quote(model)=''`). Two paths could produce it:
-//
-//     1. **Raw SQL with a `''` literal.** `kanban_tasks_create.zig` (HTTP) and
-//        `create_kanban_task.zig` (agent tool) both seed a synthetic `role='user'`
-//        row so the chatview never lands on the "How can I help you?" empty
-//        state, and both hardcoded `''` for `model`.
-//
-//     2. **An empty *bind*, which is worse — it loses the row.** The backend binds
-//        a zero-length slice as SQL NULL; NULL violates `model TEXT NOT NULL`, so
-//        the INSERT fails outright, and every call site swallows that non-fatally.
-//        The user's message row is silently gone.
-//
-//   This suite asserts the invariant at the WIRE level, against a real server on
-//   an isolated tmpdir HOME: after a kanban `create_session`, the seeded
-//   `llm_history` row exists AND its `model` is non-empty. Existence matters as
-//   much as non-emptiness — failure mode 2 is a missing row, and a test that only
-//   asserted "no empty model" would pass vacuously on a dropped row.
-//
-//   Why a functional test and not a unit test: the unit tests exercise
-//   `model_guard.resolve` in isolation. This replays the exact HTTP body the
-//   frontend's "Create task" button sends, so it also covers the config cascade
-//   that decides *which* model gets written.
-//
-//   Run:
-//       PABRIK_BIN=$(pwd)/zig-out/bin/pabrikcore-linux-x86_64 \
-//         python3 -m pytest tests/functional/llm_history_model_not_empty_test.py -v
-//   """
-//
-// ─── WHY THE DB IS READ WITH THE `sqlite3` CLI ───────────────────────────────
-// The Python helpers `_db_path` / `_history_rows` opened
-// `<temp_dir>/.config/pabrik/agent.db` with the stdlib `sqlite3` MODULE.
-// This package declares no SQLite link dependency and will not grow one —
-// `tests/functional/build.zig` has no dependency on `pabrikcore` precisely so
-// a suite can never "pass" without crossing the wire (see that file's header).
-//
-// What the port does instead is spawn the `sqlite3` COMMAND-LINE tool, the same
-// way `chat_right_sidebar_git_test.zig` spawns `git`: an external process, no
-// link-time coupling, with a skip guard when it is absent. `-json` makes the
-// CLI emit exactly what Python's `cursor.fetchall()` +
-// `sqlite3.Row` returned, and `typeof(model)` round-trips as the string
-// `'null'` / `'text'` the Python compared against. `.timeout 5000` is the
-// CLI's spelling of Python's `PRAGMA busy_timeout` / `timeout=` on a WAL
-// database the server holds open concurrently.
-//
-// The wire half is unchanged: the rows under test are created by the REAL
-// HTTP `POST .../kanban/tasks` the frontend's Create-task button sends, so the
-// config cascade that decides which model is written is still covered.
+// `llm_history.model` is never empty — wire-level proof. Zig port of
+// `tests/functional/llm_history_model_not_empty_test.py` (same test names,
+// same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -83,17 +26,8 @@ const HistoryRow = struct {
     response_content: ?[]const u8,
 };
 
-/// Skip unless a `sqlite3` CLI is present and speaks `-json`.
-///
-/// `-json` landed in SQLite 3.33 (2020). Probing it once, up front, is what
-/// lets every LATER non-zero exit be read as a real SQL failure instead of
-/// "this build of sqlite3 has no such flag".
-/// Exit code for a finished child, or null if a signal stopped it.
-///
-/// `Child.Term` is a tagged union, NOT an optional: `.exited` is a `u8`
-/// field, so `res.term.exited orelse ...` does not compile and a bare
-/// `res.term.exited != 0` would silently read the wrong field on a
-/// signalled run.
+/// Skip unless a `sqlite3` CLI is present and speaks `-json`. `-json` landed
+/// in SQLite 3.33 (2020).
 fn exitCode(term: std.process.Child.Term) ?u8 {
     return switch (term) {
         .exited => |c| c,
@@ -122,12 +56,8 @@ fn requireSqlite3Cli() !void {
     }
 }
 
-/// Parse `sqlite3 -json` output into a document the caller owns.
-///
-/// `-json` prints ZERO BYTES for an empty result set — not `[]`. Handing
-/// that to the JSON parser is a syntax error, which would report a parse
-/// failure on the exact input Python turned into `[]`. An empty array is
-/// the faithful translation.
+/// Parse `sqlite3 -json` output into a document the caller owns. `-json`
+/// prints ZERO BYTES for an empty result set — not `[]`.
 fn parseSqliteJson(allocator: std.mem.Allocator, out: []const u8) !std.json.Parsed(std.json.Value) {
     if (std.mem.trim(u8, out, " \t\r\n").len == 0) {
         return std.json.parseFromSlice(std.json.Value, allocator, "[]", .{});
@@ -149,10 +79,6 @@ fn sqlLit(s: []const u8) ![]u8 {
 }
 
 /// Run one statement against `db_path` and return the CLI's stdout.
-///
-/// `.timeout 5000` is the `busy_timeout` the Python helpers relied on: the
-/// server holds a WAL connection open the whole time and a bare CLI
-/// invocation would otherwise fail with SQLITE_BUSY.
 fn sqliteRun(db_path: []const u8, sql: []const u8) ![]u8 {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-cmd", ".timeout 5000", "-json", db_path, sql },
@@ -204,10 +130,6 @@ fn historyRowsSql(temp_dir: []const u8, session_id: []const u8) !std.json.Parsed
 }
 
 /// Decode a `sqlite3 -json` result into an owned array of `HistoryRow`.
-///
-/// Returns `error.TestUnexpectedResult` on a shape mismatch so a schema
-/// change reports itself instead of silently yielding zero rows — a
-/// zero-row read would make `len(rows) == 1` fail for the wrong reason.
 fn decodeRows(parsed: *const std.json.Parsed(std.json.Value), ctx: []const u8) ![]HistoryRow {
     const arr = switch (parsed.value) {
         .array => |a| a,
@@ -333,10 +255,6 @@ fn createKanban(h: *Harness, workspace_id: []const u8, name: []const u8) ![]u8 {
 
 /// `POST .../kanban/tasks` with `mode: "create_session"` — the exact wire the
 /// frontend's plain `Create task` button sends. Python `_create_task`.
-///
-/// The two optional fields are the Python `extra` dict: omitted keys stay out
-/// of the body entirely (`std.json.Stringify` drops null optionals by
-/// default), so test 1 sends precisely `{mode, name, description}`.
 const TaskBody = struct {
     mode: []const u8 = "create_session",
     name: []const u8,
@@ -399,8 +317,7 @@ test "kanban_create_session_seeds_a_row_with_a_non_empty_model" {
 
     // The harness's stub profile leaves `active_profile` unset and the config
     // carries no top-level `model`, so `resolveEffectiveProfile` cascades all
-    // the way down to an empty string. That is exactly the condition that used
-    // to write `''`. The row must still land, with a non-empty model.
+    // the way down to an empty string.
     const ws_id = try createWorkspace(&h, "model-guard-ws");
     defer gpa.free(ws_id);
     const kanban_id = try createKanban(&h, ws_id, "sprint-guard");
@@ -414,10 +331,7 @@ test "kanban_create_session_seeds_a_row_with_a_non_empty_model" {
     const rows = try decodeRows(&doc, "llm_history rows");
     defer gpa.free(rows);
 
-    // Existence first. An empty-bind INSERT fails outright against
-    // `model TEXT NOT NULL` and the caller swallows it — so the pre-fix
-    // symptom for some configs is NO row at all. Asserting only "no empty
-    // model" would pass vacuously against a dropped row.
+    // Existence first.
     if (rows.len != 1) {
         std.debug.print(
             "expected exactly 1 seeded llm_history row for {s}, got {d}\n",
@@ -518,9 +432,8 @@ test "no_blank_model_anywhere_in_the_database" {
     }
 
     // Catches a regression that a per-session assertion would miss: a write
-    // site that still binds an empty model would either drop its row or, after
-    // Migration 101's trigger is in place, be caught there. Either way the
-    // sweep must come back clean.
+    // site that still binds an empty model would either drop its row or,
+    // after Migration 101's trigger is in place, be caught there.
     const db = try dbPath(h.temp_dir);
     defer gpa.free(db);
     const sql =
@@ -533,7 +446,6 @@ test "no_blank_model_anywhere_in_the_database" {
     // `parseSqliteJson`, not a raw parse: a CLEAN sweep is the expected
     // outcome here, and `-json` prints zero bytes (not `[]`) for an empty
     // result set — so the passing case is exactly the one the std parser
-    // would choke on.
     var doc = try parseSqliteJson(gpa, out);
     defer doc.deinit();
     const blank = switch (doc.value) {

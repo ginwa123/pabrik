@@ -1,24 +1,6 @@
-//! `model_catalog_refresh` — the network half of the model catalog.
-//!
-//! Three jobs, and nothing else:
-//!
-//!   1. `loadAtBoot`  — read the DB into the in-memory index. NO network. This
-//!      is on the boot path, so it must be boring and fast.
-//!   2. `refresh`     — fetch models.dev, trim, save the snapshot, swap the
-//!      index. Called by the background timer and by the manual
-//!      `POST /api/models/refresh`.
-//!   3. `startBackgroundSync` — a detached thread that calls `refresh` once an
-//!      hour and LOGS its failures.
-//!
-//! ORDERING IS THE CONTRACT: `saveCatalog` runs BEFORE `setSingleton`. A failed
-//! fetch or a failed write must leave every session compacting against exactly
-//! the same numbers it was using a moment ago — an empty or half-written
-//! catalog is never installed.
-//!
-//! WHY THE FIRST BACKGROUND SYNC WAITS A FULL INTERVAL: boot already loaded the
-//! catalog from the DB, so the app has correct numbers before the thread wakes.
-//! Firing a fetch at boot would put a network call at the exact moment a user
-//! is waiting for their window, to re-learn something we already knew.
+//! `model_catalog_refresh` — the network half of the model catalog. Three
+//! jobs, and nothing else: 1. `loadAtBoot` — read the DB into the in-memory
+//! index.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -92,10 +74,6 @@ pub fn refresh(alloc: Allocator, io: std.Io, db: *sqlite.SqliteBackend) !Report 
 
 /// Read the DB into the in-memory index. Returns whether a catalog was
 /// installed. Called once, from boot, on the main thread.
-///
-/// A failure here is logged and swallowed on purpose: pabrik must start even
-/// with no catalog at all (that is the air-gapped first-run case), and the
-/// caller must not have to handle it as a fatal condition.
 pub fn loadAtBoot(alloc: Allocator, db: *sqlite.SqliteBackend) bool {
     const cat = store.loadCatalog(db, alloc) catch |err| {
         std.log.warn("model catalog: could not read the cached catalog: {s}", .{@errorName(err)});

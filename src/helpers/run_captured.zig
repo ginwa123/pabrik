@@ -1,62 +1,5 @@
-//! run_captured — the ONE safe way to spawn a child process and capture
-//! its stdout + stderr from inside a long-lived, multithreaded server.
-//!
-//! ## Why this exists
-//!
-//! Handlers used to hand-roll the same four steps over and over:
-//!
-//! ```zig
-//! var child = std.process.spawn(io, .{
-//!     .stdin = .ignore, .stdout = .pipe, .stderr = .pipe,
-//! });
-//! // read stdout to EOF ...
-//! // read stderr to EOF ...
-//! const term = child.wait(io) catch ...;   // <-- aborts the process
-//! ```
-//!
-//! That shape has three process-killing / request-killing failure modes,
-//! all of which bit us in production (see `git_pr_status.zig`):
-//!
-//! 1. **`Child.wait` can `unreachable` — i.e. SIGABRT the whole server.**
-//!    `Io.Threaded.childWaitPosix` defers `childCleanupPosix`, which
-//!    calls `closeFd` on every pipe still attached to the `Child`. In
-//!    Debug builds `closeFd` runs `recoverableOsBugDetected()` on EBADF
-//!    (`std/Io/Threaded.zig` — `if (is_debug) unreachable;`), so one
-//!    stale/already-closed descriptor turns a single bad HTTP request
-//!    into `thread NNNNN panic: reached unreachable code` and takes the
-//!    entire process down. Observed at `Threaded.zig:closeFd` ←
-//!    `childCleanupPosix` ← `childWaitPosix` ← `Child.wait` called from
-//!    `git_pr_status.zig:runGhPrView`.
-//!
-//! 2. **Sequential pipe draining deadlocks.** Draining stdout to EOF
-//!    *before* touching stderr deadlocks as soon as the child writes
-//!    more than one pipe buffer (64 KiB on Linux) to stderr: the child
-//!    blocks in `write(2)`, so it never closes stdout, so our read
-//!    never sees EOF. `gh` printing a large error, a hook stack trace,
-//!    or a `git` warning is enough. The request then hangs forever and
-//!    wedges a worker-pool thread for the life of the process.
-//!
-//! 3. **No timeout.** A child that never exits (a `gh` waiting on a
-//!    hung network call, a credential prompt nobody can answer) blocks
-//!    the worker thread indefinitely.
-//!
-//! ## What this module does instead
-//!
-//! - **Detaches the pipes from the `Child` immediately.** `child.stdout`
-//!   / `child.stderr` are set to `null` before anything else happens, so
-//!   std's `childCleanupPosix` has nothing to close and `closeFd` can
-//!   never abort. The descriptors are closed exactly once, by
-//!   [`closeTolerant`], which swallows every failure.
-//! - **Drains stdout and stderr concurrently**, on one thread each, so
-//!   neither pipe can fill up and block the child.
-//! - **Bounds the run with a deadline.** On expiry the child is killed
-//!   (which also reaps it, so no zombie is left behind) and
-//!   `Result.timed_out` is set.
-//! - **Caps each stream** at `Options.max_output_bytes` but keeps
-//!   draining past the cap, so a chatty child still exits.
-//! - **Never allocates from the reader threads' perspective without a
-//!   lock** — the shared allocator is only touched under a per-stream
-//!   mutex, so passing the (non-thread-safe) request arena is safe.
+//! run_captured — the ONE safe way to spawn a child process and capture its
+//! stdout + stderr from inside a long-lived, multithreaded server.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -71,11 +14,8 @@ pub const DEFAULT_MAX_OUTPUT_BYTES: usize = 64 * 1024;
 /// thread recovers.
 pub const DEFAULT_TIMEOUT_MS: u32 = 30_000;
 
-/// How long to keep waiting for the drain threads AFTER killing the
-/// child's process group. Killing the group closes every write end, so
-/// this normally expires on the first poll; it only matters for a
-/// descendant that escaped the group via `setsid`, and it exists so
-/// such a descendant can never hold the caller hostage.
+/// How long to keep waiting for the drain threads AFTER killing the child's
+/// process group.
 const POST_KILL_GRACE_MS: u32 = 500;
 
 /// POSIX process groups (`setpgid` / `kill(-pgid)`) are meaningless on
@@ -86,33 +26,19 @@ const posix_process_groups = switch (builtin.os.tag) {
 };
 
 /// "This pipe does not exist" for a [`std.Io.File.Handle`].
-///
-/// The handle type is `fd_t` (an `i32`) on POSIX, so `-1` is the
-/// natural invalid value, but it is a `HANDLE` (a `*anyopaque`) on
-/// Windows, where the conventional invalid value is
-/// `INVALID_HANDLE_VALUE`. One literal cannot spell both, so the
-/// sentinel is a per-OS comptime constant; anything that wants to
-/// compare a handle against "none" must compare against this, never
-/// against a hard-coded `-1`.
 const no_handle: std.Io.File.Handle = switch (builtin.os.tag) {
     .windows => std.os.windows.INVALID_HANDLE_VALUE,
     else => -1,
 };
 
-/// Stand-in for a pipe `spawn` declined to hand us (`.stdout = .pipe`
-/// always yields one, so this is unreachable in practice). Reading it
-/// reports `error.NotOpenForReading` — `STATUS_INVALID_HANDLE` on
-/// Windows, `EBADF` on POSIX — which `Drain.drain` treats as "stream
-/// over" rather than a reason to abort.
+/// Stand-in for a pipe `spawn` declined to hand us (`.stdout = .pipe` always
+/// yields one, so this is unreachable in practice).
 const absent_pipe: std.Io.File = .{ .handle = no_handle, .flags = .{ .nonblocking = false } };
 
 /// Output + exit status of a finished child. Both buffers are owned by
 /// the caller; release them with [`Result.deinit`].
 pub const Result = struct {
-    /// How the child terminated. When `timed_out` is true this is the
-    /// termination WE forced, not a self-reported one: `.signal` with
-    /// `KILL` on POSIX, `.unknown` on Windows (whose `Child.kill` is
-    /// `TerminateProcess` and reports no signal).
+    /// How the child terminated.
     term: std.process.Child.Term,
     /// Captured stdout, at most `Options.max_output_bytes` long.
     stdout: []u8,
@@ -139,11 +65,8 @@ pub const Options = struct {
     /// Wall-clock budget. `null` disables the deadline — only pass that
     /// for children you control the lifetime of.
     timeout_ms: ?u32 = DEFAULT_TIMEOUT_MS,
-    /// Put the child in its own process group and, on timeout, kill the
-    /// whole group. Needed whenever the child might fork helpers that
-    /// outlive it: killing only the direct child leaves those helpers
-    /// holding the stdout/stderr write ends, so the drain threads never
-    /// reach EOF. Ignored on Windows. Default: true.
+    /// Put the child in its own process group and, on timeout, kill the whole
+    /// group.
     kill_process_group: bool = true,
 };
 
@@ -152,13 +75,6 @@ pub const RunError = std.mem.Allocator.Error ||
     std.process.Child.WaitError;
 
 /// Close a descriptor without letting Zig abort the process.
-///
-/// `std.Io.Threaded.closeFd` deliberately turns any unexpected errno
-/// into `unreachable` in Debug builds, because for *its own* handles a
-/// bad close really is a bug. For a descriptor we took ownership of and
-/// close exactly once, being defensive is the whole point: a
-/// double-close must degrade to "leak one fd", never to "kill the
-/// server". See the module doc for the crash this replaces.
 fn closeTolerant(handle: std.Io.File.Handle) void {
     if (handle == no_handle) return;
     // `builtin.os.tag` is comptime-known, so only the taken branch is
@@ -166,21 +82,15 @@ fn closeTolerant(handle: std.Io.File.Handle) void {
     // and the Windows body never has to link on POSIX.
     switch (builtin.os.tag) {
         .windows => {
-            // Same call `Io.Threaded.fileClose` makes on Windows, and
-            // already void/tolerant there. Calling it ourselves is
-            // still the right move: it documents that this descriptor
-            // is OURS, and it stays correct if std ever routes Windows
-            // through the aborting `closeFd` too.
+            // Same call `Io.Threaded.fileClose` makes on Windows, and already
+            // void/tolerant there.
             std.os.windows.CloseHandle(handle);
         },
         else => {
             switch (std.posix.errno(std.posix.system.close(handle))) {
-                // A signal arrived mid-close; POSIX says the descriptor
-                // may or may not have been released, so retrying is the
-                // only way to be sure. (Zig's own closeFd treats INTR as
-                // success; for a best-effort close either is
-                // acceptable, and retrying risks closing a recycled
-                // descriptor, so match std here.)
+                // A signal arrived mid-close; POSIX says the descriptor may
+                // or may not have been released, so retrying is the only way
+                // to be sure.
                 .INTR => {},
                 else => {},
             }
@@ -188,10 +98,9 @@ fn closeTolerant(handle: std.Io.File.Handle) void {
     }
 }
 
-/// Minimal lock guarding the shared `gpa` between the two drain
-/// threads. `std.atomic.Mutex` only offers `tryLock`, so this spins
-/// with a yield fallback. The critical section is one 4 KiB memcpy
-/// plus (rarely) an ArrayList growth, so contention is negligible.
+/// Minimal lock guarding the shared `gpa` between the two drain threads.
+/// `std.atomic.Mutex` only offers `tryLock`, so this spins with a yield
+/// fallback.
 const SpinLock = struct {
     state: std.atomic.Mutex = .unlocked,
 
@@ -227,10 +136,7 @@ const Drain = struct {
     finished: std.atomic.Value(bool) = .init(false),
     /// `null` when `std.Thread.spawn` failed and we drain inline instead.
     thread: ?std.Thread = null,
-    /// Set when we gave up waiting for this stream. The thread (and
-    /// this heap allocation) is deliberately leaked: it is still parked
-    /// in `read(2)` on a descriptor we can no longer reach, and a
-    /// use-after-free on the way out would be far worse.
+    /// Set when we gave up waiting for this stream.
     orphaned: bool = false,
 
     fn drain(self: *Drain) void {
@@ -282,13 +188,9 @@ pub fn run(
 ) RunError!Result {
     std.debug.assert(argv.len > 0);
 
-    // `.pgid = 0` makes the child `setpgid(0, 0)` — it becomes the
-    // leader of a brand-new process group whose id equals its pid. On
-    // timeout we can then `kill(-pid)` and take the whole subtree down.
-    // Without this, `sh -c 'sleep 600'` (or any CLI that forks a
-    // helper) leaves a grandchild holding the stdout/stderr write
-    // ends, so the drain threads never see EOF and the caller hangs
-    // even after the direct child is dead.
+    // `.pgid = 0` makes the child `setpgid(0, 0)` — it becomes the leader of
+    // a brand-new process group whose id equals its pid. On timeout we can
+    // then `kill(-pid)` and take the whole subtree down.
     const own_pg = opts.kill_process_group and posix_process_groups;
     var child = try std.process.spawn(io, .{
         .argv = argv,
@@ -299,25 +201,8 @@ pub fn run(
         .pgid = if (own_pg) 0 else null,
     });
 
-    // Take ownership of both pipes and detach them from the Child in
-    // one step. From here on `Child.wait` / `Child.kill` see null
-    // pipes, so std's `childCleanupPosix` closes nothing and its
-    // `closeFd` -> `unreachable` path is unreachable. This is the fix
-    // for the process-wide SIGABRT.
-    //
-    // Keep the `std.Io.File` values `spawn` produced, handle AND flags.
-    // `File.flags.nonblocking` is not cosmetic: on Windows `spawn`
-    // creates the parent ends of the stdout/stderr pipes with
-    // `MODE.IO.ASYNCHRONOUS` (`std/Io/Threaded.zig::processSpawnWindows`),
-    // so those `File`s carry `.nonblocking = true` and `readStreaming`
-    // must take its APC-wait branch. Rebuilding the `File` around the
-    // bare handle with `.nonblocking = false` made std issue
-    // `NtReadFile` with a null APC routine against an overlapped
-    // handle, which returns `STATUS_PENDING` on the very first read
-    // and trips
-    //     `.PENDING => unreachable, // unrecoverable: wrong File nonblocking flag`
-    // — i.e. it aborted the whole server on the first `run` on
-    // Windows, in every thread that had a drain parked in it.
+    // Take ownership of both pipes and detach them from the Child in one
+    // step.
     const child_pid = child.id;
     const out_file = child.stdout orelse absent_pipe;
     const out_handle = out_file.handle;
@@ -329,10 +214,9 @@ pub fn run(
     // future options change cannot resurrect the same hazard.
     child.stdin = null;
 
-    // Heap-allocated, not stack: if a drain thread is still wedged
-    // when we give up on it, it must not be writing into a frame that
-    // `run` has already returned from. A leaked Drain + a leaked thread
-    // is strictly better than a use-after-free.
+    // Heap-allocated, not stack: if a drain thread is still wedged when we
+    // give up on it, it must not be writing into a frame that `run` has
+    // already returned from.
     const out = gpa.create(Drain) catch return error.OutOfMemory;
     defer gpa.destroy(out);
     const errs = gpa.create(Drain) catch return error.OutOfMemory;
@@ -340,17 +224,9 @@ pub fn run(
     out.* = .{ .gpa = gpa, .io = io, .file = out_file, .cap = opts.max_output_bytes };
     errs.* = .{ .gpa = gpa, .io = io, .file = err_file, .cap = opts.max_output_bytes };
     defer {
-        // Only reached when we DID join the threads (or when the spawn
-        // of a thread failed and we drained inline), so this frees the
-        // captured bytes exactly once.
-        //
-        // An orphaned drain keeps its handle open on purpose. On Windows
-        // its read is an APC-backed overlapped operation; `CloseHandle`
-        // on a handle with I/O in flight cancels the IRP, the APC fires
-        // with `STATUS_CANCELLED`, and std's `ntReadFileResult` maps
-        // that status to `unreachable` — trading a leaked HANDLE for
-        // another process-wide abort. One leaked handle per abandoned
-        // child is the cheaper deal; see `Drain.orphaned`.
+        // Only reached when we DID join the threads (or when the spawn of a
+        // thread failed and we drained inline), so this frees the captured
+        // bytes exactly once.
         if (!out.orphaned) {
             out.release();
             closeTolerant(out_handle);
@@ -384,14 +260,9 @@ pub fn run(
     }
 
     if (timed_out) {
-        // Kill the whole process group first so a grandchild cannot keep
-        // the pipes open, then `kill` (which also reaps, and asserts
-        // the pipes are detached — they are). After it returns
-        // `child.id` is null and `child.wait` must not be called.
-        // `posix_process_groups` is a comptime constant, so on Windows
-        // this block is dropped before `std.posix.kill` is analysed —
-        // and it must be dropped, since there is no process group to
-        // kill and no negative pid to pass.
+        // Kill the whole process group first so a grandchild cannot keep the
+        // pipes open, then `kill` (which also reaps, and asserts the pipes
+        // are detached — they are).
         if (posix_process_groups) {
             if (own_pg) {
                 if (child_pid) |pid| {
@@ -404,10 +275,7 @@ pub fn run(
         }
         child.kill(io);
 
-        // Bounded grace period for the readers. Killing the group
-        // closes the write ends, so this normally returns on the first
-        // poll; a descendant that called setsid() to escape the group
-        // would not, and must not hold the caller hostage.
+        // Bounded grace period for the readers.
         const grace_deadline = std.Io.Timestamp.now(io, .awake)
             .addDuration(.fromMilliseconds(@intCast(POST_KILL_GRACE_MS)));
         while (!bothDone(out, errs)) {
@@ -445,12 +313,9 @@ fn bothDone(out: *const Drain, errs: *const Drain) bool {
 /// there is no real one to describe.
 fn termForKill() std.process.Child.Term {
     return switch (builtin.os.tag) {
-        // Windows `Child.kill` is `TerminateProcess`: there is no
-        // signal, and `Child.wait` never yields `.signal` there either
-        // (it reports `.exited` from the process exit status, or
-        // `.unknown` when the query fails). `.unknown` is both honest
-        // and legal — the old `@enumFromInt(0)` spelled an out-of-range
-        // value for `std.c.SIG`'s exhaustive enum, which traps in Debug.
+        // Windows `Child.kill` is `TerminateProcess`: there is no signal, and
+        // `Child.wait` never yields `.signal` there either (it reports
+        // `.exited` from the process exit status, or `.unknown` when the
         .windows => .{ .unknown = 0 },
         else => .{ .signal = std.posix.SIG.KILL },
     };
@@ -472,9 +337,7 @@ fn skipOnWindows() bool {
 const SH = "/bin/sh";
 
 /// The shortest child that exists on the host, so the *host's own* pipe
-/// plumbing gets exercised on every platform. The rest of this file is
-/// POSIX-only, which is how a Windows-only abort shipped: nothing here
-/// ever ran there.
+/// plumbing gets exercised on every platform.
 const probe_argv: []const []const u8 = switch (builtin.os.tag) {
     .windows => &.{ "cmd.exe", "/C", "echo hello" },
     else => &.{ SH, "-c", "printf 'hello'" },
@@ -484,8 +347,6 @@ test "run: a child's stdout comes back on this host's own pipes" {
     // Windows regression: rebuilding the child's `File` around the bare
     // handle dropped `flags.nonblocking = true`, so std read an
     // `ASYNCHRONOUS` pipe in its synchronous branch, got `STATUS_PENDING`
-    // back from `NtReadFile`, and hit `unreachable` — which kills the
-    // whole process, test binary included, rather than failing here.
     const gpa = testing.allocator;
     var r = try run(gpa, testing.io, probe_argv, .{ .timeout_ms = 20_000 });
     defer r.deinit(gpa);
@@ -537,10 +398,9 @@ test "run: a child that never exits is killed at the deadline" {
 }
 
 test "run: large stderr does not deadlock (the runGhPrView regression)" {
-    // `gh` printing more than one pipe buffer to stderr used to wedge
-    // the worker thread forever: the old code drained stdout to EOF
-    // first, so `gh` blocked in write(2) on a full stderr pipe and
-    // never closed stdout. 512 KiB is 8x the Linux pipe buffer.
+    // `gh` printing more than one pipe buffer to stderr used to wedge the
+    // worker thread forever: the old code drained stdout to EOF first, so
+    // `gh` blocked in write(2) on a full stderr pipe and never closed stdout.
     if (skipOnWindows()) return error.SkipZigTest;
     const gpa = testing.allocator;
     var r = try run(gpa, testing.io, &.{
@@ -626,13 +486,8 @@ test "run: honours cwd" {
     var r = try run(gpa, testing.io, &.{ SH, "-c", "pwd" }, .{ .cwd = "/tmp" });
     defer r.deinit(gpa);
 
-    // Assert against the CANONICAL form of the directory we asked for,
-    // not the literal string we passed in. `pwd` reports the physical
-    // path, and on macOS `/tmp` is a symlink to `/private/tmp` — so the
-    // child is in exactly the right directory while the literal "/tmp"
-    // is the wrong expectation. That mismatch is a macOS-only CI
-    // failure; resolving both sides tests the actual contract (the cwd
-    // we asked for is the cwd the child got) on every platform.
+    // Assert against the CANONICAL form of the directory we asked for, not
+    // the literal string we passed in.
     const canonical_tmp = try std.Io.Dir.realPathFileAbsoluteAlloc(testing.io, "/tmp", gpa);
     defer gpa.free(canonical_tmp);
 
@@ -667,13 +522,9 @@ test "run: timeout_ms = 0 kills immediately without hanging" {
 }
 
 test "run: a grandchild holding the pipes does not survive the deadline" {
-    // The shell script forks `sleep`, so killing only the direct child
-    // leaves `sleep` holding the stdout/stderr write ends open — the
-    // drain threads would never see EOF and the caller would hang even
-    // though "the child" is dead. Caught by
-    // tests/functional/git_pr_status_crash_test.py
-    // ::test_gh_that_never_exits_is_killed_not_awaited_forever against
-    // the first version of this helper, which had no process group.
+    // The shell script forks `sleep`, so killing only the direct child leaves
+    // `sleep` holding the stdout/stderr write ends open — the drain threads
+    // would never see EOF and the caller would hang even though "the child"
     if (skipOnWindows()) return error.SkipZigTest;
     if (builtin.os.tag != .linux) return error.SkipZigTest;
     const gpa = testing.allocator;

@@ -1,13 +1,5 @@
-// src/service/crash_handler_smoke.zig
-//
-// Tiny standalone binary that exercises src/service/crash_handler.zig
-// end-to-end. Used by scripts/crash_handler_smoke.sh to verify the
-// production crash
-// handler actually runs when a SIGSEGV is delivered.
-//
-// NOT compiled into the production pabrik binary — it's a sibling that
-// lives in src/ for code-review visibility but is only built when the
-// user runs the smoke script (which does `zig build-exe` directly).
+// src/service/crash_handler_smoke.zig Tiny standalone binary that exercises
+// src/service/crash_handler.zig end-to-end.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -16,16 +8,12 @@ const helpers = @import("helpers");
 
 /// This file is the ROOT of the standalone smoke build, so it is also the
 /// only place in the test suite where `pub const debug` is actually
-/// *compiled* rather than grepped for. `src/main.zig` and
-/// desktop_app/main.zig` carry the same decl for the shipped binaries;
-/// here it proves the declaration is legal and that std's
-/// `@hasDecl(root.debug, "handleSegfault")` dispatch finds it.
+/// *compiled* rather than grepped for.
 pub const debug = pabrikcore.crash_handler.root_debug;
 
-/// Runtime-opaque base so the compiler cannot prove the load is safe
-/// and fold it to `undefined` (a comptime-known address turns the
-/// "crash" into a no-op — see the 2026-09-30 iteration where the first
-/// attempt at this file exited 0 without faulting).
+/// Runtime-opaque base so the compiler cannot prove the load is safe and fold
+/// it to `undefined` (a comptime-known address turns the "crash" into a no-op
+/// — see the 2026-09-30 iteration where the first attempt at this file exited
 var wild_base: usize = 0xdead_0000;
 
 /// The function that must appear in the captured stack trace. Its name
@@ -51,11 +39,9 @@ pub fn main(init: std.process.Init) !void {
     pabrikcore.crash_handler.setCrashLogPath(log_path_arg);
     pabrikcore.crash_handler.installCrashHandlers();
 
-    // Give the signal handler a moment to be installed before we trip it.
-    // On POSIX, `helpers.nanosleep` (libc `nanosleep` exposed via
-    // `extern "c"`) is the standard async-safe delay. On Windows,
-    // installCrashHandlers is synchronous (no sleep needed — the
-    // SetUnhandledExceptionFilter call returned before we got here).
+    // Give the signal handler a moment to be installed before we trip it. On
+    // POSIX, `helpers.nanosleep` (libc `nanosleep` exposed via `extern "c"`)
+    // is the standard async-safe delay.
     if (builtin.os.tag != .windows) {
         var ts: helpers.PosixTimespec = .{ .sec = 0, .nsec = 50_000_000 };
         _ = helpers.nanosleep(&ts, null);
@@ -63,12 +49,7 @@ pub fn main(init: std.process.Init) !void {
 
     std.debug.print("[smoke] crash_handler installed for log='{s}'; triggering {s}\n", .{ log_path_arg, signal_arg });
 
-    // A real hardware fault through a known call chain. `raise(SIGSEGV)`
-    // cannot prove the captured trace is the CRASHING one — the
-    // raiser's stack and the handler's stack are indistinguishable in
-    // that case. Dereferencing an unmapped address deep in a named
-    // frame does: the log must name `crashSiteTarget`, and must not
-    // name the handler that produced the report.
+    // A real hardware fault through a known call chain.
     if (std.mem.eql(u8, signal_arg, "FAULT")) {
         std.debug.print("[smoke] dereferencing a wild pointer in crashSiteTarget\n", .{});
         crashSiteTarget();

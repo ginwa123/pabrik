@@ -1,26 +1,5 @@
-//! `POST /api/workspaces/:workspace_id/skills`.
-//!
-//! Creates one workspace-scoped skill. This is the HTTP half of what the
-//! `add_skill` agent tool already does — the tool exists so a MODEL can
-//! write a skill, and this route exists so the human in the Settings →
-//! Skills panel can. Both go through `skills_store.upsertSkill`, so the
-//! two cannot disagree about what a skill is.
-//!
-//! The name is validated against `skills_store.isValidSkillName` BEFORE it
-//! reaches SQLite. Two reasons, in order of how much damage they do:
-//!
-//!   1. `name` is joined onto a materialisation directory by `use_skill`,
-//!      so `../..` would escape it. The grammar is the guard.
-//!   2. `SqliteBackend.exec` binds a zero-length slice as SQL NULL, which
-//!      `skills.name NOT NULL` rejects as a constraint violation — an
-//!      operator mistake answered with a 500 instead of the 400 the caller
-//!      can act on.
-//!
-//! Wire shape: `{ "skill": { name, description, content, asset_count } }`,
-//! the same projection `skill_detail.zig` returns, so a caller that just
-//! created a skill can render it without a second GET. `asset_count` is
-//! always 0 here: this route writes the body only, and a bundled skill's
-//! companions arrive through the importer.
+//! `POST /api/workspaces/:workspace_id/skills`. Creates one workspace-scoped
+//! skill.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -71,21 +50,12 @@ fn useCase(
 
     // Trimmed, not rejected: a name pasted with a trailing newline is the
     // same name, and the UNIQUE key is what the URL path segment has to
-    // spell. The grammar check below then runs on the trimmed value, so
-    // " pdf " cannot smuggle a space past it.
+    // spell.
     const name = std.mem.trim(u8, input.body.name, " \t\r\n");
     if (name.len == 0) return error.NameRequired;
     if (!skills_store.isValidSkillName(name)) return error.InvalidName;
 
-    // A create must not silently overwrite. `upsertSkill` is
-    // create-or-replace by design — the importer runs on every start-up
-    // and a second run has to update in place — so the duplicate check
-    // lives HERE, where the caller is a human who pressed a button and
-    // expects "that name is taken", not a body replaced under them.
-    //
-    // A name that exists in ANOTHER workspace is `NotFound` here, which is
-    // the same answer as one that does not exist: a 403 would confirm the
-    // name exists, which is the leak the workspace scoping exists to hide.
+    // A create must not silently overwrite.
     if (skills_store.getSkillByName(allocator, db, input.workspace_id, name)) |existing| {
         // Freed here, not discarded: the row is only read to learn that
         // the name is taken, and `|_|` would drop every string it owns.
@@ -114,13 +84,9 @@ fn useCase(
     return .{ .skill = row };
 }
 
-// =====================================================================
-// Error mapping
-// =====================================================================
-//
-// Two exhaustive switches, one for the status and one for the message, so a
-// variant added to `SkillCreateError` fails the build here rather than
-// surfacing as an unhandled error at runtime.
+// ===================================================================== Error
+// mapping
+// ===================================================================== Two
 
 fn statusFor(err: SkillCreateError) u16 {
     return switch (err) {
@@ -133,8 +99,7 @@ fn statusFor(err: SkillCreateError) u16 {
 
 /// `requested_name` is only read for the duplicate answer, which names the
 /// offending skill so the UI can say which row to change instead of
-/// "conflict". A skill name is not itself a secret — it is what a model
-/// types into `use_skill({ name })` — so echoing it discloses nothing.
+/// "conflict".
 fn messageFor(
     err: SkillCreateError,
     allocator: std.mem.Allocator,
@@ -202,10 +167,7 @@ pub fn skillCreateHandler(
             .name = output.skill.name,
             .description = output.skill.description,
             .content = output.skill.content,
-            // This route writes the body only. A bundled skill's
-            // companions arrive through the importer, so a skill created
-            // here has none — and claiming otherwise would render a
-            // "0 bundled files" row the user never asked for.
+            // This route writes the body only.
             .asset_count = 0,
             .is_can_auto_improve = output.skill.is_can_auto_improve,
         }),
@@ -296,9 +258,7 @@ test "useCase: an empty description round-trips as empty, not as a missing field
     defer ctx.db.deinit();
 
     // A model routinely writes the body first and the one-line description
-    // second, so "" is a legal skill state. If it round-tripped as NULL the
-    // JSON would carry `null` and the picker would show a blank row with no
-    // way to tell it apart from a bug.
+    // second, so "" is a legal skill state.
     const output = try useCase(alloc, &ctx.db, .{
         .workspace_id = "ws_1",
         .body = .{ .name = "half-written", .description = "", .content = "body" },

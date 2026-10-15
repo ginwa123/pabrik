@@ -28,11 +28,9 @@ fn parseGitStatus(allocator: std.mem.Allocator, output: []const u8) GitChangesRe
         const line = output[start .. start + end];
 
         if (line.len >= 4) {
-            // Git porcelain format: XY<space><path>
-            // X = index status (1 char at position 0)
-            // Y = worktree status (1 char at position 1)
-            // space at position 2
-            // path starts at position 3
+            // Git porcelain format: XY<space><path> X = index status (1 char
+            // at position 0) Y = worktree status (1 char at position 1) space
+            // at position 2 path starts at position 3
             const indexStatus = line[0..1];
             const worktreeStatus = line[1..2];
             const path = line[3..];

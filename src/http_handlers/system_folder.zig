@@ -25,12 +25,6 @@ fn jsonEscape(allocator: std.mem.Allocator, value: []const u8) ![]u8 {
 
 /// Serialize entries into the JSON array literal used on the wire:
 /// `[{"name":...,"path":...,"is_directory":...,"is_symlink":...},...]`.
-///
-/// Shared by the `list` and `search` branches (which previously carried
-/// byte-identical copies of this loop) and callable from a test, which is
-/// what lets the Windows case be asserted instead of assumed: on Windows
-/// every `entry.path` is a backslash path (`C:\Users\ginwa\...`), and an
-/// unescaped one makes the whole response unparseable.
 pub fn buildEntriesJson(allocator: std.mem.Allocator, entries: []const FolderEntry) ![]u8 {
     var out = std.ArrayList(u8).empty;
     errdefer out.deinit(allocator);
@@ -54,16 +48,6 @@ pub fn buildEntriesJson(allocator: std.mem.Allocator, entries: []const FolderEnt
 }
 
 /// Render the `{path, absolute, home[, parent][, entries]}` body.
-///
-/// Every one of those top-level fields can hold a Windows path
-/// (`C:\Users\ginwa`), and a lone backslash is an invalid JSON escape --
-/// interpolating them raw is what made this endpoint's response
-/// unparseable on Windows. Escaping failures PROPAGATE here rather than
-/// falling back to the raw string: that fallback would re-produce exactly
-/// the broken body this function exists to prevent.
-///
-/// `entries_json` is `null` for the no-action shape (which has no
-/// `entries` key) and the already-serialized array for `action=list`.
 fn printFolderJson(
     allocator: std.mem.Allocator,
     relative: []const u8,
@@ -126,12 +110,9 @@ pub fn buildFolderInfoJson(
     return printFolderJson(allocator, relative, absolute, home, parent, null);
 }
 
-/// System folder endpoint
-///
-/// GET /api/system/folder
-/// GET /api/system/folder?path=/some/relative/path
-/// GET /api/system/folder?path=/some/relative/path&action=list
-/// GET /api/system/folder?path=/some/relative/path&action=read&file=filename.txt
+/// System folder endpoint GET /api/system/folder GET
+/// /api/system/folder?path=/some/relative/path GET
+/// /api/system/folder?path=/some/relative/path&action=list GET
 pub fn systemFolderHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
 
@@ -214,12 +195,9 @@ pub fn systemFolderHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest,
         ) });
     }
 
- // Recursive server-side search for the ChatView `@` picker:
-    // GET /api/system/folder?action=search&path=<root>&q=comp&limit=50
-    // Same route as list (no new main.zig registration); same entry
-    // shape ({name, path, is_directory, is_symlink}). Missing `q` =
-    // top-N listing (not an error); `limit` defaults to 50 (hard cap
-    // 200); `max_depth` defaults to 8 (clamp 1..16).
+ // Recursive server-side search for the ChatView `@` picker: GET
+ // /api/system/folder?action=search&path=<root>&q=comp&limit=50 Same route as
+ // list (no new main.zig registration); same entry shape ({name, path,
     const do_search = std.mem.eql(u8, action orelse "", "search");
     if (do_search) {
         const q = req.query.get("q") orelse "";
@@ -302,44 +280,15 @@ pub fn systemFolderHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest,
     ) });
 }
 
-// ===== Tests merged from system_folder_search_test.zig (2026-09-11 flatten) =====
-// Static-contract tests for `action=search` on GET /api/system/folder
+// ===== Tests merged from system_folder_search_test.zig (2026-09-11 flatten)
+// ===== Static-contract tests for `action=search` on GET /api/system/folder
 // (plan: docs/superpowers/plans/2026-09-08-chatview-search-files-perf.md,
-// Task 1).
-// 
-// Why this file exists
-// ────────────────────
-// The ChatView `@` picker used to walk the tree with N sequential
-// `action=list` fetches (one per directory). The fix adds a single
-// server-side recursive search branch (`action=search` with `q`,
-// `limit`, `max_depth` params) backed by
-// `SystemFolder.searchFiles`, serialized in the SAME
-// `{name, path, is_directory, is_symlink}` shape as list.
-// 
-// Standing up a real server + singleton + Io to exercise the HTTP path
-// is too much integration infra for one branch (same rationale as
-// `frontend_log_post_test.zig`), so these contracts grep the handler
-// source for the substrings a future refactor must preserve. The
-// search behaviour itself is covered behaviourally by the `searchFiles`
-// + `parseSearchLimit/parseSearchMaxDepth` tests in
-// `src/modules/system_folder/system_folder_test.zig`; the wire
-// behaviour lands in `tests/functional/system_folder_search_test.py`
-// (Task 4 of the same plan).
 
 const testing = std.testing;
 
 // ===== Behavioural tests: the Windows wire format ========================
-//
-// These guard the wire format: none of them would notice if the response
-// body stopped being valid JSON. On Windows that is the whole failure mode: the
-// top-level `path` / `absolute` / `home` / `parent` fields and every
-// `entries[].path` hold backslash paths (`C:\Users\ginwa`), and a lone
-// backslash is an invalid JSON escape. When those were interpolated raw
-// the frontend's `response.json()` threw and the picker rendered empty.
-//
-// So: parse what the builders emit and compare against the input. A
-// regression that drops an `jsonEscape` fails here, on every platform,
-// without needing a Windows runner.
+// These guard the wire format: none of them would notice if the response body
+// stopped being valid JSON.
 
 /// Parse a built body and return the value, so a body that is not JSON
 /// fails the test instead of silently comparing as text.

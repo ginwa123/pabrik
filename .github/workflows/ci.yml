@@ -273,15 +273,15 @@ jobs:
 
   # ── 1b. zginlint ────────────────────────────────────────────────────
   # The Zig linter's gate: `src/modules/zginlint/` implemented as a CLI,
-  # run over the tree against a pinned per-file ceiling
-  # (`zginlint-baseline.json`, whose entries may only fall). The rule and
-  # the ratchet are documented in CODING_STANDARDS.md §4.
+  # run over the tree with zero tolerance — no baseline, no per-file
+  # ceiling, no suppression. The rule is documented in
+  # CODING_STANDARDS.md §4.
   #
   # It hangs off `lint` for the same reason the backend cells do: a red
   # cheap gate must not schedule an expensive job. Nothing here consumes
   # a JS artifact and nothing in `lint` consumes a Zig one.
   zginlint:
-    name: zginlint (comment-block ceilings)
+    name: zginlint (comment-block ceiling, zero findings)
     needs: [changes, lint]
     if: ${{ needs.lint.result == 'success' && needs.changes.outputs.heavy == 'true' && !cancelled() }}
     runs-on: ubuntu-24.04
@@ -313,10 +313,10 @@ jobs:
           restore-keys: |
             v1-zig-global-ubuntu-24.04-
 
-      - name: Zig lint (zginlint, pinned comment-block ceilings)
+      - name: Zig lint (zginlint, zero findings)
         # The gate `.husky/pre-commit` mirrors. `zginlint:check` builds the
-        # CLI, runs it over the paths build.zig pins, and fails on any file
-        # above its pinned ceiling or missing from the baseline.
+        # CLI, runs it over the paths build.zig pins, and fails on any
+        # finding at all — there is no baseline to hide one behind.
         #
         # The unit tests are NOT run here: they are part of `zig build test`,
         # which all three backend cells already run, so this job would only

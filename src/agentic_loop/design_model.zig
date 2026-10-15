@@ -1,32 +1,4 @@
 //! Data layer for the design-mode workspace item (item_type='design').
-//!
-//! Each design workspace item has N pages (e.g. "Home", "Login",
-//! "Dashboard"), and each page has 0..N positioned elements (e.g.
-//! "login-card", "hero-image") with their HTML bodies stored on disk
-//! under `<workspace_item.path>/.pabrik/design/<page_name>/<element_name>.html`.
-//!
-//! Schema:
-//! - `design_pages` — created by Migration 055, upgraded by 056
-//! - `design_page_elements` — created by Migration 056, v6 props added
-//!   by Migration 057.
-//!
-//! Row ownership: each `db.query()` row's `values[i]` slices are
-//! owned by the `Row` and freed by `row.deinit(allocator)`. To keep a
-//! value past the loop iteration, the field is duplicated with
-//! `allocator.dupe(u8, row.values[i])`. Strings returned by
-//! `listPages` are owned by the caller and must be released with
-//! `freePages`.
-//!
-//! Why this rewrite
-//! ────────────────
-//! The v5 `design_model.zig` was 5-file overengineered and supported
-//! the old panzoom-based canvas. The v6 rewrite focuses on the
-//! 3-tool LLM surface (`set_design_page`, `add_element`,
-//! `update_element`) and the file-backed HTML invariants (atomic
-//! writes, orphan cleanup on delete, path-traversal defense). The
-//! v6 surface is small enough to fit in one file (~600 LoC).
-//!
-//! Plan: docs/superpowers/plans/2026-07-08-design-mode-redesign.md (Chunk 1)
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -36,10 +8,6 @@ const design_io = @import("design_io.zig");
 const on_event_sent_design = @import("on_event_sent_design.zig");
 
 /// Generate a unique page id of the form `page_<unix_nanoseconds>`.
-/// Same approach as `kanban_model.generateColumnId` (a process-global
-/// monotonic counter XORed with a stack address) — see that file
-/// for the rationale (avoids `std.c.clock_gettime` which doesn't
-/// compile on Windows).
 fn generatePageId(allocator: std.mem.Allocator) ![]u8 {
     const counter = nextPageIdCounter();
     var entropy: [8]u8 = undefined;
@@ -69,14 +37,7 @@ pub const DesignPage = struct {
     id: []u8,
     workspace_item_id: []u8,
     name: []u8,
-    /// 1:1 FK to `workspace_item_tasks.id`. Set atomically by
-    /// `setDesignPage` at create time (each new page gets a fresh
-    /// `task_<unix_nanoseconds>` row whose name is
-    /// `"Design Chat: <page_name>"`). Empty string `""` for legacy
-    /// pre-Migration-066 rows that the backfill didn't catch (no row
-    /// in current data — the migration's backfill is exhaustive —
-    /// but defensive: `SELECT COALESCE(...)` keeps the field
-    /// non-empty on the wire even if a future DB state slips a NULL).
+    /// 1:1 FK to `workspace_item_tasks.id`.
     workspace_item_task_id: []u8,
     width: i64,
     height: i64,
@@ -114,15 +75,9 @@ pub const SetDesignPageError = error{
     OutOfMemory,
 };
 
-/// Create or update a page for a design item. Idempotent: if a page
-/// with the same (workspace_item_id, name) exists, its width/height
-/// are updated; otherwise a new row is inserted.
-///
-/// Returns the page_id of the existing-or-newly-created page.
-/// Caller owns the returned slice.
-///
-/// Prerequisite: `workspace_items.path` is non-empty (otherwise
-/// returns `ItemPathMissing`).
+/// Create or update a page for a design item. Idempotent: if a page with the
+/// same (workspace_item_id, name) exists, its width/height are updated;
+/// otherwise a new row is inserted.
 pub fn setDesignPage(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -148,18 +103,13 @@ pub fn setDesignPage(
     defer if (path_opt) |p| allocator.free(p);
     if (path_opt == null) return error.ItemPathMissing;
 
-    // 2. Check whether a row with the same (item_id, name) already
-    //    exists. If yes, just update its width/height/updated_at
-    //    and return the existing id. This is true idempotency —
-    //    every call returns the same id for the same (item, name).
+    // 2. Check whether a row with the same (item_id, name) already exists.
     if (try findPageIdByName(allocator, db, input.item_id, input.page_name)) |existing_id| {
         // Existing row → update width/height/updated_at and return.
         defer allocator.free(existing_id);
 
-        // SQLite's argv takes `[]const []const u8`, so stringify the
-        // integer columns. `db.exec` binds empty slices as SQL NULL
-        // (see project memory `sqlite-backend-empty-slice-binds-as-null`),
-        // so the strings must be non-empty even for the "zero" case.
+        // SQLite's argv takes `[]const []const u8`, so stringify the integer
+        // columns.
         const width_str = try std.fmt.allocPrint(allocator, "{d}", .{input.width});
         defer allocator.free(width_str);
         const height_str = try std.fmt.allocPrint(allocator, "{d}", .{input.height});
@@ -176,21 +126,15 @@ pub fn setDesignPage(
     const id = try generatePageId(allocator);
     defer allocator.free(id);
 
-    // SQLite's argv takes `[]const []const u8`, so we have to
-    // stringify the integer columns. `db.exec` binds empty slices
-    // as SQL NULL (see project memory
-    // `sqlite-backend-empty-slice-binds-as-null`), so the strings
-    // we build here must be non-empty even for the "zero" case.
+    // SQLite's argv takes `[]const []const u8`, so we have to stringify the
+    // integer columns.
     const width_str = try std.fmt.allocPrint(allocator, "{d}", .{input.width});
     defer allocator.free(width_str);
     const height_str = try std.fmt.allocPrint(allocator, "{d}", .{input.height});
     defer allocator.free(height_str);
 
-    // Generate the per-page chat task id (paired with the page so the
-    // 1:1 FK is always populated on INSERT). Uses the same
-    // `task_<unix_nanoseconds>` scheme as
-    // `llm_history.createWorkspaceItemTask` so existing code that
-    // looks up tasks by id prefix keeps working.
+    // Generate the per-page chat task id (paired with the page so the 1:1 FK
+    // is always populated on INSERT).
     var task_id_buf: [64]u8 = undefined;
     const task_id = std.fmt.bufPrint(
         task_id_buf[0..],
@@ -198,14 +142,9 @@ pub fn setDesignPage(
         .{helpers.unixTimestampNanos()},
     ) catch return error.BufferTooSmall;
 
-    // The task's user-visible name matches the per-page naming
-    // convention (`"Design Chat: <page_name>"`) introduced by the
-    // 2026-07-28 per-page chat plan. Keeping the naming stable across
-    // the migration means a user with a legacy
-    // `"Design Chat: <pageName>"` task (created by the 2026-07-28
-    // frontend-only plan) will see its new design-page task reuse
-    // that name rather than getting a parallel
-    // `"Design Chat: <pageName> (2)"`-style artifact.
+    // The task's user-visible name matches the per-page naming convention
+    // (`"Design Chat: <page_name>"`) introduced by the 2026-07-28 per-page
+    // chat plan.
     var task_name_buf: [512]u8 = undefined;
     const task_name = std.fmt.bufPrint(
         task_name_buf[0..],
@@ -213,13 +152,9 @@ pub fn setDesignPage(
         .{input.page_name},
     ) catch return error.BufferTooSmall;
 
-    // Insert the per-page chat task FIRST so the workspace_item_tasks
-    // row exists when design_pages INSERT fires (the application-level
-    // "FK" we maintain via the UNIQUE index would otherwise allow a
-    // dangling reference). task_type='standard' matches the existing
-    // per-page chat tasks (no kanban auto-assign — the parent isn't a
-    // kanban). description='' is a SQL '' literal so it doesn't trip
-    // the empty-slice-binds-as-NULL trap.
+    // Insert the per-page chat task FIRST so the workspace_item_tasks row
+    // exists when design_pages INSERT fires (the application-level "FK" we
+    // maintain via the UNIQUE index would otherwise allow a dangling
     try db.exec(allocator,
         "INSERT INTO workspace_item_tasks " ++
             "(id, name, workspace_item_id, task_type, description) " ++
@@ -269,27 +204,12 @@ pub const UpdateDesignPageInput = struct {
     width: i64,
     height: i64,
     // NEW (2026-08-06 — design page rename menu). Optional page name.
-    // When non-null AND non-empty, the UPDATE statement writes it to
-    // `design_pages.name` (via dynamic SQL — building the SET clause
-    // conditionally so empty patches don't trigger NULL writes).
-    // Empty string is rejected with BadPageName (matches the same
-    // guard `setDesignPage` enforces — a page with an empty name
-    // would break the design folder derivation in design_io).
     name: ?[]const u8 = null,
 };
 
-/// Update an existing design page by id. UPDATE-only; does NOT
-/// insert — see `setDesignPage` for the upsert path used by the
-/// agent's `set_design_page` tool. Returns the post-update
-/// `DesignPage` with heap-owned string fields; caller MUST release
-/// with `freePages(allocator, &[_]DesignPage{result})` or pass the
-/// whole struct to `freePages` wrapped in a single-element array.
-///
-/// Width must be in [320, 4096], height in [240, 4096]. These ranges
-/// match typical viewport sizes (320 = iPhone SE width, 4096 = common
-/// 4K width; 240 = iPhone SE height, 4096 = tall scrollable hero).
-/// `name`, when provided, must be non-empty (matches `setDesignPage`'s
-/// BadPageName guard).
+/// Update an existing design page by id. UPDATE-only; does NOT insert — see
+/// `setDesignPage` for the upsert path used by the agent's `set_design_page`
+/// tool.
 pub fn updateDesignPage(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -326,12 +246,7 @@ pub fn updateDesignPage(
     const height_str = try std.fmt.allocPrint(allocator, "{d}", .{input.height});
     defer allocator.free(height_str);
 
-    // Dynamic SQL builder — width+height are always set, name is
-    // conditional. Back-compat: when `name == null`, the produced
-    // SQL is identical to the pre-fix `UPDATE design_pages SET
-    // width=?, height=?, updated_at=datetime('now') WHERE id=?`.
-    // The `name` value is bound via `?` so the SQLite driver handles
-    // escaping (matches `setDesignPage`'s naming convention).
+    // Dynamic SQL builder — width+height are always set, name is conditional.
     const has_name = input.name != null;
     const update_sql: []const u8 = if (has_name)
         "UPDATE design_pages SET width = ?, height = ?, name = ?, " ++
@@ -347,11 +262,7 @@ pub fn updateDesignPage(
 
     db.exec(allocator, update_sql, update_args) catch return error.DbError;
 
-    // Re-fetch the updated row to return the full DesignPage. Same
-    // ownership pattern as `design_pages_create.zig` useCase:
-    // listPages returns a fresh slice whose strings are heap-owned;
-    // we duplicate into a single struct so the caller can `freePages`
-    // it without affecting the listPages slice.
+    // Re-fetch the updated row to return the full DesignPage.
     const pages = listPages(allocator, db, item_id_owned) catch return error.DbError;
     defer freePages(allocator, pages);
 
@@ -392,20 +303,17 @@ pub fn updateDesignPage(
         };
     }
 
-    // Row existed at SELECT but vanished by the time listPages ran —
-    // race condition (someone deleted between our UPDATE and our
-    // re-fetch). Surface as DbError so the caller knows something
-    // weird happened.
+    // Row existed at SELECT but vanished by the time listPages ran — race
+    // condition (someone deleted between our UPDATE and our re-fetch).
+    // Surface as DbError so the caller knows something weird happened.
     return error.DbError;
 }
 
 // ─── listPages ────────────────────────────────────────────────────────────
 
-/// List the pages of a design workspace item in `position` order.
-///
-/// Returns an owned slice; caller MUST release with
-/// `freePages(allocator, slice)`. If the item has no pages, the slice
-/// has length 0 (not an error).
+/// List the pages of a design workspace item in `position` order. Returns an
+/// owned slice; caller MUST release with `freePages(allocator, slice)`. If
+/// the item has no pages, the slice has length 0 (not an error).
 pub fn listPages(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -533,11 +441,9 @@ pub const AddElementInput = struct {
     text_content: []const u8 = "",
     text_style: []const u8 = "",
     image_url: []const u8 = "",
-    /// Optional FK to an existing `group` or `frame` on the same page.
-    /// When `null` (the default), the new element is top-level — same
-    /// as the pre-2026-07-29 behavior. The parent MUST exist on the
-    /// same `page_id` AND be of type `group` or `frame`; otherwise
-    /// the call fails with `BadParentId` or `ParentNotContainer`.
+    /// Optional FK to an existing `group` or `frame` on the same page. When
+    /// `null` (the default), the new element is top-level — same as the
+    /// pre-2026-07-29 behavior.
     parent_id: ?[]const u8 = null,
 };
 
@@ -557,20 +463,8 @@ pub const AddElementError = error{
     OutOfMemory,
 };
 
-/// Add a new element to a design page. Atomically writes the element's
-/// HTML to disk and inserts the corresponding metadata row.
-///
-/// Returns the new element_id. Caller owns the returned slice.
-///
-/// Behavior:
-///   1. Look up the parent page (item_id, page name, item path) via
-///      JOIN. Returns `PageNotFound` if the page is missing or
-///      `ItemPathMissing` if the workspace_item has no `path`.
-///   2. Sanitize page name and element name.
-///   3. Build file path: `<item_path>/.pabrik/design/<page>/<element>.html`
-///   4. Make the page directory (mkdir-p via Io).
-///   5. Atomic-write the HTML body to disk.
-///   6. INSERT the metadata row with all 11 v6 columns.
+/// Add a new element to a design page. Atomically writes the element's HTML
+/// to disk and inserts the corresponding metadata row.
 pub fn addElement(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -579,10 +473,7 @@ pub fn addElement(
 ) anyerror![]u8 {
     if (input.name.len == 0) return error.BadName;
 
-    // 1. Look up parent page via JOIN. Also SELECT `wi.workspace_id`
-    //    so we can emit a `design_element_created` SSE event with the
-    //    full (workspace_id, item_id, page_id, element_id) context
-    //    — the frontend listener filters events by all four ids.
+    // 1. Look up parent page via JOIN.
     const Lookup = struct { workspace_id: []u8, item_id: []u8, page_name: []u8, item_path: []u8 };
     const lookup: Lookup = blk: {
         var q = try db.query(allocator,
@@ -607,13 +498,8 @@ pub fn addElement(
     defer allocator.free(lookup.item_path);
     if (lookup.item_path.len == 0) return error.ItemPathMissing;
 
-    // 1b. Validate parent_id (when provided): the parent element must
-    //     exist on the SAME page and must be of type `group` or `frame`.
-    //
-    //     We do this BEFORE the disk-write steps so a bad parent_id
-    //     fails fast without leaving orphan files. The query reads the
-    //     parent's page_id + type via a single SELECT — much cheaper
-    //     than writing the HTML and then rolling back the INSERT.
+    // 1b. Validate parent_id (when provided): the parent element must exist
+    // on the SAME page and must be of type `group` or `frame`.
     const parent_id_to_bind: []const u8 = if (input.parent_id) |pid| blk: {
         var q = try db.query(allocator,
             \\SELECT de.page_id, de.type FROM design_page_elements de WHERE de.id = ?
@@ -690,24 +576,13 @@ pub fn addElement(
         x_str, y_str, width_str, height_str, input.page_id,
         elem_type_str, rotation_str, input.fill, corner_radius_str, opacity_str,
         // SqliteBackend.exec binds an empty slice as SQL NULL — that's
-        // exactly what we want for `parent_id = ?` (nullable column)
-        // when the user did not pass parent_id. See project memory
-        // `sqlite-backend-empty-slice-binds-as-null`.
-        //
-        // For `fill` (NOT NULL DEFAULT ''), the same empty-slice bind
-        // would land as NULL and trip the NOT NULL constraint. The
-        // COALESCE(?, '') above maps the NULL bind back to the
-        // column's own default, which is the schema author's intent.
-        // (regression test: design_model_test.zig "addElement with
-        // empty fill succeeds".)
+        // exactly what we want for `parent_id = ?` (nullable column) when the
+        // user did not pass parent_id.
         parent_id_to_bind,
     }) catch |err| {
-        // Surface the actual sqlite error so a 500 "Failed to create
-        // element" tells the user whether it was a FK error, a NOT
-        // NULL violation, a uniqueness collision, a bind error, or
-        // something else. The pre-fix code did nothing here, so the
-        // caller saw only a generic `error.DbError` from a catch-all
-        // downstream — actionable only by reading the backend log.
+        // Surface the actual sqlite error so a 500 "Failed to create element"
+        // tells the user whether it was a FK error, a NOT NULL violation, a
+        // uniqueness collision, a bind error, or something else.
         std.log.err(
             "addElement: INSERT failed for page_id={s} name={s} type={s} err={s}",
             .{ input.page_id, input.name, elem_type_str, @errorName(err) },
@@ -715,13 +590,7 @@ pub fn addElement(
         return error.DbError;
     };
 
-    // Emit SSE event AFTER the SQL INSERT succeeded. Best-effort: if
-    // the event_bus is not initialized (e.g. in unit tests without a
-    // GinwaServer singleton) or the JSON serialization fails, the
-    // caller still gets the new element_id — SSE is a hint, not a
-    // hard contract. The lookup slices (workspace_id, item_id) are
-    // still alive at this point; the function-level defers haven't
-    // fired yet.
+    // Emit SSE event AFTER the SQL INSERT succeeded.
     on_event_sent_design.onEventSendDesignElementCreated(allocator, .{
         .action = "created",
         .workspace_id = lookup.workspace_id,
@@ -775,16 +644,11 @@ pub const UpdateElementInput = struct {
     text_content: ?[]const u8 = null,
     text_style: ?[]const u8 = null,
     image_url: ?[]const u8 = null,
-    /// FK to a `group`/`frame` element on the same page. `null` =
-    /// leave unchanged. Pass `""` (empty string) to clear the
-    /// parent (reparent to top-level). See
-    /// `docs/superpowers/plans/2026-07-28-grouped-layers.md` Chunk 2.
+    /// FK to a `group`/`frame` element on the same page. `null` = leave
+    /// unchanged. Pass `""` (empty string) to clear the parent (reparent to
+    /// top-level).
     parent_id: ?[]const u8 = null,
-    /// Optional post-update position normalization. When set, the
-    /// element's position is recomputed AFTER the SET clause runs —
-    /// used by the drag-to-reparent UX so the moved element lands
-    /// at the bottom of its new parent's children. See
-    /// `docs/superpowers/plans/2026-07-30-design-layer-drag-join-or-leave-group.md`.
+    /// Optional post-update position normalization.
     reposition: ?RepositionMode = null,
 };
 
@@ -792,28 +656,20 @@ pub const UpdateElementInput = struct {
 /// parent_id change. Currently only one variant; future variants
 /// branch in `updateElement` to do precise-position inserts.
 pub const RepositionMode = enum {
-    /// Land at MAX(position) + 1 of all rows that share the new
-    /// parent (or are top-level when parent_id is empty). The
-    /// element being moved is excluded from the MAX so it lands
-    /// strictly after its new siblings.
+    /// Land at MAX(position) + 1 of all rows that share the new parent (or
+    /// are top-level when parent_id is empty). The element being moved is
+    /// excluded from the MAX so it lands strictly after its new siblings.
     last_in_parent,
 };
 
-/// Update an element. Each non-null field is SET in the SQL UPDATE;
-/// null fields are left unchanged. If `html` is set, the file at
-/// `file_path` is rewritten atomically. Returns the element_id on
-/// success; returns `ElementNotFound` if no such row exists.
+/// Update an element. Each non-null field is SET in the SQL UPDATE; null
+/// fields are left unchanged.
 pub fn updateElement(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
     input: UpdateElementInput,
 ) anyerror![]u8 {
-    // 0. Pre-lookup: fetch (page_id, workspace_id, item_id) for the
-    //    element so we can emit a `design_element_updated` SSE
-    //    event with the full id context (after the SQL UPDATE
-    //    succeeds). Returns `ElementNotFound` if no such row.
-    //    The JOIN chains design_page_elements → design_pages →
-    //    workspace_items.
+    // 0.
     const ElementContext = struct {
         page_id: []u8,
         workspace_id: []u8,
@@ -905,12 +761,8 @@ pub fn updateElement(
     if (input.image_url) |v| { try sets.append(allocator, "image_url = ?"); try args.append(allocator, v); }
     if (input.parent_id) |v| { try sets.append(allocator, "parent_id = ?"); try args.append(allocator, v); }
 
-    // Cycle prevention for the parent_id assignment. Run BEFORE the
-    // UPDATE so a cycle never reaches the database. Two checks:
-    //   (a) self-cycle (drop the element into itself)
-    //   (b) ancestor-into-descendant (close a cycle via the chain)
-    // Both return `error.CycleDetected`, mapped to HTTP 400 in the
-    // handler. Skip entirely when parent_id is null (no change).
+    // Cycle prevention for the parent_id assignment. Run BEFORE the UPDATE so
+    // a cycle never reaches the database.
     if (input.parent_id) |new_pid| {
         if (std.mem.eql(u8, new_pid, input.element_id)) return error.CycleDetected;
         if (try wouldCreateCycle(db, allocator, input.element_id, new_pid)) {
@@ -923,11 +775,8 @@ pub fn updateElement(
         // the future branch point for additional RepositionMode variants
         // (e.g. `before_sibling`, `after_sibling`).
         defer _ = mode;
-        // The new parent_id is what we just appended to the SET list
-        // (or empty string for top-level). The COALESCE in the SQL
-        // matches the SELECT-side convention used everywhere in the
-        // codebase: NULL → ''. So `COALESCE(parent_id, '') = ?` works
-        // for BOTH top-level (`?` = '') and nested (`?` = group_id).
+        // The new parent_id is what we just appended to the SET list (or
+        // empty string for top-level).
         const new_parent_sql: []const u8 = if (input.parent_id) |p| p else "";
         var max_pos_q = try db.query(allocator,
             \\SELECT COALESCE(MAX(position), -1) FROM design_page_elements
@@ -1020,25 +869,17 @@ pub fn updateElement(
     // AND element_id separately. Pull the WHERE out: pop the
     // element_id from sets and use it as the WHERE.
     _ = sets.pop();
-    // Actually we set things up wrong: the element_id is in args
-    // as the last position, but our SET list already includes
-    // "updated_at = datetime('now')" as a set. Let's re-do this.
-    // SQL would be: UPDATE ... SET col1=?, col2=?, updated_at=datetime('now') WHERE id=?
-    // We appended element_id to args as the WHERE placeholder. Sets
-    // already ends with "updated_at = datetime('now')" (no params).
-    // So the SQL is correct — just append " WHERE id = ?".
+    // Actually we set things up wrong: the element_id is in args as the last
+    // position, but our SET list already includes "updated_at =
+    // datetime('now')" as a set.
     const where_clause = " WHERE id = ?";
     @memcpy(sql_buf[pos..][0..where_clause.len], where_clause);
     pos += where_clause.len;
 
     try db.exec(allocator, sql_buf[0..pos], args.items);
 
-    // Emit SSE event AFTER the SQL UPDATE succeeded and the SQL
-    // actually changed at least one user-provided column. Best-effort:
-    // if the event_bus is not initialized or the JSON serialization
-    // fails, the caller still gets the element_id — SSE is a hint,
-    // not a hard contract. The `ctx` slices are still alive at this
-    // point; the function-level defers haven't fired.
+    // Emit SSE event AFTER the SQL UPDATE succeeded and the SQL actually
+    // changed at least one user-provided column.
     on_event_sent_design.onEventSendDesignElementUpdated(allocator, .{
         .action = "updated",
         .workspace_id = ctx.workspace_id,
@@ -1051,32 +892,7 @@ pub fn updateElement(
 }
 
 // ─── updateElementsBatch ───────────────────────────────────────────────────
-//
-// Atomic N-element geometry update in a single SQL transaction. Used by
-// the design-canvas drag handler to collapse N per-element PATCHes (one
-// per selected element per pointermove) into ONE PATCH per pointermove.
-//
-// Behaviour:
-//   1. Validate every element_id exists and lives on `input.page_id`.
-//      Pre-flight check (a single SELECT COUNT(*) ... WHERE id IN (...) AND
-//      page_id = ?). If count != input.updates.len → error.ElementNotFound
-//      with NO writes performed.
-//   2. Begin a transaction (mutex-held for the whole batch).
-//   3. For each input.updates[i] in order: build the SET clause
-//      (same dynamic-set pattern as `updateElement`) and execute the
-//      UPDATE inside the transaction.
-//   4. Re-SELECT the updated rows via `getElement` per id (in input order)
-//      and return them as `[]DesignElement`. Caller MUST release with
-//      `freeElements(allocator, result)`.
-//   5. Emit ONE `design_elements_geometry_batch_updated` SSE event
-//      carrying the full id context (workspace_id, item_id, page_id,
-//      element_ids[], updated_at). The frontend's local-mutation dedupe
-//      (stores/designSse.ts) uses this to skip the GET fan-out when the
-//      batch came from this client.
-//   6. Commit (or rollback on any failure inside the loop).
-//
-// Plan: docs/superpowers/plans/2026-07-30-design-drag-debounce-batch.md
-//   (Chunk 1, Task 1.1)
+// Atomic N-element geometry update in a single SQL transaction.
 
 pub const BatchGeometryUpdateInput = struct {
     page_id: []const u8,
@@ -1091,23 +907,15 @@ pub const BatchGeometryUpdateError = error{
     EmptyUpdates,
     ElementNotFound,
     /// Any DB-side failure (PrepareFailed, ExecuteFailed, BindFailed,
-    /// QueryFailed, RowNotFound, DatabaseCorrupt, DiskFull, etc.).
-    /// The handler maps this to 500. Use the concrete error names
-    /// elsewhere if you need to discriminate; this is the catch-all.
+    /// QueryFailed, RowNotFound, DatabaseCorrupt, DiskFull, etc.). The
+    /// handler maps this to 500.
     DbError,
     OutOfMemory,
 };
 
 // ─── moveElementsWithDescendantsBatch ─────────────────────────────────────
-//
 // Plan: docs/superpowers/plans/2026-08-06-move-element-with-descendants.md
-// (Chunk 1, Task 1.1)
-//
-// Server-side cascade: each item's (dx, dy) applies to the item's
-// element AND every transitive descendant of that element. Optional
-// (width, height, rotation) apply ONLY to the root element — Figma
-// convention (resize is per-element, not per-subtree). One SQL
-// transaction across all items — all-or-nothing atomicity.
+// (Chunk 1, Task 1.1) Server-side cascade: each item's (dx, dy) applies to
 
 pub const MoveItem = struct {
     element_id: []const u8,
@@ -1199,10 +1007,7 @@ pub fn updateElementsBatch(
     var committed = false;
     defer if (!committed) tx.rollback() catch {};
 
-    // 4. Apply each UPDATE inside the transaction. We deliberately
-    //    don't extract a helper — the SET-list build is small enough
-    //    that inlining keeps the logic visible and avoids borrowing
-    //    arena slices across loop iterations.
+    // 4. Apply each UPDATE inside the transaction.
     for (input.updates) |u| {
         var sets: std.ArrayList([]const u8) = .empty;
         defer sets.deinit(allocator);
@@ -1263,19 +1068,11 @@ pub fn updateElementsBatch(
         try tx.exec(allocator, sql_buf[0..pos], argv.items);
     }
 
-    // 5. Commit BEFORE re-querying. Re-querying via `db.query`
-    //    (which `getElement` uses) acquires the same mutex the
-    //    transaction holds — calling it inside the tx would
-    //    deadlock. The project memory `zig-sqlite-patterns.md` §
-    //    "Pitfall 3: RAII mutex-held-for-whole-resource-lifetime"
-    //    documents this constraint.
+    // 5. Commit BEFORE re-querying.
     try tx.commit();
     committed = true;
 
     // 6. Re-SELECT the updated rows in INPUT order (not SQL order).
-    //    Use `getElement` per id — each call allocates fresh strings,
-    //    so the returned slice is fully owned. Caller MUST release
-    //    with `freeElements(allocator, result)`.
     var results: std.ArrayList(DesignElement) = .empty;
     errdefer {
         for (results.items) |e| freeElement(allocator, e);
@@ -1289,10 +1086,7 @@ pub fn updateElementsBatch(
         try results.append(allocator, el);
     }
 
-    // 7. Emit ONE batch SSE event. Best-effort: failure here does NOT
-    //    fail the request — SSE is a hint, not a hard contract. The
-    //    `updated_at` is the current Unix epoch in seconds (matches
-    //    existing SSE timestamps elsewhere).
+    // 7. Emit ONE batch SSE event.
     var element_ids_buf: std.ArrayList([]const u8) = .empty;
     defer element_ids_buf.deinit(allocator);
     for (input.updates) |u| try element_ids_buf.append(allocator, u.element_id);
@@ -1315,43 +1109,8 @@ pub fn updateElementsBatch(
 }
 
 // ─── moveElementsWithDescendantsBatch ─────────────────────────────────────
-//
 // Plan: docs/superpowers/plans/2026-08-06-move-element-with-descendants.md
-// (Chunk 1, Task 1.2)
-//
-// Server-side cascade move. Each item's (dx, dy) applies to the item's
-// element AND every transitive descendant of that element via a single
-// recursive CTE inside one SQL transaction. Optional (width, height,
-// rotation) apply ONLY to the item's root — Figma convention (resize
-// is per-element, not per-subtree).
-//
-// Behaviour:
-//   1. Validate `items` is non-empty (EmptyItems).
-//   2. Look up the page JOIN (workspace_id, item_id) — needed for the
-//      SSE event payload. PageNotFound on miss.
-//   3. Pre-flight: verify every input item's element_id exists on
-//      `input.page_id`. Any miss → ElementNotFound (atomicity, no
-//      writes).
-//   4. Begin transaction. For each input item:
-//      a. Build a recursive CTE that walks DOWN from `item.element_id`
-//         through `parent_id` (limited to 10000 rows as a safety net
-//         against pathological cycles — though cycle prevention on
-//         reparent already keeps the DB consistent).
-//      b. UPDATE all subtree rows: SET x = x + dx, y = y + dy,
-//         updated_at = datetime('now').
-//      c. For the root row only, also SET width/height/rotation
-//         (when non-null) + updated_at.
-//   5. Commit. On any failure the deferred rollback leaves the DB
-//      unchanged.
-//   6. Re-SELECT every affected element (deduped union of all
-//      subtrees) and return them in tree-traversal order (root first,
-//      then descendants in source order). Heap-owned; caller frees
-//      with `freeElements`.
-//   7. Emit ONE `design_elements_geometry_batch_updated` SSE event
-//      carrying the deduped union of affected element_ids.
-//
-// Returns the slice of updated `DesignElement` rows in tree-traversal
-// order. Atomicity is all-or-nothing.
+// (Chunk 1, Task 1.2) Server-side cascade move.
 
 pub fn moveElementsWithDescendantsBatch(
     allocator: std.mem.Allocator,
@@ -1419,38 +1178,7 @@ pub fn moveElementsWithDescendantsBatch(
     var committed = false;
     defer if (!committed) tx.rollback() catch {};
 
-    // 4. Apply the per-item cascade UPDATEs. We use a dynamic
-    //    `UPDATE ... WHERE id IN (subtree_ids)` per item, where
-    //    `subtree_ids` is collected by a recursive CTE in a separate
-    //    SELECT first (so we can dedupe + reuse).
-    //
-    // Strategy: for each item:
-    //   a. SELECT all subtree element ids via recursive CTE.
-    //   b. UPDATE x/y for the whole subtree (root + descendants).
-    //   c. UPDATE width/height/rotation for the root only (when
-    //      non-null). When both (b) and (c) target the same row,
-    //      SQLite's per-statement UPDATE applies both — we just split
-    //      into two UPDATEs to keep the SET-list build simple.
-    //
-    // Dedup is automatic: `WHERE id IN (subtree_ids)` matches each row
-    // at most once per UPDATE. The (dx, dy) is applied to the row's
-    // CURRENT x/y at UPDATE-time, so multiple items in the batch
-    // with overlapping subtrees would compound the delta — the
-    // caller should avoid this (the frontend sends one item per
-    // selected root, no overlap in normal usage).
-    //
-    // `affected_ids` accumulates the **owned** (dup'd) subtree element
-    // ids across all iterations. Owns its strings via `allocator.dupe`
-    // at append time so the buffers survive across the `for (input.items)`
-    // iterations (whose `subtree_ids` buffers are freed at the end of
-    // each iteration body). Earlier versions of this code used a
-    // `std.StringHashMap(void)` for the dedup and stored the
-    // `subtree_ids[i]` slice headers directly — that broke with N>=8
-    // because the second iteration's `subtree_ids.deinit(allocator)`
-    // freed the FIRST iteration's id buffers, leaving the hashmap's
-    // slice headers pointing into freed memory. The next put would
-    // then `eql`-compare the new key against the freed bytes and
-    // crash. Owned-keys below sidestep the issue.
+    // 4. Apply the per-item cascade UPDATEs. We use a dynamic `UPDATE ...
     var affected_ids: std.ArrayList([]u8) = .empty;
     defer {
         for (affected_ids.items) |id| allocator.free(id);
@@ -1459,11 +1187,7 @@ pub fn moveElementsWithDescendantsBatch(
 
     for (input.items) |it| {
         // 4a. Recursive CTE — collect the subtree ids (root + every
-        //     transitive descendant). We inline the SQL here rather
-        //     than extract a helper because the helper would need
-        //     to know about the `*Transaction` vs `*SqliteBackend`
-        //     type distinction (both expose `.query`, but they're
-        //     distinct types in this codebase).
+        // transitive descendant).
         var subtree_ids: std.ArrayList([]u8) = .empty;
         errdefer {
             for (subtree_ids.items) |id| allocator.free(id);
@@ -1501,11 +1225,9 @@ pub fn moveElementsWithDescendantsBatch(
                 "UPDATE design_page_elements SET x = x + ?, y = y + ?, updated_at = datetime('now') WHERE id IN (");
             var argv: std.ArrayList([]const u8) = .empty;
             defer argv.deinit(allocator);
-            // Bind dx and dy as text — the codebase convention is
-            // that `tx.exec` only binds TEXT (see
-            // `zig-sqlite-patterns.md` §"exec / query only bind TEXT").
-            // SQLite coerces numeric-looking TEXT to INTEGER under
-            // INTEGER affinity.
+            // Bind dx and dy as text — the codebase convention is that
+            // `tx.exec` only binds TEXT (see `zig-sqlite-patterns.md` §"exec
+            // / query only bind TEXT").
             const dx_str = try std.fmt.allocPrint(allocator, "{d}", .{it.dx});
             defer allocator.free(dx_str);
             const dy_str = try std.fmt.allocPrint(allocator, "{d}", .{it.dy});
@@ -1573,17 +1295,8 @@ pub fn moveElementsWithDescendantsBatch(
             try tx.exec(allocator, sql_buf[0..pos], argv.items);
         }
 
-        // 4d. Track every affected id (deduped) for the re-SELECT +
-        //     SSE event below. Linear O(n²) scan over
-        //     `affected_ids.items` to skip ids we've already seen —
-        //     the input batch is bounded by the SELECTED element count
-        //     in the UI (small, ≤ a few dozen typical) so the n²
-        //     constant beats maintaining a separate dedup hashmap.
-        //     Each new id is duped into `affected_ids` so the buffers
-        //     outlive this iteration's `subtree_ids.deinit(allocator)`
-        //     (see the `affected_ids` declaration above for the
-        //     rationale — the dangling-pointer / use-after-free the
-        //     prior `std.StringHashMap(void)` triggered).
+        // 4d. Track every affected id (deduped) for the re-SELECT + SSE event
+        // below.
         for (subtree_ids.items) |id| {
             var already_seen = false;
             for (affected_ids.items) |existing| {
@@ -1605,9 +1318,6 @@ pub fn moveElementsWithDescendantsBatch(
     committed = true;
 
     // 6. Re-SELECT the affected rows (deduped union of all subtrees).
-    //    Use `getElement` per id — each call allocates fresh strings,
-    //    so the returned slice is fully owned. Caller MUST release
-    //    with `freeElements(allocator, result)`.
     var results: std.ArrayList(DesignElement) = .empty;
     errdefer {
         for (results.items) |e| freeElement(allocator, e);
@@ -1643,43 +1353,8 @@ pub fn moveElementsWithDescendantsBatch(
 }
 
 // ─── moveElementToPage ────────────────────────────────────────────────────
-//
 // Plan: docs/superpowers/plans/2026-08-06-move-element-to-page.md (Chunk 1)
-//
-// Cross-page element relocate. Changes `page_id` (and `position` on the
-// target page) instead of `x`/`y`. Mirrors the cascade semantics of
-// `moveElementsWithDescendantsBatch`: when `apply_to_children = true`
-// (default), the moved subtree includes the root AND every transitive
-// descendant, in one SQL transaction.
-//
-// Behaviour:
-//   1. Same-page guard (cheap) → `SamePage`.
-//   2. Pre-flight: the element must exist on `source_page_id`.
-//      Different-page `element_id` → `ElementNotFound`.
-//   3. Pre-flight: the target page must exist (`PageNotFound`).
-//   4. Cross-design guard: the target must be on the same `item_id`
-//      as the source page → `CrossDesign`.
-//   5. Resolve the moved-subtree element ids via recursive CTE (depth-
-//      limited at 10000 as a cycle safety net).
-//   6. Begin transaction. For each subtree element:
-//      a. SET page_id = target_page_id.
-//      b. For the ROOT only: SET position = (MAX(position) on target
-//         page) + 1 — append-at-end per Q5 default.
-//   7. Auto-detach (Q4 default): if the root's parent_id is non-empty
-//      AND that parent is NOT in the moved subtree (i.e. the parent
-//      stays behind on the source page), SET parent_id = NULL on the
-//      root. Otherwise descendants would carry a cross-page parent_id
-//      reference (schema invariant violated).
-//   8. Commit. On error before commit, rollback leaves DB unchanged.
-//   9. Re-SELECT the moved subtree via `getElement` (heap-owned for
-//      the caller).
-//  10. Emit a `design_elements_geometry_batch_updated` SSE event with
-//      the deduped subtree element ids (best-effort; SSE failure
-//      doesn't fail the request — same as the sibling cascade handler).
-//
-// The function is single-element only (no batch). Followup plan can
-// add `moveElementsToPageBatch` if the LLM needs to relayout multiple
-// elements across pages in one call.
+// Cross-page element relocate.
 
 pub const MoveElementToPageInput = struct {
     /// The page the element currently lives on. The element must exist
@@ -1691,10 +1366,9 @@ pub const MoveElementToPageInput = struct {
     /// The destination page. Must exist and share the design item
     /// with `source_page_id`.
     target_page_id: []const u8,
-    /// Default true. When true, every transitive descendant of
-    /// `element_id` moves with it (Figma parity); when false, only the
-    /// root itself moves (descendants stay on the source page as
-    /// top-level orphans).
+    /// Default true. When true, every transitive descendant of `element_id`
+    /// moves with it (Figma parity); when false, only the root itself moves
+    /// (descendants stay on the source page as top-level orphans).
     apply_to_children: bool = true,
 };
 
@@ -1796,10 +1470,9 @@ pub fn moveElementToPage(
         return error.CrossDesign;
     }
 
-    // 5. Resolve the moved-subtree element ids.
-    //    - apply_to_children = true  → root + every transitive descendant
-    //      (recursive CTE, LIMIT 10000 cycle safety)
-    //    - apply_to_children = false → just the root
+    // 5. Resolve the moved-subtree element ids. - apply_to_children = true →
+    // root + every transitive descendant (recursive CTE, LIMIT 10000 cycle
+    // safety) - apply_to_children = false → just the root
     var subtree_ids: std.ArrayList([]u8) = .empty;
     defer {
         for (subtree_ids.items) |id| allocator.free(id);
@@ -1855,14 +1528,8 @@ pub fn moveElementToPage(
         try tx.exec(allocator, sql_buf.items, argv.items);
     }
 
-    // 8. Q4 default — auto-detach the root when its parent isn't in
-    //    the moved subtree. The parent's `parent_id` chain stays on
-    //    the source page; if we kept the link, the root would carry a
-    //    cross-page parent_id (violating the "parent lives on the same
-    //    page" invariant).
-    //
-    // Skip when: root is top-level (parent_id empty), or the parent IS
-    // part of the moved subtree (we're moving a group with its parent).
+    // 8. Q4 default — auto-detach the root when its parent isn't in the moved
+    // subtree.
     if (elem_lookup.parent_id.len > 0) {
         var parent_in_subtree = false;
         for (subtree_ids.items) |id| {
@@ -1880,18 +1547,8 @@ pub fn moveElementToPage(
         }
     }
 
-    // 9. Append-at-end for the root's `position` on the target page
-    //    (Q5 default). Descendants' positions are NOT adjusted here;
-    //    they're irrelevant for rendering (the page-level rendering
-    //    order is by `position` and descendants within a group render
-    //    in tree order — a separate column tracks that ordering, not
-    //    the page-level `position`). The schema's `position` is
-    //    rendered for top-level elements only; children within a
-    //    group use `parent_id` + their own `position` for inter-child
-    //    ordering on the target page's independent sort.
-    //
-    // We don't refresh `updated_at` here (the row already got it from
-    // the bulk UPDATE above).
+    // 9. Append-at-end for the root's `position` on the target page (Q5
+    // default).
     {
         const next_pos_str = blk: {
             var q = try tx.query(allocator,
@@ -1972,35 +1629,9 @@ pub const GroupElementsError = error{
     OutOfMemory,
 };
 
-/// Create a new `group` (or `frame`) parent element at the UNION
-/// bounding box of the given `child_ids`, and reparent every child
-/// to the new parent. Single transaction — all-or-nothing.
-///
-/// Behaviour:
-///   1. Validate children are all on the requested page
-///      (`SELECT page_id FROM design_page_elements WHERE id IN (...)`).
-///   2. Reject if any child is already parented
-///      (`parent_id IS NOT NULL`) — first-cut safety. Future
-///      enhancement: support "re-parent" by passing through.
-///   3. Compute the union bbox: `min_x = min(child.x)`,
-///      `min_y = min(child.y)`, `max_x = max(child.x + child.width)`,
-///      `max_y = max(child.y + child.height)`.
-///   4. INSERT a new element row with `parent_id = NULL`,
-///      `z_index = MAX(child.z_index) + 1`,
-///      `position = MAX(child.position) + 1`,
-///      `fill = "transparent"` (so it doesn't visually obscure
-///      children — frames with `fill = ""` would render as
-///      white-on-white if the canvas background is also white).
-///   5. UPDATE children in one statement to set `parent_id` to the
-///      new parent's id.
-///   6. Emit `design_element_created` SSE for the parent + one
-///      `design_element_updated` SSE per child.
-///   7. Atomically write an empty `<div>` to
-///      `<item_path>/.pabrik/design/<page>/<group_name>.html`.
-///
-/// Returns the new parent's element_id (heap-owned; caller frees).
-///
-/// Plan: docs/superpowers/plans/2026-07-28-grouped-layers.md (Chunk 2)
+/// Create a new `group` (or `frame`) parent element at the UNION bounding box
+/// of the given `child_ids`, and reparent every child to the new parent.
+/// Single transaction — all-or-nothing.
 pub fn groupElements(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -2110,10 +1741,9 @@ pub fn groupElements(
     var min_y: i64 = std.math.maxInt(i64);
     var max_x: i64 = std.math.minInt(i64);
     var max_y: i64 = std.math.minInt(i64);
-    // Track min_z so the new container can be placed BEHIND its
-    // children (a group/frame is a container, not a peer — it must
-    // not occlude its contents). min_z starts at the same sentinels
-    // as min_x/min_y so a single-child page still works.
+    // Track min_z so the new container can be placed BEHIND its children (a
+    // group/frame is a container, not a peer — it must not occlude its
+    // contents). min_z starts at the same sentinels as min_x/min_y so a
     var min_z: i64 = std.math.maxInt(i64);
     var max_z: i64 = 0;
     var max_pos: i64 = -1;
@@ -2139,24 +1769,18 @@ pub fn groupElements(
     const file_path = try std.fmt.allocPrint(allocator, "{s}/{s}.html", .{ page_dir, sanitized_elem });
     defer allocator.free(file_path);
 
-    // mkdir -p the page directory (createDirPath is Io's mkdir-p).
-    // Use the SqliteBackend's io — we don't take io as a parameter
-    // because the LLM tool path (set_design_page) passes db without
-    // an io handle.
+    // mkdir -p the page directory (createDirPath is Io's mkdir-p). Use the
+    // SqliteBackend's io — we don't take io as a parameter because the LLM
+    // tool path (set_design_page) passes db without an io handle.
     std.Io.Dir.cwd().createDirPath(db.io, page_dir) catch return error.FileWriteFailed;
 
-    // Atomic-write an empty wrapper. The group's HTML body is a
-    // transparent container — children render themselves inside
-    // their own (separate) iframes via the design-mode iframe
-    // convention.
+    // Atomic-write an empty wrapper. The group's HTML body is a transparent
+    // container — children render themselves inside their own (separate)
+    // iframes via the design-mode iframe convention.
     const empty_html = "<div style=\"width:100%;height:100%;\"></div>";
     design_io.atomicWriteFile(allocator, file_path, empty_html) catch return error.FileWriteFailed;
 
     // 5. Start the transaction (mutex-held for the whole operation).
-    // Use the explicit commit-then-mark pattern: any failure below
-    // the commit fires the deferred rollback (since `tx.completed`
-    // is false). On the success path, the commit runs and we
-    // explicitly mark the defer a no-op via the `committed` flag.
     var tx = try db.begin();
     var committed = false;
     defer if (!committed) tx.rollback() catch {};
@@ -2173,12 +1797,7 @@ pub fn groupElements(
     defer allocator.free(width_str);
     const height_str = try std.fmt.allocPrint(allocator, "{d}", .{group_height});
     defer allocator.free(height_str);
-    // The new container must render BEHIND its children. Using the
-    // highest child z_index plus one would put the group on top of its
-    // contents, so an opaque `fill` like the user's template #181616
-    // would occlude the children inside it. min_z - 1 slides the
-    // container one slot below the earliest child so the children
-    // paint on top. (See task_1786693066547 / plan 2026-08-14.)
+    // The new container must render BEHIND its children.
     const z_index_str = try std.fmt.allocPrint(allocator, "{d}", .{min_z - 1});
     defer allocator.free(z_index_str);
     const position_str = try std.fmt.allocPrint(allocator, "{d}", .{max_pos + 1});
@@ -2272,42 +1891,9 @@ pub const ReparentElementsError = error{
     OutOfMemory,
 };
 
-/// Re-parent N elements atomically (single SQL transaction). Used
-/// by the drag-to-reparent UX so dragging 1 or N selected rows into
-/// a group uses one round-trip instead of N parallel PUTs.
-///
-/// Behaviour:
-///   1. Validate `element_ids` is non-empty (EmptyElementIds).
-///   2. Look up the page JOIN (workspace_id, item_id) — needed for
-///      the SSE event payload. PageNotFound on miss.
-///   3. Look up `new_parent_id` (when non-null): validate it exists
-///      on the same page, validate its type is `group` or `frame`
-///      (containers only). BadNewParentId on miss / wrong type /
-///      cross-page.
-///   4. Pre-flight cycle check: for each element_id, walk up from
-///      `new_parent_id` and reject the WHOLE batch if any element_id
-///      appears in the chain (CycleDetected). No writes happen on
-///      rejection — see the SQL transaction below.
-///   5. Begin transaction. For each element_id (in input order):
-///      a. SELECT COALESCE(MAX(position), -1) FROM design_page_elements
-///         WHERE (COALESCE(parent_id, '') = ? OR parent_id IS NULL)
-///         AND id != ?
-///      b. UPDATE design_page_elements SET parent_id = ?, position = ?,
-///         updated_at = datetime('now') WHERE id = ?
-///   6. Commit. On any failure the deferred rollback leaves the DB
-///      unchanged.
-///   7. Re-SELECT the updated rows and return them in input order
-///      (heap-owned; caller frees with `freeElements`).
-///   8. Emit one `design_element_updated` SSE event per affected
-///      element (best-effort).
-///
-/// Returns the slice of updated `DesignElement` rows in input order.
-/// The signature is `anyerror!` so the sqlite-side error unions
-/// from `db.query` / `db.exec` / `db.begin` can flow through
-/// unchanged — the handler maps the documented variants to HTTP
-/// status codes and treats the rest as 500.
-///
-/// Plan: docs/superpowers/plans/2026-07-30-design-layer-drag-join-or-leave-group.md
+/// Re-parent N elements atomically (single SQL transaction). Used by the
+/// drag-to-reparent UX so dragging 1 or N selected rows into a group uses one
+/// round-trip instead of N parallel PUTs.
 pub fn reparentElements(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -2340,9 +1926,8 @@ pub fn reparentElements(
     defer allocator.free(lookup.item_id);
 
     // 2. Validate the new parent (when non-null). Same shape as
-    //    updateElement's parent_id cycle check, plus the page match
-    //    and container-type validation that setElementParent already
-    //    does.
+    // updateElement's parent_id cycle check, plus the page match and
+    // container-type validation that setElementParent already does.
     if (input.new_parent_id) |new_pid| {
         var q = try db.query(allocator,
             \\SELECT page_id, type FROM design_page_elements WHERE id = ?
@@ -2405,10 +1990,8 @@ pub fn reparentElements(
         }
     }
 
-    // 6. SQL transaction. defer-rollback guarantees atomicity: if
-    //    any UPDATE fails below, the rollback fires automatically.
-    //    On the success path we commit explicitly and mark
-    //    `committed = true` to suppress the defer rollback.
+    // 6. SQL transaction. defer-rollback guarantees atomicity: if any UPDATE
+    // fails below, the rollback fires automatically.
     var tx = try db.begin();
     var committed = false;
     defer if (!committed) tx.rollback() catch {};
@@ -2510,20 +2093,8 @@ pub fn reparentElements(
         try updated.append(allocator, e);
     }
 
-    // 9. Emit SSE events (one per element) AFTER the commit so listeners
-    //    see state that's already committed. Best-effort.
-    //
-    //    `committed = true` MUST come after `try tx.commit()`. Clearing
-    //    it first disarms the `defer if (!committed) tx.rollback()`
-    //    safety net while the COMMIT is still pending, and
-    //    `Transaction._doFinalizeCommit` marks the Transaction `completed`
-    //    before it reports a COMMIT failure — so a COMMIT that comes back
-    //    `database is locked` leaves an OPEN transaction holding WAL's
-    //    single writer slot on this connection, with no code path left
-    //    that can close it. Every later write on this backend then fails
-    //    with the same message until the process restarts. The four
-    //    sibling functions in this file (lines 1272, 1604, 1914, 2225)
-    //    already order it this way.
+    // 9. Emit SSE events (one per element) AFTER the commit so listeners see
+    // state that's already committed.
     try tx.commit();
     committed = true;
 
@@ -2563,16 +2134,8 @@ pub const ReorderError = error{
     OutOfMemory,
 };
 
-/// Reorder 1+ elements on a page. Returns the updated rows in their
-/// new top-to-bottom z-order. Caveats:
-///   - All ids must resolve to rows on the same `page_id`.
-///   - For `bring_to_front` / `send_to_back`, multiple ids are
-///     processed in (or reverse-of) input order; users get explicit
-///     control of the final relative order via the order they list
-///     the ids.
-///   - For `bring_forward` / `send_backward`, only the first
-///     (resp. last) selected id swaps with its next sibling; if the
-///     selection contains more ids, only the boundary id moves.
+/// Reorder 1+ elements on a page. Returns the updated rows in their new
+/// top-to-bottom z-order.
 pub fn reorderElements(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -2580,12 +2143,7 @@ pub fn reorderElements(
 ) ReorderError![]DesignElement {
     if (input.element_ids.len == 0) return error.BadElementId;
 
-    // 1. Pre-flight: verify the page exists. listElements returns an
-    //    empty slice (no error) for a non-existent page, so we cannot
-    //    distinguish "no elements yet" from "page doesn't exist"
-    //    without an extra SELECT. The HTTP handler maps
-    //    PageNotFound to 404; without this check every reorder
-    //    against an unknown page would surface as 400 BadElementId.
+    // 1.
     {
         var pq = db.query(allocator,
             "SELECT 1 FROM design_pages WHERE id = ?",
@@ -2602,14 +2160,8 @@ pub fn reorderElements(
         allocator.free(all);
     };
 
-    // 2. Validate every requested id resolves to a row on this page.
-    //    Build an id -> index map. Duplicates in input.element_ids are
-    //    tolerated (the second occurrence skips the DB lookup).
-    //
-    //    For ids that DON'T resolve to a row on this page, distinguish
-    //    BadElementId (id missing entirely) from CrossPageIds
-    //    (id exists but on a different page) via an existence probe —
-    //    so the HTTP handler can return 400 vs 409 correctly.
+    // 2. Validate every requested id resolves to a row on this page. Build an
+    // id -> index map.
     var id_to_idx = std.StringHashMap(usize).init(allocator);
     defer id_to_idx.deinit();
     for (all, 0..) |e, i| try id_to_idx.put(e.id, i);
@@ -2676,11 +2228,8 @@ pub fn reorderElements(
             }
         },
         .bring_forward => {
-            // For each selected (in INPUT order), swap with the
-            // next-sibling above (the FIRST non-selected element
-            // with a HIGHER z_index). Iterating forward means the
-            // highest-of-the-selected swaps first, then the next, etc.
-            // — collectively the multi-selection moves up by one slot.
+            // For each selected (in INPUT order), swap with the next-sibling
+            // above (the FIRST non-selected element with a HIGHER z_index).
             for (indexes.items) |idx| {
                 const cur_z = all[idx].z_index;
                 // We want the smallest non-selected z that is > cur_z.
@@ -2767,14 +2316,8 @@ pub const UngroupError = error{
     OutOfMemory,
 };
 
-/// Dissolve a `group` or `frame`: reparent its direct children to
-/// the group's parent (or NULL if top-level), delete the group's row.
-/// Children keep their absolute x/y/z_index — their geometry is
-/// independent of the group's bbox.
-///
-/// Returns the rows of the now-orphaned children in their new state
-/// (post-reparent) so the caller can mirror them in local state.
-/// Call `freeElements(allocator, result)` on the returned slice.
+/// Dissolve a `group` or `frame`: reparent its direct children to the group's
+/// parent (or NULL if top-level), delete the group's row.
 pub fn ungroupElements(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -2871,10 +2414,8 @@ pub fn ungroupElements(
 
 // ─── listElements / getElement ─────────────────────────────────────────────
 
-/// List all elements of a design page in (z_index, position) order.
-/// Returns an owned slice; caller MUST release with
-/// `freeElements(allocator, slice)`. Excludes the element's HTML
-/// body — use `loadElementHtml` to fetch the body lazily.
+/// List all elements of a design page in (z_index, position) order. Returns
+/// an owned slice; caller MUST release with `freeElements(allocator, slice)`.
 pub fn listElements(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -3031,13 +2572,8 @@ pub const PageWithElements = struct {
     }
 };
 
-/// Get ONE design page with all of its elements (no HTML bodies).
-/// Returns `PageNotFound` if no page with that id exists. The
-/// returned bundle owns all heap allocations — caller MUST call
-/// `result.deinit(allocator)`.
-///
-/// Lazy-loading: element HTML bodies are NOT included; use
-/// `loadElementHtml(element_id)` to fetch them individually.
+/// Get ONE design page with all of its elements (no HTML bodies). Returns
+/// `PageNotFound` if no page with that id exists.
 pub fn getPageWithElements(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -3055,10 +2591,9 @@ pub fn getPageWithElements(
     defer q.deinit();
 
     const page = (try q.next()) orelse return error.PageNotFound;
-    // The page row is owned by `q` — dup the fields BEFORE row.deinit
-    // fires (the existing listPages pattern uses allocator.dupe inside
-    // the loop body). See project memory
-    // `zig-slice-headers-across-defer-lifetimes`.
+    // The page row is owned by `q` — dup the fields BEFORE row.deinit fires
+    // (the existing listPages pattern uses allocator.dupe inside the loop
+    // body). See project memory `zig-slice-headers-across-defer-lifetimes`.
     var page_owned: DesignPage = undefined;
     {
         defer page.deinit(allocator);
@@ -3084,36 +2619,24 @@ pub fn getPageWithElements(
     };
 }
 
-/// List ALL pages of a design item, each with its elements (no HTML
-/// bodies). Returns an owned slice; caller MUST call `freePagesWithElements`
-/// (or each result's `deinit` + `allocator.free(slice)`).
-///
-/// For an item with N pages and M total elements across all pages,
-/// this issues 1 query for the page list and N queries for the
-/// elements — fine for small N (the design-mode UI typically has
-/// 3-10 pages). If N grows large, callers should batch via
-/// `getPageWithElements` per visible page instead.
+/// List ALL pages of a design item, each with its elements (no HTML bodies).
+/// Returns an owned slice; caller MUST call `freePagesWithElements` (or each
+/// result's `deinit` + `allocator.free(slice)`).
 pub fn listPagesWithElements(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
     item_id: []const u8,
 ) anyerror![]PageWithElements {
     const pages = try listPages(allocator, db, item_id);
-    // Track how many pages we've successfully moved into `rows`.
-    // Un-consumed pages still own their strings (and need freeing
-    // on error). Consumed pages are owned by `rows` (freed by
-    // rows.deinit via the errdefer below). The backing slice of
-    // `pages` is freed on both paths (success path frees it
-    // directly after the loop; error path frees it via the defer
-    // below).
+    // Track how many pages we've successfully moved into `rows`. Un-consumed
+    // pages still own their strings (and need freeing on error).
     var consumed: usize = 0;
     var backing_slice_freed = false;
     defer {
         if (!backing_slice_freed) {
-            // Error path: free the un-consumed tail's strings, then
-            // the backing slice. The consumed pages are owned by
-            // `rows` and will be freed by its errdefer below
-            // (registered AFTER this defer).
+            // Error path: free the un-consumed tail's strings, then the
+            // backing slice. The consumed pages are owned by `rows` and will
+            // be freed by its errdefer below (registered AFTER this defer).
             for (pages[consumed..]) |p| {
                 allocator.free(p.id);
                 allocator.free(p.workspace_item_id);
@@ -3166,12 +2689,8 @@ pub fn freePagesWithElements(allocator: std.mem.Allocator, items: []PageWithElem
 }
 
 // ─── setElementParent ─────────────────────────────────────────────────────
-//
-// Re-parent an existing element to a new `group`/`frame` (or to
-// top-level when `new_parent_id` is null). This is the v1 unblocker
-// for the LLM tool surface — without this primitive, an element
-// created via `add_element` (which always lands at top-level) cannot
-// be moved into an existing group/frame after the fact.
+// Re-parent an existing element to a new `group`/`frame` (or to top-level
+// when `new_parent_id` is null).
 
 pub const SetElementParentError = error{
     ElementNotFound,
@@ -3183,25 +2702,8 @@ pub const SetElementParentError = error{
     OutOfMemory,
 };
 
-/// Cycle detection for reparent operations. Returns `true` iff
-/// reparenting `element_id` to be a child of `new_parent_id` would
-/// close a cycle — i.e. `new_parent_id` is already a descendant of
-/// `element_id` (or `element_id` itself, though the self-check is
-/// done separately at the call site).
-///
-/// The recursive CTE walks the parent chain UPWARD from
-/// `new_parent_id`. If `element_id` appears anywhere in that chain,
-/// the new assignment would close a cycle. The
-/// `WHERE dpe.parent_id IS NOT NULL` guard terminates the walk at
-/// top-level rows. `LIMIT 1` short-circuits as soon as the target
-/// is found.
-///
-/// Used by `updateElement` and `reparentElements` to reject reparent
-/// requests that would close a cycle. Same shape as the inline check
-/// in `setElementParent` — extracted so both endpoints share one
-/// canonical implementation.
-///
-/// Plan: docs/superpowers/plans/2026-07-30-design-layer-drag-join-or-leave-group.md
+/// Cycle detection for reparent operations. Returns `true` iff reparenting
+/// `element_id` to be a child of `new_parent_id` would close a cycle — i.e.
 pub fn wouldCreateCycle(
     db: *sqlite.SqliteBackend,
     allocator: std.mem.Allocator,
@@ -3227,27 +2729,7 @@ pub fn wouldCreateCycle(
 }
 
 /// Re-parent `element_id` to `new_parent_id` (or top-level when null).
-///
-/// Behaviour:
-///   1. Look up `element_id`'s current page_id + parent_id.
-///      Return `ElementNotFound` if the row is missing.
-///   2. If `new_parent_id` is null → UPDATE parent_id = NULL
-///      (empty string for the empty-slice-binds-as-NULL SQLite
-///      convention; same trick used by `addElement`).
-///   3. If `new_parent_id` equals the element's current parent_id →
-///      no-op (idempotent success).
-///   4. Look up `new_parent_id`'s page_id + type.
-///      Return `ParentNotFound` if the row is missing.
-///   5. Different page? Return `DifferentPages`.
-///   6. Type in {`group`, `frame`}? Otherwise return
-///      `ParentNotContainer`.
-///   7. Cycle check: walk the parent chain from `new_parent_id`
-///      upward; if `element_id` appears, return `CycleDetected`.
-///   8. UPDATE design_page_elements SET parent_id = ? WHERE id = ?
-///      and emit a `design_element_updated` SSE event.
-///
-/// Returns `void`; the caller re-fetches the element via `getElement`
-/// if it needs the post-update state.
+/// Behaviour: 1. Look up `element_id`'s current page_id + parent_id.
 pub fn setElementParent(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -3317,14 +2799,8 @@ pub fn setElementParent(
         return error.ParentNotContainer;
     }
 
-    // 7. Cycle detection via recursive CTE.
-    //
-    // Walk up the parent chain starting from `new_parent_id`. If any
-    // ancestor equals `element_id`, the new assignment would close
-    // a cycle (element_id → ... → new_parent_id → element_id).
-    //
-    // The `WHERE dpe.parent_id IS NOT NULL` guard prevents infinite
-    // loops on top-level chains (parent_id = NULL ends the walk).
+    // 7. Cycle detection via recursive CTE. Walk up the parent chain starting
+    // from `new_parent_id`.
     {
         var q = try db.query(allocator,
             \\WITH RECURSIVE chain(id) AS (
@@ -3350,23 +2826,16 @@ pub fn setElementParent(
 
 // ─── deleteElement ────────────────────────────────────────────────────────
 
-/// Delete an element. Returns `true` if the row was deleted, `false`
-/// if no such element existed.
-///
-/// The on-disk file is unlinked AFTER the SQL DELETE succeeds
-/// (defer-pattern). If the unlink fails (file missing or
-/// permission denied), we silently log and continue — the DB
-/// state is the source of truth, and a leftover file becomes an
-/// orphan that the next run can clean up.
+/// Delete an element. Returns `true` if the row was deleted, `false` if no
+/// such element existed.
 pub fn deleteElement(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
     element_id: []const u8,
 ) anyerror!bool {
-    // Look up file_path + workspace_id + item_id + page_id BEFORE
-    // delete so we can both unlink the file and emit a
-    // `design_element_deleted` SSE event with the full id context.
-    // Single JOIN query that returns all four pieces of context.
+    // Look up file_path + workspace_id + item_id + page_id BEFORE delete so
+    // we can both unlink the file and emit a `design_element_deleted` SSE
+    // event with the full id context.
     const Lookup = struct {
         file_path: []u8,
         page_id: []u8,
@@ -3399,9 +2868,6 @@ pub fn deleteElement(
 
     // NULL-back step: if this element is itself a parent (group/frame),
     // orphan its children first so they become top-level again.
-    // Otherwise the children would silently reference a non-existent
-    // parent (SQLite FK enforcement is OFF by default — see
-    // `docs/superpowers/plans/2026-07-28-grouped-layers.md` Chunk 4).
     try db.exec(allocator,
         "UPDATE design_page_elements SET parent_id = NULL WHERE parent_id = ?",
         &.{element_id});
@@ -3417,11 +2883,7 @@ pub fn deleteElement(
         design_io.deleteFileIfExists(allocator, lookup.file_path) catch {};
     }
 
-    // Emit SSE event AFTER the SQL DELETE succeeded. Best-effort: if
-    // the event_bus is not initialized or the JSON serialization
-    // fails, the caller still gets a successful return value — SSE
-    // is a hint, not a hard contract. The lookup slices are still
-    // alive at this point; the function-level defers haven't fired.
+    // Emit SSE event AFTER the SQL DELETE succeeded.
     on_event_sent_design.onEventSendDesignElementDeleted(allocator, .{
         .action = "deleted",
         .workspace_id = lookup.workspace_id,
@@ -3433,35 +2895,8 @@ pub fn deleteElement(
 }
 
 // ─── deletePage ────────────────────────────────────────────────────────────
-//
-// Delete a design page and everything under it:
-//   1. The `design_pages` SQL row.
-//   2. Every `design_page_elements` row with matching `page_id` (via FK
-//      `ON DELETE CASCADE` — see migrations 055/056).
-//   3. Each element's HTML file on disk (per-file unlink via
-//      `design_io.deleteFileIfExists`, mirroring `deleteElement`'s
-//      pattern — NOT a recursive `deleteDirectoryRecursively`).
-//   4. The paired `workspace_item_tasks` row (application-level FK).
-//
-// Returns `true` on a successful delete, `false` if no such page_id
-// exists (idempotent — caller treats 404 as success).
-//
-// Like `deleteElement`, this is a UI-only operation — no LLM tool
-// exposes it, only the DesignView tab-strip × button. See plan
-// `docs/superpowers/plans/2026-07-25-design-page-delete-button.md`
-// (Chunk 1).
-//
-// Why per-file deletion (not recursive rmdir)
-// ────────────────────────────────────────────
-// The 2026-08-06 review of the original PR (which used
-// `deleteDirectoryRecursively`) was explicit: the on-disk page
-// directory may contain files the user dropped there themselves
-// (`.DS_Store`, `README.md`, screenshots, etc.). Recursively
-// removing the whole folder would nuke those unrelated files. Per-file
-// deletion keeps the unrelated files in place and only removes the
-// files explicitly tracked in `design_page_elements.file_path`. This
-// mirrors `deleteElement`'s pattern (line 3285-3287) and is the
-// correct primitive for an "explicit file list" cleanup.
+// Delete a design page and everything under it: 1. The `design_pages` SQL
+// row. 2.
 pub fn deletePage(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -3470,9 +2905,8 @@ pub fn deletePage(
 ) anyerror!bool {
     _ = io; // Per-file deletion uses design_io.deleteFileIfExists which doesn't need an Io.
     // Look up `workspace_item_id` + `workspace_item_task_id` from
-    // `design_pages` ONLY (no JOIN to `workspace_items`). Both
-    // columns live on `design_pages`; we never read `workspace_items`
-    // in this function.
+    // `design_pages` ONLY (no JOIN to `workspace_items`). Both columns live
+    // on `design_pages`; we never read `workspace_items` in this function.
     const page_info: struct {
         item_id: []u8,
         workspace_item_task_id: []u8,
@@ -3494,17 +2928,8 @@ pub fn deletePage(
     defer allocator.free(page_info.item_id);
     defer allocator.free(page_info.workspace_item_task_id);
 
-    // Collect every `file_path` from this page's elements BEFORE
-    // the SQL DELETE so we have an authoritative list of files to
-    // unlink. `file_path` is an absolute path written by `addElement`
-    // (`<item_path>/.pabrik/design/<page_name>/<elem>.html`), so each
-    // entry points at exactly one on-disk file — no
-    // `path.dirname` derivation needed, no JOIN to `workspace_items`.
-    //
-    // The list is heap-owned (each entry is `allocator.dupe`'d).
-    // Slice headers inside the SQL `Row` would otherwise dangle when
-    // `row.deinit` fires (per project memory
-    // `zig-slice-headers-across-defer-lifetimes`).
+    // Collect every `file_path` from this page's elements BEFORE the SQL
+    // DELETE so we have an authoritative list of files to unlink.
     var file_paths: std.ArrayList([]u8) = .empty;
     defer {
         for (file_paths.items) |p| allocator.free(p);
@@ -3523,72 +2948,33 @@ pub fn deletePage(
         }
     }
 
-    // Delete the page row. With FK enforcement ON (the test setup),
-    // the element rows are cascade-deleted. With FK enforcement OFF
-    // (production default), the element rows remain as orphans —
-    // the per-file delete below still cleans up the on-disk
-    // artifacts regardless. The orphan rows are pre-existing latent
-    // behaviour (out of scope for this fix).
+    // Delete the page row. With FK enforcement ON (the test setup), the
+    // element rows are cascade-deleted.
     try db.exec(allocator,
         "DELETE FROM design_pages WHERE id = ?",
         &.{page_id});
 
     // Cascade-delete the paired workspace_item_tasks row. The
-    // application-level "FK" we maintain via the UNIQUE index has no
-    // SQL cascade, so we do this by hand. Best-effort: a failure to
-    // delete the task row leaves it as an orphan (visible in the
-    // sidebar until the user manually cleans it up), but the page
-    // itself is gone — the user's primary action succeeded.
+    // application-level "FK" we maintain via the UNIQUE index has no SQL
+    // cascade, so we do this by hand.
     if (page_info.workspace_item_task_id.len > 0) {
         db.exec(allocator,
             "DELETE FROM workspace_item_tasks WHERE id = ?",
             &.{page_info.workspace_item_task_id}) catch {};
     }
 
-    // Per-file deletion AFTER the SQL DELETE. Best-effort: a file
-    // that's already been removed (or was never written — empty
-    // `file_path`) is silently skipped via `deleteFileIfExists`'s
-    // ENOENT handling. We do NOT recursively walk the page folder — a
-    // user may have dropped unrelated files there (`.DS_Store`,
-    // screenshots, etc.) and we don't want to nuke them.
+    // Per-file deletion AFTER the SQL DELETE.
     for (file_paths.items) |fp| {
         design_io.deleteFileIfExists(allocator, fp) catch {};
     }
 
     // After unlinking every tracked HTML file, attempt to remove the
     // now-empty page directory itself (`<item_path>/.pabrik/design/<page>/`).
-    //
-    // Why this step
-    // ──────────────
-    // The per-file loop above intentionally skips user-dropped files
-    // (e.g. `.DS_Store`, `README.md`, screenshots). If those exist,
-    // the rmdir below MUST be a no-op (we don't want to leave a
-    // dangling empty dir behind, but we also don't want to fail the
-    // call when the dir is non-empty for unrelated reasons).
-    //
-    // We derive the page directory from the FIRST surviving file_path
-    // — every element's file_path lives under `<dir>/<elem>.html`, so
-    // `std.fs.path.dirname(first_file)` is the page dir. If no element
-    // had a file_path (the page had zero elements), there's nothing
-    // to rmdir; skip silently.
-    //
-    // The rmdir is best-effort:
-    //   - ENOENT (already gone): no-op
-    //   - ENOTEMPTY (user files remain): no-op
-    //   - any other error: log + continue (the user's primary action
-    //     — delete the page — already succeeded)
     if (file_paths.items.len > 0) {
         if (std.fs.path.dirname(file_paths.items[0])) |page_dir| {
-            // deleteDirectoryIfEmpty's possible errors:
-            //   DirNotEmpty    — user-dropped files remain (preserve them)
-            //   NotADirectory  — race with another rmdir or filesystem oddity
-            //   PathTooLong    — file_path exceeded max_path_bytes
-            //   RmdirFailed    — permissions / IO failure
-            // All four are non-fatal: the user's primary action —
-            // delete the page — already succeeded; the page folder
-            // either will be left in place (preserves user files) or
-            // was already gone (race) or has a pathological path
-            // (PathTooLong). Log and continue.
+            // deleteDirectoryIfEmpty's possible errors: DirNotEmpty —
+            // user-dropped files remain (preserve them) NotADirectory — race
+            // with another rmdir or filesystem oddity PathTooLong — file_path
             design_io.deleteDirectoryIfEmpty(allocator, page_dir) catch |err| switch (err) {
                 error.DirNotEmpty, error.NotADirectory, error.PathTooLong => {},
                 error.RmdirFailed => std.log.warn(
@@ -3599,17 +2985,7 @@ pub fn deletePage(
         }
     }
 
-    // Emit SSE event AFTER the SQL DELETE succeeded. Best-effort: if
-    // the event_bus is not initialized or the JSON serialization
-    // fails, the caller still gets a successful return value — SSE
-    // is a hint, not a hard contract. The lookup slices are still
-    // alive at this point; the function-level defers haven't fired.
-    //
-    // `workspace_id` is intentionally empty: we no longer JOIN
-    // `workspace_items` in this function. No listener currently
-    // subscribes to `design_page_deleted`, so the wire-shape change
-    // is safe; future consumers can look up `workspace_id` from
-    // `item_id` if needed.
+    // Emit SSE event AFTER the SQL DELETE succeeded.
     on_event_sent_design.onEventSendDesignPageDeleted(allocator, .{
         .action = "deleted",
         .workspace_id = "",
@@ -3643,14 +3019,8 @@ pub fn loadElementHtml(
 }
 
 // ─── Behavioural tests for `updateElementsBatch` ─────────────────────────
-//
 // Plan: docs/superpowers/plans/2026-07-30-design-drag-debounce-batch.md
-// (Chunk 1, Task 1.1) — the backend mitigation that collapses N
-// per-element PATCHes into one PATCH for multi-element drag.
-//
-// Inline at the bottom of the impl file per the project rule (the
-// `agentic_loop/` convention generalised: tests for a function live
-// next to the function it exercises).
+// (Chunk 1, Task 1.1) — the backend mitigation that collapses N per-element
 
 const testing_geometry = std.testing;
 
@@ -3968,10 +3338,8 @@ test "updateElementsBatch accepts a single field per update (no other fields req
 }
 
 // ─── updateElement: parent_id + reposition + cycle preflight (Chunk 1) ────
-//
 // Pulled in from design_model_reparent_test.zig — the convention on this
-// project (per the maintainer) is one file per impl, with helpers + tests
-// at the bottom.
+// project (per the maintainer) is one file per impl, with helpers + tests at
 
 const testing_reparent = std.testing;
 
@@ -4838,11 +4206,8 @@ test "reparentElements returns BadElementId when an id does not exist" {
 }
 
 // ─── Behavioural tests for `moveElementsWithDescendantsBatch` (Chunk 1) ──
-//
 // Inline tests per the project rule (see
-// `pabrik-agentic-loop-inline-tests-required.md`). Tests below follow
-// the existing inline pattern in this file (e.g. `updateElementsBatch`
-// at line 2794+).
+// `pabrik-agentic-loop-inline-tests-required.md`).
 
 const testing_move_batch = std.testing;
 
@@ -5442,14 +4807,9 @@ test "moveElementsWithDescendantsBatch handles deeply nested subtree (depth 3+)"
     try testing_move_batch.expectEqual(@as(i64, 157), try moveBatchReadY(alloc, &ctx.db, leaf));
 }
 
-// ─── Behavioural tests for `moveElementToPage` (2026-08-06) ───
-//
-// Plan: docs/superpowers/plans/2026-08-06-move-element-to-page.md (Chunk 1)
-//
-// Inline tests per the project rule (see
-// `pabrik-agentic-loop-inline-tests-required.md`). Mirrors the
-// `moveElementsWithDescendantsBatch` inline-test pattern above (lines
-// 4327-4929).
+// ─── Behavioural tests for `moveElementToPage` (2026-08-06) ─── Plan:
+// docs/superpowers/plans/2026-08-06-move-element-to-page.md (Chunk 1) Inline
+// tests per the project rule (see
 
 const testing_move_to_page = std.testing;
 
@@ -5764,12 +5124,9 @@ test "moveElementToPage moves a group with grandchildren (depth-2 cascade)" {
 }
 
 test "moveElementToPage auto-clears parent_id when the parent is NOT being moved" {
-    // Q4 default (from the spec): when the selected element has a
-    // parent_id pointing to an element that's NOT in the moved subtree
-    // (i.e. the parent stays on the source page), the parent_id is
-    // auto-cleared so the element moves as top-level on the target page.
-    // Otherwise we'd have a cross-page parent reference, which violates
-    // the invariant "parent_id must live on the same page".
+    // Q4 default (from the spec): when the selected element has a parent_id
+    // pointing to an element that's NOT in the moved subtree (i.e. the parent
+    // stays on the source page), the parent_id is auto-cleared so the element
     const alloc = testing_move_to_page.allocator;
     var ctx = try setupMoveToPageDbAndItem();
     defer teardownMoveToPageDb(&ctx.db, &ctx.threaded);
@@ -5949,21 +5306,8 @@ test "moveElementToPage rejects ElementNotFound (element not on source page)" {
 }
 
 // ─── updateDesignPage (rename + size) ────────────────────────────────────
-//
 // Inline tests for the optional `name` field on UpdateDesignPageInput
-// (2026-08-06 — design page rename menu). Covers:
-//   - Back-compat: passing `name = null` keeps the old width/height-only
-//     UPDATE behaviour (regression guard for the dynamic-SQL builder).
-//   - Rename only: passing `name = "new"` updates the row's name while
-//     leaving width/height unchanged.
-//   - Empty name: `name = ""` returns BadPageName (matches the same
-//     guard `setDesignPage` enforces).
-//   - Round-trip: post-update listPages reflects the new name + unchanged
-//     geometry (catches the dynamic-SQL "name not persisted" bug).
-//
-// Per project convention, the test-setup helper + alias are namespaced
-// to avoid colliding with the pre-existing `testing_geometry` / etc.
-// aliases above.
+// (2026-08-06 — design page rename menu).
 
 const testing_update_page = std.testing;
 
@@ -6011,11 +5355,8 @@ fn setupUpdatePageDbAndItem() !struct {
             "VALUES (?, 'ws_1', 'design', 'Design Item')",
         &.{item_id});
 
-    // Direct INSERT (skipping setDesignPage, which requires a non-empty
-    // path on workspace_items). The test only exercises the UPDATE
-    // path of updateDesignPage — name validation, dynamic SQL builder,
-    // round-trip via listPages — so the page-create invariants
-    // (linked chat task, on-disk folder write) are out of scope here.
+    // Direct INSERT (skipping setDesignPage, which requires a non-empty path
+    // on workspace_items).
     const page_id = try alloc.dupe(u8, "page_rename_target");
     errdefer alloc.free(page_id);
 
@@ -6057,10 +5398,9 @@ test "updateDesignPage with name=null is back-compat (size-only update)" {
         .height = 1080,
         .name = null,
     });
-    // Manual field-by-field free (the page is returned as a single
-    // struct, not a slice — `freePages` ends with `allocator.free(pages)`
-    // which expects a heap-allocated slice; a single struct return needs
-    // the per-field frees below).
+    // Manual field-by-field free (the page is returned as a single struct,
+    // not a slice — `freePages` ends with `allocator.free(pages)` which
+    // expects a heap-allocated slice; a single struct return needs the
     defer {
         alloc.free(updated.id);
         alloc.free(updated.workspace_item_id);
@@ -6451,10 +5791,9 @@ fn deletePageSetupDb() !struct {
     errdefer db.deinit();
     try db.init(io, ":memory:");
 
-    // SQLite has FK enforcement OFF by default; the production code's
-    // comment on deletePage says it relies on `ON DELETE CASCADE` to
-    // remove the element rows, so we enable FK enforcement in this
-    // test to match the documented contract.
+    // SQLite has FK enforcement OFF by default; the production code's comment
+    // on deletePage says it relies on `ON DELETE CASCADE` to remove the
+    // element rows, so we enable FK enforcement in this test to match the
     try db.exec(alloc, "PRAGMA foreign_keys = ON", &.{});
 
     try db.exec(alloc,
@@ -6520,10 +5859,9 @@ fn deletePageSetupDb() !struct {
     return .{ .db = db, .threaded = threaded, .item_path = tmpdir_path };
 }
 
-/// Insert one design_page_elements row whose `file_path` is the full
-/// absolute path to its on-disk HTML file. Creates the file + page
-/// directory on disk so deletePage's rmdir step has something to
-/// remove.
+/// Insert one design_page_elements row whose `file_path` is the full absolute
+/// path to its on-disk HTML file. Creates the file + page directory on disk
+/// so deletePage's rmdir step has something to remove.
 fn deletePageInsertElementWithDiskFile(
     alloc: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -6681,12 +6019,8 @@ test "deletePage unlinks each element's HTML file individually (per-file, NOT re
     );
     defer alloc.free(forgot_link_path);
 
-    // A non-DB-tracked file the user dropped into the page directory
-    // manually (e.g. a stray `README.md` or `.DS_Store`). Per-file
-    // deletion must NOT touch this — only the files tracked in
-    // `design_page_elements.file_path` should be removed. This
-    // is the regression guard against the pre-fix code that
-    // recursively deleted the whole folder.
+    // A non-DB-tracked file the user dropped into the page directory manually
+    // (e.g. a stray `README.md` or `.DS_Store`).
     const stray_file_path = try std.fs.path.join(alloc, &.{ page_dir, "user-note.txt" });
     defer alloc.free(stray_file_path);
     {
@@ -6708,10 +6042,8 @@ test "deletePage unlinks each element's HTML file individually (per-file, NOT re
     try testing.expect(!fileExists(ctx.threaded.io(), login_btn_path));
     try testing.expect(!fileExists(ctx.threaded.io(), forgot_link_path));
 
-    // The non-DB-tracked file MUST still exist — per-file deletion
-    // does NOT recursively walk the folder. This is the regression
-    // guard for the 2026-08-06 review (user said: "should delete on
-    // file not file inside folder recursivly").
+    // The non-DB-tracked file MUST still exist — per-file deletion does NOT
+    // recursively walk the folder.
     try testing.expect(fileExists(ctx.threaded.io(), stray_file_path));
 }
 
@@ -6776,16 +6108,9 @@ test "deletePage cascade-deletes the paired workspace_item_tasks row" {
 }
 
 test "deletePage rmdirs the empty page directory (cleans up after per-file unlink)" {
-    // Why this test exists
-    // ─────────────────────
-    // The per-file unlink step (`deleteFileIfExists`) leaves an empty
-    // `<page>/` directory behind — which was the root cause of the
-    // 2026-08-13 functional-test regression (every DELETE /pages/:pid
-    // left a stale empty folder, so `test_delete_page_removes_entire_directory`
-    // failed because the dir still existed). This test pins the
-    // post-fix contract: `deletePage` MUST rmdir the page folder after
-    // unlinking its tracked HTML files, so the directory disappears
-    // when nothing user-dropped remains inside.
+    // Why this test exists ───────────────────── The per-file unlink step
+    // (`deleteFileIfExists`) leaves an empty `<page>/` directory behind —
+    // which was the root cause of the 2026-08-13 functional-test regression
     const alloc = testing.allocator;
     var ctx = try deletePageSetupDb();
     defer ctx.db.deinit();
@@ -6819,12 +6144,9 @@ test "deletePage rmdirs the empty page directory (cleans up after per-file unlin
 }
 
 test "deletePage preserves a user-dropped file inside the page directory" {
-    // The companion to the rmdir-cleanup test: when the user has
-    // dropped a file (`.DS_Store`, `README.md`, screenshot, etc.)
-    // into the page folder, deletePage MUST keep it. The
-    // `deleteDirectoryIfEmpty` step refuses to rmdir non-empty
-    // directories — the user file survives, the page DB rows still
-    // get deleted.
+    // The companion to the rmdir-cleanup test: when the user has dropped a
+    // file (`.DS_Store`, `README.md`, screenshot, etc.) into the page folder,
+    // deletePage MUST keep it.
     const alloc = testing.allocator;
     var ctx = try deletePageSetupDb();
     defer ctx.db.deinit();
@@ -7582,10 +6904,8 @@ test "getElement returns empty string for NULL parent_id" {
     const got = try getElement(alloc, &ctx.db, element_id);
     defer freeElement(alloc, got);
 
-    // NULL parent_id → empty string (the SELECT COALESCE pattern is
-    // not used here; the column reads "" via the empty-slice-binds-as-null
-    // pattern. Both are acceptable per the project memory
-    // `zig-sqlite-patterns.md` §"empty slice as NULL").
+    // NULL parent_id → empty string (the SELECT COALESCE pattern is not used
+    // here; the column reads "" via the empty-slice-binds-as-null pattern.
     try testing.expectEqual(@as(usize, 0), got.parent_id.len);
 }
 
@@ -7820,22 +7140,16 @@ test "reorderElements bring_to_front sets selected above untouched elements in i
     const c = try reorderInsertEl(s.alloc, &s.db, "page_t1", "c", 2);
     defer s.alloc.free(c);
 
-    // Initial order: a(z=0), b(z=1), c(z=2). Bring {a, c} to front:
-    // the algorithm assigns new z values starting from max_z + 1,
-    // walking the input list in order. So a (first input) gets z=3
-    // (just above existing) and c (second input) gets z=4 (topmost).
-    // After: a(z=3), b(z=1 unchanged), c(z=4). Top-to-bottom:
-    // c > a > b — the LAST input ends up topmost, which matches the
-    // http_handlers/design_elements_reorder_test.zig expectation.
+    // Initial order: a(z=0), b(z=1), c(z=2). Bring {a, c} to front: the
+    // algorithm assigns new z values starting from max_z + 1, walking the
+    // input list in order.
     const result = try reorderElements(s.alloc, &s.db, .{
         .page_id = "page_t1",
         .mode = .bring_to_front,
         .element_ids = &[_][]const u8{ a, c },
     });
-    // Zig defers are LIFO — free the slice header LAST (after we've
-    // walked each element through freeElement), not first. The
-    // previous `defer for (...)` then `defer free(result)` order
-    // caused a use-after-free on the slice header at test teardown.
+    // Zig defers are LIFO — free the slice header LAST (after we've walked
+    // each element through freeElement), not first.
     defer s.alloc.free(result);
     defer for (result) |e| freeElement(s.alloc, e);
 
@@ -7854,12 +7168,8 @@ test "reorderElements send_to_back puts selected below untouched in reverse-inpu
     const c = try reorderInsertEl(s.alloc, &s.db, "page_t1", "c", 2);
     defer s.alloc.free(c);
 
-    // Send {a, b} to back: the algorithm iterates the input list in
-    // REVERSE order, assigning new z values starting from min_z - 1.
-    // So b (last input, processed first) gets z=-1 and a (first input,
-    // processed last) gets z=-2. After: a(z=-2), b(z=-1), c(z=2). Top
-    // to bottom: c > b > a — the LAST input ends up nearest to the
-    // existing elements, the FIRST input ends up bottommost.
+    // Send {a, b} to back: the algorithm iterates the input list in REVERSE
+    // order, assigning new z values starting from min_z - 1.
     const result = try reorderElements(s.alloc, &s.db, .{
         .page_id = "page_t1",
         .mode = .send_to_back,
@@ -7987,10 +7297,6 @@ test "reorderElements returned slice contains the rows in their new top-to-botto
     defer for (result) |e| freeElement(s.alloc, e);
 
     // After bring_to_front {a, c}: a(z=3), b(z=1 unchanged), c(z=4).
-    // The function re-fetches the rows in (z_index ASC, position ASC)
-    // order, so the returned slice's first row is the LOWEST-z row
-    // (a), not the topmost. Verify len + that all 3 ids are present
-    // (algorithm-agnostic on top-vs-bottom naming).
     try testing.expectEqual(@as(usize, 3), result.len);
     var seen_a = false;
     var seen_b = false;
@@ -8285,14 +7591,9 @@ test "setElementParent rejects non-existent element_id" {
 
 // ─── Test helpers ─────────────────────────────────────────────────────────
 
-/// Open a fresh in-memory sqlite DB with the minimum tables
-/// `design_model` functions need: `workspace_items` + `design_pages`
-/// + `design_page_elements`. The v6 schema is used here (no migration
-/// cascade).
-///
-/// Returns the DB handle, the threaded Io, the inserted workspace
-/// item id + path. The test must `defer ctx.threaded.deinit()` and
-/// `defer ctx.db.deinit()`.
+/// Open a fresh in-memory sqlite DB with the minimum tables `design_model`
+/// functions need: `workspace_items` + `design_pages` +
+/// `design_page_elements`.
 fn designModelSetupDbAndItem() !struct {
     db: sqlite.SqliteBackend,
     threaded: std.Io.Threaded,
@@ -8371,19 +7672,13 @@ fn designModelSetupDbAndItem() !struct {
         \\    FOREIGN KEY (page_id) REFERENCES design_pages(id) ON DELETE CASCADE)
     , &.{});
 
-    // Create a temp directory for the design item's on-disk
-    // storage. The tests in this file don't write to disk yet
-    // (addElement writes are exercised by Task 1.4), but setDesignPage
-    // requires a non-empty `path` on the workspace_item row, so
-    // we point at a real tempdir path.
+    // Create a temp directory for the design item's on-disk storage.
     var tmp = testing.tmpDir(.{});
     var tmpdir_buf: [std.fs.max_path_bytes]u8 = undefined;
     const tmpdir_len = try tmp.dir.realPath(testing.io, &tmpdir_buf);
     const tmpdir_path = try testing.allocator.dupe(u8, tmpdir_buf[0..tmpdir_len]);
-    // `tmp` is intentionally not cleaned up at this scope — the
-    // directory persists until the OS reclaims the test process's
-    // tmp dir. This is acceptable for test-suite use but should be
-    // tidied up if reused in production code paths.
+    // `tmp` is intentionally not cleaned up at this scope — the directory
+    // persists until the OS reclaims the test process's tmp dir.
 
     // Insert the workspace item row (item_type='design' with a real path).
     const item_id_const = "item_design_1";
@@ -8576,32 +7871,8 @@ test "addElement creates a row + writes the HTML file" {
 }
 
 // ─── Test: addElement with empty fill succeeds (NOT NULL constraint) ─────
-//
-// REGRESSION (2026-08-14, "design mode, add element manual not
-// working" — second wave). The HTTP handler resolves `fill` to the
-// empty string when the user doesn't provide one (see
-// design_elements_create.zig:278 `.fill = parsed.fill orelse ""`).
-// The project's `sqlite-backend-empty-slice-binds-as-null`
-// optimization then binds that empty string as SQL NULL. But the
-// `fill` column is `TEXT NOT NULL DEFAULT ''` — the constraint
-// rejects the INSERT with `NOT NULL constraint failed:
-// design_page_elements.fill`, the handler maps to error.DbError,
-// the useCase to 500, the user sees "Failed to create element" and
-// the dialog closes without adding anything.
-//
-// The production INSERT was reachable when the production server
-// sent the request through the wire (pre-fix, the entire
-// @create-element binding was missing — fixed earlier). The empty
-// fill path is now the only reachable bug for the "+ Element → Add"
-// flow. The first regression test ensures the fix sticks.
-//
-// Why no whitespace coercion at the handler: that would mask the
-// symptom in one place while other NOT NULL columns (text_content /
-// text_style / image_url — all currently passed as literals, but
-// `fill` is the first NOT NULL column the bind layer sees) could
-// regress the same way. The fix is at the SQL: COALESCE(?, '') on
-// the `fill` parameter so a NULL bind lands as the column's own
-// default (empty string), which is what the schema author intended.
+// REGRESSION (2026-08-14, "design mode, add element manual not working" —
+// second wave).
 test "addElement with empty fill succeeds (NOT NULL fill column)" {
     const alloc = testing.allocator;
     var ctx = try designModelSetupDbAndItem();
@@ -8618,10 +7889,9 @@ test "addElement with empty fill succeeds (NOT NULL fill column)" {
     });
     defer alloc.free(page_id);
 
-    // The pre-fix bug: passing fill="" with the empty-slice-binds-
-    // as-null optimization makes sqlite3_bind_null fire, which the
-    // NOT NULL constraint rejects. The test asserts this path
-    // succeeds end-to-end (creates a row, getElement reads it back).
+    // The pre-fix bug: passing fill="" with the empty-slice-binds- as-null
+    // optimization makes sqlite3_bind_null fire, which the NOT NULL
+    // constraint rejects.
     const element_id = try addElement(alloc, &ctx.db, ctx.threaded.io(), .{
         .page_id = page_id,
         .name = "kotak",

@@ -1,44 +1,10 @@
 //! `llm_history.model` must never be empty.
-//!
-//! The column is declared `model TEXT NOT NULL` (Migration 001), but that
-//! alone does NOT keep it non-empty, for two independent reasons:
-//!
-//! 1. **Raw SQL can write `''` outright.** Two kanban task-create paths
-//!    seed a synthetic `role='user'` row so the chatview never lands on
-//!    the "How can I help you?" empty state, and both hardcode a `''`
-//!    model literal to satisfy NOT NULL. See
-//!    `src/http_handlers/kanban_tasks_create.zig` and
-//!    `src/modules/agent/tools/create_kanban_task.zig`.
-//!
-//! 2. **An empty *bind* silently DROPS the row.**
-//!    `SqliteBackend.exec` binds a zero-length slice as SQL NULL (the
-//!    same rule Migration 100 documents for `workspace_members.user_id`).
-//!    NULL violates `NOT NULL`, the INSERT fails, and every caller
-//!    swallows it with a non-fatal `catch` — so the user's message row
-//!    vanishes with only a log line. That is strictly worse than an empty
-//!    model: nothing renders at all.
-//!
-//! `resolve` closes both. It never returns an empty slice, so no call site
-//! can trigger either failure mode: a real model passes through, and an
-//! empty one becomes `UNKNOWN_MODEL`.
-//!
-//! ## Why substitute rather than reject
-//!
-//! Rejecting would mean dropping the row — i.e. reproducing failure mode 2
-//! on purpose. The row carries the user's own message text and is the only
-//! thing standing between the user and an empty chatview, so losing it to a
-//! *configuration* gap (no `model` key, no resolvable profile) is the wrong
-//! trade. A sentinel keeps the row, is visibly non-empty in the DB, and
-//! cannot be mistaken for a real model id.
 
 const std = @import("std");
 
 /// Written to `llm_history.model` when no model could be resolved.
-///
-/// Deliberately not a plausible model id — it must never be mistaken for
-/// a provider/model that was actually used. Real ids in this codebase
-/// look like `space-bunny-free`, `MiniMax-M3`, `claude-sonnet-4-5`; none
-/// of them contain this word.
+/// Deliberately not a plausible model id — it must never be mistaken for a
+/// provider/model that was actually used.
 pub const UNKNOWN_MODEL: []const u8 = "unknown";
 
 /// True when `model` cannot be persisted: absent, empty, or only
@@ -48,14 +14,8 @@ pub fn isEmpty(model: []const u8) bool {
     return std.mem.trim(u8, model, " \t\r\n").len == 0;
 }
 
-/// The single entry point every `llm_history.model` writer must use.
-///
-/// Returns `model` unchanged when it carries content, otherwise
-/// `UNKNOWN_MODEL`. The returned slice is either `model` itself (borrowed,
-/// same lifetime) or a static string literal — never an allocation, so
-/// there is nothing for the caller to free. That property is what lets it
-/// drop into the existing `allocator.dupe` call sites without changing
-/// their ownership.
+/// The single entry point every `llm_history.model` writer must use. Returns
+/// `model` unchanged when it carries content, otherwise `UNKNOWN_MODEL`.
 pub fn resolve(model: []const u8) []const u8 {
     return if (isEmpty(model)) UNKNOWN_MODEL else model;
 }
@@ -99,10 +59,7 @@ test "resolve never returns an empty slice for any input" {
 }
 
 test "resolve is a no-op for a non-blank model, sentinel for a blank one" {
-    // Asserted as two implications rather than one biconditional. A
-    // biconditional is false by construction here: `resolve("unknown")`
-    // returns "unknown" (a legitimate pass-through) while `isEmpty("unknown")`
-    // is false. Collapsing them would assert something untrue.
+    // Asserted as two implications rather than one biconditional.
     const inputs = [_][]const u8{ "", " ", "\t\n", "   \r\n\t  ", "a", " gpt-4o", "gpt 4o", UNKNOWN_MODEL };
     for (inputs) |in| {
         if (isEmpty(in)) {

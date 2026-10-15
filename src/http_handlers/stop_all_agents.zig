@@ -1,28 +1,6 @@
-//! Bulk endpoint `POST .../kanban/columns/:column_id/stop_all_agents`.
-//!
-//! Stops agents on every running task in a kanban column, including tasks
-//! not yet loaded by frontend pagination. The frontend must NOT loop
-//! client-side (it only sees the loaded page); this use-case SELECTs all
-//! task ids for the column server-side and cancels the worker per id via
-//! the existing single-task `cancelSession` (keeping its idempotent
-//! semantics).
-//!
-//! ## Layering
-//!
-//! - `PerTaskResult` / `TaskStopper` — injectable per-task stopper so
-//!   behavioural tests can exercise the stopped/skipped/failed split
-//!   without touching real LLM workers.
-//! - `stopAllAgentsWithStopper` — injectable core (column check + id list
-//!   + per-id loop). Never throws on single-task failure; failures are
-//!   collected into `failed`.
-//! - `stopAllAgentsUseCase` — live binding that checks `isTaskRunning`
-//!   per id (idle ⇒ skipped) then calls `cancelSession` (running ⇒
-//!   stopped, cancel error ⇒ failed) and delegates to the injectable core.
-//! - `stopAllAgentsHandler` — thin HTTP orchestrator (path param +
-//!   singleton + status mapping).
-//!
-//! Mirrors `run_all_agents.zig` (Option C) with the direction flipped:
-//! run-all maps `triggered→started`, stop-all maps `cancelled→stopped`.
+//! Bulk endpoint `POST .../kanban/columns/:column_id/stop_all_agents`. Stops
+//! agents on every running task in a kanban column, including tasks not yet
+//! loaded by frontend pagination.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -73,16 +51,6 @@ pub const StopAllAgentsOutcome = struct {
 // =====================================================================
 
 /// List every task id in `column_id`, then run `stopper` per id.
-///
-/// Errors:
-///   - `error.EmptyColumnId` — empty `column_id` (empty-slice-as-NULL
-///     rule: "" must never reach a `WHERE id = ?` binding).
-///   - `error.ColumnNotFound` — no `kanban_columns` row for the id.
-///   - DB errors propagate (query/exec/alloc failures).
-///
-/// Single-task stopper results never propagate as errors: `stopped`
-/// collects cancelled workers, `skipped` collects idle tasks (no worker
-/// row), `failed` collects cancel errors.
 pub fn stopAllAgentsWithStopper(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -198,11 +166,8 @@ pub fn stopAllAgentsUseCase(
 // Handler
 // =====================================================================
 
-/// `POST /api/workspaces/:workspace_id/items/:item_id/kanban/columns/:column_id/stop_all_agents`.
-///
-/// Success: `200` with
-/// `{"success":true,"column_id":"...","stopped":[...],"skipped":[...],"failed":[...]}`.
-/// Unknown column: `404`. Empty `column_id`: `400`.
+/// `POST
+/// /api/workspaces/:workspace_id/items/:item_id/kanban/columns/:column_id/stop_all_agents`.
 pub fn stopAllAgentsHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -229,10 +194,7 @@ pub fn stopAllAgentsHandler(
     };
     const sqlite_db = di.db;
 
-    // 3. Apply the use-case. Auth scoping is unnecessary: cancelling a
-    //    worker only flips the `cancelled` flag on the task's own worker
-    //    row (task.id == session.id), and the column check + id list are
-    //    already scoped by the column id in the path.
+    // 3. Apply the use-case.
     const outcome = stopAllAgentsUseCase(allocator, sqlite_db, column_id) catch |err| {
         if (err == error.ColumnNotFound) {
             return res.jsonResponse(.{
@@ -272,10 +234,7 @@ pub fn stopAllAgentsHandler(
 }
 
 // =====================================================================
-// Inline behavioural tests. Single-file convention mirroring
-// run_all_agents.zig: handler + useCase + tests live here so the
-// test_runner import of this file discovers + runs them.
-// =====================================================================
+// Inline behavioural tests.
 
 const testing = std.testing;
 
@@ -306,10 +265,8 @@ fn setupDb() !TestDb {
     return .{ .db = db, .threaded = threaded };
 }
 
-/// Post-Migration-072 minimal schema: the kanban join table holds the
-/// 1:1 task-to-board placement. The `worker` table carries the
-/// `cancelled` flag the live stopper flips; the fake stopper below
-/// consults `isTaskRunning` (worker row presence) for the same split.
+/// Post-Migration-072 minimal schema: the kanban join table holds the 1:1
+/// task-to-board placement.
 fn setupColumnSchema(ctx: *TestDb) !void {
     const alloc = testing.allocator;
     try ctx.db.exec(alloc,

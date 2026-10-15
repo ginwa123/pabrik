@@ -1,12 +1,5 @@
-//! ANSI SGR (Select Graphic Rendition) style helpers.
-//!
-//! Every helper returns a NEW heap-allocated string with the escape
-//! codes wrapped around `text`. Callers own the result and free it
-//! with `allocator.free`.
-//!
-//! v1 emits only VT100-safe sequences: `[0m` reset, `[1m` bold,
-//! `[2m` dim, and the 8 standard foreground/background colors
-//! (`[30m`..`[37m`, `[40m`..`[47m`). No truecolor.
+//! ANSI SGR (Select Graphic Rendition) style helpers. Every helper returns a
+//! NEW heap-allocated string with the escape codes wrapped around `text`.
 
 const std = @import("std");
 const color = @import("color.zig");

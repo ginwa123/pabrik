@@ -1,51 +1,5 @@
-// Functional tests for workspace items full CRUD.
-//
-// Zig port of `tests/functional/workspace_items_test.py`
-// (same test names, same order).
-//
-// PYTHON DOCSTRING, PRESERVED:
-//
-//   """Functional tests for workspace items full CRUD.
-//
-//   Exercises the workspace + item HTTP surface that's NOT covered by
-//   `workspace_lifecycle_test.py`:
-//
-//     - GET  /api/workspaces/:id                (single workspace fetch
-//                                                   + 404)
-//     - GET  /api/workspaces/:ws/items/:id      (single item fetch + 404)
-//     - PUT  /api/workspaces/:ws/items/:id      (rename + empty-name
-//                                                   rejection + path
-//                                                   updates + absent-body
-//                                                   rejection + 404)
-//     - DELETE /api/workspaces/:ws/items/:id    (item removal +
-//                                                   cascade-removes on-disk
-//                                                   .pabrik/design/ for
-//                                                   design items + 404)
-//     - POST /api/workspaces/:ws/items/reorder  (reorder of mixed item
-//                                                   types)
-//
-//   Each test boots a fresh pabrik (function-scoped fixture). Real-data
-//   shapes: 3+ items per workspace; for the cascade test, a design item
-//   with 3 pages x 2 elements so we have on-disk state worth deleting.
-//   """
-//
-// ── PORTING NOTES ───────────────────────────────────────────────────────
-// * `_create_item`'s default `path` was the literal `"/tmp/pabrik-items-crud"`.
-//   A hardcoded `/tmp` is NOT portable: the server validates it with
-//   `std.fs.path.isAbsolute`, which is platform-relative, so on
-//   windows-2022 the request would 400 for a reason that has nothing to
-//   do with the contract. Derived from `h.temp_dir` instead.
-//
-// * The `item_workspace_path` fixture was pytest's `tmp_path / "item"` —
-//   a SIBLING of the harness tempdir, not a child of it. A child would
-//   be reaped mid-test by `reapOrphanTestPids` (which matches the
-//   `pabrik-func-` prefix). `harness.makeScratchDir` allocates the
-//   `pabrik-fix-` sibling namespace for exactly this reason.
-//
-// * `i.get("is_default") == 1` in the reorder test is a Python identity
-//   with int, which is also true for `True` and for a JSON string
-//   never. `isDefaultFlag` accepts the integer, the bool and the decimal
-//   string so the filter reads the way it did in Python.
+// Functional tests for workspace items full CRUD. Zig port of
+// `tests/functional/workspace_items_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -58,11 +12,9 @@ const io = testing.io;
 // Helpers — wire
 // ============================================================================
 
-/// Parse OWNED bytes into a `harness.Json`.
-///
-/// A `harness.Json` aliases the `Response` body it was parsed from, so a
-/// helper may not RETURN one. Helpers below return owned bytes and each
-/// test parses locally.
+/// Parse OWNED bytes into a `harness.Json`. A `harness.Json` aliases the
+/// `Response` body it was parsed from, so a helper may not RETURN one.
+/// Helpers below return owned bytes and each test parses locally.
 fn parseJson(bytes: []const u8) !harness.Json {
     return .{ .parsed = try std.json.parseFromSlice(std.json.Value, gpa, bytes, .{}) };
 }
@@ -139,10 +91,9 @@ fn getItem(h: *Harness, workspace_id: []const u8, item_id: []const u8) ![]u8 {
     return gpa.dupe(u8, r.body);
 }
 
-/// `GET /api/workspaces/<ws>/items` → the whole body, owned.
-///
-/// The Python accepted EITHER `{items: [...]}` or a bare list and raised
-/// on anything else; `itemArray` below preserves that.
+/// `GET /api/workspaces/<ws>/items` → the whole body, owned. The Python
+/// accepted EITHER `{items: [...]}` or a bare list and raised on anything
+/// else; `itemArray` below preserves that.
 fn listItems(h: *Harness, workspace_id: []const u8) ![]u8 {
     const path = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/items", .{workspace_id});
     defer gpa.free(path);
@@ -261,11 +212,9 @@ fn pathExists(path: []const u8) bool {
     return true;
 }
 
-/// Python `list(design_root.rglob("*.html"))` — how many `.html` files
-/// live anywhere under `root`.
-///
-/// `Dir.Walker` order is undefined, but the test only counts, so the
-/// difference from `rglob`'s sorted order is unobservable.
+/// Python `list(design_root.rglob("*.html"))` — how many `.html` files live
+/// anywhere under `root`. `Dir.Walker` order is undefined, but the test only
+/// counts, so the difference from `rglob`'s sorted order is unobservable.
 fn countHtmlFiles(root: []const u8) !usize {
     var dir = std.Io.Dir.cwd().openDir(io, root, .{ .iterate = true }) catch |err| switch (err) {
         error.FileNotFound => return 0,
@@ -284,15 +233,9 @@ fn countHtmlFiles(root: []const u8) !usize {
     return n;
 }
 
-/// A per-test on-disk directory OUTSIDE the harness tempdir.
-///
-/// Python's `item_workspace_path` fixture returned pytest's
-/// `tmp_path / "item"` — a SIBLING of the harness tempdir, never a
-/// child of it. A child would be reaped mid-test by
-/// `reapOrphanTestPids`, which matches the `pabrik-func-` prefix on
-/// every harness boot. `harness.makeScratchDir` allocates the
-/// `pabrik-fix-` namespace for exactly this case, and
-/// `cleanupExtraDir` is its `isSafeTmp`-gated counterpart.
+/// A per-test on-disk directory OUTSIDE the harness tempdir. Python's
+/// `item_workspace_path` fixture returned pytest's `tmp_path / "item"` — a
+/// SIBLING of the harness tempdir, never a child of it.
 const Scratch = struct {
     /// The scratch root. Deleted by `deinit`.
     root: []u8,
@@ -323,18 +266,9 @@ fn makeItemDir() !Scratch {
 // Test 1: GET /api/workspaces/:id round-trips the created fields
 // ============================================================================
 
-// POST then GET-by-id; assert name, id, and timestamps round-trip.
-//
-// The handler returns `{"id":..., "name":..., "created_at":...,
-// "updated_at":...}`. `created_at` and `updated_at` come from SQLite's
-// `datetime('now')` and are non-empty ISO-8601-ish strings.
-//
-// Regression guard for the 0xAA-byte bug: the prior implementation of
-// `workspace_get.zig::useCase` returned slice headers into the SQLite
-// row's arena, but `defer row.deinit(allocator)` fired before the
-// handler's `std.fmt.allocPrint` consumed them — the JSON body ended up
-// with `0xAA` bytes (Zig debug allocator's free fill) where the id/name
-// should be.
+// POST then GET-by-id; assert name, id, and timestamps round-trip. The
+// handler returns `{"id":..., "name":..., "created_at":...,
+// "updated_at":...}`.
 test "get_workspace_by_id_returns_full_record" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -431,11 +365,9 @@ test "get_workspace_by_id_404_for_nonexistent" {
 // Test 3: GET item-by-id returns the right item_type + path for each
 // ============================================================================
 
-// Create chat + kanban + design; GET each by id; verify item_type.
-//
-// The wire shape is `WorkspaceItemGetResponse` — fields are all
-// nullable except `id, workspace_id, item_type`. `name`, `path`,
-// `created_at`, `updated_at` come from the DB row.
+// Create chat + kanban + design; GET each by id; verify item_type. The wire
+// shape is `WorkspaceItemGetResponse` — fields are all nullable except `id,
+// workspace_id, item_type`.
 test "get_item_by_id_returns_mixed_item_types" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -514,9 +446,8 @@ test "get_item_by_id_returns_mixed_item_types" {
 // ============================================================================
 
 // GET item_nope returns 404 with `{"error": "..."}`.
-//
-// workspace_items_get.zig:64-77 maps `WorkspaceItemNotFound` -> 404
-// with message "Workspace item not found".
+// workspace_items_get.zig:64-77 maps `WorkspaceItemNotFound` -> 404 with
+// message "Workspace item not found".
 test "get_item_by_id_404_for_nonexistent" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -552,13 +483,6 @@ test "get_item_by_id_404_for_nonexistent" {
 // ============================================================================
 
 // PUT {name: "new"} -> GET returns the new name; DB column updated.
-//
-// The PUT response intentionally omits `name` (and `path`,
-// `created_at`, `updated_at`) — those are always `null` in the response,
-// even when the body updated them. The pattern is
-// `WorkspaceItemGetResponse` with `name: ?[]const u8 = null`. The
-// contract is "the frontend re-fetches via GET to see the freshly
-// updated DB row"; the test mirrors that.
 test "update_item_name_round_trips" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -663,12 +587,9 @@ test "update_item_name_round_trips" {
 // Test 6: PUT with empty name returns 400
 // ============================================================================
 
-// PUT {name: ""} -> 400.
-//
-// workspace_items_update.zig:99-132 documents the strict contract: if
-// the `name` key is PRESENT but the value is null/empty, reject with
-// `name must be a non-empty string when present`. This protects the UI
-// from a blank rename leaving the kanban name field showing nothing.
+// PUT {name: ""} -> 400. workspace_items_update.zig:99-132 documents the
+// strict contract: if the `name` key is PRESENT but the value is null/empty,
+// reject with `name must be a non-empty string when present`.
 test "update_item_name_rejects_empty" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -731,11 +652,9 @@ test "update_item_name_rejects_empty" {
 // Test 7: PUT with empty body returns 400
 // ============================================================================
 
-// PUT {} -> 400.
-//
-// workspace_items_update.zig:156-161 enforces "at least one of
-// item_type, name, or path is required". A bare PUT that sends nothing
-// is a no-op that must NOT silently succeed.
+// PUT {} -> 400. workspace_items_update.zig:156-161 enforces "at least one of
+// item_type, name, or path is required". A bare PUT that sends nothing is a
+// no-op that must NOT silently succeed.
 test "update_item_rejects_empty_body" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -825,10 +744,9 @@ test "update_item_404_for_nonexistent" {
 // Test 9: DELETE removes the item from the list + GET returns 404
 // ============================================================================
 
-// DELETE -> /items no longer contains it; GET-by-id is now 404.
-//
-// The handler returns `{id, success: true}` (the `WorkspaceItemResponse`
-// shape from http_response.zig:6).
+// DELETE -> /items no longer contains it; GET-by-id is now 404. The handler
+// returns `{id, success: true}` (the `WorkspaceItemResponse` shape from
+// http_response.zig:6).
 test "delete_item_removes_from_list" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -946,12 +864,9 @@ test "delete_item_404_for_nonexistent" {
 // Test 11: POST /reorder changes item display order
 // ============================================================================
 
-// Create 7 items of mixed types; POST reorder with a permuted list;
-// assert the list endpoint returns them in the new order.
-//
+// Create 7 items of mixed types; POST reorder with a permuted list; assert
+// the list endpoint returns them in the new order.
 // workspace_items_reorder.zig:124-127 documents the position formula:
-// ordered_ids[0] gets the highest position (so it sorts to the top via
-// `ORDER BY position DESC`).
 test "reorder_items_changes_display_order" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -1061,11 +976,6 @@ test "reorder_items_changes_display_order" {
 
     // The list endpoint returns items in `position DESC` order, so
     // ordered_ids[0] is at the top.
-    //
-    // The workspace's DEFAULT project (Migration 094) is excluded by
-    // flag rather than by a `[:7]` slice. It was at the top before the
-    // reorder and the reorder pushed the seven above it, so a
-    // positional slice silently started comparing the wrong seven ids.
     {
         const raw = try listItems(&h, ws_id);
         defer gpa.free(raw);
@@ -1106,12 +1016,7 @@ test "reorder_items_changes_display_order" {
 
 // Design item with 3 pages x 2 elements -> DELETE item ->
 // `<path>/.pabrik/design/` directory is gone.
-//
-// workspace_items_delete.zig:77-97 documents the on-disk cleanup: for
-// design items, the handler `rmdir`s `<path>/.pabrik/design/` BEFORE
-// the SQL DELETE. The test verifies the cascade by checking the
-// directory is gone (all element files inside it are also gone as a
-// side-effect of the rmdir).
+// workspace_items_delete.zig:77-97 documents the on-disk cleanup: for design
 test "delete_design_item_cascade_removes_html_files" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -1210,13 +1115,8 @@ test "delete_design_item_cascade_removes_html_files" {
 // Test 13: DELETE chat item doesn't touch sibling items
 // ============================================================================
 
-// 5 items of mixed types; DELETE chat item #3; the other 4 are
-// untouched (no FK cascade surprise, no orphan rows that the API forgets
-// about).
-//
-// This is a regression guard for future migrations that add
-// `ON DELETE CASCADE` to workspace_items' dependents (kanban_columns,
-// design_pages).
+// 5 items of mixed types; DELETE chat item #3; the other 4 are untouched (no
+// FK cascade surprise, no orphan rows that the API forgets about).
 test "delete_chat_item_does_not_touch_other_items" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});

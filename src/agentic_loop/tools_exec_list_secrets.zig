@@ -1,24 +1,5 @@
-// Exec adapter for `list_secrets` — the agent's discovery call for
-// workspace credentials.
-//
-// Two properties drive the whole shape of this file:
-//
-//   1. The workspace comes from `ctx.session_id`, NEVER from the tool call.
-//      `ToolExecContext` has no `workspace_id` field and this adapter never
-//      parses `tc.function.arguments`, so a model that writes
-//      `{"workspace_id": "ws_someone_else"}` into the call has it ignored
-//      for the same reason a typo is ignored. Access is workspace
-//      membership, enforced one level up by `auth_common.canSeeWorkspace`.
-//
-//   2. No value, ever. `secrets_store.listSecretNames` is the names-only
-//      projection and is what decides WHICH names are disclosed; the
-//      timestamps come from the row projection, and a name is emitted only
-//      where the two agree. Neither SELECT mentions `value`.
-//
-// A session that resolves to no workspace returns an EMPTY list. It never
-// falls back to "all workspaces" — the alternative to an empty answer here
-// is a cross-tenant read, and a tool that can be made to give one by
-// calling it from the wrong session is not a tool, it is a leak.
+// Exec adapter for `list_secrets` — the agent's discovery call for workspace
+// credentials. Two properties drive the whole shape of this file: 1.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -31,10 +12,7 @@ const ToolExecResult = tools.ToolExecResult;
 const agent = pabrikcore.agent;
 const wrapToolOutput = tools.wrapToolOutput;
 
-/// One disclosed secret. Deliberately two fields: `name` is what the model
-/// types into `{{SECRETS:NAME}}`, `updated_at` is what tells a stale
-/// credential from a fresh one. Nothing else about the row is the model's
-/// business — in particular not the row id.
+/// One disclosed secret.
 const SecretEntry = struct {
     name: []const u8,
     updated_at: []const u8,
@@ -45,10 +23,7 @@ const SecretsPayload = struct {
     secrets: []SecretEntry,
 };
 
-/// The fail-closed answer: a well-formed, empty payload. Used for the
-/// unresolvable-workspace case AND for a database failure, because in both
-/// cases "this session has no secrets it may see" is the only true thing
-/// the adapter can say.
+/// The fail-closed answer: a well-formed, empty payload.
 fn emptyResult(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     const payload = try std.json.Stringify.valueAlloc(
         ctx.allocator,
@@ -81,14 +56,7 @@ pub fn execListSecrets(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult
 }
 
 /// The names of `workspace_id`'s secrets, each paired with the timestamp of
-/// its last rotation. The returned entries own their strings — they must,
-/// because the store rows they are copied out of are released before this
-/// function returns.
-///
-/// Both queries are `ORDER BY name`, so the merge walk below is a correct
-/// intersection. If that ever stops holding the result degrades to FEWER
-/// entries, never to a name from another workspace — the names projection
-/// stays the authority on what may be disclosed.
+/// its last rotation.
 fn collectEntries(
     allocator: std.mem.Allocator,
     db: *@import("pabrikcore").sqlite.SqliteBackend,
@@ -132,14 +100,8 @@ fn freeSecretEntries(allocator: std.mem.Allocator, entries: []SecretEntry) void 
 }
 
 // ============================================================================
-// Tests
-//
-// In-memory SQLite carrying both fixtures the adapter touches:
+// Tests In-memory SQLite carrying both fixtures the adapter touches:
 // `workspace_scope`'s three tables (so a session can resolve to a workspace)
-// and `workspace_secrets` (so there is something to discover). The DDL is
-// spelled out here rather than run through the migration chain, mirroring
-// `workspace_scope.zig` and `secrets_store.zig`.
-// ============================================================================
 
 const testing = std.testing;
 const sqlite = pabrikcore.sqlite;
@@ -405,10 +367,7 @@ test "execListSecrets: a disclosed name is one the names-only projection also re
     try seedSecret(alloc, &ctx, "ws_b", "ROTATED_TOKEN", "other_value");
 
     // Disclosing a name requires it to be present in BOTH projections — the
-    // names projection is the authority on what may leave the store. This
-    // asserts the two agree for the calling session's workspace, and that
-    // the agreement survives a same-named secret living in another
-    // workspace (a join bug would be invisible otherwise).
+    // names projection is the authority on what may leave the store.
     const names_only = try secrets_store.listSecretNames(alloc, &ctx.db, "ws_a");
     defer secrets_store.freeSecretNames(alloc, names_only);
     try testing.expectEqual(@as(usize, 1), names_only.len);

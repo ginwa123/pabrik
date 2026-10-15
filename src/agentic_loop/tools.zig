@@ -71,11 +71,8 @@ pub const execUsedTools = @import("tools_exec_used_tools.zig").execUsedTools;
 // 2026-09-16 — ask_user: ends the turn so the human can answer in their own
 // time; the answer rewrites this call's tool-result row and resumes a run.
 pub const execAskUser = @import("tools_exec_ask_user.zig").execAskUser;
-// 2026-08-28 — add_mcp_server agent tool (Step 3 of 2026-08-28-add-mcp-server-agent-tool.md).
-// Lets the LLM register a new MCP server (stdio in v1) in the live config +
-// persist to disk + hot-reload `di.llm_config`. MCP tools are progressive:
-// the new server's tools become discoverable via `search_tool` on the next
-// iteration and reach the tool list only after `use_tool` equips them.
+// 2026-08-28 — add_mcp_server agent tool (Step 3 of
+// 2026-08-28-add-mcp-server-agent-tool.md).
 pub const execAddMcpServer = @import("tools_exec_add_mcp_server.zig").execAddMcpServer;
 
 // Progressive tool search (plan 2026-09-12-progressive-tool-search): the three
@@ -110,39 +107,23 @@ pub const ToolExecContext = struct {
     environment: ?*const std.process.Environ.Map,
     selected_profile_model: []const u8 = "",
     cwd_override: ?[]const u8 = null,
-    /// The active design page id (when the LLM is in a design-item
-    /// session). Empty string means "no active design page" — the
-    /// design tools (move_design_element, set_design_page, etc.)
-    /// require this. The agentic loop sets it from
-    /// `activeDesignPageId` in the session state.
-    ///
-    /// Added 2026-08-06 for the `move_element_to_page` tool — the
-    /// LLM needs to know which page the element is currently on
-    /// (the model function takes `source_page_id` as a required
-    /// param). Default empty so existing call sites continue to
-    /// compile.
+    /// The active design page id (when the LLM is in a design-item session).
+    /// Empty string means "no active design page" — the design tools
+    /// (move_design_element, set_design_page, etc.) require this.
     active_page_id: []const u8 = "",
     /// The parent's tool_call id for THIS dispatch. 2026-08-23 spawn-
-    /// subagent-live-progress: `execSpawnSubAgent` needs this to key
-    /// its per-tool progress events (ChatView.vue's frontend reducer
-    /// routes by it). Empty string default so every existing call
-    /// site that doesn't care about this field continues to compile.
+    /// subagent-live-progress: `execSpawnSubAgent` needs this to key its
+    /// per-tool progress events (ChatView.vue's frontend reducer routes by
     tool_call_id: []const u8 = "",
     /// This session's resolved `allowed_tools` CSV (the agent/kanban
-    /// allowlist, or "" / "all" for no filtering). The progressive-tool
-    /// adapter needs it to compute which built-ins are NOT enabled, and
-    /// therefore discoverable. Defaulted so unrelated call sites compile.
+    /// allowlist, or "" / "all" for no filtering).
     allowed_tools: []const u8 = "",
     /// Whether this is a sub-agent session. Mirrors the flag the workflow
     /// uses for the anti-recursion strip; the catalog honours it too so a
     /// sub-agent cannot discover its way back to `spawn_sub_agent`.
     is_sub_agent: bool = false,
     /// The `llm_history` tool-result row this dispatch belongs to (set by
-    /// `handle_tool` Phase 3 from its placeholder list). Needed by tools
-    /// whose result is written AGAIN later, outside the dispatch — the
-    /// `ask_user` answer endpoint rewrites this exact row in place when the
-    /// human replies. Empty when the caller has no such row (tests, direct
-    /// dispatch), which is why it defaults.
+    /// `handle_tool` Phase 3 from its placeholder list).
     llm_history_id: []const u8 = "",
 };
 
@@ -164,11 +145,6 @@ pub const ToolExecResult = struct {
     progressive_tool_save: ?ProgressiveToolSaveInfo = null,
     /// The tool asked the agentic loop to END THIS TURN once the whole tool
     /// batch has been dispatched and persisted (`command`'s `is_stop`).
-    ///
-    /// Distinct from a worker cancellation: nothing is killed, and a
-    /// detached command started in the same batch keeps running. `handle_tool`
-    /// OR-merges this across the batch and returns it to `workflow.zig`,
-    /// which takes the same `break` the `.stop` finish_reason arm takes.
     stop_loop: bool = false,
 
     pub fn deinit(self: *const ToolExecResult, allocator: std.mem.Allocator) void {

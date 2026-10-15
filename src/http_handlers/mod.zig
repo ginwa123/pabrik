@@ -1,7 +1,6 @@
-//! HTTP Handlers module - one file per endpoint for better organization
-//!
-//! This module exports all HTTP handlers used by the TUI HTTP server.
-//! Each handler is in its own file for maintainability.
+//! HTTP Handlers module - one file per endpoint for better organization This
+//! module exports all HTTP handlers used by the TUI HTTP server. Each handler
+//! is in its own file for maintainability.
 
 const std = @import("std");
 pub const pabrikcore = @import("pabrikcore");
@@ -69,9 +68,6 @@ pub const workspacesListHandler = @import("workspaces_list.zig").workspacesListH
 pub const workspacesCreateHandler = @import("workspaces_create.zig").workspacesCreateHandler;
 // The single workspace-create path: id generation, the `position = MAX + 1`
 // INSERT, the `workspace_members` grant and the attached default project.
-// Exposed so `pabrik create-admin` (src/main.zig) and any future signup route
-// can provision an account's "Default" workspace through the same code the
-// POST /api/workspaces handler uses.
 pub const workspace_provisioning = @import("workspace_provisioning.zig");
 pub const workspacesReorderHandler = @import("workspaces_reorder.zig").workspacesReorderHandler;
 pub const workspaceGetHandler = @import("workspace_get.zig").workspaceGetHandler;
@@ -83,22 +79,7 @@ pub const workspaceItemsGetHandler = @import("workspace_items_get.zig").workspac
 pub const workspaceDefaultProjectHandler = @import("workspace_items_default.zig").workspaceDefaultProjectHandler;
 
 test {
-    // The implementation file's OWN inline tests. This line is load-bearing and
-    // its absence is invisible: `pub const workspaceDefaultProjectHandler =
-    // @import("workspace_items_default.zig").workspaceDefaultProjectHandler;`
-    // above makes the file reachable for its *value*, but that does NOT pull
-    // its tests into the test binary. Only a `test { _ = @import(...) }` block
-    // does.
-    //
-    // Nine tests (create, idempotence, per-workspace, alongside-ordinary,
-    // bad-home, empty-id, race, useCaseGet, workspaceExists) were silently not
-    // running for an entire review cycle because this block was missing, and a
-    // freeing bug in that file shipped. Verified with `strings` on the test
-    // binary: the test names were absent. Do not delete this import.
-    //
-    // The former `workspace_items_default_test.zig` (static route-contract
-    // assertions) is now inline at the bottom of workspace_items_default.zig,
-    // so this single import surfaces both halves.
+    // The implementation file's OWN inline tests.
     _ = @import("workspace_items_default.zig");
 
     // web_search_mask: key masking + provider validation for the config
@@ -124,18 +105,9 @@ pub const agentKnowledgeReorderHandler = @import("agent_knowledge_reorder.zig").
 // returns 404 when the gate is off. Used by functional UI tests to drive
 // the chatview's SSE streaming path without a real LLM.
 pub const devSseEmitLlmHandler = @import("dev_sse_emit.zig").emitLlmHandler;
-// MCP server "Test" probe — fires a tools/list request against a
-// candidate config (without persisting anything) so the user can
-// verify their command / args / env / cwd (or URL + headers) before
-// clicking Save in the MCP server modal. `mcpTestHandler` is declared
-// at the bottom of this file (merged from the former mcp_test.zig).
-// LLM profile "Test" probe — fires one minimal non-streaming chat call
-// against a candidate model + base_url + api_key + url_style (without
-// persisting anything) so the user can verify the profile before
-// clicking Save in the Add/Edit profile modal. `llmTestHandler` is
-// declared at the bottom of this file (merged from the former
-// llm_test.zig).
-// Agent Mode tools CRUD (Tasks 7-8)
+// MCP server "Test" probe — fires a tools/list request against a candidate
+// config (without persisting anything) so the user can verify their command /
+// args / env / cwd (or URL + headers) before clicking Save in the MCP server
 pub const agentToolsRegistryHandler = @import("agent_tools_registry.zig").agentToolsRegistryHandler;
 pub const agentToolsListHandler = @import("agent_tools_list.zig").agentToolsListHandler;
 pub const agentToolsCreateHandler = @import("agent_tools_create.zig").agentToolsCreateHandler;
@@ -178,9 +150,8 @@ pub const agentRoutineToolsCreateHandler = @import("agent_routine_tools_create.z
 pub const agentRoutineToolsDeleteHandler = @import("agent_routine_tools_delete.zig").agentRoutineToolsDeleteHandler;
 
 // Workspace-level routines (Migration 084, plan
-// 2026-09-10-workspace-items-routines) — first-class
-// `item_type='routine'` beside `agent`. Replaces the deleted
-// per-task `routines` table (Migration 044).
+// 2026-09-10-workspace-items-routines) — first-class `item_type='routine'`
+// beside `agent`.
 pub const workspaceItemsCreateRoutineHandler = @import("workspace_items_create_routine.zig").workspaceItemsCreateRoutineHandler;
 pub const workspaceRoutinesGetHandler = @import("workspace_routines_get.zig").workspaceRoutinesGetHandler;
 pub const workspaceRoutinesUpdateHandler = @import("workspace_routines_update.zig").workspaceRoutinesUpdateHandler;
@@ -195,10 +166,9 @@ pub const documentsGetHandler = @import("documents_get.zig").documentsGetHandler
 pub const documentsUpdateHandler = @import("documents_update.zig").documentsUpdateHandler;
 pub const documentsDeleteHandler = @import("documents_delete.zig").documentsDeleteHandler;
 
-// Workspace-scoped secrets (Migration 103). Same house shape as the
-// documents block above: one file per HTTP verb, each carrying its own
-// private `useCase` + inline tests. No handler reads a secret's value back —
-// the response type has no field for one (Design Decision 9).
+// Workspace-scoped secrets (Migration 103). Same house shape as the documents
+// block above: one file per HTTP verb, each carrying its own private
+// `useCase` + inline tests.
 pub const secretsListHandler = @import("secrets_list.zig").secretsListHandler;
 pub const secretsCreateHandler = @import("secrets_create.zig").secretsCreateHandler;
 pub const secretsUpdateHandler = @import("secrets_update.zig").secretsUpdateHandler;
@@ -214,10 +184,8 @@ pub const kanbanColumnsCreateHandler = @import("kanban_columns_create.zig").kanb
 pub const kanbanTasksCreateHandler = @import("kanban_tasks_create.zig").kanbanTasksCreateHandler;
 pub const kanbanColumnsUpdateHandler = @import("kanban_columns_update.zig").kanbanColumnsUpdateHandler;
 pub const kanbanColumnsDeleteHandler = @import("kanban_columns_delete.zig").kanbanColumnsDeleteHandler;
-// Copy a kanban's column spec (names + descriptions, preserving order)
-// from a source kanban to a target kanban. Tasks are NOT copied.
-// Body: `{mode: "replace" | "append"}`. See plan
-// docs/superpowers/plans/2026-07-04-copy-kanban-spec.md (Chunk 2).
+// Copy a kanban's column spec (names + descriptions, preserving order) from a
+// source kanban to a target kanban. Tasks are NOT copied.
 pub const kanbanCopySpecHandler = @import("kanban_copy_spec.zig").kanbanCopySpecHandler;
 pub const tasksMoveHandler = @import("tasks_move.zig").tasksMoveHandler;
 pub const tasksListHandler = @import("tasks_list.zig").tasksListHandler;
@@ -235,11 +203,8 @@ pub const tasksCreateHandler = @import("task_create.zig").tasksCreateHandler;
 pub const tasksUpdateHandler = @import("task_update.zig").tasksUpdateHandler;
 pub const tasksUpdateByIdHandler = @import("task_update.zig").tasksUpdateByIdHandler;
 pub const tasksDeleteHandler = @import("task_delete.zig").tasksDeleteHandler;
-// Use-case + outcome type live in the same file as the handler
-// (DELETE /api/workspaces/:workspace_id/items/:item_id/tasks/:task_id).
-// The handler is a thin orchestrator over `deleteTaskUseCase`; both
-// are scoped under `pabrikcore.http_handlers.*` per the project
-// convention (see `pabrik_config_profile_delete.zig`'s re-exports).
+// Use-case + outcome type live in the same file as the handler (DELETE
+// /api/workspaces/:workspace_id/items/:item_id/tasks/:task_id).
 pub const deleteTaskUseCase = @import("task_delete.zig").deleteTaskUseCase;
 pub const TaskDeleteOutcome = @import("task_delete.zig").TaskDeleteOutcome;
 pub const taskPinHandler = @import("task_pin.zig").taskPinHandler;
@@ -248,25 +213,10 @@ pub const taskPinHandler = @import("task_pin.zig").taskPinHandler;
 // SSE event. See docs/plans/2026-07-26-kanban-task-notification-icon.md.
 pub const taskMarkHumanTouchedHandler = @import("task_mark_human_touched.zig").taskMarkHumanTouchedHandler;
 pub const tasksReorderPinnedHandler = @import("tasks_reorder_pinned.zig").tasksReorderPinnedHandler;
-// Task attachment upload/download handlers — REMOVED 2026-08-06
-// (Migration 069 / kanban-image-urls-column plan). Replaced by the
-// `workspace_item_tasks.image_urls` column (`||`-delimited base64
-// data URLs) — see image_urls_validation.zig for the wire format
-// and validation. No filesystem path lookup, no broken `*` GET
-// wildcard route. The handler files task_attachment_post.zig and
-// task_attachment_get.zig have been deleted.
-// NOTE: routinesRunHandler deleted with the per-task `routines` table
-// (Migration 084, plan 2026-09-10-workspace-items-routines).
-// NEW (plan: 2026-08-18-kanban-task-detail-start-agent). Dedicated
-// endpoint for triggering an LLM worker on an existing task's
-// session WITHOUT queueing a new user message. Distinct from
-// `sessionCreateHandler` (POST /api/llm/session) which always
-// inserts a queue message.
+// Task attachment upload/download handlers — REMOVED 2026-08-06 (Migration
+// 069 / kanban-image-urls-column plan).
 pub const startAgentHandler = @import("start_agent.zig").startAgentHandler;
-// NEW (plan: 2026-08-18-kanban-task-detail-start-agent). The split
-// use-case, re-exported so callers + tests can reach it as
-// `pabrikcore.http_handlers.startAgentUseCase` (matches the
-// `task_delete.zig::deleteTaskUseCase` re-export convention).
+// NEW (plan: 2026-08-18-kanban-task-detail-start-agent).
 pub const startAgentUseCase = @import("start_agent.zig").startAgentUseCase;
 pub const runAllAgentsHandler = @import("run_all_agents.zig").runAllAgentsHandler;
 pub const stopAllAgentsHandler = @import("stop_all_agents.zig").stopAllAgentsHandler;
@@ -282,20 +232,14 @@ pub const workerListHandler = @import("worker_list.zig").workerListHandler;
 // unified_events_sse.zig for the channel grammar (?channels=).
 pub const unifiedEventsStreamHandler = @import("unified_events_sse.zig").unifiedEventsStreamHandler;
 
-// Skills API handlers
-// Workspace-scoped skills (Migration 101). All three read and write through
-// `agentic_loop/skills_store.zig`, so the workspace scoping lives in SQL
-// rather than in a check each handler has to remember. Wired at
-// `/api/workspaces/:workspace_id/skills[/:skill_name]`.
+// Skills API handlers Workspace-scoped skills (Migration 101).
 pub const skillsListHandler = @import("skills_list.zig").skillsListHandler;
 pub const skillCreateHandler = @import("skill_create.zig").skillCreateHandler;
 pub const skillDetailHandler = @import("skill_detail.zig").skillDetailHandler;
 pub const skillUpdateHandler = @import("skill_update.zig").skillUpdateHandler;
 pub const skillDeleteHandler = @import("skill_delete.zig").skillDeleteHandler;
-// Skill Evals — the read surface (see docs/plans/2026-09-27-skill-evals.md §4.10).
-// A SIBLING prefix under /api/skill-evals/, deliberately outside the skills
-// prefix above: `matchRoute` returns on the first registration-order hit, so
-// a literal nested under a `:skill_name` route would be captured as the param.
+// Skill Evals — the read surface (see docs/plans/2026-09-27-skill-evals.md
+// §4.10).
 pub const skillEvalsRunsHandler = @import("skill_evals.zig").skillEvalsRunsHandler;
 pub const skillEvalsSummaryHandler = @import("skill_evals.zig").skillEvalsSummaryHandler;
 pub const skillEvalsApplyHandler = @import("skill_evals.zig").skillEvalsApplyHandler;
@@ -309,10 +253,7 @@ pub const memoryDeleteHandler = @import("memories_delete.zig").memoryDeleteHandl
 
 // Local Memories API handlers — same CRUD shape as the global memories
 // handlers above but operating on `<cwd>/.pabrik/memories/` instead of
-// `~/.config/pabrik/memories/`. The `cwd` resolution prefers the body
-// (for POST/PUT) or the query string (for GET/DELETE), falling back
-// to the pabrik server's CWD via `io.realPath` when no explicit cwd
-// is provided. See `docs/plans/2026-06-20-add-markdown-memory.md`.
+// `~/.config/pabrik/memories/`.
 pub const localMemoriesListHandler = @import("local_memories_list.zig").localMemoriesListHandler;
 pub const localMemoryDetailHandler = @import("local_memories_detail.zig").localMemoryDetailHandler;
 pub const localMemoryCreateHandler = @import("local_memories_create.zig").localMemoryCreateHandler;
@@ -371,9 +312,8 @@ pub const terminalResizeHandler = @import("terminal_resize.zig").terminalResizeH
 pub const terminalDeleteHandler = @import("terminal_delete.zig").terminalDeleteHandler;
 pub const terminalWsHandler = @import("terminal_ws.zig").terminalWsHandler;
 
-// Design-mode HTTP handlers (item_type='design') — v6 of the
-// design-mode redesign. See
-// docs/superpowers/plans/2026-07-08-design-mode-redesign.md
+// Design-mode HTTP handlers (item_type='design') — v6 of the design-mode
+// redesign. See docs/superpowers/plans/2026-07-08-design-mode-redesign.md
 // (Chunk 3) for the full route table.
 pub const designPagesListHandler = @import("design_pages_list.zig").designPagesListHandler;
 pub const designPagesCreateHandler = @import("design_pages_create.zig").designPagesCreateHandler;
@@ -399,10 +339,9 @@ pub const designElementsGeometryBatchHandler = @import("design_elements_geometry
 pub const designElementsTranslateHandler = @import("design_elements_translate.zig").designElementsTranslateHandler;
 pub const designElementsTranslateUseCase = @import("design_elements_translate.zig").useCase;
 pub const designElementsTranslateError = @import("design_elements_translate.zig").DesignElementTranslateError;
-// NEW (2026-08-06) — POST .../resize. Single-element resize with
-// absolute x/y/width/height/rotation. No cascade (resize is per-element
-// by Figma convention).
-// See docs/superpowers/plans/2026-08-06-split-move-resize.md.
+// NEW (2026-08-06) — POST .../resize. Single-element resize with absolute
+// x/y/width/height/rotation. No cascade (resize is per-element by Figma
+// convention). See docs/superpowers/plans/2026-08-06-split-move-resize.md.
 pub const designElementsResizeHandler = @import("design_elements_resize.zig").designElementsResizeHandler;
 pub const designElementsResizeUseCase = @import("design_elements_resize.zig").useCase;
 pub const designElementsResizeError = @import("design_elements_resize.zig").DesignElementResizeError;
@@ -440,36 +379,23 @@ pub const pabrikConfigPutHandler = @import("pabrik_config_put.zig").pabrikConfig
 pub const workspaceConfigGetHandler = @import("workspace_config.zig").workspaceConfigGetHandler;
 pub const workspaceConfigPutHandler = @import("workspace_config.zig").workspaceConfigPutHandler;
 pub const pabrikConfigProfileDeleteHandler = @import("pabrik_config_profile_delete.zig").pabrikConfigProfileDeleteHandler;
-// Use-case + domain types live in the same file as the handler. The
-// handler is a thin orchestrator over the use-case; both are scoped
-// under `pabrikcore.http_handlers.*` (the convention for handler
-// internals — see `pabrik_config_profile_delete_test.zig`'s header).
+// Use-case + domain types live in the same file as the handler.
 pub const removeProfileFromConfig = @import("pabrik_config_profile_delete.zig").removeProfileFromConfig;
 pub const PabrikConfigJsonForDelete = @import("pabrik_config_profile_delete.zig").PabrikConfigJsonForDelete;
-// `ConfigInput` is the wire format for `PUT /api/config/pabrik`. It is
-// `pub` so the test file can re-parse the same body the handler would
-// and lock in the parse-step tolerance (the on-disk object map vs the
-// granular array-of-changes shape). Exposed alongside `parseConfigInput`
-// for the same reason.
+// `ConfigInput` is the wire format for `PUT /api/config/pabrik`.
 pub const ConfigInput = @import("pabrik_config_put.zig").ConfigInput;
 pub const parseConfigInput = @import("pabrik_config_put.zig").parseConfigInput;
 
-// OS notification test handler — fires a real OS notification so the
-// user can verify their system can display them without running a
-// full LLM stream. See /docs/superpowers/plans/2026-01-15-llm-completion-notification.md
-// `notifyTestHandler` is declared at the bottom of this file (merged
-// from the former notify_test.zig).
+// OS notification test handler — fires a real OS notification so the user can
+// verify their system can display them without running a full LLM stream.
 
 // Browser-mode (web launch) status — read-only report of the
-// `web_launch_enabled` flag + live bound port/URL. Plan
-// 2026-09-10-web-launch-toggle (lifecycle A: no server-side
-// start/stop, the flag only drives the settings UI).
+// `web_launch_enabled` flag + live bound port/URL.
 pub const webStatusHandler = @import("web_status.zig").webStatusHandler;
 
-// Frontend error log handlers — persist and query the
-// window.error / unhandledrejection / console.error / console.warn
-// events in the `logs` table. See
-// docs/plans/2026-07-17-frontend-error-logs-design.md.
+// Frontend error log handlers — persist and query the window.error /
+// unhandledrejection / console.error / console.warn events in the `logs`
+// table. See docs/plans/2026-07-17-frontend-error-logs-design.md.
 pub const frontendLogPostHandler = @import("frontend_log_post.zig").frontendLogPostHandler;
 pub const frontendLogGetHandler = @import("frontend_log_get.zig").frontendLogGetHandler;
 
@@ -519,28 +445,15 @@ pub const SseStreamCtx = struct {
     session_id: []const u8,
 };
 
-// ===== Tests merged from notify_test.zig (2026-09-29 flatten) =====
-//
-// This file held no `test` blocks — it is the OS-notification probe
-// endpoint whose name merely ends in `_test`. Merged here so the module
-// keeps a single source per handler; the `notifyTestHandler` re-export
-// at the top of this file now resolves to the decl below.
+// ===== Tests merged from notify_test.zig (2026-09-29 flatten) ===== This
+// file held no `test` blocks — it is the OS-notification probe endpoint whose
+// name merely ends in `_test`.
 
 const notifications = pabrikcore.notifications_mod;
 
-/// POST /api/notify/test
-///
-/// Fires a fixed test OS notification so the user can verify their
-/// system can display notifications without running a full LLM stream.
-/// The request body is ignored — always uses the same test message.
-///
-/// On success:  200 {"ok": true}
-/// On failure:  200 {"ok": false, "error": "<error name>"}
-///
-/// We return 200 on failure (not 500) because the typical failure
-/// mode is "notify-send is not installed" — a 500 would make the
-/// frontend think the backend is broken. The `ok: false` payload
-/// gives the UI enough info to show a helpful hint.
+/// POST /api/notify/test Fires a fixed test OS notification so the user can
+/// verify their system can display notifications without running a full LLM
+/// stream.
 pub fn notifyTestHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     _ = req;
     const allocator = ctx.allocator;
@@ -563,71 +476,6 @@ pub fn notifyTestHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, r
 // ===== Tests merged from llm_test.zig (2026-09-29 flatten) =====
 
 // HTTP handler + use-case for `POST /api/llm/test`.
-//
-// Purpose: let the user click "Test" inside the Add/Edit profile modal
-// and verify their model + base_url + api_key + url_style actually work
-// BEFORE they click Save. The existing flow only validates locally
-// (name/model non-empty) and persists via `PUT /api/config/pabrik`, so a
-// typo'd base_url or revoked key would only surface mid-workflow.
-//
-// This endpoint is INERT: it does NOT touch `config.json` or the DB —
-// it fires ONE minimal non-streaming chat call against the candidate
-// `base_url` and reports the result.
-//
-// Wire (request):
-// ```json
-// {
-//   "model": "MiniMax-M2.7",
-//   "base_url": "https://api.minimax.io/v1/chat/completions",
-//   "api_key": "sk-...",
-//   "url_style": "openai"
-// }
-// ```
-// `url_style` is one of `"openai" | "openai-response" | "anthropic"`
-// (defaults to `"openai"`). Unknown styles are rejected with a clear
-// error — the frontend only sends the three known values.
-//
-// Wire (response): `{"ok": true, "model": "...", "reply": "ok",
-// "latency_ms": 123}` on success; `{"ok": false, "error": "...",
-// "details": "..."}` on failure. Both paths return HTTP 200 (matches
-// the MCP probe / notify probe — the endpoint is a probe, and the
-// modal wants to render the error inline, not as a 500).
-//
-// Probe bodies (minimal, non-streaming, no tools):
-//   - openai:          `{"model","messages":[{"role":"user","content":
-//                        "Reply with exactly: ok"}],"max_tokens":<budget>,
-//                        "temperature":0,"stream":false}`
-//   - openai-response: `{"model","input":"Reply with exactly: ok",
-//                        "max_output_tokens":<budget>,"stream":false,
-//                        "store":false}`
-//   - anthropic:       `{"model","max_tokens":<budget>,"messages":[{"role":
-//                        "user","content":"Reply with exactly: ok"}]}`
-//
-// `<budget>` is `PROBE_MAX_OUTPUT_TOKENS`, retried once at
-// `PROBE_MAX_OUTPUT_TOKENS_RETRY` — see those constants. It is NOT a
-// handful of tokens: the output budget is shared with the model's hidden
-// REASONING tokens, so a tiny budget makes a working reasoning-model
-// profile look broken (the reply comes back `status: "incomplete"` with a
-// reasoning item and no text at all).
-//
-// Auth: `openai*` styles send `Authorization: Bearer <api_key>`;
-// `anthropic` sends `x-api-key: <api_key>` + `anthropic-version:
-// 2023-06-01`. An EMPTY api_key is allowed (local Ollama-style
-// endpoints, stub upstreams in tests) — the auth header is simply
-// omitted in that case.
-//
-// Session: every probe sends `x-opencode-session: pabrik-llm-test-probe`
-// so Console Go / OpenCode Zen gateways can route it. Without the
-// header the gateway rejects the probe with 400
-// `{"type":"error","error":{"type":"MissingSessionID",...}}` — the
-// exact failure in the Edit-profile Test button for `url_style:
-// "anthropic"`. The value is a fixed probe id (not a real
-// conversation); extra headers are ignored by direct providers
-// (OpenAI / Ollama / MiniMax), matching how `Agent.callStreaming`
-// only omits the header when `sessionId` is empty.
-//
-// **Timeout model**: `custom_http_client`'s `timeout_ms` (libcurl
-// handles cancellation at the OS level), 15s per probe.
 
 // kabelweb is the unified web-framework package imported
 // directly via `@import("kabelweb").client` (see root.zig:509),
@@ -637,31 +485,14 @@ const helpers = @import("helpers");
 const claude_code = @import("../agentic_loop/claude_code.zig");
 const opencode = @import("../agentic_loop/opencode.zig");
 
-/// Per-call deadline for the probe (libcurl has OS-level timeout
-/// support). Generous vs the MCP 10s probe because LLM inference —
-/// even for a one-word answer — routinely takes several seconds on a
-/// cold model, and a premature timeout would read as "your key is broken".
+/// Per-call deadline for the probe (libcurl has OS-level timeout support).
 const TEST_LLM_TIMEOUT_MS: u32 = 15_000;
 
 /// Output budget for a probe.
-///
-/// All three wire styles spend this budget on the model's hidden REASONING
-/// tokens before any visible text exists, so it must be big enough to cover
-/// a short think. It used to be 16 — enough for a chat model's "ok", but a
-/// reasoning model spends all 16 thinking and answers with
-/// `status:"incomplete"` and no text item, which the probe reported as
-/// "LLM server response did not contain a reply" for a profile that works
-/// fine in a real chat turn (the chat path budgets thousands — see
-/// `Agent.buildJsonResponsesRequest`).
 const PROBE_MAX_OUTPUT_TOKENS: u32 = 2048;
 
 /// Budget for the single retry after the provider says the first probe ran
 /// out of output mid-reasoning.
-///
-/// Any finite budget can be eaten by a reasoning model, and the probe
-/// cannot know how much thinking a given model does, so the honest answer
-/// is "try once more with a lot more room, then explain what happened".
-/// Only the exhausted path pays for this second request.
 const PROBE_MAX_OUTPUT_TOKENS_RETRY: u32 = 8192;
 
 /// The probe prompt. Short + deterministic so the modal can show the
@@ -673,25 +504,17 @@ const PROBE_PROMPT: []const u8 = "Reply with exactly: ok";
 const MAX_REPLY_LEN: usize = 200;
 
 /// Stable session id sent as `x-opencode-session` on every Test probe.
-/// Console Go / OpenCode Zen gateways require the header for routing
-/// and prompt caching — see https://opencode.ai/docs/go/#where-can-i-use-it
-/// and `Agent.sessionId`. The probe has no real conversation, so a fixed
-/// id is enough to satisfy the gateway; direct providers ignore it.
 const PROBE_SESSION_ID: []const u8 = "pabrik-llm-test-probe";
 
-/// Candidate profile fields. Mirrors the frontend's `LlmTestRequest`
-/// shape in `src/apps/desktop/src/api/index.ts`. Extra fields sent by
-/// the form (thinking, temperature, ...) are ignored — the probe uses
-/// fixed minimal values.
+/// Candidate profile fields. Mirrors the frontend's `LlmTestRequest` shape in
+/// `src/apps/desktop/src/api/index.ts`.
 const LlmTestRequest = struct {
     model: []const u8 = "",
     base_url: []const u8 = "",
     api_key: []const u8 = "",
     url_style: []const u8 = "openai",
-    /// Transport discriminator, mirroring a profile's `backend` key:
-    /// `"http"` (default) | `"claude-code"` | `"opencode"`. Absent from
-    /// older frontends that only ever sent `url_style`, which is why it
-    /// defaults to http.
+    /// Transport discriminator, mirroring a profile's `backend` key: `"http"`
+    /// (default) | `"claude-code"` | `"opencode"`.
     backend: []const u8 = "http",
     /// Claude Code only: `CLAUDE_CONFIG_DIR`, so the probe checks the same
     /// login the run would use.
@@ -711,9 +534,7 @@ const LlmTestError = error{
     JsonParseFailed,
     InvalidResponse,
     /// The provider returned no visible text AND said it stopped because the
-    /// output budget ran out. Distinct from `InvalidResponse` so the probe
-    /// can retry with more room instead of reporting a missing reply, and so
-    /// a real truncation is never described as a broken key.
+    /// output budget ran out.
     ReasoningBudgetExhausted,
     OutOfMemory,
 };
@@ -726,14 +547,8 @@ const LlmTestOutcome = struct {
 
 // ─── Pure helpers (unit-testable, no network) ───────────────────────────────
 
-/// Validate the candidate without touching the network. Empty api_key
-/// is ALLOWED (keyless local endpoints + stub upstreams in tests).
-///
-/// The TRANSPORT decides which fields are required — `base_url` / `api_key`
-/// are HTTP concepts. A CLI profile (`backend="claude-code"` or
-/// `"opencode"`) authenticates through the CLI's own login state, so it
-/// needs only `model` and its `url_style` is irrelevant (it never reaches a
-/// wire body).
+/// Validate the candidate without touching the network. Empty api_key is
+/// ALLOWED (keyless local endpoints + stub upstreams in tests).
 fn llmTestValidate(req: LlmTestRequest) LlmTestError!void {
     if (req.model.len == 0) return LlmTestError.MissingModel;
 
@@ -752,10 +567,6 @@ fn llmTestValidate(req: LlmTestRequest) LlmTestError!void {
 
 /// Build the minimal probe body for the request's url_style, asking for
 /// `max_output_tokens` tokens. Caller owns the returned slice.
-///
-/// The budget is a PARAMETER because the use-case retries once with a
-/// bigger one when the provider reports the first probe ran out mid-reply;
-/// see `PROBE_MAX_OUTPUT_TOKENS`.
 fn llmTestBuildProbeBody(
     allocator: std.mem.Allocator,
     req: LlmTestRequest,
@@ -800,12 +611,7 @@ fn llmTestExtractReply(
     };
 
     const reply = llmTestFindReplyText(root, url_style) orelse {
-        // No text anywhere in the body. If the provider ALSO said it stopped
-        // because the output budget ran out, the honest reading is not "there
-        // was no reply" but "the model never got to write one" — a reasoning
-        // model spends that budget on hidden reasoning first. The use-case
-        // retries with more room on this error; only if that also fails does
-        // the modal explain it.
+        // No text anywhere in the body.
         if (llmTestBudgetExhausted(root, url_style)) return LlmTestError.ReasoningBudgetExhausted;
         return LlmTestError.InvalidResponse;
     };
@@ -822,12 +628,7 @@ fn llmTestExtractReply(
 
 /// The assistant reply text in a probe response, or null when the body
 /// carries none — a wrong url_style, an error envelope, or a reasoning-only
-/// response where the model never produced a text item.
-///
-///   anthropic:       `{"content": [{"type": "text", "text": "..."}]}`
-///   openai-response: `{"output": [{"type": "message", "content":
-///                     [{"type": "output_text", "text": "..."}]}]}`
-///   openai:          `{"choices": [{"message": {"content": "..."}}]}`
+/// response where the model never produced a text item. anthropic:
 fn llmTestFindReplyText(root: std.json.ObjectMap, url_style: []const u8) ?[]const u8 {
     if (std.mem.eql(u8, url_style, "anthropic")) {
         const content_v = root.get("content") orelse return null;
@@ -914,16 +715,7 @@ fn llmTestFindReplyText(root: std.json.ObjectMap, url_style: []const u8) ?[]cons
 
 /// True when the provider says it stopped because the output budget ran out,
 /// i.e. the model may have spent every allowed token on hidden reasoning
-/// before writing any visible text.
-///
-///   openai-response: `"status": "incomplete"` with
-///                    `"incomplete_details": {"reason": "max_output_tokens"}`.
-///                    An `incomplete` status with NO details at all counts
-///                    too — it is a truncation, and the signal that has to be
-///                    absent for us to stay silent is a DIFFERENT reason
-///                    (e.g. `content_filter`).
-///   anthropic:       `"stop_reason": "max_tokens"`
-///   openai:          `"choices": [{"finish_reason": "length"}]`
+/// before writing any visible text. openai-response: `"status": "incomplete"`
 fn llmTestBudgetExhausted(root: std.json.ObjectMap, url_style: []const u8) bool {
     if (std.mem.eql(u8, url_style, "openai-response")) {
         const status = switch (root.get("status") orelse return false) {
@@ -970,19 +762,8 @@ fn llmTestBudgetExhausted(root: std.json.ObjectMap, url_style: []const u8) bool 
 
 // ─── Use-case (network) ────────────────────────────────────────────────────
 
-/// Probe a CLI backend profile by running `<binary> --version`.
-///
-/// Goes through `helpers.run_captured` — the only sanctioned spawn path in
-/// this codebase. It detaches the child's pipes before waiting (so std's
-/// `childCleanupPosix` can never abort the whole server), drains stdout and
-/// stderr concurrently (so a chatty child cannot deadlock on a full pipe),
-/// and bounds the run with a deadline. See its module doc for the three
-/// production incidents it exists to prevent.
-///
-/// `backend_label` names the backend in the log line only; the argv and the
-/// human-readable reply come from the backend module's own builders, so
-/// Claude Code and OpenCode share this one spawn path without either
-/// backend's wording leaking into the other.
+/// Probe a CLI backend profile by running `<binary> --version`. Goes through
+/// `helpers.run_captured` — the only sanctioned spawn path in this codebase.
 fn llmTestProbeCli(
     allocator: std.mem.Allocator,
     logger: *loggermod.Logger,
@@ -1089,12 +870,6 @@ fn llmTestProbeOpencode(
 
 /// Probe the candidate, retrying once with a bigger output budget when the
 /// provider reports the first attempt was cut off mid-reasoning.
-///
-/// The retry exists because no finite budget can be known to be enough: a
-/// reasoning model's hidden tokens come out of the same budget as its visible
-/// ones, and how many it wants is a property of the model, not of the
-/// profile. Only the exhausted path pays for the second request — a probe
-/// that already has a reply is unchanged.
 fn llmTestUseCase(
     allocator: std.mem.Allocator,
     logger: *loggermod.Logger,
@@ -1105,9 +880,7 @@ fn llmTestUseCase(
     try llmTestValidate(req);
 
     // Claude Code is a local CLI backend, not an HTTP endpoint: there is no
-    // POST to make. Probe the binary for REAL (`claude --version`) instead
-    // of reporting a green stub — that catches "not installed" and
-    // "installed but broken", which a config-shape check cannot.
+    // POST to make.
     if (std.mem.eql(u8, req.backend, "claude-code")) {
         return llmTestProbeClaudeCode(allocator, logger, io, req);
     }
@@ -1184,10 +957,8 @@ fn llmTestProbeOnce(
         header_buf[header_count] = .{ .name = "Authorization", .value = auth_value.? };
         header_count += 1;
     }
-    // Console Go / Zen routing requires `x-opencode-session` on every
-    // request (see PROBE_SESSION_ID). The chat path sends the real
-    // conversation id via `Agent.sessionId`; the probe has none, so it
-    // sends the fixed probe id. Harmless for direct providers.
+    // Console Go / Zen routing requires `x-opencode-session` on every request
+    // (see PROBE_SESSION_ID).
     header_buf[header_count] = .{ .name = "x-opencode-session", .value = PROBE_SESSION_ID };
     header_count += 1;
 
@@ -1433,9 +1204,6 @@ test "llm_test buildProbeBody: anthropic body uses max_tokens + messages" {
 // The budget is the fix for "Test says the profile is broken, the profile
 // works in a chat turn": the output budget is shared with the model's hidden
 // reasoning tokens, so a handful of them is spent thinking and the probe gets
-// back a reply with no text. `Agent.buildJsonResponsesRequest` budgets
-// thousands for the same model; a probe that budgets 16 is not asking the
-// same question. Assert it as a property, not as the literal.
 test "llm_test buildProbeBody: the requested budget leaves room for reasoning (all styles)" {
     const styles = [_][]const u8{ "openai", "openai-response", "anthropic" };
     const budgets = [_]u32{ PROBE_MAX_OUTPUT_TOKENS, PROBE_MAX_OUTPUT_TOKENS_RETRY };
@@ -1472,9 +1240,6 @@ test "llm_test retry budget is bigger than the first probe's" {
 
 // Regression, in the unit layer: the exact body the Test button got back from
 // a Responses gateway whose model spent the whole 16-token budget thinking.
-// It is valid JSON and a valid response — just with no text in it — so it must
-// be reported as a budget exhaustion (which the use-case retries with more
-// room), never as `InvalidResponse` ("did not contain a reply").
 test "llm_test extractReply: reasoning-only truncation is a budget exhaustion, not a missing reply" {
     const raw =
         \\{"id":"resp_1","object":"response","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[{"id":"rs_1","type":"reasoning","summary":[]}]}
@@ -1580,56 +1345,8 @@ test "llm_test extractReply: rejects non-JSON body" {
     );
 }
 
-// ===== Tests merged from mcp_test.zig (2026-09-29 flatten) =====
-// `POST /api/mcp/test` — try a candidate MCP server config WITHOUT saving.
-//
-// Purpose: let the user click "Test" inside the Add/Edit MCP server modal
-// and verify their command + args + env + cwd (or URL + headers for the
-// HTTP transport) actually work BEFORE they click Save. The existing
-// flow only validates the config on disk at agent-loop time, which means
-// a typo'd command or wrong path would only surface mid-workflow.
-//
-// This endpoint is INERT in the sense that it does NOT touch
-// `config.json` or the DB — it just spawns the candidate child / fires
-// the candidate HTTP request once and reports the result. Successful
-// calls also leave the spawned child in the `StdioRegistry` cache
-// keyed by a per-call preview name (so a subsequent Save with the same
-// `server_name` reuses it, which is fine and matches the existing
-// registry semantics).
-//
-// **Timeout model**: HTTP probes use `custom_http_client`'s
-// `timeout_ms` (libcurl handles cancellation at the OS level).
-// stdio probes have a 10s deadline (see `TEST_STDIO_TIMEOUT_MS`),
-// implemented via the deadline plumbing in `mcp_stdio.StdioClient`
-// (plan 2026-08-28-fix-mcp-stdio-blocking). On deadline, the recv
-// returns `StdioError.RecvTimeout` and the preview entry is marked
-// stale so the next /api/mcp/test doesn't reuse the hung child.
-// `2026-08-28-fix-mcp-stdio-blocking` plan.
-//
-// Wire (request):
-// ```json
-// {
-//   "transport": "stdio",
-//   "command": "mcp-hello-world",
-//   "args": ["--name", "alpha"],
-//   "env": ["NODE_ENV=production"],
-//   "cwd": "/abs/path"
-// }
-// ```
-// OR
-// ```json
-// {
-//   "transport": "http",
-//   "url": "https://mcp.contextcontext.com://mcp",
-//   "headers": {"X-Token": "secret"}
-// }
-// ```
-//
-// Wire (response): `{"ok": true, "transport": "...", "tools": [{"name", "description"}]}`
-// on success; `{"ok": false, "error": "...", "details": "..."}` on failure.
-// Both paths return HTTP 200 (matches the OS-notification probe's pattern — the
-// endpoint is a probe, not a state mutation, and the user's UI wants
-// to render the error message inline, not as a 500).
+// ===== Tests merged from mcp_test.zig (2026-09-29 flatten) ===== `POST
+// /api/mcp/test` — try a candidate MCP server config WITHOUT saving.
 
 const builtin = @import("builtin");
 const mcp_stdio = pabrikcore.mcp_stdio;
@@ -1639,32 +1356,16 @@ const tool_models = pabrikcore.tool_models;
 /// support). See the "Timeout model" comment at the top.
 const TEST_HTTP_TIMEOUT_MS: u32 = 10_000;
 
-/// Per-call deadline for stdio probes (mcp_stdio.zig polls this
-/// between bytes read). Tight enough to fail fast for the user
-/// without burning a long test budget; long enough to absorb
-/// slow process spawn + IPC roundtrip on a busy host.
+/// Per-call deadline for stdio probes (mcp_stdio.zig polls this between bytes
+/// read).
 const TEST_STDIO_TIMEOUT_MS: u64 = 10_000;
 
-/// Maximum attempts for the stdio probe. The first attempt covers
-/// the happy path; the retries handle the cold-start race where
-/// `process.spawn` returns BEFORE the child (sh wrapper → exec
-/// node → SDK connect → `_stdin.on('data', ...)`) has attached its
-/// stdin listener. On macOS the race window is wider than on Linux;
-/// on slow CI runners (Linux, Windows, macOS) the SDK bootstrap
-/// can occasionally take longer than the inter-attempt sleep, so
-/// each spawn has the race independently. Twenty covers the
-/// observed ~once-per-100-runs CI failure rate on all three
-/// platforms. Worst-case latency:
-///   ~10s (first attempt) + 19 * (500ms sleep + 1s deadline) ≈ 38.5s.
-/// On the happy path the first attempt succeeds in ~50ms so the
-/// retry loop never executes.
+/// Maximum attempts for the stdio probe.
 const TEST_STDIO_MAX_ATTEMPTS: u8 = 20;
 
-/// Sleep between cold-start retries. 500 ms gives the SDK enough
-/// time to finish `mcp.connect(transport)` + attach its `'data'`
-/// listener on the fresh spawn; small enough that the worst-case
-/// user latency is ~2s (cold spawn + 500ms sleep + 4 retries),
-/// well inside the 10s deadline budget.
+/// Sleep between cold-start retries. 500 ms gives the SDK enough time to
+/// finish `mcp.connect(transport)` + attach its `'data'` listener on the
+/// fresh spawn; small enough that the worst-case user latency is ~2s (cold
 const TEST_STDIO_RETRY_DELAY_MS: i64 = 500;
 
 /// Tagged request body. Mirrors the frontend's `McpServerModalValue`
@@ -1709,12 +1410,8 @@ const McpTestOutcome = struct {
     tools: []const McpToolPreview,
 };
 
-/// Try a single MCP server candidate. Returns either the parsed
-/// tools (on success) or a `McpTestError`. On error, `out_err_detail`
-/// (if non-null) is set to a heap-allocated slice with the concrete
-/// underlying error name (e.g. "UnexpectedEof") — useful for
-/// surfacing in the response body without making the user dig
-/// through server logs. Pure function — does NOT write to disk/DB.
+/// Try a single MCP server candidate. Returns either the parsed tools (on
+/// success) or a `McpTestError`.
 fn mcpTestUseCase(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -1736,14 +1433,8 @@ fn mcpTestUseCase(
 
 // ─── stdio ────────────────────────────────────────────────────────────────
 
-/// Try a stdio candidate: spawn the child, send `tools/list` as
-/// raw NDJSON, parse the response.
-///
-/// **Deadline**: 10s via `TEST_STDIO_TIMEOUT_MS`, plumbed into
-/// `client.recv(deadline_ns, null)`. A hung child returns
-/// `StdioError.RecvTimeout` instead of blocking the handler; the
-/// preview entry is marked stale so the next test doesn't reuse
-/// the dead client. See plan 2026-08-28-fix-mcp-stdio-blocking.
+/// Try a stdio candidate: spawn the child, send `tools/list` as raw NDJSON,
+/// parse the response.
 fn mcpTestStdio(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -1768,14 +1459,7 @@ fn mcpTestStdio(
         allocator.free(argv);
     }
 
-    // Stable preview name per config (hash of command + args). Keeps
-    // the spawned child distinct from the user's eventual Save'd name,
-    // but STABLE across consecutive Tests so the second click reuses
-    // the same cached child instead of spawning a new Python process
-    // (each holding the 9.4MB graph) and leaking the old one.
-    // Previously this used a timestamp (new entry per click, never
-    // cleaned up) — first Test worked, second Test spawned a second
-    // child while the first was still alive → OOM/FD exhaustion → SEGV.
+    // Stable preview name per config (hash of command + args).
     const preview_name = blk: {
         var hasher = std.hash.Wyhash.init(0);
         hasher.update(req.command);
@@ -1798,22 +1482,8 @@ fn mcpTestStdio(
     // Via the singleton struct (see root.zig `mcpStdioRegistry`).
     const reg = pabrikcore.mcpStdioRegistry(allocator);
 
-    // Build the MCP handshake + tools/list bodies once. The SDK
-    // expects line-delimited JSON on stdin.
-    //
-    // Wire sequence (per MCP spec):
-    //   1. `initialize` request  → server responds with capabilities
-    //   2. `initialized` notification (no response expected)
-    //   3. `tools/list` request  → server responds with tool list
-    //
-    // We use the proper handshake because on slow CI runners the
-    // SDK's stdio bootstrap sometimes fails to attach the `'data'`
-    // listener before the request is processed, surfacing as
-    // UnexpectedEof. The handshake doubles the wire roundtrips but
-    // makes the first read a guaranteed probe: if `initialize`
-    // returns a response, the SDK is alive and `tools/list` will
-    // succeed; if `initialize` returns EOF, the SDK is dead and we
-    // retry with a fresh spawn.
+    // Build the MCP handshake + tools/list bodies once. The SDK expects
+    // line-delimited JSON on stdin. Wire sequence (per MCP spec): 1.
     const init_body = std.fmt.allocPrint(
         allocator,
         "{{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"method\":\"initialize\",\"params\":{{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{{}},\"clientInfo\":{{\"name\":\"pabrik-mcp-test\",\"version\":\"0.0.1\"}}}}}}\n",
@@ -1833,42 +1503,15 @@ fn mcpTestStdio(
     ) catch return McpTestError.OutOfMemory;
     defer allocator.free(tools_list_body);
 
-    // Cold-start race retry: CI (macOS, Linux, Windows) sees
-    // intermittent `UnexpectedEof` because `process.spawn` returns
-    // BEFORE the child (sh wrapper → exec node → SDK connect →
-    // attach `_stdin.on('data')`) has finished bootstrapping. The
-    // request sits in the kernel pipe buffer unread, the SDK never
-    // sees it, and our deadline fires on an empty stdout → EOF.
-    //
-    // Twenty attempts covers the observed CI failure rate (every
-    // spawn has the race independently; we need enough attempts to
-    // land on a runner moment where the SDK bootstrap succeeds).
-    //
-    // Per-attempt deadline: 10s on the first attempt (covers normal
-    // cold start), 1s on retries (SDK bootstrap is done by now).
-    // Worst-case latency:
-    //   ~10s + 19 × (500ms sleep + 1s deadline) ≈ 38.5s.
-    //
-    // Diagnostic capture: each attempt's stderr is drained
-    // (non-blocking) so when the test fails the response body
-    // includes the SDK's actual error message. CI runners swallow
-    // server stderr; we surface it through the JSON wire.
-    //
-    // Storage: `stderrs_buf[i]` holds heap-allocated slices from
-    // drainStderr (the @errorName(err) case uses allocator.dupe too,
-    // so the buffer is uniformly heap-allocated). `freeStderrs`
-    // releases them before the diagnostic string is copied into
-    // `out_err_detail` (which is allocated via the mcpTestStdio
-    // allocator param and freed by the caller).
+    // Cold-start race retry: CI (macOS, Linux, Windows) sees intermittent
+    // `UnexpectedEof` because `process.spawn` returns BEFORE the child (sh
+    // wrapper → exec node → SDK connect → attach `_stdin.on('data')`) has
     var attempts_codes: [20 * 8]u8 = undefined;
     var stderrs_buf: [20][]const u8 = .{""} ** 20;
     var attempts_used: usize = 0;
 
     // `recordAttempt` appends the attempt's outcome to the diagnostic
-    // buffers. Called from each `catch` block; heap-allocates the
-    // stderr slice if drainStderr captured any bytes.
-    // Helper to append one attempt's outcome to the diagnostic
-    // buffers. Returns false if the buffer is full (20 cap).
+    // buffers.
     const freeStderrs = struct {
         fn call(a: std.mem.Allocator, stderrs: []const []const u8, count: usize) void {
             for (stderrs[0..count]) |s| a.free(s);
@@ -1878,10 +1521,8 @@ fn mcpTestStdio(
     var attempt: u8 = 1;
     while (true) : (attempt += 1) {
         // One lease per attempt, taken for the whole request/response
-        // transaction so a concurrent session can't drive the same
-        // child while we're mid-frame. The `defer` is scoped to the
-        // loop body, so it runs on every exit from this attempt —
-        // `return` on a hard failure AND `continue` on a retry.
+        // transaction so a concurrent session can't drive the same child
+        // while we're mid-frame.
         var lease = reg.acquire(preview_name, argv, .{}) catch |err| {
             logger.warnFmt("[mcp_test] stdio spawn failed for command '{s}': {s}", .{ req.command, @errorName(err) });
             const msg = std.fmt.allocPrint(allocator, "spawn:{s}", .{@errorName(err)}) catch null;
@@ -1898,17 +1539,7 @@ fn mcpTestStdio(
             return McpTestError.SendFailed;
         };
 
-        // Send ONLY `initialize` first. The MCP handshake is ordered:
-        // client sends `initialize`, the server replies, and only THEN
-        // may the client send `notifications/initialized` and issue
-        // requests like `tools/list`. Pipelining all three lines into
-        // one write (as this did) hands the SDK a `tools/list` request
-        // that is already in the pipe buffer before it has finished
-        // initializing — the SDK then drops it rather than answering,
-        // and our reader waits out the full deadline on a response that
-        // is never coming. Because every retry replayed the same
-        // out-of-order sequence, the 19 remaining attempts could not
-        // rescue it either.
+        // Send ONLY `initialize` first.
         std.Io.File.writeStreamingAll(stdin_file, io, init_body) catch |err| {
             logger.warnFmt("[mcp_test] stdio send failed: {s}", .{@errorName(err)});
             if (attempts_used < 20) {
@@ -1973,14 +1604,9 @@ fn mcpTestStdio(
                 ) catch null;
                 freeStderrs(allocator, &stderrs_buf, attempts_used);
                 out_err_detail.* = detail;
-                // Silent-but-alive child (e.g. bare `python` with empty
-                // args, waiting on stdin for EOF): it started fine but
-                // never answered `initialize`. Report `Timeout` so the
-                // modal shows "did not respond within 10 seconds"
-                // instead of the generic receive-failure text — the
-                // user almost certainly forgot the server's arguments.
-                // Still `markStale`d above (next probe respawns) and
-                // still HTTP 200 + `{ok:false}` (no backend crash).
+                // Silent-but-alive child (e.g. bare `python` with empty args,
+                // waiting on stdin for EOF): it started fine but never
+                // answered `initialize`.
                 if (err == error.RecvTimeout) return McpTestError.Timeout;
                 return McpTestError.RecvFailed;
             }
@@ -2001,12 +1627,9 @@ fn mcpTestStdio(
         // NOTE: no `defer free` — inside `while(true)`, defer runs at
         // function exit. Free explicitly on every path below.
 
-        // The server has answered `initialize`, so the session is live.
-        // NOW send `notifications/initialized` followed by the
-        // `tools/list` request. These two ARE safe to batch — the
-        // notification is what puts the SDK into its initialized state,
-        // and the SDK processes stdin in order, so the request that
-        // follows it is handled against a connected transport.
+        // The server has answered `initialize`, so the session is live. NOW
+        // send `notifications/initialized` followed by the `tools/list`
+        // request.
         const post_init_payload = std.fmt.allocPrint(
             allocator,
             "{s}{s}",
@@ -2127,21 +1750,9 @@ fn mcpTestStdio(
     }
 }
 
-/// Drain whatever is available on the child's stderr pipe.
-/// ALWAYS returns a HEAP-allocated slice (caller frees),
-/// even when the pipe is empty or the read failed. Truncated at 4
-/// KiB to keep the response body small.
-///
-/// NEVER BLOCKS (2026-09-03 empty-args hang fix): on POSIX the pipe
-/// is polled for 200ms first — a live-but-silent child (e.g. bare
-/// `python` waiting on stdin after a `RecvTimeout`) has no stderr
-/// bytes and no EOF, so a bare `readSliceShort` would block forever
-/// and hang the handler a second time, right after `recv` was fixed
-/// to time out. No data within 200ms → return `""`. On Windows
-/// (`std.posix.poll` is a `@compileError` there) the single read is
-/// kept as-is: after `UnexpectedEof` the child is dead so the read
-/// returns promptly; the live-silent shape keeps the old blocking
-/// behavior (documented limitation, same as `waitReadable`).
+/// Drain whatever is available on the child's stderr pipe. ALWAYS returns a
+/// HEAP-allocated slice (caller frees), even when the pipe is empty or the
+/// read failed.
 fn drainStderr(allocator: std.mem.Allocator, io: std.Io, stderr: ?std.Io.File) []u8 {
     // Always heap-allocate so the caller can uniformly `free` the
     // returned slice. The empty fallback is also heap so `free` is
@@ -2163,29 +1774,14 @@ fn drainStderr(allocator: std.mem.Allocator, io: std.Io, stderr: ?std.Io.File) [
     }
     var buf: [4096]u8 = undefined;
     var reader = std.Io.File.reader(f, io, &buf);
-    // Single-shot read: whatever is in the kernel pipe buffer RIGHT
-    // NOW (up to 4 KiB). The `poll` above guarantees this never blocks:
-    // after `UnexpectedEof` the child is dead (data + EOF waiting); after
-    // `RecvTimeout` the child is alive but we only reach this read when
-    // poll saw bytes waiting. If the child crashed, we get whatever was
-    // in flight (1-2 lines of error message).
+    // Single-shot read: whatever is in the kernel pipe buffer RIGHT NOW (up
+    // to 4 KiB).
     const n = std.Io.Reader.readSliceShort(&reader.interface, &buf) catch return empty;
     if (n == 0) return empty;
     return allocator.dupe(u8, buf[0..n]) catch empty;
 }
 
-/// Build a JSON-formatted diagnostic string for the failed
-/// response body. Format:
-///   "<last-error>|attempts=N/M codes=[<8-char codes>]|last_stderr=<escaped>"
-/// Compact, single-line, escaped for JSON embedding. The stderr
-/// portion is sanitized — control characters are replaced with
-/// `\\n`/`\\r`/`\\t` escape sequences (or stripped if non-printable)
-/// so a child that writes a multi-line error with embedded TTY
-/// control codes doesn't break the response body's JSON parser
-/// (observed on macOS ARM64 CI: Node SDK's `mcp.connect` failure
-/// path writes an ANSI-coloured stack trace to stderr, which
-/// contains \\x1b ESC bytes that make `json.loads` raise
-/// "Invalid control character").
+/// Build a JSON-formatted diagnostic string for the failed response body.
 fn formatAttemptsDetail(
     allocator: std.mem.Allocator,
     last_err: []const u8,
@@ -2214,11 +1810,8 @@ fn formatAttemptsDetail(
         try buf.appendSlice(allocator, "|last_stderr=");
         const last = stderrs[attempts_used - 1];
         const truncated = if (last.len > 512) last[0..512] else last;
-        // Sanitize: replace control chars with their backslash-escaped
-        // form so the resulting JSON is parseable. Other bytes (high
-        // UTF-8, ANSI ESC, etc.) pass through — Python's json.loads
-        // accepts them as long as they're not C0 control chars
-        // (< 0x20 except \t \n \r).
+        // Sanitize: replace control chars with their backslash-escaped form
+        // so the resulting JSON is parseable.
         var i: usize = 0;
         while (i < truncated.len) : (i += 1) {
             const c = truncated[i];
@@ -2241,19 +1834,9 @@ fn formatAttemptsDetail(
     return buf.toOwnedSlice(allocator);
 }
 
-/// Try an HTTP candidate: POST `tools/list` to the URL with the
-/// headers, parse `result.tools[]`. Uses libcurl's built-in 10s
-/// timeout via `timeout_ms`.
-///
-/// Body is intentionally MINIMAL (`{"params":{}}`, no `_meta` envelope):
-/// real servers on protocol revision 2026-07-28 (e.g. context7) answer
-/// the lenient path with `200 text/event-stream` for a bare body but
-/// return `400 Invalid _meta envelope ... clientCapabilities: missing`
-/// as soon as a 2025-11-25-shaped `_meta.protocolVersion` envelope is
-/// present (bisected 2026-09-10 via curl). The `MCP-Protocol-Version`
-/// + `Mcp-Method` headers below are tolerated (200) by those servers
-/// and required by strict ones, so we send headers but not the body
-/// envelope.
+/// Try an HTTP candidate: POST `tools/list` to the URL with the headers,
+/// parse `result.tools[]`. Uses libcurl's built-in 10s timeout via
+/// `timeout_ms`.
 fn mcpTestHttp(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -2340,18 +1923,6 @@ fn mcpTestHttp(
 }
 
 /// Unwrap a Streamable HTTP response body to its JSON-RPC payload.
-///
-/// Handles BOTH shapes per the spec:
-///   - `application/json` (single object, starts with `{`) → dup verbatim
-///   - `text/event-stream` (SSE: `event:` / `data:` / `:` comment lines
-///     grouped by blank-line boundaries) → last event's `data:` lines
-///     joined with `\n` (per the SSE spec's multi-data rule)
-///
-/// Real servers (e.g. context7) answer `tools/list` as
-/// `event: message\ndata: {"result":...}` — the old code only stripped
-/// a leading `data:` prefix, so `event:`-prefixed bodies went to the
-/// JSON parser verbatim → `JsonParseFailed` ("failed to parse MCP
-/// server response as JSON"). Caller owns the returned slice.
 fn unwrapSsePayload(allocator: std.mem.Allocator, body: []const u8) McpTestError![]const u8 {
     const trimmed = std.mem.trim(u8, body, " \t\r\n");
     if (trimmed.len == 0) return allocator.dupe(u8, body) catch return McpTestError.OutOfMemory;
@@ -2393,10 +1964,9 @@ fn unwrapSsePayload(allocator: std.mem.Allocator, body: []const u8) McpTestError
         const out = allocator.dupe(u8, d) catch return McpTestError.OutOfMemory;
         return out;
     }
-    // No `data:` line found (e.g. legacy single-line `data: {...}`
-    // without event framing is already covered above, but keep the
-    // old prefix-strip as a last resort) — fall back to the trimmed
-    // body so the JSON parser produces the authoritative error.
+    // No `data:` line found (e.g. legacy single-line `data: {...}` without
+    // event framing is already covered above, but keep the old prefix-strip
+    // as a last resort) — fall back to the trimmed body so the JSON parser
     if (std.mem.startsWith(u8, trimmed, "data:"))
         return allocator.dupe(u8, std.mem.trim(u8, trimmed["data:".len..], " \t")) catch return McpTestError.OutOfMemory;
     return allocator.dupe(u8, trimmed) catch return McpTestError.OutOfMemory;
@@ -2529,22 +2099,16 @@ pub fn mcpTestHandler(
 // ─── Inline tests ──────────────────────────────────────────────────────────
 
 test "formatAttemptsDetail: sanitizes C0 control chars from stderr (JSON-safe)" {
-    // Regression guard for CI macOS ARM64 (commit 76d03d6d + this fix):
-    // the SDK's mcp.connect failure path writes ANSI-coloured stack
-    // traces to stderr containing \\x1b (ESC) and \\n bytes. If those
-    // reach the JSON response body verbatim, `json.loads` on the
-    // client raises "Invalid control character". The sanitizer must
-    // \\n -> \\\\n, strip \\x1b, leave printable bytes alone.
+    // Regression guard for CI macOS ARM64 (commit 76d03d6d + this fix): the
+    // SDK's mcp.connect failure path writes ANSI-coloured stack traces to
+    // stderr containing \\x1b (ESC) and \\n bytes.
     const allocator = testing.allocator;
 
     // Build a stderr blob with: ESC, newline, NUL, BEL, printable.
     const dirty_stderr = "\x1b[31mfatal\x1b[0m: \nmcp.connect failed\n\x00\x07";
     var stderrs = [_][]const u8{dirty_stderr};
-    // Mirror production code: codes buffer is 8 bytes per attempt,
-    // padded with SPACE (0x20) after the short code. Using NUL (0x00)
-    // here would break the sanitizer's invariant that codes_text is
-    // printable — the formatAttemptsDetail loop appends every byte,
-    // so trailing NULs would land in the response body.
+    // Mirror production code: codes buffer is 8 bytes per attempt, padded
+    // with SPACE (0x20) after the short code.
     var codes = [_]u8{' '} ** (1 * 8);
     @memcpy(codes[0..3], "EOF");
 
@@ -2558,23 +2122,17 @@ test "formatAttemptsDetail: sanitizes C0 control chars from stderr (JSON-safe)" 
     defer allocator.free(detail);
 
     // formatAttemptsDetail returns a custom format string, NOT JSON:
-    //   "<err>|attempts=N/M codes=[<codes>]|last_stderr=<sanitized>"
-    // The response handler then embeds this into the JSON response body
-    // via `{s}`. Verify the sanitizer produced output that, once
-    // embedded into a JSON document, parses cleanly.
-    //
-    // Verify specific sanitization: \\n appears as literal \\\\n, not raw \\n.
+    // "<err>|attempts=N/M codes=[<codes>]|last_stderr=<sanitized>" The
+    // response handler then embeds this into the JSON response body via
     try testing.expect(std.mem.indexOf(u8, detail, "\\n") != null);
     // ESC (0x1b) was stripped entirely (not even present in escape form).
     try testing.expect(std.mem.indexOf(u8, detail, "\x1b") == null);
     // Printable text preserved.
     try testing.expect(std.mem.indexOf(u8, detail, "fatal") != null);
 
-    // CRITICAL: embed `detail` into a JSON document and parse it back.
-    // If any control char survived, std.json will raise SyntaxError
-    // (which on the Python test client is `json.loads: Invalid
-    // control character`). This is the regression guard for the
-    // commit-76d03d6d macOS CI failure.
+    // CRITICAL: embed `detail` into a JSON document and parse it back. If any
+    // control char survived, std.json will raise SyntaxError (which on the
+    // Python test client is `json.loads: Invalid control character`).
     const wrapped = try std.fmt.allocPrint(
         allocator,
         "{{\"details\":\"{s}\"}}",

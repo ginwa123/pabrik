@@ -1,30 +1,6 @@
 //! `web_search_curl` — a GET-only parser for the curl string the agent sends.
-//!
 //! The agent is handed a template by `list_web_search_providers` and edits
-//! it: it replaces the search text and may adjust other parameters. This
-//! module turns that edited string back into a request. It does NOT
-//! perform I/O and it NEVER TOUCHES A KEY — the `{key}` placeholder is
-//! located and its position recorded, but substituting the credential is
-//! `web_search.zig`'s job, after the host pin has been checked.
-//!
-//! ## Why a parser and not a shell
-//!
-//! Passing a model-authored string to `sh -c` is arbitrary command
-//! execution. Everything here is a quote-aware tokenizer over a flat
-//! string, and the result is a URL plus a header list.
-//!
-//! ## What is accepted
-//!
-//! - the URL, with or without a leading `curl` token
-//! - `-H "Name: value"` / `--header "Name: value"`
-//! - `-G`/`--get` and `--data-urlencode`/`-d "k=v"` folded into the query
-//! - `\` line continuations
-//! - either quoting style
-//!
-//! Everything else that changes the meaning of the request is an ERROR
-//! **named in the message** — `-X POST`, `-o`, `-d @file`,
-//! `--upload-file`. Silently ignoring `-X POST` would send something other
-//! than what the paste said while appearing to succeed.
+//! it: it replaces the search text and may adjust other parameters.
 
 const std = @import("std");
 
@@ -44,12 +20,6 @@ pub const KeySite = union(enum) {
     /// The URL's query string carries `{key}`.
     url_query: void,
     /// The template has no `{key}` — a provider that needs no credential.
-    ///
-    /// The parser tolerates this because a self-hosted SearxNG genuinely
-    /// has none, but it does not mean "fine": whether that is acceptable
-    /// depends on whether the CONFIG entry declares a key, which only
-    /// `web_search_request.validateKeySite` knows. The alternative —
-    /// erroring here — would make a no-auth provider unconfigurable.
     none: void,
 };
 
@@ -99,10 +69,6 @@ pub const ParseError = error{
 };
 
 /// Extract the `host[:port]` portion of a URL that has no query.
-///
-/// Deliberately string-based rather than `std.Uri`-based: `std.Uri` has no
-/// query API in Zig 0.16, and the pin comparison needs a host exactly as
-/// the user wrote it. Bracket-wrapped IPv6 literals are returned intact.
 pub fn hostOfUrl(url: []const u8) []const u8 {
     // Strip the scheme FIRST. Cutting at the first delimiter before this
     // turns "https://e.com/a" into "https:" — the very next line then
@@ -124,14 +90,7 @@ pub fn hostOfUrl(url: []const u8) []const u8 {
 }
 
 /// True when `host` names a loopback, link-local, private, or otherwise
-/// non-public address. These must never be reachable from a user-supplied
-/// search provider: `169.254.169.254` is a cloud metadata endpoint, and a
-/// key sent there is a stolen key.
-///
-/// Best-effort by design — it covers the literal forms a paste can produce.
-/// A hostname that resolves to a private address is not detectable without
-/// DNS, which is why the host pin (checked by the caller) is the real
-/// control and this is defence in depth.
+/// non-public address.
 pub fn isNonPublicHost(host: []const u8) bool {
     var h = host;
     // Strip an explicit port. Bracketed IPv6 keeps its brackets until here.
@@ -194,10 +153,6 @@ fn endsWithIgnoreCase(haystack: []const u8, needle: []const u8) bool {
 }
 
 /// Validate the scheme and host of a URL that will carry a credential.
-///
-/// `require_public` is `true` for the request the agent builds (the host
-/// pin plus the key are both in play) and `false` for nothing today — it
-/// exists so the pinned-URL check and the request check cannot drift.
 fn checkHostPolicy(url: []const u8, require_public: bool) ParseError!void {
     const scheme_end = std.mem.indexOf(u8, url, "://") orelse return error.InvalidUrl;
     const scheme = url[0..scheme_end];
@@ -281,27 +236,17 @@ fn bannedFlag(token: []const u8) bool {
 
 /// The owned result of `parse`. Exactly two allocations, both released by
 /// `deinit`; `parsed` borrows from them and from `input`.
-///
-/// This is a named owner rather than an anonymous struct on purpose: an
-/// anonymous one let `headers` escape twice — once owned at the top level
-/// and once inside `Parsed` — and every caller double-freed it.
 pub const Owned = struct {
     tokens: []Token,
     headers: []Header,
     /// Owns the query string ONLY when `-G`/`--data-urlencode` made us
-    /// synthesise one. Normally `parsed.url_query` points into the caller's
-    /// `input` and this is null.
-    ///
-    /// It has to exist: the fold happens in a local `ArrayList` that a
-    /// `defer` would free before the caller ever reads the result, which
-    /// leaves `parsed.url_query` dangling.
+    /// synthesise one.
     query_buf: ?[]u8,
     parsed: Parsed,
 
-    /// Free every allocation. `parsed` is a view and owns nothing.
-    ///
-    /// Takes `self` by value: releasing does not mutate the owner, so a
-    /// `const` binding can still `defer r.deinit(alloc)`.
+    /// Free every allocation. `parsed` is a view and owns nothing. Takes
+    /// `self` by value: releasing does not mutate the owner, so a `const`
+    /// binding can still `defer r.deinit(alloc)`.
     pub fn deinit(self: Owned, allocator: std.mem.Allocator) void {
         allocator.free(self.tokens);
         allocator.free(self.headers);
@@ -310,10 +255,6 @@ pub const Owned = struct {
 };
 
 /// Parse the agent's curl string into a URL + headers + the `{key}` site.
-///
-/// `url_base`, `url_query` and the header name/value slices all borrow
-/// from `input`, which the caller must therefore keep alive — in
-/// production that is the tool's own argument slice.
 pub fn parse(
     allocator: std.mem.Allocator,
     input: []const u8,
@@ -341,10 +282,9 @@ pub fn parse(
     while (i < tokens.len) : (i += 1) {
         const tok = tokens[i];
 
-        // A leading bare `curl` is the program name, not a URL. Stripping
-        // it is what lets the model paste a whole command from a provider's
-        // docs. Any OTHER leading bare word is a different program, and
-        // naming it beats reporting "no URL found".
+        // A leading bare `curl` is the program name, not a URL. Stripping it
+        // is what lets the model paste a whole command from a provider's
+        // docs.
         if (i == 0 and !tok.was_quoted) {
             if (std.mem.eql(u8, tok.text, "curl")) {
                 // No `i += 1` here: the loop's own `: (i += 1)` runs on
@@ -427,9 +367,7 @@ pub fn parse(
     if (extra_query.items.len > 0) {
         // curl's `-G` APPENDS its data arguments to whatever query the URL
         // already had, so `?count=10` + `--data-urlencode q=FIFA` becomes
-        // `count=10&q=FIFA` — not the other way round. Order is
-        // observable: a provider that reads the first occurrence of a
-        // repeated key would otherwise see the wrong value.
+        // `count=10&q=FIFA` — not the other way round.
         var merged: std.ArrayList(u8) = .empty;
         errdefer merged.deinit(allocator);
         try merged.appendSlice(allocator, query);
@@ -460,11 +398,7 @@ pub fn parse(
     else
         .none;
 
-    // `toOwnedSlice`, NOT `headers.items`. The list's backing storage is
-    // `capacity` long while `.items` is `len` long, and a caller that
-    // frees what we hand it frees `len` — a size the allocator never
-    // handed out, which trips the debug allocator's canary check. This is
-    // the same reason `tokenize` returns `out.toOwnedSlice(...)`.
+    // `toOwnedSlice`, NOT `headers.items`.
     const owned_headers = try headers.toOwnedSlice(allocator);
 
     return .{
@@ -749,12 +683,9 @@ test "web_search_curl: isNonPublicHost covers the literal private ranges" {
 }
 
 test "web_search_curl: every emitted piece came verbatim from the input" {
-    // The structural claim "this module cannot leak a credential" rests on
-    // it inventing nothing: a `Parsed` holds only slices of the input plus
-    // one index. Asserting that behaviourally — every url/header fragment
-    // is a substring of what the agent sent — is stronger than asserting it
-    // by reflection, and it catches a future `allocPrint` in here that
-    // would break the "no key is ever read here" guarantee.
+    // The structural claim "this module cannot leak a credential" rests on it
+    // inventing nothing: a `Parsed` holds only slices of the input plus one
+    // index.
     const alloc = testing.allocator;
     const input =
         "https://api.search.tinyfish.ai?query=FIFA&location=US" ++

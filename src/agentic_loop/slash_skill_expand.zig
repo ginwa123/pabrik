@@ -1,19 +1,4 @@
 //! Send-time expansion of slash-command skill tokens in chat messages.
-//!
-//! The frontend renders `/skill-<name>` (and bare `/<name>`) chips in the
-//! composer, but the wire body that reaches `POST /api/llm/session` is
-//! plain text — the token is just characters in `queue_message`. This
-//! module resolves those tokens server-side, in `session_create.useCase`,
-//! before the run starts: each known token loads its workspace skill
-//! through the canonical `use_skill` loader and the bodies ride along as
-//! a trailing `<slash_skills>` block, so the model sees the instructions
-//! without spending a `use_skill` round trip. A loaded skill is also
-//! recorded in `session_skills`, the same persistence the agent-tool path
-//! gets from `handle_tool`, so later turns keep the context.
-//!
-//! Unknown tokens stay literal in the text. There is no 404 and no toast
-//! in v1 — a follow-up may surface them — so a typo degrades to the model
-//! reading the raw `/name` characters, never to a dropped send.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -30,10 +15,9 @@ fn isTokenChar(c: u8) bool {
     return std.ascii.isAlphanumeric(c) or c == '.' or c == '_' or c == '-';
 }
 
-/// Map one raw `/`-token to the skill name it means, or null when the
-/// token is not a skill reference. `/skill-<rest>` strips the prefix;
-/// a bare `/<tok>` keeps it. A lone `/skill` is the prefix with nothing
-/// after it, not a skill called `skill`, so it maps to null.
+/// Map one raw `/`-token to the skill name it means, or null when the token
+/// is not a skill reference. `/skill-<rest>` strips the prefix; a bare
+/// `/<tok>` keeps it.
 fn nameFromToken(tok: []const u8) ?[]const u8 {
     if (std.mem.eql(u8, tok, "skill")) return null;
     const name = if (std.mem.startsWith(u8, tok, "skill-")) tok["skill-".len..] else tok;
@@ -43,12 +27,7 @@ fn nameFromToken(tok: []const u8) ?[]const u8 {
 }
 
 /// Distinct skill names referenced by `/`-tokens in `message`, in first-
-/// appearance order. A token starts at a `/` at offset 0 or after
-/// whitespace; anything else (`http://x`, `a/b`) is a path or URL, not a
-/// command. Pure string scan — no DB, safe to unit-test in isolation.
-///
-/// All returned strings are allocator-owned; free each element, then the
-/// slice itself.
+/// appearance order.
 pub fn extractSkillTokens(allocator: std.mem.Allocator, message: []const u8) ![][]const u8 {
     var out: std.ArrayList([]const u8) = .empty;
     errdefer {
@@ -82,9 +61,7 @@ pub fn extractSkillTokens(allocator: std.mem.Allocator, message: []const u8) ![]
 
 /// The outcome of `expandSlashSkills`. `message` is the send text: the
 /// original verbatim when nothing loaded, otherwise the original plus a
-/// trailing `<slash_skills>` block. `unknown` names the tokens that
-/// resolved to no skill, left literal in the text. Both are
-/// allocator-owned; call `deinit`.
+/// trailing `<slash_skills>` block.
 pub const ExpandResult = struct {
     message: []const u8,
     unknown: [][]const u8,
@@ -102,9 +79,6 @@ pub const ExpandResult = struct {
 
 /// Resolve every `/`-token in `message` against the calling session's
 /// workspace and rewrite the text with the loaded bodies appended.
-/// Best-effort by construction: a token that loads to nothing lands in
-/// `unknown` (left literal), a token whose load errors is skipped with a
-/// warning, and only hard allocation failures propagate.
 pub fn expandSlashSkills(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -185,16 +159,7 @@ pub fn expandSlashSkills(
     };
 }
 
-/// Load one skill through the canonical `use_skill` loader. Returns the
-/// owned body when the skill exists and carries instructions, null when
-/// the token names nothing loadable (not-found, scope refusal, or an
-/// empty body — `SqliteBackend.exec` binds zero-length slices as NULL,
-/// so an empty body could never persist anyway).
-///
-/// A body containing `</skill` is refused: it would break out of the
-/// `<skill>` envelope the rewritten message wraps it in, and the safe
-/// move is to leave the token literal rather than ship a malformed
-/// block the model would misparse.
+/// Load one skill through the canonical `use_skill` loader.
 fn loadOne(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -222,13 +187,8 @@ fn loadOne(
     return try allocator.dupe(u8, parsed.value.content);
 }
 
-/// Record a loaded skill in `session_skills` so later turns keep the
-/// context without re-expanding. This is the single `INSERT OR REPLACE`
-/// from `llm_history.saveSkill`, inlined because no `Logger` threads
-/// through this send-time path — keep the SQL identical to that function
-/// if either changes. Failures are warn-and-continue: the body still
-/// rides in the rewritten message, so persistence is a bonus, not the
-/// delivery mechanism.
+/// Record a loaded skill in `session_skills` so later turns keep the context
+/// without re-expanding.
 fn persistSkill(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -246,10 +206,9 @@ fn persistSkill(
     };
 }
 
-// =====================================================================
-// Tests — behaviour only: tokenize the string, expand against a real
-// in-memory workspace, read back real rows. No source greps.
-// =====================================================================
+// ===================================================================== Tests
+// — behaviour only: tokenize the string, expand against a real in-memory
+// workspace, read back real rows.
 
 const TestCtx = struct {
     db: sqlite.SqliteBackend,
@@ -257,9 +216,8 @@ const TestCtx = struct {
 };
 
 /// Real skills tables (Migration 102) plus the three tables
-/// `workspace_scope.resolveWorkspaceId` reads and the `session_skills`
-/// table the expansion persists into, so a test hands over a
-/// `caller_session_id` and gets a real workspace back.
+/// `workspace_scope.resolveWorkspaceId` reads and the `session_skills` table
+/// the expansion persists into, so a test hands over a `caller_session_id`
 fn setupSlashDb() !TestCtx {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});

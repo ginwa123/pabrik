@@ -1,45 +1,5 @@
-// GET /api/git/pr/conflicts against a real conflicting work tree.
-//
-// Zig port of `tests/functional/git_pr_conflicts_test.py` (same test
-// names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """GET /api/git/pr/conflicts against a real conflicting work tree.
-//
-//   The unit tests in `src/http_handlers/git_pr_conflicts.zig` drive
-//   `useCase` in-process. They cannot see the three things that only exist
-//   on the wire:
-//
-//   1. the route is actually registered and reachable under `/api/git/pr/`,
-//   2. the JSON body has the field names the desktop client destructures
-//      (`conflicting_files`, `count`, `base_ref`, …), and
-//   3. `path` survives URL encoding — repo paths contain slashes and spaces.
-//
-//   So this file builds a repo whose two branches genuinely conflict, boots
-//   the real binary, and asserts the endpoint names the file. Three cases
-//   matter and each has bitten a different implementation:
-//
-//   - a conflict on a *different line* of the same file must NOT be reported
-//     (git merges those cleanly) — the first draft of the Zig fixture changed
-//     line 2 on one branch and appended on the other and "passed" while broken;
-//   - a conflicting file outside the PR diff (added on the base side only) must
-//     still be named — that is exactly the case the client falls back to the
-//     code editor for;
-//   - a clean branch must answer 200 with an empty list, not an error, because
-//     the client tells "clean" from "could not determine" by the absence of an
-//     `error` field.
-//   """
-//
-// WHERE THE FIXTURE LIVES: `harness.makeScratchDir` allocates under
-// `pabrik-fix-`, never `pabrik-func-`. `reapOrphanTestPids` runs on EVERY
-// harness boot and deletes any `pabrik-func-` entry with no live pid — a
-// fixture there is reaped by the NEXT test's boot, mid-suite. See
-// `git_file_diffs_test.zig` for the full reasoning.
-//
-// DEFER ORDER IS LIFO AND LOADS-BEARING in every test below:
-// `free(scratch)` is registered BEFORE `cleanupExtraDir(scratch)`, and
-// `free(repo)` BEFORE the HTTP calls that read it.
+// GET /api/git/pr/conflicts against a real conflicting work tree. Zig port of
+// `tests/functional/git_pr_conflicts_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -56,10 +16,8 @@ const PR_URL = "https://github.com/acme/app/pull/4242";
 // Helpers
 // ============================================================================
 
-/// Run `git` in `cwd` with the fixture identity baked in, so the repo
-/// never depends on the machine's global git config (which CI does not
-/// set). Python's `_git` used `check=True`; the Zig equivalent is to
-/// return an error the caller propagates.
+/// Run `git` in `cwd` with the fixture identity baked in, so the repo never
+/// depends on the machine's global git config (which CI does not set).
 fn git(cwd: []const u8, args: []const []const u8) !void {
     var full: std.ArrayList([]const u8) = .empty;
     defer full.deinit(gpa);
@@ -97,17 +55,6 @@ fn writeFileAt(dir: std.Io.Dir, name: []const u8, contents: []const u8) !void {
 
 /// Build the `conflict-proj` fixture: two branches that conflict in two
 /// different ways, plus two files that do not.
-///
-///   * `shared.txt` line 2 rewritten differently on each side → content
-///     conflict.
-///   * `doomed.txt` modified on feature, DELETED on main → modify/delete
-///     conflict. A file added on one side only merges cleanly and must NOT
-///     be named — that is the mistake this fixture exists to prevent.
-///   * `feature_added.txt` (feature only) and `clean.txt` (rewritten on one
-///     side only) merge cleanly too, so naming either means the parser
-///     leaked git's informational section into the answer.
-///
-/// Returns the owned repo path; the caller frees it and cleans `scratch`.
 fn buildConflictingRepo(scratch: []const u8) ![]u8 {
     const repo = try std.fs.path.join(gpa, &.{ scratch, "conflict-proj" });
     errdefer gpa.free(repo);
@@ -144,9 +91,6 @@ fn buildConflictingRepo(scratch: []const u8) ![]u8 {
 
 /// Build a repo at `<scratch>/a repo with spaces` whose two branches
 /// genuinely conflict on the same line.
-///
-/// BOTH sides must rewrite the same line, or git merges this cleanly and
-/// the endpoint is right to answer with an empty list.
 fn buildSpacedRepo(scratch: []const u8) ![]u8 {
     const repo = try std.fs.path.join(gpa, &.{ scratch, "a repo with spaces" });
     errdefer gpa.free(repo);
@@ -334,12 +278,9 @@ test "path_with_spaces_survives_url_encoding" {
 // Test 3: a clean merge is an empty list, not an error
 // ============================================================================
 
-// A 200 with `conflicting_files: []` is the "clean" answer.
-//
-// The client distinguishes it from a failure by the absence of `error`,
-// so this case must not degrade into a 4xx/5xx. Detaching HEAD at the
-// branch point makes every one of the changes one-sided, so the merge is
-// clean.
+// A 200 with `conflicting_files: []` is the "clean" answer. The client
+// distinguishes it from a failure by the absence of `error`, so this case
+// must not degrade into a 4xx/5xx.
 test "clean_merge_is_an_empty_list_not_an_error" {
     var h: Harness = undefined;
     var scratch: []u8 = undefined;
@@ -397,10 +338,9 @@ test "missing_parameters_and_bad_provider_are_rejected" {
 
     const url = PR_URL;
 
-    // Python's `conflicting_repo / ".." / ".."` does NOT normalise: it
-    // yields a literal `<repo>/../..`. Reproduced byte for byte — the
-    // handler has to see the traversal, and a clean join would hand it a
-    // different string.
+    // Python's `conflicting_repo / ".." / ".."` does NOT normalise: it yields
+    // a literal `<repo>/../..`. Reproduced byte for byte — the handler has to
+    // see the traversal, and a clean join would hand it a different string.
     const not_a_repo = try std.fmt.allocPrint(
         gpa,
         "{s}{s}..{s}..",

@@ -1,9 +1,5 @@
-//! LLM tool: `set_element_parent` — re-parents an existing design
-//! element to a new `group`/`frame` parent, or back to top-level via
-//! `null`.
-//!
-//! Plan: docs/superpowers/plans/2026-07-29-design-element-parent-id-tools.md
-//! (Task 5)
+//! LLM tool: `set_element_parent` — re-parents an existing design element to
+//! a new `group`/`frame` parent, or back to top-level via `null`.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -14,10 +10,9 @@ const design_model = pabrikcore.ai_mod.design_model;
 const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
 
-/// Input structure for `set_element_parent` tool.
-///
-/// Both fields are required. Pass `null` for `new_parent_id` to move
-/// the element back to top-level (the inverse of nesting).
+/// Input structure for `set_element_parent` tool. Both fields are required.
+/// Pass `null` for `new_parent_id` to move the element back to top-level (the
+/// inverse of nesting).
 pub const SetElementParentInput = struct {
     /// The element id to re-parent. Must exist on the active page.
     element_id: []const u8 = "",
@@ -107,13 +102,7 @@ fn validateElementIdShape(allocator: std.mem.Allocator, element_id: []const u8) 
     return null;
 }
 
-/// Execute the `set_element_parent` tool. Returns a JSON string for
-/// the LLM.
-///
-/// On success, the response shape is:
-/// `{"element":{"id":"elem_...","name":"...","parent_id":"...", ...}}`.
-///
-/// On error, the response is `{"error":...}`.
+/// Execute the `set_element_parent` tool. Returns a JSON string for the LLM.
 pub fn executeSetElementParentToString(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,

@@ -1,67 +1,5 @@
-// Functional wire tests for the `ask_user` agent tool (Migration 088).
-//
-// Zig port of `tests/functional/ask_user_test.py` (same test names,
-// same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional wire tests for the `ask_user` agent tool (Migration 088).
-//
-//   Plan: docs/superpowers/plans/2026-09-16-agent-tool-ask-user.md
-//
-//   The design makes this feature testable WITHOUT an LLM. `ask_user` does not
-//   block: it records a question, returns immediately, and the agentic loop
-//   BREAKS. The human's answer rewrites that tool call's `llm_history` row in
-//   place and starts a new run. So a test only has to:
-//
-//     1. seed the two rows the backend would have written (assistant tool_calls
-//        row + the tool-result row) plus the pending question row;
-//     2. POST the exact body `AskUser.vue` sends;
-//     3. assert the row rewrite AND the resume.
-//
-//   That last one is why this file exists: the row rewrite is the model's view of
-//   the answer, and `resumed:true` proves a new run was started. Neither is
-//   observable from Zig unit tests.
-//
-//   Covers:
-//     * happy path — answer recorded, tool row rewritten in place, run resumed;
-//     * idempotency — a second POST is a 200, not a 4xx, and resumes once;
-//     * validation — empty answer 400, unknown question 404, wrong session 403;
-//     * skip — settles as `skipped` and still resumes;
-//     * abandoned — a message sent instead of an answer settles the question and
-//       rewrites the row, so the model never reads `pending`;
-//     * the route resolves to its own handler (the route-order trap).
-//   """
-//
-// ── PORTING NOTES ───────────────────────────────────────────────────────
-// * `_connect` (Python's `sqlite3.connect`) became the `sqlite3` COMMAND-LINE
-//   tool plus its `-json` output — the idiom
-//   `session_human_touched_at_test.zig` established. This package declares NO
-//   dependency on `pabrikcore` and links no SQLite, so a test can never "pass"
-//   without crossing the wire. `requireSqlite3Cli` SKIPS (never fails) when the
-//   CLI is absent or predates `-json` (SQLite 3.33).
-//
-// * `-json` prints ZERO BYTES for an empty result set rather than `[]`.
-//   `parseSqliteJson` shims that, which matters here because several tests
-//   distinguish "no row" from "a NULL column".
-//
-// * Every value a test reads back out of the DB is DUPPED into `gpa` and
-//   returned as an owned `[]u8`: `parseFromSlice`'s default
-//   `.alloc_if_needed` leaves a string that needs no escaping pointing INTO the
-//   CLI's stdout buffer, which the helper frees.
-//
-// * `_pending_envelope` / `_tool_envelope` were `json.dumps(..., separators=
-//   (",", ":"))` of a dict literal. They are `std.json.Stringify` over structs
-//   here, with the field ORDER preserved so the seeded bytes match the Python's
-//   byte for byte — the assertions read the row as TEXT and compare exact
-//   substrings like `"status":"pending"`.
-//
-// * `cwd_session: "/tmp"` (Python literal) became `harnessPath(gpa, h.temp_dir,
-//   &.{})`: `std.fs.path.isAbsolute("/tmp")` is FALSE on windows-2022, so a
-//   hardcoded literal that is correct on Linux fails at the HTTP door there.
-//
-// * `_wait_for_worker` polls a WRITE-BEHIND endpoint (the resume runs in a
-//   concurrent task), so the worker row lands just after the HTTP response.
+// Functional wire tests for the `ask_user` agent tool (Migration 088). Zig
+// port of `tests/functional/ask_user_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -74,11 +12,6 @@ const io = testing.io;
 // NOTE FOR `ask_user_multi_question_test.zig`: the seeding helpers here
 // (`requireSqlite3Cli`, `sqliteRun`, `sqlLit`, `firstCellString`,
 // `scalarCount`, `toolEnvelopeJson`, `ToolCall`, `seedQuestion`,
-// `createSession`, `postAnswer`, `AnswerBody`, `waitForWorker`, …) are
-// `pub` so that file can import them instead of copying them — the Python
-// original did the same (`from ask_user_test import _connect,
-// _create_session, _pending_envelope, _tool_envelope`) precisely so the
-// two files cannot drift.
 
 // ============================================================================
 // Helpers — sqlite3 CLI
@@ -91,22 +24,11 @@ pub fn exitCode(term: std.process.Child.Term) ?u8 {
     };
 }
 
-/// The resolved `sqlite3` CLI for the CURRENT test. Borrowed by every
-/// helper below; the OWNERSHIP is the caller's (`defer gpa.free(...)`),
-/// because a file-scope allocation would leak once per test under the
-/// DebugAllocator. Zig's test runner is single-threaded, so one slot is
-/// enough.
+/// The resolved `sqlite3` CLI for the CURRENT test.
 var sqlite_cli: []const u8 = "";
 
-/// True iff `bin` speaks `-json` AND can load the app's schema.
-///
-/// TWO probes, because one is not enough. `-json` landed in SQLite 3.33
-/// (2020), and FTS5 is a COMPILE option: the `sqlite3` shipped with the
-/// Android SDK is 3.50 but has no FTS5, so it fails the whole suite with
-/// `Error: in prepare, no such module: fts5` the moment it parses a
-/// schema the server created. Probing both means a PATH that happens to
-/// shadow the system sqlite3 costs nothing — the scan simply moves on to
-/// the next candidate.
+/// True iff `bin` speaks `-json` AND can load the app's schema. TWO probes,
+/// because one is not enough.
 fn sqliteCliWorks(bin: []const u8) bool {
     const res = std.process.run(gpa, io, .{
         .argv = &.{
@@ -124,11 +46,6 @@ fn sqliteCliWorks(bin: []const u8) bool {
 }
 
 /// Resolve a usable `sqlite3`, or SKIP.
-///
-/// Every `PATH` entry is tried in order (Python's `shutil.which` returned
-/// only the first hit, which is the one that matters here: the FIRST
-/// `sqlite3` on PATH is frequently the Android SDK's, and that build has
-/// no FTS5).
 pub fn requireSqlite3Cli() ![]u8 {
     const path_env = std.process.Environ.getAlloc(std.testing.environ, gpa, "PATH") catch {
         std.debug.print("PATH is unreadable; skipping DB assertions\n", .{});
@@ -145,9 +62,8 @@ pub fn requireSqlite3Cli() ![]u8 {
         std.Io.Dir.cwd().access(io, cand, .{ .execute = true }) catch continue;
         if (!sqliteCliWorks(cand)) continue;
         // `cand` is freed by the loop body's `defer` when this iteration
-        // ends, so the global must point at the OWNED copy, not at
-        // `cand` — a borrowed-into-the-global pointer reads freed memory
-        // and the next `spawn` fails with FileNotFound.
+        // ends, so the global must point at the OWNED copy, not at `cand` — a
+        // borrowed-into-the-global pointer reads freed memory and the next
         const owned = try gpa.dupe(u8, cand);
         sqlite_cli = owned;
         return owned;
@@ -187,11 +103,6 @@ pub fn dbPath(temp_dir: []const u8) ![]u8 {
 
 /// Run one statement against the harness's DB, return the CLI's stdout
 /// (owned).
-///
-/// `.timeout 10000` is the `busy_timeout` the server's WAL connection
-/// needs — the Python helper's `sqlite3.connect(..., timeout=10)`. A bare CLI
-/// invocation without it fails with SQLITE_BUSY the moment the boot's
-/// migration transaction is still closing.
 pub fn sqliteRun(temp_dir: []const u8, sql: []const u8) ![]u8 {
     const db = try dbPath(temp_dir);
     defer gpa.free(db);
@@ -235,11 +146,9 @@ pub fn firstRow(parsed: *const std.json.Parsed(std.json.Value)) !?std.json.Objec
     };
 }
 
-/// The first row's `col`, dupe'd into `gpa` so it outlives the parse.
-///
-/// A SQL NULL (Python's `row["answer"] or ""`) collapses to `""` here,
-/// which is the same collapse the Python helper performed at its call
-/// sites.
+/// The first row's `col`, dupe'd into `gpa` so it outlives the parse. A SQL
+/// NULL (Python's `row["answer"] or ""`) collapses to `""` here, which is the
+/// same collapse the Python helper performed at its call sites.
 pub fn firstCellString(temp_dir: []const u8, sql: []const u8, col: []const u8) !?[]u8 {
     const out = try sqliteRun(temp_dir, sql);
     defer gpa.free(out);
@@ -273,11 +182,9 @@ pub fn scalarCount(temp_dir: []const u8, sql: []const u8) !i64 {
 // Helpers — envelopes
 // ============================================================================
 
-/// The inner `data` payload `execAskUser` produces while pending.
-///
-/// Field order matches the Python dict literal so the seeded bytes are
-/// the same bytes Python wrote (the assertions compare exact substrings of
-/// the stored text).
+/// The inner `data` payload `execAskUser` produces while pending. Field order
+/// matches the Python dict literal so the seeded bytes are the same bytes
+/// Python wrote (the assertions compare exact substrings of the stored text).
 pub const PendingEnvelope = struct {
     status: []const u8 = "pending",
     question_id: []const u8,
@@ -331,12 +238,6 @@ pub fn pendingEnvelopeJson(question_id: []const u8, question: []const u8) ![]u8 
 }
 
 /// The stored tool-output envelope.
-///
-/// The Python `_tool_envelope(question_id, question, tool_call_id=...)`
-/// signature carried a `tool_call_id` it never put in the body — the
-/// envelope identifies its question by `question_id`, and the call id
-/// lives on the `session_pending_question` row. Dropped here rather than
-/// kept as a dead parameter.
 pub fn toolEnvelopeJson(question_id: []const u8, question: []const u8) ![]u8 {
     return std.json.Stringify.valueAlloc(gpa, ToolEnvelope{
         .parameters = .{ .question = question },
@@ -363,16 +264,6 @@ pub fn nowNs() i64 {
 var session_seq = std.atomic.Value(u64).init(0);
 
 /// Spin up a session ROW without starting a run.
-///
-/// Deliberately `PUT /api/llm/session/:id` (which auto-creates via
-/// `ensureSessionExists`) and NOT `POST /api/llm/session`: the POST variant
-/// starts an agent run, and the run's DB transaction then hides this test's
-/// externally-seeded rows from the app (the row would look missing and the
-/// endpoint would 404). Same reasoning as
-/// `session_human_touched_at_test._create_session_via_update`.
-///
-/// Returns an OWNED session id — every caller formats it into a URL or
-/// into SQL, both of which outlive this frame.
 pub fn createSession(h: *Harness, name: []const u8) ![]u8 {
     const seq = session_seq.fetchAdd(1, .monotonic) + 1;
     const session_id = try std.fmt.allocPrint(
@@ -393,10 +284,6 @@ pub fn createSession(h: *Harness, name: []const u8) ![]u8 {
 }
 
 /// `POST /api/llm/session/:sid/answer`.
-///
-/// `null` optionals are OMITTED, not serialised as null — which is what
-/// makes `body_requires_a_question_key` send a body with no `question_id`
-/// key at all, the way the Python dict literal did.
 pub const AnswerBody = struct {
     question_id: ?[]const u8 = null,
     tool_call_id: ?[]const u8 = null,
@@ -593,10 +480,6 @@ pub fn fetchQuestion(temp_dir: []const u8, question_id: []const u8) !?QuestionRo
 }
 
 /// `assert row is not None and row["status"] == want`.
-///
-/// Fused into one helper because Python's two-step assert leaves the Zig
-/// call site holding a `const` payload it cannot `defer row.deinit()`
-/// on — `orelse` yields a const value, and `deinit` needs `*T`.
 pub fn expectQuestionStatus(temp_dir: []const u8, question_id: []const u8, want: []const u8) !void {
     var row_opt = try fetchQuestion(temp_dir, question_id);
     defer if (row_opt) |*r| r.deinit();
@@ -625,7 +508,6 @@ pub fn expectQuestionAnswer(temp_dir: []const u8, question_id: []const u8, want:
 }
 
 /// `_tool_row_content` — the `response_content` of one `llm_history` row.
-///
 /// OWNED: Python returned a `str` copied out of the driver, and the Zig
 /// caller compares it after this frame's buffers are gone.
 pub fn toolRowContent(temp_dir: []const u8, row_id: []const u8) ![]u8 {
@@ -734,10 +616,6 @@ test "answer_rewrites_the_tool_row_and_resumes_the_run" {
 
 // The card parses the row with `unwrapToolOutput`, which THROWS unless the
 // envelope has `tool`, `parameters`, `success` and `v`.
-//
-// An earlier version of the rewrite emitted an envelope with only
-// `success` — no `parameters` — so every resolved question fell back to an
-// empty "pending" card: it looked unanswered and its inputs stayed live.
 test "rewritten_row_satisfies_the_frontend_envelope_contract" {
     try harness.requirePabrikBin(io, gpa);
     const sqlite = try requireSqlite3Cli();
@@ -1109,10 +987,6 @@ test "a_new_message_instead_of_an_answer_settles_it_as_abandoned" {
     defer seeded.deinit();
 
     // `POST /api/llm/session` creates-or-sends, so it answers 201 here.
-    //
-    // `cwd_session` is `h.temp_dir` rather than the Python's "/tmp"
-    // literal: `std.fs.path.isAbsolute("/tmp")` is FALSE on windows-2022,
-    // and `harnessPath` is absolute on every platform.
     {
         const cwd = try harness.harnessPath(gpa, h.temp_dir, &.{});
         defer gpa.free(cwd);
@@ -1163,10 +1037,6 @@ test "a_new_message_instead_of_an_answer_settles_it_as_abandoned" {
 }
 
 // Route-order regression guard: `/answer` must resolve to its OWN handler.
-//
-// `matchRoute` walks routes in registration order, so a sibling `:param`
-// route registered earlier could capture this path (the /knowledge/reorder
-// class of bug). The distinctive JSON keys prove which handler ran.
 test "answer_route_is_not_shadowed_by_sibling_routes" {
     try harness.requirePabrikBin(io, gpa);
     const sqlite = try requireSqlite3Cli();

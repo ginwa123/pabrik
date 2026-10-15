@@ -1,19 +1,6 @@
-// Exec wrappers for the progressive tool search agent tools
-// (`search_tool` / `view_tool` / `use_tool`) — one file, three exec fns,
-// mirroring `tools_exec_skills.zig`.
-//
-// The catalog these operate on is:
-//
-//     catalog = (registered built-ins − enabled built-ins − session-equipped)
-//               ∪ (mcp tools − session-equipped)
-//
-// "enabled" comes from `tool_eligibility.allowlistFilter`, the SAME helper the
-// workflow uses to build the LLM's tool list — so the catalog can never offer
-// a tool the model already has, nor hide one it should be able to reach.
-// The item-type policy (kanban ↔ design) is applied too, via
-// `tool_eligibility.itemTypeStrip` inside `buildCatalog`.
-//
-// Plan: docs/superpowers/plans/2026-09-12-progressive-tool-search.md
+// Exec wrappers for the progressive tool search agent tools (`search_tool` /
+// `view_tool` / `use_tool`) — one file, three exec fns, mirroring
+// `tools_exec_skills.zig`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -134,10 +121,9 @@ pub fn execSearchTool(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult 
     const literal = parsed.value.literal orelse false;
     const server = parsed.value.server orelse "";
 
-    // ── Paging bounds ──
-    // Rejected, never silently clamped: the model pages by offset from the
-    // `<total>` it was shown, so a quiet clamp would make its next call land
-    // on the wrong window. The messages name the accepted range.
+    // ── Paging bounds ── Rejected, never silently clamped: the model pages
+    // by offset from the `<total>` it was shown, so a quiet clamp would make
+    // its next call land on the wrong window.
     const limit: usize = blk: {
         const raw = parsed.value.limit orelse @as(i64, @intCast(progressive_catalog.DEFAULT_SEARCH_LIMIT));
         if (raw < 1) {
@@ -171,9 +157,7 @@ pub fn execSearchTool(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult 
 
     // `matchQuery` returns every match (no cap); `pageSlice` + the renderer
     // apply `offset`/`limit`, and `total` is always the pre-page count so the
-    // model can page deterministically. The query is a regex unless `literal`
-    // says otherwise; a bad pattern degrades to a literal substring match and
-    // the outcome carries the warning.
+    // model can page deterministically.
     const outcome = try progressive_catalog.matchQuery(
         ctx.allocator,
         catalog,
@@ -279,10 +263,9 @@ pub fn execUseTool(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
 
     const inputs = try loadInputs(ctx);
 
-    // ── The validation rule, checked BEFORE anything else ──
-    // If it is already equipped for this session there is nothing to insert;
-    // report it and write nothing. This also short-circuits the case where the
-    // catalog no longer lists the name (it excludes equipped tools).
+    // ── The validation rule, checked BEFORE anything else ── If it is
+    // already equipped for this session there is nothing to insert; report it
+    // and write nothing.
     if (progressive_catalog.findAnyByNameFiltered(inputs.registered, inputs.mcp, name, inputs.equipped_names)) |already| {
         const inner = try progressive_catalog.renderUseTool(ctx.allocator, already, false);
         const output = try wrapToolOutput(ctx.allocator, "use_tool", tc.function.arguments, true, null, inner);
@@ -472,26 +455,16 @@ test "execSearchTool: limit/offset page the matches and report the true total" {
         threaded.io(),
         "{\"query\":\"^(list|load|save|search)_\",\"limit\":3,\"offset\":3}",
     );
-    // Page 2 is a WINDOW of at most `limit` rows, so its count is
-    // `min(limit, total - offset)` — NOT `total - offset`.
-    //
-    // The old assertion here was `total - 3`, which silently assumed the
-    // entire remainder fit in one page, i.e. total <= 6. That was true
-    // while the catalog happened to hold 6 tools matching
-    // `^(list|load|save|search)_`, and went quietly false the moment a 7th
-    // landed (search_documents does) — while the paging itself stayed
-    // perfectly correct. Assert the windowing RULE instead: it holds for
-    // every catalog size, so the next tool added cannot break it.
+    // Page 2 is a WINDOW of at most `limit` rows, so its count is `min(limit,
+    // total - offset)` — NOT `total - offset`.
     const page2_expected = @min(@as(usize, 3), total - 3);
     const expect_page2_count = try std.fmt.allocPrint(a, "\"count\":{d}", .{page2_expected});
     try testing.expect(std.mem.indexOf(u8, page2, expect_page2_count) != null);
     try testing.expect(std.mem.indexOf(u8, page2, "\"offset\":3,\"limit\":3") != null);
     try testing.expectEqual(total, try totalOf(a, page2));
 
-    // The last page proves the windowing all the way out: it is the only
-    // page that is NOT truncated, and its count is whatever is left. This
-    // is the assertion that was missing — without it, "page 2 holds the
-    // whole remainder" went unnoticed.
+    // The last page proves the windowing all the way out: it is the only page
+    // that is NOT truncated, and its count is whatever is left.
     const page3 = try searchToolOutput(
         a,
         &db,
@@ -530,10 +503,8 @@ test "execSearchTool: limit/offset page the matches and report the true total" {
 const testing = std.testing;
 
 /// One `use_tool` dispatch against the REAL registry and a real (in-memory)
-/// DB, on the same allowlist `searchToolOutput` uses — so the name under
-/// test is registered but not enabled, i.e. discoverable, which is the only
-/// state `use_tool` acts on. A real Logger because `saveProgressiveTool`
-/// logs the insert.
+/// DB, on the same allowlist `searchToolOutput` uses — so the name under test
+/// is registered but not enabled, i.e. discoverable, which is the only state
 fn useToolResult(
     a: std.mem.Allocator,
     db: *test_sqlite.SqliteBackend,
@@ -568,9 +539,7 @@ fn useToolResult(
 
 test "the three progressive tools are offered to the model and resolve to dispatchable registry entries" {
     // `equips()` is the list the workflow hands the LLM;
-    // UNIFIED_TOOL_REGISTRY() is the dispatcher's table. Both are required —
-    // a registry entry alone is dispatchable but invisible, an equips() entry
-    // alone is visible but undispatchable.
+    // UNIFIED_TOOL_REGISTRY() is the dispatcher's table.
     const equip = tools_equipped.equips(testing.allocator);
     defer testing.allocator.free(equip);
 
@@ -619,9 +588,7 @@ test "execUseTool: equipping a catalog tool persists the row and reports it back
     try testing.expectEqualStrings("save_memory", res.progressive_tool_save.?.name);
 
     // …and the row really is in session_progressive_tool, which is what the
-    // next turn's allowlist and the catalog both read back. The flag and the
-    // database are asserted together because the flag exists precisely so the
-    // two can never disagree (see ProgressiveToolSaveInfo).
+    // next turn's allowlist and the catalog both read back.
     const rows = try llm_history.getProgressiveTools(a, &db, "sess_regex");
     defer for (rows) |r| r.deinit(a);
     try testing.expectEqual(@as(usize, 1), rows.len);

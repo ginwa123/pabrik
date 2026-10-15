@@ -1,30 +1,5 @@
 //! Agent-callable tool: `list_secrets` — the NAMES of the secrets stored in
 //! the calling session's workspace, and nothing else.
-//!
-//! Wire shape:
-//!   input:  {} (no params — the workspace is resolved server-side from the
-//!           `ToolExecContext.session_id` in the exec adapter)
-//!   output: <list_secrets><count>N</count><secrets>
-//!             <secret><name>..</name><updated_at>..</updated_at></secret>...
-//!           </secrets></list_secrets>
-//!
-//! ## Why the schema carries no `workspace_id`
-//!
-//! `add_document` / `edit_document` / `read_workspace_session` all resolve
-//! their own workspace from the session rather than taking one as an
-//! argument, and for a tool that only ever reads NAMES that is the whole
-//! security model: there is no parameter through which a model — or a
-//! prompt-injected command line — could name a workspace it does not
-//! belong to. Adding a `workspace_id` property later would be a privilege
-//! escalation, so the test at the bottom of this file asserts on the
-//! serialized schema and not merely on the field count.
-//!
-//! ## Why no `value`
-//!
-//! The same argument, one level down: the stored credential must not be
-//! reachable from a discovery call at all. `secrets_store.listSecretNames`
-//! selects `name` alone, so the exec adapter physically cannot build a
-//! payload containing one.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -75,9 +50,7 @@ test "list_secrets_tool JSON schema: no properties, no required, and no workspac
 
     // Asserted on the SERIALIZED schema, not on the struct: a future edit
     // that adds a property is exactly the regression this has to catch, and
-    // counting fields cannot see it. `workspace_id` would let a model pick
-    // which isolation boundary it reads from, which is the one thing this
-    // tool must never let it do.
+    // counting fields cannot see it.
     const json = try std.json.Stringify.valueAlloc(testing.allocator, tool, .{});
     defer testing.allocator.free(json);
 

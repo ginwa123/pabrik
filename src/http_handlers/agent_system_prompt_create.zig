@@ -1,20 +1,5 @@
-//! `POST /api/agents/:agent_id/system_prompt`.
-//!
-//! Adds a named system-prompt block to an Agent. Body: `{title?, content}`.
-//! `content` is required (non-empty after trim); `title` optional ('' =
-//! untitled).
-//!
-//! Layered as:
-//!   - `useCase` — validate agent + content → INSERT with
-//!     `position = MAX + 1` (COALESCE) → read back position.
-//!   - `agentSystemPromptCreateHandler` — thin orchestrator over
-//!     `useCase`: parses path/body, delegates, maps outcome to HTTP.
-//!
-//! Memory: the per-request arena reaps all allocations at request
-//! end, so neither layer needs explicit `free`s.
-//!
-//! Plan: docs/superpowers/plans/2026-08-21-agent-system-prompt.md
-//! Task: task_1787408958280_1
+//! `POST /api/agents/:agent_id/system_prompt`. Adds a named system-prompt
+//! block to an Agent. Body: `{title?, content}`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -34,11 +19,7 @@ const CreateSystemPromptBody = struct {
 /// Subset of the system-prompt row returned by the use-case.
 pub const SystemPrompt = agent_db.SystemPromptRow;
 
-/// Domain-level error set for `useCase`. The handler maps each
-/// variant to an HTTP status code + message via two exhaustive
-/// switches (intentional — adding a new variant fails to compile in
-/// the handler until both switches are updated, keeping status
-/// codes in lockstep with the error set).
+/// Domain-level error set for `useCase`.
 pub const SystemPromptCreateError = error{
     /// `agent_id` path param was missing or empty.
     AgentIdRequired,
@@ -54,10 +35,9 @@ pub const SystemPromptCreateError = error{
     RefetchFailed,
     /// Refetched row vanished (should be impossible — surfaces as 500).
     RowVanished,
-    /// `std.fmt.allocPrint` failed on id generation. Unreachable
-    /// under arena allocator (test builds with `testing.allocator`
-    /// can hit it), but the type system requires the variant so
-    /// `try` propagates a typed error.
+    /// `std.fmt.allocPrint` failed on id generation. Unreachable under arena
+    /// allocator (test builds with `testing.allocator` can hit it), but the
+    /// type system requires the variant so `try` propagates a typed error.
     OutOfMemory,
 };
 
@@ -78,13 +58,7 @@ pub const SystemPromptCreateOutput = struct {
 // Use case
 // =====================================================================
 
-/// Create a system-prompt row for the given agent. Validates that the
-/// agent exists + is of type `'agent'`, that content is non-empty,
-/// then INSERTs with `position = MAX(position) + 1` (COALESCE so the
-/// first row gets position 0, not -1 + 1). The use-case is
-/// transport-agnostic: it works for both the per-request arena
-/// (production HTTP handler) and `testing.allocator` (unit tests
-/// below) — all allocations go through the passed-in allocator.
+/// Create a system-prompt row for the given agent.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -183,15 +157,8 @@ pub fn agentSystemPromptCreateHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-//
-// impl + tests in one file (project convention for Agent Mode).
-// Behavioural tests cover the use-case:
-//
-//   1. Validation: empty agent_id → AgentIdRequired
-//   2. Validation: empty/whitespace content → ContentRequired
-//   3. AgentNotFound: workspace_item doesn't exist
-//   4. Happy path: first row gets position 0; second gets 1
-//   5. Empty title tolerated (COALESCE → '')
+// impl + tests in one file (project convention for Agent Mode). Behavioural
+// tests cover the use-case: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;

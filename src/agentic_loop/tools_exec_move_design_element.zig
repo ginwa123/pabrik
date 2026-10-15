@@ -1,10 +1,6 @@
 //! Tool executor for `move_design_element` — wraps
-//! `pabrikcore.move_design_element.executeMoveDesignElementToString`
-//! into the `ToolExecContext` / `ToolExecResult` shape used by the
-//! agentic loop's tool dispatcher.
-//!
-//! Plan: docs/superpowers/plans/2026-08-06-move-element-with-descendants.md
-//! (Chunk 5, Task 5.2)
+//! `pabrikcore.move_design_element.executeMoveDesignElementToString` into the
+//! `ToolExecContext` / `ToolExecResult` shape used by the agentic loop's tool
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");

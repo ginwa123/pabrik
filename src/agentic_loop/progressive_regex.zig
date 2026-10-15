@@ -1,24 +1,5 @@
-//! Tiny in-process regex engine for `search_tool`'s catalog query.
-//!
-//! Why hand-rolled: the catalog is an in-memory list of `AgentTool`s. There is
-//! no file to hand to ripgrep (the `search` agent tool's engine) and no `regex.h`
-//! on Windows, so shelling out is not an option — and a tool lookup must never
-//! depend on an external binary being installed.
-//!
-//! Syntax (RE2-flavoured subset, ASCII/byte-oriented):
-//!   literals, `.`, `[...]` (ranges, `[^...]`), `\d \D \w \W \s \S`, `\b \B`,
-//!   `\.`-style escapes, `* + ? {m} {m,} {m,n}`, `( )` / `(?: )`, `|`, `^`, `$`.
-//! `$` is strict end-of-text (no trailing-newline allowance). A lazy `?` after a
-//! quantifier is accepted and ignored: only match existence matters here.
-//!
-//! Anything else (lookarounds, backreferences, `\A \z \G`, unknown alphabetic
-//! escapes) is `error.InvalidPattern` — never silently reinterpreted. Callers
-//! are expected to fall back to literal substring matching and say so.
-//!
-//! Matching is the classic Pike VM (Thompson NFA simulation): O(text × program)
-//! with no backtracking, so a pattern like `(a+)+b` cannot blow up on a long
-//! description. Two hard caps bound the worst case: `MAX_INSTRS` at compile time
-//! (quantifier expansion) and `MAX_STEPS` per `isMatch` call (runaway scans).
+//! Tiny in-process regex engine for `search_tool`'s catalog query. Why
+//! hand-rolled: the catalog is an in-memory list of `AgentTool`s.
 
 const std = @import("std");
 
@@ -811,14 +792,8 @@ test "a pathological backtracking pattern stays linear" {
     try testing.expect(!try pair(testing.allocator, "(a+)+b", text));
 }
 
-// ─── Oracle: expectations cross-checked against Python's `re` ───
-//
-// Generated with Python 3 (`re.compile(pattern.encode())`, i.e. BYTE patterns so
-// `\d`/`\w`/`\s` are ASCII-only like this engine) on 2026-09-12. The one
-// deliberate divergence: Python's `$` also matches before a trailing newline,
-// so oracle patterns using `$` were translated to `\Z` — this engine's `$` is
-// strict end-of-text. Do not hand-edit; re-derive from the oracle script if the
-// supported subset changes.
+// ─── Oracle: expectations cross-checked against Python's `re` ─── Generated
+// with Python 3 (`re.compile(pattern.encode())`, i.e.
 
 const OracleCase = struct { pattern: []const u8, text: []const u8, want: bool };
 

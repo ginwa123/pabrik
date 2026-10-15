@@ -1,74 +1,6 @@
-// Functional tests for the `present_files` download endpoint.
-//
-// Zig port of `tests/functional/agent_present_files_test.py` (same test
-// names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional tests for the `present_files` download endpoint.
-//
-//   Exercises GET /api/files/download against a REAL pabrik binary + REAL
-//   SQLite, replaying the EXACT query strings the PresentFiles.vue card
-//   emits (see `fileDownloadUrl` in src/apps/desktop/src/api/index.ts).
-//
-//     Plan: docs/plans/2026-09-14-agent-tool-present-files.md
-//
-//   Why a wire test (not just Zig unit tests): three failure modes only
-//   surface on a real round-trip —
-//     1. Route-order shadowing — matchRoute walks routes in registration
-//        order, so a literal registered after a `:param` sibling is
-//        captured as a param.
-//     2. Query decoding — the card sends encodeURIComponent(path); the
-//        handler must see the decoded absolute path.
-//     3. Sandbox scope — the session-cwd containment check runs against
-//        the sessions row, which only exists in a real DB.
-//
-//   Setup pattern (replay-frontend-wire-payload rule): sessions are
-//   created via PUT /api/llm/session/:id {"name": ...} (auto-creates, no
-//   LLM profile needed — same precedent as
-//   background_processes_api_test.py), then the sandbox root is pinned
-//   via direct sqlite3 UPDATE of sessions.cwd (WAL-safe short-lived
-//   connection, same precedent). Files live under harness.temp_dir
-//   (isolated tmpdir HOME), never /tmp bare — teardown rmtree's only the
-//   validated tempdir.
-//
-//   Covers:
-//     * REGISTRY    — present_files is in /api/agent-tools/registry
-//     * TXT_ATTACH  — .txt + disposition=attachment -> 200,
-//       byte-identical, Content-Disposition: attachment;
-//       filename="notes.txt"
-//     * JPG_INLINE  — .jpg + disposition=inline -> 200, byte-identical,
-//       Content-Disposition: inline (thumbnail path)
-//     * JPG_ATTACH  — .jpg + disposition=attachment -> attachment header
-//     * MISSING     — absent path -> 404
-//     * TRAVERSAL   — a path outside cwd (the harness tempdir's parent)
-//       -> 403
-//     * DOTDOT      — path with .. -> 403
-//     * NO_SESSION  — unknown session_id -> 404
-//     * BAD_DISP    — disposition=download -> 400
-//   """
-//
-// THE `path` PARAM IS NEVER PRE-ENCODED BY THE TEST. Every fixture path
-// comes from `harness.harnessPath(gpa, h.temp_dir, ...)` and travels in
-// `HttpOptions.params`, which the harness percent-encodes itself: a
-// literal `/tmp/...` would be rejected by `std.fs.path.isAbsolute` on
-// windows-2022, and hand-encoding the value would double-escape it.
-//
-// THE ONE EXCEPTION IS `android_percent_twenty_path_decodes_to_a_space`,
-// which deliberately BYPASSES `params` and inlines a pre-encoded query
-// in the PATH — because the point of that test is the Android client's
-// exact wire bytes (`%20`, never a form-style `+`). That local encoder is
-// intentionally NOT the harness's: it is the client's, and asserting on
-// the harness's own encoder would test the wrong program.
-//
-// THE BODIES ARE REAL BYTES, not base64. `TXT_BODY` / `JPG_BODY` /
-// `SPACED_BODY` / `SECRET_BODY` are written to disk verbatim and compared
-// byte-for-byte against the response body, so the comparisons are
-// `std.mem.eql(u8, ...)` on raw bytes — `JPG_BODY` is NOT valid UTF-8
-// after its first two bytes.
-//
-// The DB is written with the `sqlite3` CLI, not the stdlib module (this
-// package links no SQLite) — see `requireSqlite3Cli`.
+// Functional tests for the `present_files` download endpoint. Zig port of
+// `tests/functional/agent_present_files_test.py` (same test names, same
+// order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -258,13 +190,8 @@ fn download(
     });
 }
 
-/// Percent-encode `s` the way the Android client does: RFC 3986
-/// unreserved set only, so a space is `%20` and `+` is `%2B`.
-///
-/// This mirrors `java.net.URLEncoder` followed by the client's `+` ->
-/// `%20` rewrite. It is deliberately a LOCAL copy: the test's subject is
-/// the bytes the CLIENT emits, so reusing the harness's encoder would
-/// assert that the harness agrees with itself.
+/// Percent-encode `s` the way the Android client does: RFC 3986 unreserved
+/// set only, so a space is `%20` and `+` is `%2B`.
 fn androidEncode(s: []const u8) ![]u8 {
     var out: std.Io.Writer.Allocating = .init(gpa);
     errdefer out.deinit();
@@ -453,19 +380,8 @@ test "missing_file_404" {
     defer r.deinit();
 }
 
-// A real file that canonicalizes outside the sandbox -> 403, never bytes.
-//
-// The probe used to be the literal `/etc/passwd`. That is only absolute
-// (and only outside the sandbox) on POSIX: on windows-2022 it resolves
-// against the current drive, so the request 404s as a missing file
-// instead of 403ing as a traversal, and the guard this test exists for
-// goes unexercised. Worse, a path that does not exist proves nothing on
-// ANY platform — the handler answers 404 before it reaches the sandbox
-// check.
-//
-// So the fixture is a file we CREATE, under the harness tempdir but
-// beside the session sandbox rather than inside it: absolute on every
-// platform, guaranteed to exist, and provably outside the root.
+// A real file that canonicalizes outside the sandbox -> 403, never bytes. The
+// probe used to be the literal `/etc/passwd`.
 test "traversal_outside_cwd_403" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -498,10 +414,9 @@ test "dotdot_rejected_403" {
     const root = try setupSandbox(&h, "sess_present_1");
     defer gpa.free(root);
 
-    // Built with `std.fs.path.join(root, "..", "notes.txt")` so the
-    // `..` survives — `join` here is string concatenation of segments
-    // and `..` is a legal one. The harness percent-encodes the whole
-    // value, so the server sees the literal `..` bytes.
+    // Built with `std.fs.path.join(root, "..", "notes.txt")` so the `..`
+    // survives — `join` here is string concatenation of segments and `..` is
+    // a legal one.
     const dotdot = try std.fs.path.join(gpa, &.{ root, "..", "notes.txt" });
     defer gpa.free(dotdot);
 
@@ -520,15 +435,12 @@ test "unknown_session_404" {
 
     // The sandbox is a prerequisite for the probe's SHAPE, not for the
     // assertion: the unknown session id is the only thing under test.
-    // The owned root still has to be freed — `try` alone is not enough,
-    // and `_ =` here silently leaked until the DebugAllocator caught it.
     const root = try setupSandbox(&h, "sess_present_1");
     defer gpa.free(root);
 
-    // The Python probe used a literal `/tmp/x.txt`; deriving the path
-    // keeps it absolute on every platform (the handler checks
-    // `isAbsolute` before anything else). The unknown SESSION id is what
-    // makes this a miss, not the path.
+    // The Python probe used a literal `/tmp/x.txt`; deriving the path keeps
+    // it absolute on every platform (the handler checks `isAbsolute` before
+    // anything else).
     const missing = try harness.harnessPath(gpa, h.temp_dir, &.{ "present-files-ws", "x.txt" });
     defer gpa.free(missing);
 
@@ -565,17 +477,7 @@ test "invalid_disposition_400" {
     defer r.deinit();
 }
 
-// The Android card's exact wire form: `my%20notes.md`, not
-// `my+notes.md`.
-//
-// The Kotlin client (src/apps/android_mobile/.../chat/PresentFiles.kt,
-// downloadUrl) builds the query itself with java.net.URLEncoder and then
-// rewrites `+` back to `%20`, so its wire bytes differ from everything
-// above — which is precisely the case a unit test on the URL string
-// cannot catch. The server's query parser has to decode `%20` as a space
-// for a presented file with a space in its name to open at all, and a
-// space is the single most common character in a file the agent chooses
-// to show you.
+// The Android card's exact wire form: `my%20notes.md`, not `my+notes.md`.
 test "android_percent_twenty_path_decodes_to_a_space" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -636,13 +538,6 @@ test "android_percent_twenty_path_decodes_to_a_space" {
 }
 
 // `present-files-ws-evil` is NOT inside `present-files-ws`.
-//
-// `isInsideRoot`'s prefix rule ("the character after the root must be a
-// separator") is a pure-string test in Zig and it passes — but a real
-// sibling directory that shares the sandbox's name prefix is the shape
-// that actually leaks a file if the rule is wrong. The reverse matters
-// just as much: refusing the sibling must not refuse the sandbox's own
-// subdirectories.
 fn sandboxWithSibling(h: *Harness) ![]u8 {
     try createSession(h, "sess_present_boundary");
 

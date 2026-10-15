@@ -1,13 +1,4 @@
 //! Per-user LLM config store for opt-in `--auth` mode.
-//!
-//! When `--auth` is on, each user's LLM config (profiles, MCP servers,
-//! sub-agents, operational flags — the same JSON shape as config.json)
-//! lives in `users.config_json` (Migration 092) and config.json is
-//! ignored. NULL or empty = defaults (same as a missing file).
-//!
-//! Single-column simple entity: no new tables, no JSON shredding.
-//! Read-merge-write happens in the HTTP handlers; this module only
-//! loads/saves the raw JSON string per user.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -35,10 +26,9 @@ pub fn loadRaw(
     return try allocator.dupe(u8, r.values[0]);
 }
 
-/// Save the raw `config_json` for a user. Empty input stores NULL
-/// (defaults) — never binds `""` directly since SqliteBackend
-/// collapses empty slices to NULL mid-execution anyway; the literal
-/// keeps the intent explicit.
+/// Save the raw `config_json` for a user. Empty input stores NULL (defaults)
+/// — never binds `""` directly since SqliteBackend collapses empty slices to
+/// NULL mid-execution anyway; the literal keeps the intent explicit.
 pub fn saveRaw(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,

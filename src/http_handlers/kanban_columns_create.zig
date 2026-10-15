@@ -1,31 +1,6 @@
-//! `POST /api/workspaces/:workspace_id/items/:item_id/kanban/columns`.
-//!
-//! Append a new column to the end of a kanban's column sequence (or at
-//! an explicit `position` if the caller passes one).
-//!
-//! Body: `{name, description?, position?}` where `name` is required
-//! and `position` is optional (default `MAX(position) + 1`).
-//! `description` is optional; absent / null → stored as the empty
-//! string (the "no description" sentinel — `NOT NULL DEFAULT ''`).
-//!
-//! Response shape: `KanbanColumnResponse` for the newly-created column
-//! (built by `http_response.makeKanbanColumnResponse`).
-//!
-//! Layered as:
-//!   - `useCase` — business logic (validate → insert → re-fetch → find
-//!     → emit SSE → return heap-owned `KanbanColumn`).
-//!   - `kanbanColumnsCreateHandler` — thin orchestrator over
-//!     `useCase`: parses the HTTP request, resolves the singleton DB
-//!     handle, delegates to `useCase`, maps the use-case outcome to
-//!     an HTTP response (201 / 400 / 500).
-//!
-//! Errors:
-//!   - 400 missing/invalid JSON body, missing/empty `name`,
-//!     missing `item_id` path param
-//!   - 500 DB failure (insert, fetch, or consistency violation)
-//!
-//! Plan: docs/superpowers/plans/2026-06-21-workspace-item-kanban.md
-//!   (Chunk 3, Task 3.4)
+//! `POST /api/workspaces/:workspace_id/items/:item_id/kanban/columns`. Append
+//! a new column to the end of a kanban's column sequence (or at an explicit
+//! `position` if the caller passes one).
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -34,23 +9,16 @@ const http_response = @import("http_response.zig");
 const kanban_model = @import("../agentic_loop/kanban_model.zig");
 const on_event_sent_kanban = pabrikcore.ai_mod.on_event_sent_kanban;
 
-/// HTTP request body for column-create. Decoupled from the
-/// `CreateColumnInput` domain struct so the wire format can evolve
-/// independently (e.g. adding `?` optional fields) without touching
-/// the use-case.
+/// HTTP request body for column-create.
 const CreateColumnBody = struct {
     name: []const u8,
     description: ?[]const u8 = null,
     position: ?i64 = null,
 };
 
-/// Domain-level error set for `useCase`. The handler maps each
-/// variant to an HTTP status code + message via two exhaustive
-/// switches (one for status, one for the user-facing message).
-///
-/// Adding a new variant fails to compile in the handler until both
-/// switches are updated — that's intentional, to keep status codes
-/// in lockstep with the error set.
+/// Domain-level error set for `useCase`. The handler maps each variant to an
+/// HTTP status code + message via two exhaustive switches (one for status,
+/// one for the user-facing message).
 pub const KanbanColumnCreateError = error{
     /// `:item_id` path param was missing or empty.
     ItemIdRequired,
@@ -65,10 +33,6 @@ pub const KanbanColumnCreateError = error{
     /// unlikely; surfaces as 500 so the caller can re-fetch).
     ColumnNotVisible,
     /// `allocator.dupe` failed while building the output struct.
-    /// In production this is effectively unreachable (the
-    /// per-request arena reaps everything at request end) but the
-    /// type system requires the variant so the `try` on the dupe
-    /// propagates a typed error.
     OutOfMemory,
 };
 
@@ -92,16 +56,7 @@ pub const CreateColumnInput = struct {
 
 /// Output of the create-column use-case.
 pub const CreateColumnOutput = struct {
-    /// The freshly-created column. The slice fields are HEAP-OWNED
-    /// by the use-case: the use-case duplicates them out of the
-    /// `listColumns` result so the output survives the useCase's
-    /// internal `freeColumns` defer (and any later
-    /// `freeColumns(cols)` that runs in the caller).
-    ///
-    /// The caller MUST free the per-field slices (or wrap in a
-    /// single-element array and pass to `kanban_model.freeColumns`).
-    /// The same ownership pattern as `listColumns` consumers
-    /// throughout `http_handlers/*`.
+    /// The freshly-created column.
     column: kanban_model.KanbanColumn,
 };
 
@@ -109,24 +64,7 @@ pub const CreateColumnOutput = struct {
 // Use case
 // =====================================================================
 
-/// Create a kanban column.
-///
-/// Steps:
-///   1. Validate `item_id` and `name`.
-///   2. Insert the column via `kanban_model.addColumn` (which
-///      computes `position = MAX + 1` when null).
-///   3. Re-query via `kanban_model.listColumns` to fetch the full
-///      row (addColumn only returns the new id).
-///   4. Locate the new column in the list by its id.
-///   5. Emit a `kanban_column` SSE event with `action="created"`
-///      (fire-and-forget: SSE failures are logged but do not fail
-///      the request — the row is already inserted).
-///   6. Return a heap-owned `KanbanColumn` for the response.
-///
-/// The use-case is intentionally allocator-agnostic: it works for
-/// both the per-request arena (production HTTP handler) and a
-/// leak-tracker allocator (unit tests). All allocations are paired
-/// with `errdefer` / `defer` for non-arena safety.
+/// Create a kanban column. Steps: 1. Validate `item_id` and `name`. 2.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -138,10 +76,7 @@ fn useCase(
     if (input.item_id.len == 0) return error.ItemIdRequired;
     if (input.name.len == 0) return error.NameRequired;
 
-    // 2. Insert the column. `addColumn` returns a freshly-generated
-    // id (allocated from `allocator`); we don't need it past the
-    // find step below, so we free it via a defer (no-op on arena,
-    // real free on other allocators).
+    // 2. Insert the column.
     const new_id = kanban_model.addColumn(
         allocator,
         .{ .db = db },
@@ -162,14 +97,7 @@ fn useCase(
     for (cols) |c| {
         if (!std.mem.eql(u8, c.id, new_id)) continue;
 
-        // 5. Emit the SSE event so other connected clients refresh
-        // their kanban view. action="created" matches the
-        // frontend's `KanbanColumnEvent` union variant. The emit is
-        // fire-and-forget: `event_bus.emit` silently no-ops when no
-        // SSE client is subscribed (so tests without an SSE server
-        // still pass), and any error from `valueAlloc` is logged
-        // and swallowed here — the row is already inserted, so we
-        // do NOT fail the request.
+        // 5.
         on_event_sent_kanban.onEventSendKanbanColumn(allocator, .{
             .action = "created",
             .workspace_id = input.workspace_id,
@@ -183,11 +111,8 @@ fn useCase(
             );
         };
 
-        // 6. Duplicate the matched column's slices so the output
-        // survives the `freeColumns(cols)` defer above. `errdefer`
-        // reverts each successful dupe if a later dupe fails (the
-        // partial state would otherwise leak — the dupes are on
-        // `allocator`, which may or may not be an arena).
+        // 6. Duplicate the matched column's slices so the output survives the
+        // `freeColumns(cols)` defer above.
         var duped_id: ?[]u8 = null;
         var duped_workspace_item_id: ?[]u8 = null;
         var duped_name: ?[]u8 = null;
@@ -284,11 +209,7 @@ pub fn kanbanColumnsCreateHandler(
         .description = description,
         .position = parsed.position,
     }) catch |err| {
-        // 3. Map the use-case error to an HTTP response. Both
-        // switches are exhaustive over the inferred error set —
-        // adding a new `KanbanColumnCreateError` variant will fail
-        // to compile here (intentional, to keep status codes in
-        // sync). No `else` prong needed.
+        // 3. Map the use-case error to an HTTP response.
         const status: u16 = switch (err) {
             error.ItemIdRequired => 400,
             error.NameRequired => 400,
@@ -310,13 +231,9 @@ pub fn kanbanColumnsCreateHandler(
             .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = message }),
         });
     };
-    // Free the useCase's heap-owned column slices. On the per-request
-    // arena this is a no-op (the arena reaps at request end) but the
-    // explicit frees are defensive + document ownership. We inline
-    // the per-field frees here (rather than calling `freeColumns`)
-    // because `output` is `const` and wrapping `output.column` in
-    // an array literal produces a `*const [1]T` — which doesn't
-    // coerce to `freeColumns`'s `[]T` parameter.
+    // Free the useCase's heap-owned column slices. On the per-request arena
+    // this is a no-op (the arena reaps at request end) but the explicit frees
+    // are defensive + document ownership.
     defer {
         allocator.free(output.column.id);
         allocator.free(output.column.workspace_item_id);

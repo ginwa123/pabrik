@@ -167,65 +167,7 @@ pub fn handleIndexCodebase(
     _ = io;
     _ = cwd;
     return error.NotImplemented;
-    // const index_dir = indexing.getIndexDir(cwd);
-    // defer allocator.free(index_dir);
-    //
-    // // Create index directory
-    // std.Io.Dir.cwd().createDirPath(io, index_dir);
-    //
-    // const files = indexing.walkWorkspace(allocator, io, cwd);
-    // defer {
-    //     for (files) |f| {
-    //         allocator.free(f.path);
-    //         allocator.free(f.content);
-    //     }
-    //     allocator.free(files);
-    // }
-    //
-    // // Chunk files
-    // var all_chunks = std.ArrayList(indexing.ChunkInfo).empty;
-    // defer {
-    //     for (all_chunks.items) |c| {
-    //         allocator.free(c.file_path);
-    //         allocator.free(c.content);
-    //     }
-    //     all_chunks.deinit(allocator);
-    // }
-    //
-    // for (files) |file| {
-    //     const chunks = indexing.chunkFile(ctx.allocator, file.path, file.content, 500) catch |err| {
-    //         ctx.logger.errFmt("[index_codebase] Failed to chunk {s}: {s}", .{ file.path, @errorName(err) });
-    //         continue;
-    //     };
-    //     for (chunks) |chunk| {
-    //         try all_chunks.append(ctx.allocator, chunk);
-    //     }
-    // }
-    //
-    // ctx.logger.infoFmt("[index_codebase] Created {d} chunks from {d} files", .{ all_chunks.items.len, files.len });
-    //
-    // // Write chunks
-    // indexing.writeChunks(ctx.allocator, ctx.io, index_dir, all_chunks.items) catch |err| {
-    //     ctx.logger.errFmt("[index_codebase] Failed to write chunks: {s}", .{@errorName(err)});
-    //     const output = try pabrik.semantic_search.jsonError(ctx.allocator, "Failed to write chunks");
-    //     return tool_registry.ToolExecResult{ .output = output, .output_allocated = true };
-    // };
-    //
-    // // Write manifest
-    // const manifest = indexing.IndexManifest{
-    //     .version = 1,
-    //     .dimensions = 768, // Placeholder - would come from embedding provider
-    //     .chunk_count = @truncate(all_chunks.items.len),
-    //     .indexed_files = &.{},
-    //     .last_updated = @as(i64, @intCast(std.Io.Timestamp.now(ctx.io, .real).nanoseconds)),
-    //     .memory_bytes = @as(u64, all_chunks.items.len) * 768 * 4,
-    //     .oversized_chunks = &.{},
-    // };
-    // indexing.writeManifest(ctx.io, index_dir, &manifest) catch |err| {};
-    //
-    // const summary = try std.fmt.allocPrint(ctx.allocator, "Indexed {d} files, {d} chunks.", .{ files.len, all_chunks.items.len });
-    // defer ctx.allocator.free(summary);
-    //
-    // const output = try pabrik.semantic_search.toJSONSuccess(ctx.allocator, &.{});
-    // return tool_registry.ToolExecResult{ .output = output, .output_allocated = true };
+    // const index_dir = indexing.getIndexDir(cwd); defer
+    // allocator.free(index_dir); // Create index directory
+    // std.Io.Dir.cwd().createDirPath(io, index_dir); const files =
 }

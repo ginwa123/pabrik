@@ -1,15 +1,4 @@
 //! Ping endpoint for connection health checks.
-//!
-//! Returns connection status for a given session:
-//!   - 200 with `"connected": true` if the session has an active
-//!     SSE stream
-//!   - 200 with `"reconnect": true` if the session is registered
-//!     but no live SSE stream
-//!   - 400 if `session_id` is missing
-//!   - 500 if the server singleton is not initialized
-//!
-//! Layered as `useCase` (resolve session + check SSE) and a thin
-//! handler that maps the outcome + errors to status codes / JSON.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");

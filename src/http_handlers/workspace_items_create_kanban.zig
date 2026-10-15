@@ -1,30 +1,4 @@
 //! `POST /api/workspaces/:workspace_id/items/kanban`.
-//!
-//! Creates a new workspace item of `item_type='kanban'`, seeds its
-//! default 3-column flow (`todo / in progress / done`), creates the
-//! `agent_kanbans` config row, and seeds default tools
-//! (command, read_file, write_file) so a fresh board is immediately usable.
-//!
-//! Body: `{name, path?}` — `name` is required, `path` is optional
-//! (NULL is stored when omitted; the kanban is cwd-less until the
-//! user sets the path via the PUT endpoint).
-//!
-//! Steps:
-//!   1. Generate a unique item id (`item_<unix_nanoseconds>` — same
-//!      pattern as `workspace_items_create.zig`).
-//!   2. INSERT into `workspace_items` with `item_type='kanban'` and
-//!      a fresh position (`COALESCE(MAX(position), -1) + 1`).
-//!   3. Seed the default columns.
-//!   4. Emit one SSE `kanban_column` event per seeded column.
-//!   5. Return 201 with `{id, workspace_id, item_type, name, path,
-//!      position}`.
-//!
-//! Layered as `useCase` (validate + generate id + insert + seed +
-//! emit SSE) and a thin handler that maps the outcome + errors to
-//! status codes / JSON.
-//!
-//! Plan: docs/superpowers/plans/2026-06-21-workspace-item-kanban.md
-//!   (Chunk 3)
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -56,29 +30,7 @@ pub const CreateKanbanResponse = struct {
     position: i64,
 };
 
-/// Wire envelope for the create endpoint. The frontend's
-/// `api.createKanban(workspaceId, name, path)` destructures
-/// `{item, columns}` from the response body and pushes the item
-/// straight into the workspaces store (see `addKanbanItem` in
-/// `src/apps/desktop/src/stores/workspaces.ts`).
-///
-/// Why the wrapper:
-///   - The frontend's `KanbanColumn[]` array is the 3 freshly-seeded
-///     default columns (`todo / in progress / done`). Returning them
-///     inline saves a follow-up `GET /items/:id/kanban/columns`
-///     round-trip — the kanban board renders immediately on the
-///     client without a flicker-frame of empty columns.
-///   - The flat `CreateKanbanResponse` shape (the original `item`
-///     payload alone) caused a UI bug: the frontend's destructure
-///     `const { item, columns } = await api.createKanban(...)` got
-///     `item` and `columns` as `undefined`, the local store pushed
-///     an item with all fields undefined, and the sidebar rendered
-///     the `{{ item.name || 'Untitled project' }}` fallback until
-///     the user reloaded (the reloaded state came from
-///     `getWorkspacesItems`, which has the correct shape). Tests
-///     pass because the API mocks return the wrapped shape — the
-///     real backend never matched it. Fix: serialize both fields
-///     in one envelope so the wire shape matches the contract.
+/// Wire envelope for the create endpoint.
 pub const CreateKanbanResponseFull = struct {
     item: CreateKanbanResponse,
     columns: []const kanban_model.KanbanColumn,
@@ -100,10 +52,9 @@ pub const WorkspaceItemsCreateKanbanError = error{
 pub const WorkspaceItemsCreateKanbanInput = struct {
     workspace_id: []const u8,
     body: CreateKanbanBody,
-    /// Live config.json `tools` checklist (null = legacy defaults).
-    /// Read from the singleton by the HTTP handler and threaded into
-    /// the seed so D2's absent/list/[] semantics reach
-    /// `agent_kanban_tools`.
+    /// Live config.json `tools` checklist (null = legacy defaults). Read from
+    /// the singleton by the HTTP handler and threaded into the seed so D2's
+    /// absent/list/[] semantics reach `agent_kanban_tools`.
     config_tools: ?[]const []const u8 = null,
 };
 
@@ -119,29 +70,19 @@ fn useCase(
     input: WorkspaceItemsCreateKanbanInput,
 ) WorkspaceItemsCreateKanbanError!WorkspaceItemsCreateKanbanResult {
     if (input.workspace_id.len == 0) return error.WorkspaceIdRequired;
-    // Trim leading/trailing ASCII whitespace and reject empty names.
-    // Mirrors `workspace_items_create.zig`'s `EmptyName` validation
-    // so both create endpoints have consistent semantics.
-    // `std.mem.trim` returns a slice into the same backing
-    // `parseFromSliceLeaky` arena, so no allocation needed. Plan:
-    // docs/superpowers/plans/2026-07-10-empty-workspace-item-bug.md.
+    // Trim leading/trailing ASCII whitespace and reject empty names. Mirrors
+    // `workspace_items_create.zig`'s `EmptyName` validation so both create
+    // endpoints have consistent semantics.
     const trimmed_name = std.mem.trim(u8, input.body.name, " \t\n\r");
     if (trimmed_name.len == 0) return error.NameRequired;
 
-    // Path is optional — when omitted, NULL is stored (cwd-less
-    // kanban, same as pre-fix behavior). The frontend should always
-    // pass it; we don't enforce it here so existing tests / API
-    // clients that don't know about the field keep working.
+    // Path is optional — when omitted, NULL is stored (cwd-less kanban, same
+    // as pre-fix behavior).
     const path_opt: ?[]const u8 = input.body.path;
     const path_for_insert: []const u8 = path_opt orelse "";
 
     // Generate item id. Same nanosecond-timestamp scheme as
-    // `workspace_items_create.zig:generateItemId`. We use helpers.unixTimestampNanos
-    // here (rather than `std.Io.Clock.now`) so the use-case doesn't need
-    // a `std.Io` parameter — the timestamp generation is a single wall-
-    // clock read with no async/IO involvement. `std.c.clock_gettime`
-    // cannot compile on Windows in Zig 0.16 (clockid_t is void there),
-    // which is why we route through the cross-platform helper.
+    // `workspace_items_create.zig:generateItemId`.
     const timestamp_ns = helpers.unixTimestampNanos();
     const item_id = try std.fmt.allocPrint(allocator, "item_{d}", .{timestamp_ns});
     defer allocator.free(item_id);
@@ -151,14 +92,8 @@ fn useCase(
     defer tx.commitOrRollback() catch {};
     errdefer tx.rollback() catch {};
 
-    // Compute the new item's position as
-    // COALESCE(MAX(position), -1) + 1 within this workspace. The
-    // COALESCE handles the empty-workspace case (no rows → MAX is
-    // NULL → -1 → position 0). `workspace_id` is bound twice: once
-    // for the column, once for the correlated subquery. The path
-    // column is included so the kanban can act as a cwd root for
-    // its child task sessions; NULL is stored when the caller
-    // didn't pass a path.
+    // Compute the new item's position as COALESCE(MAX(position), -1) + 1
+    // within this workspace.
     tx.exec(
         allocator,
         "INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position, created_at, updated_at) VALUES (?, ?, 'kanban', ?, NULLIF(?, ''), COALESCE((SELECT MAX(position) FROM workspace_items WHERE workspace_id = ?), -1) + 1, datetime('now'), datetime('now'))",
@@ -173,8 +108,6 @@ fn useCase(
     // Seed the agent_kanban config row + the tool allowlist (config.json
     // `tools` checklist when set, otherwise DEFAULT_AGENT_TOOLS +
     // DEFAULT_KANBAN_TOOLS) so a fresh board is immediately usable.
-    // INSERT OR IGNORE keeps re-entry safe; tools seed uses OR IGNORE
-    // per row so it never trips UNIQUE(kanban_id, tool_name).
     tx.exec(
         allocator,
         "INSERT OR IGNORE INTO agent_kanbans (id, workspace_item_id) VALUES (?, ?)",
@@ -184,13 +117,8 @@ fn useCase(
 
     tx.commit() catch return error.SeedFailed;
 
-    // Read back the freshly-seeded columns so the response can
-    // include them in the `columns` field of the wire envelope.
-    // Failures here are logged and swallowed: we still return the
-    // created item (with `columns: []`) so the HTTP 201 succeeds —
-    // the frontend falls back to a follow-up
-    // `GET /items/:id/kanban/columns` via `fetchKanbanColumns` to
-    // populate the board if this read fails.
+    // Read back the freshly-seeded columns so the response can include them
+    // in the `columns` field of the wire envelope.
     const seeded_cols = kanban_model.listColumns(allocator, db, item_id) catch {
         std.log.warn(
             \\workspace_items_create_kanban: seed-listColumns failed (non-fatal); returning empty columns array
@@ -211,10 +139,8 @@ fn useCase(
     };
     defer kanban_model.freeColumns(allocator, seeded_cols);
 
-    // Emit SSE events for each seeded column so other connected
-    // clients refresh their kanban view. action="created" for all
-    // three. The emit is fire-and-forget; failures are logged and
-    // swallowed so the HTTP 201 still succeeds.
+    // Emit SSE events for each seeded column so other connected clients
+    // refresh their kanban view. action="created" for all three.
     for (seeded_cols) |col| {
         on_event_sent_kanban.onEventSendKanbanColumn(allocator, .{
             .action = "created",
@@ -229,15 +155,8 @@ fn useCase(
         };
     }
 
-    // Read the actual position back from the DB so the response
-    // mirrors what was persisted. The INSERT computes the position
-    // via `COALESCE((SELECT MAX+1), 0)` so we can't know the value
-    // without re-reading — the previous code hardcoded `0` here,
-    // which would have collided with item ordering had the
-    // frontend ever used `position` to sort a fresh response.
-    // Non-fatal on read failure: we still return the 201 with
-    // `position = 0` and the next refresh from `getWorkspacesItems`
-    // will reconcile the value.
+    // Read the actual position back from the DB so the response mirrors what
+    // was persisted.
     const position = readInsertedPosition(allocator, db, item_id);
 
     return try std.json.Stringify.valueAlloc(allocator, CreateKanbanResponseFull{
@@ -267,10 +186,7 @@ pub fn workspaceItemsCreateKanbanHandler(
     const di = try pabrikcore.getSingleton();
     const sqlite_db = di.db;
     // Live `tools` checklist — seeds the fresh board's allowlist instead of
-    // the defaults when set (plan 2026-09-22-tools-menu). Under `--auth` it
-    // is the REQUESTING user's checklist, resolved through the one
-    // config-resolution module (`session_llm_config.zig`); the slice stays
-    // valid for the synchronous useCase below.
+    // the defaults when set (plan 2026-09-22-tools-menu).
     const user_cfg = auth_common.requestUserConfig(allocator, di.db, di.auth_enabled, req.headers) orelse
         pabrikcore.getLlmConfig(di);
     const config_tools = user_cfg.tools;
@@ -303,11 +219,7 @@ pub fn workspaceItemsCreateKanbanHandler(
             .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "name is required" }),
         });
     }
-    // Trim leading/trailing ASCII whitespace. Reject whitespace-only
-    // names at the handler level too (the useCase also rejects
-    // them, but checking at both layers keeps the error message
-    // localized to the handler-side path). Plan:
-    // docs/superpowers/plans/2026-07-10-empty-workspace-item-bug.md.
+    // Trim leading/trailing ASCII whitespace.
     if (std.mem.trim(u8, parsed.name, " \t\n\r").len == 0) {
         return res.jsonResponse(.{
             .status_code = 400,
@@ -350,20 +262,6 @@ pub fn workspaceItemsCreateKanbanHandler(
 }
 
 /// Re-read the `position` of a freshly-INSERTed workspace_item.
-///
-/// The kanban-create INSERT computes position via the correlated
-/// subquery `COALESCE((SELECT MAX+1), 0)`, so we can't know the
-/// persisted value without a follow-up SELECT. This helper does
-/// that SELECT and returns the value, falling back to `0` on any
-/// failure (the next refresh from `getWorkspacesItems` will
-/// reconcile the value if the SELECT genuinely failed — non-fatal
-/// because the create itself already succeeded).
-///
-/// Extracted from `useCase` so the useCase body stays a single
-/// straight-line flow (the inline `if (db.query) |q| { defer
-/// q.deinit(); if (q.next()) |row| { ... } }` form ran into a
-/// "captured `row` is const" issue that's much cleaner to express
-/// in a dedicated function with `var q = db.query(...) catch`).
 fn readInsertedPosition(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,

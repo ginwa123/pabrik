@@ -1,26 +1,6 @@
 //! `model_catalog` — the ONE owner of "what do we know about this model?".
-//!
-//! Source of truth: <https://models.dev/api.json> (227 providers / 8,562 models
-//! when this was written). Pabrik needs exactly seven facts per model, and the
-//! context window is the one that decides when a chat compacts — which is why
-//! this module exists at all. Before it, `LLMModels.getModelTokenCount` knew two
-//! models and returned 200_000 for everything else, so every non-MiniMax profile
-//! compacted at 80% of a window it did not have.
-//!
-//! THE CONTRACT
-//!
-//!   * `loadFromPath` reads ONLY the trimmed cache written by `refresh`. A
-//!     missing cache is `absent` (a legitimate state — never fetched, offline,
-//!     or the user deleted it), NOT an error and NOT an empty catalog.
-//!   * A cache that exists but does not parse is an ERROR. It is never
-//!     collapsed into "no catalog": those two states mean different things and
-//!     the caller must be able to tell them apart.
-//!   * `lookup` returns `null` for an unknown model. It never invents a window;
-//!     the caller keeps its own fallback (`LLMModels.getModelTokenCount`).
-//!
-//! This file is deliberately std-only (no `kabelweb`, no `pabrikcore`) so
-//! `zig test src/agentic_loop/model_catalog.zig` exercises it standalone. The
-//! HTTP fetch lives in `model_catalog_refresh.zig`.
+//! Source of truth: <https://models.dev/api.json> (227 providers / 8,562
+//! models when this was written).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -33,10 +13,8 @@ pub const SOURCE_URL = "https://models.dev/api.json";
 pub const SCHEMA_VERSION: u32 = 1;
 
 /// The `reasoning_effort` values pabrik can actually put on the wire
-/// (`parse_thinking.parseReasoningEffort`). models.dev advertises model-specific
-/// sets — DeepSeek V4.1 Flash offers `low | high | max` — so the raw list and
-/// the sendable intersection are stored separately. The UI names the model's own
-/// values; the dropdown can only offer the sendable ones.
+/// (`parse_thinking.parseReasoningEffort`). models.dev advertises
+/// model-specific sets — DeepSeek V4.1 Flash offers `low | high | max` — so
 pub const SENDABLE_EFFORT_VALUES = [_][]const u8{ "low", "medium", "high", "auto" };
 
 /// What kind of extended-reasoning control a model exposes.
@@ -100,9 +78,6 @@ pub const ModelFacts = struct {
 
 // ============================================================================
 // models.dev's own payload shape — only the fields pabrik consumes.
-// `ignore_unknown_fields` at the parse site is what makes this a trim rather
-// than a schema copy: anything not named here is dropped while parsing.
-// ============================================================================
 
 pub const RawReasoningOption = struct {
     @"type": ?[]const u8 = null,
@@ -195,9 +170,6 @@ pub const Catalog = struct {
     /// "provider/model" (lowercased) -> facts
     models: std.StringHashMapUnmanaged(ModelFacts) = .empty,
     /// bare "model" (lowercased) -> the qualified key it resolved to.
-    /// FIRST WINS, in the cache's own provider order — several providers ship
-    /// the same model id with different windows, so a bare name is a guess and
-    /// callers must name the provider they got back.
     bare: std.StringHashMapUnmanaged([]const u8) = .empty,
 
     pub fn init(backing: Allocator) Catalog {
@@ -246,9 +218,7 @@ pub const Catalog = struct {
     }
 
     /// Add one model and index it under `provider/model` AND under its bare
-    /// name. The bare index is FIRST WINS — several providers ship the same
-    /// model id with different windows, so `lookup(null, id)` is a guess and
-    /// the caller must report the provider it got back.
+    /// name.
     pub fn putModel(self: *Catalog, facts: ModelFacts) !void {
         const a = self.allocator();
         const model_id = try lowerAlloc(a, facts.model_id);
@@ -285,7 +255,6 @@ pub const Catalog = struct {
 
     /// Resolve one model. `provider_or_null` is the provider id from the
     /// catalog; pass `null`/`""` when the user typed a bare model name.
-    ///
     /// Returns `null` for anything unknown — never a fabricated window.
     pub fn lookup(self: *const Catalog, provider_or_null: ?[]const u8, model: []const u8) ?*const ModelFacts {
         if (model.len == 0) return null;
@@ -385,11 +354,9 @@ pub const Catalog = struct {
 // Trim — models.dev's payload -> our shape
 // ============================================================================
 
-/// models.dev's payload -> our compact shape.
-///
-/// `ignore_unknown_fields` is what makes this a trim: the raw document is
-/// ~5.45 MB and carries ~20 fields per model, of which pabrik consumes seven.
-/// Anything not named in `RawModel` / `RawProvider` is dropped during the parse.
+/// models.dev's payload -> our compact shape. `ignore_unknown_fields` is what
+/// makes this a trim: the raw document is ~5.45 MB and carries ~20 fields per
+/// model, of which pabrik consumes seven.
 pub fn trimRawPayload(alloc: Allocator, body: []const u8, fetched_at_ms: i64) ![]u8 {
     var parsed = std.json.parseFromSlice(RawPayload, alloc, body, .{
         .ignore_unknown_fields = true,
@@ -636,21 +603,13 @@ pub fn freeCatalog(backing: Allocator, cat: *Catalog) void {
 }
 
 // ============================================================================
-// Process-wide holder
-//
-// The compaction decision is made deep inside the workflow loop, which has no
-// request context to thread a catalog through. So the catalog is loaded once at
-// boot (`boot/server_boot.zig`) and read through here; the refresh handler
-// swaps it. `Config.maxCapacityForModel` still takes its catalog EXPLICITLY —
-// this holder exists only for the two behaviour call sites that cannot.
-// ============================================================================
+// Process-wide holder The compaction decision is made deep inside the
+// workflow loop, which has no request context to thread a catalog through.
 
 var singleton: ?*Catalog = null;
 /// Retired catalogs are deliberately NOT freed on swap: a refresh handler
 /// swaps the pointer while a workflow thread may still be reading through the
-/// old one, and a use-after-free is not worth a bounded-memory win. A manual
-/// refresh is rare, each retire is a few MB, and the process reclaims them all
-/// at exit. `retireCount` exists so a test can prove the swap happened.
+/// old one, and a use-after-free is not worth a bounded-memory win.
 var retired: std.ArrayListUnmanaged(*Catalog) = .empty;
 var retired_owner: ?Allocator = null;
 
@@ -683,10 +642,7 @@ pub fn deinitSingleton(owner: Allocator) void {
     retired_owner = null;
 }
 
-/// models.dev `provider.npm` -> pabrik's `url_style`. Exactly two outcomes:
-/// Anthropic's own SDK speaks the Anthropic body shape; every other provider in
-/// the catalog is openai-compatible (6,276 of 8,562 models ride
-/// `@ai-sdk/openai-compatible`).
+/// models.dev `provider.npm` -> pabrik's `url_style`.
 pub fn urlStyleForNpm(npm: ?[]const u8) []const u8 {
     const s = npm orelse return "openai";
     if (std.mem.indexOf(u8, s, "anthropic") != null) return "anthropic";
@@ -694,16 +650,7 @@ pub fn urlStyleForNpm(npm: ?[]const u8) []const u8 {
 }
 
 // ============================================================================
-// Tests
-//
-// These exercise the PURE half only — parse + lookup. `loadFromPath` /
-// `refresh` touch the filesystem and the network and are covered by the
-// functional harness (`tests/functional/model_catalog_test.zig`), which boots
-// the real binary against an isolated tmpdir HOME.
-//
-// Test names carry the `ModelCatalog:` prefix because `build.zig` dedups test
-// names across all of `src/`.
-// ============================================================================
+// Tests These exercise the PURE half only — parse + lookup.
 
 const testing = std.testing;
 

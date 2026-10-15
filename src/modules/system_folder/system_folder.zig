@@ -24,12 +24,9 @@ pub const FolderEntry = struct {
 
 /// Namespace containing system folder utilities
 pub const SystemFolder = struct {
-    /// Get the relative path from home directory
-    /// 
-    /// If `full_path` starts with `home`, returns the portion after home.
-    /// Otherwise, returns the original `full_path` unchanged.
-    /// 
-    /// Returns "/" if path equals home exactly.
+    /// Get the relative path from home directory If `full_path` starts with
+    /// `home`, returns the portion after home. Otherwise, returns the
+    /// original `full_path` unchanged.
     pub fn getRelativePathFromHome(allocator: std.mem.Allocator, full_path: []const u8, home: []const u8) SystemFolderError![]u8 {
         // Normalize home path (remove trailing slash or backslash).
         // Windows homes look like `C:\Users\ginwa` (or `C:/Users/ginwa`
@@ -73,15 +70,8 @@ pub const SystemFolder = struct {
         return result;
     }
     
-    /// Get home directory from environment
-    ///
-    /// On POSIX the canonical var is `HOME`. On native Windows
-    /// (cmd/pwsh — NOT Git Bash, which sets HOME to %USERPROFILE%)
-    /// `HOME` is typically unset; fall back to `USERPROFILE`
-    /// (Windows' canonical user-home variable), then to
-    /// `HOMEDRIVE`+`HOMEPATH`. Only used if HOME is missing or empty.
-    /// Mirrors helpers.db_path.getDbPath / helpers.dir.getDataAppsDir
-    /// (same HOME -> USERPROFILE chain).
+    /// Get home directory from environment On POSIX the canonical var is
+    /// `HOME`.
     pub fn getHomeDirectory(allocator: std.mem.Allocator, environment: ?*const std.process.Environ.Map) SystemFolderError![]u8 {
         const env = environment orelse return SystemFolderError.HomeNotFound;
         if (env.get("HOME")) |h| {
@@ -101,9 +91,6 @@ pub const SystemFolder = struct {
         }
         // Compat: on POSIX an explicitly-set-but-empty HOME historically
         // succeeded with "" (see test "HOME=empty string still succeeds").
-        // The fallback chain above already preferred USERPROFILE/HOMEDRIVE
-        // when present, so reaching here means no fallback existed —
-        // preserve the old behaviour by returning HOME verbatim (even "").
         if (env.get("HOME")) |h| {
             return allocator.dupe(u8, h) catch return SystemFolderError.OutOfMemory;
         }
@@ -167,10 +154,9 @@ pub const SystemFolder = struct {
         };
         defer std.Io.Dir.close(dir, io);
 
-        // First pass: collect non-hidden dir/file children. Names are
-        // duped (iterator buffers are reused on next()) so the git batch
-        // below can hold them all at once. Dotfiles + non-dir/file kinds
-        // (incl. symlinks — same as before) are dropped here, before git.
+        // First pass: collect non-hidden dir/file children. Names are duped
+        // (iterator buffers are reused on next()) so the git batch below can
+        // hold them all at once.
         const RawChild = struct {
             name: []u8,
             is_dir: bool,
@@ -199,14 +185,8 @@ pub const SystemFolder = struct {
             };
         }
 
-        // ONE `git check-ignore` for the whole directory (was: one spawn
-        // per entry — ~30ms each on macOS). Null = git unavailable or not
-        // a work tree -> treat all as not ignored. Spawn failures (e.g.
-        // `git` not on PATH on Windows / Wine) are FALL-THROUGH-OK: the
-        // entry is kept because we can't prove it's gitignored. The old
-        // `catch continue` silently dropped every entry when git was
-        // unavailable — which made listDirectory return `[]` for any
-        // Windows / sandboxed environment.
+        // ONE `git check-ignore` for the whole directory (was: one spawn per
+        // entry — ~30ms each on macOS).
         var batch_names = std.ArrayList([]const u8).empty;
         defer batch_names.deinit(allocator);
         for (children.items) |c| batch_names.append(allocator, c.name) catch break;
@@ -271,25 +251,9 @@ pub const SystemFolder = struct {
         return false;
     }
 
-    /// Batch `git check-ignore` for every entry name in ONE directory.
-    ///
-    /// Why batched: the old code spawned one `git -C <dir> check-ignore
-    /// <name>` per ENTRY. On macOS each spawn costs ~30ms (fork+exec +
-    /// security policy), so a 300-file directory cost ~9-12s and blew the
-    /// 5s functional perf budget (plus the 15s socket timeout on empty-q).
-    /// One spawn per DIRECTORY (chunked at 500 names) drops the search
-    /// fixture from ~312 spawns to ~5.
-    ///
-    /// Returns an owned slice of duped ignored basenames (caller frees via
-    /// `freeIgnored`), or null when there is nothing ignored OR git is
-    /// unavailable / the dir is not in a work tree / any error — the
-    /// caller treats null as "none ignored" (same fall-through as the old
-    /// per-entry spawn-failure path, so entries are kept, never dropped).
-    ///
-    /// Parsing note: stdout is split on `\n` (trailing `\r` trimmed for
-    /// Windows git). A filename containing a literal newline would not
-    /// round-trip — it then falls through to "not ignored" (entry kept),
-    /// which is the safe direction.
+    /// Batch `git check-ignore` for every entry name in ONE directory. Why
+    /// batched: the old code spawned one `git -C <dir> check-ignore <name>`
+    /// per ENTRY.
     fn batchIgnoredNames(
         allocator: std.mem.Allocator,
         io: std.Io,
@@ -305,10 +269,9 @@ pub const SystemFolder = struct {
             offset = end;
             var argv = std.ArrayList([]const u8).empty;
             defer argv.deinit(allocator);
-            // `--` ends option parsing so names starting with `-` are
-            // treated as paths (the old per-entry form had no `--` and
-            // mis-checked such names as flags — this is strictly more
-            // correct, same fall-through direction on error).
+            // `--` ends option parsing so names starting with `-` are treated
+            // as paths (the old per-entry form had no `--` and mis-checked
+            // such names as flags — this is strictly more correct, same
             argv.appendSlice(allocator, &.{ "git", "-C", dir_path, "check-ignore", "--" }) catch break;
             argv.appendSlice(allocator, chunk) catch break;
             const result = std.process.run(allocator, io, .{ .argv = argv.items }) catch continue;
@@ -435,26 +398,7 @@ pub const SystemFolder = struct {
     };
 
     /// Recursive file search under `root_path` (iterative stack, NOT
-    /// recursion). Matching is on the entry BASENAME (not the full path).
-    ///
-    /// - `query`: case-insensitive substring first, subsequence fallback;
-    ///   empty query matches everything (top-N listing).
-    /// - `limit`: 0 → default 50; hard cap 200.
-    /// - `max_depth`: 0 → default 8. Entries deeper than max_depth are
-    ///   never visited; dirs AT max_depth are listed but not descended.
-    ///   Root children are depth 1.
-    /// - Skip-list (`search_skip_names`) + dotfiles are never descended
-    ///   into nor returned. `entry.kind` is reused (no extra stat), so
-    ///   symlinks are neither followed nor returned — same as
-    ///   listDirectory.
-    /// - `git check-ignore` semantics are identical to listDirectory
-    ///   (batched `-C <parent> check-ignore -- <names...>`, spawn-failure
-    ///   falls through to "not ignored").
-    /// - Ranking: substring hits before subsequence hits, then
-    ///   dirs-first, then lessThanIgnoreCase. Results truncated to limit.
-    ///
-    /// Caller owns the returned slice + each entry's name/path (free
-    /// with the same pattern as listDirectory).
+    /// recursion).
     pub fn searchFiles(
         allocator: std.mem.Allocator,
         io: std.Io,
@@ -491,11 +435,8 @@ pub const SystemFolder = struct {
             var dir = std.Io.Dir.openDirAbsolute(io, frame.path, .{ .iterate = true }) catch continue;
             defer std.Io.Dir.close(dir, io);
 
-            // First pass: collect candidates passing skip-list / kind /
-            // depth (duped names — iterator buffers are reused on next()).
-            // Depth + kind filter BEFORE git so the batch only sees rows
-            // we would actually visit (same order as the old per-entry
-            // code: skip -> kind -> depth -> git).
+            // First pass: collect candidates passing skip-list / kind / depth
+            // (duped names — iterator buffers are reused on next()).
             const child_depth = frame.depth + 1;
             const RawChild = struct {
                 name: []u8,
@@ -526,11 +467,9 @@ pub const SystemFolder = struct {
                 };
             }
 
-            // ONE `git check-ignore` for the whole directory (was: one
-            // spawn per entry — ~30ms each on macOS, ~312 spawns for the
-            // 300-file fixture). Null = git unavailable / not a work tree
-            // -> none ignored (same fall-through as the old per-entry
-            // spawn-failure path).
+            // ONE `git check-ignore` for the whole directory (was: one spawn
+            // per entry — ~30ms each on macOS, ~312 spawns for the 300-file
+            // fixture).
             var batch_names = std.ArrayList([]const u8).empty;
             defer batch_names.deinit(allocator);
             for (children.items) |c| batch_names.append(allocator, c.name) catch break;
@@ -607,15 +546,6 @@ pub const SystemFolder = struct {
     }
 
     /// Do two spellings of a path name the same directory?
-    ///
-    /// On Windows `/` and `\` are the same separator and the filesystem
-    /// compares path bytes case-insensitively, so `C:/Users/ginwa/` and
-    /// `C:\Users\ginwa` are one directory. Byte comparison would let a
-    /// second spelling slip past the "do not go above home" guard and
-    /// hand back a parent that is above home.
-    ///
-    /// POSIX keeps `/` and `\` meaningful inside a filename, so there this
-    /// is exactly `std.mem.eql` and nothing else.
     fn eqlSameDir(a: []const u8, b: []const u8) bool {
         if (builtin.os.tag != .windows) return std.mem.eql(u8, a, b);
         if (a.len != b.len) return false;
@@ -632,19 +562,7 @@ pub const SystemFolder = struct {
         const home = try getHomeDirectory(allocator, environment);
         defer allocator.free(home);
 
-        // Don't go above home. Compare normalized forms so
-        // `C:\Users\ginwa\` (trailing separator) still matches home
-        // `C:\Users\ginwa` on Windows, and so a home the frontend spelled
-        // with `/` (or a different case) is recognised as home too —
-        // otherwise `getParentPath` returns `C:/Users`, a directory above
-        // home, and the guard silently does nothing.
-        // Cross-platform rule (keeps POSIX tests green):
-        // - trailing `\` is always stripped (Windows paths can appear in
-        //   synthetic env maps on any OS; a POSIX filename ending in `\`
-        //   is vanishingly rare);
-        // - trailing `/` is stripped on Windows only, because the POSIX
-        //   test "dir_path == home with trailing slash still returns
-        //   parent" explicitly documents `/home/user/` -> parent `/home`.
+        // Don't go above home.
         const norm_dir = if (dir_path.len > 1 and dir_path[dir_path.len - 1] == '\\')
             dir_path[0..dir_path.len - 1]
         else if (builtin.os.tag == .windows and dir_path.len > 1 and dir_path[dir_path.len - 1] == '/')
@@ -660,17 +578,14 @@ pub const SystemFolder = struct {
         else
             home;
         // Also treat a single trailing `\` on a multi-char home (e.g.
-        // `C:\Users\ginwa\`) as equal — covered by the first branch above
-        // for dir; for home the `len > 1` backslash branch handles it.
-        // Edge: home `\` alone (Windows root) normalizes to "" like POSIX.
+        // `C:\Users\ginwa\`) as equal — covered by the first branch above for
+        // dir; for home the `len > 1` backslash branch handles it.
         const norm_home_adj = if (home.len == 1 and home[0] == '\\') home[0..0] else norm_home;
         if (eqlSameDir(norm_dir, norm_home_adj)) {
             return null;
         }
         // POSIX dirname handles `/`-separated paths (including a trailing
-        // `/`, which it strips before finding the parent). It knows
-        // nothing about `\`, so Windows paths on Linux/macOS fall through
-        // to the manual split below.
+        // `/`, which it strips before finding the parent).
         if (std.fs.path.dirname(dir_path)) |p| {
             return try allocator.dupe(u8, p);
         }
@@ -724,16 +639,7 @@ fn setupTmpRoot(allocator: std.mem.Allocator) !TestEnv {
     return .{ .tmp_dir = tmp, .root_abs = abs };
 }
 
-/// Same as setupTmpRoot but the temp dir is NOT inside a gitignored
-/// parent. `listDirectory` calls `git check-ignore` on each entry;
-/// under `.zig-cache/` (the default `testing.tmpDir` location), every
-/// entry reports "gitignored" → the function returns `[]` and every
-/// test below expects entries but finds none. We work around this by
-/// `git init`'ing the temp dir so `git check-ignore` walks up, sees
-/// `.git/`, and (with no `.gitignore` rules in this fresh repo)
-/// returns "not ignored" for every entry. Cross-platform via the
-/// stdlib's `testing.tmpDir` (which on Windows resolves under
-/// `%TEMP%\<random>\`, on Linux/macOS under `.zig-cache/tmp/<random>/`).
+/// Same as setupTmpRoot but the temp dir is NOT inside a gitignored parent.
 const ExternalTestEnv = struct {
     tmp_dir: std.testing.TmpDir,
     root_abs: []const u8,
@@ -750,23 +656,13 @@ fn setupRootInTmp(allocator: std.mem.Allocator) !ExternalTestEnv {
     var tmp = std.testing.tmpDir(.{});
 
     // Resolve to absolute path for the tests (which use it as a
-    // stringly-typed path argument). `realPath` gives the canonical
-    // form (on Windows Wine that resolves to `Z:\home\...\.zig-cache\
-    // tmp\<random>\`, on Linux to `/home/.../.zig-cache/tmp/<random>/`).
+    // stringly-typed path argument).
     var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const dir_len = try tmp.dir.realPath(testing.io, &path_buf);
     const root_abs = try allocator.dupe(u8, path_buf[0..dir_len]);
 
-    // `git init` so `git check-ignore` recognises this as a git tree
-    // (and finds no .gitignore rules → returns "not ignored" for
-    // every entry). Without this, the temp dir inherits a parent's
-    // .gitignore (e.g. the worktree's .zig-cache/), making every
-    // entry appear gitignored and `listDirectory` return [].
-    //
-    // The `git init` runs once per call; if it fails (e.g. git not on
-    // PATH inside Wine), the tests will still run but all entries will
-    // appear gitignored → tests fail. That's acceptable because the
-    // fix is environmental (install git in Wine), not code.
+    // `git init` so `git check-ignore` recognises this as a git tree (and
+    // finds no .gitignore rules → returns "not ignored" for every entry).
     const git_init = std.process.run(allocator, testing.io, .{
         .argv = &.{ "git", "-C", root_abs, "init", "--initial-branch=main", "--quiet" },
     }) catch null;
@@ -1402,11 +1298,9 @@ test "integration: getParentPath + getRelativePathFromHome produces /-relative b
     try testing.expectEqualStrings("/projects/pabrik", abs_rel);
 }
 
-// ─── Windows regression tests (issue: kanban folder picker fails on Windows) ───
-// The picker calls GET /api/system/folder?action=list with no path, which
-// hits getHomeDirectory. On native Windows (cmd/pwsh) HOME is unset —
-// only USERPROFILE / HOMEDRIVE+HOMEPATH exist. These tests run on ALL
-// platforms (no `if windows return` skip) because they use synthetic env maps.
+// ─── Windows regression tests (issue: kanban folder picker fails on Windows)
+// ─── The picker calls GET /api/system/folder?action=list with no path, which
+// hits getHomeDirectory.
 
 test "getHomeDirectory: falls back to USERPROFILE when HOME is missing (Windows)" {
     const allocator = testing.allocator;
@@ -1537,12 +1431,9 @@ test "getParentPath: Windows home with trailing backslash returns null" {
     try testing.expect(result == null);
 }
 
-// ─── searchFiles tests (plan 2026-09-08-chatview-search-files-perf Task 1) ───
-//
-// NOTE: `setupRootInTmp` roots live under `.zig-cache/tmp/<rand>/`, so the
-// root_abs PREFIX itself contains ".zig-cache". Negative path assertions
-// must strip the root prefix first (relContains), or every entry
-// false-positives on the skip-list substring.
+// ─── searchFiles tests (plan 2026-09-08-chatview-search-files-perf Task 1)
+// ─── NOTE: `setupRootInTmp` roots live under `.zig-cache/tmp/<rand>/`, so
+// the root_abs PREFIX itself contains ".zig-cache".
 
 fn freeSearchResults(allocator: std.mem.Allocator, entries: []FolderEntry) void {
     for (entries) |entry| {
@@ -1798,23 +1689,7 @@ test "parseSearchMaxDepth: defaults, clamps 1..16, rejects garbage" {
 }
 
 // ─── Windows path-shape tests (UNC, drive roots, mixed separators) ────────
-//
-// The block above covers `USERPROFILE` and a plain backslash subdir. These
-// close the remaining shapes a Windows host can hand the picker:
-//
-//   * UNC (`\\server\share\...`) — what a domain machine with a
-//     redirected profile reports as its home. `resolvePath` has explicit
-//     UNC branches with no coverage at all.
-//   * drive roots (`C:\`) — `getParentPath` must return null there, not
-//     `C:` or "".
-//   * mixed separators (`C:/Users/ginwa/Documents`) — the stdlib accepts
-//     both, so the endpoint must too.
-//
-// Every one of these is a STRING operation with no `std.fs.path`
-// dependence, so the same assertion holds on a Linux runner and on
-// windows-2022 in CI. Where the two genuinely disagree (the trailing
-// forward slash below) the test asserts BOTH outcomes instead of
-// skipping — see the comment on that test.
+// The block above covers `USERPROFILE` and a plain backslash subdir.
 
 // resolvePath: UNC in both spellings passes through untouched.
 test "resolvePath: UNC backslash path returns unchanged (Windows)" {
@@ -1838,12 +1713,9 @@ test "resolvePath: UNC forward-slash path returns unchanged (Windows)" {
 }
 
 test "resolvePath: drive-relative C:file is returned unchanged, NOT treated as absolute" {
-    // `C:notes.txt` is drive-RELATIVE on Windows: `std.fs.path.isAbsolute`
-    // is false for it, so the handler's gate rejects it with 400 "path
-    // must be absolute". What matters here is that `resolvePath` does not
-    // silently "helpfully" expand it — expansion would open the wrong
-    // file. Mirrors the drive-relative read case in
-    // tests/functional/system_folder_path_validation_test.py.
+    // `C:notes.txt` is drive-RELATIVE on Windows: `std.fs.path.isAbsolute` is
+    // false for it, so the handler's gate rejects it with 400 "path must be
+    // absolute".
     const allocator = testing.allocator;
     var env = std.process.Environ.Map.init(allocator);
     defer env.deinit();
@@ -1903,9 +1775,7 @@ test "getRelativePathFromHome: a path on another drive is returned unchanged" {
 
 test "getRelativePathFromHome: sibling sharing the home prefix is a subpath" {
     // `C:\Users\ginwa2` starts with `C:\Users\ginwa`, but it is NOT under
-    // home. Same trade-off as the POSIX case documented above (a
-    // separator check would be stricter); pinned so the behaviour is a
-    // decision rather than an accident.
+    // home.
     const allocator = testing.allocator;
     const rel = try SystemFolder.getRelativePathFromHome(
         allocator,
@@ -1991,17 +1861,7 @@ test "getParentPath: UNC subdir under a UNC home returns the intermediate parent
 }
 
 test "getParentPath: a trailing forward slash is only normalized on Windows" {
-    // `C:/Users/ginwa/` is another spelling of home. Normalizing it so it
-    // compares equal to `C:\Users\ginwa` is gated on
-    // `builtin.os.tag == .windows` — so the OUTCOME differs by platform
-    // and the test asserts both instead of skipping one. Windows CI is
-    // the cell that runs the Windows branch of this pair.
-    //
-    // This is the assertion that caught the `backend (Windows X64) / build`
-    // failure: the guard compared raw bytes, `C:/Users/ginwa/` did not match
-    // `C:\Users\ginwa`, and Windows `dirname` then returned `C:/Users` — a
-    // directory ABOVE home. `eqlSameDir` folds the separators so the guard
-    // recognises the spelling.
+    // `C:/Users/ginwa/` is another spelling of home.
     const allocator = testing.allocator;
     var env = std.process.Environ.Map.init(allocator);
     defer env.deinit();
@@ -2047,8 +1907,7 @@ test "getParentPath: a differently-cased spelling of home still returns null" {
 test "getParentPath: a lower-case forward-slash spelling of home still returns null" {
     // The exact shape a frontend builds: `${dir}/${name}` produces
     // `c:/users/ginwa/` where home is `C:\Users\ginwa` — different separator
-    // AND different case, with a trailing slash. All three folds have to
-    // line up or the guard lets the caller walk above home.
+    // AND different case, with a trailing slash.
     const allocator = testing.allocator;
     var env = std.process.Environ.Map.init(allocator);
     defer env.deinit();

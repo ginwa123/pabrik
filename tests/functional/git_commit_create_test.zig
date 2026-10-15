@@ -1,30 +1,6 @@
-// Functional wire tests for `POST /api/git/commit/create`.
-//
-// The Files tab's commit box (SidebarDiffPanel) talks to exactly one
-// endpoint and this file proves the exact wire payloads:
-//
-//   1. POST /api/git/commit/create?path=<repo>&message=<msg> commits the
-//      staged index and answers `{success, message, commit_sha}`.
-//   2. The new commit shows up first in GET /api/git/commits.
-//   3. Empty/missing params are 400s, never a git subprocess.
-//   4. A clean tree is a 400 carrying git's own "nothing to commit".
-//   5. A flag-shaped message (`--help`) commits literally — the message
-//      travels as the VALUE of `git -m`, never as a flag.
-//
-// QUERY STRINGS RIDE IN `path`, NOT IN `HttpOptions.params`
-// (see chat_right_sidebar_git_test.zig:32 — `harness.buildUrl` orphans
-// an allocation per param under `testing.allocator`).
-//
-// Fixture repo (under `harness.makeScratchDir`, NOT `std.testing.tmpDir`):
-// `<scratch>/commit-proj` with one commit ("first") plus one staged
-// change. The OS temp root keeps the fixture outside the worktree, so
-// `git` can never walk up into the real repo, and the `pabrik-fix-`
-// prefix keeps `reapOrphanTestPids` from deleting it mid-test (it only
-// reaps `pabrik-func-`). See git_commits_test.zig for the same
-// reasoning at length.
-//
-// DEFER ORDER IS LIFO AND LOADS-BEARING: `free(scratch)` is registered
-// BEFORE `cleanupExtraDir(scratch)`.
+// Functional wire tests for `POST /api/git/commit/create`. The Files tab's
+// commit box (SidebarDiffPanel) talks to exactly one endpoint and this file
+// proves the exact wire payloads: 1.
 
 const std = @import("std");
 const testing = std.testing;
@@ -104,11 +80,9 @@ fn buildCommitRepo(scratch: []const u8) ![]u8 {
 
     try git(scratch, &.{ "init", "--initial-branch=main", "--quiet", repo });
 
-    // Repo-local identity: the server commits as the repo's configured
-    // user (it must not invent one), so the fixture provides it — the
-    // same three writes the unit-test fixture in git_commit.zig makes.
-    // Without these the commit fails with "Author identity unknown" on
-    // machines with no global git config.
+    // Repo-local identity: the server commits as the repo's configured user
+    // (it must not invent one), so the fixture provides it — the same three
+    // writes the unit-test fixture in git_commit.zig makes.
     try git(repo, &.{ "config", "user.email", "t@t" });
     try git(repo, &.{ "config", "user.name", "Test Author" });
     try git(repo, &.{ "config", "commit.gpgsign", "false" });

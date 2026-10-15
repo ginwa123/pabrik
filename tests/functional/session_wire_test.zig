@@ -1,26 +1,5 @@
-// Functional tests for session wire (Tier 1.5).
-//
-// Zig port of `tests/functional/session_wire_test.py` (same test names,
-// same order).
-//
-// Exercises the session-level HTTP surface that's NOT covered by
-// `sessions_and_llm_test.py`:
-//
-//   - PUT  /api/llm/session/:session_id (rename + profile + unattended)
-//   - POST /api/llm/session/:session/stop (cancel flag)
-//   - GET  /api/llm/session/:session_id/queue_messages (empty for fresh)
-//   - GET  /api/workers (returns >=1 entry; empty after no activity)
-//
-// Each test boots a fresh pabrik (the Python `harness` fixture was
-// function-scoped; here every test block calls `Harness.boot` itself).
-//
-// The Python `harness` fixture was `FunctionalHarness.boot(bin)` with no
-// options, so the port boots `.{}` — notably WITHOUT
-// `stub_llm_profile = true`, even though test 2's Python docstring claims
-// otherwise. That claim is wrong about the fixture (its default is
-// `False`); the assertion still holds because `session_update` echoes
-// whatever `selected_profile_model` it was handed without consulting the
-// profile registry. The docstring below records the real reason.
+// Functional tests for session wire (Tier 1.5). Zig port of
+// `tests/functional/session_wire_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -33,12 +12,8 @@ const io = testing.io;
 // Helpers
 // ============================================================================
 
-/// `POST /api/workspaces` -> the new workspace's id (owned).
-///
-/// Python's `_create_workspace`. No test in this file calls it — it is
-/// part of the ported file's helper surface and the body is still force-
-/// analysed by the `comptime` block at the bottom, so a Zig rename inside
-/// it cannot hide until someone else calls it.
+/// `POST /api/workspaces` -> the new workspace's id (owned). Python's
+/// `_create_workspace`.
 fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
     const body = try std.fmt.allocPrint(gpa, "{{\"name\":\"{s}\"}}", .{name});
     defer gpa.free(body);
@@ -55,12 +30,8 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
 }
 
 /// `PUT /api/llm/session/<session_id>` to auto-create + name the row.
-///
-/// `session_update.zig` auto-creates the row via `ensureSessionExists`
-/// then UPDATEs it. Use this helper to spin up a session row for the
-/// wire tests without invoking `/api/llm/session` (which needs a real
-/// LLM). Python's `_create_session_via_update`; its return value (the
-/// parsed body) is unused by every caller, so this returns nothing.
+/// `session_update.zig` auto-creates the row via `ensureSessionExists` then
+/// UPDATEs it.
 fn createSessionViaUpdate(h: *Harness, session_id: []const u8, name: []const u8) !void {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}", .{session_id});
     defer gpa.free(path);
@@ -76,13 +47,8 @@ fn createSessionViaUpdate(h: *Harness, session_id: []const u8, name: []const u8)
 // ============================================================================
 
 // PUT /api/llm/session/:id {name: 'renamed'} -> 200 with new name.
-//
-// session_update.zig auto-creates the row via ensureSessionExists so PUT
-// can be the first call against a fresh session id (the user can land on
-// this endpoint via the Settings dialog before any LLM message has been
-// queued). The PUT response is the source of truth for the rename; a
-// follow-up PUT to a DIFFERENT name reads back the second name (proving
-// the first was actually persisted, not just echoed back).
+// session_update.zig auto-creates the row via ensureSessionExists so PUT can
+// be the first call against a fresh session id (the user can land on this
 test "put_session_rename_round_trips" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -138,13 +104,6 @@ test "put_session_rename_round_trips" {
 // ============================================================================
 
 // PUT {selected_profile_model: 'alt-profile'} -> response echoes it.
-//
-// The Python docstring claimed the stub LLM profile is pre-installed by
-// the harness boot option; the `harness` fixture it actually used passes
-// NO options, so no stub profile exists here either. The assertion holds
-// because `session_update` round-trips the field it was given without
-// consulting the profile registry — which is exactly what this test is
-// pinning (the Settings dialog's profile picker round-trips).
 test "put_session_updates_profile_model" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -229,12 +188,9 @@ test "put_session_updates_unattended_flag" {
 // Test 4: POST /stop returns 200 + sets cancel flag
 // ============================================================================
 
-// POST /api/llm/session/:session/stop -> 200 {success, session_id}.
-//
-// The handler calls `llm_history.cancelSession` which sets the
-// `cancelled` flag in the DB; the workflow loop checks this flag and
-// breaks out. No message is sent or emitted on the wire — the response
-// is just a confirmation.
+// POST /api/llm/session/:session/stop -> 200 {success, session_id}. The
+// handler calls `llm_history.cancelSession` which sets the `cancelled` flag
+// in the DB; the workflow loop checks this flag and breaks out.
 test "stop_session_returns_200" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -272,10 +228,6 @@ test "stop_session_returns_200" {
 // ============================================================================
 
 // GET /api/llm/session/:id/queue_messages -> 200 with empty list.
-//
-// A session that has never had a message queued returns
-// `{messages: [], count: 0}` — the frontend's Pinia store keys off
-// `messages.length` to decide whether to render the queue.
 test "queue_messages_empty_for_fresh_session" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -315,11 +267,7 @@ test "queue_messages_empty_for_fresh_session" {
 // ============================================================================
 
 // GET /api/workers -> 200 with a `workers` array (possibly empty).
-//
-// worker_list.zig returns `{workers: [...], count}`. Even when no LLM call
-// has been kicked off, the endpoint is reachable and returns 200 with an
-// empty list (or a list of recently-completed workers, depending on
-// backend state).
+// worker_list.zig returns `{workers: [...], count}`.
 test "workers_list_returns_array" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});

@@ -12,16 +12,9 @@ pub const Migration048AddChatListIndex = struct {
     pub const name = "add_chat_list_index";
 
     pub fn up(db: *SqliteBackend, allocator: std.mem.Allocator) anyerror!void {
-        // Hot read path: getSessionList (llm_history.zig:115) does
-        // GROUP BY session_id ORDER BY MAX(created_at) DESC LIMIT/OFFSET
-        // with no WHERE. Today the planner does a full table scan +
-        // sort. With this covering index, the inner subquery becomes
-        // a forward index scan: walk the index in created_at DESC
-        // order, read session_id from the leaf, group, stop at LIMIT.
-        //
-        // NOT a duplicate of idx_llm_history_session_created — that
-        // one is (session_id, created_at DESC) for filtering BY
-        // session; this one is the reverse for the no-WHERE scan.
+        // Hot read path: getSessionList (llm_history.zig:115) does GROUP BY
+        // session_id ORDER BY MAX(created_at) DESC LIMIT/OFFSET with no
+        // WHERE.
         try db.exec(allocator,
             "CREATE INDEX IF NOT EXISTS idx_llm_history_created_session " ++
             "ON llm_history(created_at DESC, session_id)",

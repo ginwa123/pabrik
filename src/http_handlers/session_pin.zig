@@ -1,14 +1,5 @@
-//! `POST /api/llm/session/:session_id/pin`.
-//!
-//! Body: `{ "is_pinned": true | false }`.
-//!
-//! Flips the `is_pinned` flag on the session row (Migration 104). When
-//! pinning, `pinned_position` bumps to MAX+1 so the row lands at the
-//! bottom of the PINNED section. Also syncs `workspace_item_tasks` when
-//! a task shares the same id (task.id == session_id), keeping kanban
-//! pin buttons in sync with recents.
-//!
-//! Layered as `useCase` + thin handler, mirroring `task_pin.zig`.
+//! `POST /api/llm/session/:session_id/pin`. Body: `{ "is_pinned": true |
+//! false }`. Flips the `is_pinned` flag on the session row (Migration 104).
 
 const std = @import("std");
 const http_response = @import("http_response.zig");

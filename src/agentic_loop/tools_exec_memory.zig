@@ -1,16 +1,6 @@
 // Exec wrappers for the `save_memory` / `load_memory` agent tools
 // (append-only since 2026-09-12: `delete_memory` was removed per user
 // decision — "memory is always add, no need edit or delete").
-//
-// Per-workspace scope (Migration 095)
-// ─────────────────────────────────
-// This file is the ONLY place that decides which workspace a memory
-// operation runs against, and it decides it from `ctx.session_id` —
-// never from the tool-call arguments. The `SaveMemoryInput` /
-// `LoadMemoryInput` structs parsed below have no `workspace_id` field, so
-// there is no JSON payload, however crafted, that can move a read or a
-// write into another workspace. This mirrors how `read_workspace_session`
-// scopes itself server-side.
 
 const std = @import("std");
 const testing = std.testing;
@@ -28,10 +18,9 @@ const memory_mod = pabrikcore.memory;
 const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("tools_error_explain.zig");
 
-/// Probe an inner JSON payload for a top-level `"error"` key. The
-/// returned slice borrows from `parsed` — keep it alive through the
-/// `wrapToolOutput` call, then `deinit`. A payload that fails to parse
-/// is treated as success (the producers always emit valid JSON).
+/// Probe an inner JSON payload for a top-level `"error"` key. The returned
+/// slice borrows from `parsed` — keep it alive through the `wrapToolOutput`
+/// call, then `deinit`.
 const InnerErrorProbe = struct {
     @"error": ?[]const u8 = null,
 };
@@ -39,14 +28,6 @@ const InnerErrorProbe = struct {
 // ─── save_memory ───
 
 /// Resolve the workspace this session's memory operations are scoped to.
-/// Returns an owned slice (caller frees) or null; the caller normalises
-/// null to the `''` "no workspace" bucket, which the storage layer stores
-/// through the column DEFAULT.
-///
-/// A resolution failure is NOT an error: a bare CLI chat with no matching
-/// `workspace_items.path` still gets a working (if private to other
-/// workspace-less sessions) memory store. Failing the tool instead would
-/// be a worse product than a scoped-narrow bucket.
 fn resolveScope(ctx: ToolExecContext) !?[]u8 {
     return workspace_scope.resolveWorkspaceId(ctx.allocator, ctx.db, ctx.session_id);
 }

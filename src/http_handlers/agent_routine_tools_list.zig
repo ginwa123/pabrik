@@ -1,14 +1,5 @@
-//! `GET /api/agent-routines/:routine_id/tools`.
-//!
-//! Returns `{tools: [string]}` — the enabled tool_names for the
-//! agent-routines config. Mirrors `agent_tools_list.zig` with the
-//! `agent_routine_tools` table + `routine_id` column.
-//!
-//! Memory: the per-request arena reaps all allocations at request end,
-//! so neither layer needs explicit `free`s.
-//!
-//! Plan: Routine mode task_1789505553300_1 (option A, mirror agent_routine_*)
-//! Task: task_1789505553300_1
+//! `GET /api/agent-routines/:routine_id/tools`. Returns `{tools: [string]}` —
+//! the enabled tool_names for the agent-routines config.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -95,12 +86,7 @@ pub fn agentRoutineToolsListHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-//
-// impl + tests in one file (project convention). Behavioural coverage:
-//
-//   1. Validation: empty routine_id → RoutineIdRequired
-//   2. Empty result: routine exists but has no tools → empty slice
-//   3. Filter by enabled + ordering ASC
+// impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;

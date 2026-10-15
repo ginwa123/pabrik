@@ -1,49 +1,6 @@
-// Functional coverage for the cross-project cwd system prompt.
-//
-// Zig port of `tests/functional/cross_project_cwd_prompt_test.py`
-// (same test names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional coverage for the cross-project cwd system prompt.
-//
-//   The prompt builder must render every sibling project path from
-//   ``workspace_items``. This suite creates 25 siblings (more than the former
-//   cap of 20) and verifies the real ``GET /test/system-prompt/:session_id``
-//   wire response contains every absolute path.
-//
-//   Port 8081 is never used; the functional harness chooses its own free port.
-//   """
-//
-// ─── WHY THERE IS NO SQLITE SEED HERE ────────────────────────────────────────
-// The Python helper `_seed_bound_session_and_siblings` opened
-// `<temp_dir>/.config/pabrik/agent.db` with the stdlib `sqlite3` module
-// (read/write URI) and INSERTed four kinds of rows by hand: a `sessions.cwd`
-// UPDATE, the `workspace_item_tasks` anchor, an `llm_history` row, and 25
-// `workspace_items` siblings. This package has NO SQLite driver and
-// deliberately will not grow one — `tests/functional/build.zig` declares no
-// dependency on `pabrikcore` and links no SQLite precisely so a suite can
-// never "pass" without crossing the wire (see that file's header).
-//
-// Every row the Python seeded is reachable over the wire instead, and each
-// substitute is the SAME row a real user creates:
-//
-//   sessions.cwd                     → POST /api/llm/session { cwd_session }
-//   workspace_item_tasks (the anchor) → POST .../items/:item_id/tasks.
-//                                      The task id IS the session id
-//                                      (Migration 052's task.id == session.id
-//                                      convention), which is exactly the join
-//                                      `resolveAnchor` performs:
-//                                        workspace_item_tasks t JOIN
-//                                        workspace_items wi ... WHERE t.id = ?
-//   llm_history                      → the `queue_message` on the same POST
-//   workspace_items (siblings)       → POST /api/workspaces/:ws/items
-//
-// The one value that cannot be forced is the Python module constant
-// `SESSION_ID = "task_cross_project_cwd_all"`: the task id is minted
-// server-side, so the port reads it off the create response and uses THAT as
-// the `/test/system-prompt/:session_id` segment. The assertion under test —
-// every sibling path renders, the session's own item does not — is unchanged.
+// Functional coverage for the cross-project cwd system prompt. Zig port of
+// `tests/functional/cross_project_cwd_prompt_test.py` (same test names, same
+// order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -66,8 +23,7 @@ const AgentBody = struct { name: []const u8, path: []const u8 };
 
 /// `POST /api/workspaces/:ws/items` body. `item_type` is optional server-side
 /// (it defaults to `folder`); the Python seeded `'chat'`, so this port sends
-/// the same value. Nothing in the sibling query filters on it — the prompt
-/// reads `workspace_items` rows with a non-empty `path`, whatever their type.
+/// the same value.
 const ItemBody = struct {
     name: []const u8,
     path: []const u8,
@@ -87,24 +43,8 @@ const SessionBody = struct {
     cwd_session: []const u8,
 };
 
-/// Poll `GET /test/system-prompt/:id` until it stops 404.
-///
-/// POLLING THE ENDPOINT UNDER TEST IS THE POINT, NOT A SHORTCUT.
-/// `POST /api/llm/session` answers 201 and hands two writes to background
-/// workers, and they do NOT commit together:
-///
-///   1. the `sessions` row (with its cwd) — `GET /api/llm/session/:id` reads
-///      that table directly and starts answering 200 the moment it lands;
-///   2. the `llm_history` row for the user's turn — which is what the prompt
-///      endpoint's `llm_history.get_session` is actually joined against, and
-///      which lands strictly later.
-///
-/// Waiting on (1) and then reading the prompt is a coin flip: the handler
-/// takes its `break :blk null` branch and answers 404 "Session not found"
-/// roughly half the time. The Python never hit this because it INSERTed the
-/// history row itself, synchronously, before it made the request.
-///
-/// Same 10s deadline / 0.2s interval as the Python's own async-create poll.
+/// Poll `GET /test/system-prompt/:id` until it stops 404. POLLING THE
+/// ENDPOINT UNDER TEST IS THE POINT, NOT A SHORTCUT.
 fn waitForSystemPrompt(h: *Harness, session_id: []const u8) !void {
     const path = try std.fmt.allocPrint(gpa, "/test/system-prompt/{s}", .{session_id});
     defer gpa.free(path);
@@ -131,24 +71,6 @@ fn waitForSystemPrompt(h: *Harness, session_id: []const u8) !void {
 test "system_prompt_contains_every_workspace_item_sibling_path" {
     try harness.requirePabrikBin(io, gpa);
     // `stub_llm_profile` is LOAD-BEARING, not a convenience.
-    //
-    // `/test/system-prompt/:session_id` recovers the cwd through
-    // `llm_history.get_session`, whose SQL is anchored on the HISTORY table:
-    //
-    //   FROM llm_history h LEFT JOIN sessions s ON h.session_id = s.id
-    //   WHERE h.session_id = ? GROUP BY h.session_id
-    //
-    // A `sessions` row with a cwd is therefore NOT enough — with zero
-    // history rows the join yields nothing, the handler takes its
-    // `break :blk null` branch and answers 404 "Session not found". That is
-    // exactly why the Python seeded an `llm_history` row by hand.
-    //
-    // The `queue_message` below does produce one, but only if the workflow
-    // gets far enough to persist the user's turn — and with NO LLM profile
-    // configured it bails before the insert, so the endpoint 404s. The stub
-    // profile (base_url pointing at a port nothing listens on) gets the turn
-    // written and the HTTP call to fail afterwards, which is all this test
-    // needs. The Python reached the same row because it INSERTed it directly.
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
     defer h.deinit(io) catch |err| {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
@@ -174,8 +96,6 @@ test "system_prompt_contains_every_workspace_item_sibling_path" {
 
     // Python's `UPDATE sessions SET cwd = str(root / "self")`: the session's
     // cwd is a SUBDIRECTORY of the agent item's path, not the path itself.
-    // Kept verbatim — the prompt reads the ANCHOR by session id, so the cwd
-    // only has to be absolute and non-empty for the endpoint to answer 200.
     const session_cwd = try std.fs.path.join(gpa, &.{ self_root, "self" });
     defer gpa.free(session_cwd);
 
@@ -246,10 +166,7 @@ test "system_prompt_contains_every_workspace_item_sibling_path" {
             defer item_r.deinit();
         }
 
-        // 5. The anchor row. `POST .../items/:item_id/tasks` INSERTs
-        //    workspace_item_tasks with `id = <task id>`, and task.id ==
-        //    session.id is the project's convention (Migration 052), so the
-        //    task id doubles as the session id `resolveAnchor` looks up.
+        // 5. The anchor row.
         const task_path = try std.fmt.allocPrint(
             gpa,
             "/api/workspaces/{s}/items/{s}/tasks",

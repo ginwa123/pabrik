@@ -1,13 +1,5 @@
-//! `POST /api/workspaces/:workspace_id/documents`.
-//!
-//! Creates a markdown document owned by `workspace_id`. Returns 201 with
-//! the stored row so the caller never has to re-fetch it — the same
-//! contract as `workspace_items_create_routine.zig`.
-//!
-//! The frontend uses this for the "+" button in the sidebar's Documents
-//! section; the `add_document` agent tool uses `documents_store` directly
-//! with a workspace id resolved server-side, so the two paths cannot
-//! diverge on validation.
+//! `POST /api/workspaces/:workspace_id/documents`. Creates a markdown
+//! document owned by `workspace_id`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -15,10 +7,7 @@ const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const documents_store = @import("../agentic_loop/documents_store.zig");
 
-/// Request body. `title` is required (a document with no name is not
-/// findable in the sidebar); `content` may be empty (a blank note is a
-/// legitimate starting state, and the store writes it as "" rather than
-/// letting the empty slice land as SQL NULL).
+/// Request body.
 const CreateDocumentBody = struct {
     title: []const u8 = "",
     content: []const u8 = "",

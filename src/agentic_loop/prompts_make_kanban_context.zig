@@ -8,48 +8,6 @@ const MAX_TASKS_PER_ITEM: u32 = 5;
 
 /// Build a "## Kanban Status Tracking — MANDATORY" section that FORCES the
 /// agent to call `kanban_list` + `kanban_move_task` at start and complete.
-/// The section is rendered only when the session's parent item has
-/// `item_type === 'kanban'`; otherwise returns `""` (silently
-/// omitted, matching `BuildWorkspaceContext`'s empty-case behavior).
-///
-/// Re-uses the `getWorkspaceContext` anchor to avoid a second
-/// round-trip — the parent item_type is already read there. The
-/// helper:
-///   1. Resolves the anchor (task → item → workspace) via
-///      `getWorkspaceContext` and reads `ctx.self_item_type`.
-///   2. Bails out if the parent is not a kanban.
-///   3. Reads the columns via `listColumns` (no cap — all columns).
-///   4. Renders the section (columns list only — no per-task current
-///      column, which would be dynamic and break prefix cache).
-///      The agent is FORCED to call `kanban_list` to discover its
-///      current column — cache stays hot, correctness via tool call.
-///
-/// Block shape (omitted when parent is not a kanban, or session is
-/// not bound to any task):
-///
-/// ```markdown
-/// ## Kanban Status Tracking
-///
-/// This task is on a kanban board (parent item_type: `kanban`). **You MUST
-/// call `kanban_move_task` at every meaningful workflow checkpoint.**
-/// The tool description (in the tool listing) shows the exact argument shape.
-///
-/// **Columns on this board** (in flow order):
-/// - `<name>` (`<id>`) — position 0 — <description>
-/// - `<name>` (`<id>`) — position 1 — <description>
-/// - ...
-///
-/// **Status transitions:**
-/// - **start**: move from `<first_column>` → `<second_column>` (or
-///   whatever the user-defined "in progress" column is) at the
-///   first user-visible action in this session.
-/// - **milestone**: stay in the current column; mention the milestone
-///   in your reply so the user sees progress.
-/// - **complete**: move to `<last_column>` (typically `done`) before
-///   your final reply. This is the most-skipped transition.
-/// - **blocked**: do NOT move; explain the blocker in your reply and
-///   let the user decide. The card stays where it is.
-/// ```
 pub fn makeKanbanContext(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -90,13 +48,7 @@ pub fn makeKanbanContext(
 
     // Render full column list (no cap, no per-task current column) so the
     // agent can call `kanban_move_task` in 1 call without a prior
-    // `kanban_list`. Columns are board-static (same for every task on the
-    // board), so this tail is prefix-cache friendly — it only changes when
-    // the board's column config changes, not on every task move.
-    // Description is also board-static (kanban_columns.description), so
-    // including it does not break prefix cache.
-    // The agent is FORCED to call `kanban_list` to discover its current
-    // column — we do NOT render it here to keep the prompt cache-friendly.
+    // `kanban_list`.
     if (cols.len > 0) {
         try out.appendSlice(allocator, "\n**Columns on this board** (in flow order):\n");
         for (cols) |c| {
@@ -156,22 +108,7 @@ pub fn makeKanbanContext(
     return out.toOwnedSlice(allocator);
 }
 
-/// Look up the workspace context for a session. Returns `null`
-/// when the session is not bound to any `workspace_item_task`
-/// (the caller omits the section silently in that case — matches
-/// `appendSkillsListing` behavior).
-///
-/// Anchor: `workspace_item_tasks.id = ?` → task → item → workspace.
-/// (The `session_id` column was dropped in Migration 052; `id` IS
-/// the session id for kanban / routine tasks per the
-/// `task.id == session_id` convention.)
-/// Then enumerate `workspace_items WHERE workspace_id = ?` (capped at
-/// `MAX_SIBLING_ITEMS`, ordered with self first). For each item,
-/// enumerate its tasks (capped at `MAX_TASKS_PER_ITEM`).
-///
-/// SQL convention: all tables are aliased (`wi` for workspace_items,
-/// `t` for workspace_item_tasks) per the project's
-/// `pabrik-sql-alias-tables` memory rule.
+/// Look up the workspace context for a session.
 fn getWorkspaceContext(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -180,18 +117,6 @@ fn getWorkspaceContext(
     if (session_id.len == 0) return null;
 
     // 1. Anchor: find the task bound to this session.
-    //
-    // The `task.id == session_id` convention (see AppLayout.vue
-    // `:chat-id="activeTask.id"` and
-    // workspacesStore.subscribeToSessionEvents comment in
-    // workspaces.ts:1412) means the session_id we receive from the
-    // frontend IS the task's own id. We anchor on `t.id` directly.
-    // (Historically this query used `WHERE t.session_id = ?`, but
-    // that column was redundant with `t.id` and was being populated
-    // inconsistently — the frontend's createTask does not set it, so
-    // freshly-created kanban tasks had `session_id = NULL` and the
-    // `## Workspace Context` section was silently omitted from the
-    // system prompt. Migration 052 dropped the column.)
     const anchor_sql =
         \\SELECT t.id, t.workspace_item_id, wi.workspace_id, wi.path, wi.item_type
         \\FROM workspace_item_tasks t
@@ -237,12 +162,6 @@ fn getWorkspaceContext(
     count_row.deinit(allocator); // Pitfall 1 again
 
     // 3. Enumerate items (capped at MAX_SIBLING_ITEMS).
-    //
-    // Pitfall 2: SQLite's `LIMIT ?` doesn't bind an integer via the
-    // SqliteBackend's text-binding path. Inline the limit into the
-    // SQL string at build time. Mirrors the project's existing
-    // convention in `routines/model.zig` where index hints are
-    // also inlined (no parameterized LIMIT).
     const items_sql = try std.fmt.allocPrint(allocator,
         \\SELECT wi.id, wi.item_type, wi.name, wi.path,
         \\       (wi.id = ?) AS is_self
@@ -364,10 +283,9 @@ fn getWorkspaceContext(
     };
 }
 
-/// Context for the "Workspace Context" dynamic prompt section.
-/// Returned by `getWorkspaceContext`; the tui layer's
-/// `BuildWorkspaceContext` consumes this struct and renders
-/// the markdown block.
+/// Context for the "Workspace Context" dynamic prompt section. Returned by
+/// `getWorkspaceContext`; the tui layer's `BuildWorkspaceContext` consumes
+/// this struct and renders the markdown block.
 const WorkspaceContext = struct {
     workspace_id: []u8,
     self_item_id: []u8, // task's own item id
@@ -393,12 +311,7 @@ const WorkspaceContext = struct {
             task_type: []u8,
         };
 
-        /// Free the per-item allocations. Mirrors the parent's
-        /// `WorkspaceContext.deinit` shape so callers that iterate
-        /// `siblings` and free each entry don't have to inline
-        /// the cleanup at every call site (see Pitfall 3 in the
-        /// plan — Zig 0.16 requires struct methods to be declared
-        /// inside the struct body).
+        /// Free the per-item allocations.
         pub fn deinit(self: SiblingItem, allocator: std.mem.Allocator) void {
             allocator.free(self.id);
             allocator.free(self.item_type);
@@ -427,11 +340,9 @@ const WorkspaceContext = struct {
     }
 };
 
-/// List the columns of a kanban workspace item in `position` order.
-///
-/// Returns an owned slice; the caller must release it with
-/// `freeColumns(allocator, slice)`. If the item has no columns, the
-/// slice has length 0 (not an error).
+/// List the columns of a kanban workspace item in `position` order. Returns
+/// an owned slice; the caller must release it with `freeColumns(allocator,
+/// slice)`.
 fn listColumns(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -494,11 +405,8 @@ fn freeColumns(allocator: std.mem.Allocator, cols: []KanbanColumn) void {
     allocator.free(cols);
 }
 
-/// Look up a tool by its `function.name` in the equipped-tool list.
-/// Returns true if the tool is equipped, false otherwise. Linear scan
-/// (tools lists are typically small — under 50 entries — so the
-/// constant factor is irrelevant). Matches the convention used by
-/// the static-section `.requires_tool` gate in `prompts.zig`.
+/// Look up a tool by its `function.name` in the equipped-tool list. Returns
+/// true if the tool is equipped, false otherwise.
 fn hasToolByName(tools: []const pabrikcore.tool_models.AgentTool, name: []const u8) bool {
     for (tools) |t| {
         if (std.mem.eql(u8, t.function.name, name)) return true;

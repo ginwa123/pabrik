@@ -1,30 +1,6 @@
-//! `GET /api/workspaces/:workspace_id/items/:item_id/agent_routine`.
-//!
-//! Returns `{agent_routine, knowledges, tools, system_prompts}` for the
-//! agent-routines config bound to this routine workspace_item. The
-//! frontend's RoutineAgentSettings consumes this payload to populate all
-//! three panels in one round-trip.
-//!
-//! - `agent_routine` — the `agent_routines` row (description, timestamps)
-//! - `knowledges` — array of `AgentRoutineKnowledgeRow` ordered position DESC
-//! - `tools` — array of `string` (tool_names) ordered by tool_name ASC,
-//!             filtered to `enabled = 1` only
-//! - `system_prompts` — array of `AgentRoutineSystemPromptRow`, position DESC
-//!
-//! Returns 400 when the workspace_item's `item_type` is not `'routine'`,
-//! 404 when the workspace_item doesn't exist, and 404 `NotConfigured`
-//! when no `agent_routines` row exists yet (the frontend treats this as
-//! "empty settings" — unlike agents, the config row is opt-in).
-//!
-//! Layered as:
-//!   - `useCase` — orchestrates the reads (config + 3 child collections)
-//!     and validates the workspace_item is a routine. Returns a typed
-//!     `AgentRoutinesGetOutput` with all owned slices.
-//!   - `agentRoutinesGetHandler` — thin orchestrator over `useCase`.
-//!
-//! Memory: the per-request arena reaps all allocations at request end,
-//! so the handler does NOT free anything. Tests using
-//! `testing.allocator` MUST free the slices themselves (see tests).
+//! `GET /api/workspaces/:workspace_id/items/:item_id/agent_routine`. Returns
+//! `{agent_routine, knowledges, tools, system_prompts}` for the
+//! agent-routines config bound to this routine workspace_item.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -41,10 +17,9 @@ pub const AgentRoutineSystemPromptRow = agent_routine_db.SystemPromptRow;
 /// Wire shape for the agent-routines config row in the GET response.
 pub const AgentRoutineRow = agent_routine_db.AgentRoutineRow;
 
-/// Domain-level error set for `useCase`. The handler maps each variant
-/// to an HTTP status code + message via two exhaustive switches
-/// (intentional — adding a new variant fails to compile until both are
-/// updated).
+/// Domain-level error set for `useCase`. The handler maps each variant to an
+/// HTTP status code + message via two exhaustive switches (intentional —
+/// adding a new variant fails to compile until both are updated).
 pub const AgentRoutinesGetError = error{
     /// `workspace_id` or `item_id` path param was missing or empty.
     IdsRequired,
@@ -80,9 +55,8 @@ pub const AgentRoutinesGetOutput = struct {
 // =====================================================================
 
 /// Resolve the agent-routines config row + children for a workspace_item.
-/// Validates the workspace_item exists + is of type `'routine'`, then
-/// loads the config row and its 3 sub-collections. Transport-agnostic:
-/// works under both the request arena and `testing.allocator`.
+/// Validates the workspace_item exists + is of type `'routine'`, then loads
+/// the config row and its 3 sub-collections.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -204,14 +178,7 @@ pub fn agentRoutinesGetHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-//
-// impl + tests in one file (project convention). Behavioural coverage:
-//
-//   1. Validation: empty workspace_id OR item_id → IdsRequired
-//   2. ItemNotFound: workspace_item doesn't exist
-//   3. ItemNotRoutine: workspace_item exists but item_type != 'routine'
-//   4. NotConfigured: routine without an agent_routines row
-//   5. Happy path: config + knowledges DESC + tools enabled ASC + prompts
+// impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;

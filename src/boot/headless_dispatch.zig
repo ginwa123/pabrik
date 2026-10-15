@@ -1,15 +1,6 @@
-//! `pabrik headless ...` subcommand dispatch.
-//!
-//! Peeks at argv[1] and returns false when it does not match, so `main`
-//! falls through to the regular server boot. Return true means handled
-//! (main must exit).
-//!
-//! This lives beside `dispatchServiceSubcommand` and `dispatchCreateAdmin`
-//! rather than inside either of them because headless mode is a different
-//! KIND of subcommand: `service` and `create-admin` are short-lived
-//! utilities that touch the DB and exit, while `headless` boots the whole
-//! backend and runs a turn. Sharing a dispatcher would mean one function
-//! with two unrelated lifetimes.
+//! `pabrik headless ...` subcommand dispatch. Peeks at argv[1] and returns
+//! false when it does not match, so `main` falls through to the regular
+//! server boot.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -17,11 +8,6 @@ const pabrikcore = @import("pabrikcore");
 const headless = @import("../headless/mod.zig");
 
 /// `pabrik headless {run,sessions,messages,help}`.
-///
-/// Returns true when the subcommand was recognised and handled — including
-/// when it failed, because a failed headless run has already reported
-/// itself and the process should exit non-zero rather than fall through
-/// to booting a server.
 pub fn dispatchHeadless(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -80,10 +66,9 @@ pub fn dispatchHeadless(
     return true;
 }
 
-/// Boot the backend, run one turn, print the result, tear down.
-///
-/// The teardown is a `defer` rather than an inline sequence so an error
-/// return from any phase still releases the DB handle and the scheduler.
+/// Boot the backend, run one turn, print the result, tear down. The teardown
+/// is a `defer` rather than an inline sequence so an error return from any
+/// phase still releases the DB handle and the scheduler.
 fn runTurn(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -135,10 +120,6 @@ fn runTurn(
 
     // A turn that produced nothing is a failure the caller needs to hear
     // about, so the exit code says so even though the JSON printed fine.
-    //
-    // `finish`, not `std.process.exit` + `defer deinit`: the routine
-    // scheduler is still parked in a 5s sleep holding `*ctx`, so unwinding
-    // would free the context under it. See `Backend.finish`.
     if (result.timed_out or result.error_name != null or result.assistant_text.len == 0) {
         backend.finish(1);
     }
@@ -239,13 +220,6 @@ fn listMessages(
 }
 
 /// Write `s` as a quoted, escaped JSON string.
-///
-/// Hand-rolled rather than `std.json.fmt` because the formatter's `{s}`
-/// verb does not accept a `Formatter` value — and because every field
-/// written here is free text (an assistant reply, a session name, a cwd)
-/// that can contain a quote, a backslash or a newline. An unescaped
-/// newline in the assistant text would produce a stdout blob that no JSON
-/// parser accepts, which is the one thing this command promises not to do.
 fn writeJsonString(w: *std.Io.Writer, s: []const u8) !void {
     try w.writeByte('"');
     for (s) |c| {

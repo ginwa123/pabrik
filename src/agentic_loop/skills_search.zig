@@ -1,31 +1,4 @@
 //! Matching + rendering for the `search_skills` agent tool.
-//!
-//! This is the skills-side twin of `progressive_catalog.zig`: the same
-//! shape (collect rows → match a query → page → render JSON), the same
-//! `progressive_regex` engine, the same `pattern_mode` / `pattern_warning`
-//! / `total` / `next_offset` / `hint` contract the model already reads from
-//! `search_tool`. It lives HERE rather than in
-//! `src/modules/agent/tools/skill_tools.zig` because a `modules → agentic_loop`
-//! import would close a cycle through the `pabrikcore` root — the same reason
-//! `progressive_tools.zig` keeps its AgentTool literals pure.
-//!
-//! What changed when skills moved into SQLite
-//! ──────────────────────────────────────────
-//! Every row used to be tagged with a TIER (`global` for
-//! `~/.config/pabrik/skills/`, `local` for `<cwd>/.pabrik/skills/`) and
-//! carried the exact `path` to hand back to `use_skill`. Both described a
-//! directory, and there is no directory now: `collectRows` projects the
-//! `skills` table's rows, and the only handle the model handles is a
-//! `name`. The matcher, the pager and the pattern-warning machinery are
-//! UNCHANGED — this feature is glue around an existing engine, not a new
-//! matcher, and every rule the model already learned from `search_tool`
-//! still holds.
-//!
-//! `Scope` and `parseScope` are gone rather than deprecated. An accepted
-//! tier that can no longer be named by anything is worse than a rejected
-//! one: `search_skills({scope: "global"})` returning zero rows reads as
-//! "there are no global skills", which is a statement about a place that
-//! no longer exists.
 
 const std = @import("std");
 const testing = std.testing;
@@ -48,16 +21,6 @@ pub const SkillRow = struct {
 };
 
 /// Project the store's rows into the borrowed shape the matcher wants.
-///
-/// Borrows every string from `rows`, so the caller must keep the
-/// `skills_store.SkillRow` slice alive (and free it with
-/// `skills_store.freeSkillRows`) for as long as the result.
-///
-/// One row, one hop: the store already scopes its `listSkills` by
-/// `workspace_id`, so nothing here filters and nothing here can widen the
-/// set. That is the property worth keeping — the tier flattening this
-/// function used to do was the only place a skill could arrive from a
-/// directory the caller did not ask about.
 pub fn collectRows(
     allocator: std.mem.Allocator,
     rows: []const skills_store.SkillRow,
@@ -108,11 +71,7 @@ const WARNING_SUFFIX =
     " Supported: literals, '.', '[...]', '\\d \\w \\s \\b', '*', '+', '?', '{m,n}' ranges," ++
     " '( )' groups, '|', '^', '$'. Pass literal:true when the query is literal text.";
 
-/// Why a pattern was reinterpreted as a literal substring. One STATIC string
-/// per failure so the caller never has to free a warning; the `@errorName` is
-/// spelled out per arm so a compile failure tells the model which limit it hit
-/// (`PatternTooLong` means "shorten it", `InvalidPattern` means "fix or quote
-/// it") rather than lumping them under one message.
+/// Why a pattern was reinterpreted as a literal substring.
 fn invalidPatternWarningFor(err: progressive_regex.Error) []const u8 {
     return switch (err) {
         error.InvalidPattern => "query is not a valid regex (InvalidPattern) — matched as a case-insensitive literal substring instead." ++ WARNING_SUFFIX,
@@ -125,14 +84,9 @@ fn exhaustedWarning() []const u8 {
     return "the pattern was too expensive to finish matching, so some skills were skipped — anchor it with '^' or pass literal:true";
 }
 
-/// Match rows by `query`, a case-insensitive unanchored REGEX over the skill's
-/// NAME and DESCRIPTION — the same contract `search_tool` uses, so the model
-/// needs only one mental model for "search a catalog".
-///
-/// A query that does not compile is never a hard error: it degrades to a
-/// case-insensitive substring match and the result carries the reason, so a
-/// stray `(` in a legitimate search costs nothing and teaches the syntax in
-/// the same turn.
+/// Match rows by `query`, a case-insensitive unanchored REGEX over the
+/// skill's NAME and DESCRIPTION — the same contract `search_tool` uses, so
+/// the model needs only one mental model for "search a catalog".
 pub fn matchQuery(
     allocator: std.mem.Allocator,
     rows: []const SkillRow,
@@ -230,8 +184,7 @@ fn modeStr(mode: QueryMode) []const u8 {
 
 /// `search_skills` result: `{"query","pattern_mode","pattern_warning",
 /// "count","total","offset","limit","skills","truncated","next_offset",
-/// "hint"}`. Mirrors `search_tool`'s envelope field-for-field so one paging
-/// convention serves both catalogs.
+/// "hint"}`.
 pub fn renderSearchResult(
     allocator: std.mem.Allocator,
     page: []const SkillRow,
@@ -281,14 +234,9 @@ pub fn renderSearchResult(
     }, .{});
 }
 
-// ───────────────────────── tests ─────────────────────────
-//
-// The regex / paging / warning machinery is unchanged, so those tests are
-// unchanged too — only the row shape they build lost its tier and path.
-// The one test that built real `/tmp/.pabrik/skills/<name>/SKILL.MD` trees
-// is now store-backed, because the thing it used to prove (that the local
-// tier resolved from the PASSED cwd rather than the process cwd) no longer
-// has a tier to resolve.
+// ───────────────────────── tests ───────────────────────── The regex /
+// paging / warning machinery is unchanged, so those tests are unchanged too —
+// only the row shape they build lost its tier and path.
 
 /// Parsed shape of `renderSearchResult` output.
 const RenderedSearch = struct {
@@ -497,12 +445,7 @@ test "renderSearchResult emits no tier and no path on any row" {
 }
 
 // ---------------------------------------------------------------------------
-// End-to-end against the store: the flattening must not widen the set. The
-// old version of this test proved the LOCAL TIER resolved from the passed
-// cwd rather than the process cwd — a bug that only existed because there
-// were two directories to choose between. The equivalent guarantee now is
-// that `collectRows` is a projection and nothing more.
-// ---------------------------------------------------------------------------
+// End-to-end against the store: the flattening must not widen the set.
 
 const sqlite = pabrikcore.sqlite;
 const migration = @import("../migrations/migration.zig");

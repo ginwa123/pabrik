@@ -1,65 +1,5 @@
 // Functional tests for the config-simplify change (plan
 // 2026-08-24-config-simplify-remove-defaults).
-//
-// Zig port of `tests/functional/config_simplify_test.py`
-// (same test names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional tests for the config-simplify change (plan
-//   2026-08-24-config-simplify-remove-defaults).
-//
-//   Verifies the wire round-trip after removing the top-level LLM defaults
-//   (api_key/model/base_url/url_style/max_tokens/system_prompt) from
-//   config.json:
-//
-//     1. A config WITHOUT top-level keys but WITH a profile + active_profile
-//        boots fine; GET /api/config/pabrik returns a profile-only payload.
-//     2. PUT with a body that omits the defaults entirely (exactly what the
-//        new frontend sends) → 200; the on-disk file does NOT gain any of
-//        the six removed keys; profiles survive.
-//     3. OLD-format compat: a config WITH top-level keys still boots and
-//        serves (present keys win over backfill).
-//     4. PUT live-reload succeeds on a profile-only config (backfill provides
-//        the credentials the validator requires).
-//
-//   Each test boots a fresh pylint against an isolated tmpdir HOME. Ports are
-//   picked in 8080..8199 — never 8081.
-//   """
-//
-// ─── THE `preboot` FIXTURE, AND WHAT REPLACED IT ───────────────────────────
-// Python's `preboot(cfg)` wrote `config.json` into a fresh tempdir at the
-// PLATFORM-CORRECT path and THEN spawned the binary. The Zig
-// `Harness.boot` allocates that tempdir INTERNALLY and spawns the child
-// before returning, so a suite has no "seed the file first" hook — the only
-// pre-boot seeding the harness exposes is `BootOptions.stub_llm_profile`,
-// which writes ONE fixed profile-only payload.
-//
-// What replaced it: boot with `stub_llm_profile = true` (whose payload IS a
-// profile-only, no-top-level-defaults config — exactly the shape tests 1 and
-// 4 are about), then OVERWRITE `config.json` with the test's own payload
-// before making any request.
-//
-// WHY THAT IS AN EQUIVALENT SEAM FOR EVERY ASSERTION HERE:
-//
-//   * `pabrik_config_get.zig` resolves `getDefaultConfigPath` and OPENS THE
-//     FILE on every request. A GET reflects whatever is on disk at GET time,
-//     not what was loaded at boot — so writing the seed first makes the GET
-//     byte-identical to a real preboot.
-//   * `pabrik_config_put.zig` re-reads the existing config from disk, merges
-//     the PUT body into it, writes, and then live-reloads via
-//     `LlmConfig.init` + `validate()` — the same loader boot uses. So a PUT
-//     sees the seeded file as its base, and test 4's live-reload assertion
-//     validates the seeded profile exactly as a preboot would.
-//
-// TODO(port): `BootOptions.config_json: ?[]const u8` would let a suite seed
-// an ARBITRARY config.json before the binary starts, which would additionally
-// cover the boot-time `LlmConfig.init` of a legacy-shape file. The same seam
-// is recorded by `web_search_config_test.zig`. With the overwrite seam above,
-// the ONE behaviour not exercised is "the process BOOTED against a legacy
-// config carrying top-level keys" (test 3); every wire assertion in that
-// test — `p1` present in `profiles`, `active_profile == "p1"` — is unchanged,
-// because the GET handler never consults the boot-time parse.
 
 const std = @import("std");
 const testing = std.testing;
@@ -73,11 +13,6 @@ const io = testing.io;
 // ============================================================================
 
 /// Every path `writeStubLlmProfile` seeds, in the same order.
-///
-/// Mirrored here (rather than picking one per `builtin.os.tag`) because the
-/// binary resolves its config dir from the CHILD env the harness built, and
-/// writing all three removes the question of which branch it takes. Same
-/// reason the harness's own stub writer does it.
 const CONFIG_CANDIDATES = [_][]const []const u8{
     &.{ ".config", "pabrik", "config.json" },
     &.{ "Library", "Application Support", "pabrik", "config.json" },
@@ -85,11 +20,6 @@ const CONFIG_CANDIDATES = [_][]const []const u8{
 };
 
 /// Boot with a profile-only config on disk, then replace it with `cfg_json`.
-///
-/// `cfg_json` must be a complete `config.json` document — Python passed a
-/// dict that was serialised whole, and this replaces the file whole rather
-/// than merging, so a caller that wants the stub's profile to survive says so
-/// in `cfg_json`.
 fn bootSeeded(cfg_json: []const u8) !Harness {
     const h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
     for (CONFIG_CANDIDATES) |parts| {
@@ -107,9 +37,6 @@ fn bootSeeded(cfg_json: []const u8) !Harness {
 
 /// The `config.json` the running binary reads and writes, plus its parsed
 /// form. Both owned, so the document outlives the bytes it came from.
-///
-/// `doc` FIRST then `bytes` in `deinit`: `doc.deinit()` reads nothing, but
-/// the free order is the safe one either way.
 const DiskConfig = struct {
     bytes: []u8,
     doc: harness.Json,
@@ -123,20 +50,6 @@ const DiskConfig = struct {
 
 /// Read the harness HOME's `config.json` from the path the CURRENT platform's
 /// `Config.zig:getDefaultConfigDir` selects.
-///
-/// The switch mirrors that function:
-///
-///   * macOS   — `~/Library/Application Support/pabrik`; `XDG_CONFIG_HOME` is
-///     NOT consulted on that branch, so the harness's `<home>/.config`
-///     shadow is irrelevant there.
-///   * Windows — `%APPDATA%/pabrik`, which the harness points at
-///     `<home>/AppData/Roaming`.
-///   * else    — `$XDG_CONFIG_HOME/pabrik` else `$HOME/.config/pabrik`; the
-///     harness points `XDG_CONFIG_HOME` at `<home>/.config`.
-///
-/// Derived from `home` alone rather than the ambient environment: the harness
-/// shadows those vars in the CHILD env only, and a CI runner exports a real
-/// `XDG_CONFIG_HOME` that has nothing to do with the tempdir.
 fn platformConfigFile(home: []const u8) ![]u8 {
     return switch (@import("builtin").os.tag) {
         .macos => harness.harnessPath(gpa, home, &.{ "Library", "Application Support", "pabrik", "config.json" }),
@@ -164,10 +77,6 @@ fn readDiskConfig(home: []const u8) !DiskConfig {
 // ============================================================================
 
 /// The `profiles` map out of a config GET body, or a named failure.
-///
-/// Python's `r.get("profiles") or {}` collapses absent and null, which the
-/// assertions then treat as "no profiles"; both still fail the same way, just
-/// with one fewer line per call site.
 fn profilesMap(doc: *const harness.Json) !std.json.ObjectMap {
     const v = doc.get("profiles") orelse return .{};
     return switch (v) {
@@ -193,10 +102,9 @@ fn strField(o: std.json.ObjectMap, key: []const u8) ![]const u8 {
     };
 }
 
-/// The seven top-level keys plan 2026-08-24-config-simplify removed.
-///
-/// Test 1 asserts none of them is on the GET wire; test 2 asserts none of
-/// them is written back to disk.
+/// The seven top-level keys plan 2026-08-24-config-simplify removed. Test 1
+/// asserts none of them is on the GET wire; test 2 asserts none of them is
+/// written back to disk.
 const REMOVED_WIRE_KEYS = [_][]const u8{
     "api_endpoint",
     "api_key",
@@ -220,10 +128,6 @@ const REMOVED_DISK_KEYS = [_][]const u8{
 };
 
 /// Assert none of `keys` is present at the ROOT of `doc`.
-///
-/// Python's `assert key not in r` is a root-level membership test, and that
-/// is exactly what `Json.get` reads — a nested `profiles.alpha.api_key` does
-/// not satisfy this, which is the point.
 fn expectNoKeysAtRoot(doc: *const harness.Json, keys: []const []const u8, what: []const u8) !void {
     for (keys) |key| {
         if (doc.get(key) != null) {
@@ -362,10 +266,6 @@ test "put_without_defaults_keeps_file_clean" {
 // Backward compat: a legacy config WITH top-level keys still serves. Present
 // keys win over backfill — the read surface answers exactly as it did before
 // this change.
-//
-// See the header's TODO(port): the boot-time `LlmConfig.init` against this
-// legacy shape is the one thing the overwrite seam does not exercise; the GET
-// handler re-reads the file, so every assertion below is unchanged.
 test "old_format_config_still_boots" {
     try harness.requirePabrikBin(io, gpa);
 

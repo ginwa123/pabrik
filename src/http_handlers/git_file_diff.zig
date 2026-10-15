@@ -3,16 +3,8 @@ const http_response = @import("http_response.zig");
 const photon = @import("pabrikcore");
 const gserverz = photon.gserverz;
 
-/// Git file read response.
-///
-/// The per-file DIFF endpoint that used to live here
-/// (`GET /api/git/file/diff?path=&file=&staged=`) is GONE. Reading a diff is
-/// `POST /api/git/file/diffs`, whose FOLDER mode answers a whole folder — or
-/// the whole repo — in one request and a fixed number of git spawns. The
-/// per-file endpoint cost one git spawn per call, so a panel that wanted 50
-/// changed files asked for 50 diffs and held 50 workers doing it.
-///
-/// This module keeps only the reader, which has no git in it at all.
+/// Git file read response. The per-file DIFF endpoint that used to live here
+/// (`GET /api/git/file/diff?path=&file=&staged=`) is GONE.
 pub const GitFileReadResponse = struct { content: []const u8, encoding: []const u8 };
 
 /// Read a file from git repository (working tree)
@@ -29,10 +21,7 @@ pub fn gitFileReadHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, 
         return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeGitStatusErrorResponse(allocator, "Missing file parameter") });
     };
 
-    // Both values come straight from the query string. `openFileAbsolute` below
-    // ASSERTS the path is absolute and ABORTS the whole process
-    // (Debug/ReleaseSafe) instead of returning an error, so validate before the
-    // join (and reject an absolute `file`, which would escape `path`).
+    // Both values come straight from the query string.
     if (!std.fs.path.isAbsolute(path_param)) {
         return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeGitStatusErrorResponse(allocator, "path must be an absolute directory") });
     }

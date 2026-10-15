@@ -1,21 +1,6 @@
-//! `workspace_routines` model — DB row struct + CRUD helpers.
-//!
-//! Retargeted from the deleted per-task `routines` table (Migration
-//! 044) to `workspace_routines` (Migration 084). The `Routine` struct
-//! mirrors the new table's columns; all strings are owned by the
-//! caller via `std.mem.Allocator.dupe`; `Routine.deinit` frees them.
-//! Optional fields are `null` for NULL columns (the DB
-//! representation is the empty string in the Row API; we translate
-//! empty → null on read).
-//!
-//! The DB helpers take `*pabrikcore.sqlite.SqliteBackend` (NOT a connection
-//! pool, NOT a transaction wrapper) and use the public
-//! `query`/`exec`/`Rows`/`Row` API. There is no prepare/step/columnText
-//! public surface on SqliteBackend; column reads go through
-//! `row.values[i]` (a `[]u8` text slice).
-//!
-//! Plan: docs/superpowers/plans/2026-09-10-workspace-items-routines.md (Task 3)
-//! Task: task_1789032258828_0.
+//! `workspace_routines` model — DB row struct + CRUD helpers. Retargeted from
+//! the deleted per-task `routines` table (Migration 044) to
+//! `workspace_routines` (Migration 084).
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -24,13 +9,6 @@ const Scheduler = @import("Scheduler.zig");
 
 /// Canonical status values written to the `workspace_routines.last_status`
 /// column.
-///
-/// `.idle` is the "no row has ever run" state and maps to `'idle'` on
-/// disk (the column is `NOT NULL DEFAULT 'idle'` — unlike the old
-/// per-task table where idle was NULL). `.running` is set by
-/// `claimForRun` to mark a routine as in-flight (the WHERE clause in
-/// `listDueWorkspaceRoutineIds` and `claimForRun` excludes
-/// already-running rows).
 pub const RoutineRunStatus = enum {
     idle,
     success,
@@ -89,11 +67,8 @@ pub const Routine = struct {
     }
 };
 
-/// Insert a new routine row. `next_run_at` null writes SQL NULL
-/// (manual-run only). Text columns use `COALESCE(NULLIF(?, ''), '')`
-/// because `SqliteBackend.exec` binds empty slices as SQL NULL, which
-/// would violate the `NOT NULL DEFAULT ''` constraints (see memory
-/// `sqlite-backend-empty-slice-binds-as-null`).
+/// Insert a new routine row. `next_run_at` null writes SQL NULL (manual-run
+/// only).
 pub fn insertWorkspaceRoutine(allocator: std.mem.Allocator, db: *SqliteBackend, r: Routine) !void {
     _ = try db.exec(allocator,
         \\INSERT INTO workspace_routines (id, workspace_item_id, description, instruction, schedule, enabled, next_run_at)
@@ -109,10 +84,9 @@ pub fn insertWorkspaceRoutine(allocator: std.mem.Allocator, db: *SqliteBackend, 
     });
 }
 
-/// Load the routine for a given workspace-routine `id` (which equals
-/// its `workspace_item_id` per the D3 identity). Returns
-/// `error.RoutineNotFound` if no row matches. The returned `Routine`
-/// owns its strings; caller must call `routine.deinit(allocator)`.
+/// Load the routine for a given workspace-routine `id` (which equals its
+/// `workspace_item_id` per the D3 identity). Returns `error.RoutineNotFound`
+/// if no row matches.
 pub fn loadWorkspaceRoutineById(allocator: std.mem.Allocator, db: *SqliteBackend, id: []const u8) !Routine {
     var q = try db.query(allocator,
         \\SELECT id, workspace_item_id, description, instruction, schedule, enabled, next_run_at,
@@ -147,18 +121,6 @@ pub fn loadWorkspaceRoutineById(allocator: std.mem.Allocator, db: *SqliteBackend
 
 /// Return the ids of every enabled routine whose `next_run_at` is at or
 /// before `now_sqlite` (formatted as an SQLite DATETIME literal, e.g.
-/// `"2025-01-01 00:00:00"`) and which is not already in the
-/// `last_status = 'running'` state. This is the Scheduler's hot read
-/// path — the index `idx_workspace_routines_enabled_next_run` makes it
-/// a single index seek per due routine.
-///
-/// Manual-only routines (`next_run_at IS NULL`) never match: any
-/// comparison against NULL is NULL, not true.
-///
-/// The returned slice and each of its elements are owned by the caller;
-/// free with:
-///   for (ids) |id| allocator.free(id);
-///   allocator.free(ids);
 pub fn listDueWorkspaceRoutineIds(allocator: std.mem.Allocator, db: *SqliteBackend, now_sqlite: []const u8) ![][]u8 {
     var q = try db.query(allocator,
         \\SELECT id FROM workspace_routines
@@ -181,17 +143,8 @@ pub fn listDueWorkspaceRoutineIds(allocator: std.mem.Allocator, db: *SqliteBacke
     return out.toOwnedSlice(allocator);
 }
 
-/// Atomically transition a routine's `last_status` to `'running'` iff it
-/// is not already `'running'`. Returns `true` if the claim won, `false`
-/// if the row was already running or no longer exists.
-///
-/// Implemented as a single conditional `UPDATE` followed by
-/// `sqlite3_changes()`. `db.exec` runs the entire `sqlite3_step` loop
-/// under the SqliteBackend's mutex; `sqlite3_changes` is per-connection
-/// state so it correctly reports whether the WHERE matched. The
-/// scheduler is the only writer of `last_status` so the only
-/// consequence of a concurrent write is a lost claim (return false),
-/// never a corrupted state.
+/// Atomically transition a routine's `last_status` to `'running'` iff it is
+/// not already `'running'`.
 pub fn claimForRun(allocator: std.mem.Allocator, db: *SqliteBackend, routine_id: []const u8) !bool {
     db.exec(allocator,
         \\UPDATE workspace_routines
@@ -208,15 +161,9 @@ pub fn claimForRun(allocator: std.mem.Allocator, db: *SqliteBackend, routine_id:
     return db.changes() > 0;
 }
 
-/// Mark a routine as having completed successfully: set
-/// `last_status = 'success'`, bump `next_run_at` to the cron-computed
-/// next firing time, stamp `last_run_at` to now, and clear `last_error`.
-/// A null (empty) `next_run_at_sqlite` writes SQL NULL (manual-only
-/// routine — no next fire).
-///
-/// Caller is expected to have already won the `claimForRun` race (so
-/// the routine is in the 'running' state) — this UPDATE does not check
-/// status, it just overwrites.
+/// Mark a routine as having completed successfully: set `last_status =
+/// 'success'`, bump `next_run_at` to the cron-computed next firing time,
+/// stamp `last_run_at` to now, and clear `last_error`.
 pub fn markSuccess(allocator: std.mem.Allocator, db: *SqliteBackend, routine_id: []const u8, next_run_at_sqlite: []const u8) !void {
     _ = try db.exec(allocator,
         \\UPDATE workspace_routines
@@ -229,11 +176,8 @@ pub fn markSuccess(allocator: std.mem.Allocator, db: *SqliteBackend, routine_id:
     , &.{ next_run_at_sqlite, routine_id });
 }
 
-/// Mark a routine as failed with the given error message, and advance
-/// its `next_run_at` so the scheduler picks a future run. The routine
-/// stays enabled (a transient failure like "LLM rate limit" must not
-/// silently disable a recurring job — the user can disable it
-/// explicitly).
+/// Mark a routine as failed with the given error message, and advance its
+/// `next_run_at` so the scheduler picks a future run.
 pub fn markFailed(allocator: std.mem.Allocator, db: *SqliteBackend, routine_id: []const u8, err_msg: []const u8, next_run_at_sqlite: []const u8) !void {
     _ = try db.exec(allocator,
         \\UPDATE workspace_routines
@@ -246,11 +190,7 @@ pub fn markFailed(allocator: std.mem.Allocator, db: *SqliteBackend, routine_id: 
 }
 
 /// Iterate over all enabled routines, recompute `next_run_at` via
-/// `cron.nextFireTime`, and UPDATE the row. The `compute_fn` and
-/// `now_unix_nanos` parameters are accepted for backwards
-/// compatibility (Chunk 1 placeholder signature) but ignored — the
-/// implementation uses the wall clock from `Scheduler.recomputeDueNextRunAt`
-/// and the standard `cron.nextFireTime`.
+/// `cron.nextFireTime`, and UPDATE the row.
 pub fn recomputeAllNextRunAt(
     allocator: std.mem.Allocator,
     db: *SqliteBackend,
@@ -277,27 +217,8 @@ fn nullIfEmptyConst(v: []const u8) ?[]const u8 {
 }
 
 // ===== Tests merged from model_test.zig (2026-09-29 flatten) =====
-// Behavioral tests for the `workspace_routines` model (Task 3 of
-// the workspace-items-routines plan).
-//
-// The model exposes a `Routine` struct (the in-memory representation of
-// a row in the `workspace_routines` table) and five DB helpers:
-//
-//   - `insertWorkspaceRoutine` — INSERT a new row
-//   - `loadWorkspaceRoutineById` — SELECT one row by `id`
-//   - `listDueWorkspaceRoutineIds` — SELECT ids of due + enabled +
-//     not-already-running routines (the Scheduler hot read path)
-//   - `claimForRun` — atomic transition last_status → 'running'
-//     (returns true iff the claim won)
-//   - `markSuccess` — set last_status='success' and bump next_run_at
-//
-// These tests use the in-process `:memory:` sqlite pattern. The actual
-// SqliteBackend API is `db.query(alloc, sql, args) → Rows → next() →
-// ?Row{ values: [][]u8 }`. Column reads go through `row.values[i]`
-// directly (a `[]u8` text slice, the empty string for NULLs); there
-// is no `.scalar` accessor in this codebase.
-//
-// Plan: docs/superpowers/plans/2026-09-10-workspace-items-routines.md (Task 3)
+// Behavioral tests for the `workspace_routines` model (Task 3 of the
+// workspace-items-routines plan).
 
 const testing = std.testing;
 
@@ -359,10 +280,7 @@ fn scalarText(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, sql: []const 
     return null;
 }
 
-/// Insert a parent workspace_item row. The `workspace_routines` table
-/// has a FOREIGN KEY (workspace_item_id) REFERENCES
-/// workspace_items(id), so parent rows must exist before child rows
-/// can be inserted (when FK enforcement is on).
+/// Insert a parent workspace_item row.
 fn insertParentItem(db: *sqlite.SqliteBackend, alloc: std.mem.Allocator, id: []const u8) !void {
     try db.exec(alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES (?, 'ws1', 'routine')",

@@ -1,8 +1,6 @@
 //! `POST /api/auth/login` — verify email+password, mint a session cookie.
-//!
-//! Always registered (even when `--auth` is off) so the frontend can
-//! probe auth state uniformly. When auth is off the endpoint still
-//! works but nothing enforces the cookie.
+//! Always registered (even when `--auth` is off) so the frontend can probe
+//! auth state uniformly.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -119,14 +117,7 @@ pub fn authLoginHandler(
 
     // An account with no workspaces lands on "No workspace selected" — an
     // empty sidebar behind a single "+ New workspace" button. Provision one
-    // named "Default" now that the account is usable. Idempotent, so an
-    // established user's login changes nothing.
-    //
-    // Deliberately NON-FATAL, and it runs AFTER the session row is written:
-    // the credentials are proven good at this point, and failing the response
-    // over a workspace insert would lock a user out of an account they
-    // correctly authenticated to. The "+ New workspace" button, and the next
-    // login, both still work.
+    // named "Default" now that the account is usable.
     const provisioned = provisioning.ensureDefaultWorkspace(
         allocator,
         db,

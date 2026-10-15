@@ -37,14 +37,9 @@ pub const WorkspacesListError = error{
     DatabaseError,
 };
 
-/// GET /api/workspaces
-/// Query params:
-///   - is_include_items (default: "true") — when "false", skip the workspace_items
-///     and workspace_item_tasks queries and return `items: []` for each workspace.
-///
-/// Every workspace row carries `items_count` (its `workspace_items`
-/// row count) either way — computed from one grouped query, so the
-/// badge stays cheap even when the items themselves are lazy-loaded.
+/// GET /api/workspaces Query params: - is_include_items (default: "true") —
+/// when "false", skip the workspace_items and workspace_item_tasks queries
+/// and return `items: []` for each workspace.
 pub fn workspacesListHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
 
@@ -88,15 +83,7 @@ fn useCase(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, include_items: b
 }
 
 fn fetchWorkspacesList(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, include_items: bool, owner: []const u8) !WorkspacesListResponse {
-    // Fetch the workspaces this request may see first. ORDER BY position DESC
-    // drives the user-controlled drag-and-drop reorder (see
-    // docs/plans/2026-06-12-workspace-drag-and-drop.md); created_at
-    // DESC is a tiebreaker for any workspaces that share a position
-    // (shouldn't happen post-reorder, but defense in depth).
-    //
-    // Every nested read below is keyed by ids from THIS result, so a
-    // workspace's items/tasks are filtered transitively by the same owner
-    // predicate and need no predicate of their own (see plan §Design D1).
+    // Fetch the workspaces this request may see first.
     var rows = try db.query(
         alloc,
         "SELECT id, name, created_at, updated_at FROM workspaces WHERE " ++ comptime auth_common.workspaceVisibilityClause("workspaces") ++ " ORDER BY position DESC, created_at DESC",
@@ -136,11 +123,9 @@ fn fetchWorkspacesList(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, incl
         return WorkspacesListResponse{ .workspaces = &[_]WorkspaceWithItemsResponse{} };
     }
 
-    // Items count per workspace — ONE grouped query for all rows
-    // (no N+1). Keys are duped because row memory dies with
-    // row.deinit; freed with the map on function exit. Populated
-    // for BOTH branches: the badge must not depend on
-    // is_include_items.
+    // Items count per workspace — ONE grouped query for all rows (no N+1).
+    // Keys are duped because row memory dies with row.deinit; freed with the
+    // map on function exit.
     var items_count_by_ws: std.StringHashMap(usize) = .init(alloc);
     defer {
         var key_it = items_count_by_ws.keyIterator();
@@ -172,12 +157,9 @@ fn fetchWorkspacesList(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, incl
         }
         try in_clause.appendSlice(alloc, ")");
 
-        // Fetch all items for these workspaces. Uses the
-        // project's "always alias tables in SQL" convention —
-        // see the cross-ref comment in
-        // `llm_history.zig:listWorkspaceItems`. The `wi` alias
-        // matches the short-single-letter pattern used elsewhere
-        // (`h` for `llm_history`, `s` for `sessions`, etc.).
+        // Fetch all items for these workspaces. Uses the project's "always
+        // alias tables in SQL" convention — see the cross-ref comment in
+        // `llm_history.zig:listWorkspaceItems`.
         const items_sql = try std.fmt.allocPrint(alloc, "SELECT wi.id, wi.workspace_id, wi.item_type, wi.name, wi.path, wi.created_at, wi.updated_at FROM workspace_items wi WHERE wi.workspace_id IN {s} ORDER BY wi.position DESC, wi.id ASC", .{in_clause.items});
         var items_rows = try db.query(alloc, items_sql, workspace_ids.items);
         // Owns a pooled reader until `deinit`; draining `next()` does not return it.
@@ -230,14 +212,6 @@ fn fetchWorkspacesList(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, incl
             // Migration 062: added `description` to the SELECT column list
             // (right after `workspace_item_id`). All subsequent indices shift
             // by one.
-            // Auto-retry-until-stop: LEFT JOIN sessions on id (task.id
-            // == session.id for routine tasks per the project
-            // convention; standard tasks get NULL → COALESCE to '0').
-            // Adds 1 column to the SELECT list and shifts pinned_position
-            // to index 8 (previously 7).
-            // Migration 067: added `t.tags` (JSON-encoded array of tag
-            // strings) at index 9. NOT NULL DEFAULT '' so always
-            // present. shifts no other columns (appsended at the end).
             const tasks_sql = try std.fmt.allocPrint(alloc, "SELECT t.id, t.name, t.workspace_item_id, t.description, t.created_at, t.updated_at, COALESCE(t.is_pinned, 0), COALESCE(t.pinned_position, 0), COALESCE(s.is_auto_retry_until_stop, '0'), t.tags FROM workspace_item_tasks t LEFT JOIN sessions s ON s.id = t.id WHERE t.workspace_item_id IN {s} ORDER BY t.is_pinned DESC, t.pinned_position DESC, t.created_at DESC", .{task_in_clause.items});
             var tasks_rows = try db.query(alloc, tasks_sql, item_ids.items);
             defer tasks_rows.deinit();
@@ -326,14 +300,9 @@ fn fetchWorkspacesList(alloc: std.mem.Allocator, db: *sqlite.SqliteBackend, incl
     };
 }
 
+// ===================================================================== Tests
+// — items_count (workspace-scoped sessions plan)
 // =====================================================================
-// Tests — items_count (workspace-scoped sessions plan)
-// =====================================================================
-//
-// Exercises the is_include_items=false branch directly (that branch
-// is leak-clean under testing.allocator). The include_items=true
-// branch's items_count is guarded over the wire by
-// tests/functional/session_list_workspace_test.py.
 
 const testing = std.testing;
 
@@ -402,10 +371,7 @@ fn setupDb() !TestCtx {
     , &.{});
 
     // ws_1..ws_3 are inserted without `user_id`, so they carry the NULL
-    // legacy bucket. Mirror Migration 100's backfill exactly: NULL (and '')
-    // both become a `user_system` member, i.e. the shared bucket. Writing
-    // the members by hand here is deliberate — this fixture bypasses the
-    // migration chain, so it has to reproduce the backfill's OUTPUT.
+    // legacy bucket.
     try db.exec(alloc,
         \\INSERT OR IGNORE INTO workspace_members (workspace_id, user_id, role) VALUES
         \\  ('ws_1', 'user_system', 'owner'),
@@ -531,9 +497,7 @@ test "fetchWorkspacesList: a second member sees a shared workspace it was not cr
 
     // A genuinely PRIVATE workspace: owned by user_a and NOT carrying the
     // `user_system` member — that member IS the shared marker, so a workspace
-    // that has it is already visible to everyone. Using one of the legacy
-    // fixture rows here would prove nothing: user_c can see all of them
-    // before any sharing happens.
+    // that has it is already visible to everyone.
     try ctx.db.exec(alloc, "INSERT INTO workspaces (id, name, position, user_id) VALUES ('ws_p', 'Private', 20, 'user_a')", &.{});
     try ctx.db.exec(alloc, "INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ('ws_p', 'user_a', 'owner')", &.{});
 

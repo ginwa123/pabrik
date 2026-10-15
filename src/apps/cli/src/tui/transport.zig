@@ -1,9 +1,5 @@
-//! Transport: HTTP glue between the TUI and the pabrik backend.
-//!
-//! Sole user of `custom_http_client` inside the tui module. Wraps:
-//!   - POST /api/llm/session          (queue a chat message)
-//!   - GET  /api/llm/session/:id/messages (poll for new messages)
-//!   - GET  /api/events?channels=...  (SSE stream)
+//! Transport: HTTP glue between the TUI and the pabrik backend. Sole user of
+//! `custom_http_client` inside the tui module.
 
 const std = @import("std");
 const custom_http_client = @import("kabelweb").client;
@@ -163,26 +159,8 @@ test "buildSendBody: non-empty cwd is sent as cwd_session (regression: tui alway
     try testing.expectEqualStrings("/home/ginwa/my-project", parsed.value.object.get("cwd_session").?.string);
 }
 
-// ===== Tests merged from tdd_round2_test.zig (2026-09-29 flatten) =====
-// TDD round 2 — regression tests written BEFORE the fixes.
-//
-// Each `test` in this file documents a real bug found by inspection
-// after PR #342's initial pass:
-//
-//   1. `transport.buildSendBody` — messages containing quotes,
-//      backslashes, or newlines produced INVALID JSON (raw fmt
-//      interpolation, no escaping). Server would reject with 400.
-//   2. `sse.parse` — CRLF-terminated frames (`\r\n\r\n`) were not
-//      recognized as frame separators, so a real backend that emits
-//      CRLF never yielded any events.
-//   3. `app.onMessages` — a JSON body with escaped quotes
-//      (`"content":"say \"hi\""`) crashed the cheap stringField scan
-//      path? No — onMessages uses std.json (safe). But `role`
-//      detection for the streaming-done heuristic must be
-//      case-insensitive to match the server ("Assistant" variants).
-//
-// RED phase: these tests fail against the unfixed code. GREEN phase:
-// minimal fixes land in transport.zig / sse.zig / app.zig.
+// ===== Tests merged from tdd_round2_test.zig (2026-09-29 flatten) ===== TDD
+// round 2 — regression tests written BEFORE the fixes.
 
 // ============================================================================
 // 1. transport.buildSendBody — JSON injection safety

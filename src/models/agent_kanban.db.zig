@@ -1,23 +1,6 @@
-//! SQL layer for the `agent_kanbans` entity family.
-//!
-//! Every statement that touches `agent_kanbans`, `agent_kanban_knowledges`,
-//! `agent_kanban_tools` or `agent_kanban_system_prompt` lives here. HTTP
-//! handlers and the agentic loop call these functions and never write SQL
-//! themselves — they stay transport adapters (parse → call → marshal).
-//!
-//! Same contract as `agent.db.zig`:
-//!   - `allocator` is the caller's arena in production and
-//!     `testing.allocator` in tests. Every returned slice is owned by the
-//!     caller and must be freed with the matching `free*` helper.
-//!   - `db` is `DbOrTx` so a caller inside a transaction passes
-//!     `.{ .tx = &tx }` and never deadlocks on the backend mutex.
-//!
-//! Schema: Migration 081 (`Migration081CreateAgentKanbans`) plus the
-//! knowledge / tools / system-prompt tables it created alongside.
-//!
-//! Empty-slice landmine: `SqliteBackend.exec` binds `""` as SQL NULL,
-//! which trips the NOT NULL DEFAULT '' columns. Every write that can
-//! receive an empty string wraps the bind in `COALESCE(?, '')`.
+//! SQL layer for the `agent_kanbans` entity family. Every statement that
+//! touches `agent_kanbans`, `agent_kanban_knowledges`, `agent_kanban_tools`
+//! or `agent_kanban_system_prompt` lives here.
 
 const std = @import("std");
 const database = @import("databases").database;
@@ -254,10 +237,7 @@ pub fn getKnowledgeById(allocator: std.mem.Allocator, db: DbOrTx, knowledge_id: 
     return try readKnowledgeRow(allocator, r);
 }
 
-/// Patch the provided fields of a knowledge row and return the refetched
-/// row. `file_path` / `content` use COALESCE so an empty string clears
-/// the column instead of binding NULL (the mode-switch payload sends
-/// `{file_path: "", content: "..."}` atomically).
+/// Patch the provided fields of a knowledge row and return the refetched row.
 pub fn updateKnowledge(
     allocator: std.mem.Allocator,
     db: DbOrTx,

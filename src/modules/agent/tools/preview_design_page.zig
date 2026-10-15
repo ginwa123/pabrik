@@ -1,21 +1,6 @@
-//! LLM tool: `preview_design_page` — render a design page as an SVG
-//! preview so the agent can SEE it.
-//!
-//! Takes `page_id` (required) and an optional `scale` (default 1.0, max 4.0).
-//! Generates an SVG that renders every element on the page using their
-//! design coordinates + visual properties, then returns the metadata as a
-//! JSON object (keys mirror the old `<show_preview>` tags 1:1;
-//! content_type="html").
-//!
-//! Per-element rendering:
-//!   - `rectangle` → `<rect>` with fill, stroke, corner_radius, rotation
-//!   - `ellipse`   → `<ellipse>` with cx, cy, rx, ry
-//!   - `text`      → `<text>` with text_content (y = baseline = y + height)
-//!   - `image`     → `<image>` with href from image_url
-//!   - `frame`/`group` → `<g>` container; children render inside via
-//!     recursive descent
-//!
-//! Plan: docs/superpowers/plans/2026-08-06-ai-agent-design-context-tool.md (Chunk 2)
+//! LLM tool: `preview_design_page` — render a design page as an SVG preview
+//! so the agent can SEE it. Takes `page_id` (required) and an optional
+//! `scale` (default 1.0, max 4.0).
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -39,10 +24,8 @@ pub const MAX_SCALE: f64 = 4.0;
 pub const PreviewDesignPageInput = struct {
     /// The design page to render. Required.
     page_id: []const u8 = "",
-    /// Scale factor applied to the SVG viewBox AND every element
-    /// coordinate. Default 1.0 (1:1 with the design viewport). Max 4.0.
-    /// Use 0.5 for a "see the whole page at a glance" preview, 1.0 for
-    /// the design viewport, 2.0 for "zoomed in to inspect details".
+    /// Scale factor applied to the SVG viewBox AND every element coordinate.
+    /// Default 1.0 (1:1 with the design viewport). Max 4.0.
     scale: f64 = 1.0,
 };
 
@@ -153,11 +136,8 @@ fn successJSON(
 
 // ─── Build SVG ───────────────────────────────────────────────────────────
 
-/// Render the page's elements as a self-contained SVG document.
-///
-/// `scale` is applied to the viewBox AND every coordinate. The page
-/// background is a white rectangle so the SVG renders on a non-transparent
-/// background (matches what the design canvas looks like in the UI).
+/// Render the page's elements as a self-contained SVG document. `scale` is
+/// applied to the viewBox AND every coordinate.
 fn buildSvg(
     allocator: std.mem.Allocator,
     page: design_model.DesignPage,
@@ -419,14 +399,6 @@ fn appendRotation(
 // ─── Execute ─────────────────────────────────────────────────────────────
 
 /// Execute `preview_design_page`.
-///
-/// Returns a JSON object (keys mirror the old `<show_preview>` tags 1:1):
-///   - success: `{"status":"shown",...}`
-///   - error:   `{"error":...}`
-///
-/// `out_preview_id` receives the generated preview id (heap-owned; caller
-/// MUST free). Always populated, even on error, so the caller can log the
-/// failed attempt.
 pub fn executePreviewDesignPageToString(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -487,21 +459,9 @@ pub fn executePreviewDesignPageToString(
     );
 }
 
-// ===== Tests merged from preview_design_page_test.zig (2026-09-29 flatten) =====
-// NOT REGISTERED: no registrar imports this file, so these tests are not
-// discovered by `zig build test`. That was already true before the
-// 2026-09-29 flatten (nothing imported the former `*_test.zig`), and it
-// stays true here: the suite below has never been compiled.
-// Tests for the `preview_design_page` LLM tool.
-//
-// Behavioural tests drive `executePreviewDesignPageToString` directly
-// against an in-memory SQLite DB with the v6 schema.
-//
-// The envelope uses the legacy `<show_preview>` tag name (kept for wire
-// compat with existing transcripts); the chat renders it via the generic
-// tool fallback.
-//
-// Plan: docs/superpowers/plans/2026-08-06-ai-agent-design-context-tool.md (Chunk 2)
+// ===== Tests merged from preview_design_page_test.zig (2026-09-29 flatten)
+// ===== NOT REGISTERED: no registrar imports this file, so these tests are
+// not discovered by `zig build test`.
 
 const testing = std.testing;
 // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -650,17 +610,6 @@ fn insertElementRaw(
     });
 }
 
-//
 // ─── Behavioural tests (REMOVED, 2026-09-29 flatten) ─────────────────────
-//
 // The former preview_design_page_test.zig also carried 9 behavioural tests
 // that built a v6-schema in-memory DB and asserted the tool's XML output
-// (`<show_preview>`, `<rect>`, `<ellipse>`, `preview_id` uniqueness). One of
-// them also hung the whole suite when first compiled, which is how the
-// rot stayed hidden.
-// The 2026-09-18 XML -> JSON tool-output migration replaced that envelope,
-// so every one of those substring assertions can no longer hold — and
-// because the file was never registered before the flatten, none of them
-// had ever been compiled, which is how they rotted unnoticed. They are
-// removed rather than shipped red. Re-add them against the JSON envelope
-// in a change of their own.

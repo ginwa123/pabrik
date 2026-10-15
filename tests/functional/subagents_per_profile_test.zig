@@ -1,40 +1,6 @@
-// Subagents are per-profile only (plan 2026-09-04-subagents-per-profile).
-//
-// Zig port of `tests/functional/subagents_per_profile_test.py` (same test
-// names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Subagents are per-profile only (plan 2026-09-04-subagents-per-profile).
-//
-//   Wire contract over HTTP (harness boots a fresh pabrik per test):
-//     - GET  /api/config/pabrik returns top-level `sub_agents: null` always;
-//       each profile carries its own `sub_agents` inside `profiles`.
-//     - PUT granular profile update WITHOUT `sub_agents` preserves the
-//       profile's existing on-disk list (no clobber regression).
-//     - PUT granular profile update WITH `sub_agents` replaces the
-//       profile's list wholesale.
-//     - PUT strips the deprecated on-disk top-level `sub_agents` key
-//       after migrating its entries into profiles missing their own list.
-//   """
-//
-// ─── THE `config_harness` FIXTURE ───────────────────────────────────────────
-// The Python module imported `config_harness` from
-// `pabrik_config_test.py` ("shared fixture"): boot the binary with
-// `stub_llm_profile=True`, which pre-installs a `stub` profile at
-// `<HOME>/.config/pabrik/config.json`. In Zig that is
-// `Harness.boot(io, gpa, .{ .stub_llm_profile = true })`, and
-// `bootConfig()` below is the only call site.
-//
-// ─── WHY `== [SA]` BECOMES A FIELD-BY-FIELD COMPARE ─────────────────────────
-// Python compared a dict against a dict, which is also an assertion
-// that no UNEXPECTED key is present. Zig has no structural `==` for
-// `std.json.Value`, so `expectSubAgentsEq` compares each of the eight
-// fields the Python dict named, plus the list LENGTH. That is what the
-// assertion is for; a `std.mem.jsonEqual` on two `std.json.Value`s
-// would be the literal translation but orders maps before
-// object-identity and turns an ordinary mismatch into an opaque
-// boolean.
+// Subagents are per-profile only (plan 2026-09-04-subagents-per-profile). Zig
+// port of `tests/functional/subagents_per_profile_test.py` (same test names,
+// same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -99,12 +65,8 @@ fn putConfig(h: *Harness, body: []const u8) !harness.Response {
     return h.http(io, .PUT, "/api/config/pabrik", .{ .json_body = body, .expect = &.{200} });
 }
 
-/// `_profiles(h)` — assert the top-level `sub_agents` is null/absent,
-/// then return the `profiles` map of a GET body.
-///
-/// Python: `assert r.get("sub_agents") is None` — a MISSING key also
-/// passes there (`dict.get` returns None), so both "absent" and "null"
-/// are accepted here. Anything else fails.
+/// `_profiles(h)` — assert the top-level `sub_agents` is null/absent, then
+/// return the `profiles` map of a GET body.
 fn expectTopLevelSubAgentsNull(doc: *const harness.Json) !void {
     const v = doc.get("sub_agents") orelse return;
     if (v != .null) {
@@ -200,12 +162,8 @@ fn expectSubAgentStr(entry: std.json.ObjectMap, key: []const u8, want: []const u
     try testing.expectEqualStrings(want, got);
 }
 
-/// The `PUT` body that seeds the `stub` profile carrying `sub_agents` —
-/// the OBJECT-MAP shape (`{"profiles": {"stub": {...}}}`).
-///
-/// The map key is the anonymous struct's FIELD name, so it is literally
-/// `stub` — the profile the harness stub installs, which is what the
-/// Python dict named too.
+/// The `PUT` body that seeds the `stub` profile carrying `sub_agents` — the
+/// OBJECT-MAP shape (`{"profiles": {"stub": {...}}}`).
 fn objectMapBody(sub_agents: []const SubAgent) ![]u8 {
     // Anonymous struct literals: Zig infers the shape, and
     // `Stringify` emits exactly the JSON the Python dict produced —
@@ -365,16 +323,6 @@ test "granular_update_with_subagents_replaces_list" {
 // ─── `_candidate_config_paths` ─────────────────────────────────────────────
 
 /// Every config.json location the server might read on this box.
-///
-/// The harness pre-installs the stub profile at ALL of these paths (see
-/// `harness.writeStubLlmProfile`), but the server's
-/// `getDefaultConfigDir` is platform-specific (Linux → `.config`,
-/// macOS → `Library/Application Support`, Windows → `AppData`). A test
-/// that edits/asserts exactly ONE path breaks whenever its guess
-/// disagrees with the server (the macOS CI failure this replaces: the
-/// file the test read still had `selected_profile_model` + the legacy
-/// list, proving the server wrote elsewhere). Seed/assert across all
-/// candidates instead of guessing one.
 const CANDIDATE_CONFIG_PARTS = [_][]const []const u8{
     &.{ ".config", "pabrik", "config.json" },
     &.{ "Library", "Application Support", "pabrik", "config.json" },
@@ -385,34 +333,12 @@ fn candidateConfigPath(h: *Harness, index: usize) ![]u8 {
     return harness.harnessPath(gpa, h.temp_dir, CANDIDATE_CONFIG_PARTS[index]);
 }
 
-/// `SA` as a standalone `std.json.Value`, for writing the LEGACY
-/// on-disk shape.
-///
-/// `.allocate = .alloc_always` IS LOAD-BEARING. `std.json`'s default is
-/// `.alloc_if_needed`, which leaves a string that needs no escaping
-/// pointing INTO THE INPUT BUFFER rather than copying it into the
-/// parse's arena. The obvious spelling of this helper —
-///
-///     const sa_json = try std.json.Stringify.valueAlloc(gpa, SA, .{});
-///     defer gpa.free(sa_json);                                  // ← the bug
-///     return std.json.parseFromSlice(std.json.Value, gpa, sa_json, .{});
-///
-/// — returns a tree whose `system_prompt` string is a dangling pointer
-/// into freed memory the moment `parseSaValue` returns. The tree is
-/// then written into `config.json` and read back by the server, so the
-/// failure surfaces as a `PUT /api/config/pabrik` **500** two steps
-/// later, pointing at the server rather than at the suite. That is
-/// exactly the 500 this port hit. Forcing `.alloc_always` makes every
-/// string live in the `Parsed` arena, which the CALLER owns for the
-/// whole seeding loop — which is why `Parsed`, not the value, is what
-/// this function returns.
+/// `SA` as a standalone `std.json.Value`, for writing the LEGACY on-disk
+/// shape. `.allocate = .alloc_always` IS LOAD-BEARING.
 fn parseSaValue() !std.json.Parsed(std.json.Value) {
-    // ONE ELEMENT WRAPPER. Python wrote `disk["sub_agents"] = [SA]` — a
-    // LIST of one entry — and `std.json.Stringify.valueAlloc(gpa, SA, .{})`
-    // produces the bare OBJECT. Seeding the object instead makes the
-    // server's `parseSubAgentsList` fail on a non-array, and the PUT
-    // answers 500: a failure that looks like a server bug and is
-    // actually a missing bracket here.
+    // ONE ELEMENT WRAPPER. Python wrote `disk["sub_agents"] = [SA]` — a LIST
+    // of one entry — and `std.json.Stringify.valueAlloc(gpa, SA, .{})`
+    // produces the bare OBJECT.
     const sa_obj = try std.json.Stringify.valueAlloc(gpa, SA, .{});
     defer gpa.free(sa_obj);
 
@@ -436,8 +362,6 @@ test "put_strips_deprecated_top_level_key_from_disk" {
 
     // Seed the legacy shape into EVERY candidate path so the migration
     // triggers no matter which path the server reads on this platform.
-    // Fresh-harness stubs carry no per-profile `sub_agents`, so popping
-    // is a no-op that documents the legacy precondition.
     var seeded: usize = 0;
     for (CANDIDATE_CONFIG_PARTS, 0..) |_, index| {
         const path = try candidateConfigPath(&h, index);
@@ -446,10 +370,9 @@ test "put_strips_deprecated_top_level_key_from_disk" {
         const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, gpa, .limited(1 << 20)) catch continue;
         defer gpa.free(bytes);
 
-        // `.alloc_always` for the same reason as `parseSaValue` — the
-        // tree outlives nothing here, but the `sub_agents` value
-        // INSERTED into it does, and a tree whose own strings borrow
-        // from `bytes` is only safe while `bytes` lives.
+        // `.alloc_always` for the same reason as `parseSaValue` — the tree
+        // outlives nothing here, but the `sub_agents` value INSERTED into it
+        // does, and a tree whose own strings borrow from `bytes` is only safe
         var parsed = std.json.parseFromSlice(std.json.Value, gpa, bytes, .{ .allocate = .alloc_always }) catch continue;
         defer parsed.deinit();
 
@@ -496,10 +419,8 @@ test "put_strips_deprecated_top_level_key_from_disk" {
         defer r.deinit();
     }
 
-    // Wire contract first (platform-independent): the stub profile must
-    // show the migrated list and the top level must read null. If this
-    // passes but no disk path shows migration, the server wrote outside
-    // the isolated HOME — the disk loop below reports exactly that.
+    // Wire contract first (platform-independent): the stub profile must show
+    // the migrated list and the top level must read null.
     {
         var r = try getConfig(&h);
         defer r.deinit();
@@ -511,11 +432,9 @@ test "put_strips_deprecated_top_level_key_from_disk" {
         try expectSubAgentsEq(stub, SA);
     }
 
-    // Disk contract: whichever candidate path(s) the server actually
-    // wrote show the migrated stub AND a stripped top-level key (Zig
-    // Stringify emits `"sub_agents": null` for the stripped key rather
-    // than omitting it — assert null, not absent). Paths the server
-    // never touched retain the seeded legacy shape and are skipped.
+    // Disk contract: whichever candidate path(s) the server actually wrote
+    // show the migrated stub AND a stripped top-level key (Zig Stringify
+    // emits `"sub_agents": null` for the stripped key rather than omitting it
     var migrated_paths: usize = 0;
     for (CANDIDATE_CONFIG_PARTS, 0..) |_, index| {
         const path = try candidateConfigPath(&h, index);

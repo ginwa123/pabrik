@@ -1,54 +1,6 @@
 //! Workspace-secret placeholders: `{{SECRETS:NAME}}` in tool arguments, and
-//! the redaction that keeps a resolved value out of a tool's own output.
-//!
-//! The model writes `{{SECRETS:NAME}}` into any tool-call argument. This module
-//! turns it into the real value immediately before the tool executes, and can
-//! separately turn it back into the placeholder in the tool's result. It never
-//! logs and never persists anything.
-//!
-//! Grammar: `{{SECRETS:<name>}}` where `<name>` is 1-64 characters from
-//! `[A-Za-z0-9_-]`. Anything else is literal text and passes through untouched.
-//! Matching is case-sensitive on both `SECRETS` and the name, so `GITHUB_TOKEN`
-//! and `github_token` are different secrets. A placeholder is substituted only
-//! inside JSON string leaves; a value is never re-scanned, so a secret that
-//! itself contains `{{SECRETS:…}}` cannot recurse.
-//!
-//! ## Why this parses and re-serializes instead of editing raw bytes
-//!
-//! `std.mem.replace` on the raw arguments looks equivalent and is not. A value
-//! containing `"` terminates the JSON string literal, a value containing `\`
-//! becomes an escape leader (`\U` is invalid — the failure `readFileCall`
-//! documents at `src/agentic_loop/handle_tool.zig:1671-1673`), and a newline is
-//! an illegal control character. Every consumer that re-parses the arguments
-//! then breaks, and the two worst of them break SILENTLY rather than erroring:
-//! `normalizeParamsJson` (`src/agentic_loop/tools_wrap_output.zig:94`) returns
-//! `{"_raw": …}`, and the call to `repairToolCallArguments` at
-//! `src/modules/agent/Agent.zig:1785` is spelled `catch break :blk "{}"` — so
-//! the model is handed plausible-looking empty arguments instead of an error.
-//! For a credential feature, silent degradation is the worst failure mode
-//! available.
-//!
-//! `jsonEscapePath` (`src/agentic_loop/handle_tool.zig:1680`) is deliberately
-//! NOT reused: it escapes only `\` and `"`, and a secret is arbitrary user
-//! input. Parsing into `std.json.Value` and re-serializing with
-//! `Stringify.valueAlloc` makes correct escaping the serializer's problem.
-//!
-//! ## Accepted limitation of `redactOutput`
-//!
-//! `redactOutput` is best-effort substring replacement. A value that a tool
-//! TRANSFORMS before returning it — base64-encoded, split across lines,
-//! reversed, hex-dumped — is NOT caught and can still reach the model. That is
-//! an accepted limitation of this design, not a defect to fix in this file:
-//! catching transformed values means tainting every byte the tool process
-//! handles, which is out of scope here.
-//!
-//! ## Ownership
-//!
-//! Both entry points allocate from the caller's allocator and return memory
-//! the caller frees. In a `SubstitutionResult` that is four allocations, not
-//! one: `substituted_args`, `resolved`, and each `name` and `value` inside it.
-//! `substituteToolArguments` leaves `out` untouched when it returns an error,
-//! so a failed call frees nothing.
+//! the redaction that keeps a resolved value out of a tool's own output. The
+//! model writes `{{SECRETS:NAME}}` into any tool-call argument.
 
 const std = @import("std");
 
@@ -77,12 +29,6 @@ const max_name_len = 64;
 
 /// Replace every resolvable `{{SECRETS:NAME}}` inside the JSON string leaves
 /// of `args_json` and re-serialize the result.
-///
-/// Returns `error.InvalidArguments` when `args_json` does not parse — there is
-/// deliberately no raw-byte fallback, because a corrupted arguments payload
-/// silently reaches the model as `{}` or `{"_raw": …}` further downstream.
-/// Returns `error.UnknownSecretName` when a placeholder names a secret the
-/// resolver does not know; an empty string is never substituted for it.
 pub fn substituteToolArguments(
     allocator: std.mem.Allocator,
     args_json: []const u8,
@@ -117,9 +63,6 @@ pub fn substituteToolArguments(
 
 /// Put every value resolved by `substituteToolArguments` back behind its
 /// placeholder before the tool's output is stored or streamed.
-///
-/// Best-effort substring replacement: a value the tool transformed (encoded,
-/// split, reversed) is not caught. See the module docstring.
 pub fn redactOutput(
     allocator: std.mem.Allocator,
     output: []const u8,

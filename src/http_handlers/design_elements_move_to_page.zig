@@ -1,31 +1,6 @@
-//! `POST /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/move-to-page`.
-//!
-//! Cross-page element relocate. Changes an element's `page_id` from
-//! `page_id` (path param) to a new target page specified in the body.
-//! When `apply_to_children = true` (the default), the move cascades
-//! to every transitive descendant via a recursive CTE in one SQL
-//! transaction (mirrors `moveElementsWithDescendantsBatch`).
-//!
-//! Body: `{ new_page_id: string, apply_to_children?: bool }`
-//!   - `new_page_id` is REQUIRED.
-//!   - `apply_to_children` defaults to `true`.
-//!
-//! Response shape: `{ updated: DesignElementResponse[] }` — the
-//! post-move elements in tree-traversal order (root first, then
-//! descendants).
-//!
-//! Errors:
-//!   - 400 empty/missing `:element_id` or empty `new_page_id` path/body
-//!     (BadElementId, BadNewPageId)
-//!   - 400 source page == target page (SamePage)
-//!   - 400 target page is on a DIFFERENT design item (CrossDesign)
-//!   - 404 target page not found (PageNotFound)
-//!   - 404 element not found on source page (ElementNotFound)
-//!   - 500 DB failure (DbError)
-//!   - 500 out of memory (OutOfMemory)
-//!
-//! Plan: docs/superpowers/plans/2026-08-06-move-element-to-page.md
-//!   (Chunk 2, Tasks 2.1-2.3)
+//! `POST
+//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/move-to-page`.
+//! Cross-page element relocate.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -233,13 +208,9 @@ fn makeErrorJson(allocator: std.mem.Allocator, message: []const u8) ![]u8 {
     );
 }
 
-// ─── Behavioural tests for the move-to-page use-case (Chunk 2) ───
-//
-// Inline tests per the project rule (see AGENTS.md /
-// `pabrik-agentic-loop-inline-tests-required.md`). Mirrors the
-// `design_elements_move_batch.zig::useCase` test pattern above (the
-// use-case is the testable layer; the HTTP handler is exercised by
-// the live-smoke flow).
+// ─── Behavioural tests for the move-to-page use-case (Chunk 2) ─── Inline
+// tests per the project rule (see AGENTS.md /
+// `pabrik-agentic-loop-inline-tests-required.md`).
 
 const testing_handler = std.testing;
 

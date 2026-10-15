@@ -69,22 +69,6 @@ pub const EventBus = struct {
 
 // ===== Tests merged from event_test.zig (2026-09-29 flatten) =====
 // Comprehensive edge-case tests for `EventBus` (see `event.zig`).
-//
-// These tests are registered into the project's test build via a
-// `test { _ = @import("event.zig"); }` block in the sibling
-// `test_runner.zig` (a `test { }` block inside `event.zig` would
-// import itself). They run under:
-//   - `zig build test` at the project root (the main project's
-//     `mod_tests` compiles the `pabrikcore` module → `event_bus` →
-//     `src/test_runner.zig` → `event.zig`).
-//   - `cd src/modules/event_bus && zig build test` (the event_bus
-//     module's own `mod_tests` step, rooted at `event_bus/src/root.zig`).
-//
-// Module-level globals track callback state because the API takes
-// `*const fn (T) void` (no closure context). Each test resets its
-// globals at the top so tests are independent. The globals live next
-// to the test that uses them (one set per "topic") and are reset by
-// the owning test's `reset(...)` helper.
 
 // Reused in many tests.
 const event_test_alloc = std.testing.allocator;
@@ -273,20 +257,7 @@ test "subscribe stress: 1000 different ids then unsubscribe all then emit" {
 }
 
 // ---------------------------------------------------------------------------
-// C. Subscribe re-use on the same id — documented contract
-// ---------------------------------------------------------------------------
-//
-// The current implementation of subscribe() with a duplicate id:
-//   - allocates owned_id (a duplicate of the new bytes),
-//   - calls getOrPut which returns found_existing=true,
-//   - frees the new owned_id (the OLD key stays in the map),
-//   - leaves the OLD callback pointer untouched (the `else` branch
-//     that updates result.value_ptr is never entered).
-//
-// Therefore subscribe() with a duplicate id is effectively a no-op —
-// the existing callback stays registered, NOT replaced. These tests
-// document the contract so a future refactor that changes it will
-// fail loudly here.
+// C.
 
 test "subscribe twice with same id same T — second call is a no-op (first cb stays)" {
     resetB();
@@ -307,10 +278,9 @@ test "subscribe twice with same id different T — first callback still wins (UB
     resetB();
     var bus = EventBus.init("c", event_test_alloc, std.testing.io);
     defer bus.deinit();
-    // Register with u32, then register again with a different T.
-    // The T is compile-time; we use the same T but a different
-    // callback to surface the contract. This documents that subscribe
-    // is per-id-only, NOT per-(id, T).
+    // Register with u32, then register again with a different T. The T is
+    // compile-time; we use the same T but a different callback to surface the
+    // contract.
     try bus.subscribe(u32, "id", B1Handler.cb);
     try bus.subscribe(u32, "id", B2Handler.cb);
 
@@ -342,10 +312,9 @@ test "subscribe copies the id — caller mutating the buffer afterward is invisi
     var bus = EventBus.init("d", event_test_alloc, std.testing.io);
     defer bus.deinit();
 
-    // The bus dupe()s the id internally (per source: dupe + errdefer
-    // free on getOrPut failure). Mutating the caller's buffer after
-    // subscribe must not affect anything. Use a buffer whose length
-    // matches the literal we emit against (no trailing NULs).
+    // The bus dupe()s the id internally (per source: dupe + errdefer free on
+    // getOrPut failure). Mutating the caller's buffer after subscribe must
+    // not affect anything.
     var id_buf: [12]u8 = .{ 'i', 'd', '_', 'l', 'i', 'f', 'e', 'c', 'y', 'c', 'l', 'e' };
     const id_slice = id_buf[0..];
     try bus.subscribe(u32, id_slice, B1Handler.cb);
@@ -619,15 +588,7 @@ test "callback can be called with a zero-sized payload (T=void)" {
 }
 
 // ---------------------------------------------------------------------------
-// H. Re-entrance — callback can call back into the same bus
-// ---------------------------------------------------------------------------
-//
-// emit() reads from the listeners map WITHOUT taking the mutex (the
-// lock/unlock is commented out in the source). This makes re-entrant
-// subscribe/unsubscribe/emit calls safe for IDs other than the one
-// being iterated. The is-currently-firing id would break if re-entered
-// (the iteration would mutate state mid-iteration), but for any
-// OTHER id it's fine.
+// H.
 
 const Reentrant = struct {
     var bus_ref: ?*EventBus = null;
@@ -676,10 +637,8 @@ test "callback may subscribe a brand-new id without affecting the firing entry" 
     var bus = EventBus.init("h", event_test_alloc, std.testing.io);
     defer bus.deinit();
 
-    // Per the documented contract: subscribe() with a duplicate id
-    // is a NO-OP — the FIRST subscription wins and stays. So the
-    // re-entrant callback (Reentrant.on_event) must be subscribed
-    // FIRST for it to be the one that fires on "trigger".
+    // Per the documented contract: subscribe() with a duplicate id is a NO-OP
+    // — the FIRST subscription wins and stays.
     Reentrant.bus_ref = &bus;
     try bus.subscribe(u32, "trigger", Reentrant.on_event);
 
@@ -689,10 +648,9 @@ test "callback may subscribe a brand-new id without affecting the firing entry" 
 
     bus.emit(u32, "trigger", 111);
 
-    // The re-entrant path executed (on_event ran) and registered
-    // + dispatched to a new listener. count >= 2 means:
-    //   - 1 from the on_event path itself
-    //   - 1+ from the on_emit path triggered inside on_event
+    // The re-entrant path executed (on_event ran) and registered + dispatched
+    // to a new listener. count >= 2 means: - 1 from the on_event path itself
+    // - 1+ from the on_emit path triggered inside on_event
     try std.testing.expect(Reentrant.count >= 2);
     // B1 is independent of the re-entrance (different id).
     try std.testing.expectEqual(@as(u32, 0), b1_count);
@@ -778,10 +736,6 @@ test "EventBus has init, subscribe, unsubscribe, emit, deinit as public methods"
 test "EventBus.init returns a Self (not !Self) — no error union on init" {
     const T = @TypeOf(EventBus.init);
     // The typeName shape for a fn is `fn ([params]) [return_type]`.
-    // Self is named `event.EventBus` here because the test file is in
-    // the `event_bus` package but references the struct via
-    // `@import("event.zig").EventBus` — the fully-qualified name
-    // uses the inner file's declaration namespace.
     try std.testing.expect(std.mem.endsWith(u8, @typeName(T), "event.EventBus"));
     // Confirm by constructing one and discarding it.
     var bus = EventBus.init("static", event_test_alloc, std.testing.io);
@@ -793,10 +747,9 @@ test "EventBus.subscribe takes (self, T, id, callback) — verify via @typeInfo"
     const T = @TypeOf(EventBus.subscribe);
     const info = @typeInfo(T).@"fn";
     try std.testing.expectEqual(@as(usize, 4), info.params.len);
-    // params: self: *Self, comptime T: type, id: []const u8, callback: *const fn (T) void
-    // Type names are non-canonicalized module-wide strings; assert only
-    // the trailing namespace token to avoid coupling to intermediate
-    // names like `*event.EventBus` vs `*event_bus.EventBus`.
+    // params: self: *Self, comptime T: type, id: []const u8, callback: *const
+    // fn (T) void Type names are non-canonicalized module-wide strings;
+    // assert only the trailing namespace token to avoid coupling to
     try std.testing.expect(std.mem.endsWith(u8, @typeName(info.params[0].type.?), ".EventBus"));
     try std.testing.expectEqualStrings("type", @typeName(info.params[1].type.?));
     try std.testing.expectEqualStrings("[]const u8", @typeName(info.params[2].type.?));
@@ -822,23 +775,7 @@ test "EventBus.deinit returns void (not error union)" {
 }
 
 // ---------------------------------------------------------------------------
-// K. Allocator behaviour — out-of-memory is propagated
-// ---------------------------------------------------------------------------
-//
-// We use a failing allocator to verify subscribe() propagates
-// allocation failure rather than corrupting state. The two
-// allocation points in subscribe() are:
-//   1. `self.alloc.dupe(u8, id)` — the owned key,
-//   2. `self.listeners.getOrPut(self.alloc, owned_id)` — the slot.
-//
-// If either fails the function returns the error and no listener
-// is registered (verified by emit being a no-op afterwards).
-//
-// The vtable signature in Zig 0.16 (see `std.mem.Allocator.VTable`):
-//   alloc:   *const fn (*anyopaque, usize, Alignment, usize) ?[*]u8
-//   resize:  *const fn (*anyopaque, []u8, Alignment, usize, usize) bool
-//   remap:   *const fn (*anyopaque, []u8, Alignment, usize, usize) ?[*]u8
-//   free:    *const fn (*anyopaque, []u8, Alignment, usize) void
+// K.
 
 const FailingAllocator = struct {
     fail_after_alloc: u32 = 0,

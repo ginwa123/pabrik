@@ -1,24 +1,5 @@
-//! `GET /api/workspaces/:workspace_id/skills/:skill_name`.
-//!
-//! One skill's body, scoped to one workspace.
-//!
-//! The description comes from the `description` COLUMN, never from parsing
-//! the body's YAML frontmatter. The frontmatter is still IN the body — it
-//! has to be, because `skill_eval` identities are `sha256(body)` and
-//! stripping it would invalidate every cached verdict — but it is no longer
-//! the place the app reads a field from. Parsing a second copy of a value
-//! the table already stores is how the two drift: `add_skill` writes the
-//! column, the frontmatter keeps the old text, and the sidebar disagrees
-//! with the model about what the skill is.
-//!
-//! Wire shape: `{ "skill": { name, description, content, asset_count } |
-//! null, "error_message": "" }`. `is_global` is GONE — it described which
-//! directory a body was read from, and there is no directory of record.
-//!
-//! On a miss the response also carries `available_skills`: the workspace's
-//! own names, so a caller that got the name wrong is told what DOES exist
-//! instead of only that it does not. Same field name and same purpose as
-//! `use_skill`'s error payload.
+//! `GET /api/workspaces/:workspace_id/skills/:skill_name`. One skill's body,
+//! scoped to one workspace.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -38,10 +19,9 @@ pub const SkillDetailInput = struct {
     skill_name: []const u8,
 };
 
-/// The row as it goes on the wire. `asset_count` rather than the asset
-/// list: the dialog shows "11 companion files", and shipping every
-/// companion body to render that number would put the whole bundle in the
-/// response payload.
+/// The row as it goes on the wire. `asset_count` rather than the asset list:
+/// the dialog shows "11 companion files", and shipping every companion body
+/// to render that number would put the whole bundle in the response payload.
 pub const SkillDetailRow = struct {
     name: []const u8,
     description: []const u8,
@@ -90,10 +70,9 @@ fn useCase(
         return error.IdsRequired;
     }
 
-    // A name that exists in ANOTHER workspace lands here as `NotFound`
-    // too, and that is deliberate: a 403 would confirm the name exists,
-    // which is the thing the workspace scoping exists to hide. See
-    // `documents_get.zig`, which made the same call.
+    // A name that exists in ANOTHER workspace lands here as `NotFound` too,
+    // and that is deliberate: a 403 would confirm the name exists, which is
+    // the thing the workspace scoping exists to hide.
     const row = skills_store.getSkillByName(allocator, db, input.workspace_id, input.skill_name) catch |err| switch (err) {
         error.NotFound => return error.NotFound,
         // Both ids are non-empty by the guard above, so the store can only
@@ -105,10 +84,9 @@ fn useCase(
     };
     errdefer skills_store.freeSkillRow(allocator, row);
 
-    // Counted by loading the companions rather than with a `COUNT(*)`
-    // query: `skills_store` exposes one read for assets and adding a
-    // second shape here would mean a second hand-written SELECT against
-    // `skill_assets` outside the file that owns that table's rules.
+    // Counted by loading the companions rather than with a `COUNT(*)` query:
+    // `skills_store` exposes one read for assets and adding a second shape
+    // here would mean a second hand-written SELECT against `skill_assets`
     const assets = skills_store.listAssets(allocator, db, input.workspace_id, input.skill_name) catch |err| switch (err) {
         error.QueryFailed => return error.QueryFailed,
         error.OutOfMemory => return error.OutOfMemory,
@@ -174,12 +152,8 @@ pub fn skillDetailHandler(
         };
 
         if (err == error.NotFound) {
-            // The one branch that answers with the skill's own payload
-            // rather than the generic error envelope. If the name list
-            // cannot be read the miss is still a miss, so a failure here
-            // degrades to the plain 404 below instead of becoming a 500 —
-            // and never to a fabricated empty list, which would look
-            // identical to "this workspace really has no skills".
+            // The one branch that answers with the skill's own payload rather
+            // than the generic error envelope.
             const available = availableNames(allocator, sqlite_db, input.workspace_id) catch {
                 return res.jsonResponse(.{
                     .status_code = 404,

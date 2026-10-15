@@ -1,9 +1,5 @@
 //! Server-boot phases extracted from `main`: SIGPIPE handling, CLI parsing,
 //! TLS setup, database open + migrations, port resolution, static-dir config.
-//!
-//! Ownership rule: phase fns return owned values; `main` keeps every local
-//! and `defer`. Background threads outliving freed context segfault, so
-//! teardown order stays in exactly one place.
 
 const std = @import("std");
 const helpers = @import("helpers");
@@ -53,10 +49,9 @@ pub fn tryParseCliArgs(
     return .{ .ok = cli };
 }
 
-/// tryParseCliArgs + report + remap to InvalidArgs.
-/// Runs BEFORE anything with side effects: `LlmConfig.init` starts the
-/// scheduler thread, after which an error exit segfaults instead of
-/// reporting the real error.
+/// tryParseCliArgs + report + remap to InvalidArgs. Runs BEFORE anything with
+/// side effects: `LlmConfig.init` starts the scheduler thread, after which an
+/// error exit segfaults instead of reporting the real error.
 pub fn parseCliArgs(allocator: std.mem.Allocator, argv: []const []const u8) !?cli_args.CliArgs {
     return switch (try tryParseCliArgs(allocator, argv)) {
         .ok => |cli| cli,
@@ -111,10 +106,9 @@ pub const DatabaseHandles = struct {
     }
 };
 
-/// Resolve the DB path, open it with `boot/db_config.zig`'s measured
-/// policy (WAL + `.normal`, reader pooling, 8 MiB page cache per
-/// connection, 256 MiB mmap window), log the live config, and run
-/// migrations. Caller owns the handles.
+/// Resolve the DB path, open it with `boot/db_config.zig`'s measured policy
+/// (WAL + `.normal`, reader pooling, 8 MiB page cache per connection, 256 MiB
+/// mmap window), log the live config, and run migrations.
 pub fn openDatabase(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -138,26 +132,6 @@ pub fn runMigrations(allocator: std.mem.Allocator, db: *database.Db) !void {
 }
 
 /// Give every UNDECIDED workspace a copy of the user-level config.
-///
-/// This is what makes "Profiles / MCP Servers / Tools / Skill Evals live in
-/// Workspace settings" true for workspaces that already existed: each one
-/// starts with the sections the user already configured, editable in place,
-/// instead of an empty page the user has to rebuild.
-///
-/// BEST-EFFORT, and deliberately not an error path: the settings pages work
-/// off the user-level config whether or not this ran, so a failure here must
-/// never stop the server from booting. Every failure is logged.
-///
-/// Idempotent, so running it on every boot is safe: `workspace_config
-/// .seedWorkspaces` skips any workspace that already has a `workspace_settings`
-/// ROW. The row (not the body) is the test, which is what lets a deliberate
-/// "reset to inherited" survive the next boot instead of being re-copied.
-///
-/// `--auth` mode is SKIPPED on purpose: a workspace is shared between users
-/// and `workspace_settings` holds profiles with API keys in them, so seeding
-/// it from whichever user happened to be first would hand that user's
-/// credentials to every other member. Auth mode gets the same result through
-/// the explicit per-workspace copy endpoint, which knows who is asking.
 pub fn seedWorkspaceSettingsFromUserConfig(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -199,16 +173,8 @@ pub fn seedWorkspaceSettingsFromUserConfig(
 }
 
 /// Build the `--static-dir DIR` config: absolutize first (`openDirAbsolute`
-/// asserts absolute and aborts on failure — a relative path must never
-/// reach it), then open + canonicalize, with the `/app` + `/login` SPA
-/// fallbacks so client-side routes survive reload. Caller frees via
-/// `freeStaticDir`.
-/// Load the models.dev catalog from the database and start its hourly sync.
-///
-/// NEVER blocks on the network: `loadAtBoot` is a local read, and the fetch
-/// happens on a detached thread whose first run is one interval away. A machine
-/// with no catalog at all still boots — every profile just falls back to the
-/// built-in window, exactly as before this feature existed.
+/// asserts absolute and aborts on failure — a relative path must never reach
+/// it), then open + canonicalize, with the `/app` + `/login` SPA fallbacks so
 pub fn loadModelCatalog(allocator: std.mem.Allocator, db: *database.Db) void {
     _ = model_catalog_refresh.loadAtBoot(allocator, db);
     model_catalog_refresh.startBackgroundSync(allocator, db);
@@ -250,13 +216,8 @@ pub fn freeStaticDir(allocator: std.mem.Allocator, cfg: *static_files.StaticDirC
 }
 
 /// Find a shipped webapp dir (its `index.html`) without any flags, for
-/// installer layouts where the UI ships beside the install root:
-/// `install.sh` extracts `html/` next to the binaries (mirroring the
-/// `zig-out/bin/html` checkout layout), Windows keeps
-/// `%LOCALAPPDATA%\pabrik\html`. Probes each candidate dir for
-/// `index.html`, first hit wins; returns the owned dir path or null.
-/// Pure probe — no logging (callers report the chosen dir, and the test
-/// runner fails any test that logs at err level).
+/// installer layouts where the UI ships beside the install root: `install.sh`
+/// extracts `html/` next to the binaries (mirroring the `zig-out/bin/html`
 pub fn findBundledWebapp(
     io: std.Io,
     allocator: std.mem.Allocator,

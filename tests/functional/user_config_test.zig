@@ -1,35 +1,5 @@
-// Functional tests for `--auth` per-user config (users.config_json).
-//
-// Zig port of `tests/functional/user_config_test.py` (same test names,
-// same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional tests for `--auth` per-user config (users.config_json).
-//
-//   Boots a REAL pabrik binary + REAL SQLite via the harness (never a live
-//   dev server, never port 8081). Replays the EXACT wire flows the settings
-//   page uses: GET /api/config/pabrik, PUT /api/config/pabrik, DELETE
-//   /api/config/pabrik/profiles/:name.
-//
-//   Covers:
-//     * AUTH-GET-DEFAULTS — fresh admin GETs defaults (no config_json yet).
-//     * AUTH-PUT-ISOLATION — user A and B have independent configs.
-//     * AUTH-FILE-UNTOUCHED — PUT in auth mode never writes config.json.
-//     * AUTH-UNAUTH — GET/PUT/DELETE without cookie -> 401.
-//     * AUTH-DELETE — DELETE removes the profile from the user's column.
-//     * OFF-MODE-REGRESSION — without --auth, PUT still writes config.json.
-//   """
-//
-// Boots a REAL pabrik binary + REAL SQLite via the harness. Replays the
-// exact wire flows the settings page uses: GET /api/config/pabrik, PUT
-// /api/config/pabrik, DELETE /api/config/pabrik/profiles/:name.
-//
-// The suite's `_raw` helper became `rawHttp` below: `Harness.http`
-// asserts on `expect` by default, but "expect 401" is the thing under
-// test in AUTH-UNAUTH, so that path needs the raw (status, headers, body)
-// triple. `HttpOptions.assert_status = false` is the harness's own seam
-// for exactly this shape, so no suite needs a private HTTP client.
+// Functional tests for `--auth` per-user config (users.config_json). Zig port
+// of `tests/functional/user_config_test.py` (same test names, same order).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -69,13 +39,6 @@ fn bootAuth() !Harness {
 }
 
 /// `pabrik create-admin` against the harness HOME.
-///
-/// `force` adds `--force`, which is how the second admin is created —
-/// without it `dispatchCreateAdmin` refuses and this helper errors, which
-/// is exactly what `auth_test.zig` pins separately.
-///
-/// `runPabrikCommand` prepends the resolved binary itself, so `argv`
-/// starts at the SUBCOMMAND.
 fn createAdmin(
     home: []const u8,
     email: []const u8,
@@ -96,12 +59,6 @@ fn createAdmin(
 }
 
 /// POST /api/auth/login and return the session token. Caller frees.
-///
-/// The token is the SEGMENT between `pabrik_session=` and the next `;`:
-/// `harness.afterFirst(x, ";")` would return the text AFTER that `;`
-/// (i.e. `Path=/`), so the first `;`-separated attribute is split off
-/// here and the name prefix stripped — Python's
-/// `set_cookie.split("pabrik_session=", 1)[1].split(";", 1)[0].strip()`.
 fn login(h: *Harness, email: []const u8, password: []const u8) ![]u8 {
     const body = try std.fmt.allocPrint(gpa, "{{\"email\":\"{s}\",\"password\":\"{s}\"}}", .{
         email, password,
@@ -142,22 +99,8 @@ fn profileBody(name: []const u8, model: []const u8) ![]u8 {
 }
 
 /// Where `getDefaultConfigDir` (Config.zig) actually writes config.json.
-///
-/// Mirrors that function's platform switch:
-///
-///   * macOS   — `~/Library/Application Support/pabrik`. `XDG_CONFIG_HOME`
-///     is NOT consulted on this branch, so the harness's `<home>/.config`
-///     shadow is irrelevant.
-///   * Windows — `%APPDATA%/pabrik`, which the harness points at
-///     `<home>/AppData/Roaming`.
-///   * else    — `$XDG_CONFIG_HOME/pabrik` else `$HOME/.config/pabrik`; the
-///     harness points `XDG_CONFIG_HOME` at `<home>/.config`.
-///
-/// Derived from `home` alone rather than the ambient environment: the
-/// harness only shadows the CHILD env on Linux/mac, and CI runners export
-/// a real `XDG_CONFIG_HOME` that has nothing to do with the tempdir.
-/// Hardcoding `<home>/.config` made this pass on Linux and fail on macOS,
-/// where the assertion then read a path the server never wrote.
+/// Mirrors that function's platform switch: * macOS — `~/Library/Application
+/// Support/pabrik`.
 fn configFilePath(home: []const u8) ![]u8 {
     return switch (builtin.os.tag) {
         .macos => harness.harnessPath(gpa, home, &.{ "Library", "Application Support", "pabrik", "config.json" }),

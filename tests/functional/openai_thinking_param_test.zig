@@ -1,68 +1,5 @@
 //! Wire test: an openai-style CHAT turn must NOT carry the non-standard
 //! `thinking` / `enable_thinking` request params.
-//!
-//! Regression for task_1791915284771_3 ("already set off but still invalid
-//! request"). A profile with Thinking = "Off" against
-//! `https://opencode.ai/inference/go/v1/chat/completions` failed EVERY turn
-//! with
-//!   {"error":{"param":"thinking","type":"invalid_request_error",
-//!     "message":"Upstream request failed: [unsupported_parameter]
-//!               Unrecognized request argument supplied: thinking."}}
-//! and, once that was worked around, the identical error for
-//! `enable_thinking`.
-//!
-//! Root cause: `JsonRequest` in `src/modules/agent/Agent.zig` emitted
-//! `thinking: {"type":"disabled"}` when thinking was OFF and
-//! `enable_thinking: <bool>` unconditionally. Neither is an OpenAI
-//! chat-completions parameter — they are vendor extensions that strict
-//! gateways reject outright. The logic was also inverted (thinking ON
-//! emitted neither field).
-//!
-//! Fix: drop both fields from the openai wire body. `reasoning_effort` is
-//! the only thinking knob on this shape; Anthropic-style URLs go through
-//! `buildJsonAnthropicRequest`, which owns its own `thinking` block.
-//!
-//! WHY A FUNCTIONAL TEST AND NOT ONLY UNIT TESTS: the unit tests in
-//! `Agent.zig` assert the body `buildJsonOpenAIRequest` returns, which is
-//! the right first witness. But the bug the user reported is a WIRE
-//! symptom — the bytes that actually left the process — and only a
-//! round-trip through the real binary proves the profile's `thinking:
-//! "off"` reaches the upstream as an absent param rather than as
-//! `{"type":"disabled"}`. The unit tests cannot see the profile cascade
-//! (`resolveEffectiveProfile` → `is_thinking` → `Agent.thinkingEnabled`)
-//! that produced the value in the first place.
-//!
-//! Plan: boot the harness, PUT an openai profile with `thinking: "off"`
-//! pointing at a stub SSE server, POST /api/llm/session with a
-//! queue_message (the exact `sendChatMessage` wire), poll until the
-//! assistant reply lands, then assert EVERY stub request body carries
-//! NEITHER `thinking` NOR `enable_thinking`.
-//!
-//! Run:
-//!     PABRIK_BIN=<worktree>/zig-out/bin/pabrikcore-linux-x86_64 \
-//!       zig test tests/functional/openai_thinking_param_test.zig
-//!
-//! THE STUB UPSTREAM
-//! -----------------
-//! Same shape as `anthropic_chat_headers_test.zig`'s stub: an `Io.net`
-//! listener on a background thread, one request at a time, port picked
-//! with `findFreePortRandom` because `Io.net` has no getsockname.
-//!
-//! Two differences from that file are worth naming:
-//!
-//!   * The recorded request is the BODY, not the head. The contract under
-//!     test is a JSON field's absence, and the body is where JSON lives.
-//!     The head is still read (and drained) because a client cannot be
-//!     answered mid-frame.
-//!   * The body is accumulated into its own writer rather than tossed,
-//!     because `fill(1)` returns a whole syscall's worth — the head AND
-//!     the first chunk of the body arrive together, and discarding the
-//!     overflow would block the drain waiting for bytes already read.
-//!
-//! Shutdown needs the same non-obvious step as upstream: `Server.accept`
-//! is a blocking `accept4(2)` and closing a listening socket does not
-//! wake a thread already blocked in `accept` on it, so `Stub.deinit` sets
-//! the stop flag and then makes ONE throwaway self-connect to wake it.
 
 const std = @import("std");
 const testing = std.testing;
@@ -74,11 +11,6 @@ const io = testing.io;
 const Io = std.Io;
 
 /// The OpenAI chat-completions SSE transcript the stub replays verbatim.
-///
-/// Byte-identical in shape to the Anthropic one in
-/// `anthropic_chat_headers_test.zig`: the parser under test consumes
-/// `data:` lines, and a truncated final event would make the assertions
-/// pass for a reason that is not the body contract.
 const SSE_STREAM =
     "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\"," ++
     "\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"}," ++
@@ -116,24 +48,13 @@ const Stub = struct {
     thread: std.Thread,
     stop: std.atomic.Value(bool) = .init(false),
     /// Guards `reqs`; the serve thread appends while the test reads.
-    ///
-    /// `std.Io.Mutex`, not `std.Thread.Mutex`: Zig 0.16 deleted the
-    /// latter, and the replacement takes the `Io` handle for its
-    /// contended path. `lockUncancelable` is right here — the critical
-    /// section is a slice append, which should never be abandoned
-    /// halfway.
+    /// `std.Io.Mutex`, not `std.Thread.Mutex`: Zig 0.16 deleted the latter,
+    /// and the replacement takes the `Io` handle for its contended path.
     mutex: Io.Mutex = .init,
     reqs: std.ArrayList(Recorded) = .empty,
 
-    /// Bind and start serving on `stub`.
-    ///
-    /// An OUT-PARAMETER, and that is load-bearing. The serve thread is
-    /// handed `stub`'s address, so the `Stub` must live at a stable
-    /// address — the caller's frame. Returning a `Stub` BY VALUE (the
-    /// obvious spelling) hands the thread a pointer to THIS function's
-    /// stack frame, which is dead the moment it returns; the very first
-    /// `accept` then reads a freed socket handle and the process
-    /// segfaults inside `Io.net.readVec`.
+    /// Bind and start serving on `stub`. An OUT-PARAMETER, and that is
+    /// load-bearing.
     fn start(stub: *Stub) !void {
         stub.* = .{
             .io = io,
@@ -197,15 +118,6 @@ fn serve(stub: *Stub) void {
 
 /// Read one request (head AND body), record the body, reply with the SSE
 /// transcript.
-///
-/// THE HEAD AND THE BODY OVERLAP IN THE SOCKET BUFFER, and getting that
-/// wrong hangs the whole suite. `fill(1)` reads a whole syscall's worth,
-/// so one call typically returns the head AND the first chunk of the
-/// body — accumulate everything seen and treat the first
-/// `\r\n\r\n`-terminated slice as the head boundary. The naive version,
-/// which tossed everything it had buffered once the head was complete,
-/// DISCARDED those body bytes and then blocked in the body drain
-/// waiting for bytes the client had already sent.
 fn handleRequest(stub: *Stub, stream: Io.net.Stream) !void {
     var rbuf: [64 * 1024]u8 = undefined;
     var sr = stream.reader(stub.io, &rbuf);
@@ -327,11 +239,8 @@ fn waitForAssistantReply(h: *Harness, stub: *Stub, session_id: []const u8) ![]u8
             return gpa.dupe(u8, content.string);
         }
 
-        // Sleep the INTERVAL, capped by what is left of the budget —
-        // never the whole remainder. Sleeping the remainder turns a 60s
-        // budget into two polls (t=0 and t=60) and reports "the worker
-        // turn never produced an assistant message" for a turn that
-        // finished in one second.
+        // Sleep the INTERVAL, capped by what is left of the budget — never
+        // the whole remainder.
         const remaining = deadline - std.Io.Timestamp.now(io, .awake).toMilliseconds();
         if (remaining > 0) {
             const nap = @min(remaining, POLL_INTERVAL_MS);
@@ -340,10 +249,8 @@ fn waitForAssistantReply(h: *Harness, stub: *Stub, session_id: []const u8) ![]u8
     }
 
     // Say WHICH failure it was: zero recorded requests means the profile
-    // never pointed at the stub; a non-zero count means the turn reached
-    // the upstream and the SSE transcript is what failed to parse. The
-    // harness log tail goes with it because that is where the LLM error
-    // surfaces.
+    // never pointed at the stub; a non-zero count means the turn reached the
+    // upstream and the SSE transcript is what failed to parse.
     const tail = try h.tailLog(io, gpa, 40);
     defer gpa.free(tail);
     std.debug.print(
@@ -356,21 +263,14 @@ fn waitForAssistantReply(h: *Harness, stub: *Stub, session_id: []const u8) ![]u8
 }
 
 /// Install an openai profile pointing at the stub and run one chat turn.
-///
-/// `thinking` is the profile's raw `thinking` string — the exact value
-/// the Edit-profile modal's Thinking dropdown writes ("off" / "on" /
-/// "auto"). Passing it through rather than hard-coding "off" is what
-/// makes the second test below a real control instead of a copy.
+/// `thinking` is the profile's raw `thinking` string — the exact value the
+/// Edit-profile modal's Thinking dropdown writes ("off" / "on" / "auto").
 fn runTurnWithThinking(h: *Harness, stub: *Stub, thinking: []const u8, session_id: []const u8) !void {
     const stub_url = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/v1/chat/completions", .{stub.port});
     defer gpa.free(stub_url);
 
     // Mirrors the pabrik_config PUT shape. `url_style: "openai"` is what
     // selects `buildJsonOpenAIRequest` in `Agent.callStreaming`.
-    //
-    // Hand-written rather than `std.json.Stringify`d: the nested
-    // `profiles` map has no struct spelling, and `stub_url` is a
-    // loopback URL with nothing to escape.
     const cfg_body = try std.fmt.allocPrint(gpa,
         \\{{"api_endpoint":"{s}","api_key":"sk-openai-test","model":"stub-model","url_style":"openai","profiles":{{"oa-stub":{{"model":"stub-model","base_url":"{s}","api_key":"sk-openai-test","url_style":"openai","thinking":"{s}"}}}},"active_profile":"oa-stub"}}
     , .{ stub_url, stub_url, thinking });
@@ -383,10 +283,8 @@ fn runTurnWithThinking(h: *Harness, stub: *Stub, thinking: []const u8, session_i
         defer r.deinit();
     }
 
-    // The exact `sendChatMessage` wire (session_id + queue_message +
-    // profile selection). The empty-string fields are kept verbatim:
-    // they are what the frontend puts on the wire, and an omitted key
-    // would exercise a different deserialization path.
+    // The exact `sendChatMessage` wire (session_id + queue_message + profile
+    // selection).
     const session_body = try std.fmt.allocPrint(gpa,
         \\{{"session_id":"{s}","queue_message":"say hi","cwd_session":"","image_urls":"","selected_profile_model":"oa-stub","is_auto_retry_until_stop":""}}
     , .{session_id});
@@ -413,11 +311,6 @@ fn runTurnWithThinking(h: *Harness, stub: *Stub, thinking: []const u8, session_i
 /// Assert that NO recorded request body carries `thinking` or
 /// `enable_thinking`, and that the body IS valid JSON with the core
 /// chat-completions fields present.
-///
-/// The positive controls matter: an absence assertion that never proves
-/// the field COULD have been there passes vacuously. `model` and
-/// `messages` are that proof — they are emitted by the same
-/// `jsonStringify` that used to emit the two vendor params.
 fn assertNoThinkingParams(stub: *Stub) !void {
     var seen = try stub.snapshot();
     defer {
@@ -429,10 +322,9 @@ fn assertNoThinkingParams(stub: *Stub) !void {
         return error.TestUnexpectedResult;
     }
     for (seen.items, 0..) |r, i| {
-        // Substring check first — cheap, and it catches the field under
-        // any spelling (`"thinking"`, `"enable_thinking"`, and the
-        // `reasoning_content` echo is a DIFFERENT field, so it must not
-        // trip this).
+        // Substring check first — cheap, and it catches the field under any
+        // spelling (`"thinking"`, `"enable_thinking"`, and the
+        // `reasoning_content` echo is a DIFFERENT field, so it must not trip
         if (std.mem.indexOf(u8, r.body, "\"thinking\"") != null or
             std.mem.indexOf(u8, r.body, "\"enable_thinking\"") != null)
         {
@@ -483,10 +375,7 @@ fn assertNoThinkingParams(stub: *Stub) !void {
 // ============================================================================
 
 // The exact reported failure: Thinking = "Off" in the Edit-profile modal,
-// openai body shape, strict upstream. Pre-fix the body carried
-// `"thinking":{"type":"disabled"}` AND `"enable_thinking":false`, and the
-// gateway answered `unsupported_parameter` with 0 chunks — which surfaced
-// as "stream ended without finish_reason after 0 chunk(s)".
+// openai body shape, strict upstream.
 test "openai_chat_turn_thinking_off_omits_thinking_and_enable_thinking" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -498,9 +387,8 @@ test "openai_chat_turn_thinking_off_omits_thinking_and_enable_thinking" {
     defer stub.deinit();
 
     // `stub_llm_profile` is load-bearing, not a convenience: without a
-    // configured profile the binary has no model to run the turn with,
-    // so nothing ever reaches the stub. The profile written here is
-    // replaced by the openai one in `runTurnWithThinking`.
+    // configured profile the binary has no model to run the turn with, so
+    // nothing ever reaches the stub.
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
     defer h.deinit(io) catch |err| {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
@@ -519,10 +407,7 @@ test "openai_chat_turn_thinking_off_omits_thinking_and_enable_thinking" {
 // Test 2: thinking "on" — the control
 // ============================================================================
 
-// The positive control for Test 1's absence assertions. The fields are
-// gone for BOTH states, so Test 1 cannot pass vacuously: if the fix had
-// merely inverted the condition (emit when ON, omit when OFF) this test
-// would catch it.
+// The positive control for Test 1's absence assertions.
 test "openai_chat_turn_thinking_on_also_omits_thinking_and_enable_thinking" {
     try harness.requirePabrikBin(io, gpa);
 

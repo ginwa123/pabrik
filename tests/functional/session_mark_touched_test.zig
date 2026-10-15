@@ -1,52 +1,5 @@
-// `POST /api/llm/session/:id/touched` — mark-as-seen clears the amber stale dot.
-//
-// Zig port of `tests/functional/session_mark_touched_test.py`
-// (same test names).
-//
-// Replays the exact wire the sidebar sends on click:
-//   POST /api/llm/session/:session_id/touched  body {}
-//
-// Cases (in the Python file's order):
-//   1. `touched` returns 200 {success:true} and stamps the column.
-//   2. GET list shows `last_human_touched_at` as a SQLite datetime so the
-//      dot clears: `updated_at <= last_human_touched_at`.
-//   3. Dual-route parity: `POST /api/session/:id/touched` also 200.
-//
-// The Python docstring's case 3 ("empty session_id -> 400") has no test
-// of its own: an empty path segment cannot match the route, so the file
-// folded it into case 4, the dual-alias parity check. That mapping is
-// preserved here — there are three tests, not four.
-//
-// ── WHY `_db_val` IS NOT A RAW SQLITE READ ──────────────────────────────
-// The Python `_db_val` helper opened `<temp_dir>/.config/pabrik/agent.db`
-// with the stdlib `sqlite3` module (read-only URI) and asserted
-// `last_human_touched_at_nano IS NOT NULL` for the session row.
-//
-// `sessionLastHumanTouchedAt` below replaces that with the wire's own
-// view of the SAME column, and it is an equivalent witness rather than a
-// weaker one: `src/http_handlers/session_list.zig` builds the list row as
-//
-//     CASE WHEN last_human_touched_at_nano IS NULL THEN ''
-//          ELSE strftime('%Y-%m-%d %H:%M:%S', last_human_touched_at_nano/1000, 'unixepoch') END
-//
-// so a NON-EMPTY `last_human_touched_at` on `GET /api/llm/session` is
-// reachable only when the column is non-NULL in SQLite — the assertion
-// still fails if the UPDATE never landed.
-//
-// TODO(port): a raw-DB witness needs an SQLite driver, which this package
-// deliberately does not have. `tests/functional/build.zig` declares NO
-// dependency on `pabrikcore` and links no SQLite precisely so a suite can
-// never "pass" without crossing the wire; adding `sqlite3` here (or
-// shelling out to a `sqlite3` CLI that is absent on the windows-2022
-// runner image) would break that property. If a real DB-level assertion
-// is ever wanted, the honest home is `tests/sqlite_test.py`'s Zig
-// successor or a `harness.zig` helper added with that intent — not a
-// per-suite dependency.
-//
-// NOTE ON STRING ORDERING: case 2 compares two timestamps as STRINGS
-// (`updated > human` in Python). Both are `YYYY-MM-DD HH:MM:SS`, so
-// byte-wise comparison is chronological; `std.mem.order` reproduces
-// Python's comparison exactly.
+// `POST /api/llm/session/:id/touched` — mark-as-seen clears the amber stale
+// dot.
 
 const std = @import("std");
 const testing = std.testing;
@@ -60,14 +13,9 @@ const io = testing.io;
 // Helpers
 // ============================================================================
 
-/// `sessionLastHumanTouchedAt`'s replacement for the Python `_db_val`:
-/// read `GET /api/llm/session`, find the one entry whose `session_id`
-/// matches, and return its `last_human_touched_at` wire field — `""`
-/// when the column is NULL. Fails when the entry is missing or
-/// ambiguous, exactly like Python's `assert len(matches) == 1`.
-///
-/// The returned slice borrows from `doc`, which the caller must keep
-/// alive.
+/// `sessionLastHumanTouchedAt`'s replacement for the Python `_db_val`: read
+/// `GET /api/llm/session`, find the one entry whose `session_id` matches, and
+/// return its `last_human_touched_at` wire field — `""` when the column is
 fn sessionLastHumanTouchedAt(doc: *const harness.Json, session_id: []const u8) ![]const u8 {
     const entry = findSessionInList(doc, session_id) catch |err| {
         std.debug.print("expected 1 match for {s}: {s}\n", .{ session_id, @errorName(err) });
@@ -112,11 +60,8 @@ fn jsonStringField(value: std.json.Value, key: []const u8) []const u8 {
     };
 }
 
-/// `PUT {base}/session/:id` — the auto-creating write the Python tests
-/// used to make the row exist. `base` is `"/api/llm"` or `"/api"`; the
-/// two spellings are the dual routes under test, so the helper takes the
-/// prefix whole rather than an "llm or empty" flag (an empty prefix
-/// would build `/api//session/...`, which does not match either route).
+/// `PUT {base}/session/:id` — the auto-creating write the Python tests used
+/// to make the row exist.
 fn ensureSession(h: *Harness, base: []const u8, sid: []const u8, name: []const u8) !void {
     const path = try std.fmt.allocPrint(gpa, "{s}/session/{s}", .{ base, sid });
     defer gpa.free(path);

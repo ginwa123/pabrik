@@ -5,30 +5,8 @@ const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
 const testing = std.testing;
 
-/// Wrap a tool result in the standardized JSON envelope.
-///
-/// On success: emits `"data"` containing the inner tool-specific JSON object.
-/// On error: emits `"error"` containing a human-readable message and nulls
-/// `"data"`. The two are mutually exclusive — when `success=true`, the
-/// `error_message` argument is ignored; when `success=false`, the `data`
-/// argument is ignored.
-///
-/// `tool_name` — the registered tool name (e.g. `"read_file"`). Serialized
-///   with `std.json` — no escaping layer needed.
-/// `parameters` — the raw JSON arguments string from the tool call
-///   (e.g. `{"path":"/foo"}`). The wrapper normalizes it: a top-level JSON
-///   object is re-serialized canonically; empty input becomes `{}`; malformed
-///   JSON (or a non-object top level) falls back to `{"_raw":<original>}`.
-///   Always emitted (even on error).
-/// `success` — `true` for a successful tool execution, `false` for a failure.
-/// `error_message` — required when `success=false`; ignored when `success=true`.
-/// `data` — the tool-specific JSON object string (e.g. read_file's
-///   `{"path":…,"content":…}`). Required when `success=true`; ignored when
-///   `success=false`. Empty string means "no payload" and serializes as
-///   `null`. Fragments that are not valid JSON objects are wrapped as
-///   `{"_raw":…}` so every stored row stays valid JSON.
-///
-/// The returned string is owned by the caller; free with `allocator.free`.
+/// Wrap a tool result in the standardized JSON envelope. On success: emits
+/// `"data"` containing the inner tool-specific JSON object.
 pub fn wrapToolOutput(
     allocator: std.mem.Allocator,
     tool_name: []const u8,
@@ -63,28 +41,12 @@ pub fn wrapToolOutput(
 }
 
 // Every `execX` function below MUST end by calling `wrapToolOutput` so the
-// LLM sees a single consistent envelope:
-//
-//   {"tool":…, "parameters":…,
-//    "success":true|false,
-//    "data":{…} | null,
-//    "error":"…" | null,
-//    "v":1}
-//
-// The inner `"data"` field holds the tool-specific JSON object unchanged
-// (e.g. read_file's `{"path":…,"content":…}`, shell's
-// `{"command":…,"stdout":…}`, ask_user's `{"status":…}`, etc.) so the tool
-// modules' `toJSONSuccess` functions and the frontend `tool_outputs/*.vue`
-// components share one schema (see
-// docs/superpowers/plans/2026-09-18-agent-tool-output-json-schema.md).
+// LLM sees a single consistent envelope: {"tool":…, "parameters":…,
+// "success":true|false, "data":{…} | null, "error":"…" | null, "v":1} The
 
-/// Normalize a raw JSON arguments string into the JSON value that goes in
-/// the envelope's `"parameters"` field.
-///
-/// - Empty input → `{}`.
-/// - Top-level object → re-serialized canonically.
-/// - Malformed JSON or non-object top level → `{"_raw":<original-or-value>}`
-///   so the LLM can still see what was passed.
+/// Normalize a raw JSON arguments string into the JSON value that goes in the
+/// envelope's `"parameters"` field. - Empty input → `{}`. - Top-level object
+/// → re-serialized canonically. - Malformed JSON or non-object top level →
 fn normalizeParamsJson(allocator: std.mem.Allocator, json_str: []const u8) ![]u8 {
     const trimmed = std.mem.trim(u8, json_str, &std.ascii.whitespace);
     if (trimmed.len == 0) {
@@ -110,16 +72,8 @@ fn normalizeParamsJson(allocator: std.mem.Allocator, json_str: []const u8) ![]u8
 }
 
 /// Normalize the tool-specific payload into the JSON fragment for the
-/// envelope's `"data"` field.
-///
-/// - Empty input → `null` (no payload).
-/// - Valid JSON object → embedded verbatim (control chars sanitized first).
-/// - Anything else (including legacy non-JSON strings) → `{"_raw":…}` so
-///   every stored row stays valid JSON.
-///
-/// Raw NUL/C0 bytes (binary stdout, e.g. an ELF header) are replaced with
-/// U+FFFD before parsing: NUL truncates SQLite TEXT and raw controls are
-/// illegal in JSON strings.
+/// envelope's `"data"` field. - Empty input → `null` (no payload). - Valid
+/// JSON object → embedded verbatim (control chars sanitized first). -
 fn normalizeDataFragment(allocator: std.mem.Allocator, data: []const u8) ![]u8 {
     const trimmed = std.mem.trim(u8, data, &std.ascii.whitespace);
     if (trimmed.len == 0) {
@@ -365,13 +319,9 @@ test "wrapToolOutput - allocates and caller owns" {
     try testing.expect(out.len > 0);
 }
 
-// ===== Tests merged from tool_output_json_contract_test.zig (2026-09-29 flatten) =====
-// Phase 0 RED contract for the XML → JSON tool-output migration
-// (plan `2026-09-18-agent-tool-output-xml-to-json.md`, schema in
-// `2026-09-18-agent-tool-output-json-schema.md`).
-//
-// These tests assert the JSON envelope `wrapToolOutput` must produce after
-// Phase 1. Fixtures live in `tests/fixtures/tool_output/json/`.
+// ===== Tests merged from tool_output_json_contract_test.zig (2026-09-29
+// flatten) ===== Phase 0 RED contract for the XML → JSON tool-output
+// migration (plan `2026-09-18-agent-tool-output-xml-to-json.md`, schema in
 
 fn parseEnvelope(allocator: std.mem.Allocator, out: []const u8) !std.json.Parsed(std.json.Value) {
     return try std.json.parseFromSlice(std.json.Value, allocator, out, .{});

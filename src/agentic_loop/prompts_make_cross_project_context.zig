@@ -2,11 +2,6 @@ const std = @import("std");
 const sqlite = @import("pabrikcore").sqlite;
 
 /// Build the dynamic sibling-cwd list for the cross-project prompt.
-///
-/// Source is `workspace_items` ONLY: sibling items in the same workspace
-/// as the session's bound task, excluding the session's own item, and
-/// only rows with a non-empty `path`. Returns "" when the session is
-/// not bound to any workspace task or no sibling paths exist.
 pub fn makeCrossProjectCwdContext(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,

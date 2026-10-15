@@ -1,36 +1,5 @@
-// Functional tests for kanban lifecycle.
-//
-// Zig port of `tests/functional/kanban_lifecycle_test.py` (same test
-// names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional tests for kanban lifecycle.
-//
-//   Exercises the kanban-specific HTTP surface: create a kanban item
-//   (seeds 3 default columns), add a 4th column, add 12 tasks across
-//   columns, move tasks between columns, pin, copy spec, and delete.
-//
-//   Plan: docs/superpowers/plans/2026-07-26-functional-tests-with-real-data.md (Chunk 4)
-//   """
-//
-// PORT NOTES
-//
-// * `copy_kanban_spec_replaces_columns` built its target URL with
-//   `kanban_b['id'] if 'id' in kanban_b else kanban_b`. `kanban_b` is
-//   already an id STRING, so `'id' in kanban_b` was a substring test on
-//   that string, not a dict lookup - both branches yield the same value
-//   for every id this suite creates. The port just interpolates
-//   `kanban_b`, with the reasoning recorded here.
-//
-// * `_list_tasks` sends `params={"limit": 100}`. The harness
-//   percent-encodes params itself, so the value is passed verbatim
-//   (`"100"`), never pre-encoded.
-//
-// * The `sorted(c["name"] for c in cols_a)` comparison in the copy-spec
-//   test is a real ordering assertion: both name lists are collected
-//   into owned buffers, sorted with the same comparator, and compared
-//   as comma-joined strings.
+// Functional tests for kanban lifecycle. Zig port of
+// `tests/functional/kanban_lifecycle_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -61,12 +30,6 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
 }
 
 /// Python `_create_kanban`. Returns the new kanban item id (owned).
-///
-/// The backend wraps the kanban in a `{item, columns}` envelope so the
-/// frontend's `const { item, columns } = await createKanban(...)`
-/// destructure renders the board immediately on the client (no second
-/// round-trip for the seeded default columns). See
-/// `workspace_items_create_kanban.zig::CreateKanbanResponseFull`.
 fn createKanban(h: *Harness, workspace_id: []const u8, name: []const u8) ![]u8 {
     const body = try std.json.Stringify.valueAlloc(gpa, .{ .name = name }, .{});
     defer gpa.free(body);
@@ -136,16 +99,6 @@ fn createKanban(h: *Harness, workspace_id: []const u8, name: []const u8) ![]u8 {
 }
 
 /// `GET .../kanban/columns` → the parsed `{columns:[...]}` document.
-///
-/// Returns an OWNED, SELF-CONTAINED `harness.Json`: the parse runs with
-/// `.alloc_always` so no string borrows the `Response` buffer, which is
-/// freed by `r.deinit()` before this function returns. The caller MUST
-/// `deinit` the result.
-///
-/// This is why there is no `columnsArray(body) -> std.json.Array` helper
-/// here: an `std.json.Array` borrows its document's arena, so returning
-/// one from a function that frees the document hands back a dangling
-/// pointer.
 fn listColumnsDoc(h: *Harness, workspace_id: []const u8, kanban_id: []const u8) !harness.Json {
     const path = try std.fmt.allocPrint(
         gpa,
@@ -244,11 +197,9 @@ fn listTasksDoc(h: *Harness, workspace_id: []const u8, kanban_id: []const u8) !h
     };
 }
 
-/// Python `body.get("tasks", body if isinstance(body, list) else [])`:
-/// the `tasks` array if the root is an object carrying one, the root
-/// itself if the root is already a list, else empty.
-///
-/// Borrows `doc` — the caller owns it.
+/// Python `body.get("tasks", body if isinstance(body, list) else [])`: the
+/// `tasks` array if the root is an object carrying one, the root itself if
+/// the root is already a list, else empty.
 fn tasksArray(doc: *const harness.Json, ctx: []const u8) !std.json.Array {
     const empty: std.json.Array = .{ .items = &.{}, .capacity = 0, .allocator = gpa };
     return switch (doc.value().*) {
@@ -741,13 +692,8 @@ test "move_task_to_same_column_is_idempotent" {
 // Test 6: delete column moves tasks to NULL (orphans)
 // ============================================================================
 
-// Delete a column: tasks get kanban_column_id=NULL (or stay but
-// without the column). The current handler behavior is to set
-// kanban_column_id=NULL for the moved-away tasks.
-//
-// The delete column handler checks for tasks first (409 if any exist),
-// so we either need to move them first or use a column with no tasks.
-// The cleanest test: delete an empty column.
+// Delete a column: tasks get kanban_column_id=NULL (or stay but without the
+// column).
 test "delete_column_orphans_tasks" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -1014,20 +960,6 @@ test "copy_kanban_spec_replaces_columns" {
 // ============================================================================
 
 // Delete the kanban item; columns become orphans (no FK CASCADE).
-//
-// Documents the CURRENT API behavior (mirrors the workspace->items
-// cascade gap found in Chunk 3):
-//   - workspace_items_delete.zig does `DELETE FROM workspace_items`
-//     without first cleaning up `kanban_columns`.
-//   - Migration 051 declared `kanban_columns.workspace_item_id
-//     TEXT NOT NULL` WITHOUT `REFERENCES workspace_items(id) ON
-//     DELETE CASCADE`.
-//   - The columns endpoint queries by `workspace_item_id` and
-//     returns the orphan rows.
-//
-// This is a known design gap. If a future migration adds the
-// `ON DELETE CASCADE` (or the handler is updated to clean up
-// columns), the test should be updated to assert the cascade.
 test "delete_kanban_item_orphans_columns" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});

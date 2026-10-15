@@ -1,24 +1,5 @@
-//! Builds the `## Kanban Knowledge` system-prompt section for sessions
-//! bound to a kanban workspace-item WITH an `agent_kanbans` row
-//! (Migration 081).
-//!
-//! Mirrors `prompts_make_agent_knowledge.zig` but reads from the
-//! `agent_kanban_knowledges` table (keyed by kanban_id) and only fires
-//! when:
-//!   - the session's workspace_item is of type 'kanban', AND
-//!   - an `agent_kanbans` row exists for it (opt-in config)
-//!
-//! Unconfigured boards are completely unaffected — returns "".
-//!
-//! Behaviour:
-//!   - Empty for non-kanban items → ""
-//!   - Empty for kanbans without an agent_kanbans row → ""
-//!   - Empty for configured boards with no knowledge rows → ""
-//!   - Missing / unreadable file paths: log + skip, continue
-//!   - Files > 100 MiB: log + skip, continue
-//!
-//! Plan: docs/superpowers/plans/2026-08-25-agent-kanbans-mirror.md
-//! Task: task_1787597624259_2
+//! Builds the `## Kanban Knowledge` system-prompt section for sessions bound
+//! to a kanban workspace-item WITH an `agent_kanbans` row (Migration 081).
 
 const std = @import("std");
 const sqlite = @import("pabrikcore").sqlite;
@@ -49,14 +30,6 @@ fn resolveWorkspaceItemId(
 
 /// Read a single file's full contents. Caller owns the returned slice.
 /// Returns `null` (logged + skipped by caller) on failure.
-///
-/// `file_path` comes from the `agent_kanban_knowledges.file_path` DB column.
-/// An empty or RELATIVE value is reachable (the create/update handlers accept
-/// `file_path = ""` and only validate non-empty values, and legacy rows may
-/// predate that validation), so the contract is enforced HERE:
-/// `std.Io.Dir.openFileAbsolute` asserts `path.isAbsolute(...)`, and a failed
-/// assertion ABORTS the whole process (Debug/ReleaseSafe) instead of returning
-/// an error — one bad knowledge row would kill the worker on every turn.
 fn readFileContents(
     io: std.Io,
     allocator: std.mem.Allocator,
@@ -266,12 +239,6 @@ var test_file_counter: std.atomic.Value(u64) = .init(0);
 
 /// Writes `contents` to a uniquely-named file inside `tmp` and returns its
 /// ABSOLUTE path (caller-owned: `alloc.free` it).
-///
-/// The path comes from `testing.tmpDir` (`.zig-cache/tmp/<random>/`) rather
-/// than a literal `/tmp/...`: on Windows `/tmp/x` resolves to `D:\tmp\x`,
-/// whose parent directory does not exist, so `createFileAbsolute` fails
-/// with `error.FileNotFound`. The knowledge reader asserts `isAbsolute`
-/// before `openFileAbsolute`, so the returned path must stay absolute.
 fn writeTestFile(tmp: *std.testing.TmpDir, allocator: std.mem.Allocator, io: std.Io, contents: []const u8) ![]u8 {
     const n = test_file_counter.fetchAdd(1, .seq_cst);
     var name_buf: [64]u8 = undefined;

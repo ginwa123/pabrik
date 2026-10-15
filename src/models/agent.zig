@@ -1,10 +1,5 @@
-//! Data model for the `agents` entity table.
-//!
-//! One row per Agent workspace item. The `id` is the same string as the
-//! `workspace_item_id` (1-1 enforced by `UNIQUE(workspace_item_id)` per
-//! spec D3 — they share the workspace_item's id space).
-//!
-//! Schema: Migration 076 (`add_agents_and_agent_knowledge_and_agent_tools`).
+//! Data model for the `agents` entity table. One row per Agent workspace
+//! item.
 
 const std = @import("std");
 

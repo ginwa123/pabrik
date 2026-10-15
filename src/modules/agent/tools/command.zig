@@ -1,21 +1,4 @@
 // command.zig — unified shell-exec tool, merged from bash.zig + pwsh.zig.
-//
-// Phase A+B of the unify plan: `bash` and `pwsh` were thin wrappers over
-// `shell.zig` differing ONLY in the argv-prefix (plus per-shell description
-// text). This module MERGES that shared structure (moved, not duplicated):
-//
-//   * `CommandInput` / `CommandOutput` — aliases for `shell.ShellInput` /
-//     `shell.ShellOutput`, so the LLM-facing JSON schema cannot drift.
-//   * `COMMAND_BASH_PREFIX` + `COMMAND_PWSH_PREFIX` + `COMMAND_CMD_PREFIX`
-//     — the three argv-prefix consts, moved here from bash.zig / pwsh.zig
-//     (cmd.exe is the Windows fallback when pwsh is not installed).
-//   * `execute_command` — dispatches per-OS (`pwsh` on Windows with a
-//     `cmd.exe` retry on `error.FileNotFound`, `bash` elsewhere) via
-//     `shell.execute_shell`.
-//   * `command_result_to_json` — the shared 8-field JSON payload.
-//   * `command_tool` — the merged `AgentTool` (name "command").
-//
-// `bash.zig` / `pwsh.zig` are now deprecated shims over this module.
 const std = @import("std");
 const builtin = @import("builtin");
 const shell = @import("shell.zig");
@@ -34,29 +17,19 @@ pub const CommandOutput = shell.ShellOutput;
 /// argv-prefix for the POSIX shell: `bash -c <command>`.
 pub const COMMAND_BASH_PREFIX: []const []const u8 = &.{ "bash", "-c" };
 
-/// argv-prefix for PowerShell Core:
-/// `pwsh -NoProfile -NonInteractive -Command <script>`.
-/// `-NoProfile` skips profile loading (faster, no startup hooks).
-/// `-NonInteractive` prevents prompting for input (would hang the agent
-/// loop waiting for a TTY that doesn't exist).
+/// argv-prefix for PowerShell Core: `pwsh -NoProfile -NonInteractive -Command
+/// <script>`. `-NoProfile` skips profile loading (faster, no startup hooks).
 pub const COMMAND_PWSH_PREFIX: []const []const u8 = &.{
     "pwsh", "-NoProfile", "-NonInteractive", "-Command",
 };
 
 /// argv-prefix for the Windows fallback shell: `cmd.exe /c <command>`.
-/// Used ONLY when `pwsh` is not installed (`error.FileNotFound` on spawn)
-/// — cmd.exe ships with every Windows, so this keeps the `command` tool
-/// usable on stock boxes. Phase 1 = foreground only (see execute_command).
 pub const COMMAND_CMD_PREFIX: []const []const u8 = &.{
     "cmd.exe", "/c",
 };
 
-/// Run a shell command on the host-appropriate shell: `pwsh` on Windows
-/// (with a `cmd.exe` retry when pwsh is missing), `bash` everywhere else.
-/// Same semantics as the old `execute_bash` / `execute_pwsh`: mandatory
-/// timeout (returns `error.TimeoutMissing` if null), byte + line
-/// truncation, foreground / background dispatch, URL-encoding (skipped
-/// under cmd — see shell.run_shell_command).
+/// Run a shell command on the host-appropriate shell: `pwsh` on Windows (with
+/// a `cmd.exe` retry when pwsh is missing), `bash` everywhere else.
 pub fn execute_command(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -65,10 +38,7 @@ pub fn execute_command(
     if (builtin.os.tag == .windows) {
         // Phase 1 (cmd fallback) is foreground-only: background keeps the
         // historical pwsh path (spawn_background's nohup idiom + the D8
-        // Start-Process TODO in shell.zig). A background call on a
-        // pwsh-less box fails with FileNotFound exactly as before — no
-        // silent behavior change, and no nohup string is ever passed to
-        // cmd (which would not understand it).
+        // Start-Process TODO in shell.zig).
         if (input.background) {
             return shell.execute_shell(allocator, io, COMMAND_PWSH_PREFIX, input);
         }
@@ -210,18 +180,13 @@ pub const command_tool = AgentTool{
 // ============================================================================
 // Inline tests — schema shape (existing bash/pwsh tests are NOT duplicated
 // here; bash_test.zig + the pwsh.zig inline tests keep covering the shim
-// path).
-// ============================================================================
 
 const testing = std.testing;
 const command = @import("command.zig");
 
 test "command_tool schema: no `timeout` prefix rule in the LLM-facing text" {
     // The tool description and system prompt used to instruct the model to
-    // write `timeout <seconds> <cmd>`. That rule is gone — the only deadline
-    // is the `timeout` field, enforced in shell.execute_shell.
-    // The negative "do NOT prefix" wording is still allowed; what must not
-    // come back is a rule that tells the model to START with one.
+    // write `timeout <seconds> <cmd>`.
     const desc = command.command_tool.function.description;
     const prompt = command.command_tool_system_prompt;
 
@@ -258,19 +223,7 @@ test "command_tool schema: no `timeout` prefix rule in the LLM-facing text" {
 
 test "command_tool schema: exactly ONE deadline param, and it is required" {
     // This test used to read "a `timeout` param must NOT exist" — it was the
-    // guard against the tool growing a second way to bound a command. The
-    // FIELD IS NOW CALLED `timeout`, so the literal assertion had to change;
-    // what it must keep asserting is the INVARIANT, which is unchanged:
-    //
-    //   * exactly one property is a deadline;
-    //   * it is required (no silent 30 s default — the bug that made the
-    //     original field mandatory in the first place);
-    //   * the shell `timeout` UTILITY is still forbidden inside `command`,
-    //     which is the confusion this name creates and the next test pins.
-    //
-    // A second property whose name merely mentions a timeout (`timeout_ms`,
-    // `timeout_seconds`) is exactly how a model starts believing it can bound
-    // one command two ways, so the count is the assertion.
+    // guard against the tool growing a second way to bound a command.
     const params = command.command_tool.function.parameters;
 
     var deadline_count: usize = 0;
@@ -299,13 +252,7 @@ test "command_tool schema: exactly ONE deadline param, and it is required" {
 
 test "command_tool schema: the field named `timeout` is NOT the shell timeout utility" {
     // The rename put the model's word for the FIELD and its word for the
-    // banned UTILITY on the same string. Without an explicit note, `timeout`
-    // reading as "the thing I can prefix" is the natural mistake — and the
-    // tool text is where it has to be pre-empted.
-    // The warning belongs on the PROPERTY (that is the text the model reads
-    // when deciding what to put in the field), so this asserts where it
-    // actually has to be — asserting it on the top-level description would pass
-    // on a tool whose field-level help says nothing.
+    // banned UTILITY on the same string.
     var timeout_desc: ?[]const u8 = null;
     for (command.command_tool.function.parameters.properties) |prop| {
         if (std.mem.eql(u8, prop.name, "timeout")) timeout_desc = prop.description;
@@ -325,9 +272,7 @@ test "command_tool schema: the field named `timeout` is NOT the shell timeout ut
 
 test "command.execute_command still enforces timeout at runtime" {
     // The prompt-text change is cosmetic; the CODE enforcement is the
-    // contract. A call with timeout = null must still fail with
-    // TimeoutMissing (and 0 must too) — otherwise removing the
-    // `timeout N` prefix rule would silently leave commands unbounded.
+    // contract.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     try testing.expectError(
@@ -373,13 +318,7 @@ test "command_tool schema: required fields are (command, cwd, timeout)" {
 test "command_tool schema: is_stop is optional boolean and states its whole contract" {
     // `is_stop` is the model's own "I am done" signal: it ends the TURN, it
     // kills NOTHING, and a `background=true` process in the same call keeps
-    // running. Each of those three is a way the model can be wrong in a way
-    // the human then has to clean up, so the description has to carry all
-    // three — a bare "stop the agent" would read as a cancel.
-    //
-    // Optional on purpose: defaulting to true would end every turn on the
-    // first tool call, and requiring it would make every existing call site
-    // (and every transcript) invalid.
+    // running.
     const params = command.command_tool.function.parameters;
 
     var is_stop: ?@TypeOf(params.properties[0]) = null;
@@ -408,9 +347,7 @@ test "command_tool schema: is_stop is optional boolean and states its whole cont
 
 test "command_tool schema: the is_stop rule reaches the description AND the system prompt" {
     // The description is what the provider embeds in the tool schema; the
-    // system prompt is the prose reminder. The `timeout`-prefix regression
-    // taught that a rule stated in only one of the two gets dropped from the
-    // model's behaviour as soon as one of them is edited.
+    // system prompt is the prose reminder.
     try testing.expect(std.mem.indexOf(u8, command.command_tool.function.description, "is_stop=true") != null);
     try testing.expect(std.mem.indexOf(u8, command.command_tool_system_prompt, "is_stop=true") != null);
 }
@@ -466,10 +403,7 @@ test "command.execute_command runs on the host shell (bash off-Windows)" {
     try testing.expect(std.mem.indexOf(u8, out.stdout, "hello-command") != null);
 }
 
-// T1 RED (cmd.exe fallback): availability probe. The prefix the retry
-// uses is pinned by `command argv prefixes have the expected shape` above;
-// the retry itself is a Windows-only branch of `execute_command` and cannot be
-// driven from a Linux host.
+// T1 RED (cmd.exe fallback): availability probe.
 
 /// Probe whether `cmd.exe` is on $PATH. Windows-only: returns false
 /// everywhere else so Linux CI passes. Mirrors pwsh.zig's pwsh_available().

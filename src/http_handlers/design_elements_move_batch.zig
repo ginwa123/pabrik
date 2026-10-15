@@ -1,27 +1,6 @@
-//! `POST /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/move-batch`.
-//!
-//! Server-side cascade move. Each item's `(dx, dy)` applies to the
-//! item's element AND every transitive descendant of that element via
-//! a single recursive CTE inside one SQL transaction. Optional
-//! `(width, height, rotation)` apply ONLY to the root element — Figma
-//! convention (resize is per-element, not per-subtree).
-//!
-//! Body: `{ items: [{element_id, dx, dy, width?, height?, rotation?}, …] }`
-//! At least one `items` entry is required.
-//!
-//! Response shape: `{ updated: DesignElementResponse[] }` — the
-//! post-batch elements in tree-traversal order (deduped).
-//!
-//! Errors:
-//!   - 400 empty `items` array (`EmptyItems`)
-//!   - 400 malformed JSON body
-//!   - 400 missing `element_id` on any item (`BadItem`)
-//!   - 404 `:page_id` not found
-//!   - 404 any `element_id` not found on the page (`ElementNotFound`)
-//!   - 500 DB failure (DbError)
-//!
-//! Plan: docs/superpowers/plans/2026-08-06-move-element-with-descendants.md
-//!   (Chunk 2, Task 2.1)
+//! `POST
+//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/move-batch`.
+//! Server-side cascade move.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -202,24 +181,7 @@ pub fn designElementsMoveBatchHandler(
         });
     };
 
-    // 5. Build the success response (200 OK). Map every cascaded
-    //    element through `makeDesignElementResponse` so the wire shape
-    //    matches `GET /design/pages/:page_id` (specifically: the
-    //    `type` field, NOT `elem_type` — see the model comment on
-    //    `elem_type`).
-    //
-    //    BUG FIX (2026-08-06, design-mode-second-drag): previously this
-    //    handler serialized the `design_model.DesignElement` struct
-    //    directly via `std.json.Stringify.valueAlloc`, which emitted
-    //    `elem_type` (the model's field name). The page response and
-    //    every other design endpoint use `makeDesignElementResponse`
-    //    which aliases `elem_type` → `type` on the wire. After a single
-    //    move-batch the local store was mirrored with elements missing
-    //    the `type` field, so `props.element.type === undefined` on
-    //    every subsequent drag → `isGroupLike = false` →
-    //    `triggerGroupDrag = false` → the cascade path silently
-    //    switched to the single-element translate path. Frame/group
-    //    drags worked the first time then became broken.
+    // 5. Build the success response (200 OK).
     defer {
         design_model.freeElements(allocator, output.updated);
     }
@@ -253,13 +215,8 @@ fn makeErrorJson(allocator: std.mem.Allocator, message: []const u8) ![]u8 {
 }
 
 // ─── Behavioural tests for the `POST .../elements/move-batch` handler ────
-//
 // Plan: docs/superpowers/plans/2026-08-06-move-element-with-descendants.md
-// (Chunk 2, Task 2.1). Mirrors `design_elements_geometry_batch.zig`'s
-// convention: tests the public `useCase` directly with crafted inputs
-// — no HTTP framework mocking. The handler's parseFromSliceLeaky +
-// status-code mapping is covered by the parallel pattern in the
-// geometry-batch handler.
+// (Chunk 2, Task 2.1).
 
 const testing_handler = std.testing;
 

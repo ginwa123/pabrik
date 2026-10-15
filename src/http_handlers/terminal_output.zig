@@ -1,14 +1,6 @@
-//! `GET /api/terminal/sessions/:id/output?cursor=N` — poll PTY output.
-//!
-//! Drains newly arrived bytes, then returns everything since the
-//! absolute `cursor` (missing/garbage cursor replays from the oldest
-//! retained byte). Success: 200
-//! `{ data, cursor, exited, exit_code }` where `cursor` is the new
-//! absolute offset to pass back, `exited` reports child termination,
-//! and `exit_code` is null while running. Unknown id: 404.
-//!
-//! `data` strips NUL bytes (JSON safety, same convention as the
-//! background-process log tail).
+//! `GET /api/terminal/sessions/:id/output?cursor=N` — poll PTY output. Drains
+//! newly arrived bytes, then returns everything since the absolute `cursor`
+//! (missing/garbage cursor replays from the oldest retained byte).
 
 const std = @import("std");
 const http_response = @import("http_response.zig");

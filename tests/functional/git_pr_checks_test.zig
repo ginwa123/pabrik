@@ -1,45 +1,5 @@
-// Functional wire tests for GET /api/git/pr/checks.
-//
-// Zig port of `tests/functional/git_pr_checks_test.py` (same test names,
-// same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional wire tests for GET /api/git/pr/checks.
-//
-//   The endpoint the Checks tab reads (`gh pr checks` + `gh run view`):
-//
-//     1. Missing path -> 400 (route is registered, validator runs).
-//     2. Unknown provider -> 400 (strict validator).
-//     3. Non-repo path -> 404 (not shadowing, real handler answer).
-//     4. gitlab -> 422, NOT 200-with-zero-checks. A CI panel that answers
-//        "0 checks" for an unsupported forge reads as "everything passed",
-//        which is the one answer it must never invent.
-//     5. Happy path via a fake `gh` on PATH -> 200, with the failing job's
-//        STEPS attached. The steps are the feature; a wire test that only
-//        proves the job rows would miss the whole point.
-//     6. `gh pr checks` exiting non-zero with "no checks reported" -> 200
-//        with an empty list, not a 502.
-//   """
-//
-// WHERE THE FIXTURE LIVES: `harness.makeScratchDir`, never
-// `std.testing.tmpDir` and never the harness's own tempdir. The
-// `pabrik-func-` namespace is what `reapOrphanTestPids` deletes on every
-// boot, and `<cwd>/.zig-cache/tmp/` is INSIDE the git worktree — where
-// `git symbolic-ref` walks UP and the fixture repo resolves to the
-// worktree's branch. See `git_pr_status_test.zig` for the long form.
-//
-// HOW THE FAKE `gh` REACHES THE SERVER: PATH. The backend spawns `gh` by
-// bare name, and the only injection seam is unit-test-only, invisible over
-// HTTP. The Python original used `monkeypatch.setenv("PATH", ...)` before
-// booting the server; `PathShadow` below is the same trick against
-// `std.testing.environ`, which is the exact block `Harness.boot` copies
-// into the child env. The server is booted AFTER the shadow is installed.
-//
-// THE JSON PAYLOADS ARE LITERALS, NOT BUILT AT RUNTIME. Python used
-// `json.dumps(CHECKS_ROWS)`; the dicts are module constants there and
-// verbatim string literals here, so what the fake CLI prints is visible in
-// the diff rather than assembled three lines away from where it is compared.
+// Functional wire tests for GET /api/git/pr/checks. Zig port of
+// `tests/functional/git_pr_checks_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -61,10 +21,9 @@ const Scratch = struct {
         return .{ .root = try harness.makeScratchDir(gpa) };
     }
 
-    /// LIFO note: `cleanupExtraDir` READS `root`, so the free is
-    /// registered first — a defer that freed the slice before the
-    /// cleaner read it is a use-after-free that happens to read as a
-    /// plausible path.
+    /// LIFO note: `cleanupExtraDir` READS `root`, so the free is registered
+    /// first — a defer that freed the slice before the cleaner read it is a
+    /// use-after-free that happens to read as a plausible path.
     fn deinit(self: *Scratch) void {
         harness.cleanupExtraDir(io, gpa, self.root);
         gpa.free(self.root);
@@ -75,12 +34,8 @@ const Scratch = struct {
     }
 };
 
-/// Python's `_git`: `git` in `cwd` with the fixture identity baked in,
-/// so the fixture never depends on the machine's global git config.
-///
-/// `-c commit.gpgsign=false` is an addition, not a port artifact: it
-/// stops a developer's global signing config from failing the commit on
-/// a box that has one.
+/// Python's `_git`: `git` in `cwd` with the fixture identity baked in, so the
+/// fixture never depends on the machine's global git config.
 fn git(cwd: []const u8, args: []const []const u8) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
@@ -137,16 +92,14 @@ fn writeExecScript(path: []const u8, contents: []const u8) !void {
     defer f.close(io);
     try f.writeStreamingAll(io, contents);
     // `setFilePermissions(..., .executable_file, ...)` is the portable
-    // spelling of Python's `chmod(st_mode | stat.S_IEXEC)` and also
-    // makes the file READABLE, which OR-ing the exec bit into a fresh
-    // file's mode does not guarantee.
+    // spelling of Python's `chmod(st_mode | stat.S_IEXEC)` and also makes the
+    // file READABLE, which OR-ing the exec bit into a fresh file's mode does
     try std.Io.Dir.cwd().setFilePermissions(io, path, .executable_file, .{});
 }
 
-/// Put an executable `gh` stub in its OWN bindir inside `s`, so
-/// prepending that directory to PATH cannot shadow another command the
-/// server needs (`git` in particular — the repo gate runs it).
-/// Returns the bindir so the caller can install the PATH shadow.
+/// Put an executable `gh` stub in its OWN bindir inside `s`, so prepending
+/// that directory to PATH cannot shadow another command the server needs
+/// (`git` in particular — the repo gate runs it).
 fn installFakeGh(s: *Scratch, dir_name: []const u8, body: []const u8) ![]u8 {
     const bindir = try s.path(&.{dir_name});
     errdefer gpa.free(bindir);
@@ -161,19 +114,13 @@ fn installFakeGh(s: *Scratch, dir_name: []const u8, body: []const u8) ![]u8 {
 
 /// Prepend `prefix` to `PATH` in `std.testing.environ` — the exact block
 /// `Harness.boot` copies into the child env.
-///
-/// Scoped by `restore`: the shadow must not outlive the test, or every
-/// later suite in the same process would spawn the fake `gh`.
 const PathShadow = struct {
     gpa: std.mem.Allocator,
     saved: std.process.Environ,
     entries: [:null]const ?[*:0]const u8,
 
     fn install(alloc: std.mem.Allocator, prefix: []const u8) !PathShadow {
-        // `Environ`'s block is a raw `KEY=VALUE` slice on POSIX. On
-        // Windows it is a PEB pointer read through `GlobalBlock`, which
-        // Zig offers no way to shadow — and the fixture `gh` is a
-        // `/bin/sh` script anyway, so this suite is POSIX-only.
+        // `Environ`'s block is a raw `KEY=VALUE` slice on POSIX.
         if (comptime @import("builtin").os.tag != .windows) {
             const saved = std.testing.environ;
             const orig = saved.block.slice;
@@ -373,12 +320,8 @@ test "gitlab_is_422_not_an_empty_200" {
     }
 }
 
-// 5. Happy path via a fake `gh` on PATH → 200, with the failing job's
-// STEPS attached.
-//
-// The whole point of the endpoint: which PROCESS failed, not just which
-// job. A wire test asserting only the job rows would pass even if the
-// `gh run view` hop were dropped.
+// 5. Happy path via a fake `gh` on PATH → 200, with the failing job's STEPS
+// attached.
 test "failed_job_carries_its_steps" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -573,13 +516,8 @@ test "pending_checks_exit_code_8_is_still_200" {
 // Assertion helpers
 // ============================================================================
 
-/// One `case` arm of the fake `gh` dispatcher.
-///
-/// The heredoc terminator lives HERE, once, rather than in the caller's
-/// splice list. The first draft of this file split it across a prefix and
-/// a suffix constant and emitted `EOF / ;;` twice, which `/bin/sh`
-/// reports as "line 7: syntax error near unexpected token `newline`" — a
-/// failure that reads like a server regression and is not one.
+/// One `case` arm of the fake `gh` dispatcher. The heredoc terminator lives
+/// HERE, once, rather than in the caller's splice list.
 fn ghArm(verb: []const u8, payload: []const u8) ![]u8 {
     return std.fmt.allocPrint(
         gpa,

@@ -1,23 +1,6 @@
-//! `ask_user` exec adapter.
-//!
-//! Parses the arguments, applies the sub-agent gate, writes the pending row
-//! and returns the `"status":"pending"` payload **immediately**. It
-//! never blocks, never sleeps, and never touches `llm_history` — Phase 3 of
-//! `handle_tool` writes this result into the tool row, and the workflow then
-//! breaks the turn (see `workflow.zig`).
-//!
-//! There is deliberately NO "is a human around?" gate. `ask_user` used to
-//! consult `sessions.is_auto_retry_until_stop` as a proxy for human
-//! availability, which silently disabled asking for every long-horizon
-//! kanban task — the exact workload that flag exists to support. The two
-//! concerns are orthogonal: that flag answers "should this run survive
-//! repeated API failures?", not "can anyone answer a question?". A pending
-//! question is safe to leave behind regardless, because the workflow breaks
-//! the turn and deletes the worker, and this module has no timeout by
-//! design — nothing is held open.
-//!
-//! The human's answer arrives much later and rewrites that same row via
-//! `POST /api/llm/session/:id/answer` → `ask_user_pending.rewriteToolResultRow`.
+//! `ask_user` exec adapter. Parses the arguments, applies the sub-agent gate,
+//! writes the pending row and returns the `"status":"pending"` payload
+//! **immediately**.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -34,10 +17,6 @@ const error_explain = @import("tools_error_explain.zig");
 const TOOL_NAME = ask_user_mod.ASK_USER_TOOL_NAME;
 
 /// Parse → validate → gate → insert → return.
-///
-/// Every failure path is a `success=false` envelope the model can read and
-/// act on; a Zig error escaping here would be turned into a generic
-/// "ask_user failed: …" by `handle_tool`, losing the actionable reason.
 pub fn execAskUser(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     const parsed = std.json.parseFromSlice(
         ask_user_mod.AskUserInput,
@@ -60,14 +39,11 @@ pub fn execAskUser(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     };
 
     // ─── Gate: a sub-agent has no answer surface ────────────────────────
-    //
     // Returns `unavailable` WITHOUT writing a row, so the model decides in
     // the same run and the run completes.
     if (ctx.is_sub_agent) {
         // Unreachable in practice — `spawn_sub_agent` rejects `ask_user` at
         // parse time and `tool_eligibility` strips it for sub-agent sessions.
-        // Kept as defence-in-depth: a sub-agent run has no answer surface, so
-        // the question would sit unanswered forever.
         ctx.logger.warnFmt(
             "[ASK_USER] sub-agent session {s} called ask_user — returning unavailable (should have been stripped)",
             .{ctx.session_id},
@@ -275,10 +251,8 @@ test "execAskUser: unparseable arguments produce a success=false envelope" {
 
 test "execAskUser: an unattended (long-horizon) session CAN still ask" {
     // Regression guard for the decoupling. `is_auto_retry_until_stop` answers
-    // "should this run survive repeated API failures?" — it says nothing about
-    // whether a human can answer. Gating `ask_user` on it silently disabled
-    // asking for every long-horizon kanban task, which is the exact workload
-    // the flag exists to support.
+    // "should this run survive repeated API failures?" — it says nothing
+    // about whether a human can answer.
     const a = testing.allocator;
     var s = try setupDb();
     defer s.db.deinit();

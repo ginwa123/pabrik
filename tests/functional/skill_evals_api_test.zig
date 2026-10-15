@@ -1,48 +1,5 @@
-// Wire test: the Skill Evals HTTP surface.
-//
-// Zig port of `tests/functional/skill_evals_api_test.py`
-// (same test names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Wire test: the Skill Evals HTTP surface.
-//
-//   Covers the three routes the frontend actually calls:
-//
-//       GET  /api/skill-evals/runs?run_id=&session_id=&limit=
-//       GET  /api/skill-evals/summary?session_id=
-//       POST /api/skill-evals/results/apply?result_id=&action=
-//
-//   Why a functional test and not a unit test: the read handlers resolve the
-//   DB through `getSingleton()`, so they are not unit-testable as written, and
-//   the apply route's whole risk is in its WIRE shape — a `result_id` that is a
-//   query parameter rather than a path segment (so the route stays a literal
-//   and cannot be shadowed by a later `:param`), and a closed error set that
-//   must map to 400/404/409 rather than falling through to a 500.
-//
-//   The rows are seeded directly through the API's own database file, because
-//   there is no HTTP route that creates an eval run — the agent's
-//   `run_skill_eval` tool does, and driving a full agent turn just to get one
-//   row would test the agent, not this surface.
-//   """
-//
-// ─── WHY THE SEED GOES IN THROUGH THE `sqlite3` CLI ────────────────────────
-// Python used the stdlib `sqlite3` MODULE. This package links no SQLite and
-// will not grow one (`tests/functional/build.zig` declares no dependency on
-// `pabrikcore` precisely so a suite can never "pass" without crossing the
-// wire), so the port spawns the `sqlite3` COMMAND-LINE tool — the same idiom
-// `session_skills_live_test.zig` and `default_workspace_provisioning_test.zig`
-// already use. The SQL below is byte-identical to what Python executed, so the
-// seeded rows are the rows `run_skill_eval` writes.
-//
-// ─── WHY THE DB PATH IS A CONSTANT, NOT A `rglob` ─────────────────────────
-// Python's `_db_path` globbed `*.db` / `*.sqlite` under the harness HOME
-// because the layout was an implementation detail of the moment. It is not
-// any more: `src/helpers/db_path.zig:getDbPath` resolves exactly
-// `$HOME/.config/pabrik/agent.db` and its own header records that this is the
-// path on EVERY platform (macOS puts `config.json` under
-// `Library/Application Support`, but the DB stays at `~/.config/pabrik/`).
-// The fixed path is therefore both shorter and MORE correct than the glob.
+// Wire test: the Skill Evals HTTP surface. Zig port of
+// `tests/functional/skill_evals_api_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -56,11 +13,6 @@ const io = testing.io;
 // ============================================================================
 
 /// Exit code for a finished child, or null if a signal stopped it.
-///
-/// `Child.Term` is a tagged union, NOT an optional: `.exited` is a `u8`
-/// field, so `res.term.exited orelse ...` does not compile and a bare
-/// `res.term.exited != 0` would silently read the wrong field on a
-/// signalled run.
 fn exitCode(term: std.process.Child.Term) ?u8 {
     return switch (term) {
         .exited => |c| c,
@@ -69,10 +21,6 @@ fn exitCode(term: std.process.Child.Term) ?u8 {
 }
 
 /// Skip unless a `sqlite3` CLI is present and speaks `-json`.
-///
-/// The probe runs `SELECT 1 AS probe` and checks the output really carries
-/// the column name, so a build whose `sqlite3` predates `-json` (SQLite
-/// 3.33, 2020) is detected here rather than mis-read as "no rows" later.
 fn requireSqlite3Cli() !void {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-json", ":memory:", "SELECT 1 AS probe;" },
@@ -107,22 +55,15 @@ fn sqlLit(s: []const u8) ![]u8 {
     return out.toOwnedSlice();
 }
 
-/// The sqlite file the running binary opened. Owned.
-///
-/// `helpers/db_path.zig` resolves this path on every platform; the harness
-/// points HOME at an isolated tmpdir, so it is always under `h.temp_dir`.
+/// The sqlite file the running binary opened. Owned. `helpers/db_path.zig`
+/// resolves this path on every platform; the harness points HOME at an
+/// isolated tmpdir, so it is always under `h.temp_dir`.
 fn dbPath(temp_dir: []const u8) ![]u8 {
     return harness.harnessPath(gpa, temp_dir, &.{ ".config", "pabrik", "agent.db" });
 }
 
 /// Run the statement(s) in `sql` against the harness DB. Caller frees the
 /// returned stdout.
-///
-/// `.timeout 5000` is the `busy_timeout` the server's WAL connection needs;
-/// a bare CLI invocation would otherwise fail with SQLITE_BUSY. The `sqlite3`
-/// CLI executes every statement in its argument, so a multi-statement seed is
-/// one spawn — which is what makes the INSERT pair atomic enough for the
-/// unique-index interactions the Python `INSERT OR IGNORE` pair relied on.
 fn sqliteRun(db_path: []const u8, sql: []const u8) ![]u8 {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-cmd", ".timeout 5000", db_path, sql },
@@ -147,14 +88,6 @@ fn sqliteRun(db_path: []const u8, sql: []const u8) ![]u8 {
 
 /// Python `_seed_result`: one run row plus one result row, the shape
 /// `run_skill_eval` writes.
-///
-/// Both inserts are `OR IGNORE`, as in Python, and that matters twice over:
-/// re-seeding the same id is idempotent, AND the partial unique index
-/// `uq_skill_eval_runs_self_prompt ON skill_eval_runs(session_id, trigger)
-/// WHERE trigger = 'self_prompt'` means a second run for the same session is
-/// silently dropped while its RESULT row still lands — which is precisely how
-/// `test_summary_is_valid_json_and_tallies_the_seeded_rows` ends up with two
-/// `keep` verdicts from two `_seed_result` calls against one session.
 fn seedResult(h: *Harness, result_id: []const u8, verdict: []const u8) !void {
     try requireSqlite3Cli();
 
@@ -233,10 +166,6 @@ fn strField(o: std.json.ObjectMap, key: []const u8) ![]const u8 {
 }
 
 /// The one-element array at `key`, or a named failure.
-///
-/// Used where the Python asserted on `body["results"][0]` — reaching into the
-/// single element without copying the array out (which a `harness.Json` would
-/// not survive anyway, since it borrows the `Response` body).
 fn firstOf(doc: *const harness.Json, key: []const u8) !std.json.ObjectMap {
     const arr = doc.array(key) orelse {
         std.debug.print("`{s}` is missing or not an array\n", .{key});
@@ -286,10 +215,6 @@ fn bodyHas(body: []const u8, needle: []const u8) bool {
 }
 
 /// Assert a response body is parseable JSON, echoing it on failure.
-///
-/// Python's bare `json.loads(r.body)` raised at the call site; Zig needs the
-/// error surfaced with the body attached or the failure reads as a parse bug
-/// in the harness rather than a wire-contract break.
 fn expectJson(r: *harness.Response) !void {
     var doc = r.json() catch |err| {
         std.debug.print(
@@ -305,11 +230,9 @@ fn expectJson(r: *harness.Response) !void {
 // Test 1: an unmatched filter is an empty 200, not a 404
 // ============================================================================
 
-// A filter that matches nothing is a 200 with empty arrays.
-//
-// Not a 404 and not a 500: `?run_id=` is a filter, and "no rows" is a
-// legitimate answer to a filter. A 404 here would make the frontend show an
-// error for a session that simply has no evals yet.
+// A filter that matches nothing is a 200 with empty arrays. Not a 404 and not
+// a 500: `?run_id=` is a filter, and "no rows" is a legitimate answer to a
+// filter.
 test "runs_returns_valid_json_with_empty_arrays_when_nothing_matches" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -461,10 +384,8 @@ test "runs_rejects_limit_zero_with_400" {
 // Test 5: an oversized limit is clamped, not rejected
 // ============================================================================
 
-// `limit=99999` is clamped to MAX_LIMIT, not rejected.
-//
-// A caller asking for more than we serve gets what we serve; only a malformed
-// value is a 400.
+// `limit=99999` is clamped to MAX_LIMIT, not rejected. A caller asking for
+// more than we serve gets what we serve; only a malformed value is a 400.
 test "runs_clamps_an_oversized_limit_rather_than_erroring" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -571,9 +492,8 @@ test "summary_on_an_empty_table_is_zero_not_an_error" {
 // ============================================================================
 
 // The response must parse even when a stored string contains a quote.
-//
-// `rationale` is free text written by an LLM, so a raw `"` in it is
-// normal input, not an edge case.
+// `rationale` is free text written by an LLM, so a raw `"` in it is normal
+// input, not an edge case.
 test "a_rationale_containing_a_quote_survives_json_encoding" {
     try harness.requirePabrikBin(io, gpa);
 

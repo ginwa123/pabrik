@@ -1,42 +1,12 @@
-//! `GET /api/files/download?session_id=<id>&path=<abs>&disposition=<inline|attachment>`
-//!
+//! `GET
+//! /api/files/download?session_id=<id>&path=<abs>&disposition=<inline|attachment>`
 //! Serves workspace file bytes for the `present_files` agent tool card
-//! (`src/modules/agent/tools/present_files.zig`, rendered by
-//! `PresentFiles.vue`). Cookie-based auth like every other `/api`
-//! route, so plain `<a href>` (download) and `<img src>` (thumbnail
-//! preview) carry credentials with no JS blob dance.
-//!
-//! - `disposition=attachment` (default): `Content-Disposition: attachment;
-//!   filename="<basename>"` — the browser shows a save dialog.
-//! - `disposition=inline`: `Content-Disposition: inline;
-//!   filename="<basename>"` — the browser renders (used for `<img>`
-//!   thumbnails of jpg/png/gif/webp).
-//!
-//! Sandbox: `path` must be absolute and must canonicalize (symlinks +
-//! `..` resolved via `realPathFileAbsoluteAlloc`) to inside the
-//! session's working directory (`git_worktree_cwd` when set, else
-//! `cwd` from the `sessions` row). Violations are 403, missing files
-//! 404, oversized files 413. Same trust story as `read_file` — the
-//! LLM names the path — with cwd-containment as defense in depth so a
-//! confused model can't turn the browser into an arbitrary-file
-//! exfiltration primitive.
-//!
-//! Layered as pure helpers (`parseDisposition`, `mimeForPath`,
-//! `isInsideRoot`, `resolveSessionRoot`) plus a thin handler, mirroring
-//! `background_process_log_get.zig`. The helpers are unit-tested
-//! in-file; the wire round-trip (route order, byte identity,
-//! 403/404/413) is covered by the functional harness
-//! (`tests/functional/agent_present_files_test.py`).
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
 const pabrikcore = @import("pabrikcore");
 const gserverz = pabrikcore.gserverz;
-// The one containment rule, shared with the `present_files` agent tool. The
-// two disagreed once — the tool accepted any absolute path while this
-// handler 403'd anything outside the session working directory — and the
-// result was a rendered card whose every preview / download failed.
-// See docs/plans/2026-09-29-present-files-sandbox-parity.md.
+// The one containment rule, shared with the `present_files` agent tool.
 const file_sandbox = @import("../modules/agent/tools/file_sandbox.zig");
 
 /// Cap mirrors `present_files.zig:MAX_FILE_BYTES` so every presented
@@ -48,10 +18,8 @@ pub const Disposition = enum {
     attachment,
 };
 
-/// Parse the `?disposition=` query value. Absent → attachment (the
-/// safe default: browsers download rather than render). Present but
-/// unknown → error (fail loud so a frontend typo surfaces as 400, not
-/// a silently wrong rendering mode).
+/// Parse the `?disposition=` query value. Absent → attachment (the safe
+/// default: browsers download rather than render).
 pub fn parseDisposition(raw: ?[]const u8) !Disposition {
     const s = raw orelse return .attachment;
     if (std.mem.eql(u8, s, "attachment")) return .attachment;
@@ -91,10 +59,8 @@ const mime_table = [_]MimeEntry{
     .{ .ext = ".mp4", .mime = "video/mp4" },
 };
 
-/// Extension-based mime (case-insensitive ASCII, last `.` after the
-/// final `/`). Unknown → `application/octet-stream` so the browser
-/// downloads instead of sniffing. Mirrors `static_files.zig` +
-/// `present_files.zig:mimeForPath` (duplicated per project convention).
+/// Extension-based mime (case-insensitive ASCII, last `.` after the final
+/// `/`).
 pub fn mimeForPath(path: []const u8) []const u8 {
     var dot_idx: ?usize = null;
     for (path, 0..) |c, i| {
@@ -150,11 +116,8 @@ pub fn filesDownloadHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
             try http_response.makeErrorResponse(allocator, .{ .@"error" = "Path must be absolute" }),
         );
     }
-    // Defense in depth (mirrors `static_files.resolve`): the
-    // canonicalization below is the real protection. Segments only — a
-    // filename may legitimately contain dots (`report..html`), and the
-    // shared helper is what the `present_files` tool checks with, so both
-    // sides of the contract agree on what a traversal is.
+    // Defense in depth (mirrors `static_files.resolve`): the canonicalization
+    // below is the real protection.
     if (file_sandbox.hasParentSegment(path_param)) {
         return gserverz.HttpResponse.init(403, "Forbidden", allocator).withJson(
             try http_response.makeErrorResponse(allocator, .{ .@"error" = "Path traversal rejected" }),
@@ -231,20 +194,14 @@ pub fn filesDownloadHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
     const mime = mimeForPath(canon);
     const basename = std.fs.path.basename(canon);
     // `withHeader` stores the slice by reference (same as `setContentType`
-    // and every `makeErrorResponse` payload in this codebase) — do NOT
-    // free it; it lives in the per-request allocator like all other
-    // handler output. Freeing here is a use-after-free: the header
-    // serializes after we return (caught by the functional wire test
-    // as garbage bytes in Content-Disposition).
+    // and every `makeErrorResponse` payload in this codebase) — do NOT free
+    // it; it lives in the per-request allocator like all other handler
     const disp_value = switch (disposition) {
         .attachment => try std.fmt.allocPrint(allocator, "attachment; filename=\"{s}\"", .{basename}),
         .inline_preview => try std.fmt.allocPrint(allocator, "inline; filename=\"{s}\"", .{basename}),
     };
 
-    // `withBody` sets Content-Length; `setContentType` sets
-    // Content-Type. No `Cache-Control: no-store` on inline (thumbnails
-    // re-render on every history revisit otherwise); attachment
-    // responses are one-shot downloads.
+    // `withBody` sets Content-Length; `setContentType` sets Content-Type.
     var resp = gserverz.HttpResponse.init(200, "OK", allocator).withBody(bytes).setContentType(mime).withHeader(
         "Content-Disposition",
         disp_value,

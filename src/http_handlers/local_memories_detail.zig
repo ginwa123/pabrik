@@ -1,25 +1,5 @@
 //! `GET /api/local-memories/:name?cwd=...` — read a local memory file's
 //! content + metadata.
-//!
-//! On success: 200 with `{"memory":{"name","title","path","size","content"}}`.
-//!
-//! Layered as:
-//!   - `useCase` — validates `:name`, resolves the local memories dir
-//!     (query `cwd` first, then io fallback), reads the file, re-lists
-//!     to derive `title/path/size`, returns a heap-owned
-//!     `LocalMemoryDetailPayload`.
-//!   - `localMemoryDetailHandler` — thin orchestrator: extracts the
-//!     `:name` path param + `?cwd=` query, calls `useCase`, maps
-//!     errors to status codes, builds the JSON response.
-//!
-//! Preserves the static-contract assertions in `local_memories_crud_test.zig`:
-//!   - `get_local_memories_path_for_dir` + `get_local_memories_path_from_io`
-//!     substring checks
-//!   - `params.get("name")` + `400` substring checks
-//!   - `readLocalMemoryFile` + `listMemoriesInDir` + `404` substring checks
-//!   - `isValidMemoryName` validation
-//!   - `std.json.Stringify.valueAlloc` + `content` substring checks
-//!   - `500` + `no cwd available` substring checks
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -27,11 +7,9 @@ const gserverz = pabrikcore.gserverz;
 const memories_mod = pabrikcore.memories;
 const http_response = @import("http_response.zig");
 
-/// Response payload for `GET /api/local-memories/:name`.
-///
-/// `content` is JSON-escaped automatically by
-/// `std.json.Stringify.valueAlloc` — do not hand-roll JSON for the
-/// body.
+/// Response payload for `GET /api/local-memories/:name`. `content` is
+/// JSON-escaped automatically by `std.json.Stringify.valueAlloc` — do not
+/// hand-roll JSON for the body.
 pub const LocalMemoryDetailPayload = struct {
     name: []const u8,
     title: []const u8,
@@ -63,10 +41,7 @@ pub const LocalMemoryDetailInput = struct {
     cwd: []const u8,
 };
 
-/// Output of the detail use-case. Slice fields are HEAP-OWNED by the
-/// use-case (duplicated from `listMemoriesInDir` + `readLocalMemoryFile`
-/// so they survive the internal `freeMemoriesList` /
-/// `allocator.free(content)` defers).
+/// Output of the detail use-case.
 pub const LocalMemoryDetailOutput = struct {
     payload: LocalMemoryDetailPayload,
 };
@@ -75,16 +50,8 @@ pub const LocalMemoryDetailOutput = struct {
 // Use case
 // =====================================================================
 
-/// Read a local memory file's content and metadata.
-///
-/// Steps:
-///   1. Validate `name` (non-empty + `isValidMemoryName`).
-///   2. Resolve the local memories dir (query `cwd` → io fallback).
-///   3. Read the file via `readLocalMemoryFile`. File not found → 404.
-///   4. Re-list via `listMemoriesInDir` to derive `title/path/size`.
-///   5. Locate the entry by name. Missing → 404 (defensive).
-///   6. Duplicate the matched slices so the output survives internal
-///      `free` defers.
+/// Read a local memory file's content and metadata. Steps: 1. Validate `name`
+/// (non-empty + `isValidMemoryName`). 2.
 fn useCase(
     allocator: std.mem.Allocator,
     io: std.Io,

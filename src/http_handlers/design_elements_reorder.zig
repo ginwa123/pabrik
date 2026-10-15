@@ -1,24 +1,6 @@
-//! `POST /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/reorder`.
-//!
-//! Reorder 1+ elements on a page along the z-axis. The 4 modes:
-//!   - `bring_to_front`: selected ids jump above all non-selected
-//!     elements in the user-specified input order.
-//!   - `send_to_back`: mirror of bring_to_front.
-//!   - `bring_forward`: each selected swaps with its next non-selected
-//!     sibling above (multi-selection moves up by one slot).
-//!   - `send_backward`: mirror of bring_forward.
-//!
-//! Body: `{ mode: "bring_to_front"|"send_to_back"|"bring_forward"|"send_backward",
-//!          element_ids: ["elem_a", "elem_b"] }`.
-//!
-//! Response 200: `{ reordered: <DesignElementResponse>[] }` (top-to-bottom).
-//!
-//! Errors:
-//!   - 400 BadMode, NoElementIds, EmptyElementIds, BadElementId
-//!   - 404 PageNotFound
-//!   - 500 DbError, OutOfMemory
-//!
-//! Plan: docs/superpowers/plans/2026-07-29-design-right-click-group-menu.md (Chunk 5)
+//! `POST
+//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/reorder`.
+//! Reorder 1+ elements on a page along the z-axis.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -53,10 +35,9 @@ pub const DesignElementsReorderError = error{
     OutOfMemory,
 };
 
-/// Map a `design_model.ReorderMode` enum variant to its lowercase
-/// string form. The wire side (`parsed.mode`) is the string; the
-/// model side wants the enum. `std.meta.stringToEnum` does the
-/// inverse.
+/// Map a `design_model.ReorderMode` enum variant to its lowercase string
+/// form. The wire side (`parsed.mode`) is the string; the model side wants
+/// the enum. `std.meta.stringToEnum` does the inverse.
 fn modeFromString(s: []const u8) ?design_model.ReorderMode {
     return std.meta.stringToEnum(design_model.ReorderMode, s);
 }
@@ -181,12 +162,9 @@ pub fn designElementsReorderHandler(
     });
 }
 
-// ===== Tests merged from design_elements_reorder_test.zig (2026-09-11 flatten) =====
-// Behavioural tests for the `POST .../elements/reorder` HTTP
-// handler. Covers the body-validation contract + the success path
-// (real DB round-trip on an in-memory DB).
-// 
-// Plan: docs/superpowers/plans/2026-07-29-design-right-click-group-menu.md (Chunk 5)
+// ===== Tests merged from design_elements_reorder_test.zig (2026-09-11
+// flatten) ===== Behavioural tests for the `POST .../elements/reorder` HTTP
+// handler.
 
 const testing = std.testing;
 const sqlite = pabrikcore.sqlite;
@@ -300,15 +278,9 @@ test "reorderElements bring_to_front puts selected ids at the top in input order
         s.alloc.free(result);
     }
 
-    // After bring_to_front [a, c]: a gets z=3 (top, since c had z=2
-    // already and is first in input order... wait, this is bring_to_front,
-    // not preserve-input-order. Let me re-check the model logic.)
-    //
-    // Per the model:
-    //   max_z = 2 (c)
-    //   next_z = 3
-    //   for [a, c]: a.z = 3, next_z = 4; c.z = 4, next_z = 5.
-    // So a(z=3), c(z=4), b(z=1 unchanged).
+    // After bring_to_front [a, c]: a gets z=3 (top, since c had z=2 already
+    // and is first in input order... wait, this is bring_to_front, not
+    // preserve-input-order.
     try testing.expectEqual(@as(?i64, 3), try readZ(s.alloc, &s.db, "a"));
     try testing.expectEqual(@as(?i64, 4), try readZ(s.alloc, &s.db, "c"));
     try testing.expectEqual(@as(?i64, 1), try readZ(s.alloc, &s.db, "b"));
@@ -337,12 +309,8 @@ test "reorderElements bring_forward swaps the selected element with the next sib
     try testing.expectEqual(@as(?i64, 1), try readZ(s.alloc, &s.db, "c"));
 }
 
-// Note: "page not found" detection at the model layer is brittle
-// (the current implementation collapses missing-page into a generic
-// error). The HTTP handler additionally validates `page_id` from
-// path params and returns 400 PageIdRequired if empty. Adding a
-// dedicated PageNotFound test requires a pre-flight SELECT for
-// page existence; deferred to a follow-up.
+// Note: "page not found" detection at the model layer is brittle (the current
+// implementation collapses missing-page into a generic error).
 
 test "reorderElements returns BadElementId when an id does not resolve on the page" {
     var s = try setupDb();

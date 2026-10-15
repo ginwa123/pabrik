@@ -1,17 +1,6 @@
-//! Builds the `## Kanban System Prompt` system-prompt section for
-//! sessions bound to a kanban workspace-item WITH an `agent_kanbans`
-//! row (Migration 081).
-//!
-//! Mirrors `prompts_make_agent_system_prompt.zig` but reads from the
-//! `agent_kanban_system_prompt` table (keyed by kanban_id) and only
-//! fires when:
-//!   - the session's workspace_item is of type 'kanban', AND
-//!   - an `agent_kanbans` row exists for it (opt-in config)
-//!
-//! Unconfigured boards are completely unaffected — returns "".
-//!
-//! Plan: docs/superpowers/plans/2026-08-25-agent-kanbans-mirror.md
-//! Task: task_1787597624259_2
+//! Builds the `## Kanban System Prompt` system-prompt section for sessions
+//! bound to a kanban workspace-item WITH an `agent_kanbans` row (Migration
+//! 081).
 
 const std = @import("std");
 const sqlite = @import("pabrikcore").sqlite;

@@ -1,15 +1,5 @@
-//! `DELETE /api/agents/:agent_id/knowledge/:knowledge_id`.
-//! Removes a knowledge entry. Returns `{ok: true}` on success, 404 if not found.
-//!
-//! Layered as:
-//!   - `useCase` — business logic (validate params → DELETE row).
-//!   - `agentKnowledgeDeleteHandler` — thin orchestrator over
-//!     `useCase`: parses the path params, resolves the singleton DB
-//!     handle, delegates to `useCase`, maps the use-case outcome to
-//!     an HTTP response.
-//!
-//! Memory: the per-request arena reaps all allocations at request
-//! end, so neither layer needs explicit `free`s.
+//! `DELETE /api/agents/:agent_id/knowledge/:knowledge_id`. Removes a
+//! knowledge entry. Returns `{ok: true}` on success, 404 if not found.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -17,11 +7,7 @@ const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const agent_db = @import("../models/agent.db.zig");
 
-/// Domain-level error set for `useCase`. The handler maps each
-/// variant to an HTTP status code + message via two exhaustive
-/// switches (intentional — adding a new variant fails to compile in
-/// the handler until both switches are updated, keeping status
-/// codes in lockstep with the error set).
+/// Domain-level error set for `useCase`.
 pub const KnowledgeDeleteError = error{
     /// `agent_id` or `knowledge_id` path param was missing or empty.
     IdsRequired,
@@ -39,10 +25,7 @@ pub const KnowledgeDeleteInput = struct {
 // Use case
 // =====================================================================
 
-/// Delete a knowledge row for the given agent. The use-case is
-/// transport-agnostic: it works for both the per-request arena
-/// (production HTTP handler) and `testing.allocator` (unit tests
-/// below) — all allocations go through the passed-in allocator.
+/// Delete a knowledge row for the given agent.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -99,14 +82,8 @@ pub fn agentKnowledgeDeleteHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-//
-// impl + tests in one file (project convention for Agent Mode).
-// 3 behavioural tests cover the same contracts as the use-case would
-// be exercised under HTTP:
-//
-//   1. Validation: empty agent_id OR knowledge_id → IdsRequired
-//   2. Happy path: a matching row is removed
-//   3. Idempotency: a non-existent knowledge_id doesn't error
+// impl + tests in one file (project convention for Agent Mode). 3 behavioural
+// tests cover the same contracts as the use-case would be exercised under
 
 const sqlite = @import("pabrikcore").sqlite;
 const testing = std.testing;
@@ -126,13 +103,7 @@ fn setupDb() !TestCtx {
     try db.init(io, ":memory:");
 
     // Migration 076 (Agent Mode) only creates the `agents`,
-    // `agent_knowledge`, `agent_tools` tables. The `workspace_items`
-    // table it references is the FULL version (with name / path /
-    // position / timestamps) — Migration 001 only has id /
-    // workspace_id / item_type, so we re-create the full shape here
-    // matching what migrations 003–018 add cumulatively. The test
-    // only needs `id` and `item_type` to be enforced as NOT NULL;
-    // everything else is `null` OK.
+    // `agent_knowledge`, `agent_tools` tables.
     try db.exec(testing.allocator,
         "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT NOT NULL, name TEXT, path TEXT, position INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
         &[_][]const u8{},

@@ -8,32 +8,6 @@ const helpers = @import("helpers");
 const parse_thinking = @import("parse_thinking.zig");
 
 /// Skill Evals — the agent evaluates the skills it actually used.
-///
-/// **Default OFF.** `enabled` is the MASTER SWITCH and it is deliberately the
-/// first field: with it false the feature does not exist for this user — the
-/// `run_skill_eval` tool is never injected into the tool list, the prompt rule
-/// self-gates on that absence, and the HTTP surface stays inert. Nothing is
-/// spent and no eval can start until the user opts in.
-///
-/// Why a flag rather than just "the tool is absent by default": the tool list
-/// is seeded per workspace item at creation time, so an existing install would
-/// otherwise never see the feature appear (or disappear) when the user changes
-/// their mind. A config flag is the single place the user flips it.
-///
-/// Why gating TOOL AVAILABILITY is the right lever rather than editing the
-/// prompt text: the static rule block is appended unconditionally so it stays
-/// byte-identical across agents and remains one cache hit rather than N
-/// fragments (see the comment in
-/// `agentic_loop/prompts_build_messages_for_agent_prompt.zig`). Making the
-/// rule *word* itself conditional on config would break that property for
-/// every agent; making the *tool* conditional costs nothing.
-///
-/// Every field is a primitive or an enum on purpose — no owned strings — so
-/// this struct needs no allocation, no dupe, and no deinit participation.
-/// `judge_sub_agent` / `judge_profile` are therefore not here yet: v1 works
-/// with zero configuration (a missing sub-agent name already falls back to the
-/// existing random-fallback path), and they can be added when the judge
-/// sub-agent work lands.
 pub const SkillEvalsConfig = struct {
     /// Master switch. False = the feature is off and cannot spend anything.
     enabled: bool = false,
@@ -57,19 +31,9 @@ pub const SkillEvalsConfig = struct {
     pub const ApplyMode = enum { off, propose, auto_low_risk };
 };
 
-/// Tolerant JSON mirror of `SkillEvalsConfig`.
-///
-/// A separate type from the runtime one for the same reason `ProfileJson` is
-/// separate from `LlmProfile`: the JSON side must survive a user typo.
-/// `apply_mode` is therefore a nullable *string* rather than the enum — an
-/// unrecognised value degrades to `propose` instead of failing the whole
-/// `config.json` parse. That matches how the sub-agent `thinking` /
-/// `temperature` fields behave, where garbage degrades to the default rather
-/// than making the user's config unloadable.
-///
-/// Declared at file scope rather than nested inside `LlmConfigJson` because
-/// Zig requires every struct field to precede any declaration, and the field
-/// that uses this type sits in the middle of that struct.
+/// Tolerant JSON mirror of `SkillEvalsConfig`. A separate type from the
+/// runtime one for the same reason `ProfileJson` is separate from
+/// `LlmProfile`: the JSON side must survive a user typo.
 pub const SkillEvalsJson = struct {
     enabled: bool = false,
     max_skills_per_run: u32 = 8,
@@ -80,12 +44,6 @@ pub const SkillEvalsJson = struct {
 };
 
 /// Map the tolerant `config.json` string to the runtime enum.
-///
-/// Absent or unrecognised yields `.propose` — the safe default, where a verdict
-/// is recorded and surfaced but nothing is written to a skill without a human
-/// clicking Apply. Typo-tolerant on purpose: a bad value must never make the
-/// user's `config.json` unloadable, which is exactly what declaring this field
-/// as an enum on the JSON side would do.
 fn parseApplyMode(raw: ?[]const u8) SkillEvalsConfig.ApplyMode {
     const s = raw orelse return .propose;
     if (std.mem.eql(u8, s, "off")) return .off;
@@ -94,13 +52,6 @@ fn parseApplyMode(raw: ?[]const u8) SkillEvalsConfig.ApplyMode {
 }
 
 /// Map the wire block onto the runtime struct.
-///
-/// Single source of truth for the mapping, so the two paths that can produce
-/// a `SkillEvalsConfig` cannot drift apart on defaults: `LlmConfig.init` here,
-/// and the per-session resolution the agent loop does under `--auth` (where the
-/// singleton never sees the user's saved file). Everything is by value — the
-/// one borrowed field, `apply_mode`, becomes an enum — so the result outlives
-/// the parsed document.
 pub fn skillEvalsFromJson(wire: SkillEvalsJson) SkillEvalsConfig {
     return .{
         .enabled = wire.enabled,
@@ -122,8 +73,6 @@ pub const LlmConfig = struct {
     mcpServers_parsed: ?json.Parsed(json.Value),
     /// Typed map of MCP servers. Keys are server names, values are owned
     /// `McpServerConfig` (with their own owned `url` and `headers`).
-    /// Populated from the same JSON object as `mcpServers_parsed` so that
-    /// both representations stay in sync.
     mcp_servers: McpServersMap,
     /// Parsed profiles from profiles_models
     profiles_models: ProfilesMap,
@@ -131,93 +80,43 @@ pub const LlmConfig = struct {
     /// with its own owned strings.
     sub_agents: SubAgentsList,
     url_style: []const u8,
-    /// When true, fire an OS-level notification when an LLM response
-    /// finishes with `finish_reason === 'stop'`. Off by default — the
-    /// user opts in via the config. Notifications are dispatched from
-    /// the backend (notify-send / osascript / PowerShell) so they work
-    /// even when the desktop app's browser is closed.
+    /// When true, fire an OS-level notification when an LLM response finishes
+    /// with `finish_reason === 'stop'`. Off by default — the user opts in via
+    /// the config.
     notify_on_complete: bool = true,
-    /// When true, fire an OS-level notification when the LLM workflow
-    /// hits a transport error, retries exhaust (TooManyRetries), or
-    /// the outer agentic loop catches an unrecoverable error. Mirrors
-    /// `notify_on_complete` (off by default — the user opts in).
-    /// Fired from `workflow.zig` at three sites: (1) the
-    /// `callDynamicAgentNew` catch, (2) the TooManyRetries hard bail,
-    /// (3) the outer `runAgenticMultiStepnew` catch. Body is the
-    /// captured `reason_error` + server detail, truncated to 200 chars.
+    /// When true, fire an OS-level notification when the LLM workflow hits a
+    /// transport error, retries exhaust (TooManyRetries), or the outer
+    /// agentic loop catches an unrecoverable error.
     notify_on_error: bool = false,
     /// When true, browser mode is on: the same UI served to the desktop
-    /// webview is advertised for the user's system browser on a random
-    /// local port (settings General tab shows the URL + auto-opens it).
-    /// Off by default — the user opts in. Lifecycle A (plan
-    /// 2026-09-10-web-launch-toggle): the flag only drives the UI + the
-    /// startup port default (random when on); the server keeps running
-    /// when the flag is off. Mirrors `notify_on_complete` pattern.
+    /// webview is advertised for the user's system browser on a random local
+    /// port (settings General tab shows the URL + auto-opens it).
     web_launch_enabled: bool = false,
     /// Skill Evals — the agent evaluates the skills it actually used. Off by
     /// default; see `SkillEvalsConfig` for the switch and the reasoning.
     skill_evals: SkillEvalsConfig = .{},
     /// Delay in milliseconds that the workflow sleeps before retrying a
-    /// failed `callDynamicAgentNew` call. 0 = no delay (current behavior,
-    /// the retry fires immediately on the next loop iteration). Upper
-    /// bound is 60 000 ms (1 min) — beyond that, the user should cancel
-    /// and start a new session. Range-validated at the HTTP layer.
-    /// Plan 2026-07-15-retry-delay.
+    /// failed `callDynamicAgentNew` call. 0 = no delay (current behavior, the
+    /// retry fires immediately on the next loop iteration).
     retry_delay_ms: u32 = 0,
     /// Optional top-level override for the context window (in tokens).
-    /// `null` = fall through to the per-profile override
-    /// (`LlmProfile.max_capacity_tokens`), then to the built-in
-    /// `LLMModels.getModelTokenCount(model)` default. Restored in
-    /// plan 2026-07-07-compaction-inline (the user wants defaults
-    /// visible in the Defaults tab, not only in a separate Compaction
-    /// tab). See `maxCapacityForModel` for the cascade order.
     max_capacity_token_model: ?u32 = null,
-    /// Optional top-level compaction threshold as a percentage (0-100)
-    /// of the model's context window. `null` = fall through to the
-    /// per-profile override (`LlmProfile.compaction_threshold_percent`),
-    /// then to the built-in default of 80. Range-validated at the
-    /// HTTP layer (see `error.InvalidThresholdPercent`).
+    /// Optional top-level compaction threshold as a percentage (0-100) of the
+    /// model's context window.
     compaction_threshold_percent: ?u8 = null,
-    /// Plan 2026-08-06-set-active-profile-default — optional name of
-    /// a profile in `profiles_models` that the workflow uses as the
-    /// default when neither the session's `selected_profile_model`
-    /// nor the POST body's `selected_profile_model` is set. Set by
-    /// the user via PabrikSettings → "Set as active profile"; falls
-    /// through to top-level config when the named profile is missing
-    /// or when the field itself is `null`. Empty string is normalized
-    /// to `null` on load (the PUT handler also coerces `""` → null).
+    /// Plan 2026-08-06-set-active-profile-default — optional name of a
+    /// profile in `profiles_models` that the workflow uses as the default
+    /// when neither the session's `selected_profile_model` nor the POST
     active_profile: ?[]const u8 = null,
-    /// Owned slice of random sub-agent names that `resolveSubAgent`
-    /// generated for the random-fallback case. Each name is allocated
-    /// on `self.allocator` and is freed in `deinit`. Slices in the
-    /// `ResolvedSubAgent` returned by `resolveSubAgent` borrow from
-    /// this slice — callers MUST use them only while `self` is alive
-    /// (which is always the case in production because `LlmConfig`
-    /// lives in the singleton).
+    /// Owned slice of random sub-agent names that `resolveSubAgent` generated
+    /// for the random-fallback case. Each name is allocated on
+    /// `self.allocator` and is freed in `deinit`.
     random_names: [][]u8 = &.{},
     /// Default tool checklist from config.json (plan
-    /// 2026-09-22-tools-menu-config-default-tools). `null` = key absent
-    /// = legacy per-mode defaults; `[]` = explicitly zero tools;
-    /// non-empty = the default list. Owned: each name is duped in
-    /// `init`/`clone` and freed by `freeToolsList` in `deinit`. Read by
-    /// the creation-time seeds (`tools_equipped.seedDefault*`) and the
-    /// workflow's config-default override.
+    /// 2026-09-22-tools-menu-config-default-tools).
     tools: ?[]const []const u8 = null,
     /// User-configured web-search providers, keyed by the provider name the
-    /// agent passes as the `provider` tool argument. Owned: the map owns its
-    /// keys and each entry's strings; freed in `deinit`.
-    ///
-    /// `null` is the honest representation of "the `web_search` key is
-    /// absent from config.json" and is the same thing to every reader: no
-    /// providers configured. It is optional rather than an always-present
-    /// map so that adding this key does not force a `.web_search = …` line
-    /// into every one of the 13 existing `LlmConfig{}` literals across 8
-    /// unrelated files (the same reason `tools` is optional).
-    ///
-    /// Read through `agentic_loop/web_search_config.zig`'s per-session
-    /// `resolve`, NOT through `ToolExecContext.config` — in `--auth` mode
-    /// the singleton that `ctx.config` points at never sees what the user
-    /// saved, because the config PUT returns early without swapping it.
+    /// agent passes as the `provider` tool argument.
     web_search: ?WebSearchProvidersMap = null,
 
     pub const LoadError = error{
@@ -229,16 +128,9 @@ pub const LlmConfig = struct {
         HomeNotFound,
         ConfigDirNotFound,
         /// `compaction_threshold_percent` outside the 0..100 range.
-        /// Surfaced by the HTTP PUT handler at the validation gate
-        /// (validates both `LlmProfile.compaction_threshold_percent`
-        /// and `SubAgentConfig.compaction_threshold_percent`).
         InvalidThresholdPercent,
         /// `thinking_budget_tokens` outside the (0, 2_000_000] range.
         /// Surfaced by the HTTP PUT handler (plan 2026-08-23-model-thinking).
-        /// The Anthropic API rejects budgets that violate the 1024 floor
-        /// and the strict-less-than-max_tokens ceiling; we pre-clamp at the
-        /// request-build site, so the only way a bad value reaches here is
-        /// a hand-edited config or a malformed PUT body.
         InvalidThinkingBudgetTokens,
         /// `reasoning_effort` outside the {low, medium, high, auto} set.
         /// Surfaced by the HTTP PUT handler via the `parse_thinking`
@@ -248,10 +140,6 @@ pub const LlmConfig = struct {
 
     /// Canonical `backend` values — the transport discriminator, orthogonal
     /// to `url_style` (which describes HTTP wire format only).
-    ///
-    /// The names live here, in the lower layer, so `agentic_loop/claude_code.zig`
-    /// references them instead of re-typing string literals that could drift
-    /// out of sync with the config parser.
     pub const Backend = struct {
         /// POST to `base_url` using the profile's `url_style`. The default
         /// for every config that does not name a backend.
@@ -265,13 +153,6 @@ pub const LlmConfig = struct {
     };
 
     /// Individual profile settings.
-    ///
-    /// The compaction-related fields (`max_capacity_tokens`,
-    /// `compaction_threshold_percent`) cascade down to sub-agents in
-    /// the same profile via `resolveCompactionSettings`. Use them when
-    /// a profile uses a self-hosted model with a different context
-    /// window, or when a profile wants a different compaction aggressiveness
-    /// (e.g. dev profile compacts at 50%, prod profile at 90%).
     pub const LlmProfile = struct {
         model: []const u8 = "",
         base_url: []const u8 = "",
@@ -280,23 +161,10 @@ pub const LlmConfig = struct {
         api_key: []const u8 = "",
         url_style: []const u8 = "openai",
         /// Transport discriminator — `""` (unset → resolves to `"http"`) or
-        /// `"claude-code"`. See `Backend` for why this is orthogonal to
-        /// `url_style` rather than a fourth `url_style` value.
-        ///
-        /// The EMPTY default is deliberate and load-bearing: `addProfile`
-        /// owns a duped copy, and `freeProfilesMap` frees only a non-empty
-        /// value. A producer that constructs `LlmProfile{}` without setting
-        /// this therefore stores a literal, which is never freed — whereas
-        /// defaulting to the `"http"` literal would make that same producer
-        /// hand a non-heap pointer to `free`. The transport is resolved
-        /// through `resolveEffectiveProfile`/`effectiveBackend`, both of
-        /// which treat `""` as `"http"`.
+        /// `"claude-code"`.
         backend: []const u8 = "",
         /// Claude Code only: the directory the `claude` CLI reads its
-        /// credentials/config from (`CLAUDE_CONFIG_DIR`). Lets two
-        /// profiles keep two DIFFERENT subscription logins side by side,
-        /// which is how per-profile identity works when there is no API
-        /// key. `null` = the CLI default (`~/.claude`).
+        /// credentials/config from (`CLAUDE_CONFIG_DIR`).
         config_dir: ?[]const u8 = null,
         /// Claude Code only: agentic turn ceiling passed as
         /// `--max-turns`. `null` = the CLI's own default.
@@ -304,45 +172,33 @@ pub const LlmConfig = struct {
         /// OpenCode only: which of the CLI's agents runs the turn
         /// (`--agent`). `null` = the CLI's default agent.
         opencode_agent: ?[]const u8 = null,
-        /// OpenCode only: whether to pass `--auto`. `null` = on (the
-        /// headless default); `false` = off. Stored as an optional so the
-        /// absent key costs no allocation and `freeProfilesMap` stays
-        /// balanced.
+        /// OpenCode only: whether to pass `--auto`. `null` = on (the headless
+        /// default); `false` = off. Stored as an optional so the absent key
+        /// costs no allocation and `freeProfilesMap` stays balanced.
         opencode_auto: ?bool = null,
         /// Per-profile sub-agents. Owned `[]SubAgentConfig` (default empty).
         /// Each entry's strings are allocated with the parent `LlmConfig.allocator`.
         sub_agents: SubAgentsList = &.{},
-        /// Optional override for the context window (in tokens) used
-        /// by this profile. `null` = use `LLMModels.getModelTokenCount(model)`
-        /// built-in default. Set this when using a self-hosted model with
-        /// a non-standard context window, or to under-provision for cost.
+        /// Optional override for the context window (in tokens) used by this
+        /// profile.
         max_capacity_tokens: ?u32 = null,
         /// Compaction threshold as a percentage (0-100) of the model's
         /// context window. `null` = use the built-in 80. Values > 100
         /// are rejected by the HTTP layer with `error.InvalidThresholdPercent`.
         compaction_threshold_percent: ?u8 = null,
-        /// Anthropic-only: override for `thinking.budget_tokens`. When
-        /// set, used directly by `buildJsonAnthropicRequest` (clamped
-        /// to >=1024 and <max_tokens). When null AND `thinking == "on"`,
-        /// the agent falls back to the 50%-of-max heuristic; when
-        /// `thinking == "auto"`, the agent emits Anthropic's
-        /// `type: "adaptive"` mode and lets the model pick its own
-        /// budget (Sonnet 4.5+ recommendation). OpenAI-style URLs
-        /// ignore this field — they use `reasoning_effort` instead.
+        /// Anthropic-only: override for `thinking.budget_tokens`. When set,
+        /// used directly by `buildJsonAnthropicRequest` (clamped to >=1024
+        /// and <max_tokens).
         thinking_budget_tokens: ?u32 = null,
-        /// OpenAI-style reasoning effort (o1 / o3 / GPT-5 / DeepSeek-R1).
-        /// One of "low" | "medium" | "high" | "auto". Validated by
-        /// `parse_thinking.parseReasoningEffort`. `null` = omit from
-        /// the request body (model-default reasoning). Anthropic-style
-        /// URLs ignore this field entirely.
+        /// OpenAI-style reasoning effort (o1 / o3 / GPT-5 / DeepSeek-R1). One
+        /// of "low" | "medium" | "high" | "auto". Validated by
+        /// `parse_thinking.parseReasoningEffort`.
         reasoning_effort: ?[]const u8 = null,
     };
 
     /// Typed configuration for a single sub-agent. Mirrors `LlmProfile`
-    /// fields plus an additional `system_prompt` and two
-    /// compaction-related overrides that cascade over the parent
-    /// profile. All strings are owned slices (allocated with the parent
-    /// `LlmConfig.allocator`).
+    /// fields plus an additional `system_prompt` and two compaction-related
+    /// overrides that cascade over the parent profile.
     pub const SubAgentConfig = struct {
         name: []const u8,
         model: []const u8,
@@ -389,25 +245,7 @@ pub const LlmConfig = struct {
     /// string fields are individually allocated on the same allocator.
     pub const SubAgentsList = []SubAgentConfig;
 
-    /// Resolved sub-agent configuration — the output of
-    /// `resolveSubAgent`. Carries the sub-agent's name, the resolved
-    /// LLM endpoint fields, the strongly-typed `thinking` /
-    /// `temperature`, and the system prompt to inject.
-    ///
-    /// All `[]const u8` string fields in the LLM block (model, base_url,
-    /// api_key, url_style) are **already overlaid** on the
-    /// orchestrator's defaults — an empty field in the matched
-    /// `SubAgentConfig` falls through to the orchestrator's value, so
-    /// the caller can use these slices directly.
-    ///
-    /// `is_thinking` and `temperature` are `?bool` / `?f32` (not
-    /// strings) so the workflow can use them without parsing.
-    /// `null` means "auto — inherit from parent's value at run time".
-    ///
-    /// `name` is either the matched `SubAgentConfig.name` (when found)
-    /// or a generated random name of the form
-    /// `"agent-{randomhex}"` (when not found and the caller did
-    /// opt in). `is_random_fallback` distinguishes the two.
+    /// Resolved sub-agent configuration — the output of `resolveSubAgent`.
     pub const ResolvedSubAgent = struct {
         /// Name to record as `agent_name` for the sub-agent's session
         /// and to embed in the session_id suffix.
@@ -427,10 +265,7 @@ pub const LlmConfig = struct {
         api_key: []const u8,
         url_style: []const u8,
 
-        /// Resolved transport — `"http"` | `"claude-code"`. Unlike the
-        /// other string fields this is never empty: an unset sub-agent
-        /// `backend` inherits the orchestrator's, and the orchestrator's
-        /// is always one of the two known values.
+        /// Resolved transport — `"http"` | `"claude-code"`.
         backend: []const u8,
 
         /// Claude Code only: resolved `CLAUDE_CONFIG_DIR` (`null` =
@@ -470,10 +305,8 @@ pub const LlmConfig = struct {
         /// random-fallback case.
         system_prompt: []const u8,
 
-        /// Which sub_agents list supplied this config: the profile
-        /// name (e.g. `"profile1"`) or `""` for top-level. Useful
-        /// for logging "loaded from profile1's sub_agents" vs
-        /// "top-level". Empty for the random-fallback case.
+        /// Which sub_agents list supplied this config: the profile name (e.g.
+        /// `"profile1"`) or `""` for top-level.
         source: []const u8,
     };
 
@@ -495,10 +328,7 @@ pub const LlmConfig = struct {
         opencode_agent: ?[]const u8 = null,
         /// OpenCode only: `--auto`. Null = on (the headless default).
         opencode_auto: ?bool = null,
-        /// Per-profile sub-agents (typed — defaults to absent). Each entry
-        /// is parsed via the existing `SubAgentJson` struct, so unknown
-        /// fields are silently ignored and missing fields fall back to
-        /// the documented defaults.
+        /// Per-profile sub-agents (typed — defaults to absent).
         sub_agents: ?[]SubAgentJson = null,
         /// Optional per-profile override for the context window (in tokens).
         /// Null = use LLMModels built-in per-model default.
@@ -528,16 +358,12 @@ pub const LlmConfig = struct {
         notify_on_complete: bool = false,
         /// Opt-in: fire an OS notification when the LLM workflow hits an
         /// error (transport failure, TooManyRetries, outer catch). Default
-        /// false. Mirrors `notify_on_complete`; default off so a brand-new
-        /// install is silent on errors too.
+        /// false.
         notify_on_error: bool = false,
         /// Opt-in: allow the agent to launch URLs in the user's web
         /// browser. Default false. Mirrors `notify_on_complete`.
         web_launch_enabled: bool = false,
-        /// Skill Evals. Absent from `config.json` entirely = disabled, which
-        /// is the shipped default — so an existing install that never heard of
-        /// this feature parses to `enabled: false` and behaves exactly as it
-        /// did before. See `SkillEvalsConfig`.
+        /// Skill Evals.
         skill_evals: SkillEvalsJson = .{},
         /// Delay in milliseconds before retrying a failed workflow call.
         /// See `LlmConfig.retry_delay_ms` for semantics. Plan
@@ -549,13 +375,8 @@ pub const LlmConfig = struct {
         /// Optional top-level compaction threshold as a percentage (0-100).
         /// Null = fall through to per-profile override, then 80.
         compaction_threshold_percent: ?u8 = null,
-        /// Plan 2026-08-06-set-active-profile-default — name of the
-        /// profile to use as the default when no other selection is
-        /// set. Round-tripped as a top-level config key so the
-        /// PabrikSettings "Set as active profile" UI persists across
-        /// reloads. The PUT handler in `pabrik_config_put.zig` coerces
-        /// empty string → null so a manual JSON edit of `""` is
-        /// equivalent to deleting the key.
+        /// Plan 2026-08-06-set-active-profile-default — name of the profile
+        /// to use as the default when no other selection is set.
         active_profile: ?[]const u8 = null,
         /// Configured MCP servers (snake_case, matches PABRIK.md JSON convention).
         mcp_servers: ?std.json.Value = null,
@@ -566,14 +387,9 @@ pub const LlmConfig = struct {
         sub_agents: ?std.json.Value = null,
         /// Stable per-install UUID used as the LLM-API end-user identifier.
         /// Empty string when missing from the parsed JSON (legacy configs).
-        /// `LlmConfig.init` auto-migrates empty values by generating a fresh
-        /// UUID and rewriting the config file atomically.
         user_identifier: []const u8 = "",
-        /// Default tool checklist (plan 2026-09-22-tools-menu-config-default-tools).
-        /// Absent/null = built-in per-mode defaults (legacy behavior);
-        /// `[]` = explicitly zero tools; non-empty = the default list.
-        /// Typed so a hand-edited non-array value fails whole-config parse
-        /// (same failure mode as the other typed fields).
+        /// Default tool checklist (plan
+        /// 2026-09-22-tools-menu-config-default-tools).
         tools: ?[]const []const u8 = null,
         /// Configured web-search providers (snake_case). Raw JSON value
         /// parsed into the typed `WebSearchProvidersMap`; the map owns the
@@ -582,10 +398,8 @@ pub const LlmConfig = struct {
     };
 
     /// JSON-side parse struct for a single sub-agent entry. Mirrors
-    /// `SubAgentConfig` exactly (borrowed slices from the parsed JSON
-    /// blob, vs `SubAgentConfig`'s owned allocator slices). Public so
-    /// HTTP handlers can use the same shape for their wire-side parse
-    /// targets (`ConfigInput`, `ConfigJson`, etc.).
+    /// `SubAgentConfig` exactly (borrowed slices from the parsed JSON blob,
+    /// vs `SubAgentConfig`'s owned allocator slices).
     pub const SubAgentJson = struct {
         name: []const u8 = "",
         model: []const u8 = "",
@@ -631,17 +445,9 @@ pub const LlmConfig = struct {
     /// The map owns both the keys and the values (all are allocated strings).
     pub const McpHeadersMap = std.StringHashMap([]const u8);
 
-    /// Typed configuration for a single MCP server.
-    ///
-    /// Each entry is EITHER an HTTP server (with `url` + optional
-    /// `headers`) OR a stdio server (with `command` + optional `args`
-    /// + optional `cwd`). Exactly one transport must be present —
-    /// entries with both, neither, or empty discriminators are skipped
-    /// at parse time with a warning.
-    ///
-    /// All string fields are owned (allocated with the parent
-    /// `LlmConfig.allocator`). `args` is an owned slice of owned
-    /// strings — freed in `freeMcpServersMap`.
+    /// Typed configuration for a single MCP server. Each entry is EITHER an
+    /// HTTP server (with `url` + optional `headers`) OR a stdio server (with
+    /// `command` + optional `args` + optional `cwd`).
     pub const McpServerConfig = struct {
         /// HTTP transport: the URL of the MCP server. Null for stdio entries.
         url: ?[]const u8,
@@ -682,16 +488,6 @@ pub const LlmConfig = struct {
     pub const McpServersMap = std.StringHashMap(McpServerConfig);
 
     /// One user-configured web-search provider.
-    ///
-    /// `key` and `curl` are kept in SEPARATE fields on purpose: `curl`
-    /// carries the literal `{key}` placeholder where the credential
-    /// belongs, never the credential itself. Everything derived from
-    /// `curl` — the `list_web_search_providers` listing, logs, the
-    /// rendered prompt — is therefore inert by construction. Merging the
-    /// two fields would mean every one of those surfaces needs redaction.
-    ///
-    /// All string fields are owned (allocated with the parent
-    /// `LlmConfig.allocator`) and freed in `freeWebSearchProvidersMap`.
     pub const WebSearchProviderEntry = struct {
         /// The host pin. This is the ONLY host whose requests may ever
         /// carry `key`; it is compared against the host of whatever curl
@@ -711,14 +507,9 @@ pub const LlmConfig = struct {
         /// Defaults to true, mirroring `McpServerConfig.enabled`.
         enabled: bool = true,
 
-        /// True when this entry can actually be dispatched: it is
-        /// enabled, has a host pin and a template, and — if it declares a
-        /// credential — that credential is non-empty.
-        ///
-        /// A blank `key` string is treated as absent rather than as a
-        /// credential that happens to be empty, because an empty slice
-        /// is exactly what a JSON round-trip of an unset optional
-        /// produces, and `SqliteBackend.exec` binds `""` as SQL NULL.
+        /// True when this entry can actually be dispatched: it is enabled,
+        /// has a host pin and a template, and — if it declares a credential —
+        /// that credential is non-empty.
         pub fn isUsable(self: WebSearchProviderEntry) bool {
             if (!self.enabled) return false;
             if (self.url.len == 0) return false;
@@ -841,10 +632,9 @@ pub const LlmConfig = struct {
 
         var it = raw.object.iterator();
         while (it.next()) |entry| {
-            // A hand-edited file with the same provider name twice keeps
-            // the first entry. JSON parsers hand us both, and silently
-            // letting the last one win would make the pin depend on
-            // document order.
+            // A hand-edited file with the same provider name twice keeps the
+            // first entry. JSON parsers hand us both, and silently letting
+            // the last one win would make the pin depend on document order.
             if (providers.contains(entry.key_ptr.*)) {
                 std.log.warn("duplicate web_search provider '{s}'; keeping the first", .{entry.key_ptr.*});
                 continue;
@@ -862,32 +652,9 @@ pub const LlmConfig = struct {
         return providers;
     }
 
-    /// Initialize an `LlmConfig` from disk (boot / file mode only).
-    /// Thin I/O wrapper around `initFromJsonText`: resolves the path,
-    /// reads the file, then delegates to the single JSON -> struct mapping.
-    /// Runtime reads under `--auth` must NOT call this — per-user config
-    /// lives in `users.config_json`, so use
-    /// `agentic_loop/session_llm_config.zig` (`forSession` / `forOwner`).
-    /// When `path` is null (the
-    /// default), uses the platform-specific config path returned by
-    /// `getDefaultConfigPath` (e.g. `~/.config/pabrik/config.json` on
-    /// Linux, `~/Library/Application Support/pabrik/config.json` on
-    /// macOS, `%APPDATA%/pabrik/config.json` on Windows).
-    ///
-    /// **Auto-init on first run**: When `path` is null AND the file at
-    /// the resolved default path does not exist, this function creates
-    /// a default config with empty placeholder values (via
-    /// `writeDefaultConfig`), logs an `info:` message, and proceeds.
-    /// The server can then start; downstream LLM calls will fail until
-    /// the user edits the placeholder values.
-    ///
-    /// **Explicit paths are NOT auto-created**: When `path` is non-null
-    /// (e.g. `--config /custom/path.json`), a missing file surfaces
-    /// `error.ConfigFileNotFound` unchanged — explicit paths are
-    /// honored literally.
-    ///
-    /// **Other errors**: permission denied, invalid JSON, parse errors
-    /// surface to the caller unchanged.
+    /// Initialize an `LlmConfig` from disk (boot / file mode only). Thin I/O
+    /// wrapper around `initFromJsonText`: resolves the path, reads the file,
+    /// then delegates to the single JSON -> struct mapping.
     pub fn init(allocator: std.mem.Allocator, io: std.Io, path: ?[]const u8, environment: *std.process.Environ.Map) LoadError!LlmConfig {
         const config_path = if (path) |p|
             try allocator.dupe(u8, p)
@@ -897,9 +664,6 @@ pub const LlmConfig = struct {
 
         // `config_path` is either the validated default path (see
         // `getDefaultConfigDir`) or an explicit `--config <path>` argument.
-        // `openFileAbsolute` below ASSERTS the path is absolute and ABORTS the
-        // whole process (Debug/ReleaseSafe) instead of returning an error, so
-        // reject a relative explicit path here.
         if (!std.fs.path.isAbsolute(config_path)) {
             std.log.warn("Config path is not an absolute path: {s}", .{config_path});
             return error.ConfigFileNotFound;
@@ -951,16 +715,6 @@ pub const LlmConfig = struct {
     /// Build an `LlmConfig` from in-memory JSON text, applying the same
     /// shape, tolerance (`ignore_unknown_fields`) and post-processing
     /// (`parseToolsList`, `backfillTopLevelFromProfiles`,
-    /// `migrateTopLevelSubAgentsIntoEmptyProfiles`, ...) as the file path.
-    ///
-    /// Split out of `init` for opt-in `--auth`, where each user's config is
-    /// the `users.config_json` column — a string, not a file. This is the
-    /// ONE JSON -> `LlmConfig` mapping, so a stored row and a `config.json`
-    /// holding identical bytes cannot drift apart.
-    ///
-    /// Errors: `InvalidJson` for malformed text. The file-specific failures
-    /// `init` can raise (`ConfigFileNotFound`, `ConfigFileReadError`) are
-    /// impossible here.
     pub fn initFromJsonText(
         allocator: std.mem.Allocator,
         content: []const u8,
@@ -988,15 +742,11 @@ pub const LlmConfig = struct {
             .skill_evals = skillEvalsFromJson(config_json.skill_evals),
             .retry_delay_ms = config_json.retry_delay_ms,
             // Top-level compaction defaults — restored in plan
-            // 2026-07-07-compaction-inline. Persisted as raw optional
-            // values; cascade logic in `maxCapacityForModel` /
-            // `compactionThresholdPercent` honors null = fall through.
+            // 2026-07-07-compaction-inline.
             .max_capacity_token_model = config_json.max_capacity_token_model,
             .compaction_threshold_percent = config_json.compaction_threshold_percent,
             // Plan 2026-08-06-set-active-profile-default — load the
-            // user-chosen default profile from JSON. Coerce empty
-            // string to null so manual `""` edits don't survive the
-            // round-trip (matches `pabrik_config_put.zig` PUT coercion).
+            // user-chosen default profile from JSON.
             .active_profile = blk: {
                 const raw = config_json.active_profile orelse break :blk null;
                 if (raw.len == 0) break :blk null;
@@ -1021,10 +771,8 @@ pub const LlmConfig = struct {
             if (config.mcpServers_parsed) |*p| p.deinit();
         }
 
-        // Owned copy of the `tools` checklist — `parsed` deinits at the
-        // end of `init`, so the borrowed slices must be duped here.
-        // Null (key absent) stays null; `[]` stays an empty non-null
-        // slice so D2's absent-vs-empty distinction survives the parse.
+        // Owned copy of the `tools` checklist — `parsed` deinits at the end
+        // of `init`, so the borrowed slices must be duped here.
         config.tools = try parseToolsList(allocator, config_json.tools);
 
         // Web-search providers: absent key = no providers. Parsed from the
@@ -1064,21 +812,8 @@ pub const LlmConfig = struct {
         }
 
         // Parse profiles_models into ProfilesMap.
-        //
         // 2026-08-06-config-profiles-arbitrary-keys: the previous
-        // implementation parsed `profiles_models` against a hardcoded
-        // 4-field schema (profile1..profile4); every other profile
-        // name — including the user's "900ribu" — was silently dropped
-        // by `parseFromSlice` with `ignore_unknown_fields = true`,
-        // causing the workflow to fall through to top-level config
-        // when the user picked a profile via the chatview picker.
-        //
-        // Now we re-stringify the JSON object and reparse it as a
-        // generic `json.Value`, then iterate over its keys to feed
-        // each entry to `addProfile` under its original key. Same
-        // pattern as the existing `mcp_servers` parser above; the
-        // extra alloc + parse per profile is negligible (typical
-        // configs have 1-5 profiles).
+        // implementation parsed `profiles_models` against a hardcoded 4-field
         if (config_json.profiles_models) |profiles| {
             const profiles_str = std.json.Stringify.valueAlloc(allocator, profiles, .{}) catch {
                 return error.InvalidJson;
@@ -1129,39 +864,18 @@ pub const LlmConfig = struct {
         // Parse top-level sub_agents (skip-with-warning on bad entries).
         config.sub_agents = try parseSubAgentsList(allocator, config_json.sub_agents);
 
-        // Plan 2026-09-04-subagents-per-profile: one-time load migration.
-        // Old configs carry subagents ONLY at the top level. Copy them
-        // into every profile with an empty list so each profile owns its
-        // subagents going forward. Profiles that already have their own
-        // list are left untouched. The top-level list stays in memory
-        // for now (deprecated read path) until Task 3 removes it.
+        // Plan 2026-09-04-subagents-per-profile: one-time load migration. Old
+        // configs carry subagents ONLY at the top level.
         try migrateTopLevelSubAgentsIntoEmptyProfiles(&config);
 
         // Plan 2026-08-24-config-simplify-remove-defaults: config.json no
-        // longer carries top-level api_key/model/base_url/url_style. When
-        // absent/empty, derive them from the active profile so every
-        // downstream consumer of cfg.model etc. keeps working unchanged.
-        // Present keys always win (backward compat with old configs).
+        // longer carries top-level api_key/model/base_url/url_style.
         try backfillTopLevelFromProfiles(&config);
 
         return config;
     }
 
     /// Derive empty top-level LLM fields from the resolved profile.
-    ///
-    /// Cascade: `active_profile` → first profile entry (HashMap iteration
-    /// order — nondeterministic with multiple profiles; documented as
-    /// unspecified. Deterministic-path tests use single-profile fixtures).
-    ///
-    /// url_style note: `LlmConfigJson.url_style` defaults to "openai", so
-    /// an ABSENT key is indistinguishable from explicit-openai post-parse.
-    /// Rule: whenever ANY field is backfilled, a non-empty profile
-    /// url_style also wins over the parse default (the profile defines the
-    /// wire format). An explicitly-set top-level url_style is preserved by
-    /// the same rule only when it differs... no — simpler: profile wins for
-    /// url_style whenever the other fields needed backfilling AND the
-    /// profile's url_style is non-empty. Explicit top-level configs that
-    /// set all four keys never enter this path at all.
     fn backfillTopLevelFromProfiles(config: *LlmConfig) LoadError!void {
         const needs_backfill =
             config.model.len == 0 or
@@ -1205,10 +919,7 @@ pub const LlmConfig = struct {
     }
 
     /// Parse the top-level `tools` checklist into an owned slice of owned
-    /// names. `null` (key absent) passes through as `null`; a present
-    /// array — including `[]` — becomes an owned non-null slice, which is
-    /// what keeps D2's "absent = defaults / [] = zero" distinction intact
-    /// after `parsed.deinit()`. Free with `freeToolsList`.
+    /// names.
     fn parseToolsList(allocator: std.mem.Allocator, src: ?[]const []const u8) LoadError!?[]const []const u8 {
         const list = src orelse return null;
         const owned = try allocator.alloc([]const u8, list.len);
@@ -1277,10 +988,7 @@ pub const LlmConfig = struct {
         const api_key = try alloc.dupe(u8, profile.api_key);
         errdefer alloc.free(api_key);
 
-        // Transport + its Claude Code knobs. Empty `backend` stays the
-        // struct's literal default (never duped, never freed) — so an
-        // absent key costs no allocation and `freeProfilesMap` stays
-        // balanced. `config_dir` normalises "" to null for the same reason.
+        // Transport + its Claude Code knobs.
         const backend: []const u8 = if (profile.backend.len > 0)
             try alloc.dupe(u8, profile.backend)
         else
@@ -1349,11 +1057,8 @@ pub const LlmConfig = struct {
         if (slice.len > 0) allocator.free(slice);
     }
 
-    /// Parse a `SubAgentsList` from an already-typed `[]SubAgentJson`
-    /// (the parse target for `ProfileJson.sub_agents`). Each entry is
-    /// required to have a non-empty string `name`; entries with an
-    /// empty `name` are skipped with a warning. Returns an empty slice
-    /// when `items` is null.
+    /// Parse a `SubAgentsList` from an already-typed `[]SubAgentJson` (the
+    /// parse target for `ProfileJson.sub_agents`).
     fn parseSubAgentsJson(allocator: std.mem.Allocator, items: ?[]const SubAgentJson) !SubAgentsList {
         const unwrapped = items orelse return &.{};
 
@@ -1443,10 +1148,7 @@ pub const LlmConfig = struct {
         return list.toOwnedSlice(allocator);
     }
 
-    /// Parse a `SubAgentsList` from a raw JSON array value. Each entry is
-    /// required to have a non-empty string `name`; entries missing that
-    /// field (or with malformed JSON) are skipped with a warning. Returns
-    /// an empty slice when `value` is null or not an array.
+    /// Parse a `SubAgentsList` from a raw JSON array value.
     fn parseSubAgentsList(allocator: std.mem.Allocator, value: ?std.json.Value) !SubAgentsList {
         const unwrapped = value orelse return &.{};
         const arr = switch (unwrapped) {
@@ -1579,10 +1281,9 @@ pub const LlmConfig = struct {
         };
     }
 
-    /// Plan 2026-09-04-subagents-per-profile: copy the deprecated
-    /// top-level `sub_agents` into every profile whose own list is
-    /// empty. No-op when the top-level list is empty. Profiles with a
-    /// non-empty list keep theirs (no merge — per-profile wins).
+    /// Plan 2026-09-04-subagents-per-profile: copy the deprecated top-level
+    /// `sub_agents` into every profile whose own list is empty. No-op when
+    /// the top-level list is empty.
     fn migrateTopLevelSubAgentsIntoEmptyProfiles(config: *LlmConfig) !void {
         if (config.sub_agents.len == 0) return;
         var it = config.profiles_models.iterator();
@@ -1661,12 +1362,9 @@ pub const LlmConfig = struct {
         return headers;
     }
 
-    /// Parse a single `McpServerConfig` from a JSON object value.
-    /// Returns `null` when `value` is not an object, or when the object
-    /// has neither a non-empty `url` (HTTP) nor a non-empty `command`
-    /// (stdio). The `headers` field is HTTP-only and optional — if
-    /// absent or malformed, the returned config has an empty headers map.
-    /// The `args` and `cwd` fields are stdio-only and optional.
+    /// Parse a single `McpServerConfig` from a JSON object value. Returns
+    /// `null` when `value` is not an object, or when the object has neither a
+    /// non-empty `url` (HTTP) nor a non-empty `command` (stdio).
     fn parseMcpServerConfig(allocator: std.mem.Allocator, value: std.json.Value) !?McpServerConfig {
         const obj = switch (value) {
             .object => |o| o,
@@ -1826,10 +1524,9 @@ pub const LlmConfig = struct {
             parsed.deinit();
         }
 
-        // Free each random sub-agent name that resolveSubAgent
-        // generated, then free the tracking slice itself. The
-        // names borrow from `self.allocator` and the slice
-        // header was grown via `realloc`.
+        // Free each random sub-agent name that resolveSubAgent generated,
+        // then free the tracking slice itself. The names borrow from
+        // `self.allocator` and the slice header was grown via `realloc`.
         for (self.random_names) |name| {
             self.allocator.free(name);
         }
@@ -1884,10 +1581,7 @@ pub const LlmConfig = struct {
         // Owned copy of the tools checklist (null stays null).
         config.tools = try parseToolsList(self.allocator, self.tools);
 
-        // Owned copy of the web-search providers. `clone` must deep-copy
-        // rather than share: the config PUT hot-swaps a freshly cloned
-        // LlmConfig into the singleton, and a shared map would leave the
-        // old config's strings dangling after its deinit.
+        // Owned copy of the web-search providers.
         if (self.web_search) |src| {
             var copy_map = WebSearchProvidersMap.init(self.allocator);
             errdefer freeWebSearchProvidersMap(&copy_map, self.allocator);
@@ -1973,9 +1667,6 @@ pub const LlmConfig = struct {
         }
 
         // Clone all profiles.
-        // Plan 2026-09-04-subagents-per-profile: per-profile `sub_agents`
-        // ARE preserved through clone via `dupeSubAgentConfig` (each
-        // profile owns its list — no global fallback to rely on).
         var it = self.profiles_models.iterator();
         while (it.next()) |entry| {
             const owned_sub_agents = blk: {
@@ -2036,9 +1727,6 @@ pub const LlmConfig = struct {
         }
 
         // Deep-copy top-level sub_agents into a freshly allocated slice.
-        // `dupeSubAgentConfig` is the single copier — the inline field list
-        // this loop used to carry silently dropped the compaction and
-        // thinking overrides, so a clone could lose them.
         var sub_agents_list = std.ArrayList(SubAgentConfig).empty;
         errdefer {
             for (sub_agents_list.items) |sa| {
@@ -2065,11 +1753,7 @@ pub const LlmConfig = struct {
     }
 
     pub fn validate(self: *const LlmConfig) LoadError!void {
-        // The TRANSPORT decides which fields are required. `base_url` and
-        // `api_key` are HTTP concepts; a CLI profile (Claude Code, OpenCode)
-        // authenticates through the CLI's own login state, so demanding them
-        // would make a correct CLI-only config unloadable (and the warning
-        // below would tell the user to populate keys they must not set).
+        // The TRANSPORT decides which fields are required.
         const backend = self.effectiveBackend();
 
         if (self.model.len == 0) {
@@ -2089,11 +1773,6 @@ pub const LlmConfig = struct {
     }
 
     /// The transport the ACTIVE profile selects, defaulting to `"http"`.
-    ///
-    /// Mirrors `resolveEffectiveProfile(...).backend` for callers that need
-    /// only the discriminator (validation, the Settings probes) and do not
-    /// want to build a whole `EffectiveProfile` — which requires a
-    /// `selected_profile_model` they may not have.
     pub fn effectiveBackend(self: *const LlmConfig) []const u8 {
         const p = self.resolveSessionProfileCompat("") orelse return Backend.http;
         if (p.backend.len == 0) return Backend.http;
@@ -2116,10 +1795,8 @@ pub const LlmConfig = struct {
         return self.mcp_servers.contains(name);
     }
 
-    /// Get the typed configuration for a single MCP server by name.
-    /// Returns null when no server with that name is configured.
-    /// The returned `McpServerConfig` borrows from `self` — the lifetime
-    /// is tied to this `LlmConfig` (do not outlive the config).
+    /// Get the typed configuration for a single MCP server by name. Returns
+    /// null when no server with that name is configured.
     pub fn mcpServerConfig(self: *const LlmConfig, name: []const u8) ?McpServerConfig {
         const entry = self.mcp_servers.getEntry(name) orelse return null;
         return entry.value_ptr.*;
@@ -2154,22 +1831,7 @@ pub const LlmConfig = struct {
         cwd: ?[]const u8 = null,
     };
 
-    /// Add a new stdio MCP server to the live config in-place. Mutates
-    /// `self.mcp_servers` (typed map) AND rebuilds `self.mcpServers_parsed`
-    /// (the json.Value mirror used by `mcpServers()` + `buildMCPToolsRun`).
-    ///
-    /// The caller is responsible for persisting the change to disk (see
-    /// `persistMcpServerStdio` for the matching disk-write helper). The
-    /// two-step split lets the unit tests exercise the in-memory mutation
-    /// without touching disk; the agent-tool exec wrapper chains both.
-    ///
-    /// Errors:
-    ///   - `error.InvalidName` — `name` is empty.
-    ///   - `error.DuplicateServer` — `name` is already a key in `mcp_servers`.
-    ///   - `error.InvalidCommand` — `command` is empty.
-    ///   - propagates `OutOfMemory` from `allocator.dupe` / `ObjectMap.put`.
-    ///
-    /// Plan: docs/superpowers/plans/2026-08-28-add-mcp-server-agent-tool.md
+    /// Add a new stdio MCP server to the live config in-place.
     pub fn addMcpServerStdio(
         self: *LlmConfig,
         input: AddMcpServerStdioInput,
@@ -2199,32 +1861,13 @@ pub const LlmConfig = struct {
             entry.args = args_dup;
         }
 
-        // ── 3. Insert into the typed map ───────────────────────────────────
-        // F8 fix: scope the `key_dup` + `entry` ownership transfer inside
-        // a labeled block so the `errdefer` only fires on the actual
-        // failure path (dupe + put). Once `put` succeeds, the block
-        // exits and the errdefer no longer applies — the map owns the
-        // key. A later error in `rebuildMcpServersParsed` (OOM etc.)
-        // therefore can't double-free `key_dup` via the outer scope's
-        // errdefer.
-        // The block's only purpose is to scope the `key_dup` + `entry`
-        // ownership transfer so the `errdefer self.allocator.free(k)`
-        // is dormant after the successful `put`. The map now owns
-        // `k`; the constant is captured here only to give Zig a
-        // binding for the errdefer (which requires `k` to be a
-        // declaration in scope). We mark it `_` because we don't
-        // reference it again — the map is the owner.
+        // ── 3.
         const _key_dup = blk: {
             const k = try self.allocator.dupe(u8, input.name);
             errdefer self.allocator.free(k);
             try self.mcp_servers.put(k, entry);
-            // Transfer ownership of the entry's heap-allocated fields to
-            // the map. `put` COPIES the struct value (which copies
-            // POINTERS — the map and the local `entry` now share the
-            // same duped strings). Reset the local `entry` so the outer
-            // scope's `freeMcpServerConfig` errdefer (declared earlier)
-            // is a no-op for these fields; otherwise a later error
-            // would double-free strings the map still owns.
+            // Transfer ownership of the entry's heap-allocated fields to the
+            // map.
             entry = .{
                 .url = null,
                 .headers = McpHeadersMap.init(self.allocator),
@@ -2237,25 +1880,13 @@ pub const LlmConfig = struct {
         };
         _ = _key_dup; // owned by the map now; suppress unused-constant warning
 
-        // ── 4. Rebuild mcpServers_parsed from the typed map ───────────────
-        // The typed map is now authoritative — we serialize it back to a
-        // json.Value so `mcpServers()` + `buildMCPToolsRun` see the new
-        // entry on the next iteration. Old `mcpServers_parsed` is freed.
+        // ── 4.
         try rebuildMcpServersParsed(self);
     }
 
     /// Serialize the typed `mcp_servers` map back into `mcpServers_parsed`.
     /// Called by `addMcpServerStdio` after each insert; safe to call when
     /// `mcpServers_parsed` is null (re-builds from scratch).
-    ///
-    /// Each server becomes a JSON object with the same keys as the typed
-    /// entry. We deliberately drop the `headers` field when it's empty
-    /// (matches `parseMcpServerConfig`'s "absent = empty" convention) and
-    /// `args` / `cwd` when they're null. Mirrors the on-disk shape that
-    /// `pabrik_config_put.zig` writes — `parseMcpServerConfig` accepts
-    /// either HTTP (`url` + `headers`) or stdio (`command` + `args` + `cwd`)
-    /// and rejects entries with neither or both, so we only emit the keys
-    /// the new entry actually uses.
     fn rebuildMcpServersParsed(self: *LlmConfig) !void {
         const allocator = self.allocator;
         var new_obj = try json.ObjectMap.init(allocator, &.{}, &.{});
@@ -2289,11 +1920,7 @@ pub const LlmConfig = struct {
             }
             if (cfg.args) |a| {
                 // Transfer ownership: `args_arr` (and its duped string items)
-                // becomes part of the JSON tree. Do NOT `defer` deinit —
-                // it would fire before Stringify reads the array, freeing
-                // the items the tree still points to. Instead, free the
-                // array later in `freeServerObjValue` (which knows it's an
-                // .array variant owned by us).
+                // becomes part of the JSON tree.
                 var args_arr = json.Array.init(allocator);
                 for (a) |arg| {
                     try args_arr.append(.{ .string = try allocator.dupe(u8, arg) });
@@ -2304,9 +1931,6 @@ pub const LlmConfig = struct {
                 try server_obj.put(allocator, "cwd", .{ .string = try allocator.dupe(u8, c) });
             }
             // Omit-when-true: only disabled servers serialize `enabled`.
-            // Matches parseMcpServerConfig's "absent = true" convention, so
-            // a rebuild round-trip preserves the flag without bloating
-            // enabled servers' JSON.
             if (!cfg.enabled) {
                 try server_obj.put(allocator, "enabled", .{ .bool = false });
             }
@@ -2316,12 +1940,7 @@ pub const LlmConfig = struct {
             try new_obj.put(allocator, name_dup, .{ .object = server_obj });
         }
 
-        // Parse the new object map as `mcpServers_parsed`. Round-trip via
-        // string serialization is required because json.ObjectMap → json.Value
-        // isn't a direct cast — we need a Parsed wrapper. After parseFromSlice
-        // returns, the source ObjectMap + everything we put into it is
-        // orphaned (Stringify.valueAlloc deep-copied the structure into the
-        // serialized buffer; reparsed owns independent copies).
+        // Parse the new object map as `mcpServers_parsed`.
         const serialized = try std.json.Stringify.valueAlloc(allocator, json.Value{ .object = new_obj }, .{});
         defer allocator.free(serialized);
         const reparsed = try json.parseFromSlice(json.Value, allocator, serialized, .{
@@ -2329,11 +1948,9 @@ pub const LlmConfig = struct {
         });
         errdefer reparsed.deinit();
 
-        // Free the source tree manually. ObjectMap.deinit only frees the
-        // hash map structure — it does NOT recurse into values or free the
-        // outer keys. Our shape has duped OUTER keys (server names, owned)
-        // + literal INNER keys ("command", "args", etc., NOT owned) +
-        // json.Value values that recursively own duped strings.
+        // Free the source tree manually. ObjectMap.deinit only frees the hash
+        // map structure — it does NOT recurse into values or free the outer
+        // keys.
         freeNewObjDeep(allocator, &new_obj);
 
         // Free the old mcpServers_parsed (its underlying ObjectMap is now
@@ -2343,12 +1960,7 @@ pub const LlmConfig = struct {
         self.mcpServers_parsed = reparsed;
     }
 
-    /// Free a `new_obj` tree built by `rebuildMcpServersParsed`. The OUTER
-    /// keys are duped server names (owned); the INNER keys ("command",
-    /// "args", "url", "cwd", "headers", "enabled") are STRING LITERALS and
-    /// MUST NOT be freed. The values inside server_obj own memory (duped
-    /// strings, headers sub-map). We exploit that with a dedicated helper
-    /// rather than a generic recursive free.
+    /// Free a `new_obj` tree built by `rebuildMcpServersParsed`.
     fn freeNewObjDeep(allocator: std.mem.Allocator, new_obj: *json.ObjectMap) void {
         var it = new_obj.iterator();
         while (it.next()) |kv| {
@@ -2609,36 +2221,17 @@ pub const LlmConfig = struct {
     }
 
     /// Fully-resolved effective settings for one LLM call, produced by
-    /// walking the canonical profile cascade (see
-    /// `resolveEffectiveProfile`). All strings BORROW from the
-    /// `LlmConfig` singleton — never free them, never let them outlive
-    /// the config. The derived fields (`is_thinking`,
-    /// `thinking_adaptive`) are computed ONCE from the final
-    /// `thinking_str`, matching the pre-refactor semantics at
-    /// workflow.zig:471/477 exactly.
-    ///
-    /// Plan: docs/superpowers/plans/2026-08-23-refactor-profile-resolution.md
+    /// walking the canonical profile cascade (see `resolveEffectiveProfile`).
     pub const EffectiveProfile = struct {
         model: []const u8,
         base_url: []const u8,
         api_key: []const u8,
         url_style: []const u8,
-        /// Which transport runs this call: `"http"` | `"claude-code"`.
-        ///
-        /// Never empty. `url_style` answers "what HTTP body shape" — a
-        /// question Claude Code cannot answer, because it has no URL — so
-        /// the transport lives in its own field rather than as a fourth
-        /// `url_style` value. Overloading `url_style` would leave
-        /// `base_url` / `api_key` present-but-dead and force a "not
-        /// applicable" arm into every wire-format dispatch site.
-        ///
-        /// Absent on both the selected and active profile → `"http"`, so
-        /// every pre-existing config behaves exactly as before.
+        /// Which transport runs this call: `"http"` | `"claude-code"`. Never
+        /// empty.
         backend: []const u8,
-        /// Claude Code only: `CLAUDE_CONFIG_DIR` for this call. `null` =
-        /// the CLI's own default (`~/.claude`). Two profiles pointing at
-        /// two directories are two different logins, which is how
-        /// per-profile identity works without an API key.
+        /// Claude Code only: `CLAUDE_CONFIG_DIR` for this call. `null` = the
+        /// CLI's own default (`~/.claude`).
         config_dir: ?[]const u8,
         /// Claude Code only: `--max-turns` for this call. `null` = CLI
         /// default.
@@ -2668,22 +2261,7 @@ pub const LlmConfig = struct {
     }
 
     /// THE canonical profile cascade — ONE implementation for the whole
-    /// codebase. Walks:
-    ///
-    ///   1. `selected_profile_model` (non-empty AND profile exists AND
-    ///      field non-empty/non-null)
-    ///   2. `active_profile`          (same guards)
-    ///   3. top-level defaults (`self.model` / `"auto"` / null)
-    ///
-    /// Per-field fall-through: a profile that EXISTS but has an empty
-    /// string or null optional falls through to the next step FOR THAT
-    /// FIELD ONLY (partial profiles are allowed). This matches the old
-    /// hand-rolled blocks in workflow.zig byte-for-byte.
-    ///
-    /// Consumers: workflow entry + per-iteration re-read (workflow.zig),
-    /// llm_history.resolveSessionProfile (HTTP read paths), and any new
-    /// code that needs effective LLM settings. Do NOT hand-roll this
-    /// cascade again.
+    /// codebase. Walks: 1.
     pub fn resolveEffectiveProfile(
         self: *const LlmConfig,
         selected_profile_model: []const u8,
@@ -2790,13 +2368,8 @@ pub const LlmConfig = struct {
         };
     }
 
-    /// Whole-profile variant of the cascade: returns the winning
-    /// `LlmProfile` (selected → active → null), NOT per-field merged.
-    /// Used by consumers that need profile-level overrides like
-    /// `max_capacity_tokens` / `compaction_threshold_percent` (compaction
-    /// decision, HTTP footer computation). This is the body of the old
-    /// `llm_history.resolveSessionProfile`, moved here so Config owns
-    /// the entire cascade family.
+    /// Whole-profile variant of the cascade: returns the winning `LlmProfile`
+    /// (selected → active → null), NOT per-field merged.
     pub fn resolveSessionProfileCompat(
         self: *const LlmConfig,
         selected_profile_model: []const u8,
@@ -2830,34 +2403,9 @@ pub const LlmConfig = struct {
         return @intCast(self.sub_agents.len);
     }
 
-    /// Resolve a sub-agent by name, applying the v1 lookup rules:
-    ///   1. If `profile_name` is non-empty AND a profile with that name
-    ///      exists, search `profile.sub_agents` first.
-    ///   2. Fall back to `self.sub_agents` (top-level).
-    ///
-    /// If `agent_name` is empty OR not found in either list, the returned
-    /// struct has `is_random_fallback = true`, a generated random `name`
-    /// of the form `"agent-{nanoseconds}-{randomhex}"`, and the
-    /// orchestrator's default `model` / `api_key` / `base_url` /
-    /// `url_style` / empty `system_prompt`.
-    ///
-    /// The returned struct's LLM fields are *overlays* on the
-    /// orchestrator's defaults: any field that's empty in the matched
-    /// `SubAgentConfig` falls through to the orchestrator's value
-    /// (the caller is expected to apply the overlay against the
-    /// parent's already-resolved values — which is what
-    /// `RunParamsNew.sub_agent_overrides` does).
-    ///
-    /// `thinking` and `temperature` are resolved into the strongly-typed
-    /// `?bool` / `?f32` shapes the workflow needs. `"auto"` (the
-    /// default in `SubAgentConfig`) maps to `null` ("inherit from
-    /// parent").
-    ///
-    /// `is_random_fallback` is true iff `agent_name` was provided but
-    /// not found in any sub_agents list. It's `false` when the name
-    /// was found. Callers that pass `agent_name = ""` (i.e. did not
-    /// opt in) should not call this function — just use the
-    /// orchestrator's default values directly.
+    /// Resolve a sub-agent by name, applying the v1 lookup rules: 1. If
+    /// `profile_name` is non-empty AND a profile with that name exists,
+    /// search `profile.sub_agents` first. 2.
     pub fn resolveSubAgent(
         self: *LlmConfig,
         profile_name: []const u8,
@@ -2881,22 +2429,13 @@ pub const LlmConfig = struct {
             // an empty per-profile list is a normal configuration.)
         }
 
-        // 2. Not found — random fallback. The random name is
-        // tracked in `self.random_names` so it can be freed in
-        // `deinit`. We do this BEFORE returning so the caller can
-        // safely use the borrowed `name` slice.
+        // 2. Not found — random fallback.
         const random_name = generateRandomAgentName(self.allocator) catch blk: {
-            // Last-ditch fallback: empty string. Callers that get
-            // an empty name still see `is_random_fallback = true`
-            // and can show a degraded UX (the session_id will fall
-            // back to the LLM-provided name).
+            // Last-ditch fallback: empty string.
             break :blk "";
         };
-        // Track the name for cleanup in deinit (no-op for empty
-        // string fallback). We reallocate the tracking slice to
-        // grow by one; on failure, we leave `random_names`
-        // unchanged (the leaked name is the lesser evil compared
-        // to a double-free).
+        // Track the name for cleanup in deinit (no-op for empty string
+        // fallback).
         if (random_name.len > 0) {
             const new_len = self.random_names.len + 1;
             var grown: [][]u8 = self.allocator.realloc(self.random_names, new_len) catch blk: {
@@ -2913,9 +2452,7 @@ pub const LlmConfig = struct {
             }
         }
         // Transport for the random fallback: whatever the orchestrator
-        // resolves to. A sub-agent that exists only because the model asked
-        // for a name nobody configured must still run on the right backend,
-        // or a Claude Code session would silently POST to an empty URL.
+        // resolves to.
         const act_profile = self.resolveSessionProfileCompat("");
         return ResolvedSubAgent{
             .name = random_name,
@@ -2941,21 +2478,16 @@ pub const LlmConfig = struct {
 
     /// Internal helper — convert a matched `SubAgentConfig` into a
     /// `ResolvedSubAgent` with string→bool/f32 parsing for `thinking` /
-    /// `temperature`. Empty string fields in `sa` fall through to the
-    /// orchestrator's values (overlay semantics).
+    /// `temperature`.
     fn buildResolvedFromConfig(
         self: *const LlmConfig,
         sa: SubAgentConfig,
         requested_name: []const u8,
         source: []const u8,
     ) ResolvedSubAgent {
-        // thinking: route through the pure parse_thinking helper. The
-        // helper accepts "auto" / "on" / "off" / "true" / "false" /
-        // "" and surfaces `error.InvalidThinkingMode` on garbage.
-        // Unparseable values fall through to `null` (= auto / inherit)
-        // so a typo in a sub-agent's `thinking` field doesn't break
-        // the whole spawn path — same fallback semantics as the
-        // previous inline parser at this site.
+        // thinking: route through the pure parse_thinking helper. The helper
+        // accepts "auto" / "on" / "off" / "true" / "false" / "" and surfaces
+        // `error.InvalidThinkingMode` on garbage.
         const resolved_thinking: ?bool = parse_thinking.parseThinkingString(sa.thinking) catch null;
 
         // temperature: "auto" → null. Numeric → parseFloat. Anything
@@ -2965,19 +2497,12 @@ pub const LlmConfig = struct {
             break :blk std.fmt.parseFloat(f32, sa.temperature) catch null;
         };
 
-        // thinking_budget_tokens: pass through. HTTP layer enforces
-        // the (0, 2_000_000] range, so by the time we see this
-        // value it's guaranteed non-zero. Empty/null on the sub-agent
-        // means "inherit from parent profile" — the workflow's
-        // resolver will fall through to the parent profile's value.
+        // thinking_budget_tokens: pass through. HTTP layer enforces the (0,
+        // 2_000_000] range, so by the time we see this value it's guaranteed
+        // non-zero.
         const resolved_budget: ?u32 = sa.thinking_budget_tokens;
 
-        // reasoning_effort: pass through. The HTTP layer validates
-        // the 4-value set via `parse_thinking.parseReasoningEffort`,
-        // so by the time we see this value it's either null or one
-        // of "low" | "medium" | "high" | "auto". Empty string here
-        // (which the form sends for "auto") is normalized to null
-        // by the HTTP layer before reaching this site.
+        // reasoning_effort: pass through.
         const resolved_effort: ?[]const u8 = blk: {
             const e = sa.reasoning_effort orelse break :blk null;
             if (e.len == 0) break :blk null;
@@ -2989,17 +2514,8 @@ pub const LlmConfig = struct {
             .is_random_fallback = false,
             .requested_name = requested_name,
             // Overlay: empty field in SubAgentConfig → orchestrator default.
-            //
-            // NOTE (plan 2026-08-23-refactor-profile-resolution): this
-            // is deliberately NOT `resolveEffectiveProfile`. The overlay
-            // base here is the ORCHESTRATOR's top-level values
-            // (`self.model` etc.) — a sub-agent with an empty field
-            // inherits the top-level Defaults tab, never the user's
-            // active profile. Routing this through the cascade would
-            // silently change behavior whenever active_profile is set.
-            // The full cascade applies to MAIN-agent sessions only;
-            // per-profile sub_agents are already scoped by their parent
-            // profile via resolveSubAgent's lookup order.
+            // NOTE (plan 2026-08-23-refactor-profile-resolution): this is
+            // deliberately NOT `resolveEffectiveProfile`.
             .model = if (sa.model.len > 0) sa.model else self.model,
             .base_url = if (sa.base_url.len > 0) sa.base_url else self.base_url,
             .api_key = if (sa.api_key.len > 0) sa.api_key else self.api_key,
@@ -3032,25 +2548,8 @@ pub const LlmConfig = struct {
         };
     }
 
-    /// Resolve the effective max-context-window in tokens for a given
-    /// model under the optional profile + sub-agent scope. Cascade order:
-    ///   1. `sub_agent.max_capacity_tokens` (if `sub_agent` is non-null
-    ///      and the field is set)
-    ///   2. `profile.max_capacity_tokens` (if `profile` is non-null and
-    ///      the field is set)
-    ///   3. `defaults.max_capacity_token_model` (top-level override;
-    ///      `null` falls through to step 4). Restored in plan
-    ///      2026-07-07-compaction-inline so the Defaults tab's value
-    ///      flows through to chats that don't set a per-profile override.
-    ///   4. `LLMModels.getModelTokenCount(model_name)` (built-in default)
-    ///
-    /// `defaults` should be `*const LlmConfig` — typically the orchestrator's
-    /// own config (the same `self` that's calling this function). Pass `null`
-    /// to skip step 3 and fall straight through to the built-in default.
-    ///
-    /// Use this everywhere a "what's the effective context window for
-    /// THIS chat?" answer is needed instead of calling
-    /// `LLMModels.getModelTokenCount` directly.
+    /// Resolve the effective max-context-window in tokens for a given model
+    /// under the optional profile + sub-agent scope. Cascade order: 1.
     pub fn maxCapacityForModel(
         self: *const LlmConfig,
         profile: ?*const LlmProfile,
@@ -3064,21 +2563,8 @@ pub const LlmConfig = struct {
         return self.maxCapacityForModelWith(profile, sub_agent, defaults, model_name, null);
     }
 
-    /// The cascade, with an explicit catalog in step 4:
-    ///   1. `sub_agent.max_capacity_tokens`
-    ///   2. `profile.max_capacity_tokens`
-    ///   3. `defaults.max_capacity_token_model`
-    ///   4. `catalog` — models.dev's `limit.context` for this model
-    ///   5. `LLMModels.getModelTokenCount` (the built-in 200k fallback)
-    ///
-    /// Step 4 is the whole point of the models.dev work. Before it, a model
-    /// that was not MiniMax-M2.7/M3 resolved to 200_000, so a 1M-window model
-    /// compacted at 80% of 200k = 160k tokens — five sixths of the window
-    /// thrown away, silently, because the built-in table did not know the model.
-    ///
-    /// The catalog is passed in rather than read from `model_catalog`'s holder
-    /// so this stays a pure function of its arguments: a test can pin the
-    /// cascade with an explicit catalog and no global state.
+    /// The cascade, with an explicit catalog in step 4: 1.
+    /// `sub_agent.max_capacity_tokens` 2. `profile.max_capacity_tokens` 3.
     pub fn maxCapacityForModelWith(
         self: *const LlmConfig,
         profile: ?*const LlmProfile,
@@ -3100,13 +2586,8 @@ pub const LlmConfig = struct {
     }
 
     /// Resolve the compaction threshold as a percentage (0-100). Cascade
-    /// order (same shape as `maxCapacityForModel`):
-    ///   1. `sub_agent.compaction_threshold_percent` (if non-null and set)
-    ///   2. `profile.compaction_threshold_percent` (if non-null and set)
-    ///   3. `defaults.compaction_threshold_percent` (top-level override;
-    ///      `null` falls through to step 4). Restored in plan
-    ///      2026-07-07-compaction-inline.
-    ///   4. `80` (the historical hardcoded value in `LLMModels.isDoCompact`)
+    /// order (same shape as `maxCapacityForModel`): 1.
+    /// `sub_agent.compaction_threshold_percent` (if non-null and set) 2.
     pub fn compactionThresholdPercent(
         self: *const LlmConfig,
         profile: ?*const LlmProfile,
@@ -3120,17 +2601,8 @@ pub const LlmConfig = struct {
         return 80;
     }
 
-    /// The default `config.json` content written on first run (when no
-    /// config file exists at the platform-default path).
-    ///
-    /// Plan 2026-08-24-config-simplify-remove-defaults: the top-level LLM
-    /// defaults (`api_key` / `model` / `base_url` / `url_style`) are NO
-    /// LONGER written. The user configures LLM access exclusively through
-    /// `profiles_models`; `LlmConfig.init` backfills the in-memory
-    /// top-level fields from the active profile at load time. Optional
-    /// operational fields are populated with their documented defaults so
-    /// a subsequent `LlmConfig.init` re-parse yields a well-formed
-    /// `LlmConfig`.
+    /// The default `config.json` content written on first run (when no config
+    /// file exists at the platform-default path).
     pub const defaultConfigJson: []const u8 =
         \\{
         \\  "profiles_models": {},
@@ -3153,30 +2625,13 @@ pub const LlmConfig = struct {
     ;
 
     /// Write `defaultConfigJson` to `path`, creating any missing parent
-    /// directories (mkdir -p semantics). Overwrites any existing file at
-    /// the path (the caller is expected to NOT call this on an
-    /// already-existing config — see `LlmConfig.init` for the auto-init
-    /// flow that gates the call on `error.ConfigFileNotFound`).
-    ///
-    /// Returns `error.ConfigDirNotFound` when the parent directory
-    /// cannot be created (e.g. permission denied, invalid path) or
-    /// `error.ConfigFileReadError` on a write failure. The caller is
-    /// expected to log the error and surface it as appropriate.
+    /// directories (mkdir -p semantics).
     pub fn writeDefaultConfig(allocator: std.mem.Allocator, io: std.Io, path: []const u8) LoadError!void {
         _ = allocator; // unused in current implementation, kept for future use
 
         // Ensure the parent directory exists (mkdir -p semantics).
         // std.Io.Dir.cwd().createDirPath is the project-wide pattern for
         // "create nested dirs relative to cwd" (see Logger.zig:136,
-        // add_skill.zig:108). It handles both "dir already exists" and
-        // "dir does not exist" without error. It does NOT assert the
-        // path is absolute (unlike createDirAbsolute), so both absolute
-        // and relative parent paths work. If `dirname` returns null
-        // (e.g. `path = "config.json"` or `/config.json`), we skip this
-        // step — the file goes in the cwd (or the root, for absolute
-        // paths with no parent) directly. Note: Zig 0.16's
-        // `std.fs.path.dirname` returns either null OR a slice of
-        // length >= 1, so no inner length check is needed.
         if (std.fs.path.dirname(path)) |parent| {
             std.Io.Dir.cwd().createDirPath(io, parent) catch |err| {
                 std.log.warn("Failed to create config dir {s}: {s}", .{ parent, @errorName(err) });
@@ -3184,13 +2639,8 @@ pub const LlmConfig = struct {
             };
         }
 
-        // Write the default config. .truncate = true means any stale
-        // file at `path` is replaced atomically by the kernel.
-        //
-        // `createFileAbsolute` ASSERTS the path is absolute and ABORTS the whole
-        // process (Debug/ReleaseSafe) instead of returning an error, so never hand
-        // it a relative path (a caller-supplied one, or a $HOME/$XDG_CONFIG_HOME
-        // base that failed validation).
+        // Write the default config. .truncate = true means any stale file at
+        // `path` is replaced atomically by the kernel.
         if (!std.fs.path.isAbsolute(path)) {
             std.log.warn("Refusing to write the default config to a relative path: {s}", .{path});
             return error.ConfigFileReadError;
@@ -3214,22 +2664,9 @@ pub const LlmConfig = struct {
     }
 };
 
-/// Generate a random sub-agent name of the form
-/// `"agent-{randomhex}"` for the random-fallback case when a
-/// requested `agent_name` is not found in any sub_agents list.
-///
-/// Allocates the formatted name on `allocator`. The caller MUST
-/// store the returned slice in `LlmConfig.random_names` (via
-/// `resolveSubAgent`) so it can be freed in `deinit` — otherwise
-/// the memory leaks.
-///
-/// The 16 hex characters come from a mix of entropy sources
-/// available in this codebase: the process ID and stack/heap
-/// pointer addresses. This mirrors the pattern in
-/// `src/helpers/random.zig` for `generateSessionId` — avoids the
-/// `std.crypto.random` API (which doesn't exist in this Zig 0.16
-/// build) while still producing effectively-unique names across
-/// parallel sub-agents.
+/// Generate a random sub-agent name of the form `"agent-{randomhex}"` for the
+/// random-fallback case when a requested `agent_name` is not found in any
+/// sub_agents list.
 fn generateRandomAgentName(allocator: std.mem.Allocator) ![]u8 {
     // 8 bytes of pseudo-random entropy → 16 hex chars.
     var entropy_bytes: [8]u8 = undefined;
@@ -3314,20 +2751,11 @@ pub fn loadDefault(allocator: std.mem.Allocator, environment: *std.process.Envir
 
 // ---------------------------------------------------------------------------
 // resolveEffectiveProfile — THE canonical profile cascade (plan
-// 2026-08-23-refactor-profile-resolution). One implementation; every
-// consumer (workflow entry, per-iteration re-read, llm_history HTTP
-// paths) must go through here.
-//
-// Cascade: selected_profile_model → active_profile → top-level defaults.
-// Per-field fall-through: a profile that EXISTS but has an empty/null
-// field falls through for THAT field only (partial profiles allowed).
-// ---------------------------------------------------------------------------
+// 2026-08-23-refactor-profile-resolution).
 
 /// Shared fixture: top-level defaults + two profiles ("alpha" fully
 /// populated, "partial" with only model set). Built directly (no disk
-/// round-trip). All strings are duped on the testing allocator because
-/// `deinit`/`freeProfilesMap` free every field — assigning literals
-/// here would panic "Invalid free".
+/// round-trip).
 fn cascadeFixture(allocator: std.mem.Allocator) !LlmConfig {
     var cfg: LlmConfig = .{
         .allocator = allocator,
@@ -3475,10 +2903,7 @@ test "resolveEffectiveProfile: derived fields for off / garbage thinking strings
     var cfg = try cascadeFixture(allocator);
     defer cfg.deinit();
     cfg.active_profile = try std.testing.allocator.dupe(u8, "partial");
-    // Mutate the stored profile's thinking directly. The map owns its
-    // strings (freeProfilesMap frees `thinking`), so free the old
-    // slice and install a fresh owned copy — assigning a literal
-    // would make deinit() free a non-heap pointer.
+    // Mutate the stored profile's thinking directly.
     const pptr = cfg.profiles_models.getPtr("partial").?;
     cfg.allocator.free(pptr.thinking);
     pptr.thinking = try cfg.allocator.dupe(u8, "off");
@@ -3516,9 +2941,7 @@ test "resolveSessionProfileCompat: mirrors old resolveSessionProfile semantics" 
 test {
     // config_test.zig's tests are inline at the bottom of this file
     // (2026-09-29 flatten); parse_thinking_test.zig's landed in
-    // parse_thinking.zig, which still needs a discovery edge. The
-    // `const parse_thinking = @import(...)` above is a plain declaration
-    // and does not pull a file's test blocks into the test binary.
+    // parse_thinking.zig, which still needs a discovery edge.
     _ = @import("parse_thinking.zig");
 }
 
@@ -3647,7 +3070,6 @@ test "mcp_servers: parses multiple servers" {
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // Robustness
-// ---------------------------------------------------------------------------
 
 test "mcp_servers: empty config yields empty map" {
     const allocator = std.testing.allocator;
@@ -4052,11 +3474,8 @@ test "notify_on_complete: reads false from JSON when explicitly false" {
 }
 
 // ---------------------------------------------------------------------------
-// notify_on_error: opt-in OS notification flag for the error path
-// (transport failure, TooManyRetries, outer catch). Mirrors
-// `notify_on_complete` but fires on error sites in workflow.zig
-// instead of the success path. Plan 2026-08-25-notify-on-error.
-// ---------------------------------------------------------------------------
+// notify_on_error: opt-in OS notification flag for the error path (transport
+// failure, TooManyRetries, outer catch).
 
 test "notify_on_error: defaults to false when missing from JSON" {
     const allocator = std.testing.allocator;
@@ -4125,10 +3544,7 @@ test "notify_on_error: round-trips independently of notify_on_complete" {
 }
 
 // ---------------------------------------------------------------------------
-// web_launch_enabled: opt-in browser-launch flag. Mirrors
-// `notify_on_complete` pattern (default false, reads true when present,
-// round-trips independently).
-// ---------------------------------------------------------------------------
+// web_launch_enabled: opt-in browser-launch flag.
 
 test "web_launch_enabled: defaults to false when missing from JSON" {
     const allocator = std.testing.allocator;
@@ -4182,8 +3598,6 @@ test "web_launch_enabled: round-trips independently of notify_on_complete" {
 // ---------------------------------------------------------------------------
 // url_style: top-level OpenAI vs Anthropic selector (regression for
 // `PabrikSettings.vue` URL Style dropdown — see plan
-// `2026-06-11-pabrik-config-url-style.md`).
-// ---------------------------------------------------------------------------
 
 test "LlmConfig: url_style field round-trips through disk JSON" {
     const allocator = std.testing.allocator;
@@ -4216,9 +3630,7 @@ test "LlmConfig: url_style defaults to openai when missing from JSON" {
 
 // ---------------------------------------------------------------------------
 // retry_delay_ms: workflow retry backoff in milliseconds. 0 = no delay
-// (current behavior). Plan 2026-07-15-retry-delay. Defaults to 0 when
-// missing so existing config files load without surprises.
-// ---------------------------------------------------------------------------
+// (current behavior).
 
 test "LlmConfig: retry_delay_ms defaults to 0 when missing from JSON" {
     const allocator = std.testing.allocator;
@@ -4251,8 +3663,7 @@ test "LlmConfig: retry_delay_ms reads from JSON when present" {
 
 // ---------------------------------------------------------------------------
 // model_compaction_size_kb: session-compactor threshold (consumed by
-// `session_compact.zig:57`). No UI — power users edit config.json.
-// ---------------------------------------------------------------------------
+// `session_compact.zig:57`).
 
 test "LlmConfig: model_compaction_size_kb reads value from JSON" {
     const allocator = std.testing.allocator;
@@ -4396,11 +3807,8 @@ test "sub_agents: hasSubAgent / getSubAgent accessors" {
 }
 
 test "model-thinking knobs: profile thinking_budget_tokens + reasoning_effort round-trip" {
-    // Verify the new per-profile fields round-trip through the JSON
-    // parser without being silently dropped. The HTTP layer is
-    // responsible for range validation (0 < budget <= 2_000_000,
-    // effort in the 4-value set); this test only asserts the storage
-    // path.
+    // Verify the new per-profile fields round-trip through the JSON parser
+    // without being silently dropped.
     const allocator = std.testing.allocator;
 
     const json_body =
@@ -4683,35 +4091,20 @@ test "sub_agents: clone preserves per-profile sub_agents" {
 // ---------------------------------------------------------------------------
 // resolveSubAgent — config-driven sub-agent selection
 // ---------------------------------------------------------------------------
-//
-// Tests the LlmConfig.resolveSubAgent function that the
-// spawn_sub_agent tool uses to look up a named sub-agent from
-// config. The function returns a ResolvedSubAgent overlay that's
-// applied on top of the orchestrator's default model/api_key/etc.
-//
-// v1: profile_name is always passed as "" from tool_registry.zig
-// because ToolExecContext doesn't yet carry the parent's
-// selected_profile_model. The tests exercise the top-level
-// sub_agents lookup only. The "per-profile sub_agents first" rule
-// from the plan is wired but not yet exercised by the spawn path.
 
 const resolve_alloc = std.testing.allocator;
 const resolve_io = std.testing.io;
 
-/// Pair of (cfg, resolved) so the test can keep cfg alive while
-/// inspecting the resolved struct. The slices in
-/// `ResolvedSubAgent` borrow from `cfg` (the LlmConfig's owned
-/// strings), so cfg MUST outlive any use of the resolved
-/// struct — hence the pair, not just the resolved struct.
+/// Pair of (cfg, resolved) so the test can keep cfg alive while inspecting
+/// the resolved struct.
 const ResolvedPair = struct {
     cfg: LlmConfig,
     resolved: LlmConfig.ResolvedSubAgent,
 };
 
-/// Helper: build a config JSON with the given top-level sub_agents
-/// array (and no profiles) and resolve `agent_name` against it.
-/// Caller owns the returned `cfg` and must call `deinit` on it
-/// AFTER they're done with `resolved`.
+/// Helper: build a config JSON with the given top-level sub_agents array (and
+/// no profiles) and resolve `agent_name` against it. Caller owns the returned
+/// `cfg` and must call `deinit` on it AFTER they're done with `resolved`.
 fn resolveFromTopLevel(json_body: []const u8, agent_name: []const u8) !ResolvedPair {
     var cfg = try writeAndRead(resolve_alloc, resolve_io, json_body);
     const resolved = cfg.resolveSubAgent("", agent_name);
@@ -4955,12 +4348,6 @@ test "resolveSubAgent: name match is exact (case-sensitive)" {
 // ---------------------------------------------------------------------------
 // resolveSubAgent — per-profile sub_agents lookup (decision #1)
 // ---------------------------------------------------------------------------
-//
-// Exercises the full lookup chain: when a profile is selected, its
-// sub_agents list is consulted first; the top-level list is the
-// fallback. `resolveFromProfile` passes a non-empty profile_name
-// into `resolveSubAgent`, mirroring how `tool_registry.execSpawnSubAgent`
-// passes `ctx.selected_profile_model`.
 
 test "resolveSubAgent: per-profile sub_agent is preferred over top-level" {
     // profile1 has its own "reviewer" with a specialized model;
@@ -5000,10 +4387,9 @@ test "resolveSubAgent: per-profile sub_agent is preferred over top-level" {
 }
 
 test "resolveSubAgent: empty profile inherits top-level via load migration" {
-    // profile1 has no sub_agents of its own; the load migration
-    // (plan 2026-09-04-subagents-per-profile) copies the top-level
-    // "reviewer" into it. Resolution hits the migrated entry with
-    // source="profile1" — there is no live top-level fallback.
+    // profile1 has no sub_agents of its own; the load migration (plan
+    // 2026-09-04-subagents-per-profile) copies the top-level "reviewer" into
+    // it.
     const json_body =
         \\{ "api_key": "k", "model": "default", "base_url": "u",
         \\  "sub_agents": [
@@ -5028,10 +4414,9 @@ test "resolveSubAgent: empty profile inherits top-level via load migration" {
 }
 
 test "resolveSubAgent: empty profile_name -> random fallback (no global list)" {
-    // The call passes `""` for `profile_name` (e.g. the parent
-    // session has no profile selected). Per-profile-only means
-    // there is nothing to consult — random fallback, even though
-    // profile1 owns a matching "reviewer".
+    // The call passes `""` for `profile_name` (e.g. the parent session has no
+    // profile selected). Per-profile-only means there is nothing to consult —
+    // random fallback, even though profile1 owns a matching "reviewer".
     const json_body =
         \\{ "api_key": "k", "model": "default", "base_url": "u",
         \\  "profiles_models": {
@@ -5160,10 +4545,8 @@ test "writeDefaultConfig creates a valid JSON config file at the given path" {
     try std.testing.expectEqual(@as(i64, 100), obj.get("model_compaction_size_kb").?.integer);
     try std.testing.expectEqual(@as(bool, false), obj.get("notify_on_complete").?.bool);
     // Plan 2026-07-07-compaction-inline: the top-level
-    // `max_capacity_token_model` and `compaction_threshold_percent`
-    // fields are RESTORED. The default JSON writes them as null so
-    // the loader sees the cascade wildcard (fall through to per-profile
-    // override, then built-in).
+    // `max_capacity_token_model` and `compaction_threshold_percent` fields
+    // are RESTORED.
     try std.testing.expect(obj.get("max_capacity_token_model").? == .null);
     try std.testing.expect(obj.get("compaction_threshold_percent").? == .null);
 }
@@ -5209,12 +4592,8 @@ test "init auto-creates config.json when default path does not exist (path=null)
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    // Get the canonical absolute path of the tmp dir — this becomes
-    // our fake $HOME / $XDG_CONFIG_HOME / %APPDATA% depending on
-    // platform. `getDefaultConfigDir` reads different env vars per
-    // platform: Linux uses XDG_CONFIG_HOME/HOME, macOS uses HOME
-    // (under `Library/Application Support/`), Windows uses APPDATA.
-    // Setting all three keeps the test platform-portable.
+    // Get the canonical absolute path of the tmp dir — this becomes our fake
+    // $HOME / $XDG_CONFIG_HOME / %APPDATA% depending on platform.
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const base_len = try tmp.dir.realPath(std.testing.io, &path_buf);
     const base_path = path_buf[0..base_len];
@@ -5225,18 +4604,13 @@ test "init auto-creates config.json when default path does not exist (path=null)
     try env_map.put("XDG_CONFIG_HOME", base_path);
     try env_map.put("APPDATA", base_path);
 
-    // Call init() with path = null. The default config path resolves
-    // via getDefaultConfigPath to a platform-appropriate location
-    // (e.g. `<base>/.config/pabrik/config.json` on Linux, `<base>/Library/Application Support/pabrik/config.json`
-    // on macOS, `<base>/pabrik/config.json` on Windows). The file does
-    // not exist yet — auto-init must create it.
+    // Call init() with path = null. The default config path resolves via
+    // getDefaultConfigPath to a platform-appropriate location (e.g.
     var cfg = try LlmConfig.init(allocator, std.testing.io, null, &env_map);
     defer cfg.deinit();
 
-    // Post-condition: the file now exists on disk and contains the default template.
-    // Use getDefaultConfigPath to get the actual platform-appropriate
-    // path (instead of hardcoding one platform's layout, which broke
-    // macOS CI — see PR #68 review).
+    // Post-condition: the file now exists on disk and contains the default
+    // template.
     const expected_path = try getDefaultConfigPath(allocator, &env_map);
     defer allocator.free(expected_path);
 
@@ -5252,10 +4626,9 @@ test "init auto-creates config.json when default path does not exist (path=null)
     // Plan 2026-07-15-retry-delay: top-level `retry_delay_ms` is
     // auto-created as 0 (the documented default = no delay).
     try std.testing.expect(std.mem.indexOf(u8, content, "\"retry_delay_ms\": 0") != null);
-    // Plan 2026-07-07-compaction-inline: top-level
-    // `max_capacity_token_model` and `compaction_threshold_percent`
-    // are RESTORED as null defaults in the auto-created file. The
-    // loader sees them as the cascade wildcard.
+    // Plan 2026-07-07-compaction-inline: top-level `max_capacity_token_model`
+    // and `compaction_threshold_percent` are RESTORED as null defaults in the
+    // auto-created file. The loader sees them as the cascade wildcard.
     try std.testing.expect(std.mem.indexOf(u8, content, "max_capacity_token_model") != null);
     try std.testing.expect(std.mem.indexOf(u8, content, "compaction_threshold_percent") != null);
 }
@@ -5279,17 +4652,8 @@ test "init does NOT auto-create when explicit path is missing" {
     try env_map.put("XDG_CONFIG_HOME", base_path);
     try env_map.put("APPDATA", base_path);
 
-    // Explicit path arg (non-null) — must surface ConfigFileNotFound,
-    // NOT silently auto-create.
-    //
-    // Note: `LlmConfig.init` logs via std.log.err on this path for
-    // production observability. The Zig 0.16 test harness treats
-    // `log_err_count > 0` as a test failure even when the assertion
-    // itself passes — see the chunk-2 deviation notes in
-    // `docs/superpowers/plans/2026-07-02-auto-init-config.md` (the
-    // assertions pass; the build wrapper exits 1). Verify each
-    // `expectError` test by name via the test binary directly
-    // (see run logs in the chunk report).
+    // Explicit path arg (non-null) — must surface ConfigFileNotFound, NOT
+    // silently auto-create.
     const result = LlmConfig.init(allocator, std.testing.io, missing_path, &env_map);
     try std.testing.expectError(error.ConfigFileNotFound, result);
 }
@@ -5317,16 +4681,9 @@ test "init does NOT auto-create when file exists with parse error" {
     try env_map.put("HOME", "/tmp");
     try env_map.put("XDG_CONFIG_HOME", "/tmp");
 
-    // File exists → auto-init must NOT run; the parse error surfaces.
-    //
-    // Note: `LlmConfig.init` logs via std.log.err on this path for
-    // production observability. The Zig 0.16 test harness treats
-    // `log_err_count > 0` as a test failure even when the assertion
-    // itself passes — see the chunk-2 deviation notes in
-    // `docs/superpowers/plans/2026-07-02-auto-init-config.md` (the
-    // assertions pass; the build wrapper exits 1). Verify each
-    // `expectError` test by name via the test binary directly
-    // (see run logs in the chunk report).
+    // File exists → auto-init must NOT run; the parse error surfaces. Note:
+    // `LlmConfig.init` logs via std.log.err on this path for production
+    // observability.
     const result = LlmConfig.init(allocator, std.testing.io, config_path, &env_map);
     try std.testing.expectError(error.InvalidJson, result);
 
@@ -5337,18 +4694,15 @@ test "init does NOT auto-create when file exists with parse error" {
 }
 
 // ---------------------------------------------------------------------------
-// Compaction overrides: max_capacity_token_model + compaction_threshold_percent
-// (configurable compaction settings — see
-//  docs/superpowers/plans/2026-07-06-configurable-compaction.md).
-// ---------------------------------------------------------------------------
+// Compaction overrides: max_capacity_token_model +
+// compaction_threshold_percent (configurable compaction settings — see
 
 test "LlmConfig: LlmProfile.max_capacity_tokens reads value from JSON" {
     const allocator = std.testing.allocator;
 
-    // NOTE: `profiles_models` is a real JSON map (matches the
-    // shape the UI sends). The legacy `profile1..profile4` keys
-    // are convenience shorthands for tests; both shapes parse to
-    // the same internal `ProfilesMap`.
+    // NOTE: `profiles_models` is a real JSON map (matches the shape the UI
+    // sends). The legacy `profile1..profile4` keys are convenience shorthands
+    // for tests; both shapes parse to the same internal `ProfilesMap`.
     const json_body =
         \\{ "api_key": "k", "model": "m", "base_url": "b",
         \\  "profiles_models": { "profile1": { "model": "m", "max_capacity_tokens": 128000 } } }
@@ -5476,10 +4830,9 @@ test "LlmConfig: compactionThresholdPercent returns 80 when no profile / null pr
     try std.testing.expectEqual(@as(u8, 80), cfg.compactionThresholdPercent(null, null, null));
 }
 
-// ============================================================
-// Top-level defaults round-trip + cascade tests
-// (restored in plan 2026-07-07-compaction-inline)
-// ============================================================
+// ============================================================ Top-level
+// defaults round-trip + cascade tests (restored in plan
+// 2026-07-07-compaction-inline)
 
 test "LlmConfig: top-level max_capacity_token_model reads from JSON" {
     const allocator = std.testing.allocator;
@@ -5594,10 +4947,9 @@ test "LlmConfig: top-level defaults are skipped when defaults=null passed" {
 // ---------------------------------------------------------------------------
 
 test "active_profile: parses top-level 'active_profile' string from JSON" {
-    // Regression for "set_active_profile not work too" — the field
-    // was persisted by the PUT handler but dropped on load, so the
-    // workflow could never see it. With the fix, LlmConfig.init
-    // surfaces it on `cfg.active_profile` as a non-null borrowed slice.
+    // Regression for "set_active_profile not work too" — the field was
+    // persisted by the PUT handler but dropped on load, so the workflow could
+    // never see it.
     const allocator = std.testing.allocator;
 
     const json_body =
@@ -5654,22 +5006,8 @@ test "active_profile: empty string normalises to null" {
 }
 
 // ---------------------------------------------------------------------------
-//
 // profiles_models: arbitrary key names (not just profile1..profile4)
-//
-// Regression for "profile not selected as effective on demand" (task_1785963505875).
-// Config.zig previously hardcoded a 4-field schema
-// (ProfilesModelsJson { profile1, profile2, profile3, profile4 }); the
-// parse-from-slice with `ignore_unknown_fields = true` silently dropped
-// every other key. So `profiles_models: { "900ribu": {...} }` became
-// `profiles_models: {}` after load, and the workflow emitted:
-//   WORKFLOW: selected_profile_model '900ribu' not found in LlmConfig.profiles_models
-// …falling back to top-level config silently. The fix replaces the
-// hardcoded schema with a json.Value reparse that iterates the object's
-// keys (mirroring the existing mcp_servers parser). These tests verify
-// that arbitrary profile names — including the user's "900ribu" — make
-// it into cfg.profiles_models.
-// ---------------------------------------------------------------------------
+// Regression for "profile not selected as effective on demand"
 
 test "profiles_models: arbitrary name 'alpha' is loaded" {
     // Pre-fix: ProfilesModelsJson hardcodes profile1..profile4 keys;
@@ -5778,10 +5116,9 @@ test "profiles_models: multiple arbitrary names all loaded" {
 }
 
 test "profiles_models: empty {} → cfg.profiles_models.count is 0" {
-    // Pre-fix this passed (the schema decoded {} as 4 nulls which
-    // produced no entries), but it's still worth pinning so the
-    // post-fix json.Value iteration doesn't accidentally crash on
-    // an empty object.
+    // Pre-fix this passed (the schema decoded {} as 4 nulls which produced no
+    // entries), but it's still worth pinning so the post-fix json.Value
+    // iteration doesn't accidentally crash on an empty object.
     const allocator = std.testing.allocator;
 
     const json_body =
@@ -5820,13 +5157,8 @@ test "profiles_models: missing key → cfg.profiles_models.count is 0 (back-comp
 }
 
 // ---------------------------------------------------------------------------
-// Top-level defaults backfill (plan 2026-08-24-config-simplify-remove-defaults)
-//
-// config.json no longer carries top-level api_key/model/base_url/url_style.
-// When absent/empty, LlmConfig.init derives them from the active profile so
-// every downstream consumer of cfg.model etc. keeps working unchanged.
-// Present keys always win (backward compat with old configs).
-// ---------------------------------------------------------------------------
+// Top-level defaults backfill (plan
+// 2026-08-24-config-simplify-remove-defaults) config.json no longer carries
 
 test "backfill: missing top-level keys derived from active_profile" {
     const allocator = std.testing.allocator;
@@ -5979,10 +5311,7 @@ test "backfill: active_profile names a missing profile → falls back to first e
 test "backfill: url_style copied from profile even when default openai present" {
     const allocator = std.testing.allocator;
 
-    // url_style key ABSENT from the file → parse default "openai". The
-    // profile says anthropic; backfill must prefer the profile's wire
-    // format (absence is indistinguishable from explicit-openai post-parse,
-    // so profile-wins is the documented rule for url_style).
+    // url_style key ABSENT from the file → parse default "openai".
     const json_body =
         \\{
         \\  "profiles_models": {
@@ -6121,10 +5450,7 @@ test "rebuildMcpServersParsed: enabled server omits enabled key" {
 
 // ---------------------------------------------------------------------------
 // tools: top-level default tool checklist (Tools tab, plan
-// 2026-09-22-tools-menu-config-default-tools). D2: null (key absent or
-// explicit JSON null) = legacy per-mode defaults; `[]` = explicit zero;
-// non-empty = the default list. All three states must survive `init`.
-// ---------------------------------------------------------------------------
+// 2026-09-22-tools-menu-config-default-tools).
 
 test "tools: missing key → null (legacy defaults, D2 absent)" {
     const allocator = std.testing.allocator;
@@ -6209,10 +5535,8 @@ test "tools: wrong type (string) fails whole-config parse with InvalidJson" {
 }
 
 // ─── Skill Evals — the config toggle (default OFF) ───────────────────────
-//
 // These live inline rather than in config_test.zig because they exercise
-// `LlmConfig.LlmConfigJson` and `parseApplyMode`, both of which are private to
-// this file.
+// `LlmConfig.LlmConfigJson` and `parseApplyMode`, both of which are private
 
 test "skill_evals defaults to disabled" {
     const cfg: SkillEvalsConfig = .{};

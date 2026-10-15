@@ -108,12 +108,8 @@ pub fn getLLMHistories(
                         try urls.append(allocator, try allocator.dupe(u8, url));
                     }
                 }
-                // CRITICAL: use toOwnedSlice (not `urls.items`) so the returned
-                // slice is sized to `items.len`. `urls.items` aliases the
-                // ArrayList's full backing buffer (`capacity` may exceed `len`);
-                // if we returned that and a later caller (e.g. LLMHistory.deinit)
-                // tried to `allocator.free` the slice, it would free the wrong
-                // size and trip the debug allocator's canary check.
+                // CRITICAL: use toOwnedSlice (not `urls.items`) so the
+                // returned slice is sized to `items.len`.
                 break :blk if (urls.items.len > 0) try urls.toOwnedSlice(allocator) else null;
             } else null,
             .video_urls = if (video_url_str.len > 0) blk: {
@@ -144,11 +140,9 @@ fn parseRowBool(s: []const u8) bool {
     return s[0] == '1';
 }
 
-// ─── Tests ──────────────────────────────────────────────────────────────────
-//
+// ─── Tests
+// ──────────────────────────────────────────────────────────────────
 // `getLLMHistories` is a 24-column SELECT with a LEFT JOIN, COALESCE
-// defaults, numeric/bool parsing, and a pipe-split image_url. The tests
-// below exercise each of those branches against a minimal in-memory DB.
 
 const IdxAgent = 11;
 const IdxSessionName = 12;

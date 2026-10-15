@@ -56,10 +56,7 @@ const sse_send_event_worker_mod = @import("sse_send_event_worker.zig");
 const update_session_name_mod = @import("update_session_name.zig");
 const update_worker_mod = @import("update_worker.zig");
 
-// Re-exports (formerly from mod.zig). These form the public surface of
-// the agentic_loop module — `agentic_loop_mod.<X>` resolves to
-// `workflow.zig`, so any caller that previously imported from
-// `mod.zig` can keep the same access pattern.
+// Re-exports (formerly from mod.zig).
 pub const updateWorker = update_worker_mod.updateWorker;
 pub const UpdateWorkerInput = update_worker_mod.UpsertWorkerInput;
 pub const insertQueueMessage = insert_queue_message_mod.insertQueueMessage;
@@ -157,11 +154,9 @@ pub const CallbackAiWorkerFlow = struct {
                 logger.errFmt("[{s}] Failed to delete worker: {s}\n", .{ keyword, @errorName(error_sqlite) });
             };
 
-            // For TooManyRetries, the inner bail already saved a rich diagnostic
-            // to chat history (with the retry reason, count, and source). Skip the
-            // generic user-message save here so the AI agent sees ONE clear message
-            // instead of two — one rich (from the inner bail) and one redundant
-            // "TooManyRetries" generic message that would just confuse it again.
+            // For TooManyRetries, the inner bail already saved a rich
+            // diagnostic to chat history (with the retry reason, count, and
+            // source).
             if (err == error.TooManyRetries) {
                 logger.errFmt("[{s}] TooManyRetries\n", .{keyword});
                 return;
@@ -208,24 +203,8 @@ pub const RunAgenticMultiStepInput = struct {
 };
 
 // ─── re_read_selected_profile_model — live-re-read from sessions table ─────
-//
-// **Why this helper exists** (bug report task_1786031708725, 2026-08-06):
-// The workflow's `while (true)` loop in `runAgenticMultiStepnew` previously
-// used a snapshot of `selected_profile_model` taken at the top of the run
-// (`copy_selected_profile_model = parent_allocator.dupe(u8, params.selected_profile_model)`).
-// So when the user picked a different profile in the chatview dropdown
-// mid-run (PUT /api/llm/session/:id), the DB updated but the running
-// loop continued with the snapshot — the new profile was silently ignored
-// until the next message was sent.
-//
-// The fix: re-read `selected_profile_model` from the DB at the top of every
-// loop iteration (mirror the existing `is_auto_retry_until_stop` re-read
-// pattern at workflow.zig:543-552). The returned slice is borrowed from
-// the per-iteration arena — caller MUST NOT free it.
-//
-// Fallback behavior: any read failure (query throws, no row) returns the
-// `fallback` argument (typically `params.selected_profile_model`, the
-// snapshot). Same graceful-degrade as `is_auto_retry_until_stop`.
+// **Why this helper exists** (bug report task_1786031708725, 2026-08-06): The
+// workflow's `while (true)` loop in `runAgenticMultiStepnew` previously used
 fn re_read_selected_profile_model(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -243,21 +222,14 @@ fn re_read_selected_profile_model(
     if (maybe_row) |row| {
         defer row.deinit(allocator);
         // CRITICAL: row.deinit() frees row.values[0]'s backing memory.
-        // We must dupe into `allocator` (the per-iteration arena in
-        // production; the test allocator here) so the returned slice
-        // outlives the row's deferred free. Returning row.values[0]
-        // directly would crash the caller on read.
         return allocator.dupe(u8, row.values[0]) catch return fallback;
     }
     return fallback;
 }
 
-// ─── Test fixture for re_read_selected_profile_model ─────────────────────────
-//
-// In-memory SQLite with the full migration chain applied (so the
-// `sessions` table has the `selected_profile_model` column exactly as
-// production does — see `llm-history-test-use-migrations-module.md`).
-// Mirrors `src/agentic_loop/llm_history_search_fts_query_safety_test.zig::setupDb`.
+// ─── Test fixture for re_read_selected_profile_model
+// ───────────────────────── In-memory SQLite with the full migration chain
+// applied (so the `sessions` table has the `selected_profile_model` column
 const ReReadTestCtx = struct {
     db: sqlite.SqliteBackend,
     threaded: std.Io.Threaded,
@@ -286,13 +258,6 @@ fn re_read_teardown(ctx: *ReReadTestCtx) void {
 }
 
 /// Touch the checkpoint worker rows for one loop iteration.
-///
-/// Encapsulates the two `updateWorker` calls at the top of the `while (true)`
-/// loop in `runAgenticMultiStepnew`: always upserts the current session's
-/// worker row, and — for sub-agents — also upserts the parent session's
-/// worker row (preserving the parent's own `working_directory` verbatim via
-/// worker-row → sessions.cwd → fallback-to-child-cwd). Failures are logged
-/// and swallowed so a worker-table hiccup never kills the loop.
 const TouchCheckpointWorkersInput = struct {
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -373,11 +338,7 @@ fn touchCheckpointWorkers(input: TouchCheckpointWorkersInput) void {
 }
 
 /// Fetch MCP tools fresh from all configured servers (plan:
-/// mcp-fetch-once-cache). Extracted verbatim from the old per-run blk in
-/// `runAgenticMultiStepnew` — same cancel-thunk, same 30s deadline inside
-/// `buildMCPToolsRun`, same fail-soft `catch → null`. The caller publishes
-/// the result via `App.storeMcpToolsCache` so this runs exactly
-/// once per boot / per config mutation.
+/// mcp-fetch-once-cache).
 fn fetchMcpToolsFresh(
     parent_allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -421,18 +382,8 @@ fn fetchMcpToolsFresh(
 }
 
 /// Cancel thunk handed to `Agent.callStreaming` for the in-flight turn.
-///
-/// `Agent.zig` must not depend on sqlite/config, so it takes a plain
-/// `?*const fn () bool` and the workflow supplies this one. Same
-/// `threadlocal` shape as the MCP tools thunk in `fetchMcpToolsFresh` — the
-/// workflow runs one agentic loop per thread.
-///
-/// The DB read is throttled. The agent polls this once per SSE chunk (tens to
-/// hundreds of times a second on a fast stream) and a `SELECT` per chunk is
-/// pure overhead. Caching the answer for `LLM_CANCEL_POLL_INTERVAL_NS` bounds
-/// the added stop latency to that interval — negligible next to the
-/// second-or-so delay it replaces — while a positive answer is latched so a
-/// observed cancel can never be un-observed.
+/// `Agent.zig` must not depend on sqlite/config, so it takes a plain `?*const
+/// fn () bool` and the workflow supplies this one.
 const LlmCancelCtx = struct {
     db: *sqlite.SqliteBackend,
     session_id: []const u8,
@@ -496,25 +447,6 @@ const FlushCancelledInput = struct {
 
 /// Publish + persist the text streamed so far when a turn is cancelled
 /// mid-stream.
-///
-/// Before this, the cancel path's only terminal signal was `worker_deleted`
-/// (from `deleteWorker`'s defer). The frontend clears its `streaming-*`
-/// placeholder row and its `isStreaming` flag ONLY on a `full` event
-/// (`ChatView.vue`), so a stopped turn left a permanently "still streaming"
-/// client row that had no `llm_history` counterpart — it survived until the
-/// user switched sessions, and a reload lost the partial text entirely.
-///
-/// Emitting the canonical assistant row fixes both halves at once:
-/// `is_emit_sse = true` publishes the `llm_full` event the view already knows
-/// how to settle on, and the INSERT makes the stopped turn part of history.
-/// `finish_reason` is `"cancelled"` rather than `"stop"` so nothing downstream
-/// renders it as a completed turn (the frontend's green check marks key off
-/// `'stop'`).
-///
-/// Deliberately does NOT emit `chunk_final`: its payload is a usage report,
-/// which an aborted transfer cannot produce, and a zero-usage marker would
-/// clobber the token counter the view mirrors from it. The `full` event alone
-/// is sufficient to clear the streaming row.
 fn flushCancelledPartial(input: FlushCancelledInput) void {
     const allocator = input.allocator;
 
@@ -525,7 +457,6 @@ fn flushCancelledPartial(input: FlushCancelledInput) void {
     // Nothing streamed (cancelled before the first token): there is no row to
     // write and an empty `full` would fail the frontend's renderable gate
     // anyway, so the streaming placeholder is best cleared by the ordinary
-    // session-reload path.
     if (snapshot.content.len == 0) return;
 
     const now_ns = std.Io.Timestamp.now(input.io, .real).nanoseconds;
@@ -587,14 +518,9 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         .{ params.session_id, params.parent_session_id, params.is_sub_agent, params.message.len, params.allowed_tools.len, params.cwd },
     );
 
-    // ─── Per-session config (auth mode) ───
-    // With `--auth` on, each user's LLM config lives in
-    // `users.config_json` and the process-global singleton still describes
-    // the on-disk `config.json` — it is never swapped, because one global
-    // pointer cannot serve per-user config (see `session_llm_config.zig`).
-    // Resolve the run's config from the session owner; every case the
-    // database cannot answer (file mode, no owner, user never saved) falls
-    // back to the singleton, i.e. to the previous behaviour.
+    // ─── Per-session config (auth mode) ─── With `--auth` on, each user's
+    // LLM config lives in `users.config_json` and the process-global
+    // singleton still describes the on-disk `config.json` — it is never
     var config = session_llm_config.forSession(parent_allocator, db, params.session_id) orelse
         pabrikcore.getLlmConfig(di.di);
     var eff = config.resolveEffectiveProfile(params.selected_profile_model);
@@ -659,13 +585,9 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
     const copy_inherited_context = try parent_allocator.dupe(u8, params.inherited_context);
     var is_have_queue_message = false;
 
-    // Persist the selected profile on the session row so subagent
-    // children (whose rows are lazily created by updateWorker with
-    // NULL profile) carry the parent's profile. Only writes when
-    // params has a non-empty value so we never bind "" (which the
-    // SqliteBackend coerces to NULL) and never clobber an existing
-    // row with empty. The per-iteration re-read then resolves the
-    // correct model for every LLM call.
+    // Persist the selected profile on the session row so subagent children
+    // (whose rows are lazily created by updateWorker with NULL profile) carry
+    // the parent's profile.
     if (params.selected_profile_model.len > 0) {
         _ = llm_history.ensureSessionExists(parent_allocator, db, copy_session_id) catch |err| {
             logger.errFmt("[CHECKPOINT] ensure session failed session_id={s}: {s}", .{ copy_session_id, @errorName(err) });
@@ -675,10 +597,9 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         };
     }
 
-    // Migration 091 — stamp sub-agent identity alongside the parent
-    // profile. selected_profile_model stays as the parent (needed for
-    // thinking inheritance); sub_agent_name records who actually ran
-    // so DB inspection shows "implementator" instead of only the parent.
+    // Migration 091 — stamp sub-agent identity alongside the parent profile.
+    // selected_profile_model stays as the parent (needed for thinking
+    // inheritance); sub_agent_name records who actually ran so DB inspection
     if (params.sub_agent_overrides) |ov| {
         if (ov.resolved_name.len > 0) {
             _ = llm_history.ensureSessionExists(parent_allocator, db, copy_session_id) catch {};
@@ -696,10 +617,6 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
     const initial_agent = initial_agent_state.agent;
 
     // Check if session is already running (exists in worker table).
-    // The worker row is the single source of truth: it is upserted before
-    // the loop and on every iteration (plus per tool call), and deleted by
-    // the `defer deleteWorker` below at run end. Stale rows (kill -9, crash)
-    // are reaped by the `cleanup_stale_worker` cron.
     const is_worker_running = isWorkerRunning(parent_allocator, db, copy_session_id);
     if (is_worker_running) {
         logger.infoFmt(
@@ -771,24 +688,12 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
     var last_iter_start_ns: i128 = 0;
     // The auto-name call is a blocking LLM round-trip, so it runs at most
     // ONCE per worker run (one user turn) — never once per loop iteration.
-    // The retry that this bugfix is about is CROSS-turn: the next user
-    // message re-enters this function, re-evaluates the placeholder gate,
-    // and tries again. Without this bound, a provider that keeps failing
-    // the name request would add one extra LLM call (with a 5-minute
-    // read timeout) to every tool-call iteration of every turn.
     var auto_name_attempted = false;
     // The auto-name call is a blocking LLM round-trip, so it runs at most
     // ONCE per worker run (one user turn) — never once per loop iteration.
-    // The retry that this bugfix is about is CROSS-turn: the next user
-    // message re-enters this function, re-evaluates the placeholder gate,
-    // and tries again. Without this bound, a provider that keeps failing
-    // the name request would add one extra LLM call (with a 5-minute
-    // read timeout) to every tool-call iteration of every turn.
 
     // Same source as `config` above: the session owner's stored config in
-    // auth mode, the process-global singleton otherwise. Named apart
-    // because this is the ENTRY config the MCP fetch below reads, while
-    // the loop body re-reads the live one every iteration.
+    // auth mode, the process-global singleton otherwise.
     const initial_config = config;
 
     touchCheckpointWorkers(.{
@@ -803,11 +708,8 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
     });
 
     // Fetch-once MCP tools cache (plan: mcp-fetch-once-cache): one
-    // `tools/list` per boot / per config mutation, published to the
-    // singleton for every future run. This block only warms/publishes the
-    // cache — the per-turn SNAPSHOT is taken inside the loop below, because
-    // a slice read on every turn must be owned by an allocator that
-    // outlives every turn.
+    // `tools/list` per boot / per config mutation, published to the singleton
+    // for every future run.
     if (!di.di.isMcpToolsInit()) {
         const fresh = fetchMcpToolsFresh(parent_allocator, db, copy_session_id, initial_config, logger);
         // Publish for all future runs. On error (`fresh == null`) pass
@@ -818,13 +720,6 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
 
     // Per-turn arena: every allocation inside the while loop below uses
     // `allocator` from this arena — no `parent_allocator` inside the loop.
-    // Backed by the process GPA so each turn's memory is reclaimed by
-    // `reset` as the first statement of the loop body: a `defer` inside
-    // the loop would only run at function exit (that was the leak — turns
-    // accumulated until run end). Resetting at loop top rather than before
-    // each `continue` keeps inner-scope defers running before reclamation.
-    // Anything that must outlive its turn (copies) lives in
-    // parent_allocator outside the loop.
     var arenaAllocatorWhileLoop = std.heap.ArenaAllocator.init(di.allocator);
     defer arenaAllocatorWhileLoop.deinit();
     const allocator = arenaAllocatorWhileLoop.allocator();
@@ -857,35 +752,14 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         last_iter_start_ns = std.Io.Timestamp.now(io, .real).nanoseconds;
 
         // ─── Live config re-read (plan 2026-08-06-live-config-reload) ───
-        // Re-fetch the LlmConfig pointer from the holder once per
-        // iteration so user-initiated changes (model switch, profile
-        // change, API-key rotation via PabrikSettings) take effect on
-        // the next LLM call without waiting for the workflow run to
-        // end. `getLlmConfig` is a lock-free single-word pointer load;
-        // memory safety is preserved by `LlmConfigHolder.previous`
-        // keeping the swapped-out config alive until this run finishes.
-        // Auth mode re-resolves the owner's stored config (same fallback
-        // as the entry resolution), so a Settings save applies on the next
-        // iteration without waiting for the run to end. Allocated in the
-        // per-turn arena, like every other per-iteration allocation, so a
-        // Settings save applies on the next iteration without growing the
-        // run arena.
+        // Re-fetch the LlmConfig pointer from the holder once per iteration
+        // so user-initiated changes (model switch, profile change, API-key
         config = session_llm_config.forSession(allocator, db, copy_session_id) orelse
             pabrikcore.getLlmConfig(di.di);
 
-        // ─── Live MCP tools refresh on config invalidation ───
-        // PUT /api/config/pabrik and add_mcp_server call
-        // `clearMcpToolsCache()` after their `setLlmConfig` swap. If the
-        // user toggled an MCP server mid-run, the cache is uninitialized
-        // here → refetch once from the LIVE `config` above and
-        // re-publish, so the toggle applies on the next iteration
-        // without waiting for the run to end. Steady-state cost is one
-        // spinlock bool check per iteration (zero `tools/list` I/O) —
-        // deliberately NOT an unconditional per-iteration fetch, which
-        // would roundtrip every server on every loop step. Uses the live
-        // config (not `initial_config`): the toggle swapped the pointer.
-        // On error publishes mark_init=false so the next iteration
-        // retries (same fail-soft contract as the pre-loop fetch).
+        // ─── Live MCP tools refresh on config invalidation ─── PUT
+        // /api/config/pabrik and add_mcp_server call `clearMcpToolsCache()`
+        // after their `setLlmConfig` swap.
         if (!di.di.isMcpToolsInit()) {
             const fresh = fetchMcpToolsFresh(allocator, db, copy_session_id, config, logger);
             // `fresh` is consumed by `storeMcpToolsCache` (which deep-dupes
@@ -894,29 +768,14 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             di.di.storeMcpToolsCache(fresh, fresh != null);
         }
 
-        // ─── MCP tools for THIS TURN ONLY ───
-        // The snapshot is owned by the per-turn arena `allocator`, which
+        // ─── MCP tools for THIS TURN ONLY ─── The snapshot is owned by the
+        // per-turn arena `allocator`, which
         // `arenaAllocatorWhileLoop.reset(.free_all)` at the top of every
-        // iteration frees. It is therefore read in the iteration that takes
-        // it and never kept: carrying it across turns (a `var mcp_tools`
-        // declared outside the loop and re-pointed only while the cache was
-        // uninitialized) left the turn AFTER a config mutation reading a
-        // slice the reset had already freed — the use-after-free behind the
-        // SEGV reported at `progressive_catalog.buildCatalog`, reached from
-        // `sub_agent_batch.runSubAgent`.
         const mcp_tools: ?[]pabrikcore.tool_models.AgentTool = di.di.getMcpToolsCached(allocator);
 
-        // ─── Live per-session profile re-read (plan 2026-08-06-workflow-re-read-profile) ───
-        // The previous snapshot pattern (params.selected_profile_model) silently
-        // ignored mid-run profile changes via PUT /api/llm/session/:id. Now we
-        // re-read `sessions.selected_profile_model` per iteration so the next
-        // LLM call + any sub-agent spawned in this iteration use the user's
-        // freshly-picked profile. Mirrors the live-config-re-read above + the
-        // is_auto_retry_until_stop re-read above that.
-        //
-        // The dupe'd slice is owned by `allocator` (the per-iteration arena)
-        // and freed at iteration end. Falls back to the snapshot
-        // `params.selected_profile_model` on any read failure.
+        // ─── Live per-session profile re-read (plan
+        // 2026-08-06-workflow-re-read-profile) ─── The previous snapshot
+        // pattern (params.selected_profile_model) silently ignored mid-run
         const live_selected_profile_model: []const u8 = re_read_selected_profile_model(
             allocator,
             db,
@@ -932,13 +791,9 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         {
             logger.warnFmt("WORKFLOW: selected_profile_model '{s}' not found in LlmConfig.profiles_models, using top-level config", .{live_selected_profile_model});
         }
-        // === Per-iteration profile re-resolution ============================
-        // ONE typed cascade call replaces the 4× resolveProfileField +
-        // ~50 lines of hand-rolled thinking/budget/effort blocks + the
-        // iter_profile lookup. Same live-re-read pattern as the
-        // effective_* fields above: user-initiated profile changes via
-        // PabrikSettings take effect on the NEXT LLM call without
-        // waiting for the workflow run to end.
+        // === Per-iteration profile re-resolution
+        // ============================ ONE typed cascade call replaces the 4×
+        // resolveProfileField + ~50 lines of hand-rolled
         eff = config.resolveEffectiveProfile(live_selected_profile_model);
         const iter_profile: ?config_mod.LlmConfig.LlmProfile =
             config.resolveSessionProfileCompat(live_selected_profile_model);
@@ -959,11 +814,8 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         }
 
         // A run must never proceed while a question is unanswered: the model
-        // would receive the <status>pending</status> envelope and might guess.
-        // The `session_create` funnel settles a pending question as
-        // `abandoned` before any user-initiated run, and the `.tool_calls` arm
-        // below breaks immediately after asking — this guard covers the third
-        // path, a scheduler-started run (e.g. `wakeSessionForCompletion`).
+        // would receive the <status>pending</status> envelope and might
+        // guess.
         if (ask_user_pending.hasPendingQuestion(allocator, db, copy_session_id)) {
             logger.infoFmt(
                 "[CHECKPOINT] ask_user question still pending — ending the run session_id={s}",
@@ -1095,12 +947,8 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         var agent_temperature = currentAgentState.temperature;
         var isThinking = currentAgentState.is_thinking;
 
-        // Apply sub-agent overrides (resolved by Config.resolveSubAgent
-        // in tool_registry.execSpawnSubAgent). For the main-agent
-        // flow, `sub_agent_overrides` is null and this block is a
-        // no-op. For the sub-agent flow, non-empty string fields
-        // override the profile-resolved values, and non-null
-        // bool/f32 fields override the session's current values.
+        // Apply sub-agent overrides (resolved by Config.resolveSubAgent in
+        // tool_registry.execSpawnSubAgent).
         var sub_agent_session_name: []const u8 = "";
         if (params.sub_agent_overrides) |ov| {
             if (ov.model.len > 0) eff.model = ov.model;
@@ -1117,70 +965,42 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             if (ov.opencode_auto) |b| eff.opencode_auto = b;
             if (ov.is_thinking) |t| {
                 isThinking = t;
-                // Mirror the override onto the session-state carrier
-                // so the user-message INSERT below carries the
-                // sub-agent's resolved `is_thinking`, not the
-                // profile's. Without this, the inserted user row
-                // would record `eff.is_thinking` (from the
-                // profile), and the assistant response would echo it
-                // even though the sub-agent actually uses `isThinking`
-                // for its LLM call.
+                // Mirror the override onto the session-state carrier so the
+                // user-message INSERT below carries the sub-agent's resolved
+                // `is_thinking`, not the profile's.
                 eff.is_thinking = t;
             }
             if (ov.temperature) |t| agent_temperature = t;
             // Model-thinking overrides (plan 2026-08-23-model-thinking).
-            // Non-null budget_tokens wins over the profile's value.
-            // Non-null reasoning_effort wins over the profile's value.
-            // Null/empty means "inherit from parent profile" — the
-            // effective_* vars keep their per-iteration resolved
-            // values. The empty-string guard on reasoning_effort
-            // matches the form's "auto" representation.
+            // Non-null budget_tokens wins over the profile's value. Non-null
+            // reasoning_effort wins over the profile's value.
             if (ov.thinking_budget_tokens) |t| eff.thinking_budget_tokens = t;
             if (ov.reasoning_effort) |re| {
                 if (re.len > 0) eff.reasoning_effort = re;
             }
             sub_agent_session_name = ov.resolved_name;
         }
-        // For sub-agent flow: replace `current_agent` (the session's
-        // last `agent_name` from llm_history) with the resolved
-        // sub-agent name. The session is brand-new for sub-agents
-        // (no prior agent_name), so `current_agent` defaults to
-        // "Agent" — we want the sub-agent's resolved_name instead.
+        // For sub-agent flow: replace `current_agent` (the session's last
+        // `agent_name` from llm_history) with the resolved sub-agent name.
         const effective_agent_name: []const u8 = if (sub_agent_session_name.len > 0)
             sub_agent_session_name
         else
             current_agent;
 
         // Sub-agent's specialized system_prompt (from
-        // SubAgentConfig.system_prompt) is injected as the
-        // `## Your Active Agent Configuration` section of
-        // build_agent_prompt. For the main-agent flow and the
-        // random-fallback case, this is empty and `buildMessages`
-        // falls back to `BuildDynamicAgentContent`.
+        // SubAgentConfig.system_prompt) is injected as the `## Your Active
+        // Agent Configuration` section of build_agent_prompt.
         const sub_agent_system_prompt: []const u8 = if (params.sub_agent_overrides) |ov|
             ov.system_prompt
         else
             "";
 
-        // Bail on retry budget exhaustion. Placed here (after effective_agent_name
-        // is computed) so the diagnostic saved to chat history has the correct
-        // agent context for the AI to read on its next turn. Without this rich
-        // diagnostic, the AI only sees the generic "TooManyRetries" error name
-        // in the outer catch and has no idea WHY retries were happening or what
-        // the underlying cause was (network, rate-limit, auth, etc.).
+        // Bail on retry budget exhaustion.
         if (retry_count > 10) {
             const reason_error = @errorName(last_retry_error);
             const reason_source = last_retry_source;
 
             // Migration 063 — unattended-mode soft-bail.
-            // When the session opts into `is_auto_retry_until_stop=1`, the
-            // workflow keeps running past retry_count > 10 instead of
-            // returning `error.TooManyRetries`. It logs a chat-history
-            // snapshot, sleeps for the configured retry delay, and
-            // `continue`s the while-loop. Hard bail behavior is
-            // preserved EXACTLY when the flag is off — same diagnostic,
-            // same llm_history entry, same `return error.TooManyRetries`
-            // — so existing users see no change.
             if (is_auto_retry_until_stop) {
                 logger.warnFmt(
                     "UNATTENDED SOFT-BAIL: retry_count={} exceeded 10 (last error={s} source={s}) — continuing per is_auto_retry_until_stop=1",
@@ -1202,7 +1022,6 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                     // Soft-bail diagnostic should surface in the live chat
                     // stream but NOT pollute the persistent chat history —
                     // the AI's next turn shouldn't see 10+ retry snapshots
-                    // accumulated across unattended-mode cycles.
                     .is_skip_db = true,
                     // Frontend AgentErrorCard routing (task_1787663566535_2).
                     .is_error = true,
@@ -1223,8 +1042,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                 }
                 // Reset retry counter AND stale retry-cause capture so the
                 // NEXT soft-bail diagnostic reflects the *current* failure
-                // batch, not the very first error of this session. The first
-                // failure cause persisted indefinitely before this reset.
+                // batch, not the very first error of this session.
                 retry_count = 0;
                 last_retry_error = error.Unknown;
                 last_retry_source = "unknown";
@@ -1252,11 +1070,9 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                 .logger = logger,
                 .event_bus = event_bus,
                 .is_emit_sse = true,
-                // Hard-bail diagnostic should surface in the live chat
-                // stream but NOT pollute the persistent chat history —
-                // the workflow halts immediately after this call so the
-                // diagnostic is purely a UX message, not a follow-up
-                // prompt for the next turn.
+                // Hard-bail diagnostic should surface in the live chat stream
+                // but NOT pollute the persistent chat history — the workflow
+                // halts immediately after this call so the diagnostic is
                 .is_skip_db = true,
                 // Frontend AgentErrorCard routing (task_1787663566535_2).
                 .is_error = true,
@@ -1320,13 +1136,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         };
         loop_counter += 1;
         // Auto-name gate: keyed on the session's CURRENT name, not on
-        // `loop_counter == 1`. A name call that fails (transport blip,
-        // 429, a provider rejecting the extra request) used to leave the
-        // session "New Chat" for the rest of its life because this branch
-        // never ran again. Gating on the placeholder makes the attempt
-        // idempotent AND retryable: it re-runs on the next turn while the
-        // name is still a placeholder, and stops for good once the name
-        // exists (LLM-generated or typed by the user).
+        // `loop_counter == 1`.
         if (!is_task_kanban and
             !auto_name_attempted and
             sessionNameIsPlaceholder(allocator, db, copy_session_id))
@@ -1335,12 +1145,9 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             generateSessionNameNew(db_messages, allocator, eff.api_key, eff.model, eff.base_url, eff.url_style, eff.backend, copy_session_id, logger, io, db, event_bus);
         }
 
-        // ─── Progressive tool search ───────────────────────────────────
-        // The catalog is what this session could still enable: registered
+        // ─── Progressive tool search ─────────────────────────────────── The
+        // catalog is what this session could still enable: registered
         // built-ins that are NOT enabled, plus every MCP tool (MCP is
-        // progressive — it never reaches the prompt unless equipped). It is
-        // computed with the SAME eligibility helper the merge below uses, so
-        // the offer can never drift from what the model actually receives.
         const progressive_rows = try llm_history.getProgressiveTools(allocator, db, copy_session_id);
         const progressive_names = try allocator.alloc([]const u8, progressive_rows.len);
         for (progressive_rows, 0..) |row, i| progressive_names[i] = row.tool_name;
@@ -1353,9 +1160,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
 
         const registered_tools = tools.all_agent_tools(allocator);
         // The catalog is built for the diagnostic log line below (how many
-        // tools this session could still discover). It gates nothing: the
-        // three progressive tools are ordinary tools, injected when the
-        // session's tool config includes them.
+        // tools this session could still discover).
         const catalog = try progressive_catalog.buildCatalog(
             allocator,
             registered_tools,
@@ -1372,13 +1177,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             copy_allowed_tools,
             copy_is_sub_agent,
             progressive_names,
-            // The Skill Evals master switch. `config` is the LIVE re-read
-            // pointer (see the per-iteration re-read above), so flipping the
-            // switch in config.json takes effect on the next iteration without
-            // restarting the run — the same contract as the model switch.
-            // Under `--auth` that pointer never sees the user's saved
-            // settings, so resolve per session and keep the pointer as the
-            // file-mode answer.
+            // The Skill Evals master switch.
             (skill_evals_config.resolve(allocator, db, copy_session_id) orelse
                 config.skill_evals).enabled,
         );
@@ -1419,11 +1218,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         );
 
         var last_dynamic_agent_error_message: ?[]const u8 = null;
-        // Make this turn cancellable. The agent polls `llm_cancel_thunk`
-        // between SSE chunks so a user Stop aborts the in-flight call instead of
-        // waiting for the response to finish. Registered per iteration and
-        // cleared on the way out, so a stale context can never leak into the
-        // next turn.
+        // Make this turn cancellable.
         llm_cancel_thunk.register(.{ .db = db, .session_id = copy_session_id, .io = io });
         defer llm_cancel_thunk.unregister();
         const res_dynamic_agent = callDynamicAgentNew(allocator, io, messagesLists, agent_temperature, current_max_tokens, isThinking, eff.thinking_budget_tokens, eff.thinking_adaptive, eff.reasoning_effort, eff.api_key, eff.model, eff.base_url, eff.url_style, eff.backend, copy_session_id, merged_tools, &llm_cancel_thunk.call, &last_dynamic_agent_error_message) catch |err| {
@@ -1450,39 +1245,30 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                 break;
             }
             retry_count += 1;
-            // Capture WHY this retry fired so the AI agent can understand
-            // the cause when the retry budget is eventually exhausted.
-            // This overwrites any stale capture from a previous iteration,
-            // so the *most recent* failure cause is what the bail diagnostic
-            // reflects — not the first failure of this session.
+            // Capture WHY this retry fired so the AI agent can understand the
+            // cause when the retry budget is eventually exhausted.
             last_retry_error = err;
             last_retry_source = "callDynamicAgentNew";
-            // Cross-turn carry: the retry-budget check at the TOP of a
-            // later iteration reads this, and every iteration frees the
-            // per-turn arena — so the copy must live in the RUN arena
-            // (`parent_allocator`, freed at run end), not the turn arena.
+            // Cross-turn carry: the retry-budget check at the TOP of a later
+            // iteration reads this, and every iteration frees the per-turn
+            // arena — so the copy must live in the RUN arena
             last_retry_server_detail = if (last_dynamic_agent_error_message) |msg|
                 parent_allocator.dupe(u8, msg) catch null
             else
                 null;
-            // The agent populated `last_dynamic_agent_error_message` with
-            // the actual server / transport reason (e.g. "HTTP 429: rate
-            // limit exceeded", "scanner.next failed after 12 chunk(s):
-            // ConnectionResetByPeer"). Falls back to "(no server detail)"
-            // for error variants the agent doesn't synthesize a message
-            // for (Cancelled, AllocFailed, OutOfMemory, BuildRequestFailed).
+            // The agent populated `last_dynamic_agent_error_message` with the
+            // actual server / transport reason (e.g. "HTTP 429: rate limit
+            // exceeded", "scanner.next failed after 12 chunk(s):
             const server_detail = clampDetail(last_dynamic_agent_error_message orelse "(no server detail)", 500);
             logger.errFmt("Error calling dynamic agent: {s} now retrying after {d}ms delay — server: {s}", .{ @errorName(err), config.retry_delay_ms, server_detail });
             // Save a per-retry diagnostic to chat history so the user sees
-            // each attempt live AND the AI has the full retry progression
-            // in context for its next turn (instead of only learning about
-            // retries after the budget is exhausted).
+            // each attempt live AND the AI has the full retry progression in
+            // context for its next turn (instead of only learning about
             try saveRetryAttemptMessage(allocator, db, event_bus, logger, io, copy_cwd, copy_session_id, copy_parent_session_id, eff.model, effective_agent_name, agent_temperature, isThinking, loop_counter, retry_count, @as(u32, 10), "callDynamicAgentNew", @errorName(err), server_detail, config.retry_delay_ms);
 
             // Sleep before the next attempt so the upstream can recover (or
             // rate-limit window can close). 0 ms = no delay (current
-            // behavior, the default). Interrupted by worker cancellation —
-            // see retryDelayMs for the polling details.
+            // behavior, the default).
             if (!retryDelayMs(.{
                 .allocator = allocator,
                 .delay_ms = config.retry_delay_ms,
@@ -1506,24 +1292,9 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             m.deinit(allocator);
         }
 
-        // Lifecycle: `CallResponse` (and everything it points at —
-        // `content`, `reasoning_content`, each
-        // `tool_calls[i].{id, function.name, function.arguments}`, the
-        // `tool_calls` slice itself) is allocated from THIS iteration’s
-        // arena (`arenaAllocatorWhileLoop` declared above the loop; the
-        // per-turn `reset` at loop top reclaims it at end-of-turn in LIFO
-        // order). `CallResponse.deinit` is a documented no-op (see
-        // `Agent.zig` CallResponse doc), so the explicit `defer` here
-        // is purely cosmetic — it’s kept as `res_dynamic_agent.deinit()`
-        // so the call site stays readable, but the arena does the real
-        // work.
-        //
-        // The pre-fix code free’d every inner slice by hand, which
-        // under the arena was a no-op but under `testing.allocator`
-        // (Debug, fill-poisoned freed memory with 0xAA) corrupted the
-        // very slices the downstream `handle_tool → execBash` consumer
-        // was about to read — see the 2026-08-15 “bash tool leak” bug
-        // where 22 0xAA bytes ended up as `ls -la $'ʪ…'`.
+        // Lifecycle: `CallResponse` (and everything it points at — `content`,
+        // `reasoning_content`, each `tool_calls[i].{id, function.name,
+        // function.arguments}`, the `tool_calls` slice itself) is allocated
 
         const llm_duration_ms = @divTrunc(std.Io.Timestamp.now(io, .real).nanoseconds - checkpoint_llm_start_ns, std.time.ns_per_ms);
         logger.infoFmt(
@@ -1546,11 +1317,9 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         last_retry_error = error.Unknown;
         last_retry_source = "unknown";
         last_retry_server_detail = null;
-        // Migration 063 — persist the most recent `finish_reason` so the
-        // next workflow invocation (e.g., after a server restart) can
-        // start from the right state without re-querying llm_history.
-        // Fire-and-log: a DB error here doesn't abort the loop — the
-        // cache is best-effort, not source-of-truth.
+        // Migration 063 — persist the most recent `finish_reason` so the next
+        // workflow invocation (e.g., after a server restart) can start from
+        // the right state without re-querying llm_history.
         if (res_dynamic_agent.finish_reason) |fr| {
             llm_history.updateSessionLastFinishReason(allocator, db, copy_session_id, fr.to_str()) catch |err| {
                 logger.warnFmt(
@@ -1575,11 +1344,8 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                     continue;
                 }
                 // In-stream final marker (llm_chunk / type="chunk_final"):
-                // tells the frontend the token stream is over + carries
-                // usage BEFORE the canonical llm_full row lands. The full
-                // row (insertLLMHistories below with is_emit_sse=true)
-                // remains the source of truth for rendering — this only
-                // ends the typing indicator early.
+                // tells the frontend the token stream is over + carries usage
+                // BEFORE the canonical llm_full row lands.
                 on_event_sent.sendStreamChunkFinal(allocator, copy_session_id, .{
                     .index = 0,
                     .usage = .{
@@ -1630,9 +1396,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
 
                 // Fire an OS notification when the user has opted in. Only on
                 // `finish_reason == .stop` — tool_calls and length are
-                // mid-conversation events the user is already watching. Fire-
-                // and-forget: a missing notify-send (or denied daemon) is
-                // logged and ignored so the LLM workflow never blocks.
+                // mid-conversation events the user is already watching.
                 if (config.notify_on_complete and copy_is_sub_agent == false) {
                     const preview = if (res_dynamic_agent.content) |c| c else "(empty response)";
                     try notifications.notify(io, allocator, "Agent Pabrik", preview);
@@ -1665,38 +1429,15 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                     "[CHECKPOINT] finish_reason=tool_calls session_id={s} loop_counter={d} tool_count={d}",
                     .{ copy_session_id, loop_counter, if (res_dynamic_agent.tool_calls) |tc| tc.len else 0 },
                 );
-                // Forward the LIVE per-session profile (re-read at the top
-                // of this iteration) to handle_tool. Sub-agents spawned via
-                // spawn_sub_agent use this as their RunParamsNew.selected_profile_model
-                // — so a sub-agent spawned mid-run, after the user picks a
-                // new profile in the chatview dropdown, uses the NEW
-                // profile from its first LLM call. (Previously the
-                // snapshot copy_selected_profile_model was forwarded, so
-                // sub-agents stuck to the profile at run start.) The snapshot
-                // stays allocated for the run's lifetime as the fallback if
-                // a future iteration's re-read fails.
+                // Forward the LIVE per-session profile (re-read at the top of
+                // this iteration) to handle_tool.
                 const tool_outcome = try handle_tool(allocator, io, db, logger, copy_session_id, copy_parent_session_id, eff.model, copy_cwd, loop_counter, res_dynamic_agent, &agent_temperature, &isThinking, config.api_key, config.base_url, config, environment, live_selected_profile_model, copy_allowed_tools, copy_is_sub_agent);
 
-                // `ask_user` ends the turn rather than parking the loop. The
-                // tool recorded a pending question and returned
-                // `<status>pending</status>`; the batch's rows are already
-                // complete (handle_tool's Phase 1 gave every tool call its own
-                // role=tool row), so the chain stays valid and the resume run —
-                // started when the human answers — reads that same row with the
-                // answer in it.
-                //
-                // Deliberately NO `hasQueuedMessages` guard here (unlike
-                // `.stop` below): a queued message must not start another
-                // iteration while a question is pending, because the loop would
-                // hand the model the <status>pending</status> envelope and it
-                // might guess. `session_create` settles the question as
-                // `abandoned` before any user-initiated run for the same reason.
+                // `ask_user` ends the turn rather than parking the loop.
                 if (ask_user_pending.hasPendingQuestion(allocator, db, copy_session_id)) {
-                    // Overwrite the `tool_calls` value persisted at the top of
-                    // this iteration: as far as anything reading the session is
-                    // concerned, this turn ended waiting on the human. The
-                    // assistant row keeps `tool_calls` — that IS what the LLM
-                    // returned, and the frontend's TOOLS-pill logic keys off it.
+                    // Overwrite the `tool_calls` value persisted at the top
+                    // of this iteration: as far as anything reading the
+                    // session is concerned, this turn ended waiting on the
                     llm_history.updateSessionLastFinishReason(allocator, db, copy_session_id, agent.FinishReason.awaiting_user.to_str()) catch |err| {
                         logger.warnFmt(
                             "[workflow] failed to persist last_finish_reason=awaiting_user: {s}",
@@ -1718,28 +1459,11 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                     break;
                 }
 
-                // `is_stop` on a tool call (`command is_stop=true`): the model
-                // asked to end THIS turn. Same exit as `finish_reason == .stop`
-                // above — deleteWorker + break — because as far as every reader
-                // is concerned the turn is over and nothing is pending.
-                //
-                // Reached only AFTER `handle_tool` dispatched and persisted the
-                // whole batch, so every tool_call_id has its role=tool row and
-                // the transcript stays valid for the next turn.
-                //
-                // Nothing is killed. A `background` / `background_persistence`
-                // command started in the same batch keeps running — that
-                // combination ("start the dev server, then stop looping") is
-                // the main reason this parameter exists.
+                // `is_stop` on a tool call (`command is_stop=true`): the
+                // model asked to end THIS turn.
                 if (tool_outcome.stop_loop) {
-                    // The provider's own finish_reason was `tool_calls` and was
-                    // persisted as such at the top of this iteration. Overwrite
-                    // it: `last_finish_reason` is read as "is anything still in
-                    // flight", and a tool batch that ended the turn is not.
-                    // `stop` (not a new enum value) because the semantics are
-                    // exactly the `.stop` arm's: turn over, nothing pending.
-                    // `awaiting_user` needed its own value because a RESUME is
-                    // pending; `is_stop` has no such obligation.
+                    // The provider's own finish_reason was `tool_calls` and
+                    // was persisted as such at the top of this iteration.
                     llm_history.updateSessionLastFinishReason(allocator, db, copy_session_id, agent.FinishReason.stop.to_str()) catch |err| {
                         logger.warnFmt(
                             "[workflow] failed to persist last_finish_reason=stop after is_stop: {s}",
@@ -1763,9 +1487,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             } else {
                 retry_count += 1;
                 // Capture the unexpected finish_reason as a synthetic
-                // retry-cause so the bail diagnostic identifies it. The
-                // success path's reset (after the `if (finish_reason)` block)
-                // clears this for the next iteration.
+                // retry-cause so the bail diagnostic identifies it.
                 last_retry_error = error.UnexpectedFinishReason;
                 last_retry_source = "finish_reason else";
                 // No transport error on this path — the LLM responded but
@@ -1776,10 +1498,9 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                 // finish_reason has no underlying error name, so use the
                 // source label as the diagnostic).
                 try saveRetryAttemptMessage(allocator, db, event_bus, logger, io, copy_cwd, copy_session_id, copy_parent_session_id, eff.model, effective_agent_name, agent_temperature, isThinking, loop_counter, retry_count, @as(u32, 10), "finish_reason else", "unexpected finish_reason", "(no server detail — LLM responded with an unexpected finish_reason)", config.retry_delay_ms);
-                // Same delay policy as the callDynamicAgentNew catch —
-                // sleep before the loop restarts so we don't hammer the
-                // upstream when it returns an unexpected finish_reason
-                // repeatedly. Interrupted by worker cancellation.
+                // Same delay policy as the callDynamicAgentNew catch — sleep
+                // before the loop restarts so we don't hammer the upstream
+                // when it returns an unexpected finish_reason repeatedly.
 
                 if (!retryDelayMs(.{
                     .allocator = allocator,
@@ -1795,10 +1516,9 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                 break;
             }
 
-            // Reset retry counter AND stale retry-cause capture so the
-            // NEXT bail (soft or hard) reflects the most recent failure,
-            // not the very first one of this session. Mirrors the reset
-            // in the soft-bail path above.
+            // Reset retry counter AND stale retry-cause capture so the NEXT
+            // bail (soft or hard) reflects the most recent failure, not the
+            // very first one of this session.
             retry_count = 0;
             last_retry_error = error.Unknown;
             last_retry_source = "unknown";
@@ -1822,18 +1542,8 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
     logger.debugFmt("WORKFLOW: exiting while loop for session_id {s}", .{copy_session_id});
 }
 
-/// True when the session has no real name yet, so the LLM name
-/// generator should (still) be allowed to run.
-///
-/// The two placeholder literals are the only names the product itself
-/// writes for a fresh chat: "New Chat" (sidebar new-chat flow, stored on
-/// the task row so both lists agree) and "New Session" (session_create /
-/// TUI default). Anything else is either generated or typed by the user,
-/// and must never be overwritten.
-///
-/// A missing row or an unreadable name answers `true`: the worker can
-/// start before the session row lands, and skipping the name there would
-/// reproduce the very "stuck on New Chat forever" bug this gate fixes.
+/// True when the session has no real name yet, so the LLM name generator
+/// should (still) be allowed to run.
 fn sessionNameIsPlaceholder(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -1854,11 +1564,7 @@ fn isPlaceholderSessionName(name: []const u8) bool {
         std.mem.eql(u8, name, "New Session");
 }
 
-/// True when a model-returned name is usable. `sessions.name` is TEXT NOT
-/// NULL, and this repo's `db.exec` binds an empty slice as SQL NULL, so a
-/// blank name must never reach the UPDATE — it would fail (or leave an
-/// empty title) and, because the session would keep its placeholder, the
-/// auto-name gate would reopen on every later turn.
+/// True when a model-returned name is usable.
 fn isUsableGeneratedName(name: []const u8) bool {
     return std.mem.trim(u8, name, " \t\r\n").len > 0;
 }
@@ -1906,9 +1612,7 @@ fn generateSessionNameNew(
 
     var name_agent = agent.Agent.init(allocator, io);
     // Frees `last_error_message` (the drained server error body) on the
-    // failure path. The http Client itself is stateless — every perform
-    // builds and tears down its own CURL* — so this is a small clean-up,
-    // not a handle-leak fix.
+    // failure path.
     defer name_agent.deinit();
     name_agent.apiKey = api_key;
     name_agent.model = model;
@@ -1924,11 +1628,7 @@ fn generateSessionNameNew(
         .messages = name_messages,
     };
 
-    // A failed name call must be DIAGNOSABLE. The pre-fix code logged a
-    // bare constant, so a provider that rejects the name request (429,
-    // auth, a gateway that dislikes the extra call) looked identical to a
-    // success. `last_error_message` carries the drained HTTP body / scanner
-    // reason; read it before `deinit` frees it.
+    // A failed name call must be DIAGNOSABLE.
     const response = name_agent.callStreaming(params, null, noopStreamCallbackNew) catch |err| {
         logger.errFmt(
             "[SESSION NAME] Failed to call LLM for session name session_id={s} model={s} error={s} detail={s}",
@@ -1948,11 +1648,7 @@ fn generateSessionNameNew(
             logger.warnFmt("[SESSION NAME] Failed to strip thinking tags: {s}, using original content", .{@errorName(err)});
         }
 
-        // An empty / whitespace-only name is not a name. `sessions.name`
-        // is TEXT NOT NULL, so writing "" would either fail the UPDATE
-        // (this repo's db.exec binds an empty slice as NULL) or leave a
-        // blank title. Bail instead — and because the session keeps its
-        // placeholder, a later turn retries rather than looping here.
+        // An empty / whitespace-only name is not a name.
         const trimmed_name = std.mem.trim(u8, stripped_content, " \t\r\n");
         if (!isUsableGeneratedName(trimmed_name)) {
             logger.warnFmt(
@@ -1994,32 +1690,9 @@ fn generateSessionNameNew(
     }
 }
 
-/// Save a per-retry diagnostic message to chat history so the user
-/// sees each retry attempt live in their chat (instead of only
-/// learning about retries via the final TooManyRetries summary)
-/// AND the AI agent has the full retry history in context for its
-/// next turn.
-///
-/// Called from BOTH retry paths (callDynamicAgentNew catch + else
-/// finish_reason branch). The message is marked `is_input: true` so
-/// it appears in the chat list as a user-side entry — this gives the
-/// human live visibility into each retry attempt. Critically,
-/// `is_feed_to_llm: false` — the per-retry diagnostic does NOT
-/// propagate to the LLM context. Feeding every retry to the LLM
-/// would bloat the context with up to 10 identical error messages
-/// per failure cycle; the LLM only needs the failure CAUSE, which
-/// is captured in the final TooManyRetries bail diagnostic (see
-/// the `diagnostic` / `soft_diagnostic` blocks at retry_count > 10).
-///
-/// Format: `[Retry {attempt}/{max}] {error_name} ({source}). Retrying in {delay_ms}ms.`
-/// — terse on purpose, since up to 10 of these accumulate in chat.
-///
-/// `attempt` is 1-based (after the increment). `max_attempts` is the
-/// retry budget (currently 10, matching the `retry_count > 10` bail).
-/// Clamp a server-detail string for user-visible diagnostics. The raw
-/// detail can be up to 2 KiB (raw SSE sample cap in Agent.callStreaming);
-/// 10 retries × 2 KiB would flood the chat, so user-visible messages get
-/// at most `max_len` bytes. Returns a slice of the input — no allocation.
+/// Save a per-retry diagnostic message to chat history so the user sees each
+/// retry attempt live in their chat (instead of only learning about retries
+/// via the final TooManyRetries summary) AND the AI agent has the full retry
 fn clampDetail(detail: []const u8, max_len: usize) []const u8 {
     if (detail.len <= max_len) return detail;
     return detail[0..max_len];
@@ -2043,17 +1716,12 @@ fn saveRetryAttemptMessage(
     max_attempts: u32,
     source: []const u8,
     error_name: []const u8,
-    /// Actual server-side reason (HTTP status+body, scanner error, raw
-    /// SSE sample) — already clamped by the caller via `clampDetail`.
-    /// Falls back to "(no server detail)" when the transport produced
-    /// no message for this error variant.
+    /// Actual server-side reason (HTTP status+body, scanner error, raw SSE
+    /// sample) — already clamped by the caller via `clampDetail`.
     server_detail: []const u8,
     delay_ms: u32,
 ) !void {
-    // Track ownership explicitly. On allocPrint failure (e.g. OOM) we
-    // fall back to a STRING LITERAL — deferring `allocator.free(literal)`
-    // would panic with `Invalid free` on a debug allocator. So `formatted`
-    // is `null` in the fallback case and the `errdefer` skips the free.
+    // Track ownership explicitly. On allocPrint failure (e.g.
     const formatted = std.fmt.allocPrint(allocator,
         \\[Retry {d}/{d}] {s} ({s}). Retrying in {d}ms.
         \\Server said: {s}
@@ -2103,16 +1771,9 @@ fn saveRetryAttemptMessage(
         },
     });
 
-    // NEW (plan 2026-08-29-chat-sidebar-last-human-touched, Task 5):
-    // "Also when error too" — bump the session's last_human_touched_at
-    // whenever the workflow emits an error diagnostic (retry-catch /
-    // unexpected finish_reason / TooManyRetries bail). The user must
-    // intervene after an error, so the sidebar time pill should
-    // reflect the most recent human-implicating event.
-    //
-    // Best-effort: log + continue on transient DB blip so a stamp
-    // failure doesn't shadow the actual error emit. The diagnostic
-    // INSERT above already succeeded; failing here would be noise.
+    // NEW (plan 2026-08-29-chat-sidebar-last-human-touched, Task 5): "Also
+    // when error too" — bump the session's last_human_touched_at whenever the
+    // workflow emits an error diagnostic (retry-catch / unexpected
     llm_history.updateSessionLastHumanTouchedAt(
         allocator,
         db,
@@ -2134,18 +1795,10 @@ fn callDynamicAgentNew(
     current_max_tokens: usize,
     isThinking: bool,
     /// Anthropic-only override for `thinking.budget_tokens`. When set,
-    /// `buildJsonAnthropicRequest` uses it directly (clamped to
-    /// >=1024 and <max_tokens). When null AND `thinkingAdaptive` is
-    /// true (user picked "auto"), emits Anthropic's
-    /// `type: "adaptive"` mode and lets the model pick its own
-    /// budget. When null AND `thinkingAdaptive` is false, falls
-    /// back to the 50%-of-max heuristic. OpenAI-style URLs ignore
-    /// this field. See plan 2026-08-23-model-thinking.md.
+    /// `buildJsonAnthropicRequest` uses it directly (clamped to >=1024 and
+    /// <max_tokens).
     thinking_budget_tokens: ?u32,
-    /// Anthropic-only. When true AND `thinking_budget_tokens` is null,
-    /// `buildJsonAnthropicRequest` emits `thinking: {type: "adaptive"}`
-    /// (Anthropic picks its own budget — recommended for Sonnet 4.5+).
-    /// The workflow sets this from `profile.thinking == "auto"`.
+    /// Anthropic-only.
     thinking_adaptive: bool,
     /// OpenAI-style reasoning effort (o1/o3/GPT-5/DeepSeek-R1). When
     /// set, `buildJsonOpenAIRequest` emits `reasoning_effort` verbatim.
@@ -2161,22 +1814,15 @@ fn callDynamicAgentNew(
     /// Polled by the agent's SSE chunk-read loop between chunks so a
     /// user-initiated Stop aborts the in-flight turn immediately instead of
     /// waiting for the response to finish (see `Agent.callStreaming`).
-    /// Null = the turn is not cancellable.
     cancel_fn: ?*const fn () bool,
-    /// On error, the underlying server/transporter detail (drained HTTP
-    /// error body, scanner error name, chunk count) so the retry-catch
-    /// block can log the actual reason instead of just `error.ApiError` /
-    /// `error.StreamInterrupted`. Heap-owned by the caller — freed by the
-    /// per-iteration arena at loop end. Stays null on success.
+    /// On error, the underlying server/transporter detail (drained HTTP error
+    /// body, scanner error name, chunk count) so the retry-catch block can
+    /// log the actual reason instead of just `error.ApiError` /
     out_last_error_message: *?[]const u8,
 ) !agent.CallResponse {
-    // Libcurl-backed Agent (custom_http_client). Same field names,
-    // same callStreaming signature as the previous std.http.Client version
-    // — only the transport differs. The previous std.http.Client implementation
-    // had a 200-line StreamWatchdog / apply_tcp_keepalive / dup2-to-/dev/null
-    // workaround for std.Io.Threaded parking workers in recv(); the new
-    // Agent (formerly a separate Agent2.zig merged in this PR) uses
-    // libcurl's CURLOPT_TIMEOUT_MS instead, which doesn't have that issue.
+    // Libcurl-backed Agent (custom_http_client). Same field names, same
+    // callStreaming signature as the previous std.http.Client version — only
+    // the transport differs.
     var dynamic_agent = agent.Agent.init(allocator, io);
     dynamic_agent.apiKey = api_key;
     dynamic_agent.model = model;
@@ -2189,11 +1835,9 @@ fn callDynamicAgentNew(
     const messages_for_agent: []const agent.AgentMessage = messages_list.items;
     const dynamic_agent_call_params = agent.AgentCall{ .tools = equip_tools, .messages = messages_for_agent, .temperature = agent_temperature, .max_tokens = current_max_tokens, .cancel_fn = cancel_fn };
     dynamic_agent.thinkingEnabled = isThinking;
-    // === Model-thinking (plan 2026-08-23-model-thinking) =============
-    // The new fields are no-ops when the URL style isn't a match:
+    // === Model-thinking (plan 2026-08-23-model-thinking) ============= The
+    // new fields are no-ops when the URL style isn't a match:
     // buildJsonAnthropicRequest ignores `reasoningEffort`; OpenAI
-    // buildJsonOpenAIRequest ignores `thinkingBudgetTokens` /
-    // `thinkingAdaptive`. Setting them unconditionally is safe.
     dynamic_agent.thinkingBudgetTokens = thinking_budget_tokens;
     dynamic_agent.thinkingAdaptive = thinking_adaptive;
     dynamic_agent.reasoningEffort = reasoning_effort;
@@ -2204,19 +1848,16 @@ fn callDynamicAgentNew(
         .session_id = session_id,
         .chunk_index = 0,
     };
-    // 2026-09-02 stream-resume-on-reselect — mark the in-flight stream
-    // buffer as started (clears any stale content from a previous turn)
-    // so `GET /api/llm/session/:id/stream` can serve the partial text to
-    // a re-mounted ChatView.
+    // 2026-09-02 stream-resume-on-reselect — mark the in-flight stream buffer
+    // as started (clears any stale content from a previous turn) so `GET
+    // /api/llm/session/:id/stream` can serve the partial text to a re-mounted
     stream_snapshot.beginStream(allocator, session_id);
     // `stream_callback` is typed as agent.StreamCallback; callStreaming
     // wants the same type — direct assignment, no @ptrCast needed.
     const callback_for_agent: agent.StreamCallback = &stream_callback;
     out_last_error_message.* = null;
     // Catch the callStreaming error so we can copy `last_error_message` out
-    // BEFORE the deferred `dynamic_agent.deinit()` frees it. The
-    // per-iteration arena outlives this scope, so a dupe into `allocator`
-    // is safe to hand back to the caller's retry-catch block.
+    // BEFORE the deferred `dynamic_agent.deinit()` frees it.
     const res_dynamic_agent = dynamic_agent.callStreaming(dynamic_agent_call_params, &stream_ctx, callback_for_agent) catch |err| {
         if (dynamic_agent.last_error_message) |msg| {
             out_last_error_message.* = allocator.dupe(u8, msg) catch null;
@@ -2224,10 +1865,7 @@ fn callDynamicAgentNew(
         return err;
     };
     // `callDynamicAgentNew` returns `agent.CallResponse` (preserves the
-    // upstream signature). Pre-rename this was a byte-identical copy from
-    // agent2.CallResponse (different module). Post-rename both sides are
-    // the same struct in the same module — but the function signature is
-    // still `agent.CallResponse` so we just pass through the locals.
+    // upstream signature).
     const tool_calls_for_agent: ?[]agent.ToolCall = res_dynamic_agent.tool_calls;
     const finish_reason_for_agent: ?agent.FinishReason = res_dynamic_agent.finish_reason;
     const usage_for_agent: agent.Usage = .{
@@ -2311,44 +1949,16 @@ pub fn stream_callback(ctx: ?*anyopaque, chunk: agent.StreamChunk) void {
     stream_ctx.chunk_index += 1;
 }
 
-/// Filter and merge tools based on allowed_tools setting
-/// - allowed_tools: "" = no filtering (all tools), "all" = all tools,
-///   "none" = zero tools (the exact sentinel emitted by the agent
-///   override's zero-enabled case and the config.json `tools: []`
-///   fallback — see tool_eligibility.allowlistFilter), comma-separated
-///   = specific tools. NOTE the pre-existing wart: the doc line below
-///   used to claim "" = no tools while the code did the opposite;
-///   `tool_eligibility.allowlistFilter` preserves the code's
-///   behaviour, and the discrepancy is called out there.
-/// - mcp_tools: null = no MCP (not configured or fetch failed); non-null
-///   slice = the catalog. MCP tools are PROGRESSIVE: only the ones named in
-///   `progressive_equipped` reach the LLM's tool list.
-/// - progressive_equipped: this session's `session_progressive_tool` names,
-///   in equip order. Built-ins named here are injected even when the
-///   allowlist excluded them — that is what `use_tool` is for.
-///
-/// `search_tool` / `view_tool` / `use_tool` are ordinary tools here: they are
-/// injected when the session's tool config includes them. That config is the
-/// creation-time seed (`DEFAULT_AGENT_TOOLS`), which ONLY
-/// `workspace_items_create_agent` and `workspace_items_create_kanban` apply —
-/// so those two modes get them by default, and they are the user's to toggle
-/// from the Tools tab afterwards. No design or folder creation path seeds a
-/// tool list, so those modes only get them if their config explicitly
-/// includes them.
+/// Filter and merge tools based on allowed_tools setting - allowed_tools: ""
+/// = no filtering (all tools), "all" = all tools, "none" = zero tools (the
+/// exact sentinel emitted by the agent override's zero-enabled case and the
 pub fn filterAndMergeTools(
     allocator: std.mem.Allocator,
     mcp_tools: ?[]const agent.AgentTool,
     allowed_tools: []const u8,
     is_sub_agent: bool,
     progressive_equipped: []const []const u8,
-    // Injected by the caller from `config.skill_evals.enabled`. Defaulted so
-    // every existing caller (and the several tests below) keeps compiling, and
-    // so the default is the SAFE one: absent means the feature is off.
-    //
-    // This is a server-side policy injection and deliberately BYPASSES the
-    // allowlist, exactly as the MCP/progressive tools do: the config switch is
-    // the on/off control, not the per-agent tool checklist. It still respects
-    // `is_sub_agent` below.
+    // Injected by the caller from `config.skill_evals.enabled`.
     inject_skill_evals: bool,
 ) ![]agent.AgentTool {
     // Single source of truth for the allowlist + sub-agent strip
@@ -2375,20 +1985,7 @@ pub fn filterAndMergeTools(
 
     // Workspace secrets discovery: injected SERVER-SIDE, bypassing the
     // allowlist, exactly as the MCP/progressive and skill_evals injections
-    // below do. It has to be, because the tool list is seeded per workspace
-    // item at creation time and `DEFAULT_AGENT_TOOLS` only reaches agents
-    // created from now on — an existing agent's persisted `agent_tools` rows
-    // never name `list_secrets`, and the Migration099 lesson is exactly that
-    // such a tool is a tool nobody ever sees. The discovery step for
-    // `{{SECRETS:NAME}}` would be dead on arrival for every existing user.
-    //
-    // Placed before the progressive-equipped loop on purpose: an equipped
-    // tool is expected to land LAST in the list, and the composition test
-    // below pins that.
-    //
-    // Scope is the caller's own workspace (resolved from `ctx.session_id` in
-    // the exec adapter) and the payload is names only, so this bypasses a
-    // capability checklist without bypassing isolation.
+    // below do.
     if (!is_sub_agent and !seen.contains("list_secrets")) {
         for (registered) |tool| {
             if (std.mem.eql(u8, tool.function.name, "list_secrets")) {
@@ -2413,11 +2010,8 @@ pub fn filterAndMergeTools(
         }
     }
 
-    // Skill Evals: injected from CONFIG, not from the allowlist, and only when
-    // the user turned the feature on. Reached here rather than through
-    // `allowedTools` because the tool list is seeded per workspace item at
-    // creation time — an existing install would otherwise never see the feature
-    // appear (or disappear) when the switch is flipped.
+    // Skill Evals: injected from CONFIG, not from the allowlist, and only
+    // when the user turned the feature on.
     if (inject_skill_evals and !is_sub_agent and !seen.contains("run_skill_eval")) {
         for (registered) |tool| {
             if (std.mem.eql(u8, tool.function.name, "run_skill_eval")) {
@@ -2496,18 +2090,12 @@ pub const SubAgentOverrides = struct {
     opencode_auto: ?bool = null,
     is_thinking: ?bool = null,
     temperature: ?f32 = null,
-    /// Anthropic-only override for `thinking.budget_tokens`. When
-    /// set, the spawned sub-agent's `Agent.thinkingBudgetTokens` is
-    /// this value (not the parent profile's). When null, the
-    /// workflow falls through to the parent profile's value via
-    /// the same per-iteration resolution. See
-    /// `ResolvedSubAgent.thinking_budget_tokens`.
+    /// Anthropic-only override for `thinking.budget_tokens`. When set, the
+    /// spawned sub-agent's `Agent.thinkingBudgetTokens` is this value (not
+    /// the parent profile's).
     thinking_budget_tokens: ?u32 = null,
-    /// OpenAI-style reasoning effort (o1/o3/GPT-5/DeepSeek-R1).
-    /// When set, the spawned sub-agent's `Agent.reasoningEffort` is
-    /// this value. Empty string is normalized to null at the
-    /// sub-agent resolution site so the field is omitted from
-    /// the wire. See `ResolvedSubAgent.reasoning_effort`.
+    /// OpenAI-style reasoning effort (o1/o3/GPT-5/DeepSeek-R1). When set, the
+    /// spawned sub-agent's `Agent.reasoningEffort` is this value.
     reasoning_effort: ?[]const u8 = null,
     system_prompt: []const u8 = "",
 };
@@ -2526,19 +2114,14 @@ pub const RunParamsNew = struct {
     inherited_context: []const u8 = "",
     sub_agent_overrides: ?SubAgentOverrides = null,
     is_auto_retry_until_stop: []const u8 = "",
-    // NEW (plan: 2026-08-18-kanban-task-detail-start-agent). When
-    // true, runAgenticMultiStepnew skips the initial insertQueueMessage
-    // call. Used by the start_agent endpoint to trigger a worker on
-    // an existing session without queueing a new user message. The
-    // default `false` preserves the existing create-session path
-    // behaviour (always queue the initial message).
+    // NEW (plan: 2026-08-18-kanban-task-detail-start-agent). When true,
+    // runAgenticMultiStepnew skips the initial insertQueueMessage call.
     skip_initial_queue_message: bool = false,
 };
 
 // ─── Inline tests (formerly compaction_long_context_test.zig) ────────────
 // Long-context compaction test. Inlined here. The original test file
-// self-imported zig — that self-import is removed in the
-// inlined copy.
+// self-imported zig — that self-import is removed in the inlined copy.
 
 /// Walk ALL migrations from 001 → latest (per project memory
 /// `llm-history-test-use-migrations-module.md`). No hand-rolled
@@ -2642,13 +2225,9 @@ test "end-to-end: compaction envelope is queryable via getCompactedMessages" {
     }
     try testing.expectEqual(@as(usize, 5), index_results.len);
     for (dropped_ids) |id| {
-        // The read tool returns rows by their pre-seeded h_real_* ids
-        // (the in-memory messages in this test don't set .id, so the
-        // envelope uses "unknown" placeholders — but the DB rows still
-        // carry the real h_real_* ids and are findable here). The
-        // separate "envelope ids are real DB ids" test in
-        // workflow_compaction_envelope_test.zig verifies the contract
-        // when the in-memory messages DO set .id.
+        // The read tool returns rows by their pre-seeded h_real_* ids (the
+        // in-memory messages in this test don't set .id, so the envelope uses
+        // "unknown" placeholders — but the DB rows still carry the real
         try testing.expect(std.mem.indexOf(u8, id, "h_real_") == null or index_results.len > 0);
     }
     // Verify the h_real_ ids appear in the read tool's results
@@ -2670,19 +2249,9 @@ test "end-to-end: compaction envelope is queryable via getCompactedMessages" {
     }
 }
 
-/// Agent Mode helper: if `session_id` is bound to a workspace_item
-/// whose item_type='agent', resolve the agent's allowed_tools from
-/// the `agent_tools` table and overwrite `out_allowed_tools` with
-/// the comma-joined list — or the exact `none` sentinel when zero
-/// rows are enabled (D3: `""` means "no filtering → all tools" at
-/// runtime, which would contradict the secure-by-default spec; `none`
-/// yields zero tools instead).
-///
-/// Returns `true` when an override was applied, `false` otherwise
-/// (session not bound to an agent, or DB error — non-fatal; the
-/// caller falls back to the original `out_allowed_tools`).
-///
-/// Plan: docs/superpowers/plans/2026-08-15-agent-mode.md (Task 12).
+/// Agent Mode helper: if `session_id` is bound to a workspace_item whose
+/// item_type='agent', resolve the agent's allowed_tools from the
+/// `agent_tools` table and overwrite `out_allowed_tools` with the
 fn maybeOverrideAllowedToolsForAgent(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -2712,11 +2281,7 @@ fn maybeOverrideAllowedToolsForAgent(
         allocator.free(names);
     }
 
-    // Zero enabled rows → secure-by-default zero tools. Emit the exact
-    // `none` sentinel (D3), NOT `""`: `""` means "no filtering → all
-    // tools" in allowlistFilter, which would silently grant everything
-    // the user just disabled (the pre-D3 contradiction of
-    // docs/superpowers/specs/2026-08-15-agent-mode-design.md:22).
+    // Zero enabled rows → secure-by-default zero tools.
     if (names.len == 0) {
         out_allowed_tools.* = "none";
         return true;
@@ -2727,26 +2292,9 @@ fn maybeOverrideAllowedToolsForAgent(
     return true;
 }
 
-/// Agent-Kanbans mirror (Migration 081): override `out_allowed_tools`
-/// with the board's allowlist from `agent_kanban_tools` when the
-/// session's workspace_item is a kanban WITH an `agent_kanbans` row.
-///
-/// Semantics (design decision D5 in the plan — differs from the agent
-/// world's secure-by-default):
-///   - No `agent_kanbans` row → returns `false`, caller keeps the
-///     original defaults. Unconfigured boards are 100% unaffected.
-///   - Row exists + ≥1 enabled tool → comma-joined list.
-///   - Row exists + ZERO enabled tools → treated as "not configured"
-///     (returns `false`) so a freshly-created config can't brick the
-///     board to zero tools. Flip this branch to mirror agent
-///     secure-by-default if the user prefers strict parity.
-///
-/// Never passes `""` to `filterAndMergeTools` (its `allowed_tools=""`
-/// semantics are ambiguous — see plan Pitfalls).
-///
-/// Returns `true` when an override was applied, `false` otherwise.
-///
-/// Plan: docs/superpowers/plans/2026-08-25-agent-kanbans-mirror.md
+/// Agent-Kanbans mirror (Migration 081): override `out_allowed_tools` with
+/// the board's allowlist from `agent_kanban_tools` when the session's
+/// workspace_item is a kanban WITH an `agent_kanbans` row.
 fn maybeOverrideAllowedToolsForKanban(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -2805,21 +2353,9 @@ fn maybeOverrideAllowedToolsForKanban(
     return true;
 }
 
-/// Agent-Routines mirror (Migration 087): override `out_allowed_tools`
-/// with the routine's allowlist from `agent_routine_tools` when the
-/// session belongs to a routine WITH an `agent_routines` row.
-///
-/// Resolution is dual-path (mirrors prompts_make_agent_routine_*):
-/// chats under a routine item resolve via workspace_item_tasks, while
-/// routine fires (fire.zig sets sid = routine.id, bypassing the tasks
-/// table) resolve straight through workspace_routines.
-///
-/// Same kanban D5 semantics: missing row or zero enabled tools returns
-/// `false` (caller keeps defaults = all tools), so pre-migration fires
-/// and freshly-seeded routines behave exactly as before. Never passes
-/// `""` to `filterAndMergeTools`.
-///
-/// Routine mode task_1789505553300_1 (option A, mirror agent_kanban_*).
+/// Agent-Routines mirror (Migration 087): override `out_allowed_tools` with
+/// the routine's allowlist from `agent_routine_tools` when the session
+/// belongs to a routine WITH an `agent_routines` row.
 fn maybeOverrideAllowedToolsForRoutine(
     allocator: std.mem.Allocator,
     db: *sqlite.SqliteBackend,
@@ -2892,17 +2428,9 @@ fn maybeOverrideAllowedToolsForRoutine(
     return true;
 }
 
-/// Config-default fallback: apply config.json's top-level `tools`
-/// checklist as `allowed_tools` when NO agent / kanban / routine override
-/// fired (the final else-if in the `runAgenticMultiStepnew` chain, inside
-/// the `!params.is_sub_agent` guard — so existing per-item rows always
-/// win, and sub-agents never see it). Returns `false` when the key is
-/// absent (`null`) so the request body keeps today's behaviour; `[]`
-/// maps to the exact `none` sentinel (explicit zero tools); a non-empty
-/// list is joined into the CSV allowlist. This is what makes design mode,
-/// plain chat, and zero-configured fallthroughs pick up the checklist.
-///
-/// Plan: docs/plans/2026-09-22-tools-menu-config-default-tools.md
+/// Config-default fallback: apply config.json's top-level `tools` checklist
+/// as `allowed_tools` when NO agent / kanban / routine override fired (the
+/// final else-if in the `runAgenticMultiStepnew` chain, inside the
 fn maybeOverrideAllowedToolsForConfigDefault(
     allocator: std.mem.Allocator,
     config_tools: ?[]const []const u8,
@@ -2957,11 +2485,7 @@ test "config default override: non-empty list joins into the CSV allowlist" {
 test "filterAndMergeTools: MCP tools are progressive — absent from the tool list unless equipped" {
     // MCP is progressive: the catalog is fetched and cached (so search_tool
     // can offer it) but NOT injected into the LLM's tool list until the
-    // session equips it. Uses mock MCP tools (no spawn).
-    //
-    // Uses a per-test arena: filterAndMergeTools has intermediate allocs that
-    // production's per-iteration arena reaps but DebugAllocator would flag as
-    // leaks. The arena gives us the same reaping semantics here.
+    // session equips it.
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -3133,11 +2657,7 @@ test "filterAndMergeTools: list_secrets is injected past the allowlist, for main
     const alloc = arena.allocator();
 
     // The Migration099 lesson: a tool only new agents have is a tool no
-    // existing agent ever sees. This CSV is what every agent created before
-    // `list_secrets` shipped has persisted in `agent_tools` — a restrictive
-    // list that never mentions the tool — and discovery is dead on arrival
-    // there unless the injection ignores the allowlist the way the
-    // progressive and skill_evals injections do.
+    // existing agent ever sees.
     const restrictive = "read_file,glob";
     const merged = try filterAndMergeTools(alloc, null, restrictive, false, &.{}, false);
 
@@ -3165,11 +2685,7 @@ test "filterAndMergeTools: list_secrets is injected past the allowlist, for main
     }
     try testing.expectEqual(@as(usize, 1), count_allowed);
 
-    // `is_sub_agent` is still respected by the INJECTION. Probed with the same
-    // restrictive CSV on purpose: an allowlist of `"all"` grants `list_secrets`
-    // to a sub-agent by its own configuration, which is the user's choice and
-    // has nothing to do with the injection. What must not happen is the
-    // injection handing it to a sub-agent that never asked for it.
+    // `is_sub_agent` is still respected by the INJECTION.
     const sub = try filterAndMergeTools(alloc, null, restrictive, true, &.{}, false);
     for (sub) |t| {
         try testing.expect(!std.mem.eql(u8, t.function.name, "list_secrets"));
@@ -3177,13 +2693,7 @@ test "filterAndMergeTools: list_secrets is injected past the allowlist, for main
     }
 
     // The `"none"` sentinel still receives it, exactly as the skill_evals
-    // injection above does. That is a deliberate consequence of "bypass the
-    // allowlist": the injections are gated on server-side policy
-    // (`is_sub_agent` and, for skill_evals, the config switch), not on what
-    // the checklist says. A read-only, names-only tool that resolves its own
-    // workspace is the same kind of infrastructure the progressive meta-tools
-    // are, and an agent that cannot discover a credential name is the
-    // Migration099 dead end this whole injection exists to avoid.
+    // injection above does.
     const none = try filterAndMergeTools(alloc, null, "none", false, &.{}, false);
     var none_secrets = false;
     for (none) |t| {
@@ -3199,10 +2709,7 @@ test "filterAndMergeTools: the injected list_secrets schema cannot be pointed at
 
     // Asserted on the SERIALIZED schema of the tool that actually gets
     // appended, not on the const in the tool module: this is the copy the
-    // model reads, and it is the copy that matters. A `workspace_id` property
-    // here would be swallowed by the dispatcher's `ignore_unknown_fields`
-    // parse and would then sit unused while looking like it did something —
-    // which is exactly the shape of a future privilege escalation.
+    // model reads, and it is the copy that matters.
     const merged = try filterAndMergeTools(alloc, null, "read_file", false, &.{}, false);
 
     var checked = false;
@@ -3221,11 +2728,9 @@ test "filterAndMergeTools: the injected list_secrets schema cannot be pointed at
 }
 
 test "list_secrets prompt rule: the gated append is in buildMessages, and the gate really is a gate" {
-    // Static contract, in the spirit of the source-grep tests above: the
-    // rule exists in `core.zig` and is reachable through the `prompts.zig`
-    // barrel the builder consumes. Wiring it in the tool module and never
-    // appending it is a silent no-op — the schema reads correctly and the
-    // model is never told the syntax exists.
+    // Static contract, in the spirit of the source-grep tests above: the rule
+    // exists in `core.zig` and is reachable through the `prompts.zig` barrel
+    // the builder consumes.
     const alloc = testing.allocator;
 
     const builder = try std.Io.Dir.cwd().readFileAlloc(
@@ -3249,10 +2754,6 @@ test "list_secrets prompt rule: the gated append is in buildMessages, and the ga
     try testing.expect(std.mem.indexOf(u8, builder[gate..append], "}") == null);
 
     // The rule has to say the three things the feature cannot work without.
-    // Asserted on `core.zig` because that is where the bytes live; a
-    // paraphrased rule that drops the placeholder syntax or the
-    // never-echo-the-value prohibition still "builds", and the model then
-    // writes a credential into a file.
     const core_src = try std.Io.Dir.cwd().readFileAlloc(
         std.testing.io,
         "src/modules/agent/prompts/core.zig",
@@ -3276,7 +2777,6 @@ test "list_secrets prompt rule: the gated append is in buildMessages, and the ga
 // Composition test: replays exactly what the loop does at the resolution
 // point (getProgressiveTools -> buildCatalog -> filterAndMergeTools) against
 // a real database, so the three pieces are proven to fit together — not just
-// individually.
 test "progressive tool search: equipping a built-in makes it appear in the next resolution" {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
@@ -3478,10 +2978,8 @@ test "re_read_selected_profile_model: returns fallback when no session row exist
 }
 
 test "re_read_selected_profile_model: subsequent reads see UPDATEd value (live re-read)" {
-    // The whole point of this helper: a second call after a session
-    // row UPDATE picks up the new value, NOT the snapshot. If this
-    // test ever fails, the workflow loop is back to using a snapshot
-    // — the original bug returns.
+    // The whole point of this helper: a second call after a session row
+    // UPDATE picks up the new value, NOT the snapshot.
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -3507,11 +3005,6 @@ test "re_read_selected_profile_model: subsequent reads see UPDATEd value (live r
 
 test "flushCancelledPartial persists the streamed partial as a cancelled turn" {
     // Phase C contract: a Stop mid-stream must leave the transcript settled.
-    // The cancel path used to emit only `worker_deleted`, so the frontend kept
-    // its `streaming-*` row forever (it clears that row only on a `full`
-    // event) and the partial text was nowhere in history. This pins BOTH
-    // halves: a real `llm_history` row carrying the partial with
-    // `finish_reason = "cancelled"`, and the snapshot released.
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
@@ -3537,9 +3030,7 @@ test "flushCancelledPartial persists the streamed partial as a cancelled turn" {
 
     // The flush path is arena-scoped BY CONTRACT — production passes the
     // per-iteration arena, and `insertLLMHistories` hands several allocations
-    // to the SSE emit path without freeing them itself. Mirroring that here
-    // (rather than handing it `testing.allocator`) keeps the test faithful to
-    // production ownership instead of reporting a phantom leak.
+    // to the SSE emit path without freeing them itself.
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
@@ -3628,10 +3119,9 @@ test "sessionNameIsPlaceholder: un-named sessions are a placeholder, real names 
 }
 
 test "isUsableGeneratedName: blank / whitespace names are rejected, real ones pass" {
-    // These are the names that would otherwise reach
-    // `UPDATE sessions SET name = ?` on a TEXT NOT NULL column and (per
-    // this repo's documented db.exec behaviour) bind as SQL NULL, failing
-    // the write and leaving the auto-name gate latched open forever.
+    // These are the names that would otherwise reach `UPDATE sessions SET
+    // name = ?` on a TEXT NOT NULL column and (per this repo's documented
+    // db.exec behaviour) bind as SQL NULL, failing the write and leaving the
     for ([_][]const u8{ "", " ", "\n", "\t\r\n  ", "\n \t" }) |blank| {
         try testing.expect(!isUsableGeneratedName(blank));
     }
@@ -3641,12 +3131,9 @@ test "isUsableGeneratedName: blank / whitespace names are rejected, real ones pa
 }
 
 test "generateSessionNameNew: name call failure leaves the placeholder name and does not throw" {
-    // The pre-fix bug: the name call's transport error was swallowed by
-    // a bare `catch {}` that logged a constant, and the gate
-    // (`loop_counter == 1`) meant the failure was never retried — the
-    // session stayed "New Chat" forever. Point the name agent at a
-    // closed port so `callStreaming` fails, and assert the row is
-    // untouched and the function returns normally.
+    // The pre-fix bug: the name call's transport error was swallowed by a
+    // bare `catch {}` that logged a constant, and the gate (`loop_counter ==
+    // 1`) meant the failure was never retried — the session stayed "New Chat"
     const alloc = testing.allocator;
     var s = try setupDb();
     defer teardownDb(&s);

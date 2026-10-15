@@ -1,40 +1,12 @@
-//! Tier 0 of a skill eval: the deterministic half. No LLM, no tokens.
-//!
-//! A skill names things — file paths, commands, `file:line` references. Those
-//! are claims about the code as it is TODAY, and they can be checked
-//! mechanically. Doing that here rather than asking a model to remember a
-//! codebase is the difference between adjudicating a fact and recalling one,
-//! and it means the cheapest and most common failure (a skill pointing at a
-//! file that has since moved) costs nothing to detect.
-//!
-//! ## Tier 0 deliberately never reports severity `high`
-//!
-//! `skill_evals_db.decideVerdict` promotes any high-severity finding to
-//! `delete`, and that is correct: some findings really do mean the skill must
-//! go. A renamed path is not one of them. It means the skill needs UPDATING.
-//! So this module caps severity at `medium`, which makes "Tier 0 can never
-//! delete a skill" a structural property rather than a promise — deletion is
-//! reserved for the LLM tier, which can judge that a skill's subject matter is
-//! gone rather than merely moved.
-//!
-//! ## Why `statFile`, not `statFileAbsolute`
-//!
-//! The paths checked here come from LLM-authored prose, so they can be
-//! relative, empty, or nonsense. Zig's `*Absolute` family ASSERTS on a
-//! non-absolute path and aborts the whole process — a `catch` cannot save you,
-//! because the panic fires inside the callee (PR #639's crash class).
-//! `std.Io.Dir.cwd().statFile` is the path-based, assertion-free form, and an
-//! error from it is exactly the signal wanted.
+//! Tier 0 of a skill eval: the deterministic half. No LLM, no tokens. A skill
+//! names things — file paths, commands, `file:line` references.
 
 const std = @import("std");
 const testing = std.testing;
 const skill_evals_db = @import("skill_evals_db.zig");
 const Verdict = skill_evals_db.Verdict;
 
-/// Cap on the paths checked per skill. A skill that names more than this is
-/// either enormous or listing examples; either way, checking the first 50 is
-/// enough to reach a verdict and keeps a pathological body from turning one
-/// eval into thousands of stats.
+/// Cap on the paths checked per skill.
 pub const MAX_REFERENCED_PATHS = 50;
 
 /// A skill larger than this is a smell (`MAX_SKILLS_SIZE` in `skills.zig`).
@@ -132,11 +104,7 @@ fn stripLineSuffix(token: []const u8) []const u8 {
 
 fn looksLikePath(token: []const u8) bool {
     if (token.len < 3 or token.len > 200) return false;
-    // A `/` is what makes a token a path. A bare filename is NOT checked: it
-    // would be stat'd against the repo root, where it almost never lives, so a
-    // skill that says "edit Sidebar.vue" would be reported as stale and the
-    // false positive would be cached into the shared fact. An honest "not
-    // checkable" beats a wrong verdict.
+    // A `/` is what makes a token a path.
     if (std.mem.indexOfScalar(u8, token, '/') == null) return false;
     // A trailing slash is a directory prefix, not a file — and it is what a
     // glob like `src/**/*.zig` leaves behind once the `*` segments are
@@ -146,10 +114,7 @@ fn looksLikePath(token: []const u8) bool {
 }
 
 /// True when a segment is a bare file extension (`.ts`) rather than a real
-/// name. The length bound is what separates the two: the longest extension in
-/// everyday use is four characters, while every dot-directory a repo actually
-/// contains (`.github`, `.zig-cache`, `.pabrik`, `.claude`) is longer than that.
-/// Without a bound, `.github` would read as an extension.
+/// name.
 fn isBareExtension(seg: []const u8) bool {
     if (seg.len < 2 or seg.len > 5) return false;
     if (seg[0] != '.') return false;
@@ -160,9 +125,7 @@ fn isBareExtension(seg: []const u8) bool {
 }
 
 /// Tokens that are path-SHAPED but are prose, so stat'ing them can only ever
-/// report them missing. Each of these reached the filesystem in production and
-/// came back "this path does not exist any more" — which is how a fact row
-/// ended up claiming eight rot files for a skill whose every reference was fine.
+/// report them missing.
 fn isProsePlaceholder(token: []const u8) bool {
     var all_single_char = true;
     var saw_segment = false;
@@ -178,10 +141,8 @@ fn isProsePlaceholder(token: []const u8) bool {
         // discriminator is a bare extension standing as a whole segment.
         if (isBareExtension(seg)) return true;
     }
-    // `N/N`, `X/Y` — the format placeholders in a summary line (`Build Summary:
-    // N/N steps succeeded; X/Y tests passed`). EVERY segment being a single
-    // character is what separates them from a real path: one short segment is
-    // entirely ordinary, as `/home/u/proj/src/a.zig` shows.
+    // `N/N`, `X/Y` — the format placeholders in a summary line (`Build
+    // Summary: N/N steps succeeded; X/Y tests passed`).
     return all_single_char and saw_segment;
 }
 
@@ -190,11 +151,7 @@ fn shouldSkip(token: []const u8) bool {
     // "http" prefix, which would also swallow real files like `http_server.zig`.
     if (std.mem.indexOf(u8, token, "://") != null) return true;
     if (std.mem.startsWith(u8, token, "//")) return true;
-    // A leading slash means an absolute path OR a route. A route is a short
-    // path-shaped string with no file extension (`/api/skills`); an absolute
-    // path is a real filesystem location and IS checked. Distinguishing them by
-    // extension is what keeps `/api/skills/:name` from being stat'd while
-    // `/home/u/proj/src/a.zig` still is.
+    // A leading slash means an absolute path OR a route.
     if (token.len > 0 and token[0] == '/') {
         if (!hasKnownExtension(token)) return true;
     }
@@ -231,9 +188,6 @@ pub fn extractPaths(allocator: std.mem.Allocator, body: []const u8) ![][]u8 {
         // Trailing `.`/`,`/`;`/`:` is sentence punctuation and must go, but a
         // LEADING `.` is part of the path: `.` is not in `token_delims`, so
         // trimming it here turned `.github/workflows/ci.yml` into
-        // `github/workflows/ci.yml`, which then failed to stat and got recorded
-        // as a stale path on a file that was sitting right there. `trimEnd`
-        // keeps every trailing character `trim` used to remove.
         const token = std.mem.trimEnd(u8, raw, ".,;:");
         if (!looksLikePath(token)) continue;
         if (shouldSkip(token)) continue;
@@ -301,10 +255,6 @@ fn structuralFindings(allocator: std.mem.Allocator, body: []const u8, out: *std.
 }
 
 /// Analyse one skill body against the code as it is now.
-///
-/// `cwd` is used to resolve relative paths; when it is empty, relative
-/// references are reported as uncheckable rather than as missing — a false
-/// "missing" would be worse than an honest "unknown".
 pub fn analyse(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -325,8 +275,7 @@ pub fn analyse(
 
     // A cwd that does not exist would turn every relative reference into a
     // false "missing" — and a removed git worktree is a routine event in this
-    // repo, not an exotic one. Treat an unusable cwd exactly like an absent
-    // one: report nothing rather than 50 lies.
+    // repo, not an exotic one.
     const cwd_usable = if (cwd.len == 0) false else blk: {
         _ = std.Io.Dir.cwd().statFile(io, cwd, .{}) catch break :blk false;
         break :blk true;
@@ -348,10 +297,7 @@ pub fn analyse(
         defer allocator.free(resolved.?);
 
         _ = std.Io.Dir.cwd().statFile(io, resolved.?, .{}) catch |err| {
-            // Only a genuine "not there" is a stale path. A permission error, a
-            // symlink loop or a path whose parent is a file are all "cannot
-            // tell", and reporting them as rot would send a human to fix a
-            // skill that is perfectly current.
+            // Only a genuine "not there" is a stale path.
             if (err != error.FileNotFound) continue;
             try missing.append(allocator, p);
             try findings.append(allocator, .{
@@ -383,13 +329,8 @@ pub fn analyse(
 
 // ─── tests ───────────────────────────────────────────────────────────────
 
-/// Parse the findings JSON and assert no finding claims severity `high`.
-///
-/// This is the real form of the module's central invariant. Asserting on
-/// `Analysis.has_high` cannot fail, because that field is a hard-coded `false`;
-/// asserting on the emitted severities fails the moment anyone adds a
-/// high-severity branch, which is the only way Tier 0 could ever authorise a
-/// deletion.
+/// Parse the findings JSON and assert no finding claims severity `high`. This
+/// is the real form of the module's central invariant.
 fn assertNoHighSeverity(allocator: std.mem.Allocator, findings_json: []const u8) !void {
     const parsed = try std.json.parseFromSlice([]Finding, allocator, findings_json, .{
         .ignore_unknown_fields = true,
@@ -432,7 +373,6 @@ test "a bare filename is not treated as a checkable path" {
     // A bare filename would be stat'd against the repo root, where it almost
     // never lives, so a healthy skill mentioning `Sidebar.vue` would be
     // reported as stale — and that false positive is cached into the shared
-    // fact. An honest "not checkable" beats a wrong verdict.
     const paths = try extractPaths(alloc, "Edit Sidebar.vue and tsconfig.app.json, then run it.");
     defer freePaths(alloc, paths);
     try testing.expectEqual(@as(usize, 0), paths.len);
@@ -578,11 +518,8 @@ test "analyse tolerates a body full of hostile tokens without aborting" {
     ;
     const a = try analyse(alloc, testing.io, "/tmp", body);
     defer a.deinit(alloc);
-    // It RETURNED, which is the point — the *Absolute family would have aborted
-    // the process here. Some of these tokens legitimately resolve to nothing
-    // (`../../etc/passwd` under /tmp), so the verdict may be `update`; what must
-    // hold is that a mechanical check can never authorise a deletion. Asserted
-    // on the emitted severities, not on the hard-coded `has_high` flag.
+    // It RETURNED, which is the point — the *Absolute family would have
+    // aborted the process here.
     try assertNoHighSeverity(alloc, a.findings_json);
     try testing.expect(skill_evals_db.decideVerdict(a.verdict, a.has_high) != .delete);
 }
@@ -747,12 +684,7 @@ test "stripLineSuffix handles a huge line number and a trailing colon" {
 
 test "a dot-directory path keeps its leading dot instead of being reported as rot" {
     const alloc = testing.allocator;
-    // Both of these exist in this tree. Trimming the leading `.` turned them
-    // into `github/workflows/ci.yml` and `pabrik/hooks`, which stat to nothing
-    // and were recorded as "this path does not exist any more" -- a lie about
-    // files that are present. Asserted on the EXTRACTED token rather than only
-    // on missing_count, so a change that quietly stopped checking dotfiles
-    // still fails here instead of passing as "nothing was missing".
+    // Both of these exist in this tree.
     const body =
         \\---
         \\name: dotpath

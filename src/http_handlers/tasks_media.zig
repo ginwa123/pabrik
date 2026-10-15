@@ -1,11 +1,5 @@
 //! `GET /api/workspaces/:workspace_id/items/:item_id/tasks/:task_id/media`
-//!
-//! Lazy media fetch for a kanban task (media-flags change). List/get return
-//! only `is_have_image` / `is_have_video` flags so board fetches stay
-//! small; the frontend calls this endpoint only when a flag is true.
-//! Returns `{ image_urls, video_urls }` as raw `||`-delimited strings
-//! (the same wire shape the create/update endpoints accept). 404 when
-//! the task does not exist under the item.
+//! Lazy media fetch for a kanban task (media-flags change).
 
 const std = @import("std");
 const http_response = @import("http_response.zig");

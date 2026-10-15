@@ -1,19 +1,5 @@
 //! `GET /api/workspaces/:workspace_id/items/:item_id/tasks/:task_id`
-//!
-//! Single-task fetch for the kanban Task details dialog. Returns
-//! `{ task: {...} }` using the same `WorkspaceItemTaskResponse` shape
-//! as the list endpoint (`GET .../tasks`) so the frontend `Task` type
-//! is unchanged. 404 when the task does not exist under the item.
-//!
-//! Replaces the dialog-open list refetch (`?limit=100` + pluck-one),
-//! which downloaded every task's routine JOINs, tags, and base64
-//! image_urls to update one row.
-//!
-//! Layered as `useCase` (resolve singleton + DB query + git branch +
-//! build response) and a thin handler that maps errors to status
-//! codes / JSON. Mirrors `tasks_list.zig` field-for-field.
-//!
-//! Plan: docs/superpowers/plans/2026-08-24-kanban-task-detail-single-fetch.md
+//! Single-task fetch for the kanban Task details dialog.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -57,9 +43,6 @@ fn useCase(
 
     // Kanban-task-git-branch (plan:
     // docs/superpowers/plans/2026-08-06-kanban-task-git-branch.md).
-    // Same fallback chain as the list endpoint: prefer the task's
-    // worktree cwd; fall back to the parent item's path. Empty string
-    // when neither is set → no badge on the frontend.
     const item_path = fetchWorkspaceItemPath(allocator, db, item_id) catch "";
     const cwd = if (task.git_worktree_cwd.len > 0)
         task.git_worktree_cwd
@@ -158,16 +141,8 @@ pub fn tasksGetHandler(
 // Git branch resolution (kanban-task-git-branch plan, 2026-08-06)
 // =====================================================================
 
-/// Look up the parent workspace item's `path`. Used as the fallback
-/// cwd for the git_branch lookup when a task has no worktree bound.
-///
-/// Single SQL query (1 row expected — workspace_item_id PKs are
-/// unique). Returns the empty string when the row is missing or the
-/// path column is NULL — caller treats empty as "no badge".
-///
-/// Documented duplication from tasks_list.zig (both helpers are
-/// file-private there); the two handlers share the schema contract,
-/// not the query shape.
+/// Look up the parent workspace item's `path`. Used as the fallback cwd for
+/// the git_branch lookup when a task has no worktree bound.
 fn fetchWorkspaceItemPath(
     allocator: std.mem.Allocator,
     db: *pabrikcore.sqlite.SqliteBackend,
@@ -184,15 +159,8 @@ fn fetchWorkspaceItemPath(
     return try allocator.dupe(u8, row.values[0]);
 }
 
-/// Run `git -C <path> symbolic-ref --short HEAD` and fall back to
-/// `git -C <path> rev-parse --abbrev-ref HEAD` for detached HEAD.
-/// Returns the trimmed branch name (e.g. "main", "feature/x") or
-/// the empty string for: non-repo, detached HEAD ("HEAD" literal),
-/// permission denied, spawn failure, etc. Caller maps empty → null.
-///
-/// Best-effort — git is not always available, and the path may not
-/// be a repo. Any error returns ""; we never surface a 500 for git
-/// failures because the branch badge is best-effort decoration.
+/// Run `git -C <path> symbolic-ref --short HEAD` and fall back to `git -C
+/// <path> rev-parse --abbrev-ref HEAD` for detached HEAD.
 fn resolveGitBranch(
     allocator: std.mem.Allocator,
     io: std.Io,

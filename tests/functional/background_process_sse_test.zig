@@ -1,52 +1,6 @@
-// Functional e2e for background_process SSE push.
-//
-// Zig port of `tests/functional/background_process_sse_test.py` (same
-// test names, same order).
-//
-// Replaces the frontend 5s `GET background_processes` poll with server
-// push (`background_process_created` on spawn, `background_process_completed`
-// on exit — see src/agentic_loop/background_process_events.zig).
-//
-// Covers the wire contract the frontend relies on:
-//   * GET /api/events?channels=background_process -> 200 text/event-stream
-//     + `connected` handshake (unified_events_sse.zig parseChannels +
-//     CallbackUnifiedBackgroundProcessStream wiring).
-//   * GET /api/llm/session/:sid/background_processes still returns the
-//     list shape (frontend fetches once on mount + on each push event).
-//
-// Emit-path triggering (spawn via `command background=true`, completion
-// via watcher/cron) needs an LLM tool run and is covered by Zig unit
-// tests (background_process_events null-bus no-op) + the frontend vitest
-// (BackgroundCommandsPopup.spec.ts push refresh). This file pins the
-// transport so a future channel rename breaks here, not in the browser.
-//
-// WHY THERE IS A HAND-ROLLED SSE CLIENT HERE
-//
-// The Python test used `urllib.request.urlopen` + a daemon reader thread
-// feeding a `queue.Queue`. `Harness.http` CANNOT be used: it calls
-// `reader.streamRemaining(...)`, which on a `text/event-stream` response
-// blocks until the server closes the connection — and the server holds
-// the stream open forever, so `streamRemaining` never returns. Python's
-// `urlopen` returns as soon as the RESPONSE HEAD is parsed, and the body
-// is drained line-by-line on a separate thread with a deadline.
-//
-// The Zig port keeps that shape: `std.http.Client` directly,
-// `req.sendBodiless()`, `req.receiveHead(&.{})` for the status +
-// Content-Type, then `resp.reader(&buf)` read LINE BY LINE with a
-// deadline, driven from a watchdog thread that `shutdown(.recv)`s the
-// socket to unblock a pending read. Asserting "the `connected` event
-// arrived within N seconds" needs a bounded read, and the only way to
-// bound a blocking socket read in Zig 0.16 is to make it returnable.
-//
-// WHY THE STREAM IS HEAP-ALLOCATED
-//
-// `std.http.Client` embeds a `ConnectionPool` with an `Io.Mutex`, and
-// `Response.request` is a `*Request` pointing at the request that
-// produced it. Both make the trio UNCOPYABLE — returning an `SseStream`
-// BY VALUE from `openSse` bit-copied the mutex's state (so the first
-// `unlock` hit "switch on corrupt value") and left `resp.request`
-// pointing into the dead callee frame. `gpa.create` gives every field a
-// stable address for the whole life of the connection.
+// Functional e2e for background_process SSE push. Zig port of
+// `tests/functional/background_process_sse_test.py` (same test names, same
+// order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -63,12 +17,6 @@ const io = testing.io;
 const handshake_timeout_ms: i64 = 3_000;
 
 /// Transfer buffer for the response body reader.
-///
-/// NOT `&.{}`: `Response.reader(transfer_buffer)` uses that slice as the
-/// reader's own buffer for a chunked body, and `takeDelimiterExclusive`
-/// reports `error.StreamTooLong` the moment the buffer is full without a
-/// newline — which, on a stream with no `\n` yet, is immediately. An SSE
-/// frame is a few hundred bytes, so 8 KiB is generous.
 const transfer_buffer_len = 8 * 1024;
 
 /// Monotonic milliseconds (`.awake` = monotonic, not wall clock).
@@ -88,10 +36,9 @@ const SseEvent = struct {
     }
 };
 
-/// An open SSE connection plus the state the reader thread fills in.
-///
-/// The test thread owns the pointer; the reader thread writes into it.
-/// `stop` / `done` are the cross-thread handshake — see `readEvents`.
+/// An open SSE connection plus the state the reader thread fills in. The test
+/// thread owns the pointer; the reader thread writes into it. `stop` / `done`
+/// are the cross-thread handshake — see `readEvents`.
 const SseStream = struct {
     client: std.http.Client,
     req: std.http.Client.Request,
@@ -109,14 +56,6 @@ const SseStream = struct {
     /// Set by the reader thread once it has stopped touching `events`.
     done: std.atomic.Value(bool) = .init(false),
     /// Frames parsed so far.
-    ///
-    /// `events` and `read_error` are guarded by `mutex`: the reader
-    /// thread appends while the test thread polls, and an unsynchronised
-    /// read of `events.items` during the reader's `append` is a
-    /// use-after-free (the ArrayList realloc frees the old buffer).
-    /// Python's `queue.Queue` was this lock; `Io.Mutex` is its
-    /// equivalent here. `lockUncancelable` rather than `lock` because
-    /// there is no cancellation point worth honouring inside a test.
     mutex: Io.Mutex = .init,
     events: std.ArrayList(SseEvent) = .empty,
     /// Set by the reader thread when the stream errored or ended.
@@ -141,13 +80,7 @@ fn openSse(port: u16, channels: []const u8) !*SseStream {
     errdefer gpa.destroy(s);
 
     // `gpa.create` returns UNINITIALIZED memory — it does NOT run the
-    // struct's field default initializers. Every field with a default
-    // (`mutex`, `stop`, `done`, `events`, `read_error`) must be
-    // assigned here or it stays garbage, and an uninitialised
-    // `Io.Mutex` is not a lock at all: `lockUncancelable` on garbage
-    // state parks the test thread on a futex that nobody will ever
-    // wake. `s.* = .{...}` applies all the defaults in one shot;
-    // `req` is genuinely assigned by `request()` below.
+    // struct's field default initializers.
     s.* = .{ .client = .{ .allocator = gpa, .io = io }, .req = undefined };
 
     const url = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/api/events?channels={s}", .{ port, channels });
@@ -190,18 +123,8 @@ fn openSse(port: u16, channels: []const u8) !*SseStream {
     return s;
 }
 
-/// Read SSE frames from `s` until `stop` is set, the stream ends, or an
-/// error occurs. Runs on its own thread.
-///
-/// The SSE grammar (per unified_events_sse.zig `forwardToClients`):
-///
-///     event: <name>\n
-///     data: <line>\n
-///     \n            <- blank line dispatches the frame
-///
-/// `data:` lines are joined with `\n`; a frame with an `event:` but no
-/// `data:` dispatches with an empty payload, exactly as Python's reader
-/// did (`json.loads("") if data_str else None`).
+/// Read SSE frames from `s` until `stop` is set, the stream ends, or an error
+/// occurs. Runs on its own thread.
 fn readEvents(s: *SseStream) void {
     defer s.done.store(true, .release);
 
@@ -219,27 +142,10 @@ fn readEvents(s: *SseStream) void {
     while (!s.stop.load(.acquire)) {
         // One LINE, not the whole stream: this is what makes the read
         // incremental. `error.EndOfStream` is a clean server close.
-        //
-        // `takeDelimiter` — NOT `takeDelimiterExclusive`. The Exclusive
-        // variant advances "up to (BUT NOT PAST) the delimiter", so the
-        // `\n` stays in the buffer; the next call finds a delimiter at
-        // position 0 and returns a ZERO-LENGTH slice, forever. The loop
-        // livelocks at full speed and never reaches `error.EndOfStream`,
-        // so a closed stream reads as still-open.
-        //
-        // It went unnoticed because the only frame this suite waits for
-        // is the `connected` handshake, which is the FIRST line — and the
-        // first line dispatches correctly. Two independent agents found
-        // this while porting SSE suites that assert on PUSHED events,
-        // which is where the livelock becomes visible.
-        //
-        // `takeDelimiter` consumes the delimiter and maps clean EOF to
-        // `null`, which is exactly Python's `readline()` returning `b""`.
         const raw_line_opt = reader.takeDelimiter('\n') catch |err| {
             // `takeDelimiter` has a NARROWER error set than the
             // delimiter-splitting variants: clean EOF is `null`, not
-            // `error.EndOfStream`. Only real I/O failures and an
-            // over-long line reach here.
+            // `error.EndOfStream`.
             const msg = switch (err) {
                 error.ReadFailed => "read failed",
                 error.StreamTooLong => "line exceeded the transfer buffer",
@@ -251,9 +157,6 @@ fn readEvents(s: *SseStream) void {
             return;
         };
         // A clean server close: `null` here, not `error.EndOfStream`.
-        // Reported through the SAME `read_error` channel as a failure —
-        // the test only needs to know the reader stopped, and it already
-        // polls that.
         if (raw_line_opt == null) {
             const owned = gpa.dupe(u8, "stream ended") catch return;
             s.mutex.lockUncancelable(io);
@@ -268,9 +171,8 @@ fn readEvents(s: *SseStream) void {
             // Blank line → dispatch whatever we accumulated.
             if (current_name) |name| {
                 // `std.mem.join` allocates an owned buffer but types it
-                // `[]const u8`; the constCast is sound because the
-                // buffer is ours to hand to `gpa.free` (and nothing
-                // mutates it).
+                // `[]const u8`; the constCast is sound because the buffer is
+                // ours to hand to `gpa.free` (and nothing mutates it).
                 const joined = std.mem.join(gpa, "\n", data_lines.items) catch "";
                 const data: []u8 = @constCast(joined);
                 s.mutex.lockUncancelable(io);
@@ -305,12 +207,9 @@ fn readEvents(s: *SseStream) void {
     }
 }
 
-/// Release a blocked `readEvents` by shutting the socket's read side.
-///
-/// Without this the reader thread parks in `readv` forever on an SSE
-/// stream that never ends. `shutdown(SHUT_RD)` makes the pending `readv`
-/// return 0, which `netReadPosix` reports as `error.EndOfStream`, and
-/// the reader exits its loop.
+/// Release a blocked `readEvents` by shutting the socket's read side. Without
+/// this the reader thread parks in `readv` forever on an SSE stream that
+/// never ends.
 fn releaseReader(s: *SseStream) void {
     s.stop.store(true, .release);
     s.req.connection.?.stream_reader.stream.shutdown(io, .recv) catch {};
@@ -322,13 +221,6 @@ fn waitForEvent(s: *SseStream, want: []const u8, timeout_ms: i64) bool {
     const deadline = nowMs() + timeout_ms;
     while (true) {
         // Snapshot under the lock, then RELEASE it before sleeping.
-        // Holding the mutex across `Io.sleep` starves the reader: the
-        // loop re-acquires the instant the sleep ends, so the reader —
-        // which needs the same lock to append — can miss every window
-        // and the deadline expires with zero events seen. That is not a
-        // hypothetical: it is exactly what the first run of this suite
-        // did, reporting "saw: []" for a stream that had already sent
-        // `event: connected`.
         s.mutex.lockUncancelable(io);
         const found = blk: {
             for (s.events.items) |e| {

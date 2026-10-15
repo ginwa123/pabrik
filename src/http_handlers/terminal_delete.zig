@@ -1,7 +1,6 @@
-//! `DELETE /api/terminal/sessions/:id` — kill the shell, close the
-//! PTY, drop the session. Success: 200 `{ ok: true }`. Unknown id:
-//! 404. Idempotent in effect (a second delete is a 404, not an error
-//! to retry — the session is already gone).
+//! `DELETE /api/terminal/sessions/:id` — kill the shell, close the PTY, drop
+//! the session. Success: 200 `{ ok: true }`. Unknown id: to retry — the
+//! session is already gone).
 
 const std = @import("std");
 const http_response = @import("http_response.zig");

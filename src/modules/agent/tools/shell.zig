@@ -1,34 +1,5 @@
-// SPDX-License-Identifier: TBD
-// shell.zig — shared shell-execution core used by `bash.zig` and `pwsh.zig`.
-//
-// This module owns the parts of the shell-tool pipeline that are SHELL-NEUTRAL:
-//   * the wire schema (`ShellInput` / `ShellOutput`) — `BashInput` / `BashOutput`
-//     and `PwshInput` / `PwshOutput` are type aliases so the LLM-facing JSON
-//     schema cannot drift between shells
-//   * the spawn + reader-thread + byte-truncation + line-count pipeline
-//   * the mandatory-timeout enforcement
-//   * the background-detach path (currently bash's `nohup` idiom)
-//   * the URL-encoding step (swaps `"…"` → `'…'` around URLs to keep both
-//     bash and PowerShell from interpreting `?` / `&` as wildcards)
-//   * the JSON serialisation of `ShellOutput` to the LLM-facing envelope
-//
-// Shell-SPECIFIC code (executable name, argv-prefix, Windows availability)
-// lives in the per-shell wrappers (bash.zig, pwsh.zig). The two wrappers
-// are ~80 lines each and supply ONLY:
-//   * `ShellInput` is the input type — already aliased to bash / pwsh
-//   * the argv-prefix (e.g. `&.{ "bash", "-c" }` or
-//     `&.{ "pwsh", "-NoProfile", "-NonInteractive", "-Command" }`)
-//   * the bash/pwsh-specific `AgentTool` schema (tool name, description,
-//     example commands)
-//
-// Cross-platform: shell.zig is POSIX-only because the process-group SIGKILL
-// `std.posix.kill(-pgid, .KILL)` + `.pgid = 0` field on `std.process.Child`
-// are POSIX-only primitives. The Windows guard for `bash` lives in the
-// bash.zig wrapper (`if (builtin.os.tag == .windows) return error.UnsupportedOS;`).
-// pwsh is NOT guarded at the wrapper — PowerShell Core ships preinstalled on
-// Windows and pwsh on macOS / Linux via Homebrew / Microsoft's tarball. If
-// pwsh is not on `$PATH`, the spawn fails with FileNotFound (the same shape
-// of error bash gives on Windows today).
+// SPDX-License-Identifier: TBD shell.zig — shared shell-execution core used
+// by `bash.zig` and `pwsh.zig`.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -39,26 +10,6 @@ const sanitizeControlChars = helpers.sanitize_control_chars;
 
 /// Canonical wire schema. Per-shell wrappers (bash.zig, pwsh.zig) re-export
 /// this as `BashInput` / `PwshInput` so the JSON contract is identical.
-/// How the command relates to the caller's turn.
-///
-/// The three categories the product asks for, in the order a user meets them:
-///
-///   * `foreground`      — the call blocks, the result is returned inline, and
-///                         a `timeout` is REQUIRED (1–600 s).
-///   * `background`      — the command detaches and a QUEUE MESSAGE is written
-///                         when it exits. For a long build, test run or
-///                         migration — bounded work whose outcome the agent
-///                         needs. Consumed by `background_watcher` and the
-///                         per-minute cron.
-///   * `background_persistence` — the command detaches and NO queue message is
-///                         ever written. For a dev server or a watcher that
-///                         runs for the life of the session. The agent polls
-///                         it when it wants to know something, and the only
-///                         thing that ends it is an explicit stop or pabrik
-///                         itself shutting down.
-///
-/// `background` (the boolean) is the LEGACY spelling of `background`; the
-/// parser resolves it, and `resolvedMode` keeps direct constructors working.
 pub const RunMode = enum {
     foreground,
     background,
@@ -86,9 +37,7 @@ pub const RunMode = enum {
     }
 
     /// The kind column value a detached command of this mode is recorded
-    /// under. `service` is what makes "no queue message" enforceable in TWO
-    /// places (the watcher is not scheduled, and the cron skips the row) —
-    /// see `session_background_process.kind`.
+    /// under.
     pub fn kindFor(self: RunMode) []const u8 {
         return switch (self) {
             .foreground => "job",
@@ -104,10 +53,7 @@ pub const ShellInput = struct {
     cwd: ?[]const u8 = null,
     max_output: ?usize = 20 * 1024,
     stdin_data: ?[]const u8 = null,
-    /// LEGACY alias for `mode == .background`. The parser resolves the two into
-    /// `mode` (and rejects a contradiction), but this stays because an
-    /// in-tree constructor, a test or a transcript written before `mode`
-    /// existed sets only this. `resolvedMode` is the single reader.
+    /// LEGACY alias for `mode == .background`.
     background: bool = false,
     /// See `RunMode`. Additive: everything that does not set it keeps
     /// running in the foreground, which is the behaviour it had.
@@ -115,31 +61,11 @@ pub const ShellInput = struct {
     max_lines: ?usize = 1000,
     do_encoding: bool = false,
     /// ASK THE AGENTIC LOOP TO END THIS TURN after the current tool batch.
-    ///
-    /// Not a shell concern, and `shell.zig` never reads it — the field rides
-    /// in this struct only because `ShellInput` is the parsed-arguments type
-    /// for the `command` tool (the retired `bash` / `pwsh` shims alias it).
-    /// `tools_exec_command` copies it onto `ToolExecResult.stop_loop`, which
-    /// `handle_tool` returns to the workflow loop.
-    ///
-    /// Nothing is killed: a detached command started by the same call keeps
-    /// running. See `docs/plans/2026-10-14-command-is-stop-persistence.md`.
     is_stop: bool = false,
 };
 
 /// The mode a spawn should actually use, after folding in the legacy
 /// `background` alias.
-///
-/// `mode` wins whenever it says anything other than `foreground`: a caller
-/// that sets `.mode = .background_persistence` and leaves `background` at its
-/// false default gets what it asked for. `background = true` only promotes a
-/// defaulted `.foreground` — which is the pre-`mode` behaviour, preserved for
-/// the direct constructors and tests that still rely on it.
-///
-/// The `background=true` + explicit `mode="foreground"` CONTRADICTION is NOT
-/// resolved here: nothing can, since this function cannot tell an explicit
-/// `foreground` from a defaulted one. `parseShellArgs` catches it on the
-/// LLM-facing path and returns a structured error naming both fields.
 pub fn resolvedMode(input: ShellInput) RunMode {
     if (input.background and input.mode == .foreground) return .background;
     return input.mode;
@@ -160,70 +86,29 @@ pub const ShellOutput = struct {
 /// Same semantics as the bash.zig version; shell-neutral.
 pub const TimeoutMissing = error{TimeoutMissing};
 
-/// Returned by `execute_shell` when the caller passes a `timeout`
-/// above `MAX_TIMEOUT_SEC`. A huge deadline is the same as no
-/// deadline — it lets a runaway command hang the agent until the outer
-/// harness gives up. Reject explicitly so the caller splits the work
-/// (smaller steps, `background=true`, or the functional harness).
+/// Returned by `execute_shell` when the caller passes a `timeout` above
+/// `MAX_TIMEOUT_SEC`.
 pub const TimeoutTooLarge = error{TimeoutTooLarge};
 
 /// Returned by `execute_shell` when the caller omits `cwd`.
-///
-/// Without `cwd` the child inherits the SERVER process's working directory —
-/// for an agent session that is the project root, never the session's bound
-/// worktree. A `background=true` build launched that way compiles the wrong
-/// checkout, and a relative `zig-out` installs into it. Requiring the field
-/// turns that silent wrong-tree run into a learnable error.
 pub const MandatoryCwdMissing = error{MandatoryCwdMissing};
 
 /// Returned by `execute_shell` when `cwd` is not an absolute path.
-///
-/// A relative path is resolved against the server's working directory, which
-/// is the same wrong-tree bug spelled differently — and invisible, because
-/// the caller believes it named a location.
 pub const CwdNotAbsolute = error{CwdNotAbsolute};
 
 /// Upper bound for a single foreground command: 10 minutes.
-///
-/// This is the ceiling, not the expected value: the schema asks for a few
-/// seconds for `ls`, and a caller that reaches for ten minutes is usually
-/// about to block a turn for ten minutes. The cap exists to refuse exactly
-/// that BEFORE a child is spawned — the caller is steered to a detached
-/// `mode` (which outlives the call and is exempt from this cap) or to
-/// splitting the work. It also turns absurd values like 120000 (33 h) into an
-/// instant, learnable error.
-///
-/// It was 60 s. Ten minutes covers a real build or test run without the agent
-/// having to detach and poll for it — at the cost that a genuinely hung
-/// command now holds the turn for ten minutes instead of one. The ceiling is
-/// still far below "no deadline", which is the property that matters.
 pub const MAX_TIMEOUT_SEC: u32 = 600;
 
-// POSIX `nanosleep(req, rem)` — declared as `extern "c"` so the call
-// doesn't go through Zig 0.16's Io runtime. We deliberately avoid
-// `std.Io.sleep` here because shell.zig is invoked from the AI
-// workflow, which itself runs as an `Io.Group` concurrent task. Blocking
-// on `std.Io.sleep` inside that context would dead-lock the group.
-// Plain `nanosleep` parks the OS thread without involving the Io runtime,
-// so the rest of the group keeps making progress.
-//
-// Field names differ between libc implementations: glibc uses `tv_sec`/
-// `tv_nsec`, Darwin and most BSDs use `sec`/`nsec`. We mirror the local
-// `PosixTimespec` shape from helpers/mod.zig (sec/nsec) so this works
-// on macOS too.
+// POSIX `nanosleep(req, rem)` — declared as `extern "c"` so the call doesn't
+// go through Zig 0.16's Io runtime.
 const NanoSleepTimespec = extern struct {
     sec: c_long,
     nsec: c_long,
 };
 extern "c" fn nanosleep(req: *const NanoSleepTimespec, rem: ?*NanoSleepTimespec) c_int;
 
-/// Sleep ~10ms between deadline polls.
-///
-/// Windows: Win32 Sleep via helpers.sleepMillis. Raw nanosleep's
-/// timespec is LLP64-broken here — c_long is 32-bit while MinGW reads
-/// 64-bit time_t, so {0, 10ms} is misread as a ~millions-of-years sleep
-/// (same hang as search.zig's deadline poll hung `zig build test`).
-/// POSIX: raw nanosleep, unchanged.
+/// Sleep ~10ms between deadline polls. Windows: Win32 Sleep via
+/// helpers.sleepMillis.
 fn pollSleep10ms() void {
     if (builtin.os.tag == .windows) {
         helpers.sleepMillis(10);
@@ -244,18 +129,14 @@ extern "kernel32" fn GetExitCodeProcess(
     lpExitCode: *u32,
 ) callconv(.winapi) std.os.windows.BOOL;
 
-/// Wall-clock grace period after SIGKILL during which we wait for the
-/// kernel to reap the spawned process group. 2 seconds is enough for
-/// normal process groups to die and be reaped; D-state descendants
-/// (uninterruptible sleep) cannot be killed by SIGKILL and will block
-/// forever — the grace period caps the wait so we can return anyway.
+/// Wall-clock grace period after SIGKILL during which we wait for the kernel
+/// to reap the spawned process group. 2 seconds is enough for normal process
+/// groups to die and be reaped; D-state descendants (uninterruptible sleep)
 const KILL_GRACE_PERIOD_NS: u64 = 2 * std.time.ns_per_s;
 
 // Sentinel stub — Task 1.1 only lands the SKELETON. Subsequent tasks
-// (1.2–1.7) progressively move helpers and the spawn pipeline from
-// bash.zig into this module. The execute_shell body is intentionally
-// a NotImplemented error until Task 1.5 lands the foreground spawn.
-/// Result of the bounded `waitpid` polling helper.
+// (1.2–1.7) progressively move helpers and the spawn pipeline from bash.zig
+// into this module.
 const WaitResult = struct {
     /// Outcome category.
     outcome: enum {
@@ -263,11 +144,6 @@ const WaitResult = struct {
         /// contains the raw waitpid status word.
         reaped,
         /// The grace period expired before the process became a zombie.
-        /// The kernel could not reap the process — most commonly because
-        /// a descendant is stuck in D state (uninterruptible sleep on
-        /// Linux, e.g. broken NFS, hung FUSE, stuck disk I/O) and SIGKILL
-        /// cannot interrupt it. The parent-side pipe FDs MUST be closed
-        /// manually before returning so the reader threads can exit.
         grace_period_expired,
         /// `waitpid` returned ECHILD — no such process. Either the PID
         /// never existed or was already reaped by a different waiter
@@ -281,20 +157,8 @@ const WaitResult = struct {
     status: c_int = 0,
 };
 
-/// Poll `waitpid(pid, &status, WNOHANG)` until the process is reaped OR
-/// the grace period expires. Uses raw libc (`waitpid` + `nanosleep`)
-/// instead of the Io runtime to avoid the deadlock that
-/// `std.Io.Threaded.childWait` causes when this function is called from
-/// an `Io.Group` worker context (the workflow task blocks the group).
-///
-/// Does NOT close pipe FDs — the caller is responsible for that AFTER
-/// this function returns, so the reader threads can exit cleanly.
-///
-/// Cross-platform: uses `std.os.linux.waitpid` directly on POSIX (Linux
-/// + macOS via the Darwin kernel-call wrappers), and `WaitForSingleObject`
-/// via `std.os.windows` on Windows. The `pid` argument is whatever
-/// `child.id.?` produces (`std.posix.pid_t` on POSIX, `HANDLE` on
-/// Windows) — we pass it through to the right syscall for each host.
+/// Poll `waitpid(pid, &status, WNOHANG)` until the process is reaped OR the
+/// grace period expires.
 pub fn wait_pid_bounded(
     io: std.Io,
     child: *const std.process.Child,
@@ -310,25 +174,18 @@ pub fn wait_pid_bounded(
 }
 
 fn wait_pid_boundedPosix(child: *const std.process.Child, deadline_ns: u64) WaitResult {
-    // `posix.pid_t` is `void` on Windows — Zig 0.16 resolves the
-    // type on every host even inside a body that's only called from
-    // POSIX-gated callers, so we can't reference `posix.pid_t`
-    // here at all. Cast through `c_int` (the POSIX `pid_t` is a
-    // 32-bit signed integer on every supported POSIX host), and
-    // cast `child.id.?` (Windows HANDLE / POSIX pid_t) back to
-    // `c_int` via the `Id` switch — `Id = std.posix.pid_t` on POSIX
-    // (`c_int` on Linux x86_64 / aarch64 / macOS), so the cast is
-    // a no-op at runtime.
+    // `posix.pid_t` is `void` on Windows — Zig 0.16 resolves the type on
+    // every host even inside a body that's only called from POSIX-gated
+    // callers, so we can't reference `posix.pid_t` here at all.
     const pid: c_int = blk: {
         const id_opt: std.process.Child.Id = child.id.?;
         const T = @TypeOf(id_opt);
         if (@typeInfo(T) == .int) {
             break :blk @as(c_int, @intCast(id_opt));
         }
-        // Non-int Id is `HANDLE` (Windows). Unreachable at runtime
-        // because callers gate this fn on `.linux, .macos =>`,
-        // but emit a clear compile-time error if someone ever
-        // removes that gate.
+        // Non-int Id is `HANDLE` (Windows). Unreachable at runtime because
+        // callers gate this fn on `.linux, .macos =>`, but emit a clear
+        // compile-time error if someone ever removes that gate.
         @compileError("wait_pid_boundedPosix called on a non-POSIX host");
     };
     while (true) {
@@ -361,19 +218,11 @@ fn wait_pid_boundedWindows(
     deadline_ns: u64,
 ) WaitResult {
     const handle: std.os.windows.HANDLE = child.id.?;
-    // Poll NtWaitForSingleObject with a short timeout until the
-    // deadline. The `STATUS_TIMEOUT` constant is at 0x00000102;
-    // compare the returned NTSTATUS by value because Zig 0.16 doesn't
-    // expose kernel32's WaitForSingleObject via std.os.windows on
-    // this platform — ntdll is the wrapper layer that exposes it.
+    // Poll NtWaitForSingleObject with a short timeout until the deadline.
     while (true) {
-        // 100ms relative timeout (NT's LARGE_INTEGER is `i64` — for
-        // relative waits, the convention is a NEGATIVE 100-ns interval;
-        // positive values are interpreted as an absolute wakeup time,
-        // which we'd rather avoid in a poll loop). Zig 0.16 typed
-        // `LARGE_INTEGER` as a plain `i64` alias (`pub const
-        // LARGE_INTEGER = i64` in `std/os/windows.zig:4040`), so we
-        // just use the value directly.
+        // 100ms relative timeout (NT's LARGE_INTEGER is `i64` — for relative
+        // waits, the convention is a NEGATIVE 100-ns interval; positive
+        // values are interpreted as an absolute wakeup time, which we'd
         const timeout_100ms: std.os.windows.LARGE_INTEGER =
             -100 * @as(i64, @intCast(std.time.ns_per_ms));
         const status = std.os.windows.ntdll.NtWaitForSingleObject(
@@ -382,10 +231,9 @@ fn wait_pid_boundedWindows(
             &timeout_100ms,
         );
         if (status == .SUCCESS) {
-            // Process signalled; harvest the exit code via
-            // GetExitCodeProcess (declared above; not in Zig 0.16
-            // std) so the .status slot has the same shape the POSIX
-            // path produces.
+            // Process signalled; harvest the exit code via GetExitCodeProcess
+            // (declared above; not in Zig 0.16 std) so the .status slot has
+            // the same shape the POSIX path produces.
             var exit_code: u32 = 0;
             _ = GetExitCodeProcess(handle, &exit_code);
             // Match std.process.Child.Term's `exited: u8` slot:
@@ -408,13 +256,7 @@ fn wait_pid_boundedWindows(
     }
 }
 
-/// Convert a `WaitResult` to a `std.process.Child.Term`. Cross-platform:
-/// on POSIX, `status_to_term` decodes the waitpid status word via
-/// `std.c.W.*` macros (all `-= std.c.IFEXITED/EXITSTATUS/IFSIGNALED/...`
-/// on Windows since `std.c.W = void` there). On Windows, the helper
-/// just pops the low byte of the synthesized status word (matches the
-/// `WaitForSingleObject + GetExitCodeProcess` flow in
-/// `wait_pid_boundedWindows`).
+/// Convert a `WaitResult` to a `std.process.Child.Term`.
 fn term_from_wait(wait_result: WaitResult) std.process.Child.Term {
     return switch (builtin.os.tag) {
         .windows => term_from_wait_windows(wait_result),
@@ -423,25 +265,15 @@ fn term_from_wait(wait_result: WaitResult) std.process.Child.Term {
 }
 
 fn term_from_wait_windows(wait_result: WaitResult) std.process.Child.Term {
-    // The Windows path synthesizes a status with the low 8 bits
-    // holding the exit code (no `posix.SIG.KILL` representation — the
-    // historical `.signal = .KILL` doesn't apply on Windows). Wrap
-    // a synthetic "signal value" by stuffing the exit code into a
-    // u8 and assigning to .exited; if the high bit indicates
-    // abnormal termination by an enum-from-int cast we still surface
-    // it via `.unknown` (callers can introspect via `child.wait()`
-    // separately).
+    // The Windows path synthesizes a status with the low 8 bits holding the
+    // exit code (no `posix.SIG.KILL` representation — the historical `.signal
+    // = .KILL` doesn't apply on Windows).
     const u: u32 = @bitCast(@as(u32, @intCast(wait_result.status)));
     _ = u;
     return switch (wait_result.outcome) {
         .reaped, .no_child => .{ .exited = @intCast(wait_result.status & 0xff) },
         .grace_period_expired, .unexpected_error => .{
-            // Forced kill via TerminateProcess. There's no POSIX
-            // signal mapping on Windows; surface as
-            // `exited = STATUS_TIMEOUT` (0xC000_FFFF magic trimmed)
-            // or, more conservatively, as 255 (typical bash "$?")
-            // so downstream tools see "killed" but don't trip the
-            // "exited cleanly" path in callers.
+            // Forced kill via TerminateProcess.
             .exited = 137, // 128 + SIGKILL = 128+9, the bash
             // convention for "killed by SIGKILL". Portable across
             // POSIX callers that recognize this magic.
@@ -454,35 +286,23 @@ fn term_from_wait_posix(wait_result: WaitResult) std.process.Child.Term {
         .reaped => status_to_term(wait_result.status),
         .no_child => .{ .exited = 0 },
         .grace_period_expired, .unexpected_error => if (comptime builtin.os.tag != .windows)
-            // POSIX path: surface the kill via `posix.SIG.KILL`. The
-            // `.signal = ...` arm isn't reachable on Windows (where
-            // `posix.SIG` is `void`), but Zig 0.16 resolves the arm
-            // anyway — we guard with `comptime` so the resolve arm
-            // is elided on Windows.
+            // POSIX path: surface the kill via `posix.SIG.KILL`.
             .{ .signal = .KILL }
         else
-            // Windows path (this `else` arm is unreachable at
-            // runtime because `term_from_wait` dispatches on
-            // `builtin.os.tag` first); included only so the
-            // function compiles on every host.
+            // Windows path (this `else` arm is unreachable at runtime because
+            // `term_from_wait` dispatches on `builtin.os.tag` first);
+            // included only so the function compiles on every host.
             .{ .exited = 137 },
     };
 }
 
 /// Convert a raw `waitpid` status word to a Zig `std.process.Child.Term`.
 /// Mirrors `childWaitPosix` in `std/Io/Threaded.zig:15309`.
-///
-/// POSIX-only: `std.c.W = void` on Windows (Zig 0.16 — `posix.SIG`
-/// resolves to `void` there, and the `WAIT_OBJECT_0` / `WNOHANG` /
-/// `IFEXITED` / `W.IFEXITED` macros aren't reachable). The Windows
-/// wait path goes through `term_from_wait_windows` directly.
-/// Marked `pub` so callers in the POSIX-only shell tests can use it.
 pub fn status_to_term(status: c_int) std.process.Child.Term {
     if (comptime builtin.os.tag == .windows) {
-        // Unreachable at runtime — emitted as a no-op so the
-        // package compiles on every host. The Windows path
-        // extracts the exit code directly via GetExitCodeProcess
-        // (see `term_from_wait_windows`).
+        // Unreachable at runtime — emitted as a no-op so the package compiles
+        // on every host. The Windows path extracts the exit code directly via
+        // GetExitCodeProcess (see `term_from_wait_windows`).
         return .{ .unknown = 0 };
     }
     const u: u32 = @bitCast(@as(u32, @intCast(status)));
@@ -493,55 +313,26 @@ pub fn status_to_term(status: c_int) std.process.Child.Term {
 }
 
 // ============================================================================
-// Foreground deadline enforcement
-//
-// The deadline has to mean two things, and the old code only delivered the
-// first:
-//
-//   1. the child is terminated when the deadline passes — on EVERY platform.
-//      Both kill sites used to be `if (comptime builtin.os.tag != .windows)`,
-//      so on Windows the deadline only recorded `timeout_hit` while the child
-//      — and any dialog it had put on screen — kept running.
-//   2. the CALL returns when the deadline says it does. That is the hard part:
-//      stdout/stderr are read by two threads that finish only on pipe EOF, and
-//      a process that survived the kill still holds the write ends (POSIX: a
-//      `setsid`/`nohup` descendant that escaped the process group; Windows: a
-//      `start /b` grandchild of the direct child). The old code then did a
-//      plain `std.Thread.join()`, which has no timeout — so the tool never
-//      returned and the agent workflow loop hung with it: "the deadline fired
-//      and nothing came back". `Reader` + `settleReader` below bound that join.
-// ============================================================================
+// Foreground deadline enforcement The deadline has to mean two things, and
+// the old code only delivered the first: 1. the child is terminated when the
 
 /// Win32 TerminateProcess — declared locally for the same reason as
-/// `GetExitCodeProcess` above: Zig 0.16's `std.os.windows` does not export it.
-/// `child.kill(io)` is NOT a substitute: on Windows it waits on the process
-/// handle without a bound, and it clears `child.id`, which `wait_pid_bounded`
-/// needs for the exit-code harvest.
+/// `GetExitCodeProcess` above: Zig 0.16's `std.os.windows` does not export
+/// it.
 extern "kernel32" fn TerminateProcess(
     hProcess: std.os.windows.HANDLE,
     uExitCode: u32,
 ) callconv(.winapi) std.os.windows.BOOL;
 
-/// Grace the reader threads get to observe EOF once the deadline kill has been
-/// issued. In the common case — the whole process group dies — EOF arrives in
-/// milliseconds; the grace exists for the case where a descendant SURVIVED the
-/// kill and therefore never closes the pipe. When it expires the call returns
-/// anyway; see `settleReader`.
+/// Grace the reader threads get to observe EOF once the deadline kill has
+/// been issued.
 const READER_JOIN_GRACE_PERIOD_NS: u64 = 2 * std.time.ns_per_s;
 
-/// Reader threads that were handed off instead of joined (see `settleReader`).
-///
-/// Non-zero means a process that outlived the deadline kill is still holding a
-/// pipe. Each such reader releases its own state and decrements this once the
-/// pipe finally closes — it is the observable form of "we returned a timeout
-/// result without waiting for a stray descendant", and it returns to zero even
-/// though nobody joined that thread.
+/// Reader threads that were handed off instead of joined (see
+/// `settleReader`).
 pub var abandoned_reader_count: std.atomic.Value(usize) = .init(0);
 
-/// How the deadline terminates the child. Pure data, with the OS tag as a
-/// PARAMETER rather than a read of `builtin.os.tag`, so the Windows arm is
-/// assertable from a Linux runner — the same reason `backgroundSpec` takes the
-/// tag instead of reading the host.
+/// How the deadline terminates the child.
 const TimeoutKill = enum {
     /// `kill(-pgid, SIGKILL)`: the child leads its own process group
     /// (`.pgid = 0` at spawn), so one syscall reaches the whole tree.
@@ -559,9 +350,7 @@ fn timeoutKillPlan(comptime os_tag: std.Target.Os.Tag) []const TimeoutKill {
 }
 
 /// Terminate the child — and on POSIX its whole process group — when the
-/// deadline passes. Best-effort by nature: a descendant that escaped the group
-/// cannot be reached from here, which is exactly why the caller must not depend
-/// on the pipes closing (see `Reader`).
+/// deadline passes.
 fn terminateTimedOutChild(child: *const std.process.Child, child_pgid: c_int) void {
     for (timeoutKillPlan(builtin.os.tag)) |kill| {
         switch (kill) {
@@ -579,18 +368,9 @@ fn terminateTimedOutChild(child: *const std.process.Child, child_pgid: c_int) vo
     }
 }
 
-/// One foreground output stream: the pipe, what has been captured from it, and
-/// the ownership protocol that lets the reader thread OUTLIVE the call that
-/// spawned it.
-///
-/// It is heap-allocated and self-contained on purpose. When a pipe holder
-/// survives the deadline kill the reader can still be parked in
-/// `readStreaming` long after `run_shell_command` has to return, so it cannot
-/// be left pointing at that frame — and it cannot use the caller's allocator
-/// either, because the caller's allocator may be an arena that dies with the
-/// tool call. The state and the captured bytes therefore come from
-/// `std.heap.smp_allocator` (thread-safe, process-lifetime), and the caller
-/// copies what it returns into its own allocator.
+/// One foreground output stream: the pipe, what has been captured from it,
+/// and the ownership protocol that lets the reader thread OUTLIVE the call
+/// that spawned it.
 const Reader = struct {
     stream: std.Io.File,
     io: std.Io,
@@ -642,11 +422,7 @@ const Reader = struct {
         self.publishEof();
     }
 
-    /// Exit path. `eof` and the ownership decision are published in ONE critical
-    /// section, and the caller decides under the same `mutex`, so the two cannot
-    /// interleave: either the caller sees `eof` and releases the state, or it
-    /// leaves `handed_off` set and this thread releases it. Never both
-    /// (use-after-free), never neither (leak).
+    /// Exit path.
     fn publishEof(self: *Reader) void {
         self.lock();
         const orphan = self.handed_off;
@@ -667,9 +443,6 @@ const Reader = struct {
             }
             if (self.abandoned.load(.acquire)) {
                 // The caller has already built its answer from the snapshot.
-                // Keep draining — a detached writer must not block on a full
-                // pipe — but stop capturing, so nothing here grows after the
-                // call returned.
                 continue;
             }
             self.lock();
@@ -713,16 +486,8 @@ const Ownership = enum {
     reader,
 };
 
-/// Bounded join for one reader: wait until `deadline_ns` for EOF, then decide who
-/// releases the state.
-///
-/// This is the fix for the hang. `std.Thread.join` has no timeout, and a reader
-/// blocked on a pipe whose write end is held elsewhere never returns — so the
-/// wait has to be a poll, and the "join or hand off" decision has to be taken
-/// under the reader's own `mutex` to stay single-valued.
-///
-/// The deadline is ABSOLUTE and shared by both readers (`readersDeadline`), so
-/// the grace is a budget for the call, not two budgets spent back to back.
+/// Bounded join for one reader: wait until `deadline_ns` for EOF, then decide
+/// who releases the state. This is the fix for the hang.
 fn settleReader(state: *Reader, thread: ?std.Thread, deadline_ns: u64, label: []const u8) Ownership {
     if (thread == null) return .caller; // Spawn failed: it never ran, nothing to wait for.
     while (true) {
@@ -777,13 +542,7 @@ const Captured = struct {
     abandoned: bool,
 };
 
-/// Settle one reader and copy what it captured, into `alloc`. The copy happens
-/// while this side still owns the state, which is what makes it safe even when
-/// the reader is handed off (an abandoned reader stops appending under its own
-/// lock, and we read under that same lock).
-///
-/// The state is released on EVERY path out of here — success, error, and
-/// handoff — so the caller must clear its pending slot before calling.
+/// Settle one reader and copy what it captured, into `alloc`.
 fn captureStream(
     alloc: std.mem.Allocator,
     state: *Reader,
@@ -836,24 +595,17 @@ pub fn execute_shell(
     return run_shell_command(allocator, io, argv_prefix, input);
 }
 
-/// Run a shell command with the supplied argv-prefix (e.g. `&.{ "bash", "-c" }`
-/// or `&.{ "pwsh", "-NoProfile", "-NonInteractive", "-Command" }`). The user's
-/// `command` string is appended as the last argv element. This is the
-/// SHELL-NEUTRAL spawn pipeline — moved verbatim from bash.zig (Tasks
-/// 1.5–1.7 of the 2026-08-14-pwsh-tool plan). Background mode is split
-/// into a separate `spawn_background` helper for the nohup-vs-Start-Process
-/// divergence (D8 in the plan).
+/// Run a shell command with the supplied argv-prefix (e.g. `&.{ "bash", "-c"
+/// }` or `&.{ "pwsh", "-NoProfile", "-NonInteractive", "-Command" }`).
 pub fn run_shell_command(
     allocator: std.mem.Allocator,
     io: std.Io,
     argv_prefix: []const []const u8,
     input: ShellInput,
 ) !ShellOutput {
-    // --- URL encoding if requested ---
-    // cmd.exe treats single quotes literally (no quoting semantics), so the
-    // `"…"` → `'…'` swap would corrupt URLs on the cmd fallback path — skip
-    // it when the resolved shell is cmd. Detected via argv_prefix so the
-    // kill/reader logic stays shared (no fork).
+    // --- URL encoding if requested --- cmd.exe treats single quotes
+    // literally (no quoting semantics), so the `"…"` → `'…'` swap would
+    // corrupt URLs on the cmd fallback path — skip it when the resolved shell
     const is_cmd_shell = argv_prefix.len > 0 and std.mem.eql(u8, argv_prefix[0], "cmd.exe");
     const command = if (input.do_encoding and !is_cmd_shell)
         try encode_command_urls(allocator, input.command)
@@ -866,31 +618,16 @@ pub fn run_shell_command(
         return error.CommandForbidden;
     }
 
-    // --- Mandatory-cwd check (BOTH modes) ---
-    //
-    // Checked before the timeout guard so a call missing both fields is told
-    // about the more dangerous omission first — the one that runs work in the
-    // wrong directory.
-    //
-    // `cwd` used to be documented as mandatory while a missing value quietly
-    // fell back to `.inherit`, i.e. the SERVER's working directory. That is
-    // the silent wrong-tree bug: `background=true` ignored `cwd` outright, so
-    // a detached build compiled the main checkout (and installed into its
-    // `zig-out`) while the operator watched a worktree. Absolute-only for the
-    // same reason: a relative path resolves against the server's cwd, so it
-    // lands somewhere the caller never named.
+    // --- Mandatory-cwd check (BOTH modes) --- Checked before the timeout
+    // guard so a call missing both fields is told about the more dangerous
+    // omission first — the one that runs work in the wrong directory.
     const cwd = input.cwd orelse return error.MandatoryCwdMissing;
     if (cwd.len == 0) return error.MandatoryCwdMissing;
     if (!std.fs.path.isAbsolute(cwd)) return error.CwdNotAbsolute;
 
-    // --- Mandatory-timeout check (foreground only) ---
-    // Neither detached mode uses the timeout (the process outlives the call
-    // by definition), so the check is skipped for both. But the foreground
-    // path MUST have an explicit deadline — the previous design defaulted
-    // to 30 s which silently masked runaway commands.
-    //
-    // Keyed on the RESOLVED mode, so `background=true` and
-    // `mode="background"` take exactly the same branch.
+    // --- Mandatory-timeout check (foreground only) --- Neither detached mode
+    // uses the timeout (the process outlives the call by definition), so the
+    // check is skipped for both.
     const mode = resolvedMode(input);
     if (!mode.isDetached() and input.timeout == null) {
         return error.TimeoutMissing;
@@ -905,17 +642,9 @@ pub fn run_shell_command(
         }
     }
 
-    // --- Detached modes ---
-    //
-    // Two different detach mechanisms, deliberately, for one release:
-    //   * `background`      keeps the `nohup` shell idiom it has always used,
-    //                       so the path every existing caller and test
-    //                       depends on cannot regress while the new one is
-    //                       proven.
-    //   * `background_persistence` gets the native spawn (`.pgid = 0` +
-    //                       stdout/stderr straight to the log file), which is
-    //                       what makes `pid == pgid` — and therefore a tree
-    //                       kill that actually frees the port.
+    // --- Detached modes --- Two different detach mechanisms, deliberately,
+    // for one release: * `background` keeps the `nohup` shell idiom it has
+    // always used, so the path every existing caller and test depends on
     if (mode == .background_persistence) {
         return try spawn_detached_native(allocator, io, argv_prefix, command, cwd);
     }
@@ -923,11 +652,9 @@ pub fn run_shell_command(
         return try spawn_background(allocator, io, argv_prefix, command, cwd);
     }
 
-    // --- Foreground mode ---
-    // `input.max_output` defaults to 20 KiB in the schema (see schemas.zig),
-    // so the `orelse` fallback here is a defense-in-depth — it would only
-    // fire if someone constructs ShellInput programmatically without going
-    // through the JSON schema (e.g. tests, internal callers).
+    // --- Foreground mode --- `input.max_output` defaults to 20 KiB in the
+    // schema (see schemas.zig), so the `orelse` fallback here is a
+    // defense-in-depth — it would only fire if someone constructs ShellInput
     const max_output = input.max_output orelse 20 * 1024;
     const max_lines = input.max_lines orelse 1000;
     const timeout_sec = input.timeout.?;
@@ -947,25 +674,12 @@ pub fn run_shell_command(
         .stdin = if (input.stdin_data != null) .pipe else .close,
         .stdout = .pipe,
         .stderr = .pipe,
-        // Zig 0.16: `?posix.pid_t = null`. On Windows, `posix.pid_t`
-        // resolves to `void`, so the ternary `null / @as(?pid_t, 0)`
-        // can't infer a unified type (the Windows branch is
-        // `?*anyopaque` from the void-typed pid_t). Use comptime
-        // branches so Zig 0.16 emits only the relevant arm:
-        //   POSIX: place the child in a new pgroup whose pgid equals
-        //          its own pid (preserves the historical "kill the
-        //          whole group" semantics below).
-        //   Windows: pass null (no pgid concept; group-kill branch
-        //          below is gated anyway).
+        // Zig 0.16: `?posix.pid_t = null`.
         .pgid = if (comptime builtin.os.tag == .windows) null else @as(?std.posix.pid_t, 0),
     });
-    // On Windows, `posix.pid_t` is `void` (Windows has no POSIX pid
-    // concept), so the historical `kill(-child_pgid, .KILL)` group-
-    // kill pattern compiles only on POSIX. Gate the group-kill path
-    // by host OS: Windows children use the .id HANDLE directly via
-    // `child.kill(io)` (in the cleanup branches below — no group-kill
-    // because Windows has no `setpgid(0)` equivalent). `wait_pid_bounded`
-    // is now OS-dispatched (see its `switch (builtin.os.tag)` body).
+    // On Windows, `posix.pid_t` is `void` (Windows has no POSIX pid concept),
+    // so the historical `kill(-child_pgid, .KILL)` group- kill pattern
+    // compiles only on POSIX.
     const child_pgid: c_int = blk: {
         if (comptime builtin.os.tag == .windows) break :blk 0;
         const id_opt: std.process.Child.Id = child.id.?;
@@ -1007,8 +721,7 @@ pub fn run_shell_command(
     const readers = [2]*Reader{ stdout_reader, stderr_reader };
     // `pending` is the settle ledger: a slot goes null the moment that reader
     // changes hands (`captureStream`), so the errdefer can never settle — and
-    // release — the same state twice. A slot whose spawn never happened is still
-    // set, and `settleReader` handles that (there is nothing to wait for).
+    // release — the same state twice.
     var pending = [2]?*Reader{ stdout_reader, stderr_reader };
     var threads: [2]?std.Thread = .{ null, null };
     errdefer {
@@ -1026,13 +739,9 @@ pub fn run_shell_command(
     var child_term: ?std.process.Child.Term = null;
 
     const deadline_ns = std.Io.Timestamp.now(io, .real).nanoseconds + @as(i64, @intCast(timeout_ns));
-    // `std.process.Child.Term` is `.{ exited: u8, signal: std.posix.SIG,
-    // … }` — `posix.SIG` is `void` on Windows in Zig 0.16, so neither
-    // `.signal = .KILL` nor `status_to_term` (which uses `std.c.W.*` —
-    // also `void` on Windows) compile there. Gate the inner switch by
-    // OS: the POSIX path produces the historical WIFEXITED /
-    // WIFSIGNALED-style term, the Windows path just takes the DWORD
-    // exit code we harvested in `wait_pid_boundedWindows`.
+    // `std.process.Child.Term` is `.{ exited: u8, signal: std.posix.SIG, … }`
+    // — `posix.SIG` is `void` on Windows in Zig 0.16, so neither `.signal =
+    // .KILL` nor `status_to_term` (which uses `std.c.W.*` — also `void` on
     child_term = blk: {
         while (true) {
             if (stdout_reader.eof.load(.acquire) and stderr_reader.eof.load(.acquire)) {
@@ -1041,10 +750,7 @@ pub fn run_shell_command(
             }
             if (std.Io.Timestamp.now(io, .real).nanoseconds >= deadline_ns) {
                 timeout_hit = true;
-                // Terminate on EVERY platform. This used to be POSIX-only, so on
-                // Windows the deadline recorded `timeout_hit` and then waited on a
-                // child nobody had asked to stop — which is how a modal dialog
-                // could hold the tool open past its own deadline.
+                // Terminate on EVERY platform.
                 terminateTimedOutChild(&child, child_pgid);
                 const wait_result = wait_pid_bounded(io, &child, KILL_GRACE_PERIOD_NS);
                 break :blk term_from_wait(wait_result);
@@ -1053,11 +759,7 @@ pub fn run_shell_command(
         }
     };
 
-    // Bounded. A pipe holder that outlived the kill — POSIX: a `setsid` descendant
-    // that escaped the process group; Windows: a `start /b` grandchild — must not
-    // keep the tool open past its deadline. `captureStream` joins the readers
-    // that did see EOF and hands the rest to the reader threads that still own
-    // them; the pipes are closed by whichever side releases a reader.
+    // Bounded.
     const readers_deadline = readersDeadline();
     const stdout_state = pending[0].?;
     pending[0] = null; // `captureStream` releases it on every path from here.
@@ -1100,25 +802,8 @@ pub fn run_shell_command(
     };
 }
 
-/// Background-mode spawn (the `nohup` bash idiom). Returns the
-/// structured ShellOutput with `command`, `stdout = "PID: X\nLog: …"`,
-/// `exit_code = 0`. The detached process keeps running; the caller is
-/// responsible for killing it later.
-///
-/// TODO (D8): PowerShell has no `nohup`. The follow-up PR replaces this
-/// with `Start-Process -NoNewWindow -RedirectStandardOutput` for pwsh.
-/// Platform-correct way to detach a command and capture its PID.
-///
-/// `nohup <cmd> > <log> 2>&1 & echo $!` is a POSIX shell idiom with no
-/// PowerShell equivalent: handed to `pwsh -Command` it is a syntax error,
-/// and its redirect target `/tmp/bg_*.log` does not exist on Windows
-/// either. The old code sent it unconditionally, so every
-/// `background: true` call on Windows failed.
-///
-/// `os_tag` is a parameter rather than a direct `builtin.os.tag` read, and
-/// `tmp_dir` is passed in, so BOTH shapes are testable from any host — the
-/// Windows command is otherwise the one that can never be exercised on a
-/// Linux runner.
+/// Background-mode spawn (the `nohup` bash idiom). Returns the structured
+/// ShellOutput with `command`, `stdout = "PID: X\nLog: …"`, `exit_code = 0`.
 pub const OsTag = @TypeOf(@import("builtin").os.tag);
 
 pub fn backgroundSpec(
@@ -1180,17 +865,12 @@ pub fn quotePwsh(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
     return out.toOwnedSlice(allocator);
 }
 
-/// The platform's own temp directory.
-///
-/// The old code interpolated a literal `/tmp` into a path that was then
-/// handed to a Windows shell. Reading the OS variable keeps the fallback
-/// inside the POSIX arm, where it is actually correct.
+/// The platform's own temp directory. The old code interpolated a literal
+/// `/tmp` into a path that was then handed to a Windows shell.
 pub fn tempDirFor(allocator: std.mem.Allocator, os_tag: OsTag) ![]u8 {
     // `std.c.getenv` is the same accessor the rest of the codebase uses for
     // this (service/state_file.zig reads LOCALAPPDATA through it), and it
     // works on both platforms because the agent process always links libc.
-    // `std.c.getenv` takes a C string pointer, so the candidates are typed
-    // `[*:0]const u8` rather than slices.
     const names: []const [*:0]const u8 = if (os_tag == .windows) &.{ "TEMP", "TMP" } else &.{"TMPDIR"};
     for (names) |n| {
         if (std.c.getenv(n)) |value| {
@@ -1235,9 +915,6 @@ fn spawn_background(
         // The `nohup … &` idiom runs in the shell we spawn here, and the
         // detached process inherits THAT shell's cwd — so honoring `cwd` on
         // this spawn is what puts the background job in the caller's
-        // directory. Hardcoding `.inherit` here is the bug this replaces: the
-        // job silently ran in the server's cwd (the project root), so a
-        // detached `zig build` compiled the wrong checkout.
         .cwd = .{ .path = cwd },
         .stdin = .close,
         .stdout = .pipe,
@@ -1294,36 +971,6 @@ pub fn detachedLogPath(
 }
 
 /// Native detached spawn: no shell, and `pid == pgid`.
-///
-/// Why not the `nohup cmd & echo $!` idiom `spawn_background` uses:
-///
-///   * `$!` is the PID of the SHELL's child, not of the command, and that
-///     child's process group is the group WE were started in. So
-///     `kill(-pgid)` could never be used — it would signal our own group —
-///     and a single-PID kill orphans everything the command forked.
-///     `pnpm run dev` forks again (vite → esbuild), and the survivors keep
-///     the port: "stop the dev server" did not stop it.
-///   * It needs a shell string to be built and quoted per platform
-///     (`backgroundSpec`, `quotePwsh`). A direct spawn has no such string.
-///
-/// Spawning the command ourselves with `.pgid = 0` makes it a process-group
-/// leader, so `kill(-pid)` reaches the whole tree; redirecting stdout/stderr
-/// straight at the log FILE (no pipes) means no reader threads are involved —
-/// the `Reader` / `settleReader` machinery exists for the foreground deadline
-/// problem and has nothing to do here.
-///
-/// The child is OUR child, so it MUST be reaped — see `reap_pid_nohang`. A
-/// zombie answers `kill(pid, 0)` with SUCCESS, so an unreaped native child
-/// would report as "running" for the life of the process.
-///
-/// Note what is deliberately NOT done here: `PR_SET_PDEATHSIG`.
-/// `std.process.SpawnOptions` has no such field (and no pre-exec hook) in Zig
-/// 0.16 — verified against `/usr/lib/zig/std/process.zig:361-403` — and the
-/// flag has to be set by the CHILD before it execs, so it is unreachable from
-/// a plain `spawn` without putting a shell wrapper back, which is the thing
-/// this function exists to remove. "Dies with pabrik" is therefore carried by
-/// the shutdown hook (SIGINT/SIGTERM) plus the boot sweep for the `kill -9`
-/// case; see `killServicesForShutdown` / `reapOrKillServicesOnBoot`.
 fn spawn_detached_native(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -1418,12 +1065,6 @@ pub const ReapOutcome = union(enum) {
 
 /// Non-blocking reap. Returns `.running`/`.exited` for a child of this
 /// process, `.not_our_child` otherwise.
-///
-/// This is not housekeeping: `process_status.isProcessRunning` probes with
-/// `kill(pid, 0)`, and a ZOMBIE answers that probe with SUCCESS. Without a
-/// reaper a native detached child that exited would read as "running"
-/// forever — the process list would lie and the boot sweep would try to kill
-/// a corpse.
 pub fn reap_pid_nohang(pid: u32) ReapOutcome {
     if (comptime builtin.os.tag == .windows) return .not_our_child;
     if (comptime builtin.os.tag != .linux and builtin.os.tag != .macos) return .not_our_child;
@@ -1447,11 +1088,6 @@ pub fn reap_pid_nohang(pid: u32) ReapOutcome {
 }
 
 /// How a stop reaches a detached process.
-///
-/// Pure DATA, with the OS tag as a PARAMETER rather than a read of
-/// `builtin.os.tag`, so the Windows arm is assertable from a Linux runner —
-/// the `timeoutKillPlan` precedent in this file, and what
-/// `CODING_STANDARDS.md` §2 requires of a platform-conditional path.
 pub const StopKill = enum {
     /// `kill(-pid, SIGKILL)`: `spawn_detached_native` spawns with
     /// `.pgid = 0`, so the child leads its own group and one syscall reaches
@@ -1469,12 +1105,8 @@ pub fn stopPlan(comptime os_tag: std.Target.Os.Tag) []const StopKill {
     };
 }
 
-/// Stop a process started by `spawn_detached_native`, tree included.
-///
-/// Returns true when the process was signalled or was already gone. Unlike
-/// `background_process.killProcess` (a single PID through
-/// `helpers.process_status`), this signals the whole process GROUP — which is
-/// the difference between freeing the port and orphaning vite + esbuild.
+/// Stop a process started by `spawn_detached_native`, tree included. Returns
+/// true when the process was signalled or was already gone.
 pub fn stopDetachedProcess(allocator: std.mem.Allocator, io: std.Io, pid: u32) bool {
     var signalled = false;
     for (stopPlan(builtin.os.tag)) |kill| {
@@ -1517,24 +1149,8 @@ pub fn stopDetachedProcess(allocator: std.mem.Allocator, io: std.Io, pid: u32) b
 /// JSON serialiser — same 8-field payload as the old `result_to_xml`
 /// (`command/stdout/stderr/exit_code/truncated/timeout/stdout_lines/
 /// stderr_lines`), now a JSON object.
-///
-/// Returned to the LLM as the inner `data` of the standard JSON envelope
-/// (`wrapToolOutput` embeds it in `"data"` on the agentic-loop side).
 pub fn result_to_json(allocator: std.mem.Allocator, result: ShellOutput) ![]u8 {
-    // Strip terminal escape sequences FIRST. MSBuild, PowerShell's
-    // Write-Host, cargo, pytest and friends colour their diagnostics even
-    // when stdout is a pipe, so a captured log is laced with `ESC[7m` /
-    // `ESC[0m`. `sanitizeControlChars` maps ESC (0x1B) to U+FFFD, but the
-    // CSI parameters around it are printable ASCII and survive — which is
-    // how `ESC[7mwarning ESC[0m` reaches the UI as the literal text
-    // `�[7mwarning �[0m`. The flattening is one-way, so the escape has to
-    // be recognised and dropped while it is still an escape.
-    //
-    // Then: binary stdout (e.g. `head $(which qs)` dumping the ELF header)
-    // embeds NUL + C0 controls that truncate SQLite TEXT at the first NUL
-    // and are illegal in JSON strings. Sanitize everything to U+FFFD;
-    // `std.json` then handles the remaining `<>&"'` natively (no escaping
-    // layer — markup stays raw so the LLM and frontend read it directly).
+    // Strip terminal escape sequences FIRST.
     const ansi_stdout = try helpers.ansi.stripAnsi(allocator, result.stdout);
     defer allocator.free(ansi_stdout);
     const ansi_stderr = try helpers.ansi.stripAnsi(allocator, result.stderr);
@@ -1558,10 +1174,9 @@ pub fn result_to_json(allocator: std.mem.Allocator, result: ShellOutput) ![]u8 {
     }, .{});
 }
 
-/// Concatenates `argv_prefix` with `[command]` to form the full spawn
-/// argv. This is a tiny helper kept separate so callers can audit the
-/// prefix without scrolling through the spawn site. Tasks 1.5+ of the
-/// 2026-08-14-pwsh-tool plan.
+/// Concatenates `argv_prefix` with `[command]` to form the full spawn argv.
+/// This is a tiny helper kept separate so callers can audit the prefix
+/// without scrolling through the spawn site.
 pub fn build_argv(
     allocator: std.mem.Allocator,
     argv_prefix: []const []const u8,
@@ -1574,12 +1189,6 @@ pub fn build_argv(
 }
 
 /// Detects forbidden command patterns that produce unbounded output.
-/// Currently disabled (returns `false` for every input) — the previous
-/// guard list (recursive `ls -R`, `find /` without `-maxdepth`, missing
-/// `timeout` / `head -n` prefix) is parked here in commented-out form
-/// pending a future hardening PR. Kept verbatim in shell.zig because
-/// the rule engine is shell-neutral (the same patterns apply to bash
-/// and to PowerShell `Get-ChildItem -Recurse`).
 pub fn is_forbidden_command(command: []const u8) bool {
     const trimmed = std.mem.trim(u8, command, " \t\n\r");
 
@@ -1589,12 +1198,9 @@ pub fn is_forbidden_command(command: []const u8) bool {
     return false;
 }
 
-/// Encode special characters in URLs within double quotes
-/// Converts: curl -sI "http://host/path?query=val&sig=xyz"
-///      to: curl -sI 'http://host/path?query=val&sig=xyz'
-/// This prevents bash from interpreting ?, &, etc.
-/// Also helps PowerShell — `?` is a wildcard and `&` is the call
-/// operator there too (D6 in the plan).
+/// Encode special characters in URLs within double quotes Converts: curl -sI
+/// "http://host/path?query=val&sig=xyz" to: curl -sI
+/// 'http://host/path?query=val&sig=xyz' This prevents bash from interpreting
 pub fn encode_command_urls(allocator: std.mem.Allocator, command: []const u8) ![]u8 {
     var result = std.ArrayList(u8).empty;
     errdefer result.deinit(allocator);
@@ -1681,9 +1287,7 @@ test "resolvedMode: the legacy background boolean keeps working, and mode wins w
 
     // The CONTRADICTION is deliberately NOT resolved here — nothing can tell
     // an explicit `foreground` from a defaulted one at this layer, so
-    // `parseShellArgs` rejects it before a ShellInput is ever built. This
-    // assertion documents which side this function lands on if that guard is
-    // ever bypassed: the legacy boolean, because that is what the field said.
+    // `parseShellArgs` rejects it before a ShellInput is ever built.
     try testing.expectEqual(
         RunMode.background,
         resolvedMode(.{ .command = "x", .background = true, .mode = .foreground }),
@@ -1704,26 +1308,13 @@ test "stopPlan: a stop reaches the whole tree on every platform" {
     // Pure data with the OS tag as a parameter, so the Windows arm is
     // assertable from a Linux runner — without that it could only ever be
     // exercised on a Windows CI cell, which is how the `nohup`-on-Windows bug
-    // survived. Same pattern as `timeoutKillPlan` above.
     try testing.expectEqualSlices(StopKill, &.{.process_group}, stopPlan(.linux));
     try testing.expectEqualSlices(StopKill, &.{.process_group}, stopPlan(.macos));
     try testing.expectEqualSlices(StopKill, &.{.taskkill_tree}, stopPlan(.windows));
 }
 
 test "spawn_detached_native: pid == pgid, the log is the child's own stdout, and the tree kill works" {
-    // The behavioural witness for the whole point of the native spawn. Three
-    // things have to hold at once, and none of them is visible from the
-    // `nohup cmd & echo $!` path this replaces:
-    //
-    //   1. the reported PID is the COMMAND's, not a shell wrapper's;
-    //   2. that PID is its own process-group leader, so `kill(-pid)` is a tree
-    //      kill (asserted directly via getpgid);
-    //   3. the child's stdout lands in the log file with no pipes and no
-    //      reader threads involved.
-    //
-    // `background_persistence` is also the mode that must NOT go through
-    // `spawn_background`, so a regression that rerouted it would fail (1) and
-    // (2) here.
+    // The behavioural witness for the whole point of the native spawn.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const allocator = testing.allocator;
@@ -1747,10 +1338,7 @@ test "spawn_detached_native: pid == pgid, the log is the child's own stdout, and
         allocator.free(out.stderr);
     }
 
-    // "PID: <n>\nLog: <path>". Parsed by locating the markers rather than by
-    // counting bytes: `readLogTruncated` and the completion path both consume
-    // this same string, and a one-byte slip here (a leading space) reads as
-    // "log file not found" everywhere downstream.
+    // "PID: <n>\nLog: <path>".
     try testing.expect(std.mem.startsWith(u8, out.stdout, "PID: "));
     const nl = std.mem.indexOfScalar(u8, out.stdout, '\n') orelse return error.NoNewline;
     const pid = try std.fmt.parseInt(u32, out.stdout[5..nl], 10);
@@ -1760,9 +1348,6 @@ test "spawn_detached_native: pid == pgid, the log is the child's own stdout, and
     defer _ = stopDetachedProcess(allocator, io, pid);
 
     // (2) pid == pgid — the property `kill(-pid)` depends on.
-    // `std.posix` has no `getpgid` in Zig 0.16 (only `std.os.linux`'s raw
-    // syscall), so libc is called directly — the same approach this file
-    // already takes for `nanosleep` and the Win32 pair.
     const pgid = getpgid(@intCast(pid));
     if (pgid < 0) {
         std.debug.print("getpgid({d}) failed\n", .{pid});
@@ -1790,14 +1375,8 @@ test "spawn_detached_native: pid == pgid, the log is the child's own stdout, and
     if (!saw_marker) return error.ChildOutputNeverReachedTheLog;
 
     // (4) the stop really stops it — and this is where the zombie distinction
-    // bites, which is why the probe has to be the REAPER and not `kill(pid, 0)`.
-    //
-    // After SIGKILL the child is a ZOMBIE until someone waits on it, and a
-    // zombie answers `kill(pid, 0)` with SUCCESS. This test found that the hard
-    // way: asserting `!isProcessRunning(pid)` here FAILED on a process that was
-    // already dead. The same fact is why the service reaper exists — without
-    // it, a `background_persistence` process that exited would read as running
-    // for the life of the server.
+    // bites, which is why the probe has to be the REAPER and not `kill(pid,
+    // 0)`.
     try testing.expect(stopDetachedProcess(allocator, io, pid));
     attempts = 0;
     var reaped = false;
@@ -1815,10 +1394,7 @@ test "spawn_detached_native: pid == pgid, the log is the child's own stdout, and
     try testing.expect(!processAliveForTest(pid));
 }
 
-/// POSIX `getpgid(2)`. Declared here rather than reached through `std`
-/// because Zig 0.16's `std.posix` does not expose it (only `std.os.linux`'s
-/// raw syscall, which has no macOS arm); libc is linked on every POSIX target
-/// this runs on. Used ONLY by the detached-spawn test above.
+/// POSIX `getpgid(2)`.
 extern "c" fn getpgid(pid: c_int) c_int;
 
 /// `kill(pid, 0)` probe used only by the detached-spawn test above.
@@ -1831,8 +1407,7 @@ fn processAliveForTest(pid: u32) bool {
 test "shell.ShellInput JSON schema: same field set as BashInput (alias carries through)" {
     // shell.ShellInput is the canonical type; BashInput and PwshInput are
     // `pub const = ShellInput` aliases in their per-shell wrappers. The
-    // JSON-schema parser must accept the same JSON for both names. This
-    // is the "same interface" promise on the backend wire.
+    // JSON-schema parser must accept the same JSON for both names.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const json_str =
@@ -1853,10 +1428,8 @@ test "shell.ShellInput JSON schema: same field set as BashInput (alias carries t
 
 test "shell.ShellOutput has all 8 fields the bash JSON payload uses" {
     // The bash_result_to_json payload has: command, stdout, stderr,
-    // exit_code, truncated, timeout, stdout_lines, stderr_lines.
-    // ShellOutput MUST have the same 8 — pwsh_result_to_json reuses it.
-    // We construct a sample instance so the type inference resolves
-    // correctly; @hasField works on the inferred type only.
+    // exit_code, truncated, timeout, stdout_lines, stderr_lines. ShellOutput
+    // MUST have the same 8 — pwsh_result_to_json reuses it.
     const sample = shell.ShellOutput{
         .command = "",
         .stdout = "",
@@ -1953,21 +1526,7 @@ test "shell.execute_shell accepts timeout at exactly MAX_TIMEOUT_SEC" {
 test "shell.execute_shell: a pipe holder that escapes the deadline kill cannot hold the call open" {
     // The deadline path kills the child's PROCESS GROUP, so a descendant that
     // stays in the group releases the pipe and the reader threads finally see
-    // EOF. The process group is not the whole story: `setsid` — which is what
-    // `nohup`, a daemonizing wrapper, or a shell with job control does — puts
-    // the descendant in a NEW session, in a process group `kill(-pgid, .KILL)`
-    // cannot reach. It still holds the pipe write ends, so both reader threads
-    // stay parked in `readStreaming`, and the unconditional
-    // `stdout_thread.join()` / `stderr_thread.join()` after the kill blocks the
-    // tool for as long as that descendant lives. That is the reported symptom:
-    // the deadline fired, the tool never returned, and the agent workflow loop
-    // hung with it.
-    //
-    // The escaped holder here releases the pipe after 6 s, so a regression
-    // costs 6 s instead of hanging the suite; the deadline is 1 s. A bounded
-    // implementation returns on the deadline's schedule (deadline + kill grace
-    // + reader-join grace); the unbounded one returns whenever the holder
-    // decides to let go.
+    // EOF.
     if (builtin.os.tag != .linux) return; // `setsid` ships with util-linux.
 
     const io = std.testing.io;
@@ -1986,16 +1545,13 @@ test "shell.execute_shell: a pipe holder that escapes the deadline kill cannot h
 
     // Positive control: `timeout` can only be true if the readers were still
     // waiting for EOF when the deadline arrived — i.e. the escaped holder
-    // really did survive the group kill. Had it died with the group, the call
-    // would have returned before the deadline with `timeout == false`.
+    // really did survive the group kill.
     try testing.expect(out.timeout);
     // ...and it returned on OUR schedule, not on the escaped holder's.
     try testing.expect(elapsed_ms < 4500);
 
-    // The other half of the deal: the reader that was left behind is not a leak.
-    // The escaped holder releases the pipe at the 6 s mark, the abandoned thread
-    // sees EOF, frees its own state and decrements the counter — so nothing stays
-    // allocated for the life of the process.
+    // The other half of the deal: the reader that was left behind is not a
+    // leak.
     const handoff_deadline = std.Io.Timestamp.now(io, .real).nanoseconds + 4 * std.time.ns_per_s;
     while (abandoned_reader_count.load(.monotonic) > 0 and
         std.Io.Timestamp.now(io, .real).nanoseconds < handoff_deadline)
@@ -2006,25 +1562,16 @@ test "shell.execute_shell: a pipe holder that escapes the deadline kill cannot h
 }
 
 test "shell.timeoutKillPlan: the deadline terminates the child on EVERY platform" {
-    // The reported Windows hang: both kill sites were
-    // `if (comptime builtin.os.tag != .windows)`, so on Windows the deadline
-    // recorded `timeout_hit` and then waited on a child nobody had asked to stop
-    // — the dialog stayed on screen and the tool stayed blocked behind it.
-    //
-    // The plan is pure data with the OS tag as a PARAMETER rather than a read of
-    // `builtin.os.tag`, precisely so the Windows arm is assertable from a Linux
-    // runner (the `backgroundSpec` precedent in this file). Without that, the
-    // arm can only ever be exercised on a Windows CI cell.
+    // The reported Windows hang: both kill sites were `if (comptime
+    // builtin.os.tag != .windows)`, so on Windows the deadline recorded
+    // `timeout_hit` and then waited on a child nobody had asked to stop — the
     try testing.expectEqualSlices(TimeoutKill, &.{.child_handle}, timeoutKillPlan(.windows));
     try testing.expectEqualSlices(TimeoutKill, &.{.process_group}, timeoutKillPlan(.linux));
     try testing.expectEqualSlices(TimeoutKill, &.{.process_group}, timeoutKillPlan(.macos));
 }
 
 test "shell.execute_shell requires cwd in BOTH modes (MandatoryCwdMissing)" {
-    // `cwd` is not merely documented as required. Without it the child
-    // inherits the SERVER process's working directory — which is how a
-    // `background=true` build silently compiled the wrong checkout. The guard
-    // fires before any spawn, so this runs on ALL platforms.
+    // `cwd` is not merely documented as required.
     try testing.expectError(
         error.MandatoryCwdMissing,
         shell.execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
@@ -2073,9 +1620,7 @@ test "shell.execute_shell rejects a relative cwd (CwdNotAbsolute)" {
 
 test "foreground: the child runs IN cwd, not in the harness's cwd" {
     // Behavioural witness for the `cwd` contract: `pwd -P` must print the
-    // directory the caller named. Before the guard a missing `cwd` fell back
-    // to `.inherit` (the server/test-runner cwd = the repo root), so this
-    // compared equal to the wrong tree.
+    // directory the caller named.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const allocator = testing.allocator;
@@ -2103,16 +1648,9 @@ test "foreground: the child runs IN cwd, not in the harness's cwd" {
 }
 
 test "background: the DETACHED process starts in cwd, not the server's" {
-    // The regression this pins: `spawn_background` hardcoded `.cwd = .inherit`
-    // and was never even handed `input.cwd`, so a detached command ran in the
-    // SERVER's working directory. A `background=true` build therefore compiled
-    // the main checkout (and installed into its `zig-out`) while the operator
-    // watched a worktree.
-    //
-    // The witness is a file the detached process creates: the process itself
-    // is gone by the time we look, so its working directory has to be observed
-    // through what it left behind. `tmp.dir` is scoped to the directory we
-    // named, so the marker existing at all PROVES it ran there.
+    // The regression this pins: `spawn_background` hardcoded `.cwd =
+    // .inherit` and was never even handed `input.cwd`, so a detached command
+    // ran in the SERVER's working directory.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const allocator = testing.allocator;
@@ -2171,16 +1709,8 @@ test "shell.execute_shell background mode is exempt from the max-timeout cap" {
     }
 }
 
-// Task 6 — schema-shape parity lock. The user requirement: "bash and
-// pwsh have to have the same interface". This test fails closed if a
-// future refactor breaks the alias and re-introduces copy-paste (the
-// "two separate struct types with the same fields" footgun).
-//
-// After Task 2, BashInput / PwshInput are `pub const = ShellInput`
-// aliases — so `@typeName` returns the same string for all three.
-// The test also round-trips the same JSON through all three parsers
-// to prove the wire schema is identical (same field order, same field
-// types, same default values).
+// Task 6 — schema-shape parity lock. The user requirement: "bash and pwsh
+// have to have the same interface".
 test "ShellInput is structurally identical to BashInput AND PwshInput (alias liveness check)" {
     // We use `@typeName` of a constructed instance to force Zig to
     // resolve the alias — if the alias is broken in a future refactor,
@@ -2213,11 +1743,8 @@ test "ShellInput is structurally identical to BashInput AND PwshInput (alias liv
 }
 
 test "result_to_json sanitizes binary ELF stdout into valid JSON" {
-    // Regression for user report: `head -n 40 $(which qs)` dumps the
-    // ELF header (0x7F 'E' 'L' 'F' 0x02 0x01 ... 0x00 + controls).
-    // The old result_to_xml interpolated raw bytes — NUL truncated SQLite
-    // TEXT and illegal chars broke parsers, so the stored history ended
-    // at `ELF`. The JSON writer sanitizes to U+FFFD before serializing.
+    // Regression for user report: `head -n 40 $(which qs)` dumps the ELF
+    // header (0x7F 'E' 'L' 'F' 0x02 0x01 ... 0x00 + controls).
     const elf_stdout = "\x7FELF\x02\x01\x01\x00\x00\x01\x02<a>&\"'\x0B\x0C\x1F\x7Fend";
     const out = shell.ShellOutput{
         .command = "head -n 40 /usr/bin/quickshell",
@@ -2254,14 +1781,8 @@ test "result_to_json sanitizes binary ELF stdout into valid JSON" {
 }
 
 test "result_to_json: MSBuild colour codes become plain text, not ?[7m" {
-    // User report: a `dotnet build … | Select-String …` on Windows came
-    // back as a wall of `?[7mwarning ?[0m`. MSBuild colours its
-    // diagnostics; ESC is a C0 control, so sanitizeControlChars turned it
-    // into U+FFFD and left the printable CSI parameters (`[7m`) behind as
-    // literal text. The words were all there — wrapped in escape soup.
-    //
-    // This drives the real serialiser end to end and asserts what the UI
-    // reads out of the JSON envelope.
+    // User report: a `dotnet build … | Select-String …` on Windows came back
+    // as a wall of `?[7mwarning ?[0m`.
     const msbuild_stdout =
         "C:\\src\\Microsoft.Common.CurrentVersion.targets(4919,5): " ++
         "\x1b[7mwarning \x1b[0m\x1b[1mMSB\x1b[0m3026: " ++
@@ -2332,13 +1853,7 @@ test "xmlEscape replaces NUL and C0 controls with U+FFFD" {
 
 // ─── Background detach (Windows) ──────────────────────────────────────────
 // The bug: `spawn_background` built `"nohup {cmd} > /tmp/bg_{n}.log 2>&1 &
-// echo $!"` and handed it to whatever shell was configured. On Windows that
-// is `pwsh -Command`, where the string is a syntax error — and its redirect
-// target does not exist either. Every `background: true` call failed there.
-//
-// `backgroundSpec` takes the OS tag as a parameter precisely so the Windows
-// shape is assertable from a Linux runner; these tests would otherwise only
-// ever run on the platform whose CI cell is currently broken.
+// echo $!"` and handed it to whatever shell was configured.
 test "backgroundSpec: Windows uses Start-Process, never nohup, and no /tmp" {
     const spec = try backgroundSpec(
         testing.allocator,

@@ -1,15 +1,5 @@
-//! Data model for the `session_skills` entity table.
-//!
-//! Tracks which skills each session has loaded. The skill loader
-//! writes here so a session restart re-hydrates the same skill set
-//! without re-reading the skill files from disk.
-//!
-//! Schema: Migration 009 (`add_session_skills`).
-//!
-//! Composite PRIMARY KEY: (session_id, skill_name).
-//!
-//! Note: `loaded_at` is stored as INTEGER (unix-seconds), distinct
-//! from the DATETIME convention used by most other tables.
+//! Data model for the `session_skills` entity table. Tracks which skills each
+//! session has loaded.
 
 const std = @import("std");
 
@@ -63,11 +53,6 @@ pub fn clone(self: *const Self, allocator: std.mem.Allocator) !Self {
 // ===== Tests merged from models_test.zig (2026-09-29 flatten) =====
 
 // Sanity tests for the `src/models/` entity models.
-//
-// Verifies that every model file compiles, that `init` populates the
-// struct as expected, that `deinit` releases its strings, and that
-// external callers can read the struct's fields directly (matching
-// the file-level struct pattern requested by the user).
 
 const testing = std.testing;
 

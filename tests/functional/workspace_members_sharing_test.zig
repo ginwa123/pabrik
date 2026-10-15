@@ -1,51 +1,5 @@
-// Wire-level proof that workspace visibility is driven by `workspace_members`.
-//
-// Zig port of `tests/functional/workspace_members_sharing_test.py`
-// (same test names, same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Wire-level proof that workspace visibility is driven by `workspace_members`.
-//
-//   Implements docs/plans/2026-10-02-workspace-members-shared-workspaces.md
-//   (Migration 100). The unit tests in migration.zig and workspaces_list.zig prove
-//   the SQL and the mapping; these prove the parts a unit test structurally
-//   cannot:
-//
-//     * the create handler's TRANSACTION really commits BOTH the workspace row and
-//       the membership row — if it did not, a user could not see the workspace it
-//       just created, which is the failure the whole feature lives or dies on;
-//     * `normaliseOwnerId` is reached on the auth-off path, where the resolved
-//       owner is the sentinel and the NOT NULL column is the thing at risk;
-//     * delete really removes the membership row instead of orphaning it
-//       (`PRAGMA foreign_keys` is OFF, so nothing else would clean up);
-//     * the whole read path — middleware choke point, list filter, single GET —
-//       follows a membership row.
-//
-//   Membership rows are written with a direct SQLite INSERT because the
-//   `/api/workspaces/:id/members` endpoints are deliberately NOT part of this
-//   change (they were scoped as a follow-up in the plan). The point of these tests
-//   is the READ path and the transaction wiring, both of which are fully exercised
-//   once a row exists.
-//
-//   Never uses port 8081 and never touches a real dev server — see harness.py.
-//   """
-//
-// THE WIRE HELPERS BECAME HARNESS CALLS. Python's `_raw` opened its own
-// `urllib` socket and returned a `(status, headers, body)` triple;
-// `Harness.http` already does that and asserts the status unless told not
-// to, so every call site passes `.assert_status = false` and reads
-// `r.status` itself — the same shape `auth_test.zig` uses. `_two_users`
-// became the `TwoUsers` struct because Zig has no fixture, and because
-// the harness must be deinit'd by the TEST's own `defer`.
-//
-// THE DB IS READ AND WRITTEN WITH THE `sqlite3` CLI, NOT THE STDLIB
-// MODULE. Python used `sqlite3.connect(...)`; this package links no
-// SQLite and must stay portable to a runner with no `libsqlite3` dev
-// package, so the port spawns the `sqlite3` COMMAND-LINE tool and reads
-// its `-json` output — the same idiom `skills_sqlite_test.zig` and
-// `default_workspace_provisioning_test.zig` already use. The DB
-// assertions SKIP when the CLI is absent rather than fail.
+// Wire-level proof that workspace visibility is driven by
+// `workspace_members`.
 
 const std = @import("std");
 const testing = std.testing;
@@ -58,11 +12,8 @@ const io = testing.io;
 // Wire helpers
 // ============================================================================
 
-/// Issue a request WITHOUT a status assertion — the caller asserts.
-///
-/// Python's `_raw` was the suite's private HTTP client. `Harness.http`
-/// with `.assert_status = false` is the harness's own seam for exactly
-/// this shape, so no suite needs a private copy.
+/// Issue a request WITHOUT a status assertion — the caller asserts. Python's
+/// `_raw` was the suite's private HTTP client.
 fn rawHttp(
     h: *Harness,
     method: harness.HttpMethod,
@@ -109,9 +60,6 @@ fn login(h: *Harness, email: []const u8, password: []const u8) ![]u8 {
     }
     // `set_cookie.split("pabrik_session=", 1)[1].split(";", 1)[0].strip()`:
     // the token is the text BETWEEN the name and the next `;`.
-    // `harness.afterFirst` returns the text AFTER a delimiter, which here
-    // would be the attribute list (`Path=/; HttpOnly`) — the wrong tool
-    // for this direction, hence the manual split.
     var attrs = std.mem.splitSequence(u8, set_cookie, ";");
     const first_attr = attrs.next() orelse return error.TestUnexpectedResult;
     const token = std.mem.trim(u8, harness.afterFirst(first_attr, "pabrik_session=") orelse
@@ -125,12 +73,6 @@ fn cookieHeader(token: []const u8) ![]u8 {
 }
 
 /// `POST /api/workspaces` with `name`; returns the new id (owned).
-///
-/// An empty `cookie` is the auth-off case: Python passed `""` there and
-/// `_raw` only set the header when the argument was not `None`, so an
-/// empty string still produced a `Cookie:` header with no value. Here
-/// `null` is passed for the auth-off case so no cookie header is sent at
-/// all, which is the shape the server sees with `--auth` off.
 fn createWorkspace(h: *Harness, name: []const u8, cookie: ?[]const u8) ![]u8 {
     const body = try std.fmt.allocPrint(gpa, "{{\"name\":\"{s}\"}}", .{name});
     defer gpa.free(body);
@@ -151,10 +93,9 @@ fn createWorkspace(h: *Harness, name: []const u8, cookie: ?[]const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// `GET /api/workspaces?is_include_items=false` -> every visible id.
-///
-/// Owned slices: a `harness.Json` borrows its `Response` body, so the
-/// ids are duped before the response is released.
+/// `GET /api/workspaces?is_include_items=false` -> every visible id. Owned
+/// slices: a `harness.Json` borrows its `Response` body, so the ids are duped
+/// before the response is released.
 fn listWorkspaceIds(h: *Harness, cookie: ?[]const u8) ![][]u8 {
     var r = try rawHttp(h, .GET, "/api/workspaces", null, cookie);
     defer r.deinit();
@@ -212,10 +153,8 @@ fn containsId(ids: []const []u8, want: []const u8) bool {
     return false;
 }
 
-/// `pabrik create-admin` against the harness HOME.
-///
-/// `runPabrikCommand` prepends the resolved binary itself, so `argv`
-/// starts at the SUBCOMMAND.
+/// `pabrik create-admin` against the harness HOME. `runPabrikCommand`
+/// prepends the resolved binary itself, so `argv` starts at the SUBCOMMAND.
 fn createAdmin(home: []const u8, email: []const u8, password: []const u8, force: bool) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
@@ -230,11 +169,9 @@ fn createAdmin(home: []const u8, email: []const u8, password: []const u8, force:
     }
 }
 
-/// Auth mode, two admins, ONE database — Python's `_two_users`.
-///
-/// A STRUCT rather than a function returning a tuple, because the
-/// harness must be torn down by whoever owns the `defer`, and Zig has
-/// no `finally`.
+/// Auth mode, two admins, ONE database — Python's `_two_users`. A STRUCT
+/// rather than a function returning a tuple, because the harness must be torn
+/// down by whoever owns the `defer`, and Zig has no `finally`.
 const TwoUsers = struct {
     h: Harness,
     tok_a: []u8,
@@ -277,11 +214,8 @@ fn exitCode(term: std.process.Child.Term) ?u8 {
     };
 }
 
-/// Skip unless a `sqlite3` CLI is present and speaks `-json`.
-///
-/// `-json` landed in SQLite 3.33 (2020). Probing it once, up front, is
-/// what lets every LATER non-zero exit be read as a real SQL failure
-/// instead of "this build of sqlite3 has no such flag".
+/// Skip unless a `sqlite3` CLI is present and speaks `-json`. `-json` landed
+/// in SQLite 3.33 (2020).
 fn requireSqlite3Cli() !void {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-json", ":memory:", "SELECT 1 AS probe;" },
@@ -325,11 +259,8 @@ fn sqlLit(s: []const u8) ![]u8 {
 }
 
 /// Run statements against `db_path`, return the CLI's stdout (owned).
-///
-/// `.timeout 5000` is the `busy_timeout` the server's WAL connection
-/// needs; a bare CLI invocation would otherwise fail with SQLITE_BUSY.
-/// Python's `timeout=10` + `PRAGMA busy_timeout = 10000` is the same
-/// intent, in milliseconds the CLI takes directly.
+/// `.timeout 5000` is the `busy_timeout` the server's WAL connection needs; a
+/// bare CLI invocation would otherwise fail with SQLITE_BUSY.
 fn sqliteRun(db_path: []const u8, sql: []const u8) ![]u8 {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-cmd", ".timeout 10000", "-json", db_path, sql },
@@ -588,11 +519,6 @@ fn expectGetNamed(h: *Harness, cookie: ?[]const u8, id: []const u8, want_name: [
 // ============================================================================
 
 // The create tx must commit the membership row too, or nobody sees it.
-//
-// This is the single most load-bearing assertion in the file: the whole
-// read path is now membership-driven, so a workspace with no membership
-// row is invisible to EVERYONE including its creator. A unit test of the
-// SQL cannot catch a handler that only inserts the workspace row.
 test "create_writes_a_membership_row_for_the_real_user" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -624,13 +550,7 @@ test "create_writes_a_membership_row_for_the_real_user" {
 // Test 2: auth-off create stores the sentinel membership
 // ============================================================================
 
-// Auth off -> owner resolves to the sentinel, and the row must land
-// anyway.
-//
-// This is where `normaliseOwnerId` earns its keep: `SqliteBackend.exec`
-// binds an empty slice as SQL NULL and `workspace_members.user_id` is NOT
-// NULL, so without normalisation the auth-off create would fail outright
-// with a constraint violation instead of writing the shared marker.
+// Auth off -> owner resolves to the sentinel, and the row must land anyway.
 test "auth_off_create_stores_the_sentinel_membership" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -656,11 +576,8 @@ test "auth_off_create_stores_the_sentinel_membership" {
 // Test 3: one membership row is the entire difference
 // ============================================================================
 
-// The feature: one membership row is the entire difference.
-//
-// A's workspace is private, so B gets a 404 and never sees it in the
-// list. Add one membership row and B sees it in BOTH the list and the
-// direct GET, across every path that consults visibility.
+// The feature: one membership row is the entire difference. A's workspace is
+// private, so B gets a 404 and never sees it in the list.
 test "shared_workspace_becomes_visible_to_the_second_user" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -769,16 +686,9 @@ test "removing_a_membership_revokes_access" {
 // Test 5: the upgrade regression
 // ============================================================================
 
-// The sentinel membership keeps a legacy workspace visible to everyone.
-//
-// The upgrade regression: an operator must not lose their sidebar. A
-// workspace created before `--auth` was switched on carries no real
-// owner. Migration 100's backfill turns that into a `user_system`
-// membership, and the clause treats that row as "shared". If the backfill
-// or the clause ever stops doing that, every pre-auth workspace silently
-// disappears from every authenticated user's list — the single worst
-// outcome of this migration. This test reproduces the backfilled state
-// and asserts the wire result.
+// The sentinel membership keeps a legacy workspace visible to everyone. The
+// upgrade regression: an operator must not lose their sidebar. A workspace
+// created before `--auth` was switched on carries no real owner.
 test "the_sentinel_membership_keeps_a_legacy_workspace_visible_to_everyone" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -839,10 +749,6 @@ test "the_sentinel_membership_keeps_a_legacy_workspace_visible_to_everyone" {
 // ============================================================================
 
 // No orphans: `PRAGMA foreign_keys` is OFF, so delete must clean up.
-//
-// Nothing in SQLite will drop the member rows for us, so if this
-// regresses the table grows without bound and — worse — a re-created
-// workspace that reused the id would inherit stale members.
 test "delete_removes_the_membership_rows" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -900,12 +806,6 @@ test "delete_removes_the_membership_rows" {
 // ============================================================================
 
 // Prove Migration 100 is WIRED, not merely callable.
-//
-// The migration.zig unit tests call `Migration100AddWorkspaceMembers.up`
-// directly, so they would all pass even if the struct were never
-// registered in `allMigrations` — which on a real boot means no table,
-// and every single workspace query failing with "no such table:
-// workspace_members". Only a real boot proves the chain ran it.
 test "migration_100_actually_runs_on_a_real_boot" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();

@@ -1,12 +1,5 @@
-//! Data model for the `design_pages` entity table.
-//!
-//! One row per design page (e.g. "Login", "Dashboard"). Pages belong
-//! to a `design` workspace item. Element HTML bodies live on disk
-//! under `<workspace_item.path>/.pabrik/design/<page_name>/<element>.html`.
-//!
-//! Schema: Migration 055 (`create_design_pages`) + 056
-//! (`upgrade_design_pages_to_file_model`) + 066 (1:1 chat pairing via
-//! `workspace_item_task_id`) + 071 (width/height/x/y defaults).
+//! Data model for the `design_pages` entity table. One row per design page
+//! (e.g. "Login", "Dashboard"). Pages belong to a `design` workspace item.
 
 const std = @import("std");
 
@@ -89,11 +82,6 @@ pub fn clone(self: *const Self, allocator: std.mem.Allocator) !Self {
 // ===== Tests merged from models_test.zig (2026-09-29 flatten) =====
 
 // Sanity tests for the `src/models/` entity models.
-//
-// Verifies that every model file compiles, that `init` populates the
-// struct as expected, that `deinit` releases its strings, and that
-// external callers can read the struct's fields directly (matching
-// the file-level struct pattern requested by the user).
 
 const testing = std.testing;
 

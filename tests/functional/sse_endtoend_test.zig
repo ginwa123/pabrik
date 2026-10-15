@@ -1,47 +1,5 @@
-// Functional tests for SSE end-to-end.
-//
-// Zig port of `tests/functional/sse_endtoend_test.py` (same test names,
-// same order).
-//
-// Python docstring, preserved verbatim:
-//
-//   """Functional tests for SSE end-to-end.
-//
-//   Open an EventSource on /api/events, trigger a backend event, assert
-//   the event arrives within 1s. The trickiest test in the suite — SSE
-//   has backpressure, the connection must stay open across the test,
-//   and the read loop must use a thread to avoid blocking the test.
-//
-//   Plan: docs/superpowers/plans/2026-07-26-functional-tests-with-real-data.md (Chunk 8)
-//   """
-//
-// ─── WHY THERE IS A HAND-ROLLED SSE CLIENT HERE ─────────────────────────────
-// `Harness.http` CANNOT open an SSE stream: it calls
-// `reader.streamRemaining(...)`, which on a `text/event-stream` response
-// blocks until the server closes the connection — and the server holds
-// the stream open forever, so `streamRemaining` never returns. Python's
-// `urllib.request.urlopen` returns as soon as the RESPONSE HEAD is
-// parsed and drains the body line-by-line on a separate thread with a
-// deadline; this port keeps that shape with `std.http.Client` directly,
-// `req.receiveHead(&.{})` for the status + Content-Type, then a reader
-// thread that pulls ONE LINE at a time and pushes parsed frames into a
-// queue the test drains with a deadline.
-//
-// `background_process_sse_test.zig` has the same client. It is not
-// `@import`ed from here because each suite owns its files; the two are
-// deliberate duplicates rather than a shared module this worker is not
-// allowed to add.
-//
-// ─── WHY THE QUEUE SEMANTICS ARE EXACT ──────────────────────────────────────
-// Python's `_drain_until` POPS events and DISCARDS every non-matching
-// one; test 4 relies on that, first draining the three `kanban_column`
-// events the kanban create produced and only then asserting that a NEW
-// one arrives after the add-column call. A "does the event list contain
-// a match?" scan — which is the cheaper shape and is what
-// `background_process_sse_test.zig` uses for its single handshake frame
-// — would pass here on the events the trigger never produced. So
-// `drainMatching` below removes the head of the queue on every
-// iteration, exactly as `queue.Queue.get` did.
+// Functional tests for SSE end-to-end. Zig port of
+// `tests/functional/sse_endtoend_test.py` (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -54,11 +12,6 @@ const gpa = testing.allocator;
 const io = testing.io;
 
 /// Transfer buffer for the response body reader.
-///
-/// NOT `&.{}`: `Response.reader(transfer_buffer)` uses the slice as the
-/// reader's own buffer for a chunked body, and a frame without a `\n`
-/// yet would immediately exhaust it. An SSE frame here is a few hundred
-/// bytes, so 8 KiB is generous.
 const transfer_buffer_len = 8 * 1024;
 
 /// Monotonic milliseconds (`.awake` is monotonic, not wall clock — an
@@ -68,12 +21,8 @@ fn nowMs() i64 {
 }
 
 /// One parsed SSE frame: the `event:` name plus the joined `data:` lines.
-///
-/// Python also ran `json.loads` over the payload and put the resulting
-/// object on the queue. No assertion in this file reads the payload —
-/// every predicate is `e == "<name>"` — so the raw text is kept instead
-/// of a parsed tree, which also keeps the reader thread allocation-free
-/// of a parse arena.
+/// Python also ran `json.loads` over the payload and put the resulting object
+/// on the queue.
 const SseEvent = struct {
     name: []u8,
     data: []u8,
@@ -85,10 +34,9 @@ const SseEvent = struct {
     }
 };
 
-/// An open SSE connection plus the state the reader thread fills in.
-///
-/// The test thread owns the pointer; the reader thread writes into it.
-/// `stop` / `done` are the cross-thread handshake.
+/// An open SSE connection plus the state the reader thread fills in. The test
+/// thread owns the pointer; the reader thread writes into it. `stop` / `done`
+/// are the cross-thread handshake.
 const SseStream = struct {
     client: std.http.Client,
     req: std.http.Client.Request,
@@ -106,12 +54,6 @@ const SseStream = struct {
     /// Set by the reader thread once it has stopped touching `events`.
     done: std.atomic.Value(bool) = .init(false),
     /// Frames parsed so far — Python's `queue.Queue`.
-    ///
-    /// Guarded by `mutex`: the reader thread appends while the test
-    /// thread pops, and an unsynchronised read during the reader's
-    /// `append` is a use-after-free (the ArrayList realloc frees the old
-    /// buffer). `lockUncancelable` rather than `lock` because there is
-    /// no cancellation point worth honouring inside a test.
     mutex: Io.Mutex = .init,
     events: std.ArrayList(SseEvent) = .empty,
     /// Set by the reader thread when the stream errored or ended.
@@ -136,13 +78,7 @@ fn openSse(port: u16, channels: []const u8) !*SseStream {
     errdefer gpa.destroy(s);
 
     // `gpa.create` returns UNINITIALIZED memory — it does NOT run the
-    // struct's field default initializers. Every field with a default
-    // (`mutex`, `stop`, `done`, `events`, `read_error`) must be
-    // assigned here or it stays garbage, and an uninitialised
-    // `Io.Mutex` is not a lock at all: `lockUncancelable` on garbage
-    // state parks the test thread on a futex nobody will ever wake.
-    // `s.* = .{...}` applies all the defaults in one shot; `req` is
-    // genuinely assigned by `request()` below.
+    // struct's field default initializers.
     s.* = .{ .client = .{ .allocator = gpa, .io = io }, .req = undefined };
 
     const url = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/api/events?channels={s}", .{ port, channels });
@@ -185,17 +121,8 @@ fn openSse(port: u16, channels: []const u8) !*SseStream {
     return s;
 }
 
-/// Read SSE frames from `s` until `stop` is set, the stream ends, or an
-/// error occurs. Runs on its own thread.
-///
-/// The SSE grammar (per `unified_events_sse.zig`'s `forwardToClients`):
-///
-///     event: <name>\n
-///     data: <line>\n
-///     \n            <- blank line dispatches the frame
-///
-/// `data:` lines are joined with `\n`; a frame with an `event:` but no
-/// `data:` dispatches with an empty payload.
+/// Read SSE frames from `s` until `stop` is set, the stream ends, or an error
+/// occurs. Runs on its own thread.
 fn readEvents(s: *SseStream) void {
     defer s.done.store(true, .release);
 
@@ -212,22 +139,11 @@ fn readEvents(s: *SseStream) void {
 
     while (!s.stop.load(.acquire)) {
         // One LINE, not the whole stream: this is what makes the read
-        // incremental.
-        //
-        // `takeDelimiter` — NEVER `takeDelimiterExclusive`. The
-        // Exclusive variant advances "up to (BUT NOT PAST) the
-        // delimiter", so the `\n` stays in the buffer; the next call
-        // finds a delimiter at position 0 and returns a ZERO-LENGTH
-        // slice, forever. The loop livelocks at full speed and never
-        // reaches clean EOF, so a closed stream reads as still-open.
-        // `takeDelimiter` consumes the delimiter and maps clean EOF to
-        // `null`, which is exactly Python's `readline()` returning
-        // `b""`.
+        // incremental. `takeDelimiter` — NEVER `takeDelimiterExclusive`.
         const raw_line_opt = reader.takeDelimiter('\n') catch |err| {
             // `takeDelimiter` has a NARROWER error set than the
             // delimiter-splitting variants: clean EOF is `null`, not
-            // `error.EndOfStream`. Only real I/O failures and an
-            // over-long line reach here.
+            // `error.EndOfStream`.
             const msg = switch (err) {
                 error.ReadFailed => "read failed",
                 error.StreamTooLong => "line exceeded the transfer buffer",
@@ -239,9 +155,6 @@ fn readEvents(s: *SseStream) void {
             return;
         };
         // A clean server close: `null` here, not `error.EndOfStream`.
-        // Reported through the SAME `read_error` channel as a failure —
-        // the test only needs to know the reader stopped, and it
-        // already polls that.
         if (raw_line_opt == null) {
             const owned = gpa.dupe(u8, "stream ended") catch return;
             s.mutex.lockUncancelable(io);
@@ -256,9 +169,8 @@ fn readEvents(s: *SseStream) void {
             // Blank line → dispatch whatever we accumulated.
             if (current_name) |name| {
                 // `std.mem.join` allocates an owned buffer but types it
-                // `[]const u8`; the constCast is sound because the
-                // buffer is ours to hand to `gpa.free` (and nothing
-                // mutates it).
+                // `[]const u8`; the constCast is sound because the buffer is
+                // ours to hand to `gpa.free` (and nothing mutates it).
                 const joined = std.mem.join(gpa, "\n", data_lines.items) catch "";
                 const data: []u8 = @constCast(joined);
                 s.mutex.lockUncancelable(io);
@@ -293,22 +205,16 @@ fn readEvents(s: *SseStream) void {
     }
 }
 
-/// Release a blocked `readEvents` by shutting the socket's read side.
-///
-/// Without this the reader thread parks in `readv` forever on an SSE
-/// stream that never ends. `shutdown(SHUT_RD)` makes the pending
-/// `readv` return 0, which `netReadPosix` reports as
-/// `error.EndOfStream`, and the reader exits its loop.
+/// Release a blocked `readEvents` by shutting the socket's read side. Without
+/// this the reader thread parks in `readv` forever on an SSE stream that
+/// never ends.
 fn releaseReader(s: *SseStream) void {
     s.stop.store(true, .release);
     s.req.connection.?.stream_reader.stream.shutdown(io, .recv) catch {};
 }
 
-/// Pop events off the queue until one is named `want`, the stream ends,
-/// or the deadline passes. Returns true iff a MATCHING event was seen.
-///
-/// Consuming (rather than scanning) is the point — see the file header.
-/// Python's `_drain_until(events_q, lambda e, d: e == want, timeout)`.
+/// Pop events off the queue until one is named `want`, the stream ends, or
+/// the deadline passes. Returns true iff a MATCHING event was seen.
 fn drainMatching(s: *SseStream, want: []const u8, timeout_ms: i64) bool {
     const deadline = nowMs() + timeout_ms;
     while (true) {
@@ -324,11 +230,7 @@ fn drainMatching(s: *SseStream, want: []const u8, timeout_ms: i64) bool {
             }
             continue;
         }
-        // Snapshot `done` under the SAME lock, then RELEASE before
-        // sleeping. Holding the mutex across `Io.sleep` starves the
-        // reader: the loop re-acquires the instant the sleep ends, so
-        // the reader — which needs the same lock to append — can miss
-        // every window and the deadline expires with zero events seen.
+        // Snapshot `done` under the SAME lock, then RELEASE before sleeping.
         const finished = s.done.load(.acquire);
         s.mutex.unlock(io);
 
@@ -339,11 +241,9 @@ fn drainMatching(s: *SseStream, want: []const u8, timeout_ms: i64) bool {
     }
 }
 
-/// Discard up to `max_n` queued events, waiting at most `wait_ms` for
-/// EACH one and breaking out of the loop on the first miss.
-///
-/// Python: `for _ in range(5): try events_q.get(timeout=0.3) except
-/// queue.Empty: break`.
+/// Discard up to `max_n` queued events, waiting at most `wait_ms` for EACH
+/// one and breaking out of the loop on the first miss. Python: `for _ in
+/// range(5): try events_q.get(timeout=0.3) except queue.Empty: break`.
 fn discardQueued(s: *SseStream, max_n: usize, wait_ms: i64) usize {
     var dropped: usize = 0;
     while (dropped < max_n) {
@@ -412,10 +312,6 @@ fn createWorkspace(h: *Harness) ![]u8 {
 }
 
 /// `_create_kanban` — return the kanban item's OWNED id.
-///
-/// The backend returns the wrapped `{item, columns}` envelope (the
-/// frontend's `api.createKanban` destructure relies on it); see
-/// `workspace_items_create_kanban.zig::CreateKanbanResponseFull`.
 fn createKanban(h: *Harness, ws_id: []const u8) ![]u8 {
     const url = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/items/kanban", .{ws_id});
     defer gpa.free(url);
@@ -450,10 +346,8 @@ fn createKanban(h: *Harness, ws_id: []const u8) ![]u8 {
 // ============================================================================
 
 // `GET /api/events?channels=workers` returns 200 with the SSE content type.
-//
-// No reader thread here: only the HEAD is needed, and the Python used a
-// `with urlopen(...)` block that never read the body. `openSse` parses
-// the head and stops there.
+// No reader thread here: only the HEAD is needed, and the Python used a `with
+// urlopen(...)` block that never read the body.
 test "sse_handshake_returns_200" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -551,11 +445,6 @@ test "kanban_create_emits_sse_event" {
 // ============================================================================
 
 // `POST /columns` emits a `kanban_column` event.
-//
-// The queue is drained FIRST, and that is what makes this test mean
-// something: the kanban create above already emitted three
-// `kanban_column` frames, and a "is one in the list?" check would find
-// one of those and pass without the add-column ever being pushed.
 test "kanban_add_column_emits_event" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -578,11 +467,8 @@ test "kanban_add_column_emits_event" {
     // Drain the initial events from the kanban create.
     const drained = discardQueued(s, 5, 300);
     if (drained == 0) {
-        // The Python's loop silently broke out of an empty queue here
-        // and then still asserted on a NEW event. Refusing to continue
-        // would change the test; keeping the count only makes the
-        // vacuity visible if this ever starts failing for the wrong
-        // reason.
+        // The Python's loop silently broke out of an empty queue here and
+        // then still asserted on a NEW event.
         std.debug.print("note: kanban create queued {d} events before the drain\n", .{drained});
     }
 

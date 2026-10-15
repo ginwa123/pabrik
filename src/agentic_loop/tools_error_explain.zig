@@ -1,51 +1,6 @@
-//! Model-facing explanations for the errors that reach a tool envelope.
-//!
-//! ## Why this exists
-//!
-//! Every `tools_exec_*.zig` adapter used to render a failure as
-//! `<tool> failed: <@errorName>`. That string is written for a Zig
-//! programmer, not for the model that has to repair its own next tool
-//! call. `command failed: TimeoutMissing` names no field, no
-//! value and no fix, so the model retries the identical call — the
-//! screenshot in the task shows four identical retries and then the
-//! whole stream dying.
-//!
-//! `tools_exec_glob.zig` and `tools_exec_search.zig` already carried
-//! hand-written per-error sentences. This module generalises that
-//! pattern so every adapter can share one table instead of each
-//! inventing its own wording (or, more often, not bothering).
-//!
-//! ## What a good message contains
-//!
-//! Three things, in this order:
-//!
-//!   1. WHAT was wrong, in the model's vocabulary ("the `timeout`
-//!      field is required").
-//!   2. WHY it is required / what the constraint is ("it is the only
-//!      deadline; there is no default").
-//!   3. WHAT TO SEND instead ("add \"timeout\": 30").
-//!
-//! A message that only names the Zig error fails all three. A message
-//! that only says "invalid input" fails the third.
-//!
-//! ## Ownership
-//!
-//! `explain` ALWAYS allocates with `allocator` and the caller always
-//! frees. That uniformity is deliberate: a mixed literal/allocated
-//! return would force every call site to know which prong it hit, and
-//! the one site that guessed wrong becomes a double-free or a leak. An
-//! error path already allocates the envelope around this string, so one
-//! more small allocation is free by comparison.
-//!
-//! ## Adding an entry
-//!
-//! Add a prong to the `switch` in `explain`. Zig requires every prong's
-//! error name to be a member of the switched error set, so a prong for
-//! an error that no caller can produce is a compile error — the table
-//! cannot drift into naming errors that do not exist. The `else` prong
-//! is the honest fallback: it keeps the raw error name (so a human
-//! reading the log can still identify it) and adds the generic
-//! "re-send valid arguments" advice.
+//! Model-facing explanations for the errors that reach a tool envelope. Every
+//! `tools_exec_*.zig` adapter used to render a failure as `<tool> failed:
+//! <@errorName>`.
 
 const std = @import("std");
 
@@ -56,12 +11,8 @@ const FALLBACK_ADVICE =
     "If the same error repeats, do not retry the identical call — " ++
     "change the arguments or report the blocker.";
 
-/// Render `err` as a sentence the model can act on.
-///
-/// The result is allocated with `allocator`; the caller owns it.
-///
-/// `context` is optional and only read by the prongs that interpolate
-/// one (path-shaped errors). Pass `null` everywhere else.
+/// Render `err` as a sentence the model can act on. The result is allocated
+/// with `allocator`; the caller owns it.
 pub fn explain(allocator: std.mem.Allocator, err: anyerror, context: ?[]const u8) ![]u8 {
     return switch (err) {
         // ── command / shell ────────────────────────────────────────────

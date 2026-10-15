@@ -1,16 +1,6 @@
 //! `GET /api/workspaces/:ws_id/items/:item_id/kanban/tags?limit=N&offset=K`.
-//!
-//! Returns one page of distinct tags from tasks belonging to the
-//! given kanban workspace item, ordered by frequency DESC then
-//! most-recent usage DESC. Powers the kanban task detail dialog's
-//! tag autocomplete dropdown. Pagination is via `limit` + `offset`.
-//!
-//! Response: `{ tags: [{name, count, last_used_at}], has_more }`.
-//!
-//! Mirrors the layered shape of `tasks_list.zig` (useCase + thin
-//! handler that maps errors to status codes / JSON).
-//!
-//! Plan: docs/superpowers/plans/2026-07-30-kanban-task-tags-autocomplete.md
+//! Returns one page of distinct tags from tasks belonging to the given kanban
+//! workspace item, ordered by frequency DESC then most-recent usage DESC.
 
 const std = @import("std");
 const testing = std.testing;
@@ -130,11 +120,9 @@ pub fn kanbanTagsListHandler(
 
     return res.jsonResponse(.{ .status_code = 200, .data = data });
 }
-// =====================================================================
-// Tests for useCase
-// Plan: docs/superpowers/plans/2026-07-30-kanban-task-tags-autocomplete.md
-// Behavioural tests; not static-contract / grep.
-// =====================================================================
+// ===================================================================== Tests
+// for useCase Plan:
+// docs/superpowers/plans/2026-07-30-kanban-task-tags-autocomplete.md
 
 fn setupDbWithTagsForHandler() !struct { db: pabrikcore.sqlite.SqliteBackend, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
