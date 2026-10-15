@@ -192,8 +192,8 @@ export interface DesignPage {
   updated_at: string
 }
 
-/** Element types emitted by the backend's `ElementType` enum. Wire form is the
- * lowercase `tagName` string; the backend maps it back at the handler boundary. */
+/** Element types emitted by the backend's `ElementType` enum. Wire form is the lowercase
+ * `tagName` string; the backend maps it back to the enum at the handler boundary. */
 /**
  * Normalize the `type` field on a design element from the wire.
  *
@@ -426,14 +426,13 @@ export async function getWorkspacesItems(
 
 // Cold-start fallback for the "New Chat" action.
 //
-// The invariant is "every workspace has a default project, and a miss creates
-// one" — `GET /workspaces/:id/items` already enforces it server-side, so a
-// client lookup is normally a pure local find. This endpoint covers the one
-// case the list cannot: the app was open when Migration 094 ran, so the
-// store's list predates the `is_default` column.
+// The invariant is "every workspace has a default project, and a miss creates one" —
+// `GET /workspaces/:id/items` already enforces it server-side, so a client lookup is
+// normally a pure local find. This endpoint covers the one case the list cannot: the
+// app was open when Migration 094 ran, so the store's list predates `is_default`.
 //
-// Idempotent — 200 + `created: false` when it already existed, 201 + `created:
-// true` when this call created it. Takes no body.
+// Idempotent — 200 + `created: false` when it existed, 201 + `created: true` when this
+// call created it. Takes no body.
 export async function getOrCreateDefaultProject(
   workspace_id: string,
 ): Promise<{ item: WorkspaceItem; created: boolean }> {
@@ -467,11 +466,9 @@ export async function updateWorkspace(id: string, data: Partial<Workspace>): Pro
   })
 }
 
-/** Persist a new top-to-bottom display order for workspaces.
- * POST /api/workspaces/reorder with body `{ordered_ids: [...]}`. The server
- * reverses the array (top of list = highest position) and throws on non-2xx so
- * the caller can roll back its optimistic update. The list is the *full*
- * ordered set, not a delta; the backend is idempotent. */
+/** Persist a new top-to-bottom display order for workspaces. POST /api/workspaces/reorder
+ * with body `{ordered_ids: [...]}`. The server reverses the array (top of list = highest
+ * position) and throws on non-2xx so the caller can roll back its optimistic update. */
 export async function reorderWorkspaces(
   orderedIds: string[],
 ): Promise<{ success: boolean; count: number }> {
@@ -481,10 +478,9 @@ export async function reorderWorkspaces(
   })
 }
 
-/** Persist a new top-to-bottom display order for one workspace's items.
- * POST /api/workspaces/:workspace_id/items/reorder with body `{ordered_ids: [...]}`.
- * Mirrors `reorderWorkspaces` but scoped to a single workspace; the list is the
- * *full* ordered set, not a delta. */
+/** Persist a new top-to-bottom display order for one workspace's items. POST
+ * /api/workspaces/:workspace_id/items/reorder with body `{ordered_ids: [...]}`. Mirrors
+ * `reorderWorkspaces` but scoped to a single workspace; the list is the full ordered set. */
 export async function reorderWorkspaceItems(
   workspaceId: string,
   orderedIds: string[],
@@ -544,12 +540,12 @@ export async function getTasks(
   itemId: string,
   limit = 10,
   cursor?: string,
-  // NEW (2026-08-06): NO default values. Pass `undefined` for both when no sort
-  // is in play and let the backend's default (`updated_at desc`) handle it —
-  // same wire result, cleaner URL, less coupling.
+  // NEW (2026-08-06): NO default values. Pass `undefined` for both when no sort is in
+  // play and let the backend's default (`updated_at desc`) handle it — same wire result,
+  // cleaner URL, less coupling.
   //
-  // Both must be provided together: the backend's cursor format depends on the
-  // sort field, so sending only one falls back to "no sort params".
+  // Both must be provided together: the backend's cursor format depends on the sort
+  // field, so sending only one falls back to "no sort params".
   sortBy?: 'created_at' | 'updated_at' | 'name',
   direction?: 'asc' | 'desc',
   columnId?: string,
@@ -586,11 +582,9 @@ export async function getTasks(
   }
 }
 
-/** Fetch ONE workspace item task by id (kanban Task details dialog).
- * GET /api/workspaces/:ws/items/:item/tasks/:task_id → { task } | 404.
- * Resolves to the Task, or null on 404 — "the task is gone" is an expected
- * state, so 404 is silent. Other failures (network, 5xx) throw ApiError; the
- * store's best-effort catch handles them. */
+/** Fetch ONE workspace item task by id (kanban Task details dialog). GET
+ * /api/workspaces/:ws/items/:item/tasks/:task_id → { task } | 404. Resolves to the Task, or
+ * null on 404 — "the task is gone" is expected, so 404 is silent. Other failures throw. */
 export async function getTask(
   workspaceId: string,
   itemId: string,
@@ -608,12 +602,9 @@ export async function getTask(
   }
 }
 
-/** Stamp `workspace_item_tasks.last_human_touched_at` so the kanban card flips
- * from the orange "AI finished — awaiting review" dot to the green "reviewed"
- * checkmark. Fire-and-forget: the caller does NOT await this — failures log a
- * warning but don't surface as toasts.
- * Idempotent server-side. The backend also emits a `kanban_task.human_touched`
- * SSE event so other connected clients refresh without a round-trip. */
+/** Stamp `workspace_item_tasks.last_human_touched_at` so the kanban card flips from the
+ * orange "AI finished — awaiting review" dot to the green "reviewed" checkmark.
+ * Fire-and-forget: failures log a warning but don't surface as toasts. */
 /** Lazy media fetch for ONE task (media-flags change).
  * GET /api/workspaces/:ws/items/:item/tasks/:task_id/media
  *   → { image_urls, video_urls } (`||`-delimited raw strings).
@@ -641,10 +632,9 @@ export async function getTaskMedia(
 
 export type TaskMedia = { imageUrls: string[]; videoUrls: string[] }
 
-/** Parallel media fetch for MANY tasks (media-flags change). Fires one
- * `getTaskMedia` per id concurrently and settles every leg (`Promise.allSettled`):
- * a single 404 / network blip resolves that entry to null instead of rejecting
- * the whole batch. Callers awaiting N tasks pay ~one round-trip, not N. */
+/** Parallel media fetch for MANY tasks (media-flags change). Fires one `getTaskMedia` per
+ * id concurrently and settles every leg (`Promise.allSettled`): a single 404 / network blip
+ * resolves that entry to null instead of rejecting the whole batch. */
 export async function getTasksMedia(
   workspaceId: string,
   itemId: string,
@@ -679,19 +669,12 @@ export async function markTaskHumanTouched(
 }
 
 /**
- * Create a task under a workspace item.
+ * Create a task under a workspace item. The third arg is a single params object: for a
+ * standard task pass `{ name, description?, taskType: 'standard' }`, for a memory pass
+ * `{ name, taskType: 'memory', memory: { name, content } }`.
  *
- * The third arg is a single params object. For a standard task
- * (the default), pass `{ name, description?, taskType: 'standard' }`.
- * For a memory, pass `{ name, taskType: 'memory', memory: { name, content } }`.
- *
- * NOTE: `taskType: 'routine'` was deleted (Migration 084) — routines
- * are now first-class workspace items, see `createRoutineItem`.
- *
- * The backend stores `task_type` on `workspace_item_tasks`.
- * For memories, the backend creates the .md file
- * at `<workspace_item.path>/.pabrik/memories/<name>.md` AND inserts
- * the task row pointing at it.
+ * `taskType: 'routine'` was deleted (Migration 084) — routines are now first-class
+ * workspace items, see `createRoutineItem`.
  */
 export async function createTask(
   workspaceId: string,
