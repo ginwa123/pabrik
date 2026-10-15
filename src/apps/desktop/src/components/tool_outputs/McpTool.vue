@@ -39,10 +39,9 @@ const props = defineProps<{
 const isExpanded = ref(props.expanded ?? false)
 const normalized = computed(() => normalizeToolContent(props.content))
 const parsed = computed(() => {
-  // MCP results are raw server text on success (not a JSON envelope), so
-  // strings pass through verbatim — only JSON-envelope strings/objects
-  // go through the normalizer. `parseMcp` handles raw text, bare data
-  // objects, and full envelope objects.
+  // MCP results are raw server text on success (not a JSON envelope), so strings pass through
+  // verbatim — only JSON-envelope strings/objects go through the normalizer. `parseMcp` handles raw
+  // text, bare data objects, and full envelope objects.
   const c = props.content
   let input: unknown = c
   if (typeof c === 'string') {

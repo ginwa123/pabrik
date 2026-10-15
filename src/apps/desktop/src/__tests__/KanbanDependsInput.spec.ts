@@ -1,8 +1,5 @@
 /**
- * KanbanDependsInput — dependency multi-select (kanban task
- * dependencies feature). Covers: renders candidates, never offers
- * the task itself, emits the id array on pick + on chip remove,
- * and marks incomplete deps distinctly.
+ * KanbanDependsInput: never offers the task itself, emits the id array on pick and on chip remove, marks incomplete deps distinctly.
  */
 import { describe, expect, it } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'

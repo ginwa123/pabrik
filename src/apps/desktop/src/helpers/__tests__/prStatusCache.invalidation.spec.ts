@@ -55,10 +55,9 @@ describe('prStatusCache invalidation', () => {
   })
 
   it('drops a provider-keyed entry as well as the provider-less one', async () => {
-    // The regression that made the old invalidation a no-op: the board's PR
-    // list passed the provider it had just learned (`github`) while every
-    // badge had asked with no provider, so the stale entry survived in exactly
-    // the case the call existed for. Both key shapes must go.
+    // The regression that made the old invalidation a no-op: the board's PR list passed the
+    // provider it had just learned (`github`) while every badge had asked with no provider, so the
+    // stale entry survived in exactly the case the call existed for. Both key shapes must go.
     await fetchPrStatusCached('/repo', 'worktree/x', 'github')
     await fetchPrStatusCached('/repo', 'worktree/y')
     expect(getPrStatusMock).toHaveBeenCalledTimes(2)

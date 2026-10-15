@@ -224,7 +224,7 @@ describe('LayersPanel context menu', () => {
   })
 
   // ─── Leave group (2026-08-06, design-leave-group plan) ────────────────
-  //
+
   // The LayersPanel forwards the menu's @leave-group emit upward as
   // the @leaveGroup emit. The test confirms the forward works — the
   // actual reparent is in DesignView (out of scope here).

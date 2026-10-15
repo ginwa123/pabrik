@@ -1,10 +1,5 @@
 /**
- * workspacesStore — kanban task dependencies passthrough.
- * Covers: updateTaskDetails forwards `depends_on` (and omits it
- * when untouched); moveTaskToColumn threads `force` through to
- * api.moveTask; a 409 refusal leaves local task state untouched.
- *
- * API-module mock style mirrors workspacesStore.tags.spec.ts.
+ * Store dependency passthrough: `updateTaskDetails` forwards `depends_on`, `moveTaskToColumn` threads `force`, a refusal leaves state.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'

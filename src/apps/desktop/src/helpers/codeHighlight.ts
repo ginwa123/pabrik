@@ -197,10 +197,8 @@ const NUMBER_RE =
   /^(?:0x[0-9a-fA-F_]+|0b[01_]+|0o[0-7_]+|\d[\d_]*(?:\.\d[\d_]*)?(?:[eE][+-]?\d[\d_]*)?)/
 const IDENT_RE = /^[A-Za-z_$][A-Za-z0-9_$]*/
 
-/**
- * Split one line into typed tokens. Pure function — no DOM, no HTML.
- * `language` is a monaco language id (see `detectLanguage`).
- */
+/** Split one line into typed tokens. Pure function — no DOM, no HTML.
+ * `language` is a monaco language id (see `detectLanguage`). */
 export function highlightLine(line: string, language: string): Token[] {
   if (!line || PASSTHROUGH.has(language)) return [{ text: line, type: 'plain' }]
 

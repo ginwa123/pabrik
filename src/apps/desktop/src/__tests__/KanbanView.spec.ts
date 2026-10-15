@@ -281,11 +281,9 @@ describe('KanbanView — event pass-through', () => {
   })
 
   it('clicking "+ Add" opens the create dialog locally (no addTask emit)', async () => {
-    // After the kanban-add-task-via-detail-dialog feature, the
-    // "+ Add" click no longer bubbles up to AppLayout. KanbanView
-    // consumes it locally and opens the KanbanTaskDetailDialog
-    // in create mode (which mounts at the bottom of the template
-    // and teleports to document.body).
+    // After the kanban-add-task-via-detail-dialog feature, the "+ Add" click no longer bubbles up
+    // to AppLayout. KanbanView consumes it locally and opens the KanbanTaskDetailDialog in create
+    // mode (which mounts at the bottom of the template and teleports to document.body).
     wrapper = mountView(
       makeItem({
         kanban_columns: [makeColumn({ id: 'col_x', name: 'todo', position: 0 })],
@@ -452,10 +450,9 @@ describe('KanbanView — "Set project root" banner', () => {
     // (disabled binding). Just check the click handler is wired; the
     // picker itself has its own test suite.
     await banner.trigger('click')
-    // No assertion on the picker DOM (it teleports to body and is
-    // covered by FilePickerDialog.spec.ts). The point of this test is
-    // that the click is a no-op and doesn't crash, which is what the
-    // mount-time test verifies.
+    // No assertion on the picker DOM (it teleports to body and is covered by
+    // FilePickerDialog.spec.ts). The point of this test is that the click is a no-op and doesn't
+    // crash, which is what the mount-time test verifies.
     expect(wrapper.find(`[data-testid="kanban-view-${ITEM_ID}-set-project-root"]`).exists()).toBe(
       true,
     )
@@ -486,10 +483,9 @@ describe('KanbanView — inline rename pencil', () => {
   it('renders the item name in an InlineEditableText by default', () => {
     const item = makeItem({ name: 'Sprint 12' })
     wrapper = mountView(item)
-    // The InlineEditableText primitive renders the value inside a
-    // child <span data-testid="…-value">. Asserting on that span
-    // confirms the name flows through the primitive without
-    // truncation or extra whitespace.
+    // The InlineEditableText primitive renders the value inside a child <span
+    // data-testid="…-value">. Asserting on that span confirms the name flows through the primitive
+    // without truncation or extra whitespace.
     const valueSpan = wrapper.find(`[data-testid="kanban-view-${ITEM_ID}-rename-value"]`)
     expect(valueSpan.exists()).toBe(true)
     expect(valueSpan.text()).toBe('Sprint 12')
@@ -610,10 +606,9 @@ describe('KanbanView — viewTaskDetail (task detail dialog)', () => {
   })
 
   it('does not emit viewTaskDetail up to AppLayout (dialog is owned by KanbanView)', async () => {
-    // Plan rationale: the dialog only needs the kanban's column list
-    // (for the metadata strip). KanbanView already has that in scope,
-    // so mounting it here avoids coupling AppLayout to kanban internals.
-    // Verify viewTaskDetail does NOT bubble out of KanbanView.
+    // Plan rationale: the dialog only needs the kanban's column list (for the metadata strip).
+    // KanbanView already has that in scope, so mounting it here avoids coupling AppLayout to kanban
+    // internals. Verify viewTaskDetail does NOT bubble out of KanbanView.
     const item = makeItem({
       kanban_columns: [makeColumn({ id: 'col_x', name: 'todo', position: 0 })],
       tasks: [{ id: 'task_42', name: 'X', kanban_column_id: 'col_x', kanban_position: 0 }],
@@ -657,9 +652,8 @@ describe('KanbanView — create-task flow', () => {
     vi.restoreAllMocks()
   })
 
-  // We can't directly mock the workspaces store import from here
-  // (Pinia store mocking is project-conventional via spy + setup).
-  // Instead we spy on the store's methods via the existing
+  // We can't directly mock the workspaces store import from here (Pinia store mocking is
+  // project-conventional via spy + setup). Instead we spy on the store's methods via the existing
   // useWorkspacesStore() call inside KanbanView.
   async function mountAndOpenDialog() {
     const item = makeItem({
@@ -703,10 +697,9 @@ describe('KanbanView — create-task flow', () => {
     expect(addKanbanSpy).toHaveBeenCalledWith(
       WS_ID,
       ITEM_ID,
-      // CHANGED (2026-08-19): plain Create task now uses
-      // mode='create_session' (inserts the sessions row but no agent
-      // run). Legacy mode='create' on the wire stays unchanged for
-      // any external consumer.
+      // CHANGED (2026-08-19): plain Create task now uses mode='create_session' (inserts the
+      // sessions row but no agent run). Legacy mode='create' on the wire stays unchanged for any
+      // external consumer.
       'create_session',
       expect.objectContaining({ name: 'My new task' }),
     )
@@ -830,10 +823,9 @@ describe('KanbanView — create-task flow', () => {
     void w
   })
 
-  // Regression: same as above but for the EDIT path. The save
-  // emit payload type in handleTaskDetailSave omitted `tags`, so
-  // editing an existing task's tags through the dialog was a
-  // no-op (the API never received them).
+  // Regression: same as above but for the EDIT path. The save emit payload type in
+  // handleTaskDetailSave omitted `tags`, so editing an existing task's tags through the dialog was
+  // a no-op (the API never received them).
   it('forwards tags payload to updateTaskDetails when the dialog emits tags (edit mode)', async () => {
     const item = makeItem({
       kanban_columns: [makeColumn({ id: 'col_x', name: 'todo', position: 0 })],
@@ -1020,15 +1012,11 @@ describe('KanbanView — header + Add task button', () => {
   })
 
   // ─── Agent button → settings page navigation (plan
-  //    docs/superpowers/plans/2026-08-27-kanban-agent-as-tab.md,
-  //    iteration 2 — Agent button now lands on ?tab=tools since
-  //    the Agent umbrella tab was split into Tools + Knowledge) ───
+  // docs/superpowers/plans/2026-08-27-kanban-agent-as-tab.md, iteration 2 — Agent button now lands
+  // on ?tab=tools since the Agent umbrella tab was split into Tools + Knowledge) ───
 
-  /**
-   * Mount a KanbanView with a fresh vue-router installed so the
-   * Agent button's `router.push(...)` doesn't crash against the
-   * missing global plugin. Returns the spy on `push` for assertions.
-   */
+  /**    * Mount a KanbanView with a fresh vue-router installed so the Agent button's `router.push(...)`
+   * doesn't crash against the missing global plugin. Returns the spy on `push` for assertions. */
   async function mountViewWithRouter(item: WorkspaceItem) {
     const { createRouter, createMemoryHistory } = await import('vue-router')
     const router = createRouter({

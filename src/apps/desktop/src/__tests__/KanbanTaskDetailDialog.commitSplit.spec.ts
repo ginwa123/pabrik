@@ -238,10 +238,9 @@ describe('KanbanTaskDetailDialog — per-action pending label', () => {
   })
 
   it('falls back to "Creating…" when the host raises creating without a click', async () => {
-    // No handler ran, so `pendingAction` is null and there is nothing to
-    // attribute the in-flight state to. The neutral wording is the point
-    // of that fallback — the old code flashed the same word on both
-    // buttons, which is the bug this spec exists to prevent regressing.
+    // No handler ran, so `pendingAction` is null and there is nothing to attribute the in-flight
+    // state to. The neutral wording is the point of that fallback — the old code flashed the same
+    // word on both buttons, which is the bug this spec exists to prevent regressing.
     mountDialog({ creating: true })
     await flushPromises()
     await typeName('My task')

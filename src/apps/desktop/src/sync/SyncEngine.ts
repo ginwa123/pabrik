@@ -52,22 +52,16 @@ export interface SyncMountResult<T> {
   fromCache: boolean
   /** The revalidated delta, or `null` when the revalidation failed. */
   delta: SyncDelta<T> | null
-  /**
-   * Why the revalidation failed, when it did. `null` means the delta fetch
-   * succeeded — including the "it succeeded and returned no rows" case that
-   * the previous `catch { return { items: cached, fromCache, delta } }` made
-   * indistinguishable from failure.
-   */
+  /**    * Why the revalidation failed, when it did. `null` means the delta fetch succeeded — including
+   * the "it succeeded and returned no rows" case that the previous `catch { return { items: cached,
+   * fromCache, delta } }` made indistinguishable from failure. */
   error: SyncError | null
 }
 
 export abstract class BaseSyncEngine<T extends Syncable, C = string> {
-  /**
-   * @param storeName Object-store name this engine reads and writes.
-   * @param store     Local-cache implementation; specs substitute a fake.
-   *                 Defaults to a fresh IndexedDB-backed store per engine,
-   *                 matching the isolation the pre-port constructors had.
-   */
+  /**    * @param storeName Object-store name this engine reads and writes. @param store Local-cache
+   * implementation; specs substitute a fake. Defaults to a fresh IndexedDB-backed store per engine,
+   * matching the isolation the pre-port constructors had. */
   constructor(
     protected readonly storeName: string,
     protected readonly store: SyncStoreShape = makeIndexedDbSyncStore(),
@@ -116,19 +110,15 @@ export abstract class BaseSyncEngine<T extends Syncable, C = string> {
       .pipe(Effect.map((rows) => rows.slice().sort(this.compareFn.bind(this)) as T[]))
   }
 
-  /**
-   * Cache-then-delta: return cached rows immediately when present, then fetch
+  /** Cache-then-delta: return cached rows immediately when present, then fetch
    * the network delta, merge (dedupe by id), persist, and advance the cursor.
-   *
    * Never fails — a broken cache or an unreachable backend degrades to the
    * painted cache — but `error` now records why, which the previous bare
-   * `catch` discarded.
-   */
+   * `catch` discarded. */
   syncOnMount(ctx: C, limit: number): Effect.Effect<SyncMountResult<T>> {
-    // `Effect.gen` takes a generator function, and a generator's `this` is its
-    // own — so `this` has to be captured outside. It cannot be destructured
-    // instead: the engine API lives on the prototype, and an unbound
-    // destructured method would run with `this === undefined`.
+    // `Effect.gen` takes a generator function, and a generator's `this` is its own — so `this` has
+    // to be captured outside. It cannot be destructured instead: the engine API lives on the
+    // prototype, and an unbound destructured method would run with `this === undefined`.
     // oxlint-disable-next-line typescript-eslint/no-this-alias -- see above
     const engine = this
     return Effect.gen(function* () {
@@ -164,10 +154,8 @@ export abstract class BaseSyncEngine<T extends Syncable, C = string> {
     })
   }
 
-  /**
-   * Best-effort write-through (e.g. SSE `full` handler). Never fails: a cache
-   * write must not break the live update path that triggered it.
-   */
+  /** Best-effort write-through (e.g. SSE `full` handler). Never fails: a cache
+   * write must not break the live update path that triggered it. */
   putLocal(ctx: C, items: T[]): Effect.Effect<void> {
     if (items.length === 0) return Effect.void
     return this.store
@@ -182,11 +170,9 @@ export abstract class BaseSyncEngine<T extends Syncable, C = string> {
       .pipe(Effect.catchAll((e) => this.note(`removeLocal(${this.storeName})`, e)))
   }
 
-  /**
-   * Older-page read for scroll-back: cache first. An empty result means the
-   * caller should fetch from the network — an *error* now says the cache
-   * itself is unavailable, which the previous `catch { return [] }` could not.
-   */
+  /**    * Older-page read for scroll-back: cache first. An empty result means the caller should fetch
+   * from the network — an *error* now says the cache itself is unavailable, which the previous
+   * `catch { return [] }` could not. */
   loadOlderFromCache(
     ctx: C,
     beforeSortKey: string | number,

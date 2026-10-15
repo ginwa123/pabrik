@@ -31,12 +31,10 @@ const completedEnvelope = {
 
 const emptyPlaceholder = ''
 
-/**
- * The exact `response_content` the backend persisted for the four failed
+/** The exact `response_content` the backend persisted for the four failed
  * calls in session task_1790447864669_3 (llm_history row 1790452019027732862
  * and its three siblings). The model asked for the pre-2026-09-04 `bash`
- * tool, Phase 3 skipped the call, and this is what was left behind.
- */
+ * tool, Phase 3 skipped the call, and this is what was left behind. */
 const unknownToolEnvelope = JSON.stringify({
   tool: 'bash',
   parameters: {
@@ -140,22 +138,18 @@ describe('ShellTool.vue — in-progress placeholder (TDD: unknown bug)', () => {
   })
 })
 
-/**
- * Regression: a `success:false` shell envelope used to render as a card with
+/** Regression: a `success:false` shell envelope used to render as a card with
  * a pill, a command line, and nothing else — `normalized.error` was computed
  * and then read by nobody. A tool call that NEVER RAN was therefore
  * pixel-identical to a command that ran and printed nothing, which is how
  * four dead `bash` calls were read as "the shell is flaky" (the agent's own
- * diagnosis) instead of "that tool does not exist".
- */
-/**
- * Regression: a `dotnet build` piped through PowerShell rendered as a wall
+ * diagnosis) instead of "that tool does not exist". */
+/** Regression: a `dotnet build` piped through PowerShell rendered as a wall
  * of `?[7mwarning ?[0m` (user screenshot). MSBuild colourises its
  * diagnostics even onto a pipe, so the captured stdout carried raw
  * `ESC[7m` sequences. These assert the card shows the DIAGNOSTIC, not the
  * escape soup — i.e. the exact user-visible symptom, driven through the
- * real component.
- */
+ * real component. */
 describe('ShellTool.vue — ANSI escape soup never reaches the card', () => {
   const msbuildStdout =
     'C:\\Users\\gilang.trisetya\\AppData\\Local\\Microsoft\\dotnet\\sdk\\10.0.401\\Microsoft.Common.CurrentVersion.targets(4919,5): ' +

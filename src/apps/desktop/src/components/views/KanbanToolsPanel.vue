@@ -61,10 +61,9 @@ const props = withDefaults(
 
 const loading = ref(false)
 const loadError = ref<string | null>(null)
-// `config` is only needed to know "is there an agent_kanban row yet?"
-// — toggles use `kanbanId.value` (NOT config.value.id) so first-enable
-// from the unconfigured state still hits the backend, which auto-seeds
-// the row in agent_kanban_tools_create.zig.
+// `config` is only needed to know "is there an agent_kanban row yet?" — toggles use
+// `kanbanId.value` (NOT config.value.id) so first-enable from the unconfigured state still hits the
+// backend, which auto-seeds the row in agent_kanban_tools_create.zig.
 const config = ref<AgentKanban | null>(null)
 const tools = ref<string[]>([])
 const toolRegistry = ref<{ name: string; description: string }[]>([])
@@ -130,10 +129,9 @@ onMounted(() => {
 const toolBusy = ref(false)
 const isEnabled = (toolName: string) => tools.value.includes(toolName)
 
-// Effective kanban id passed to the backend. We use the workspace_item
-// id directly (NOT config.value.id) because the auto-seed path in
-// agent_kanban_tools_create.zig inserts the agent_kanbans row keyed by
-// workspace_item_id = kanban_id.
+// Effective kanban id passed to the backend. We use the workspace_item id directly (NOT
+// config.value.id) because the auto-seed path in agent_kanban_tools_create.zig inserts the
+// agent_kanbans row keyed by workspace_item_id = kanban_id.
 const effectiveKanbanId = () => kanbanId.value
 
 const handleToggleTool = async (toolName: string) => {
@@ -153,10 +151,9 @@ const handleToggleTool = async (toolName: string) => {
     } else {
       await enableAgentKanbanTool(kid, toolName)
     }
-    // After a first-enable from the unconfigured state, refetch the
-    // bundle so `config` gets populated and the unconfigured banner
-    // disappears. Cheap round-trip (one bundle read); saves a page
-    // reload and surfaces the agent_kanbans row immediately.
+    // After a first-enable from the unconfigured state, refetch the bundle so `config` gets
+    // populated and the unconfigured banner disappears. Cheap round-trip (one bundle read); saves a
+    // page reload and surfaces the agent_kanbans row immediately.
     if (!wasEnabled && !config.value) {
       try {
         const data = await getAgentKanban(props.workspaceId ?? '', kid)

@@ -133,10 +133,9 @@ describe('AdaptiveItemHeightEstimator', () => {
   })
 
   it('updates in O(log n) per observation (sorted insert via binary search)', () => {
-    // Behavioral proxy for the complexity contract: many observations
-    // stay fast and correct. If someone replaces binary insert with a
-    // full sort per observe(), this still passes but the perf contract
-    // is documented here + enforced by review.
+    // Behavioral proxy for the complexity contract: many observations stay fast and correct. If
+    // someone replaces binary insert with a full sort per observe(), this still passes but the perf
+    // contract is documented here + enforced by review.
     const est = new AdaptiveItemHeightEstimator({ seed: 64, maxSamples: 50 })
     for (let i = 0; i < 1000; i++) {
       est.observe((i % 400) + 40)

@@ -28,20 +28,13 @@ export interface UseDesignHandlersArgs {
   workspaceId: string | { value: string } | (() => string)
   itemId: string | { value: string } | (() => string)
   pageId: string | { value: string } | (() => string)
-  /**
-   * Reactive Set of currently-selected element ids. The composable
-   * reads `selectedIds.value.size` to enforce the 2+ rule and
-   * replaces `selectedIds.value = new Set()` after a successful
-   * group. Pass it as a ref/computed so changes from DesignView
-   * propagate here.
-   */
+  /**    * Reactive Set of currently-selected element ids. The composable reads `selectedIds.value.size`
+   * to enforce the 2+ rule and replaces `selectedIds.value = new Set()` after a successful group.
+   * Pass it as a ref/computed so changes from DesignView propagate here. */
   selectedIds: { value: Set<string> }
-  /**
-   * Optional override for the browser prompt. The default uses
-   * `window.prompt` (the first-cut implementation; Figma uses an
-   * inline rename affordance — see plan §7.1 for the follow-up).
-   * Tests pass a stub to avoid blocking on the real prompt.
-   */
+  /**    * Optional override for the browser prompt. The default uses `window.prompt` (the first-cut
+   * implementation; Figma uses an inline rename affordance — see plan §7.1 for the follow-up).
+   * Tests pass a stub to avoid blocking on the real prompt. */
   promptForName?: (defaultValue: string) => string | null
 }
 
@@ -92,13 +85,11 @@ export function useDesignHandlers(args?: UseDesignHandlersArgs) {
     }
   }
 
-  /**
-   * NEW (2026-08-06, split-move-resize plan) — translate (move) a
+  /** NEW (2026-08-06, split-move-resize plan) — translate (move) a
    * single element by a (dx, dy) delta. Routes to POST /translate.
    * The backend cascades the delta to every transitive descendant
    * when the target is a `group`/`frame` — callers don't need to
-   * know about the cascade. For leaves the cascade is a no-op.
-   */
+   * know about the cascade. For leaves the cascade is a no-op. */
   async function translateElement(
     workspaceId: string,
     itemId: string,
@@ -139,13 +130,11 @@ export function useDesignHandlers(args?: UseDesignHandlersArgs) {
     }
   }
 
-  /**
-   * NEW (2026-08-06, split-move-resize plan) — resize a single
+  /** NEW (2026-08-06, split-move-resize plan) — resize a single
    * element with absolute x/y/width/height/rotation fields. Routes
    * to POST /resize. Resize NEVER cascades (Figma convention —
    * only the dragged element's bounding box changes; children keep
-   * their own positions).
-   */
+   * their own positions). */
   async function resizeElement(
     workspaceId: string,
     itemId: string,
@@ -291,9 +280,8 @@ export function useDesignHandlers(args?: UseDesignHandlersArgs) {
     // Selected ids is stored as a Set; the API expects an array.
     const childIds = Array.from(selectedIds.value)
     const defaultName = `Group ${childIds.length}`
-    // First-cut implementation: window.prompt. A future inline-rename
-    // affordance (plan §7.1) would replace this with an input UI
-    // bound to the new group's name. Tests pass `promptForName` to
+    // First-cut implementation: window.prompt. A future inline-rename affordance (plan §7.1) would
+    // replace this with an input UI bound to the new group's name. Tests pass `promptForName` to
     // bypass the real browser prompt.
     const promptFn = promptForName ?? ((defaultValue: string): string | null => window.prompt('Name the new group:', defaultValue))
     const name = promptFn(defaultName)
@@ -309,9 +297,8 @@ export function useDesignHandlers(args?: UseDesignHandlersArgs) {
       // fresh selection (Figma behavior — grouping collapses to the
       // new parent, then the user picks the next group).
       selectedIds.value = new Set()
-      // The notification store only exposes notifyError (a single
-      // success-vs-error style is overkill for the 1-shot success
-      // case here). Success notifications auto-dismiss in 5s like
+      // The notification store only exposes notifyError (a single success-vs-error style is
+      // overkill for the 1-shot success case here). Success notifications auto-dismiss in 5s like
       // error notifications, so the UX is consistent.
       notificationStore.notifyError(
         `Grouped ${childIds.length} elements into "${name}".`,
@@ -449,10 +436,9 @@ export function useDesignHandlers(args?: UseDesignHandlersArgs) {
           new_parent_id: null,
         },
       )
-      // Clear selection so the user can immediately Leave group
-      // again on a fresh selection (Figma behavior — the just-
-      // pulled-out element stays highlighted through spurious
-      // context menus unless we clear).
+      // Clear selection so the user can immediately Leave group again on a fresh selection (Figma
+      // behavior — the just- pulled-out element stays highlighted through spurious context menus
+      // unless we clear).
       args.selectedIds.value = new Set()
       notificationStore.notifyError(
         'Left group. Element moved to top-level.',

@@ -121,9 +121,8 @@ describe('WorkspaceItemTaskRow per-task row', () => {
     // The circle spinner was removed — the time pill is the only marker.
     expect(wrapper.findAll('[data-testid="task-spinner"]')).toHaveLength(0)
     expect(wrapper.find('[data-testid="task-elapsed-chip"]').exists()).toBe(true)
-    // Bullet must NOT render while the worker runs (single
-    // visual marker per row). The bullet selector is w-1.5.h-1.5; the
-    // slider track sits below the row, so the w-1.5 selector catches
+    // Bullet must NOT render while the worker runs (single visual marker per row). The bullet
+    // selector is w-1.5.h-1.5; the slider track sits below the row, so the w-1.5 selector catches
     // only the bullet.
     expect(wrapper.findAll('span.w-1.h-1.rounded-full')).toHaveLength(0)
   })
@@ -150,11 +149,9 @@ describe('WorkspaceItemTaskRow per-task row', () => {
   })
 
   it('applies active styling (aqua bullet + active background) when URL is ?view=workspace&itemId=Y/chat/task_X', async () => {
-    // SIMPLIFY-URL-BROWSER (2026-08-15): the URL is now
-    // ?view=workspace&itemId=Y/chat/task_X. useCurrentMainView
-    // parses the /chat/ suffix and exposes chatTaskId on the
-    // workspace view variant. The task row's active highlight
-    // reads kind='workspace' + chatTaskId.
+    // SIMPLIFY-URL-BROWSER (2026-08-15): the URL is now ?view=workspace&itemId=Y/chat/task_X.
+    // useCurrentMainView parses the /chat/ suffix and exposes chatTaskId on the workspace view
+    // variant. The task row's active highlight reads kind='workspace' + chatTaskId.
     const ITEM_ID = 'item_test'
     useRouteMock.mockReturnValue({
       query: {
@@ -276,10 +273,9 @@ describe('WorkspaceItemTaskRow per-task row', () => {
   })
 
   it('does NOT emit selectTask when a menu row is picked', async () => {
-    // The old inline buttons needed event.stopPropagation so the click
-    // did not bubble to the row's @click. The teleported menu never
-    // traverses the row, so this asserts the outcome survived rather
-    // than relying on a guard that no longer has anything to guard.
+    // The old inline buttons needed event.stopPropagation so the click did not bubble to the row's
+    // @click. The teleported menu never traverses the row, so this asserts the outcome survived
+    // rather than relying on a guard that no longer has anything to guard.
     const { wrapper } = mountTask()
     // Each pick closes the menu, so reopen between the two.
     await openRowMenu(wrapper)

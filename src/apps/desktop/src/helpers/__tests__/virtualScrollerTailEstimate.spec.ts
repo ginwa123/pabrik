@@ -40,10 +40,9 @@ describe('VirtualScroller tail estimation (no gap below last message)', () => {
   }
 
   it('estimates appended tail items at the learned median (no shrink)', async () => {
-    // 100 items. Scroll to the middle (index ~50), measure them all at
-    // 300px → estimator median = 300. Then APPEND a new item (the
-    // streaming message) at the end. It is unmeasured AND after the
-    // last measured index (~59) → must estimate at 64, not 300.
+    // 100 items. Scroll to the middle (index ~50), measure them all at 300px → estimator median =
+    // 300. Then APPEND a new item (the streaming message) at the end. It is unmeasured AND after
+    // the last measured index (~59) → must estimate at 64, not 300.
     const { wrapper, el } = mountScroller(100)
     await nextTick()
 
@@ -65,10 +64,9 @@ describe('VirtualScroller tail estimation (no gap below last message)', () => {
     await wrapper.setProps({ items: [...Array.from({ length: 100 }, (_, i) => ({ id: i })), { id: 100 }], totalCount: 101 })
     await nextTick()
 
-    // Median-300 backs every unmeasured item: 23 measured at 300 plus
-    // 78 unmeasured (incl. the appended streaming row) at median 300 =
-    // 101*300 = 30300. The old 23*300+78*64=11892 collapsed the sizer
-    // to under half the real height (the shrink symptom).
+    // Median-300 backs every unmeasured item: 23 measured at 300 plus 78 unmeasured (incl. the
+    // appended streaming row) at median 300 = 101*300 = 30300. The old 23*300+78*64=11892 collapsed
+    // the sizer to under half the real height (the shrink symptom).
     const sizer = el.querySelector('.virtual-scroller-sizer') as HTMLElement
     const total = parseFloat(sizer.style.height)
     expect(total).toBe(101 * 300)

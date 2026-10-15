@@ -99,14 +99,12 @@ const dotGlyph = computed(() => {
 
 // ── the method, remembered per repo ───────────────────────────────────────
 const repoKey = computed(() => repoKeyFor(props.prUrl, props.cwd))
-/**
- * The method shown and used. No watcher: a `watch` that copies the remembered
+/** The method shown and used. No watcher: a `watch` that copies the remembered
  * value into a ref is banned here (local/no-watch), and it is not needed — the
  * remembered value is a pure function of the repo key, so a `computed` reads it
  * lazily. A pick is tagged with the key it belongs to, so a different change
  * request on the same mounted box falls back to ITS repo's memory instead of
- * carrying the previous choice over.
- */
+ * carrying the previous choice over. */
 const picked = ref<{ key: string; method: MergeMethod } | null>(null)
 const method = computed<MergeMethod>(() => {
   const key = repoKey.value
@@ -116,9 +114,9 @@ const method = computed<MergeMethod>(() => {
 // ── the confirm step ──────────────────────────────────────────────────────
 const menuOpen = ref(false)
 const confirming = ref(false)
-/** OFF by default. In this app the source branch is usually the session's OWN
- *  worktree branch, so a pre-ticked box could delete the branch the user is
- *  standing on. The name is always shown next to it. */
+/**  * OFF by default. In this app the source branch is usually the session's OWN worktree branch, so a
+ * pre-ticked box could delete the branch the user is standing on. The name is always shown next to
+ * it. */
 const deleteBranch = ref(false)
 const message = ref('')
 
@@ -182,10 +180,9 @@ async function submit() {
   }
   rememberMethod(repoKey.value, method.value)
   confirming.value = false
-  // `success` is the FORGE's answer, not an exit code. A zero exit that only
-  // armed an auto-merge (GitLab) or joined a merge queue (GitHub) is
-  // `pending`, and saying "Merged" for it is the one failure a merge button
-  // cannot afford.
+  // `success` is the FORGE's answer, not an exit code. A zero exit that only armed an auto-merge
+  // (GitLab) or joined a merge queue (GitHub) is `pending`, and saying "Merged" for it is the one
+  // failure a merge button cannot afford.
   pendingNotice.value = result.value.pending
   // The merge moved this BRANCH's change-request state, and the sidebar's
   // RECENT icon and the kanban card badge read the shared 60s cache — which

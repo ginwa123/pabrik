@@ -52,14 +52,12 @@ const baseHttpServer: McpServerModalValue = {
   cwd: '',
 }
 
-/**
- * Both branches of McpServerModal use <Teleport to="body">: the HTTP
+/** Both branches of McpServerModal use <Teleport to="body">: the HTTP
  * branch delegates to <LlmConfigModal>, the stdio branch has its own
  * bespoke centered dialog with backdrop + close ✕. Tests MUST use
  * `document.body.querySelector` for teleported elements (NOT
  * `wrapper.find`) and `mount({ attachTo: document.body })` so the
- * teleported DOM lands on the same body the queries walk.
- */
+ * teleported DOM lands on the same body the queries walk. */
 function mountModal(
   value: McpServerModalValue,
   mode: 'add' | 'edit' = 'add',
@@ -418,10 +416,9 @@ describe('McpServerModal — stdio transport', () => {
   })
 
   it('clears the test result when the user edits any form field', async () => {
-    // The modal's watcher fires on `props.modelValue` changes. In
-    // the parent (`PabrikConfigEditor.vue`) this is wired via v-model;
-    // in this isolated test we have to manually re-feed the emitted
-    // `update:modelValue` payload back into the prop via setProps.
+    // The modal's watcher fires on `props.modelValue` changes. In the parent
+    // (`PabrikConfigEditor.vue`) this is wired via v-model; in this isolated test we have to
+    // manually re-feed the emitted `update:modelValue` payload back into the prop via setProps.
     const testState = ref<McpServerModalValue>({ ...baseStdioServer })
     wrapper = mount(McpServerModal, {
       props: {
@@ -447,9 +444,8 @@ describe('McpServerModal — stdio transport', () => {
     await new Promise((r) => setTimeout(r, 0))
     expect(document.body.querySelector('[data-testid="test-result"]')).not.toBeNull()
 
-    // Now edit the command — the input event triggers the
-    // modal's `updateCommand` → `update:modelValue` emit, the test
-    // bridge above re-feeds it into the prop, and the watcher
+    // Now edit the command — the input event triggers the modal's `updateCommand` →
+    // `update:modelValue` emit, the test bridge above re-feeds it into the prop, and the watcher
     // clears `testResult` to null.
     const commandInput = document.body.querySelector<HTMLInputElement>(
       '[data-testid="command-input"]',

@@ -1,13 +1,10 @@
-/**
- * Tests for ProgressiveTool.vue — universal renderer for
+/** Tests for ProgressiveTool.vue — universal renderer for
  * `search_tool` / `view_tool` / `use_tool`.
- *
  * Verifies (same expandable ToolCardHeader pattern as McpTool):
  *  - search_tool header shows query + tool count, rows render on expand
  *  - view_tool header shows name, description + pretty parameters on expand
  *  - use_tool header shows enabled/already-enabled with just the equip note
- *  - error envelopes render the red error block
- */
+ *  - error envelopes render the red error block */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 

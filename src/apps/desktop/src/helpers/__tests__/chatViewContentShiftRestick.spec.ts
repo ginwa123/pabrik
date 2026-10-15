@@ -259,11 +259,8 @@ describe('ChatView onContentShift restick (extracted)', () => {
   // path). If they were scrolled up reading history, do nothing — the
   // preserve already restored their anchor position.
   describe('Bug C: post-preserve bottom re-validation', () => {
-    /**
-     * The decision function the loadMore branch runs after re-arming
-     * suppressContentShiftStick. Mirrors the production fix in
-     * ChatView.vue's loadChatHistory loadMore path.
-     */
+    /**      * The decision function the loadMore branch runs after re-arming suppressContentShiftStick.
+     * Mirrors the production fix in ChatView.vue's loadChatHistory loadMore path. */
     function postPreserveRestick(args: {
       container: HTMLElement
       wasAtBottom: boolean
@@ -280,10 +277,9 @@ describe('ChatView onContentShift restick (extracted)', () => {
       })
       const el = wrapper.element as HTMLElement
       Object.defineProperty(el, 'clientHeight', { value: 400, configurable: true })
-      // Post-prepend layout: 10 old items (800px) + 5 prepended (400px)
-      // = 1200 scrollHeight. endPreserve restored scrollTop to the
-      // anchor's offsetTop (400) — the user's viewport now sits at the
-      // OLD content, with the bottom 400px away.
+      // Post-prepend layout: 10 old items (800px) + 5 prepended (400px) = 1200 scrollHeight.
+      // endPreserve restored scrollTop to the anchor's offsetTop (400) — the user's viewport now
+      // sits at the OLD content, with the bottom 400px away.
       Object.defineProperty(el, 'scrollHeight', { value: 1200, configurable: true })
       el.scrollTop = 400
 
@@ -349,10 +345,9 @@ describe('ChatView onContentShift restick (extracted)', () => {
     // matching `} else {` that starts the initial-load branch).
     const loadMoreStart = src.indexOf('suppressContentShiftStick = true')
     expect(loadMoreStart).toBeGreaterThan(-1)
-    // End the window at the initial-load branch marker — the post-preserve
-    // re-validation lives AFTER the `suppressContentShiftStick = false`
-    // re-arm line, so slicing to that line would exclude the very code
-    // under test.
+    // End the window at the initial-load branch marker — the post-preserve re-validation lives
+    // AFTER the `suppressContentShiftStick = false` re-arm line, so slicing to that line would
+    // exclude the very code under test.
     const branchEnd = src.indexOf('isInitialLoad = true', loadMoreStart)
     expect(branchEnd).toBeGreaterThan(-1)
     const branch = src.slice(loadMoreStart, branchEnd)
@@ -392,10 +387,8 @@ describe('ChatView onContentShift restick (extracted)', () => {
   // Fix: only RETAIN the stick if it WAS engaged. A user who already
   // scrolled up must never be re-engaged by content growth.
   describe('Bug D: content growth must not re-engage a disengaged stick', () => {
-    /**
-     * The decision function handleVirtualScroll runs for isAtBottom.
-     * Mirrors the production fix in ChatView.vue.
-     */
+    /** The decision function handleVirtualScroll runs for isAtBottom.
+     * Mirrors the production fix in ChatView.vue. */
     function computeIsAtBottom(args: {
       newIsAtBottom: boolean
       previousIsAtBottom: boolean

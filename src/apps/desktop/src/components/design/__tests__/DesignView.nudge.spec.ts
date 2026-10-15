@@ -15,10 +15,9 @@ import { createPinia, setActivePinia } from 'pinia'
 import DesignView from '../DesignView.vue'
 import { useWorkspacesStore } from '../../../stores/workspaces'
 
-// vi.mock factories are hoisted above `const` declarations by Vitest, so
-// the spy must be created inside `vi.hoisted()` to exist before the
-// factory runs (which eagerly imports DesignView.vue → DesignElement.vue
-// → ../../api during module evaluation).
+// vi.mock factories are hoisted above `const` declarations by Vitest, so the spy must be created
+// inside `vi.hoisted()` to exist before the factory runs (which eagerly imports DesignView.vue →
+// DesignElement.vue → ../../api during module evaluation).
 const { updateDesignElementGeometrySpy, listDesignPagesMock } = vi.hoisted(() => ({
   updateDesignElementGeometrySpy: vi.fn().mockResolvedValue({ id: 'el_1' }),
   listDesignPagesMock: vi.fn().mockResolvedValue({

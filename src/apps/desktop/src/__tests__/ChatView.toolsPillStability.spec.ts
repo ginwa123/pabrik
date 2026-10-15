@@ -32,10 +32,9 @@ const readChatViewSource = async (): Promise<string> => {
 describe('groupToolNames — pill suppression when tool already rendered (source contract)', () => {
   it('pre-collects rendered tool_call_ids from every tool group in the transcript', async () => {
     const source = await readChatViewSource()
-    // The computed MUST walk every tool group and gather the set of
-    // tool_call_ids that have a matching tool row. Without this, the
-    // pill flashes during the live-SSE window between the assistant
-    // tool_calls row arriving and the tool result row arriving.
+    // The computed MUST walk every tool group and gather the set of tool_call_ids that have a
+    // matching tool row. Without this, the pill flashes during the live-SSE window between the
+    // assistant tool_calls row arriving and the tool result row arriving.
     expect(source).toMatch(/const renderedToolCallIds = new Set<string>\(\)/)
     expect(source).toMatch(/if \(g\.role !== 'tool'\) continue/)
     expect(source).toMatch(/if \(m\.tool_call_id\) renderedToolCallIds\.add\(m\.tool_call_id\)/)
@@ -43,10 +42,9 @@ describe('groupToolNames — pill suppression when tool already rendered (source
 
   it('suppresses the pill when EVERY tool_call has a matching tool row', async () => {
     const source = await readChatViewSource()
-    // Look for the suppression block — `parsed.every((tc) => tool_call_id
-    // in renderedToolCallIds) → return null`. This is the core fix: an
-    // assistant tool_calls row whose tools are already represented by
-    // structured cards must NOT render a redundant "tools" pill.
+    // Look for the suppression block — `parsed.every((tc) => tool_call_id in renderedToolCallIds) →
+    // return null`. This is the core fix: an assistant tool_calls row whose tools are already
+    // represented by structured cards must NOT render a redundant "tools" pill.
     expect(source).toMatch(/const allRendered = parsed\.every\(/)
     expect(source).toMatch(/renderedToolCallIds\.has\(id\)/)
     expect(source).toMatch(/if \(allRendered\) return null/)
@@ -90,10 +88,9 @@ describe('groupToolNames — pill suppression when tool already rendered (source
 
   it('still renders the pill when NO tool row exists for the assistant turn', async () => {
     const source = await readChatViewSource()
-    // Regression guard: the pill must still appear for genuine
-    // tool-only assistant turns (no matching tool result in the
-    // transcript — e.g. aborted tool calls, server-side errors that
-    //    lost the tool row). The names.join(', ') branch must survive.
+    // Regression guard: the pill must still appear for genuine tool-only assistant turns (no
+    // matching tool result in the transcript — e.g. aborted tool calls, server-side errors that
+    // lost the tool row). The names.join(', ') branch must survive.
     expect(source).toMatch(/return names\.join\(', '\)/)
   })
 })

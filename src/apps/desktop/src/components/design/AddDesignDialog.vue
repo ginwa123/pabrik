@@ -57,10 +57,9 @@ const nameError = computed<string | null>(() => {
 
 // ─── Picker data source ────────────────────────────────────────────────────
 
-// Adapts the existing listFolder/getSystemFolder API to the picker's
-// agnostic (path: string) => Promise<T[]> contract. Same helper as
-// AddItemDialog + AddKanbanDialog — duplicated here (not extracted)
-// to keep the dialogs independently editable.
+// Adapts the existing listFolder/getSystemFolder API to the picker's agnostic (path: string) =>
+// Promise<T[]> contract. Same helper as AddItemDialog + AddKanbanDialog — duplicated here (not
+// extracted) to keep the dialogs independently editable.
 const loadItemsForPicker = async (path: string): Promise<FolderEntry[]> => {
   const data = path ? await listFolder(path) : await getSystemFolder()
   return (data.entries || []) as FolderEntry[]
@@ -110,10 +109,9 @@ onBeforeUnmount(() => {
   document.body.style.overflow = ''
 })
 
-// Open-reset without watch(): seed on mount (initial show=true) and on
-// closed->open updates. A Transition before-enter hook cannot do this — it
-// never fires on initial mount (no `appear`) and VTU stubs Transition, so
-// specs that mount then setProps(show=true) would see empty fields.
+// Open-reset without watch(): seed on mount (initial show=true) and on closed->open updates. A
+// Transition before-enter hook cannot do this — it never fires on initial mount (no `appear`) and
+// VTU stubs Transition, so specs that mount then setProps(show=true) would see empty fields.
 const wasShown = ref(props.show)
 onMounted(() => {
   if (props.show) void handleOpen()

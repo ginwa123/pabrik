@@ -22,9 +22,6 @@ import AddItemDialog from '../components/dialogs/AddItemDialog.vue'
 
 // Stub the FilePickerDialog — we only care that the parent wires up the
 // picker's events. Real picker behavior is tested in FilePickerDialog.spec.ts.
-// The stub mirrors the picker's public API:
-//   - v-model:show (modelValue + update:modelValue)
-//   - @select(path)
 //   - title prop (displayed in stub header)
 vi.mock('../components/FilePickerDialog.vue', () => ({
   default: {

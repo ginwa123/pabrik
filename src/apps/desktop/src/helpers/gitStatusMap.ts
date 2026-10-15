@@ -26,10 +26,8 @@ function norm(status: string): string {
   return trimmed === '' ? ' ' : trimmed
 }
 
-/**
- * Badge for one wire entry. Staged state wins when both sides are set
- * (e.g. `A`/`M` = staged new file edited again in the worktree).
- */
+/** Badge for one wire entry. Staged state wins when both sides are set
+ * (e.g. `A`/`M` = staged new file edited again in the worktree). */
 export function displayStatusForChange(change: GitFileChange): GitBadge {
   const index = norm(change.index_status)
   const worktree = norm(change.worktree_status)
@@ -41,11 +39,9 @@ export function displayStatusForChange(change: GitFileChange): GitBadge {
   return { kind: 'modified', badge: 'M' }
 }
 
-/**
- * Fold the three wire lists into one map. Insert order is deliberate:
- * untracked, then modified, then staged — so a path present in several
- * lists (staged + further worktree edits) keeps its staged badge.
- */
+/**  * Fold the three wire lists into one map. Insert order is deliberate: untracked, then modified,
+ * then staged — so a path present in several lists (staged + further worktree edits) keeps its
+ * staged badge. */
 export function buildGitStatusMap(changes: GitChangesResponse): Map<string, GitBadge> {
   const map = new Map<string, GitBadge>()
   for (const file of changes.untracked_files ?? []) map.set(file.path, displayStatusForChange(file))

@@ -1,7 +1,5 @@
-/**
- * The sidebar status badge on the RECENT and PINNED rows — the same
- * red / yellow / green trio the kanban card renders.
- */
+/** The sidebar status badge on the RECENT and PINNED rows — the same
+ * red / yellow / green trio the kanban card renders. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, ref } from 'vue'

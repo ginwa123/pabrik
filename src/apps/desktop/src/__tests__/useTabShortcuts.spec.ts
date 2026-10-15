@@ -8,11 +8,9 @@ import {
   type TabShortcutHandlers,
 } from '../composables/useTabShortcuts'
 
-/**
- * Task 6 of the tab-mode plan. The map is asserted on the pure resolver,
+/** Task 6 of the tab-mode plan. The map is asserted on the pure resolver,
  * and the listener is asserted on a fake target so the test never depends
- * on (or pollutes) the real document.
- */
+ * on (or pollutes) the real document. */
 
 function mods(overrides: Partial<{ shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey: boolean }> = {}) {
   return { shiftKey: false, altKey: false, ctrlKey: false, metaKey: false, ...overrides }

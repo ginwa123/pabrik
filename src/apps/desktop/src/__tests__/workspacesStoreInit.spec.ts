@@ -1,8 +1,5 @@
-/**
- * Unit tests for the workspaces store's init() flow.
- * Mocks api.getWorkspaces, api.getWorkspacesItems, and api.getTasks
- * to assert the 3-call flow + task-attachment logic.
- */
+/**  * Unit tests for the workspaces store's init() flow. Mocks api.getWorkspaces,
+ * api.getWorkspacesItems, and api.getTasks to assert the 3-call flow + task-attachment logic. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp } from 'vue'
@@ -85,16 +82,14 @@ describe('useWorkspacesStore.init()', () => {
     // test's calls and the call-count assertion below flakes.
     listDesignPagesMock.mockClear()
     listKanbanColumnsMock.mockClear()
-    // getTasks is reused for per-column kanban task fetches. Clear
-    // its call history too so the kanban-prefetch tests can assert
-    // call counts for column_id-tagged calls without seeing the
+    // getTasks is reused for per-column kanban task fetches. Clear its call history too so the
+    // kanban-prefetch tests can assert call counts for column_id-tagged calls without seeing the
     // earlier board-wide tests' state.
     getTasksMock.mockClear()
   })
 
-  // Helper for design-item fixtures: produces the shape the backend
-  // returns so we can assert against `design_pages` and the
-  // `item_type === 'design'` branch in init() without breaking
+  // Helper for design-item fixtures: produces the shape the backend returns so we can assert
+  // against `design_pages` and the `item_type === 'design'` branch in init() without breaking
   // existing tests.
   function makeDesignItem(overrides: Record<string, unknown> = {}) {
     return {
@@ -117,10 +112,9 @@ describe('useWorkspacesStore.init()', () => {
       name: 'kanban',
       item_type: 'kanban',
       workspace_id: 'ws_1',
-      // kanban_columns are populated by listKanbanColumns in
-      // init(); start with an empty array so the per-column
-      // fetches have no work to do unless the test stubs a
-      // populated columns response.
+      // kanban_columns are populated by listKanbanColumns in init(); start with an empty array so
+      // the per-column fetches have no work to do unless the test stubs a populated columns
+      // response.
       kanban_columns: [],
       tasks: [],
       ...overrides,
@@ -149,10 +143,9 @@ describe('useWorkspacesStore.init()', () => {
     await store.init()
 
     expect(getWorkspacesMock).toHaveBeenCalledTimes(1)
-    // Lazy loading (2026-09-22 revamp plan): only the active
-    // workspace (first row — no explicit/persisted choice here) is
-    // fetched; the other row stays seeded-empty until visited via
-    // ensureWorkspaceItemsLoaded.
+    // Lazy loading (2026-09-22 revamp plan): only the active workspace (first row — no
+    // explicit/persisted choice here) is fetched; the other row stays seeded-empty until visited
+    // via ensureWorkspaceItemsLoaded.
     expect(getWorkspacesItemsMock).toHaveBeenCalledTimes(1)
     expect(getWorkspacesItemsMock).toHaveBeenNthCalledWith(1, 'ws_1')
     expect(store.workspaces.find((ws) => ws.id === 'ws_2')!.items).toEqual([])
@@ -303,10 +296,9 @@ describe('useWorkspacesStore.init()', () => {
   })
 
   it('does NOT fire listDesignPages for non-design items in init()', async () => {
-    // Belt-and-braces: the folder item in the previous test never
-    // triggered a listDesignPages call. This test makes that
-    // contract explicit so a future refactor doesn't accidentally
-    // broaden the filter and fetch pages for, e.g., kanban items.
+    // Belt-and-braces: the folder item in the previous test never triggered a listDesignPages call.
+    // This test makes that contract explicit so a future refactor doesn't accidentally broaden the
+    // filter and fetch pages for, e.g., kanban items.
     getWorkspacesMock.mockResolvedValueOnce({
       workspaces: [{ id: 'ws_1', name: 'W1', icon: '📁' }],
     })
@@ -328,11 +320,9 @@ describe('useWorkspacesStore.init()', () => {
   })
 
   it('keeps the workspace when a per-design-item pages fetch fails', async () => {
-    // Best-effort contract — same as the per-item tasks fetch. A
-    // single bad listDesignPages call logs and leaves the cache
-    // empty for that item, but the workspace tree still loads. The
-    // chevron-toggle lazy fetch in WorkspaceItem.vue is the
-    // fallback that retries the failing item.
+    // Best-effort contract — same as the per-item tasks fetch. A single bad listDesignPages call
+    // logs and leaves the cache empty for that item, but the workspace tree still loads. The
+    // chevron-toggle lazy fetch in WorkspaceItem.vue is the fallback that retries the failing item.
     getWorkspacesMock.mockResolvedValueOnce({
       workspaces: [{ id: 'ws_1', name: 'W1', icon: '📁' }],
     })
@@ -547,9 +537,8 @@ describe('useWorkspacesStore.init()', () => {
     // branch is gated on item_type === 'kanban'; a future refactor
     // that broadens the filter would be caught here.
     expect(listKanbanColumnsMock).toHaveBeenCalledTimes(0)
-    // Filter getTasks calls to the KANBAN branch: every getTasks
-    // call from the kanban-prefetch block passes column_id as the
-    // 7th argument. The board-wide fetch (folder + chat) does NOT
+    // Filter getTasks calls to the KANBAN branch: every getTasks call from the kanban-prefetch
+    // block passes column_id as the 7th argument. The board-wide fetch (folder + chat) does NOT
     // pass column_id. So we assert zero column_id-tagged calls.
     const kanbanCalls = getTasksMock.mock.calls.filter(
       (call) => call[6] !== undefined, // 7th arg = column_id
@@ -558,10 +547,9 @@ describe('useWorkspacesStore.init()', () => {
   })
 
   it('keeps the workspace when a per-column kanban fetch fails', async () => {
-    // Best-effort contract — same as the per-item tasks fetch. A
-    // single bad column fetch logs and leaves that column's
-    // pagination entry missing, but the workspace tree still
-    // loads and other columns' tasks populate.
+    // Best-effort contract — same as the per-item tasks fetch. A single bad column fetch logs and
+    // leaves that column's pagination entry missing, but the workspace tree still loads and other
+    // columns' tasks populate.
     getWorkspacesMock.mockResolvedValueOnce({
       workspaces: [{ id: 'ws_1', name: 'W1', icon: '📁' }],
     })

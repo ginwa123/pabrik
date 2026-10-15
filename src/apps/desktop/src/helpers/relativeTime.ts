@@ -17,10 +17,9 @@
 export const formatRelativeTime = (dateWillBeRelative: string): string => {
   if (!dateWillBeRelative || dateWillBeRelative.trim() === '') return 'now'
 
-  // Migration 082: detect unix-ms shape (digits-only, length >= 10)
-  // before falling through to the SQLite datetime path. The SSE event
-  // emit passes the raw unix-ms integer string; the REST GET path
-  // passes the SQLite datetime string. Both must render correctly.
+  // Migration 082: detect unix-ms shape (digits-only, length >= 10) before falling through to the
+  // SQLite datetime path. The SSE event emit passes the raw unix-ms integer string; the REST GET
+  // path passes the SQLite datetime string. Both must render correctly.
   const trimmed = dateWillBeRelative.trim()
   if (/^\d{10,}$/.test(trimmed)) {
     const unixMs = Number(trimmed)

@@ -44,10 +44,9 @@ import { useDesignContextMenu } from '../../composables/useDesignContextMenu'
 import { useLayerDragDrop, TOP_LEVEL_SENTINEL } from '../../composables/useLayerDragDrop'
 import { useWorkspacesStore } from '../../stores/workspaces'
 
-// Read the active workspace + item + page at call time. Mirrors the
-// pattern in `useDesignHandlers.updateElement` — no need to plumb
-// ids through props when the store already knows them. Undo/redo
-// plan Chunk 1 (wire-up of silent-drop emits).
+// Read the active workspace + item + page at call time. Mirrors the pattern in
+// `useDesignHandlers.updateElement` — no need to plumb ids through props when the store already
+// knows them. Undo/redo plan Chunk 1 (wire-up of silent-drop emits).
 const workspacesStore = useWorkspacesStore()
 const activeWorkspaceId = computed(() => workspacesStore.activeWorkspace?.id ?? null)
 const activeWorkspaceItemId = computed(() => workspacesStore.activeWorkspaceItemId)
@@ -93,17 +92,15 @@ const emit = defineEmits<{
   // workspacesStore.reparentDesignElementsBatch. Independent of the
   // Ungroup action (which dissolves the selected group itself).
   leaveGroup: [elementId: string]
-  // NEW (Chunk 7, design-move-to-page plan, 2026-08-06): bubble the
-  // "Move to page..." selection up to the host so it can open the
-  // MoveToPageDialog with the right element id. The dialog handles
+  // NEW (Chunk 7, design-move-to-page plan, 2026-08-06): bubble the "Move to page..." selection up
+  // to the host so it can open the MoveToPageDialog with the right element id. The dialog handles
   // the actual API call after the user picks a target page.
   moveToPage: [elementId: string]
   selectAll: []
   bringToFront: [targetIds: string[]]
   bringForward: [targetIds: string[]]
-  // NEW (Chunk 4 Task 4.2 of drag-to-reparent plan): payload from a
-  // drop event. `elementIds` is the FULL selection when the dragged
-  // row is in the selection (multi-drag). `newParentId` is the
+  // NEW (Chunk 4 Task 4.2 of drag-to-reparent plan): payload from a drop event. `elementIds` is the
+  // FULL selection when the dragged row is in the selection (multi-drag). `newParentId` is the
   // group/frame id to reparent under, or null for "leave group".
   reparent: [payload: { elementIds: string[]; newParentId: string | null }]
   sendBackward: [targetIds: string[]]
@@ -167,12 +164,9 @@ const layerTree = computed<LayerTreeNode[]>(() => {
   return byParent.get(null) ?? []
 })
 
-/**
- * Per-element collapse state. A `Set` because collapse is binary
- * per-id. Held as `ref(new Set)` so a replacement (not a mutation)
- * triggers Vue 3 reactivity. The Set is passed DOWN to `<LayerRow>`
- * by reference (read-only in the child).
- */
+/**  * Per-element collapse state. A `Set` because collapse is binary per-id. Held as `ref(new Set)` so
+ * a replacement (not a mutation) triggers Vue 3 reactivity. The Set is passed DOWN to `<LayerRow>`
+ * by reference (read-only in the child). */
 const collapsedIds = ref<Set<string>>(new Set())
 
 const toggleCollapse = (elementId: string): void => {
@@ -185,16 +179,13 @@ const toggleCollapse = (elementId: string): void => {
   collapsedIds.value = next
 }
 
-/**
- * Walk the tree to find a node by id. Returns the node + its
+/** Walk the tree to find a node by id. Returns the node + its
  * sibling array (the parent's children) + the node's index within
  * that array. Used by `handleMoveUp` / `handleMoveDown` to swap
  * with the previous / next sibling.
- *
  * For a top-level element, `siblings` is `layerTree` (the top-level
  * array) and `parent` is `null`. For a nested element, `siblings`
- * is the parent's `children` array.
- */
+ * is the parent's `children` array. */
 function findNode(
   nodes: LayerTreeNode[],
   elementId: string,
@@ -209,23 +200,19 @@ function findNode(
   return null
 }
 
-/**
- * Deep-clone the tree so we can swap siblings without mutating the
- * `layerTree` computed (which is owned by Vue's reactivity and
- * should be treated as immutable). The clone preserves `element`
- * references (no need to copy those — only the tree structure
- * mutates).
- */
+/**  * Deep-clone the tree so we can swap siblings without mutating the `layerTree` computed (which is
+ * owned by Vue's reactivity and should be treated as immutable). The clone preserves `element`
+ * references (no need to copy those — only the tree structure mutates). */
 // ─── Drag-and-drop state (Chunk 4 Task 4.2) ────────────────────────────
-//
+
 // LayersPanel owns the drag state machine via `useLayerDragDrop`.
 // The composable returns the drag handlers + per-row visual state
 // predicates; we pass those down to each <LayerRow>.
-//
+
 // Top-level drop zones (above the first top-level row, between each
 // pair, below the last) use the TOP_LEVEL_SENTINEL id — the same
 // sentinel the composable treats as "leave any group".
-//
+
 // Multi-drag: when the dragged row is in `selectedIds` AND the
 // selection has > 1 element, the composable sets draggedIds to the
 // FULL set. The LayerRow's per-row visual flags (`isBeingDragged`)
@@ -253,14 +240,11 @@ function cloneTree(nodes: LayerTreeNode[]): LayerTreeNode[] {
   }))
 }
 
-/**
- * Move the element at `elementId` up by one (toward the top of the
+/** Move the element at `elementId` up by one (toward the top of the
  * panel). In a tree, "up" means swapping with the previous SIBLING
  * within the same parent's children array. For top-level elements,
  * the parent is the panel itself (the top-level `layerTree`).
- *
- * Emits `reorder` with the new top-to-bottom depth-first id list.
- */
+ * Emits `reorder` with the new top-to-bottom depth-first id list. */
 const handleMoveUp = (elementId: string): void => {
   if (props.readonly) return
   const found = findNode(layerTree.value, elementId)

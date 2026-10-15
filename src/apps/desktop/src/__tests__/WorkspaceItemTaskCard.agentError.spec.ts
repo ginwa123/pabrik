@@ -182,11 +182,9 @@ describe('WorkspaceItemTaskCard — agent-error indicator', () => {
   })
 
   it('does NOT apply the error-pulse animation when prefers-reduced-motion is reduce', async () => {
-    // Mock window.matchMedia to report prefers-reduced-motion: reduce.
-    // The agent-error-pulse keyframes live inside @media
-    // (prefers-reduced-motion: no-preference); with reduce, the
-    // animation shorthand doesn't apply and computed
-    // animationName === 'none'.
+    // Mock window.matchMedia to report prefers-reduced-motion: reduce. The agent-error-pulse
+    // keyframes live inside @media (prefers-reduced-motion: no-preference); with reduce, the
+    // animation shorthand doesn't apply and computed animationName === 'none'.
     const matchMediaMock = vi.fn((query: string) => ({
       matches: query === '(prefers-reduced-motion: reduce)',
       media: query,
@@ -225,10 +223,9 @@ describe('WorkspaceItemTaskCard — agent-error indicator', () => {
   })
 
   it('renders the ⚠ icon alongside an active spinner (additive, not mutually exclusive)', async () => {
-    // The retry chain fires WHILE the worker is still active, so the
-    // spinner and the error indicator must coexist on the standard
-    // branch (not v-else-if). Mount with both processingState[id]
-    // AND a store error, assert both render.
+    // The retry chain fires WHILE the worker is still active, so the spinner and the error
+    // indicator must coexist on the standard branch (not v-else-if). Mount with both
+    // processingState[id] AND a store error, assert both render.
     const store = useAgentErrorStore()
     store.setError('task_1', RETRY_CONTENT)
 

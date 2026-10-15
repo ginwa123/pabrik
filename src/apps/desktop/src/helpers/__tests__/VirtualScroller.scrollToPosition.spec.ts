@@ -80,13 +80,9 @@ interface ScrollHarness {
   scrollerRef: Ref<VirtualScrollerTestExposed | null>
 }
 
-/**
- * Hand-typed mirror of VirtualScroller's exposed methods that this
- * test uses. The Vue 3 SFC can't be referenced via
- * `InstanceType<typeof VirtualScroller>` — SFCs are functions, not
- * classes. The same approach ChatView.vue uses for
- * `VirtualScrollerExposed` (see ChatView.vue:453-464).
- */
+/**  * Hand-typed mirror of VirtualScroller's exposed methods that this test uses. The Vue 3 SFC can't
+ * be referenced via `InstanceType<typeof VirtualScroller>` — SFCs are functions, not classes. The
+ * same approach ChatView.vue uses for `VirtualScrollerExposed` (see ChatView.vue:453-464). */
 interface VirtualScrollerTestExposed {
   scrollToPosition: (scrollTop: number, behavior?: ScrollBehavior) => void
 }
@@ -197,10 +193,9 @@ describe('VirtualScroller.scrollToPosition', () => {
 
     harness.scrollerRef.value?.scrollToPosition(500)
 
-    // The browser still sets scrollTop, but the scroller's own
-    // method should have been a no-op. With max <= 0, the spec is
-    // "no scroll needed" — the value stays at 0 because there's
-    // nothing to scroll past.
+    // The browser still sets scrollTop, but the scroller's own method should have been a no-op.
+    // With max <= 0, the spec is "no scroll needed" — the value stays at 0 because there's nothing
+    // to scroll past.
     expect(harness.container.scrollTop).toBe(0)
     harness.wrapper.unmount()
   })

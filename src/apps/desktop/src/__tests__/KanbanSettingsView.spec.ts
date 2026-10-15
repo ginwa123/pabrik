@@ -112,10 +112,8 @@ function setInputValue(selector: string, value: string) {
   el.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
-/**
- * Seed the workspacesStore with a workspace that contains the given
- * kanban item. Returns the store so tests can inspect/assert.
- */
+/** Seed the workspacesStore with a workspace that contains the given
+ * kanban item. Returns the store so tests can inspect/assert. */
 function seedWorkspaces(item: WorkspaceItem | null = baseItem) {
   const store = useWorkspacesStore()
   // Force-create the workspace + items arrays; we don't need the full
@@ -218,10 +216,9 @@ describe('KanbanSettingsView', () => {
   })
 
   it('deletes a column via the per-row Delete button (opens editor, then confirms)', async () => {
-    // The per-row Delete button opens the editor in delete mode
-    // (mirrors KanbanSettingsDialog's 2-step flow). The editor's
-    // Delete submit is what fires `deleteColumn`. Mirrors the
-    // original KanbanSettingsDialog test at line 166.
+    // The per-row Delete button opens the editor in delete mode (mirrors KanbanSettingsDialog's
+    // 2-step flow). The editor's Delete submit is what fires `deleteColumn`. Mirrors the original
+    // KanbanSettingsDialog test at line 166.
     seedWorkspaces()
     mountView()
     await flushPromises()
@@ -432,10 +429,9 @@ describe('KanbanSettingsView', () => {
   })
 
   it('stays on columns when ?tab= holds a browser tab ID (tab-mode coexistence)', async () => {
-    // The exact URL from the bug report:
-    // /app/kanban/<id>/settings?tab=tab_mu0lle6j940yz — the settings
-    // getter must ignore the browser ID (fall back to columns) rather
-    // than crash or misroute.
+    // The exact URL from the bug report: /app/kanban/<id>/settings?tab=tab_mu0lle6j940yz — the
+    // settings getter must ignore the browser ID (fall back to columns) rather than crash or
+    // misroute.
     seedWorkspaces()
     setupRoute({ tab: 'tab_mu0lle6j940yz' })
     mountView()

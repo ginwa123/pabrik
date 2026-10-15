@@ -1,10 +1,8 @@
-/**
- * `pairSplitRows` — the split (side-by-side) projection of a parsed unified
+/** `pairSplitRows` — the split (side-by-side) projection of a parsed unified
  * diff. The interesting cases are the UNEVEN change blocks (3 removals, 2
  * insertions) and the hunk boundaries, because those are where a naive
  * "render both sides by index" produces a row that silently shifts every
- * following line number.
- */
+ * following line number. */
 import { describe, expect, it } from 'vitest'
 import { pairSplitRows, splitRowIndexBySourceIndex } from '../chat_right_sidebar/pairSplitRows'
 import { parseUnifiedDiff } from '../chat_right_sidebar/parseUnifiedDiff'

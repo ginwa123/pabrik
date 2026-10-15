@@ -29,10 +29,8 @@ import { dirname, resolve } from 'node:path'
 
 const SRC = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
-/**
- * Geometry only. There is deliberately no --sb-fs-* here: font size is
- * not a sidebar concern, it is an app-wide one (type-scale.spec.ts).
- */
+/** Geometry only. There is deliberately no --sb-fs-* here: font size is
+ * not a sidebar concern, it is an app-wide one (type-scale.spec.ts). */
 const TOKENS: Record<string, string> = {
   '--sb-gutter': '12px',
   '--sb-row': '32px',
@@ -46,10 +44,9 @@ const MENU_FILES = [
   'components/workspace/WorkspaceSwitcher.vue',
   'components/views/ChatsList.vue',
   'components/workspace/ProjectsList.vue',
-  // Documents section (Migration 095). Added to MENU_FILES so the
-  // arbitrary-padding / font-size / type-token bans below apply to it —
-  // a new sidebar section that skips the guard is how the panel drifts
-  // back to four different left edges.
+  // Documents section (Migration 095). Added to MENU_FILES so the arbitrary-padding / font-size /
+  // type-token bans below apply to it — a new sidebar section that skips the guard is how the panel
+  // drifts back to four different left edges.
   'components/workspace/DocumentsList.vue',
   'components/workspace/WorkspaceItem.vue',
   'components/workspace/WorkspaceItemTaskRow.vue',
@@ -60,10 +57,9 @@ const ROW_FILES = [
   'components/views/ChatsList.vue',
   'components/workspace/WorkspaceItem.vue',
   'components/workspace/WorkspaceItemTaskRow.vue',
-  // Documents rows (Migration 095) are the same kind of object as a chat
-  // row: one clickable line in a sidebar list. They must resolve their
-  // height and type off the same two tokens or the panel grows a fourth
-  // row rhythm.
+  // Documents rows (Migration 095) are the same kind of object as a chat row: one clickable line in
+  // a sidebar list. They must resolve their height and type off the same two tokens or the panel
+  // grows a fourth row rhythm.
   'components/workspace/DocumentsList.vue',
 ]
 
@@ -71,13 +67,11 @@ const read = (p: string) => readFileSync(resolve(SRC, p), 'utf8')
 
 type Line = { n: number; text: string }
 
-/**
- * Lines between `sb-scope: overlay` markers are floating popovers
+/** Lines between `sb-scope: overlay` markers are floating popovers
  * (tooltips, dropdown cards), not rows in the three menus. They keep
  * their own width and type scale on purpose, so the row contract does
  * not apply to them. The marker is explicit and reviewable rather than a
- * regex guessing at what counts as a popover.
- */
+ * regex guessing at what counts as a popover. */
 function menuLines(src: string): Line[] {
   const out: Line[] = []
   let inOverlay = false
@@ -161,10 +155,9 @@ describe('sidebar spacing + type scale', () => {
   })
 
   it('has no leftover arbitrary font sizes in the menu rows', () => {
-    // Handled app-wide by type-scale.spec.ts; repeated here because the
-    // sidebar is the panel most likely to grow its own private scale
-    // back. A 9/10/14/15/16/20 in a menu row is exactly the drift this
-    // file exists to catch.
+    // Handled app-wide by type-scale.spec.ts; repeated here because the sidebar is the panel most
+    // likely to grow its own private scale back. A 9/10/14/15/16/20 in a menu row is exactly the
+    // drift this file exists to catch.
     const found = collect((line) => {
       const px = /text-\[(\d+)px\]/.exec(line)?.[1]
       return px !== undefined ? `text-[${px}px] — pick a step off the type scale` : null

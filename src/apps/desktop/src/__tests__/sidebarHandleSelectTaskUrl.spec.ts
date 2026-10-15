@@ -140,10 +140,9 @@ describe('Sidebar.handleSelectTask — APPEND URL, not REPLACE (better-url-brows
       path: '/app',
       fullPath: '/app',
     }))
-    // The current vi.hoisted() returns a stable mock; the implementation
-    // reads from a single routeRef. We reset that ref's query here.
-    // (useRouteMock.getMockImplementation() returns the closure fn that
-    // builds a fresh object each call; we want a stable one for state.)
+    // The current vi.hoisted() returns a stable mock; the implementation reads from a single
+    // routeRef. We reset that ref's query here. (useRouteMock.getMockImplementation() returns the
+    // closure fn that builds a fresh object each call; we want a stable one for state.)
     useRouteMock.mockImplementation(() => ({
       query: {},
       path: '/app',
@@ -290,15 +289,13 @@ describe('Sidebar.handleSelectTask — APPEND URL, not REPLACE (better-url-brows
       { id: WS_ID, name: 'WS', items: [baseItem] },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ] as any
-    // The URL is a deep link — no workspaceId in route.query. The
-    // new URL MUST add workspaceId from the active store state
-    // (setActiveTask auto-discovers the parent item + workspace via
+    // The URL is a deep link — no workspaceId in route.query. The new URL MUST add workspaceId from
+    // the active store state (setActiveTask auto-discovers the parent item + workspace via
     // workspacesStore.setActiveTask's parent-item lookup at
      
-    // workspaces.ts:3366). This addresses the user's report
-    // (task_1785774094183): task URLs were missing `workspaceId`
-    // and the user wanted it added so the URL bar shows the
-    // kanban / design context (share / refresh / back work).
+    // workspaces.ts:3366). This addresses the user's report (task_1785774094183): task URLs were
+    // missing `workspaceId` and the user wanted it added so the URL bar shows the kanban / design
+    // context (share / refresh / back work).
     setRouteQuery({
       view: 'workspace',
       workspaceId: WS_ID,
@@ -365,11 +362,9 @@ describe('Sidebar.handleSelectTask — APPEND URL, not REPLACE (better-url-brows
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ] as any
     store.setActiveWorkspaceItem(ITEM_ID)
-    // Simulate a URL refresh that landed the user on a task view
-    // WITHOUT workspaceId in route.query — e.g. an older URL
-    // bookmark, or a code path that stripped workspaceId. The user
-    // wants the URL to be repaired with workspaceId once they click
-    // a task.
+    // Simulate a URL refresh that landed the user on a task view WITHOUT workspaceId in route.query
+    // — e.g. an older URL bookmark, or a code path that stripped workspaceId. The user wants the
+    // URL to be repaired with workspaceId once they click a task.
     setRouteQuery({
       view: 'workspace',
       workspaceId: WS_ID,

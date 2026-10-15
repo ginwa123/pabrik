@@ -59,8 +59,6 @@ vi.mock('vue-router', async () => {
 
 // Mock the api module: keep everything from the real api module, only
 // override getChats so each test can drive the wire payload directly.
-// This pattern matches `apiKanbanTagSuggestions.spec.ts` /
-// `apiGetChats.spec.ts` and avoids the spy-reset edge cases that
 // `vi.spyOn(api, 'getChats')` hits under the project's vitest setup.
 vi.mock('../api/index', async () => {
   const actual = await vi.importActual<typeof import('../api/index')>('../api/index')

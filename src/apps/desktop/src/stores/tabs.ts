@@ -193,11 +193,9 @@ export const useTabsStore = defineStore('tabs', () => {
     }
   }
 
-  /**
-   * Re-key a tab in place. Used when the same target turns out to have a
-   * different canonical identity than the one it was created with (the item
-   * type was not known yet, or a session id was renamed).
-   */
+  /**    * Re-key a tab in place. Used when the same target turns out to have a different canonical
+   * identity than the one it was created with (the item type was not known yet, or a session id was
+   * renamed). */
   function rekeyTab(id: string, key: string, query: TabQuery): void {
     let touched = false
     tabs.value = tabs.value.map((tab) => {
@@ -210,12 +208,10 @@ export const useTabsStore = defineStore('tabs', () => {
     if (touched) persist()
   }
 
-  /**
-   * Find the tab this target already has: the canonical key first, then — only
+  /** Find the tab this target already has: the canonical key first, then — only
    * for a tab whose identity was provisional — the other reading of the same
    * URL. Without the provisional guard, two legitimately distinct tabs (an item
-   * and one of its task chats on a standalone item type) would be merged.
-   */
+   * and one of its task chats on a standalone item type) would be merged. */
   function findExisting(variants: string[]): Tab | null {
     const canonical = variants[0]
     if (canonical) {
@@ -265,10 +261,8 @@ export const useTabsStore = defineStore('tabs', () => {
     return tab
   }
 
-  /**
-   * Open without leaving the current tab (`Ctrl/Cmd+click`). The URL is
-   * deliberately untouched — the target is only remembered.
-   */
+  /** Open without leaving the current tab (`Ctrl/Cmd+click`). The URL is
+   * deliberately untouched — the target is only remembered. */
   function openInBackground(input: OpenTabInput): Tab {
     const path = input.path || '/app'
     const query = tabQueryOf(input.query)
@@ -301,11 +295,8 @@ export const useTabsStore = defineStore('tabs', () => {
     return activate(tab.id)
   }
 
-  /**
-   * Close `id` and report which tab should be activated next (the right
-   * neighbour, else the left — the browser rule). The caller decides
-   * whether to navigate; `null` means the id was unknown.
-   */
+  /**    * Close `id` and report which tab should be activated next (the right neighbour, else the left —
+   * the browser rule). The caller decides whether to navigate; `null` means the id was unknown. */
   function close(id: string): Tab | null {
     const index = tabs.value.findIndex((tab) => tab.id === id)
     if (index === -1) return null
@@ -424,21 +415,17 @@ export const useTabsStore = defineStore('tabs', () => {
     return tab
   }
 
-  /**
-   * The funnel. Returns the navigation to apply for the current URL:
-   * create a tab, focus an existing one, honour a `?tab=` that names
-   * exactly this target, or (when disabled / an overlay) leave the
-   * target alone.
-   */
+  /**    * The funnel. Returns the navigation to apply for the current URL: create a tab, focus an
+   * existing one, honour a `?tab=` that names exactly this target, or (when disabled / an overlay)
+   * leave the target alone. */
   function syncFromTarget(
     path: string,
     query: Record<string, unknown>,
     itemType?: string | null,
   ): SyncResult {
-    // Migrate pre-tab-mode kanban-settings deep links (`?tab=<section>`)
-    // to `?section=` before the tab ID logic runs — otherwise a legacy
-    // value like `?tab=memories` is mistaken for an unknown browser tab
-    // ID and rewritten to a fresh `tab_xxx`, dropping the section.
+    // Migrate pre-tab-mode kanban-settings deep links (`?tab=<section>`) to `?section=` before the
+    // tab ID logic runs — otherwise a legacy value like `?tab=memories` is mistaken for an unknown
+    // browser tab ID and rewritten to a fresh `tab_xxx`, dropping the section.
     query = migrateLegacySettingsTab(path, query)
     const plain = tabQueryOf(query)
     const urlTabId = typeof query.tab === 'string' ? query.tab : ''
@@ -491,12 +478,9 @@ export const useTabsStore = defineStore('tabs', () => {
     })
   }
 
-  /**
-   * Live tab titles. The backend already announces renames on the `session`
-   * channel (`SessionEvent { action, id, name }`), so a chat tab keeps up
-   * with the auto-rename-on-first-message cascade without polling. Guarded
-   * because the bus is not installed until App.vue mounts.
-   */
+  /**    * Live tab titles. The backend already announces renames on the `session` channel (`SessionEvent
+   * { action, id, name }`), so a chat tab keeps up with the auto-rename-on-first-message cascade
+   * without polling. Guarded because the bus is not installed until App.vue mounts. */
   let offTitleFeed: (() => void) | null = null
 
   function initTitleFeed(): void {
@@ -519,14 +503,12 @@ export const useTabsStore = defineStore('tabs', () => {
     offTitleFeed = null
   }
 
-  /**
-   * Follow a session-id change *in place*. `ChatsList` mints a synthetic
+  /** Follow a session-id change *in place*. `ChatsList` mints a synthetic
    * `session-<timestamp>` id for a brand-new chat; when the real id arrives
    * (the `update-chat-id` path), a tab still keyed on the old id is a dead
    * pointer — and the route funnel would add a second tab for the same chat.
    * Ids are stable across a rename, so the strip (and the user's muscle
-   * memory) sees one tab that simply became the real chat.
-   */
+   * memory) sees one tab that simply became the real chat. */
   function renameChatTab(oldSessionId: string, newSessionId: string): boolean {
     if (!oldSessionId || !newSessionId || oldSessionId === newSessionId) return false
     const oldKey = `chat:${oldSessionId}`
@@ -559,11 +541,9 @@ export const useTabsStore = defineStore('tabs', () => {
     if (tab) setTabTitle(tab.id, name)
   }
 
-  /**
-   * Store a title the caller resolved from live state (the workspace tree,
-   * the chats list, a rename event). Used by the strip so the persisted
-   * label is a real name rather than the generic kind fallback.
-   */
+  /**    * Store a title the caller resolved from live state (the workspace tree, the chats list, a rename
+   * event). Used by the strip so the persisted label is a real name rather than the generic kind
+   * fallback. */
   function setTabTitle(id: string, title: string): void {
     if (!id || !title) return
     let touched = false

@@ -91,9 +91,8 @@ function mountWithReactiveRoute(initialQuery: Record<string, string>, initialPat
   return { wrapper, routeState }
 }
 
-// The session refs live in AppLayout setup; <script setup> bindings are
-// proxied on wrapper.vm (same seam AppLayout.urlPersist.spec.ts uses for
-// openInCodeEditor), with refs unwrapped.
+// The session refs live in AppLayout setup; <script setup> bindings are proxied on wrapper.vm (same
+// seam AppLayout.urlPersist.spec.ts uses for openInCodeEditor), with refs unwrapped.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const openFileOf = (wrapper: any) => wrapper.vm.codeEditorFile as unknown
 

@@ -200,9 +200,8 @@ describe('WorkspaceItem — design items hide the tasks list section', () => {
   })
 
   it('collapsed DESIGN item with no pages: nothing rendered under the row', async () => {
-    // Even with tasks populated, an un-expanded design item should
-    // not render anything below the row (the tasks-section guard
-    // is `isExpanded && item.item_type !== 'design'` — when collapsed,
+    // Even with tasks populated, an un-expanded design item should not render anything below the
+    // row (the tasks-section guard is `isExpanded && item.item_type !== 'design'` — when collapsed,
     // neither section renders).
     const store = useWorkspacesStore()
     store.expandedItemIds[ITEM_ID] = false

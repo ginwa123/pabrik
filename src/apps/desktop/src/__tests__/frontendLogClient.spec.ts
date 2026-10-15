@@ -354,11 +354,9 @@ describe('frontendLogClient', () => {
     const { window } = makeFakeWindow()
     makeHandle(window)
 
-    // 60 console.error calls.
-    //   - Calls 1..50   fill the queue to 50.
-    //   - Call 51       overflows: drop 25 → 25, +1 warn → 26, +1 event → 27.
-    //   - Calls 52..60  fill queue from 27 → 36.
-    // Final queue size after 60 calls = 36 (35 console_error + 1 console_warn).
+    // 60 console.error calls. - Calls 1..50 fill the queue to 50. - Call 51 overflows: drop 25 →
+    // 25, +1 warn → 26, +1 event → 27. - Calls 52..60 fill queue from 27 → 36. Final queue size
+    // after 60 calls = 36 (35 console_error + 1 console_warn).
     for (let i = 0; i < 60; i++) {
       window.console.error('x')
     }

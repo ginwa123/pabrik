@@ -42,8 +42,6 @@ const router = createRouter({
     },
     // Kanban settings page (plan: 2026-09-02-kanban-settings-as-page).
     // Resolves to AppLayout which dispatches via the `currentView`
-    // computed (path-based regex match at AppLayout.vue). The `name`
-    // is informational — we navigate by path from
     // AppLayout.handleOpenKanbanSettings via `router.push`.
     {
       path: '/app/kanban/:itemId/settings',
@@ -99,9 +97,8 @@ const router = createRouter({
       name: 'workspace',
       component: AppLayout,
     },
-    // Global catch-all: any path the backend's SPA fallback serves
-    // index.html for but no route above matches (stale deep link,
-    // refresh at a removed URL) lands on /app instead of rendering
+    // Global catch-all: any path the backend's SPA fallback serves index.html for but no route
+    // above matches (stale deep link, refresh at a removed URL) lands on /app instead of rendering
     // an empty router-view. Must stay LAST — Vue matches in order.
     {
       path: '/:pathMatch(.*)*',
@@ -118,11 +115,9 @@ const router = createRouter({
 // auth_enabled=false) — no redirect. Every view switch stays in the
 // URL (repo rule), so refresh/Back/shared links keep working.
 //
-// The top loading bar is driven here: start on beforeEach (covers the
-// async auth check, which is the slowest part of a redirect), finish
-// on afterEach/onError. Lazily resolved inside the guard so the router
-// module never hard-depends on an installed pinia (specs import the
-// router without one).
+// The top loading bar is driven here: start on beforeEach (covers the async auth check, which is
+// the slowest part of a redirect), finish on afterEach/onError. Lazily resolved inside the guard so
+// the router module never hard-depends on an installed pinia (specs import the router without one).
 function loadingStore() {
   try {
     return useLoadingStore()

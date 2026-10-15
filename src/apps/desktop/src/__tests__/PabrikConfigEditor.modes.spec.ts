@@ -165,10 +165,9 @@ describe('PabrikConfigEditor — JSON mode', () => {
     await wrapper.find('[data-testid="config-json-textarea"]').setValue('{ oops')
     await flushPromises()
 
-    // Make the config dirty through the JSON path's Apply... which is blocked,
-    // so dirty must come from somewhere else to expose the trap: apply valid
-    // text, then break it again. The bar is up, the text is unusable, and a
-    // naive Save would report success while dropping the text.
+    // Make the config dirty through the JSON path's Apply... which is blocked, so dirty must come
+    // from somewhere else to expose the trap: apply valid text, then break it again. The bar is up,
+    // the text is unusable, and a naive Save would report success while dropping the text.
     await wrapper.find('[data-testid="config-json-textarea"]').setValue('{"active_profile":"work","tools":[]}')
     await flushPromises()
     await wrapper.find('[data-testid="config-json-apply"]').trigger('click')

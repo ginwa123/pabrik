@@ -177,10 +177,9 @@ describe('ChatView agent-error card — persistence across remounts', () => {
     // active for any useXxxStore() call.
     setActivePinia(createPinia())
 
-    // Install the bus BEFORE mounting so ChatView's `useSseBus()` in
-    // `connectSse()` finds an installed bus. Replace the global client
-    // so we never touch jsdom's EventSource — the stub satisfies the
-    // SseClient interface. We drive `llm` events via `__dispatchSseBus`.
+    // Install the bus BEFORE mounting so ChatView's `useSseBus()` in `connectSse()` finds an
+    // installed bus. Replace the global client so we never touch jsdom's EventSource — the stub
+    // satisfies the SseClient interface. We drive `llm` events via `__dispatchSseBus`.
     __resetSseBus()
     app = createApp({})
     installSseBus(app)
@@ -229,10 +228,9 @@ describe('ChatView agent-error card — persistence across remounts', () => {
     await flushPromises()
     await nextTick()
 
-    // The card must STILL be there — the Pinia store outlives the
-    // component, so the error diagnostic survives the remount. Pre-fix
-    // this assertion failed because the local `agentError` ref was
-    // GC'd between mounts.
+    // The card must STILL be there — the Pinia store outlives the component, so the error
+    // diagnostic survives the remount. Pre-fix this assertion failed because the local `agentError`
+    // ref was GC'd between mounts.
     const card = wrapper.find('[data-testid="agent-error-card"]')
     expect(card.exists()).toBe(true)
     // The headline / detail parsed from the original content must
@@ -263,10 +261,9 @@ describe('ChatView agent-error card — persistence across remounts', () => {
     await nextTick()
     expect(wrapper.find('[data-testid="agent-error-card"]').exists()).toBe(true)
 
-    // Recovery fires (non-error renderable full) → card disappears.
-    // Mirrors the ChatView.vue:2155-2163 branch: any `full` event with
-    // `finish_reason` + at least one renderable field triggers
-    // `agentErrorStore.clearForSession(sid)`.
+    // Recovery fires (non-error renderable full) → card disappears. Mirrors the
+    // ChatView.vue:2155-2163 branch: any `full` event with `finish_reason` + at least one
+    // renderable field triggers `agentErrorStore.clearForSession(sid)`.
     __dispatchSseBus('llm', {
       session_id: 's1',
       type: 'full',
@@ -341,10 +338,9 @@ describe('ChatView agent-error card — persistence across remounts', () => {
   it('C: errors are isolated per session_id across simultaneous ChatViews', async () => {
     installChatViewMocks()
 
-    // Mount TWO ChatViews in parallel. Each owns its own
-    // `processingState` map (separate `ref` instances). The Pinia
-    // store is the shared state — both mounts read from / write to the
-    // same `useAgentErrorStore()` instance keyed by session_id.
+    // Mount TWO ChatViews in parallel. Each owns its own `processingState` map (separate `ref`
+    // instances). The Pinia store is the shared state — both mounts read from / write to the same
+    // `useAgentErrorStore()` instance keyed by session_id.
     const ps1 = ref<Record<string, boolean>>({})
     const ps2 = ref<Record<string, boolean>>({})
 

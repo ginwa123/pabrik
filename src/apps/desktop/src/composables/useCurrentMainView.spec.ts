@@ -160,10 +160,9 @@ describe('useCurrentMainView', () => {
   })
 
   it('does NOT have a kind=task variant (legacy view=task URLs are auto-rewritten on mount)', () => {
-    // Sanity: the legacy shape ?view=task&task=X is not handled by
-    // this composable — AppLayout.onMounted silently rewrites those
-    // URLs to the new shape before the composable is consulted. This
-    // test pins the contract.
+    // Sanity: the legacy shape ?view=task&task=X is not handled by this composable —
+    // AppLayout.onMounted silently rewrites those URLs to the new shape before the composable is
+    // consulted. This test pins the contract.
     mockRoute({ view: 'task', task: 'task_old' })
     let v!: ReturnType<typeof useCurrentMainView>
     function setup() {

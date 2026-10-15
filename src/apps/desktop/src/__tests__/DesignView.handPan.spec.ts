@@ -167,9 +167,8 @@ describe('DesignView hand-mode pan', () => {
     expect(document.body.style.cursor).toBe('grabbing')
     expect(onMove).not.toBeNull()
 
-    // Simulate a 50-px-left, 20-px-up drag — the canvas should have
-    // scrolled +50 horizontally and +20 vertically (cursor delta is
-    // subtracted from the original scroll position, so a leftward
+    // Simulate a 50-px-left, 20-px-up drag — the canvas should have scrolled +50 horizontally and
+    // +20 vertically (cursor delta is subtracted from the original scroll position, so a leftward
     // drag with a positive delta increases scrollLeft).
     onMove!(
       new PointerEvent('pointermove', {

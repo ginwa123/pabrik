@@ -57,14 +57,12 @@ vi.mock('vue-router', async () => {
   }
 })
 
-/**
- * A ResizeObserver the test can fire by hand. The global stub in
+/** A ResizeObserver the test can fire by hand. The global stub in
  * `setup.ts` is inert (observe/disconnect only), which is right for the
  * other suites but useless here: the whole point is to prove the dock's
  * observer publishes a height. VirtualScroller also constructs one, so
  * instances are tagged by the elements they observe and the test picks
- * out the observer that watched the composer dock.
- */
+ * out the observer that watched the composer dock. */
 class ControllableRO {
   static instances: ControllableRO[] = []
   observed: Element[] = []
@@ -129,9 +127,9 @@ function installBaseMocks() {
   } as any)
 }
 
-/** Three groups: short enough that the scroller's initial window covers
- *  all of them (jsdom reports a 0-height container, so the window is
- *  `buffer` rows wide), which lets the spec see the real last row. */
+/**  * Three groups: short enough that the scroller's initial window covers all of them (jsdom reports a
+ * 0-height container, so the window is `buffer` rows wide), which lets the spec see the real last
+ * row. */
 function historyWithMessages() {
   const messages = [
     { role: 'user', content: 'first question' },

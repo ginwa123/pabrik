@@ -59,11 +59,9 @@ beforeAll(() => {
     configurable: true,
   })
 
-  // jsdom does NOT provide requestAnimationFrame — polyfill it
-  // using setTimeout(0) so the composable's `await rAF × 2` actually
-  // resolves. When vi.useFakeTimers() is active (e.g. debounce
-  // tests), rAF resolves when `vi.advanceTimersByTime(0)` runs the
-  // setTimeout queue.
+  // jsdom does NOT provide requestAnimationFrame — polyfill it using setTimeout(0) so the
+  // composable's `await rAF × 2` actually resolves. When vi.useFakeTimers() is active (e.g.
+  // debounce tests), rAF resolves when `vi.advanceTimersByTime(0)` runs the setTimeout queue.
   if (typeof globalThis.requestAnimationFrame !== 'function') {
     globalThis.requestAnimationFrame = (cb: (t: number) => void): number => {
       return setTimeout(() => cb(performance.now()), 0) as unknown as number
@@ -99,14 +97,9 @@ function mountHarness(initialKey = 'kanban-scroll-item_test'): TestHarness {
   return { wrapper, container, inner, itemIdRef }
 }
 
-/**
- * Configure jsdom to report a known scrollWidth/clientWidth on the
- * container. Without this, scrollWidth = 0 in jsdom and the
- * composable's "max <= 0" early-exit would skip the restore.
- *
- * Property descriptors must be `configurable: true` so individual
- * tests can override per-case.
- */
+/**  * Configure jsdom to report a known scrollWidth/clientWidth on the container. Without this,
+ * scrollWidth = 0 in jsdom and the composable's "max <= 0" early-exit would skip the restore.
+ * Property descriptors must be `configurable: true` so individual tests can override per-case. */
 function setScrollGeometry(
   container: HTMLDivElement,
   { scrollWidth, clientWidth }: { scrollWidth: number; clientWidth: number },
@@ -123,13 +116,9 @@ function setScrollGeometry(
   })
 }
 
-/**
- * Wait the two `requestAnimationFrame` ticks the composable awaits
- * before applying the restore, plus a microtask flush so Vue's
- * reactive effects settle. jsdom's rAF resolves via the macrotask
- * queue — awaiting `requestAnimationFrame` directly is the
- * canonical way to wait for it.
- */
+/**  * Wait the two `requestAnimationFrame` ticks the composable awaits before applying the restore,
+ * plus a microtask flush so Vue's reactive effects settle. jsdom's rAF resolves via the macrotask
+ * queue — awaiting `requestAnimationFrame` directly is the canonical way to wait for it. */
 async function waitForRestore(): Promise<void> {
   await flushPromises()
   // jsdom provides `requestAnimationFrame` (defined on window).
@@ -141,10 +130,9 @@ async function waitForRestore(): Promise<void> {
 }
 
 beforeEach(() => {
-  // Default: real timers (so jsdom's requestAnimationFrame
-  // resolves). Tests that need deterministic debounce timing
-  // call `vi.useFakeTimers()` themselves and reset with
-  // `vi.useRealTimers()` in their own teardown.
+  // Default: real timers (so jsdom's requestAnimationFrame resolves). Tests that need deterministic
+  // debounce timing call `vi.useFakeTimers()` themselves and reset with `vi.useRealTimers()` in
+  // their own teardown.
   vi.useRealTimers()
   // Clean any leftover storage between tests.
   localStorage.clear()
@@ -339,10 +327,8 @@ describe('useKanbanScrollRestore', () => {
   })
 
   it('uses a reactive storage key (per-itemId)', async () => {
-    // The composable uses the key verbatim — the caller is
-    // responsible for building the full key (e.g.
-    // `kanban-scroll-<itemId>`). Seed storage with two distinct
-    // FULL keys.
+    // The composable uses the key verbatim — the caller is responsible for building the full key
+    // (e.g. `kanban-scroll-<itemId>`). Seed storage with two distinct FULL keys.
     localStorage.setItem('kanban-scroll-item_A', '111')
     localStorage.setItem('kanban-scroll-item_B', '222')
 
@@ -402,10 +388,9 @@ describe('useKanbanScrollRestore', () => {
   })
 
   it('does not throw when containerRef is null at flush time', async () => {
-    // Defensive: the composable's `flushPending` reads
-    // `containerRef.value` — if the ref is null when unmount fires
-    // (e.g. parent template rendered an error boundary), the
-    // composable should silently skip rather than throw.
+    // Defensive: the composable's `flushPending` reads `containerRef.value` — if the ref is null
+    // when unmount fires (e.g. parent template rendered an error boundary), the composable should
+    // silently skip rather than throw.
     const itemIdRef = ref('item_test')
     const TestComp = defineComponent({
       setup() {
@@ -421,11 +406,8 @@ describe('useKanbanScrollRestore', () => {
   })
 })
 
-/**
- * The `axis: 'y'` variant — used by the kanban row-mode list, which
- * scrolls vertically (the columns row scrolls horizontally). Same
- * contract, different offset property.
- */
+/**  * The `axis: 'y'` variant — used by the kanban row-mode list, which scrolls vertically (the columns
+ * row scrolls horizontally). Same contract, different offset property. */
 describe('useKanbanScrollRestore (axis: y)', () => {
   function mountVerticalHarness(initialKey = 'kanban-row-scroll-item_test') {
     const itemIdRef = ref(initialKey)

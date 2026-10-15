@@ -46,20 +46,16 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   click: [item: WorkspaceItem]
-  /**
-   * Ctrl/Cmd+click / middle click on the row: the parent opens (or focuses) a
-   * background tab for this item instead of navigating.
-   */
+  /** Ctrl/Cmd+click / middle click on the row: the parent opens (or focuses) a
+   * background tab for this item instead of navigating. */
   openItemInBackground: [
     payload: { workspaceId: string; itemId: string; name: string; itemType?: string },
   ]
   delete: [item: WorkspaceItem]
   addTask: [item: WorkspaceItem]
-  // The three task-level events are emitted by the child
-  // <WorkspaceItemTaskRow> and re-emitted verbatim up to ProjectsList.
-  // ProjectsList's contract with Sidebar is unchanged; this is a
-  // pure pass-through (see handleSelectTask / handleDeleteTask /
-  // handleRenameTask below).
+  // The three task-level events are emitted by the child <WorkspaceItemTaskRow> and re-emitted
+  // verbatim up to ProjectsList. ProjectsList's contract with Sidebar is unchanged; this is a pure
+  // pass-through (see handleSelectTask / handleDeleteTask / handleRenameTask below).
   selectTask: [taskId: string]
   openTaskInBackground: [
     payload: { workspaceId: string; itemId: string; itemType?: string; taskId: string },
@@ -81,23 +77,20 @@ const emit = defineEmits<{
   // handleReorderPinnedTasks below.
   pinTask: [workspaceId: string, itemId: string, taskId: string, isPinned: boolean]
   reorderPinnedTasks: [workspaceId: string, itemId: string, orderedIds: string[]]
-  // NEW (design-pages-in-workspace-tree plan, 2026-08-06): design
-  // page events from <DesignPageRow> (children of expanded design
-  // items). ProjectsList forwards them to Sidebar which calls the
+  // NEW (design-pages-in-workspace-tree plan, 2026-08-06): design page events from <DesignPageRow>
+  // (children of expanded design items). ProjectsList forwards them to Sidebar which calls the
   // store actions.
   selectDesignPage: [workspaceId: string, itemId: string, pageId: string]
   deleteDesignPage: [workspaceId: string, itemId: string, pageId: string]
   addDesignPage: [workspaceId: string, itemId: string]
-  // NEW (rename-design-pages plan, 2026-08-06): ⋮ menu "Rename"
-  // item forwards the page to Sidebar which opens the
-  // RenameDesignPageModal. Pure pass-through — same pattern as
-  // selectDesignPage / deleteDesignPage.
+  // NEW (rename-design-pages plan, 2026-08-06): ⋮ menu "Rename" item forwards the page to Sidebar
+  // which opens the RenameDesignPageModal. Pure pass-through — same pattern as selectDesignPage /
+  // deleteDesignPage.
   renameDesignPage: [workspaceId: string, itemId: string, pageId: string, currentName: string]
   openDesignPageInBackground: [payload: { workspaceId: string; itemId: string; pageId: string }]
-  // Right-click "Go to settings" on the item row. Carries the
-  // item payload so Sidebar can route per item_type: kanban items
-  // open /app/kanban/:itemId/settings, agent items open their
-  // AgentView config (Tools / System Prompt / Knowledge).
+  // Right-click "Go to settings" on the item row. Carries the item payload so Sidebar can route per
+  // item_type: kanban items open /app/kanban/:itemId/settings, agent items open their AgentView
+  // config (Tools / System Prompt / Knowledge).
   goToSettings: [payload: { workspaceId: string; itemId: string; itemType?: string }]
 }>()
 
@@ -192,9 +185,8 @@ const handleChevronToggle = (event: Event) => {
   event.stopPropagation()
   workspacesStore.toggleExpandedItem(props.item.id)
   // Lazy fetch design pages on first expand. The cache lives in
-  // `workspacesStore.designPagesByItemId`; if it's already populated
-  // or a fetch is in-flight, the store action is a no-op beyond
-  // returning the cached promise — no double-fetch on rapid toggle.
+  // `workspacesStore.designPagesByItemId`; if it's already populated or a fetch is in-flight, the
+  // store action is a no-op beyond returning the cached promise — no double-fetch on rapid toggle.
   if (workspacesStore.expandedItemIds[props.item.id] === true) {
     void workspacesStore.fetchDesignPages(props.workspaceId, props.item.id)
   }
@@ -241,10 +233,9 @@ const openItemMenuSettings = () => {
   emit('goToSettings', itemMenuPayload())
 }
 
-// The row carries no inline action buttons (removed: the hover-reveal
-// `+` / `×` rendered as oversized boxes on the agent site), so the
-// right-click menu is the only path to Add task / Delete. Same payloads
-// the old row buttons emitted — the menu is the door, not a second one.
+// The row carries no inline action buttons (removed: the hover-reveal `+` / `×` rendered as
+// oversized boxes on the agent site), so the right-click menu is the only path to Add task /
+// Delete. Same payloads the old row buttons emitted — the menu is the door, not a second one.
 const openItemMenuAddTask = () => {
   closeItemMenu()
   emit('addTask', props.item)
@@ -261,10 +252,9 @@ const showItemAddTask = computed(
   () => props.item.item_type !== 'kanban' && props.item.item_type !== 'routine',
 )
 
-// Only item types with a dedicated settings surface get the menu
-// entry: kanban boards (KanbanSettingsView: Columns + Agent tabs),
-// agent items (AgentView: Tools / System Prompt / Knowledge) and
-// routine items (RoutineView: description / instruction / schedule).
+// Only item types with a dedicated settings surface get the menu entry: kanban boards
+// (KanbanSettingsView: Columns + Agent tabs), agent items (AgentView: Tools / System Prompt /
+// Knowledge) and routine items (RoutineView: description / instruction / schedule).
 const showItemSettings = computed(
   () =>
     props.item.item_type === 'kanban' ||
@@ -333,9 +323,8 @@ const handlePinTask = (workspaceId: string, itemId: string, taskId: string, isPi
   emit('pinTask', workspaceId, itemId, taskId, isPinned)
 }
 
-// NEW (pinned-tasks feature): drag-reorder of the pinned subset.
-// The drag handler captures the dragged task's id via data-task-id
-// and the drop handler splices the row to the bottom of the
+// NEW (pinned-tasks feature): drag-reorder of the pinned subset. The drag handler captures the
+// dragged task's id via data-task-id and the drop handler splices the row to the bottom of the
 // pinned region. v1: simple "move to bottom on drop" semantics.
 const handleReorderPinnedTasks = (orderedIds: string[]) => {
   emit('reorderPinnedTasks', props.workspaceId, props.item.id, orderedIds)
@@ -356,10 +345,9 @@ const handleSelectDesignPage = (page: DesignPage) => {
   // 1. Set the page as active first so the click handler in the
   // store's setActiveWorkspaceItem flow doesn't race.
   workspacesStore.setActiveDesignPage(page.id)
-  // 2. Activate the design item (which fires the click emit that
-  // ProjectsList → Sidebar route to the design view). Only do this
-  // if it's not already active — otherwise we re-emit and trigger
-  // an unnecessary watcher in AppLayout.
+  // 2. Activate the design item (which fires the click emit that ProjectsList → Sidebar route to
+  // the design view). Only do this if it's not already active — otherwise we re-emit and trigger an
+  // unnecessary watcher in AppLayout.
   if (workspacesStore.activeWorkspaceItemId !== props.item.id) {
     workspacesStore.setActiveWorkspaceItem(props.item.id)
   }
@@ -393,10 +381,9 @@ const handleDeleteDesignPage = (page: DesignPage) => {
   emit('deleteDesignPage', props.workspaceId, props.item.id, page.id)
 }
 
-// NEW (rename-design-pages plan, 2026-08-06): pass-through for the
-// "Rename" item from the <DesignPageRow> ⋮ menu. ProjectsList /
-// Sidebar are responsible for opening the modal; we just bubble
-// the payload up the chain.
+// NEW (rename-design-pages plan, 2026-08-06): pass-through for the "Rename" item from the
+// <DesignPageRow> ⋮ menu. ProjectsList / Sidebar are responsible for opening the modal; we just
+// bubble the payload up the chain.
 const handleRenameDesignPage = (page: DesignPage) => {
   emit('renameDesignPage', props.workspaceId, props.item.id, page.id, page.name)
 }
@@ -429,11 +416,9 @@ const designPages = computed<DesignPage[]>(() => {
   return workspacesStore.designPagesByItemId[props.item.id] ?? []
 })
 
-// Capture the dragged task's id from the data-task-id attribute on
-// the row's root button (added in WorkspaceItemTaskRow.vue). The
-// pinned region uses event delegation — the dragstart bubbles
-// from the row to the region, which calls closest('[data-task-id]')
-// to find the source.
+// Capture the dragged task's id from the data-task-id attribute on the row's root button (added in
+// WorkspaceItemTaskRow.vue). The pinned region uses event delegation — the dragstart bubbles from
+// the row to the region, which calls closest('[data-task-id]') to find the source.
 const handlePinnedDragStart = (event: DragEvent) => {
   const target = event.target as HTMLElement | null
   if (!target) return
@@ -479,10 +464,9 @@ const dropIndicatorFor = (taskId: string): DropIndicator => {
 }
 
 const handlePinnedDragOver = (event: DragEvent) => {
-  // preventDefault is REQUIRED to mark this element as a valid drop
-  // target. Without it the browser's dragend fires without a drop
-  // and the drop event never reaches us. We also use it to update
-  // the cursor position for the insertion-point math.
+  // preventDefault is REQUIRED to mark this element as a valid drop target. Without it the
+  // browser's dragend fires without a drop and the drop event never reaches us. We also use it to
+  // update the cursor position for the insertion-point math.
   event.preventDefault()
   const target = event.target as HTMLElement | null
   if (!target) return

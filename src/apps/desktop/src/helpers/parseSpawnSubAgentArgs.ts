@@ -1,13 +1,11 @@
 export interface SubAgentArgs {
-  /** Required. The name of the pre-configured sub-agent from
-   * LlmConfig.sub_agents. Also used as the sub-agent's label in
-   * the result XML. */
+  /**    * Required. The name of the pre-configured sub-agent from LlmConfig.sub_agents. Also used as the
+   * sub-agent's label in the result XML. */
   agent_name: string
   instruction: string
-  /** Required since 2026-09-12 (mirrors the backend parse rule in
-   * `spawn_sub_agent.zig`): explicit non-empty allowlist, never "all".
-   * Entries missing/empty/"all" tools are filtered out so the UI never
-   * renders cards for a spawn the backend will reject. */
+  /**    * Required since 2026-09-12 (mirrors the backend parse rule in `spawn_sub_agent.zig`): explicit
+   * non-empty allowlist, never "all". Entries missing/empty/"all" tools are filtered out so the UI
+   * never renders cards for a spawn the backend will reject. */
   tools: string[]
   timeout_seconds?: number
   inherited_context?: string

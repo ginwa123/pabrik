@@ -34,10 +34,9 @@ import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 import { makeLocalStorageStub } from './helpers'
 import type { Message } from '../api'
 
-// ────────────────────────────────────────────────────────────────────────
-// Stubs — we only assert WHICH renderer the dispatcher picked, so the
-// stubs are thin markers rather than the real components.
-// ────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────── Stubs — we only assert
+// WHICH renderer the dispatcher picked, so the stubs are thin markers rather than the real
+// components. ────────────────────────────────────────────────────────────────────────
 
 vi.mock('../components/tool_outputs/UsedTools.vue', () => ({
   default: {
@@ -82,9 +81,8 @@ function makeStubClient(initial: SseState): SseClient {
   return stub as SseClient
 }
 
-// ────────────────────────────────────────────────────────────────────────
-// Wire helpers (mirror the backend `wrapToolOutput` shape for
-// `used_tools` — see src/agentic_loop/tools_exec_used_tools.zig)
+// ──────────────────────────────────────────────────────────────────────── Wire helpers (mirror the
+// backend `wrapToolOutput` shape for `used_tools` — see src/agentic_loop/tools_exec_used_tools.zig)
 // ────────────────────────────────────────────────────────────────────────
 
 const usedToolsEnvelope = (tools: { name: string; description: string }[]): string =>
@@ -159,11 +157,9 @@ function installChatViewMocks(opts: { messages: Message[]; sessionId: string }) 
   vi.spyOn(api, 'getPabrikConfig').mockResolvedValue({ profiles: {} })
 }
 
-/**
- * ChatView reads `route.query` and calls `router.replace` (diff deep-linking),
- * so the mount needs a real router — without one `useRoute()` returns
- * undefined and the render throws. Catch-all route keeps the path opaque.
- */
+/**  * ChatView reads `route.query` and calls `router.replace` (diff deep-linking), so the mount needs a
+ * real router — without one `useRoute()` returns undefined and the render throws. Catch-all route
+ * keeps the path opaque. */
 async function makeRouter(): Promise<Router> {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -176,16 +172,13 @@ async function makeRouter(): Promise<Router> {
 
 let mountSeq = 0
 
-/**
- * Mount ChatView with `messages` and return the per-test container. Queries
+/** Mount ChatView with `messages` and return the per-test container. Queries
  * must be scoped to the returned container (`document.querySelector` would see
  * the previous test's tree when a mount leaves anything behind).
- *
  * Each test gets a FRESH `chatId` on purpose: ChatView primes its messages
  * from the IndexedDB-backed `chatEngineDb` cache keyed by session id, so
  * reusing one id would make test N+1 paint test N's rows instead of the
- * mocked `getChatHistory` response.
- */
+ * mocked `getChatHistory` response. */
 async function mountChatViewWithMessages(messages: Message[]) {
   const chatId = `s_used_tools_${++mountSeq}`
   installChatViewMocks({ messages, sessionId: chatId })

@@ -64,7 +64,7 @@ function makeStubClient(initial: SseState): SseClient {
 }
 
 // ─── mocks ────────────────────────────────────────────────────────────────
-//
+
 // Per-test overrides via setup() so each test can change
 // getPabrikConfig / getSession responses without re-mounting the global
 // vi.mock() harness.
@@ -105,7 +105,7 @@ function installChatViewMocks(opts: {
 }
 
 // ─── mount helper ────────────────────────────────────────────────────────
-//
+
 // Mounts ChatView with the provided sessionId. Returns the wrapper plus
 // resolved refs once the component is mounted and the initial
 // async data (getPabrikConfig + getSession) has resolved.
@@ -141,9 +141,8 @@ beforeEach(() => {
   installSseBus(vueApp)
   sseBusGlobalClient = makeStubClient('open')
   __setSseBusGlobalClient(sseBusGlobalClient)
-  // jsdom 29 dropped localStorage from its default globals. Several
-  // stores (navigation.ts, designSse.ts, kanbanSse.ts) call
-  // localStorage.getItem() on init — without this stub every test
+  // jsdom 29 dropped localStorage from its default globals. Several stores (navigation.ts,
+  // designSse.ts, kanbanSse.ts) call localStorage.getItem() on init — without this stub every test
   // crashes with "Cannot read properties of undefined (reading 'getItem')".
   Object.defineProperty(globalThis, 'localStorage', {
     value: makeLocalStorageStub(),
@@ -313,10 +312,9 @@ describe('ChatView profile chip — cascade display', () => {
     await chip.trigger('click.stop')
     await nextTick()
 
-    // With selectedProfile=null + activeProfile="300 ribu", ✓ should be on
-    // the 300 ribu row (not on "Default (top-level)" — the effective
-    // selection IS the active profile). Scope by testid so we don't match
-    // the chip's own "300 ribu" text (which has no ✓).
+    // With selectedProfile=null + activeProfile="300 ribu", ✓ should be on the 300 ribu row (not on
+    // "Default (top-level)" — the effective selection IS the active profile). Scope by testid so we
+    // don't match the chip's own "300 ribu" text (which has no ✓).
     const picker300 = wrapper.find('[data-testid="profile-picker-300 ribu"]')
     const picker900 = wrapper.find('[data-testid="profile-picker-900ribu"]')
     expect(picker300.exists()).toBe(true)

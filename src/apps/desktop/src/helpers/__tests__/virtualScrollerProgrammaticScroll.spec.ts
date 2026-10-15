@@ -30,10 +30,8 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import VirtualScroller from '../VirtualScroller.vue'
 
-/**
- * Mount a scroller with N items at the ChatView-like settings
- * (defaultItemHeight 64, buffer 30) and a fixed 800px viewport.
- */
+/** Mount a scroller with N items at the ChatView-like settings
+ * (defaultItemHeight 64, buffer 30) and a fixed 800px viewport. */
 function mountScroller(n: number) {
   const items = Array.from({ length: n }, (_, i) => ({ id: i }))
   const wrapper = mount(VirtualScroller, {
@@ -57,19 +55,15 @@ function scroll(el: HTMLElement, top: number) {
   el.dispatchEvent(new Event('scroll'))
 }
 
-/**
- * Simulate the browser firing the scroll event that follows a
- * programmatic scrollTop write: dispatch WITHOUT touching scrollTop —
- * the element's current (post-write) value is what onScroll reads.
- */
+/**  * Simulate the browser firing the scroll event that follows a programmatic scrollTop write:
+ * dispatch WITHOUT touching scrollTop — the element's current (post-write) value is what onScroll
+ * reads. */
 function fireScrollEvent(el: HTMLElement) {
   el.dispatchEvent(new Event('scroll'))
 }
 
-/**
- * Give every rendered child a fake offsetHeight: `tallPx` for items
- * above `anchorIndex`, `estimatePx` for the rest.
- */
+/** Give every rendered child a fake offsetHeight: `tallPx` for items
+ * above `anchorIndex`, `estimatePx` for the rest. */
 function mockChildHeights(el: HTMLElement, anchorIndex: number, tallPx: number, estimatePx: number) {
   const content = el.querySelector('.virtual-scroller-content')
   if (!content) throw new Error('.virtual-scroller-content not found')
@@ -152,10 +146,9 @@ describe('VirtualScroller programmatic-scroll signal', () => {
   })
 
   it('DOWNWARD compensation (content settles shorter) is also programmatic — the exact misread case', async () => {
-    // The production failure: measured heights come in BELOW the
-    // estimate, compensation moves scrollTop DOWN, and the old code
-    // read deltaTop<0 as "user scrolled up". The label must be true
-    // so ChatView can exclude it from userScrolledUp.
+    // The production failure: measured heights come in BELOW the estimate, compensation moves
+    // scrollTop DOWN, and the old code read deltaTop<0 as "user scrolled up". The label must be
+    // true so ChatView can exclude it from userScrolledUp.
     const { wrapper, el } = mountScroller(255)
     await nextTick()
 

@@ -123,11 +123,9 @@ function mountAppLayout(): VueWrapper {
         SettingsView: true,
         CodeEditor: true,
         KanbanView: true,
-        // CRITICAL: do NOT stub DesignView — we want the real
-        // <Teleport to="body"> content to render so
-        // document.querySelector can find the + Element button.
-        // The dialog itself uses Teleport so document.querySelector
-        // still works regardless of where DesignView mounts.
+        // CRITICAL: do NOT stub DesignView — we want the real <Teleport to="body"> content to
+        // render so document.querySelector can find the + Element button. The dialog itself uses
+        // Teleport so document.querySelector still works regardless of where DesignView mounts.
         Chats: true,
         DesignChatDialog: true,
       },

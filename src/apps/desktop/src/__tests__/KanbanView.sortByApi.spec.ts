@@ -301,10 +301,9 @@ describe('KanbanView — URL persistence of per-column sorts', () => {
   })
 
   it('picking a sort preserves the ?layout= row-mode param', async () => {
-    // Regression guard: the sorts watcher used to rebuild the query from
-    // scratch, which dropped every sibling param — including the layout
-    // switch, so picking a column sort silently snapped the board back to
-    // column mode.
+    // Regression guard: the sorts watcher used to rebuild the query from scratch, which dropped
+    // every sibling param — including the layout switch, so picking a column sort silently snapped
+    // the board back to column mode.
     const store = useWorkspacesStore()
     store.workspaces = [{ id: WS_ID, name: 'ws', icon: '📁', expanded: false, items: [makeItem()] }]
     vi.spyOn(store, 'fetchKanbanTasks').mockResolvedValue()
@@ -342,10 +341,9 @@ describe('KanbanView — URL restore fires per-column fetchKanbanTasks', () => {
   })
 
   it('mount with ?sorts=col_a:name:asc fires fetchKanbanTasks for col_a with sortBy=name', async () => {
-    // User lands on the kanban with a URL carrying a per-column sort.
-    // KanbanView's onMount parses the URL, calls setSortMode on each
-    // column, and fires fetchKanbanTasks for ONLY the columns mentioned
-    // in the URL.
+    // User lands on the kanban with a URL carrying a per-column sort. KanbanView's onMount parses
+    // the URL, calls setSortMode on each column, and fires fetchKanbanTasks for ONLY the columns
+    // mentioned in the URL.
     const item = makeItem({
       tasks: [makeTask('t_z', 'Zeta', 0), makeTask('t_a', 'Alpha', 1)],
     })
@@ -385,10 +383,9 @@ describe('KanbanView — URL restore fires per-column fetchKanbanTasks', () => {
     expect(lastColACall[6]).toBe('name')
     expect(lastColACall[7]).toBe('asc')
 
-    // col_b's fetch ALSO fires (regression fix 2026-08-06: other
-    // columns should NOT stay empty when only some have URL
-    // sort entries). col_b gets default sort (no sortBy/direction
-    // params — backend's natural ORDER BY).
+    // col_b's fetch ALSO fires (regression fix 2026-08-06: other columns should NOT stay empty when
+    // only some have URL sort entries). col_b gets default sort (no sortBy/direction params —
+    // backend's natural ORDER BY).
     const colBCalls = fetchOneSpy.mock.calls.filter((c) => c[2] === 'col_b')
     expect(colBCalls.length).toBeGreaterThan(0)
     const lastColBCall = colBCalls[colBCalls.length - 1]!

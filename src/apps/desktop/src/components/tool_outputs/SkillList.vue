@@ -20,12 +20,9 @@ import { runSyncResult } from '../../sync/runtime'
 
 const props = defineProps<{
   selectedSkillName: string | null
-  /**
-   * Explicit workspace binding. When set, the list reads this workspace's
-   * skills instead of the active workspace's — the workspace settings page
-   * binds the route workspace, which may differ from the active one.
-   * Absent = previous behaviour (active workspace).
-   */
+  /**    * Explicit workspace binding. When set, the list reads this workspace's skills instead of the
+   * active workspace's — the workspace settings page binds the route workspace, which may differ
+   * from the active one. Absent = previous behaviour (active workspace). */
   workspaceId?: string | null
 }>()
 

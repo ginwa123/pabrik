@@ -125,11 +125,8 @@ function mountHarness({
   }
 }
 
-/**
- * Give the container real scroll geometry. jsdom reports 0 for
- * scrollHeight / clientHeight, which would make the composable's
- * "not scrollable yet" early-exit skip every restore.
- */
+/**  * Give the container real scroll geometry. jsdom reports 0 for scrollHeight / clientHeight, which
+ * would make the composable's "not scrollable yet" early-exit skip every restore. */
 function setGeometry(
   container: HTMLDivElement,
   { scrollHeight, clientHeight }: { scrollHeight: number; clientHeight: number },
@@ -146,10 +143,8 @@ function setGeometry(
   })
 }
 
-/**
- * Wait the two requestAnimationFrame ticks the composable awaits before
- * applying a restore, plus a microtask flush so Vue's effects settle.
- */
+/** Wait the two requestAnimationFrame ticks the composable awaits before
+ * applying a restore, plus a microtask flush so Vue's effects settle. */
 async function waitForRestore(): Promise<void> {
   await flushPromises()
   await new Promise<void>((r) => requestAnimationFrame(() => r()))

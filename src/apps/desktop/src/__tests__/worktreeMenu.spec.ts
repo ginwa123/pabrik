@@ -84,9 +84,8 @@ describe('WorktreeMenu — worktree-bound (hasWorktree=true)', () => {
 
   it('clicking outside the menu emits close', async () => {
     wrapper = mountMenu(true)
-    // The component registers a document-level `click` listener in
-    // onMounted (with a 0ms setTimeout so the click that OPENED the
-    // menu doesn't immediately close it). After that tick, dispatching
+    // The component registers a document-level `click` listener in onMounted (with a 0ms setTimeout
+    // so the click that OPENED the menu doesn't immediately close it). After that tick, dispatching
     // a click on a target OUTSIDE the menu must emit `close`.
     await new Promise((r) => setTimeout(r, 5))
 

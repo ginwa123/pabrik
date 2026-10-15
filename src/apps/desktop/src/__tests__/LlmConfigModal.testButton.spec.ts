@@ -41,12 +41,9 @@ const baseValue: LlmConfigModalValue = {
   },
 }
 
-/**
- * LlmConfigModal uses <Teleport to="body">, so tests MUST use
- * `document.body.querySelector` for teleported elements (NOT
- * `wrapper.find`) and `mount({ attachTo: document.body })`.
- * (See the vue-teleport-vitest-document-queryselector skill.)
- */
+/**  * LlmConfigModal uses <Teleport to="body">, so tests MUST use `document.body.querySelector` for
+ * teleported elements (NOT `wrapper.find`) and `mount({ attachTo: document.body })`. (See the
+ * vue-teleport-vitest-document-queryselector skill.) */
 function mountModal(value: LlmConfigModalValue = baseValue): VueWrapper {
   return mount(LlmConfigModal, {
     props: {

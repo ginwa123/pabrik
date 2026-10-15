@@ -44,10 +44,9 @@ export interface LlmConfig {
    * Optional on purpose: an absent key IS the documented `"http"` default,
    * so a profile that predates this field needs no change. */
   backend?: string
-  /** Claude Code only: `CLAUDE_CONFIG_DIR`. Two profiles pointing at two
-   * directories are two different `claude login` sessions — the way
-   * per-profile identity works when there is no API key.
-   * `null` = the CLI default (`~/.claude`). */
+  /**    * Claude Code only: `CLAUDE_CONFIG_DIR`. Two profiles pointing at two directories are two
+   * different `claude login` sessions — the way per-profile identity works when there is no API
+   * key. `null` = the CLI default (`~/.claude`). */
   config_dir?: string | null
   /** Claude Code only: agentic turn ceiling (`--max-turns`).
    * `null` = the CLI's own default. */
@@ -64,9 +63,8 @@ export interface LlmConfig {
   /** Optional per-profile compaction threshold as a percentage (0-100).
    * `null` = the global default (built-in 80). */
   compaction_threshold_percent: number | null
-  /** Anthropic-only override for `thinking.budget_tokens`. Range
-   * (0, 2_000_000]. `null` = the 50%-of-max heuristic, or Anthropic's
-   * `type: "adaptive"` when `thinking === "auto"`. */
+  /**    * Anthropic-only override for `thinking.budget_tokens`. Range (0, 2_000_000]. `null` = the
+   * 50%-of-max heuristic, or Anthropic's `type: "adaptive"` when `thinking === "auto"`. */
   thinking_budget_tokens: number | null
   /** OpenAI-style reasoning effort. `null` = omit from the request body
    * (model-default reasoning). Anthropic-style URLs ignore it. */
@@ -156,10 +154,9 @@ async function runPickerSearch(): Promise<void> {
     catalogState.value = res.catalog
     pickerError.value = null
   } catch (err) {
-    // A picker that cannot reach the catalog must not break typing — the field
-    // stays free text. But the reason is KEPT and rendered below, because
-    // "this model has no matches" and "we could not search" are different
-    // answers and must not look the same.
+    // A picker that cannot reach the catalog must not break typing — the field stays free text. But
+    // the reason is KEPT and rendered below, because "this model has no matches" and "we could not
+    // search" are different answers and must not look the same.
     pickerError.value = err instanceof Error ? err.message : String(err)
     pickerResults.value = []
     pickerTotal.value = 0
@@ -276,15 +273,12 @@ function onTemperatureInput(raw: string): void {
 /** True only when the catalog actually answered for this model. */
 const hasFacts = computed<boolean>(() => resolved.value?.source === 'catalog')
 
-/**
- * Does the model support extended reasoning at all?
- *
+/** Does the model support extended reasoning at all?
  * With facts: its own `reasoning_options`. WITHOUT facts — catalog unreachable,
  * unknown model, first run — it degrades to the OLD `url_style`-based gate
  * rather than hiding a control because a request failed. The user cannot tell
  * "this model has no effort control" from "we could not ask", so we do not
- * pretend to.
- */
+ * pretend to. */
 const modelSupportsReasoning = computed<boolean>(() => {
   if (!hasFacts.value) return true
   return resolved.value?.reasoning !== 'none'

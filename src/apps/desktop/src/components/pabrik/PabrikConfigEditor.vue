@@ -68,11 +68,9 @@ const props = withDefaults(
   defineProps<{
     /** Where the config is read from and written to. */
     source?: PabrikConfigSource
-    /**
-     * Which sections this editor offers. The settings shell renders the nav,
-     * so this is the editor's ACCEPT list: a `?section=` outside it falls back
-     * to the first entry instead of rendering an empty pane.
-     */
+    /**      * Which sections this editor offers. The settings shell renders the nav, so this is the
+     * editor's ACCEPT list: a `?section=` outside it falls back to the first entry instead of
+     * rendering an empty pane. */
     sections?: readonly Tab[]
   }>(),
   {
@@ -105,11 +103,8 @@ defineExpose({
 // computed below can fall back to it when the URL has no `?section=`.
 const TAB_STORAGE_KEY = 'pabrik-settings-active-tab'
 
-/**
- * The section ids this editor accepts. Derived from the `sections` prop, so a
- * URL or a stored value pointing at a section this editor does not offer
- * falls back instead of rendering nothing.
- */
+/**  * The section ids this editor accepts. Derived from the `sections` prop, so a URL or a stored value
+ * pointing at a section this editor does not offer falls back instead of rendering nothing. */
 const TAB_IDS = computed<readonly string[]>(() => props.sections)
 // ─── Edit mode: the form, or the raw JSON ────────────────────────────────
 // Some edits are far easier to express as JSON - pasting a whole profile map
@@ -127,14 +122,11 @@ const jsonText = ref('')
 /** Has the textarea's content been folded into the in-memory config? */
 const jsonApplied = ref(false)
 
-/**
- * What is wrong with the textarea, or null when it is applicable.
- *
+/** What is wrong with the textarea, or null when it is applicable.
  * Live, not on-submit: the Apply button is disabled and the reason is on
  * screen while the user types, so an invalid paste never looks like it
  * worked. Never reformats the text - rewriting what somebody is typing is
- * the fastest way to lose an edit.
- */
+ * the fastest way to lose an edit. */
 const jsonProblem = computed<string | null>(() => {
   const text = jsonText.value.trim()
   if (text.length === 0) return 'Nothing to apply — the JSON is empty.'
@@ -154,10 +146,9 @@ const jsonProblem = computed<string | null>(() => {
 const { config, loaded, dirty, unsavedCount, saving, setConfig, save, reset } =
   usePabrikConfig(source)
 
-// ─── Tab mode ────────────────────────────────────────────────────────────
-// This one is an app preference, not part of the server config: the tab set
-// is client-side state, so it is deliberately NOT a field
-// in the config v-model.
+// ─── Tab mode ──────────────────────────────────────────────────────────── This one is an app
+// preference, not part of the server config: the tab set is client-side state, so it is
+// deliberately NOT a field in the config v-model.
 const tabsStore = useTabsStore()
 const router = useRouter()
 const route = useRoute()
@@ -214,12 +205,9 @@ const activeTab = computed<Tab>({
   },
 })
 
-/**
- * Turning tab mode off must leave no trace: the route funnel stops
- * creating/normalising tabs, and the now-meaningless `?tab=` is dropped
- * from the URL. Guarded because this component also mounts in tests
- * without a router installed.
- */
+/**  * Turning tab mode off must leave no trace: the route funnel stops creating/normalising tabs, and
+ * the now-meaningless `?tab=` is dropped from the URL. Guarded because this component also mounts
+ * in tests without a router installed. */
 function onToggleBrowserTabs(value: boolean) {
   tabsStore.setEnabled(value)
   if (value || !router || !route) return
@@ -261,15 +249,12 @@ function showJson() {
   mode.value = 'json'
 }
 
-/**
- * Leave JSON mode.
- *
+/** Leave JSON mode.
  * Refuses to leave when the textarea holds text that has NOT been applied and
  * cannot be - leaving would silently discard an edit the user is mid-way
  * through. EMPTY is not "unusable": there is nothing to lose, so leaving is
  * allowed (which is what makes a `?mode=json` deep link escapable before the
- * textarea has been seeded).
- */
+ * textarea has been seeded). */
 function showForm() {
   if (mode.value === 'json' && jsonText.value.trim().length > 0 && !applyJson()) return
   mode.value = 'form'
@@ -279,15 +264,11 @@ function onJsonInput() {
   jsonApplied.value = false
 }
 
-/**
- * Fold the textarea into the in-memory config, then re-hydrate the sections.
- *
+/** Fold the textarea into the in-memory config, then re-hydrate the sections.
  * Written straight to `config` rather than through `setConfig`: `setConfig`
  * re-snapshots, which would mark this edit as already-saved and hide the save
  * bar. The snapshot must keep describing what the SERVER last gave us.
- *
- * Returns false (leaving the config untouched) when the text is unusable.
- */
+ * Returns false (leaving the config untouched) when the text is unusable. */
 function applyJson(): boolean {
   if (jsonProblem.value !== null) return false
   config.value = JSON.parse(jsonText.value) as PabrikConfig
@@ -414,10 +395,9 @@ function syncFromConfig() {
     // next; per-profile wins over top-level.
     max_capacity_tokens: p.max_capacity_tokens ?? null,
     compaction_threshold_percent: p.compaction_threshold_percent ?? null,
-    // Model-thinking knobs (plan 2026-08-23-model-thinking).
-    // Anthropic budget + OpenAI effort. Both default to null when
-    // missing from the persisted profile, so the form can decide
-    // whether to render the row (it does for thinking !== "off").
+    // Model-thinking knobs (plan 2026-08-23-model-thinking). Anthropic budget + OpenAI effort. Both
+    // default to null when missing from the persisted profile, so the form can decide whether to
+    // render the row (it does for thinking !== "off").
     thinking_budget_tokens: p.thinking_budget_tokens ?? null,
     reasoning_effort: p.reasoning_effort ?? null,
   }))
@@ -425,10 +405,9 @@ function syncFromConfig() {
   // Plan 2026-09-04-subagents-per-profile: top-level `sub_agents` is
   // always null from the backend — intentionally NOT hydrated anywhere.
   mcpServersList.value = parseMcpServers(c.mcp_servers)
-  // Web search providers hydrate with whatever `key` the backend sent,
-  // which may be a MASK rather than the secret. It is kept verbatim so
-  // a save that does not touch the key field cannot blank the stored
-  // credential — see webSearchProviders.ts.
+  // Web search providers hydrate with whatever `key` the backend sent, which may be a MASK rather
+  // than the secret. It is kept verbatim so a save that does not touch the key field cannot blank
+  // the stored credential — see webSearchProviders.ts.
   webSearchRows.value = parseWebSearchProviders(c.web_search)
   webSearchErrors.value = {}
   // Tools checklist — `null`/absent stays null (built-in defaults);
@@ -455,10 +434,9 @@ function syncFromConfig() {
   // transition for the one-time browser auto-open.
   prevWebLaunch.value = generalSettings.value.web_launch_enabled
 
-  // Skill Evals: keep the raw block for the save, and project just the
-  // switch for the checkbox. A config with no `skill_evals` key hydrates
-  // as OFF — the same default the runtime uses, so the toggle never
-  // shows a phantom ON.
+  // Skill Evals: keep the raw block for the save, and project just the switch for the checkbox. A
+  // config with no `skill_evals` key hydrates as OFF — the same default the runtime uses, so the
+  // toggle never shows a phantom ON.
   skillEvalsRaw.value = c.skill_evals
   skillEvalsHydrated.value = c.skill_evals?.enabled ?? false
   skillEvalsSettings.value = { enabled: skillEvalsHydrated.value }
@@ -561,10 +539,9 @@ function syncToConfig() {
   const webSearch = serializeWebSearchProviders(webSearchRows.value)
   config.value = {
     ...c,
-    // Plan 2026-08-25-notify-on-error-and-retry-ms-in-settings: the
-    // three operational settings are driven by the General tab
-    // (`generalSettings`). Always write them through so toggling
-    // surfaces in the dirty pill + save bar.
+    // Plan 2026-08-25-notify-on-error-and-retry-ms-in-settings: the three operational settings are
+    // driven by the General tab (`generalSettings`). Always write them through so toggling surfaces
+    // in the dirty pill + save bar.
     notify_on_complete: generalSettings.value.notify_on_complete,
     notify_on_error: generalSettings.value.notify_on_error,
     retry_delay_ms: generalSettings.value.retry_delay_ms,
@@ -603,9 +580,8 @@ function syncToConfig() {
     // exactly as loaded, so the backend sees "no change" instead of an
     // empty map that would wipe the user's providers.
     ...(webSearch ? { web_search: webSearch } : {}),
-    // Tools checklist follows the mcp_servers guard: while nothing
-    // was chosen (`null`) the key is left exactly as loaded so the
-    // backend sees "no change"; a chosen list — including `[]` — is
+    // Tools checklist follows the mcp_servers guard: while nothing was chosen (`null`) the key is
+    // left exactly as loaded so the backend sees "no change"; a chosen list — including `[]` — is
     // written through and replaces the whole stored list.
     ...(toolsList.value !== null ? { tools: toolsList.value } : {}),
   }
@@ -622,12 +598,9 @@ function profilesToRecord(list: ProfileRow[]): Record<string, PabrikProfile> {
 
 // ─── Modal state ──────────────────────────────────────────────────────────
 type ProfileModalState = { mode: 'add' | 'edit'; value: LlmConfigModalValue } | null
-/**
- * Where a sub-agent is being added/edited. Plan
- * 2026-09-04-subagents-per-profile: per-profile only — the `scope`
- * always carries the owning profile name (the old `{ kind: 'top' }`
- * global scope is gone with the Sub-agents tab).
- */
+/**  * Where a sub-agent is being added/edited. Plan 2026-09-04-subagents-per-profile: per-profile only
+ * — the `scope` always carries the owning profile name (the old `{ kind: 'top' }` global scope is
+ * gone with the Sub-agents tab). */
 type SubAgentScope = { kind: 'profile'; profileName: string }
 type SubAgentModalState = {
   mode: 'add' | 'edit'
@@ -951,10 +924,9 @@ function handleToolsChange(list: string[]) {
   syncToConfig()
 }
 
-// ─── Web search providers ─────────────────────────────────────────────────
-// The section edits rows in place; every mutation clears the row errors,
-// because an error describes the row as it was when the save failed and
-// would otherwise outlive the edit that fixed it.
+// ─── Web search providers ───────────────────────────────────────────────── The section edits rows
+// in place; every mutation clears the row errors, because an error describes the row as it was when
+// the save failed and would otherwise outlive the edit that fixed it.
 function updateWebSearchRows(rows: WebSearchProviderRow[]) {
   webSearchRows.value = rows
   webSearchErrors.value = {}
@@ -1000,7 +972,7 @@ async function setActiveProfile(name: string) {
 // failed). The empty-string sentinel works within the existing wire
 // contract — the handler at pabrik_config_put.zig:250 already maps
 // `ap.len == 0` to "clear" exactly for this purpose.
-//
+
 // Mirrors the existing `setActiveProfile` flow so the UI feedback
 // (success / error notification) is consistent.
 async function clearActiveProfile() {
@@ -1053,10 +1025,9 @@ async function handleSave() {
     prevWebLaunch.value = generalSettings.value.web_launch_enabled
     await refreshWebStatus()
     emit('notification', 'Settings saved', 'success')
-    // Plan 2026-09-10-web-launch-toggle: auto-open the browser once on
-    // the OFF→ON transition. Fired from the Save click (a user gesture)
-    // so popup-blockers let it through; the pill's Open button remains
-    // the reliable path if it is ever blocked.
+    // Plan 2026-09-10-web-launch-toggle: auto-open the browser once on the OFF→ON transition. Fired
+    // from the Save click (a user gesture) so popup-blockers let it through; the pill's Open button
+    // remains the reliable path if it is ever blocked.
     if (autoOpen && webUrl.value) openWeb()
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -1133,13 +1104,9 @@ function confirmDeleteProfile() {
 }
 
 // ─── Loading ─────────────────────────────────────────────────────────────
-/**
- * Re-read the effective config through the source.
- *
- * The mount path's only load path. (It used to be shared with a
- * reset/copy control; that control is gone - the boot seeding IS the
- * migration, so there is nothing left to reset to or copy in.)
- */
+/**  * Re-read the effective config through the source. The mount path's only load path. (It used to be
+ * shared with a reset/copy control; that control is gone - the boot seeding IS the migration, so
+ * there is nothing left to reset to or copy in.) */
 async function reload() {
   try {
     const data = await source.load()

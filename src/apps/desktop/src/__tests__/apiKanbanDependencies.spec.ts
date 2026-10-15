@@ -1,14 +1,5 @@
 /**
- * Kanban task dependencies — API wire rules.
- *
- * Covers: `moveTask` sends `force` only when truthy;
- * `updateTaskSimple` omits `depends_on` unless the caller
- * provides it (`[]` clears); `updateKanbanColumn` forwards
- * `is_done`; `parseMoveBlockers` reads the 409 body; and
- * `normalizeTaskDependsOn` coerces the wire shape.
- *
- * Mock style mirrors `apiTasks.spec.ts` (pinia for the apiFetch
- * error-toast path, fetch mock with `text()` for error bodies).
+ * Dependency API wire rules: `force` only when truthy, `depends_on` omitted unless provided (`[]` clears), `is_done` forwarded.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'

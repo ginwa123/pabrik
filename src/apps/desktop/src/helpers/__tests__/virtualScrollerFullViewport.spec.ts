@@ -200,10 +200,9 @@ describe('VirtualScroller two-tier measurement dead-band', () => {
     await measureAtTop(el, 130)
     expect(modelTotalOf(wrapper)).toBe(2600)
 
-    // Scroll to the bottom: anchor = last index (19). Re-measure
-    // 20px taller — under the dead-band. Items 0..18 sit strictly
-    // above the anchor and must NOT move; item 19 (at the anchor)
-    // takes the exact tier.
+    // Scroll to the bottom: anchor = last index (19). Re-measure 20px taller — under the dead-band.
+    // Items 0..18 sit strictly above the anchor and must NOT move; item 19 (at the anchor) takes
+    // the exact tier.
     el.scrollTop = 1e7
     el.dispatchEvent(new Event('scroll'))
     mockAllChildren(el, 150)

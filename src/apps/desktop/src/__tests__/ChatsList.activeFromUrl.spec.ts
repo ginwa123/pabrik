@@ -43,9 +43,8 @@ import {
 } from '../helpers/sseBus'
 import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 
-// Stub vue-router — ChatsList calls useRouter() in setup. The
-// `mocks: { $router: ... }` option only patches `this.$router`, so
-// we stub the composables at module level. Same pattern as
+// Stub vue-router — ChatsList calls useRouter() in setup. The `mocks: { $router: ... }` option only
+// patches `this.$router`, so we stub the composables at module level. Same pattern as
 // sidebarHandleSelectTaskUrl.spec.ts:57-77.
 const { useRouteMock, useRouterMock } = vi.hoisted(() => ({
   useRouteMock: vi.fn(() => ({ query: {} as Record<string, string>, path: '/', fullPath: '/' })),
@@ -112,9 +111,8 @@ function mountChatsList() {
 }
 
 async function flushLoadChats() {
-  // loadChats() in onMounted is async (awaits api.getChats). The
-  // mocked api.getChats resolves on the next microtask. Wait one
-  // macrotask + two Vue ticks so the render queue flushes before we
+  // loadChats() in onMounted is async (awaits api.getChats). The mocked api.getChats resolves on
+  // the next microtask. Wait one macrotask + two Vue ticks so the render queue flushes before we
   // assert on the DOM.
   await new Promise((r) => setTimeout(r, 0))
   await nextTick()

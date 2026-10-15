@@ -193,10 +193,9 @@ async function mountChatView(
     attachTo: document.body,
     global: { provide: { processingState } },
   })
-  // Wait for the transcript to paint. The mount gate is
-  // `!isInitializing && (isLoading || messageGroups.length > 0)` on the
-  // <VirtualScroller>, and `isInitializing` only clears once the history
-  // load settles — so the scroller's presence IS the load-completed signal.
+  // Wait for the transcript to paint. The mount gate is `!isInitializing && (isLoading ||
+  // messageGroups.length > 0)` on the <VirtualScroller>, and `isInitializing` only clears once the
+  // history load settles — so the scroller's presence IS the load-completed signal.
   for (let i = 0; i < 60; i++) {
     await new Promise((r) => setTimeout(r, 40))
     await nextTick()

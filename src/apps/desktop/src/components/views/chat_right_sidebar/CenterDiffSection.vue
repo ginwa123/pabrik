@@ -4,13 +4,11 @@ import SidebarDiffView from './SidebarDiffView.vue'
 import type { DiffCommentSavePayload } from './DiffCommentBox.vue'
 import type { ParsedDiffLine } from './parseUnifiedDiff'
 
-/**
- * One lazily-mounted file section of the stacked center diff. The shell
+/** One lazily-mounted file section of the stacked center diff. The shell
  * (id anchor + content-visibility sizing) renders immediately so scroll
  * position stays stable; the heavy SidebarDiffView mounts when the
  * section nears the viewport (400px prefetch margin). A fixed-height
- * placeholder holds layout until then.
- */
+ * placeholder holds layout until then. */
 const props = defineProps<{
   sectionId: string
   path: string

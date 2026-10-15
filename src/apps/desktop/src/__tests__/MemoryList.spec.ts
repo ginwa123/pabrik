@@ -1,8 +1,6 @@
-/**
- * Tests for MemoryList.vue. Mocks the getMemories API and asserts
+/** Tests for MemoryList.vue. Mocks the getMemories API and asserts
  * rendering states (loading, empty, populated) and the selectMemory
- * emit on row click. Mirrors the SkillsPopup / SkillList test style.
- */
+ * emit on row click. Mirrors the SkillsPopup / SkillList test style. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 

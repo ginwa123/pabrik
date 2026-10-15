@@ -41,10 +41,9 @@ describe('isAutoStickActive', () => {
   })
 
   it('treats a future timestamp as still active (clock skew safety)', () => {
-    // If the timer fires slightly before Date.now() is read (rare but
-    // possible with throttled setTimeout), a negative delta is still
-    // "active" — better to over-suppress than to let a prepend fight
-    // a stick that's about to fire.
+    // If the timer fires slightly before Date.now() is read (rare but possible with throttled
+    // setTimeout), a negative delta is still "active" — better to over-suppress than to let a
+    // prepend fight a stick that's about to fire.
     const now = 1_000_000
     expect(isAutoStickActive(now + 50, now, true)).toBe(true)
   })

@@ -106,10 +106,9 @@ beforeEach(() => {
   ;(globalThis as { __sseStallDetector?: boolean }).__sseStallDetector = true
   Object.defineProperty(globalThis, 'navigator', {
     value: {
-      // `onLine: true` is the default for a connected desktop app.
-      // The sse-disconnect-diagnosis chunk surfaces `navigatorOnline`
-      // in every diagnostic log; tests that want `suspect: 'network'`
-      // override this to `false` (see the corresponding test).
+      // `onLine: true` is the default for a connected desktop app. The sse-disconnect-diagnosis
+      // chunk surfaces `navigatorOnline` in every diagnostic log; tests that want `suspect:
+      // 'network'` override this to `false` (see the corresponding test).
       onLine: true,
       connection: {
         effectiveType: '4g',
@@ -147,10 +146,9 @@ function parseLogCalls(): Array<{ msg: string; extra?: Record<string, unknown> }
     const line = String(c[0])
     const m = line.match(/\] (.+?)(?: (\{.*\})|$)/)
     if (m) {
-      // Group 1 is required by the regex pattern (the `m !== null` check
-      // already proves group 1 matched a non-empty run); TypeScript's
-      // RegExpMatchArray type still types captures as `string | undefined`,
-      // so the `!` asserts what the regex guarantees.
+      // Group 1 is required by the regex pattern (the `m !== null` check already proves group 1
+      // matched a non-empty run); TypeScript's RegExpMatchArray type still types captures as
+      // `string | undefined`, so the `!` asserts what the regex guarantees.
       const msg = m[1]!
       const json = m[2]
       try {
@@ -382,10 +380,9 @@ describe('SseClient deep v2 logger — DISCONNECT DIAGNOSIS', () => {
     const es = mock.instance()
     es.simulateOpen('{"ok":true}')
     es.emit('message', 'ping') // heartbeat
-    // 19 seconds of silence — long enough that STALL DETECTED fires
-    // (~7s) and the browser's error fires (~14s in jsdom + we
-    // simulate the error manually). Mirrors the user's reported
-    // symptom from the bug report.
+    // 19 seconds of silence — long enough that STALL DETECTED fires (~7s) and the browser's error
+    // fires (~14s in jsdom + we simulate the error manually). Mirrors the user's reported symptom
+    // from the bug report.
     vi.advanceTimersByTime(19_000)
     // Force the ES into CONNECTING (readyState=0) — what the
     // browser would do internally when its internal retry fires.
@@ -511,10 +508,9 @@ describe('SseClient deep v2 logger — DISCONNECT DIAGNOSIS', () => {
     )
     expect(closeCall).toBeDefined()
     expect(closeCall!.extra).toBeDefined()
-    // The caller field is a stack trace segment — must be a
-    // non-empty string. We don't assert the exact frame because
-    // vitest's stack format varies by Node version, but the
-    // captured stack should at least contain the sseClient module.
+    // The caller field is a stack trace segment — must be a non-empty string. We don't assert the
+    // exact frame because vitest's stack format varies by Node version, but the captured stack
+    // should at least contain the sseClient module.
     const caller = closeCall!.extra!.caller
     expect(caller).toBeDefined()
     expect(typeof caller).toBe('string')

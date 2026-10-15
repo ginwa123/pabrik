@@ -61,10 +61,9 @@ export interface DocumentDelta extends SyncDelta<DocumentRow> {
 
 export class DocumentEngineDb extends BaseSyncEngine<DocumentRow, DocumentCtx> {
   constructor(
-    // Namespace indirection (NOT a bare `listDocuments` import): the
-    // property is read at call time so `vi.spyOn(api, 'listDocuments')`
-    // — the seam every Documents spec uses — intercepts engine fetches
-    // too. Same reason as SessionEngineDb.
+    // Namespace indirection (NOT a bare `listDocuments` import): the property is read at call time
+    // so `vi.spyOn(api, 'listDocuments')` — the seam every Documents spec uses — intercepts engine
+    // fetches too. Same reason as SessionEngineDb.
     private fetchFn: typeof api.listDocuments = (...args) => api.listDocuments(...args),
     storeName = 'documents',
     store: SyncStoreShape = makeIndexedDbSyncStore(),
@@ -90,11 +89,9 @@ export class DocumentEngineDb extends BaseSyncEngine<DocumentRow, DocumentCtx> {
     return this.fetchDeltaPage(ctx)
   }
 
-  /**
-   * Full-list revalidate. `listDocuments` is unpaginated and returns the
-   * whole workspace, so `limit` and the stored cursor are both irrelevant —
-   * accepted for the base-class contract and ignored.
-   */
+  /**    * Full-list revalidate. `listDocuments` is unpaginated and returns the whole workspace, so
+   * `limit` and the stored cursor are both irrelevant — accepted for the base-class contract and
+   * ignored. */
   fetchDeltaPage(ctx: DocumentCtx): Effect.Effect<DocumentDelta, SyncRemoteError> {
     return Effect.tryPromise({
       try: () => this.fetchFn(ctx),

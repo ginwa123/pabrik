@@ -1,9 +1,6 @@
-/**
- * Unit tests for the memories API client (getMemories, getMemoryDetail,
- * createMemory, updateMemory, deleteMemory). Mocks global.fetch to
- * assert URL, method, body shape, and error handling without hitting
- * the network. Mirrors apiDeleteProfile.spec.ts style.
- */
+/**  * Unit tests for the memories API client (getMemories, getMemoryDetail, createMemory, updateMemory,
+ * deleteMemory). Mocks global.fetch to assert URL, method, body shape, and error handling without
+ * hitting the network. Mirrors apiDeleteProfile.spec.ts style. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -107,9 +104,8 @@ describe('api.memories', () => {
     })
 
     it('throws on 409 (duplicate) with the response body preserved on the ApiError', async () => {
-      // After the apiFetch migration, the body is no longer in
-      // `err.message` (which is now `HTTP 409`) — callers that want
-      // the body must read `err.body`. The toast notification also
+      // After the apiFetch migration, the body is no longer in `err.message` (which is now `HTTP
+      // 409`) — callers that want the body must read `err.body`. The toast notification also
       // surfaces the `error` field from the JSON body automatically.
       mockFetchOnce(409, { error: 'Memory already exists' })
       await expect(createMemory('dup.md', 'x')).rejects.toMatchObject({

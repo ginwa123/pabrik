@@ -24,20 +24,15 @@ const STRIP_CACHE_MAX_ENTRY_CHARS = 4 * 1024 * 1024
 const stripCache = new Map<string, string>()
 let stripCacheChars = 0
 
-/**
- * Test-only cache reset (mirrors `_resetRenderResponseCache`). Not exported
- * through the helpers barrel so production callers can't clobber the cache.
- */
+/** Test-only cache reset (mirrors `_resetRenderResponseCache`). Not exported
+ * through the helpers barrel so production callers can't clobber the cache. */
 export const _resetStripThinkingTagsCache = (): void => {
   stripCache.clear()
   stripCacheChars = 0
 }
 
-/**
- * Test-only cache introspection. `hits` is not tracked — the observable
- * contract tests assert on `entries` (a cache hit must not add an entry, so
- * a repeated call leaves the count unchanged).
- */
+/**  * Test-only cache introspection. `hits` is not tracked — the observable contract tests assert on
+ * `entries` (a cache hit must not add an entry, so a repeated call leaves the count unchanged). */
 export const _stripThinkingTagsCacheStats = (): { entries: number; chars: number } => ({
   entries: stripCache.size,
   chars: stripCacheChars,
@@ -137,13 +132,9 @@ export function isThinkingTags(content: string): boolean {
   return withoutThinking === ''
 }
 
-/**
- * Extract the inner payload(s) of `<html>...</html>` blocks.
- *
- * The chat UI renders each payload as a live sandboxed-iframe block
- * (see ChatView.vue). Multiple blocks are joined with a blank line,
- * mirroring getThinkingTags. Returns '' when no block is present.
- */
+/**  * Extract the inner payload(s) of `<html>...</html>` blocks. The chat UI renders each payload as a
+ * live sandboxed-iframe block (see ChatView.vue). Multiple blocks are joined with a blank line,
+ * mirroring getThinkingTags. Returns '' when no block is present. */
 export function getHtmlTags(content: string): string {
   if (!content) return ''
 
@@ -156,10 +147,8 @@ export function getHtmlTags(content: string): string {
     .join('\n\n')
 }
 
-/**
- * True when the content's only visible payload is `<html>` block(s)
- * (plus optional `<think>` reasoning, which is not visible content).
- */
+/** True when the content's only visible payload is `<html>` block(s)
+ * (plus optional `<think>` reasoning, which is not visible content). */
 export function isHtmlTags(content: string): boolean {
   if (!content) return false
   const trimmed = content.trim()

@@ -1,8 +1,5 @@
 /**
- * Blocked badge (kanban task dependencies feature). Covers the
- * card twin (WorkspaceItemTaskCard) and the row twin
- * (KanbanTaskRow): hidden when `is_blocked` is falsy, showing the
- * count + blocker names when true.
+ * Blocked badge on both twins (WorkspaceItemTaskCard, KanbanTaskRow): hidden when `is_blocked` is falsy, else count + names.
  */
 import { describe, expect, it, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'

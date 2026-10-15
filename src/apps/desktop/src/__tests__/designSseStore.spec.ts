@@ -36,14 +36,9 @@ import { useDesignSseStore } from '../stores/designSse'
 import { useWorkspacesStore } from '../stores/workspaces'
 import { makeLocalStorageStub } from './helpers'
 
-/**
- * Test-only stub SseClient. Tracks state-listener callbacks so tests
- * can drive the bus's `state` ShallowRef transitions to exercise
- * the `onConnected → fetchInitialDesign` watcher.
- *
- * Same shape as the kanban test's stub — the bus's SseClient vtable
- * is shared across all channel subscribers.
- */
+/**  * Test-only stub SseClient. Tracks state-listener callbacks so tests can drive the bus's `state`
+ * ShallowRef transitions to exercise the `onConnected → fetchInitialDesign` watcher. Same shape as
+ * the kanban test's stub — the bus's SseClient vtable is shared across all channel subscribers. */
 function makeStubClient(initial: SseState): SseClient {
    
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -76,10 +71,9 @@ describe('useDesignSseStore (bus-backed)', () => {
       configurable: true,
     })
 
-    // Install the bus BEFORE initDesignSse runs — designSseStore calls
-    // `useSseBus()` inside initDesignSse, which throws if the bus
-    // hasn't been installed. Replace the underlying SseClient with a
-    // stub so we never open a network EventSource in tests.
+    // Install the bus BEFORE initDesignSse runs — designSseStore calls `useSseBus()` inside
+    // initDesignSse, which throws if the bus hasn't been installed. Replace the underlying
+    // SseClient with a stub so we never open a network EventSource in tests.
     __resetSseBus()
     app = createApp({})
     installSseBus(app)
@@ -88,10 +82,9 @@ describe('useDesignSseStore (bus-backed)', () => {
   })
 
   afterEach(() => {
-    // Detach the bus listener so events don't fire into a store whose
-    // Pinia is gone — `__resetSseBus` closes the global client which
-    // also tears down internal state, but explicit closeDesignSse
-    // covers the case where a test crashed before reaching close.
+    // Detach the bus listener so events don't fire into a store whose Pinia is gone —
+    // `__resetSseBus` closes the global client which also tears down internal state, but explicit
+    // closeDesignSse covers the case where a test crashed before reaching close.
     try {
       useDesignSseStore().closeDesignSse()
     } catch {
@@ -137,11 +130,9 @@ describe('useDesignSseStore (bus-backed)', () => {
   })
 
   it('closeDesignSse clears activeWorkspaceId so a later re-init re-binds cleanly', async () => {
-    // The spec asserts that closeDesignSse nulls out the active
-    // workspace filter — this lets `initDesignSse(newId)` after
-    // close re-register with the new id (verified by dispatching an
-    // event for the new id post-close+reinit and observing the
-    // fetch fire).
+    // The spec asserts that closeDesignSse nulls out the active workspace filter — this lets
+    // `initDesignSse(newId)` after close re-register with the new id (verified by dispatching an
+    // event for the new id post-close+reinit and observing the fetch fire).
     const ws = useWorkspacesStore()
     const fetchSpy = vi.spyOn(ws, 'fetchDesignElements').mockResolvedValue()
 
@@ -188,10 +179,9 @@ describe('useDesignSseStore (bus-backed)', () => {
 // Every locally-issued geometry PATCH registers the affected
 // element_id(s) in the `recentLocalMutations` Map (workspaces.ts). The
 // SSE handler reads this Map on every incoming event and SKIPS the
-// `fetchDesignElements` GET fan-out when the event is for a locally-
-// mutated element. Combined with the batch endpoint (1 PATCH instead
-// of N per-element PATCHes per pointermove), this is the dominant
-// backend-load reduction.
+// `fetchDesignElements` GET fan-out when the event is for a locally- mutated element. Combined with
+// the batch endpoint (1 PATCH instead of N per-element PATCHes per pointermove), this is the
+// dominant backend-load reduction.
 
 describe('designSse — local-mutation dedupe', () => {
   let localStubClient: SseClient

@@ -1,10 +1,6 @@
-/**
- * extractParam — shared helper for pulling a named parameter out of a
- * tool-call `parameters` string.
- *
- * Tries XML `<tag>…</tag>` first, then JSON `{"tag": value}` fallback.
- * Returns `null` for missing / empty / unparseable input. Pure function.
- */
+/**  * extractParam — shared helper for pulling a named parameter out of a tool-call `parameters`
+ * string. Tries XML `<tag>…</tag>` first, then JSON `{"tag": value}` fallback. Returns `null` for
+ * missing / empty / unparseable input. Pure function. */
 export function extractParam(parameters: string | null | undefined, tag: string): string | null {
   if (!parameters || !tag) return null
   try {

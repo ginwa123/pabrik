@@ -8,15 +8,12 @@ import SettingsShell from '../components/settings/SettingsShell.vue'
 import { useWorkspacesStore } from '../stores/workspaces'
 import { makeLocalStorageStub } from './helpers'
 
-/**
- * SettingsShell — the one chrome for user + workspace settings.
- *
+/** SettingsShell — the one chrome for user + workspace settings.
  * User scope (`/app/settings`) is Pabrik-only: the old Skills/Memories
  * sidebar entries showed the ACTIVE workspace's rows without saying so,
  * so they moved to workspace scope, bound to the route workspace.
  * The open section rides in `?section=` (repo rule: every view switch
- * syncs the browser URL); the path itself is the scope.
- */
+ * syncs the browser URL); the path itself is the scope. */
 
 const WS_1 = { id: 'ws_1', name: 'Acme', icon: '', items: [], expanded: false }
 const WS_2 = { id: 'ws_2', name: 'Beta', icon: '', items: [], expanded: false }

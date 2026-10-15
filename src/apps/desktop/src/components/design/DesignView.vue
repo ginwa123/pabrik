@@ -153,20 +153,17 @@ const emit = defineEmits<{
 
 const workspacesStore = useWorkspacesStore()
 
-// Chunk 5: reorder dispatch. Calls the workspace store's
-// reorderDesignElements action (which is itself a stub for now —
-// the backend endpoint lands in a follow-up; the model function is
-// already implemented in design_model.zig).
+// Chunk 5: reorder dispatch. Calls the workspace store's reorderDesignElements action (which is
+// itself a stub for now — the backend endpoint lands in a follow-up; the model function is already
+// implemented in design_model.zig).
 async function dispatchReorder(
   mode: 'bring_to_front' | 'send_to_back' | 'bring_forward' | 'send_backward',
 ): Promise<void> {
   if (!props.workspaceId || !effectiveItemId.value || !activePageId.value) return
   if (selectedIds.value.size === 0) return
-  // Undo/redo plan (Chunk 5): capture the current top-to-bottom z-
-  // order BEFORE the reorder call. The composable's applyInverse
-  // for `reorder` is currently a no-op (no absolute-z-order endpoint
-  // yet); this entry at least records what the order was at
-  // gesture time.
+  // Undo/redo plan (Chunk 5): capture the current top-to-bottom z- order BEFORE the reorder call.
+  // The composable's applyInverse for `reorder` is currently a no-op (no absolute-z-order endpoint
+  // yet); this entry at least records what the order was at gesture time.
   const beforeOrder = elements.value
     .slice()
     .sort((a, b) => b.z_index - a.z_index)
@@ -249,18 +246,15 @@ const pages = computed<DesignPage[]>(() => {
   if (!effectiveItemId.value) return []
   return workspacesStore.designPagesByItemId[effectiveItemId.value] ?? []
 })
-// Single source of truth: the store's `activeDesignPageId` (set by the
-// sidebar tree, the URL restore, and this component's page handlers).
-// The computed setter routes every local assignment through the store,
-// so sidebar-driven changes are visible here without a mirror.
+// Single source of truth: the store's `activeDesignPageId` (set by the sidebar tree, the URL
+// restore, and this component's page handlers). The computed setter routes every local assignment
+// through the store, so sidebar-driven changes are visible here without a mirror.
 const activePageId = computed<string>({
   get: () => workspacesStore.activeDesignPageId,
   set: (v: string) => {
-    // Skip no-op sets: the old local-ref assignment only propagated
-    // (via its watcher) when the value actually changed. Blindly
-    // writing would wipe a preset store page (e.g. loadPages falling
-    // back to '' when the page list is empty — see
-    // AppLayout.createElement.spec.ts).
+    // Skip no-op sets: the old local-ref assignment only propagated (via its watcher) when the
+    // value actually changed. Blindly writing would wipe a preset store page (e.g. loadPages
+    // falling back to '' when the page list is empty — see AppLayout.createElement.spec.ts).
     const next = v ?? ''
     if (workspacesStore.activeDesignPageId !== next) workspacesStore.setActiveDesignPage(next)
   },
@@ -270,9 +264,8 @@ const pagesError = ref<string | null>(null)
 
 const activePage = computed(() => pages.value.find((p) => p.id === activePageId.value) ?? null)
 
-// NEW (2026-08-06, design-move-to-page plan, Chunk 8): pass-through
-// computed properties for the MoveToPageDialog. `pages` is already
-// scoped to `effectiveItemId.value`; we just need the selected
+// NEW (2026-08-06, design-move-to-page plan, Chunk 8): pass-through computed properties for the
+// MoveToPageDialog. `pages` is already scoped to `effectiveItemId.value`; we just need the selected
 // element's name (looked up from the local elements list).
 const pagesForMoveDialog = computed<DesignPage[]>(() => pages.value)
 const elementNameForMoveDialog = computed<string>(() => {
@@ -365,10 +358,7 @@ const snapGuides = ref<SnapGuide[]>([])
 // handles, selection outline, drag handler) is suppressed. State is
 // transient — no localStorage, no backend roundtrip — a "play the
 // mockup" affordance. Default false.
-//
-// Keyboard:
-//   - Cmd/Ctrl+P: toggle Preview ↔ Edit
-//   - Esc: exit Preview (return to Edit)
+// Keyboard: - Cmd/Ctrl+P: toggle Preview ↔ Edit - Esc: exit Preview (return to Edit)
 const isPreviewMode = ref<boolean>(false)
 
 const togglePreviewMode = (): void => {
@@ -610,10 +600,9 @@ const handleKeydown = (event: KeyboardEvent): void => {
     return
   }
 
-  // Space held (no Ctrl/Cmd/Alt/Shift — those are bound to other shortcuts,
-  // and Alt+Space is the window-menu shortcut on Linux/macOS). Plain Space
-  // should NOT scroll the page when the design view is mounted — that's
-  // the browser default we override here.
+  // Space held (no Ctrl/Cmd/Alt/Shift — those are bound to other shortcuts, and Alt+Space is the
+  // window-menu shortcut on Linux/macOS). Plain Space should NOT scroll the page when the design
+  // view is mounted — that's the browser default we override here.
   if (event.key === ' ' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
     if (!isSpacePressed.value) {
       isSpacePressed.value = true
@@ -654,11 +643,9 @@ const handleKeydown = (event: KeyboardEvent): void => {
     return
   }
 
-  // Chunk 4: Cmd/Ctrl+] (bring forward) and Cmd/Ctrl+Shift+]
-  // (bring to front). Both gate on selection.size >= 1. The actual
-  // reorder call lives in `workspacesStore.reorderDesignElements`,
-  // which Chunk 5 introduces — until then the shortcut fires the
-  // stub that no-ops with a warning.
+  // Chunk 4: Cmd/Ctrl+] (bring forward) and Cmd/Ctrl+Shift+] (bring to front). Both gate on
+  // selection.size >= 1. The actual reorder call lives in `workspacesStore.reorderDesignElements`,
+  // which Chunk 5 introduces — until then the shortcut fires the stub that no-ops with a warning.
   if (event.key === ']' && (event.ctrlKey || event.metaKey) && !event.altKey) {
     event.preventDefault()
     if (event.shiftKey) {
@@ -799,10 +786,9 @@ const handleKeydown = (event: KeyboardEvent): void => {
     const step = event.shiftKey ? 10 : 1
     const dx = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0
     const dy = event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0
-    // Undo/redo plan (Chunk 4): each keypress is one undo entry
-    // (Figma parity). Pre-state is captured BEFORE the PATCH loop;
-    // post-state AFTER. capturePostState is async (reads HTML body);
-    // we don't await so the next keypress queues the next capture.
+    // Undo/redo plan (Chunk 4): each keypress is one undo entry (Figma parity). Pre-state is
+    // captured BEFORE the PATCH loop; post-state AFTER. capturePostState is async (reads HTML
+    // body); we don't await so the next keypress queues the next capture.
     void history.capturePreState(Array.from(selectedIds.value))
     for (const id of selectedIds.value) {
       const el = elements.value.find((e) => e.id === id)
@@ -914,14 +900,12 @@ const handleCanvasClick = (event: MouseEvent): void => {
   // handler anyway, but we guard the canvas-background case too so
   // panning doesn't deselect during a Preview session.
   if (isPreviewMode.value) return
-  // If we just finished a pan-drag (Space + drag), swallow the
-  // click so it doesn't deselect the active element. The browser
-  // dispatches a synthetic click after pointerup; without this
-  // guard, every pan ends with selection-clear.
+  // If we just finished a pan-drag (Space + drag), swallow the click so it doesn't deselect the
+  // active element. The browser dispatches a synthetic click after pointerup; without this guard,
+  // every pan ends with selection-clear.
   if (isPanning.value) return
-  // Only clear selection when clicking the canvas itself (not an
-  // element child). The DesignElement child events fire before this
-  // and they stopPropagation on their pointerdown — so this handler
+  // Only clear selection when clicking the canvas itself (not an element child). The DesignElement
+  // child events fire before this and they stopPropagation on their pointerdown — so this handler
   // is only called for the canvas background.
   if ((event.target as HTMLElement | null)?.closest('[data-design-element]')) {
     return
@@ -935,9 +919,8 @@ const handleCanvasClick = (event: MouseEvent): void => {
 const canvasContextMenu = useDesignContextMenu()
 function handleCanvasContextMenu(event: MouseEvent): void {
   if (isPreviewMode.value) return
-  // Open with the current selection — right-click on empty canvas
-  // acts on whatever was previously selected. The LayersPanel owns
-  // its own context-menu instance for row-level right-clicks; this
+  // Open with the current selection — right-click on empty canvas acts on whatever was previously
+  // selected. The LayersPanel owns its own context-menu instance for row-level right-clicks; this
   // one is canvas-only.
   canvasContextMenu.open(event, Array.from(selectedIds.value))
 }
@@ -1058,10 +1041,9 @@ const computeNextUntitledName = (existingPages: ReadonlyArray<{ name: string }>)
       }
     }
   }
-  // Very first page: no unnumbered, no numbered → "Untitled".
-  // Everything else: take maxNumbered + 1. If only an unnumbered
-  // "Untitled" exists (maxNumbered === 0), return "Untitled 1"
-  // because we can't collide with the existing literal.
+  // Very first page: no unnumbered, no numbered → "Untitled". Everything else: take maxNumbered +
+  // 1. If only an unnumbered "Untitled" exists (maxNumbered === 0), return "Untitled 1" because we
+  // can't collide with the existing literal.
   if (!hasUnnumbered && maxNumbered === 0) return UNTITLEDBASE_NAME
   return `${UNTITLEDBASE_NAME} ${maxNumbered + 1}`
 }
@@ -1100,18 +1082,16 @@ const handleAddPage = async (): Promise<string | undefined> => {
   }
 }
 
-// In-flight guard for the + Page button. Prevents a double-click from
-// POSTing two duplicate pages back-to-back while the first request is
-// still in flight. The disabled state is exposed via the + Page
-// button's `:disabled` attribute so the user sees the lock.
+// In-flight guard for the + Page button. Prevents a double-click from POSTing two duplicate pages
+// back-to-back while the first request is still in flight. The disabled state is exposed via the +
+// Page button's `:disabled` attribute so the user sees the lock.
 const addPageInFlight = ref<boolean>(false)
 
-// Exposed via `wrapper.vm.handleSelectPage` in DesignView.pageSync.spec.ts.
-// Vue 3's `<script setup>` auto-surfaces top-level bindings but eslint
-// can't see the `vm.X` reflection path, so the rule fires. The two
-// declarations below (`_handleDeletePage`, `_handleElementSelect`) are
-// truly unused so they get the `_` prefix to silence the rule.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// Exposed via `wrapper.vm.handleSelectPage` in DesignView.pageSync.spec.ts. Vue 3's `<script
+// setup>` auto-surfaces top-level bindings but eslint can't see the `vm.X` reflection path, so the
+// rule fires. The two declarations below (`_handleDeletePage`, `_handleElementSelect`) are truly
+// unused so they get the `_` prefix to silence the rule. eslint-disable-next-line
+// @typescript-eslint/no-unused-vars
 const handleSelectPage = (pageId: string): void => {
   // Mirror to the store first so AppLayout's design handlers
   // (handleDesignUpdateElement / handleDesignDeleteElement) always
@@ -1127,12 +1107,9 @@ const handleSelectPage = (pageId: string): void => {
   emit('selectPage', pageId)
 }
 
-// Delete a design page.
-//
-// NEW (design-pages-in-workspace-tree plan, 2026-08-06): routes
-// through the store so the cache + `activeDesignPageId` fallback
-// happen in one place. The store's `deleteDesignPage` action picks
-// the next-active page (same index as the deleted one, falling
+// Delete a design page. NEW (design-pages-in-workspace-tree plan, 2026-08-06): routes through the
+// store so the cache + `activeDesignPageId` fallback happen in one place. The store's
+// `deleteDesignPage` action picks the next-active page (same index as the deleted one, falling
 
 // back to the previous; or empty if the item now has no pages).
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for diff readability.
@@ -1159,16 +1136,14 @@ const _handleDeletePage = async (pageId: string): Promise<void> => {
   }
 }
 
-// In-flight guard for the per-page × button. Prevents a double-click
-// from issuing two DELETE calls back-to-back while the first is in
-// flight (which could fire two confirm dialogs in quick succession
-// and confuse the user).
+// In-flight guard for the per-page × button. Prevents a double-click from issuing two DELETE calls
+// back-to-back while the first is in flight (which could fire two confirm dialogs in quick
+// succession and confuse the user).
 const deletePageInFlight = ref<boolean>(false)
 
-// Figma-style multi-select toggle. Plain click (additive=false)
-// replaces the selection with just this element. Shift+click
-// (additive=true) adds or removes membership without disturbing the
-// rest of the selection.
+// Figma-style multi-select toggle. Plain click (additive=false) replaces the selection with just
+// this element. Shift+click (additive=true) adds or removes membership without disturbing the rest
+// of the selection.
 const handleElementToggle = (elementId: string, additive: boolean): void => {
   if (additive) {
     const next = new Set(selectedIds.value)
@@ -1181,10 +1156,9 @@ const handleElementToggle = (elementId: string, additive: boolean): void => {
   emit('selectElement', elementId)
 }
 
-// Keep the legacy handler name around as an alias so LayersPanel's
-// `@select="_handleElementSelect"` (which emits a plain elementId with
-// no additive flag) still works — LayersPanel gets the additive flag
-// from the Shift state on the row click and emits a structured
+// Keep the legacy handler name around as an alias so LayersPanel's `@select="_handleElementSelect"`
+// (which emits a plain elementId with no additive flag) still works — LayersPanel gets the additive
+// flag from the Shift state on the row click and emits a structured
 
 // payload instead.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for diff readability.
@@ -1257,15 +1231,12 @@ const handleElementTranslate = (payload: { elementId?: string; dx: number; dy: n
   emit('translateElement', id, payload.dx, payload.dy)
 }
 
-/**
- * NEW (2026-08-06, split-move-resize plan) — handler for the
+/** NEW (2026-08-06, split-move-resize plan) — handler for the
  * `resize` event fired by DesignElement during a resize gesture.
  * The payload is the absolute target geometry after applying the
  * cursor delta.
- *
  * Routes through `useDesignHandlers.resizeElement` → POST /resize.
- * Resize never cascades (Figma convention).
- */
+ * Resize never cascades (Figma convention). */
 const handleElementResize = (patch: Partial<DesignElementApi>): void => {
   if (selectedIds.value.size !== 1) {
     designLogger.warn({
@@ -1344,10 +1315,9 @@ const handleLayerReparent = (payload: {
 const handleDesignGroupFromContextMenu = (targetIds: string[]): void => {
   if (targetIds.length < 2) return
   selectedIds.value = new Set(targetIds)
-  // Push the group entry — the parent group's id is determined by
-  // the backend; for the capture entry we record `beforeParentExisted:
-  // true` (parent row doesn't exist yet) and use a placeholder id
-  // that the composable's inverse will treat as "no-op".
+  // Push the group entry — the parent group's id is determined by the backend; for the capture
+  // entry we record `beforeParentExisted: true` (parent row doesn't exist yet) and use a
+  // placeholder id that the composable's inverse will treat as "no-op".
   void history.captureGroup('__pending__', targetIds, true)
   void designHandlers.groupSelection()
 }
@@ -1465,9 +1435,8 @@ const handleDesignMoveToPageDialogClose = (): void => {
 //
 // The fix: capture each element's position the FIRST time
 // `handleGroupDrag` fires (the drag start), then use that snapshot
-// for every subsequent PATCH in the same drag. The cursor's delta
-// is applied to the ORIGINAL position, so the PATCH is always the
-// correct absolute target — matching the single-element drag's
+// for every subsequent PATCH in the same drag. The cursor's delta is applied to the ORIGINAL
+// position, so the PATCH is always the correct absolute target — matching the single-element drag's
 // `start.x + dx` pattern in DesignElement.vue.
 let dragStartPositions: Map<string, { x: number; y: number }> | null = null
 
@@ -1597,10 +1566,9 @@ const handleGroupDrag = (delta: { dx: number; dy: number }): void => {
 // and PATCHes `firstOriginal + secondDelta` instead of
 // `secondOriginal + secondDelta` — the element lags the cursor
 // by `firstDelta` design-px on the second drag. Reset here
-// synchronously: `capturePostState` does not depend on the
-// snapshot (it reads from the store directly), so the order is
-// irrelevant to its correctness; synchronous is just safer for
-// a quick-follow-up second drag.
+// synchronously: `capturePostState` does not depend on the snapshot (it reads from the store
+// directly), so the order is irrelevant to its correctness; synchronous is just safer for a
+// quick-follow-up second drag.
 const handleDragStart = (ids: string[]): void => {
   void history.capturePreState(ids)
 }
@@ -1613,11 +1581,9 @@ const handleDragEnd = (): void => {
   dragStartPositions = null
   void history
     .capturePostState(
-      // For single-element drag, ids is implicit (just this element).
-      // For multi-element drag, ids has been captured. We pass an
-      // empty array as a safety net — capturePostState re-reads the
-      // live state from the store and diffs against the pre-state we
-      // captured above.
+      // For single-element drag, ids is implicit (just this element). For multi-element drag, ids
+      // has been captured. We pass an empty array as a safety net — capturePostState re-reads the
+      // live state from the store and diffs against the pre-state we captured above.
       Array.from(selectedIds.value),
     )
     .then(() => {
@@ -1735,9 +1701,8 @@ const zoomFit = (): void => {
   const zoomY = ch / contentH
   const fit = Math.min(zoomX, zoomY)
   setZoom(fit)
-  // Center after the scale change so the elements appear centered.
-  // The scroll math mirrors the Ctrl+wheel handler, but offset by
-  // the elements' minX/minY (the canvas div is auto-grown to wrap
+  // Center after the scale change so the elements appear centered. The scroll math mirrors the
+  // Ctrl+wheel handler, but offset by the elements' minX/minY (the canvas div is auto-grown to wrap
   // elements, so the scroll origin is the bbox top-left, not 0,0).
   requestAnimationFrame(() => {
     const scaledW = contentW * zoom.value
@@ -1762,11 +1727,10 @@ const zoomFit = (): void => {
 // compute zoom from the ratio of current finger-distance to the
 // distance at pinch-start. Mouse pointerType is intentionally ignored
 // — a single-mouse user can't physically pinch.
-//
-// Pair this with `touch-action: pan-x pan-y` on the same container
-// (set in the template below) so the browser stops doing
-// viewport-level pinch-zoom there — only the canvas scales, not the
-// sidebar / chrome.
+
+// Pair this with `touch-action: pan-x pan-y` on the same container (set in the template below) so
+// the browser stops doing viewport-level pinch-zoom there — only the canvas scales, not the sidebar
+// / chrome.
 interface PinchPointer {
   startX: number
   startY: number
@@ -1779,10 +1743,9 @@ let pinchStartDistance: number | null = null
 let pinchStartZoom: number | null = null
 
 const onPinchPointerDown = (event: PointerEvent): void => {
-  // Run the Space-pan handler first — it's a no-op when Space isn't
-  // held, and we want both gestures to coexist on the same element
-  // (chained instead of multiple @pointerdown listeners because
-  // Vue 3 templates only bind one listener per event per element).
+  // Run the Space-pan handler first — it's a no-op when Space isn't held, and we want both gestures
+  // to coexist on the same element (chained instead of multiple @pointerdown listeners because Vue
+  // 3 templates only bind one listener per event per element).
   startCanvasPan(event)
   // Mouse can't pinch (single-pointer by definition). Pen / touch only.
   if (event.pointerType === 'mouse') return
@@ -1867,9 +1830,8 @@ const handleCanvasWheel = (event: WheelEvent): void => {
   container.scrollTop = cursorY * ratio - (event.clientY - rect.top)
 }
 
-// Restore zoom on design-item change (different localStorage key).
-// Mount covers the initial item (the parent keys this component by
-// item id, so item switches remount); the prev-id guard covers
+// Restore zoom on design-item change (different localStorage key). Mount covers the initial item
+// (the parent keys this component by item id, so item switches remount); the prev-id guard covers
 // itemId prop changes on a reused instance.
 const prevZoomItemId = ref(effectiveItemId.value)
 onMounted(() => {

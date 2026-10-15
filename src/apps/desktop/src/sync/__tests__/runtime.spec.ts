@@ -1,9 +1,7 @@
-/**
- * The Vue bridge: `runSyncEffect*` is what nineteen call sites in ChatView,
+/** The Vue bridge: `runSyncEffect*` is what nineteen call sites in ChatView,
  * ChatsList and the workspaces store use to run an Effect from `<script setup>`.
  * Its whole job is to preserve the pre-Effect degradation behaviour (a failed
- * cache read never breaks a render) while keeping the typed reason reachable.
- */
+ * cache read never breaks a render) while keeping the typed reason reachable. */
 import { Cause, Effect, Exit, Layer } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
 import { SyncRemoteError, SyncStorageError, describeSyncError } from '../SyncError'

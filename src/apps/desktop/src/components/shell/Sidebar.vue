@@ -18,10 +18,9 @@ import RenameTaskModal from '../dialogs/RenameTaskModal.vue'
 import RenameDesignPageModal from '../dialogs/RenameDesignPageModal.vue'
 import AddItemDialog from '../dialogs/AddItemDialog.vue'
 import AddKanbanDialog from '../dialogs/AddKanbanDialog.vue'
-// NEW (design-mode feature): the modal that creates a design
-// workspace item (DesignView's container). Opened via the
-// "+ Add Item → Add Design" dropdown option in ProjectsList.
-// Plan: docs/superpowers/plans/2026-06-13-design-mode.md.
+// NEW (design-mode feature): the modal that creates a design workspace item (DesignView's
+// container). Opened via the "+ Add Item → Add Design" dropdown option in ProjectsList. Plan:
+// docs/superpowers/plans/2026-06-13-design-mode.md.
 import AddDesignDialog from '../design/AddDesignDialog.vue'
 import AddAgentDialog from '../dialogs/AddAgentDialog.vue'
 import AddRoutineItemDialog from '../dialogs/AddRoutineItemDialog.vue'
@@ -99,10 +98,9 @@ const isCreatingChat = ref(false)
 // workspace. Same precedence fix as DocumentsList below.
 const newChatWorkspaceId = computed(() => workspacesStore.activeWorkspace?.id ?? null)
 
-// Chat-id updates forward to ChatsList, which owns the live navItems
-// mirror (plan: 2026-09-22-revamp-ui-chats). Sidebar kept no list of
-// its own — the pre-refactor navItems/chatsLoading mirror below was
-// dead state (never rendered, never refreshed).
+// Chat-id updates forward to ChatsList, which owns the live navItems mirror (plan:
+// 2026-09-22-revamp-ui-chats). Sidebar kept no list of its own — the pre-refactor
+// navItems/chatsLoading mirror below was dead state (never rendered, never refreshed).
 const updateChatId = (oldId: string, newId: string) => {
   chatsListRef.value?.updateChatId(oldId, newId)
 }
@@ -166,11 +164,9 @@ const renameTargetTaskWorkspaceId = ref<string | null>(null)
 const renameTargetTaskItemId = ref<string | null>(null)
 const renameTargetTaskId = ref<string | null>(null)
 const renameTargetTaskName = ref('')
-// NEW (rename-design-pages plan, 2026-08-06): ⋮ menu "Rename"
-// opens the RenameDesignPageModal. Same four-ref pattern as the
-// task-rename state above — the four vars survive across modal
-// close + reopen lifecycles, since the modal's emit('rename', name)
-// only carries the name (not the ids).
+// NEW (rename-design-pages plan, 2026-08-06): ⋮ menu "Rename" opens the RenameDesignPageModal. Same
+// four-ref pattern as the task-rename state above — the four vars survive across modal close +
+// reopen lifecycles, since the modal's emit('rename', name) only carries the name (not the ids).
 const showRenameDesignPageModal = ref(false)
 const renameTargetDesignPageWorkspaceId = ref<string | null>(null)
 const renameTargetDesignPageItemId = ref<string | null>(null)
@@ -371,14 +367,12 @@ const handleDeleteConfirmClose = () => {
 }
 
 // Workspace handlers
-/**
- * Right-click "Go to settings" from a workspace item row. Opens
+/** Right-click "Go to settings" from a workspace item row. Opens
  * the item's own settings surface in a NEW browser tab (never navigates the current tab, NOT the global /app/settings page):
  * kanban items open their KanbanSettingsView (Columns + Agent tabs),
  * agent items open their AgentView config (Tools / System Prompt /
  * Knowledge), routine items open their RoutineView config
- * (description / instruction / schedule).
- */
+ * (description / instruction / schedule). */
 const handleGoToSettings = (payload: {
   workspaceId: string
   itemId: string
@@ -391,11 +385,8 @@ const handleGoToSettings = (payload: {
   openInNewTab(router, buildAppUrl({ workspaceId: payload.workspaceId, projectId: payload.itemId }))
 }
 
-/**
- * Ctrl/Cmd+click (or middle click) on a workspace item: open a real
- * browser tab and stay where the user is. The click never navigates,
- * so nothing in the render chain has to know about it.
- */
+/**  * Ctrl/Cmd+click (or middle click) on a workspace item: open a real browser tab and stay where the
+ * user is. The click never navigates, so nothing in the render chain has to know about it. */
 const handleOpenItemInBackground = (payload: {
   workspaceId: string
   itemId: string
@@ -405,12 +396,9 @@ const handleOpenItemInBackground = (payload: {
   openInNewTab(router, buildAppUrl({ workspaceId: payload.workspaceId, projectId: payload.itemId }))
 }
 
-/**
- * Right-click "Open in new tab" on a task row/card. Builds the task
- * chat URL from the row's explicit ids (NOT the active store state —
- * the row may belong to a non-active item) and opens a real browser
- * tab. Never mutates navigation state: the current tab stays put.
- */
+/**  * Right-click "Open in new tab" on a task row/card. Builds the task chat URL from the row's
+ * explicit ids (NOT the active store state — the row may belong to a non-active item) and opens a
+ * real browser tab. Never mutates navigation state: the current tab stays put. */
 const handleOpenTaskInBackground = (payload: {
   workspaceId: string
   itemId: string
@@ -497,17 +485,15 @@ const handleSelectItem = async (workspaceId: string, itemId: string) => {
         ? pathParsed.projectId
         : parseItemIdWithChat((route.query.itemId as string | undefined) ?? '').itemId
     if (existingSorts && urlItemId === itemId) {
-      // Re-navigation to the SAME kanban — preserve the user's
-      // existing sort picks so we don't clobber them with the
-      // default. The KanbanView's URL-restore on mount reads
-      // `sorts` and applies each entry to its column.
+      // Re-navigation to the SAME kanban — preserve the user's existing sort picks so we don't
+      // clobber them with the default. The KanbanView's URL-restore on mount reads `sorts` and
+      // applies each entry to its column.
       sortsParam = existingSorts
     } else {
       const columns = item.kanban_columns ?? []
       if (columns.length === 0) {
-        // Fire-and-await: the URL we emit must include the column ids,
-        // so we wait for the columns to land. fetchKanbanColumns is
-        // idempotent — safe to call even if columns are already in
+        // Fire-and-await: the URL we emit must include the column ids, so we wait for the columns
+        // to land. fetchKanbanColumns is idempotent — safe to call even if columns are already in
         // flight from elsewhere (e.g. Sidebar expansion).
         try {
           await workspacesStore.fetchKanbanColumns(workspaceId, itemId)
@@ -519,9 +505,8 @@ const handleSelectItem = async (workspaceId: string, itemId: string) => {
       }
     }
   }
-  // Carry (workspaceId, itemId) into the URL so the kanban / folder /
-  // design view survives a page reload. The URL is the source of
-  // truth on reload; the in-memory `activeWorkspaceItemId` would
+  // Carry (workspaceId, itemId) into the URL so the kanban / folder / design view survives a page
+  // reload. The URL is the source of truth on reload; the in-memory `activeWorkspaceItemId` would
   // otherwise reset to null on a refresh.
   emit('navigate', 'workspace', undefined, undefined, workspaceId, itemId, undefined, sortsParam)
 }
@@ -546,11 +531,9 @@ const handleAddItem = (workspaceId: string, itemType: string) => {
   addItemTargetWorkspaceId.value = workspaceId
   if (itemType === 'folder') showAddItemDialog.value = true
   if (itemType === 'kanban') showAddKanbanDialog.value = true
-  // NEW (design-mode feature): routes the 'design' itemType to
-  // AddDesignDialog. Mirrors the kanban routing above — both
-  // dialogs share the (workspaceId, itemType) routing pattern
-  // emitted by ProjectsList. Plan:
-  // docs/superpowers/plans/2026-06-13-design-mode.md.
+  // NEW (design-mode feature): routes the 'design' itemType to AddDesignDialog. Mirrors the kanban
+  // routing above — both dialogs share the (workspaceId, itemType) routing pattern emitted by
+  // ProjectsList. Plan: docs/superpowers/plans/2026-06-13-design-mode.md.
   if (itemType === 'design') showAddDesignDialog.value = true
   // Agent Mode (plan 2026-08-15-agent-mode, task_1786962724740_0):
   // routes the 'agent' itemType to the new AddAgentDialog.
@@ -647,18 +630,15 @@ const handleCloseAddRoutineItemDialog = () => {
   showAddRoutineItemDialog.value = false
 }
 
-/**
- * Resolve the cwd to scope a new local memory to. Uses the first
+/** Resolve the cwd to scope a new local memory to. Uses the first
  * folder-type item in the target workspace as the project root
  * (the most natural "cwd" for the workspace). Falls back to ''
  * when the workspace has no folder items — the AddMemoryDialog
- * then shows its own "no cwd" error and refuses to submit.
- */
+ * then shows its own "no cwd" error and refuses to submit. */
 const resolveCwdForMemory = (workspaceId: string): string => {
-  // workspacesStore is a Pinia store; its `workspaces` getter
-  // auto-unwraps the underlying ref (no `.value` access in the
-  // store-public surface). See src/apps/desktop/src/stores/workspaces.ts
-  // for the store definition.
+  // workspacesStore is a Pinia store; its `workspaces` getter auto-unwraps the underlying ref (no
+  // `.value` access in the store-public surface). See src/apps/desktop/src/stores/workspaces.ts for
+  // the store definition.
   const ws = workspacesStore.workspaces.find((w) => w.id === workspaceId)
   if (!ws) return ''
   // Find the first folder item (item_type === 'folder') — its `path`
@@ -671,15 +651,13 @@ const resolveCwdForMemory = (workspaceId: string): string => {
   return ''
 }
 
-/**
- * Resolve the cwd to scope a new memory TASK to. Unlike
+/** Resolve the cwd to scope a new memory TASK to. Unlike
  * `resolveCwdForMemory` (which uses the workspace's first folder),
  * this function takes the SPECIFIC item_id the user picked — the
  * memory task is attached to that item, and the .md file is
  * scoped to that item's path. Returns '' if the item can't be
  * found or has no path (in which case the AddMemoryDialog will
- * show its own "no cwd" error and refuse to submit).
- */
+ * show its own "no cwd" error and refuse to submit). */
 const resolveCwdForItem = (itemId: string): string => {
   const item = workspacesStore.allWorkspaceItems.find((i) => i.id === itemId)
   if (!item) return ''
@@ -801,11 +779,9 @@ const handleCloseTaskRenameModal = () => {
 // the ids need to survive across the modal's close + reopen cycle.
 //
 // On confirm, calls `workspacesStore.renameDesignPage(...)`. The
-// store handles the optimistic update + rollback + PATCH
-// round-trip; Sidebar's only job is opening the modal + dispatching
-// the action. Failure surfaces as a toast via the store's catch
-// (renamed page = re-throws so the modal close awaits, then the
-// caller catches + notifies).
+// store handles the optimistic update + rollback + PATCH round-trip; Sidebar's only job is opening
+// the modal + dispatching the action. Failure surfaces as a toast via the store's catch (renamed
+// page = re-throws so the modal close awaits, then the caller catches + notifies).
 const handleRenameDesignPage = (
   workspaceId: string,
   itemId: string,
@@ -871,10 +847,9 @@ const createAndOpenStandardChat = async (workspaceId: string, itemId: string) =>
     if (workspacesStore.activeWorkspaceItemId !== itemId) {
       workspacesStore.setActiveWorkspaceItem(itemId)
     }
-    // Build the URL from the passed ids, not stale store state. The
-    // store values are correct after setActiveTask in the happy path,
-    // but the passed ids are the source of truth for which item the
-    // + button was clicked on.
+    // Build the URL from the passed ids, not stale store state. The store values are correct after
+    // setActiveTask in the happy path, but the passed ids are the source of truth for which item
+    // the + button was clicked on.
     const parentItem = workspacesStore.workspaces
       .flatMap((ws) => ws.items)
       .find((it) => it.id === itemId)
@@ -902,10 +877,9 @@ const createAndOpenStandardChat = async (workspaceId: string, itemId: string) =>
 // the button is instant.
 //
 // Everything past resolving the default is delegated to
-// createAndOpenStandardChat, unchanged: the race guard, the store flags,
-// and the router.replace that makes the new chat's URL deep-linkable and
-// Back/Forward-correct. Reimplementing any of that here is how two
-// subtly-different "new chat" paths get born.
+// createAndOpenStandardChat, unchanged: the race guard, the store flags, and the router.replace
+// that makes the new chat's URL deep-linkable and Back/Forward-correct. Reimplementing any of that
+// here is how two subtly-different "new chat" paths get born.
 const handleNewChat = async () => {
   const workspaceId = newChatWorkspaceId.value
   // No active workspace means no chat is possible. The button is disabled
@@ -984,10 +958,9 @@ const handleAddTaskPick = async (taskType: 'standard' | 'memory') => {
     return
   }
 
-  // 'memory' (2026-06-20): open AddMemoryDialog in `mode='task'`
-  // (it won't call the API itself; the create callback here
-  // calls addTask with taskType='memory' which triggers the
-  // backend's file-write + task-insert in one POST).
+  // 'memory' (2026-06-20): open AddMemoryDialog in `mode='task'` (it won't call the API itself; the
+  // create callback here calls addTask with taskType='memory' which triggers the backend's
+  // file-write + task-insert in one POST).
   addMemoryTaskWorkspaceId.value = workspaceId
   addMemoryTaskItemId.value = itemId
   showAddMemoryTaskDialog.value = true
@@ -1022,9 +995,8 @@ const handleCreateMemoryTask = async (name: string, content: string) => {
   showAddMemoryTaskDialog.value = false
   addMemoryTaskWorkspaceId.value = null
   addMemoryTaskItemId.value = null
-  // Defensive: close the picker too. AddTaskPickerDialog already
-  // self-closes on pick, but the create callback is the last word
-  // on dialog state — see handleAddTaskCreated for the same
+  // Defensive: close the picker too. AddTaskPickerDialog already self-closes on pick, but the
+  // create callback is the last word on dialog state — see handleAddTaskCreated for the same
   // rationale applied to the standard path.
   handleCloseAddTaskPicker()
 }
@@ -1035,10 +1007,9 @@ const handleCloseAddMemoryTaskDialog = () => {
   addMemoryTaskItemId.value = null
 }
 
-// The single owner of the task-delete confirmation. Every delete path
-// (kanban card context menu, kanban row button, sidebar task row)
-// arrives here, so naming the task is what tells the user which card
-// they are about to destroy — the menu they just used to pick it.
+// The single owner of the task-delete confirmation. Every delete path (kanban card context menu,
+// kanban row button, sidebar task row) arrives here, so naming the task is what tells the user
+// which card they are about to destroy — the menu they just used to pick it.
 const handleDeleteTask = (workspaceId: string, itemId: string, taskId: string) => {
   const item = workspacesStore.workspaces
     .find((w) => w.id === workspaceId)
@@ -1264,10 +1235,9 @@ const handleAddDesignPage = async (workspaceId: string, itemId: string) => {
   try {
     const created = await workspacesStore.addDesignPage(workspaceId, itemId, name)
     if (created) {
-      // The store's `addDesignPage` action already set the new page
-      // as active (matches pre-fix DesignView handleAddPage). We
-      // only need to activate the design item so AppLayout routes
-      // to DesignView.
+      // The store's `addDesignPage` action already set the new page as active (matches pre-fix
+      // DesignView handleAddPage). We only need to activate the design item so AppLayout routes to
+      // DesignView.
       if (workspacesStore.activeWorkspaceItemId !== itemId) {
         workspacesStore.setActiveWorkspaceItem(itemId)
       }
@@ -1278,9 +1248,8 @@ const handleAddDesignPage = async (workspaceId: string, itemId: string) => {
   }
 }
 
-// Compute the next untitled name (mirrors DesignView's pre-fix
-// `computeNextUntitledName`). Copied here to keep the sidebar logic
-// independent of DesignView — the function is 20 lines and
+// Compute the next untitled name (mirrors DesignView's pre-fix `computeNextUntitledName`). Copied
+// here to keep the sidebar logic independent of DesignView — the function is 20 lines and
 // Sidebar/DesignView don't share a common parent module.
 const UNTITLED_BASE = 'Untitled'
 const UNTITLED_PATTERN = /^Untitled (\d+)$/
@@ -1316,10 +1285,9 @@ const handleReorderPinnedTasks = (workspaceId: string, itemId: string, orderedId
 // owns the user-visible side effects (route to chat).
 //
 // NOTE: per-task routine handlers (handleRunRoutine,
-// handleEditRoutine + EditRoutineDialog plumbing) were deleted with
-// per-task routines (Migration 084, plan
-// 2026-09-10-workspace-items-routines). Workspace-level routines
-// fire via RoutineView → workspacesStore.runRoutineItem.
+// handleEditRoutine + EditRoutineDialog plumbing) were deleted with per-task routines (Migration
+// 084, plan 2026-09-10-workspace-items-routines). Workspace-level routines fire via RoutineView →
+// workspacesStore.runRoutineItem.
 
 // ─── Kanban handlers ────────────────────────────────────────────────────────
 //
@@ -1337,13 +1305,9 @@ const handleReorderPinnedTasks = (workspaceId: string, itemId: string, orderedId
 //   - handleAddKanbanTask    (replaced by AppLayout's call to
 //                             sidebarRef.openTaskPicker)
 //   - handleMoveKanbanTask   (moved to AppLayout's
-//                             handleKanbanMoveTask)
-//   - handleAddKanbanColumn  (moved to AppLayout's
-//                             handleKanbanAddColumn)
-//   - handleRenameKanbanColumn (moved to AppLayout's
-//                               handleKanbanRenameColumn)
-//   - handleDeleteKanbanColumn (moved to AppLayout's
-//                               handleKanbanDeleteColumn)
+// handleKanbanMoveTask) - handleAddKanbanColumn (moved to AppLayout's handleKanbanAddColumn) -
+// handleRenameKanbanColumn (moved to AppLayout's handleKanbanRenameColumn) -
+// handleDeleteKanbanColumn (moved to AppLayout's handleKanbanDeleteColumn)
 
 // Expose the task event handlers for AppLayout to call when the
 // kanban board (now mounted in the main content area, not the

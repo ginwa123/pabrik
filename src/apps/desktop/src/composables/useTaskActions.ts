@@ -37,21 +37,17 @@ export interface TaskComponentProps {
   task: Task
   workspaceId: string
   itemId: string
-  /**
-   * Where to render the 2px yellow drop indicator on this row/card.
+  /** Where to render the 2px yellow drop indicator on this row/card.
    * Set by the parent <WorkspaceItem> while the user is dragging
    * another pinned row over this one — 'above' draws the line on the
    * top edge (insert-before), 'below' on the bottom edge (insert-after),
-   * null means no indicator.
-   */
+   * null means no indicator. */
   dropIndicator?: 'above' | 'below' | null
-  /**
-   * Absolute path used as the root for `@`-trigger file pickers in
+  /** Absolute path used as the root for `@`-trigger file pickers in
    * descendant editors / markdown renderers. Optional — task-list
    * callers in <WorkspaceItem> don't pass it (no kanban context). The
    * kanban column passes it through so `@/path` references in the
-   * card's description resolve against the kanban's filesystem path.
-   */
+   * card's description resolve against the kanban's filesystem path. */
   cwd?: string
 }
 
@@ -106,10 +102,9 @@ export function useTaskActions(
   )
   void processingState
 
-  // Compute the box-shadow for the row/card's drop indicator. Uses
-  // box-shadow (not border) so the visual cue doesn't shift the row's
-  // height between drag/no-drag states. 'above' -> 2px line on the top
-  // edge, 'below' -> 2px line on the bottom edge, null -> none.
+  // Compute the box-shadow for the row/card's drop indicator. Uses box-shadow (not border) so the
+  // visual cue doesn't shift the row's height between drag/no-drag states. 'above' -> 2px line on
+  // the top edge, 'below' -> 2px line on the bottom edge, null -> none.
   const dropIndicatorBoxShadow = computed<string>(() => {
     if (props.dropIndicator === 'above') return 'inset 0 2px 0 0 #facc15' // yellow-400
     if (props.dropIndicator === 'below') return 'inset 0 -2px 0 0 #facc15'
@@ -140,10 +135,9 @@ export function useTaskActions(
     // would call selectTask on the same task). Same rationale as the
     // other action handlers above.
     event.stopPropagation()
-    // Flip the local optimistic state — the store action will echo
-    // the same flip, so the parent's `task.is_pinned` will be
-    // updated to match. If the API call fails, the store rolls back
-    // and our local state is overwritten on the next render.
+    // Flip the local optimistic state — the store action will echo the same flip, so the parent's
+    // `task.is_pinned` will be updated to match. If the API call fails, the store rolls back and
+    // our local state is overwritten on the next render.
     emit('pinTask', props.workspaceId, props.itemId, props.task.id, !props.task.is_pinned)
   }
 

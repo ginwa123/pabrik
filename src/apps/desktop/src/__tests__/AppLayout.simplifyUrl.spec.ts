@@ -1,9 +1,9 @@
 // AppLayout — URL restoration under the simplify-url-browser
 // scheme (?view=workspace&itemId=Y/chat/task_W).
-//
+
 // Mounts AppLayout with various URL shapes and asserts the
 // resulting store state + chat dialog visibility.
-//
+
 // Spec: docs/superpowers/specs/2026-08-15-simplify-url-browser-design.md
 // Plan: docs/superpowers/plans/2026-08-15-simplify-url-browser.md
 
@@ -230,10 +230,9 @@ describe('AppLayout — simplify-url-browser wire shape', () => {
   })
 
   it('legacy URL without workspaceId does NOT rewrite (boots normally)', async () => {
-    // Edge case: an old bookmark with no workspaceId in the URL.
-    // The sync rewrite needs workspaceId + itemId to build the path,
-    // so it returns null and boot continues normally (no replace).
-    // The chat task id is still restored into the store.
+    // Edge case: an old bookmark with no workspaceId in the URL. The sync rewrite needs workspaceId
+    // + itemId to build the path, so it returns null and boot continues normally (no replace). The
+    // chat task id is still restored into the store.
     const replaceMock = vi.fn()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     useRouterMock.mockReturnValue({ replace: replaceMock, push: vi.fn(), back: vi.fn() } as any)
@@ -262,10 +261,9 @@ describe('AppLayout — simplify-url-browser wire shape', () => {
 
   it('mounting with /chat/<taskId> on a design item sets activeDesignChatTaskId via onMounted branch', async () => {
      
-    // Design items have empty tasks arrays post-init, so the chat
-    // task is restored via the onMounted `setActiveTask` call (not
-    // via parent-discovery in setActiveTask). Verify the URL bar
-    // shape is preserved across mount.
+    // Design items have empty tasks arrays post-init, so the chat task is restored via the
+    // onMounted `setActiveTask` call (not via parent-discovery in setActiveTask). Verify the URL
+    // bar shape is preserved across mount.
     const wrapper = mountApp(
       [makeDesignItem()],
       {},

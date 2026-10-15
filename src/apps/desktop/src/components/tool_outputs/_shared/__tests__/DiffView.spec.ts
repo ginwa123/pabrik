@@ -259,10 +259,9 @@ describe('DiffView', () => {
   // ─────────────────────────────────────────────────────────────────────
 
   it('split view: changed row has bg color on itself, NO inline highlights', () => {
-    // User feedback: the previous version mixed row bg + per-word
-    // strikethrough + per-word highlights on the same line, which was
-    // unreadable. The new design is row bg on the row element + plain
-    // text — no [data-bg] child, no inline highlights.
+    // User feedback: the previous version mixed row bg + per-word strikethrough + per-word
+    // highlights on the same line, which was unreadable. The new design is row bg on the row
+    // element + plain text — no [data-bg] child, no inline highlights.
     const wrapper = mount(DiffView, {
       props: {
         before: 'hello world',
@@ -272,10 +271,9 @@ describe('DiffView', () => {
     const beforeRows = wrapper.findAll('[data-side="before"][data-row]')
     expect(beforeRows.length).toBeGreaterThan(0)
     const firstBeforeRow = beforeRows[0]!
-    // The bg is on the row's own inline style (not on a [data-bg] child).
-    // We assert the row has the bg-color and that NO [data-bg] child
-    // element exists — locks in the redesigned layout so a future
-    // revert to the old per-row [data-bg] layer is caught.
+    // The bg is on the row's own inline style (not on a [data-bg] child). We assert the row has the
+    // bg-color and that NO [data-bg] child element exists — locks in the redesigned layout so a
+    // future revert to the old per-row [data-bg] layer is caught.
     expect(firstBeforeRow.attributes('style') ?? '').toMatch(/background-color/)
     expect(firstBeforeRow.find('[data-bg]').exists()).toBe(false)
     // Plain text — no strikethrough anywhere in the row.
@@ -334,11 +332,9 @@ describe('DiffView', () => {
   })
 
   it('split view: pane uses overflow-x-auto (long lines trigger horizontal scroll)', () => {
-    // The PANE (grandparent of the row, parent of the shared wrapper)
-    // uses `overflow-x: auto` so long content triggers a horizontal
-    // scrollbar. Combined with the shared-wrapper sizing, the bg
-    // stays anchored to the visible pane while the content scrolls
-    // under it.
+    // The PANE (grandparent of the row, parent of the shared wrapper) uses `overflow-x: auto` so
+    // long content triggers a horizontal scrollbar. Combined with the shared-wrapper sizing, the bg
+    // stays anchored to the visible pane while the content scrolls under it.
     const wrapper = mount(DiffView, {
       props: {
         before: 'a\nb',
@@ -433,10 +429,9 @@ describe('DiffView', () => {
   })
 
   it('states its own text colour on every pane, so plain tokens are readable', () => {
-    // Measured in a real browser: with the row tint gone, `.tok-plain`
-    // (color: inherit) resolved to the initial value — BLACK on the dark
-    // card. The pane must carry the base colour itself, not inherit blindly
-    // from whatever hosts the diff.
+    // Measured in a real browser: with the row tint gone, `.tok-plain` (color: inherit) resolved to
+    // the initial value — BLACK on the dark card. The pane must carry the base colour itself, not
+    // inherit blindly from whatever hosts the diff.
     const wrapper = mount(DiffView, {
       props: { before: 'const a = 1', after: 'const b = 2', filePath: 'demo.ts' },
     })

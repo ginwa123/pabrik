@@ -1,8 +1,6 @@
-/**
- * FolderExplorer git signs — badges, branch header, folder counts, filter,
+/** FolderExplorer git signs — badges, branch header, folder counts, filter,
  * footer summary. listFolder + getGitChanges are mocked; the spec pins the
- * join between the two (absolute explorer paths vs repo-relative git paths).
- */
+ * join between the two (absolute explorer paths vs repo-relative git paths). */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import FolderExplorer from './FolderExplorer.vue'

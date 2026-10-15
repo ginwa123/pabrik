@@ -41,13 +41,9 @@ const ESC = 0x1b
 /** Bell — the legacy terminator for OSC / DCS payloads. */
 const BEL = 0x07
 
-/**
- * Strip ANSI/ECMA-48 escape sequences from `s`.
- *
- * Pure and total: every input returns a string, no escape is ever
- * re-emitted, and a malformed sequence that runs to the end of the
- * buffer is dropped rather than leaked as a fragment.
- */
+/**  * Strip ANSI/ECMA-48 escape sequences from `s`. Pure and total: every input returns a string, no
+ * escape is ever re-emitted, and a malformed sequence that runs to the end of the buffer is dropped
+ * rather than leaked as a fragment. */
 export function stripAnsiEscapes(s: string): string {
   if (!s) return s
   // Fast path — the overwhelming majority of captured output has no
@@ -73,9 +69,8 @@ export function stripAnsiEscapes(s: string): string {
     // by the `i >= n` guard above, so this can never be NaN.
     const nextCode = s.charCodeAt(i)
     switch (true) {
-      // CSI: ESC '[' params/intermediates, ended by one byte in
-      // 0x40..0x7E. Parameter bytes (digits, ';', '?' and the
-      // private-mode markers) and intermediates (0x20..0x2F) all sit
+      // CSI: ESC '[' params/intermediates, ended by one byte in 0x40..0x7E. Parameter bytes
+      // (digits, ';', '?' and the private-mode markers) and intermediates (0x20..0x2F) all sit
       // below 0x40, so "first code unit at or above 0x40" terminates it.
       case nextCode === 0x5b /* '[' */: {
         i += 1
@@ -122,12 +117,9 @@ export function stripAnsiEscapes(s: string): string {
   return out.join('')
 }
 
-/**
- * Index just past an OSC/DCS-style string payload starting at `start`.
- * Returns an absolute index, not an offset — the terminator is consumed
- * too, so the caller's cursor lands on the first character after the
- * sequence.
- */
+/**  * Index just past an OSC/DCS-style string payload starting at `start`. Returns an absolute index,
+ * not an offset — the terminator is consumed too, so the caller's cursor lands on the first
+ * character after the sequence. */
 function skipStringPayload(s: string, start: number): number {
   let i = start
   const n = s.length

@@ -242,10 +242,9 @@ describe("AppLayout — Sidebar chat click does NOT get its URL overwritten by t
     await nextTick()
     await nextTick()
 
-    // Assert: the mirror watcher must NOT have called
-    // router.replace with a `?view=workspace` query (the bug). The
-    // destination's own router.replace({view: 'chat', session: S}) is
-    // the authoritative URL update and must not be clobbered.
+    // Assert: the mirror watcher must NOT have called router.replace with a `?view=workspace` query
+    // (the bug). The destination's own router.replace({view: 'chat', session: S}) is the
+    // authoritative URL update and must not be clobbered.
     const clobberCalls = replaceMock.mock.calls.filter(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (call: any[]) => {
@@ -265,9 +264,8 @@ describe("AppLayout — Sidebar chat click does NOT get its URL overwritten by t
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     useRouterMock.mockReturnValue({ replace: replaceMock, push: pushMock } as any)
 
-    // Start with NO active workspace item and an empty URL — this
-    // simulates a future code path (keyboard shortcut, deep link,
-    // localStorage restoration) that programmatically sets an
+    // Start with NO active workspace item and an empty URL — this simulates a future code path
+    // (keyboard shortcut, deep link, localStorage restoration) that programmatically sets an
     // activeWorkspaceItem. The watcher MUST mirror that to the URL.
     useRouteMock.mockReturnValue({
       query: {},

@@ -377,11 +377,9 @@ describe('useWorkspacesStore — kanban actions', () => {
     })
 
     it('preserves the description of the patched column across the round-trip (regression for "empty after save" bug)', async () => {
-      // The original bug: the store assigned the PATCH response
-      // (which is the full board, NOT a single column) to the
-      // single-column slot, so col.description read as undefined and
-      // the settings dialog rendered "No description" until the
-      // user refreshed the page.
+      // The original bug: the store assigned the PATCH response (which is the full board, NOT a
+      // single column) to the single-column slot, so col.description read as undefined and the
+      // settings dialog rendered "No description" until the user refreshed the page.
       const store = seedStore([
         ws('ws_1', 'W1', [
           item('item_1', 'Sprint', 'kanban', {

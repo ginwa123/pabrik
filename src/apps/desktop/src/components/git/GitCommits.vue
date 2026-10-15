@@ -10,13 +10,11 @@ import { highlightLinesForFile, type Token } from '../../helpers/codeHighlight'
 const props = withDefaults(
   defineProps<{
     cwd?: string
-    /**
-     * When true (default) a file click expands its diff inline below the
+    /** When true (default) a file click expands its diff inline below the
      * row — the only view available to hosts without a center column
      * (RightSidebar). When false the row emits `commit-file-click` instead
      * and the host renders the diff itself (SidebarDiffPanel forwards it
-     * to ChatView's center column, like worktree/PR file rows).
-     */
+     * to ChatView's center column, like worktree/PR file rows). */
     inlineFileDiff?: boolean
   }>(),
   { inlineFileDiff: true },

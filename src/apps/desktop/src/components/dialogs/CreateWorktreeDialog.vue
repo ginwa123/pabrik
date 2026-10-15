@@ -93,11 +93,9 @@ const canSubmit = computed(() => {
 
 const handleFolderSelected = (path: string) => {
   parentDir.value = path
-  // Close the picker on selection — matches the expected UX (the picker
-  // dismisses and the user is returned to the CreateWorktreeDialog with
-  // the chosen path filled in). The real FilePickerDialog has a
-  // `closeOnSelect` prop but it defaults to false, so we close from the
-  // parent instead.
+  // Close the picker on selection — matches the expected UX (the picker dismisses and the user is
+  // returned to the CreateWorktreeDialog with the chosen path filled in). The real FilePickerDialog
+  // has a `closeOnSelect` prop but it defaults to false, so we close from the parent instead.
   showPicker.value = false
 }
 

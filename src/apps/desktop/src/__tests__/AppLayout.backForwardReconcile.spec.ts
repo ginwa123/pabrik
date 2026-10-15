@@ -113,9 +113,8 @@ function fullPathOf(query: Record<string, string>): string {
   return '/app' + (qs ? `?${qs}` : '')
 }
 
-/** Seed the fixture tree AND rewire the API mocks to serve it, so
- * init() populates instead of wiping (lazy init reads the mocks
- * after replacing the tree — a live read would see the wipe). */
+/**  * Seed the fixture tree AND rewire the API mocks to serve it, so init() populates instead of wiping
+ * (lazy init reads the mocks after replacing the tree — a live read would see the wipe). */
 function seedFixtureTree() {
   const ws = useWorkspacesStore()
   ws.workspaces = [makeWorkspace()]

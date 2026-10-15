@@ -18,11 +18,9 @@ import { parseItemIdWithChat } from './buildItemIdWithChat'
 
 export type TabQuery = Record<string, string>
 
-/**
- * Display hint only — drives the glyph and the close tooltip. It is
- * deliberately coarse: a pure function cannot know a workspace item's
- * `item_type`, and a wrong icon must never affect behaviour.
- */
+/**  * Display hint only — drives the glyph and the close tooltip. It is deliberately coarse: a pure
+ * function cannot know a workspace item's `item_type`, and a wrong icon must never affect
+ * behaviour. */
 export type TabKind = 'home' | 'chat' | 'workspace' | 'kanban-settings' | 'settings' | 'other'
 
 export interface Tab {
@@ -35,12 +33,9 @@ export interface Tab {
   path: string
   query: TabQuery
   createdAt: number
-  /**
-   * True when the tab's identity was decided without knowing the workspace
-   * item's type (a cold-boot deep link, before the tree loaded). Such a tab
-   * may be adopted — i.e. re-keyed — once the real type arrives, so the
-   * strip does not end up with two tabs for one target.
-   */
+  /**    * True when the tab's identity was decided without knowing the workspace item's type (a cold-boot
+   * deep link, before the tree loaded). Such a tab may be adopted — i.e. re-keyed — once the real
+   * type arrives, so the strip does not end up with two tabs for one target. */
   provisional?: boolean
 }
 
@@ -64,12 +59,9 @@ export const TABS_VERSION = 1
 const SETTINGS_PATH = '/app/settings'
 const KANBAN_SETTINGS_RE = /^\/app\/kanban\/([^/]+)\/settings\/?$/
 
-/**
- * Views that are full-surface overlays over whatever was there before
- * (`AppLayout.vue` mounts them `absolute inset-0 z-10` with their own
- * Back button). They are not destinations, so they never become tabs —
- * the strip stays behind them untouched.
- */
+/**  * Views that are full-surface overlays over whatever was there before (`AppLayout.vue` mounts them
+ * `absolute inset-0 z-10` with their own Back button). They are not destinations, so they never
+ * become tabs — the strip stays behind them untouched. */
 const OVERLAY_VIEWS = ['gitfile', 'skill', 'code-editor']
 
 /** `ChatsList` emits this as an event flag, not as a view. */
@@ -85,10 +77,8 @@ function sameNormalized(left: TabQuery, right: TabQuery): boolean {
   return true
 }
 
-/**
- * Same target? Ignores `tab`, because the tab's stored target must not
- * change just because it became active.
- */
+/** Same target? Ignores `tab`, because the tab's stored target must not
+ * change just because it became active. */
 export function sameTabTarget(
   a: Record<string, unknown> | null | undefined,
   b: Record<string, unknown> | null | undefined,
@@ -96,10 +86,8 @@ export function sameTabTarget(
   return sameNormalized(stripTabParam(a ?? {}), stripTabParam(b ?? {}))
 }
 
-/**
- * Same URL? Includes `tab` — used to decide whether a navigation is
- * actually needed, so naming a different tab IS a difference.
- */
+/** Same URL? Includes `tab` — used to decide whether a navigation is
+ * actually needed, so naming a different tab IS a difference. */
 export function sameRouteQuery(
   a: Record<string, unknown> | null | undefined,
   b: Record<string, unknown> | null | undefined,
@@ -107,11 +95,8 @@ export function sameRouteQuery(
   return sameNormalized(normalizeQuery(a, true), normalizeQuery(b, true))
 }
 
-/**
- * The URL contract is flat strings. Values that are arrays/objects (or
- * empty) are dropped so two URLs that mean the same thing produce the
- * same key.
- */
+/**  * The URL contract is flat strings. Values that are arrays/objects (or empty) are dropped so two
+ * URLs that mean the same thing produce the same key. */
 export function stripTabParam(query: Record<string, unknown> | null | undefined): TabQuery {
   return normalizeQuery(query, false)
 }
@@ -174,10 +159,9 @@ export function tabKeyOf(
     const parsed = parseItemIdWithChat(q.itemId ?? '')
     const parts = ['ws', q.workspaceId ?? '', parsed.itemId]
     if (q.pageId) parts.push(q.pageId)
-    // A task chat is its own session, and WHERE it renders decides whether it
-    // gets its own tab. A kanban card click opens the chat as its own view, so
-    // it gets its own tab; design opens it as a dialog INSIDE the canvas view,
-    // so that item keeps one tab total.
+    // A task chat is its own session, and WHERE it renders decides whether it gets its own tab. A
+    // kanban card click opens the chat as its own view, so it gets its own tab; design opens it as
+    // a dialog INSIDE the canvas view, so that item keeps one tab total.
     if (parsed.chatTaskId && !taskChatRendersInItemTab(itemType)) {
       parts.push(`chat:${parsed.chatTaskId}`)
     }
@@ -186,16 +170,13 @@ export function tabKeyOf(
   return `view:${view}`
 }
 
-/**
- * Item types whose task chat renders as a dialog *inside* the item's view
+/** Item types whose task chat renders as a dialog *inside* the item's view
  * (`DesignChatDialog`) — those items keep ONE tab no matter how many chats you
  * open. Every other type — kanban included — renders the chat as its own view,
  * so each chat is a tab of its own.
- *
  * `kanban-settings` is inert here (this predicate is only ever called with an
  * item type, never with the synthetic settings key) and is kept only so the
- * list reads as a whitelist of "chat is not its own view" cases.
- */
+ * list reads as a whitelist of "chat is not its own view" cases. */
 const DIALOG_ITEM_TYPES = ['design', 'kanban-settings']
 
 export function taskChatRendersInItemTab(itemType?: string | null): boolean {
@@ -225,10 +206,8 @@ export function tabKeyVariants(
   return canonical === other ? [canonical] : [canonical, other]
 }
 
-/**
- * `Ctrl/Cmd+click` or a middle click means "open this in a background
- * tab" — the gesture users already have in their fingers from a browser.
- */
+/** `Ctrl/Cmd+click` or a middle click means "open this in a background
+ * tab" — the gesture users already have in their fingers from a browser. */
 export function isBackgroundOpenEvent(event: {
   ctrlKey?: boolean
   metaKey?: boolean
@@ -325,10 +304,8 @@ export function newTabId(): string {
   return `tab_${Date.now().toString(36)}${idSequence.toString(36)}${Math.random().toString(36).slice(2, 6)}`
 }
 
-/**
- * The "new tab page": the chats list. Reused both for the initial tab
- * and whenever the last tab is closed, so the strip is never empty.
- */
+/** The "new tab page": the chats list. Reused both for the initial tab
+ * and whenever the last tab is closed, so the strip is never empty. */
 export function homeTab(): Tab {
   return {
     id: newTabId(),
@@ -392,10 +369,8 @@ function freshList(): PersistedTabs {
   return { active: tab.id, tabs: [tab], closed: [] }
 }
 
-/**
- * Total: any input at all yields a usable list. A corrupt, older-version
- * or hand-edited value must never throw at boot — it starts over.
- */
+/** Total: any input at all yields a usable list. A corrupt, older-version
+ * or hand-edited value must never throw at boot — it starts over. */
 export function parseTabList(raw: string | null | undefined): PersistedTabs {
   if (!raw) return freshList()
   let parsed: unknown

@@ -137,11 +137,9 @@ describe('KanbanView.handleCreateTaskSave — create_and_run', () => {
     // workspacesStoreAddKanbanTask.spec.ts suite).
     expect(createKanbanSpy).toBeTruthy()
 
-    // CHANGED (2026-08-06, "no need go chatview"): on the SUCCESS
-    // path we deliberately do NOT emit `selectTask`. The user stays
-    // on the kanban view (no chat dialog opens); the agent runs in
-    // the background and the user can click the new task card to
-    // open the chat view any time they want.
+    // CHANGED (2026-08-06, "no need go chatview"): on the SUCCESS path we deliberately do NOT emit
+    // `selectTask`. The user stays on the kanban view (no chat dialog opens); the agent runs in the
+    // background and the user can click the new task card to open the chat view any time they want.
      
     expect(view.emitted('selectTask')).toBeUndefined()
   })
@@ -336,9 +334,8 @@ describe('KanbanView.handleCreateTaskSave — create_and_run', () => {
   })
 })
 
-// =====================================================================
-// Plain "Create task" button → mode='create_session' (plan:
-// 2026-08-19-kanban-create-task-inits-session.md)
+// ===================================================================== Plain "Create task" button
+// → mode='create_session' (plan: 2026-08-19-kanban-create-task-inits-session.md)
 // =====================================================================
 
 describe('KanbanView.handleCreateTaskSave — create_session (plain Create task button)', () => {
@@ -369,15 +366,12 @@ describe('KanbanView.handleCreateTaskSave — create_session (plain Create task 
   }
 
   it("plain Create task → mode='create_session' is dispatched to addKanbanTask (no queue_message)", async () => {
-    // The plain "Create task" button in the dialog emits `create` and
-    // KanbanView's @create listener forwards it as `mode: 'create_session'`
-    // (see template line ~1250 of KanbanView.vue). Driving the
-    // listener through the stubbed dialog button proved flaky in CI
-    // (the stub's emit propagation is sensitive to test-utils version
-    // pins), so this test exercises the same end-to-end behaviour via
-    // the handler directly with the mode the listener is supposed to
-    // inject. The actual template wiring is one-line and reviewed in
-    // the PR diff.
+    // The plain "Create task" button in the dialog emits `create` and KanbanView's @create listener
+    // forwards it as `mode: 'create_session'` (see template line ~1250 of KanbanView.vue). Driving
+    // the listener through the stubbed dialog button proved flaky in CI (the stub's emit
+    // propagation is sensitive to test-utils version pins), so this test exercises the same
+    // end-to-end behaviour via the handler directly with the mode the listener is supposed to
+    // inject. The actual template wiring is one-line and reviewed in the PR diff.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fakeTask = { id: 'task_new', name: 'My task', task_type: 'standard' } as any
     const fakeSession = { id: 'task_new', name: 'My task', status: 'idle' }
@@ -414,17 +408,15 @@ describe('KanbanView.handleCreateTaskSave — create_session (plain Create task 
     // that's only the create_and_run button's job.
     expect(addKanbanSpy.mock.calls[0]?.[3].queue_message).toBeUndefined()
 
-    // CHANGED (2026-08-19): plain Create task now lands on an
-    // existing session when the user clicks the card, but we still
-    // do NOT navigate to the chatview on success — the user stays
-    // on the kanban and clicks the card themselves.
+    // CHANGED (2026-08-19): plain Create task now lands on an existing session when the user clicks
+    // the card, but we still do NOT navigate to the chatview on success — the user stays on the
+    // kanban and clicks the card themselves.
     expect(view.emitted('selectTask')).toBeUndefined()
   })
 
   it("@create-and-run path stays on mode='create_and_run' (regression)", async () => {
-    // Sanity check: the existing create_and_run path is unchanged.
-    // Same caveat as the test above — the @create-and-run listener
-    // forwards mode='create_and_run' (template line ~1251).
+    // Sanity check: the existing create_and_run path is unchanged. Same caveat as the test above —
+    // the @create-and-run listener forwards mode='create_and_run' (template line ~1251).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fakeTask = { id: 'task_new', name: 't', task_type: 'standard' } as any
     const fakeSession = { id: 'task_new', name: 't', status: 'send' }
@@ -497,10 +489,9 @@ describe('KanbanView.handleCreateTaskSave — double-click re-entry guard', () =
     const fakeTask = { id: 'task_new', name: 'My task', task_type: 'standard' } as any
     const fakeSession = { id: 'task_new', name: 'My task', status: 'send' }
     const store = useWorkspacesStore()
-    // Never-resolving promise = request stays in flight, exactly the
-    // window a double-click lands in. resolveCreate is typed to match
-    // the store action's resolved shape (KanbanCreateResponse) so the
-    // Promise executor's inferred `resolve` assigns cleanly.
+    // Never-resolving promise = request stays in flight, exactly the window a double-click lands
+    // in. resolveCreate is typed to match the store action's resolved shape (KanbanCreateResponse)
+    // so the Promise executor's inferred `resolve` assigns cleanly.
     let resolveCreate!: (v: KanbanCreateResponse) => void
     const addKanbanSpy = vi
       .spyOn(store, 'addKanbanTask')

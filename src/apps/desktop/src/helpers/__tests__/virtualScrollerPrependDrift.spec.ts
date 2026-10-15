@@ -88,10 +88,9 @@ describe('VirtualScroller prepend height remap (100-message lifecycle)', () => {
     setRealHeights()
     await flushMeasure()
 
-    // Phase 2: loadMore prepend — real app calls beginPreserve(N) before
-    // mutating the array and endPreserve() after. endPreserve awaits
-    // rAF internally; under fake timers we fire-and-forget it and
-    // advance the clock so its internal awaits resolve.
+    // Phase 2: loadMore prepend — real app calls beginPreserve(N) before mutating the array and
+    // endPreserve() after. endPreserve awaits rAF internally; under fake timers we fire-and-forget
+    // it and advance the clock so its internal awaits resolve.
     const vm = wrapper.vm as unknown as {
       beginPreserve: (n: number) => void
       endPreserve: () => Promise<void>
@@ -173,9 +172,8 @@ describe('VirtualScroller prepend height remap (100-message lifecycle)', () => {
     const vm = wrapper.vm as unknown as { beginPreserve: (n: number) => void }
     vm.beginPreserve(2)
     await nextTick()
-    // Stable keys: heights are untouched by beginPreserve — the sizer
-    // stays 600 (the heights still describe their own items). The
-    // corruption the old remap guarded against is now impossible by
+    // Stable keys: heights are untouched by beginPreserve — the sizer stays 600 (the heights still
+    // describe their own items). The corruption the old remap guarded against is now impossible by
     // construction.
     expect(
       parseFloat((el.querySelector('.virtual-scroller-sizer') as HTMLElement).style.height),

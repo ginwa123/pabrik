@@ -37,11 +37,9 @@ vi.mock('@/api', async (importOriginal) => {
 
 const searchFilesMock = api.searchFiles as unknown as ReturnType<typeof vi.fn>
 
-/**
- * Mock `api.searchFiles` with pre-ranked server rows (Task 3: the server
- * owns ranking now — the old N-sequential-fetch full-tree walk via raw
- * `fetch` is deleted). The picker renders rows directly in server order.
- */
+/**  * Mock `api.searchFiles` with pre-ranked server rows (Task 3: the server owns ranking now — the old
+ * N-sequential-fetch full-tree walk via raw `fetch` is deleted). The picker renders rows directly
+ * in server order. */
 function mockSearchResults(
   entries: Array<{ name: string; path: string; is_directory: boolean }>,
 ) {
@@ -170,9 +168,8 @@ describe('KanbanDescriptionEditor', () => {
     await fileButtons[1]!.trigger('click')
     await flushPromises()
     const updatedTextarea = wrapper.find('textarea').element as HTMLTextAreaElement
-    // The path is inserted WITHOUT the leading `@` (the user dropped
-    // the `@` prefix per the latest UX feedback; the chip detector
-    // matches `/path` directly). The path is RELATIVE to the cwd
+    // The path is inserted WITHOUT the leading `@` (the user dropped the `@` prefix per the latest
+    // UX feedback; the chip detector matches `/path` directly). The path is RELATIVE to the cwd
     // (mirrors FileInput.vue's `entry.path.replace(rootPath, '')`).
     expect(updatedTextarea.value).toContain('/main.zig')
     expect(updatedTextarea.value).not.toContain('@/main.zig')
@@ -243,12 +240,9 @@ describe('KanbanDescriptionEditor — create-mode image paste (no taskId)', () =
     return new File([TINY_PNG], name, { type: 'image/png' })
   }
 
-  /**
-   * Build a minimal DataTransferItem-like object. jsdom doesn't expose
-   * DataTransferItem constructor in the test env, so we use the closest
-   * shape and rely on the handler's duck-typing checks (kind, type,
-   * getAsFile()).
-   */
+  /**    * Build a minimal DataTransferItem-like object. jsdom doesn't expose DataTransferItem constructor
+   * in the test env, so we use the closest shape and rely on the handler's duck-typing checks
+   * (kind, type, getAsFile()). */
   function fakeImageItem(
     file: File,
   ): {
@@ -263,12 +257,9 @@ describe('KanbanDescriptionEditor — create-mode image paste (no taskId)', () =
     }
   }
 
-  /**
-   * Build a synthetic ClipboardEvent with a fake clipboardData. jsdom
-   * doesn't expose a ClipboardEvent constructor (DOM v0.x), so we use
-   * `new Event('paste', …)` and define `clipboardData` as a property.
-   * Mirrors the same pattern used in FileInput.spec.ts.
-   */
+  /**    * Build a synthetic ClipboardEvent with a fake clipboardData. jsdom doesn't expose a
+   * ClipboardEvent constructor (DOM v0.x), so we use `new Event('paste', …)` and define
+   * `clipboardData` as a property. Mirrors the same pattern used in FileInput.spec.ts. */
   function fakeClipboardEvent(file: File): ClipboardEvent {
     const item = fakeImageItem(file)
     const dataTransfer = {
@@ -291,9 +282,8 @@ describe('KanbanDescriptionEditor — create-mode image paste (no taskId)', () =
     const event = fakeClipboardEvent(file)
     const textarea = wrapper.find('textarea').element as HTMLTextAreaElement
     textarea.dispatchEvent(event)
-    // addImageFile awaits FileReader.onload which fires on the next
-    // macrotask (not microtask) tick — flushPromises alone isn't
-    // enough. A short setTimeout gives FileReader time to encode the
+    // addImageFile awaits FileReader.onload which fires on the next macrotask (not microtask) tick
+    // — flushPromises alone isn't enough. A short setTimeout gives FileReader time to encode the
     // File into a data URL before we read the textarea.
     await new Promise((resolve) => setTimeout(resolve, 50))
     await flushPromises()

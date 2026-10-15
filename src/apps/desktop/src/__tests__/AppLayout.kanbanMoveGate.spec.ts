@@ -1,15 +1,5 @@
 /**
- * AppLayout — kanban move gate (kanban task dependencies feature).
- *
- * A 409 from the move API surfaces the "Move anyway" confirm
- * dialog naming the blockers; confirming retries with
- * `force === true`; cancelling leaves the store's task in its
- * original column.
- *
- * Mount harness mirrors AppLayout.kanban.spec.ts (router stub,
- * SSE bus, localStorage stub, API fire-and-forget mocks). The
- * <ConfirmDialog> teleports to <body>, so the dialog is queried
- * via document.body (see Sidebar.deleteDesignPageConfirm.spec.ts).
+ * AppLayout kanban move gate: a 409 opens the "Move anyway" confirm, confirming retries with force === true, cancelling changes nothing.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
@@ -175,10 +165,8 @@ describe('AppLayout — kanban move gate', () => {
 
   async function openBoard() {
     const wrapper = mountAppLayout([])
-    // Let AppLayout's boot init() settle FIRST: it re-fetches the
-    // workspace list (mocked to []) and would wipe a tree seeded
-    // before mount. Re-seeding after the settle is stable — boot
-    // runs once, so no later fetch clobbers the fixture.
+    // Let AppLayout's boot init() settle first: it re-fetches (mocked to []) and would wipe a
+    // tree seeded before mount, while a re-seed after it is stable.
     await flushPromises()
     const ws = useWorkspacesStore()
     ws.workspaces = [

@@ -20,9 +20,8 @@ import {
   type SubAgentProgressMap,
 } from '../../../helpers/subagentProgress'
 
-// Inline the ChatView-style bus handler so we can test the routing
-// logic in isolation. This mirrors the real ChatView.vue:2033 early
-// branch: progress events go into the map; everything else falls
+// Inline the ChatView-style bus handler so we can test the routing logic in isolation. This mirrors
+// the real ChatView.vue:2033 early branch: progress events go into the map; everything else falls
 // through (in this test, we just count "ignored").
 type RegularEvent = { type: 'full' | 'chunk'; role?: string; session_id?: string; content?: string }
 

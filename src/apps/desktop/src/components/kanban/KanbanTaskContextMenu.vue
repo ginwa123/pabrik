@@ -41,12 +41,9 @@ const props = withDefaults(
     isAgentRunning?: boolean
     /** Shown in the menu's title bar so the user can confirm the target. */
     taskName?: string
-    /**
-     * The board's columns, already ordered. Empty (or a single entry)
-     * hides the "Move to column" row entirely — a submenu with one
-     * dead item is worse than no submenu. The sidebar-row host and
-     * legacy/unloaded boards pass nothing.
-     */
+    /**      * The board's columns, already ordered. Empty (or a single entry) hides the "Move to column"
+     * row entirely — a submenu with one dead item is worse than no submenu. The sidebar-row host
+     * and legacy/unloaded boards pass nothing. */
     columns?: KanbanColumn[]
     /** Id of the column this task currently lives in; marked in the submenu. */
     currentColumnId?: string | null
@@ -68,10 +65,9 @@ const emit = defineEmits<{
   openChat: []
   openDetails: []
   stop: []
-  // Start an agent on this task's existing session (no new user
-  // message queued). Hidden while a worker is already running —
-  // the backend's 409 is the source of truth, but offering a row
-  // that can only fail is worse than not offering it.
+  // Start an agent on this task's existing session (no new user message queued). Hidden while a
+  // worker is already running — the backend's 409 is the source of truth, but offering a row that
+  // can only fail is worse than not offering it.
   runAgent: []
   moveToColumn: [columnId: string]
 }>()
@@ -113,23 +109,20 @@ const closeSub = () => {
 }
 
 // ─── Keyboard navigation ────────────────────────────────────────────────
-//
+
 // The menu is not mouse-only: the card root handles the ContextMenu /
 // F10 keys and opens this menu, so the menu has to be arrow-navigable
 // too. `focusIdx` indexes the flat list of enabled rows.
 const focusIdx = ref(-1)
 const rootRef = ref<HTMLElement | null>(null)
 
-/**
- * Rows in visual order, skipping the ones this card doesn't render.
- *
+/** Rows in visual order, skipping the ones this card doesn't render.
  * Queried from the DOM rather than collected through function refs: the
  * "Stop agent" row is v-if'd on `isAgentRunning`, and a function ref is
  * re-invoked when such a row remounts — a `push`-into-a-ref array would
  * then hold a detached element alongside the live one, and the arrow keys
  * would walk into a row that is no longer on screen. A query is always
- * exactly the rows currently rendered.
- */
+ * exactly the rows currently rendered. */
 const navRows = (): HTMLElement[] =>
   Array.from(rootRef.value?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])
 

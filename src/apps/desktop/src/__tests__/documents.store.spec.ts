@@ -37,14 +37,12 @@ const doc = (id: string, overrides: Partial<api.Document> = {}): api.Document =>
   ...overrides,
 })
 
-/**
- * The list is cache-first now, and `documentEngineDb` is a module singleton
+/** The list is cache-first now, and `documentEngineDb` is a module singleton
  * whose IndexedDB fallback is a module-level Map. That cache deliberately
  * outlives `createPinia()` — which is the feature — but it means rows
  * cached by one test are still primed by the next, flipping `loaded` to
  * true before the mocked `listDocuments` is ever consulted. Every test
- * here asserts a cold load, so each starts from an empty cache.
- */
+ * here asserts a cold load, so each starts from an empty cache. */
 async function clearDocumentsCache(workspaceId = 'ws_1'): Promise<void> {
   const { documentEngineDb } = await import('../sync/DocumentEngineDb')
   const { runSyncVoid } = await import('../sync/runtime')
@@ -168,10 +166,9 @@ describe('documents store — mutations', () => {
     const store = useDocumentsStore()
     await store.fetchDocuments('ws_1')
 
-    // The PATCH body must contain `title` and NOT `content`. Sending
-    // `content: undefined` through JSON.stringify drops it, but sending
-    // `content: ''` would CLEAR the body — the store must not invent the
-    // key to satisfy its own type.
+    // The PATCH body must contain `title` and NOT `content`. Sending `content: undefined` through
+    // JSON.stringify drops it, but sending `content: ''` would CLEAR the body — the store must not
+    // invent the key to satisfy its own type.
     let body: Record<string, unknown> = {}
     updateDocument.mockImplementation((_ws, _id, patch) => {
       body = JSON.parse(JSON.stringify(patch))

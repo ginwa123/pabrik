@@ -64,12 +64,9 @@ const props = withDefaults(
     workspaceId: string
     itemId: string
     cwd?: string
-    /**
-     * `comfortable` (default) is the two-line record: name + metadata.
-     * `compact` drops the metadata line back to a single scannable line,
-     * for boards like `merged` where 110 two-line rows is a lot of
-     * scrolling. Threaded from <KanbanView> via localStorage.
-     */
+    /**      * `comfortable` (default) is the two-line record: name + metadata. `compact` drops the metadata
+     * line back to a single scannable line, for boards like `merged` where 110 two-line rows is a
+     * lot of scrolling. Threaded from <KanbanView> via localStorage. */
     density?: KanbanRowDensity
   }>(),
   { cwd: '', density: 'comfortable' },
@@ -102,7 +99,7 @@ const { handleSelectTask, handleDeleteTask, handleRenameTask, handlePinToggle } 
 )
 
 // ─── Active state ──────────────────────────────────────────────────────────
-//
+
 // URL-driven, like the sidebar row: the highlight must survive refresh,
 // deep links and Back/Forward, so it is derived from the route rather
 // than from a store flag that can drift.

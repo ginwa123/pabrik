@@ -28,10 +28,8 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  /**
-   * Fired when the user clicks the peek button on a sub-agent row. The parent
-   * (ChatView) opens <SubAgentPeekPanel> with this payload.
-   */
+  /** Fired when the user clicks the peek button on a sub-agent row. The parent
+   * (ChatView) opens <SubAgentPeekPanel> with this payload. */
   peek: [payload: { sessionId: string; agentName: string; instruction: string }]
 }>()
 
@@ -225,13 +223,9 @@ const isStarting = computed(
 // header copy ("3 sub-agents starting…" vs bare "starting…").
 const expectedCount = computed(() => props.subAgentArgs?.length ?? 0)
 
-/**
- * Emit a peek event for one sub-agent row. In live-progress mode,
- * rows carry `sessionId` (set by `applyProgressEvent` once the
- * `launched` event arrives with `subagent_session_id`). Same payload
- * shape as the parsed-envelope peek so ChatView's
- * <SubAgentPeekPanel> doesn't need to branch.
- */
+/**  * Emit a peek event for one sub-agent row. In live-progress mode, rows carry `sessionId` (set by
+ * `applyProgressEvent` once the `launched` event arrives with `subagent_session_id`). Same payload
+ * shape as the parsed-envelope peek so ChatView's <SubAgentPeekPanel> doesn't need to branch. */
 function peekLiveAgent(idx: number, row: SubAgentProgress) {
   if (!row.sessionId) return
   const instruction = props.subAgentArgs?.[idx]?.instruction ?? ''

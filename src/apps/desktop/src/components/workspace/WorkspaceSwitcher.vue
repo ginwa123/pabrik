@@ -27,9 +27,8 @@ const props = withDefaults(
   defineProps<{
     workspaces: Workspace[]
     activeWorkspaceId?: string | null
-    /** Collapsed-sidebar mode: monogram trigger + the panel is
-     *  teleported to <body> (fixed position) so it escapes the
-     *  narrow sidebar's overflow. */
+    /**      * Collapsed-sidebar mode: monogram trigger + the panel is teleported to <body> (fixed position)
+     * so it escapes the narrow sidebar's overflow. */
     collapsed?: boolean
   }>(),
   { activeWorkspaceId: null, collapsed: false },
@@ -56,9 +55,8 @@ const activeWorkspace = computed(
 )
 const triggerLabel = computed(() => activeWorkspace.value?.name ?? 'Select workspace')
 
-/** 1–2 letter monogram for the collapsed trigger (algorithm moved
- *  from Sidebar's removed workspace tiles — keep in sync with the
- *  old workspaceMonogram contract). */
+/**  * 1–2 letter monogram for the collapsed trigger (algorithm moved from Sidebar's removed workspace
+ * tiles — keep in sync with the old workspaceMonogram contract). */
 const monogram = (name: string): string => {
   const cleaned = name.replace(/[^a-zA-Z0-9]/g, '')
   if (cleaned.length === 0) return '?'

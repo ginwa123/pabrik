@@ -247,10 +247,9 @@ describe('RightSideBarSkillList — one list, scoped to the active workspace', (
     )
 
     await wrapper.find('[data-testid="skills-list-section-toggle"]').trigger('click')
-    // `v-show`, so the rows stay mounted and only the container's inline
-    // `display` changes. Asserted on that attribute rather than on
-    // `isVisible()`: jsdom caches the computed cascade and keeps
-    // reporting `display: none` after the inline style was cleared.
+    // `v-show`, so the rows stay mounted and only the container's inline `display` changes.
+    // Asserted on that attribute rather than on `isVisible()`: jsdom caches the computed cascade
+    // and keeps reporting `display: none` after the inline style was cleared.
     expect(listContainerStyle(wrapper)).toContain('display: none')
 
     await wrapper.find('[data-testid="skills-list-section-toggle"]').trigger('click')

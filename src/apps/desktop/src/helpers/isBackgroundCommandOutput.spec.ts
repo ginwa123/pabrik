@@ -83,10 +83,9 @@ describe('isBackgroundCommandOutput (JSON envelope)', () => {
   })
 
   it('detects the JSON envelope but returns null when it is not one of ours', () => {
-    // Same contract as a malformed `<background_command>` block: the PREDICATE
-    // says "this is an envelope" (so the bubble is not rendered as prose) and
-    // the PARSER says "I cannot shape it" (so no card). A JSON object with no
-    // `pid` is somebody else's data.
+    // Same contract as a malformed `<background_command>` block: the PREDICATE says "this is an
+    // envelope" (so the bubble is not rendered as prose) and the PARSER says "I cannot shape it"
+    // (so no card). A JSON object with no `pid` is somebody else's data.
     const content = '{"pid":'
     expect(isBackgroundCommandOutput(content)).toBe(true)
     expect(parseBackgroundCommandOutput(content)).toBeNull()

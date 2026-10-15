@@ -129,9 +129,8 @@ describe('DesignView — activePageId syncs from store activeDesignPageId', () =
   })
 
   it('does NOT mirror when the store value matches the local value (no-op guard)', async () => {
-    // Setting the store to the same value the local ref already has
-    // should not trigger any work. We assert this implicitly: the
-    // fix uses an equality guard so a no-op set doesn't fire the
+    // Setting the store to the same value the local ref already has should not trigger any work. We
+    // assert this implicitly: the fix uses an equality guard so a no-op set doesn't fire the
     // elements-fetch watcher below (which would be a redundant GET).
     const store = useWorkspacesStore()
     store.setActiveDesignPage(PAGE_ID_1)

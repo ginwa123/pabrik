@@ -212,17 +212,15 @@ describe('KanbanColumn — VirtualScroller integration', () => {
     // reaching getTasks, not about how many ticks that takes.
     await flushPromises()
 
-    // Spy on api.getTasks (set up in beforeEach) so we can verify the
-    // @load-more path forwards the columnId correctly. The auto-fetch
-    // watcher fires once during mount — we capture the LATEST call
-    // (the @load-more driven one).
+    // Spy on api.getTasks (set up in beforeEach) so we can verify the @load-more path forwards the
+    // columnId correctly. The auto-fetch watcher fires once during mount — we capture the LATEST
+    // call (the @load-more driven one).
     const getTasksSpy = vi.mocked(api.getTasks)
     const callsBefore = getTasksSpy.mock.calls.length
 
-    // Drive the scroller's @load-more emit directly. In production
-    // this fires when the user scrolls within loadMoreThreshold of
-    // the bottom; in jsdom we trigger it manually because there's
-    // no real scroll layout.
+    // Drive the scroller's @load-more emit directly. In production this fires when the user scrolls
+    // within loadMoreThreshold of the bottom; in jsdom we trigger it manually because there's no
+    // real scroll layout.
     const scroller = wrapper.findComponent({ name: 'VirtualScroller' })
     scroller.vm.$emit('loadMore')
     await nextTick()
@@ -355,11 +353,9 @@ describe('KanbanColumn — VirtualScroller integration', () => {
   // !scrollerIsScrollable` and fires `loadMoreTasksForColumn` itself.
 
   it('auto-fetches when hasMore=true and the page fits in the viewport', async () => {
-    // 9 cards (< PAGE_SIZE=10) so the watcher's
-    // `cardsInColumn.length < PAGE_SIZE` branch fires. hasMore=true so
-    // `moreTasksAvailable` is true. scrollerIsScrollable defaults to
-    // false (no @scrollability-change has fired yet). All three
-    // conditions for auto-fetch are met.
+    // 9 cards (< PAGE_SIZE=10) so the watcher's `cardsInColumn.length < PAGE_SIZE` branch fires.
+    // hasMore=true so `moreTasksAvailable` is true. scrollerIsScrollable defaults to false (no
+    // @scrollability-change has fired yet). All three conditions for auto-fetch are met.
     wrapper = mountColumnWithPagination(makeColumn(), makeTasks(9), {
       hasMore: true,
       cursor: 'cursor_p2',
@@ -398,10 +394,9 @@ describe('KanbanColumn — VirtualScroller integration', () => {
   })
 
   it('does NOT auto-fetch when cardsInColumn.length >= PAGE_SIZE (page full)', async () => {
-    // 10 cards == PAGE_SIZE. The watcher's "viewport fits the page"
-    // condition is `cardsInColumn.length < PAGE_SIZE` — false here —
-    // so no auto-fetch. VirtualScroller's scroll-driven @load-more
-    // is the path that fires in that case.
+    // 10 cards == PAGE_SIZE. The watcher's "viewport fits the page" condition is
+    // `cardsInColumn.length < PAGE_SIZE` — false here — so no auto-fetch. VirtualScroller's
+    // scroll-driven @load-more is the path that fires in that case.
     wrapper = mountColumnWithPagination(makeColumn(), makeTasks(10), {
       hasMore: true,
       cursor: 'cursor_p2',
@@ -421,10 +416,9 @@ describe('KanbanColumn — VirtualScroller integration', () => {
     await nextTick()
 
     const getTasksSpy = vi.mocked(api.getTasks)
-    // The default cursor in the seeded pagination is null when
-    // hasMore=false — and the store action bails on null cursor
-    // before calling api.getTasks. We check that no api.getTasks
-    // call was made for this column at all.
+    // The default cursor in the seeded pagination is null when hasMore=false — and the store action
+    // bails on null cursor before calling api.getTasks. We check that no api.getTasks call was made
+    // for this column at all.
     const callsForCol = getTasksSpy.mock.calls.filter((call) => call[6] === COL_TODO)
     expect(callsForCol.length).toBe(0)
   })
@@ -438,10 +432,9 @@ describe('KanbanColumn — VirtualScroller integration', () => {
     const cardsWrapper = wrapper.find(`[data-testid="kanban-column-${COL_TODO}-cards"]`)
     expect(cardsWrapper.exists()).toBe(true)
 
-    // Dispatch a real DragEvent so the handler's `event.dataTransfer`
-    // reads as a live object (vue-test-utils' `trigger` synthesises a
-    // generic Event, which makes `dataTransfer` undefined and the
-    // handler bails before calling preventDefault).
+    // Dispatch a real DragEvent so the handler's `event.dataTransfer` reads as a live object
+    // (vue-test-utils' `trigger` synthesises a generic Event, which makes `dataTransfer` undefined
+    // and the handler bails before calling preventDefault).
     const el = cardsWrapper.element as HTMLElement
     const dragOver = new Event('dragover', { bubbles: true, cancelable: true }) as Event & {
       dataTransfer?: { types: string[]; dropEffect: string }

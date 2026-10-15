@@ -34,14 +34,11 @@ import type { PabrikWebSearchProvider } from '../../api'
 /** The literal placeholder `curl` must contain when a key is set. */
 export const KEY_PLACEHOLDER = '{key}'
 
-/**
- * Editable row model for one provider.
- *
+/** Editable row model for one provider.
  * `id` is stable UI identity and is NEVER written to config.json — the
  * map key is `name`. It exists because `name` is an editable text input:
  * keying Vue's `:key` on it would destroy and rebuild the input node on
- * every keystroke, dropping focus mid-word.
- */
+ * every keystroke, dropping focus mid-word. */
 export interface WebSearchProviderRow {
   /** Stable per-row identity (Vue `:key`, error lookup). Not on the wire. */
   id: string
@@ -78,10 +75,8 @@ export function createWebSearchProviderRow(): WebSearchProviderRow {
   }
 }
 
-/**
- * Hydrate the editable list from the config's `web_search` map.
- * `null`/absent yields `[]` — same contract as `parseMcpServers`.
- */
+/** Hydrate the editable list from the config's `web_search` map.
+ * `null`/absent yields `[]` — same contract as `parseMcpServers`. */
 export function parseWebSearchProviders(
   raw: Record<string, PabrikWebSearchProvider> | null | undefined,
 ): WebSearchProviderRow[] {
@@ -107,12 +102,9 @@ export function parseWebSearchProviders(
   return out
 }
 
-/**
- * Write the editable list back to the config's `web_search` map.
- * `undefined` means "omit the key entirely" — the same signal the
- * sibling `serializeMcpServers` uses, and the one `usePabrikConfig`'s
- * diff reads as "no change".
- */
+/**  * Write the editable list back to the config's `web_search` map. `undefined` means "omit the key
+ * entirely" — the same signal the sibling `serializeMcpServers` uses, and the one
+ * `usePabrikConfig`'s diff reads as "no change". */
 export function serializeWebSearchProviders(
   rows: WebSearchProviderRow[],
 ): Record<string, PabrikWebSearchProvider> | undefined {
@@ -160,11 +152,8 @@ function endsWithIgnoreCase(haystack: string, needle: string): boolean {
   return haystack.slice(-needle.length).toLowerCase() === needle.toLowerCase()
 }
 
-/**
- * True when `host` names a loopback, link-local, private or otherwise
- * non-public address — a cloud metadata endpoint, most of all, since a
- * key sent to `169.254.169.254` is a stolen key.
- */
+/**  * True when `host` names a loopback, link-local, private or otherwise non-public address — a cloud
+ * metadata endpoint, most of all, since a key sent to `169.254.169.254` is a stolen key. */
 export function isNonPublicHost(host: string): boolean {
   let h = host
   if (h.startsWith('[')) {
@@ -228,15 +217,12 @@ export function urlPinError(url: string): string | null {
 
 // ─── Row validation ─────────────────────────────────────────────────────────
 
-/**
- * Per-row messages keyed by `WebSearchProviderRow.id`, mirroring the
+/** Per-row messages keyed by `WebSearchProviderRow.id`, mirroring the
  * rules the backend enforces on `web_search`. One message per row: the
  * first rule that fails, so the user is not handed a wall of text about
  * a row they are still halfway through typing.
- *
  * Exported as a pure function so the parent can call it before writing
- * `web_search` into the config snapshot — the tests drive it directly.
- */
+ * `web_search` into the config snapshot — the tests drive it directly. */
 export function validateWebSearchRows(rows: WebSearchProviderRow[]): Record<string, string> {
   const errors: Record<string, string> = {}
   for (const row of rows) {

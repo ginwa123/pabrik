@@ -330,10 +330,9 @@ describe('ReadWorkspaceSession.vue — search entries', () => {
   })
 
   it('highlights bare-bracket spans (the format the backend actually emits)', () => {
-    // llm_history.zig calls snippet(messages_fts, 0, '[', ']', '...', 10),
-    // so a real snippet looks like `...a [portal] that refuses...` — there
-    // are no `[match]`/`[/match]` tags in it. This is a verbatim capture
-    // from the live database.
+    // llm_history.zig calls snippet(messages_fts, 0, '[', ']', '...', 10), so a real snippet looks
+    // like `...a [portal] that refuses...` — there are no `[match]`/`[/match]` tags in it. This is
+    // a verbatim capture from the live database.
     const wrapper = mount(ReadWorkspaceSession, {
       props: {
         expanded: true,

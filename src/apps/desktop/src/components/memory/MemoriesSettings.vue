@@ -15,13 +15,11 @@ const handleSelectMemory = (name: string) => {
   selectedMemoryName.value = name
 }
 
-/**
- * Open the create-mode form in the right panel. Wired to the
+/** Open the create-mode form in the right panel. Wired to the
  * "+ New Memory" button in the list header so the user doesn't have
  * to first deselect the current memory. Existing edits in
  * edit/create mode are discarded (consistent with the rest of the
- * app — no confirm dialog for this action).
- */
+ * app — no confirm dialog for this action). */
 const handleCreateClick = () => {
   selectedMemoryName.value = null
   memoryDetailRef.value?.startCreate()

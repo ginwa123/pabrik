@@ -57,11 +57,9 @@ vi.mock('vue-router', async () => {
   return { ...actual, useRoute: useRouteMock, useRouter: useRouterMock }
 })
 
-/**
- * Shallow mount: the nav, its wrapper divs and their class strings render
- * for real; the child components are stubbed, because the assertion is
- * about the geometry contract between them, not their contents.
- */
+/**  * Shallow mount: the nav, its wrapper divs and their class strings render for real; the child
+ * components are stubbed, because the assertion is about the geometry contract between them, not
+ * their contents. */
 function renderSidebar() {
   setActivePinia(createPinia())
   return mount(Sidebar, {

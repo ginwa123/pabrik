@@ -72,11 +72,9 @@ export function useDesignDragDebounce<P>(
     }
   }
 
-  // Auto-cleanup on component unmount — mirrors the
-  // useKanbanScrollRestore pattern. `onBeforeUnmount` returns the
-  // noop (a `() => void`) when called outside a component setup
-  // (e.g. in unit tests). Guard so `dispose()` is safe to call
-  // without a component context.
+  // Auto-cleanup on component unmount — mirrors the useKanbanScrollRestore pattern.
+  // `onBeforeUnmount` returns the noop (a `() => void`) when called outside a component setup (e.g.
+  // in unit tests). Guard so `dispose()` is safe to call without a component context.
   const removeOnUnmount = onBeforeUnmount(() => {
     cancel()
   }) as (() => void) | undefined

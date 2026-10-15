@@ -135,10 +135,9 @@ const loadDiff = async () => {
   error.value = null
 
   try {
-    // Folder mode, via the shared snapshot: the diff panel primes this cache
-    // for the whole repo, so opening a file it already listed costs ZERO
-    // requests. On a miss this is ONE folder request (deduped across every
-    // reader for this cwd), not a per-file one.
+    // Folder mode, via the shared snapshot: the diff panel primes this cache for the whole repo, so
+    // opening a file it already listed costs ZERO requests. On a miss this is ONE folder request
+    // (deduped across every reader for this cwd), not a per-file one.
     diff.value = await fetchFolderDiff(props.cwd, props.filePath, props.staged)
 
     // Parse the unified diff

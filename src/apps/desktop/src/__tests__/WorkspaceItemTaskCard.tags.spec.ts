@@ -1,10 +1,6 @@
-/**
- * WorkspaceItemTaskCard — tags row (Migration 067).
- * Covers: empty/undefined tags → no row, non-empty tags → chips,
- * max 3 visible + "+N more" affordance, deterministic color.
- *
- * Plan: docs/superpowers/plans/2026-07-28-kanban-task-tags.md (Task 12)
- */
+/**  * WorkspaceItemTaskCard — tags row (Migration 067). Covers: empty/undefined tags → no row,
+ * non-empty tags → chips, max 3 visible + "+N more" affordance, deterministic color. Plan:
+ * docs/superpowers/plans/2026-07-28-kanban-task-tags.md (Task 12) */
 
 import { describe, it, expect, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'

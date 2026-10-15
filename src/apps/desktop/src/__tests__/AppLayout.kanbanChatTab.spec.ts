@@ -13,7 +13,7 @@
 // `item_type === 'kanban'`, so a chat branch written as `v-if` — or placed
 // after the KanbanView branch — would render the board AND the chat at once.
 // The old modal could not catch that: a Teleport rendered outside the chain.
-//
+
 // This spec used to be `AppLayout.kanbanChatDialog.spec.ts` and queried
 // `document` for the teleported dialog. There is no modal any more, so it
 // queries the mounted wrapper instead.
@@ -179,9 +179,8 @@ describe('AppLayout — kanban task chat as its own view', () => {
   // init() overwrites workspaces.value with the API response, so the mocks must
   // echo the per-test fixture set immediately before mount.
   function rewireApiForFixture(store: ReturnType<typeof useWorkspacesStore>) {
-    // Snapshot the fixture tree NOW (JSON): lazy init() replaces
-    // `workspaces.value` with empty-items rows BEFORE calling
-    // getWorkspacesItems, so a live read would see the wiped tree.
+    // Snapshot the fixture tree NOW (JSON): lazy init() replaces `workspaces.value` with
+    // empty-items rows BEFORE calling getWorkspacesItems, so a live read would see the wiped tree.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const snapshot = JSON.parse(JSON.stringify(store.workspaces)) as any[]
     vi.spyOn(api, 'getWorkspaces').mockImplementation(async () => {

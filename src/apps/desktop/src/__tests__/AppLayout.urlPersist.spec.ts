@@ -190,9 +190,8 @@ describe('AppLayout — page reload of /app/{ws}/projects/{item} restores the ac
       {},
       `/app/${WS_ID}/projects/${KANBAN_ID}`,
     )
-    // The restore watcher fires on mount (seeded fixtures) and again
-    // after init() loads the items from the API mocks. init() is
-    // async (workspace list → items → columns), so wait for the
+    // The restore watcher fires on mount (seeded fixtures) and again after init() loads the items
+    // from the API mocks. init() is async (workspace list → items → columns), so wait for the
     // kanban view to actually render instead of counting ticks.
     await vi.waitFor(() => {
       expect(ws.activeWorkspaceItemId).toBe(KANBAN_ID)
@@ -357,10 +356,9 @@ describe('AppLayout — design item URL persistence (Chunk 3 of design-url-persi
     const wrapper = mountAppLayout(ws.workspaces, {}, `/app/${WS_ID}`)
     await nextTick()
     await nextTick()
-    // AppLayout.onMounted calls initializeFromSystemFolder() which
-    // calls init() which overwrites `workspaces.value` with the
-    // (empty) API mock result. Re-set workspaces so the URL
-    // watcher's lookup of activeWorkspace succeeds.
+    // AppLayout.onMounted calls initializeFromSystemFolder() which calls init() which overwrites
+    // `workspaces.value` with the (empty) API mock result. Re-set workspaces so the URL watcher's
+    // lookup of activeWorkspace succeeds.
     ws.workspaces = [
       { id: WS_ID, name: 'WS', icon: '📁', expanded: true, items: [makeDesignItem()] } as Workspace,
     ]
@@ -452,10 +450,9 @@ describe('AppLayout — design item URL persistence (Chunk 3 of design-url-persi
     })
     await nextTick()
     await nextTick()
-    // AppLayout.onMounted calls initializeFromSystemFolder() which
-    // calls init() which overwrites `workspaces.value` with the
-    // (empty) API mock result. Re-set workspaces so the URL
-    // watcher's lookup of activeWorkspace succeeds.
+    // AppLayout.onMounted calls initializeFromSystemFolder() which calls init() which overwrites
+    // `workspaces.value` with the (empty) API mock result. Re-set workspaces so the URL watcher's
+    // lookup of activeWorkspace succeeds.
     ws.workspaces = [
       {
         id: WS_ID,
@@ -467,26 +464,21 @@ describe('AppLayout — design item URL persistence (Chunk 3 of design-url-persi
     ]
     await nextTick()
     replaceMock.mockClear()
-    // Simulate the user clicking the kanban in the sidebar —
-    // activeWorkspaceItemId changes to the kanban. The store's
-    // activeDesignPageId is STILL PAGE_ID_1 (stale, set from the
-    // previous design mount) — that's the leak.
+    // Simulate the user clicking the kanban in the sidebar — activeWorkspaceItemId changes to the
+    // kanban. The store's activeDesignPageId is STILL PAGE_ID_1 (stale, set from the previous
+    // design mount) — that's the leak.
     ws.setActiveWorkspaceItem(KANBAN_ID)
     await nextTick()
     await nextTick()
-    // The URL the watcher writes must NOT include pageId — the
-    // active item is a kanban, and pageId is design-item-scoped.
-    // We don't care which exact call the URL-sync watcher made;
-    // any router.replace after the item switch that includes a
-    // pageId would be the bug.
+    // The URL the watcher writes must NOT include pageId — the active item is a kanban, and pageId
+    // is design-item-scoped. We don't care which exact call the URL-sync watcher made; any
+    // router.replace after the item switch that includes a pageId would be the bug.
     const calls = replaceMock.mock.calls
     const lastCall = calls[calls.length - 1]
     expect(lastCall).toBeDefined()
-    // lastCall[0] is the router.replace arg; non-null assertion
-    // is safe because expect(lastCall).toBeDefined() above
-    // narrowed `lastCall` (still possibly undefined per the
-    // index lookup — TS doesn't carry the toBeDefined narrowing
-    // across expressions).
+    // lastCall[0] is the router.replace arg; non-null assertion is safe because
+    // expect(lastCall).toBeDefined() above narrowed `lastCall` (still possibly undefined per the
+    // index lookup — TS doesn't carry the toBeDefined narrowing across expressions).
     const lastArg = lastCall![0] as { path: string; query: Record<string, string> }
     expect(lastArg).toMatchObject({
       path: `/app/${WS_ID}/projects/${KANBAN_ID}`,
@@ -496,10 +488,9 @@ describe('AppLayout — design item URL persistence (Chunk 3 of design-url-persi
     wrapper.unmount()
   })
 
-  // FIX (chatview-bug, task_1785726648589, sibling case): same
-  // scenario as the kanban test above, but the user navigates from
-  // a design to a folder. Folders don't have design pages either,
-  // so the URL must NOT carry the stale pageId.
+  // FIX (chatview-bug, task_1785726648589, sibling case): same scenario as the kanban test above,
+  // but the user navigates from a design to a folder. Folders don't have design pages either, so
+  // the URL must NOT carry the stale pageId.
   it('activeWorkspaceItem → URL watcher does NOT leak stale pageId when switching from design to folder', async () => {
     const FOLDER_ID = 'item_folder_url'
     const makeFolderItem = (overrides: Partial<WorkspaceItem> = {}): WorkspaceItem => ({
@@ -742,9 +733,8 @@ describe('AppLayout — design item URL persistence (Chunk 3 of design-url-persi
     useRouterMock.mockReturnValue({ replace: replaceMock, push: vi.fn() } as any)
     const ws = useWorkspacesStore()
     const kanban = makeKanbanItem()
-    // Inject the active task into the kanban's `tasks` array so the
-    // activeTask computed can find it (mirrors the workspaces
-    // store's setActiveTask auto-discovery at workspaces.ts:3366).
+    // Inject the active task into the kanban's `tasks` array so the activeTask computed can find it
+    // (mirrors the workspaces store's setActiveTask auto-discovery at workspaces.ts:3366).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     kanban.tasks = [{ id: 'task_active', name: 'Active Task' } as any]
     ws.workspaces = [
@@ -793,10 +783,9 @@ describe('AppLayout — design item URL persistence (Chunk 3 of design-url-persi
 
     ws.workspaces = [{ id: WS_ID, name: 'WS', icon: '📁', expanded: true, items: [] } as Workspace]
 
-    // activeTask.value is null because no item owns the task —
-    // activeTask computed walks the tree. The branch falls through
-    // to chat since neither activeWorkspaceItem nor activeTask
-    // computed is truthy. Defensive: workspaceId absent.
+    // activeTask.value is null because no item owns the task — activeTask computed walks the tree.
+    // The branch falls through to chat since neither activeWorkspaceItem nor activeTask computed is
+    // truthy. Defensive: workspaceId absent.
     ws.setActiveTask('task_chat_only')
 
     await nextTick()
@@ -986,11 +975,9 @@ describe('AppLayout — design page URL persistence (pageId in URL)', () => {
   })
 
   it('URL mirror does NOT clobber the chat suffix when activeDesignPageId changes', async () => {
-    // SIMPLIFY-URL-BROWSER (2026-08-15): the chat suffix on itemId
-    // must survive every URL write by the watcher. This pins the
-    // invariant: even if `setActiveDesignPage` fires (which changes
-    // activeDesignPageId), the watcher's write must NOT drop the
-    // suffix from itemId.
+    // SIMPLIFY-URL-BROWSER (2026-08-15): the chat suffix on itemId must survive every URL write by
+    // the watcher. This pins the invariant: even if `setActiveDesignPage` fires (which changes
+    // activeDesignPageId), the watcher's write must NOT drop the suffix from itemId.
     const replaceMock = vi.fn()
     useRouteMock.mockReturnValue({
       query: {
@@ -1015,10 +1002,9 @@ describe('AppLayout — design page URL persistence (pageId in URL)', () => {
     )
     await nextTick()
     await nextTick()
-    // AppLayout.onMounted calls initializeFromSystemFolder() which
-    // calls init() which overwrites `workspaces.value` with the
-    // (empty) API mock result. Re-set workspaces so the URL
-    // watcher's lookup of activeWorkspace succeeds.
+    // AppLayout.onMounted calls initializeFromSystemFolder() which calls init() which overwrites
+    // `workspaces.value` with the (empty) API mock result. Re-set workspaces so the URL watcher's
+    // lookup of activeWorkspace succeeds.
     ws.workspaces = [
       { id: WS_ID, name: 'WS', icon: '📁', expanded: true, items: [makeDesignItem()] } as Workspace,
     ]
@@ -1027,9 +1013,8 @@ describe('AppLayout — design page URL persistence (pageId in URL)', () => {
     ws.setActiveDesignPage(PAGE_ID_1)
     await nextTick()
     await nextTick()
-    // If the watcher DID fire, every write's path must still carry
-    // the chat suffix. The pre-fix watcher overwrote itemId with
-    // `DESIGN_ID` (bare) on every setActiveDesignPage call, which
+    // If the watcher DID fire, every write's path must still carry the chat suffix. The pre-fix
+    // watcher overwrote itemId with `DESIGN_ID` (bare) on every setActiveDesignPage call, which
     // closed the chat dialog. Post-fix it preserves the suffix.
     for (const call of replaceMock.mock.calls) {
       const target = call[0] as { path: string; query: Record<string, string> }
