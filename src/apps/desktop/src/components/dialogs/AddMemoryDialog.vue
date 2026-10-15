@@ -46,22 +46,18 @@ import UiIcon from '../ui/UiIcon.vue'
 
 const props = withDefaults(defineProps<{
   show: boolean
-  /** The initial cwd to scope the new memory to. Used as the starting
-   * value of the local `cwd` ref; the user can change it via the
-   * folder picker before submitting. Typically passed by the parent
-   * as the workspace's first folder item's path, but any valid
-   * absolute path works. */
+  /**    * The initial cwd to scope the new memory to. Used as the starting value of the local `cwd` ref;
+   * the user can change it via the folder picker before submitting. Typically passed by the parent
+   * as the workspace's first folder item's path, but any valid absolute path works. */
   cwd: string
-  /**
-   * 'standalone' (default) — the legacy flow: this dialog calls
+  /** 'standalone' (default) — the legacy flow: this dialog calls
    * `createLocalMemory` and emits `create(name, path)`.
    * 'task' — the new flow (2026-06-20): this dialog does NOT call
    * the API. It emits `create(name, content, path)` and the parent
    * calls `addTask(..., { taskType: 'memory', memory: { name, content } })`.
    * The backend's `task_create.zig` for memory tasks handles both
    * the file write AND the task-row insert in a single POST, so the
-   * parent only needs to make one API call.
-   */
+   * parent only needs to make one API call. */
   mode?: 'standalone' | 'task'
 }>(), {
   mode: 'standalone',
@@ -101,11 +97,9 @@ const notificationStore = useNotificationStore()
 
 // ─── Validation ─────────────────────────────────────────────────────────────
 
-/** Mirrors `memories.isValidMemoryName` from
- * `src/modules/agent/tools/memories.zig:372` — kept in sync so the
- * dialog rejects obvious typos before hitting the server. The
- * server is the source of truth; if the two ever drift, the
- * server-side check returns 400. */
+/**  * Mirrors `memories.isValidMemoryName` from `src/modules/agent/tools/memories.zig:372` — kept in
+ * sync so the dialog rejects obvious typos before hitting the server. The server is the source of
+ * truth; if the two ever drift, the server-side check returns 400. */
 function isValidMemoryName(rawName: string): boolean {
   const trimmed = rawName.trim()
   if (trimmed.length === 0) return false

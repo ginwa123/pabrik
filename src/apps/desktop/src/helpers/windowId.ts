@@ -19,9 +19,8 @@ export function newWindowId(): string {
   return `w_${Math.random().toString(36).slice(2, 12)}`
 }
 
-/** Read-or-create the window id. Never throws: a host without
- * `sessionStorage` (or one that denies it, e.g. a hardened webview)
- * still gets a stable id for the lifetime of the page. */
+/**  * Read-or-create the window id. Never throws: a host without `sessionStorage` (or one that denies
+ * it, e.g. a hardened webview) still gets a stable id for the lifetime of the page. */
 export function getWindowId(): string {
   if (cached) return cached
   const created = newWindowId()

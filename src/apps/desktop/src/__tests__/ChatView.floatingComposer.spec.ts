@@ -127,9 +127,9 @@ function installBaseMocks() {
   } as any)
 }
 
-/** Three groups: short enough that the scroller's initial window covers
- *  all of them (jsdom reports a 0-height container, so the window is
- *  `buffer` rows wide), which lets the spec see the real last row. */
+/**  * Three groups: short enough that the scroller's initial window covers all of them (jsdom reports a
+ * 0-height container, so the window is `buffer` rows wide), which lets the spec see the real last
+ * row. */
 function historyWithMessages() {
   const messages = [
     { role: 'user', content: 'first question' },

@@ -39,9 +39,8 @@ import {
 } from '../stores/workspaces'
 import { makeLocalStorageStub } from './helpers'
 
-/** Test-only stub SseClient. Tracks state-listener callbacks so tests
- * can drive the bus's `state` ShallowRef transitions to exercise
- * the `onConnected → fetchInitialKanban` watcher. */
+/**  * Test-only stub SseClient. Tracks state-listener callbacks so tests can drive the bus's `state`
+ * ShallowRef transitions to exercise the `onConnected → fetchInitialKanban` watcher. */
 function makeStubClient(initial: SseState): SseClient {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const stub: any = {

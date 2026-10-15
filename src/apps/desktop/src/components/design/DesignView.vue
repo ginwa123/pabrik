@@ -1237,15 +1237,12 @@ const handleElementTranslate = (payload: { elementId?: string; dx: number; dy: n
   emit('translateElement', id, payload.dx, payload.dy)
 }
 
-/**
- * NEW (2026-08-06, split-move-resize plan) — handler for the
+/** NEW (2026-08-06, split-move-resize plan) — handler for the
  * `resize` event fired by DesignElement during a resize gesture.
  * The payload is the absolute target geometry after applying the
  * cursor delta.
- *
  * Routes through `useDesignHandlers.resizeElement` → POST /resize.
- * Resize never cascades (Figma convention).
- */
+ * Resize never cascades (Figma convention). */
 const handleElementResize = (patch: Partial<DesignElementApi>): void => {
   if (selectedIds.value.size !== 1) {
     designLogger.warn({

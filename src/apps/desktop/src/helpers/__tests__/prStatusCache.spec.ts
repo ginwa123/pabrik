@@ -1,7 +1,6 @@
-/** Behavioural tests for the shared PR-status cache (kanban git icon).
- * The board mounts ~140 cards at once; without dedupe every card fired
- * its own `gh pr view`. These tests lock in: in-flight dedupe, TTL
- * caching, retry-on-transient, no-retry-on-404, and fail-silent ''. */
+/**  * Behavioural tests for the shared PR-status cache (kanban git icon). The board mounts ~140 cards
+ * at once; without dedupe every card fired its own `gh pr view`. These tests lock in: in-flight
+ * dedupe, TTL caching, retry-on-transient, no-retry-on-404, and fail-silent ''. */
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { ApiError } from '@/api'
 import { fetchPrStatusCached, clearPrStatusCache } from '../prStatusCache'

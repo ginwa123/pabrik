@@ -39,10 +39,9 @@ import type { DesignElement } from '../../api'
 import UiIcon from '../ui/UiIcon.vue'
 import type { UiIconName } from '../ui/icons'
 
-/** One node in the design-page layers tree. Each `DesignElement` can
- * have N nested children (when its `parent_id` points to a `group`
- * or `frame` element). The tree is built in `LayersPanel.vue` via
- * the `layerTree` computed. */
+/**  * One node in the design-page layers tree. Each `DesignElement` can have N nested children (when
+ * its `parent_id` points to a `group` or `frame` element). The tree is built in `LayersPanel.vue`
+ * via the `layerTree` computed. */
 export interface LayerTreeNode {
   element: DesignElement
   children: LayerTreeNode[]
@@ -67,25 +66,21 @@ const props = withDefaults(
     depth: number
     selectedIds: string[]
     readonly: boolean
-    /** Shared collapse state from the parent. The parent owns a
-     * `ref(new Set<string>())` and passes the Set down by reference.
-     * Vue 3 reactivity requires the parent to REPLACE the Set (not
+    /**      * Shared collapse state from the parent. The parent owns a `ref(new Set<string>())` and passes
+     * the Set down by reference. Vue 3 reactivity requires the parent to REPLACE the Set (not
      * mutate it) to trigger re-renders — LayerRow just READS it. */
     collapsedIds: Set<string>
-    /** Kind flag — 'row' is the default (a real element row).
-     * 'drop-zone' renders the row as a non-draggable top-level
-     * drop target used between top-level siblings. The parent
-     * LayersPanel mounts these as synthetic rows with a sentinel
-     * element id (`TOP_LEVEL_SENTINEL`). */
+    /**      * Kind flag — 'row' is the default (a real element row). 'drop-zone' renders the row as a
+     * non-draggable top-level drop target used between top-level siblings. The parent LayersPanel
+     * mounts these as synthetic rows with a sentinel element id (`TOP_LEVEL_SENTINEL`). */
     kind?: 'row' | 'drop-zone'
     /** Optional drag-state visual flags from the parent. */
     isBeingDragged?: boolean
     isDropTarget?: boolean
     isDropTargetBlocked?: boolean
-    /** Drag event callbacks. The parent (LayersPanel) owns the
-     *  drag state machine via `useLayerDragDrop` and uses these
-     *  hooks to drive it. When omitted (e.g. synthetic rows) the
-     *  row stays passive. */
+    /**      * Drag event callbacks. The parent (LayersPanel) owns the drag state machine via
+     * `useLayerDragDrop` and uses these hooks to drive it. When omitted (e.g. synthetic rows) the
+     * row stays passive. */
     onLayerDragStart?: (id: string, ev: DragEvent) => void
     onLayerDragOver?: (id: string, ev: DragEvent) => void
     onLayerDragLeave?: (id: string, ev: DragEvent) => void

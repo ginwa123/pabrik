@@ -22,11 +22,8 @@ import { Cause, Effect, Exit } from 'effect'
 import { describeSyncError, type SyncError } from './SyncError'
 import { IndexedDbStoreLive } from './IndexedDbStore'
 
-/** The same cache as a `Layer`, for code that composes a whole Effect program
- * and wants the service in context:
- * ```ts
- * Effect.provide(program, syncStoreLayer)
- * ``` */
+/**  * The same cache as a `Layer`, for code that composes a whole Effect program and wants the service
+ * in context: ```ts Effect.provide(program, syncStoreLayer) ``` */
 export const syncStoreLayer = IndexedDbStoreLive
 
 const report = (op: string, error: SyncError): void => {
@@ -58,10 +55,9 @@ export async function runSyncEffectOr<A>(
   return fallback
 }
 
-/** Run a best-effort sync Effect for its side effects, e.g. `putLocal`. These
- * are typed `Effect<void, never>` by the engine, but the error channel is
- * accepted anyway so a caller cannot accidentally turn an advisory write into
- * a rejected promise. */
+/**  * Run a best-effort sync Effect for its side effects, e.g. `putLocal`. These are typed
+ * `Effect<void, never>` by the engine, but the error channel is accepted anyway so a caller cannot
+ * accidentally turn an advisory write into a rejected promise. */
 export async function runSyncVoid(
   effect: Effect.Effect<void, SyncError>,
   op: string,

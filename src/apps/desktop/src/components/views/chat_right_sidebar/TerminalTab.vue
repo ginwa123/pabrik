@@ -15,9 +15,8 @@ import {
 
 const props = defineProps<{
   cwd: string
-  /** Per-chat persistence key. With it, session ids survive tab/chat
-   * switches via localStorage and re-attach on return; without it
-   * sessions are deleted on unmount. */
+  /**    * Per-chat persistence key. With it, session ids survive tab/chat switches via localStorage and
+   * re-attach on return; without it sessions are deleted on unmount. */
   sessionKey?: string
 }>()
 

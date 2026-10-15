@@ -180,10 +180,9 @@ export function invalidatePrStatus(cwd: string, branch: string): void {
   }
 }
 
-/** Provider is part of the key because one repo directory can hold
- * branches pointing at different forges, and a GitLab answer must never
- * be served to a caller that asked for GitHub (the status vocabulary
- * differs too — GitHub reports CONFLICTING, GitLab `conflicted`). */
+/**  * Provider is part of the key because one repo directory can hold branches pointing at different
+ * forges, and a GitLab answer must never be served to a caller that asked for GitHub (the status
+ * vocabulary differs too — GitHub reports CONFLICTING, GitLab `conflicted`). */
 function cacheKey(cwd: string, branch: string, provider: string): string {
   return `${cwd}::${branch}::${provider}`
 }
@@ -225,9 +224,8 @@ async function fetchWithRetry(cwd: string, branch: string, provider: string): Pr
   return { ...EMPTY_INFO }
 }
 
-/** PR status + URL for a repo + branch. Never rejects — unknown
- * (no cwd/branch, no PR, `gh` missing, fetch failing) resolves to
- * `{ status: '', prUrl: '' }`. */
+/**  * PR status + URL for a repo + branch. Never rejects — unknown (no cwd/branch, no PR, `gh` missing,
+ * fetch failing) resolves to `{ status: '', prUrl: '' }`. */
 export function fetchPrInfoCached(cwd: string, branch: string, provider = ''): Promise<PrInfo> {
   if (!cwd || !branch) return Promise.resolve({ ...EMPTY_INFO })
   const k = cacheKey(cwd, branch, provider)
@@ -270,9 +268,8 @@ export function fetchPrInfoCached(cwd: string, branch: string, provider = ''): P
   return p
 }
 
-/** Lowercase PR status (`open` | `merged` | `closed`) for a repo + branch,
- * or `''` when unknown (no cwd/branch, no PR, `gh` missing, or the fetch
- * kept failing). Never rejects. */
+/**  * Lowercase PR status (`open` | `merged` | `closed`) for a repo + branch, or `''` when unknown (no
+ * cwd/branch, no PR, `gh` missing, or the fetch kept failing). Never rejects. */
 export function fetchPrStatusCached(cwd: string, branch: string, provider = ''): Promise<string> {
   return fetchPrInfoCached(cwd, branch, provider).then((info) => info.status)
 }
@@ -287,9 +284,8 @@ export function fetchPrStatusFullCached(
   return fetchPrInfoCached(cwd, branch, provider)
 }
 
-/** Cached conflict flag for a repo + branch. True only when the PR reports
- * CONFLICTING (or DIRTY) — quiet (false) for mergeable, unknown, or failed
- * fetches. Never rejects. */
+/**  * Cached conflict flag for a repo + branch. True only when the PR reports CONFLICTING (or DIRTY) —
+ * quiet (false) for mergeable, unknown, or failed fetches. Never rejects. */
 export function fetchPrConflictCached(
   cwd: string,
   branch: string,
@@ -348,16 +344,13 @@ function earliestMarkerIndex(prUrl: string): number {
   return best
 }
 
-/**
- * Repo base derived from a PR/MR URL — the part before the change-request
+/** Repo base derived from a PR/MR URL — the part before the change-request
  * segment: `https://github.com/owner/repo` from
  * `…/owner/repo/pull/123`, and `https://gitlab.com/group/sub/repo` from
  * `…/group/sub/repo/-/merge_requests/7`.
- *
  * Previously this only understood `/pull/`, so it returned `''` for every
  * GitLab MR URL — which silently disabled the "open branch in new tab"
- * menu item for the entire GitLab user base rather than showing an error.
- */
+ * menu item for the entire GitLab user base rather than showing an error. */
 export function repoBaseFromPrUrl(prUrl: string): string {
   if (!prUrl) return ''
   const idx = earliestMarkerIndex(prUrl)
@@ -365,15 +358,12 @@ export function repoBaseFromPrUrl(prUrl: string): string {
   return prUrl.slice(0, idx)
 }
 
-/**
- * Branch page URL derived from the PR URL's repo base.
- *
+/** Branch page URL derived from the PR URL's repo base.
  * The `/tree/` vs `/-/tree/` split is not cosmetic: GitLab puts a `/-/`
  * discriminator before sub-paths, so a GitHub-shaped link on a GitLab repo
  * is a 404. Deriving the shape from the URL (rather than the provider
  * string) keeps this correct even when the caller never learned the
- * provider, e.g. a bare MR URL off the board badge.
- */
+ * provider, e.g. a bare MR URL off the board badge. */
 export function branchUrlFromPrUrl(prUrl: string, branch: string): string {
   const base = repoBaseFromPrUrl(prUrl)
   if (!base || !branch) return ''

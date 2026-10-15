@@ -58,17 +58,16 @@ import { normalizeToolContent } from './_shared/toolOutputParser'
 const props = defineProps<{
   content: unknown
   expanded?: boolean
-  /** Tool-call args (XML from jsonArgsToXml, or JSON). Used as a fallback
-   *  so a still-running tool (empty content) shows its target id, and as
-   *  the primary source of the saved body (the result does not echo it). */
+  /**    * Tool-call args (XML from jsonArgsToXml, or JSON). Used as a fallback so a still-running tool
+   * (empty content) shows its target id, and as the primary source of the saved body (the result
+   * does not echo it). */
   parameters?: string
 }>()
 
 const isExpanded = ref(props.expanded ?? false)
 
-/** Body longer than this is clipped in the card. A memory can be up to
- *  1 MiB; a chat card has no business rendering all of it. The copy
- *  button still yields the full body. */
+/**  * Body longer than this is clipped in the card. A memory can be up to 1 MiB; a chat card has no
+ * business rendering all of it. The copy button still yields the full body. */
 const MAX_DISPLAY_CHARS = 20000
 
 /** How much of the body the header's hover tooltip reveals. */
@@ -161,9 +160,8 @@ const savedContent = computed((): string | null => {
   return extractParam(props.parameters, 'content')
 })
 
-/** Tags as individual chips. `splitTagsString` in
- *  `src/modules/agent/tools/memory.zig` accepts `||`, `|`, `,` and
- *  space; mirror that order so the chips match what was stored. */
+/**  * Tags as individual chips. `splitTagsString` in `src/modules/agent/tools/memory.zig` accepts `||`,
+ * `|`, `,` and space; mirror that order so the chips match what was stored. */
 const savedTags = computed((): string[] => {
   let raw: string | null = null
   const fromData = dataRecord.value.tags
@@ -189,10 +187,9 @@ const statusIndicator = computed(() => (isRunning.value ? '…' : isSuccess.valu
  *  collapsed so a multi-line note still fits one tooltip line. */
 const contentOneLine = computed(() => (savedContent.value ?? '').replace(/\s+/g, ' ').trim())
 
-/** Chips shown in the header. The header is a single line, so a memory
- *  carrying a dozen tags would otherwise blow the row out; the tail
- *  collapses into a `+N` chip. Nothing is lost — the hover title and the
- *  Arguments block both carry the full list. */
+/**  * Chips shown in the header. The header is a single line, so a memory carrying a dozen tags would
+ * otherwise blow the row out; the tail collapses into a `+N` chip. Nothing is lost — the hover
+ * title and the Arguments block both carry the full list. */
 const HEADER_MAX_TAGS = 3
 const headerTags = computed(() => savedTags.value.slice(0, HEADER_MAX_TAGS))
 const hiddenTagCount = computed(() => Math.max(0, savedTags.value.length - HEADER_MAX_TAGS))
@@ -271,9 +268,8 @@ function clip(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) : s
 }
 
-/** UTF-8 byte length without allocating a copy of the (up to 1 MiB)
- *  body — `TextEncoder.encode` would materialise the whole byte array
- *  just to read its length. */
+/**  * UTF-8 byte length without allocating a copy of the (up to 1 MiB) body — `TextEncoder.encode`
+ * would materialise the whole byte array just to read its length. */
 function utf8Len(s: string): number {
   let n = 0
   for (let i = 0; i < s.length; i++) {

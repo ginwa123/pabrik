@@ -385,9 +385,8 @@ const handleGoToSettings = (payload: {
   openInNewTab(router, buildAppUrl({ workspaceId: payload.workspaceId, projectId: payload.itemId }))
 }
 
-/** Ctrl/Cmd+click (or middle click) on a workspace item: open a real
- * browser tab and stay where the user is. The click never navigates,
- * so nothing in the render chain has to know about it. */
+/**  * Ctrl/Cmd+click (or middle click) on a workspace item: open a real browser tab and stay where the
+ * user is. The click never navigates, so nothing in the render chain has to know about it. */
 const handleOpenItemInBackground = (payload: {
   workspaceId: string
   itemId: string
@@ -397,10 +396,9 @@ const handleOpenItemInBackground = (payload: {
   openInNewTab(router, buildAppUrl({ workspaceId: payload.workspaceId, projectId: payload.itemId }))
 }
 
-/** Right-click "Open in new tab" on a task row/card. Builds the task
- * chat URL from the row's explicit ids (NOT the active store state —
- * the row may belong to a non-active item) and opens a real browser
- * tab. Never mutates navigation state: the current tab stays put. */
+/**  * Right-click "Open in new tab" on a task row/card. Builds the task chat URL from the row's
+ * explicit ids (NOT the active store state — the row may belong to a non-active item) and opens a
+ * real browser tab. Never mutates navigation state: the current tab stays put. */
 const handleOpenTaskInBackground = (payload: {
   workspaceId: string
   itemId: string
@@ -653,15 +651,13 @@ const resolveCwdForMemory = (workspaceId: string): string => {
   return ''
 }
 
-/**
- * Resolve the cwd to scope a new memory TASK to. Unlike
+/** Resolve the cwd to scope a new memory TASK to. Unlike
  * `resolveCwdForMemory` (which uses the workspace's first folder),
  * this function takes the SPECIFIC item_id the user picked — the
  * memory task is attached to that item, and the .md file is
  * scoped to that item's path. Returns '' if the item can't be
  * found or has no path (in which case the AddMemoryDialog will
- * show its own "no cwd" error and refuse to submit).
- */
+ * show its own "no cwd" error and refuse to submit). */
 const resolveCwdForItem = (itemId: string): string => {
   const item = workspacesStore.allWorkspaceItems.find((i) => i.id === itemId)
   if (!item) return ''

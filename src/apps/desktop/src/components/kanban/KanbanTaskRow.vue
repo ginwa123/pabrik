@@ -64,10 +64,9 @@ const props = withDefaults(
     workspaceId: string
     itemId: string
     cwd?: string
-    /** `comfortable` (default) is the two-line record: name + metadata.
-     * `compact` drops the metadata line back to a single scannable line,
-     * for boards like `merged` where 110 two-line rows is a lot of
-     * scrolling. Threaded from <KanbanView> via localStorage. */
+    /**      * `comfortable` (default) is the two-line record: name + metadata. `compact` drops the metadata
+     * line back to a single scannable line, for boards like `merged` where 110 two-line rows is a
+     * lot of scrolling. Threaded from <KanbanView> via localStorage. */
     density?: KanbanRowDensity
   }>(),
   { cwd: '', density: 'comfortable' },

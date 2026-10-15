@@ -72,9 +72,9 @@ export function primeFolderDiffs(cwd: string, diffs: GitFileDiff[]): void {
   evictOldest()
 }
 
-/** The diff for one file, or null when the snapshot is missing or expired.
- * A file the server did not report is null too — the caller decides whether
- * that means "clean file" (empty diff) or "ask again". */
+/**  * The diff for one file, or null when the snapshot is missing or expired. A file the server did not
+ * report is null too — the caller decides whether that means "clean file" (empty diff) or "ask
+ * again". */
 export function readFolderDiff(cwd: string, path: string, staged: boolean): GitFileDiff | null {
   if (!cwd || !path) return null
   const snap = snapshots.get(cwd)
@@ -114,16 +114,13 @@ function fetchSnapshot(cwd: string): Promise<Map<string, GitFileDiff>> {
   return tracked
 }
 
-/**
- * Diff for one file, from the shared snapshot. Revalidates with a single
+/** Diff for one file, from the shared snapshot. Revalidates with a single
  * folder request when the snapshot is missing or older than the TTL;
  * concurrent callers share that one request.
- *
  * Resolves to a diff entry even when the path is absent from the payload —
  * the server only reports CHANGED paths, so a missing path means "no diff",
  * which is what the per-file endpoint used to answer with empty content.
- * REJECTS when the fetch itself fails; callers render that as an error.
- */
+ * REJECTS when the fetch itself fails; callers render that as an error. */
 export async function fetchFolderDiff(
   cwd: string,
   path: string,

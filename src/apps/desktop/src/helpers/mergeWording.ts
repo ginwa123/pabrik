@@ -223,9 +223,8 @@ export function mergeWording(s: MergeSignals): MergeWording {
 
 export type MergeMethod = 'merge' | 'squash' | 'rebase'
 
-/** The three methods both CLIs expose. `gh pr merge` needs exactly one of
- *  them — with no strategy flag it prompts, and a non-tty child cannot
- *  answer. Order is GitHub's. */
+/**  * The three methods both CLIs expose. `gh pr merge` needs exactly one of them — with no strategy
+ * flag it prompts, and a non-tty child cannot answer. Order is GitHub's. */
 export const MERGE_METHODS: readonly MergeMethod[] = ['merge', 'squash', 'rebase'] as const
 
 export function methodLabel(m: MergeMethod): string {
@@ -242,16 +241,13 @@ export function methodDetail(m: MergeMethod, target: string): string {
 
 const METHOD_KEY = 'pabrik-pr-merge-method'
 
-/**
- * A stable key for "this repository": everything between the host and the
+/** A stable key for "this repository": everything between the host and the
  * change request, e.g. `ginwa123/pabrik` on GitHub and `g/sub/repo` on GitLab
  * (a GitLab project path keeps its nested namespace). The same repo reached
  * through two worktrees therefore remembers ONE method choice.
- *
  * The `(?:-\/)?` is load-bearing: GitLab inserts a `/-/` discriminator before
  * `merge_requests`, and a pattern that ignored it would key the memory on the
- * project name alone — colliding with a same-named project elsewhere.
- */
+ * project name alone — colliding with a same-named project elsewhere. */
 export function repoKeyFor(prUrl: string, fallback: string): string {
   const m = /^https?:\/\/[^/]+\/(.+?)\/(?:-\/)?(?:pull|merge_requests)\/\d+/.exec(
     (prUrl || '').trim(),

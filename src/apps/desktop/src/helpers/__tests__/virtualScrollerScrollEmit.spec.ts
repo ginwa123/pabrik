@@ -29,9 +29,8 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import VirtualScroller from '../VirtualScroller.vue'
 
-/** Mount a VirtualScroller with one item. The item content doesn't
- * matter for these tests — we're driving scroll events directly on
- * the root element. */
+/**  * Mount a VirtualScroller with one item. The item content doesn't matter for these tests — we're
+ * driving scroll events directly on the root element. */
 function mountScroller() {
   return mount(VirtualScroller, {
     props: {
@@ -46,11 +45,9 @@ function mountScroller() {
   })
 }
 
-/** Dispatch a real scroll event on the scroller's root element with
- * a known `scrollTop`. jsdom does not lay out, so we set the
- * layout-affecting properties explicitly so the geometry reads in
- * `onScroll` (target.clientHeight, target.scrollHeight) return
- * realistic values. */
+/**  * Dispatch a real scroll event on the scroller's root element with a known `scrollTop`. jsdom does
+ * not lay out, so we set the layout-affecting properties explicitly so the geometry reads in
+ * `onScroll` (target.clientHeight, target.scrollHeight) return realistic values. */
 function dispatchScroll(wrapper: ReturnType<typeof mountScroller>, scrollTop: number) {
   const el = wrapper.element as HTMLElement
   Object.defineProperty(el, 'clientHeight', { value: 800, configurable: true })

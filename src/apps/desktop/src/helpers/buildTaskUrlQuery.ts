@@ -63,10 +63,9 @@ export { pickBreadcrumbFromQuery }
 export interface TaskUrlContext {
   /** The task id to put in the `/chat/<taskId>` suffix (required). */
   taskId: string
-  /** Accepted for back-compat with old call sites (some historically
-   * passed both `taskId` and `sessionId`).
-   * Ignored under the new wire shape — the chat task id in the
-   * suffix IS the session id per `task.id == session_id`. */
+  /**    * Accepted for back-compat with old call sites (some historically passed both `taskId` and
+   * `sessionId`). Ignored under the new wire shape — the chat task id in the suffix IS the session
+   * id per `task.id == session_id`. */
   sessionId?: string
   /** Active workspace id from the store, or null if none. */
   activeWorkspaceId?: string | null | undefined
@@ -84,9 +83,8 @@ export interface TaskUrlContext {
   currentQuery?: UrlQueryInput | null | undefined
 }
 
-/** Build a URL query object for chat-dialog navigation on a
- * workspace item. Always emits `view: 'workspace'` and includes the
- * `/chat/<taskId>` suffix on `itemId`. */
+/**  * Build a URL query object for chat-dialog navigation on a workspace item. Always emits `view:
+ * 'workspace'` and includes the `/chat/<taskId>` suffix on `itemId`. */
 export function buildTaskUrlQuery(input: TaskUrlContext): Record<string, string> {
   const taskId = (input.taskId ?? '').toString().trim()
   if (!taskId) {

@@ -39,9 +39,9 @@ export function displayStatusForChange(change: GitFileChange): GitBadge {
   return { kind: 'modified', badge: 'M' }
 }
 
-/** Fold the three wire lists into one map. Insert order is deliberate:
- * untracked, then modified, then staged — so a path present in several
- * lists (staged + further worktree edits) keeps its staged badge. */
+/**  * Fold the three wire lists into one map. Insert order is deliberate: untracked, then modified,
+ * then staged — so a path present in several lists (staged + further worktree edits) keeps its
+ * staged badge. */
 export function buildGitStatusMap(changes: GitChangesResponse): Map<string, GitBadge> {
   const map = new Map<string, GitBadge>()
   for (const file of changes.untracked_files ?? []) map.set(file.path, displayStatusForChange(file))

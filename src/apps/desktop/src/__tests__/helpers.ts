@@ -1,6 +1,5 @@
-/** Shared test helpers. Keep this file dependency-light — only `vitest` and
- * Node built-ins. Tests in this directory import from `./helpers` to avoid
- * duplicating boilerplate across spec files. */
+/**  * Shared test helpers. Keep this file dependency-light — only `vitest` and Node built-ins. Tests in
+ * this directory import from `./helpers` to avoid duplicating boilerplate across spec files. */
 
 /**
  * Returns a localStorage stub backed by a Map. jsdom 29 dropped localStorage

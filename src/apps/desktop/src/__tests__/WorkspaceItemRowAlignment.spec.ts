@@ -58,17 +58,16 @@ function mountItem(item: WorkspaceItemType, isActive = false) {
   })
 }
 
-/** The menu is `v-if="menuPos"`, so it only mounts after a real right-click
- * on the row. Trigger it the way a user does rather than poking the
- * composable's ref — the point of these tests is the wired path. */
+/**  * The menu is `v-if="menuPos"`, so it only mounts after a real right-click on the row. Trigger it
+ * the way a user does rather than poking the composable's ref — the point of these tests is the
+ * wired path. */
 async function openRowMenu(w: VueWrapper) {
   await w.find('button.flex-1').trigger('contextmenu', { clientX: 40, clientY: 40 })
   await nextTick()
 }
 
-/** OpenInNewTabMenu is `<Teleport to="body">`, so its rows are NOT inside the
- * wrapper's element tree and `wrapper.find` cannot see them. Read the
- * document instead. */
+/**  * OpenInNewTabMenu is `<Teleport to="body">`, so its rows are NOT inside the wrapper's element tree
+ * and `wrapper.find` cannot see them. Read the document instead. */
 function menuRowExists(testid: string): boolean {
   return document.querySelector(`[data-testid="${testid}"]`) !== null
 }

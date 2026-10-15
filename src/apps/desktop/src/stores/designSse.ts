@@ -216,9 +216,8 @@ export const useDesignSseStore = defineStore('designSse', () => {
     }) ?? null
   }
 
-  /** Tear down the design-event handlers. Called on AppLayout unmount
-   * (and at the end of each test). Mirrors the pre-migration
-   * `closeKanbanSse` contract but for the bus listener instead of a
+  /**    * Tear down the design-event handlers. Called on AppLayout unmount (and at the end of each test).
+   * Mirrors the pre-migration `closeKanbanSse` contract but for the bus listener instead of a
    * self-managed SseClient. */
   function closeDesignSse(): void {
     if (offDesign) {
@@ -297,11 +296,9 @@ export const useDesignSseStore = defineStore('designSse', () => {
   }
 })
 
-/** Extract the list of element ids from a design SSE event. The
- * single-element wire shape carries `element_id`; the batch wire
- * shape (Chunk 3 of design-drag-debounce-batch) carries
- * `element_ids`. Defensive: missing fields → empty array → SSE
- * handler falls through to the normal fetch path. */
+/**  * Extract the list of element ids from a design SSE event. The single-element wire shape carries
+ * `element_id`; the batch wire shape (Chunk 3 of design-drag-debounce-batch) carries `element_ids`.
+ * Defensive: missing fields → empty array → SSE handler falls through to the normal fetch path. */
 function extractElementIds(event: DesignElementEvent): string[] {
   const e = event as unknown as {
     element_id?: string

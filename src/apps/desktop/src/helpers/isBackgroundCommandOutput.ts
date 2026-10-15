@@ -57,30 +57,24 @@ export interface ParsedBackgroundCommandOutput {
 /** XML envelope — non-greedy so a body containing tags can't overrun. */
 const BACKGROUND_XML_RE = /<background_command>([\s\S]*?)<\/background_command>/
 
-/**
- * A candidate JSON envelope: an object whose first key is `pid`.
- *
+/** A candidate JSON envelope: an object whose first key is `pid`.
  * Cheap and deliberately narrow. It keeps `JSON.parse` off the hot path of
  * ordinary chat history, and lets the predicate answer without parsing, so a
  * user message that merely contains `{` is not misdetected.
- *
  * It is not a validity check: a message that starts like ours still has to
- * survive `shapeFromJson`, which returns null if it is something else.
- */
+ * survive `shapeFromJson`, which returns null if it is something else. */
 const JSON_ENVELOPE_RE = /^\s*\{\s*"pid"\s*:/
 
-/** Failure of the JSON branch. A tagged error so the failure channel has a type
- * instead of `unknown` — `local/no-try-catch` bans the `try`/`catch` spelling,
- * and an `Effect` keeps the failure in the signature (same reasoning as
- * `sync/SyncError.ts`). */
+/**  * Failure of the JSON branch. A tagged error so the failure channel has a type instead of `unknown`
+ * — `local/no-try-catch` bans the `try`/`catch` spelling, and an `Effect` keeps the failure in the
+ * signature (same reasoning as `sync/SyncError.ts`). */
 class BackgroundEnvelopeJsonError extends Data.TaggedError('BackgroundEnvelopeJsonError')<{
   reason: string
 }> {}
 
-/** Parse the JSON envelope without a `try`/`catch`.
- * `Effect.try` moves a throw into the error channel and `Effect.either` turns it
- * into a VALUE, so `runSync` here cannot throw: the failure is a `Left`, which
- * is `null` to the caller. Same idiom as `helpers/prStatusCache.ts`. */
+/**  * Parse the JSON envelope without a `try`/`catch`. `Effect.try` moves a throw into the error
+ * channel and `Effect.either` turns it into a VALUE, so `runSync` here cannot throw: the failure is
+ * a `Left`, which is `null` to the caller. Same idiom as `helpers/prStatusCache.ts`. */
 function parseJsonEnvelope(content: string): ParsedBackgroundCommandOutput | null {
   const outcome = Effect.runSync(
     Effect.either(
@@ -94,9 +88,8 @@ function parseJsonEnvelope(content: string): ParsedBackgroundCommandOutput | nul
   return shapeFromJson(outcome.right)
 }
 
-/** Map a parsed value onto the card's fields, or `null` when it is not our
- * envelope after all. The wire names are the BACKEND's (`stdout`); `body` is the
- * card's name for the same thing. */
+/**  * Map a parsed value onto the card's fields, or `null` when it is not our envelope after all. The
+ * wire names are the BACKEND's (`stdout`); `body` is the card's name for the same thing. */
 function shapeFromJson(value: unknown): ParsedBackgroundCommandOutput | null {
   if (typeof value !== 'object' || value === null) return null
   const obj = value as Record<string, unknown>
@@ -120,10 +113,9 @@ const LEGACY_PREFIX = 'This is an output from background command (pid '
 /** Legacy fence matcher — tolerates 3, 4, or 5-quote fences. */
 const LEGACY_FENCE_RE = /"{3,5}/g
 
-/** Escape the 5 XML metacharacters on serialization.
- * Mirrors `llm_history.zig xmlEscape`: `&` MUST be replaced first,
- * otherwise the later replacements would double-escape their own
- * `&`-prefixed entities. */
+/**  * Escape the 5 XML metacharacters on serialization. Mirrors `llm_history.zig xmlEscape`: `&` MUST
+ * be replaced first, otherwise the later replacements would double-escape their own `&`-prefixed
+ * entities. */
 function escapeXml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
@@ -167,10 +159,9 @@ export function parseBackgroundCommandOutput(content: string): ParsedBackgroundC
   return parseLegacyProse(content)
 }
 
-/** Legacy prose fallback: `This is an output from background command
- * (pid {d}, command \`{s}\`):` + first-to-last `"{3,5}` fence slice.
- * The body passes through verbatim (trimmed) — the real envelope never
- * had a header line inside the fences. */
+/**  * Legacy prose fallback: `This is an output from background command (pid {d}, command \`{s}\`):` +
+ * first-to-last `"{3,5}` fence slice. The body passes through verbatim (trimmed) — the real
+ * envelope never had a header line inside the fences. */
 function parseLegacyProse(content: string): ParsedBackgroundCommandOutput | null {
   if (!content.startsWith(LEGACY_PREFIX)) return null
   // Real envelope: `(pid {d}, command \`{s}\`)` — the closing paren comes
@@ -194,9 +185,9 @@ function parseLegacyProse(content: string): ParsedBackgroundCommandOutput | null
   return { pid, command, body: content.slice(bodyStart, bodyEnd).trim(), truncated: false, logPath: null }
 }
 
-/** Re-emit a parsed background completion as the foreground shell XML
- * envelope. `command`/`stdout` are XML-escaped; `stderr` is empty (the
- * background logger merges streams); `truncated` comes from the envelope. */
+/**  * Re-emit a parsed background completion as the foreground shell XML envelope. `command`/`stdout`
+ * are XML-escaped; `stderr` is empty (the background logger merges streams); `truncated` comes from
+ * the envelope. */
 export function backgroundToShellXml(parsed: ParsedBackgroundCommandOutput): string {
   return (
     `<command>${escapeXml(parsed.command)}</command>` +

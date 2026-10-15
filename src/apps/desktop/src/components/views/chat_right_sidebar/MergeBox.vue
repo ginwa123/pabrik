@@ -114,9 +114,9 @@ const method = computed<MergeMethod>(() => {
 // ── the confirm step ──────────────────────────────────────────────────────
 const menuOpen = ref(false)
 const confirming = ref(false)
-/** OFF by default. In this app the source branch is usually the session's OWN
- *  worktree branch, so a pre-ticked box could delete the branch the user is
- *  standing on. The name is always shown next to it. */
+/**  * OFF by default. In this app the source branch is usually the session's OWN worktree branch, so a
+ * pre-ticked box could delete the branch the user is standing on. The name is always shown next to
+ * it. */
 const deleteBranch = ref(false)
 const message = ref('')
 

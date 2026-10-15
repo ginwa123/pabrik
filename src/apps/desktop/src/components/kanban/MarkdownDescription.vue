@@ -80,10 +80,9 @@ const PLACEHOLDER_PREFIX = '\uE000_FILECHIP_'
 const PLACEHOLDER_SUFFIX = '_\uE000'
 
 const emit = defineEmits<{
-  /** Fires when the user clicks a file-path chip. The path is
-   *  resolved against the consumer's `cwd` prop (e.g. the kanban's
-   *  `item.path`) — the chip itself stores the path verbatim, the
-   *  consumer decides what to do with it. */
+  /**    * Fires when the user clicks a file-path chip. The path is resolved against the consumer's `cwd`
+   * prop (e.g. the kanban's `item.path`) — the chip itself stores the path verbatim, the consumer
+   * decides what to do with it. */
   'file-click': [path: string]
 }>()
 

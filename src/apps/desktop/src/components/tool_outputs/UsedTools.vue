@@ -95,10 +95,9 @@ function strOrNull(v: unknown): string | null {
   return null
 }
 
-/** Unwrap the message content to the inner payload record. Accepts the full JSON
- * envelope string (the real wire shape) or a bare payload JSON string
- * (defensive fallback for direct callers). Returns null when the content is
- * not parseable JSON at all. */
+/**  * Unwrap the message content to the inner payload record. Accepts the full JSON envelope string
+ * (the real wire shape) or a bare payload JSON string (defensive fallback for direct callers).
+ * Returns null when the content is not parseable JSON at all. */
 function payloadOf(
   content: string,
 ): { data: Record<string, unknown>; error: string | null } | null {

@@ -38,9 +38,9 @@ import {
 } from './_shared/toolOutputParser'
 
 const props = defineProps<{
-  /** The tool row's payload — the inner `data` object on success, or the full
-   * envelope on failure (ChatView's `innerToolData` falls back to the whole
-   * content when `data` is null, which is what a failure envelope carries). */
+  /**    * The tool row's payload — the inner `data` object on success, or the full envelope on failure
+   * (ChatView's `innerToolData` falls back to the whole content when `data` is null, which is what
+   * a failure envelope carries). */
   content: unknown
   /** The JSON-stringified tool-call arguments: `{provider, curl}`. */
   parameters?: string
@@ -102,15 +102,12 @@ interface ResultRow {
   position: string | null
 }
 
-/**
- * Whether a provider-supplied URL may become an `href`.
- *
+/** Whether a provider-supplied URL may become an `href`.
  * The payload is passthrough (D13): the backend pins the host it REQUESTS and
  * scrubs the key, but it never inspects what came back, so a `url` here is
  * whatever the provider wrote. Only http(s) becomes a link; anything else
  * (`javascript:`, `data:`, a bare word) is shown as plain text, because a
- * clickable one runs in this app's origin.
- */
+ * clickable one runs in this app's origin. */
 function isWebUrl(url: string): boolean {
   return /^https?:\/\//i.test(url)
 }
@@ -163,9 +160,8 @@ const hasResultRows = computed(() => rows.value !== null)
 
 // ─── Formatted JSON fallback ───────────────────────────────────────────────
 
-/** Pretty-print an untyped payload. `JSON.stringify` can refuse (a cycle, a
- * BigInt); the card then says the payload is unprintable instead of showing
- * an empty block that reads like "no results". */
+/**  * Pretty-print an untyped payload. `JSON.stringify` can refuse (a cycle, a BigInt); the card then
+ * says the payload is unprintable instead of showing an empty block that reads like "no results". */
 const prettyResponse = computed(() => {
   const response = parsed.value.response
   if (response === null || response === undefined) return '(no response body)'

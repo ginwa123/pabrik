@@ -53,9 +53,9 @@ async function mountEditor(propsOverride: Record<string, unknown> = {}) {
   return wrapper
 }
 
-/** Set the textarea value, park the cursor at the end, dispatch `input`
- * so `onTextareaInput` updates state, then wait out BOTH debounces
- * (150ms `@`-detect + 150ms server-search) plus promise flushes. */
+/**  * Set the textarea value, park the cursor at the end, dispatch `input` so `onTextareaInput` updates
+ * state, then wait out BOTH debounces (150ms `@`-detect + 150ms server-search) plus promise
+ * flushes. */
 async function typeInTextarea(
   textareaWrapper: ReturnType<VueWrapper['find']>,
   value: string,

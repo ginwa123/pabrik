@@ -103,9 +103,8 @@ interface ReadEntry {
   preview: string
   tool_call_id?: string
   tool_name?: string
-  /** Present only when the caller passed `message_ids` and the LLM wants
-   *  the full body. `truncated` is true if the body was clipped to
-   *  `MAX_FULL_CONTENT_BYTES` (16 KB) by the backend. */
+  /**    * Present only when the caller passed `message_ids` and the LLM wants the full body. `truncated`
+   * is true if the body was clipped to `MAX_FULL_CONTENT_BYTES` (16 KB) by the backend. */
   content?: string
   content_truncated?: boolean
 }
@@ -202,9 +201,8 @@ const sessionId = computed((): string | null => strOrNull(dataRecord.value.sessi
 /** Returned-page size (count of entries in *this* response). */
 const count = computed((): number | null => numOrNull(dataRecord.value.count))
 
-/** Total rows matching the WHERE clause (before LIMIT/OFFSET). Used by
- *  the LLM to know whether more pages exist. We surface this too so the
- *  user can see "showing 20 of 47" at a glance. */
+/**  * Total rows matching the WHERE clause (before LIMIT/OFFSET). Used by the LLM to know whether more
+ * pages exist. We surface this too so the user can see "showing 20 of 47" at a glance. */
 const totalCount = computed((): number | null => numOrNull(dataRecord.value.total_count))
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for diff readability.
@@ -258,9 +256,8 @@ const searchEntries = computed((): SearchEntry[] => {
   return results
 })
 
-/** Full message bodies the backend returns when the caller passes
- * `message_ids`. Keyed by message id so a hit can expand into its own body.
- * The card previously ignored this field entirely. */
+/**  * Full message bodies the backend returns when the caller passes `message_ids`. Keyed by message id
+ * so a hit can expand into its own body. The card previously ignored this field entirely. */
 const fullContents = computed((): Map<string, FullContent> => {
   const map = new Map<string, FullContent>()
   const raw = dataRecord.value.full_contents
@@ -280,9 +277,8 @@ const fullContents = computed((): Map<string, FullContent> => {
   return map
 })
 
-/** `YYYY-MM-DD HH:MM:SS` sorts lexicographically, which is why grouping by
- * recency is only correct now that the backend returns `created_iso`
- * instead of a raw nanosecond epoch. */
+/**  * `YYYY-MM-DD HH:MM:SS` sorts lexicographically, which is why grouping by recency is only correct
+ * now that the backend returns `created_iso` instead of a raw nanosecond epoch. */
 function recencyKey(entry: SearchEntry): string {
   return entry.created_at ?? ''
 }
@@ -318,9 +314,8 @@ const groupedEntries = computed((): SearchGroup[] => {
   return groups
 })
 
-/** Stable test-id index per hit, taken from the ORIGINAL result order rather
- * than the grouped render order, so `search-entry-snippet-N` keeps meaning
- * the same row it always did. */
+/**  * Stable test-id index per hit, taken from the ORIGINAL result order rather than the grouped render
+ * order, so `search-entry-snippet-N` keeps meaning the same row it always did. */
 const entryIndexById = computed((): Map<string, number> => {
   const map = new Map<string, number>()
   searchEntries.value.forEach((entry, i) => map.set(entry.id, i))

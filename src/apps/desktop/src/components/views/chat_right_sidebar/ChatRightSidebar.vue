@@ -14,17 +14,15 @@ const props = defineProps<{
   width: number
   minWidth?: number
   maxWidth?: number
-  /** Branch from the bottom status bar (single source of truth).
-   * `undefined` while loading — the panel falls back to its own
-   * fetched branch. Drilled from ChatView's `sidebarBranch`. */
+  /**    * Branch from the bottom status bar (single source of truth). `undefined` while loading — the
+   * panel falls back to its own fetched branch. Drilled from ChatView's `sidebarBranch`. */
   branch?: string
   /** Attached PR URL — switches the panel to PR-changes mode. */
   prUrl?: string
   /** Effective provider for the attached PR. */
   prProvider?: string
-  /** Per-chat persistence key (ChatView's chatId). When set, terminal
-   * session ids persist in localStorage and re-attach on return;
-   * without it sessions die with the tab (legacy behavior). */
+  /**    * Per-chat persistence key (ChatView's chatId). When set, terminal session ids persist in
+   * localStorage and re-attach on return; without it sessions die with the tab (legacy behavior). */
   sessionKey?: string
 }>()
 

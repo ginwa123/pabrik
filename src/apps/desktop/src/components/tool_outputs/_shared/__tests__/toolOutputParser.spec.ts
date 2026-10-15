@@ -897,10 +897,9 @@ describe('present files helpers', () => {
   })
 })
 
-/** `set_pull_request` — the payload has exactly two success shapes plus the
- * error shape. These cases are copied from real rows in the live DB
- * (`llm_history.response_content`) so the parser is pinned to the wire, not to
- * a guess about it. */
+/**  * `set_pull_request` — the payload has exactly two success shapes plus the error shape. These cases
+ * are copied from real rows in the live DB (`llm_history.response_content`) so the parser is pinned
+ * to the wire, not to a guess about it. */
 describe('parseSetPullRequest', () => {
   const ATTACH_GITHUB = {
     session_id: 'task_1791883461055_3',

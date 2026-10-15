@@ -24,9 +24,9 @@ import CodeEditor from '../CodeEditor.vue'
 const codeEditorPath = resolve(__dirname, '..', 'CodeEditor.vue')
 const source = readFileSync(codeEditorPath, 'utf-8')
 
-/** Strip comment bodies before the source-contract greps below: this
- * file's own header explains *why* the component no longer uses monaco,
- * so the word appears in prose. Only executable code matters. */
+/**  * Strip comment bodies before the source-contract greps below: this file's own header explains
+ * *why* the component no longer uses monaco, so the word appears in prose. Only executable code
+ * matters. */
 function stripComments(src: string): string {
   return src
     .replace(/<!--[\s\S]*?-->/g, '')

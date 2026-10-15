@@ -550,10 +550,9 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     return router
   }
 
-  /** Mount the editor with a section already open.
-   * The editor no longer owns a tab strip - the settings shell navigates and
-   * the section lives in `?section=` - so a spec opens a section the way the
-   * app does: through the URL. */
+  /**    * Mount the editor with a section already open. The editor no longer owns a tab strip - the
+   * settings shell navigates and the section lives in `?section=` - so a spec opens a section the
+   * way the app does: through the URL. */
   async function mountAt(section: string, query: Record<string, string> = {}) {
     const router = await makeSettingsRouter(section === 'general' ? query : { ...query, section })
     const wrapper = mount(PabrikConfigEditor, {

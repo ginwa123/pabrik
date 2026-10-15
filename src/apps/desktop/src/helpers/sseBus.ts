@@ -72,27 +72,23 @@ type SseEventMap = {
 type Listener<K extends keyof SseEventMap> = (event: SseEventMap[K]) => void
 
 export interface SseBus {
-  /** Register a listener for events of `type`. Returns an unsubscribe
-   * function. The same `cb` registered twice for the same `type`
-   * counts twice (callers must dedupe themselves). No-op if the bus
-   * is not yet installed. */
+  /**    * Register a listener for events of `type`. Returns an unsubscribe function. The same `cb`
+   * registered twice for the same `type` counts twice (callers must dedupe themselves). No-op if
+   * the bus is not yet installed. */
   on<K extends keyof SseEventMap>(type: K, cb: Listener<K>): () => void
   /** Remove a previously-registered listener. No-op if `cb` was not
    * registered for `type`. No-op if the bus is not yet installed. */
   off<K extends keyof SseEventMap>(type: K, cb: Listener<K>): void
-  /** Reactive read of the current SSE connection state (one of
-   * `connecting | open | reconnecting | closed | failed`). Updates
-   * synchronously on every state transition emitted by the
-   * underlying `SseClient`. */
+  /**    * Reactive read of the current SSE connection state (one of `connecting | open | reconnecting |
+   * closed | failed`). Updates synchronously on every state transition emitted by the underlying
+   * `SseClient`. */
   readonly state: ShallowRef<SseState>
-  /** Force a reconnect of the global (non-session-scoped) channels
-   * and reset the attempt counter. Use this for a user-driven
-   * "Retry" button on the `failed` badge. No-op if the bus is not
-   * yet installed. */
+  /**    * Force a reconnect of the global (non-session-scoped) channels and reset the attempt counter.
+   * Use this for a user-driven "Retry" button on the `failed` badge. No-op if the bus is not yet
+   * installed. */
   reconnectGlobal(): void
-  /** Close the bus. Terminal — stops all streams, clears retry
-   * timers, leaves the bus uninstalled (a subsequent `installSseBus`
-   * rebuilds it). Safe to call multiple times. */
+  /**    * Close the bus. Terminal — stops all streams, clears retry timers, leaves the bus uninstalled (a
+   * subsequent `installSseBus` rebuilds it). Safe to call multiple times. */
   close(): void
   /** Which role THIS window plays when cross-tab sharing is active:
    * `leader` owns the single EventSource, `follower` receives events
@@ -505,10 +501,9 @@ export function useSseBus(): SseBus {
   return _instance
 }
 
-/** Test-only: clears the singleton. Closes the global client (via
- * `bus.close()`) so the EventSource stub's retry timer / state
- * listeners are torn down before the next test installs a fresh
- * bus. Safe to call before `installSseBus` (no-op). */
+/**  * Test-only: clears the singleton. Closes the global client (via `bus.close()`) so the EventSource
+ * stub's retry timer / state listeners are torn down before the next test installs a fresh bus.
+ * Safe to call before `installSseBus` (no-op). */
 export function __resetSseBus(): void {
   if (_instance) {
     _instance.close()
@@ -533,9 +528,8 @@ export function __resetSseBus(): void {
   _dispatch = null
 }
 
-/** Test-only: dispatches a synthetic event into the bus's listener
- * Maps. Bypasses the SseClient entirely (the test owns the event
- * payload shape — `as any` casts at the call site are intentional
+/**  * Test-only: dispatches a synthetic event into the bus's listener Maps. Bypasses the SseClient
+ * entirely (the test owns the event payload shape — `as any` casts at the call site are intentional
  * to keep this helper loose). No-op if the bus is not installed. */
 export function __dispatchSseBus<K extends keyof SseEventMap>(
   type: K,
@@ -587,9 +581,8 @@ export function __setSseBusGlobalClient(client: SseClient): void {
   _instance.state.value = client.getState()
 }
 
-/** Test-only: returns the currently-installed global SseClient, or
- * null if the bus is not yet installed (or has been closed).
- * Useful for asserting that `__setSseBusGlobalClient` swapped the
+/**  * Test-only: returns the currently-installed global SseClient, or null if the bus is not yet
+ * installed (or has been closed). Useful for asserting that `__setSseBusGlobalClient` swapped the
  * right client, and for spying on `.close()` to verify cleanup. */
 export function __getSseBusGlobalClient(): SseClient | null {
   return _globalClient

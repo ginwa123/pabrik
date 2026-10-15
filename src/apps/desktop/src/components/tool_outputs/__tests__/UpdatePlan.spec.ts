@@ -38,10 +38,9 @@ const makeEnvelope = (data: unknown, success = true, error: string | null = null
 const makeSuccessContent = (opts: {
   sessionId?: string
   updatedAt?: string
-  /** The markdown body — carried in the `plan` key. Default: undefined
-   *  (no plan key), so tests that don't care about the body just
-   *  see session_id + updated_at metadata. Pass a value to render the
-   *  checklist section. */
+  /**    * The markdown body — carried in the `plan` key. Default: undefined (no plan key), so tests that
+   * don't care about the body just see session_id + updated_at metadata. Pass a value to render the
+   * checklist section. */
   body?: string
 } = {}) => {
   const sessionId = opts.sessionId ?? 's_1787073929852_8'
@@ -58,10 +57,9 @@ const makeErrorContent = (msg = 'session_id mismatch') => makeEnvelope(null, fal
 
 const makeEmptyContent = () => makeEnvelope({})
 
-/** Wrap the inner data payload in the full JSON wire envelope the
- * dispatcher actually passes through. Mirrors the backend's
- * `wrapToolOutput`. Accepts a data object (or a full envelope string,
- * passed through unchanged). */
+/**  * Wrap the inner data payload in the full JSON wire envelope the dispatcher actually passes
+ * through. Mirrors the backend's `wrapToolOutput`. Accepts a data object (or a full envelope
+ * string, passed through unchanged). */
 const wrapInToolEnvelope = (inner: string): string => {
   if (inner.trim().startsWith('{')) {
     try {
@@ -465,9 +463,8 @@ describe('UpdatePlan.vue — plan body from <plan> CDATA', () => {
 //     </data>
 //   </tool>
 
-/** Build a full JSON wire envelope with the agent's input args in
- *  `parameters` and the just-written plan body in `data.plan`.
- *  Mirrors the backend's `wrapToolOutput` shape (success path). */
+/**  * Build a full JSON wire envelope with the agent's input args in `parameters` and the just-written
+ * plan body in `data.plan`. Mirrors the backend's `wrapToolOutput` shape (success path). */
 const wrapAsFullToolEnvelope = (
   inner: string,
   parametersJson: string,

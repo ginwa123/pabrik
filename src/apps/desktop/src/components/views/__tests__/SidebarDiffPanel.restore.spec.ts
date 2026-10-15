@@ -1,7 +1,6 @@
-/** Refresh lands on chat: the panel never auto-selects from ?diff= on
- * list load. A reload keeps the param the scroll-spy wrote while the
- * viewer was open; ChatView strips it on mount while the center is
- * closed. Row clicks still emit show-diff instantly as before. */
+/**  * Refresh lands on chat: the panel never auto-selects from ?diff= on list load. A reload keeps the
+ * param the scroll-spy wrote while the viewer was open; ChatView strips it on mount while the
+ * center is closed. Row clicks still emit show-diff instantly as before. */
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import SidebarDiffPanel from '../chat_right_sidebar/SidebarDiffPanel.vue'

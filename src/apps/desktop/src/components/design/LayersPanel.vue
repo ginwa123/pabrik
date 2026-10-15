@@ -164,9 +164,8 @@ const layerTree = computed<LayerTreeNode[]>(() => {
   return byParent.get(null) ?? []
 })
 
-/** Per-element collapse state. A `Set` because collapse is binary
- * per-id. Held as `ref(new Set)` so a replacement (not a mutation)
- * triggers Vue 3 reactivity. The Set is passed DOWN to `<LayerRow>`
+/**  * Per-element collapse state. A `Set` because collapse is binary per-id. Held as `ref(new Set)` so
+ * a replacement (not a mutation) triggers Vue 3 reactivity. The Set is passed DOWN to `<LayerRow>`
  * by reference (read-only in the child). */
 const collapsedIds = ref<Set<string>>(new Set())
 
@@ -180,16 +179,13 @@ const toggleCollapse = (elementId: string): void => {
   collapsedIds.value = next
 }
 
-/**
- * Walk the tree to find a node by id. Returns the node + its
+/** Walk the tree to find a node by id. Returns the node + its
  * sibling array (the parent's children) + the node's index within
  * that array. Used by `handleMoveUp` / `handleMoveDown` to swap
  * with the previous / next sibling.
- *
  * For a top-level element, `siblings` is `layerTree` (the top-level
  * array) and `parent` is `null`. For a nested element, `siblings`
- * is the parent's `children` array.
- */
+ * is the parent's `children` array. */
 function findNode(
   nodes: LayerTreeNode[],
   elementId: string,
@@ -204,11 +200,9 @@ function findNode(
   return null
 }
 
-/** Deep-clone the tree so we can swap siblings without mutating the
- * `layerTree` computed (which is owned by Vue's reactivity and
- * should be treated as immutable). The clone preserves `element`
- * references (no need to copy those — only the tree structure
- * mutates). */
+/**  * Deep-clone the tree so we can swap siblings without mutating the `layerTree` computed (which is
+ * owned by Vue's reactivity and should be treated as immutable). The clone preserves `element`
+ * references (no need to copy those — only the tree structure mutates). */
 // ─── Drag-and-drop state (Chunk 4 Task 4.2) ────────────────────────────
 //
 // LayersPanel owns the drag state machine via `useLayerDragDrop`.

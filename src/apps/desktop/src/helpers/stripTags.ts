@@ -31,9 +31,8 @@ export const _resetStripThinkingTagsCache = (): void => {
   stripCacheChars = 0
 }
 
-/** Test-only cache introspection. `hits` is not tracked — the observable
- * contract tests assert on `entries` (a cache hit must not add an entry, so
- * a repeated call leaves the count unchanged). */
+/**  * Test-only cache introspection. `hits` is not tracked — the observable contract tests assert on
+ * `entries` (a cache hit must not add an entry, so a repeated call leaves the count unchanged). */
 export const _stripThinkingTagsCacheStats = (): { entries: number; chars: number } => ({
   entries: stripCache.size,
   chars: stripCacheChars,
@@ -133,9 +132,8 @@ export function isThinkingTags(content: string): boolean {
   return withoutThinking === ''
 }
 
-/** Extract the inner payload(s) of `<html>...</html>` blocks.
- * The chat UI renders each payload as a live sandboxed-iframe block
- * (see ChatView.vue). Multiple blocks are joined with a blank line,
+/**  * Extract the inner payload(s) of `<html>...</html>` blocks. The chat UI renders each payload as a
+ * live sandboxed-iframe block (see ChatView.vue). Multiple blocks are joined with a blank line,
  * mirroring getThinkingTags. Returns '' when no block is present. */
 export function getHtmlTags(content: string): string {
   if (!content) return ''

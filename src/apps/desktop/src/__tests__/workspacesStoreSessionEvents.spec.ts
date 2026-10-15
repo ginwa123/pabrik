@@ -30,10 +30,9 @@ import {
 import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 import type { SessionEvent } from '../api'
 
-/** Test-only stub SseClient. We don't drive state transitions
- * from these tests (the bus's `state` ShallowRef is not asserted
- * here), but the install path requires a real-looking client —
- * see sseBus.spec.ts / App.spec.ts for the same helper. */
+/**  * Test-only stub SseClient. We don't drive state transitions from these tests (the bus's `state`
+ * ShallowRef is not asserted here), but the install path requires a real-looking client — see
+ * sseBus.spec.ts / App.spec.ts for the same helper. */
 function makeStubClient(initial: SseState): SseClient {
    
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -80,10 +79,9 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
     vi.restoreAllMocks()
   })
 
-  /** Install the bus-backed handlers AND seed the store. Order
-   * matters: `init()` resets `workspaces.value` to `[]` on
-   * completion (or to the fetched list), so we seed AFTER the
-   * install call returns. */
+  /**    * Install the bus-backed handlers AND seed the store. Order matters: `init()` resets
+   * `workspaces.value` to `[]` on completion (or to the fetched list), so we seed AFTER the install
+   * call returns. */
   async function setupHandlersAndSeed() {
     const ws = useWorkspacesStore()
     await ws.init()

@@ -55,9 +55,9 @@ function scroll(el: HTMLElement, top: number) {
   el.dispatchEvent(new Event('scroll'))
 }
 
-/** Simulate the browser firing the scroll event that follows a
- * programmatic scrollTop write: dispatch WITHOUT touching scrollTop —
- * the element's current (post-write) value is what onScroll reads. */
+/**  * Simulate the browser firing the scroll event that follows a programmatic scrollTop write:
+ * dispatch WITHOUT touching scrollTop — the element's current (post-write) value is what onScroll
+ * reads. */
 function fireScrollEvent(el: HTMLElement) {
   el.dispatchEvent(new Event('scroll'))
 }

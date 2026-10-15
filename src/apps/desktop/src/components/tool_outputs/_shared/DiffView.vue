@@ -51,9 +51,9 @@ interface Props {
   after: string
   /** Optional path — used as a title on the diff header for context. */
   filePath?: string
-  /** Optional monaco language id for code coloring. When omitted it is
-   * derived from `filePath` via `detectLanguage`; unknown extensions fall
-   * back to plaintext (plain-text rendering, exactly as before). */
+  /**    * Optional monaco language id for code coloring. When omitted it is derived from `filePath` via
+   * `detectLanguage`; unknown extensions fall back to plaintext (plain-text rendering, exactly as
+   * before). */
   language?: string
   /** Initial mode. Default 'split'. */
   initialMode?: 'split' | 'unified'
@@ -117,10 +117,9 @@ const hasChanges = computed(() => changeCount.value > 0)
  * derived from the file path. Plaintext disables token spans. */
 const effectiveLanguage = computed(() => props.language ?? detectLanguage(props.filePath ?? ''))
 
-/** Split one line into colored token spans. Plaintext (or an empty line)
- * returns a single text node — identical output to the old plain-text
- * rendering. Tokens render as framework text nodes, never HTML strings,
- * so `old_str` content cannot inject markup. */
+/**  * Split one line into colored token spans. Plaintext (or an empty line) returns a single text node
+ * — identical output to the old plain-text rendering. Tokens render as framework text nodes, never
+ * HTML strings, so `old_str` content cannot inject markup. */
 function renderHighlighted(text: string, language: string): VNode[] {
   const tokens = highlightLine(text, language)
   if (tokens.length === 1 && tokens[0]!.type === 'plain') {
@@ -135,16 +134,13 @@ const readMode = readStoredMode // suppress unused warning if some bundler tree-
 // Sub-components — inline to avoid 3 separate files for tiny helpers.
 // ────────────────────────────────────────────────────────────────────────────
 
-/**
- * Renders one side (before/after) of the split-view.
- *
+/** Renders one side (before/after) of the split-view.
  * Structure: an `overflow-x-auto` scroll container > one sizing WRAPPER
  * (`width: max-content; min-width: 100%` — sized once, to fit the widest
  * row or the pane, whichever is larger) > each row (`width: 100%` of that
  * wrapper). Because every row's width comes from the same already-sized
  * wrapper, every row — long or short — paints a background across the
- * exact same width, at any scroll position.
- */
+ * exact same width, at any scroll position. */
 const DiffSplitSide = defineComponent({
   name: 'DiffSplitSide',
   props: {

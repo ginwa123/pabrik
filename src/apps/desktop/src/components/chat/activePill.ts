@@ -4,10 +4,9 @@ export interface PillIndex {
   groupIndex: number
 }
 
-/** Whether a message group deserves a rail pill. Real user turns only:
- * background completions are `role=user` on the wire but render as
- * left-aligned tool cards (never the blue bubble), and compaction
- * envelopes are system artifacts — neither is a user turn to jump to. */
+/**  * Whether a message group deserves a rail pill. Real user turns only: background completions are
+ * `role=user` on the wire but render as left-aligned tool cards (never the blue bubble), and
+ * compaction envelopes are system artifacts — neither is a user turn to jump to. */
 export function isPillGroup(role: string, isBgOnly: boolean, isCompaction: boolean): boolean {
   return role === 'user' && !isBgOnly && !isCompaction
 }

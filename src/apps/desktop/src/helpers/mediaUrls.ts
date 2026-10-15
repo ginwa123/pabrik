@@ -21,10 +21,9 @@
 
 export const MEDIA_URLS_WIRE_DELIMITER = '||'
 
-/** Join staged attachments into the wire string. Empty / blank entries are
- * dropped so a staged-but-cleared attachment cannot turn into a stray `||`
- * (which the split tolerates, but which would still show up in raw DB dumps and
- * in the `queue_queued` SSE frame). */
+/**  * Join staged attachments into the wire string. Empty / blank entries are dropped so a
+ * staged-but-cleared attachment cannot turn into a stray `||` (which the split tolerates, but which
+ * would still show up in raw DB dumps and in the `queue_queued` SSE frame). */
 export function joinMediaUrlsWire(urls?: readonly string[]): string {
   return (urls ?? [])
     .map((u) => u.trim())

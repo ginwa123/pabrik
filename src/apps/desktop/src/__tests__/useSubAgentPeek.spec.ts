@@ -268,10 +268,9 @@ describe('useSubAgentPeek', () => {
   // runChunkScenario) can also reuse it.
   const CHUNK_PEEK_SID = 'subagent_chunk_test'
 
-  /** Drive streaming chunks through the bus's llm channel. Returns the
-   * composable's peek so callers can assert on the final state. Each
-   * chunk is dispatched as `{ session_id: CHUNK_PEEK_SID, ...chunk }`
-   * so the listener-side filter passes through. */
+  /**    * Drive streaming chunks through the bus's llm channel. Returns the composable's peek so callers
+   * can assert on the final state. Each chunk is dispatched as `{ session_id: CHUNK_PEEK_SID,
+   * ...chunk }` so the listener-side filter passes through. */
   async function runChunkScenario(
     initialMessages: Message[],
     chunks: Array<{

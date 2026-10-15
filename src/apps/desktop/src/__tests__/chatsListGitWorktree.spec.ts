@@ -1,8 +1,6 @@
-/** Regression tests for the Recent list in ChatsList.
- * The section title is "Recent". A row shows the icon-only
- * `chat-git-branch` badge only when the session has both a branch and
- * a known pull-request status. Worktree bindings and branches without
- * a pull request show no git badge. */
+/**  * Regression tests for the Recent list in ChatsList. The section title is "Recent". A row shows the
+ * icon-only `chat-git-branch` badge only when the session has both a branch and a known
+ * pull-request status. Worktree bindings and branches without a pull request show no git badge. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp, nextTick, ref } from 'vue'

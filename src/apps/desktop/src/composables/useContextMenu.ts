@@ -35,15 +35,12 @@ export function useContextMenu(options: { width?: number; height?: number } = {}
 
   const menuPos = ref<{ x: number; y: number } | null>(null)
 
-  /**
-   * The element the menu was opened from, captured at open time.
-   *
+  /** The element the menu was opened from, captured at open time.
    * Read from `event.currentTarget` (the row the `@contextmenu` handler is
    * bound to) or passed explicitly by the keyboard path. It lives here
    * rather than in the host because the host would have to thread it
    * through every call site, and because the anchor is only meaningful
-   * to the dismiss logic that consumes it.
-   */
+   * to the dismiss logic that consumes it. */
   let anchorEl: HTMLElement | null = null
 
   const openAt = (event: MouseEvent) => {
@@ -53,24 +50,20 @@ export function useContextMenu(options: { width?: number; height?: number } = {}
     openAtPoint(event.clientX, event.clientY, event.currentTarget as HTMLElement | null)
   }
 
-  /**
-   * Open at an explicit point with an explicit anchor.
-   *
+  /** Open at an explicit point with an explicit anchor.
    * Split out of `openAt` so the keyboard path (ContextMenu / Shift+F10)
    * can open the menu from a bounding-rect centre and still get the same
    * dismiss wiring. Before this, that path assigned `menuPos` directly
    * and never attached a single listener — no Escape, no outside-click,
-   * no scroll dismiss.
-   */
+   * no scroll dismiss. */
   const openAtPoint = (x: number, y: number, anchor: HTMLElement | null) => {
     anchorEl = anchor
     menuPos.value = clampToViewport(x, y)
     attachDismissListeners()
   }
 
-  /** Pull a (x, y) inside the viewport, keeping the menu's estimated
-   * footprint visible. Exported as a pure function so a host that
-   * computes its own position (e.g. the ContextMenu-key path, which
+  /**    * Pull a (x, y) inside the viewport, keeping the menu's estimated footprint visible. Exported as
+   * a pure function so a host that computes its own position (e.g. the ContextMenu-key path, which
    * anchors at a card's bounding-rect centre) can reuse the same rule. */
   function clampToViewport(x: number, y: number): { x: number; y: number } {
     const maxX = Math.max(8, window.innerWidth - MENU_W - 8)

@@ -20,14 +20,13 @@
 
 import { computeLoadMoreThreshold } from './virtualScrollerThreshold'
 
-/** Absolute floor for the arm radius, in px. Larger than the commit band's
- * 200 px floor because the point is to start the round trip while the user
- * is still travelling. */
+/**  * Absolute floor for the arm radius, in px. Larger than the commit band's 200 px floor because the
+ * point is to start the round trip while the user is still travelling. */
 export const ARM_RADIUS_FLOOR_PX = 800
 
-/** Proportional part of the arm radius: how many viewport heights away from
- * the top the arm fires. Must stay strictly greater than the commit band's
- * `loadMoreThresholdRatio` (0.5) so the arm always precedes the commit. */
+/**  * Proportional part of the arm radius: how many viewport heights away from the top the arm fires.
+ * Must stay strictly greater than the commit band's `loadMoreThresholdRatio` (0.5) so the arm
+ * always precedes the commit. */
 export const ARM_RADIUS_RATIO = 1.5
 
 /** Cold-start fetch estimate (ms) used before any round trip is measured. */
@@ -113,10 +112,9 @@ export interface PrefetchDecision {
   skip?: PrefetchSkip
 }
 
-/** Decide whether to arm a prefetch of the next older page.
- * Order matters: terminal states (no session, no more pages, already
- * buffered/fetching/committing) short-circuit first, then the optional
- * velocity term (which can arm from further out), then the distance margin. */
+/**  * Decide whether to arm a prefetch of the next older page. Order matters: terminal states (no
+ * session, no more pages, already buffered/fetching/committing) short-circuit first, then the
+ * optional velocity term (which can arm from further out), then the distance margin. */
 export function decidePrefetchOlder(input: PrefetchInput): PrefetchDecision {
   const armRadius =
     Number.isFinite(input.armRadiusPx) && input.armRadiusPx > 0

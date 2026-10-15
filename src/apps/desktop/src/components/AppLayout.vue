@@ -2419,10 +2419,9 @@ const handleDesignUpdateElement = async (
   await designHandlers.updateElement(ws.id, item.id, elementId, patch)
 }
 
-/** NEW (2026-08-06, split-move-resize plan) — handler for the
- * `translateElement` event fired by DesignView during a single-element
- * drag (move mode). Routes to useDesignHandlers.translateElement →
- * POST /translate. Backend handles cascade-to-descendants for groups. */
+/**  * NEW (2026-08-06, split-move-resize plan) — handler for the `translateElement` event fired by
+ * DesignView during a single-element drag (move mode). Routes to useDesignHandlers.translateElement
+ * → POST /translate. Backend handles cascade-to-descendants for groups. */
 const handleDesignTranslateElement = async (
   elementId: string,
   dx: number,
@@ -2434,10 +2433,9 @@ const handleDesignTranslateElement = async (
   await designHandlers.translateElement(ws.id, item.id, elementId, dx, dy)
 }
 
-/** NEW (2026-08-06, split-move-resize plan) — handler for the
- * `resizeElement` event fired by DesignView during a resize gesture.
- * Routes to useDesignHandlers.resizeElement → POST /resize. Resize
- * never cascades (Figma convention). */
+/**  * NEW (2026-08-06, split-move-resize plan) — handler for the `resizeElement` event fired by
+ * DesignView during a resize gesture. Routes to useDesignHandlers.resizeElement → POST /resize.
+ * Resize never cascades (Figma convention). */
 const handleDesignResizeElement = async (
   elementId: string,
   patch: Partial<{
@@ -2819,16 +2817,13 @@ const retryEditorRestore = () => {
 // tab" rather than becoming a tab switcher. A normal navigation still uses
 // `push`, so history stays about navigation, not about tab switches.
 
-/**
- * The store side of a navigation.
- *
+/** The store side of a navigation.
  * The render chain reads the STORES (`workspacesStore.activeWorkspaceItem`,
  * `navigationStore.activeChatId`) — not the URL — so a navigation that only
  * rewrote the URL left the previous view on screen. A sidebar click set both
  * (WorkspaceItem → Sidebar.handleSelectItem → emit), which is why this only
  * showed up once tabs could be activated directly: switching between two
- * workspace tabs kept rendering the same item.
- */
+ * workspace tabs kept rendering the same item. */
 function mirrorTargetIntoStores(path: string, query: Record<string, string>, chatName?: string) {
   if (path !== '/app') return
   const view = query.view ?? 'chat'
@@ -2860,15 +2855,12 @@ function applyActiveTabToUrl() {
   router.replace({ path: tab.path, query })
 }
 
-/**
- * The funnel. Every navigation in the app lands here — sidebar clicks, the
+/** The funnel. Every navigation in the app lands here — sidebar clicks, the
  * chats list, kanban/design chat dialogs, deep links, the Back button — so
  * no call site has to know the tab strip exists, and a view type added
  * later becomes tabbable for free.
- *
  * Gated on mount so it runs AFTER the restore block above: the deep link is
- * resolved by the existing code first, then normalised with its `tab=` name.
- */
+ * resolved by the existing code first, then normalised with its `tab=` name. */
 function syncFromRoute() {
   // The item's type decides whether a task chat belongs to the item's tab
   // (kanban/design open it as a dialog inside that view) or gets its own.
@@ -2891,10 +2883,9 @@ onMounted(() => {
   syncFromRoute()
 })
 
-/** Shortcuts and the live title feed are window-scoped wiring, so they live
- * here and are torn down with the layout. Every handler re-applies the URL
- * through `applyActiveTabToUrl`, so the shortcut map can never leave the
- * URL pointing at a tab the user is no longer on. */
+/**  * Shortcuts and the live title feed are window-scoped wiring, so they live here and are torn down
+ * with the layout. Every handler re-applies the URL through `applyActiveTabToUrl`, so the shortcut
+ * map can never leave the URL pointing at a tab the user is no longer on. */
 const stopTabShortcuts = useTabShortcuts({
   isEnabled: () => tabsStore.enabled,
   tabCount: () => tabsStore.tabCount,

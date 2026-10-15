@@ -138,10 +138,9 @@ function scrollTo(el: HTMLElement, top: number) {
   el.dispatchEvent(new Event('scroll'))
 }
 
-/** Teach the height model the profile, so corrections are measured against a
- * realistic scale instead of the 64px seed. Several passes, because the
- * rendered window only covers part of a 1000-item list and each pass
- * measures the rows that are on screen. */
+/**  * Teach the height model the profile, so corrections are measured against a realistic scale instead
+ * of the 64px seed. Several passes, because the rendered window only covers part of a 1000-item
+ * list and each pass measures the rows that are on screen. */
 async function learnProfile(el: HTMLElement, scale = 1) {
   for (let pass = 0; pass < 4; pass++) {
     scrollTo(el, 0)

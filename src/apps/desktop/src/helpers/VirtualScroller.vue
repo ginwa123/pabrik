@@ -402,16 +402,13 @@ const ESTIMATE_MAX_PX = 1600
 const clampEstimate = (px: number): number =>
   Math.min(ESTIMATE_MAX_PX, Math.max(ESTIMATE_MIN_PX, px))
 
-/**
- * How many observations the estimator must hold before its estimate is
+/** How many observations the estimator must hold before its estimate is
  * frozen (see `estimateHeight`).
- *
  * At this count the rolling window is FULL, so the learned median describes a
  * whole window of real rows rather than the handful that happened to render
  * first — and, because it was just fed by those rows, freezing it is a no-op
  * for the model: nothing moves at the moment of the freeze. Only the LATER
- * drift is prevented, which is the part that moves content.
- */
+ * drift is prevented, which is the part that moves content. */
 const ESTIMATOR_FREEZE_SAMPLES = 64
 
 /**
@@ -745,9 +742,9 @@ const syncSizerHeightToDom = (): void => {
   sizer.style.height = px
 }
 
-/** Highest `scrollTop` the container can reach as its geometry stands NOW. Read
- * after `syncSizerHeightToDom` so it describes the model this pass built rather
- * than the previous render's (see `maxScrollTop` on the compensation helper). */
+/**  * Highest `scrollTop` the container can reach as its geometry stands NOW. Read after
+ * `syncSizerHeightToDom` so it describes the model this pass built rather than the previous
+ * render's (see `maxScrollTop` on the compensation helper). */
 const reachableScrollTop = (): number => {
   const el = containerRef.value
   if (!el) return 0
@@ -819,11 +816,9 @@ const renderedCount = computed(() => {
   return Math.max(0, end - start)
 })
 
-/** The {start, end} range of items currently rendered. Exposed as
- * a single object so the parent can read both fields in one
- * reactive read (avoiding the start-vs-end skew that would happen
- * if they were two separate computeds and a scroll fired between
- * reads). */
+/**  * The {start, end} range of items currently rendered. Exposed as a single object so the parent can
+ * read both fields in one reactive read (avoiding the start-vs-end skew that would happen if they
+ * were two separate computeds and a scroll fired between reads). */
 const effectiveRange = computed(() => {
   const { start, end } = visibleRange.value
   return { start, end }

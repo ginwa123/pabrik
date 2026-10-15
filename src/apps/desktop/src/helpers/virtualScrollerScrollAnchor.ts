@@ -59,9 +59,8 @@
 // module: heights are plain numbers in px.
 type geometry_px = number
 
-/** One pending height write from a measure pass. Carried on the debug
- * log only — compensation itself no longer consumes per-item entries
- * (see the v2 note above). */
+/**  * One pending height write from a measure pass. Carried on the debug log only — compensation itself
+ * no longer consumes per-item entries (see the v2 note above). */
 export interface AnchorMeasurement {
   /** Item index in the full items array. */
   index: number
@@ -82,9 +81,8 @@ export interface AnchorCompensationInput {
   /** `accumulatedHeights[anchorIndex]` captured BEFORE the pass
    * mutates the model — the model-space top edge of the anchor item. */
   oldAnchorTop: geometry_px
-  /** `accumulatedHeights[anchorIndex]` after the pass rebuilt the
-   * model (measured heights written, estimator re-seeded, estimates
-   * refreshed). */
+  /**    * `accumulatedHeights[anchorIndex]` after the pass rebuilt the model (measured heights written,
+   * estimator re-seeded, estimates refreshed). */
   newAnchorTop: geometry_px
   /**
    * The bottom edge AFTER the pass (`bottomScrollTop()`), passed only when
@@ -140,15 +138,13 @@ export interface AnchorCompensationResult {
   newScrollTop: geometry_px
   /** True when the clamp at 0 bit (residual jump is unavoidable). */
   clamped: boolean
-  /** True when `maxScrollTop` cut the target down. The write is still made — as
-   * far as the container can go — but the view could NOT be held exactly, so a
-   * caller that sees this should treat the pass as lossy (the next one will
-   * re-derive the reader's position from wherever this left them). */
+  /**    * True when `maxScrollTop` cut the target down. The write is still made — as far as the container
+   * can go — but the view could NOT be held exactly, so a caller that sees this should treat the
+   * pass as lossy (the next one will re-derive the reader's position from wherever this left them). */
   clampedToMax: boolean
-  /** Which rule produced `newScrollTop`. `'bottom'` means the reader was at the
-   * bottom and the pass targeted the bottom edge instead of the anchor; the
-   * `shiftPx` reported alongside it is the model delta that was absorbed, not
-   * a move the reader can observe. */
+  /**    * Which rule produced `newScrollTop`. `'bottom'` means the reader was at the bottom and the pass
+   * targeted the bottom edge instead of the anchor; the `shiftPx` reported alongside it is the
+   * model delta that was absorbed, not a move the reader can observe. */
   target: 'anchor' | 'bottom'
 }
 

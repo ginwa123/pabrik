@@ -76,16 +76,13 @@ function fmtTokens(n: number): string {
   return `${Math.round(n / 1_000)}k`
 }
 
-/**
- * Line 2 of the row.
- *
+/** Line 2 of the row.
  * The old row printed the full base URL, a sub-agent count, and
  * `Compaction: 97% @ 1000k tokens` — four lines that mostly restated the raw
  * fields. This states the two facts that decide what the profile DOES:
  * where the context window comes from, and where compaction fires. A `null`
  * override is not "default" (which read as "nothing is going on"); it is
- * "the catalog's window" and "the global threshold".
- */
+ * "the catalog's window" and "the global threshold". */
 function rowSummary(profile: ProfileRow): string {
   const cap = profile.max_capacity_tokens
   const thr = profile.compaction_threshold_percent

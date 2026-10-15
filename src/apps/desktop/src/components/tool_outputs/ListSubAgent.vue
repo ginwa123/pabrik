@@ -51,10 +51,9 @@ interface ToolMessageLike {
   tool_name?: string
 }
 
-/** One parsed <sub_agent> row. `has*` flags record tag PRESENCE so the
- *  tuning grid renders only tags present in the envelope (absent =
- *  'inherits profile default', no empty cells). api_key / base_url are
- *  deliberately absent — never parsed, never rendered. */
+/**  * One parsed <sub_agent> row. `has*` flags record tag PRESENCE so the tuning grid renders only tags
+ * present in the envelope (absent = 'inherits profile default', no empty cells). api_key / base_url
+ * are deliberately absent — never parsed, never rendered. */
 interface SubAgentRow {
   name: string
   model: string
@@ -96,9 +95,8 @@ const envelopeParams = computed(
   () => tryUnwrapToolOutput(props.message.content)?.parameters ?? '{}',
 )
 
-/** Inner `data` payload for this tool message. The dispatcher passes the
- * raw tool message, whose content is the full JSON envelope; we unwrap
- * one level here so the component is self-contained. */
+/**  * Inner `data` payload for this tool message. The dispatcher passes the raw tool message, whose
+ * content is the full JSON envelope; we unwrap one level here so the component is self-contained. */
 function asRecord(v: unknown): Record<string, unknown> {
   if (typeof v === 'string') {
     try {
@@ -122,10 +120,9 @@ function strOrNull(v: unknown): string | null {
   return null
 }
 
-/** Unwrap the message content to the inner `data` record. Accepts the full
- * JSON envelope string (normal wire shape) or a bare data-object JSON
- * string (defensive fallback for direct callers). Returns null when the
- * content is not parseable JSON at all. */
+/**  * Unwrap the message content to the inner `data` record. Accepts the full JSON envelope string
+ * (normal wire shape) or a bare data-object JSON string (defensive fallback for direct callers).
+ * Returns null when the content is not parseable JSON at all. */
 function innerDataOf(
   content: string,
 ): { data: Record<string, unknown>; error: string | null } | null {

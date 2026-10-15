@@ -68,10 +68,9 @@ const makeItem = (overrides: Partial<WorkspaceItem> = {}): WorkspaceItem => ({
   ...overrides,
 })
 
-/** A real router with a catch-all route, so `router.replace` actually commits
- * and `route.query` actually updates. The catch-all keeps the path opaque —
- * these tests assert on the query, and on the path only where the shape is
- * the point. */
+/**  * A real router with a catch-all route, so `router.replace` actually commits and `route.query`
+ * actually updates. The catch-all keeps the path opaque — these tests assert on the query, and on
+ * the path only where the shape is the point. */
 async function makeRouter(initial: {
   path: string
   query?: Record<string, string>

@@ -28,15 +28,12 @@ export interface UseDesignHandlersArgs {
   workspaceId: string | { value: string } | (() => string)
   itemId: string | { value: string } | (() => string)
   pageId: string | { value: string } | (() => string)
-  /** Reactive Set of currently-selected element ids. The composable
-   * reads `selectedIds.value.size` to enforce the 2+ rule and
-   * replaces `selectedIds.value = new Set()` after a successful
-   * group. Pass it as a ref/computed so changes from DesignView
-   * propagate here. */
+  /**    * Reactive Set of currently-selected element ids. The composable reads `selectedIds.value.size`
+   * to enforce the 2+ rule and replaces `selectedIds.value = new Set()` after a successful group.
+   * Pass it as a ref/computed so changes from DesignView propagate here. */
   selectedIds: { value: Set<string> }
-  /** Optional override for the browser prompt. The default uses
-   * `window.prompt` (the first-cut implementation; Figma uses an
-   * inline rename affordance — see plan §7.1 for the follow-up).
+  /**    * Optional override for the browser prompt. The default uses `window.prompt` (the first-cut
+   * implementation; Figma uses an inline rename affordance — see plan §7.1 for the follow-up).
    * Tests pass a stub to avoid blocking on the real prompt. */
   promptForName?: (defaultValue: string) => string | null
 }

@@ -71,10 +71,9 @@ export function splitLines(s: string): string[] {
   return lines
 }
 
-/** Compute the shortest edit script via LCS DP.
- * Strategy: compute LCS lengths matrix `dp[i][j]` = LCS length of
- * `before[0..i)` and `after[0..j)`. Walk back from `dp[N][M]` to construct
- * the SES in reverse order. */
+/**  * Compute the shortest edit script via LCS DP. Strategy: compute LCS lengths matrix `dp[i][j]` =
+ * LCS length of `before[0..i)` and `after[0..j)`. Walk back from `dp[N][M]` to construct the SES in
+ * reverse order. */
 export function myersDiff(before: string[], after: string[]): DiffOp[] {
   const N = before.length
   const M = after.length

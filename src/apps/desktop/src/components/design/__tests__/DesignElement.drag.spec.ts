@@ -376,10 +376,9 @@ describe('DesignElement drag', () => {
   /** ticks of cursor movement d, the element ended up at d·N·(N+1)/2 // eslint-disable-next-line
    * @typescript-eslint/no-explicit-any */
 
-  /** instead of d — making the element visibly leap ahead of the cursor (the "moves so fast" user
-   * complaint).
-   * The fix sends the INCREMENTAL dx (delta since last emit). Each // eslint-disable-next-line
-   * @typescript-eslint/no-explicit-any */
+  /**    * instead of d — making the element visibly leap ahead of the cursor (the "moves so fast" user
+   * complaint). The fix sends the INCREMENTAL dx (delta since last emit). Each //
+   * eslint-disable-next-line @typescript-eslint/no-explicit-any */
 
   /**
    * emit carries only the cursor movement SINCE the previous emit. The backend still ADDs, but the

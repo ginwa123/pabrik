@@ -68,9 +68,9 @@ const props = withDefaults(
   defineProps<{
     /** Where the config is read from and written to. */
     source?: PabrikConfigSource
-    /** Which sections this editor offers. The settings shell renders the nav,
-     * so this is the editor's ACCEPT list: a `?section=` outside it falls back
-     * to the first entry instead of rendering an empty pane. */
+    /**      * Which sections this editor offers. The settings shell renders the nav, so this is the
+     * editor's ACCEPT list: a `?section=` outside it falls back to the first entry instead of
+     * rendering an empty pane. */
     sections?: readonly Tab[]
   }>(),
   {
@@ -103,9 +103,8 @@ defineExpose({
 // computed below can fall back to it when the URL has no `?section=`.
 const TAB_STORAGE_KEY = 'pabrik-settings-active-tab'
 
-/** The section ids this editor accepts. Derived from the `sections` prop, so a
- * URL or a stored value pointing at a section this editor does not offer
- * falls back instead of rendering nothing. */
+/**  * The section ids this editor accepts. Derived from the `sections` prop, so a URL or a stored value
+ * pointing at a section this editor does not offer falls back instead of rendering nothing. */
 const TAB_IDS = computed<readonly string[]>(() => props.sections)
 // ─── Edit mode: the form, or the raw JSON ────────────────────────────────
 // Some edits are far easier to express as JSON - pasting a whole profile map
@@ -206,10 +205,9 @@ const activeTab = computed<Tab>({
   },
 })
 
-/** Turning tab mode off must leave no trace: the route funnel stops
- * creating/normalising tabs, and the now-meaningless `?tab=` is dropped
- * from the URL. Guarded because this component also mounts in tests
- * without a router installed. */
+/**  * Turning tab mode off must leave no trace: the route funnel stops creating/normalising tabs, and
+ * the now-meaningless `?tab=` is dropped from the URL. Guarded because this component also mounts
+ * in tests without a router installed. */
 function onToggleBrowserTabs(value: boolean) {
   tabsStore.setEnabled(value)
   if (value || !router || !route) return
@@ -251,15 +249,12 @@ function showJson() {
   mode.value = 'json'
 }
 
-/**
- * Leave JSON mode.
- *
+/** Leave JSON mode.
  * Refuses to leave when the textarea holds text that has NOT been applied and
  * cannot be - leaving would silently discard an edit the user is mid-way
  * through. EMPTY is not "unusable": there is nothing to lose, so leaving is
  * allowed (which is what makes a `?mode=json` deep link escapable before the
- * textarea has been seeded).
- */
+ * textarea has been seeded). */
 function showForm() {
   if (mode.value === 'json' && jsonText.value.trim().length > 0 && !applyJson()) return
   mode.value = 'form'
@@ -269,15 +264,11 @@ function onJsonInput() {
   jsonApplied.value = false
 }
 
-/**
- * Fold the textarea into the in-memory config, then re-hydrate the sections.
- *
+/** Fold the textarea into the in-memory config, then re-hydrate the sections.
  * Written straight to `config` rather than through `setConfig`: `setConfig`
  * re-snapshots, which would mark this edit as already-saved and hide the save
  * bar. The snapshot must keep describing what the SERVER last gave us.
- *
- * Returns false (leaving the config untouched) when the text is unusable.
- */
+ * Returns false (leaving the config untouched) when the text is unusable. */
 function applyJson(): boolean {
   if (jsonProblem.value !== null) return false
   config.value = JSON.parse(jsonText.value) as PabrikConfig
@@ -607,10 +598,9 @@ function profilesToRecord(list: ProfileRow[]): Record<string, PabrikProfile> {
 
 // ─── Modal state ──────────────────────────────────────────────────────────
 type ProfileModalState = { mode: 'add' | 'edit'; value: LlmConfigModalValue } | null
-/** Where a sub-agent is being added/edited. Plan
- * 2026-09-04-subagents-per-profile: per-profile only — the `scope`
- * always carries the owning profile name (the old `{ kind: 'top' }`
- * global scope is gone with the Sub-agents tab). */
+/**  * Where a sub-agent is being added/edited. Plan 2026-09-04-subagents-per-profile: per-profile only
+ * — the `scope` always carries the owning profile name (the old `{ kind: 'top' }` global scope is
+ * gone with the Sub-agents tab). */
 type SubAgentScope = { kind: 'profile'; profileName: string }
 type SubAgentModalState = {
   mode: 'add' | 'edit'
@@ -1114,10 +1104,9 @@ function confirmDeleteProfile() {
 }
 
 // ─── Loading ─────────────────────────────────────────────────────────────
-/** Re-read the effective config through the source.
- * The mount path's only load path. (It used to be shared with a
- * reset/copy control; that control is gone - the boot seeding IS the
- * migration, so there is nothing left to reset to or copy in.) */
+/**  * Re-read the effective config through the source. The mount path's only load path. (It used to be
+ * shared with a reset/copy control; that control is gone - the boot seeding IS the migration, so
+ * there is nothing left to reset to or copy in.) */
 async function reload() {
   try {
     const data = await source.load()

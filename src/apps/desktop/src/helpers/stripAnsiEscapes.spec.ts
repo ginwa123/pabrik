@@ -2,10 +2,9 @@ import { describe, expect, it } from 'vitest'
 
 import { stripAnsiEscapes } from './stripAnsiEscapes'
 
-/** Mirrors the Zig tests in `src/helpers/ansi.zig`. These are the byte
- * sequences real toolchains emit — MSBuild, PowerShell, cargo, pytest —
- * not synthetic regex bait. If the two implementations ever drift on
- * what counts as an escape, one of these suites goes red. */
+/**  * Mirrors the Zig tests in `src/helpers/ansi.zig`. These are the byte sequences real toolchains
+ * emit — MSBuild, PowerShell, cargo, pytest — not synthetic regex bait. If the two implementations
+ * ever drift on what counts as an escape, one of these suites goes red. */
 
 describe('stripAnsiEscapes — MSBuild colour codes', () => {
   // Byte-for-byte what `dotnet build … | Select-String …` hands back:

@@ -39,9 +39,8 @@ export interface LayerDragDropArgs {
     | DesignElement[]
     | Ref<DesignElement[]>
     | (() => DesignElement[] | Ref<DesignElement[]>)
-  /** Optional reactive selectedIds (same union). When the dragged
-   *  row is in this Set AND its size > 1, the whole set is dragged
-   *  together. */
+  /**    * Optional reactive selectedIds (same union). When the dragged row is in this Set AND its size >
+   * 1, the whole set is dragged together. */
   selectedIds?: Set<string> | Ref<Set<string>> | (() => Set<string> | null)
 }
 

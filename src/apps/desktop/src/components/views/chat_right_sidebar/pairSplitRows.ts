@@ -1,14 +1,11 @@
 import type { ParsedDiffLine } from './parseUnifiedDiff'
 
-/**
- * A row of the side-by-side (split) diff render.
- *
+/** A row of the side-by-side (split) diff render.
  * `oldText` / `newText` are the line bodies with the diff prefix already
  * stripped (that is what `parseUnifiedDiff` hands over). A `null` side is a
  * FILLER cell — the row is taller than one of the two files at that point
  * (a pure insertion has no old side; a pure deletion has no new side).
- * Renderers must paint a filler as empty, never as an unchanged line.
- */
+ * Renderers must paint a filler as empty, never as an unchanged line. */
 export interface SplitRow {
   kind: 'hunk' | 'context' | 'change'
   /** Full-width row content (a hunk header). `null` for the two-sided rows,
@@ -20,10 +17,9 @@ export interface SplitRow {
   newText: string | null
   /** True for the paired change rows — both sides are tinted from this flag. */
   isChanged: boolean
-  /** Indexes into the SOURCE `ParsedDiffLine[]` this row was built from, in
-   * source order. Review-comment threads anchor to a source line index, so
-   * this is what lets a thread keep its position when the user flips between
-   * unified and split. */
+  /**    * Indexes into the SOURCE `ParsedDiffLine[]` this row was built from, in source order.
+   * Review-comment threads anchor to a source line index, so this is what lets a thread keep its
+   * position when the user flips between unified and split. */
   sourceIndexes: number[]
 }
 

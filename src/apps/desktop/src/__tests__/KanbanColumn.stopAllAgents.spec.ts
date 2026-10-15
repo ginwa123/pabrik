@@ -1,12 +1,9 @@
-/**
- * Tests for KanbanColumn "Stop all agents" menu item — the mirror of
+/** Tests for KanbanColumn "Stop all agents" menu item — the mirror of
  * KanbanColumn.runAllAgents.spec.ts.
- *
  * The column "⋮" menu gains a 5th item after "Run all agents" that emits
  * `requestStopAllAgents` with the column id and closes the menu.
  * Accepts a `stopAllBusy` prop for the in-flight state (disabled
- * while a bulk stop for that column is in flight).
- */
+ * while a bulk stop for that column is in flight). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, type VueWrapper } from '@vue/test-utils'

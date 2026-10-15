@@ -89,9 +89,9 @@ export class DocumentEngineDb extends BaseSyncEngine<DocumentRow, DocumentCtx> {
     return this.fetchDeltaPage(ctx)
   }
 
-  /** Full-list revalidate. `listDocuments` is unpaginated and returns the
-   * whole workspace, so `limit` and the stored cursor are both irrelevant —
-   * accepted for the base-class contract and ignored. */
+  /**    * Full-list revalidate. `listDocuments` is unpaginated and returns the whole workspace, so
+   * `limit` and the stored cursor are both irrelevant — accepted for the base-class contract and
+   * ignored. */
   fetchDeltaPage(ctx: DocumentCtx): Effect.Effect<DocumentDelta, SyncRemoteError> {
     return Effect.tryPromise({
       try: () => this.fetchFn(ctx),

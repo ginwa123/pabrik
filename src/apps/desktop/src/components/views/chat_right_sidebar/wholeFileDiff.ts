@@ -55,10 +55,9 @@ function remember(key: string, value: WholeFileDiff): void {
   }
 }
 
-/** Read the whole-file diff for one path, fetching at most once per path.
- * A backend failure REJECTS. It must never resolve to an empty diff: an empty
- * diff renders as "this file is unchanged", which is the worst direction to be
- * wrong in — and the one thing the whole-file view exists to avoid. */
+/**  * Read the whole-file diff for one path, fetching at most once per path. A backend failure REJECTS.
+ * It must never resolve to an empty diff: an empty diff renders as "this file is unchanged", which
+ * is the worst direction to be wrong in — and the one thing the whole-file view exists to avoid. */
 export async function fetchWholeFileDiff(
   cwd: string,
   path: string,

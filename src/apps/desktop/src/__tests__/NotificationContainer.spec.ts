@@ -1,7 +1,5 @@
-/** NotificationContainer.spec.ts
- * Unit tests for the `NotificationContainer` stack renderer.
- * Covers: empty state, one-toast-per-store-entry, and the dismiss
- * wiring (× click → store.dismiss(id)). */
+/**  * NotificationContainer.spec.ts Unit tests for the `NotificationContainer` stack renderer. Covers:
+ * empty state, one-toast-per-store-entry, and the dismiss wiring (× click → store.dismiss(id)). */
 import { describe, it, expect, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

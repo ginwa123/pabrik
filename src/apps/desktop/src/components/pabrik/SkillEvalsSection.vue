@@ -33,10 +33,9 @@ export interface SkillEvalsSettings {
 
 const model = defineModel<SkillEvalsSettings>({ required: true })
 
-/** Whether the backend reported the block at all. A config with no
- * `skill_evals` key still comes back with the object (defaults), so this
- * is only false if the GET failed entirely — worth surfacing, because it
- * means the value on screen is a guess rather than the server's state. */
+/**  * Whether the backend reported the block at all. A config with no `skill_evals` key still comes
+ * back with the object (defaults), so this is only false if the GET failed entirely — worth
+ * surfacing, because it means the value on screen is a guess rather than the server's state. */
 const props = defineProps<{ loaded?: boolean }>()
 const isLoaded = computed(() => props.loaded !== false)
 

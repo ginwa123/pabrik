@@ -97,11 +97,9 @@ function mountHarness(initialKey = 'kanban-scroll-item_test'): TestHarness {
   return { wrapper, container, inner, itemIdRef }
 }
 
-/** Configure jsdom to report a known scrollWidth/clientWidth on the
- * container. Without this, scrollWidth = 0 in jsdom and the
- * composable's "max <= 0" early-exit would skip the restore.
- * Property descriptors must be `configurable: true` so individual
- * tests can override per-case. */
+/**  * Configure jsdom to report a known scrollWidth/clientWidth on the container. Without this,
+ * scrollWidth = 0 in jsdom and the composable's "max <= 0" early-exit would skip the restore.
+ * Property descriptors must be `configurable: true` so individual tests can override per-case. */
 function setScrollGeometry(
   container: HTMLDivElement,
   { scrollWidth, clientWidth }: { scrollWidth: number; clientWidth: number },
@@ -118,11 +116,9 @@ function setScrollGeometry(
   })
 }
 
-/** Wait the two `requestAnimationFrame` ticks the composable awaits
- * before applying the restore, plus a microtask flush so Vue's
- * reactive effects settle. jsdom's rAF resolves via the macrotask
- * queue — awaiting `requestAnimationFrame` directly is the
- * canonical way to wait for it. */
+/**  * Wait the two `requestAnimationFrame` ticks the composable awaits before applying the restore,
+ * plus a microtask flush so Vue's reactive effects settle. jsdom's rAF resolves via the macrotask
+ * queue — awaiting `requestAnimationFrame` directly is the canonical way to wait for it. */
 async function waitForRestore(): Promise<void> {
   await flushPromises()
   // jsdom provides `requestAnimationFrame` (defined on window).
@@ -410,9 +406,8 @@ describe('useKanbanScrollRestore', () => {
   })
 })
 
-/** The `axis: 'y'` variant — used by the kanban row-mode list, which
- * scrolls vertically (the columns row scrolls horizontally). Same
- * contract, different offset property. */
+/**  * The `axis: 'y'` variant — used by the kanban row-mode list, which scrolls vertically (the columns
+ * row scrolls horizontally). Same contract, different offset property. */
 describe('useKanbanScrollRestore (axis: y)', () => {
   function mountVerticalHarness(initialKey = 'kanban-row-scroll-item_test') {
     const itemIdRef = ref(initialKey)

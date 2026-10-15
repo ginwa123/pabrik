@@ -1,7 +1,6 @@
-/** Phase 3 scroll-spy + URL sync (3.3) and click-to-scroll (3.4,
- * ChatView side): the most-visible stacked section drives currentPath,
- * which syncs to ?diff= via router.replace (never push); the Back
- * button clears the selection and deletes the param. */
+/**  * Phase 3 scroll-spy + URL sync (3.3) and click-to-scroll (3.4, ChatView side): the most-visible
+ * stacked section drives currentPath, which syncs to ?diff= via router.replace (never push); the
+ * Back button clears the selection and deletes the param. */
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'

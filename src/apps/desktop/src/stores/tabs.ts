@@ -193,9 +193,9 @@ export const useTabsStore = defineStore('tabs', () => {
     }
   }
 
-  /** Re-key a tab in place. Used when the same target turns out to have a
-   * different canonical identity than the one it was created with (the item
-   * type was not known yet, or a session id was renamed). */
+  /**    * Re-key a tab in place. Used when the same target turns out to have a different canonical
+   * identity than the one it was created with (the item type was not known yet, or a session id was
+   * renamed). */
   function rekeyTab(id: string, key: string, query: TabQuery): void {
     let touched = false
     tabs.value = tabs.value.map((tab) => {
@@ -295,9 +295,8 @@ export const useTabsStore = defineStore('tabs', () => {
     return activate(tab.id)
   }
 
-  /** Close `id` and report which tab should be activated next (the right
-   * neighbour, else the left — the browser rule). The caller decides
-   * whether to navigate; `null` means the id was unknown. */
+  /**    * Close `id` and report which tab should be activated next (the right neighbour, else the left —
+   * the browser rule). The caller decides whether to navigate; `null` means the id was unknown. */
   function close(id: string): Tab | null {
     const index = tabs.value.findIndex((tab) => tab.id === id)
     if (index === -1) return null
@@ -416,10 +415,9 @@ export const useTabsStore = defineStore('tabs', () => {
     return tab
   }
 
-  /** The funnel. Returns the navigation to apply for the current URL:
-   * create a tab, focus an existing one, honour a `?tab=` that names
-   * exactly this target, or (when disabled / an overlay) leave the
-   * target alone. */
+  /**    * The funnel. Returns the navigation to apply for the current URL: create a tab, focus an
+   * existing one, honour a `?tab=` that names exactly this target, or (when disabled / an overlay)
+   * leave the target alone. */
   function syncFromTarget(
     path: string,
     query: Record<string, unknown>,
@@ -480,10 +478,9 @@ export const useTabsStore = defineStore('tabs', () => {
     })
   }
 
-  /** Live tab titles. The backend already announces renames on the `session`
-   * channel (`SessionEvent { action, id, name }`), so a chat tab keeps up
-   * with the auto-rename-on-first-message cascade without polling. Guarded
-   * because the bus is not installed until App.vue mounts. */
+  /**    * Live tab titles. The backend already announces renames on the `session` channel (`SessionEvent
+   * { action, id, name }`), so a chat tab keeps up with the auto-rename-on-first-message cascade
+   * without polling. Guarded because the bus is not installed until App.vue mounts. */
   let offTitleFeed: (() => void) | null = null
 
   function initTitleFeed(): void {
@@ -544,9 +541,9 @@ export const useTabsStore = defineStore('tabs', () => {
     if (tab) setTabTitle(tab.id, name)
   }
 
-  /** Store a title the caller resolved from live state (the workspace tree,
-   * the chats list, a rename event). Used by the strip so the persisted
-   * label is a real name rather than the generic kind fallback. */
+  /**    * Store a title the caller resolved from live state (the workspace tree, the chats list, a rename
+   * event). Used by the strip so the persisted label is a real name rather than the generic kind
+   * fallback. */
   function setTabTitle(id: string, title: string): void {
     if (!id || !title) return
     let touched = false

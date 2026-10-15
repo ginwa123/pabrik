@@ -26,9 +26,8 @@ const props = withDefaults(
     size?: number
     /** Tailwind box class, e.g. `w-5 h-5`. Wins over `size`. */
     sizeClass?: string | null
-    /** Accessible name. Leave unset when a visible label already names
-     * the thing — the icon is then decorative and must stay
-     * `aria-hidden`, not announced as "Trash" after "Delete". */
+    /**      * Accessible name. Leave unset when a visible label already names the thing — the icon is then
+     * decorative and must stay `aria-hidden`, not announced as "Trash" after "Delete". */
     title?: string | null
     /** Stroke weight. 1.75 is the house default: Lucide ships 2, which
      * reads heavy next to 12px monospace in the muted palette. */

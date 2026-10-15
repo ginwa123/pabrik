@@ -435,11 +435,9 @@ export function registerRecentLocalMutations(ids: string[], expiryMs: number): v
   }
 }
 
-/** True iff `elementId` was mutated by this client within the last
- * `RECENT_MUTATION_TTL_MS` milliseconds. Read by the SSE handler to
- * decide whether to skip the GET fan-out for an incoming event.
- * Exported for `stores/designSse.ts`. Side effect: expired entries are
- * lazily GC'd on read. */
+/**  * True iff `elementId` was mutated by this client within the last `RECENT_MUTATION_TTL_MS`
+ * milliseconds. Read by the SSE handler to decide whether to skip the GET fan-out for an incoming
+ * event. Exported for `stores/designSse.ts`. Side effect: expired entries are lazily GC'd on read. */
 export function isRecentLocalMutation(elementId: string): boolean {
   const exp = recentLocalMutations.get(elementId)
   if (exp === undefined) return false
@@ -450,9 +448,8 @@ export function isRecentLocalMutation(elementId: string): boolean {
   return true
 }
 
-/** Test-only helper to clear the dedupe Map between tests. NOT exposed
- * in the production API surface — exported via the store's returned
- * object only for unit tests. */
+/**  * Test-only helper to clear the dedupe Map between tests. NOT exposed in the production API surface
+ * — exported via the store's returned object only for unit tests. */
 export function _clearRecentLocalMutationsForTests(): void {
   recentLocalMutations.clear()
 }
@@ -1066,15 +1063,13 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     }))
   }
 
-  /**
-   * Idempotent loader for ONE workspace's items (lazy loading — plan
+  /** Idempotent loader for ONE workspace's items (lazy loading — plan
    * above). Already loaded → no-op; in flight → shares the same
    * promise (dedupe); not yet loaded → loadWorkspaceItems + mark.
    * Failures are logged, never rethrown: fire-and-forget callers
    * (workspace switch, URL restore) must not see unhandled
    * rejections, and a failed id stays out of the loaded set so the
-   * NEXT visit retries.
-   */
+   * NEXT visit retries. */
   async function ensureWorkspaceItemsLoaded(workspaceId: string): Promise<void> {
     if (workspaceItemsLoaded.has(workspaceId)) return
     const pending = workspaceItemsInFlight.get(workspaceId)
@@ -4540,15 +4535,12 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
   // unloads on close).
   let sessionHandlersInstalled = false
 
-  /**
-   * Subscribe to session events. The callback fires once per
+  /** Subscribe to session events. The callback fires once per
    * session event (after the internal workspacesStore handler runs).
    * Returns an unsubscribe function.
-   *
    * Use this when you have a SEPARATE data structure that needs to
    * stay in sync with session renames/deletes/creates — for
-   * example, ChatsList.vue's `navItems` mirror.
-   */
+   * example, ChatsList.vue's `navItems` mirror. */
   function onSessionEvent(cb: (event: api.SessionEvent) => void): () => void {
     const bus = useSseBus()
     return bus.on('session', (event) => {

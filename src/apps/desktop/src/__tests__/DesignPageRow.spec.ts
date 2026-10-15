@@ -150,12 +150,9 @@ describe('DesignPageRow.vue', () => {
     expect(wrapper.find('[data-testid="design-page-row-page_xxx"]').exists()).toBe(true)
   })
 
-  // ─── ⋮ menu (rename-design-pages, 2026-08-06) ──────────────────────────
-  //
-  // Verifies the three-dot menu mounted alongside the existing × delete
-  // button. The menu is the canonical surface for page-level actions
-  // (Rename + Delete); future actions (duplicate, lock, etc.) slot in
-  // here.
+  // ─── ⋮ menu (rename-design-pages, 2026-08-06) ────────────────────────── Verifies the three-dot
+  // menu mounted alongside the existing × delete button. The menu is the canonical surface for
+  // page-level actions (Rename + Delete); future actions (duplicate, lock, etc.) slot in here.
 
   it('renders a ⋮ menu trigger button on the row', () => {
     const wrapper = mountRow({

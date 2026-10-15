@@ -1,8 +1,6 @@
-/** Tests for CompactionCard.vue — the chat-bubble renderer for the
- * `<compact_messages>` envelope that `compactMessageInMemoryNew` writes
- * to the DB. The component is purely presentational (parses a string,
- * no API calls), so no mocks are needed.
- * Mirrors the style of `SetGitWorktree.spec.ts`. */
+/**  * Tests for CompactionCard.vue — the chat-bubble renderer for the `<compact_messages>` envelope
+ * that `compactMessageInMemoryNew` writes to the DB. The component is purely presentational (parses
+ * a string, no API calls), so no mocks are needed. Mirrors the style of `SetGitWorktree.spec.ts`. */
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 

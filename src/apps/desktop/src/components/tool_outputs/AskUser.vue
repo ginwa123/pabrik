@@ -87,10 +87,9 @@ function strField(o: Record<string, unknown>, key: string): string {
   return ''
 }
 
-/** Resolve `content` to the ask_user `data` object. Accepts the bare data
- * object (ChatView's success path), a full envelope object, or either form
- * as a JSON string (ChatView's error fallback hands us the raw envelope
- * string). Returns the envelope error when the call failed. */
+/**  * Resolve `content` to the ask_user `data` object. Accepts the bare data object (ChatView's success
+ * path), a full envelope object, or either form as a JSON string (ChatView's error fallback hands
+ * us the raw envelope string). Returns the envelope error when the call failed. */
 function resolveData(content: unknown): {
   data: Record<string, unknown> | null
   error: string | null
@@ -262,9 +261,9 @@ function parseAnswers(raw: string): string[] {
   return [trimmed]
 }
 
-/** True when the free-text box is the answer: either the user explicitly chose
- * "Other", or they simply typed something without picking an option. Typing
- * IS answering — requiring a radio click first would silently drop the text. */
+/**  * True when the free-text box is the answer: either the user explicitly chose "Other", or they
+ * simply typed something without picking an option. Typing IS answering — requiring a radio click
+ * first would silently drop the text. */
 const answerIsFreeText = computed(
   () => freeText.value.trim().length > 0 && (usingFreeText.value || selected.value.length === 0),
 )
@@ -293,9 +292,9 @@ function chooseFreeText(): void {
   selected.value = []
 }
 
-/** Answer text is often a sentence or three (an id, a path, a caveat), so the
- * box grows with what is typed instead of staying two lines tall. Capped so a
- * pasted essay cannot push the composer off screen. */
+/**  * Answer text is often a sentence or three (an id, a path, a caveat), so the box grows with what is
+ * typed instead of staying two lines tall. Capped so a pasted essay cannot push the composer off
+ * screen. */
 const FREETEXT_MAX_PX = 220
 
 function autoGrow(event: Event): void {
@@ -393,16 +392,12 @@ function onKeydown(event: KeyboardEvent): void {
 
 const waiting = computed(() => state.value === 'pending')
 
-/**
- * The question is model-authored MARKDOWN — `ask_user.zig`'s schema says
+/** The question is model-authored MARKDOWN — `ask_user.zig`'s schema says
  * "Markdown allowed" — so it renders as markdown, not as `{{ text }}`.
  * Before this, a question like
- *
  *   **Option 1 — Full 1:1 (recommended)** … `linux/window.zig` …
- *
  * reached the card as one wall of asterisks and backticks. Scoped CSS
- * below keeps the global `.markdown-content` typography at card scale.
- */
+ * below keeps the global `.markdown-content` typography at card scale. */
 const questionHtml = computed(() => renderMarkdownHtml(parsed.value.question))
 
 /** Option labels: markdown stripped, so `**bold**` never shows literally. */
@@ -410,10 +405,9 @@ const optionLabels = computed<string[]>(() =>
   options.value.map((option) => stripMarkdownSyntax(option)),
 )
 
-/** The one-line `primary` and the resolved answer chip must stay TEXT —
- * the header pill is a single truncated line, and the answer chip's text
- * is the very string POSTed back to the model. Strip the syntax, keep the
- * words, and keep `options` / `answer` themselves raw for the wire. */
+/**  * The one-line `primary` and the resolved answer chip must stay TEXT — the header pill is a single
+ * truncated line, and the answer chip's text is the very string POSTed back to the model. Strip the
+ * syntax, keep the words, and keep `options` / `answer` themselves raw for the wire. */
 const primary = computed(() => {
   const header = stripMarkdownSyntax(parsed.value.header)
   if (header) return header
@@ -437,9 +431,8 @@ const rightMeta = computed(() => {
   }
 })
 
-/** Display-only. `answers` stays raw because `buildBody` POSTs the raw
- * answer value; the chip just drops markdown syntax so a picked
- * `**Option 1**` does not read as asterisks next to its own "✓". */
+/**  * Display-only. `answers` stays raw because `buildBody` POSTs the raw answer value; the chip just
+ * drops markdown syntax so a picked `**Option 1**` does not read as asterisks next to its own "✓". */
 const answerChip = computed(() =>
   answers.value.map((answer) => stripMarkdownSyntax(answer)).join(' · '),
 )

@@ -5,11 +5,9 @@ import ProfilesSection from '../components/pabrik/ProfilesSection.vue'
 import type { ProfileRow } from '../components/pabrik/ProfilesSection.vue'
 import type { SubAgent } from '../api'
 
-/** Mount and open `Advanced`.
- * Advanced is collapsed by default — that is the whole point of the redesign —
- * so a spec that wants to touch a field behind it has to open it first. The
- * helper is tolerant so it can be used for components that have no Advanced
- * section at all. */
+/**  * Mount and open `Advanced`. Advanced is collapsed by default — that is the whole point of the
+ * redesign — so a spec that wants to touch a field behind it has to open it first. The helper is
+ * tolerant so it can be used for components that have no Advanced section at all. */
 async function mountOpen(component: unknown, opts?: unknown) {
   // `as never` keeps `mount`'s overload resolution from narrowing the SECOND
   // argument to a VNode-props shape at every call site.

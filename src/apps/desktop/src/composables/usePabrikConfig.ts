@@ -19,10 +19,9 @@ import { computed, ref } from 'vue'
 import type { PabrikConfig } from '../api'
 import { userConfigSource, type PabrikConfigSource } from '../helpers/configSource'
 
-/** @param source where the config is read from and written to. Defaults to the
- * user-level config, which is what every existing caller wants; the workspace
- * scope passes `workspaceConfigSource(id)` instead. See
- * `helpers/configSource.ts` for why the two are not interchangeable. */
+/**  * @param source where the config is read from and written to. Defaults to the user-level config,
+ * which is what every existing caller wants; the workspace scope passes `workspaceConfigSource(id)`
+ * instead. See `helpers/configSource.ts` for why the two are not interchangeable. */
 export function usePabrikConfig(source: PabrikConfigSource = userConfigSource()) {
   const config = ref<PabrikConfig | null>(null)
   const loaded = ref(false)
@@ -31,9 +30,8 @@ export function usePabrikConfig(source: PabrikConfigSource = userConfigSource())
   const snapshot = ref<string>('')
   const saving = ref(false)
 
-  /** Number of leaf-level field changes since load. Counts each
-   * primitive change once. Used by PabrikSaveBar to show
-   * "● N unsaved changes". */
+  /**    * Number of leaf-level field changes since load. Counts each primitive change once. Used by
+   * PabrikSaveBar to show "● N unsaved changes". */
   const unsavedCount = computed(() => {
     if (!config.value) return 0
     if (!snapshot.value) return 0
@@ -106,15 +104,12 @@ export function usePabrikConfig(source: PabrikConfigSource = userConfigSource())
   }
 }
 
-/**
- * Count primitive field differences between two JSON strings.
+/** Count primitive field differences between two JSON strings.
  * Used to drive the "N unsaved changes" pill in the save bar.
- *
  * Walks both trees in parallel; for each key present in either
  * object, recurses if both values are objects, else counts a leaf
  * mismatch (different value OR present-in-one-only). Arrays are
- * compared element-by-element. Returns the total count.
- */
+ * compared element-by-element. Returns the total count. */
 function countLeafDiffs(aJson: string, bJson: string): number {
   let a: unknown
   let b: unknown

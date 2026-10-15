@@ -122,15 +122,12 @@ const emit = defineEmits<{
    * Replaces `update` for the move use case.
    */
   translate: [payload: { elementId: string; dx: number; dy: number }]
-  /**
-   * NEW (2026-08-06) — fires on every pointermove during a RESIZE
+  /** NEW (2026-08-06) — fires on every pointermove during a RESIZE
    * gesture (dragging one of the 8 resize handles). Payload carries
    * the absolute target `(x, y, width, height, rotation)` after
    * applying the cursor delta to the start geometry. Parent calls
    * `workspacesStore.resizeDesignElement` with this absolute patch.
-   *
-   * Replaces `update` for the resize use case.
-   */
+   * Replaces `update` for the resize use case. */
   resize: [patch: Partial<DesignElement>]
   // Chunk 2: when the user drags an element that's part of a
   // multi-selection, the WHOLE selection moves. The parent

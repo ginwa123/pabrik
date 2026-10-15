@@ -25,9 +25,8 @@ describe('UserPillRail', () => {
     })
     const buttons = wrapper.findAll('[data-testid="user-pill"]')
     expect(buttons[0]!.attributes('aria-label')).toBe('Jump to message: hello world')
-    // The styled message box is the single affordance now. A native
-    // `title` would ALSO fire, so the user would see the OS tooltip
-    // appear next to (or on top of) the box — two previews for one
+    // The styled message box is the single affordance now. A native `title` would ALSO fire, so the
+    // user would see the OS tooltip appear next to (or on top of) the box — two previews for one
     // hover. Assert it is gone, not merely unused.
     expect(buttons[0]!.attributes('title')).toBeUndefined()
     expect(wrapper.find('[data-testid="user-pill-rail"]').attributes('aria-label')).toBe(
@@ -101,10 +100,9 @@ describe('UserPillRail — hover/focus message box', () => {
   })
 
   it('moving between pills swaps the box instead of blanking it', async () => {
-    // `mouseleave` on the pill being LEFT can arrive after `mouseenter`
-    // on the next one. An unguarded close would blank the box the user
-    // just moved to — the box would flicker off on every pill-to-pill
-    // move, which is the whole point of the feature.
+    // `mouseleave` on the pill being LEFT can arrive after `mouseenter` on the next one. An
+    // unguarded close would blank the box the user just moved to — the box would flicker off on
+    // every pill-to-pill move, which is the whole point of the feature.
     const wrapper = mountRail()
     const [first, second] = wrapper.findAll('[data-testid="user-pill"]')
     await first!.trigger('mouseenter')
@@ -157,10 +155,9 @@ describe('UserPillRail — hover/focus message box', () => {
   })
 
   it('the box is aligned to the pill that opened it, not to the rail middle', async () => {
-    // The rail is a uniform stack, so the box's `top` is derived from the
-    // open pill's index. A box pinned at the rail's centre would sit
-    // level with the wrong pill whenever the hovered one is not the
-    // middle one — which is most of the time.
+    // The rail is a uniform stack, so the box's `top` is derived from the open pill's index. A box
+    // pinned at the rail's centre would sit level with the wrong pill whenever the hovered one is
+    // not the middle one — which is most of the time.
     const wrapper = mountRail()
     await wrapper.findAll('[data-testid="user-pill"]')[2]!.trigger('mouseenter')
     const top = wrapper.find('[data-testid="user-pill-message"]').attributes('style')

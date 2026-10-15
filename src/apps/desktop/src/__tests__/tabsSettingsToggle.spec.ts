@@ -8,10 +8,9 @@ import { __resetWindowIdForTests } from '../helpers/windowId'
 import { useTabsStore } from '../stores/tabs'
 import { makeLocalStorageStub } from './helpers'
 
-/** Task 7 of the tab-mode plan: the "Browser-style tabs" switch in
- * Settings → General. It is an app preference (localStorage), not a
- * config.json field — the tab set lives client-side, so there is nothing
- * for the backend to store. */
+/**  * Task 7 of the tab-mode plan: the "Browser-style tabs" switch in Settings → General. It is an app
+ * preference (localStorage), not a config.json field — the tab set lives client-side, so there is
+ * nothing for the backend to store. */
 
 vi.mock('../api', () => ({
   getPabrikConfig: vi.fn(),

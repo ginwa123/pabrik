@@ -20,9 +20,9 @@ import { useAgentToolsStore } from '../../stores/agentTools'
 import type { WorkspaceItem } from '../../stores/workspaces'
 import UiIcon from '../ui/UiIcon.vue'
 
-/** Agnostic row types — AgentView is reused for `item_type='agent'`, kanban boards and routines.
- *  `routine_id`; all other fields are identical.
- *  `id`, `title`, `content` (system prompts), so a union is safe. */
+/**  * Agnostic row types — AgentView is reused for `item_type='agent'`, kanban boards and routines.
+ * `routine_id`; all other fields are identical. `id`, `title`, `content` (system prompts), so a
+ * union is safe. */
 export type AgnosticKnowledgeRow = api.AgentKnowledgeRow | api.AgentKanbanKnowledgeRow | api.AgentRoutineKnowledgeRow
 export type AgnosticSystemPromptRow = api.AgentSystemPromptRow | api.AgentKanbanSystemPromptRow | api.AgentRoutineSystemPromptRow
 

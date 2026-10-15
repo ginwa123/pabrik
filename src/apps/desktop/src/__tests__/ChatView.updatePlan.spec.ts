@@ -145,9 +145,9 @@ function installChatViewMocks(opts: { messages: Message[]; sessionId: string }) 
   vi.spyOn(api, 'getPabrikConfig').mockResolvedValue({ profiles: {} })
 }
 
-/** ChatView reads `route.query` and calls `router.replace` (diff deep-linking),
- * so the mount needs a real router — without one `useRoute()` returns
- * undefined and the render throws. Catch-all route keeps the path opaque. */
+/**  * ChatView reads `route.query` and calls `router.replace` (diff deep-linking), so the mount needs a
+ * real router — without one `useRoute()` returns undefined and the render throws. Catch-all route
+ * keeps the path opaque. */
 async function makeRouter(): Promise<Router> {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -160,10 +160,9 @@ async function makeRouter(): Promise<Router> {
 
 let mountSeq = 0
 
-/** Each call mounts a FRESH session id on purpose: ChatView primes its
- * messages from the IndexedDB-backed `chatEngineDb` cache keyed by session
- * id, so reusing one id made test N+1 paint test N's rows instead of the
- * freshly-mocked `getChatHistory` response. */
+/**  * Each call mounts a FRESH session id on purpose: ChatView primes its messages from the
+ * IndexedDB-backed `chatEngineDb` cache keyed by session id, so reusing one id made test N+1 paint
+ * test N's rows instead of the freshly-mocked `getChatHistory` response. */
 async function mountChatViewWithMessages(messages: Message[]) {
   const chatId = `s_plan_${++mountSeq}`
   installChatViewMocks({ messages, sessionId: chatId })

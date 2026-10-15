@@ -73,24 +73,21 @@ async function makeRouter(path = '/app/ws_1', query: Record<string, string> = {}
   return router
 }
 
-/** The list is cache-first now (IndexedDB paint, then revalidate), so the
- * DOM settles on a promise boundary rather than a microtask. Two
- * `nextTick()`s no longer reach the painted rows — this does, and it is
- * the same flush `SidebarDiffPanel.tabs.spec.ts` uses. */
+/**  * The list is cache-first now (IndexedDB paint, then revalidate), so the DOM settles on a promise
+ * boundary rather than a microtask. Two `nextTick()`s no longer reach the painted rows — this does,
+ * and it is the same flush `SidebarDiffPanel.tabs.spec.ts` uses. */
 async function settle(): Promise<void> {
   await flushPromises()
   await nextTick()
 }
 
-/**
- * The documents list is cache-first now, and `documentEngineDb` is a module
+/** The documents list is cache-first now, and `documentEngineDb` is a module
  * singleton whose IndexedDB fallback is a module-level Map — so rows cached
  * by one test are still primed by the next one. Every test in this file
  * asserts a COLD start ("no documents were cached yet"), so each one begins
  * from an empty cache. Without this, the first successful test silently
  * supplies `documents` to every later test and the empty/error assertions
- * pass for the wrong reason.
- */
+ * pass for the wrong reason. */
 async function clearDocumentsCache(workspaceId = 'ws_1'): Promise<void> {
   const { documentEngineDb } = await import('../sync/DocumentEngineDb')
   const { runSyncVoid } = await import('../sync/runtime')

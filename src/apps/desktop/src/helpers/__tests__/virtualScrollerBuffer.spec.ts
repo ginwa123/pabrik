@@ -60,9 +60,9 @@ function mountScroller(props: {
   return wrapper
 }
 
-/** `defineExpose` auto-unwraps refs and computeds on the parent
- * instance, so `scroller.renderedCount` is already a plain number
- * (not a ref). This wrapper just types the access for the tests. */
+/**  * `defineExpose` auto-unwraps refs and computeds on the parent instance, so
+ * `scroller.renderedCount` is already a plain number (not a ref). This wrapper just types the
+ * access for the tests. */
 function getRenderedCount(wrapper: ReturnType<typeof mountScroller>): number {
   return (wrapper.vm as unknown as { renderedCount: number }).renderedCount
 }

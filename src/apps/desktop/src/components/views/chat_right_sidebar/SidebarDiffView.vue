@@ -67,9 +67,9 @@ const wholeFileError = ref<string | null>(null)
 
 const wholeFileRefused = computed(() => wholeFileResult.value?.refused === true)
 
-/** The lines actually rendered: the whole file when we have it, otherwise the
- * hunks we were handed. A refusal falls back to the hunks rather than to
- * nothing — the user still gets their diff, plus a notice. */
+/**  * The lines actually rendered: the whole file when we have it, otherwise the hunks we were handed.
+ * A refusal falls back to the hunks rather than to nothing — the user still gets their diff, plus a
+ * notice. */
 const displayLines = computed<ParsedDiffLine[]>(() => {
   if (!props.wholeFile) return props.lines
   const result = wholeFileResult.value

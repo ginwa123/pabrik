@@ -1,7 +1,6 @@
-/** Shared folder-diff snapshot — the module every frontend diff read goes
- * through. These tests assert the properties that stop the request flood:
- * a click is free, concurrent readers share one request, and a dead backend
- * surfaces as a rejection rather than a diff that looks clean. */
+/**  * Shared folder-diff snapshot — the module every frontend diff read goes through. These tests
+ * assert the properties that stop the request flood: a click is free, concurrent readers share one
+ * request, and a dead backend surfaces as a rejection rather than a diff that looks clean. */
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import {
   clearFolderDiffCache,

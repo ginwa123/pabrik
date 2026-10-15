@@ -53,10 +53,9 @@ export function describeSecretsError(error: SecretsRequestError): string {
   return `secrets ${error.op} failed: ${error.reason}`
 }
 
-/** Lift a rejecting promise into an Effect that fails in its error channel.
- * This is the same `Effect.tryPromise` wrapper `sync/DocumentEngineDb.ts`
- * uses for its remote fetch; the difference is only the error type, which
- * here describes a network call rather than a cache. */
+/**  * Lift a rejecting promise into an Effect that fails in its error channel. This is the same
+ * `Effect.tryPromise` wrapper `sync/DocumentEngineDb.ts` uses for its remote fetch; the difference
+ * is only the error type, which here describes a network call rather than a cache. */
 function request<A>(op: string, run: () => Promise<A>): Effect.Effect<A, SecretsRequestError> {
   return Effect.tryPromise({
     try: run,
@@ -189,9 +188,8 @@ export const useSecretsStore = defineStore('secrets', () => {
     return result.value.secret
   }
 
-  /** Replace a secret's credential in place ("rotate").
-   * Same discipline as `createSecret`: the new value goes into the PATCH
-   * body and is dropped. The response replaces the row, so the UI shows
+  /**    * Replace a secret's credential in place ("rotate"). Same discipline as `createSecret`: the new
+   * value goes into the PATCH body and is dropped. The response replaces the row, so the UI shows
    * the new `updated_at` and never the new value. */
   async function rotateSecret(
     workspaceId: string,
@@ -234,9 +232,8 @@ export const useSecretsStore = defineStore('secrets', () => {
     return true
   }
 
-  /** Called on workspace switch so one workspace's secrets are never shown
-   * under another workspace's header — and so a stale failure banner does
-   * not survive the switch. */
+  /**    * Called on workspace switch so one workspace's secrets are never shown under another workspace's
+   * header — and so a stale failure banner does not survive the switch. */
   function reset(): void {
     secrets.value = []
     error.value = null

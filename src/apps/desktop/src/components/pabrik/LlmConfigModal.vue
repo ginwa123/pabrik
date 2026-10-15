@@ -17,10 +17,9 @@ const props = withDefaults(
       model?: string
       base_url?: string
       api_key?: string
-      /** Plan 2026-07-07-compaction-inline: per-profile compaction
-       *  errors. Not currently set by the backend (null is always
-       *  valid; > 100 is caught at the HTTP layer), but accepted
-       *  by the form so the errors prop type is future-proof. */
+      /**        * Plan 2026-07-07-compaction-inline: per-profile compaction errors. Not currently set by the
+       * backend (null is always valid; > 100 is caught at the HTTP layer), but accepted by the form
+       * so the errors prop type is future-proof. */
       max_capacity_tokens?: string
       compaction_threshold_percent?: string
     }

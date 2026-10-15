@@ -1015,9 +1015,8 @@ describe('KanbanView — header + Add task button', () => {
   // docs/superpowers/plans/2026-08-27-kanban-agent-as-tab.md, iteration 2 — Agent button now lands
   // on ?tab=tools since the Agent umbrella tab was split into Tools + Knowledge) ───
 
-  /** Mount a KanbanView with a fresh vue-router installed so the
-   * Agent button's `router.push(...)` doesn't crash against the
-   * missing global plugin. Returns the spy on `push` for assertions. */
+  /**    * Mount a KanbanView with a fresh vue-router installed so the Agent button's `router.push(...)`
+   * doesn't crash against the missing global plugin. Returns the spy on `push` for assertions. */
   async function mountViewWithRouter(item: WorkspaceItem) {
     const { createRouter, createMemoryHistory } = await import('vue-router')
     const router = createRouter({

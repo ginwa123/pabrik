@@ -1,12 +1,8 @@
-/**
- * Tests for the "Start agent" button in KanbanTaskDetailDialog (edit mode).
- *
+/** Tests for the "Start agent" button in KanbanTaskDetailDialog (edit mode).
  * Mount pattern: same as KanbanTaskDetailDialog.runAgent.spec.ts —
  * <Teleport to="body">, so use `attachTo: document.body` +
  * `document.querySelector` (NOT `wrapper.find`).
- *
- * Plan: docs/superpowers/specs/2026-08-18-kanban-task-detail-start-agent.md
- */
+ * Plan: docs/superpowers/specs/2026-08-18-kanban-task-detail-start-agent.md */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

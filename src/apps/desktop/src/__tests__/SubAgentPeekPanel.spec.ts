@@ -1,13 +1,10 @@
-/**
- * Tests for SubAgentPeekPanel — the slide-over for watching a
+/** Tests for SubAgentPeekPanel — the slide-over for watching a
  * sub-agent's progress without leaving the parent chat.
- *
  * Since the reuse refactor (task_1788604407681_2) the panel is thin
  * chrome (header / error banner / footer) around an embedded ChatView
  * in read-only mode. Message rendering + tool output components are
  * ChatView's job — this spec asserts the chrome and the embed wiring,
- * not message bubbles (those belong to ChatView's own specs).
- */
+ * not message bubbles (those belong to ChatView's own specs). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

@@ -1,7 +1,6 @@
-/** Unit tests for the memories API client (getMemories, getMemoryDetail,
- * createMemory, updateMemory, deleteMemory). Mocks global.fetch to
- * assert URL, method, body shape, and error handling without hitting
- * the network. Mirrors apiDeleteProfile.spec.ts style. */
+/**  * Unit tests for the memories API client (getMemories, getMemoryDetail, createMemory, updateMemory,
+ * deleteMemory). Mocks global.fetch to assert URL, method, body shape, and error handling without
+ * hitting the network. Mirrors apiDeleteProfile.spec.ts style. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

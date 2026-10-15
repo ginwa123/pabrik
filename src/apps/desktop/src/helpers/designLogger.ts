@@ -119,15 +119,12 @@ export const setDesignLoggerEnabled = (on: boolean): void => {
 
 // ─── Reasons (the most useful field) ────────────────────────────────────────
 
-/**
- * The set of `reason` values the design logger emits. Each one
+/** The set of `reason` values the design logger emits. Each one
  * identifies a unique point in the wire — a single DevTools
  * `grep reason=…` isolates a layer.
- *
  * Naming: a colon-separated path so a search like
  * `reason=drag:start` matches all drag-start events but
- * `reason=drag:start:group` matches only group-drag starts.
- */
+ * `reason=drag:start:group` matches only group-drag starts. */
 export type DesignReason =
   // ── Element layer (DesignElement.vue) ─────────────────────────────
   | 'drag:start:move'              // pointerdown on a leaf/body, single-element
@@ -187,9 +184,8 @@ export interface ElementInfo {
 }
 
 export interface DesignContext {
-  /** Which component / function produced this log line — without it,
-   * `drag:start:move` from `DesignElement.vue` looks identical to
-   * `drag:start:move` from anywhere else. */
+  /**    * Which component / function produced this log line — without it, `drag:start:move` from
+   * `DesignElement.vue` looks identical to `drag:start:move` from anywhere else. */
   caller: string
 
   /** Stable reason code (see `DesignReason`). */
@@ -207,19 +203,16 @@ export interface DesignContext {
    * Resize patch (absolute geometry). For emit:resize.
    */
   patch?: Partial<{ x: number; y: number; width: number; height: number; rotation: number }>
-  /** startClientX/Y captured at pointerdown — without these, a 5px
-   * discrepancy in a delta looks like "wait, where did the extra 5
-   * come from?". */
+  /**    * startClientX/Y captured at pointerdown — without these, a 5px discrepancy in a delta looks like
+   * "wait, where did the extra 5 come from?". */
   startClientX?: number
   startClientY?: number
-  /** True iff this gesture branched into triggerGroupDrag (group /
-   * frame / multi-select move). The single most useful invariant —
-   * `drag:start:group=true` vs `false` tells you which wire fired. */
+  /**    * True iff this gesture branched into triggerGroupDrag (group / frame / multi-select move). The
+   * single most useful invariant — `drag:start:group=true` vs `false` tells you which wire fired. */
   isGroup?: boolean
-  /** Whether the start fired dragStartPositions = null (the reset on
-   * every drag). Lets us distinguish "this drag has a clean baseline"
-   * (`fresh=true`) from "we reused the previous drag's baseline"
-   * (`fresh=false` — the suspected second-drag bug). */
+  /**    * Whether the start fired dragStartPositions = null (the reset on every drag). Lets us
+   * distinguish "this drag has a clean baseline" (`fresh=true`) from "we reused the previous drag's
+   * baseline" (`fresh=false` — the suspected second-drag bug). */
   snapshotFresh?: boolean
   snapshotSize?: number
 
@@ -252,9 +245,8 @@ export interface DesignContext {
 
 // ─── Throttling ────────────────────────────────────────────────────────────
 
-/** Drag pointermoves fire at 60+ Hz. Without throttling, the
- * `drag:throttled-emit` lines would flood the console. Coalesce them
- * to the most recent per-gesture-id, flushing 200 ms after the last
+/**  * Drag pointermoves fire at 60+ Hz. Without throttling, the `drag:throttled-emit` lines would flood
+ * the console. Coalesce them to the most recent per-gesture-id, flushing 200 ms after the last
  * fired (trailing edge so the final position is never lost). */
 const DEBUG_THROTTLE_MS = 200
 
@@ -403,9 +395,8 @@ const emitInternal = (ctx: DesignContext, level: 'debug' | 'info' | 'warn' | 'er
 
 // ─── Helpers for callers ───────────────────────────────────────────────────
 
-/** Convert a DesignElement into the compact ElementInfo shape the
- * logger prefers. Avoids passing 30+ fields when only 5 are useful
- * for diagnostic output. */
+/**  * Convert a DesignElement into the compact ElementInfo shape the logger prefers. Avoids passing 30+
+ * fields when only 5 are useful for diagnostic output. */
 export const abbrevElement = (e: {
   id: string
   type: string

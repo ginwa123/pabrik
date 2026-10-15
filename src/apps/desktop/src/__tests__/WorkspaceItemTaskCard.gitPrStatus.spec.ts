@@ -1,12 +1,9 @@
-/**
- * Behavioural tests for PR-state coloring of the git-branch badge in
+/** Behavioural tests for PR-state coloring of the git-branch badge in
  * WorkspaceItemTaskCard.
- *
  * Contract: green = open, purple = merged, red = closed, orange =
  * plain branch — same palette as SidebarDiffPanel's prStatusStyle.
  * Bold fallback keeps the orange color (semibold) when there is no
- * cwd, no PR, or the fetch fails.
- */
+ * cwd, no PR, or the fetch fails. */
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

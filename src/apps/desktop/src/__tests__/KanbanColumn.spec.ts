@@ -308,16 +308,13 @@ describe('KanbanColumn — column header drag-and-drop reorder', () => {
     expect(wrapper.emitted('reorderColumn')).toBeUndefined()
   })
 })
-/**
- * Sort modal — the coverage gap.
- *
+/** Sort modal — the coverage gap.
  * `KanbanColumn` wires the modal as `@click` on <KanbanSortMenu>, which
  * declares no `click` emit, so it is a NATIVE listener on the menu's root
  * <div>. These tests pin the resulting contract: the modal opens without
  * emitting, a pick emits exactly once with the NEW value, and the backdrop
  * closes without emitting. Without them a refactor of that fallthrough
- * would be unguarded.
- */
+ * would be unguarded. */
 describe('KanbanColumn — sort modal', () => {
   let wrapper: VueWrapper | null = null
 

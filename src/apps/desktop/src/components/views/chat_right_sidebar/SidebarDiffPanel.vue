@@ -44,13 +44,12 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   refresh: []
-  /** File-row click: host swaps the center column to the full diff.
-   * `lines` travel by reference (no copy). `error` set when the
-   * worktree fetch failed (PR mode parses inline — always clean). */
+  /**    * File-row click: host swaps the center column to the full diff. `lines` travel by reference (no
+   * copy). `error` set when the worktree fetch failed (PR mode parses inline — always clean). */
   'show-diff': [selection: DiffSelection]
-  /** Full ordered list after a list load (PR: parsed chunks; worktree:
-   * parallel per-file fetch). ChatView stacks every file in the center
-   * column; per-click `show-diff` stays instant and unchanged. */
+  /**    * Full ordered list after a list load (PR: parsed chunks; worktree: parallel per-file fetch).
+   * ChatView stacks every file in the center column; per-click `show-diff` stays instant and
+   * unchanged. */
   'show-diff-list': [files: DiffSelection[]]
 }>()
 
@@ -190,16 +189,13 @@ const prError = ref<string | null>(null)
 // Empty = unknown (fetch failed or not yet loaded) — badge hidden.
 const prStatus = ref('')
 const prStatusTitle = ref('')
-/**
- * The whole status payload, not just the derived strings above.
- *
+/** The whole status payload, not just the derived strings above.
  * The merge box needs `head_sha` (the merge's head guard), `base_ref` (to say
  * "into main"), `number`/`title`/`head_ref` (the default commit message) and
  * `mergeable` / `merge_state` (whether a merge is allowed, and why not). All of
  * them arrive in the request the 30 s poll already makes, so keeping the object
  * costs nothing and a second fetch for them would be the expensive way to own
- * two sources of truth.
- */
+ * two sources of truth. */
 const prStatusData = ref<api.GitPrStatus | null>(null)
 // Conflict flag from the same payload (`mergeable`/`merge_state`).
 // Quiet-when-clean: only CONFLICTING/DIRTY surfaces UI; every other
@@ -608,10 +604,9 @@ const loadPrStatus = async () => {
   }
 }
 
-/** A merge landed (or was accepted) — re-read NOW.
- * The poll would pick it up within 30 s, but the user just took a destructive
- * action and the badge has to agree with it immediately; a PR still reading
- * "Open" one second after "Confirm and merge" looks like the merge failed. */
+/**  * A merge landed (or was accepted) — re-read NOW. The poll would pick it up within 30 s, but the
+ * user just took a destructive action and the badge has to agree with it immediately; a PR still
+ * reading "Open" one second after "Confirm and merge" looks like the merge failed. */
 const onMerged = () => {
   void loadPrStatus()
 }
@@ -952,16 +947,13 @@ function nextStageList(from: StageList, action: 'staged' | 'unstaged'): StageLis
   return from === 'untracked' ? 'untracked' : 'unstaged'
 }
 
-/**
- * The list the row the user just acted on was in.
- *
+/** The list the row the user just acted on was in.
  * Derived from the ACTION, not from list precedence, because the action IS
  * the evidence: the `+` button only exists on a Changes or Untracked row and
  * the `−` button only on a Staged one. Precedence would get the
  * both-lists case wrong — a path that is staged AND further modified appears
  * in Staged and Changes at once, and clicking the `+` on its Changes row
- * must move THAT row, not silently treat it as an unstage of the Staged one.
- */
+ * must move THAT row, not silently treat it as an unstage of the Staged one. */
 function actingList(
   lists: {
     staged: api.GitFileChange[]
@@ -1083,11 +1075,9 @@ const unstageFile = async (file: api.GitFileChange) => {
   }
 }
 
-/** Apply one `git_file_stage` SSE event: move the row it names and re-prime
- * only that file's diff and counts.
- * Deliberately does NOT call `loadGitStatus()` — that is the whole point of
- * the channel. The manual ↻ refresh and the commit flow keep the full
- * reload path. */
+/**  * Apply one `git_file_stage` SSE event: move the row it names and re-prime only that file's diff
+ * and counts. Deliberately does NOT call `loadGitStatus()` — that is the whole point of the
+ * channel. The manual ↻ refresh and the commit flow keep the full reload path. */
 function applyFileStageEvent(event: api.GitFileStageEvent): void {
   // A failed git command must not move anything: the row stays where it is
   // and the user sees the file still listed on the side they left it.
@@ -1122,9 +1112,9 @@ function applyFileStageEvent(event: api.GitFileStageEvent): void {
   }
 }
 
-/** Fetch one file's diff and fold it into the shared snapshot + the row's
- * counts. A failure leaves the previous counts in place rather than showing
- * `+0 -0`, which would read as "this file is unchanged". */
+/**  * Fetch one file's diff and fold it into the shared snapshot + the row's counts. A failure leaves
+ * the previous counts in place rather than showing `+0 -0`, which would read as "this file is
+ * unchanged". */
 async function reprimeFileDiff(path: string, staged: boolean): Promise<void> {
   if (!props.cwd) return
   try {

@@ -259,9 +259,8 @@ describe('ChatView onContentShift restick (extracted)', () => {
   // path). If they were scrolled up reading history, do nothing — the
   // preserve already restored their anchor position.
   describe('Bug C: post-preserve bottom re-validation', () => {
-    /** The decision function the loadMore branch runs after re-arming
-     * suppressContentShiftStick. Mirrors the production fix in
-     * ChatView.vue's loadChatHistory loadMore path. */
+    /**      * The decision function the loadMore branch runs after re-arming suppressContentShiftStick.
+     * Mirrors the production fix in ChatView.vue's loadChatHistory loadMore path. */
     function postPreserveRestick(args: {
       container: HTMLElement
       wasAtBottom: boolean

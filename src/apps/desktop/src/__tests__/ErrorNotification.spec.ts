@@ -1,7 +1,6 @@
-/** ErrorNotification.spec.ts
- * Unit tests for the `ErrorNotification` toast component.
- * Covers: message rendering, details accordion (shown / hidden),
- * dismiss emission, and the role="alert" a11y contract. */
+/**  * ErrorNotification.spec.ts Unit tests for the `ErrorNotification` toast component. Covers: message
+ * rendering, details accordion (shown / hidden), dismiss emission, and the role="alert" a11y
+ * contract. */
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ErrorNotification from '../components/preview/ErrorNotification.vue'

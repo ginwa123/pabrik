@@ -1,7 +1,6 @@
-/** Conflict-only hint for the git-branch badge in ChatsList (quiet-when-clean).
- * Contract: CONFLICTING shows a ⚠ marker with data-pr-conflict and extends
- * the tooltip with "merge conflicts". MERGEABLE/unknown renders exactly as
- * before (icon only, no attr). */
+/**  * Conflict-only hint for the git-branch badge in ChatsList (quiet-when-clean). Contract:
+ * CONFLICTING shows a ⚠ marker with data-pr-conflict and extends the tooltip with "merge
+ * conflicts". MERGEABLE/unknown renders exactly as before (icon only, no attr). */
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp, nextTick, ref } from 'vue'

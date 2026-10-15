@@ -17,10 +17,9 @@ function tryParseInt(s: string): number | null {
   return isNaN(n) ? null : n
 }
 
-/** One `@@ -a,b +c,d @@` header. Module-level and shared by
- * `parseUnifiedDiff` and `countDiffLines` on purpose: two copies of this
- * pattern drift the moment either is edited, and then the row counts stop
- * matching the diff they sit next to. */
+/**  * One `@@ -a,b +c,d @@` header. Module-level and shared by `parseUnifiedDiff` and `countDiffLines`
+ * on purpose: two copies of this pattern drift the moment either is edited, and then the row counts
+ * stop matching the diff they sit next to. */
 const HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)?$/
 
 // Pure extraction of GitFileViewer.vue parseUnifiedDiff logic so the
@@ -205,9 +204,9 @@ export function splitDiffByFile(diffText: string): SplitDiffFile[] {
   return out.filter((f) => f.text.trim().length > 0)
 }
 
-/** Center-diff selection payload: panel row click → shell → ChatView.
- * `lines` travel by reference (no copy). `error` set when the worktree
- * fetch failed (PR mode parses inline, so error is always null there). */
+/**  * Center-diff selection payload: panel row click → shell → ChatView. `lines` travel by reference
+ * (no copy). `error` set when the worktree fetch failed (PR mode parses inline, so error is always
+ * null there). */
 export interface DiffSelection {
   path: string
   staged: boolean

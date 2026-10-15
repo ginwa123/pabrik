@@ -121,15 +121,13 @@
  */
 export type SseState = 'connecting' | 'open' | 'reconnecting' | 'closed' | 'failed'
 
-/** Side-channel info attached to every state emission. Lets UI
- * (and tests) distinguish "first error before open" from "Nth error
- * after open" without re-implementing the logic. */
+/**  * Side-channel info attached to every state emission. Lets UI (and tests) distinguish "first error
+ * before open" from "Nth error after open" without re-implementing the logic. */
 export interface SseStateInfo {
   /** 1 = first try, 2 = first retry, … */
   attempt: number
-  /** Set on `reconnecting`. The actual delay until the next attempt
-   * (after jitter), in ms. Tests use this to assert the backoff
-   * schedule deterministically. */
+  /**    * Set on `reconnecting`. The actual delay until the next attempt (after jitter), in ms. Tests use
+   * this to assert the backoff schedule deterministically. */
   nextDelayMs?: number
   /** Set on `reconnecting` / `failed`. The `error` event from the ES. */
   lastError?: Event
@@ -248,9 +246,8 @@ export interface SseClientOptions {
   /** Initial backoff for the *first* retry. Doubles each subsequent
    * retry, capped at `maxDelayMs`. Default: 1 000 ms. */
   baseDelayMs?: number
-  /** Upper bound on the backoff delay (after jitter). Default:
-   * 30 000 ms. The "Reconnecting…" badge can use this to give
-   * the user a sense of how long the next attempt will take. */
+  /**    * Upper bound on the backoff delay (after jitter). Default: 30 000 ms. The "Reconnecting…" badge
+   * can use this to give the user a sense of how long the next attempt will take. */
   maxDelayMs?: number
   /** Hard cap on reconnect attempts. After this many failed retries
    * (post-open), state becomes `failed` and no further retries
@@ -259,23 +256,19 @@ export interface SseClientOptions {
    * immediately). Default: `Infinity` (an SSE stream is expected
    * to live the lifetime of the page). */
   maxAttempts?: number
-  /** Random source for jitter. Override in tests to make the
-   * backoff schedule deterministic. Default: `Math.random`.
-   * Jitter formula: `delay = exp * (0.5 + 0.5 * random())`
-   * (full-jitter pattern, AWS-style). */
+  /**    * Random source for jitter. Override in tests to make the backoff schedule deterministic.
+   * Default: `Math.random`. Jitter formula: `delay = exp * (0.5 + 0.5 * random())` (full-jitter
+   * pattern, AWS-style). */
   random?: () => number
-  /** Pause the retry timer while `document.hidden === true`.
-   * The retry fires immediately on `visibilitychange → visible`.
-   * Default: `true`. Set `false` for headless contexts or tests. */
+  /**    * Pause the retry timer while `document.hidden === true`. The retry fires immediately on
+   * `visibilitychange → visible`. Default: `true`. Set `false` for headless contexts or tests. */
   pauseWhenHidden?: boolean
-  /** Reconnect immediately on the browser's `online` event. Default:
-   * `true`. The event target is `window` (override with
-   * `onlineTarget` for tests). */
+  /**    * Reconnect immediately on the browser's `online` event. Default: `true`. The event target is
+   * `window` (override with `onlineTarget` for tests). */
   reconnectOnOnline?: boolean
-  /** Override the `EventSource` constructor. Default:
-   * `globalThis.EventSource`. Tests pass a mock factory here so
-   * they can fire synthetic `open` / `error` / `message` events
-   * without a real network. */
+  /**    * Override the `EventSource` constructor. Default: `globalThis.EventSource`. Tests pass a mock
+   * factory here so they can fire synthetic `open` / `error` / `message` events without a real
+   * network. */
   EventSourceCtor?: typeof EventSource
   /** Override the `visibilitychange` target. Default: `document`.
    * Tests may pass a mock to control visibility. */
@@ -303,28 +296,23 @@ export interface SseClientOptions {
    * listeners) or in headless contexts that have no `window`.
    */
   closeOnUnload?: boolean
-  /** Override the `pagehide` / `beforeunload` event target.
-   * Default: `window`. Tests may pass a mock to fire synthetic
-   * unload events. */
+  /**    * Override the `pagehide` / `beforeunload` event target. Default: `window`. Tests may pass a mock
+   * to fire synthetic unload events. */
   unloadTarget?: Pick<Window, 'addEventListener' | 'removeEventListener'>
-  /** The SSE event name that signals "the stream is live". The
-   * default `'connected'` matches the backend's convention; expose
-   * it for symmetry / future flexibility. */
+  /**    * The SSE event name that signals "the stream is live". The default `'connected'` matches the
+   * backend's convention; expose it for symmetry / future flexibility. */
   connectedEventName?: string
-  /**
-   * Stall threshold in ms. While `state === 'open'`, if no event
+  /** Stall threshold in ms. While `state === 'open'`, if no event
    * (message / heartbeat / connected) arrives within this window,
    * the client treats the stream as silently dead and reconnects
    * (see `stallRecovery`). Default: 30_000 — well ABOVE the ~15s
    * backend keep-alive (`sse_manager.sendHeartbeat`), with margin
    * for timer jitter. A threshold below the heartbeat interval
    * guarantees false-positive reconnects on every idle window.
-   * Tests may pass a smaller value for determinism.
-   */
+   * Tests may pass a smaller value for determinism. */
   stallThresholdMs?: number
-  /** When true (default), a stall triggers `es.close()` +
-   * `scheduleRetry({ reason: 'stall' })` instead of only logging.
-   * Set false to restore log-only behaviour (e.g. for diagnosis). */
+  /**    * When true (default), a stall triggers `es.close()` + `scheduleRetry({ reason: 'stall' })`
+   * instead of only logging. Set false to restore log-only behaviour (e.g. for diagnosis). */
   stallRecovery?: boolean
   /**
    * Max time in ms to wait for the server's `connected` handshake
@@ -370,11 +358,9 @@ export interface SseClient {
    * Synchronous read of the current state. Returns the most recently emitted state. /
    */
   getState(): SseState
-  /** Subscribe to state transitions. Returns an unsubscribe
-   * function. Subscribers are NOT called for the state that was
-   * current at the time of subscription — only for transitions
-   * that happen AFTER subscribing. (If you need the current state
-   * at subscription time, call `getState()` too.) */
+  /**    * Subscribe to state transitions. Returns an unsubscribe function. Subscribers are NOT called for
+   * the state that was current at the time of subscription — only for transitions that happen AFTER
+   * subscribing. (If you need the current state at subscription time, call `getState()` too.) */
   onStateChange(cb: (s: SseState, info: SseStateInfo) => void): () => void
 }
 

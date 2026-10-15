@@ -45,10 +45,9 @@ const MAX_ENTRIES = 100
 
 let memCache: Map<string, CachedTaskMedia> | null = null
 
-/** Normalizes one stored entry into paintable media. Requires arrays of
- * non-empty strings; filters out anything else. Returns null when
- * nothing paintable remains, so corrupt entries can never produce a
- * broken `<img>` where the badge should be. */
+/**  * Normalizes one stored entry into paintable media. Requires arrays of non-empty strings; filters
+ * out anything else. Returns null when nothing paintable remains, so corrupt entries can never
+ * produce a broken `<img>` where the badge should be. */
 function normalizeEntry(raw: unknown): CachedTaskMedia | null {
   if (!raw || typeof raw !== 'object') return null
   const e = raw as Record<string, unknown>
@@ -141,9 +140,9 @@ export function clearTaskMediaCache(): void {
   }
 }
 
-/** Test-only escape hatch — drops the in-memory memo WITHOUT touching
- * storage, so tests can stage raw blobs and exercise the parse path
- * step by step (the memo would otherwise pin the first parse). */
+/**  * Test-only escape hatch — drops the in-memory memo WITHOUT touching storage, so tests can stage
+ * raw blobs and exercise the parse path step by step (the memo would otherwise pin the first
+ * parse). */
 export function resetTaskMediaCacheMemo(): void {
   memCache = null
 }

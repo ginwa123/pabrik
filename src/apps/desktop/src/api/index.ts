@@ -28,18 +28,18 @@ export interface ApiFetchOptions extends Omit<RequestInit, 'body'> {
   body?: unknown
   /** When true, skip the error notification (caller handles UI inline). */
   silent?: boolean
-  /** When false, skip the top loading bar. Defaults to true — the bar tracks
-   * network activity, orthogonal to error visibility. Pass false for
-   * background pollers so the bar can idle while they keep polling. */
+  /**    * When false, skip the top loading bar. Defaults to true — the bar tracks network activity,
+   * orthogonal to error visibility. Pass false for background pollers so the bar can idle while
+   * they keep polling. */
   track?: boolean
   /** Timeout in ms. Default 15_000; 0 disables. A caller-provided `signal` is
    * respected and no timeout signal is added. */
   timeoutMs?: number
 }
 
-/** Centralized HTTP wrapper. Toasts on 4xx/5xx unless `silent: true`, and
- * throws `ApiError` on non-OK so callers can implement fallback UI. Network
- * failures propagate without a toast — SseStatusBadge covers SSE. */
+/**  * Centralized HTTP wrapper. Toasts on 4xx/5xx unless `silent: true`, and throws `ApiError` on
+ * non-OK so callers can implement fallback UI. Network failures propagate without a toast —
+ * SseStatusBadge covers SSE. */
 export async function apiFetch<T = unknown>(url: string, opts: ApiFetchOptions = {}): Promise<T> {
   const { body, silent, track = true, timeoutMs = 15_000, ...init } = opts
 
@@ -168,24 +168,22 @@ export interface KanbanColumn {
   id: string
   workspace_item_id: string
   name: string
-  /** Free-text description of the column's meaning. Empty string when unset;
-   * the Settings UI renders an "Add a description..." placeholder. Optional
-   * for backwards compat with legacy column literals in test files. */
+  /**    * Free-text description of the column's meaning. Empty string when unset; the Settings UI renders
+   * an "Add a description..." placeholder. Optional for backwards compat with legacy column
+   * literals in test files. */
   description?: string | null
   position: number
   created_at: string
 }
 
-/** Wire shape for `GET .../design/pages` (list envelope) and
- * `POST .../design/pages` (single page). Numeric fields are `number`, not
- * `i64` — JSON has no integer/float distinction on the wire. */
+/**  * Wire shape for `GET .../design/pages` (list envelope) and `POST .../design/pages` (single page).
+ * Numeric fields are `number`, not `i64` — JSON has no integer/float distinction on the wire. */
 export interface DesignPage {
   id: string
   workspace_item_id: string
   name: string
-  /** 1:1 FK to `workspace_item_tasks.id`, set at page-create time. Resolves
-   * the page's chat task directly — no name matching, no legacy migration,
-   * no `taskHasMessages` probe. */
+  /**    * 1:1 FK to `workspace_item_tasks.id`, set at page-create time. Resolves the page's chat task
+   * directly — no name matching, no legacy migration, no `taskHasMessages` probe. */
   workspace_item_task_id: string
   width: number
   height: number
@@ -227,9 +225,9 @@ export const normalizeDesignElementType = <
 
 export type DesignElementType = 'rectangle' | 'ellipse' | 'text' | 'image' | 'frame' | 'group'
 
-/** Wire shape for design elements (rows in `design_page_elements`). Mirrors the
- * backend's `http_response.DesignElementResponse`. Numeric fields are `number`
- * (JSON has no int/float distinction); optional strings use `''` as "no value". */
+/**  * Wire shape for design elements (rows in `design_page_elements`). Mirrors the backend's
+ * `http_response.DesignElementResponse`. Numeric fields are `number` (JSON has no int/float
+ * distinction); optional strings use `''` as "no value". */
 export interface DesignElement {
   id: string
   page_id: string
@@ -259,9 +257,8 @@ export interface DesignElement {
   updated_at: string
 }
 
-/** Geometry-only patch payload for
- * `PATCH .../design/pages/:page_id/elements/:element_id/geometry`. Every
- * field is optional — the backend sparse-merges and leaves the rest alone. */
+/**  * Geometry-only patch payload for `PATCH .../design/pages/:page_id/elements/:element_id/geometry`.
+ * Every field is optional — the backend sparse-merges and leaves the rest alone. */
 export interface DesignElementGeometry {
   x?: number
   y?: number
@@ -270,18 +267,17 @@ export interface DesignElementGeometry {
   rotation?: number
 }
 
-/** Wire shape for design-mode SSE events (`design_element_created` / `_updated` /
- * `_deleted`). All three share one payload struct; the `action` discriminator
- * routes them. Field names are the backend's snake_case JSON keys. */
+/**  * Wire shape for design-mode SSE events (`design_element_created` / `_updated` / `_deleted`). All
+ * three share one payload struct; the `action` discriminator routes them. Field names are the
+ * backend's snake_case JSON keys. */
 export interface DesignElementEvent {
   action: 'created' | 'updated' | 'deleted' | 'reordered'
   workspace_id: string
   item_id: string
   page_id: string
   element_id: string
-  /** Batch event variant (`design_elements_geometry_batch_updated`). When set,
-   * the SSE handler reads `element_ids` instead of `element_id` to drive the
-   * local-mutation dedupe. */
+  /**    * Batch event variant (`design_elements_geometry_batch_updated`). When set, the SSE handler reads
+   * `element_ids` instead of `element_id` to drive the local-mutation dedupe. */
   element_ids?: string[]
 }
 
@@ -354,9 +350,9 @@ export interface Task {
   git_branch?: string | null
 }
 
-/** Split a mixed array of base64 data URLs into images vs videos (Migration
- * 090). `data:video/...` entries ride `video_urls`, everything else rides
- * `image_urls`; explicit `videoUrls` args are merged in. */
+/**  * Split a mixed array of base64 data URLs into images vs videos (Migration 090). `data:video/...`
+ * entries ride `video_urls`, everything else rides `image_urls`; explicit `videoUrls` args are
+ * merged in. */
 export function splitMediaUrls(
   urls?: string[],
   extraVideos?: string[],
@@ -390,9 +386,8 @@ export async function listFolder(path: string): Promise<FolderInfo> {
   return await apiFetch<FolderInfo>(`/system/folder?path=${encodeURIComponent(path)}&action=list`)
 }
 
-/** Server-side recursive file search for the ChatView `@` picker. One
- * round-trip replaces the old N-sequential-fetch full-tree walk; uses
- * `apiFetch` for timeout/auth handling. */
+/**  * Server-side recursive file search for the ChatView `@` picker. One round-trip replaces the old
+ * N-sequential-fetch full-tree walk; uses `apiFetch` for timeout/auth handling. */
 export async function searchFiles(
   cwd: string,
   q: string,
@@ -472,13 +467,11 @@ export async function updateWorkspace(id: string, data: Partial<Workspace>): Pro
   })
 }
 
-/**
- * Persist a new top-to-bottom display order for workspaces.
+/** Persist a new top-to-bottom display order for workspaces.
  * POST /api/workspaces/reorder with body `{ordered_ids: [...]}`. The server
  * reverses the array (top of list = highest position) and throws on non-2xx so
  * the caller can roll back its optimistic update. The list is the *full*
- * ordered set, not a delta; the backend is idempotent.
- */
+ * ordered set, not a delta; the backend is idempotent. */
 export async function reorderWorkspaces(
   orderedIds: string[],
 ): Promise<{ success: boolean; count: number }> {
@@ -593,14 +586,11 @@ export async function getTasks(
   }
 }
 
-/**
- * Fetch ONE workspace item task by id (kanban Task details dialog).
+/** Fetch ONE workspace item task by id (kanban Task details dialog).
  * GET /api/workspaces/:ws/items/:item/tasks/:task_id → { task } | 404.
- *
  * Resolves to the Task, or null on 404 — "the task is gone" is an expected
  * state, so 404 is silent. Other failures (network, 5xx) throw ApiError; the
- * store's best-effort catch handles them.
- */
+ * store's best-effort catch handles them. */
 export async function getTask(
   workspaceId: string,
   itemId: string,
@@ -618,25 +608,19 @@ export async function getTask(
   }
 }
 
-/**
- * Stamp `workspace_item_tasks.last_human_touched_at` so the kanban card flips
+/** Stamp `workspace_item_tasks.last_human_touched_at` so the kanban card flips
  * from the orange "AI finished — awaiting review" dot to the green "reviewed"
  * checkmark. Fire-and-forget: the caller does NOT await this — failures log a
  * warning but don't surface as toasts.
- *
  * Idempotent server-side. The backend also emits a `kanban_task.human_touched`
- * SSE event so other connected clients refresh without a round-trip.
- */
-/**
- * Lazy media fetch for ONE task (media-flags change).
+ * SSE event so other connected clients refresh without a round-trip. */
+/** Lazy media fetch for ONE task (media-flags change).
  * GET /api/workspaces/:ws/items/:item/tasks/:task_id/media
  *   → { image_urls, video_urls } (`||`-delimited raw strings).
- *
  * List/get return only `is_have_image` / `is_have_video` flags so
  * board fetches stay small; call this only when a flag is true.
  * Resolves to split arrays (empty when the column is '').
- * 404 → null (task deleted / wrong item).
- */
+ * 404 → null (task deleted / wrong item). */
 export async function getTaskMedia(
   workspaceId: string,
   itemId: string,
@@ -855,15 +839,12 @@ export interface KanbanCreateAndRunPayload {
   selected_profile_model?: string
 }
 
-/**
- * New mode (`create_session`) — inserts the sessions row keyed by
+/** New mode (`create_session`) — inserts the sessions row keyed by
  * task.id + persists selected_profile_model + emits session_created
  * SSE, but does NOT call emit_run_agent. Returns
  * `session: { id, name, status: 'idle' }`. No `queue_message` field
  * (the agent never starts on this path).
- *
- * Plan: docs/superpowers/plans/2026-08-19-kanban-create-task-inits-session.md
- */
+ * Plan: docs/superpowers/plans/2026-08-19-kanban-create-task-inits-session.md */
 export interface KanbanCreateSessionOnlyPayload {
   mode: 'create_session'
   name: string
@@ -950,11 +931,9 @@ export async function updateTask(
   )
 }
 
-// Task API - Simple version (just task_id + optional fields)
-//
-// The backend's PUT /api/workspaces/tasks/:task_id accepts a
-// subset of fields. The server cascades any name change to the
-// linked session and re-broadcasts via SSE.
+// Task API - Simple version (just task_id + optional fields) The backend's PUT
+// /api/workspaces/tasks/:task_id accepts a subset of fields. The server cascades any name change to
+// the linked session and re-broadcasts via SSE.
 export async function updateTaskSimple(
   taskId: string,
   data: {
@@ -1062,16 +1041,13 @@ export async function reorderPinnedTasks(
   )
 }
 
-/**
- * Manually fire a workspace routine. Returns the session_id (which
+/** Manually fire a workspace routine. Returns the session_id (which
  * equals the routine id — every fire appends to the same session
  * chat). The backend responds 200 + body as soon as the fire is
  * submitted — the actual LLM call happens asynchronously.
- *
  * 404: routine does not exist (or doesn't belong to this item)
  * 409: routine is disabled or another fire is in progress
- * 500: fire failed
- */
+ * 500: fire failed */
 export async function runWorkspaceRoutine(
   workspaceId: string,
   itemId: string,
@@ -1245,10 +1221,9 @@ export interface Message {
   finish_reason?: string
   is_input?: boolean
   is_output?: boolean
-  /** 2026-08-23 hidden-messages fix — thinking models' chain-of-thought.
-   * Already returned by the backend REST endpoint (http_response.zig
-   * SessionMessage.reasoning_content) and the SSE payload; previously
-   * unmapped so ChatView never saw it. */
+  /**    * 2026-08-23 hidden-messages fix — thinking models' chain-of-thought. Already returned by the
+   * backend REST endpoint (http_response.zig SessionMessage.reasoning_content) and the SSE payload;
+   * previously unmapped so ChatView never saw it. */
   reasoning_content?: string
 }
 
@@ -1287,10 +1262,9 @@ export class SseFrameError extends Data.TaggedError('SseFrameError')<{
   readonly reason: string
 }> {}
 
-/** What a best-effort transcript caller gets when the fetch failed. Named, not
- * inlined, so the two shapes can be diffed by eye: every field is `undefined`
- * or empty because the answer genuinely is unknown, and the only place this is
- * legitimate is `getChatHistory`'s three metadata callers. */
+/**  * What a best-effort transcript caller gets when the fetch failed. Named, not inlined, so the two
+ * shapes can be diffed by eye: every field is `undefined` or empty because the answer genuinely is
+ * unknown, and the only place this is legitimate is `getChatHistory`'s three metadata callers. */
 const EMPTY_CHAT_HISTORY: ChatHistoryResponse = {
   messages: [],
   has_more: false,
@@ -2045,16 +2019,13 @@ export interface Worker {
   id: string
   session_id: string
   working_directory: string | null
-  /**
-   * Unix SECONDS of the last heartbeat, as a numeric string.
-   *
+  /** Unix SECONDS of the last heartbeat, as a numeric string.
    * The backend selects `w.last_activity_nano AS last_activity` and every
    * `Row.values` entry is a `[]u8`, so the column is serialised as a JSON
    * string even though the underlying column is INTEGER. The SSE
    * `WorkerEvent.last_activity` is a bare number — the two wire shapes
    * disagree, which is why consumers normalise both (see `toMillis` in
-   * App.vue).
-   */
+   * App.vue). */
   last_activity: string | null
   last_activity_description: string | null
   created_at: string | null
@@ -2134,11 +2105,9 @@ export async function deleteWorkspaceItem(
 // app. On 4xx/5xx the call throws `ApiError`; the toast is fired
 // before the throw so the user sees the message inline.
 
-/** Create a new kanban workspace item. The backend seeds three default
- * columns (todo / in progress / done) and returns the item plus the
- * freshly-created columns so the caller can render the board without
- * a second round-trip.
- * POST /api/workspaces/:workspaceId/items/kanban */
+/**  * Create a new kanban workspace item. The backend seeds three default columns (todo / in progress /
+ * done) and returns the item plus the freshly-created columns so the caller can render the board
+ * without a second round-trip. POST /api/workspaces/:workspaceId/items/kanban */
 export async function createKanban(
   workspaceId: string,
   name: string,
@@ -2189,9 +2158,8 @@ export async function updateWorkspaceItem(
   })
 }
 
-/** List the kanban columns for a single workspace item, ordered by
- * `position` ASC.
- * GET /api/workspaces/:workspaceId/items/:itemId/kanban/columns */
+/**  * List the kanban columns for a single workspace item, ordered by `position` ASC. GET
+ * /api/workspaces/:workspaceId/items/:itemId/kanban/columns */
 export async function listKanbanColumns(
   workspaceId: string,
   itemId: string,
@@ -2301,15 +2269,12 @@ export async function deleteKanbanColumn(
   )
 }
 
-/**
- * Move a task to a new column and position within that column. The
+/** Move a task to a new column and position within that column. The
  * backend's `moveTask` does the move + sibling re-numbering in a
  * single transaction. Returns the updated task with the new
  * `kanban_column_id` and `kanban_position` so the caller can confirm
  * the move landed where expected.
- *
- * PATCH /api/workspaces/:workspaceId/items/:itemId/tasks/:taskId/move
- */
+ * PATCH /api/workspaces/:workspaceId/items/:itemId/tasks/:taskId/move */
 export async function moveTask(
   workspaceId: string,
   itemId: string,
@@ -2385,9 +2350,8 @@ export async function getKanbanTagSuggestions(
 // Plan: docs/superpowers/plans/2026-07-08-design-mode-redesign.md
 //   (Chunk 5, Task 5.1 + 5.2)
 
-/** GET /api/workspaces/:workspaceId/items/:itemId/design/pages
- * List all pages in a design workspace item, ordered by `position`
- * ascending. Returns `{ pages, count }` envelope. */
+/**  * GET /api/workspaces/:workspaceId/items/:itemId/design/pages List all pages in a design workspace
+ * item, ordered by `position` ascending. Returns `{ pages, count }` envelope. */
 export async function listDesignPages(
   workspaceId: string,
   itemId: string,
@@ -2397,15 +2361,9 @@ export async function listDesignPages(
   )
 }
 
-/**
- * POST /api/workspaces/:workspaceId/items/:itemId/design/pages
- *
- * Create a new design page. The backend assigns `id`, `position`,
- * `created_at`, `updated_at`. The new page is appended at the end
- * of the current position order.
- *
- * Returns 201 Created with the full DesignPage record.
- */
+/**  * POST /api/workspaces/:workspaceId/items/:itemId/design/pages Create a new design page. The
+ * backend assigns `id`, `position`, `created_at`, `updated_at`. The new page is appended at the end
+ * of the current position order. Returns 201 Created with the full DesignPage record. */
 export async function createDesignPage(
   workspaceId: string,
   itemId: string,
@@ -2447,11 +2405,9 @@ export async function updateDesignPage(
   )
 }
 
-/** GET /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId
- * Fetch a single page plus its full element list (HTML bodies
- * EXCLUDED — fetch lazily via `getDesignElementHtml` as the user
- * selects each element, to keep the list-page payload small for
- * designs with many elements). */
+/**  * GET /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId Fetch a single page plus its
+ * full element list (HTML bodies EXCLUDED — fetch lazily via `getDesignElementHtml` as the user
+ * selects each element, to keep the list-page payload small for designs with many elements). */
 export async function getDesignPage(
   workspaceId: string,
   itemId: string,
@@ -2495,16 +2451,12 @@ export async function addDesignElement(
   )
 }
 
-/**
- * PUT /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/:elementId
- *
+/** PUT /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/:elementId
  * Full update of an element. The body shape is `Partial<DesignElement>` —
  * any subset of fields can be patched. The backend applies the patch
  * as a sparse merge (omitted fields left unchanged).
- *
  * Returns the full updated DesignElement record (so the frontend can
- * sync its local Pinia store from the response).
- */
+ * sync its local Pinia store from the response). */
 export async function updateDesignElement(
   workspaceId: string,
   itemId: string,
@@ -2709,10 +2661,9 @@ export async function deleteDesignPage(
   )
 }
 
-/** GET /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/:elementId/html
- * Lazy-load a single element's HTML body. Used by the iframe preview
- * component as the user selects elements — avoids loading all
- * bodies up-front in the page+elements GET response. */
+/**  * GET /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/:elementId/html
+ * Lazy-load a single element's HTML body. Used by the iframe preview component as the user selects
+ * elements — avoids loading all bodies up-front in the page+elements GET response. */
 export async function getDesignElementHtml(
   workspaceId: string,
   itemId: string,
@@ -2724,15 +2675,11 @@ export async function getDesignElementHtml(
   )
 }
 
-/**
- * PATCH /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/:elementId/html
- *
+/** PATCH /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/:elementId/html
  * Persist a new HTML body for an element. Triggered by the
  * contenteditable / Monaco save flow — the content is the user-
  * edited inner HTML of the element's iframe.
- *
- * Returns the full updated DesignElement record.
- */
+ * Returns the full updated DesignElement record. */
 export async function updateDesignElementHtml(
   workspaceId: string,
   itemId: string,
@@ -2833,9 +2780,8 @@ export async function resizeDesignElement(
   )
 }
 
-/** Per-element geometry patch for the batch endpoint. All fields are
- * optional; null means "leave unchanged". Mirror of the single
- * `updateDesignElementGeometry` shape but reusable for N elements. */
+/**  * Per-element geometry patch for the batch endpoint. All fields are optional; null means "leave
+ * unchanged". Mirror of the single `updateDesignElementGeometry` shape but reusable for N elements. */
 export interface GeometryBatchUpdate {
   element_id: string
   x?: number
@@ -2874,16 +2820,13 @@ export async function updateDesignElementsGeometryBatch(
   )
 }
 
-/**
- * Server-side cascade move. Each item's `(dx, dy)` applies to the
+/** Server-side cascade move. Each item's `(dx, dy)` applies to the
  * element AND every transitive descendant of that element via a
  * single recursive CTE inside one SQL transaction. Optional
  * `width`/`height`/`rotation` apply ONLY to the root element (Figma
  * convention — resize is per-element, not per-subtree).
- *
  * Plan: docs/superpowers/plans/2026-08-06-move-element-with-descendants.md
- *   (Chunk 3, Task 3.1)
- */
+ *   (Chunk 3, Task 3.1) */
 export interface MoveBatchItem {
   element_id: string
   /** Translation delta in CSS px. Cascades to descendants. */
@@ -2969,10 +2912,9 @@ export interface SkillDetail {
   name: string
   description: string
   content: string
-  /** Companion files stored beside the body (`scripts/…`, `references/…`).
-   * `use_skill` materialises them into a temp directory so the body's
-   * relative references resolve, so a bundled skill is more than its one
-   * row. Zero for a plain single-file skill. */
+  /**    * Companion files stored beside the body (`scripts/…`, `references/…`). `use_skill` materialises
+   * them into a temp directory so the body's relative references resolve, so a bundled skill is
+   * more than its one row. Zero for a plain single-file skill. */
   asset_count: number
   /** False = the human pinned this skill: every agent write tool refuses it. */
   is_can_auto_improve: boolean
@@ -3019,15 +2961,12 @@ export interface SkillCreateResponse {
   skill: SkillDetail
 }
 
-/**
- * POST /api/workspaces/:workspaceId/skills
- *
+/** POST /api/workspaces/:workspaceId/skills
  * 201 with the stored row, so the caller can render what it just wrote
  * without a second GET. A duplicate name in the SAME workspace is a 409 —
  * the store's `upsertSkill` is create-or-replace by design (the importer
  * runs on every start-up), so the refusal has to live on this route, where
- * the caller is a human who pressed a button.
- */
+ * the caller is a human who pressed a button. */
 export async function createSkill(
   workspaceId: string,
   input: { name: string; description?: string; content?: string; is_can_auto_improve?: boolean },
@@ -3312,9 +3251,8 @@ export function fetchGitBlameEffect(
   })
 }
 
-/** Best-effort blame: a failure yields null (the file paints without
- * chips) on the Effect seam, so no `try`/`catch` sits between the
- * failure and the value. The reason is logged, not discarded. */
+/**  * Best-effort blame: a failure yields null (the file paints without chips) on the Effect seam, so
+ * no `try`/`catch` sits between the failure and the value. The reason is logged, not discarded. */
 export function getGitBlame(cwd: string, filePath: string): Promise<GitBlameResponse | null> {
   return Effect.runPromise(
     fetchGitBlameEffect(cwd, filePath).pipe(
@@ -3530,10 +3468,9 @@ export interface GitCommitFileDiff {
   diff_content: string
 }
 
-/** Unified diff of one file at one commit (`git diff <sha>^ <sha>`,
- * root-commit fallback via `git show`). Powers the clickable file rows
- * in the commits view. Returns null on any failure so the row can show
- * an inline error instead of crashing. */
+/**  * Unified diff of one file at one commit (`git diff <sha>^ <sha>`, root-commit fallback via `git
+ * show`). Powers the clickable file rows in the commits view. Returns null on any failure so the
+ * row can show an inline error instead of crashing. */
 export async function getGitCommitFileDiff(
   cwd: string,
   sha: string,
@@ -3731,15 +3668,12 @@ export async function getSkillEvalsSummary(sessionId = ''): Promise<SkillEvalsSu
   return await apiFetch<SkillEvalsSummaryResponse>(`/skill-evals/summary${suffix}`)
 }
 
-/**
- * Record that a human accepted a verdict.
- *
+/** Record that a human accepted a verdict.
  * `result_id` is a QUERY parameter, not a path segment — the backend keeps
  * every route under this prefix a literal so no `:param` route can shadow a
  * later one. A 409 means either "already applied" or "the body changed since
  * this verdict was computed"; both are surfaced to the caller rather than
- * swallowed, because the UI must offer a re-evaluate in the second case.
- */
+ * swallowed, because the UI must offer a re-evaluate in the second case. */
 export async function applySkillEvalResult(
   resultId: string,
   action = 'apply',
@@ -3904,16 +3838,14 @@ export interface UnifiedChannels {
    * PR-status cache entry for `event.branch`, so the badges that read it re-ask
    * the forge (see helpers/prStatusCache.ts `subscribePrStatusEvents`). */
   gitPrState?: (event: GitPrStateEvent) => void
-  /**
-   * Subscribe to design-mode element mutations. The backend emits
+  /** Subscribe to design-mode element mutations. The backend emits
    * three granular event names (`design_element_created`,
    * `design_element_updated`, `design_element_deleted`) that share
    * the same `DesignElementEvent` payload (the `action` discriminator
    * tells them apart). All three route on the central `design_element`
    * event_bus key — the consumer filters by `action` if it cares
    * about the distinction (the `designSse` store treats all three
-   * uniformly: re-fetch the page's element list).
-   */
+   * uniformly: re-fetch the page's element list). */
   design?: (event: DesignElementEvent) => void
   /** Subscribe to LLM streaming events. When `sessionId` is provided,
    * the factory sends `llm:<sid>` (per-session routing — used by any
@@ -3922,9 +3854,8 @@ export interface UnifiedChannels {
    * sessions' LLM events on the central key, and the consumer
    * filters by `event.session_id` on the JS side. */
   llm?: { sessionId?: string; onEvent: (event: SseEvent) => void }
-  /** Subscribe to queue-message events. Same pattern as `llm`:
-   * `sessionId` provided → per-session routing; omitted → central
-   * key (consumer filters by `event.session_id`). */
+  /**    * Subscribe to queue-message events. Same pattern as `llm`: `sessionId` provided → per-session
+   * routing; omitted → central key (consumer filters by `event.session_id`). */
   queue?: { sessionId?: string; onEvent: (event: QueueMessageEvent) => void }
 }
 
@@ -4486,28 +4417,23 @@ export interface PabrikProfile {
    * `"http"`, so existing configs need no migration.
    */
   backend?: string
-  /** Claude Code only: `CLAUDE_CONFIG_DIR` for this profile. Two profiles
-   * pointing at two directories are two different `claude login`
-   * sessions — the way per-profile identity works when there is no API
-   * key. Mirrors `LlmProfile.config_dir`. Null = CLI default (`~/.claude`). */
+  /**    * Claude Code only: `CLAUDE_CONFIG_DIR` for this profile. Two profiles pointing at two
+   * directories are two different `claude login` sessions — the way per-profile identity works when
+   * there is no API key. Mirrors `LlmProfile.config_dir`. Null = CLI default (`~/.claude`). */
   config_dir?: string | null
   /** Claude Code only: agentic turn ceiling passed as `--max-turns`.
    * Mirrors `LlmProfile.max_turns`. Null = the CLI's own default. */
   max_turns?: number | null
-  /** Per-profile sub-agents. Same shape as the top-level
-   * `PabrikConfig.sub_agents` field — profiles can override the default
-   * sub-agent set with their own. */
+  /**    * Per-profile sub-agents. Same shape as the top-level `PabrikConfig.sub_agents` field — profiles
+   * can override the default sub-agent set with their own. */
   sub_agents?: SubAgent[]
-  /**
-   * Optional override for this profile's context window (in tokens).
+  /** Optional override for this profile's context window (in tokens).
    * When null (or omitted), the backend's built-in per-model default
    * is used (e.g. 200_000 for MiniMax-M2.7, 500_000 for MiniMax-M3,
    * 200_000 fallback). Useful for self-hosted models with a
    * non-standard window.
-   *
    * Mirrors the backend's `LlmProfile.max_capacity_tokens` field
-   * (added in the configurable-compaction Chunk 7 reshape).
-   */
+   * (added in the configurable-compaction Chunk 7 reshape). */
   max_capacity_tokens?: number | null
   /** Compaction threshold as a percentage (0-100) of this profile's
    * context window. When null (or omitted), defaults to 80. Out-of-range
@@ -4521,10 +4447,9 @@ export interface PabrikProfile {
    * heuristic (or Anthropic `type: "adaptive"` when
    * `thinking === "auto"`). */
   thinking_budget_tokens?: number | null
-  /** OpenAI-style reasoning effort (o1/o3/GPT-5/DeepSeek-R1). Plan
-   * 2026-08-23-model-thinking. Mirrors `LlmProfile.reasoning_effort`.
-   * Hidden when `thinking === "off"`. Server-side validation via
-   * `parse_thinking.parseReasoningEffort` (low|medium|high|auto). */
+  /**    * OpenAI-style reasoning effort (o1/o3/GPT-5/DeepSeek-R1). Plan 2026-08-23-model-thinking.
+   * Mirrors `LlmProfile.reasoning_effort`. Hidden when `thinking === "off"`. Server-side validation
+   * via `parse_thinking.parseReasoningEffort` (low|medium|high|auto). */
   reasoning_effort?: 'low' | 'medium' | 'high' | 'auto' | null
 }
 
@@ -4537,18 +4462,16 @@ export interface SubAgent {
   url_style: string
   api_key: string
   system_prompt: string
-  /** Transport discriminator, mirroring `PabrikProfile.backend`.
-   *  `"http"` (default) | `"claude-code"` | `"opencode"`. Empty/absent =
-   *  inherit the parent profile's backend. */
+  /**    * Transport discriminator, mirroring `PabrikProfile.backend`. `"http"` (default) |
+   * `"claude-code"` | `"opencode"`. Empty/absent = inherit the parent profile's backend. */
   backend?: string
   /** Claude Code only: `CLAUDE_CONFIG_DIR` override. */
   config_dir?: string | null
   /** Claude Code only: `--max-turns` override. */
   max_turns?: number | null
-  /** Anthropic-only override for `thinking.budget_tokens`. Plan
-   * 2026-08-23-model-thinking. Mirrors `LlmProfile.thinking_budget_tokens`.
-   * Optional in the wire shape — old configs without this field
-   * hydrate as undefined and are coerced to null in the form. */
+  /**    * Anthropic-only override for `thinking.budget_tokens`. Plan 2026-08-23-model-thinking. Mirrors
+   * `LlmProfile.thinking_budget_tokens`. Optional in the wire shape — old configs without this
+   * field hydrate as undefined and are coerced to null in the form. */
   thinking_budget_tokens?: number | null
   /** OpenAI-style reasoning effort (o1/o3/GPT-5/DeepSeek-R1).
    * Mirrors `LlmProfile.reasoning_effort`. Optional. */
@@ -4562,30 +4485,26 @@ export interface McpHeader {
 
 export interface McpServer {
   name: string
-  /** Transport discriminator. Defaults to 'http' on legacy entries
-   *  that predate this field. Mutually exclusive with itself — a
-   *  server is either HTTP or stdio, never both. */
+  /**    * Transport discriminator. Defaults to 'http' on legacy entries that predate this field. Mutually
+   * exclusive with itself — a server is either HTTP or stdio, never both. */
   transport?: 'http' | 'stdio'
   /** HTTP transport — required when transport === 'http'. */
   url?: string
   /** Optional list of HTTP headers to send with MCP requests (e.g. API keys). */
   headers?: McpHeader[]
-  /** stdio transport — required when transport === 'stdio'. The
-   *  command (executable name or absolute path) the agent will spawn
-   *  as a child process and talk MCP JSON-RPC to. */
+  /**    * stdio transport — required when transport === 'stdio'. The command (executable name or absolute
+   * path) the agent will spawn as a child process and talk MCP JSON-RPC to. */
   command?: string
   /** stdio transport — argv (excluding argv[0]). One entry per line in the UI. */
   args?: string[]
-  /** stdio transport — "KEY=VALUE" per line, ADDED on top of inherited env.
-   *  v1 limitation: Zig 0.16's std.process.Child has no clean .env_map setter,
-   *  so a custom env requires a pre-fork+execve helper — not in v1.
-   *  The UI exposes this for documentation + forward-compat. */
+  /**    * stdio transport — "KEY=VALUE" per line, ADDED on top of inherited env. v1 limitation: Zig
+   * 0.16's std.process.Child has no clean .env_map setter, so a custom env requires a
+   * pre-fork+execve helper — not in v1. The UI exposes this for documentation + forward-compat. */
   env?: string[]
   /** stdio transport — optional child working directory (absolute path). */
   cwd?: string
-  /** When false the agent skips this server (no tools listed, no calls).
-   *  Missing/undefined renders as enabled. Omitted on the wire when
-   *  enabled so legacy configs stay clean. */
+  /**    * When false the agent skips this server (no tools listed, no calls). Missing/undefined renders
+   * as enabled. Omitted on the wire when enabled so legacy configs stay clean. */
   enabled?: boolean
 }
 
@@ -4612,10 +4531,9 @@ export interface PabrikWebSearchProvider {
   /** Credential, stored separately from `curl` so nothing derived from
    *  the template can leak it. Optional. */
   key?: string
-  /** Request template copied from the provider's docs, carrying the
-   *  literal text `{key}` where the credential goes. Must contain
-   *  `{key}` when the provider declares a `key`, and must NOT when it
-   *  does not. */
+  /**    * Request template copied from the provider's docs, carrying the literal text `{key}` where the
+   * credential goes. Must contain `{key}` when the provider declares a `key`, and must NOT when it
+   * does not. */
   curl: string
   /** Free-text note about when to prefer this provider. Optional. */
   description?: string
@@ -4647,39 +4565,31 @@ export interface PabrikConfig {
   // from the active profile at load time.
   profiles?: Record<string, PabrikProfile>
   active_profile?: string
-  /** Map of MCP server name to its raw JSON config (snake_case).
-   * Each value follows the `{"url": "...", "headers": {...}}` shape used by
-   * the LLM config. Sent verbatim to the backend on save. */
-  /**
-   * Raw wire shape of a single MCP server entry (snake_case, matches
+  /**    * Map of MCP server name to its raw JSON config (snake_case). Each value follows the `{"url":
+   * "...", "headers": {...}}` shape used by the LLM config. Sent verbatim to the backend on save. */
+  /** Raw wire shape of a single MCP server entry (snake_case, matches
    * `mcp_servers` in config.json). Discriminated by which top-level
    * field is present: `command` ⇒ stdio, `url` ⇒ http.
-   *
    * Note: this type is also re-exported and re-used by the
    * `PabrikConfigEditor.vue` parser/serializer pair so the frontend
    * round-trips config.json unchanged. If you add a field here, add
-   * it to the `McpServer` interface above too (camelCase).
-   */
+   * it to the `McpServer` interface above too (camelCase). */
   mcp_servers?: Record<
     string,
     | { url: string; headers?: Record<string, string>; enabled?: boolean }
     | { command: string; args?: string[]; env?: string[]; cwd?: string; enabled?: boolean }
   >
-  /** Default tool checklist (Tools tab). `null` / absent = the key is
-   * not in config.json — the backend treats those as "no change" on
-   * PUT and the built-in defaults apply. An array (including `[]`)
-   * replaces the whole list. */
+  /**    * Default tool checklist (Tools tab). `null` / absent = the key is not in config.json — the
+   * backend treats those as "no change" on PUT and the built-in defaults apply. An array (including
+   * `[]`) replaces the whole list. */
   tools?: string[] | null
-  /**
-   * Map of web-search provider name to its configuration — the
+  /** Map of web-search provider name to its configuration — the
    * top-level `web_search` key in config.json. Keys of this map are the
    * names the agent passes to `web_search`'s `provider` argument; the
    * agent discovers them through `list_web_search_providers`.
-   *
    * `null` / absent = the key is not in config.json. Sent verbatim to
    * the backend on save; see `PabrikWebSearchProvider` for the value
-   * shape and the rules the backend enforces on it.
-   */
+   * shape and the rules the backend enforces on it. */
   web_search?: Record<string, PabrikWebSearchProvider> | null
   /** @deprecated Per-profile only (plan 2026-09-04-subagents-per-profile).
    * The backend (`GET /api/config/pabrik`) always returns `sub_agents: null`
@@ -4687,21 +4597,17 @@ export interface PabrikConfig {
    * Kept as an optional field so legacy payloads still type-check — do NOT
    * read or write it in new code. */
   sub_agents?: SubAgent[]
-  /** Opt-in OS notification flag. When true, the backend fires
-   * `notify-send` / osascript / PowerShell when an LLM response
-   * completes with `finish_reason === 'stop'`. Defaults to `false`
-   * when absent (matches the `LlmConfigJson` default in
-   * `Config.zig`). */
+  /**    * Opt-in OS notification flag. When true, the backend fires `notify-send` / osascript /
+   * PowerShell when an LLM response completes with `finish_reason === 'stop'`. Defaults to `false`
+   * when absent (matches the `LlmConfigJson` default in `Config.zig`). */
   notify_on_complete?: boolean
-  /**
-   * Plan 2026-08-25-notify-on-error — opt-in OS notification flag
+  /** Plan 2026-08-25-notify-on-error — opt-in OS notification flag
    * for the error path. When true, the backend fires a desktop
    * notification when the workflow hits a transport error, exhausts
    * retries (TooManyRetries), or fails the outer agentic loop.
    * Defaults to `false` when absent (matches `LlmConfigJson`).
    * Independent from `notify_on_complete` — toggling one doesn't
-   * affect the other.
-   */
+   * affect the other. */
   notify_on_error?: boolean
   /**
    * Skill Evals block — the master switch for the `run_skill_eval` tool
@@ -4716,10 +4622,9 @@ export interface PabrikConfig {
    * untouched.
    */
   skill_evals?: PabrikSkillEvalsConfig
-  /** Compaction threshold in KB. Sessions whose DB-stored token
-   * estimate exceeds this value trigger context compaction. Defaults
-   * to `100` when absent. Not exposed in the UI — power users can
-   * edit `config.json` directly. */
+  /**    * Compaction threshold in KB. Sessions whose DB-stored token estimate exceeds this value trigger
+   * context compaction. Defaults to `100` when absent. Not exposed in the UI — power users can edit
+   * `config.json` directly. */
   model_compaction_size_kb?: number
   /** Optional top-level override for the model's context window (in
    * tokens). `null` = fall through to per-profile override, then
@@ -4727,9 +4632,8 @@ export interface PabrikConfig {
    * so the Defaults tab can show + edit the top-level compaction
    * defaults. Mirrors `LlmConfig.max_capacity_token_model`. */
   max_capacity_token_model?: number | null
-  /** Optional top-level compaction threshold as a percentage (0-100).
-   * `null` = fall through to per-profile override, then built-in 80.
-   * Mirrors `LlmConfig.compaction_threshold_percent`. */
+  /**    * Optional top-level compaction threshold as a percentage (0-100). `null` = fall through to
+   * per-profile override, then built-in 80. Mirrors `LlmConfig.compaction_threshold_percent`. */
   compaction_threshold_percent?: number | null
   /** Delay in milliseconds before the workflow retries a failed
    * `callDynamicAgentNew` call. 0 = no delay (current behavior, the
@@ -4776,9 +4680,9 @@ export async function savePabrikConfig(config: PabrikConfig): Promise<{ success:
 // save that would silently do nothing is refused instead of reported as
 // successful.
 
-/** `GET /api/workspaces/:id/config` — throws on a non-2xx (unlike the
- * user-scope `getPabrikConfig`, which swallows the failure into `{}`): the
- * workspace page must be able to tell "inheriting" from "could not look". */
+/**  * `GET /api/workspaces/:id/config` — throws on a non-2xx (unlike the user-scope `getPabrikConfig`,
+ * which swallows the failure into `{}`): the workspace page must be able to tell "inheriting" from
+ * "could not look". */
 export async function getWorkspaceConfig(workspaceId: string): Promise<PabrikConfig> {
   return await apiFetch<PabrikConfig>(`/workspaces/${encodeURIComponent(workspaceId)}/config`)
 }
@@ -4813,15 +4717,12 @@ export async function getWebStatus(): Promise<WebStatus | null> {
   }
 }
 
-/**
- * Response shape from `DELETE /api/config/pabrik/profiles/:name`.
- *
+/** Response shape from `DELETE /api/config/pabrik/profiles/:name`.
  * `active_profile_was_cleared` is `true` when the deleted profile was
  * the active one (the backend also cleared `active_profile` on disk).
  * `error_message` is set when the request succeeded (HTTP 200) but a
  * downstream concern (live reload) failed — the deletion still
- * persisted.
- */
+ * persisted. */
 export interface ProfileDeleteResponse {
   success: boolean
   profile_name: string
@@ -4829,11 +4730,9 @@ export interface ProfileDeleteResponse {
   error_message?: string
 }
 
-/** DELETE /api/config/pabrik/profiles/:name
- * Removes a profile from `config.json` and live-reloads the backend's
- * in-memory LLM config. Throws an Error (with the HTTP status) on
- * non-2xx responses; the composable wraps this for UI concerns
- * (optimistic update, rollback, notification). */
+/**  * DELETE /api/config/pabrik/profiles/:name Removes a profile from `config.json` and live-reloads
+ * the backend's in-memory LLM config. Throws an Error (with the HTTP status) on non-2xx responses;
+ * the composable wraps this for UI concerns (optimistic update, rollback, notification). */
 export async function deleteProfile(name: string): Promise<ProfileDeleteResponse> {
   return await apiFetch<ProfileDeleteResponse>(
     `/config/pabrik/profiles/${encodeURIComponent(name)}`,
@@ -4964,9 +4863,8 @@ export interface GitFileDiffsBatchItem {
 
 export interface GitFileDiffsResponse {
   diffs: GitFileDiff[]
-  /** Whole-file mode only: the file's full-context diff exceeded the
-   * server's budget and was REFUSED (`diff_content` is empty) rather than
-   * truncated into something that reads as a complete file. */
+  /**    * Whole-file mode only: the file's full-context diff exceeded the server's budget and was REFUSED
+   * (`diff_content` is empty) rather than truncated into something that reads as a complete file. */
   whole_file_refused?: boolean
 }
 
@@ -5062,9 +4960,9 @@ export interface GitPrStatus {
   status: string // open | closed | merged (lowercased by backend)
   mergeable: string
   merge_state: string
-  /** The commit the head branch points at (`headRefOid` / GitLab `sha`). It is
-   *  the merge box's head guard: `--match-head-commit` / `--sha`, so a merge
-   *  cannot land on a commit the user never saw. `''` on older servers. */
+  /**    * The commit the head branch points at (`headRefOid` / GitLab `sha`). It is the merge box's head
+   * guard: `--match-head-commit` / `--sha`, so a merge cannot land on a commit the user never saw.
+   * `''` on older servers. */
   head_sha: string
   head_ref: string
   base_ref: string
@@ -5449,25 +5347,23 @@ export interface AgentRegistryParameter {
   name: string
   /** JSON Schema type, e.g. 'string' | 'array' | 'number' | 'boolean'. */
   type: string
-  /** True when the JSON schema lists it in `required`. A REQUIRED `cwd` is
-   * what stops a path-taking tool from silently acting on the server's
-   * working directory instead of the one the agent is editing. */
+  /**    * True when the JSON schema lists it in `required`. A REQUIRED `cwd` is what stops a path-taking
+   * tool from silently acting on the server's working directory instead of the one the agent is
+   * editing. */
   required: boolean
 }
 
 export interface AgentRegistryEntry {
   name: string
   description: string
-  /** The tool's full parameter list, in declaration order. Optional on the
-   * type only so older mocks in specs keep compiling; the backend always
-   * sends it (`GET /api/agent-tools/registry`). */
+  /**    * The tool's full parameter list, in declaration order. Optional on the type only so older mocks
+   * in specs keep compiling; the backend always sends it (`GET /api/agent-tools/registry`). */
   parameters?: AgentRegistryParameter[]
 }
 
-/** Create a new agent workspace item. The backend seeds the agent
- * with an empty knowledge list AND an empty tool allowlist
- * (secure-by-default — empty allowlist = zero tools per spec D1).
- * POST /api/workspaces/:workspaceId/items/agent */
+/**  * Create a new agent workspace item. The backend seeds the agent with an empty knowledge list AND
+ * an empty tool allowlist (secure-by-default — empty allowlist = zero tools per spec D1). POST
+ * /api/workspaces/:workspaceId/items/agent */
 export async function createAgent(
   workspaceId: string,
   name: string,
@@ -5479,9 +5375,8 @@ export async function createAgent(
   )
 }
 
-/** Get agent + knowledge + tools + system prompts for a workspace_item.
- * Returns the 4 sections AgentView needs in one round-trip.
- * GET /api/workspaces/:workspaceId/items/:itemId/agent */
+/**  * Get agent + knowledge + tools + system prompts for a workspace_item. Returns the 4 sections
+ * AgentView needs in one round-trip. GET /api/workspaces/:workspaceId/items/:itemId/agent */
 export async function getAgent(
   workspaceId: string,
   itemId: string,
@@ -5577,9 +5472,8 @@ export async function getRoutineItem(
   )
 }
 
-/** Update a routine's description / instruction / schedule / enabled.
- * Schedule/enabled changes recompute next_run_at server-side.
- * PATCH /api/workspaces/:workspaceId/items/:itemId/routine */
+/**  * Update a routine's description / instruction / schedule / enabled. Schedule/enabled changes
+ * recompute next_run_at server-side. PATCH /api/workspaces/:workspaceId/items/:itemId/routine */
 export async function updateRoutineItem(
   workspaceId: string,
   itemId: string,
@@ -5596,10 +5490,9 @@ export async function updateRoutineItem(
   )
 }
 
-/** Add a knowledge entry to an agent — either a markdown file path on
- * disk (`filePath`) or inline manual text (`content`). Exactly one of
- * the two must be non-empty (backend XOR-validates).
- * POST /api/agents/:agentId/knowledge */
+/**  * Add a knowledge entry to an agent — either a markdown file path on disk (`filePath`) or inline
+ * manual text (`content`). Exactly one of the two must be non-empty (backend XOR-validates). POST
+ * /api/agents/:agentId/knowledge */
 export async function addAgentKnowledge(
   agentId: string,
   filePath: string,
@@ -5654,9 +5547,8 @@ export interface AgentSystemPromptRow {
   updated_at: string
 }
 
-/** Add a named system-prompt block to an agent. `content` is required
- * (non-empty after trim); `title` optional ('' = untitled).
- * POST /api/agents/:agentId/system_prompt */
+/**  * Add a named system-prompt block to an agent. `content` is required (non-empty after trim);
+ * `title` optional ('' = untitled). POST /api/agents/:agentId/system_prompt */
 export async function addAgentSystemPrompt(
   agentId: string,
   title: string,
@@ -5698,10 +5590,9 @@ export async function reorderAgentSystemPrompts(
   })
 }
 
-/** Get the canonical tool registry. The Tools panel renders
- * checkboxes from this list. Sourced from the runtime's
- * UNIFIED_TOOL_REGISTRY (single source of truth per spec D4).
- * GET /api/agent-tools/registry */
+/**  * Get the canonical tool registry. The Tools panel renders checkboxes from this list. Sourced from
+ * the runtime's UNIFIED_TOOL_REGISTRY (single source of truth per spec D4). GET
+ * /api/agent-tools/registry */
 export async function getAgentToolsRegistry(): Promise<{ tools: AgentRegistryEntry[] }> {
   return await apiFetch<{ tools: AgentRegistryEntry[] }>(`/agent-tools/registry`)
 }
@@ -5712,9 +5603,8 @@ export async function getAgentTools(agentId: string): Promise<{ tools: string[] 
   return await apiFetch<{ tools: string[] }>(`/agents/${agentId}/tools`)
 }
 
-/** Enable a tool for the agent. Backend validates `tool_name`
- * against the registry (400 if unknown) and returns 409 on duplicate.
- * POST /api/agents/:agentId/tools */
+/**  * Enable a tool for the agent. Backend validates `tool_name` against the registry (400 if unknown)
+ * and returns 409 on duplicate. POST /api/agents/:agentId/tools */
 export async function enableAgentTool(agentId: string, toolName: string): Promise<AgentToolRow> {
   return await apiFetch<AgentToolRow>(`/agents/${agentId}/tools`, {
     method: 'POST',
@@ -5722,19 +5612,16 @@ export async function enableAgentTool(agentId: string, toolName: string): Promis
   })
 }
 
-/** Disable a tool for the agent (deletes the row).
- * `tool_name` must match a tool the agent currently has enabled
- * (the registry name; backend returns 404 on unknown / not-enabled).
- * DELETE /api/agents/:agentId/tools/:toolName */
+/**  * Disable a tool for the agent (deletes the row). `tool_name` must match a tool the agent currently
+ * has enabled (the registry name; backend returns 404 on unknown / not-enabled). DELETE
+ * /api/agents/:agentId/tools/:toolName */
 export async function disableAgentTool(agentId: string, toolName: string): Promise<{ ok: true }> {
   return await apiFetch<{ ok: true }>(`/agents/${agentId}/tools/${toolName}`, { method: 'DELETE' })
 }
 
-// ─── Agent-Kanbans Mirror (Migration 081) ───────────────────────────────
-//
-// Mirrors the Agent Mode block above onto kanban boards. The config row
-// (`agent_kanbans`) is OPT-IN — `getAgentKanban` resolves to `null`
-// (silently, no error toast) when the board has no config yet.
+// ─── Agent-Kanbans Mirror (Migration 081) ─────────────────────────────── Mirrors the Agent Mode
+// block above onto kanban boards. The config row (`agent_kanbans`) is OPT-IN — `getAgentKanban`
+// resolves to `null` (silently, no error toast) when the board has no config yet.
 
 export interface AgentKanban {
   id: string
@@ -5774,10 +5661,9 @@ export interface AgentKanbanToolRow {
   created_at: string
 }
 
-/** Get the agent-kanbans config + children for a kanban workspace_item.
- * Returns null (silent) on 404 "not configured" — an unconfigured board
- * is an expected state, not an error worth surfacing.
- * GET /api/workspaces/:workspaceId/items/:itemId/agent_kanban */
+/**  * Get the agent-kanbans config + children for a kanban workspace_item. Returns null (silent) on 404
+ * "not configured" — an unconfigured board is an expected state, not an error worth surfacing. GET
+ * /api/workspaces/:workspaceId/items/:itemId/agent_kanban */
 export async function getAgentKanban(
   workspaceId: string,
   itemId: string,
@@ -5857,9 +5743,8 @@ export async function reorderAgentKanbanKnowledge(
   })
 }
 
-/** Add a named system-prompt block to a board's config. `content`
- * required; `title` optional.
- * POST /api/agent-kanbans/:kanbanId/system_prompt */
+/**  * Add a named system-prompt block to a board's config. `content` required; `title` optional. POST
+ * /api/agent-kanbans/:kanbanId/system_prompt */
 export async function addAgentKanbanSystemPrompt(
   kanbanId: string,
   title: string,
@@ -5901,16 +5786,14 @@ export async function reorderAgentKanbanSystemPrompts(
   })
 }
 
-/** Get the enabled tool names for a board's config. Empty array = no
- * tools configured for this board.
- * GET /api/agent-kanbans/:kanbanId/tools */
+/**  * Get the enabled tool names for a board's config. Empty array = no tools configured for this
+ * board. GET /api/agent-kanbans/:kanbanId/tools */
 export async function getAgentKanbanTools(kanbanId: string): Promise<{ tools: string[] }> {
   return await apiFetch<{ tools: string[] }>(`/agent-kanbans/${kanbanId}/tools`)
 }
 
-/** Enable a tool for the board. Backend validates against the registry
- * (400 if unknown) and returns 409 on duplicate.
- * POST /api/agent-kanbans/:kanbanId/tools */
+/**  * Enable a tool for the board. Backend validates against the registry (400 if unknown) and returns
+ * 409 on duplicate. POST /api/agent-kanbans/:kanbanId/tools */
 export async function enableAgentKanbanTool(
   kanbanId: string,
   toolName: string,
@@ -5977,10 +5860,9 @@ export interface AgentRoutineToolRow {
   created_at: string
 }
 
-/** Get the agent-routines config + children for a routine workspace_item.
- * Returns null (silent) on 404 "not configured" — an unconfigured routine
- * is an expected state, not an error worth surfacing.
- * GET /api/workspaces/:workspaceId/items/:itemId/agent_routine */
+/**  * Get the agent-routines config + children for a routine workspace_item. Returns null (silent) on
+ * 404 "not configured" — an unconfigured routine is an expected state, not an error worth
+ * surfacing. GET /api/workspaces/:workspaceId/items/:itemId/agent_routine */
 export async function getAgentRoutine(
   workspaceId: string,
   itemId: string,
@@ -6060,9 +5942,8 @@ export async function reorderAgentRoutineKnowledge(
   })
 }
 
-/** Add a named system-prompt block to a routine's config. `content`
- * required; `title` optional.
- * POST /api/agent-routines/:routineId/system_prompt */
+/**  * Add a named system-prompt block to a routine's config. `content` required; `title` optional. POST
+ * /api/agent-routines/:routineId/system_prompt */
 export async function addAgentRoutineSystemPrompt(
   routineId: string,
   title: string,
@@ -6104,16 +5985,14 @@ export async function reorderAgentRoutineSystemPrompts(
   })
 }
 
-/** Get the enabled tool names for a routine's config. Empty array = no
- * tools configured for this routine.
- * GET /api/agent-routines/:routineId/tools */
+/**  * Get the enabled tool names for a routine's config. Empty array = no tools configured for this
+ * routine. GET /api/agent-routines/:routineId/tools */
 export async function getAgentRoutineTools(routineId: string): Promise<{ tools: string[] }> {
   return await apiFetch<{ tools: string[] }>(`/agent-routines/${routineId}/tools`)
 }
 
-/** Enable a tool for the routine. Backend validates against the registry
- * (400 if unknown) and returns 409 on duplicate.
- * POST /api/agent-routines/:routineId/tools */
+/**  * Enable a tool for the routine. Backend validates against the registry (400 if unknown) and
+ * returns 409 on duplicate. POST /api/agent-routines/:routineId/tools */
 export async function enableAgentRoutineTool(
   routineId: string,
   toolName: string,
@@ -6170,9 +6049,8 @@ export interface BackgroundProcessLogResponse {
   content: string
 }
 
-/** List all background processes (`command background=true` rows) for a
- * session, ordered by started_at ASC.
- * GET /api/llm/session/:sid/background_processes */
+/**  * List all background processes (`command background=true` rows) for a session, ordered by
+ * started_at ASC. GET /api/llm/session/:sid/background_processes */
 export async function getBackgroundProcesses(
   sessionId: string,
 ): Promise<BackgroundProcessListResponse> {
@@ -6182,9 +6060,9 @@ export async function getBackgroundProcesses(
   )
 }
 
-/** Read the TAIL of one background process's log file.
- * GET /api/llm/session/:sid/background_processes/:pid/log?max_bytes=20480
- * `maxBytes` defaults to 20480, clamped server-side to [1, 1048576]. */
+/**  * Read the TAIL of one background process's log file. GET
+ * /api/llm/session/:sid/background_processes/:pid/log?max_bytes=20480 `maxBytes` defaults to 20480,
+ * clamped server-side to [1, 1048576]. */
 export async function getBackgroundProcessLog(
   sessionId: string,
   pid: number,
@@ -6243,9 +6121,8 @@ export async function sendTerminalInput(
   )
 }
 
-/** Poll output since `cursor`.
- * GET /api/terminal/sessions/:id/output?cursor=N
- * -> 200 { data, cursor, exited, exit_code } */
+/**  * Poll output since `cursor`. GET /api/terminal/sessions/:id/output?cursor=N -> 200 { data, cursor,
+ * exited, exit_code } */
 export async function getTerminalOutput(id: string, cursor = 0): Promise<TerminalOutput> {
   const params = new URLSearchParams({ cursor: String(cursor) })
   return await apiFetch<TerminalOutput>(
@@ -6300,9 +6177,8 @@ export interface Document {
   updated_at: string
 }
 
-/** GET /api/workspaces/:workspaceId/documents
- * All documents in one workspace, most-recently-updated first. Backs the
- * sidebar's Documents section, so it runs on every sidebar load. */
+/**  * GET /api/workspaces/:workspaceId/documents All documents in one workspace, most-recently-updated
+ * first. Backs the sidebar's Documents section, so it runs on every sidebar load. */
 export async function listDocuments(
   workspaceId: string,
 ): Promise<{ documents: Document[]; count: number }> {
@@ -6312,9 +6188,8 @@ export async function listDocuments(
   )
 }
 
-/** GET /api/workspaces/:workspaceId/documents/:documentId
- * Returns 404 for an id that does not exist AND for one that belongs to
- * another workspace — the backend reports both identically so this call
+/**  * GET /api/workspaces/:workspaceId/documents/:documentId Returns 404 for an id that does not exist
+ * AND for one that belongs to another workspace — the backend reports both identically so this call
  * cannot be used to probe another workspace's row ids. */
 export async function getDocument(
   workspaceId: string,
@@ -6342,10 +6217,9 @@ export async function createDocument(
   )
 }
 
-/** PATCH /api/workspaces/:workspaceId/documents/:documentId
- * Partial update. An OMITTED field keeps its current value; `content: ''`
- * genuinely clears the body. Omitting `content` does not clear it — the
- * two are different and the backend treats them differently. */
+/**  * PATCH /api/workspaces/:workspaceId/documents/:documentId Partial update. An OMITTED field keeps
+ * its current value; `content: ''` genuinely clears the body. Omitting `content` does not clear it
+ * — the two are different and the backend treats them differently. */
 export async function updateDocument(
   workspaceId: string,
   documentId: string,
@@ -6357,9 +6231,8 @@ export async function updateDocument(
   )
 }
 
-/** DELETE /api/workspaces/:workspaceId/documents/:documentId
- * Returns 404 for another workspace's id, and deletes nothing in that
- * case. */
+/**  * DELETE /api/workspaces/:workspaceId/documents/:documentId Returns 404 for another workspace's id,
+ * and deletes nothing in that case. */
 export async function deleteDocument(
   workspaceId: string,
   documentId: string,
@@ -6392,10 +6265,9 @@ export async function deleteDocument(
 // doing that work — adding one would be a second, weaker copy of a rule
 // that already lives in SQL, and the kind of duplicate that drifts.
 
-/** One row of the `workspace_secrets` table.
- * The absence of a value field is the contract, not an oversight. A row
- * this shape cannot be rendered with its credential in it because the
- * credential is not on it. */
+/**  * One row of the `workspace_secrets` table. The absence of a value field is the contract, not an
+ * oversight. A row this shape cannot be rendered with its credential in it because the credential
+ * is not on it. */
 export interface Secret {
   id: string
   name: string
@@ -6403,10 +6275,9 @@ export interface Secret {
   updated_at: string
 }
 
-/** GET /api/workspaces/:workspaceId/secrets
- * Metadata only. A workspace with no secrets returns `{ secrets: [],
- * count: 0 }` — which is a different answer from a failed request, and
- * callers must keep the two apart. */
+/**  * GET /api/workspaces/:workspaceId/secrets Metadata only. A workspace with no secrets returns `{
+ * secrets: [], count: 0 }` — which is a different answer from a failed request, and callers must
+ * keep the two apart. */
 export async function listSecrets(
   workspaceId: string,
 ): Promise<{ secrets: Secret[]; count: number }> {
@@ -6432,15 +6303,12 @@ export async function createSecret(
   )
 }
 
-/**
- * PATCH /api/workspaces/:workspaceId/secrets/:secretId
- *
+/** PATCH /api/workspaces/:workspaceId/secrets/:secretId
  * Body: `{ name?, value? }`. Both fields are partial — send `{ value }` to
  * rotate a credential without touching its name, or `{ name }` to rename
  * without re-supplying a value. An omitted field keeps its current value;
  * `value: ''` is a rejected empty credential, not a clear operation. Like
- * the reads, the response never carries the value back.
- */
+ * the reads, the response never carries the value back. */
 export async function updateSecret(
   workspaceId: string,
   secretId: string,
@@ -6452,9 +6320,8 @@ export async function updateSecret(
   )
 }
 
-/** DELETE /api/workspaces/:workspaceId/secrets/:secretId
- * Returns 404 for another workspace's id, and deletes nothing in that
- * case. */
+/**  * DELETE /api/workspaces/:workspaceId/secrets/:secretId Returns 404 for another workspace's id, and
+ * deletes nothing in that case. */
 export async function deleteSecret(
   workspaceId: string,
   secretId: string,

@@ -139,15 +139,13 @@ const ESTIMATED_BOTTOM = ESTIMATED_TOTAL - VIEWPORT
 /** Where the reader closed the chat: mid-transcript, well clear of the tail. */
 const SAVED_POSITION = 9000
 
-/**
- * jsdom has no layout, so `scrollHeight` is whatever we say. The scroller's
+/** jsdom has no layout, so `scrollHeight` is whatever we say. The scroller's
  * sizer is a real DOM element with a real inline `height`, and a browser
  * derives the container's scrollHeight from it — so mirror that: the container
  * reports the sizer's current height. That makes the estimate-vs-measured gap
  * REAL rather than asserted, which is the only way this test can tell
  * "restored to the saved position" apart from "clamped to whatever the model
- * currently claims".
- */
+ * currently claims". */
 Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
   configurable: true,
   get(): number {
@@ -197,9 +195,8 @@ function installApiMocks(): void {
   vi.spyOn(api, 'getPabrikConfig').mockResolvedValue({ profiles: {} } as any)
 }
 
-/** Give every rendered row a real, uniform height. `measureItems` reads
- * `offsetHeight` per child, so this is what turns the estimate into a
- * measurement — the exact step the restore used to race. */
+/**  * Give every rendered row a real, uniform height. `measureItems` reads `offsetHeight` per child, so
+ * this is what turns the estimate into a measurement — the exact step the restore used to race. */
 function mockRowHeights(container: HTMLElement): void {
   const content = container.querySelector('.virtual-scroller-content')
   if (!content) return
@@ -238,9 +235,9 @@ function findScrollerContainer(wrapper: VueWrapper): HTMLElement {
   return el.element as HTMLElement
 }
 
-/** Let the mount chain settle: the initial-load rAFs, the scroller's 100 ms
- * measure pass, and the trailing pre-paint sweep. Row heights are re-mocked
- * between waits because the rendered window changes as the model converges. */
+/**  * Let the mount chain settle: the initial-load rAFs, the scroller's 100 ms measure pass, and the
+ * trailing pre-paint sweep. Row heights are re-mocked between waits because the rendered window
+ * changes as the model converges. */
 async function settleScroller(container: HTMLElement): Promise<void> {
   for (let i = 0; i < 6; i++) {
     mockRowHeights(container)

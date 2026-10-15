@@ -124,9 +124,8 @@ describe('ChatView center-diff ⤴ opens the file in the code viewer', () => {
   let app: VueApp | null = null
   let openInEditor: Mock<OpenInCodeEditorFn>
 
-  /** Mount ChatView under a real `OPEN_IN_CODE_EDITOR_KEY` provider —
-   * the same provide AppLayout does — then open a center diff so the
-   * stacked sections (and their ⤴ buttons) actually render. */
+  /**    * Mount ChatView under a real `OPEN_IN_CODE_EDITOR_KEY` provider — the same provide AppLayout
+   * does — then open a center diff so the stacked sections (and their ⤴ buttons) actually render. */
   async function mountChatWithDiff() {
     openInEditor = vi.fn<OpenInCodeEditorFn>()
     const Host = defineComponent({

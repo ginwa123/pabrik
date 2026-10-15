@@ -3,11 +3,9 @@ import { describe, expect, it } from 'vitest'
 
 import LlmConfigForm from '../components/pabrik/LlmConfigForm.vue'
 
-/** Mount and open `Advanced`.
- * Advanced is collapsed by default — that is the whole point of the redesign —
- * so a spec that wants to touch a field behind it has to open it first. The
- * helper is tolerant so it can be used for components that have no Advanced
- * section at all. */
+/**  * Mount and open `Advanced`. Advanced is collapsed by default — that is the whole point of the
+ * redesign — so a spec that wants to touch a field behind it has to open it first. The helper is
+ * tolerant so it can be used for components that have no Advanced section at all. */
 async function mountOpen(component: unknown, opts?: unknown) {
   // `as never` keeps `mount`'s overload resolution from narrowing the SECOND
   // argument to a VNode-props shape at every call site.
@@ -277,11 +275,9 @@ describe('LlmConfigForm', () => {
   })
 })
 
-/** The transport discriminator.
- * `backend` is orthogonal to `url_style`: it says WHICH transport runs the
- * call, while `url_style` keeps describing the HTTP body shape. A claude-code
- * profile has no URL, no key and no request body, so those controls are
- * hidden rather than shown-but-ignored. */
+/**  * The transport discriminator. `backend` is orthogonal to `url_style`: it says WHICH transport runs
+ * the call, while `url_style` keeps describing the HTTP body shape. A claude-code profile has no
+ * URL, no key and no request body, so those controls are hidden rather than shown-but-ignored. */
 describe('LlmConfigForm — backend gating', () => {
   it('offers http, claude-code and opencode as backends', async () => {
     const wrapper = await mountOpen(LlmConfigForm, { props: { modelValue: { ...baseValue } } })

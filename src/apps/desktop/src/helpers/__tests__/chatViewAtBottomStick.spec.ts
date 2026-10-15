@@ -61,9 +61,8 @@ const HYSTERESIS_PX = 50
 /** How far the reader may sit below the real bottom before the stick disengages. */
 const RETENTION_CAP_PX = 100
 
-/** The state `VirtualScroller.scrollToBottom` computes internally, reduced to
- * the two numbers a caller needs. Mirrors `bottomScrollTop()` in
- * VirtualScroller.vue. */
+/**  * The state `VirtualScroller.scrollToBottom` computes internally, reduced to the two numbers a
+ * caller needs. Mirrors `bottomScrollTop()` in VirtualScroller.vue. */
 interface BottomPlan {
   /** Where the scroller parks the container. */
   target: number
@@ -118,15 +117,12 @@ function decideIsAtBottom(args: DecisionInput): boolean {
   return newIsAtBottom || retainedThroughGrowth
 }
 
-/**
- * The SHIPPED decision once the gap is measured against the STABLE anchor
+/** The SHIPPED decision once the gap is measured against the STABLE anchor
  * (`settledBottom`) rather than a live `bottomScrollTop()`.
- *
  * The tolerance widens to `AT_BOTTOM_STABLE_TOLERANCE_PX` because the anchor is
  * written at the end of a measure pass and the model can still converge by up to
  * the tail gap before the next scroll event is handled. That residual is the
- * model's own movement, not the reader's.
- */
+ * model's own movement, not the reader's. */
 function decideIsAtBottomStableAnchor(args: DecisionInput): boolean {
   const newIsAtBottom = args.distanceFromBottom < AT_BOTTOM_STABLE_TOLERANCE_PX
   const retainedThroughGrowth =
@@ -137,10 +133,9 @@ function decideIsAtBottomStableAnchor(args: DecisionInput): boolean {
   return newIsAtBottom || retainedThroughGrowth
 }
 
-/** The PRE-FIX decision: same code, but the gap came from
- * `scrollHeight - scrollTop - clientHeight`. Kept so the regression stays
- * described in executable form — every test below that says "flips false" is
- * really saying "this is what the DOM ruler did". */
+/**  * The PRE-FIX decision: same code, but the gap came from `scrollHeight - scrollTop - clientHeight`.
+ * Kept so the regression stays described in executable form — every test below that says "flips
+ * false" is really saying "this is what the DOM ruler did". */
 function decideIsAtBottomDomRuler(args: DecisionInput & { domGap: number }): boolean {
   return decideIsAtBottom({ ...args, distanceFromBottom: args.domGap })
 }

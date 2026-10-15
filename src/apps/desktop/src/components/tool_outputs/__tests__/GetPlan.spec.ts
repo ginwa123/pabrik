@@ -56,10 +56,9 @@ const makeErrorContent = (msg = 'database is locked') =>
     v: 1,
   })
 
-/** Wrap the inner data payload in the full JSON wire envelope the
- * dispatcher actually passes through. Mirrors the backend's
- * `wrapToolOutput`. Accepts a data object (or a full envelope string,
- * passed through unchanged). */
+/**  * Wrap the inner data payload in the full JSON wire envelope the dispatcher actually passes
+ * through. Mirrors the backend's `wrapToolOutput`. Accepts a data object (or a full envelope
+ * string, passed through unchanged). */
 const wrapInToolEnvelope = (inner: string): string => {
   if (inner.trim().startsWith('{')) {
     try {

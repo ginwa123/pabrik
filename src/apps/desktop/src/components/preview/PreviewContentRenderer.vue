@@ -63,9 +63,8 @@ const props = withDefaults(
   defineProps<{
     contentType: 'markdown' | 'text' | 'code' | 'image' | 'html'
     args: PreviewArgs
-    /** Layout variant (kept for backward compat). Only `'inline'`
-     * is used — compact chat-bubble layout that auto-resizes to fit
-     * the iframe's content height, plus an "Open in new tab" button
+    /**      * Layout variant (kept for backward compat). Only `'inline'` is used — compact chat-bubble
+     * layout that auto-resizes to fit the iframe's content height, plus an "Open in new tab" button
      * for HTML content. */
     variant?: 'side' | 'inline'
   }>(),
@@ -176,12 +175,9 @@ const htmlSrcDoc = computed<string | null>(() => {
   return `${PREVIEW_AUTO_RESIZE_SCRIPT}<style>html,body{margin:0;padding:0;background:#fff;}${FRAME_NO_SCROLLBAR_STYLE}</style>${raw}`
 })
 
-// ─── Open in new tab ───────────────────────────────────────────────
-//
-// HTML previews offer an "Open in new tab" action that builds a Blob
-// URL from the raw HTML and opens it via window.open. The iframe
-// stays sandboxed (NULL origin); the new tab gets the full viewport
-// width for wide content.
+// ─── Open in new tab ─────────────────────────────────────────────── HTML previews offer an "Open
+// in new tab" action that builds a Blob URL from the raw HTML and opens it via window.open. The
+// iframe stays sandboxed (NULL origin); the new tab gets the full viewport width for wide content.
 function openInNewTab() {
   if (typeof window === 'undefined' || typeof URL === 'undefined') return
   try {

@@ -86,9 +86,8 @@ export class AdaptiveItemHeightEstimator {
     this.maxSamples = Number.isFinite(m) && (m as number) > 0 ? Math.floor(m as number) : 64
   }
 
-  /** Record one real measured height. Invalid values (non-finite,
-   * non-positive) are ignored silently — callers already filter most of
-   * these; double-filtering keeps the sample set clean regardless. */
+  /**    * Record one real measured height. Invalid values (non-finite, non-positive) are ignored silently
+   * — callers already filter most of these; double-filtering keeps the sample set clean regardless. */
   observe(heightPx: number): void {
     if (!Number.isFinite(heightPx) || heightPx <= 0) return
     const h = quantizePx(heightPx)
@@ -114,10 +113,9 @@ export class AdaptiveItemHeightEstimator {
     }
   }
 
-  /** How many observations are currently held (0..`maxSamples`). Used by the
-   * scroller to decide when the estimate is well-founded enough to freeze —
-   * freezing the moment the window is full means the frozen value IS the live
-   * median at that instant, so freezing itself moves nothing. */
+  /**    * How many observations are currently held (0..`maxSamples`). Used by the scroller to decide when
+   * the estimate is well-founded enough to freeze — freezing the moment the window is full means
+   * the frozen value IS the live median at that instant, so freezing itself moves nothing. */
   get sampleCount(): number {
     return this.samples.length
   }
@@ -149,9 +147,8 @@ export class AdaptiveItemHeightEstimator {
     return Math.round((a + b) / 2)
   }
 
-  /** Forget everything — back to the seed (e.g. on items list swap). Also
-   * unfreezes: a different list is a different height profile, and it must be
-   * free to learn one before it freezes again. */
+  /**    * Forget everything — back to the seed (e.g. on items list swap). Also unfreezes: a different
+   * list is a different height profile, and it must be free to learn one before it freezes again. */
   reset(): void {
     this.samples = []
     this.order = []

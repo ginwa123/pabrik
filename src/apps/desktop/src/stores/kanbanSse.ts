@@ -279,9 +279,8 @@ export const useKanbanSseStore = defineStore('kanbanSse', () => {
       }) ?? null
   }
 
-  /** Tear down the kanban-event handlers. Called on AppLayout unmount
-   * (and at the end of each test). Mirrors the pre-migration
-   * `closeKanbanSse` contract but for the bus listener instead of a
+  /**    * Tear down the kanban-event handlers. Called on AppLayout unmount (and at the end of each test).
+   * Mirrors the pre-migration `closeKanbanSse` contract but for the bus listener instead of a
    * self-managed SseClient. */
   function closeKanbanSse(): void {
     if (offKanban) {
@@ -316,16 +315,13 @@ export const useKanbanSseStore = defineStore('kanbanSse', () => {
     await initKanbanSse(workspaceId)
   }
 
-  /**
-   * Initial kanban-column sync on SSE (re)connect. Mirrors
+  /** Initial kanban-column sync on SSE (re)connect. Mirrors
    * `fetchInitialWorkers()` in App.vue — a server restart can lose
    * in-memory state, so the next open should re-fetch the active
    * kanban item's columns to make sure local state matches the DB.
-   *
    * No-op if the active workspace item isn't a kanban (chat folders
    * don't have columns; the SSE events for other workspaces are
-   * filtered out at the dispatch layer anyway).
-   */
+   * filtered out at the dispatch layer anyway). */
   async function fetchInitialKanban(workspaceId: string): Promise<void> {
     // Throttled: bus.state flips to 'open' on every reconnect, and without a
     // guard each reconnect would refetch columns (the columns/workers storm in

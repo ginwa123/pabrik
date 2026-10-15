@@ -102,10 +102,9 @@ export function parseWebSearchProviders(
   return out
 }
 
-/** Write the editable list back to the config's `web_search` map.
- * `undefined` means "omit the key entirely" — the same signal the
- * sibling `serializeMcpServers` uses, and the one `usePabrikConfig`'s
- * diff reads as "no change". */
+/**  * Write the editable list back to the config's `web_search` map. `undefined` means "omit the key
+ * entirely" — the same signal the sibling `serializeMcpServers` uses, and the one
+ * `usePabrikConfig`'s diff reads as "no change". */
 export function serializeWebSearchProviders(
   rows: WebSearchProviderRow[],
 ): Record<string, PabrikWebSearchProvider> | undefined {
@@ -153,9 +152,8 @@ function endsWithIgnoreCase(haystack: string, needle: string): boolean {
   return haystack.slice(-needle.length).toLowerCase() === needle.toLowerCase()
 }
 
-/** True when `host` names a loopback, link-local, private or otherwise
- * non-public address — a cloud metadata endpoint, most of all, since a
- * key sent to `169.254.169.254` is a stolen key. */
+/**  * True when `host` names a loopback, link-local, private or otherwise non-public address — a cloud
+ * metadata endpoint, most of all, since a key sent to `169.254.169.254` is a stolen key. */
 export function isNonPublicHost(host: string): boolean {
   let h = host
   if (h.startsWith('[')) {
@@ -219,15 +217,12 @@ export function urlPinError(url: string): string | null {
 
 // ─── Row validation ─────────────────────────────────────────────────────────
 
-/**
- * Per-row messages keyed by `WebSearchProviderRow.id`, mirroring the
+/** Per-row messages keyed by `WebSearchProviderRow.id`, mirroring the
  * rules the backend enforces on `web_search`. One message per row: the
  * first rule that fails, so the user is not handed a wall of text about
  * a row they are still halfway through typing.
- *
  * Exported as a pure function so the parent can call it before writing
- * `web_search` into the config snapshot — the tests drive it directly.
- */
+ * `web_search` into the config snapshot — the tests drive it directly. */
 export function validateWebSearchRows(rows: WebSearchProviderRow[]): Record<string, string> {
   const errors: Record<string, string> = {}
   for (const row of rows) {

@@ -113,9 +113,8 @@ function asRecord(data: unknown): Record<string, unknown> {
   return {}
 }
 
-/** Unwrap one level when the input is a full tool envelope
- * (`{tool, parameters, success, data, error, v}` or its JSON string)
- * instead of the bare `data` payload. Otherwise coerce to a record. */
+/**  * Unwrap one level when the input is a full tool envelope (`{tool, parameters, success, data,
+ * error, v}` or its JSON string) instead of the bare `data` payload. Otherwise coerce to a record. */
 function unwrapDataRecord(data: unknown): Record<string, unknown> {
   const record = asRecord(data)
   if (
@@ -167,10 +166,9 @@ function boolField(o: Record<string, unknown>, key: string, defaultValue = false
   return defaultValue
 }
 
-/** Normalized view of whatever a tool card's `content` prop carries:
- * either the bare `data` object (ChatView's success path) or a full
- * envelope JSON string/object (ChatView's error fallback, `m.content`).
- * Empty or unparseable input yields null data with no error (running state). */
+/**  * Normalized view of whatever a tool card's `content` prop carries: either the bare `data` object
+ * (ChatView's success path) or a full envelope JSON string/object (ChatView's error fallback,
+ * `m.content`). Empty or unparseable input yields null data with no error (running state). */
 export interface NormalizedToolContent {
   data: unknown
   error: string | null
@@ -271,15 +269,12 @@ export function parseWriteFile(data: unknown): ParsedWriteFile {
   }
 }
 
-/**
- * The name a skill tool acted on.
- *
+/** The name a skill tool acted on.
  * `skill_name` is the canonical field on every skill tool payload; `name`
  * is the echo of what was requested and is absent from some rows. An EMPTY
  * `skill_name` counts as absent rather than winning — it would otherwise
  * render a card whose only label is blank, and `??` alone would not catch
- * it because `''` is neither null nor undefined.
- */
+ * it because `''` is neither null nor undefined. */
 function skillNameField(o: Record<string, unknown>): string {
   const primary = strOrNullField(o, 'skill_name')
   if (primary !== null && primary.trim() !== '') return primary
@@ -466,38 +461,32 @@ export function parseBash(data: unknown): ParsedBash {
   }
 }
 
-/**
- * Parse a pwsh (PowerShell Core) tool result. Same JSON `data` shape as bash —
+/** Parse a pwsh (PowerShell Core) tool result. Same JSON `data` shape as bash —
  * per plan D2 + D10 the schema is structurally identical, only the
  * `tool` field that wraps the envelope differs.
- *
  * Functionally a clone of `parseBash` so future divergence (e.g. pwsh adds a
  * `version` field for the PowerShell version that ran) is a one-line change
  * here. Tests in `toolOutputParser.spec.ts` assert `parsePwsh(x) === parseBash(x)`
- * to catch accidental drift.
- */
+ * to catch accidental drift. */
 export function parsePwsh(data: unknown): ParsedBash {
   return parseBash(data)
 }
 
-/**
- * Parse a `command` (unified shell) tool result. Same JSON `data` shape as
+/** Parse a `command` (unified shell) tool result. Same JSON `data` shape as
  * bash — the unified `command` tool reuses the identical 8-field payload
  * (`command`/`stdout`/`stderr`/`exit_code`/`truncated`/`timeout`/
  * `stdout_lines`/`stderr_lines`), only the `tool` wrapper
  * differs. Functionally an alias of `parseBash` so future payload
  * divergence is a one-line change here. Tests assert
  * `parseCommand(x) === parseBash(x)` to catch accidental drift.
- * `parseBash` / `parsePwsh` are intentionally left untouched.
- */
+ * `parseBash` / `parsePwsh` are intentionally left untouched. */
 export function parseCommand(data: unknown): ParsedBash {
   return parseBash(data)
 }
 
-/** Dispatcher: parse a tool result based on the `toolName` it was registered
- * under. 'bash' / 'pwsh' / 'run_command' (legacy alias) / 'command'
- * (unified shell) all use the same payload. New shells with divergent
- * payload shapes must add their own branch here. */
+/**  * Dispatcher: parse a tool result based on the `toolName` it was registered under. 'bash' / 'pwsh'
+ * / 'run_command' (legacy alias) / 'command' (unified shell) all use the same payload. New shells
+ * with divergent payload shapes must add their own branch here. */
 export function parseShell(toolName: string, data: unknown): ParsedBash {
   switch (toolName) {
     case 'bash':
@@ -894,11 +883,9 @@ export interface WebSearchProviderRef {
 export interface ParsedWebSearchError {
   /** The backend's sentence, verbatim. */
   message: string
-  /** Which reasons this envelope claims, in a fixed order so two renderings
-   * of the same failure never disagree.
-   * `transport` is the residual: it is the one failure with no key of its
-   * own, so a flagless error is reported as it. Every other flag is read
-   * off a key the backend sets. */
+  /**    * Which reasons this envelope claims, in a fixed order so two renderings of the same failure
+   * never disagree. `transport` is the residual: it is the one failure with no key of its own, so a
+   * flagless error is reported as it. Every other flag is read off a key the backend sets. */
   flags: WebSearchErrorFlag[]
   /** True only for `configured:false` — nothing is set up in Settings yet. */
   configured: boolean

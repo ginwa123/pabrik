@@ -1,6 +1,5 @@
-/** Conflict-flag tests for the shared PR-status cache.
- * Contract: `fetchPrConflictCached` is true only for CONFLICTING/DIRTY —
- * quiet (false) for mergeable, unknown, or failed fetches. The string
+/**  * Conflict-flag tests for the shared PR-status cache. Contract: `fetchPrConflictCached` is true
+ * only for CONFLICTING/DIRTY — quiet (false) for mergeable, unknown, or failed fetches. The string
  * contract of `fetchPrStatusCached` is unchanged (backward-compat). */
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { ApiError } from '@/api'

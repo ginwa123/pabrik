@@ -29,9 +29,8 @@ export interface SettingsSectionItem {
   id: string
   label: string
   icon: UiIconName
-  /** Heading this item sits under. A heading is rendered only where the group
-   * CHANGES, so the first group needs no separate label above the scope
-   * label the sidebar already shows. */
+  /**    * Heading this item sits under. A heading is rendered only where the group CHANGES, so the first
+   * group needs no separate label above the scope label the sidebar already shows. */
   group?: string
 }
 
@@ -42,10 +41,9 @@ const USER_SECTIONS: readonly SettingsSectionItem[] = [
   { id: 'general', label: 'General', icon: 'settings' },
 ]
 
-/** Presentation for each moved config section. A `Record` keyed by the section
- * ids, not a parallel hand-written list: adding an id to
- * `WORKSPACE_AGENT_SECTIONS` without a label here is then a TYPE error, which
- * is what stops the nav and the workspace view drifting into a dead nav item. */
+/**  * Presentation for each moved config section. A `Record` keyed by the section ids, not a parallel
+ * hand-written list: adding an id to `WORKSPACE_AGENT_SECTIONS` without a label here is then a TYPE
+ * error, which is what stops the nav and the workspace view drifting into a dead nav item. */
 const AGENT_SECTION_META: Record<
   (typeof WORKSPACE_AGENT_SECTIONS)[number],
   { label: string; icon: UiIconName }
@@ -138,9 +136,9 @@ function goWorkspace(id: string): void {
   void router.push({ path: `/app/${id}/settings` })
 }
 
-/** The Workspace tab's target. The in-scope workspace wins; only a cold boot
- * with neither a URL workspace nor an active one falls back to the first
- * listed row, because the tab has to resolve to something. */
+/**  * The Workspace tab's target. The in-scope workspace wins; only a cold boot with neither a URL
+ * workspace nor an active one falls back to the first listed row, because the tab has to resolve to
+ * something. */
 function goWorkspaceScope(): void {
   goWorkspace(inScopeWorkspaceId.value || workspaceOptions.value[0]?.id || '')
 }

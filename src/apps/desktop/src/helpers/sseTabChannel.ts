@@ -62,15 +62,13 @@ export interface TabChannelOptions {
   onRemoteState: (state: string) => void
   /** A follower asking the leader to reconnect. */
   onRemoteReconnect: () => void
-  /**
-   * A window that may have MISSED events should refresh its data:
+  /** A window that may have MISSED events should refresh its data:
    *   * it just became leader (the handover gap dropped events), or
    *   * it was hidden longer than `resyncAfterHiddenMs` and came back
    *     (background tabs get frozen/throttled and can miss deliveries).
    * Callers answer by re-fetching from the REST API — every tab can always do
    * that directly, independent of who holds the SSE connection. Coalesced by
-   * `resyncMinGapMs` so switching windows does not stampede the API.
-   */
+   * `resyncMinGapMs` so switching windows does not stampede the API. */
   onResync?: (reason: string) => void
   /** Hidden-for-longer-than-this triggers a resync on return (default 5s). */
   resyncAfterHiddenMs?: number
@@ -188,15 +186,13 @@ export function createTabChannel(opts: TabChannelOptions): TabChannel {
     }
   }
 
-  /**
-   * Tell the app it may be missing data. Two things cause that:
+  /** Tell the app it may be missing data. Two things cause that:
    *   * we just took over the connection — events during the handover gap were
    *     delivered to nobody;
    *   * we were hidden long enough for the browser to freeze/throttle us, so
    *     deliveries (and rendering) were skipped.
    * Routed through `onResync`, which the app answers by re-fetching from the API.
-   * Coalesced: an alt-tab every second must not become an API stampede.
-   */
+   * Coalesced: an alt-tab every second must not become an API stampede. */
   function maybeResync(reason: string): void {
     if (closed) return
     if (!opts.onResync) return
@@ -271,15 +267,12 @@ export function createTabChannel(opts: TabChannelOptions): TabChannel {
     }, leaderTimeoutMs)
   }
 
-  /**
-   * Claim after a jittered delay, so simultaneous candidates don't all win.
-   *
+  /** Claim after a jittered delay, so simultaneous candidates don't all win.
    * `force` skips the "someone else may have claimed while we waited" re-check.
    * That re-check is right for a contested election, but WRONG for preemption: a
    * hidden leader keeps heartbeating every `heartbeatMs`, so the re-check always
    * saw a fresh beat and the visible tab never took over (caught by
-   * `sseTabChannel.spec.ts > a VISIBLE tab preempts a HIDDEN leader`).
-   */
+   * `sseTabChannel.spec.ts > a VISIBLE tab preempts a HIDDEN leader`). */
   function scheduleElection(reason: string, force = false): void {
     if (closed || leader || claimTimer !== null) return
     const jitter = Math.random() * electionJitterMs

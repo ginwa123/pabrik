@@ -198,10 +198,9 @@ export interface ScrollContext {
   origin: ScrollOrigin
   /** What triggered this log line. */
   reason: ScrollReason
-  /** Diagnostic snapshot of the scroll container element. Always
-   * present — see `ContainerInfo` for what each field tells you.
-   * Without this, a `scrollHeight: 0` reading is just a useless
-   * zero; with it, you can see *which* check failed. */
+  /**    * Diagnostic snapshot of the scroll container element. Always present — see `ContainerInfo` for
+   * what each field tells you. Without this, a `scrollHeight: 0` reading is just a useless zero;
+   * with it, you can see *which* check failed. */
   containerInfo: ContainerInfo
   /**
    * Which function in ChatView produced this log line, e.g.
@@ -225,16 +224,13 @@ export interface ScrollContext {
    * is that the component is unmounted and the ref is null, which
    * is a completely different bug from "container exists but 0×0". */
   scrollerState?: ScrollerState
-  /** Diagnostic snapshot of the outer flex wrapper (see
-   * `WrapperState` doc). Tells you whether the layout chain
-   * reached the scroller's parent. Crucial for distinguishing
-   * "wrapper is sized but scroller isn't" from "wrapper itself
-   * is 0 high" — the two cases need different fixes. */
+  /**    * Diagnostic snapshot of the outer flex wrapper (see `WrapperState` doc). Tells you whether the
+   * layout chain reached the scroller's parent. Crucial for distinguishing "wrapper is sized but
+   * scroller isn't" from "wrapper itself is 0 high" — the two cases need different fixes. */
   wrapperState?: WrapperState
-  /** Short stack trace captured ONLY when the container is null or
-   * on warn/error. The single most useful field for "where did
-   * this come from?" — points directly to the line in ChatView
-   * that called the logger with a stale ref. */
+  /**    * Short stack trace captured ONLY when the container is null or on warn/error. The single most
+   * useful field for "where did this come from?" — points directly to the line in ChatView that
+   * called the logger with a stale ref. */
   stack?: string
   /** Free-form extras (caller, delta, etc.). */
   extra?: Record<string, unknown>
@@ -245,9 +241,9 @@ export interface ScrollContext {
 /** Within this many px of the bottom counts as "at the bottom". */
 export const BOTTOM_THRESHOLD = 10
 
-/** How far the height MODEL may sit above the real content bottom before
- * `VirtualScroller.bottomScrollTop` switches to the real bottom. Mirrors the
- * scroller's own `HYSTERESIS_PX`. */
+/**  * How far the height MODEL may sit above the real content bottom before
+ * `VirtualScroller.bottomScrollTop` switches to the real bottom. Mirrors the scroller's own
+ * `HYSTERESIS_PX`. */
 export const MODEL_OVERSHOOT_HYSTERESIS_PX = 50
 
 /**
@@ -269,15 +265,13 @@ export const MODEL_OVERSHOOT_HYSTERESIS_PX = 50
  */
 export const AT_BOTTOM_STABLE_TOLERANCE_PX = BOTTOM_THRESHOLD + MODEL_OVERSHOOT_HYSTERESIS_PX
 
-/**
- * Within this many px of the top counts as "at the top". Mirrors
+/** Within this many px of the top counts as "at the top". Mirrors
  * `BOTTOM_THRESHOLD` so the two edges behave symmetrically in the
  * logger. Note: this is the threshold for the `reached-top` /
  * `left-top` state-transition log. The lazy-load trigger uses a
  * much larger threshold (`loadMoreThreshold` = 200px on the
  * VirtualScroller) — the user can be 200px from the top and have
- * `loadMore` fire, but only at <10px do we log `reached-top`.
- */
+ * `loadMore` fire, but only at <10px do we log `reached-top`. */
 export const TOP_THRESHOLD = 10
 
 /** Debug-level scroll samples are throttled to this interval. */
@@ -340,9 +334,9 @@ const flushPendingDebug = (): void => {
 // ─── Logger factory ───────────────────────────────────────────────────────────
 
 export interface ScrollLogger {
-  /** Throttled per-frame sample. Safe to call on every scroll event.
-   * `origin` is optional: omit it to let the logger resolve from the
-   * `markProgrammatic` counter, or pass an explicit value to override. */
+  /**    * Throttled per-frame sample. Safe to call on every scroll event. `origin` is optional: omit it
+   * to let the logger resolve from the `markProgrammatic` counter, or pass an explicit value to
+   * override. */
   debug: (
     ctx: Omit<ScrollContext, 'chatId' | 'reason' | 'origin'> & {
       origin?: ScrollOrigin
@@ -373,15 +367,14 @@ export interface ScrollLogger {
       caller?: string
     },
   ) => void
-  /** Mark the next scroll event(s) as programmatic. Call BEFORE any
-   * `container.scrollTop = …` assignment. `count` defaults to 1 because
-   * each assignment usually produces exactly one scroll event. */
+  /**    * Mark the next scroll event(s) as programmatic. Call BEFORE any `container.scrollTop = …`
+   * assignment. `count` defaults to 1 because each assignment usually produces exactly one scroll
+   * event. */
   markProgrammatic: (count?: number) => void
 }
 
-/** Create a scroll logger bound to a chat id.
- * @param chatId  The chat session id (used to correlate logs across
- *                components and to label every line). */
+/**  * Create a scroll logger bound to a chat id. @param chatId The chat session id (used to correlate
+ * logs across components and to label every line). */
 export const createScrollLogger = (chatId: string): ScrollLogger => {
   // Auto-derive the context fields the caller usually can't be bothered
   // to pass. We re-read the container on every call because the geometry
@@ -590,15 +583,12 @@ const emit = (ctx: ScrollContext, level: 'debug' | 'info' | 'warn' | 'error'): v
 
 // ─── Helpers exported for callers ─────────────────────────────────────────────
 
-/**
- * Build the diagnostic `ContainerInfo` block for a container element.
- *
+/** Build the diagnostic `ContainerInfo` block for a container element.
  * We deliberately AVOID calling `getComputedStyle` on every scroll
  * event — it forces a style recalculation, which is expensive at
  * 60 Hz. We only compute it when the dimensions look suspicious
  * (`scrollHeight === 0 || clientHeight === 0`), which is the only
- * time the diagnostic is useful anyway.
- */
+ * time the diagnostic is useful anyway. */
 const buildContainerInfo = (container: HTMLElement | null | undefined): ContainerInfo => {
   if (!container) return { null: true, offsetHeight: 0, offsetParent: null }
   const scrollHeight = container.scrollHeight
@@ -619,16 +609,13 @@ const buildContainerInfo = (container: HTMLElement | null | undefined): Containe
   return info
 }
 
-/**
- * Build the diagnostic `ScrollerState` block for a VirtualScroller
+/** Build the diagnostic `ScrollerState` block for a VirtualScroller
  * component ref. Reads the component instance to determine whether
  * the ref is even populated, whether the inner container is
  * populated, and which exposed methods exist.
- *
  * Accepts the full ref object (`.value` style) so we can distinguish
  * "ref object exists but `.value` is null" from "ref object itself
- * is missing". Both are passed as `{ value: unknown }` shapes.
- */
+ * is missing". Both are passed as `{ value: unknown }` shapes. */
 const buildScrollerState = (scrollerRef: { value: unknown } | null | undefined): ScrollerState => {
   if (!scrollerRef) {
     return {
@@ -693,9 +680,8 @@ const resolveBottomEdge = (
   return Number.isFinite(edge) ? edge : domEdge
 }
 
-/** Build the diagnostic `WrapperState` block for the outer flex
- * wrapper. Tells you whether the layout chain reached the
- * scroller's parent. Like `buildContainerInfo`, only pays the
+/**  * Build the diagnostic `WrapperState` block for the outer flex wrapper. Tells you whether the
+ * layout chain reached the scroller's parent. Like `buildContainerInfo`, only pays the
  * `getComputedStyle` cost when dimensions are weird. */
 const buildWrapperState = (wrapperRef: { value: unknown } | null | undefined): WrapperState => {
   if (!wrapperRef) {
@@ -738,10 +724,9 @@ const buildWrapperState = (wrapperRef: { value: unknown } | null | undefined): W
 export const buildScrollContext = (
   container: HTMLElement | null | undefined,
   fallback: Pick<ScrollContext, 'chatId' | 'messages' | 'isAtBottom'> & {
-    /** The VirtualScroller ref from ChatView. Optional — when omitted,
-     * `scrollerState` is not populated. Pass the full ref object
-     * (`virtualScrollerRef`), NOT `virtualScrollerRef.value` — the
-     * logger inspects both the ref and the component instance. */
+    /**      * The VirtualScroller ref from ChatView. Optional — when omitted, `scrollerState` is not
+     * populated. Pass the full ref object (`virtualScrollerRef`), NOT `virtualScrollerRef.value` —
+     * the logger inspects both the ref and the component instance. */
     virtualScrollerRef?: { value: unknown } | null
     /** The outer flex wrapper ref from ChatView. Optional — when
      * omitted, `wrapperState` is not populated. */
