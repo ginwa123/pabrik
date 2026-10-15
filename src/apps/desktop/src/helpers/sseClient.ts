@@ -389,7 +389,6 @@ export function createSseClient(opts: SseClientOptions): SseClient {
   // navigator.connection is the NetworkInformation API. It's non-standard (Chromium-only), so we
   // type-erase Navigator with a cast. Reports effectiveType ('4g' / '3g' / '2g' / 'slow-2g'),
   // downlink (Mbps estimate), rtt (ms estimate), and saveData (user has data-saver enabled).
-
   // All fields are nullable.
   const readNetworkInfo = (): Record<string, unknown> | null => {
     if (typeof navigator === 'undefined') return null
@@ -436,20 +435,17 @@ export function createSseClient(opts: SseClientOptions): SseClient {
   // Set to `now()` the first time the stall detector fires during a given open window. Reset on
   // every 'connected' event (so the gap between stall-detected and browser-error is the delta of
   // two timestamps, not the cumulative stall count).
-
   // Surfaced in the EventSource 'error' log + the DISCONNECT DIAGNOSIS log so the operator can see
   // "stall detector saw it 12s before the browser did" — a key diagnostic for backend vs
   // browser-initiated drops.
   let stallFiredAt: number | null = null
   // Readiness at the time the stall detector fired.
-
   // Captured because by the time the browser fires the actual `error` event, readyState has usually
   // transitioned from OPEN to CONNECTING (the browser's internal retry state) — losing the smoking
   // gun for "TCP was alive during the silence". Reset on every 'connected' event.
   let stallFiredAtReadiness: string | null = null
   // Tracks when the tab became hidden (and when it became visible again). Set in
   // `onVisibilityChange`.
-
   // Surfaced in every diagnostic log so the operator can rule out "browser paused the connection
   // because the user backgrounded the tab" — a common cause of EventSource silence that is NOT a
   // disconnect.
@@ -461,7 +457,6 @@ export function createSseClient(opts: SseClientOptions): SseClient {
   // Capture the stack frame at the time the consumer called `.close(reason?)` and
   // `.reconnect(reason?)`. Surfaced in every diagnostic log so the operator can answer "who asked
   // for this disconnect?" — was it App.vue on unmount? pagehide/beforeunload?
-
   // Or did nobody ask, and the browser fired onerror by itself?
   let lastCloseReason: string | null = null
   let _lastCloseCaller: string | null = null
@@ -564,11 +559,9 @@ export function createSseClient(opts: SseClientOptions): SseClient {
   // Render the suspect classification + the supporting signals into a single human-readable
   // sentence. The DISCONNECT DIAGNOSIS log attaches this so the operator can read one line and know
   // what happened — no need to cross-reference multiple log lines.
-
   // Each sentence includes the suspect token verbatim ('backend', 'network', 'browser',
   // 'user-code') so the operator can grep for `conclusion: ...backend...` to find every disconnect
   // we attributed to the server.
-
   // Tests pin this contract; do not reword the suspect label without updating
   // `sseClient.deeplog.spec.ts`.
   function formatConclusion(
@@ -625,7 +618,6 @@ export function createSseClient(opts: SseClientOptions): SseClient {
       // Mark the wall-clock instant the stall detector fired so the downstream 'error' listener can
       // compute "stall-to-error ms" and the DISCONNECT DIAGNOSIS can show how long the operator had
       // to wait between "we know it's dead" and "the browser agrees".
-
       // Also capture the readiness AT STALL TIME so the DISCONNECT DIAGNOSIS doesn't lose the
       // smoking gun when the browser transitions readyState to CONNECTING before firing its onerror
       // event.
@@ -649,13 +641,11 @@ export function createSseClient(opts: SseClientOptions): SseClient {
         readyStateLabel: readiness,
         // navigator.connection tells us what kind of network the browser thinks we're on. If the
         // effectiveType says "2g" or "slow-2g", that's the smoking gun.
-
         // The NetworkInformation API is non-standard, so we type-erase Navigator with a cast —
         // guards against TS complaining in jsdom too.
         navConn: readNetworkInfo(),
         // Disconnect classification — answers "is this the backend's fault, the browser's fault, or
         // the network's fault?" in a single field. See `classifyDisconnectSuspect` for the rules.
-
         // Operator can grep for `SUSPECT: backend` to find every stall the desktop app attributed
         // to the server.
         suspect,
@@ -686,7 +676,6 @@ export function createSseClient(opts: SseClientOptions): SseClient {
       // Stall recovery (idle-freeze fix): the stream is silently dead (TCP open, zero bytes). The
       // browser will NOT fire onerror on its own, so close the dead EventSource and schedule a
       // retry.
-
       // Guarded by `stallRecovery` (default true) so diagnosis builds can restore log-only
       // behaviour.
       if (stallRecovery && !closed && state === 'open') {
@@ -817,7 +806,6 @@ export function createSseClient(opts: SseClientOptions): SseClient {
   // Deduplicated list of custom named event types the consumer wants routed to `onEvent`. Reserved
   // names (`'connected'`, `'message'`) are always handled by the SseClient's own listeners, so
   // including them here is a no-op.
-
   // We filter them out below to avoid double-registration (which would fire `onEvent` twice per
   // event).
   const reservedEventNames = new Set<string>(['connected', 'message'])
@@ -987,7 +975,6 @@ export function createSseClient(opts: SseClientOptions): SseClient {
       resetStallDetector()
       // Throw-isolation: a throwing onConnected must never break the handshake — the stream is
       // already open and subsequent data events must still dispatch.
-
       // Previously this call sat outside the try below, so a throw skipped the onEvent passthrough
       // for this handshake (and surfaced as an uncaught exception).
       try {
@@ -1030,7 +1017,6 @@ export function createSseClient(opts: SseClientOptions): SseClient {
         // Drop heartbeats before they reach the consumer. The backend sends `data: ping\n\n` as a
         // keepalive; in consumers that JSON-buffer incoming data (e.g. the queue-messages stream),
         // every heartbeat appends to the buffer and the buffer never drains (no `{`/`}`).
-
         // This is a generic SseClient concern — the heartbeat exists to keep the connection alive,
         // which is the SseClient's job, not the consumer's.
         if (isHeartbeat) {
@@ -1045,7 +1031,6 @@ export function createSseClient(opts: SseClientOptions): SseClient {
     // Raw EventSource lifecycle hooks — separate from the SSE 'connected' named event above. Logged
     // so the dev console can distinguish a) the HTTP/TLS 'open' (200 + headers) from b) the SSE
     // 'connected' (protocol handshake) from c) 'error' (the browser fired onerror).
-
     // Without this, all three fire through a single onerror callback and we can't tell them apart.
     instance.addEventListener('open', () => {
       log('EventSource raw open', { readyState: instance.readyState })
@@ -1082,7 +1067,6 @@ export function createSseClient(opts: SseClientOptions): SseClient {
         // NEW (sse-disconnect-diagnosis): if the stall detector already fired during this open
         // window, `stallToErrorMs` tells the operator "the desktop app saw this coming N seconds
         // before the browser did".
-
         // For the user's reported symptom (heartbeat stops → 19s later browser errors), this is
         // typically ~12s.
         wasStalledBefore: stallFiredAt !== null,
@@ -1097,7 +1081,6 @@ export function createSseClient(opts: SseClientOptions): SseClient {
     // Register listeners for any additional named event types the consumer declared (e.g.
     // 'queue_message'). Each one is dispatched to `onEvent` with the event name as the type
     // argument, matching the contract documented on `onEvent` and on `createSseConnection`.
-
     // We register inside `start()` (not once, at construction) so the listeners are re-attached on
     // reconnect — the EventSource is rebuilt on every retry, so any listeners on the previous
     // instance are gone.
@@ -1168,7 +1151,6 @@ export function createSseClient(opts: SseClientOptions): SseClient {
     // NEW (sse-disconnect-diagnosis): fire the comprehensive diagnosis log BEFORE scheduleRetry so
     // the operator can read it as a single log entry (after 'EventSource raw error' and before
     // 'scheduleRetry set').
-
     // The log aggregates every signal we have so the operator can answer "was this the backend, the
     // frontend, or the network?" with one log line.
     logDisconnectDiagnosis('error-event')
@@ -1220,7 +1202,6 @@ export function createSseClient(opts: SseClientOptions): SseClient {
     if (!visibilityTarget) return
     if (visibilityTarget.hidden) {
       // NEW (sse-disconnect-diagnosis): track when the tab became hidden.
-
       // Surfaced in every diagnostic log so the operator can rule out "browser paused the
       // connection because the user backgrounded the tab" — a common cause of EventSource silence
       // that is NOT a real disconnect.
@@ -1275,10 +1256,8 @@ export function createSseClient(opts: SseClientOptions): SseClient {
     // `pagehide` / `beforeunload` are the "user is leaving the page" signal (refresh, tab close,
     // navigation). The unload handler MUST be synchronous — the browser will not await a Promise.
     // Just call `teardown()` and let the browser close the socket.
-
     // Without this, the SSE connection lingers in the network panel as "open" / "pending" and the
     // server does not know the client is gone until the server-side timeout fires.
-
     // Track the close reason + caller BEFORE teardown so the next log line ("state closed {reason:
     // manual}") and any in-flight DISCONNECT DIAGNOSIS log both know who asked.
     lastCloseReason = 'page-unload'
@@ -1295,7 +1274,6 @@ export function createSseClient(opts: SseClientOptions): SseClient {
     onlineTarget.addEventListener('online', onOnline)
     // NEW (sse-disconnect-diagnosis): also listen for 'offline' so we can attribute silence to a
     // network drop. The browser fires 'offline' on `navigator.onLine === false`.
-
     // Without this listener the diagnostic log would only see `navigatorOnline: false` at error
     // time — by then the browser has already started its own internal reconnect, which masks the
     // cause.
@@ -1316,17 +1294,13 @@ export function createSseClient(opts: SseClientOptions): SseClient {
   // ── Kick off the first attempt ──────────────────────────────────────── We do this AFTER the
   // listeners are attached so a synchronous success / failure does not race the listener
   // registration.
-
   // Defer the start() call to the next macrotask (setTimeout 0) so the SseClient constructor
   // returns immediately without initiating the HTTP request synchronously.
-
   // This makes the SSE setup "fully async" — callers (e.g. `kanbanSseStore.initKanbanSse`) can be
   // `await`ed, and other in-flight fetch API calls (workspace data, chat history, etc.) can proceed
   // before the EventSource connection is established.
-
   // Without this defer, the SSE HTTP request would race with the same-tick fetches and saturate the
   // browser's per-origin connection pool (6 in HTTP/1.1).
-
   // The `onError` synchronous-constructor-throw path still works: the throw happens inside
   // `start()` after the deferral, so the first-attempt fatal error is reported on the next tick
   // (slightly later than before, but still before any reconnect could fire).
@@ -1443,7 +1417,6 @@ export function createSseClient(opts: SseClientOptions): SseClient {
 // Module-level helper: grab up to 3 caller frames from the JS stack. Used by SseClient.close() and
 // .reconnect() so the operator can see "which component asked for this disconnect?". Strips leading
 // 'at ' prefixes (V8 convention) and discards empty lines.
-
 // Returns '(no stack)' when the runtime doesn't expose Error.stack (some embedded JS engines).
 // Frame count is bounded so a deep recursion doesn't blow up the log payload.
 function getCallerStack(): string {

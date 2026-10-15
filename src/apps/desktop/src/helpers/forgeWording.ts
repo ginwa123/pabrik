@@ -49,7 +49,6 @@ const GITLAB: ForgeWording = {
 }
 
 /** Wording for `provider`, defaulting to GitHub when it is empty or unrecognised. */
-
 /** Defaulting matters: `pr_provider` is empty on every session created before GitLab support
  * existed, and those are all GitHub — so an unknown provider is a known-GitHub one far more often
  * than not, and guessing wrong is cosmetic while guessing blank is not. */

@@ -99,7 +99,6 @@ async function flush(): Promise<void> {
 // Build a DragEvent-ish Event with a real `dataTransfer` + `clientY`. jsdom doesn't support `new
 // DragEvent('drop', { dataTransfer })` and the underlying DataTransfer constructor doesn't exist,
 // so we shim the entire event surface.
-
 // The handlers only read `event.dataTransfer`, `event.clientY`, `event.relatedTarget`,
 // `event.currentTarget`, and `event.target` — all set below.
 function makeDragEvent(type: string, opts: { clientY?: number; relatedTarget?: EventTarget | null } = {}): Event {

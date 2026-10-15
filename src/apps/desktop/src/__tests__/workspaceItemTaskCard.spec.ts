@@ -106,7 +106,6 @@ describe('WorkspaceItemTaskCard data-attribute contract', () => {
   // The hover action strip (pin / rename / details / delete) was removed in favour of the card's
   // right-click context menu. These assert the strip stays gone — a regression that re-adds a
   // button costs ~100px of a 280px column and truncates the task name back to ~150px.
-
   // Plan: docs/superpowers/plans/2026-09-25-kanban-card-context-menu-move-to-column.md
   it('renders NO hover action buttons in the top row', () => {
     wrapper = mountCard({ id: 't1', name: 'Alpha' })
@@ -248,7 +247,6 @@ describe('WorkspaceItemTaskCard card-ux-v2 (richer card layout)', () => {
   it('pinned indicator appears in TOP row (not meta row) when is_pinned is true', () => {
     // card-ux-v2: pin indicator moved from the meta row (which is now reserved for "time + type
     // label" only) to the top row, sitting right after the task name.
-
     // This keeps the meta row minimal while still surfacing the pinned state in a visible location
     // (the top row is the natural reading order).
     wrapper = mountCard({ id: 't1', name: 'Alpha', is_pinned: true })

@@ -108,7 +108,6 @@ describe('VirtualScroller prepend height remap (100-message lifecycle)', () => {
     // FINAL: 43 items at indices 0..42. Heights stored through the prepend must still describe
     // their own items, so the sizer equals Σ realHeight(i) for i in 0..42 — measured ones exactly,
     // unmeasured ones within estimate tolerance.
-
     // With buffer=30 and an 800px viewport, most items get measured; assert the sizer is within 5%
     // of the true total (tight convergence, no phantom layout).
     let expected = 0
@@ -122,14 +121,11 @@ describe('VirtualScroller prepend height remap (100-message lifecycle)', () => {
     // Focused unit — UPDATED for the stable-key cache (2026-08-26). The old design remapped index
     // keys by +N inside beginPreserve; the new design keys heights by itemKey, so heights travel
     // with their items automatically and the remap is gone.
-
     // The OUTCOME contract is unchanged: after a prepend, each item's stored height still describes
     // its own item.
-
     // Sizer math at the assert instant (items.length still 3, ids "0","1","2" measured at
     // 100/200/300): the map is keyed by id, so beginPreserve(2) changes nothing about stored
     // heights — acc[3] stays 100+200+300 = 600.
-
     // (The old index-remap produced 500 here by shifting keys; that intermediate state no longer
     // exists.)
     const wrapper = mount(VirtualScroller, {

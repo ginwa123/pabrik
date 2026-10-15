@@ -54,7 +54,6 @@ function mountDialog(initialShow = true) {
   // Wipe the body before each mount. attachTo: document.body creates a new <div data-v-app> for
   // each mount, and these accumulate in jsdom even after wrapper.unmount() (the divs persist as
   // empty containers).
-
   // The accumulated divs cause weird interactions with subsequent mounts — most notably, the
   // Teleport target can become confused when there are many empty data-v-app divs already in the
   // body. Clearing the body here ensures a clean slate.
@@ -248,7 +247,6 @@ describe('AddItemDialog — name input', () => {
   // ─── Empty/whitespace name → visible error message ───────────────────── The dialog now shows an
   // inline "Name is required" error after the user has interacted with the name field
   // (typed-then-cleared OR blurred with whitespace).
-
   // The error explains why Add is disabled — without it, the disabled button looks like a renderer
   // bug to users who can't see why nothing happens. Plan:
   // docs/superpowers/plans/2026-07-10-empty-workspace-item-bug.md

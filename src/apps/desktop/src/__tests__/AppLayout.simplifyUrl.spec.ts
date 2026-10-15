@@ -1,7 +1,6 @@
 // AppLayout — URL restoration under the simplify-url-browser scheme
 // (?view=workspace&itemId=Y/chat/task_W). Mounts AppLayout with various URL shapes and asserts the
 // resulting store state + chat dialog visibility.
-
 // Spec: docs/superpowers/specs/2026-08-15-simplify-url-browser-design.md Plan:
 // docs/superpowers/plans/2026-08-15-simplify-url-browser.md
 

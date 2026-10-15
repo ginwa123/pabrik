@@ -97,13 +97,11 @@ export function useCurrentMainView(): ComputedRef<CurrentMainView> {
     // Path-based contract first (plan: 2026-09-22-revamp-ui-chats). A project is a workspace item,
     // so path projects map onto the existing `workspace` kind (itemId = projectId) — every
     // row-highlight consumer keeps working unchanged.
-
     // Legacy `?view=` URLs are handled below until the boot rewrite removes them.
     const parsed = parseAppPath(route?.path ?? '')
 
     // Document page (Migration 095). A PATH shape, so it is just another main view — no precedence
     // fight with the other shapes, and no overlay to stack on top of whatever was open before.
-
     // No `?doc=` fallback: Migration 095 shipped that overlay shape and was replaced by this path
     // shape before it was in wide use, so there are no links in the wild to keep working and no
     // second way for the URL to name a document.
@@ -146,7 +144,6 @@ export function useCurrentMainView(): ComputedRef<CurrentMainView> {
         // Parse the wire-shape itemId (may carry `/chat/<taskId>` suffix when the chat dialog is
         // open). The bare id is exposed as `itemId`; the optional chat task id is exposed as
         // `chatTaskId`.
-
         // Consumers that need the raw wire value should read `route.query.itemId` directly.
         const parsed = parseItemIdWithChat(q.itemId)
         return {

@@ -1,14 +1,11 @@
 /** End-to-end test for design-mode undo/redo capture calls (Chunk 7). Originally verified the full
  * gesture → entry push → undo/redo → element restored cycle for the most important mutations. */
-
 /** After 2026-08-06 (the undo/redo feature was hidden from the user in design mode — see
  * DesignView.undoHidden.spec.ts), the Cmd+Z / Cmd+Shift+Z / Cmd+Y keyboard shortcut tests were
  * deleted because the keyboard handlers were removed. */
-
 /** The capture-call invariant (history.capturePreState / capturePostState fire on every gesture) is
  * still the canonical regression guard against accidentally removing the dead-code captures during
  * future refactors. 1 behavioural test. */
-
 /** Project convention is behavioural only — see
  * ~/.config/pabrik/memories/static-contract-test-when-to-prefer-behavioural.md. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'

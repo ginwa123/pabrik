@@ -99,7 +99,6 @@ function setBasename(value: string) {
 function mountDialog(initialCwd?: string) {
   // Wipe the body before each mount. attachTo: document.body creates a new <div data-v-app> for
   // each mount, and these accumulate in jsdom even after wrapper.unmount().
-
   // Clearing the body here ensures a clean slate for each test (otherwise Teleport + body event
   // listeners from the previous test can interfere with the new one).
   document.body.innerHTML = ''

@@ -444,7 +444,6 @@ const effectiveLoadMoreThreshold = computed(() =>
 
 // Scrollability is pushed to the parent via the `scrollabilityChange` event (see its emit doc for
 // why an event beats a template-ref read).
-
 // `emitScrollableIfChanged` below (driven by onMounted + onUpdated) sends the initial value on
 // mount — otherwise the parent's local ref would start at its default (`false`) until the FIRST
 // actual value change.
@@ -492,24 +491,18 @@ const modelTotal = computed(() => accumulatedHeights.value[props.items.length] ?
 // ── Tail-gap cap (task_1790236655228_2) ───────────────────────────────────── "the gap is too
 // long" — the model can reserve thousands of px of empty sizer BELOW the real content (DevTools:
 // sizer 26796px vs a content box ending at ~24114px), and the browser lets the user scroll into it.
-
 // `scrollToBottom` already lands on the real bottom, so the void shows up as a blank region below
 // the last message once the user keeps scrolling DOWN (wheel momentum, keyboard End, dragging the
 // scrollbar).
-
 // `tailContentBottom` is the MEASURED bottom of the rendered window in model space (model prefix of
 // the first rendered row + the real heights of the rows in the DOM).
-
 // It is recorded by `measureItems()` — the one place that reads live child geometry — and NOT from
 // a template-ref callback.
-
 // That distinction is why the PR #355 clamp had to be reverted: its `onContentRef` value only
 // refreshed when the content DIV was mounted/replaced, so after a window shift it described the
 // PREVIOUS window (a tall one), inflating the sizer ~3x and bouncing.
-
 // `measureItems` runs on every window change, scroll, and content resize, so the number always
 // describes the rows that are actually on screen.
-
 // The cap is `min(modelTotal, tailContentBottom + maxTailGap)`: it can only ever SHRINK the
 // reserved void, never grow the sizer past the model — so the "sizer blew up / bounce" failure mode
 // is impossible. The model itself is never written; only the style binding changes.
@@ -517,7 +510,6 @@ const tailContentBottom = ref(0)
 // Latched "the rendered window covers the tail" flag. The clamp is applied only while this is true,
 // so a user reading history can always scroll back down to newly appended rows (no cap → upstream
 // model space is intact).
-
 // ON at the tail; OFF only once the window is clearly away from it (`buffer` rows), which keeps a
 // scrollTop clamp at the capped bottom from flipping the cap off and on in the same frame (the
 // bounce/dither the user rejected in the earlier tail-clamp experiment).
@@ -633,11 +625,9 @@ const visibleRange = computed(() => {
 
 // Tail-cap latch (see the sizerHeight comment). ON as soon as the rendered window reaches the last
 // item — that is exactly when `measureItems` can see the real content bottom and record it.
-
 // OFF only once the window is a full `buffer` away from the tail, so a clamp-driven scrollTop write
 // at the capped bottom cannot flip the cap off (the window would then re-grow, get clamped again,
 // and dither).
-
 // Applied by the onMounted + onUpdated sync block below (same hysteresis, prev-end guard).
 const applyTailCapLatch = (end: number) => {
   if (end >= props.items.length) tailCapLatched.value = true
@@ -703,29 +693,23 @@ const recordTailContentBottom = (
   if (firstIndex < 0 || lastIndex < props.items.length - 1) {
     // This pass did not see the tail, so whatever bottom we recorded earlier describes a DIFFERENT
     // window — and, if the list has grown since, a different list.
-
     // The tail cap is `min(modelTotal, recorded + maxTailGap)`, so a stale record silently clamps
     // the sizer far below the real content: with 43 items, a buffer of 30, and a record from when
     // the list was 20 items long, the cap held the sizer at 4196px against a correct 8542px model.
-
     // The reader then sees phantom scroll range that no content backs. Clearing it is also what
     // makes the cap dither-free. The latch's hysteresis exists because a clamp-driven scrollTop
     // write can move the window off the tail and back, re-clamping each time.
-
     // With the record cleared, the cap switches OFF the moment the window leaves the tail, so there
     // is no clamp to fight — and when the window returns, the value written is one this pass
     // actually measured, never one the clamp itself produced.
-
     // The cap can then only ever clamp to a real bottom.
     tailContentBottom.value = 0
     return
   }
   // NOTE: `childrenSum <= 0` deliberately keeps the previous value rather than clearing it.
-
   // A pass with no layout (container not yet painted, `v-if` hidden) is not evidence that the tail
   // moved, and fail-open here keeps the cap protecting the reader from a phantom void while there
   // is no measurement to replace it with.
-
   // A pass that DOES see rows and does not reach the tail is different evidence — that is the case
   // cleared above.
   if (childrenSum <= 0) return
@@ -780,11 +764,9 @@ const scrollInfo = computed(() => ({
 
 // ── P2: contentShift emit (task_1787551495337_9) ───────────────────────────── Transform-based
 // positioning has no spacer DIVs whose style mutations a parent MutationObserver could watch.
-
 // This emit is the explicit replacement signal: it fires whenever the virtual layout's geometry
 // changes (scroll-driven window shift, measurement update, item-list change). ChatView listens to
 // re-stick to bottom after measurement drift.
-
 // `emitContentShiftIfChanged` below (driven by onMounted + onUpdated with a prev-geometry guard)
 // sends the initial geometry on mount — without it a never-scrolled list would never emit, and
 // ChatView's re-stick logic would miss the initial measurement drift.
@@ -844,29 +826,23 @@ const AT_BOTTOM_SLACK_PX = 10
 // Where the bottom sat as of the END of the previous pass (or the last `scrollToBottom`), or null
 // before anything has positioned the list. `measureItems` must judge "was the reader at the
 // bottom?" against THIS, not against a live read of `bottomScrollTop()`.
-
 // A live read answers with the geometry as it is NOW — and when the previous pass grew the model,
 // that is already further down than where it left the reader. Judged live, a reader who has not
 // moved at all reads as "left the bottom", the anchor branch takes over, and the pass strands them.
-
 // That is the reported bug arriving one pass late, and it is why a single-pass fix looks correct
 // and a multi-pass turn still breaks: a turn is many passes. The distinction the model moving vs
 // the reader moving is the whole point.
-
 // A reader scrolled UP is below this number, so the test still fails for them.
 let settledBottom: number | null = null
 
 // True once a measure pass has admitted at least one REAL height over an estimate. Until then every
 // number the scroller publishes — `sizerHeight`, `modelTotal`, `bottomScrollTop()`, `scrollHeight -
 // clientHeight` — describes the ESTIMATE, not the content.
-
 // A parent that wants to write an absolute pixel position (ChatView's scroll-restore) must wait for
 // this.
-
 // Writing a real coordinate into an estimated model lands wherever the estimate happens to put the
 // bottom, and the first measure pass then compensates the reader by the whole estimate error above
 // the anchor — which is the "reopening a chat lands a bit on top" report.
-
 // One pass is enough, not one per item: `heightEstimator.observe()` feeds the running median and
 // `estimateHeight` returns `clampEstimate(median)` for EVERY unmeasured item, so the whole model
 // converges at once rather than row by row.
@@ -940,18 +916,14 @@ const measureItems = () => {
   const children = content.children
   // ── P1 perf: batched height writes (task_1787551495337_9) ────────────── All measurements are
   // collected into `pendingWrites` and applied to the reactive Map in ONE synchronous block.
-
   // The deep watcher on itemHeights debounces its rebuild (50ms), so N writes inside one batch
   // collapse to ONE timer + ONE prefix-sum rebuild instead of N timer resets that each would have
   // re-scanned the full list. The Map itself is only made reactive-mutable once per batch.
-
   // NOTE: the child→index mapping reads each child's `data-vs-index` attribute, NOT
   // `visibleRange.value.start + i`.
-
   // The computed range can update synchronously while the DOM still shows the previous window
   // (render is scheduled to a later microtask); mapping via the live computed would attribute old
   // children's heights to the wrong indices.
-
   // The attribute is stamped by the renderer at mount time and always matches the node it
   // decorates.
   const pendingWrites: Array<[string, number, number]> = []
@@ -965,7 +937,6 @@ const measureItems = () => {
     const el = children[i] as HTMLElement
     // Read the index stamped by the renderer — the live computed range can already point at the
     // next window while the DOM still shows the previous one (render is async).
-
     // Falling back to start+i here misattributes a tall measured height to the wrong item, which
     // corrupts the spacers and shows as a scroll jump on fast flings through variable-height chat
     // messages.
@@ -1040,7 +1011,6 @@ const measureItems = () => {
   // Freeze the placeholder once the estimator's window is full — from here on `estimateHeight` may
   // only change for a MEASURED row, so no scroll gesture can rescale the model above the reader
   // (see `estimateHeight` for the measured jump this prevents).
-
   // Freezing is a no-op for the model at this instant BY CONSTRUCTION: the samples are the rows
   // just measured, so the frozen value is the live median that `updateAccumulatedHeights` below
   // would have used anyway.
@@ -1144,7 +1114,6 @@ const measureItems = () => {
             // True when the target exceeded the reachable range even after the sizer was brought up
             // to date — the view could not be held exactly, and the NEXT pass will re-derive the
             // reader's position from where this left them.
-
             // Expect it to be false; a run of trues means the model is claiming a position the
             // container cannot hold.
             clampedToMax: result.clampedToMax,
@@ -1228,26 +1197,21 @@ const onScroll = (e: Event) => {
   lastScrollEventAt = Date.now()
   // Keep `containerHeight.value` in sync with the live DOM reading. The `ResizeObserver` only fires
   // when the container's *size* changes — it does NOT fire for scroll-only events.
-
   // Between the first `loadMore` and the next one, `endPreserve` does `containerRef.value.scrollTop
   // = newST` to restore the user's view, which fires a scroll event but not a resize, and a layout
   // reflow during the prepend can briefly shrink the container below its settled height.
-
   // Either path leaves the cached `containerHeight.value` stale, and the
   // `effectiveLoadMoreThreshold` computed then silently falls back to its 200 px absolute floor —
   // which is the "ratio only works on the first load" symptom.
-
   // Reading `target.clientHeight` here on every scroll event keeps the ref in sync. Vue's `ref`
   // does an internal equality check, so this is a no-op when the value didn't change.
   containerHeight.value = target.clientHeight
   const st = target.scrollTop
   const dir = st > lastScrollTop.value ? 'down' : 'up'
   // NOTE (P1 perf review, task_1787551495337_9): this write stays SYNCHRONOUS.
-
   // An rAF-deferred variant was tried and reverted: the pre-paint compensation contract (onScroll +
   // onUpdated → nextTick → measureItems, PR #310) requires the range recompute to begin within the
   // SAME tick as the scroll event; deferring it to the next frame broke that guarantee.
-
   // Coalescing is already provided by Vue's async render queue — N scroll events between two
   // flushes produce exactly ONE component re-render and ONE visibleRange evaluation.
   scrollTop.value = st
@@ -1274,7 +1238,6 @@ const onScroll = (e: Event) => {
     // Defensive guard: if the container isn't actually scrollable (scrollHeight ≤ clientHeight,
     // i.e. content fits in viewport), `st < loadMoreThreshold` is trivially true because `st` is 0
     // and there's nothing to scroll.
-
     // Emitting `loadMore` here would cause the parent to fetch a page and prepend it, which is the
     // exact "flicker" users see when a chat's container reads as 0×0 during an SSE stream. The
     // check uses the container's own dimensions — no parent layout assumptions.

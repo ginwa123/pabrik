@@ -48,7 +48,6 @@ describe('groupToolNames — pill suppression when tool already rendered (source
     const source = await readChatViewSource()
     // When tool_calls_json is missing / unparseable but finish_reason='tool_calls', the pill
     // previously always rendered.
-
     // The fix scans for ANY later tool group in the transcript and suppresses the pill if one is
     // found — covering the common server-side case where the assistant row arrives first and the
     // tool result row arrives shortly after.
@@ -61,7 +60,6 @@ describe('groupToolNames — pill suppression when tool already rendered (source
     // The groupToolNames computed MUST still end with a `return null` branch (no pill) — a plain
     // assistant text turn must NOT render. We isolate the computed body via the unique
     // `renderedToolCallIds` anchor so future refactors don't accidentally regress the path.
-
     // Anchor on the unique identifier "renderedToolCallIds" that only exists in the fixed computed.
     // Walk forward from there to the next blank-line + comment boundary so the assertion is robust
     // against future whitespace changes.

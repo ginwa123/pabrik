@@ -82,7 +82,6 @@ const state = (over: Partial<Record<string, unknown>> = {}) =>
 // jsdom in this vitest does not provide localStorage cleanly — `window.localStorage` is undefined
 // even at a valid origin. That is a known quirk of this suite, worked around in exactly this way by
 // navigation.spec.ts.
-
 // The stand-in is installed on the bare global because that is what the app's own code reads
 // (useChatRightSidebar.ts).
 beforeEach(() => {

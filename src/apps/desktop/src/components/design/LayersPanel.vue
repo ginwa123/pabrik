@@ -89,7 +89,6 @@ const emit = defineEmits<{
   // NEW (2026-08-06, design-leave-group plan): pull the SINGLE selected element out of its current
   // parent group/frame to top-level. Wired through DesignView → useDesignHandlers →
   // workspacesStore.reparentDesignElementsBatch.
-
   // Independent of the Ungroup action (which dissolves the selected group itself).
   leaveGroup: [elementId: string]
   // NEW (Chunk 7, design-move-to-page plan, 2026-08-06): bubble the "Move to page..." selection up
@@ -141,7 +140,6 @@ const layerTree = computed<LayerTreeNode[]>(() => {
     nodes.set(e.id, node)
     // The backend's `listElements` returns `COALESCE(de.parent_id, '')` — so a top-level element
     // (parent_id IS NULL) arrives as `parent_id === ""` (empty string), NOT null/undefined.
-
     // Treat empty string the same as nullish so top-level rows land in the `null` bucket instead of
     // a separate `""` bucket that the final `byParent.get(null) ?? []` returns empty. See the
     // regression test in LayersPanel.spec.ts for the wire shape.
@@ -252,7 +250,6 @@ const handleMoveUp = (elementId: string): void => {
   // Wire-up (undo/redo plan Chunk 1): was `emit('reorder', flattenTopDown(cloned))` which went up
   // to DesignView → re-emitted upward → AppLayout had no listener → silent drop. Now we call the
   // store action directly with `mode: 'bring_forward'`.
-
   // The store action mirrors the response into the local design_elements array; the layers panel
   // re-renders from that array on the next tick. Selecting just `[elementId]` (not the full order)
   // matches the keyboard shortcut's behavior (Cmd+] / Cmd+[).

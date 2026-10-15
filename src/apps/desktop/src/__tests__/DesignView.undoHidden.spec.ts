@@ -204,7 +204,6 @@ describe('DesignView undo/redo feature is hidden (2026-08-06)', () => {
   // ─── Regression guard — see DesignView.endToEnd.spec.ts ───────────── The "capture calls still
   // fire" invariant is verified by the arrow-key nudge test in DesignView.endToEnd.spec.ts (it
   // asserts capturePreState + capturePostState both fire 3 times for 3 arrow presses).
-
   // Re-asserting here would duplicate coverage; the failure modes are the same and one canonical
   // regression test is cleaner than two near-identical ones.
 })

@@ -596,7 +596,6 @@ describe('useWorkspacesStore — kanban actions', () => {
 
   // ─── fetchKanbanColumns ───────────────────────────────────────────────── The "board renders
   // empty after page reload" fix.
-
   // Without this action, item.kanban_columns stays undefined (the workspaces/items endpoint does
   // not embed columns) and the user sees an empty board even though the seeded 3 default columns
   // live in the DB.
@@ -703,10 +702,8 @@ describe('useWorkspacesStore — kanban actions', () => {
   // ─── updateKanbanItemName ─────────────────────────────────────────────── The kanban header
   // rename (from KanbanSettingsDialog's inline pencil or KanbanView's header pencil) hits the store
   // via this action.
-
   // The contract: optimistic-update item.name BEFORE the API call resolves so the UI updates
   // immediately; roll back on error.
-
   // The PUT handler accepts `{name}` and writes the column; when the API call throws, `item.name`
   // must be restored to the pre-call value (so the UI doesn't lie about the rename).
 

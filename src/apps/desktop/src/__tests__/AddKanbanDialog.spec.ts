@@ -110,7 +110,6 @@ describe('AddKanbanDialog', () => {
   // ─── Visible "Name is required" error UX (mirrors AddItemDialog) ───────── The dialog now shows
   // an inline error below the name input after the user has interacted with an empty/whitespace
   // field, so the disabled Add button has a visible explanation.
-
   // Plan: docs/superpowers/plans/2026-07-10-empty-workspace-item-bug.md
 
   it('whitespace-only name shows visible "Name is required" error', async () => {

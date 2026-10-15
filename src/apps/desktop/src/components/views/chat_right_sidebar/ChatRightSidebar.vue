@@ -67,7 +67,6 @@ const activePanel = ref<SidebarPanel>(loadPanel())
 
 // The rail. The panel's name is the active segment's own label, so there is no separate title row
 // above it — one row of chrome instead of two.
-
 // Glyphs are the app's existing vocabulary (no icon dependency); each is aria-hidden so a screen
 // reader reads "Explorer", not "black square Explorer".
 const PANEL_SEGMENTS: { id: SidebarPanel; glyph: string; label: string }[] = [

@@ -113,7 +113,6 @@ describe('CenterDiffSection collapse', () => {
     // `collapsed` reaches the view (which keeps its header and drops the table — asserted directly
     // in SidebarDiffView.split.spec.ts), and the section keeps its anchor id, so ?diff= / a sidebar
     // click can still find and re-expand it.
-
     // This mount is SHALLOW, so the stub's internals are deliberately not asserted here.
     expect(diff.props('collapsed')).toBe(true)
     expect(wrapper.get('[data-testid="center-diff-section"]').attributes('id')).toBe(

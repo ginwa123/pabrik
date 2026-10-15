@@ -291,7 +291,6 @@ describe('Sidebar.handleSelectTask — APPEND URL, not REPLACE (better-url-brows
     // The URL is a deep link — no workspaceId in route.query. The new URL MUST add workspaceId from
     // the active store state (setActiveTask auto-discovers the parent item + workspace via
     // workspacesStore.setActiveTask's parent-item lookup at workspaces.ts:3366).
-
     // This addresses the user's report (task_1785774094183): task URLs were missing `workspaceId`
     // and the user wanted it added so the URL bar shows the kanban / design context (share /
     // refresh / back work).
@@ -348,7 +347,6 @@ describe('Sidebar.handleSelectTask — APPEND URL, not REPLACE (better-url-brows
 
   // ─── add-workspace-id-params plan (2026-08-06) ────────────────── The user reported
   // (task_1785774094183): task URLs were missing `workspaceId`.
-
   // These tests lock in the new contract: when the user clicks a task in kanban / design mode, the
   // new task URL MUST include workspaceId (from the active store state).
 

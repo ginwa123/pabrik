@@ -158,7 +158,6 @@ describe('KanbanTaskDetailDialog — tag autocomplete wiring', () => {
     // Plan: docs/superpowers/plans/2026-08-06-kanban-tags-autocomplete-in-create-mode.md The
     // previous test ("does NOT fetch in create mode") locked in a bug: users opening the "+ Add
     // task" dialog could not see the kanban's existing tags in the dropdown.
-
     // The fetch needs only the kanban's workspace_item_id (from the column prop), which is provided
     // in BOTH edit and create modes. In create mode, host wires activeCreateColumn (always non-null
     // when the dialog is open).

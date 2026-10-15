@@ -108,7 +108,6 @@ describe('WorkspaceItem — item_type branching (post-kanban-migration)', () => 
     // Pre-migration, this test verified that KanbanView rendered inline in the sidebar.
     // Post-migration, the kanban board lives in <AppLayout> (rendered in the main content area when
     // activeWorkspaceItem.item_type === 'kanban').
-
     // WorkspaceItem should NOT render any board-related DOM — just the item row and the task list
     // (for folder items).
     wrapper = mountItem(makeKanbanItem())
@@ -207,7 +206,6 @@ describe('WorkspaceItem — kanban click behavior', () => {
     // Pre-migration, WorkspaceItem re-emitted kanban-* events bubbled up from its inline
     // <KanbanView>. Post-migration, WorkspaceItem has no <KanbanView>, so it cannot bubble any
     // kanban events.
-
     // The new flow: <KanbanView> in AppLayout emits directly to AppLayout's handlers.
     wrapper = mountItem(
       makeKanbanItem({

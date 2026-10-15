@@ -258,11 +258,9 @@ describe('AppLayout — design chat dialog mount', () => {
     // THE BUG: before this fix, the dialog v-if was `activeTask && item_type === 'design'`. The
     // store's `activeTask` computed returns null for design items because their tasks array is
     // empty post-init(). So clicking 💬 had no visible effect — the dialog never appeared.
-
     // THE FIX: the dialog now gates on `activeDesignChatTaskId` (a local ref set by
     // handleDesignOpenChat from the workspaceItemTaskId FK), and uses a synthetic Task object for
     // ChatView's API.
-
     // This test simulates the full bug scenario: design item with NO tasks (production state), user
     // clicks 💬, dialog should appear.
     const store = useWorkspacesStore()

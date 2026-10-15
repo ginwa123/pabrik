@@ -318,11 +318,9 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
 
   // ─── onSessionEvent fan-out (ChatsList regression fix) ─────────────────── The internal handler
   // mutates workspace tree state.
-
   // External components (ChatsList.vue's `navItems` mirror) need to be notified too — they have
   // their own shape (relativeTime, processing flag, etc.) that's not derived from the workspace
   // tree.
-
   // The fan-out fires after the internal handler so subscribers can safely re-fetch from the API.
   it('fan-outs session.updated events to onSessionEvent subscribers', async () => {
     const ws = await setupHandlersAndSeed()

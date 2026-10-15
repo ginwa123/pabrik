@@ -28,7 +28,6 @@ import { designLogger } from '../helpers/designLogger'
 
 export const useDesignSseStore = defineStore('designSse', () => {
   // Mutable ref so `setActiveWorkspaceId` can update the filter without re-subscribing.
-
   // The `bus.on('design', ...)` closure captured at install time reads `activeWorkspaceId.value` on
   // EVERY event, so flipping it takes effect immediately for incoming events (no need to detach +
   // re-attach the listener).
@@ -80,15 +79,12 @@ export const useDesignSseStore = defineStore('designSse', () => {
       // Chunk 3 (design-drag-debounce-batch): LOCAL-MUTATION DEDUPE. Every locally-issued geometry
       // PATCH (single or batch) registers the affected element_id(s) in the `recentLocalMutations`
       // Map (workspaces.ts) with a 1500 ms TTL.
-
       // When the SSE event comes back for an element THIS client just mutated, skip the
       // `fetchDesignElements` GET fan-out — the local store already has the truth (the API mirror
       // updated it synchronously).
-
       // Safety semantics (strict superset): if ANY element_id in the event is missing from the Map
       // OR has an expired TTL, fall through to the normal fetch path. This is the only safe default
       // — partial dedupe would leave the cache inconsistent.
-
       // DOMINANT BACKEND-LOAD REDUCTION: this single check removes the GET fan-out that was the
       // dominant cost of the old 50 ms-throttled drag (~200 req/sec for a 5-element drag).
       const eventElementIds = extractElementIds(event)
@@ -132,10 +128,8 @@ export const useDesignSseStore = defineStore('designSse', () => {
       // Re-fetch the elements for the page named in the event. The server-side change might apply
       // to ANY active page (not just the one the user is currently viewing — another tab, another
       // browser, an LLM tool call from a chat session all trigger the same fan-out).
-
       // The simplest correct action is to re-fetch by the event's pageId; the store's
       // `fetchDesignElements` overwrites the local cache with the full element list for that page.
-
       // `void` here: the consumer doesn't care about the resolved value of the fetch; any error is
       // logged inside the action.
       void ws.fetchDesignElements(event.workspace_id, event.item_id, event.page_id)
@@ -155,21 +149,16 @@ export const useDesignSseStore = defineStore('designSse', () => {
     // Re-sync the design state from the DB on every (re)connect of the bus's underlying global
     // SseClient. The server may have restarted and lost in-memory state (just like the kanban SSE
     // pattern in kanbanSse.ts:122-141).
-
     // The bus's state transitions to 'open' on first connect AND on every successful reconnect from
     // 'reconnecting'.
-
     // `{ immediate: true }` covers the fast path where the bus is already 'open' by the time we get
     // here (the SseClient defers its first `start()` via `setTimeout(0)`, so App.vue's
     // `installSseBus` may have already opened the stream before AppLayout.vue mounted).
-
     // Chunk 7 will wire `fetchDesignElements` to the active page id; until then
     // `fetchInitialDesign` is a no-op (the user doesn't have a design view open in Chunk 6).
-
     // The subscription is still installed so the chunk-7 wiring happens automatically — just modify
     // `fetchInitialDesign` and the callback body doesn't change. Explicit `onStateChange`
     // subscription on the underlying SseClient (not a reactive watcher).
-
     // The immediate check covers the fast path where the bus is already open when init runs.
     if (bus.state.value === 'open') void fetchInitialDesign(activeWorkspaceId.value)
     stopOpenSub = __getSseBusGlobalClient()?.onStateChange((s) => {

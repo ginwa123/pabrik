@@ -13,7 +13,6 @@ import type { DesignElement } from '../api'
 // ─── Entry shape ──────────────────────────────────────────────────── Mirrors
 // `useDesignHistory.HistoryEntry` (kept in sync — there is no shared types module yet because Pinia
 // stores and composables resolve their own types lazily).
-
 // When adding a new field, update both places.
 
 export type EntryKind =

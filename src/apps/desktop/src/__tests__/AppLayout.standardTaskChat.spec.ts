@@ -115,7 +115,6 @@ function mountApp(): VueWrapper {
       stubs: {
         // Custom ChatView stub: the default `true` stub renders no HTML, which makes prop-level
         // assertions impossible.
-
         // Bind the chat-id to a data attribute so the test can verify which branch actually mounted
         // <ChatView> (the new branch passes `chat-${activeTask.id}`, the standalone branch passes
         // `activeChatId`).
@@ -260,7 +259,6 @@ describe('AppLayout — standard task chat (folder / memory / chat items)', () =
   it('does NOT route a kanban task through this branch (its chat is the kanban view)', async () => {
     // This branch is gated on `item_type !== 'kanban' && !== 'design'`, so a kanban task is claimed
     // by the kanban chat branch instead. Guards against an accidental double-mount.
-
     // Both branches mount a <ChatView>, so the discriminator is the chat id: THIS branch passes
     // `chat-${task.id}` while the kanban branch passes the bare task id (migration 052).
     const ws = useWorkspacesStore()
@@ -295,11 +293,9 @@ describe('AppLayout — standard task chat (folder / memory / chat items)', () =
   it('passes the workspace item path as :cwd to <ChatView> (regression: empty cwd_session in sendChatMessage)', async () => {
     // REGRESSION (task_1787027750097, follow-up): before the fix, the new branch (and the
     // standalone ChatView branch above) did NOT pass `:cwd` to <ChatView>.
-
     // ChatView's onMounted then fell back to `loadChatHistory` → `data.cwd`, which is empty when
     // `sessions.cwd` is NULL (the user's bug report showed the network panel with `cwd_session:
     // ""`).
-
     // The fix adds an `effectiveChatCwd` computed in AppLayout (`chatSessionCwd ||
     // activeWorkspaceItem.path`) and passes it as the `:cwd` prop to both ChatView mounts.
     const FOLDER_PATH = '/home/user/projects/myapp'

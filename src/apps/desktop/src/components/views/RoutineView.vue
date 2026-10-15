@@ -153,7 +153,6 @@ const statusLine = computed(() => {
 // ─── Routine Agent (reuses AgentView, mirrors KanbanSettingsView) ────────── Same ownership split:
 // this view owns the data + API calls against the agent_routines mirror (Migration 087); AgentView
 // is presentational and emits intents.
-
 // Routine ids are D3 (agent_routines.id == itemId), so no workspace walk is needed — props carry
 // workspaceId + itemId directly.
 

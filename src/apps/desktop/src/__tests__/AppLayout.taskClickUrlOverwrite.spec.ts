@@ -186,7 +186,6 @@ describe('AppLayout — handleSelectTask does not get its URL overwritten by the
     })
     // Mock getSystemFolder so AppLayout's initializeFromSystemFolder path (which runs on mount)
     // doesn't hit the stubbed 404 fetch and surface as an unhandled rejection.
-
     // Without this mock, `api.getSystemFolder()` throws `ApiError: HTTP 404` from the global fetch
     // stub (see setup.ts) because no other code path catches the rejection. The test doesn't
     // exercise the folder picker, so a minimal empty response is sufficient.
@@ -235,7 +234,6 @@ describe('AppLayout — handleSelectTask does not get its URL overwritten by the
 
     // Simulate handleSelectTask: setActiveTask(taskId) + router.push. setActiveTask auto-discovers
     // the parent item (folder) and sets activeWorkspaceItemId = folder.id.
-
     // In this case the value is the SAME as the existing value, so the ref should not trigger and
     // the watcher should NOT fire. This is the regression-free path.
     ws.setActiveTask(TASK_ID)
@@ -277,7 +275,6 @@ describe('AppLayout — handleSelectTask does not get its URL overwritten by the
 
     // Start on view=workspace showing a DIFFERENT workspace item (item A). The folder (item B) is
     // expanded in the sidebar but NOT yet the active item.
-
     // The user clicks the task under the folder. setActiveTask will set activeWorkspaceItemId from
     // A to B — THIS IS the change that triggers the URL sync watcher.
     const OTHER_ID = 'item_other'
@@ -350,7 +347,6 @@ describe('AppLayout — handleSelectTask does not get its URL overwritten by the
 
     // User clicks `llls` under the folder. setActiveTask will mutate activeWorkspaceItemId from
     // OTHER_ID to FOLDER_ID — a real change.
-
     // Mimic Sidebar's flag flip in handleSelectTask (task-url-overwrite fix, 2026-08-06): the
     // navigation flag is set BEFORE setActiveTask and cleared AFTER router.push. The AppLayout URL
     // sync watcher returns early while the flag is true.

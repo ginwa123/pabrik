@@ -110,7 +110,6 @@ describe('VirtualScroller programmatic-scroll signal', () => {
     // Scenario: user parked mid-list (anchor = item 100). The measure pass discovers every
     // above-anchor buffer item is really 300px (vs the 64px estimate) → compensation moves
     // scrollTop UP by Σ(300−64).
-
     // The browser then fires a scroll event for that write; it must be labeled programmatic.
     const { wrapper, el } = mountScroller(255)
     await nextTick()

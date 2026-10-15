@@ -355,7 +355,6 @@ describe('FileInput — /skill picker', () => {
 
   // The discoverability step that precedes the picker: the user has typed enough to be heading for
   // the skill command but not the dash yet, so the composer offers the one completion that exists.
-
   // These specs pin the hint as its OWN surface (`skill-command-suggestion`) rather than reusing
   // `skill-picker-list`, so the "a partial `/sk` does not open the picker" specs above keep meaning
   // what they say.

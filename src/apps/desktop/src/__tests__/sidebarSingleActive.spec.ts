@@ -139,7 +139,6 @@ function mountSidebar() {
 // Count the rendered sidebar's active rows. The "active row" signal is the inline `style` attribute
 // containing `--semantic-active-bg` — both the workspace item row and the design page row inject
 // that CSS variable into the inline `style` when they are the URL-driven active row.
-
 // Hover styles live in `class="hover:bg-[--semantic-active-bg]"` (Tailwind arbitrary value), NOT in
 // the inline style, so we scope the regex to `style="..."` to avoid false positives.
 function countActiveRows(html: string): number {

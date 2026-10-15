@@ -62,7 +62,6 @@ const makeItem = (overrides: Partial<WorkspaceItem> = {}): WorkspaceItem => ({
   // NOTE (kanban-sort-independence, 2026-08-06, onmount single-fetch): tests that want to assert on
   // the per-column fetch from `loadColumnsAndTasks` (URL restore) should NOT pre-populate
   // columnPagination — that would skip the fetch.
-
   // Tests that want to assert on click-only fetches (e.g. the "picking a sort" describe block) DO
   // pre-populate so the initial mount's fetch doesn't muddy the assertion. See each describe block
   // for its setup.
@@ -131,11 +130,9 @@ describe('KanbanView — per-column sort triggers API call (only the changed col
   it('picking "Created (oldest)" on column A fires fetchKanbanTasks for col_a only (col_b is NOT called)', async () => {
     // The CRITICAL user-reported bug (kanban-sort-independence, take 2): "only column a endpoint
     // that called, other column should not call endpoint".
-
     // Before this fix, the watcher called fetchKanbanTasksForAllColumns which fired N parallel
     // requests (one per column) — all with the same sort_by. Now only the changed column's fetch
     // fires.
-
     // Pre-populate columnPagination so the initial mount's loadColumnsAndTasks doesn't fire its own
     // per-column fetch (which would muddy this click-isolation assertion). The click handler's
     // per-column fetch is the ONLY fetchKanbanTasks call in this test.
@@ -444,7 +441,6 @@ describe('KanbanView — URL restore fires per-column fetchKanbanTasks', () => {
     // Default sort (position+asc) is a no-op for the URL-sort override path — nonDefaultUrlEntries
     // filters it out. But col_a IS still fetched (regression fix 2026-08-06: other columns should
     // NOT stay empty when the URL has only default entries).
-
     // The fetch uses NO sortBy/direction params so the backend applies its natural ORDER BY
     // (kanban_position asc) — the same default it would have used on first-time visit.
     const item = makeItem({

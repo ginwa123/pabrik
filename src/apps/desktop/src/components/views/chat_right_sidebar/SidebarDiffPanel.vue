@@ -75,11 +75,9 @@ const selectedStaged = ref(false)
 // ── Per-file +added / -removed ──────────────────────────────────────────── GitHub/GitLab put a
 // line count on every file row; without one a 35-file list is 35 identical-looking paths and the
 // only way to find the big change is to click each.
-
 // Keyed by `folderDiffKey(staged, path)` — the same key the shared folder-diff snapshot uses — so a
 // row's counts and the diff it opens can never disagree about which file they describe. A path
 // ABSENT from the map has UNKNOWN counts and renders nothing.
-
 // That is deliberate and load-bearing: `+0 -0` would read as "this file is unchanged", which is a
 // lie whenever the diff fetch failed or the file simply has no hunks to show yet.
 const diffCounts = ref(new Map<string, { added: number; removed: number }>())
@@ -122,7 +120,6 @@ const syncTabParam = (tab: 'files' | 'pr' | 'commits' | 'checks' | 'evals' | nul
 
 // "⚠ Conflicts only" filter. View state, so it lives in the URL next to ?panel= (refresh / Back /
 // shared links restore the same panel) — a local ref would lose it on reload.
-
 // Reuses the existing query object rather than inventing a second history entry; `replace`, not
 // `push`, because toggling a filter is not a navigation.
 const readConflictsParam = (): boolean => route.query.conflicts === '1'
@@ -138,10 +135,8 @@ const isPrMode = computed(() => (props.prUrl ?? '').trim().length > 0)
 // Every view switch lands in the URL (?panel=files|pr|commits|checks|evals) so refresh,
 // Back/Forward, and shared links restore the same panel. The commits tab is valid with or without
 // an attached PR; ?panel=pr without a prUrl still falls back to files (pre-commits behavior).
-
 // Checks is reachable without a PR too — it says so rather than 404-ing a panel that is simply
 // open. The evals tab is independent of PR mode — it shows the agent's self-eval verdicts.
-
 // The route read is guarded: hosts like ChatRightSidebar mount this panel without a router (see
 // ChatRightSidebar.spec.ts), where useRoute has no current route — mount must never crash there.
 const initialTab = (): 'files' | 'pr' | 'commits' | 'checks' | 'evals' => {
@@ -152,10 +147,8 @@ const initialTab = (): 'files' | 'pr' | 'commits' | 'checks' | 'evals' => {
     // This catch exists ONLY for "mounted without a router" — hosts like ChatRightSidebar mount
     // this panel standalone (ChatRightSidebar.spec.ts), and `useRoute()` injects nothing there, so
     // `route.query` throws on a null deref.
-
     // It cannot reach the user: nothing was fetched, this runs at mount before any data loads, and
     // with no router there is no URL to keep in sync.
-
     // `files` is the documented default, so the fallback is correct — but the condition is still
     // logged rather than swallowed, because a mount that silently lost its router is worth seeing
     // in the console.
@@ -244,7 +237,6 @@ const prConflictTruncated = ref(false)
 let prConflictSeq = 0
 // The in-flight PR diff load, so loadPrConflicts can wait for the base/head it wants to reuse
 // rather than racing that read to empty.
-
 // Without it, a status response that beats a 1MB diff response silently downgrades the conflicts
 // call from "these exact two refs" to the backend's ref ladder.
 let prDiffInFlight: Promise<void> | null = null
@@ -283,7 +275,6 @@ const visiblePrFiles = computed(() =>
 
 // Clicking a conflicting file: if the PR diff has it, select it exactly like a normal row (the
 // centre column then shows that file's hunks).
-
 // A conflict on a file the PR diff does not carry (added on the base side, deleted here, …) has no
 // hunks to show, so open it in the code editor instead — "nothing happens" would be the wrong
 // answer for a file the user was just told is blocking their merge.
@@ -299,11 +290,9 @@ const onConflictFileClick = (path: string) => {
 // ── Row anatomy ─────────────────────────────────────────────────────────── The panel shows 40+
 // rows of repo-relative paths that mostly share a long identical prefix. Two helpers turn that into
 // something scannable.
-
 // `src/a/b/PrChecksPanel.vue` -> { dir: 'src/a/b/', name: 'PrChecksPanel.vue' } The template
 // renders dir dim and name bright, so the eye skips the shared prefix and lands on the one part
 // that identifies the file.
-
 // Both halves stay in the DOM, so `wrapper.text()` still carries the whole path.
 function pathParts(path: string): { dir: string; name: string } {
   const i = path.lastIndexOf('/')
@@ -378,7 +367,6 @@ const chipForFile = (file: api.GitFileChange): StatusChip => {
 // ── File filter ─────────────────────────────────────────────────────────── A 40-file list needs a
 // way to narrow it. Shown only past FILTER_MIN_ROWS so a three-file panel is not asked to carry a
 // search box.
-
 // This is transient text, not a view switch — ?panel= / ?sidebar= / ?conflicts= already own every
 // piece of state that must survive a reload, and a filter in the URL would make Back/Forward step
 // through keystrokes.
@@ -564,7 +552,6 @@ const loadPrDiff = async () => {
 // Merge-state sync: `gh pr view` via GET /api/git/pr/status. Runs alongside loadPrDiff on every
 // PR-tab load and on a 30s poll while the PR tab is visible, so a GitHub merge flips the badge
 // without a manual refresh.
-
 // Status failures no longer vanish silently: the server's `error` body lands in prStatusError and
 // renders inline, while the badge stays hidden (unknown state).
 const loadPrStatus = async () => {
@@ -738,14 +725,11 @@ const loadGitStatus = async () => {
 
 // Stacked center view: fetch every changed file so the center column renders all diffs without
 // per-click round-trips.
-
 // FOLDER mode (POST /git/file/diffs with `folder: ""` → the WHOLE repo) covers all of them in ONE
 // request and 3 git spawns, no matter how many files changed — the old per-file fan-out held N Io
 // workers for 6-10s each and starved cheap routes like queue_messages.
-
 // The payload is also primed into `folderDiffCache`, which is what makes a click on a file cost
 // ZERO requests: `loadDiff` below reads the snapshot this call already produced.
-
 // There is deliberately no per-file fallback left — the frontend and the backend ship together, and
 // the old unbounded silent fallback is precisely what turned one failed request into 1009.
 const loadFullList = async (cwd: string = props.cwd) => {
@@ -854,7 +838,6 @@ const loadDiff = async () => {
   try {
     // `loadFullList` already fetched every changed file in this cwd and primed the shared snapshot,
     // so this is a map read on the hot path.
-
     // On a miss (snapshot expired between polls, or the file changed after the fetch) this costs
     // ONE folder request — deduped against any other reader — never one per file.
     const diff = await fetchFolderDiff(props.cwd, selectedPath.value, selectedStaged.value)
@@ -1044,7 +1027,6 @@ const stageFile = async (file: api.GitFileChange) => {
     await api.stageGitFiles(props.cwd, [file.path])
     // The SSE event is the primary path: the backend emits `git_file_staged` and
     // `applyFileStageEvent` moves the row.
-
     // The local move below is the fallback for a bus that is not installed (tests, or a host that
     // never installed it) — without it the row would sit in the wrong list until the next manual
     // refresh.

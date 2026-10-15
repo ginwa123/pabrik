@@ -34,7 +34,6 @@ function syncBarVisibility(busy: boolean) {
 
 // The store is the visibility-setting path: subscribe to it (a subscription, not a watcher) and run
 // the same start/clear-timer body.
-
 // NOTE: `isBarVisible` is a store GETTER (derived from two counters), not raw state, so the
 // callback reads it off the store proxy — the subscription's `state` argument only carries
 // `routeDepth`/`apiPending`. The mount call covers the initial value (the old `immediate: true`).

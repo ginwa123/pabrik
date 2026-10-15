@@ -175,7 +175,6 @@ describe('Search.vue — match-found payload (regression guard)', () => {
 
 // ──────────────────────────────────────────────────────────────────────── Empty/no-match results —
 // Arguments must still be reachable.
-
 // Bug: the expanded body was `v-if="isExpanded && fileResults.length > 0"` and toggle() refused to
 // expand on a warning/empty payload, so a no-match search (warning payload) could never show its
 // Arguments block. ────────────────────────────────────────────────────────────────────────

@@ -383,7 +383,6 @@ describe('KanbanDescriptionEditor — create-mode image paste (no taskId)', () =
     // Migration 069 changed edit mode to use the same staged- pendingFiles flow as create mode (the
     // old `uploadTaskAttachment` endpoint was deleted entirely). The editor's job is just to expose
     // the file; the host's `updateTaskDetails({ imageUrls })` does the persistence.
-
     // The textarea stays untouched — the new column carries the images.
     const wrapper = await mountEditor({ modelValue: '', taskId: 'task_x' })
     await pasteImage(wrapper, makeFile('inline.png'))

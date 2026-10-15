@@ -171,7 +171,6 @@ export function useSubAgentPeek(opts: UseSubAgentPeekOptions): UseSubAgentPeekRe
     errorMessage.value = null
     try {
       // We fetch in ASC order so messages render in chronological order.
-
       // Limit 100 covers typical sub-agent runs (a single tool-using loop rarely exceeds 50
       // messages). 2026-09-04 subagent-peek P0: encode the sid — raw spaces break the HTTP request
       // line, '/' breaks router segment matching.
@@ -222,7 +221,6 @@ export function useSubAgentPeek(opts: UseSubAgentPeekOptions): UseSubAgentPeekRe
       }
       // Listener-side filter — the bus's single global EventSource carries all sessions' llm
       // events, so we drop events for other sessions here.
-
       // This is the layer that knows which session is 'current' for this peek; the global stream
       // itself has no notion of 'current session'.
       if (event.session_id !== sid) return
@@ -244,7 +242,6 @@ export function useSubAgentPeek(opts: UseSubAgentPeekOptions): UseSubAgentPeekRe
   // 2026-09-04 subagent-peek P1: eye-click from agent A -> agent B remounts the host (keyed by
   // sessionId), and `opts` is a plain snapshot object — so observing `opts.sessionId` never fires
   // (the source never changes).
-
   // The mount fetch above is the only load path; reuse without remount has no trigger to preserve.
 
   onUnmounted(() => {

@@ -122,10 +122,8 @@ describe('KanbanColumn — VirtualScroller integration', () => {
     setActivePinia(createPinia())
     // Silence the real fetch call from `loadMoreTasksForColumn` → `api.getTasks`. We assert on the
     // SPY, not on the fetch result.
-
     // Default mock returns `has_more: true` so the auto-fetch watcher (2026-08-06) keeps the column
     // in the "still loading more" state — matches the manual-button visibility test scenarios.
-
     // Individual tests can override this with a custom mock when they need `has_more: false`
     // semantics.
     vi.spyOn(api, 'getTasks').mockResolvedValue({
@@ -176,7 +174,6 @@ describe('KanbanColumn — VirtualScroller integration', () => {
     // 50 tasks but the scroller only mounts the visible range. jsdom doesn't have a real layout, so
     // the visible range may include more than the production default of ~10 — but it MUST be far
     // less than 50.
-
     // The exact number is not asserted; the contract is "strictly less than total items".
     const tasks = makeTasks(50)
     wrapper = mountColumnWithPagination(makeColumn(), tasks)
@@ -204,7 +201,6 @@ describe('KanbanColumn — VirtualScroller integration', () => {
     // Let the auto-fetch watcher's immediate run + its async fetch settle. `flushPromises` rather
     // than a fixed tick count: the mount path primes the local task cache through Effect, which
     // takes more microtask hops than the direct api call it replaced.
-
     // The assertion below is about reaching getTasks, not about how many ticks that takes.
     await flushPromises()
 
@@ -341,7 +337,6 @@ describe('KanbanColumn — VirtualScroller integration', () => {
   // ─── 7. Auto-fetch when the viewport fits the page (2026-08-06 fix) ─── Bug: when the entire
   // page fits in the viewport (e.g. a column with 10 cards on a tall screen), the VirtualScroller's
   // container is NOT scrollable, so its scroll-driven @load-more never fires.
-
   // Result: the user is stuck clicking "Load more" repeatedly even though the backend has more. The
   // auto-fetch watcher in KanbanColumn watches `cardsInColumn.length < PAGE_SIZE &&
   // moreTasksAvailable && !scrollerIsScrollable` and fires `loadMoreTasksForColumn` itself.

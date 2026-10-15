@@ -317,7 +317,6 @@ describe('ChatView — reopening a chat lands where the reader left it', () => {
   it('a reader who closed on the last message still lands on the last message', async () => {
     // The other half of the contract: the "near bottom" branch must keep working, and it must now
     // be judged against the MEASURED bottom.
-
     // A save at the real bottom is above the estimated bottom, so the old code read it as "scrolled
     // up" and restored a stale position instead of following the tail.
     localStorage.setItem('chat-scroll-task_tail', String(REAL_BOTTOM))

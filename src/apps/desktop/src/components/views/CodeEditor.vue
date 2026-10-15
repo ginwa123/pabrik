@@ -265,7 +265,6 @@ onUpdated(() => {
 // Footer shows the full path. filePath from the sidebar explorer is already absolute (backend
 // listDirectory joins dir_path + name), so prefixing cwd would double it:
 // /home/u/work//home/u/work/migration/README.md.
-
 // The shared displayPathFor helper joins only relative paths.
 const displayPath = computed(() => displayPathFor(props.cwd, props.filePath))
 

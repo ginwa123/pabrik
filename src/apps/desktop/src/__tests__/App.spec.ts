@@ -63,7 +63,6 @@ describe('App', () => {
     // App.vue's onMounted calls `useNavigationStore()` (to wire the frontend-log-client context).
     // Without an active Pinia the call throws (`getActivePinia()` was called but there was no
     // active Pinia).
-
     // The existing AppLayout.* tests already use this `setActivePinia(createPinia())` pattern (see
     // AppLayout.chatview .spec.ts:112). One fresh Pinia per test keeps stores isolated.
     setActivePinia(createPinia())
@@ -197,11 +196,9 @@ describe('App', () => {
     const wrapper = mount(App)
     // `bus.close()` should clear the singleton — verify by checking that a subsequent `useSseBus()`
     // throws.
-
     // We don't spy on any specific SseClient's close() because App.vue's onUnmounted delegates to
     // `useSseBus().close()`, which delegates to the bus's internal global client (the
     // closure-scoped one from installSseBus).
-
     // Spying on it would couple the test to bus internals; checking the singleton-cleared invariant
     // is a stronger behavioral contract anyway.
     expect(() => useSseBus()).not.toThrow()
@@ -218,16 +215,12 @@ describe('App', () => {
     // The desktop app uses the host webview's native page-zoom (Ctrl+wheel / multi-finger pinch).
     // The previous global wheel-zoom suppressor in App.vue was removed — letting the native
     // behaviour run.
-
     // The design canvas has its own `@wheel="handleCanvasWheel"` handler in `DesignView.vue` that
     // calls `preventDefault()` and performs cursor-anchored zoom on the canvas only.
-
     // These tests lock in the NEW contract: App.vue must NOT install any capture-phase wheel
     // listener that calls `preventDefault()`.
-
     // The host webview is now free to apply its native page-zoom on Ctrl+wheel / metaKey+wheel /
     // double-tap / pinch anywhere in the desktop app shell.
-
     // Shared wrapper — every test in this block mounts via this and unmounts in afterEach so
     // listeners from previous tests don't bleed into later ones.
     let wrapper: ReturnType<typeof mount> | null = null

@@ -32,11 +32,9 @@ import type { Message } from '../api'
 
 // ──────────────────────────────────────────────────────────────────────── Stub the new tool-output
 // components.
-
 // We don't need to assert their internal rendering here (that lives in UpdatePlan.spec.ts /
 // GetPlan.spec.ts if we ever write them) — we only need to know that the ChatView dispatcher routes
 // the right tool_name to the right component.
-
 // The stubs expose `data-tool-name` so we can verify the vnode was emitted with the expected
 // `msg.tool_name` prop. ────────────────────────────────────────────────────────────────────────
 

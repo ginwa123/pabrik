@@ -434,7 +434,6 @@ describe('FileInput — paste image (Ctrl+V) attaches to preview', () => {
 
     // After unmount, the unmounted instance's listener shouldn't add another preview to the
     // (now-unmounted) FileInput's DOM.
-
     // We assert via the readonly `clipboardReadMock` — it should not have been called for the
     // post-unmount event (scope check fails because the textarea ref is gone from the document, but
     // the assertion is stronger: we expect the listener to be entirely gone).

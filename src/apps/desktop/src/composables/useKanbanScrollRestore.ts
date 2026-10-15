@@ -135,7 +135,6 @@ export function useKanbanScrollRestore(
     // Wait two animation frames so the content has geometry. A single rAF isn't enough: Vue mounts
     // the DOM, then React-style effects (useLayoutEffect-like) may still settle, and the browser
     // may need a second frame to fully compute scrollWidth / scrollHeight.
-
     // Two is the minimum that consistently produces correct geometry in jsdom-less browsers (Chrome
     // / Firefox).
     await new Promise<void>((r) => requestAnimationFrame(() => r()))
@@ -161,7 +160,6 @@ export function useKanbanScrollRestore(
     // else: the debounced `scroll` handler covers this case. Each scroll event schedules a 250 ms
     // write, so even without scrollend the position is saved ~250 ms after the user stops
     // scrolling. Now restore from the previous session's saved offset.
-
     // Clamp to (scrollSize - clientSize) — the new container may be smaller than the last
     // session's, e.g. when the kanban toggled from full-bleed to the 3-column layout.
     const saved = readSavedOffset()

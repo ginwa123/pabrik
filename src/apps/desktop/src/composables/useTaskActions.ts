@@ -90,7 +90,6 @@ export function useTaskActions(
   // Re-inject processingState from App.vue (same key WorkspaceItem and ChatsList consume). Keyed by
   // task.id == session_id. Reading it here — even though the row/card templates also re-inject it
   // directly — establishes the contract and matches the pre-split WorkspaceItemTask.vue behavior.
-
   // The `void` keeps linters from flagging the unused binding.
   const processingState = inject<Ref<Record<string, boolean>>>(
     'processingState',

@@ -66,7 +66,6 @@ export function useKanbanColumnScrollRestore(
   storageKey: Ref<string> | string,
 ): void {
   // Alias the key rather than mirroring it into a local ref — see the note in useChatScrollRestore.
-
   // The snapshot + `{ immediate: true }` watcher this replaces could not cover a key that changed
   // between setup and the first flush, and needed `immediate` only to paper over its own initial
   // value.

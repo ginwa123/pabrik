@@ -160,7 +160,6 @@ describe('KanbanSettingsView', () => {
           },
           // Stub KanbanColumnEditor to avoid the Teleport + nested dialog complexity in the
           // rename/delete tests.
-
           // Mirrors the real editor's `kanban-column-editor-<mode>-submit` data-testid so the
           // 2-step delete test can confirm via the submit button (same shape as the original
           // KanbanSettingsDialog test at line 180).

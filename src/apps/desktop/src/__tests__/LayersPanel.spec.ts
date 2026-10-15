@@ -92,11 +92,9 @@ describe('LayersPanel.vue — flat list (no parent_id set)', () => {
     // The backend's design_model.listElements uses COALESCE(de.parent_id, '') AS parent_id so
     // top-level elements (parent_id IS NULL) arrive at the frontend with parent_id === "" — NOT
     // null, NOT undefined.
-
     // The LayersPanel tree builder previously used const pid = e.parent_id ?? null which kept "" as
     // "" (empty string is not nullish), so the row went into the byParent.get("") bucket instead of
     // the null bucket, and byParent.get(null) ?? [] returned [].
-
     // The header correctly showed "Layers (2)" but no rows rendered — the bug this regression test
     // pins.
     const elements = [

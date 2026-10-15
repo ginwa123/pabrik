@@ -312,7 +312,6 @@ describe('DocumentsList — failure is not emptiness', () => {
     // Blanking the list on a failed refresh would make a transient network error look like data
     // loss. The message is now the sync engine's (`sync remote documents.fetchDelta failed: boom`),
     // because the list load went through the Effect seam.
-
     // The assertion is on the REASON surviving to the UI, not on the exact prefix — `toBe('boom')`
     // would have caught a regression that dropped the error, but would also break on any future
     // wording change for no gain.

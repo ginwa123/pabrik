@@ -178,7 +178,6 @@ describe('AskUser — rendering', () => {
 
   it('reads the outcome from an envelope that LOST its parameters block', () => {
     // The answer endpoint rewrites the tool row in place.
-
     // A variant emits an envelope with no `parameters`, which makes `unwrapToolOutput` throw —
     // ChatView then hands the card the raw envelope string, and without this fallback the card
     // rendered a bare PENDING question: every resolved question looked unanswered.

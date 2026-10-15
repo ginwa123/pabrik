@@ -164,11 +164,9 @@ describe('stripThinkingTags — fenced markdown wrappers', () => {
 // 2026-09-11 — chatview open/stream freeze. ChatView re-scans the WHOLE loaded transcript with
 // stripThinkingTags on every `messages` mutation (filteredMessages + hasBubbleContent +
 // renderResponse), and one SSE chunk = one mutation.
-
 // Measured on the real DB (newest-100 rows of a 2.21 MB session): 34 of the 43 ms per chunk were
 // the repeated stripThinkingTags passes. The memo collapses repeat calls over unchanged messages to
 // a Map lookup, so only the streaming message is re-scanned.
-
 // These tests lock in the memo's observable contract.
 describe('stripThinkingTags — memoization (per-chunk render cost)', () => {
   beforeEach(() => {

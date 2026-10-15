@@ -186,7 +186,6 @@ async function submit() {
   // The merge moved this BRANCH's change-request state, and the sidebar's RECENT icon and the
   // kanban card badge read the shared 60s cache — which still holds the `open` answer they fetched
   // before this click. Drop it and call the registered badges back so they re-read now.
-
   // Without this the icon stays green until the row happens to remount. (The `git_pr_state` SSE
   // event does the same for every OTHER client.)
   if (props.status?.head_ref) invalidatePrStatus(props.cwd, props.status.head_ref)

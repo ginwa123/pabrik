@@ -6,7 +6,6 @@ import McpServerModal, { type McpServerModalValue } from '../components/pabrik/M
 
 // Mock the `testMcpServer` API client so the modal's "Test" button tests don't hit the network. The
 // mock is per-test (vi.resetMocks) so each test can shape its own response shape.
-
 // We default to a 2-tool success so the basic "button enabled + result renders" path is exercised
 // unless a test overrides.
 const mockTestMcpServer = vi.fn(async () => ({
@@ -310,7 +309,6 @@ describe('McpServerModal — stdio transport', () => {
   // ── "Test" button tests ────────────────────────────────────────────── The Test button fires
   // `POST /api/mcp/test` against the current form contents (NOT the parent-managed modelValue — the
   // user tests what they see in the textareas).
-
   // Result panel: green ✓ + tool list on success, red ✗ + error on failure. Both clear when any
   // field changes.
 
@@ -502,7 +500,6 @@ describe('McpServerModal — stdio transport', () => {
   // ── HTTP branch: bespoke dialog (no LLM fields) ──────────────────── The HTTP branch previously
   // delegated to LlmConfigModal, which renders the full LLM profile form (Model / Thinking /
   // Temperature / URL style / API key / compaction overrides).
-
   // An MCP HTTP server is just Name + URL + Headers — those profile fields confused users into
   // filling LLM credentials into an MCP entry.
   it('http branch renders exactly one footer (1 Test + 1 Cancel + 1 Save)', async () => {

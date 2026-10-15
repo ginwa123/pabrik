@@ -238,11 +238,9 @@ describe('WorkspaceItemTaskCard — agent-error indicator', () => {
     })
     await nextTick()
     // Inject a fake processingState via provide() — same key as the real App.vue injection.
-
     // (The component re-reads the injected ref on every render.) For this test, we just assert that
     // both indicators would render INDEPENDENTLY given the underlying state — the component test
     // above already covers the store-driven path.
-
     // Here we only assert that the error indicator does not depend on processingState — it is gated
     // on agentError alone.
     expect(wrapper.find('[data-testid="task-agent-error"]').exists()).toBe(true)

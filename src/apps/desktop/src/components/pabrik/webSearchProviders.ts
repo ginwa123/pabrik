@@ -231,7 +231,6 @@ export function validateWebSearchRows(rows: WebSearchProviderRow[]): Record<stri
 function validateWebSearchRow(row: WebSearchProviderRow): string | null {
   // A row the user added and never filled in is not an error: it has no name, so
   // `serializeWebSearchProviders` drops it and it never reaches the wire.
-
   // Blocking the whole settings save over a placeholder row would be a worse failure than the one
   // we are guarding against.
   const untouched =

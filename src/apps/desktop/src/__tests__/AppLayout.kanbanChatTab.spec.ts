@@ -151,7 +151,6 @@ describe('AppLayout — kanban task chat as its own view', () => {
     // Stub the workspace-store API calls fired by AppLayout's onMounted →
     // initializeFromSystemFolder → init(). Without them jsdom's fetch throws ERR_INVALID_URL (no
     // test server); AppLayout catches it, but it floods the output.
-
     // Each test rewires these to preserve its fixture.
     vi.spyOn(api, 'getWorkspaces').mockResolvedValue({ workspaces: [] })
     vi.spyOn(api, 'getWorkspacesItems').mockResolvedValue({ items: [], count: 0 })

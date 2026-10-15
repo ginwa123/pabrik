@@ -42,7 +42,6 @@ const handleKeydown = (event: KeyboardEvent) => {
 }
 
 // Body scroll lock + Escape listener follow the open state.
-
 // The open/close transitions originate in the parent (`src` set / `close` emitted), so they are
 // picked up here with a prev-value guard on update — same lock/unlock the watcher did; the mount
 // call covers the initial state, and onBeforeUnmount below always releases.

@@ -88,11 +88,9 @@ describe('KanbanView — header rendering', () => {
 
   // Note: as of feat(kanban): column description + per-board Kanban Settings dialog (#44), the "+
   // Column" button moved out of the KanbanView header into the new KanbanSettingsDialog.
-
   // The header now only exposes a "Settings" button (⚙️) that emits `openSettings`; the host
   // (AppLayout) mounts KanbanSettingsDialog and forwards its
   // `addColumn`/`editColumn`/`deleteColumn` emits to the store.
-
   // Tests for the actual "+ Column" form live in KanbanSettingsDialog.spec.ts.
 
   it('renders the "Settings" button in the header', () => {
@@ -111,7 +109,6 @@ describe('KanbanView — header rendering', () => {
 
   // ─── Layout toggle (row mode) ──────────────────────────────────────────── The toggle's
   // URL/persistence behaviour is covered in KanbanView.rowMode.spec.ts (which mocks vue-router).
-
   // Here we only pin that the control renders in the header and that the default is the column
   // board — this file mounts without a router.
 
@@ -212,7 +209,6 @@ describe('KanbanView — column rendering', () => {
     const item = makeItem()
     // Explicit defensive test for kanban_columns being undefined (legacy items in tests, or a fresh
     // item before the columns have been populated).
-
     // The `kanban_columns?` in KanbanView's computed already handles `undefined`, so we just verify
     // the component doesn't crash and renders no columns.
     item.kanban_columns = undefined
@@ -399,7 +395,6 @@ describe('KanbanView — event pass-through', () => {
 // ─── Set project root banner (2026-06-24 — cwd backfill UX) ───────────── Regression coverage for
 // the "every kanban task needs a cwd" bug. A kanban with `path = null` (created before the path
 // field existed on the create endpoint) shows a yellow ⚠️ button that opens the FilePickerDialog.
-
 // Selecting a folder calls workspacesStore.updateKanbanItemPath, which persists the path to the DB
 // and hides the banner.
 describe('KanbanView — "Set project root" banner', () => {
@@ -458,7 +453,6 @@ describe('KanbanView — "Set project root" banner', () => {
 
 // ─── Inline rename pencil (2026-06-30 — kanban header rename) ───────────── The kanban header h3
 // wraps the item name in an InlineEditableText primitive.
-
 // Clicking the pencil swaps to an <input> + Save/Cancel buttons; pressing Save emits `rename-item`
 // with the trimmed new value, which the host (AppLayout) delegates to
 // workspacesStore.updateKanbanItemName.
@@ -623,10 +617,8 @@ describe('KanbanView — viewTaskDetail (task detail dialog)', () => {
 // ─── + Add → create-dialog flow (kanban-add-task-via-detail-dialog) ──── The "+ Add" button on a
 // kanban column no longer bubbles up to AppLayout — KanbanView consumes it locally and opens the
 // KanbanTaskDetailDialog in create mode.
-
 // On submit, KanbanView calls workspacesStore.addTask (returns a taskId) + moveTaskToColumn (puts
 // the new task in the user's chosen column). We mock both store actions to verify the wiring.
-
 // These tests replace the pre-existing "passes through add-task" event-pass-through test with the
 // actual local-dialog behavior.
 describe('KanbanView — create-task flow', () => {
@@ -858,7 +850,6 @@ describe('KanbanView — create-task flow', () => {
 
     // Simulate the full pointer sequence: the Save button is :disabled="!canSave", and a draft tag
     // leaves canSave=false (the draft is in the input's local ref, not yet in tags.value).
-
     // The fix adds @mousedown on the Save button to commit the draft BEFORE the browser decides
     // whether to fire click. el.click() only fires a click event, so dispatch mousedown + click to
     // mirror the real browser pointer sequence.
@@ -886,7 +877,6 @@ describe('KanbanView — create-task flow', () => {
 
 // ─── Header + Add task button (plan 2026-08-06-kanban-add-task-button-placement) ── Replaces the
 // per-column footer + Add button with a single header button.
-
 // Click opens the create dialog with the first column pre-selected; the dialog's column dropdown
 // (Task 1) lets the user pick a different column. Column-change in the dialog updates
 // activeCreateColumnId so moveTaskToColumn at submit time uses the chosen column.

@@ -124,7 +124,6 @@ const handleOpenInEditor = (e: Event, path: string) => {
 // Per-snippet tokens for code coloring. Language comes from the result file path so each file block
 // highlights in its own language; unknown extensions fall back to plaintext (single plain token, as
 // before).
-
 // Tokens render as framework text nodes (never HTML strings), so snippet content cannot inject
 // markup.
 const tokensForSnippet = (snippet: string, filePath: string): Token[] => {

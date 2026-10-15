@@ -163,7 +163,6 @@ export type ScrollReason =
   | 'isAtBottom-decision' // handleVirtualScroll isAtBottom retained vs flipped
   // Warn-level reason: handleVirtualScroll fired but the container ref chain was null (component
   // unmounted, inner ref not yet bound, or layout chain broke).
-
   // The scrollerState/wrapperState blocks in the warn context tell you which — see the
   // `scroller=...` / `wrapper=...` tag rendering in `emit()`.
   | 'no-container'
@@ -259,10 +258,8 @@ const DEBUG_THROTTLE_MS = 200
 // ─── Programmatic-scroll tracking ───────────────────────────────────────────── Browsers DO fire a
 // `scroll` event when you assign `container.scrollTop`. We can't prevent that, but we CAN mark the
 // next few scroll events as "programmatic" so the logger can label them.
-
 // `markProgrammatic()` bumps the counter; `consumeProgrammatic()` returns true exactly once per
 // pending mark.
-
 // Pattern: `scrollToBottom()` calls `markProgrammatic()` BEFORE assigning scrollTop, so the
 // resulting scroll event reads `origin: 'programmatic'` even though the browser fires it
 // asynchronously.
@@ -293,7 +290,6 @@ export const consumeProgrammatic = (): boolean => {
 // ─── Throttled debug queue ──────────────────────────────────────────────────── Per-frame scroll
 // samples are coalesced: we keep only the most recent context, and flush it 200ms after the last
 // scroll event.
-
 // This gives you 5 samples/sec instead of 60, with the final position always represented
 // (trailing-edge flush).
 
@@ -703,11 +699,9 @@ export const buildScrollContext = (
   const scrollHeight = container?.scrollHeight ?? 0
   const clientHeight = container?.clientHeight ?? 0
   // `distanceFromBottom` must be the number the CALLER decided with.
-
   // ChatView measures against the scroller's `bottomScrollTop()` — the real content bottom —
   // because `scrollHeight - clientHeight` can sit `maxTailGap` (100px) below the position a
   // successful auto-stick actually lands on.
-
   // A logger that recomputed the DOM number here would print a `distanceFromBottom` that
   // contradicts the `isAtBottom` on the very same line, which is the one thing this logger exists
   // to prevent.

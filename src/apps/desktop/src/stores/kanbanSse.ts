@@ -25,7 +25,6 @@ import { useWorkspacesStore, isRecentLocalMutation } from './workspaces'
 
 export const useKanbanSseStore = defineStore('kanbanSse', () => {
   // Mutable ref so `setActiveWorkspaceId` can update the filter without re-subscribing.
-
   // The `bus.on('kanban', ...)` closure captured at install time reads `activeWorkspaceId.value` on
   // EVERY event, so flipping it takes effect immediately for incoming events (no need to detach +
   // re-attach the listener).
@@ -37,7 +36,6 @@ export const useKanbanSseStore = defineStore('kanbanSse', () => {
   let offKanban: (() => void) | null = null
 
   // Unsubscribe for the bus's "you may have missed events" signal (see `helpers/sseTabChannel.ts`).
-
   // The `bus.state` subscription below covers transitions the SseClient itself emits; this covers
   // the two cases where the state never changes but deliveries were still lost: taking over the
   // shared connection from another tab, and returning from a long hidden period.
@@ -84,11 +82,9 @@ export const useKanbanSseStore = defineStore('kanbanSse', () => {
       const ws = useWorkspacesStore()
       // Dispatch by event family. Column events refresh the column list (renames, reorder, add,
       // delete); task events refresh the task list (move, assign, unassign).
-
       // A full re-fetch (vs in-place patch) is the simplest correct action — sibling positions
       // renumber as part of every move, and the SSE payload doesn't include the new positions of
       // every sibling, so client-side patching would be brittle.
-
       // The `'column_id' in event` / `'task_id' in event` check narrows the discriminated union
       // (`KanbanColumnEvent` has `column_id`, `KanbanTaskEvent` has `task_id`, neither has the
       // other).
@@ -97,10 +93,8 @@ export const useKanbanSseStore = defineStore('kanbanSse', () => {
       } else if ('task_id' in event) {
         // `human_touched` (chatview-open api-spam fix, 2026-08-24): fired by `PUT
         // .../tasks/:id/touched` every time the user opens a task's chat.
-
         // The wire payload carries the full after-state (`needs_human_review: false`, no column
         // change) so we patch the local task IN PLACE and return — NO refetch.
-
         // Pre-fix, this event fell through to the unassign branch below (`new_column_id` is null on
         // the wire) and fired one `tasks?limit=100` per column — 7 calls / ~5 MB on a 270-task
         // board — just from opening a chatview.
@@ -223,14 +217,11 @@ export const useKanbanSseStore = defineStore('kanbanSse', () => {
     // Re-sync the kanban state from the DB on every (re)connect of the bus's underlying global
     // SseClient. The server may have restarted and lost in-memory state (just like the workers SSE
     // pattern in App.vue:44-58, `fetchInitialWorkers`).
-
     // The bus's state transitions to 'open' on first connect AND on every successful reconnect from
     // 'reconnecting'.
-
     // `{ immediate: true }` covers the fast path where the bus is already 'open' by the time we get
     // here (the SseClient defers its first `start()` via `setTimeout(0)`, so App.vue's
     // `installSseBus` may have already opened the stream before AppLayout.vue mounted).
-
     // Explicit `onStateChange` subscription on the underlying SseClient (not a reactive watcher).
     // The immediate check covers the fast path where the bus is already open when init runs.
     if (bus.state.value === 'open') void fetchInitialKanban(activeWorkspaceId.value)
@@ -241,11 +232,9 @@ export const useKanbanSseStore = defineStore('kanbanSse', () => {
 
     // Stale-on-wake (cross-tab sharing): the subscription above only fires on state transitions the
     // SseClient itself emits.
-
     // A window that TOOK OVER the shared connection, or that returns from a long hidden period
     // (browsers freeze and throttle hidden tabs, so deliveries and rendering were skipped), may
     // have missed events with no state change at all.
-
     // Re-fetch from the API — every tab can do that directly, whoever holds the SSE connection.
     offResync =
       bus.onResync?.(() => {

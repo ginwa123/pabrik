@@ -316,7 +316,6 @@ export function createTabChannel(opts: TabChannelOptions): TabChannel {
         }
         // A visible tab takes over from a hidden leader: browsers throttle hidden tabs, so leaving
         // a stale hidden leader in charge stalls the whole profile.
-
         // Without this, a visible tab that JOINS while a hidden tab leads would never claim (only
         // the visibilitychange path did).
         if (shouldPreemptHiddenLeader(peer)) {

@@ -54,11 +54,9 @@ describe('extractTag', () => {
   })
   it('decodes XML entities in inner text (&lt;, &gt;, &quot;, &apos;, &amp;)', () => {
     // The backend's `toXmlSuccess` / `xmlError` helpers escape these 5 characters on serialization.
-
     // Without un-escaping, downstream consumers (Vue templates, code-block renderers) would display
     // `&quot;` literally instead of `"` when the underlying text contained those characters (e.g. a
     // quote inside a source-code diff).
-
     // This test pins the un-escape contract so the `&quot;`-instead-of-`"` rendering bug doesn't
     // regress.
     expect(
@@ -71,7 +69,6 @@ describe('extractTag', () => {
     // `&amp;quot;` is a 6-byte sequence meaning "the literal entity &quot;". If we decoded `&amp;`
     // first, we'd incorrectly produce `"` (because `&amp;quot;` → `&quot;` → `"` after both
     // passes).
-
     // The correct decode is: `&amp;quot;` → `&quot;` (the literal 6 chars representing the entity).
     // Order of regex passes matters.
     expect(extractTag('<a>&amp;quot;</a>', 'a')).toBe('&quot;')

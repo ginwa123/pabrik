@@ -89,11 +89,9 @@ export function decodeFilePath(encoded: string): string {
 
 // New editor links carry the plain path (`?file=src/foo.ts`) so URLs stay readable and
 // hand-editable. Links written before the readable migration carry base64/base64url instead.
-
 // The two are told apart by a strict round-trip check: a legacy value decodes and re-encodes to
 // itself, while a plain path either contains characters outside the base64 alphabet (`.` never
 // appears in base64 output) or fails the re-encode comparison.
-
 // A bare name like `TWFu` that happens to round-trip is misread as legacy — vanishingly rare, and
 // the failure surfaces as an explicit read error, never a silent blank.
 function isLegacyFileLink(value: string): boolean {

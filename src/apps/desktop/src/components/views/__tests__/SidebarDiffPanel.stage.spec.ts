@@ -273,7 +273,6 @@ describe('SidebarDiffPanel surgical stage/unstage', () => {
 
   it('a path staged AND further modified: + on the Changes row moves that row', async () => {
     // index M + worktree M — the backend reports the path in BOTH lists.
-
     // The `from` list must come from the ACTION (the `+` only ever sits on a Changes row), not from
     // list precedence: precedence would see it in Staged, compute to === from, and leave the
     // clicked row sitting there while the POST reported success.

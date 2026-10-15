@@ -443,7 +443,6 @@ export function parseBash(data: unknown): ParsedBash {
     command: strOrNullField(o, 'command'),
     // Second, independent escape guard at the parse seam. The backend strips in
     // shell.result_to_json; this covers live/partial payloads and any future raw-bytes producer.
-
     // It deliberately does NOT try to repair pre-fix rows — see helpers/stripAnsiEscapes.ts on why
     // those are unrecoverable rather than heuristically "fixed".
     stdout: stripAnsiEscapes(strField(o, 'stdout')),

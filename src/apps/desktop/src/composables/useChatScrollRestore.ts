@@ -115,11 +115,9 @@ export function useChatScrollRestore(
   }
   // Alias the key rather than mirroring it into a local ref. This used to be `const keyRef =
   // ref(initialKey)` plus a `{ immediate: true }` watcher copying `storageKey.value` into it.
-
   // The watcher needed the `immediate` flag precisely because the snapshot could not see the
   // current value on its own, and it still could not cover a key that changed between setup and the
   // first flush.
-
   // Aliasing reads the live value every time, so a dynamic key is correct from the first access and
   // no watcher is needed at all.
   const keyRef: Ref<string> = typeof storageKey === 'string' ? ref(storageKey) : storageKey
@@ -174,7 +172,6 @@ export function useChatScrollRestore(
 
   // Captured synchronously during setup so restore() can return it immediately (matches the
   // existing kanban composable's contract).
-
   // Reads the raw saved value (no "near bottom" gating here — that's restore()'s job, computed
   // against the CURRENT container geometry which is only known after the VirtualScroller has
   // measured items).
@@ -185,7 +182,6 @@ export function useChatScrollRestore(
   // Wire the container when it becomes available. The chat's VirtualScroller is conditionally
   // rendered (v-if), so on first mount containerRef may still be null — the scroller only appears
   // once `isLoading` flips to true inside loadChatHistory's initial-load branch.
-
   // That arrival re-renders the host, which lands in the update hook (post-flush, like the old
   // watcher) with the element present. Idempotent per element.
   const wireChatContainer = (el: HTMLElement | null) => {

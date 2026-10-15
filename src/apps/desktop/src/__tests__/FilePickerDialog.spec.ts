@@ -316,11 +316,9 @@ describe('FilePickerDialog — selection (folder mode)', () => {
   // UPDATED (plan: 2026-08-13-folder-picker-select-button-current-folder.md). The footer now
   // reflects effectiveSelection (currentPath fallback), so at /home/user the footer shows the
   // current folder even before any click.
-
   // The new contract — clicking a file in folder mode does NOT select it — is unchanged:
   // handleItemClick leaves selectedPath empty for non-expandable items in folder mode, so
   // effectiveSelection stays on currentPath.
-
   // The test now asserts the pre-click fallback (current folder shown) then the post-click
   // invariant (footer still shows current folder, since the file click was a no-op).
   it('clicking a file in folder mode does NOT select it (mode restricts)', async () => {
@@ -682,7 +680,6 @@ describe('FilePickerDialog — agnostic data source (non-folder example)', () =>
 // ─── Address-bar (path input) ────────────────────────────────────────────────────────────── The
 // "✏️ Go" button next to the breadcrumb swaps the clickable crumb row for a single text input
 // pre-filled with the current path. Enter navigates, Escape reverts, the input commits on blur.
-
 // Whatever the user types goes through normalizeAddressInput() so a bare "docs" jumps into
 // currentPath/docs instead of being rejected as relative.
 describe('FilePickerDialog — address bar (type a path)', () => {
@@ -1013,11 +1010,9 @@ describe('FilePickerDialog — Select when current folder is open (folder mode)'
     // R10: pressing Enter without first pressing ArrowDown calls handleSelect() in the `else if
     // (canSelect.value)` branch. With the fix, canSelect is true at /home/user, and Enter emits
     // /home/user.
-
     // The dialog auto-focuses the search input on open (FilePickerDialog.vue:613
     // `searchInput.value?.focus()`). While the search input is focused, Enter submits the first
     // match (line 500-507) — i.e. it behaves like search-Enter, NOT dialog-Enter.
-
     // To exercise the dialog-Enter branch we must move focus elsewhere first (blurring the search
     // input). The plan covers R10 conceptually; the test must mirror the actual code path.
     wrapper = mountDialog({ initialPath: '/home/user', mode: 'folder', closeOnSelect: true })
@@ -1037,7 +1032,6 @@ describe('FilePickerDialog — Select when current folder is open (folder mode)'
 // ─── Recent tab + tabstrip + pin ──────────────────────────────────────────── Plan:
 // docs/superpowers/plans/2026-08-14-folder-picker-recent-history.md The dialog opens on the Recent
 // tab by default.
-
 // The user sees a flat list of folders they've picked before (most recent first, pinned at top).
 // Click a row to select; click the star to toggle pin. The Browse tab is one click away and shows
 // the existing two-pane tree + content layout.
@@ -1054,10 +1048,8 @@ describe('FilePickerDialog — Recent tab + tabstrip + pin', () => {
   it('opens on the Recent tab by default', async () => {
     // mountDialog does NOT pass enableRecentHistory — that's the "omitted" case the default-on
     // branch needs to handle.
-
     // Vue 3.5's runtime default for `boolean?` is `false`, so `props.enableRecentHistory` reads as
     // `false` here even though the caller didn't pass anything.
-
     // The computed treats `undefined` as "default on" but `mountDialog`'s implicit spread of the
     // override doesn't preserve `undefined`. To exercise the default-on branch, mount with
     // `enableRecentHistory: undefined` explicitly:

@@ -75,7 +75,6 @@ const rowErrorRetryLabel = (id: string): string | null => {
 // URL-driven "what is the main content area showing?". Derived from the URL so the chat row's
 // active background stays in sync with refresh / deep links / browser back / forward — no store
 // flag can drift. See useCurrentMainView for the full contract.
-
 // URL-driven "what is the main content area showing?". Derived from the URL so the chat row's
 // active background stays in sync with refresh / deep links / browser back / forward — no store
 // flag can drift. See useCurrentMainView for the full contract.
@@ -84,7 +83,6 @@ const currentMainView = useCurrentMainView()
 // Workspace scope for the CHATS list (plan: 2026-09-22-revamp-ui-chats). The list shows ONLY this
 // workspace's sessions — the backend filters via `?workspace_id=`. Source: the URL path workspace
 // when present, else the store's active workspace (landing / transition windows).
-
 // Undefined → global list (back-compat; the boot rewrite scopes it on the next tick).
 const scopedWorkspaceId = computed(() => {
   const v = currentMainView.value
@@ -249,10 +247,8 @@ const burstChatPrStatus = () => {
 
 // A merge or close ANYWHERE — this tab's MergeBox, or the `git_pr_state` SSE event from another
 // client — drops the shared cache entry and calls this back.
-
 // A mounted row cannot see a Map deletion, so without it the branch icon keeps the colour it
 // fetched before the merge until the row happens to remount.
-
 // A subscription, not a `watch`: `local/no-watch` bans reacting to change inside a component, and
 // this signal comes from OUTSIDE it (the forge, via the backend). The producer calls us instead.
 let unsubscribePrStatus: (() => void) | null = null
@@ -368,7 +364,6 @@ const confirmRename = async (name: string) => {
 // ─── Unattended mode ───────────────────────────────────────────────────────
 // `is_auto_retry_until_stop` lives on `sessions`, so this one genuinely has to go through
 // updateSession — which means selectedProfile must be sent back explicitly.
-
 // Passing only the flag would take the same profile-clearing path described above.
 const isUnattended = (chat: { is_auto_retry_until_stop?: string }): boolean =>
   chat.is_auto_retry_until_stop === '1'
@@ -416,7 +411,6 @@ const stopAgentFromMenu = async () => {
 
 // Right-click menu on the git icon: open GitHub branch / PR URLs in a new tab. Separate position
 // state from the row menu so a git-icon right-click never opens the chat menu.
-
 // URLs resolve via the shared PR-info cache (GET /api/git/pr/status already returns pr_url); the
 // branch URL derives from the PR repo base + /tree/<branch>.
 const { menuPos: gitMenuPos, openAt: openGitMenuAt, close: closeGitMenu } = useContextMenu()
@@ -461,7 +455,6 @@ const openGitPrInBackground = () => {
 }
 
 // Sort toggle extracted to a method so the template stays a single expression.
-
 // An inline multi-statement handler needs a semicolon separator, which the repo prettier config
 // (semi:false, printWidth:100) strips when it wraps the long line, breaking the Vue template
 // compiler (see ChatsList activeFromUrl specs).
@@ -550,7 +543,6 @@ const optimisticClearStaleDot = (id: string) => {
 
 // Loop-guard (touched-echo fix): fireSessionTouched fires at most ONCE per sessionId per component
 // lifetime.
-
 // Without this, loadChats() → POST touched → backend SSE session.updated → onSessionEvent →
 // loadChats() → POST touched … loops forever (alternating GET /llm/session + POST /touched in the
 // Network tab).
@@ -701,7 +693,6 @@ const mapNavItemToChat = (r: any): any => ({
 // PINNED drag-drop reorder (Migration 104). HTML5 DnD on the pinned rows only (small list, no
 // virtualization): dragstart captures the id, dragover tracks the target + before/after half, drop
 // splices + POSTs the full top-to-bottom order.
-
 // Mirrors WorkspaceItem's pinned reorder (custom MIME type so parent drag handlers ignore it).
 const dragPinnedId = ref<string | null>(null)
 const dragPinnedOverId = ref<string | null>(null)
@@ -764,16 +755,12 @@ const onPinnedDragEnd = () => {
 // Empty-refresh resilience. `api.getChats` swallows every transport failure — a rejected fetch, the
 // 15s `apiFetch` timeout aborting a slow request, a non-2xx — and resolves `{ sessions: [], total:
 // 0 }`.
-
 // At this call site "the request failed" is therefore indistinguishable from "this workspace has no
 // chats".
-
 // Painting that empty page over a populated list is what made RECENT go blank and STAY blank: only
 // a scope change or a session SSE event reloads the list, and a plain streaming chat fires neither.
-
 // So an empty page that lands on top of painted rows is treated as a failed refresh: keep the rows,
 // say so in the console, and revalidate on a bounded backoff.
-
 // The backoff budget is finite so a genuinely emptied workspace (last chat deleted) still converges
 // to an empty list — that path splices the row locally first, so `navItems` is already empty and
 // never takes the keep-the-rows branch below.
@@ -905,7 +892,6 @@ const loadMoreChats = async () => {
   // Cache-first scroll-back in desc mode (mirrors ChatView.fetchOlderPage): the write-through below
   // accumulates every fetched page, so older rows are usually already local. Cursor unchanged,
   // id-dedupe covers overlap.
-
   // Asc mode stays network-only — "older" has no meaning against a backend cursor that pages in
   // display order.
   if (chatsSortDirection.value === 'desc' && navItems.value.length > 0) {
@@ -960,7 +946,6 @@ const toggleNavSection = () => {
 
 // Workspace switch refetch (plan: 2026-09-22-revamp-ui-chats). The list is scoped per workspace, so
 // a scope change clears the old workspace's rows FIRST (no stale frame) and refetches.
-
 // Clearing before the async fetch lands is what keeps the wrong workspace's chats from flashing on
 // a fast switch. Runs from the scope guard below (mount seeds it; updates refetch on scope change).
 const switchWorkspaceScope = () => {

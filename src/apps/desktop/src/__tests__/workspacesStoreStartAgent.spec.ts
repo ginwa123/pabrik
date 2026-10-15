@@ -47,7 +47,6 @@ describe('workspacesStore.startAgentOnTask', () => {
     // The backend returns `{ success: true, ... }` on the happy path and 4xx errors (no body parse
     // — they fail the apiFetch). The only way the body parses but `success: false` is if the
     // backend adds a partial-success response shape.
-
     // The host's handler maps this to "Agent didn't start — server reported failure." — verify the
     // action is a pass-through (does NOT throw on success=false).
     vi.spyOn(api, 'startAgentOnTask').mockResolvedValue({ success: false })

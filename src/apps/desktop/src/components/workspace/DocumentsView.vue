@@ -2,14 +2,11 @@
 // The document page (Migration 095). Reached from the sidebar's Documents section, which writes
 // `/app/{ws}/doc/{id}` into the URL — a PAGE shape, so this view is the main content area and the
 // chat it was opened from is unmounted (not stacked underneath).
-
 // That is what removed the original bug, where the chat's floating chrome out-painted this
 // overlay's z-index. Two modes, one textarea: - Read: the rendered markdown. - Edit: a plain
 // textarea over the raw source, with a live preview toggle.
-
 // Rendering goes through `helpers/markdown.ts` rather than `marked` directly: that helper escapes
 // raw HTML BEFORE parsing, which is the repo's XSS model for every non-transcript markdown surface.
-
 // A document body is authored by an agent that may have quoted a file it read, so this is not
 // strictly self-XSS-only.
 import { computed, onMounted, onUpdated, ref } from 'vue'
@@ -94,7 +91,6 @@ const save = async () => {
   // Send ONLY the fields the user actually changed. Sending both is safe when the draft is fresh,
   // but this view can sit open for a long time and the agent's `edit_document` may have rewritten
   // the body in the meantime — a whole-body PATCH would then silently revert that edit.
-
   // Partial patches are also what the backend's omitted-vs-empty semantics are built for.
   const patch: { title?: string; content?: string } = {}
   if (draftTitle.value !== savedTitle.value) patch.title = draftTitle.value

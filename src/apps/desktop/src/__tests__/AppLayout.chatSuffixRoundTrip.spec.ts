@@ -1,7 +1,6 @@
 // AppLayout — chat-open URL round-trip under the simplify-url-browser wire shape. Drives the URL
 // through the full open-chat → close-chat → back-button cycle and asserts the URL transitions are
 // correct.
-
 // Spec: docs/superpowers/specs/2026-08-15-simplify-url-browser-design.md Plan:
 // docs/superpowers/plans/2026-08-15-simplify-url-browser.md
 

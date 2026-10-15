@@ -37,11 +37,9 @@ describe('DesignElementPreview.vue — iframe background follows fill prop', () 
 
   // Regression for the "white in corner" bug: pre-fix the iframe's inline style was `background:
   // 'white'` regardless of the element's fill.
-
   // For elements with empty / transparent fills (input fields, buttons, modal backdrop with empty
   // HTML), the canvas rendered as small white rectangles. Post-fix (this test): the iframe
   // background inherits the element's `fill` prop.
-
   // Empty fill → 'transparent' → the parent wrapper's fill shows through.
   it('sets the iframe background to transparent when fill is empty', () => {
     wrapper = mountPreview({ html: '<div>x</div>', fill: '' })

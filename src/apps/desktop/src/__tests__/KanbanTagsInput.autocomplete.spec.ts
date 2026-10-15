@@ -25,11 +25,9 @@ import KanbanTagsInput from '../components/kanban/KanbanTagsInput.vue'
 
 // jsdom does NOT implement IntersectionObserver natively. The component's watcher fires on focus
 // and unconditionally calls `new IntersectionObserver(...)` when the scroll sentinel is in the DOM.
-
 // Without a mock, that call throws a ReferenceError and cascades into a corrupted test runner for
 // subsequent tests (the next `mount` returns a wrapper with a null root, surfacing as `Cannot read
 // properties of null (reading '$')`).
-
 // Install a no-op IntersectionObserver for every test by default; the "IntersectionObserver fires
 // onLoadMore" test overrides the global with a capturing mock and restores the no-op in `finally`.
 class NoopIntersectionObserver {
@@ -100,7 +98,6 @@ describe('KanbanTagsInput — autocomplete dropdown', () => {
     // Plan: 2026-08-06-dropdown-tags-feedback. User feedback #2: "after enter select dropdown, the
     // dropdown not show up agai, it should show up". The pre-fix behaviour closed the dropdown
     // after every commit, forcing the user to click back into the input to pick the next tag.
-
     // Keep the dropdown open so the user can pick N tags in one focused session.
     const wrapper = mount(KanbanTagsInput, {
       props: { modelValue: [], suggestions: ['bug', 'urgent', 'frontend'] },
@@ -129,7 +126,6 @@ describe('KanbanTagsInput — autocomplete dropdown', () => {
     // Plan: 2026-08-06-dropdown-tags-feedback. The user-reported flow: open dialog → focus tags
     // input → click suggestion → click another suggestion → click another → ...  without the
     // dropdown closing in between.
-
     // After-pick filtering keeps the dropdown showing only the still-pickable tags.
     const wrapper = mount(KanbanTagsInput, {
       props: { modelValue: ['bug'], suggestions: ['bug', 'urgent', 'frontend', 'flaky'] },
@@ -257,7 +253,6 @@ describe('KanbanTagsInput — autocomplete dropdown', () => {
   it('IntersectionObserver fires onLoadMore when the scroll sentinel is visible', async () => {
     // jsdom doesn't trigger IntersectionObserver by default, so we stub the constructor to call the
     // callback with isIntersecting=true synchronously.
-
     // Note: the vitest tsconfig has `"lib": []` (no DOM types), so we use `any` for the captured
     // cb/opts instead of the global IntersectionObserver types (which are undeclared).
      

@@ -65,11 +65,9 @@ import type { SseClient, SseState, SseStateInfo } from '../../helpers/sseClient'
 
 // ── The hoisted api mock ──────────────────────────────────────────────────── Two seams, both
 // required, both hoisted.
-
 // `chatEngineDb` binds `fetchFn = getChatHistory` as a constructor default evaluated at module
 // load, so a later `vi.spyOn` cannot reach it; and ChatView's authoritative load calls
 // `api.fetchChatHistoryEffect` directly.
-
 // Mocking only one leaves the real fetch running, the retry loop holding `isLoading`,
 // `isInitializing` never clearing, and the `<VirtualScroller>` never mounting — the spec then dies
 // with ".virtual-scroller not mounted" having tested nothing.
@@ -342,7 +340,6 @@ describe('ChatView — 1000 messages, full-screen-tall bodies, thoughts, long re
       // Deliberately NOT byte-identical to the seeded tall bodies: the `full` handler drops an
       // event that duplicates an existing row on role + content + tool_call_id (the 2026-08-23
       // TOOLS-pill-spam fix), and 20% of the seed carries exactly `FULL_SCREEN_BODY`.
-
       // Seeding the duplicates is correct for a real transcript, but it means the final row has to
       // carry something the history does not.
       content: `${FULL_SCREEN_BODY}\n\nFinal line that only this turn has.`,
@@ -368,7 +365,6 @@ describe('ChatView — 1000 messages, full-screen-tall bodies, thoughts, long re
     // The exact arming moment the reported bug used to be lost at: the reader goes up to read
     // history, comes back with the app's own jump-to-bottom affordance (which re-arms
     // `isAtBottom`), and THEN a long response arrives.
-
     // The first long chunk is where the remeasure used to strand them and kill the stick for the
     // rest of the turn.
     const session = 'tall_stick_return'

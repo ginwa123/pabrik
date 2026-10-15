@@ -1,10 +1,8 @@
 /** Keyboard shortcuts for the tab strip. Shortcut namespace: browsers own `Ctrl/Cmd+T`,
  * `Ctrl/Cmd+W`, `Ctrl/Cmd+1..9`, and Chromium also swallows `Ctrl+Tab`, so those can never be the
  * documented map for a page. */
-
 /** The guaranteed map is `Shift+Alt+…`; the familiar chords are registered opportunistically so the
  * desktop webview (which does not reserve them) feels native. */
-
 /** There is no desktop-vs-web detection flag in this repo, hence "opportunistic" rather than
  * conditional. The resolver is pure so the whole map is testable with synthetic KeyboardEvents, and
  * the listener is a plain function returning its own teardown (no lifecycle coupling). */

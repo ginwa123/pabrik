@@ -50,10 +50,8 @@ const router = createRouter({
     },
     // Path-based URL contract (plan: 2026-09-22-revamp-ui-chats). Most-specific first — vue-router
     // matches in registration order.
-
     // These come AFTER the reserved single-segment routes above (`settings`, legacy `chat`/`task`)
     // and the kanban-settings path, otherwise `/app/chat/X` would match with workspaceId='chat'.
-
     // See `helpers/appUrl.ts` (single builder / parser) and `parseAppPath`'s
     // RESERVED_FIRST_SEGMENTS guard.
     {
@@ -74,7 +72,6 @@ const router = createRouter({
     // Document page (Migration 095). A PAGE shape, not a `?doc=` overlay: the document replaces the
     // main view, so it must own its own path instead of borrowing whichever one happened to be open
     // underneath.
-
     // Must stay BEFORE `/app/:workspaceId` — Vue matches in order, and that route's catch would
     // otherwise never see the `/doc` segment.
     {
@@ -84,11 +81,9 @@ const router = createRouter({
     },
     // Workspace settings page. Which settings SECTION is open is a query param (`?section=`), not a
     // second path segment — `?tab=` belongs to browser tab-mode.
-
     // Must stay BEFORE `/app/:workspaceId`: Vue matches in registration order and that route's
     // catch would otherwise swallow `/app/ws_1/settings` as `workspaceId='ws_1'` and drop the
     // `/settings` segment entirely.
-
     // Same trap as `/app/:workspaceId/chat/:sessionId` and `/app/:workspaceId/doc/:documentId`
     // above.
     {
@@ -114,10 +109,8 @@ const router = createRouter({
 // Auth guard: when the backend runs with `--auth`, every `/app*` view requires a valid
 // `pabrik_session` cookie. Anonymous visits redirect to `/login?redirect=<target>` (router.replace,
 // so Back skips the bounce); authed visits to `/login` bounce back to the target.
-
 // Public when auth is off (`/api/auth/me` 200 + auth_enabled=false) — no redirect. Every view
 // switch stays in the URL (repo rule), so refresh/Back/shared links keep working.
-
 // The top loading bar is driven here: start on beforeEach (covers the async auth check, which is
 // the slowest part of a redirect), finish on afterEach/onError. Lazily resolved inside the guard so
 // the router module never hard-depends on an installed pinia (specs import the router without one).

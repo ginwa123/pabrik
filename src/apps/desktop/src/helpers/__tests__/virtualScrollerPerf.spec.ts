@@ -188,7 +188,6 @@ describe('AdaptiveItemHeightEstimator', () => {
 
     // A whole window of much SHORTER rows arrives — exactly what scrolling into a run of one-liners
     // does.
-
     // The placeholder must not follow: the scroller multiplies it by the never-rendered item count,
     // so following would rescale the list and the anchor compensation would turn that rescale into
     // a scrollTop write.

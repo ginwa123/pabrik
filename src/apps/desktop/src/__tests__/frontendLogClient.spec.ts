@@ -62,11 +62,9 @@ interface FakeWindowBundle {
   rejectionListeners: Set<EventListenerOrEventListenerObject>
   unloadListeners: Set<EventListenerOrEventListenerObject>
   // Captured references to the ORIGINAL vi.fn() spies for console.error and console.warn.
-
   // After `installFrontendLogClient` runs, the module REPLACES `window.console.error` /
   // `window.console.warn` with a closure that internally calls these originals (bound at install
   // time).
-
   // Asserting on the (post-install) `window.console.*` reference would fail with "not a spy" — the
   // spies have moved. The assertions need to use `originalErrorSpy` / `originalWarnSpy`.
   originalErrorSpy: ReturnType<typeof vi.fn>
@@ -228,7 +226,6 @@ describe('frontendLogClient', () => {
     // The fake window's console.error is a vi.fn() (originalErrorSpy) that the install function
     // captured as `originalError` (bound to console). Calling the (now-patched)
     // window.console.error should: (a) enqueue a console_error event, (b) call the original spy.
-
     // We assert on the captured spy reference — `window.console.error` itself has been REPLACED by
     // the patch function, so it's no longer a vi.fn().
     window.console.error('boom')
@@ -297,7 +294,6 @@ describe('frontendLogClient', () => {
     const body = JSON.parse(init.body as string)
     // 100 events trigger queue overflow at MAX_QUEUE_SIZE=50 — the module drops the oldest 25 and
     // enqueues a `console_warn` overflow marker on each overflow.
-
     // We don't assert an exact count (the overflow math is intricate and tested separately in #9);
     // we DO assert that: (a) coalescing produced exactly one POST (the debounce claim), (b) the
     // batch is non-empty, (c) every event has kind ∈ {console_error, console_warn}.
@@ -341,7 +337,6 @@ describe('frontendLogClient', () => {
 
     // fetchFn was invoked exactly once; the rejection is caught inside flush() and the batch is
     // silently dropped (no retry, no second POST).
-
     // The module also calls originalWarn with a diagnostic — we don't assert that here because
     // originalWarn is captured BEFORE the patch (so it's NOT the spy on window.console.warn).
     expect(fetchMock).toHaveBeenCalledTimes(1)

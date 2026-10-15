@@ -77,10 +77,8 @@ describe('documents store — load', () => {
     // The pair is the whole point: `error` set AND `loaded` false is what lets the component render
     // "could not load" instead of "no documents". Asserting only one of the two would pass a store
     // that sets error on success.
-
     // The load now goes through the sync engine, so the message is the engine's (`sync remote
     // documents.fetchDelta failed: HTTP 500`).
-
     // Asserted on the REASON surviving rather than the exact string: the contract is that the
     // failure reaches `error`, and pinning the prefix would break on any future rewording for no
     // extra protection.

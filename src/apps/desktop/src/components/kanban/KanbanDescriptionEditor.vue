@@ -81,7 +81,6 @@ const emit = defineEmits<{
 // ─── State ────────────────────────────────────────────────────────────── Local editable copy of
 // the prop (uncontrolled between parent syncs: typing works even when the parent does not
 // round-trip our emits, e.g. in specs that mount without v-model).
-
 // Every local write goes through commitText so the parent stays in sync and the rehydrate guard
 // below recognises our own keystrokes' round-trip echo.
 const text = ref(props.modelValue)
@@ -95,7 +94,6 @@ const previewFiles = ref<PreviewFile[]>([])
 // Files staged in CREATE mode (taskId='') — uploaded by the host AFTER the task exists. Mirrors
 // previewFiles but exists only for the create-mode flow; in edit mode it stays empty because
 // uploads happen inline (see addImageFile).
-
 // Exposed via defineExpose so the parent dialog can hand it to the host's create-then-upload
 // orchestrator.
 const pendingFiles = ref<PreviewFile[]>([])
@@ -434,14 +432,11 @@ const addImageFile = async (file: File) => {
   // EDIT MODE (Migration 069 — kanban image urls column). The task exists on the server. We stage
   // the new image in `pendingFiles` and let the host PATCH the new column (`image_urls`) on Save —
   // same orchestration as create mode.
-
   // The previous edit-mode flow called `api.uploadTaskAttachment` (POST /.../attachments) and
   // inserted `![name](url)` markdown into the description.
-
   // The migration removed that endpoint entirely (the wildcard GET was broken, the POST was tied to
   // the kanban's filesystem path) — see
   // docs/superpowers/plans/2026-08-06-kanban-image-urls-column.md.
-
   // The dialog still surfaces the user's edits (add/remove) via the same `pendingFiles` array on
   // Save; the host reads it and PATCHes `image_urls` via `updateTaskDetails`.
   pendingFiles.value.push(previewEntry)
@@ -624,7 +619,6 @@ onUpdated(() => {
   prevModelValue.value = v
   // Mirror externally-changed props into the editable copy (mount seeds it; this covers dialog
   // re-opens with new content).
-
   // The echo emit preserves the old mirror-watcher's cascade; lastSeenText updates below so the
   // echo check sees pre-mirror state, exactly like the old watcher ordering did.
   if (v !== text.value) {
@@ -650,7 +644,6 @@ const autoResize = (event: Event) => {
 // Expose `pendingFiles` to the parent dialog so it can pass the staged files up to the host's
 // create-then-upload orchestrator. Vue auto-unwraps refs in defineExpose, so
 // `wrapper.vm.pendingFiles` returns the raw array (not a Ref).
-
 // See KanbanDescriptionEditor.spec.ts for the pendingFiles contract (5 tests).
 defineExpose({ pendingFiles })
 </script>

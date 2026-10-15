@@ -31,7 +31,6 @@ describe('pagination — cursor advances on loadMore', () => {
     // Every prepend (scroll-back, buffered prefetch, manual button) is routed through
     // `commitOlderPage`, which advances the cursor from the COMMITTED page. Without this the 2nd+
     // page re-sends the same cursor and re-prepends the same messages forever.
-
     // Task_1789505423062_0 moved this out of `loadChatHistory`'s old `loadMore` branch — assert it
     // survives in its new home rather than at the old location.
     const commitBody = source.slice(
@@ -126,7 +125,6 @@ describe('pill-rail gutter — the rail must not overlap the transcript', () => 
   it('the gutter is applied as padding-right on the transcript rows', async () => {
     // `padding-right`, NOT a margin or a width on the scroller: VirtualScroller's `measureItems()`
     // reads `el.offsetHeight`, so a horizontal padding is invisible to the height model.
-
     // A `padding-bottom` would be folded into the height and shift every scroll anchor — the class
     // of bug the floating-composer fix already fought once.
     const source = await readChatViewSource()

@@ -149,7 +149,6 @@ export function applyProgressEvent(
 
   // Don't regress: a `launched` event arriving AFTER `completed` (out-of-order delivery on a real
   // network is rare but possible) must NOT downgrade a done row back to running.
-
   // Only `failed` can override `done` (a sub-agent that succeeded but then had its result truncated
   // is a real edge case worth showing).
   let finalStatus: SubAgentRowStatus = statusForUi

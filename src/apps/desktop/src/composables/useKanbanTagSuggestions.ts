@@ -66,7 +66,6 @@ export function useKanbanTagSuggestions(
     const realItemId = toValue(itemId)
     // Graceful degradation: empty args = no-op (no network request). Avoids 400s when the caller
     // passes placeholder values during the render tick.
-
     // Leave `loaded` as false so the next `ensureLoaded()` call (after the args become available,
     // e.g. when the dialog's column prop resolves) will retry.
     if (!wsId || !realItemId) {

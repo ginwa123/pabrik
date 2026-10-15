@@ -82,7 +82,6 @@ const chatTextareaRef = ref<HTMLTextAreaElement | null>(null)
 
 // ── Draft survival across remounts (tab switches) ───────────────────── Every tab switch remounts
 // this component, so the text in the box would otherwise be lost.
-
 // The bucket lives in the tabs store (in memory, per window) and is keyed by the chat session, so
 // closing and reopening a tab within the session still finds the draft.
 const draftKey = computed(() => props.draftKey ?? '')
@@ -121,7 +120,6 @@ function scheduleDraftSave(): void {
 // ── Autofocus on session switch ─────────────────────────────────────── Clicking a chat session
 // remounts ChatView (AppLayout `:key="activeChatId"`) which remounts this input. Auto-focus the
 // textarea so the user can type immediately with no second mouse click.
-
 // Guards: never steal focus from an open modal dialog or a background tab.
 const focusInput = () => {
   const el = chatTextareaRef.value
@@ -145,14 +143,11 @@ const previewFiles = ref<PreviewFile[]>([])
 // ── Stop button state ───────────────────────────────────────────────────── Stop-button state: the
 // parent (ChatView) sets `isStopping` on click and clears it when the LLM stops, so the spinner
 // shows only while a stop is actually in flight AND the agent is still processing.
-
 // Folding the `isLLMProcessing` reset into the computed covers the fast path (SSE `worker deleted`
 // arrives before the API round-trip) and the slow path (backend processes cancel before SSE) with
 // no mirror watcher — and no stuck-spinner window.
-
 // `stopRequested` is the optimistic claim for the same-tick window: the parent's prop round-trips
 // asynchronously, so without it a rapid second click lands before the prop arrives and emits twice.
-
 // It is cleared as soon as the parent acknowledges (prop true) or the run ends — see the onUpdated
 // guard below.
 const stopRequested = ref(false)
@@ -324,7 +319,6 @@ const handlePaste = async (e: ClipboardEvent) => {
   // Strategy 2: WebKitGTK <textarea> filter workaround. If the sync path found no files AND the
   // async Clipboard API is available, use it to read the actual clipboard contents (bypassing the
   // element-level filter).
-
   // This is silently skipped in browsers without `navigator.clipboard.read` (very old Chromium),
   // and silently no-ops if the user denies the permission prompt the API raises in some
   // configurations.
@@ -762,11 +756,9 @@ const selectSkill = (skill: api.Skill) => {
 // ── /tool picker (mirrors the /skill picker above) ───────────────────── Same two-trigger shape,
 // same position rule, same dash requirement — the only differences are the marker (`tool-`), the
 // data source (the canonical tool registry instead of the workspace skill list) and the icon.
-
 // The registry is NOT workspace-scoped: `GET /api/agent-tools/registry` serves the runtime's
 // UNIFIED_TOOL_REGISTRY, the same list the Settings checklist renders, so there is no per-workspace
 // fetch and no workspace gate.
-
 // That is why the picker opens with no active workspace while the `/skill-` picker does not.
 const TOOL_COMMAND_RE = /(^|\s)\/(t|to|too|tool)$/i
 const TOOL_TOKEN_RE = /(^|\s)\/tool-([\w.-]*)$/i

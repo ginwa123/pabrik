@@ -65,10 +65,8 @@ if (typeof localStorage !== 'undefined') {
 // AUTO-ENABLE: a developer-mode browser that has the `__designLogger` escape hatch registered must
 // have loaded the new bundle. If the user reloads the page or the `__designLogger` flag wasn't set,
 // fall back to "auto on" so they immediately see diagnostics.
-
 // The user can still call `__designLogger.off()` to silence it. This is dev-only. Detection:
 // `window.__designLogger` was set by the bottom of this file (the escape hatch install).
-
 // If it's not present, the bundle running is OLD (pre-logger) and the page should auto-enable so
 // the next page reload picks up the new bundle. We use a single-shot check at module-load time to
 // avoid re-running on every navigation.

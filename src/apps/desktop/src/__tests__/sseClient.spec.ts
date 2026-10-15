@@ -37,7 +37,6 @@ import { createSseClient, type SseState } from '../helpers/sseClient'
 // ─── Mock EventSource ──────────────────────────────────────────────────── A controllable
 // replacement for the browser-native EventSource. Captures every listener registered, every close()
 // call, and lets tests fire synthetic events.
-
 // Also tracks addEventListener/removeEventListener so we can assert listener cleanup in `close()`.
 
 interface MockEventSource {
@@ -94,7 +93,6 @@ function createMockCtor(): {
         // Fire addEventListener-style listeners, if any. The native EventSource fires BOTH
         // addEventListener listeners AND the `onerror` property — they are independent — so we must
         // do the same.
-
         // An early-return here (when the listener set is empty / undefined) would skip the onerror
         // dispatch, which is exactly the path the SseClient uses for errors.
         const set = this._listeners.get(type)
@@ -303,7 +301,6 @@ describe('createSseClient', () => {
   it('jitter scales delay between 0.5×exp and 1.0×exp', () => {
     // With random=0, the actual delay is exp * 0.5. We assert by checking that the timer is
     // scheduled with the expected delay using `vi.getTimerCount()` / next fire time.
-
     // Since the timer API in vitest doesn't expose the delay directly, we use a state-listener
     // approach: subscribe to state changes and capture `nextDelayMs`.
     const seenDelays: number[] = []
@@ -789,7 +786,6 @@ describe('createSseClient', () => {
 
   // 9d. additionalEventTypes registers listeners for custom named events (e.g. `queue_message`) and
   // routes them to onEvent.
-
   // This is the fix for the bug where the server sent `event: queue_message\ndata: {...}` and the
   // JS handler never saw it — the browser's EventSource only dispatches a named event to listeners
   // registered for THAT name, and the SseClient did not auto-register `queue_message`.

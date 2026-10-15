@@ -83,18 +83,14 @@ if (typeof Element !== 'undefined' && !Element.prototype.scrollTo) {
 // Stub global fetch so relative-URL API calls in tests don't throw "Failed to parse URL from
 // /api/..." TypeErrors. Tests that need real API behavior should mock the api module (vi.spyOn(api,
 // ...)) instead of letting this stub fire.
-
 // Without this stub, store actions like `fetchKanbanColumns` and `loadFoldersForCwdPicker` produce
 // unhandled rejections during test cleanup and vitest counts them as errors (exit 1) even when the
 // test itself passes.
-
 // The stub resolves with a generic 404 JSON response — every apiFetch call goes through `silent`
 // checks before notifyError, so callers can observe the rejection normally; the stub just avoids
 // the URL-parse TypeError that would otherwise escape the test.
-
 // Replace global fetch with a stub that returns 404 for any URL. jsdom env may already provide its
 // own fetch, so we always overwrite.
-
 // Without this stub, unmocked api calls in tests hit `new URL(/api/...)` which fails to parse (no
 // base URL set up) and produces unhandled rejections that vitest counts as errors (exit 1).
 const stubFetch: typeof fetch = async () =>

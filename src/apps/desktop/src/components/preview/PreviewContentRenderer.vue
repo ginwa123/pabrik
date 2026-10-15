@@ -101,7 +101,6 @@ onUnmounted(() => {
 // ─── Auto-resize script (prepended to the iframe srcdoc) ──────────── The reporter script and its
 // postMessage parser live in helpers/iframeAutoResize.ts — shared with ChatView.vue's `<html>`
 // frames.
-
 // Same security contract as before: the sandboxed (NULL-origin) frame only reports its own
 // scrollHeight/scrollWidth; the parent only writes a clamped iframe.style.height.
 

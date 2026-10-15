@@ -11,7 +11,6 @@ import type { Message } from '../api'
 
 // Stub the embedded ChatView so we can assert the embed wiring without mounting the full 4000-line
 // chat (VirtualScroller, SSE, FileInput, …). The stub records its props for assertions.
-
 // NOTE: the stub is defined inline (not via a top-level const) because `vi.mock` factories are
 // hoisted above the module body — referencing an outer const from the factory hits the TDZ at
 // import time. Lookup in tests uses `findComponent({ name: 'ChatView' })`.

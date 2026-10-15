@@ -26,7 +26,6 @@ import { makeLocalStorageStub } from './helpers'
 // jsdom 29 dropped `Element.prototype.scrollTo`. The VirtualScroller calls
 // `containerRef.value.scrollTo({top, behavior})` on every render; without the polyfill the test log
 // floods with "containerRef.value.scrollTo is not a function" unhandled errors.
-
 // Mirrors the same polyfill in chatViewWorktree.spec.ts:62-71.
 if (
   typeof (globalThis as { HTMLElement?: { prototype: { scrollTo?: unknown } } }).HTMLElement
@@ -95,14 +94,11 @@ function installChatViewMocks() {
 // ─── mount helper ───────────────────────────────────────────────────────── Mounts ChatView with
 // `processingState[chatId] === true` so the `isLLMProcessing` computed is true and the Stop button
 // (in FileInput) renders.
-
 // Returns the wrapper + a promise that resolves once the component is fully mounted (awaiting the
 // streaming listener registration via the sseBus, the same pattern as
 // chatViewWorktree.spec.ts:150).
-
 // IMPORTANT: `processingState` MUST be a Vue `ref()` (a reactive proxy), not a plain `{ value: ...
 // }` object.
-
 // Vue's reactivity tracks reassignments to the ref's `.value` via the proxy; plain objects are
 // invisible to the reactivity system, so mutations to `.value` won't trigger re-renders even though
 // the object identity is preserved. Use `ref({})` from 'vue', never `{} as any`.
@@ -177,7 +173,6 @@ describe('ChatView — Stop button (cancel running agent)', () => {
     expect(stopSpy).toHaveBeenCalledTimes(1)
     // The sessionId passed must be un-prefixed (no `chat-`) because the backend route uses the raw
     // session_id.
-
     // ChatView strips the prefix in onMounted (`sessionId.value = props.chatId.replace(/^chat-/,
     // '')`, line 2001) so `sessionId.value` is the right thing to pass.
     expect(stopSpy).toHaveBeenCalledWith('session_proc')

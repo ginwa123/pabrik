@@ -69,7 +69,6 @@ describeRuntime('DesignView → workspacesStore active page id', () => {
     // Regression (2026-07-29): pre-fix unmount cleared activeDesignPageId to ''. That broke the
     // chat-toggle flow: AppLayout's v-else-if chain renders TWO <DesignView> instances for the same
     // item (single-column + 3-column), and clicking 💬 swaps them.
-
     // Clearing on unmount meant the new DesignView's loadPages() saw '' and fell back to
     // fetched[0]?.id — visually jumping back to the first tab. The clear is now removed (see
     // DesignView.vue onUnmounted comment); the value stays for the next mount to pick up.
@@ -139,7 +138,6 @@ describeRuntime('DesignView → workspacesStore active page id', () => {
   itRuntime('cross-item navigation: stale activeDesignPageId does not bleed across design items', async () => {
     // When the user navigates from designItem A (page PA) to designItem B, the DesignView unmounts.
     // The store still holds PA's id.
-
     // When DesignView B mounts and loads its pages, loadPages() validates `fetched.some((p) => p.id
     // === storePageId)` — if false, it falls back to fetched[0]?.id. This test pins that contract.
     const ws = useWorkspacesStore()

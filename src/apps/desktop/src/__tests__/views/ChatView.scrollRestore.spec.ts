@@ -130,10 +130,8 @@ Element.prototype.scrollTo = function scrollToPolyfill(
 // jsdom does NOT lay out elements. scrollHeight and clientHeight default to 0 on every element, so
 // ChatView's restore would see max=0 and no-op. Override the getters on the prototype so every
 // element reports known values from mount onwards.
-
 // A CONSTANT scrollHeight is deliberate here: this file is about the composable's save/restore
 // contract (per-task keys, the debounce, the unmount flush), not about the height model converging.
-
 // The estimate-vs-measured bug that made a real restore land wrong needs a scrollHeight that
 // CHANGES as the scroller measures, and lives in ChatView.scrollRestoreLands.spec.ts.
 Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
@@ -165,11 +163,9 @@ function makeStubClient(initial: SseState): SseClient {
 
 function installApiMocks(): void {
   // getChatHistory returns 100 user-role messages so the chat is scrollable.
-
   // The VirtualScroller's @total-count + 200px default item height gives a scrollHeight of 20,000px
   // against an 800px container (clientHeight) — enough room to test "scrollTop in the middle"
   // without hitting the "near bottom" branch.
-
   // Seed the module-level transcript the hoisted `vi.mock` factory serves. A `vi.spyOn` cannot
   // reach the load any more — see the note above the factory — so the rows have to go in through
   // `historyRows`.
@@ -221,7 +217,6 @@ async function mountChatView(chatId: string): Promise<VueWrapper> {
   // The onMounted chain is async: loadChatHistory → connectSse → startGitStatusPoll →
   // getQueuedMessages → loadProfiles (sync). Wait for the VirtualScroller's `isStreaming` ref (set
   // after SSE connect) + several ticks.
-
   // Tests that depend on the initial-load scroll branch fire next.
   for (let i = 0; i < 20; i++) {
     await new Promise((r) => setTimeout(r, 0))

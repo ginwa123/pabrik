@@ -1,12 +1,9 @@
 // Behavioural tests for AgentKnowledgeDetailDialog (plan 2026-08-22-agent-mode-ui-ux, Feature A2 +
 // user extension: full edit with File↔Text mode switch).
-
 // Covers open/populate, save payloads per mode, mode switching (file→text and text→file), path
 // validation, busy/error rendering, and the canSubmit gating.
-
 // NOTE (vue-teleport-vitest-document-queryselector): the dialog uses <Teleport to="body"> (+ a
 // nested FilePickerDialog), so wrapper.find() can't see the teleported DOM.
-
 // Mount with attachTo: document.body and assert via document.querySelector + native .click();
 // wrapper.emitted() still works because it tracks the vm, not the DOM tree.
 

@@ -32,7 +32,6 @@ import { makeLocalStorageStub } from './helpers'
 // Stub vue-router — WorkspaceItemTaskRow reads useRoute() via useCurrentMainView() to drive its
 // active state. We mock useRoute to return a per-test controlled query so the row's active styling
 // can be exercised against any URL.
-
 // Mirrors the pattern at sidebarHandleSelectTaskUrl.spec.ts:57-77.
 const { useRouteMock } = vi.hoisted(() => ({
   useRouteMock: vi.fn(() => ({
@@ -105,7 +104,6 @@ describe('WorkspaceItemTaskRow per-task row', () => {
     expect(wrapper.find('[data-testid="task-elapsed-chip"]').exists()).toBe(false)
     // Lock in the row-variant contract (post-2026-07-02 split): the Row component always carries
     // data-task-row and never data-task-card.
-
     // A future refactor that re-introduces a 'variant' prop or accidentally adds a data-task-card
     // attribute would break the consumer's selection logic in KanbanColumn / drag-and-drop
     // handlers.
@@ -311,7 +309,6 @@ describe('WorkspaceItemTaskRow per-task row', () => {
   it('emits the four renameTask args in the documented order', async () => {
     // Belt-and-braces check for the event payload shape, in case a future refactor re-orders the
     // arguments.
-
     // We index into the emitted tuple by position — the cast satisfies Vue's `unknown[]` element
     // type, and the `!` is required because tsconfig has noUncheckedIndexedAccess turned on (Vue's
     // `emitted()` returns `unknown[][] | undefined`).

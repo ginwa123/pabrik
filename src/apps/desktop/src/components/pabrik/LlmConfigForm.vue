@@ -234,7 +234,6 @@ const factWarning = computed<string | null>(() => {
 // === Transport gating (`backend`, orthogonal to `url_style`) ============= A CLI profile
 // (claude-code, opencode) runs a local binary: no base URL, no API key, no HTTP body shape, and no
 // request-body knobs.
-
 // Those controls are HIDDEN rather than shown-but-ignored, and the CLI's own knobs appear instead.
 // Hidden fields keep their values (never nulled) so flipping backends back and forth does not
 // discard what the user typed.
@@ -296,7 +295,6 @@ const showsEffort = computed<boolean>(
 
 // === Overrides ========================================================== Every numeric override
 // is `null` until the user types.
-
 // An empty field is the ONLY spelling of "inherit" — there is no checkbox, and a cleared field
 // emits `null`, never `""` (an empty slice binds as SQL NULL server-side).
 

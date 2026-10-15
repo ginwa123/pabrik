@@ -16,7 +16,6 @@ const emit = defineEmits<{ change: [list: string[]] }>()
 // Display selection while config.json has no `tools` key: the built-in seed lists from
 // src/agentic_loop/tools_equipped.zig — DEFAULT_AGENT_TOOLS (26 names) + DEFAULT_KANBAN_TOOLS
 // (kanban_list, kanban_move_task).
-
 // The first checkbox/All/None/group interaction emits the full explicit array, which is what puts
 // the key in config.json.
 const BUILTIN_DEFAULT_TOOLS: readonly string[] = [

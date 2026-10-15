@@ -63,7 +63,6 @@ function lint(code: string, rules: RuleName[] = ALL_RULES): string[] {
     },
     // The filename is REQUIRED: a flat config's `files` array is a matching filter, so without a
     // path to match against the block is silently skipped and every rule reports nothing.
-
     // That failure mode is invisible — the linter returns [] and the assertions below would pass
     // vacuously.
     'probe.ts',
@@ -159,7 +158,6 @@ describe('local/no-derived-state-watch', () => {
 
   it('allows a body that resets state and never reads the new value', () => {
     // SseStatusBadge counts SSE reconnects.
-
     // `attempt.value = 0` and `attempt.value += 1` depend on the counter's own history, not on the
     // watched value, so `computed()` cannot express them and the "use computed" advice would be
     // nonsense — the bus reconnects on its own and there is no local handler to move this into.
@@ -238,7 +236,6 @@ describe('local/no-watch-feedback-loop', () => {
     // Regression: an early version treated the property name as a dependency, so `() =>
     // props.isStopping` "watched" `isStopping` and every prop-mirror (FileInput.vue:159,
     // TextReplace.vue:34, McpServerModal.vue:63) was reported as a loop.
-
     // `props` is the dependency, not `isStopping`.
     expect(
       lint(`watch(() => props.isStopping, (v) => { isStopping.value = v ?? false })`, ONLY_LOOP),
@@ -439,7 +436,6 @@ describe('the rules compose without false positives on real shapes', () => {
   it('a realistic component using computed + side-effect watch + logged catch trips ONLY the blanket bans', () => {
     // Under the blanket bans this previously-clean shape reports exactly two hits —
     // `local/no-watch` and `local/no-try-catch` — and nothing else.
-
     // That pins the policy change: the targeted rules still see no derived state, no loop, no
     // silent catch here; only the backstops fire. The `catch` logs AND writes a rendered error ref,
     // so `no-silent-fallback-catch` correctly stays quiet — the construct ban is what catches it.

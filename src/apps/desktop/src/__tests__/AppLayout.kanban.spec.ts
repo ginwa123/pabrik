@@ -41,7 +41,6 @@ import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 
 // Test-only stub SseClient. Mirrors the helper in App.spec.ts / sseBus.spec.ts (kept inline rather
 // than shared to avoid coupling between spec files).
-
 // Starts in 'open' state — the SseStatusBadge is a no-op for 'open' and 'closed', so the AppLayout
 // mount won't render any pill, which keeps the existing assertions about <KanbanView> / <ChatView>
 // placement clean.
@@ -66,11 +65,9 @@ function makeStubClient(initial: SseState = 'open'): SseClient {
 }
 
 // Install the SSE bus singleton BEFORE mounting AppLayout.
-
 // Required by (a) the workspaces store's installSessionEventHandlers which calls useSseBus() in its
 // init() (line 1553 of stores/workspaces.ts), and (b) the <SseStatusBadge /> child of AppLayout
 // which calls useSseBus() in its setup.
-
 // App.vue's production onMounted does this install; in tests we do it explicitly per beforeEach.
 function installBusForTests() {
   __resetSseBus()
@@ -161,7 +158,6 @@ function mountAppLayout(workspaces: Workspace[] = []) {
         // Stub KanbanView with the chat-pane branch + resize handle so the AppLayout-level
         // integration tests can still exercise "active task belongs to kanban → chat pane visible +
         // resize handle draggable".
-
         // The real KanbanView's chat-pane logic + resize state machine are covered by
         // KanbanView.chatPane.spec.ts.
         KanbanView: {
@@ -390,7 +386,6 @@ describe('AppLayout — kanban task view (3-column layout)', () => {
     // activeTaskWorkspaceItemId === FOLDER_ID, not KANBAN_ID. The kanban chat branch's last
     // condition (`activeTaskWorkspaceItemId === activeWorkspaceItem.id`) is false — the chat does
     // NOT mount.
-
     // The KanbanView mount does render (the kanban is the active workspace item) but without the
     // chat pane. This is the canonical "clicked a card whose parent is a folder while viewing a
     // kanban" edge case.
@@ -404,10 +399,8 @@ describe('AppLayout — kanban task view (3-column layout)', () => {
   // The 4 resize-handle / localStorage-persist tests that USED to live here were deleted as part of
   // the kanban-embed-chatview refactor (plan Task 5): the resize state machine + handle moved from
   // AppLayout into KanbanView.
-
   // Behavioural coverage is now in src/__tests__/KanbanView.chatPane.spec.ts (drag updates width,
   // mouseup persists to localStorage, falls back to 40% default).
-
   // AppLayout-level tests no longer exercise the resize machinery — they only verify the
   // integration boundary: AppLayout mounts KanbanView with the right props and forwards events from
   // KanbanView.
@@ -416,11 +409,9 @@ describe('AppLayout — kanban task view (3-column layout)', () => {
 describe('AppLayout — kanban survives route navigation (regression: activeWorkspaceItemId is NOT cleared by ?view=workspace)', () => {
   // Pre-migration, the AppLayout's route.query watcher (line 727-732) cleared activeWorkspaceItemId
   // whenever the URL query `view === 'workspace'`.
-
   // Sidebar's handleSelectItem navigates to that exact URL, so if we had wired the kanban to the
   // active workspace item + workspace URL, the route watcher would have cleared the kanban
   // selection the moment it was set, leaving the user with an empty main content area.
-
   // Post-migration, AppLayout renders <KanbanView> when the active item is a kanban. The route
   // watcher must NOT clear activeWorkspaceItemId in that case — the kanban IS the active workspace
   // item.

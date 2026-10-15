@@ -89,7 +89,6 @@ const route = useRoute()
 
 // Lazy-load the kanban's columns on mount + whenever the item id changes (e.g. user navigates from
 // one kanban to another without unmounting the component).
-
 // The workspaces/items endpoint does NOT embed columns — kanbans can have arbitrarily many and we
 // want a lazy load (mirrors the folder-item `fetchFolderContents` pattern). Without this, the board
 // renders empty on every page reload even though the seeded 3 default columns exist in the DB.
@@ -241,7 +240,6 @@ const loadColumnsAndTasks = async () => {
   } else if (needFetch.length === 0) {
     // No non-default URL entries AND no unpaginated columns → nothing to do. Single endpoint
     // (fetchKanbanColumns) is already fired above; no per-column fetch needed.
-
     // (Covers the "all URL entries are default" case too — those columns already received a
     // default-sort fetch on a previous mount or have data, OR the URL restore is purely cosmetic.)
     return
@@ -272,11 +270,9 @@ const loadColumnsAndTasks = async () => {
 // Single onMounted hook (kanban-onmount-single-fetch, task_1785730557641, 2026-08-06). The previous
 // code had TWO onMounted hooks: (a) loadColumnsAndTasks — fetches columns + per-column tasks, (b)
 // URL restore — parsed sorts, updated columnSorts, called setSortMode.
-
 // Both ran on mount and (b) re-fired per-column fetches when the URL had entries — the "double
 // called same endpoint" the user reported. Merged into ONE function (loadColumnsAndTasks above)
 // that handles columns + URL sort-aware fetches + URL restore in a single pass.
-
 // ONE endpoint per column on mount.
 onMounted(loadColumnsAndTasks)
 
@@ -300,11 +296,9 @@ useKanbanScrollRestore(kanbanColumnsContainer, kanbanScrollStorageKey)
 
 // ─── Layout (columns | rows) ────────────────────────────────────────────── Row mode renders the
 // same board as a vertical list grouped by column.
-
 // The choice is URL-backed (`?layout=rows`) so refresh, Back/Forward and shared links restore it —
 // a view that only lives in component state is unreachable by all three. `columns` is the default
 // and is stripped from the URL to keep it clean.
-
 // Precedence: URL (deep link) → localStorage (sticky preference) → `columns`. A deep link must beat
 // the stored preference. The stored preference is NOT user-scoped: it is a visual preference like
 // `sidebar-width`, and userScopedKey() is reserved for identity data.
@@ -447,7 +441,6 @@ const emit = defineEmits<{
   // (openAgentSettings was REMOVED in the kanban-agent-as-tab plan — the Agent button now navigates
   // directly to /app/kanban/:itemId/settings?tab=agent instead of emitting for the host to mount a
   // dialog.
-
   // See plan docs/superpowers/plans/2026-08-27-kanban-agent-as-tab.md.) Pass-through from
   // KanbanColumn.
   selectTask: [taskId: string]
@@ -487,11 +480,9 @@ const tasks = computed<Task[]>(() => props.item.tasks ?? [])
 // ─── Search (kanban task search — Chunk 6) ──────────────────────────────── The search input is a
 // v-model'd ref. A 300ms trailing-edge debounce (hand-rolled — @vueuse/core is not installed in
 // this project) drives a refetch via workspacesStore.fetchKanbanTasks(q).
-
 // Empty/whitespace q is treated as "no filter" (passed as undefined so the backend omits the SQL
 // WHERE clause). Component-local state — closing and reopening the kanban clears it automatically
 // (KanbanView is mounted/unmounted on navigation between kanbans).
-
 // Cursor resets on every query change (page 1 of the filtered set) — mixing page 1 of the old query
 // with page 2 of the new query would return inconsistent results.
 const searchQuery = ref('')
@@ -600,19 +591,15 @@ const setColumnRef = (columnId: string) => (el: unknown) => {
 
 // On mount: the URL restore (sorts parsing, columnSorts mirror, setSortMode) is handled INSIDE
 // loadColumnsAndTasks above — see Step 1 + Step 2. No separate onMounted needed.
-
 // The user requested "merge the two onMounted into one" (kanban- onmount-single-fetch plan,
 // task_1785730557641, 2026-08-06) to eliminate the duplicate per-column fetches the previous code
 // made (one from loadColumnsAndTasks + one from URL restore).
-
 // Watcher on columnSorts changes → URL write only. (Per-column sort independence,
 // kanban-sort-independence, 2026-08-06, take 2: the FETCH is now per-column, fired immediately
 // inside `handleColumnSortChange` below.
-
 // The watcher ONLY writes the URL — no debounced fetch needed because we only touch the column that
 // changed.) Plan: docs/superpowers/plans/2026-08-06-kanban-sort-independence.md URL mirror for
 // per-column sorts (replaces the old columnSorts watcher).
-
 // Called explicitly from `handleColumnSortChange` and from the mount-time URL restore in
 // `loadColumnsAndTasks` (where it is a no-op — the URL already carries the restored entries).
 const writeSortsToUrl = () => {
@@ -620,7 +607,6 @@ const writeSortsToUrl = () => {
   // Preserve sibling params (`?detail=`, `?layout=`, …) — rebuilding the query from scratch here
   // used to silently drop them, so picking a column sort closed the detail panel and reset the
   // layout.
-
   // `layout` is written from the reactive ref rather than read back off `route.query`: this watcher
   // can fire in the same tick as a layout switch, before the router has committed the new query,
   // and reading the stale route would clobber the switch.
@@ -632,7 +618,6 @@ const writeSortsToUrl = () => {
   if (layout.value === 'rows') query[LAYOUT_PARAM] = 'rows'
   else delete query[LAYOUT_PARAM]
   // Emit the CANONICAL path shape, not the legacy `/app?view=workspace` one.
-
   // The legacy shape is rewritten once at boot by AppLayout.rewriteLegacyQuery, whose sub-state
   // whitelist is hardcoded — any param it does not know about (e.g. `layout`) is dropped on reload,
   // which silently loses row mode for shared links and second machines.
@@ -710,7 +695,6 @@ const handleOpenSettings = () => {
 // Agent-Kanbans mirror (Migration 081): navigate to the dedicated settings page with the Tools tab
 // active (iteration 2 — the Agent umbrella tab was split into Tools + Knowledge; we land on Tools
 // since that's the more security-critical config — the access allowlist).
-
 // URL is the source of truth — reload preserves state.
 const handleOpenAgentSettings = () => {
   void router.push({
@@ -722,9 +706,7 @@ const handleOpenAgentSettings = () => {
 // NEW (plan: 2026-08-06-kanban-add-task-button-placement). Open the create dialog with the first
 // column pre-selected. The header button does NOT preserve a previously-picked column — every fresh
 // open starts at the leftmost column.
-
 // Matches the "Add task" mental model (form opens in its default state).
-
 // The dialog's column dropdown (KanbanTaskDetailDialog) is the affordance for picking a different
 // column; its `column-change` emit drives the host's `activeCreateColumnId` so the submit-time
 // `moveTaskToColumn` lands the task in the chosen column.
@@ -737,11 +719,9 @@ const handleOpenCreateDialog = () => {
 // ─── "Set project root" banner (backfill UX) ───────────────────────────── When a kanban has `path
 // = null` (the user created it before the path field existed on the create endpoint), every chat
 // session in this kanban's tasks is cwd-less — git/file tools fail with "no such directory".
-
 // Surface a warning banner with a single click that opens the folder picker and persists the chosen
 // path via workspacesStore.updateKanbanItemPath. The banner is purely informational (yellow tint,
 // no destructive action). It hides once a path is set.
-
 // The picker reuses the AddKanbanDialog's picker to keep the UX consistent — same data source, same
 // select-pick-cancel flow.
 import { getSystemFolder, listFolder, updateTaskSimple, type FolderEntry } from '../../api'
@@ -796,7 +776,6 @@ const activeTaskDetailId = ref<string | null>(null)
 const showTaskDetail = ref(false)
 // NEW (plan: 2026-08-18-kanban-task-detail-start-agent). Error banner state for the edit-mode Start
 // agent flow. Bound to the dialog's errorMessage prop; cleared at the start of each click.
-
 // On success the dialog closes; on failure the dialog stays open and the banner surfaces the
 // backend status / network error.
 const startAgentError = ref<string | null>(null)
@@ -828,11 +807,9 @@ const handleViewTaskDetail = (taskId: string) => {
     // Router may be absent in unit tests — panel still opens locally.
   }
   // Refetch the task list so the panel shows server-truth on open.
-
   // The KanbanTaskDetail reads props.task.is_auto_retry_until_stop to render the unattended-mode
   // toggle, and that field can drift out of sync across clients (e.g. another pabrik instance
   // toggled the flag, or a sub-agent PUT ran unattended on a shared session).
-
   // The workspaces store re-fetches the whole task list for the parent item, plucks this task, and
   // patches the cached copy in place. Best-effort — a failure is logged and the panel still opens
   // with the cached value.
@@ -983,10 +960,8 @@ const fetchPrOpenCount = () => {
 
 // After a successful close the board button's count drops by one and the affected card's badge must
 // flip from open to closed.
-
 // `invalidatePrStatus` drops the cache entry AND bumps the shared `prStatusVersion`, which every
 // mounted card watches — so the badge re-reads on its own, in card and row mode alike.
-
 // The column key bump below predates that tick and is kept as the belt to its braces: it forces the
 // remount for the column that holds the branch.
 const prBadgeTick = ref(0)
@@ -1091,7 +1066,6 @@ onBeforeRouteUpdate((to) => {
   if (nextLayout !== layout.value) layout.value = nextLayout
   // ?prs= mirrors the detail pattern: a present value opens the list on that tab, a dropped value
   // closes it locally (the URL is already the board URL — no router call).
-
   // A tab change while the list is already open reloads explicitly — the list exposes `reload()`
   // instead of watching the prop (`local/no-watch`).
   const rawPrs = toQuery[PRS_PARAM]
@@ -1108,7 +1082,6 @@ onBeforeRouteUpdate((to) => {
 // (The old ?detail= watcher lived here — now handled by the `onBeforeRouteUpdate` guard above.)
 // (The old ?layout= watcher lived here — now handled by the `onBeforeRouteUpdate` guard above.)
 // Panel visibility handler (replaces the old showTaskDetail watcher).
-
 // When the panel closes via X / Cancel / Esc inside the panel, drop the ?detail= param so the URL
 // stays truthful, and clear the id so a re-open always goes through handleViewTaskDetail's refresh
 // path.
@@ -1146,7 +1119,6 @@ const handleTaskDetailSave = async (payload: {
 // NEW (plan: 2026-08-18-kanban-task-detail-start-agent). Edit-mode Start agent click handler. Wired
 // to the dialog's @start-agent emit. Calls workspacesStore.startAgentOnTask (which POSTs to the new
 // /api/.../tasks/:task_id/start_agent endpoint).
-
 // Closes the dialog and stays on the kanban on success; keeps the dialog open with the errorMessage
 // banner on failure. Plan: docs/superpowers/specs/2026-08-18-kanban-task-detail-start-agent.md
 const handleStartAgent = async (payload: { taskId: string }) => {
@@ -1186,11 +1158,9 @@ const handleStartAgent = async (payload: { taskId: string }) => {
 
 // NEW (plan: 2026-09-09-run-all-agents-by-column, Tasks 3+4, Option C). Column "Run all agents"
 // host handler. Wired to KanbanColumn's `@request-run-all-agents` emit.
-
 // Shows a `confirm()` gate (each run is LLM spend), delegates to
 // `workspacesStore.runAllAgentsInColumn` (which POSTs once to the server-side bulk endpoint —
 // pagination-irrelevant), and surfaces the `{started, skipped, failed}` summary in `runAllSummary`.
-
 // Per-column re-entrancy guard mirrors `startAgentBusy` above. Run-state visuals stay with the
 // existing `processingState`/SessionSlider SSE flow.
 const runAllBusyByColumn = ref<Record<string, boolean>>({})
@@ -1231,11 +1201,9 @@ const handleRunAllAgents = async (columnId: string) => {
 
 // Column "Stop all agents" host handler — the mirror of `handleRunAllAgents` above. Wired to
 // KanbanColumn's (and KanbanRowView's) `@request-stop-all-agents` emit.
-
 // Shows a `confirm()` gate (stopping is destructive to in-flight LLM work), delegates to
 // `workspacesStore.stopAllAgentsInColumn` (which POSTs once to the server-side bulk stop endpoint —
 // pagination-irrelevant), and surfaces the `{stopped, skipped, failed}` summary in `runAllSummary`.
-
 // Per-column re-entrancy guard mirrors `runAllBusyByColumn`. Run-state visuals stay with the
 // existing `processingState`/SessionSlider SSE flow (each cancelled worker emits `worker deleted`,
 // which clears its card spinner).
@@ -1270,14 +1238,11 @@ const handleStopAllAgents = async (columnId: string) => {
 
 // Card / row context-menu "Run agent". Wired to KanbanColumn's (and KanbanRowView's) `@run-agent`
 // emit, which the card's right-click menu fires.
-
 // Same store action the detail dialog's caret menu uses (`startAgentOnTask` → POST
 // .../tasks/:task_id/start_agent), so the agent resumes the task's existing chat history without a
 // new user message being queued.
-
 // Unlike `handleStartAgent` there is no dialog to hold an inline banner, so failures go to the
 // notification store — the same surface `addKanbanTask` uses for its partial-success path.
-
 // The per-task busy guard mirrors `startAgentBusy`: the menu row is already hidden while a worker
 // runs, this only closes the double-click window before the SSE state lands.
 const runAgentBusyByTask = ref<Record<string, boolean>>({})
@@ -1321,7 +1286,6 @@ const handleRunAgentFromMenu = async (payload: { taskId: string }) => {
 // Unattended-mode toggle handler (edit mode only). Persists immediately via PUT
 // /api/llm/session/<id> — the flag lives on the sessions table (task.id == session.id for routine
 // tasks per the project convention), NOT on workspace_item_tasks.
-
 // We do NOT close the dialog on toggle (it's an iOS-style immediate switch, not a Save-button
 // commit). On PUT failure we log + show the error inline; the next SSE re-fetch will correct the
 // toggle's visual state.
@@ -1334,7 +1298,6 @@ const handleUnattendedToggle = async (payload: { value: '0' | '1'; previous: '0'
     console.error('Failed to toggle unattended mode:', err)
     // On failure, the SSE re-fetch (or the dialog re-open via activeTaskDetailId) will paint the
     // correct server-truth value into the toggle.
-
     // We intentionally don't try to roll back the toggle's local state from here — the dialog's
     // `unattended.value` is the source of truth while the dialog is open, and the user can
     // re-toggle if they want.
@@ -1344,10 +1307,8 @@ const handleUnattendedToggle = async (payload: { value: '0' | '1'; previous: '0'
 // NEW (plan: 2026-08-14-kanban-task-detail-edit-cwd). Edit-mode cwd picker handler. Persists
 // immediately via PUT /api/workspaces/tasks/<id> with `cwd` — the field already round-trips through
 // the backend's `task_update.zig` validated_cwd block (Migration 070).
-
 // Same best-effort / SSE-corrected pattern as `handleUnattendedToggle`: on PUT failure we log and
 // let the next SSE re-fetch paint the server-truth value into the picker.
-
 // We do NOT close the dialog or roll back the picker's local `cwdSession` — the picker is the
 // source of truth while the dialog is open, and the user can re-pick if they want.
 const handleUpdateCwd = async (payload: { cwd: string }) => {
@@ -1457,7 +1418,6 @@ const handleCreateTaskSave = async (payload: {
   // Empty array (not undefined) when no images were attached.
   pendingFiles?: PreviewFile[]
   // NEW (Migration 070 — kanban-cwd-session-optional plan). Per-task cwd override.
-
   // The dialog's folder picker populates this field; skipped / picker-canceled leaves it as '' (the
   // canonical "no per-task cwd" sentinel — backend stores '' and the session_create 3-level
   // fallback chain falls back to the kanban-level path + the per-session sandbox).
@@ -1467,7 +1427,6 @@ const handleCreateTaskSave = async (payload: {
   // NEW (plan: 2026-08-24-kanban-create-run-disable-double-click). Re-entry guard: createBusy is
   // flipped synchronously below, but two clicks in the SAME tick (double-click faster than Vue's
   // re-render) would both pass the dialog's disabled-button check before the prop propagates.
-
   // This guard makes the second call a no-op regardless of timing. Cleared in the finally block, so
   // a failed create re-enables the buttons for retry.
   if (createBusy.value) return
@@ -1555,10 +1514,8 @@ const handleCreateTaskSave = async (payload: {
     // In plain create mode the backend's INSERT path already persisted image_urls (via the
     // createStandardTask useCase). In create_and_run mode the same path applies. We don't need a
     // follow-up updateTaskDetails call — the columns are populated server-side now.
-
     // The imageUrls forwarding on the wire is what makes them visible to the chatview's first user
     // message. CHANGED: do NOT emit `selectTask` even on success.
-
     // The user asked to stay on the kanban view after clicking "Create task & run agent" — the
     // agent runs in the background; the user can click the task card to open the chat view any
     // time. (Same UX as the pre-refactor flow.)

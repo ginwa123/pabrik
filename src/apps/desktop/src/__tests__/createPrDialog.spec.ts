@@ -352,7 +352,6 @@ describe('CreatePrDialog', () => {
     // The plan specifies `data-testid="create-pr-submit"` on the submit button. The close (✕)
     // button in the dialog header is NOT given a testid in the production code, so identify it as
     // the button with text content `Cancel` (in the footer) and the ✕ (in the header).
-
     // Both bind `:disabled="isSubmitting"`.
     const buttons = wrapper.findAll('button')
     const cancelBtn = buttons.find((b) => b.text() === 'Cancel')!

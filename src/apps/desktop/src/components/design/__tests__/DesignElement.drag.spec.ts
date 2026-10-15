@@ -16,7 +16,6 @@ const ELEMENT: DesignElementApi = {
 
 // jsdom 29 doesn't implement pointer capture on HTMLDivElement. The production code calls
 // `target.setPointerCapture(event.pointerId)` unconditionally; jsdom throws "is not a function".
-
 // Stub on the prototype so every element has a no-op (matches the spirit of the per-element
 // stubbing in the plan's test bodies).
 if (!HTMLElement.prototype.setPointerCapture) {
@@ -271,7 +270,6 @@ describe('DesignElement drag', () => {
 
   // Strict throttle test: fires 3 rapid pointermoves within the 50ms throttle window and asserts
   // the trailing patch was applied exactly once (not 3 times).
-
   // This is the test that proves the throttle is in effect — the plan's 7 tests all happen to pass
   // against the pre-fix unthrottled code because each one's last emit happens to be the final patch
   // anyway. This 8th test catches the bug.
@@ -306,10 +304,8 @@ describe('DesignElement drag', () => {
     upHandler(new PointerEvent('pointerup', { pointerId: 1 }))
     // BUG FIX 2026-08-06: the wire now sends INCREMENTAL dx/dy (delta since last emit). The
     // trailing pointerup emit carries only the delta from the last throttled emit.
-
     // The test below locks in the incremental contract: dx/dy in each emit is the delta since the
     // previous emit, and the SUM of all emitted dx/dy equals the cumulative cursor movement.
-
     // This is what prevents the server-side `x = x + dx` from compounding across ticks (which would
     // make the element move "so fast").
     const translates = wrapper.emitted('translate') ?? []
@@ -479,7 +475,6 @@ describe('DesignElement drag', () => {
     // BUG FIX 2026-08-06: the wire sends INCREMENTAL dx/dy (delta since last emit). For a single
     // pointermove followed by a pointerup with no throttle window crossed, the trailing emit
     // carries the FULL cursor delta (since lastEmittedDx was 0).
-
     // The sum across emits must equal the cursor movement (50, 30).
     const groupDrags = wrapper.emitted('groupDrag') ?? []
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -490,7 +485,6 @@ describe('DesignElement drag', () => {
     expect(sumDy).toBe(30)
     // Trailing emit alone carries the full delta (no throttle fired before pointerup). The first
     // emit's dx/dy is whatever landed before the trailing — depends on the throttle timing.
-
     // We don't pin groupDrags[groupDrags.length - 1][0].dx specifically here — see the
     // throttles-rapid test for that invariant. Critically: this is a GROUP drag, so no `update`
     // should fire. The parent decides where to route the per-element updates.
@@ -534,11 +528,9 @@ describe('DesignElement drag', () => {
   // ─── Child-of-group drag suppression (2026-08-06) ───────────────── User request: elements
   // nested inside a parent group/frame should NOT be independently movable. Clicking a child still
   // selects it (so the user can edit properties), but pointer-drag is suppressed.
-
   // The user has to drag the parent group / frame header to move the whole subtree. Resize handles
   // still work on the child (Figma parity — child resize is independent, only child move is
   // blocked).
-
   // Wire-form note: the backend uses `COALESCE(parent_id, '')` so a top-level element arrives as
   // `parent_id = ''`. A nested element arrives as `parent_id = 'elem_<parent>'`. Legacy shapes may
   // have `parent_id = null` or `undefined` — both are treated as top-level.
@@ -772,10 +764,8 @@ describe('DesignElement drag', () => {
   // ─── Click on child: select parent (2026-08-06 follow-up) ──────────── User report: "when i
   // click the element group, why its still select that child element? why not directly select the
   // group? so i can move the group layer".
-
   // Clicking a child element should now select the parent group (Figma-style deep grouping), so the
   // user can immediately drag the group without first clicking the header.
-
   // Helper: register a parent element in the workspace store so `parentElement` (computed via
   // `useWorkspacesStore`) can find it.
   const seedParentFor = (parentId: string): void => {

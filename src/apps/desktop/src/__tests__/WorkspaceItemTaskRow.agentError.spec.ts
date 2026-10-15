@@ -105,7 +105,6 @@ describe('WorkspaceItemTaskRow — agent-error indicator', () => {
 
     // The wrap carries the `.error-icon-wrap` class (the subject of the scoped hover rule) and the
     // tooltip carries `.error-tooltip` (the descendant that gets `opacity:1; visibility:visible`).
-
     // Both classes are wired by the template; the hover transition itself is asserted via DOM event
     // dispatch below.
     const wrapEl = wrapper

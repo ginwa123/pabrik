@@ -1,9 +1,7 @@
 /** Behavioural tests for the group-drag move-batch wire. */
-
 /** Plan: docs/superpowers/plans/2026-08-06-move-element-with-descendants.md (Chunk 4, Task 4.3) The
  * drag path now uses `moveDesignElementsBatch` (server-side cascade) instead of
  * `updateDesignElementsGeometryBatch` (frontend expansion + N x/y pairs). */
-
 /** The tests below exercise the new wire. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'

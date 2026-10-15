@@ -57,7 +57,6 @@ const collapsed = computed(() => props.collapsed === true)
 
 // ── whole-file scope ────────────────────────────────────────────────────── Fetched here (not in
 // the parent) because this component already owns the path + cwd + staged triple the request needs.
-
 // The cache is module-level, so collapsing and re-expanding a section — which unmounts this
 // component — is still a cache read, not a second request.
 const wholeFileResult = ref<WholeFileDiff | null>(null)

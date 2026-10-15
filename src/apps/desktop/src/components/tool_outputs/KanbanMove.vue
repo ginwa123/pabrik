@@ -46,7 +46,6 @@ const props = defineProps<{
   /** Tool-call args (XML from jsonArgsToXml, or JSON). The backend input shape
    * (`KanbanMoveTaskInput`) uses `task_id` + `target_column_id` / `target_column_name` — none of
    * which appear in the result envelope until the move completes. */
-
   /** Used as a fallback so a still-running tool (empty content) shows its target instead of
    * "unknown". */
   parameters?: string

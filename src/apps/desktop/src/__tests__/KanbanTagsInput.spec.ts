@@ -1,7 +1,6 @@
 /** KanbanTagsInput — chip input component. Tests cover: empty state, existing chips render, add via
  * Enter, add via comma, ✕ removes, backspace-on-empty removes last, case-insensitive dedupe (silent
  * no-op), forbidden char error, length cap error. */
-
 /** Plan: docs/superpowers/plans/2026-07-28-kanban-task-tags.md (Task 10) */
 
 import { describe, it, expect, beforeEach } from 'vitest'
