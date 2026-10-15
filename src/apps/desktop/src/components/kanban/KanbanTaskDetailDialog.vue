@@ -24,6 +24,9 @@ const props = withDefaults(
     workspaceId?: string
     availableColumns?: KanbanColumn[]
     creating?: boolean
+    // NEW (kanban task dependencies). Same-board candidates for
+    // the dependency picker. Forwarded to the inner detail panel.
+    tasks?: Task[]
   }>(),
   {
     mode: 'edit',
@@ -33,13 +36,14 @@ const props = withDefaults(
     workspaceId: '',
     availableColumns: (): KanbanColumn[] => [],
     creating: false,
+    tasks: (): Task[] => [],
   },
 )
 
 const emit = defineEmits<{
   'update:show': [value: boolean]
   close: []
-  save: [payload: { mode: 'edit'; name: string; description: string; tags: string[] }]
+  save: [payload: { mode: 'edit'; name: string; description: string; tags: string[]; depends_on?: string[] }]
   create: [payload: Record<string, unknown>]
   'create-and-run': [payload: Record<string, unknown>]
   'column-change': [columnId: string]
@@ -99,6 +103,7 @@ defineExpose({
             :workspace-id="workspaceId"
             :available-columns="availableColumns"
             :creating="creating"
+            :tasks="tasks"
             @update:show="forwardClose"
             @close="forwardClose"
             @save="(p) => emit('save', p)"

@@ -198,6 +198,15 @@ const extraTagsCount = computed(() =>
   Math.max(0, (props.task.tags ?? []).length - VISIBLE_TAGS_MAX),
 )
 
+// Blocked badge (kanban task dependencies). Same count + tooltip
+// contract as the card twin in WorkspaceItemTaskCard.vue.
+const blockedCount = computed<number>(() => props.task.blocked_by?.length ?? 0)
+const blockedTitle = computed<string>(() => {
+  const names = (props.task.blocked_by ?? []).map((b) => b.name).filter((n) => n.length > 0)
+  const head = `Blocked by ${blockedCount.value} task${blockedCount.value === 1 ? '' : 's'}`
+  return names.length > 0 ? `${head}: ${names.join(', ')}` : head
+})
+
 // Same djb2 → 6-colour palette as <WorkspaceItemTaskCard> and
 // <KanbanTagsInput>, so a tag keeps its colour wherever it appears.
 const TAG_PALETTE = [
@@ -343,6 +352,15 @@ const runAgentFromMenu = () => {
         </template>
         <span v-if="extraTagsCount > 0" class="shrink-0" style="color: var(--color-nontext)"
           >+{{ extraTagsCount }}</span
+        >
+
+        <span
+          v-if="props.task.is_blocked"
+          class="shrink-0 text-micro px-1.5 rounded font-medium"
+          style="background: rgba(249, 115, 22, 0.15); color: #fb923c"
+          :title="blockedTitle"
+          data-testid="kanban-row-blocked"
+          >⛔ blocked by {{ blockedCount }}</span
         >
 
         <span

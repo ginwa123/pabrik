@@ -1181,6 +1181,7 @@ const handleTaskDetailSave = async (payload: {
   name: string
   description: string
   tags?: string[]
+  depends_on?: string[]
 }) => {
   if (!activeTaskDetailId.value) return
   try {
@@ -2041,6 +2042,7 @@ const handleCreateTaskSave = async (payload: {
           :cwd="item.path || ''"
           :workspace-id="workspaceId"
           :error-message="startAgentError"
+          :tasks="tasks"
           @save="handleTaskDetailSave"
           @update-unattended="handleUnattendedToggle"
           @update-cwd="handleUpdateCwd"

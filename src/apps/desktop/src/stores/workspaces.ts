@@ -26,6 +26,9 @@ export interface KanbanColumn {
   description?: string | null
   position: number
   created_at: string
+  // NEW (kanban task dependencies). `is_done` marks a column as
+  // completing: cards here no longer block their dependents.
+  is_done?: boolean
 }
 
 export interface WorkspaceItem {
@@ -229,6 +232,13 @@ export interface Task {
   // wire tasks raw, so the wire name IS the TS name. No
   // normalization needed.
   git_branch?: string | null
+  // NEW (kanban task dependencies). `depends_on` lists ids this
+  // task waits for; `blocked_by` is the incomplete subset with
+  // names for tooltips; `is_blocked` mirrors `blocked_by.length > 0`.
+  // All optional so legacy task literals keep type-checking.
+  depends_on?: string[]
+  blocked_by?: TaskDependencyBlocker[]
+  is_blocked?: boolean
 }
 
 // localStorage keys for state persistence
@@ -257,6 +267,10 @@ const STORAGE_KEY_ACTIVE_WORKSPACE = 'pabrik-active-workspace'
 // pill is always empty — the wire returns snake_case strings but
 // the Task interface declares Date types.
 function normalizeTaskTags(task: Task): Task {
+  // Kanban task dependencies ride the same fetch sites: coerce
+  // `depends_on` to string[] (wire is a real array; tolerated
+  // as a JSON string defensively, absent stays absent).
+  normalizeTaskDependsOn(task)
   if (task.tags === undefined) {
     // Still normalize imageUrls + dates even when tags is missing
     // (the fields are independent — a task can have tags but no
@@ -519,7 +533,13 @@ import {
   type ReparentDesignElementsBatchRequest,
   type ReorderMode,
   normalizeDesignElementType,
+  normalizeTaskDependsOn,
+  type TaskDependencyBlocker,
 } from '../api'
+
+// Re-exported so card/row/dialog components import the blocker
+// shape from the store alongside Task (single import site).
+export type { TaskDependencyBlocker } from '../api'
 
 export const useWorkspacesStore = defineStore('workspaces', () => {
   // Loading state
@@ -2176,7 +2196,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     workspaceId: string,
     itemId: string,
     columnId: string,
-    patch: { name?: string; description?: string; position?: number },
+    patch: { name?: string; description?: string; position?: number; is_done?: boolean },
   ): Promise<void> {
     const result = await api.updateKanbanColumn(workspaceId, itemId, columnId, patch)
     const item = findItem(workspaceId, itemId)
@@ -2314,8 +2334,12 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     taskId: string,
     columnId: string,
     position: number,
+    force = false,
   ): Promise<void> {
-    await api.moveTask(workspaceId, itemId, taskId, columnId, position)
+    // Awaits the API BEFORE mutating: a 409 move-gate refusal
+    // throws here with local state untouched, so the card stays
+    // in its original column (the ApiError body keeps `blockers`).
+    await api.moveTask(workspaceId, itemId, taskId, columnId, position, force)
     const item = findItem(workspaceId, itemId)
     if (item && item.tasks) {
       const task = item.tasks.find((t) => t.id === taskId)
@@ -4046,6 +4070,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
       name?: string
       description?: string
       tags?: string[]
+      // NEW (kanban task dependencies). Replace-all edit: `[]`
+      // clears all; undefined = leave untouched (never coerced).
+      depends_on?: string[]
       // NEW (Migration 069 — kanban image urls column). Empty array
       // = clear all images; undefined = leave unchanged. The
       // api.updateTaskSimple helper `||`-joins the array for the
@@ -4072,6 +4099,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
       name?: string
       description?: string
       tags?: string[]
+      depends_on?: string[]
       imageUrls?: string[]
       videoUrls?: string[]
     } = {}
@@ -4090,6 +4118,10 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     if (fields.tags !== undefined) {
       patch.tags = fields.tags
     }
+    // Dependencies: replace-all; `[]` clears, undefined skips.
+    if (fields.depends_on !== undefined) {
+      patch.depends_on = fields.depends_on
+    }
     // Migration 069 — kanban image urls. Empty array = clear all
     // images; undefined = leave unchanged. The api.updateTaskSimple
     // helper `||`-joins the array for the wire.
@@ -4106,11 +4138,13 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     const previousName = task.name
     const previousDescription = task.description
     const previousTags = task.tags
+    const previousDependsOn = task.depends_on
     const previousImageUrls = task.imageUrls
     const previousVideoUrls = task.videoUrls
     if (patch.name !== undefined) task.name = patch.name
     if (patch.description !== undefined) task.description = patch.description
     if (patch.tags !== undefined) task.tags = patch.tags
+    if (patch.depends_on !== undefined) task.depends_on = patch.depends_on
     if (patch.imageUrls !== undefined) {
       task.imageUrls = patch.imageUrls
       task.is_have_image = patch.imageUrls.length > 0
@@ -4135,6 +4169,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
       task.name = previousName
       task.description = previousDescription
       task.tags = previousTags
+      task.depends_on = previousDependsOn
       task.imageUrls = previousImageUrls
       task.videoUrls = previousVideoUrls
       if (wasActive) {

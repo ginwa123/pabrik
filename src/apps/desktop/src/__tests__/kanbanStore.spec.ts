@@ -596,7 +596,9 @@ describe('useWorkspacesStore — kanban actions', () => {
 
       await store.moveTaskToColumn('ws_1', 'item_1', 't1', 'c2', 1)
 
-      expect(moveTaskMock).toHaveBeenCalledWith('ws_1', 'item_1', 't1', 'c2', 1)
+      // `force` defaults to false and is threaded through explicitly
+      // (api.moveTask keeps it out of the wire body when falsy).
+      expect(moveTaskMock).toHaveBeenCalledWith('ws_1', 'item_1', 't1', 'c2', 1, false)
       const wsRow = store.workspaces.find((w) => w.id === 'ws_1')!
       const updatedItem = wsRow.items.find((i) => i.id === 'item_1')!
       const t1 = updatedItem.tasks?.find((t) => t.id === 't1')
