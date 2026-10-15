@@ -7,6 +7,7 @@
  */
 import type { Rule } from 'eslint'
 import { maxCommentLines } from './maxCommentLines'
+import { noFloatingComments } from './noFloatingComments'
 import { noDerivedStateWatch } from './bannedCode'
 import { noSilentFallbackCatch } from './noSilentFallbackCatch'
 import { noTryCatch } from './noTryCatch'
@@ -17,6 +18,7 @@ import { noWatchFeedbackLoop } from './noWatchFeedbackLoop'
 
 const rules: Record<string, Rule.RuleModule> = {
   'max-comment-lines': maxCommentLines,
+  'no-floating-comments': noFloatingComments,
   'no-derived-state-watch': noDerivedStateWatch,
   'no-silent-fallback-catch': noSilentFallbackCatch,
   'no-try-catch': noTryCatch,
