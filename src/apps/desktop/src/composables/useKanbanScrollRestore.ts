@@ -63,10 +63,9 @@ export function useKanbanScrollRestore(
   storageKey: Ref<string> | string,
   axis: 'x' | 'y' = 'x',
 ): void {
-  // Alias the key rather than mirroring it into a local ref — a dynamic
-  // storage key (computed from props) then stays live with no watcher.
-  // This used to initialise to '' whenever `storageKey` was a Ref and rely on
-  // an `{ immediate: true }` watcher to fill it in.
+  // Alias the key rather than mirroring it into a local ref — a dynamic storage key (computed from
+  // props) then stays live with no watcher. This used to initialise to '' whenever `storageKey` was
+  // a Ref and rely on an `{ immediate: true }` watcher to fill it in.
   const keyRef: Ref<string> = typeof storageKey === 'string' ? ref(storageKey) : storageKey
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -97,10 +96,9 @@ export function useKanbanScrollRestore(
     try {
       localStorage.setItem(keyRef.value, String(value))
     } catch {
-      // localStorage may throw in disabled / private-mode /
-      // quota-exceeded scenarios. The in-memory restore on the
-      // next mount still works; only cross-reload persistence
-      // is lost. Silently ignore.
+      // localStorage may throw in disabled / private-mode / quota-exceeded scenarios. The in-memory
+      // restore on the next mount still works; only cross-reload persistence is lost. Silently
+      // ignore.
     }
   }
 
@@ -155,26 +153,22 @@ export function useKanbanScrollRestore(
     // Passive scroll listener for the debounced fallback write.
     el.addEventListener('scroll', handleScroll, { passive: true })
 
-    // scrollend is the fast path. Feature-detect by trying to set
-    // `onscrollend` (returns `undefined` if the property doesn't
-    // exist; assigning to a missing property silently creates it
-    // in jsdom, so we additionally check `'onscrollend' in el` to
-    // be safe in test environments).
+    // scrollend is the fast path. Feature-detect by trying to set `onscrollend` (returns
+    // `undefined` if the property doesn't exist; assigning to a missing property silently creates
+    // it in jsdom, so we additionally check `'onscrollend' in el` to be safe in test environments).
     const supportsScrollEnd =
       'onscrollend' in el ||
       typeof (el as unknown as { onscrollend?: unknown }).onscrollend !== 'undefined'
     if (supportsScrollEnd) {
       el.addEventListener('scrollend', handleScrollEnd, { passive: true })
     }
-    // else: the debounced `scroll` handler covers this case. Each
-    // scroll event schedules a 250 ms write, so even without
-    // scrollend the position is saved ~250 ms after the user
-    // stops scrolling.
+    // else: the debounced `scroll` handler covers this case. Each scroll event schedules a 250 ms
+    // write, so even without scrollend the position is saved ~250 ms after the user stops
+    // scrolling.
 
-    // Now restore from the previous session's saved offset.
-    // Clamp to (scrollSize - clientSize) — the new container
-    // may be smaller than the last session's, e.g. when the
-    // kanban toggled from full-bleed to the 3-column layout.
+    // Now restore from the previous session's saved offset. Clamp to (scrollSize - clientSize) —
+    // the new container may be smaller than the last session's, e.g. when the kanban toggled from
+    // full-bleed to the 3-column layout.
     const saved = readSavedOffset()
     if (saved <= 0) return // nothing to restore (initial state)
 

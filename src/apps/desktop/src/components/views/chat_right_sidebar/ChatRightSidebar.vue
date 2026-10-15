@@ -106,10 +106,9 @@ const setPanel = (panel: SidebarPanel) => {
   }
 }
 
-// Explorer file-click opens in the in-app CodeEditor (same flow as the
-// center diff's Open button). Captured at setup: inject() only resolves
-// during setup — calling it inside the click handler would return null.
-// Null-guarded for mounts outside an AppLayout subtree (unit tests).
+// Explorer file-click opens in the in-app CodeEditor (same flow as the center diff's Open button).
+// Captured at setup: inject() only resolves during setup — calling it inside the click handler
+// would return null. Null-guarded for mounts outside an AppLayout subtree (unit tests).
 const openInEditor = useInjectOpenInCodeEditor()
 const onExplorerFileClick = (file: FolderEntry) => {
   if (!openInEditor || !props.cwd) return
@@ -141,9 +140,8 @@ const startResize = (e: MouseEvent) => {
 
 const close = () => emit('update:open', false)
 
-// No cwd watcher here: SidebarDiffPanel already watches props.cwd
-// itself (clears its tab cache + reloads). A second fetch from this
-// level doubled every worktree switch and the two concurrent
+// No cwd watcher here: SidebarDiffPanel already watches props.cwd itself (clears its tab cache +
+// reloads). A second fetch from this level doubled every worktree switch and the two concurrent
 // getGitChanges calls could resolve out of order (stale branch wins).
 
 defineExpose({

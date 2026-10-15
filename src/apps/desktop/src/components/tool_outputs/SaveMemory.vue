@@ -244,10 +244,9 @@ const hasBody = computed(() => {
 // ---- Actions ---------------------------------------------------------------
 
 const toggle = () => {
-  // Always expandable on success (id + tags + the body) or error (1 row).
-  // On empty/missing envelopes (no id + no error) we still allow
-  // expansion so the user sees "what's in here" — but it's a no-op
-  // visually when there are no fields.
+  // Always expandable on success (id + tags + the body) or error (1 row). On empty/missing
+  // envelopes (no id + no error) we still allow expansion so the user sees "what's in here" — but
+  // it's a no-op visually when there are no fields.
   isExpanded.value = !isExpanded.value
 }
 

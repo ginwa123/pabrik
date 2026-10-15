@@ -99,9 +99,8 @@ const router = createRouter({
       name: 'workspace',
       component: AppLayout,
     },
-    // Global catch-all: any path the backend's SPA fallback serves
-    // index.html for but no route above matches (stale deep link,
-    // refresh at a removed URL) lands on /app instead of rendering
+    // Global catch-all: any path the backend's SPA fallback serves index.html for but no route
+    // above matches (stale deep link, refresh at a removed URL) lands on /app instead of rendering
     // an empty router-view. Must stay LAST — Vue matches in order.
     {
       path: '/:pathMatch(.*)*',

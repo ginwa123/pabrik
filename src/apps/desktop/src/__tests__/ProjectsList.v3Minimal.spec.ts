@@ -91,11 +91,9 @@ describe('ProjectsList v2 — count, no search, compact indent', () => {
     wrapper.unmount()
   })
 
-  // Was: `ul.ml-1.pl-2` — a class-string grep. That locked in the
-  // hand-rolled 4px + 8px indent, one of the four inconsistent left
-  // edges in the panel. The indent is a token now, so the assertion is
-  // on the token. The full row contract lives in
-  // Sidebar.spacing.spec.ts.
+  // Was: `ul.ml-1.pl-2` — a class-string grep. That locked in the hand-rolled 4px + 8px indent, one
+  // of the four inconsistent left edges in the panel. The indent is a token now, so the assertion
+  // is on the token. The full row contract lives in Sidebar.spacing.spec.ts.
   it('indents the project list by one --sb-indent step', async () => {
     const wrapper = mountList()
     await nextTick()

@@ -124,10 +124,9 @@ describe('local/no-derived-state-watch', () => {
   })
 
   it('allows an accumulator mixed with a real side effect', () => {
-    // SseStatusBadge.vue:54 does `attempt.value += 1` alongside a diagnostic.
-    // `+=` is not expressible as computed(), and the body touches the
-    // outside world, so neither half of the rule applies. Flagging it would
-    // be a false positive against the rule's own contract.
+    // SseStatusBadge.vue:54 does `attempt.value += 1` alongside a diagnostic. `+=` is not
+    // expressible as computed(), and the body touches the outside world, so neither half of the
+    // rule applies. Flagging it would be a false positive against the rule's own contract.
     expect(
       lint(
         `watch(bus.state, (s) => { if (s === 'up') { attempt.value += 1 }
@@ -143,10 +142,9 @@ describe('local/no-derived-state-watch', () => {
   })
 
   it('flags a body that assigns only inside an if-guard with no else', () => {
-    // Regression: treating the absent `alternate` as a failure dropped 11 of
-    // the 26 real sites — including this exact shape, FileInput.vue:230
-    // (`if (newVal) { inputText.value = newVal }`). The rule still looked
-    // configured and simply stopped matching.
+    // Regression: treating the absent `alternate` as a failure dropped 11 of the 26 real sites —
+    // including this exact shape, FileInput.vue:230 (`if (newVal) { inputText.value = newVal }`).
+    // The rule still looked configured and simply stopped matching.
     expect(
       lint(
         `watch(() => props.initialMessage, (newVal) => { if (newVal) { inputText.value = newVal } })`,
@@ -176,10 +174,9 @@ describe('local/no-derived-state-watch', () => {
   })
 
   it('allows a mirror into a ref the code also writes elsewhere', () => {
-    // The defining property of derived state is that you CANNOT write it
-    // yourself. `draft` is bound with v-model, so it is real state and
-    // replacing the watcher with `computed()` would make the input
-    // read-only. 15 of the original 26 sites are this shape.
+    // The defining property of derived state is that you CANNOT write it yourself. `draft` is bound
+    // with v-model, so it is real state and replacing the watcher with `computed()` would make the
+    // input read-only. 15 of the original 26 sites are this shape.
     expect(
       lint(
         `const draft = ref('')\nwatch(() => props.x, (v) => { draft.value = v ?? '' })\ndraft.value = 'typed'`,
@@ -332,10 +329,9 @@ describe('local/no-watch-array-source', () => {
   })
 
   it('allows a getter that builds an array (out of scope)', () => {
-    // `watch(() => [a.value, b.value], fn)` is a single reactive source as
-    // far as this rule resolves — reporting it would require resolving the
-    // getter body. Documented boundary, not a dodge endorsement: prefer two
-    // single-source watchers sharing a handler.
+    // `watch(() => [a.value, b.value], fn)` is a single reactive source as far as this rule
+    // resolves — reporting it would require resolving the getter body. Documented boundary, not a
+    // dodge endorsement: prefer two single-source watchers sharing a handler.
     expect(
       lint(`watch(() => [a.value, b.value], () => { void load() })`, ONLY_ARRAY_SOURCE),
     ).toEqual([])
@@ -534,10 +530,9 @@ describe('local/no-try-catch', () => {
   })
 
   it('allows promise.catch(fn)', () => {
-    // Deliberately out of scope: 10 of the 30 sites are fire-and-forget
-    // `router.replace(...)` navigations and 3 are best-effort `res.text()`
-    // reads, where the failure genuinely cannot reach the user. The
-    // dangerous subset is `local/no-silent-fallback-catch`'s job.
+    // Deliberately out of scope: 10 of the 30 sites are fire-and-forget `router.replace(...)`
+    // navigations and 3 are best-effort `res.text()` reads, where the failure genuinely cannot
+    // reach the user. The dangerous subset is `local/no-silent-fallback-catch`'s job.
     expect(
       lint(`router.replace({ path }).catch(() => {})`, ONLY_TRY_CATCH),
     ).toEqual([])

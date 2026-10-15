@@ -123,9 +123,8 @@ function installChatViewMocks(opts: {
   } as any)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   vi.spyOn(api, 'getQueuedMessages').mockResolvedValue({ messages: [] } as any)
-  // A `watch(() => sessionId.value, ...)` in ChatView fires
-  // `api.getSession(newId)` once onMounted sets the sessionId. The
-  // mock must return a session-shaped object so the watch's
+  // A `watch(() => sessionId.value, ...)` in ChatView fires `api.getSession(newId)` once onMounted
+  // sets the sessionId. The mock must return a session-shaped object so the watch's
   // `session?.selectedProfile` lookup is safe.
   vi.spyOn(api, 'getSession').mockResolvedValue({
     session_id: 'placeholder',
@@ -238,15 +237,13 @@ describe('ChatView worktree status button', () => {
     wrapper = await mountChatView('session_no_wt')
     const btn = wrapper!.find('[data-testid="worktree-status-button"]')
     expect(btn.exists()).toBe(true)
-    // The button is ALWAYS clickable now (no `:disabled` binding).
-    // Clicking opens a dropdown with the no-worktree menu items
-    // ("Open in folder", "Refresh status") — NOT the worktree-bound
+    // The button is ALWAYS clickable now (no `:disabled` binding). Clicking opens a dropdown with
+    // the no-worktree menu items ("Open in folder", "Refresh status") — NOT the worktree-bound
     // items ("Create a PR", "Clear worktree").
     const htmlBtn = btn.element as HTMLButtonElement
     expect(htmlBtn.disabled).toBe(false)
-    // The worktree-basename block should be absent (it's gated on
-    // v-if="gitWorktreeCwd"). Assert the icon it would have drawn
-    // rather than the glyph's text, which `WorktreeMenu` replaced with
+    // The worktree-basename block should be absent (it's gated on v-if="gitWorktreeCwd"). Assert
+    // the icon it would have drawn rather than the glyph's text, which `WorktreeMenu` replaced with
     // an SVG — the string check passed for the wrong reason.
     expect(wrapper!.find('[data-icon="tree"]').exists()).toBe(false)
 
@@ -273,10 +270,9 @@ describe('ChatView worktree status button', () => {
     const btn = wrapper!.find('[data-testid="worktree-status-button"]')
     expect(btn.exists()).toBe(true)
     expect((btn.element as HTMLButtonElement).disabled).toBe(false)
-    // The chip keeps the branch name visible. The worktree basename is
-    // intentionally NOT shown in the chip anymore (it was noisy when
-    // branch and basename were nearly identical strings); the menu
-    // header carries the worktree info instead.
+    // The chip keeps the branch name visible. The worktree basename is intentionally NOT shown in
+    // the chip anymore (it was noisy when branch and basename were nearly identical strings); the
+    // menu header carries the worktree info instead.
     expect(btn.text()).toContain('main')
     expect(btn.find('[data-icon="tree"]').exists()).toBe(false)
     expect(btn.text()).not.toContain('auth-fix')
@@ -325,11 +321,9 @@ describe('ChatView worktree status button', () => {
     wrapper = await mountChatView('session_with_wt_title')
     const btn = wrapper!.find('[data-testid="worktree-status-button"]')
     expect(btn.exists()).toBe(true)
-    // The production template binds:
-    //   :title="gitWorktreeCwd ? `Worktree: ${gitWorktreeCwd}\n...` : `...`"
-    // The full path must appear in the title (the basename is too
-    // short to be a unique identifier when the user has multiple
-    // worktrees named the same).
+    // The production template binds: :title="gitWorktreeCwd ? `Worktree: ${gitWorktreeCwd}\n...` :
+    // `...`" The full path must appear in the title (the basename is too short to be a unique
+    // identifier when the user has multiple worktrees named the same).
     const title = btn.attributes('title') ?? ''
     expect(title).toContain('/abs/.worktrees/auth-fix')
   })

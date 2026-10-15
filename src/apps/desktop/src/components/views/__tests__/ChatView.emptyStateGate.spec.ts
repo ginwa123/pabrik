@@ -68,10 +68,9 @@ describe('ChatView empty state is gated on a server-confirmed empty transcript',
     // The attempt body is a separate function so the retry re-runs the whole
     // thing (cache-prime included) rather than a half-applied load.
     expect(chatViewSrc).toMatch(/const runHistoryLoadAttempt = async \(\) =>/)
-    // `isLoading` is set true in the wrapper and cleared by `Effect.ensuring`
-    // — never between attempts, so the skeleton never flickers out mid-wait.
-    // That is the `finally`, expressed on the error channel (AGENTS.md: no
-    // `try`/`catch` in the desktop app).
+    // `isLoading` is set true in the wrapper and cleared by `Effect.ensuring` — never between
+    // attempts, so the skeleton never flickers out mid-wait. That is the `finally`, expressed on
+    // the error channel (AGENTS.md: no `try`/`catch` in the desktop app).
     expect(chatViewSrc).toMatch(
       /Effect\.ensuring\([\s\S]*?Effect\.sync\(\(\) => \{\s*\n\s*isLoading\.value = false/,
     )

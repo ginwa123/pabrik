@@ -91,11 +91,9 @@ export const useKanbanSseStore = defineStore('kanbanSse', () => {
    * synchronous, callers still `await` us.
    */
   async function initKanbanSse(workspaceId: string): Promise<void> {
-    // Set the filter first — if we're called for the first time,
-    // the listener (registered below) will read this value on its
-    // first event. If we're called for a re-init with a new
-    // workspaceId, the existing listener sees the new value on its
-    // next event.
+    // Set the filter first — if we're called for the first time, the listener (registered below)
+    // will read this value on its first event. If we're called for a re-init with a new
+    // workspaceId, the existing listener sees the new value on its next event.
     activeWorkspaceId.value = workspaceId
 
     // Already subscribed — just refresh the filter and return.
@@ -103,9 +101,8 @@ export const useKanbanSseStore = defineStore('kanbanSse', () => {
 
     const bus = useSseBus()
     offKanban = bus.on('kanban', (event: KanbanColumnEvent | KanbanTaskEvent) => {
-      // Drop events for other workspaces — the backend fans out
-      // kanban events globally, so any connected client receives
-      // them all. Skipping the no-op fetch keeps the local store's
+      // Drop events for other workspaces — the backend fans out kanban events globally, so any
+      // connected client receives them all. Skipping the no-op fetch keeps the local store's
       // re-fetch rate at 1 per actual mutation.
       if (event.workspace_id !== activeWorkspaceId.value) return
       const ws = useWorkspacesStore()
@@ -174,10 +171,9 @@ export const useKanbanSseStore = defineStore('kanbanSse', () => {
         // this task id), so skip the refetch. Remote moves (agent
         // tool, other tab) never register and still refetch below.
         if (isRecentLocalMutation(event.task_id)) return
-        // Kanban task search (Chunk 7): forward the active q so a
-        // remote move/edit during a search doesn't reset the user's
-        // narrowed view to the unfiltered list. activeSearchQueries
-        // is a Map<itemId, string>; undefined when no search active.
+        // Kanban task search (Chunk 7): forward the active q so a remote move/edit during a search
+        // doesn't reset the user's narrowed view to the unfiltered list. activeSearchQueries is a
+        // Map<itemId, string>; undefined when no search active.
         const q = ws.activeSearchQueries.get(event.item_id)
         // Kanban sort-by (Chunk 3): forward the active sort so a
         // remote move during a non-default sort re-fetches in the

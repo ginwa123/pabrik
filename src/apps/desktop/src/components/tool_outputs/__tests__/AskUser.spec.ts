@@ -266,10 +266,9 @@ describe('AskUser — rendering', () => {
 
 describe('AskUser — markdown in the question', () => {
   it('renders the markdown the model actually writes instead of its syntax', () => {
-    // The reported bug: `ask_user.zig` documents `question` as
-    // "Markdown allowed" and the model writes `**bold**` + `` `code` ``,
-    // but the card interpolated it as literal text — the whole question
-    // was one wall of asterisks and backticks.
+    // The reported bug: `ask_user.zig` documents `question` as "Markdown allowed" and the model
+    // writes `**bold**` + `` `code` ``, but the card interpolated it as literal text — the whole
+    // question was one wall of asterisks and backticks.
     const wrapper = mountCard(
       pendingData({
         question:

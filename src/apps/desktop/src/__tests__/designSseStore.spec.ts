@@ -76,10 +76,9 @@ describe('useDesignSseStore (bus-backed)', () => {
       configurable: true,
     })
 
-    // Install the bus BEFORE initDesignSse runs — designSseStore calls
-    // `useSseBus()` inside initDesignSse, which throws if the bus
-    // hasn't been installed. Replace the underlying SseClient with a
-    // stub so we never open a network EventSource in tests.
+    // Install the bus BEFORE initDesignSse runs — designSseStore calls `useSseBus()` inside
+    // initDesignSse, which throws if the bus hasn't been installed. Replace the underlying
+    // SseClient with a stub so we never open a network EventSource in tests.
     __resetSseBus()
     app = createApp({})
     installSseBus(app)
@@ -88,10 +87,9 @@ describe('useDesignSseStore (bus-backed)', () => {
   })
 
   afterEach(() => {
-    // Detach the bus listener so events don't fire into a store whose
-    // Pinia is gone — `__resetSseBus` closes the global client which
-    // also tears down internal state, but explicit closeDesignSse
-    // covers the case where a test crashed before reaching close.
+    // Detach the bus listener so events don't fire into a store whose Pinia is gone —
+    // `__resetSseBus` closes the global client which also tears down internal state, but explicit
+    // closeDesignSse covers the case where a test crashed before reaching close.
     try {
       useDesignSseStore().closeDesignSse()
     } catch {
@@ -137,11 +135,9 @@ describe('useDesignSseStore (bus-backed)', () => {
   })
 
   it('closeDesignSse clears activeWorkspaceId so a later re-init re-binds cleanly', async () => {
-    // The spec asserts that closeDesignSse nulls out the active
-    // workspace filter — this lets `initDesignSse(newId)` after
-    // close re-register with the new id (verified by dispatching an
-    // event for the new id post-close+reinit and observing the
-    // fetch fire).
+    // The spec asserts that closeDesignSse nulls out the active workspace filter — this lets
+    // `initDesignSse(newId)` after close re-register with the new id (verified by dispatching an
+    // event for the new id post-close+reinit and observing the fetch fire).
     const ws = useWorkspacesStore()
     const fetchSpy = vi.spyOn(ws, 'fetchDesignElements').mockResolvedValue()
 

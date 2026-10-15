@@ -160,9 +160,8 @@ describe('CompactionCard', () => {
   })
 
   it('renders all entries inline when total ≤ MAX_ENTRIES_VISIBLE (50)', () => {
-    // Regression for the truncation perception bug: previously
-    // MAX_ENTRIES_VISIBLE was 10, so a 12-entry envelope hid 2 entries
-    // behind a "Show all" button. With MAX_ENTRIES_VISIBLE = 50, a
+    // Regression for the truncation perception bug: previously MAX_ENTRIES_VISIBLE was 10, so a
+    // 12-entry envelope hid 2 entries behind a "Show all" button. With MAX_ENTRIES_VISIBLE = 50, a
     // 12-entry envelope renders everything inline (no toggle needed).
     const entries = Array.from({ length: 12 }, (_, i) => `    <entry>
       <id>h_${i + 1}</id>
@@ -183,10 +182,9 @@ ${entries}
   })
 
   it('still hides entries beyond MAX_ENTRIES_VISIBLE behind a toggle', () => {
-    // Regression: a 60-entry envelope should still show 50 by default
-    // and expose a "Show all 60" button for the remaining 10. The
-    // scrollable list (max-height 400px; overflow-y auto) handles the
-    // visual cap; the toggle handles keyboard-only accessibility.
+    // Regression: a 60-entry envelope should still show 50 by default and expose a "Show all 60"
+    // button for the remaining 10. The scrollable list (max-height 400px; overflow-y auto) handles
+    // the visual cap; the toggle handles keyboard-only accessibility.
     const entries = Array.from({ length: 60 }, (_, i) => `    <entry>
       <id>h_${i + 1}</id>
       <role>user</role>

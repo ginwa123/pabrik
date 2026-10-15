@@ -42,10 +42,9 @@ import type { Message } from '../api'
 vi.mock('../components/tool_outputs/UpdatePlan.vue', () => ({
   default: {
     name: 'UpdatePlan',
-    // No `parameters` prop — the component parses the plan body
-    // directly from the inner <plan><![CDATA[...]]></plan> block of
-    // the <tool> envelope (mirrors get_plan's wire shape). The
-    // dispatcher doesn't thread anything extra.
+    // No `parameters` prop — the component parses the plan body directly from the inner
+    // <plan><![CDATA[...]]></plan> block of the <tool> envelope (mirrors get_plan's wire shape).
+    // The dispatcher doesn't thread anything extra.
     props: ['message'],
     template:
       '<div class="update-plan-stub" :data-tool-name="message.tool_name" :data-msg-id="message.id"></div>',
@@ -110,10 +109,9 @@ const getPlanPresentEnvelope = (markdown: string): unknown => ({ plan: markdown 
 
 const getPlanEmptyEnvelope = (): unknown => ({ empty: true })
 
-// ────────────────────────────────────────────────────────────────────────
-// Test helpers — mock the api module + SSE bus + localStorage so the
-// mount is fast and stable (parity with profileCascade.spec.ts).
-// ────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────── Test helpers — mock the
+// api module + SSE bus + localStorage so the mount is fast and stable (parity with
+// profileCascade.spec.ts). ────────────────────────────────────────────────────────────────────────
 
 function installChatViewMocks(opts: { messages: Message[]; sessionId: string }) {
   vi.spyOn(api, 'getChatHistory').mockResolvedValue({

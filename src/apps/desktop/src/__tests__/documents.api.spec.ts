@@ -102,10 +102,9 @@ describe('documents API client — scoping', () => {
   })
 
   it('omits content from a create body when only a title is given', async () => {
-    // The backend treats `"content": ""` and an absent `content` the
-    // same (both store ''), but sending the empty string explicitly is
-    // one less thing for a future "absent means keep" PATCH semantic to
-    // get wrong. Assert the default rather than trust it.
+    // The backend treats `"content": ""` and an absent `content` the same (both store ''), but
+    // sending the empty string explicitly is one less thing for a future "absent means keep" PATCH
+    // semantic to get wrong. Assert the default rather than trust it.
     let body = ''
     fetchSpy.mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
       body = String(init?.body ?? '')

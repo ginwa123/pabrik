@@ -44,10 +44,9 @@ import { useDesignContextMenu } from '../../composables/useDesignContextMenu'
 import { useLayerDragDrop, TOP_LEVEL_SENTINEL } from '../../composables/useLayerDragDrop'
 import { useWorkspacesStore } from '../../stores/workspaces'
 
-// Read the active workspace + item + page at call time. Mirrors the
-// pattern in `useDesignHandlers.updateElement` — no need to plumb
-// ids through props when the store already knows them. Undo/redo
-// plan Chunk 1 (wire-up of silent-drop emits).
+// Read the active workspace + item + page at call time. Mirrors the pattern in
+// `useDesignHandlers.updateElement` — no need to plumb ids through props when the store already
+// knows them. Undo/redo plan Chunk 1 (wire-up of silent-drop emits).
 const workspacesStore = useWorkspacesStore()
 const activeWorkspaceId = computed(() => workspacesStore.activeWorkspace?.id ?? null)
 const activeWorkspaceItemId = computed(() => workspacesStore.activeWorkspaceItemId)
@@ -93,17 +92,15 @@ const emit = defineEmits<{
   // workspacesStore.reparentDesignElementsBatch. Independent of the
   // Ungroup action (which dissolves the selected group itself).
   leaveGroup: [elementId: string]
-  // NEW (Chunk 7, design-move-to-page plan, 2026-08-06): bubble the
-  // "Move to page..." selection up to the host so it can open the
-  // MoveToPageDialog with the right element id. The dialog handles
+  // NEW (Chunk 7, design-move-to-page plan, 2026-08-06): bubble the "Move to page..." selection up
+  // to the host so it can open the MoveToPageDialog with the right element id. The dialog handles
   // the actual API call after the user picks a target page.
   moveToPage: [elementId: string]
   selectAll: []
   bringToFront: [targetIds: string[]]
   bringForward: [targetIds: string[]]
-  // NEW (Chunk 4 Task 4.2 of drag-to-reparent plan): payload from a
-  // drop event. `elementIds` is the FULL selection when the dragged
-  // row is in the selection (multi-drag). `newParentId` is the
+  // NEW (Chunk 4 Task 4.2 of drag-to-reparent plan): payload from a drop event. `elementIds` is the
+  // FULL selection when the dragged row is in the selection (multi-drag). `newParentId` is the
   // group/frame id to reparent under, or null for "leave group".
   reparent: [payload: { elementIds: string[]; newParentId: string | null }]
   sendBackward: [targetIds: string[]]

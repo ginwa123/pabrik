@@ -134,9 +134,8 @@ function mountAppLayout(): ReturnType<typeof mount> {
 // Mock the workspace-store API calls so init() doesn't wipe the
 // injected fixture (same approach as AppLayout.kanbanChatDialog.spec.ts).
 function rewireApiForFixture(store: ReturnType<typeof useWorkspacesStore>) {
-  // Snapshot the fixture tree NOW: lazy init() replaces
-  // `workspaces.value` with empty-items rows BEFORE calling
-  // getWorkspacesItems, so a live read would see the wiped tree.
+  // Snapshot the fixture tree NOW: lazy init() replaces `workspaces.value` with empty-items rows
+  // BEFORE calling getWorkspacesItems, so a live read would see the wiped tree.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const snapshot = JSON.parse(JSON.stringify(store.workspaces)) as any[]
   vi.spyOn(api, 'getWorkspaces').mockImplementation(async () => ({
@@ -237,10 +236,9 @@ describe('AppLayout — kanban ?sorts= URL round-trip via task view', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ] as any
     rewireApiForFixture(store)
-    // Pre-populate the snapshot field the way Sidebar.vue does on
-    // user click — this simulates the user being on the
-    // `?view=workspace&...&sorts=col_a:name:asc` URL right before
-    // they click a card.
+    // Pre-populate the snapshot field the way Sidebar.vue does on user click — this simulates the
+    // user being on the `?view=workspace&...&sorts=col_a:name:asc` URL right before they click a
+    // card.
     store.savedSortsParam = 'col_a:name:asc'
 
     const wrapper = mountAppLayout()

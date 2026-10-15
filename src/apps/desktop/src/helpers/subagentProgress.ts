@@ -111,10 +111,9 @@ export function isPlaceholderSpawnRow(msg: {
     !!msg.tool_call_id &&
     typeof msg.content === 'string' &&
     !msg.content.includes('<summary') &&
-    // A pre-thread failure envelope (<success>false</success>, no
-    // <summary>) means the tool HAS completed — it is not a
-    // placeholder, so rehydrate must not poll the snapshot for it
-    // and the card must not render "starting…".
+    // A pre-thread failure envelope (<success>false</success>, no <summary>) means the tool HAS
+    // completed — it is not a placeholder, so rehydrate must not poll the snapshot for it and the
+    // card must not render "starting…".
     !msg.content.includes('<success>false</success>')
   )
 }

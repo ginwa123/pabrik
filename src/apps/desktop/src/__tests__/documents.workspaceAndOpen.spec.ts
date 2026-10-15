@@ -248,10 +248,9 @@ describe('Documents — a project click still counts as "a workspace is selected
     })
     await flush()
 
-    // The regression: the Documents section said "No workspace selected"
-    // while PROJECTS showed a plainly-selected project. Mounting the real
-    // Sidebar is the only way to see this — the component-level spec
-    // passes a `workspaceId` prop and so never sees the binding.
+    // The regression: the Documents section said "No workspace selected" while PROJECTS showed a
+    // plainly-selected project. Mounting the real Sidebar is the only way to see this — the
+    // component-level spec passes a `workspaceId` prop and so never sees the binding.
     expect(wrapper.find('[data-testid="documents-section-body"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="documents-no-workspace"]').exists()).toBe(false)
     // And it actually scoped the fetch to the right workspace.
@@ -347,10 +346,9 @@ describe('AppLayout — a document is a PAGE, not a ?doc= overlay', () => {
     navigate(DOC_PATH)
     await flush()
 
-    // The regression this file was written for: the mirror re-adopted the
-    // project from the path and then router.replace'd a URL that lost the
-    // document, so the click appeared to do nothing. With the document on
-    // its own path the mirror has no `doc` to drop.
+    // The regression this file was written for: the mirror re-adopted the project from the path and
+    // then router.replace'd a URL that lost the document, so the click appeared to do nothing. With
+    // the document on its own path the mirror has no `doc` to drop.
     expect(replacesDroppingDoc()).toHaveLength(0)
 
     // And the URL->store watcher must not re-adopt the project either: the
@@ -361,10 +359,9 @@ describe('AppLayout — a document is a PAGE, not a ?doc= overlay', () => {
   })
 
   it('a cold boot on a document path keeps the document and drops the project', async () => {
-    // The refresh / shared-link case. Before the path shape this was a
-    // second, click-free way to lose the open document: the URL restore
-    // adopted the item from the path and the mirror fired with no prior
-    // state to bail on.
+    // The refresh / shared-link case. Before the path shape this was a second, click-free way to
+    // lose the open document: the URL restore adopted the item from the path and the mirror fired
+    // with no prior state to bail on.
     navigate(DOC_PATH)
     useDocumentsStore().documents = [DOC]
     useDocumentsStore().loaded = true
@@ -381,10 +378,9 @@ describe('AppLayout — a document is a PAGE, not a ?doc= overlay', () => {
   })
 
   it('the document REPLACES the main view instead of stacking over it', async () => {
-    // The heart of the change. As an overlay this rendered alongside the
-    // chat/kanban underneath, and the chat's floating chrome out-painted
-    // the overlay's z-index (PR #749). A page unmounts what it replaces,
-    // so the overlap cannot happen at all.
+    // The heart of the change. As an overlay this rendered alongside the chat/kanban underneath,
+    // and the chat's floating chrome out-painted the overlay's z-index (PR #749). A page unmounts
+    // what it replaces, so the overlap cannot happen at all.
     navigate(PROJECT_PATH)
     const wrapper = mount(AppLayout, { global: { stubs: STUB_CONFIG } })
     await flush()

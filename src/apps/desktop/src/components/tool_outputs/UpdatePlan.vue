@@ -46,9 +46,8 @@ import { computed, ref } from 'vue'
 import ToolCardHeader from './_shared/ToolCardHeader.vue'
 import { tryUnwrapToolOutput } from '../../helpers/unwrapToolOutput'
 
-// Minimal shape we need from the parent. ChatView.vue defines a
-// LOCAL `Message` interface (different from `api.Message`) so we
-// declare just the fields we read — this keeps the component
+// Minimal shape we need from the parent. ChatView.vue defines a LOCAL `Message` interface
+// (different from `api.Message`) so we declare just the fields we read — this keeps the component
 // decoupled from whichever Message type the parent uses.
 interface ToolMessageLike {
   id?: string
@@ -180,10 +179,9 @@ const primaryLabel = computed((): string => {
 
 const rightMeta = computed((): string => {
   if (!parsed.value.success) return parsed.value.error ?? 'error'
-  // Approximate the "wrote N bytes" feel — we don't have the
-  // raw input here, so show the timestamp instead. The collapsed
-  // bubble uses a byte count, but inside the card the timestamp
-  // is more useful for "when did the agent last tick a step?".
+  // Approximate the "wrote N bytes" feel — we don't have the raw input here, so show the timestamp
+  // instead. The collapsed bubble uses a byte count, but inside the card the timestamp is more
+  // useful for "when did the agent last tick a step?".
   return parsed.value.updatedAt ?? ''
 })
 

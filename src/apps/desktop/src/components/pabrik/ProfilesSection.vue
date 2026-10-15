@@ -31,10 +31,9 @@ defineProps<{
 
 const emit = defineEmits<{
   setActive: [name: string]
-  /// Reset the active profile to "no active" — emitted when the user
-  /// clicks the Reset button next to the active pill. Parent saves
-  /// `active_profile: null` to config.json; the backend cascade then
-  /// falls through to top-level config for every new chat / task.
+  // Reset the active profile to "no active" — emitted when the user clicks the Reset button next to
+  // the active pill. Parent saves `active_profile: null` to config.json; the backend cascade then
+  // falls through to top-level config for every new chat / task.
   clearActive: []
   edit: [profile: ProfileRow]
   delete: [name: string]

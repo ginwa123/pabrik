@@ -58,10 +58,9 @@ const isDirty = computed(
 
 const renderedHtml = computed(() => renderMarkdownHtml(draftContent.value))
 
-// Load on mount AND on id change: a Back/Forward between two documents
-// keeps the same component mounted, so an `onMounted`-only fetch would
-// leave the previous document's body on screen under the new title.
-// Prev-value guard on update — same load the watcher did.
+// Load on mount AND on id change: a Back/Forward between two documents keeps the same component
+// mounted, so an `onMounted`-only fetch would leave the previous document's body on screen under
+// the new title. Prev-value guard on update — same load the watcher did.
 async function loadForDocument(id: string) {
   if (!id || !workspaceId.value) return
   const doc = await documentsStore.loadDocument(workspaceId.value, id)
@@ -120,10 +119,9 @@ const remove = async () => {
   if (!workspaceId.value) return
   const ok = await documentsStore.deleteDocument(workspaceId.value, props.documentId)
   if (!ok) return
-  // Leaving a deleted document selected would render a permanently empty
-  // view. The document owns its path, so there is no query param to drop
-  // — leave the page by going back to the workspace root, which is where
-  // the user was before they opened any document.
+  // Leaving a deleted document selected would render a permanently empty view. The document owns
+  // its path, so there is no query param to drop — leave the page by going back to the workspace
+  // root, which is where the user was before they opened any document.
   router.replace(buildAppUrl({ workspaceId: workspaceId.value })).catch(() => {
     // Nothing to recover: a rejected duplicate navigation already means
     // the URL is what the user asked for.

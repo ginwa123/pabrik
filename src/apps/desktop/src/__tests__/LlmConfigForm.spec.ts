@@ -51,10 +51,9 @@ describe('LlmConfigForm', () => {
     expect(wrapper.find('[data-testid=model-input]').exists()).toBe(true)
     expect(wrapper.find('[data-testid=base-url-input]').exists()).toBe(true)
     const selects = wrapper.findAll('select')
-    // backend, thinking, url_style, reasoning_effort — 4 selects.
-    // (temperature is freetext input, not a select.)
-    // (plan 2026-08-23-model-thinking added reasoning_effort; plan 2026-09-01 gates it per style;
-    //  the `backend` discriminator added the transport select.)
+    // backend, thinking, url_style, reasoning_effort — 4 selects. (temperature is freetext input,
+    // not a select.) (plan 2026-08-23-model-thinking added reasoning_effort; plan 2026-09-01 gates
+    // it per style; the `backend` discriminator added the transport select.)
     expect(selects.length).toBe(4)
     expect(wrapper.find('[data-testid=temperature-input]').exists()).toBe(true)
     expect(wrapper.find('[data-testid=reasoning-effort-select]').exists()).toBe(true)
@@ -268,10 +267,9 @@ describe('LlmConfigForm', () => {
     }
   })
 
-  // Task task_1788535488395_0 (WebView2 white select): every select/input
-  // must carry an inline color-scheme:dark hint so WebView2 renders native
-  // controls dark even though it defaults to a light color-scheme.
-  // Global `color-scheme: dark` in style.css is the primary fix.
+  // Task task_1788535488395_0 (WebView2 white select): every select/input must carry an inline
+  // color-scheme:dark hint so WebView2 renders native controls dark even though it defaults to a
+  // light color-scheme. Global `color-scheme: dark` in style.css is the primary fix.
   it('selects carry color-scheme:dark for WebView2', async () => {
     const wrapper = await mountOpen(LlmConfigForm, { props: { modelValue: { ...baseValue } } })
     const selects = wrapper.findAll('select')

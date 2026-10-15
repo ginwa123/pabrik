@@ -91,10 +91,9 @@ export const useDocumentsStore = defineStore('documents', () => {
         loading.value = false
       }
 
-      // 2. Revalidate in the background and replace with the server's truth.
-      //    `runSyncResult` (not `runSyncEffect`) because this failure is
-      //    RENDERED: the section shows `error` instead of the empty state,
-      //    so the reason has to survive to the UI.
+      // 2. Revalidate in the background and replace with the server's truth. `runSyncResult` (not
+      // `runSyncEffect`) because this failure is RENDERED: the section shows `error` instead of the
+      // empty state, so the reason has to survive to the UI.
       const result = await runSyncResult(
         documentEngineDb.loadDelta(workspaceId),
         'documents.loadDelta',
@@ -105,10 +104,9 @@ export const useDocumentsStore = defineStore('documents', () => {
       } else {
         error.value = result.reason
         if (cached.length === 0) {
-          // Cold miss AND a revalidation that never arrived: there is
-          // nothing painted to protect, so the list stays empty and the
-          // error block carries the reason. A populated list is NEVER
-          // blanked here — the cached rows stay on screen above it.
+          // Cold miss AND a revalidation that never arrived: there is nothing painted to protect,
+          // so the list stays empty and the error block carries the reason. A populated list is
+          // NEVER blanked here — the cached rows stay on screen above it.
           documents.value = []
         }
       }

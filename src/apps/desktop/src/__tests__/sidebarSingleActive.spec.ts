@@ -46,9 +46,8 @@ import {
 } from '../helpers/sseBus'
 import type { SseClient } from '../helpers/sseClient'
 
-// Stub vue-router per the canonical pattern (mirrors
-// sidebarHandleSelectTaskUrl.spec.ts). `useRoute` returns a `reactive`
-// shape so the composable's computed re-runs when we mutate the
+// Stub vue-router per the canonical pattern (mirrors sidebarHandleSelectTaskUrl.spec.ts).
+// `useRoute` returns a `reactive` shape so the composable's computed re-runs when we mutate the
 // query mid-test.
 const { useRouteMock, useRouterMock } = vi.hoisted(() => ({
   useRouteMock: vi.fn(),
@@ -195,9 +194,8 @@ describe('Sidebar — URL-driven single-active contract', () => {
   }
 
   it('design page URL → 2 active rows (item + page), workspace header NOT active', async () => {
-    // URL: viewing a design page. Both the item row AND the page row
-    // get the active bg + accent bar (per the spec's documented
-    // mental model — meaningful hierarchy breadcrumb). The expanded
+    // URL: viewing a design page. Both the item row AND the page row get the active bg + accent bar
+    // (per the spec's documented mental model — meaningful hierarchy breadcrumb). The expanded
     // workspace header does NOT get the active bg.
     useRouteMock.mockReturnValue({
       query: {
@@ -248,9 +246,8 @@ describe('Sidebar — URL-driven single-active contract', () => {
   })
 
   it('chat URL → 0 active rows in the sidebar tree', async () => {
-    // URL: viewing a chat. No workspace item or page is the URL-driven
-    // active row. The chat row's highlight lives inside <ChatsList>
-    // (separate from this count). Pre-fix the expanded workspace
+    // URL: viewing a chat. No workspace item or page is the URL-driven active row. The chat row's
+    // highlight lives inside <ChatsList> (separate from this count). Pre-fix the expanded workspace
     // header would still be active — this asserts it isn't.
     useRouteMock.mockReturnValue({
        

@@ -435,10 +435,9 @@ export const useTabsStore = defineStore('tabs', () => {
     query: Record<string, unknown>,
     itemType?: string | null,
   ): SyncResult {
-    // Migrate pre-tab-mode kanban-settings deep links (`?tab=<section>`)
-    // to `?section=` before the tab ID logic runs — otherwise a legacy
-    // value like `?tab=memories` is mistaken for an unknown browser tab
-    // ID and rewritten to a fresh `tab_xxx`, dropping the section.
+    // Migrate pre-tab-mode kanban-settings deep links (`?tab=<section>`) to `?section=` before the
+    // tab ID logic runs — otherwise a legacy value like `?tab=memories` is mistaken for an unknown
+    // browser tab ID and rewritten to a fresh `tab_xxx`, dropping the section.
     query = migrateLegacySettingsTab(path, query)
     const plain = tabQueryOf(query)
     const urlTabId = typeof query.tab === 'string' ? query.tab : ''

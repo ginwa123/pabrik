@@ -77,10 +77,9 @@ function installBusForTests() {
   __setSseBusGlobalClient(makeStubClient('open'))
 }
 
-// AppLayout uses useRouter / useRoute. Stub the composables at
-// module level (Options-API mocks only patch this.$router, not
-// the setup-time call). The reactive route is mutated per-test
-// to drive the URL-driven routes.
+// AppLayout uses useRouter / useRoute. Stub the composables at module level (Options-API mocks only
+// patch this.$router, not the setup-time call). The reactive route is mutated per-test to drive the
+// URL-driven routes.
 const { useRouteMock, useRouterMock } = vi.hoisted(() => ({
   useRouteMock: vi.fn(() => ({
     query: {} as Record<string, string>,
@@ -473,9 +472,8 @@ describe('AppLayout — kanban survives route navigation (regression: activeWork
     const wrapper = mountAppLayout([
       { id: WS_ID, name: 'WS', icon: '📁', expanded: true, items: [kanban] } as Workspace,
     ])
-    // Set the active item AFTER mount so it doesn't race with
-    // AppLayout's onMounted → initializeFromSystemFolder → init()
-    // call (which would otherwise wipe the test-injected kanban
+    // Set the active item AFTER mount so it doesn't race with AppLayout's onMounted →
+    // initializeFromSystemFolder → init() call (which would otherwise wipe the test-injected kanban
     // from the store with the mocked-empty API response).
     const ws = useWorkspacesStore()
     ws.setActiveWorkspaceItem(KANBAN_ID)
@@ -515,9 +513,8 @@ describe('AppLayout — kanban survives route navigation (regression: activeWork
     await nextTick()
     // Kanban view is rendered (sanity — passes pre-fix too).
     expect(wrapper.find('[data-kanban-view="stub"]').exists()).toBe(true)
-    // THE actual regression assertion: workspace folder preview
-    // must NOT be in the DOM. Pre-fix this assertion failed because
-    // the typo'd `v-if` started a second chain that also evaluated
+    // THE actual regression assertion: workspace folder preview must NOT be in the DOM. Pre-fix
+    // this assertion failed because the typo'd `v-if` started a second chain that also evaluated
     // `currentView === 'workspace'` to true.
     expect(wrapper.find('[data-testid="workspace-folder-preview"]').exists()).toBe(false)
     wrapper.unmount()

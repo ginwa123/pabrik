@@ -245,19 +245,17 @@ async function mountChatView(chatId: string): Promise<VueWrapper> {
  * return a non-null value.
  */
 function findScrollerContainer(wrapper: VueWrapper): HTMLElement | null {
-  // The VirtualScroller renders a `<div class="virtual-scroller">`
-  // container. Find it via the wrapper's HTML. If it's missing,
-  // the test is racing the initial mount — return null and let the
+  // The VirtualScroller renders a `<div class="virtual-scroller">` container. Find it via the
+  // wrapper's HTML. If it's missing, the test is racing the initial mount — return null and let the
   // caller wait.
   const el = wrapper.find('.virtual-scroller')
   return el.exists() ? (el.element as HTMLElement) : null
 }
 
 async function waitForInitialLoad(wrapper: VueWrapper): Promise<void> {
-  // The initial-load branch awaits rAF × 2 (one inside
-  // loadChatHistory, one for VirtualScroller's measureItems). Plus
-  // the VirtualScroller's 100ms measureItems delay. A 500ms total
-  // wait covers all cases with margin.
+  // The initial-load branch awaits rAF × 2 (one inside loadChatHistory, one for VirtualScroller's
+  // measureItems). Plus the VirtualScroller's 100ms measureItems delay. A 500ms total wait covers
+  // all cases with margin.
   for (let i = 0; i < 30; i++) {
     await new Promise((r) => setTimeout(r, 25))
     const container = findScrollerContainer(wrapper)
@@ -367,10 +365,9 @@ describe('ChatView — scroll position persistence', () => {
   })
 
   it('keys the save per task (two chats never share a position)', async () => {
-    // The landing position is asserted in ChatView.scrollRestoreLands.spec.ts,
-    // where the height model is real. What THIS file can pin deterministically
-    // is the storage contract: each task writes under its own key, so closing
-    // one chat can never move the reader in another.
+    // The landing position is asserted in ChatView.scrollRestoreLands.spec.ts, where the height
+    // model is real. What THIS file can pin deterministically is the storage contract: each task
+    // writes under its own key, so closing one chat can never move the reader in another.
     installApiMocks()
 
     wrapper = await mountChatView('task_A')

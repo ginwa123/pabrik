@@ -27,10 +27,9 @@ import { onBeforeUnmount, ref } from 'vue'
  * `clampToViewport` pulls the coordinates back inside.
  */
 export function useContextMenu(options: { width?: number; height?: number } = {}) {
-  // Estimated menu footprint, used before the menu is measured. Over-
-  // estimating slightly is fine — it only pulls the menu a few px further
-  // from the edge than strictly necessary, whereas under-estimating
-  // clips it.
+  // Estimated menu footprint, used before the menu is measured. Over- estimating slightly is fine —
+  // it only pulls the menu a few px further from the edge than strictly necessary, whereas
+  // under-estimating clips it.
   const MENU_W = options.width ?? 220
   const MENU_H = options.height ?? 320
 

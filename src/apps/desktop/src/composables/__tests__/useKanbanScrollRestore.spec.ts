@@ -59,11 +59,9 @@ beforeAll(() => {
     configurable: true,
   })
 
-  // jsdom does NOT provide requestAnimationFrame — polyfill it
-  // using setTimeout(0) so the composable's `await rAF × 2` actually
-  // resolves. When vi.useFakeTimers() is active (e.g. debounce
-  // tests), rAF resolves when `vi.advanceTimersByTime(0)` runs the
-  // setTimeout queue.
+  // jsdom does NOT provide requestAnimationFrame — polyfill it using setTimeout(0) so the
+  // composable's `await rAF × 2` actually resolves. When vi.useFakeTimers() is active (e.g.
+  // debounce tests), rAF resolves when `vi.advanceTimersByTime(0)` runs the setTimeout queue.
   if (typeof globalThis.requestAnimationFrame !== 'function') {
     globalThis.requestAnimationFrame = (cb: (t: number) => void): number => {
       return setTimeout(() => cb(performance.now()), 0) as unknown as number
@@ -141,10 +139,9 @@ async function waitForRestore(): Promise<void> {
 }
 
 beforeEach(() => {
-  // Default: real timers (so jsdom's requestAnimationFrame
-  // resolves). Tests that need deterministic debounce timing
-  // call `vi.useFakeTimers()` themselves and reset with
-  // `vi.useRealTimers()` in their own teardown.
+  // Default: real timers (so jsdom's requestAnimationFrame resolves). Tests that need deterministic
+  // debounce timing call `vi.useFakeTimers()` themselves and reset with `vi.useRealTimers()` in
+  // their own teardown.
   vi.useRealTimers()
   // Clean any leftover storage between tests.
   localStorage.clear()
@@ -339,10 +336,8 @@ describe('useKanbanScrollRestore', () => {
   })
 
   it('uses a reactive storage key (per-itemId)', async () => {
-    // The composable uses the key verbatim — the caller is
-    // responsible for building the full key (e.g.
-    // `kanban-scroll-<itemId>`). Seed storage with two distinct
-    // FULL keys.
+    // The composable uses the key verbatim — the caller is responsible for building the full key
+    // (e.g. `kanban-scroll-<itemId>`). Seed storage with two distinct FULL keys.
     localStorage.setItem('kanban-scroll-item_A', '111')
     localStorage.setItem('kanban-scroll-item_B', '222')
 
@@ -402,10 +397,9 @@ describe('useKanbanScrollRestore', () => {
   })
 
   it('does not throw when containerRef is null at flush time', async () => {
-    // Defensive: the composable's `flushPending` reads
-    // `containerRef.value` — if the ref is null when unmount fires
-    // (e.g. parent template rendered an error boundary), the
-    // composable should silently skip rather than throw.
+    // Defensive: the composable's `flushPending` reads `containerRef.value` — if the ref is null
+    // when unmount fires (e.g. parent template rendered an error boundary), the composable should
+    // silently skip rather than throw.
     const itemIdRef = ref('item_test')
     const TestComp = defineComponent({
       setup() {

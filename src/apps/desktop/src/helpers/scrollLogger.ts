@@ -424,10 +424,9 @@ export const createScrollLogger = (chatId: string): ScrollLogger => {
     const { scrollTop, scrollHeight, clientHeight, messages, isAtBottom, extra, containerInfo } =
       partial
     const distanceFromTop = Math.max(0, scrollTop)
-    // Prefer the caller's own number. Callers that know the real bottom edge
-    // (`buildScrollContext` resolves it through the scroller's
-    // `bottomScrollTop`) hand one in; recomputing it from the raw sizer here
-    // would print a gap that contradicts the `isAtBottom` on the same line.
+    // Prefer the caller's own number. Callers that know the real bottom edge (`buildScrollContext`
+    // resolves it through the scroller's `bottomScrollTop`) hand one in; recomputing it from the
+    // raw sizer here would print a gap that contradicts the `isAtBottom` on the same line.
     const distanceFromBottom =
       typeof partial.distanceFromBottom === 'number'
         ? Math.max(0, partial.distanceFromBottom)

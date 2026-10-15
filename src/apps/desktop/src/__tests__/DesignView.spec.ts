@@ -187,10 +187,9 @@ describeRuntime('DesignView → workspacesStore active page id', () => {
   })
 
   itRuntime('picks the active page from the store when it exists in the loaded pages (URL restore)', async () => {
-    // AppLayout's URL restore watcher sets activeDesignPageId from
-    // the ?pageId=Z query before DesignView mounts. DesignView must
-    // honor the store value (not always default to the first page)
-    // so a page reload restores the user's last-clicked tab.
+    // AppLayout's URL restore watcher sets activeDesignPageId from the ?pageId=Z query before
+    // DesignView mounts. DesignView must honor the store value (not always default to the first
+    // page) so a page reload restores the user's last-clicked tab.
     fetchMock.mockResolvedValue({
       ok: true, status: 200,
       json: () => Promise.resolve({

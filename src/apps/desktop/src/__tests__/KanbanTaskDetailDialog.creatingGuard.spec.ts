@@ -83,9 +83,8 @@ describe('KanbanTaskDetailDialog — creating prop (double-click guard)', () => 
     await flushPromises()
     await typeName('My task')
 
-    // Create mode's primary half is the run action. The "Create task
-    // only" menu row keeps its own label — the two used to read
-    // "Creating…" side by side, so the footer could not say which
+    // Create mode's primary half is the run action. The "Create task only" menu row keeps its own
+    // label — the two used to read "Creating…" side by side, so the footer could not say which
     // commit the user had actually pressed.
     const runBtn = findInDom<HTMLButtonElement>(
       '[data-testid="kanban-task-detail-create-and-run"]',
@@ -184,9 +183,8 @@ describe('KanbanTaskDetailDialog — creating prop (double-click guard)', () => 
     expect(saveBtn?.disabled).toBe(true)
     expect(saveBtn?.textContent?.trim()).toBe('Save')
 
-    // Make it dirty → Save enables despite creating=true (edit mode
-    // ignores the creating prop — the host only binds it on the
-    // create-mode mount). Edit mode's name input uses the
+    // Make it dirty → Save enables despite creating=true (edit mode ignores the creating prop — the
+    // host only binds it on the create-mode mount). Edit mode's name input uses the
     // `kanban-task-detail-name` testid (create uses `-create-name`).
     const nameInput = findInDom<HTMLInputElement>(
       '[data-testid="kanban-task-detail-name"]',

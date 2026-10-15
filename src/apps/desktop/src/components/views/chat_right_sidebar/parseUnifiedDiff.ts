@@ -224,9 +224,8 @@ export interface DiffSelection {
   untracked?: boolean
 }
 
-// Stacked center diff addressing: each section id is
-// `center-diff-<base64url-no-pad path>`, and the ?diff= URL param carries
-// the same encoding. btoa throws on non-latin1 paths (unicode), so fall
+// Stacked center diff addressing: each section id is `center-diff-<base64url-no-pad path>`, and the
+// ?diff= URL param carries the same encoding. btoa throws on non-latin1 paths (unicode), so fall
 // back to encodeURIComponent — still deterministic, still matchable.
 export function encodePathParam(path: string): string {
   try {

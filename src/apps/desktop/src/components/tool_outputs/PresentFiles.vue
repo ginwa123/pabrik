@@ -382,10 +382,9 @@ function maybeFetchVisibleTexts(): void {
   }
 }
 
-// Fetch visible texts when the card expands or the file list changes.
-// Prev-value guards on update instead of watchers; the per-path fetchers
-// dedupe by path, so repeat runs are harmless. Mount covers the
-// mount-expanded case the old `immediate` watcher handled.
+// Fetch visible texts when the card expands or the file list changes. Prev-value guards on update
+// instead of watchers; the per-path fetchers dedupe by path, so repeat runs are harmless. Mount
+// covers the mount-expanded case the old `immediate` watcher handled.
 const prevFetchKey = ref('')
 const fetchKey = () => `${isExpanded.value ? '1' : '0'}|${files.value.map((f) => f.path).join(',')}`
 onMounted(() => {

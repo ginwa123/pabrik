@@ -114,10 +114,9 @@ const isRunning = computed(() => isEmptyContent(props.content))
 
 const statusIndicator = computed(() => (isRunning.value ? '…' : isSuccess.value ? '✓' : '✗'))
 
-// Header label: "<task_name> · <column_name>" on success (or while running,
-// from the parameters fallback), "error" on failure.
-// We trim+strip the kanban_move wrapper so the user sees "fix-blocking-sse-call"
-// not the raw XML.
+// Header label: "<task_name> · <column_name>" on success (or while running, from the parameters
+// fallback), "error" on failure. We trim+strip the kanban_move wrapper so the user sees
+// "fix-blocking-sse-call" not the raw XML.
 const headerLabel = computed(() => {
   if (!isSuccess.value && !isRunning.value) return 'error'
   const name = taskName.value ?? 'unknown task'

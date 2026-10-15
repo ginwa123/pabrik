@@ -174,10 +174,9 @@ export function tabKeyOf(
     const parsed = parseItemIdWithChat(q.itemId ?? '')
     const parts = ['ws', q.workspaceId ?? '', parsed.itemId]
     if (q.pageId) parts.push(q.pageId)
-    // A task chat is its own session, and WHERE it renders decides whether it
-    // gets its own tab. A kanban card click opens the chat as its own view, so
-    // it gets its own tab; design opens it as a dialog INSIDE the canvas view,
-    // so that item keeps one tab total.
+    // A task chat is its own session, and WHERE it renders decides whether it gets its own tab. A
+    // kanban card click opens the chat as its own view, so it gets its own tab; design opens it as
+    // a dialog INSIDE the canvas view, so that item keeps one tab total.
     if (parsed.chatTaskId && !taskChatRendersInItemTab(itemType)) {
       parts.push(`chat:${parsed.chatTaskId}`)
     }

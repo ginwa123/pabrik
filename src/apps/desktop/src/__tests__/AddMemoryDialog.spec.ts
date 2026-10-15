@@ -14,10 +14,9 @@ import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import AddMemoryDialog from '../components/dialogs/AddMemoryDialog.vue'
 
-// Stub the FilePickerDialog — we only care that the parent wires
-// up the picker's events. Real picker behavior is tested in
-// FilePickerDialog.spec.ts. The stub mirrors the picker's public
-// API: v-model:show (modelValue + update:modelValue) and @select(path).
+// Stub the FilePickerDialog — we only care that the parent wires up the picker's events. Real
+// picker behavior is tested in FilePickerDialog.spec.ts. The stub mirrors the picker's public API:
+// v-model:show (modelValue + update:modelValue) and @select(path).
 vi.mock('../components/FilePickerDialog.vue', () => ({
   default: {
     name: 'FilePickerDialog',
@@ -319,9 +318,8 @@ describe('AddMemoryDialog — create event', () => {
     clickInDom('[data-testid="add-memory-submit"]')
     await flushPromises()
 
-    // The dialog always emits 3 args: (name, content, path) so the
-    // parent can choose to use any subset. The standalone (default)
-    // flow doesn't need content (it just called the API itself),
+    // The dialog always emits 3 args: (name, content, path) so the parent can choose to use any
+    // subset. The standalone (default) flow doesn't need content (it just called the API itself),
     // but the tuple shape is uniform across modes.
     expect(wrapper.emitted('create')?.[0]).toEqual([
       'foo.md',

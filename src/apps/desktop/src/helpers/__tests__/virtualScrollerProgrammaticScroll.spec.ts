@@ -152,10 +152,9 @@ describe('VirtualScroller programmatic-scroll signal', () => {
   })
 
   it('DOWNWARD compensation (content settles shorter) is also programmatic — the exact misread case', async () => {
-    // The production failure: measured heights come in BELOW the
-    // estimate, compensation moves scrollTop DOWN, and the old code
-    // read deltaTop<0 as "user scrolled up". The label must be true
-    // so ChatView can exclude it from userScrolledUp.
+    // The production failure: measured heights come in BELOW the estimate, compensation moves
+    // scrollTop DOWN, and the old code read deltaTop<0 as "user scrolled up". The label must be
+    // true so ChatView can exclude it from userScrolledUp.
     const { wrapper, el } = mountScroller(255)
     await nextTick()
 

@@ -252,10 +252,9 @@ describe('DesignElement drag', () => {
     nwEl.setPointerCapture = () => {}
     nwEl.releasePointerCapture = () => {}
     nwEl.hasPointerCapture = (): boolean => true
-    // Deliberately do NOT stub addEventListener on the handle — let
-    // both the handle's and the wrapper's listeners register normally
-    // so we can verify the bubble behaviour. (Stubbing the handle's
-    // addEventListener is what hid the bug in the existing test.)
+    // Deliberately do NOT stub addEventListener on the handle — let both the handle's and the
+    // wrapper's listeners register normally so we can verify the bubble behaviour. (Stubbing the
+    // handle's addEventListener is what hid the bug in the existing test.)
 
     nwEl.dispatchEvent(new PointerEvent('pointerdown', { button: 0, pointerId: 1, clientX: 100, clientY: 100, bubbles: true }))
 
@@ -326,11 +325,9 @@ describe('DesignElement drag', () => {
     const sumDy = translates.reduce((acc, t) => acc + (t[0] as any).dy, 0)
     expect(sumDx).toBe(30)
     expect(sumDy).toBe(30)
-    // Every individual emit must be in the range [-MAX, +MAX]. Each
-    // emit carries only the delta since the previous one, never the
-    // cumulative (a single emit carrying dx=30, dy=30 would mean the
-    // old wire-format is back, which would re-introduce the
-    // compounding bug).
+    // Every individual emit must be in the range [-MAX, +MAX]. Each emit carries only the delta
+    // since the previous one, never the cumulative (a single emit carrying dx=30, dy=30 would mean
+    // the old wire-format is back, which would re-introduce the compounding bug).
     for (const t of translates) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       expect(Math.abs((t[0] as any).dx)).toBeLessThanOrEqual(30)
@@ -372,32 +369,36 @@ describe('DesignElement drag', () => {
   })
 
   /**
-   * REGRESSION (2026-08-06, design-mode-moves-so-fast v2): the wire
-   * `dx` was historically the CUMULATIVE cursor delta from drag-start
-   * (`dx = e.clientX - startClientX`). The backend interprets `dx`
-   * as "set x = x + dx", so each throttled emit compounded: after N
-   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-   * ticks of cursor movement d, the element ended up at d·N·(N+1)/2
-   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-   * instead of d — making the element visibly leap ahead of the
-   * cursor (the "moves so fast" user complaint).
+   * REGRESSION (2026-08-06, design-mode-moves-so-fast v2): the wire `dx` was historically the
+   * CUMULATIVE cursor delta from drag-start (`dx = e.clientX - startClientX`). The backend
+   * interprets `dx` as "set x = x + dx", so each throttled emit compounded: after N //
+   * eslint-disable-next-line @typescript-eslint/no-explicit-any
+   */
+
+  /**
+   * ticks of cursor movement d, the element ended up at d·N·(N+1)/2 // eslint-disable-next-line
+   * @typescript-eslint/no-explicit-any
+   */
+
+  /**
+   * instead of d — making the element visibly leap ahead of the cursor (the "moves so fast" user
+   * complaint).
    *
-   * The fix sends the INCREMENTAL dx (delta since last emit). Each
-   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-   * emit carries only the cursor movement SINCE the previous emit.
-   * The backend still ADDs, but the cumulative effect across emits
-   * now equals the cursor delta — not a quadratically-compounded
+   * The fix sends the INCREMENTAL dx (delta since last emit). Each // eslint-disable-next-line
+   * @typescript-eslint/no-explicit-any
+   */
+
+  /**
+   * emit carries only the cursor movement SINCE the previous emit. The backend still ADDs, but the
+   * cumulative effect across emits now equals the cursor delta — not a quadratically-compounded
    * value.
    *
-   * This test pins the contract via `awplusTrick`-free simulates
-   * (no setTimeout-based waitFor): 3 sequential pointermoves with
-   * fake timestamps inside the same throttle window, then a
-   * pointerup trailing emit. We assert:
-   *   (1) SUM of dx/dy across all emits equals cursor delta (30, 30)
-   *   (2) each individual emit carries delta ≤ |cursor delta|
-   *       (never the cumulative)
+   * This test pins the contract via `awplusTrick`-free simulates (no setTimeout-based waitFor): 3
+   * sequential pointermoves with fake timestamps inside the same throttle window, then a pointerup
+   * trailing emit. We assert: (1) SUM of dx/dy across all emits equals cursor delta (30, 30) (2)
+   * each individual emit carries delta ≤ |cursor delta| (never the cumulative)
    *
-   * If anyone reverts to the cumulative format, (2) catches it.
+   * If anyone reverts to the cumulative format, (2) catches it. /
    */
   it('each translate emit carries INCREMENTAL dx/dy (sum equals cursor delta, never compounded)', async () => {
     const wrapper = mount(DesignElement, {
@@ -469,10 +470,9 @@ describe('DesignElement drag', () => {
   })
 
    
-  // Chunk 2: group drag. When this element is part of a multi-selection
-  // and the user drags the body, the component emits `groupDrag` events
-  // (NOT single-element `update` events) so the parent can apply the
-  // same dx/dy to every selected element.
+  // Chunk 2: group drag. When this element is part of a multi-selection and the user drags the
+  // body, the component emits `groupDrag` events (NOT single-element `update` events) so the parent
+  // can apply the same dx/dy to every selected element.
   it('drag on a multi-selected element emits groupDrag, not update', async () => {
     const wrapper = mount(DesignElement, {
       props: { element: ELEMENT, selectedIds: ['el_1', 'el_2'], zoom: 1.0 },
@@ -520,9 +520,8 @@ describe('DesignElement drag', () => {
     expect(wrapper.emitted('update')).toBeUndefined()
   })
 
-  // Counterpart: a single-element drag (no multi-selection context)
-  // emits `translate` (delta-based) — the new typed event replacing
-  // the old conflated `update` event. See
+  // Counterpart: a single-element drag (no multi-selection context) emits `translate` (delta-based)
+  // — the new typed event replacing the old conflated `update` event. See
   // docs/superpowers/plans/2026-08-06-split-move-resize.md.
   it('drag with empty selectedIds still emits translate (single-element path)', async () => {
     const wrapper = mount(DesignElement, {
@@ -755,10 +754,9 @@ describe('DesignElement drag', () => {
   })
 
   it('multi-select containing children still triggers groupDrag (parent_id ignored in multi-select)', async () => {
-    // Multi-select already routes through the groupDrag branch (the
-    // `triggerGroupDrag = (inMultiselect || isGroupLike) && mode === 'move'`
-    // check). The child-blocks-move guard has an `!inMultiSelect`
-    // exception, so a multi-select of children can still move.
+    // Multi-select already routes through the groupDrag branch (the `triggerGroupDrag =
+    // (inMultiselect || isGroupLike) && mode === 'move'` check). The child-blocks-move guard has an
+    // `!inMultiSelect` exception, so a multi-select of children can still move.
     const CHILD: DesignElementApi = {
       ...ELEMENT,
       id: 'el_child_multi',
@@ -857,9 +855,8 @@ describe('DesignElement drag', () => {
       button: 0, pointerId: 1, clientX: 100, clientY: 100, bubbles: true,
     }))
 
-    // The whole point: select is emitted with the PARENT's id, not
-    // the child's. The parent has a `'frame'` shape (created in
-    // seedParentFor). The user now sees the parent selected in the
+    // The whole point: select is emitted with the PARENT's id, not the child's. The parent has a
+    // `'frame'` shape (created in seedParentFor). The user now sees the parent selected in the
     // Properties panel + Layers panel and can immediately drag it.
     const selects = wrapper.emitted('select') ?? []
     expect(selects.length).toBe(1)
@@ -922,9 +919,8 @@ describe('DesignElement drag', () => {
   })
 
   it('click on a child with parent NOT in the store falls back to selecting the child (safe-degrade)', async () => {
-    // Seeded store has no element matching the child's parent_id.
-    // Lookup returns null → safe-degrade to the old behaviour
-    // (select the child). Prevents a "select nothing" if the page
+    // Seeded store has no element matching the child's parent_id. Lookup returns null →
+    // safe-degrade to the old behaviour (select the child). Prevents a "select nothing" if the page
     // data is mid-fetch or the parent was deleted.
     const CHILD_ORPHAN: DesignElementApi = {
       ...ELEMENT,

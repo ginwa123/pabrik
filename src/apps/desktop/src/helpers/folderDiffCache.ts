@@ -133,10 +133,9 @@ export async function fetchFolderDiff(
 ): Promise<GitFileDiff> {
   const empty: GitFileDiff = { path, diff_content: '', staged }
   if (!cwd || !path) return empty
-  // A FRESH snapshot is authoritative, so a path it does not list means "no
-  // diff" — answer from it instead of revalidating. Refetching here would
-  // bring back one request per click for every file that happens to be
-  // unchanged, which is the flood this module exists to remove.
+  // A FRESH snapshot is authoritative, so a path it does not list means "no diff" — answer from it
+  // instead of revalidating. Refetching here would bring back one request per click for every file
+  // that happens to be unchanged, which is the flood this module exists to remove.
   if (hasFreshFolderSnapshot(cwd)) return readFolderDiff(cwd, path, staged) ?? empty
   const byKey = await fetchSnapshot(cwd)
   return byKey.get(folderDiffKey(staged, path)) ?? empty

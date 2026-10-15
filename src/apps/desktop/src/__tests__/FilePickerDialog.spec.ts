@@ -23,10 +23,9 @@ import { setActivePinia, createPinia } from 'pinia'
 import FilePickerDialog from '../components/FilePickerDialog.vue'
 import { makeLocalStorageStub } from './helpers'
 
-// Pinia + localStorage setup is required for FilePickerDialog because the
-// component now imports `useRecentFoldersStore` (the recent-folders tab).
-// Pinia requires an active instance; jsdom 29 dropped localStorage from
-// its default globals. Each test file gets a fresh Pinia + a fresh stub.
+// Pinia + localStorage setup is required for FilePickerDialog because the component now imports
+// `useRecentFoldersStore` (the recent-folders tab). Pinia requires an active instance; jsdom 29
+// dropped localStorage from its default globals. Each test file gets a fresh Pinia + a fresh stub.
 beforeEach(() => {
   setActivePinia(createPinia())
   Object.defineProperty(globalThis, 'localStorage', {
@@ -57,14 +56,8 @@ function keydownInDom(key: string) {
   el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
 }
 
-// Mock tree:
-//   /
-//   └── home
-//       └── user
-//           ├── docs    (dir)
-//           ├── notes   (dir)
-//           ├── readme  (file)
-//           └── .hidden (file, hidden)
+// Mock tree: / └── home └── user ├── docs (dir) ├── notes (dir) ├── readme (file) └── .hidden
+// (file, hidden)
 const tree: Record<string, Array<{ name: string; path: string; is_directory: boolean }>> = {
   '/': [{ name: 'home', path: '/home', is_directory: true }],
   '/home': [{ name: 'user', path: '/home/user', is_directory: true }],
@@ -271,9 +264,8 @@ describe('FilePickerDialog — selection (folder mode)', () => {
     vi.restoreAllMocks()
   })
 
-  // RENAMED + initialPath changed from '/home/user' to '/' to assert the
-  // "disabled at root" invariant. Previously: "Select button is disabled
-  // when nothing is selected". Plan:
+  // RENAMED + initialPath changed from '/home/user' to '/' to assert the "disabled at root"
+  // invariant. Previously: "Select button is disabled when nothing is selected". Plan:
   // docs/superpowers/plans/2026-08-13-folder-picker-select-button-current-folder.md
   it('Select button is disabled at root when nothing is selected', async () => {
     wrapper = mountDialog({ initialPath: '/', mode: 'folder' })

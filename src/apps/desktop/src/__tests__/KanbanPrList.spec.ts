@@ -28,10 +28,9 @@ vi.mock('../api', async () => {
   }
 })
 
-// ConfirmDialog teleports to `body`, which escapes the wrapper —
-// stub it in place so the confirm flow stays queryable. The
-// `pr-close-confirm` testid lives on the wrapper div in
-// KanbanPrList's own template, so it survives stubbing.
+// ConfirmDialog teleports to `body`, which escapes the wrapper — stub it in place so the confirm
+// flow stays queryable. The `pr-close-confirm` testid lives on the wrapper div in KanbanPrList's
+// own template, so it survives stubbing.
 const ConfirmDialogStub = defineComponent({
   props: ['show', 'title', 'message', 'confirmText', 'cancelText'],
   emits: ['close', 'confirm'],

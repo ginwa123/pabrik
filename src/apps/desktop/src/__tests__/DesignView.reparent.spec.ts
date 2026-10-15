@@ -180,9 +180,8 @@ describe('DesignView LayersPanel @reparent wire (Chunk 4 Task 4.3)', () => {
    
   it('handleLayerReparent is a quiet no-op when activePageId is empty', async () => {
     const store = useWorkspacesStore()
-    // Mount with workspaceId='' so useDesignHandlers.reparentLayers
-    // short-circuits (workspaceId empty → no-op). This exercises
-    // the same guard as "activeDesignPageId empty" in production —
+    // Mount with workspaceId='' so useDesignHandlers.reparentLayers short-circuits (workspaceId
+    // empty → no-op). This exercises the same guard as "activeDesignPageId empty" in production —
     // the composable short-circuits when ANY of the three ids is empty.
     const storeSpy = vi
       .spyOn(store, 'reparentDesignElementsBatch')

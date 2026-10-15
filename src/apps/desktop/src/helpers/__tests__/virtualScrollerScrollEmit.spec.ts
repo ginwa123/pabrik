@@ -87,10 +87,9 @@ describe('VirtualScroller scroll emit', () => {
     expect(typeof args[0]).toBe('number')
     // Arg 1: direction ('up' | 'down')
     expect(['up', 'down']).toContain(args[1])
-    // Arg 2: the actual DOM element that dispatched the scroll.
-    // The browser guarantees `e.target` is non-null while the
-    // event is being dispatched — so the third emit argument
-    // must be the same HTMLElement we just scrolled.
+    // Arg 2: the actual DOM element that dispatched the scroll. The browser guarantees `e.target`
+    // is non-null while the event is being dispatched — so the third emit argument must be the same
+    // HTMLElement we just scrolled.
     expect(args[2]).toBe(wrapper.element)
     expect(args[2]).toBeInstanceOf(HTMLElement)
   })
@@ -108,10 +107,9 @@ describe('VirtualScroller scroll emit', () => {
     expect(emits).toBeDefined()
     expect(emits).toHaveLength(3)
 
-    // Every call's third arg must be the current element — not
-    // a stale ref, not a cached value, not null. The element
-    // identity check is the key invariant: the handler is
-    // expected to pass the LIVE element on every emit.
+    // Every call's third arg must be the current element — not a stale ref, not a cached value, not
+    // null. The element identity check is the key invariant: the handler is expected to pass the
+    // LIVE element on every emit.
     expect(emits![0]![2]).toBe(wrapper.element)
     expect(emits![1]![2]).toBe(wrapper.element)
     expect(emits![2]![2]).toBe(wrapper.element)
@@ -135,10 +133,9 @@ describe('VirtualScroller scroll emit', () => {
   })
 
   it('reports the actual scrollTop value in the first emit arg', async () => {
-    // Regression guard: if a future change to `onScroll` ever
-    // accidentally short-circuits before the `emit` call (e.g. an
-    // early return when target is null), this test catches it by
-    // asserting the value reaches the parent.
+    // Regression guard: if a future change to `onScroll` ever accidentally short-circuits before
+    // the `emit` call (e.g. an early return when target is null), this test catches it by asserting
+    // the value reaches the parent.
     const wrapper = mountScroller()
     await nextTick()
 

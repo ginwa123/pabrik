@@ -99,10 +99,9 @@ const diffAfter = computed(() => {
   return fallback ?? ''
 })
 
-// Parameters describe the attempted edit; they are not proof that the edit
-// was applied. Only a successful result may render a diff — otherwise an
-// OldStrNotFound/MissingField failure would show the proposed replacement as
-// if it were a real file change.
+// Parameters describe the attempted edit; they are not proof that the edit was applied. Only a
+// successful result may render a diff — otherwise an OldStrNotFound/MissingField failure would show
+// the proposed replacement as if it were a real file change.
 const hasDiff = computed(
   () => parsed.value.success && (diffBefore.value !== '' || diffAfter.value !== ''),
 )

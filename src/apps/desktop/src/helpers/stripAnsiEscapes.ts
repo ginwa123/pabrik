@@ -73,9 +73,8 @@ export function stripAnsiEscapes(s: string): string {
     // by the `i >= n` guard above, so this can never be NaN.
     const nextCode = s.charCodeAt(i)
     switch (true) {
-      // CSI: ESC '[' params/intermediates, ended by one byte in
-      // 0x40..0x7E. Parameter bytes (digits, ';', '?' and the
-      // private-mode markers) and intermediates (0x20..0x2F) all sit
+      // CSI: ESC '[' params/intermediates, ended by one byte in 0x40..0x7E. Parameter bytes
+      // (digits, ';', '?' and the private-mode markers) and intermediates (0x20..0x2F) all sit
       // below 0x40, so "first code unit at or above 0x40" terminates it.
       case nextCode === 0x5b /* '[' */: {
         i += 1

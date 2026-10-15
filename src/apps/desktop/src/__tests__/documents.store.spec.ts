@@ -168,10 +168,9 @@ describe('documents store — mutations', () => {
     const store = useDocumentsStore()
     await store.fetchDocuments('ws_1')
 
-    // The PATCH body must contain `title` and NOT `content`. Sending
-    // `content: undefined` through JSON.stringify drops it, but sending
-    // `content: ''` would CLEAR the body — the store must not invent the
-    // key to satisfy its own type.
+    // The PATCH body must contain `title` and NOT `content`. Sending `content: undefined` through
+    // JSON.stringify drops it, but sending `content: ''` would CLEAR the body — the store must not
+    // invent the key to satisfy its own type.
     let body: Record<string, unknown> = {}
     updateDocument.mockImplementation((_ws, _id, patch) => {
       body = JSON.parse(JSON.stringify(patch))

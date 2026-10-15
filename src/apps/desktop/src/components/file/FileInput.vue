@@ -175,9 +175,8 @@ const isStopping = computed(
 )
 
 const handleStopClick = () => {
-  // Debounce: while a stop is already in flight, ignore subsequent
-  // clicks. The button is also `:disabled` while `isStopping`, so
-  // this is a defensive check for the case where the prop hasn't
+  // Debounce: while a stop is already in flight, ignore subsequent clicks. The button is also
+  // `:disabled` while `isStopping`, so this is a defensive check for the case where the prop hasn't
   // propagated yet (same render frame as the click).
   if (isStopping.value) return
   stopRequested.value = true
@@ -237,10 +236,9 @@ const sendMessageWithFiles = async () => {
   })
 }
 
-// Pre-fill when the parent provides a new initialMessage (e.g., selecting
-// diff lines). The producer lives in the parent, so the prop change is
-// picked up here with a prev-value guard on update — same truthy-only
-// assignment the watcher did.
+// Pre-fill when the parent provides a new initialMessage (e.g., selecting diff lines). The producer
+// lives in the parent, so the prop change is picked up here with a prev-value guard on update —
+// same truthy-only assignment the watcher did.
 let prevInitialMessage = props.initialMessage
 onUpdated(() => {
   const next = props.initialMessage
@@ -305,10 +303,9 @@ const handleNativeFileSelect = (event: Event) => {
 // the element-level filter because it reads the system clipboard directly,
 // which is what we want.
 const handlePaste = async (e: ClipboardEvent) => {
-  // Scope: this listener is attached at document level (see onMounted
-  // below), so we get every paste on the page. Only intercept paste when
-  // it originated in OUR textarea — sibling input components (other chat
-  // tabs, search fields, etc.) keep their native paste behavior.
+  // Scope: this listener is attached at document level (see onMounted below), so we get every paste
+  // on the page. Only intercept paste when it originated in OUR textarea — sibling input components
+  // (other chat tabs, search fields, etc.) keep their native paste behavior.
   if (e.target !== chatTextareaRef.value) return
 
   const items = e.clipboardData?.items
@@ -630,10 +627,9 @@ function scheduleDetectAtTrigger(): void {
 const SLASH_COMMAND_RE = /(^|\s)\/(s|sk|ski|skil|skill)$/i
 const SLASH_TOKEN_RE = /(^|\s)\/skill-([\w.-]*)$/i
 const showSkillPicker = ref(false)
-// True while the `/skill-` completion hint is showing (the user typed a
-// proper prefix of the command but not the dash yet). Kept separate from
-// `showSkillPicker` so the two surfaces never render at once and the
-// hint never triggers a skills fetch.
+// True while the `/skill-` completion hint is showing (the user typed a proper prefix of the
+// command but not the dash yet). Kept separate from `showSkillPicker` so the two surfaces never
+// render at once and the hint never triggers a skills fetch.
 const showSkillCommand = ref(false)
 // Lower-cased filter text after the `skill-` marker (empty = show all).
 const skillQuery = ref('')
@@ -697,10 +693,9 @@ const detectSlashTrigger = () => {
       closeSkillPicker()
       return
     }
-    // Everything after the `skill-` marker is the filter query. Stored
-    // names are `[A-Za-z0-9._-]` (see `isValidSkillName`), so the query
-    // alphabet matches the name alphabet exactly — no separators to
-    // split, no last-segment walk.
+    // Everything after the `skill-` marker is the filter query. Stored names are `[A-Za-z0-9._-]`
+    // (see `isValidSkillName`), so the query alphabet matches the name alphabet exactly — no
+    // separators to split, no last-segment walk.
     skillQuery.value = (slashMatch[2] ?? '').toLowerCase()
     if (!showSkillPicker.value) {
       showSkillPicker.value = true
@@ -712,10 +707,9 @@ const detectSlashTrigger = () => {
     }
     return
   }
-  // Not the full token yet — is the user on the way there? A proper
-  // prefix of `skill-` (`/s`, `/sk`, `/ski`, `/skil`, `/skill`) offers
-  // the one completion that exists. No fetch happens here: the hint is
-  // a static string, so it costs nothing and works with no workspace.
+  // Not the full token yet — is the user on the way there? A proper prefix of `skill-` (`/s`,
+  // `/sk`, `/ski`, `/skil`, `/skill`) offers the one completion that exists. No fetch happens here:
+  // the hint is a static string, so it costs nothing and works with no workspace.
   if (textBeforeCursor.match(SLASH_COMMAND_RE)) {
     showSkillCommand.value = true
     closeFilePicker()
@@ -724,9 +718,8 @@ const detectSlashTrigger = () => {
   closeSkillPicker()
 }
 
-// Enter/Tab on the `/skill-` hint: rewrite the typed prefix to the
-// canonical token so the picker's own trigger fires on the next
-// keystroke. The whitespace the regex consumed is preserved, and the
+// Enter/Tab on the `/skill-` hint: rewrite the typed prefix to the canonical token so the picker's
+// own trigger fires on the next keystroke. The whitespace the regex consumed is preserved, and the
 // cursor lands right after the dash — exactly where the skill name goes.
 const acceptSkillCommand = () => {
   const text = inputText.value
@@ -751,10 +744,9 @@ const acceptSkillCommand = () => {
   })
 }
 
-// Client-side substring filter over the cached workspace list. Matches
-// the bare name, the full `skill-<name>` token shown in the row, or the
-// description — so `/skill-dep` narrows to `deploy-prod` and
-// `/SKILL-DEPLOY` behaves the same (matching is case-insensitive).
+// Client-side substring filter over the cached workspace list. Matches the bare name, the full
+// `skill-<name>` token shown in the row, or the description — so `/skill-dep` narrows to
+// `deploy-prod` and `/SKILL-DEPLOY` behaves the same (matching is case-insensitive).
 const filteredSkills = computed(() => {
   const q = skillQuery.value
   if (q === '') return skillList.value
@@ -875,9 +867,8 @@ const detectToolTrigger = () => {
   closeToolPicker()
 }
 
-// Enter/Tab on the `/tool-` hint: rewrite the typed prefix to the
-// canonical token so the picker's own trigger fires on the next
-// keystroke. The whitespace the regex consumed is preserved, and the
+// Enter/Tab on the `/tool-` hint: rewrite the typed prefix to the canonical token so the picker's
+// own trigger fires on the next keystroke. The whitespace the regex consumed is preserved, and the
 // cursor lands right after the dash — exactly where the tool name goes.
 const acceptToolCommand = () => {
   const text = inputText.value
@@ -902,10 +893,9 @@ const acceptToolCommand = () => {
   })
 }
 
-// Client-side substring filter over the cached registry. Matches the bare
-// name, the full `tool-<name>` token shown in the row, or the description
-// — so `/tool-read` narrows to `read_file` and `/TOOL-READ` behaves the
-// same (matching is case-insensitive).
+// Client-side substring filter over the cached registry. Matches the bare name, the full
+// `tool-<name>` token shown in the row, or the description — so `/tool-read` narrows to `read_file`
+// and `/TOOL-READ` behaves the same (matching is case-insensitive).
 const filteredTools = computed(() => {
   const q = toolQuery.value
   if (q === '') return toolList.value
@@ -941,10 +931,9 @@ const selectFile = (file: FileEntry) => {
   const textAfterCursor = text.slice(pos)
   const atMatch = textBeforeCursor.match(/@([\w./\\:-]*)$/)
   if (atMatch && atMatch.index !== undefined) {
-    // Slice up to (but not including) the @ — keeps everything before
-    // the trigger untouched. Then prepend @ + picked path. The query
-    // part (atMatch[1]) is dropped because the picker already filtered
-    // down to exactly the entry the user picked.
+    // Slice up to (but not including) the @ — keeps everything before the trigger untouched. Then
+    // prepend @ + picked path. The query part (atMatch[1]) is dropped because the picker already
+    // filtered down to exactly the entry the user picked.
     inputText.value = textBeforeCursor.slice(0, atMatch.index) + '@' + file.path + textAfterCursor
   }
   closeFilePicker()

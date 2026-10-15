@@ -1,19 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// Mock `marked` so the spec can count parse() invocations and avoid the
-// real (slow) markdown parser on the hot path. We keep the same return
-// shape (`<p>${content}</p>`) so any test that asserts on the HTML
-// string doesn't have to special-case the mock.
+// Mock `marked` so the spec can count parse() invocations and avoid the real (slow) markdown parser
+// on the hot path. We keep the same return shape (`<p>${content}</p>`) so any test that asserts on
+// the HTML string doesn't have to special-case the mock.
 vi.mock('marked', () => ({
   marked: {
     parse: vi.fn((content: string) => `<p>${content}</p>`),
   },
 }))
 
-// Mock the stripTags helpers so the assistant branch doesn't depend on
-// the real implementation. We only care that the memoization layer
-// routes through them — the actual thinking-tag parsing is covered by
-// the existing stripTags tests.
+// Mock the stripTags helpers so the assistant branch doesn't depend on the real implementation. We
+// only care that the memoization layer routes through them — the actual thinking-tag parsing is
+// covered by the existing stripTags tests.
 vi.mock('../stripTags', () => ({
   isThinkingTags: (content: string): boolean => content.trim().startsWith('<think>'),
   getThinkingTags: (content: string): string => `<details class="thinking">${content}</details>`,
@@ -53,9 +51,8 @@ describe('renderResponse memoization', () => {
   it('returns the same HTML reference for repeated identical content (cache hit)', () => {
     const a = renderResponse('hello', 'assistant')
     const b = renderResponse('hello', 'assistant')
-    // `toBe` checks reference equality. The cache returns the same
-    // string on every hit, so `a === b` for primitives is the
-    // contract. (Strings are value-typed in JS but `===` still works
+    // `toBe` checks reference equality. The cache returns the same string on every hit, so `a ===
+    // b` for primitives is the contract. (Strings are value-typed in JS but `===` still works
     // because the cache returns the canonical entry.)
     expect(a).toBe(b)
     expect(marked.parse).toHaveBeenCalledTimes(1)
@@ -77,10 +74,9 @@ describe('renderResponse memoization', () => {
   })
 
   it('treats leading/trailing whitespace as the same cache entry (after trim)', () => {
-    // The function trims `content` at the top; whitespace variants
-    // should share a cache entry, otherwise a streaming message
-    // would fill the cache with every chunk that happened to have
-    // a trailing newline.
+    // The function trims `content` at the top; whitespace variants should share a cache entry,
+    // otherwise a streaming message would fill the cache with every chunk that happened to have a
+    // trailing newline.
     renderResponse('hello', 'assistant')
     renderResponse('  hello  ', 'assistant')
     renderResponse('\nhello\n', 'assistant')

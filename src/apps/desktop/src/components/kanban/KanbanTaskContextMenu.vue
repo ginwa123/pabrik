@@ -68,10 +68,9 @@ const emit = defineEmits<{
   openChat: []
   openDetails: []
   stop: []
-  // Start an agent on this task's existing session (no new user
-  // message queued). Hidden while a worker is already running —
-  // the backend's 409 is the source of truth, but offering a row
-  // that can only fail is worse than not offering it.
+  // Start an agent on this task's existing session (no new user message queued). Hidden while a
+  // worker is already running — the backend's 409 is the source of truth, but offering a row that
+  // can only fail is worse than not offering it.
   runAgent: []
   moveToColumn: [columnId: string]
 }>()

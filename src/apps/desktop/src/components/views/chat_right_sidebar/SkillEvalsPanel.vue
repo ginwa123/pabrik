@@ -160,10 +160,9 @@ onUnmounted(() => {
   unsubscribe = null
 })
 
-// Reload when the session or the selected run changes: mount covers the
-// initial load, prev-value guards on update cover both. The run branch
-// keeps the select+load pairing the old watcher had — a param echo of
-// our own selectRun (param already equals selectedRunId) stays load-free.
+// Reload when the session or the selected run changes: mount covers the initial load, prev-value
+// guards on update cover both. The run branch keeps the select+load pairing the old watcher had — a
+// param echo of our own selectRun (param already equals selectedRunId) stays load-free.
 const readEvalRun = () => (typeof route.query.eval_run === 'string' ? route.query.eval_run : '')
 // Subscribed in the template (data-eval-run below) so back/forward
 // navigation that changes ?eval_run= re-renders this panel — that

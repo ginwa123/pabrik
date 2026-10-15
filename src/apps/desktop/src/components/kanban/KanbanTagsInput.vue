@@ -104,10 +104,9 @@ function tagColor(tag: string): { bg: string; border: string; text: string } {
   for (const c of tag.toLowerCase()) {
     hash = ((hash << 5) + hash + c.charCodeAt(0)) >>> 0
   }
-  // The `% TAG_PALETTE.length` keeps the index in range; the
-  // explicit fallback guards against the empty-palette case (which
-  // never happens because PALETTE is a const array, but TS's
-  // strict mode flags the indexed access as `T | undefined`).
+  // The `% TAG_PALETTE.length` keeps the index in range; the explicit fallback guards against the
+  // empty-palette case (which never happens because PALETTE is a const array, but TS's strict mode
+  // flags the indexed access as `T | undefined`).
   const idx = hash % TAG_PALETTE.length
   return TAG_PALETTE[idx] ?? TAG_PALETTE[0]
 }
@@ -283,20 +282,17 @@ function onKeydown(event: KeyboardEvent): void {
 // `aria-invalid` attr and the red border class.
 const hasError = computed(() => errorMessage.value !== null)
 
-// IntersectionObserver lifecycle — lazily load the next page of
-// suggestions when the scroll sentinel at the bottom of the
-// dropdown becomes visible. The sentinel is rendered only when
-// `hasMore` is true, so the observer is attached/detached as the
-// dropdown opens/closes.
+// IntersectionObserver lifecycle — lazily load the next page of suggestions when the scroll
+// sentinel at the bottom of the dropdown becomes visible. The sentinel is rendered only when
+// `hasMore` is true, so the observer is attached/detached as the dropdown opens/closes.
 const scrollSentinel = ref<HTMLLIElement | null>(null)
 let observer: IntersectionObserver | null = null
 
 function attachObserver(): void {
   if (!scrollSentinel.value || observer) return
-  // Lazy-load the next page when the sentinel scrolls into view.
-  // `rootMargin: 0px 0px 100px 0px` triggers ~100px BEFORE the sentinel
-  // reaches the bottom of the visible area, so the next page arrives
-  // by the time the user hits the very bottom.
+  // Lazy-load the next page when the sentinel scrolls into view. `rootMargin: 0px 0px 100px 0px`
+  // triggers ~100px BEFORE the sentinel reaches the bottom of the visible area, so the next page
+  // arrives by the time the user hits the very bottom.
   observer = new IntersectionObserver(
     (entries) => {
       for (const entry of entries) {
@@ -317,10 +313,9 @@ function detachObserver(): void {
   }
 }
 
-// The sentinel mounts/unmounts with the dropdown (v-if on hasMore, and
-// the dropdown itself opens/closes), so re-attach whenever the ref
-// element changes: mount covers the initial render, prev-element guard
-// on update covers focus-open and hasMore flips.
+// The sentinel mounts/unmounts with the dropdown (v-if on hasMore, and the dropdown itself
+// opens/closes), so re-attach whenever the ref element changes: mount covers the initial render,
+// prev-element guard on update covers focus-open and hasMore flips.
 let prevSentinel: HTMLLIElement | null = null
 onMounted(() => {
   prevSentinel = scrollSentinel.value

@@ -34,10 +34,9 @@ import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 import { makeLocalStorageStub } from './helpers'
 import type { Message } from '../api'
 
-// ────────────────────────────────────────────────────────────────────────
-// Stubs — we only assert WHICH renderer the dispatcher picked, so the
-// stubs are thin markers rather than the real components.
-// ────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────── Stubs — we only assert
+// WHICH renderer the dispatcher picked, so the stubs are thin markers rather than the real
+// components. ────────────────────────────────────────────────────────────────────────
 
 vi.mock('../components/tool_outputs/UsedTools.vue', () => ({
   default: {
@@ -82,9 +81,8 @@ function makeStubClient(initial: SseState): SseClient {
   return stub as SseClient
 }
 
-// ────────────────────────────────────────────────────────────────────────
-// Wire helpers (mirror the backend `wrapToolOutput` shape for
-// `used_tools` — see src/agentic_loop/tools_exec_used_tools.zig)
+// ──────────────────────────────────────────────────────────────────────── Wire helpers (mirror the
+// backend `wrapToolOutput` shape for `used_tools` — see src/agentic_loop/tools_exec_used_tools.zig)
 // ────────────────────────────────────────────────────────────────────────
 
 const usedToolsEnvelope = (tools: { name: string; description: string }[]): string =>

@@ -85,10 +85,9 @@ describe('useSubAgentPeek', () => {
     } as Response)
   }
 
-  // Build a Message[] with permissive typing — the backend sends
-  // `finish_reason: null` for in-progress messages even though the
-  // TypeScript interface declares it as `string | undefined`. We
-  // build the realistic shape here and cast at the boundary.
+  // Build a Message[] with permissive typing — the backend sends `finish_reason: null` for
+  // in-progress messages even though the TypeScript interface declares it as `string | undefined`.
+  // We build the realistic shape here and cast at the boundary.
   function msgs(rows: Array<Partial<Message> & { id: string; role: Message['role']; content: string; created_at: number }>): Message[] {
     return rows as unknown as Message[]
   }
@@ -133,10 +132,9 @@ describe('useSubAgentPeek', () => {
     expect(url).toContain('direction=asc')
     expect(peek.messages.value).toHaveLength(2)
     expect(peek.messages.value[0]?.id).toBe('m1')
-    // Last message has no finish_reason → SSE should open. After the
-    // global EventSource migration, opening SSE no longer touches any
-    // per-session client; status=streaming is the observable signal
-    // that the listener was registered on the bus.
+    // Last message has no finish_reason → SSE should open. After the global EventSource migration,
+    // opening SSE no longer touches any per-session client; status=streaming is the observable
+    // signal that the listener was registered on the bus.
     expect(peek.status.value).toBe('streaming')
   })
 
@@ -265,10 +263,9 @@ describe('useSubAgentPeek', () => {
   // listener-side filter (`event.session_id !== sid` returns early)
   // scopes the events to the peek's own sid.
 
-  // Stable sid for the chunk scenario tests so the dispatched events
-  // match the peek's filter. Pulled out as a constant so the
-  // `creates a new message` test (which doesn't use runChunkScenario)
-  // can also reuse it.
+  // Stable sid for the chunk scenario tests so the dispatched events match the peek's filter.
+  // Pulled out as a constant so the `creates a new message` test (which doesn't use
+  // runChunkScenario) can also reuse it.
   const CHUNK_PEEK_SID = 'subagent_chunk_test'
 
   /**
@@ -349,9 +346,8 @@ describe('useSubAgentPeek', () => {
     })
     await flushPromises()
 
-    // Drive the chunk through the bus with the peek's sid so the
-    // listener-side filter lets it through. The chunk has no
-    // matching message in `messages` (empty initial fetch) so
+    // Drive the chunk through the bus with the peek's sid so the listener-side filter lets it
+    // through. The chunk has no matching message in `messages` (empty initial fetch) so
     // `applyChunkToMessages` must create a NEW tool message.
     __dispatchSseBus('llm', {
       session_id: NEW_MSG_PEEK_SID,

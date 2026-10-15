@@ -98,9 +98,8 @@ describe('KanbanCard', () => {
     expect(wrapper.emitted('dragend')?.[0]).toEqual([])
   })
 
-  // NEW (change-task-to-card-kanban plan): KanbanCard passes the
-  // `variant="card"` prop to its wrapped <WorkspaceItemTask> so the
-  // kanban-card UX (bordered card layout, optional description
+  // NEW (change-task-to-card-kanban plan): KanbanCard passes the `variant="card"` prop to its
+  // wrapped <WorkspaceItemTask> so the kanban-card UX (bordered card layout, optional description
   // preview) is used inside kanban columns.
   it('renders the wrapped WorkspaceItemTask in card variant (data-task-card present, data-task-row absent)', () => {
     wrapper = mountCard(sampleTask)

@@ -95,10 +95,9 @@ describe('app-bar parity — the three workspace-item chat modes', () => {
   })
 
   it('the visual contract lives in exactly one file', () => {
-    // The four things that made the three bars look different: the
-    // height, the padding, the background token, the border. They are
-    // declared once, in ChatAppBar.vue — no host re-declares any of
-    // them, so a mode cannot opt out of the shared look.
+    // The four things that made the three bars look different: the height, the padding, the
+    // background token, the border. They are declared once, in ChatAppBar.vue — no host re-declares
+    // any of them, so a mode cannot opt out of the shared look.
     for (const token of ['h-11', 'px-3', '--semantic-sidebar-bg', 'border-bottom']) {
       expect(appBarSrc).toContain(token)
       expect(agentChatViewSrc).not.toContain(token)

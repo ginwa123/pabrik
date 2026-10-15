@@ -68,10 +68,9 @@ describe('older-history prefetch — trigger wiring', () => {
     const source = await readChatViewSource()
     const body = fnBody(source, 'const loadChatHistory = async () => {', '\n// ─── Scroll')
     expect(body).toContain("resetOlderPrefetch('refresh')")
-    // Measured in the browser: at this point the initial-load scroll has not
-    // been applied yet, so `container.scrollTop` is still 0 and an eager
-    // evaluation would burn a scroll-back request on every open (and then drop
-    // it). The arm waits for the first real scroll event instead.
+    // Measured in the browser: at this point the initial-load scroll has not been applied yet, so
+    // `container.scrollTop` is still 0 and an eager evaluation would burn a scroll-back request on
+    // every open (and then drop it). The arm waits for the first real scroll event instead.
     expect(body).not.toContain('evaluateOlderPrefetch()')
   })
 })

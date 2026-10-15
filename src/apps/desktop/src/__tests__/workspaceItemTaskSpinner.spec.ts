@@ -57,9 +57,8 @@ function mountWorkspaceItem(tasks: Array<{ id: string; name: string }> = itemWit
 }
 
 function expandItem(): void {
-  // Tasks are only rendered when the parent item is expanded
-  // (WorkspaceItem.vue:125). The store mutates `expandedItemIds` and
-  // reassigns the ref to trigger reactivity, matching the production
+  // Tasks are only rendered when the parent item is expanded (WorkspaceItem.vue:125). The store
+  // mutates `expandedItemIds` and reassigns the ref to trigger reactivity, matching the production
   // toggle in stores/workspaces.ts:toggleExpandedItem.
   const ws = useWorkspacesStore()
   ws.expandedItemIds['item_1'] = true

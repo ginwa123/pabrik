@@ -164,10 +164,9 @@ describe('WorkspaceItem item-row elapsed chip', () => {
   })
 
   it('active dot and item elapsed chip can render simultaneously', async () => {
-    // Same reasoning as the loading/chip pair above: the
-    // FolderExplorer active dot and the elapsed chip are independent
-    // and must coexist. A user can have a selected item that is also
-    // being worked on.
+    // Same reasoning as the loading/chip pair above: the FolderExplorer active dot and the elapsed
+    // chip are independent and must coexist. A user can have a selected item that is also being
+    // worked on.
     const { wrapper, setBusy } = mountWorkspaceItem(itemWithTasks.tasks, true)
     setBusy(['task_alpha'])
     await nextTick()
@@ -176,10 +175,8 @@ describe('WorkspaceItem item-row elapsed chip', () => {
   })
 
   it('item-loading spinner still hides the active dot (preserved right-slot priority)', async () => {
-    // Even though the active dot no longer competes with the
-    // processing slider, it must still be hidden while the loading
-    // spinner is showing (original behavior, untouched by this
-    // change).
+    // Even though the active dot no longer competes with the processing slider, it must still be
+    // hidden while the loading spinner is showing (original behavior, untouched by this change).
     const processingState: Ref<Record<string, boolean>> = ref({})
     const wrapper = mount(WorkspaceItem, {
       props: {

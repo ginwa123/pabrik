@@ -109,10 +109,9 @@ function formatTimestamp(value: string): string {
   return parsed.toLocaleString()
 }
 
-// The empty state's CTA focuses the name field. Kept as a function in the
-// script block rather than an inline arrow in the template: `document` is not
-// on the component's instance type, so a template expression fails the
-// `vue-tsc --build` type-check that the pre-push hook runs.
+// The empty state's CTA focuses the name field. Kept as a function in the script block rather than
+// an inline arrow in the template: `document` is not on the component's instance type, so a
+// template expression fails the `vue-tsc --build` type-check that the pre-push hook runs.
 function focusAddName(): void {
   document.getElementById('secret-name')?.focus()
 }

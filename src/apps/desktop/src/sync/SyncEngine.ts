@@ -125,10 +125,9 @@ export abstract class BaseSyncEngine<T extends Syncable, C = string> {
    * `catch` discarded.
    */
   syncOnMount(ctx: C, limit: number): Effect.Effect<SyncMountResult<T>> {
-    // `Effect.gen` takes a generator function, and a generator's `this` is its
-    // own — so `this` has to be captured outside. It cannot be destructured
-    // instead: the engine API lives on the prototype, and an unbound
-    // destructured method would run with `this === undefined`.
+    // `Effect.gen` takes a generator function, and a generator's `this` is its own — so `this` has
+    // to be captured outside. It cannot be destructured instead: the engine API lives on the
+    // prototype, and an unbound destructured method would run with `this === undefined`.
     // oxlint-disable-next-line typescript-eslint/no-this-alias -- see above
     const engine = this
     return Effect.gen(function* () {

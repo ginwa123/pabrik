@@ -19,9 +19,8 @@ const props = defineProps<{
   activeWorkspaceItemId: string | null
 }>()
 
-// Inject processingState from App.vue (same key WorkspaceItem,
-// ChatsList, ChatView consume). Keyed by task.id == session_id, so we
-// scan a workspace's items→tasks for any key present in the map to
+// Inject processingState from App.vue (same key WorkspaceItem, ChatsList, ChatView consume). Keyed
+// by task.id == session_id, so we scan a workspace's items→tasks for any key present in the map to
 // know "is anything in this workspace currently busy with a worker?".
 const processingState = inject<Ref<Record<string, boolean>>>(
   'processingState',
@@ -248,11 +247,9 @@ const handleItemDragOver = (event: DragEvent) => {
     if (dragOverItemId.value !== itemId) {
       dragOverItemId.value = itemId
     }
-    // Update the "insert before / after" flag on EVERY dragover
-    // (not just when the target row changes) — the cursor can
-    // move from the top to the bottom of the same row without
-    // `dragOverItemId` updating, and the drop indicator should
-    // follow the cursor.
+    // Update the "insert before / after" flag on EVERY dragover (not just when the target row
+    // changes) — the cursor can move from the top to the bottom of the same row without
+    // `dragOverItemId` updating, and the drop indicator should follow the cursor.
     const rect = li.getBoundingClientRect()
     dragOverItemInsertAfter.value = event.clientY > rect.top + rect.height / 2
   }
@@ -262,10 +259,9 @@ const handleItemDragLeave = (event: DragEvent) => {
   const target = event.target as HTMLElement | null
   const li = target?.closest('[data-item-id]') as HTMLElement | null
   if (!li) return
-  // Only clear when the cursor actually leaves the row. The
-  // dragleave event fires when crossing child elements too, so we
-  // check `relatedTarget` to see if the cursor is still inside
-  // the row. If it is, do nothing.
+  // Only clear when the cursor actually leaves the row. The dragleave event fires when crossing
+  // child elements too, so we check `relatedTarget` to see if the cursor is still inside the row.
+  // If it is, do nothing.
   const related = event.relatedTarget as Node | null
   if (related && li.contains(related)) return
   if (dragOverItemId.value === li.dataset.itemId) {
@@ -283,11 +279,9 @@ const handleItemDrop = (event: DragEvent) => {
   const targetWorkspaceId = li.dataset.workspaceId
   if (!targetItemId || !targetWorkspaceId) return
   if (!draggingItemId.value || !draggingItemWorkspaceId.value) return
-  // Cross-workspace drop: silently no-op. The user dragged an
-  // item from workspace A and dropped on an item in workspace B.
-  // The plan scopes reorder to a single workspace; cross-workspace
-  // moves are out of scope (would require a separate
-  // "moveItemToWorkspace" endpoint).
+  // Cross-workspace drop: silently no-op. The user dragged an item from workspace A and dropped on
+  // an item in workspace B. The plan scopes reorder to a single workspace; cross-workspace moves
+  // are out of scope (would require a separate "moveItemToWorkspace" endpoint).
   if (targetWorkspaceId !== draggingItemWorkspaceId.value) return
   // Drop on self: no-op.
   if (targetItemId === draggingItemId.value) return

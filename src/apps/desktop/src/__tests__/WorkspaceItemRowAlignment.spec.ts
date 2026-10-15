@@ -111,10 +111,9 @@ describe('WorkspaceItem row — one padded box owns both edges', () => {
   })
 
   it('renders the chevron as bare text, with no hit box', () => {
-    // The chevron used to sit in a 24px `--sb-hit` box, centring its glyph at
-    // x=20 while every section-header chevron rendered at x=12. Bare text
-    // puts this one at 12 too, and the project name at 28 — matching the
-    // section titles.
+    // The chevron used to sit in a 24px `--sb-hit` box, centring its glyph at x=20 while every
+    // section-header chevron rendered at x=12. Bare text puts this one at 12 too, and the project
+    // name at 28 — matching the section titles.
     wrapper = mountItem(makeItem())
 
     const chevron = wrapper.find('[data-testid="item-row-chevron"]')

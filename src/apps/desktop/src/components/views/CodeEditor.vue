@@ -235,10 +235,9 @@ function goToBlock(direction: 1 | -1): void {
   void scrollToLine(block.startLine)
 }
 
-// Annotation identity: file + cwd + content length + explicit props.
-// A change resets fetched state and re-fetches (prev-value guard on
-// update — same pattern the line/content scroll uses; mount covers the
-// initial load).
+// Annotation identity: file + cwd + content length + explicit props. A change resets fetched state
+// and re-fetches (prev-value guard on update — same pattern the line/content scroll uses; mount
+// covers the initial load).
 const annoKey = () =>
   `${props.filePath}|${props.cwd ?? ''}|${props.content?.length ?? 0}|${props.diffText ?? ''}|${props.blame ? 'b' : ''}`
 

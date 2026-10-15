@@ -173,10 +173,9 @@ describe('AddKanbanDialog', () => {
     nameInput.value = 'Sprint 12'
     nameInput.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
-    // No folder picked → button is STILL enabled (path is optional
-    // since 2026-08-06 — the backend stores NULL when the path
-    // is empty; the kanban is cwd-less until the user backfills
-    // via the "Set project root" banner in KanbanView).
+    // No folder picked → button is STILL enabled (path is optional since 2026-08-06 — the backend
+    // stores NULL when the path is empty; the kanban is cwd-less until the user backfills via the
+    // "Set project root" banner in KanbanView).
     const btn = findInDom<HTMLButtonElement>('[data-testid="add-kanban-submit"]')
     expect(btn?.disabled).toBe(false)
   })

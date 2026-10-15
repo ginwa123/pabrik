@@ -101,10 +101,9 @@ const MAX_QUEUE_SIZE = 50
 const MAX_QUEUE_DROP = 25
 const DEBOUNCE_MS = 250
 
-// `Window` in the DOM lib does NOT expose `console` (it's a separate
-// global). The install function accesses `target.console.*` to patch
-// and restore it, so widen the local `target` type to include `console`.
-// Zero runtime cost — pure compile-time widening.
+// `Window` in the DOM lib does NOT expose `console` (it's a separate global). The install function
+// accesses `target.console.*` to patch and restore it, so widen the local `target` type to include
+// `console`. Zero runtime cost — pure compile-time widening.
 type TargetWithConsole = Window & { console: Console }
 
 export function installFrontendLogClient(

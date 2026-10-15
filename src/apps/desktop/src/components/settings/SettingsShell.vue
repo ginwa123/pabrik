@@ -38,10 +38,9 @@ export interface SettingsSectionItem {
 }
 
 const USER_SECTIONS: readonly SettingsSectionItem[] = [
-  // Decision D4: General is the ONLY thing left at user level. Profiles, MCP
-  // servers, tools, skill evals and web search moved to Workspace settings -
-  // they were always really per-workspace values, and a scope whose own label
-  // says "applies everywhere" cannot host them honestly.
+  // Decision D4: General is the ONLY thing left at user level. Profiles, MCP servers, tools, skill
+  // evals and web search moved to Workspace settings - they were always really per-workspace
+  // values, and a scope whose own label says "applies everywhere" cannot host them honestly.
   { id: 'general', label: 'General', icon: 'settings' },
 ]
 

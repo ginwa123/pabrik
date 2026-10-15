@@ -136,10 +136,9 @@ export function useKanbanColumnScrollRestore(
     await new Promise<void>((r) => requestAnimationFrame(() => r()))
     await new Promise<void>((r) => requestAnimationFrame(() => r()))
 
-    // Then wait for the column to actually become scrollable (up to 500 ms).
-    // Bailing out on `max <= 0` alone would silently DROP the restore for any
-    // column whose cards have not been laid out by the second frame: the user
-    // would come back to a column sitting at the top, which is the bug.
+    // Then wait for the column to actually become scrollable (up to 500 ms). Bailing out on `max <=
+    // 0` alone would silently DROP the restore for any column whose cards have not been laid out by
+    // the second frame: the user would come back to a column sitting at the top, which is the bug.
     const start = Date.now()
     while (Date.now() - start < 500) {
       if (containerRef.value !== el) return // swapped out while waiting

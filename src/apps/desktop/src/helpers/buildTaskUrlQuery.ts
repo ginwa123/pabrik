@@ -106,11 +106,9 @@ export function buildTaskUrlQuery(input: TaskUrlContext): Record<string, string>
   // params like sorts/pageId that live in the URL but not the store).
   const urlBreadcrumb = input.currentQuery ? pickBreadcrumbFromQuery(input.currentQuery) : {}
 
-  // Resolve the bare item id. Precedence:
-  //   1. Active store (authoritative)
-  //   2. URL breadcrumb — strip any existing /chat/ suffix so we
-  //      don't pass a wire-shape value through to buildItemIdWithChat
-  //      (which would throw).
+  // Resolve the bare item id. Precedence: 1. Active store (authoritative) 2. URL breadcrumb — strip
+  // any existing /chat/ suffix so we don't pass a wire-shape value through to buildItemIdWithChat
+  // (which would throw).
   let bareItemId = activeItemId
   if (!bareItemId && urlBreadcrumb.itemId) {
     bareItemId = parseItemIdWithChat(urlBreadcrumb.itemId).itemId
@@ -153,10 +151,9 @@ export function buildTaskUrlQuery(input: TaskUrlContext): Record<string, string>
   // viewing chat Y").
   if (urlBreadcrumb.sorts) query.sorts = urlBreadcrumb.sorts
 
-  // ─── layout (kanban view mode, lives in URL only) ────────────────
-  // Same reasoning as `sorts`: the columns/rows choice is URL state, not
-  // store state, so it must be carried explicitly or the board → chat →
-  // close round-trip silently snaps the board back to column mode.
+  // ─── layout (kanban view mode, lives in URL only) ──────────────── Same reasoning as `sorts`:
+  // the columns/rows choice is URL state, not store state, so it must be carried explicitly or the
+  // board → chat → close round-trip silently snaps the board back to column mode.
   if (urlBreadcrumb.layout) query.layout = urlBreadcrumb.layout
 
   return query

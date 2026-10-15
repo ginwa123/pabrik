@@ -182,10 +182,9 @@ async function submit() {
   }
   rememberMethod(repoKey.value, method.value)
   confirming.value = false
-  // `success` is the FORGE's answer, not an exit code. A zero exit that only
-  // armed an auto-merge (GitLab) or joined a merge queue (GitHub) is
-  // `pending`, and saying "Merged" for it is the one failure a merge button
-  // cannot afford.
+  // `success` is the FORGE's answer, not an exit code. A zero exit that only armed an auto-merge
+  // (GitLab) or joined a merge queue (GitHub) is `pending`, and saying "Merged" for it is the one
+  // failure a merge button cannot afford.
   pendingNotice.value = result.value.pending
   // The merge moved this BRANCH's change-request state, and the sidebar's
   // RECENT icon and the kanban card badge read the shared 60s cache — which

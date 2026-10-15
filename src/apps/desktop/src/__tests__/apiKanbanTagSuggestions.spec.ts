@@ -16,10 +16,9 @@ describe('getKanbanTagSuggestions', () => {
   const fetchMock = vi.fn()
 
   beforeEach(() => {
-    // apiFetch calls useNotificationStore() on every non-2xx response
-    // to fire an error toast. Without an active Pinia the call
-    // throws. setActivePinia(createPinia()) mounts a fresh store for
-    // each test so the toast path can run without crashing.
+    // apiFetch calls useNotificationStore() on every non-2xx response to fire an error toast.
+    // Without an active Pinia the call throws. setActivePinia(createPinia()) mounts a fresh store
+    // for each test so the toast path can run without crashing.
     setActivePinia(createPinia())
   })
 

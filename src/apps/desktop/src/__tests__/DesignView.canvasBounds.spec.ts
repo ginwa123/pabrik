@@ -66,12 +66,9 @@ describe('DesignView removes the canvas-background feature', () => {
   })
 
   it('canvas div has NO fixed width / height / box-shadow / card background', () => {
-    // The old inline style on <div data-testid="design-canvas"> had:
-    //   width: `${canvasWidth}px`
-    //   height: `${canvasHeight}px`
-    //   backgroundColor: 'var(--semantic-card-bg)'
-    //   boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)'
-    // None of those should remain — the canvas div is now auto-grow.
+    // The old inline style on <div data-testid="design-canvas"> had: width: `${canvasWidth}px`
+    // height: `${canvasHeight}px` backgroundColor: 'var(--semantic-card-bg)' boxShadow: '0 4px 20px
+    // rgba(0, 0, 0, 0.3)' None of those should remain — the canvas div is now auto-grow.
     expect(source).not.toMatch(/width:\s*`\$\{canvasWidth\}/)
     expect(source).not.toMatch(/height:\s*`\$\{canvasHeight\}/)
     expect(source).not.toMatch(/backgroundColor:\s*'var\(--semantic-card-bg\)'/)

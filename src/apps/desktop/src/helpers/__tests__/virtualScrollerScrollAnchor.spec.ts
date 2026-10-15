@@ -514,10 +514,9 @@ describe('VirtualScroller measurement anchor compensation', () => {
     await nextTick()
     const before = el.scrollTop
 
-    // Simulate the layout settling: every above-anchor buffer item is
-    // really 300px tall (markdown paragraph), visible items stay 64px.
-    // NOTE: the scroll we just dispatched scheduled measureItems with
-    // offsetHeight still 0 everywhere (h>0 filter skips) — flush it first.
+    // Simulate the layout settling: every above-anchor buffer item is really 300px tall (markdown
+    // paragraph), visible items stay 64px. NOTE: the scroll we just dispatched scheduled
+    // measureItems with offsetHeight still 0 everywhere (h>0 filter skips) — flush it first.
     vi.advanceTimersByTime(60)
     const expectedShift = mockChildHeights(el, 100, 300, 64)
 
@@ -526,10 +525,9 @@ describe('VirtualScroller measurement anchor compensation', () => {
     vi.advanceTimersByTime(60)
     await nextTick()
 
-    // scrollTop must have advanced by exactly Σ(300−64) so the same
-    // content remains under the viewport top edge. (The estimator
-    // median stays 64 here — the mock heights straddle it — so the
-    // prefix delta equals the per-item sum.)
+    // scrollTop must have advanced by exactly Σ(300−64) so the same content remains under the
+    // viewport top edge. (The estimator median stays 64 here — the mock heights straddle it — so
+    // the prefix delta equals the per-item sum.)
     expect(el.scrollTop).toBe(before + expectedShift)
     wrapper.unmount()
   })
@@ -544,10 +542,9 @@ describe('VirtualScroller measurement anchor compensation', () => {
     const { wrapper, el } = mountScroller(255)
     await nextTick()
 
-    // Phase 1 — teach the estimator a 400px profile. Measure the first
-    // window (indices 0..31) at 400px: anchor is 0 so no compensation
-    // runs (prefix(0) = 0), stored heights land, median becomes 400,
-    // and every unmeasured item now contributes 400px to the model.
+    // Phase 1 — teach the estimator a 400px profile. Measure the first window (indices 0..31) at
+    // 400px: anchor is 0 so no compensation runs (prefix(0) = 0), stored heights land, median
+    // becomes 400, and every unmeasured item now contributes 400px to the model.
     scroll(el, 0)
     await nextTick()
     vi.advanceTimersByTime(60) // flush pre-debounce measure (offsetHeight 0 → no-op)
@@ -624,10 +621,9 @@ describe('VirtualScroller measurement anchor compensation', () => {
     expect(el.scrollTop).toBe(bottom)
     expect(bottom).toBeGreaterThan(50000) // precondition: a long chat
 
-    // Now the pass that used to strand them: every row above the anchor
-    // measures far SHORTER than the 400px the model had reserved, so the
-    // prefix above the anchor collapses and the anchor rule would subtract
-    // ~15,900px from scrollTop.
+    // Now the pass that used to strand them: every row above the anchor measures far SHORTER than
+    // the 400px the model had reserved, so the prefix above the anchor collapses and the anchor
+    // rule would subtract ~15,900px from scrollTop.
     mockAllChildren(el, 100)
     scroll(el, bottom)
     vi.advanceTimersByTime(60)

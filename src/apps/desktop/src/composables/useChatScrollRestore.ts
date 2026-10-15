@@ -206,11 +206,9 @@ export function useChatScrollRestore(
   })
 
   async function attachListenersWhenScrollable(el: HTMLElement): Promise<void> {
-    // VirtualScroller takes ~100ms to measure items after mount.
-    // Wait for `scrollHeight > clientHeight` so restore() can compute
-    // a meaningful max. If the chat is empty / not scrollable, fall
-    // through and attach anyway — the listener still serves future
-    // scrolls.
+    // VirtualScroller takes ~100ms to measure items after mount. Wait for `scrollHeight >
+    // clientHeight` so restore() can compute a meaningful max. If the chat is empty / not
+    // scrollable, fall through and attach anyway — the listener still serves future scrolls.
     const start = Date.now()
     while (Date.now() - start < 500) {
       if (el.scrollHeight > el.clientHeight) break
@@ -239,9 +237,8 @@ export function useChatScrollRestore(
     if (!el) return null
     const max = el.scrollHeight - el.clientHeight
     if (max <= 0) return null
-    // "Near bottom" branch: if the saved position is within
-    // BOTTOM_THRESHOLD_PX of the bottom edge, treat as "still at bottom"
-    // → let the caller fall through to scrollToBottom. The edge is the
+    // "Near bottom" branch: if the saved position is within BOTTOM_THRESHOLD_PX of the bottom edge,
+    // treat as "still at bottom" → let the caller fall through to scrollToBottom. The edge is the
     // caller's, not the DOM's — see `resolveBottomEdge`.
     if (savedScrollTop >= bottomEdgeOf(el) - BOTTOM_THRESHOLD_PX) return null
     return savedScrollTop

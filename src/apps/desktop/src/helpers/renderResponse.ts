@@ -40,9 +40,8 @@ const escapeHtml = (text: string): string => {
 
 const MAX_CACHE_ENTRIES = 200
 
-// Map is module-scoped so the cache survives across component
-// re-renders and even across mount/unmount (the hot path is the
-// long-lived chat, where the same messages re-render dozens of
+// Map is module-scoped so the cache survives across component re-renders and even across
+// mount/unmount (the hot path is the long-lived chat, where the same messages re-render dozens of
 // times). Tests reset via `_resetRenderResponseCache`.
 const cache = new Map<string, string>()
 
@@ -208,10 +207,9 @@ const renderTool = (content: string, tool_name: string | undefined): string => {
     return `<span class="tool-inline">${tool_name} → "${query || 'unknown'}"</span>`
   }
 
-  // Universal MCP summary: ANY `mcp_<server>_<tool>` (graphify, db, future
-  // servers). The backend stores MCP success as RAW server text (no `<tool>`
-  // envelope), so unwrap may fail — fall back to the raw content. Truncate
-  // to one line / 80 chars so the collapsed pill stays one line.
+  // Universal MCP summary: ANY `mcp_<server>_<tool>` (graphify, db, future servers). The backend
+  // stores MCP success as RAW server text (no `<tool>` envelope), so unwrap may fail — fall back to
+  // the raw content. Truncate to one line / 80 chars so the collapsed pill stays one line.
   if (tool_name?.startsWith('mcp_')) {
     const unwrappedMcp = tryUnwrapToolOutput(content)
     const dataRaw =
@@ -298,10 +296,9 @@ const renderTool = (content: string, tool_name: string | undefined): string => {
   }
 
   if (tool_name === 'read_compacted_messages') {
-    // Collapsed-bubble summary for the inline tool pill in ChatView.
-    // Mirrors the structured ReadCompactedMessages.vue card so users
-    // see the same info (mode + count + session) whether they look
-    // at the collapsed bubble or the expanded body.
+    // Collapsed-bubble summary for the inline tool pill in ChatView. Mirrors the structured
+    // ReadCompactedMessages.vue card so users see the same info (mode + count + session) whether
+    // they look at the collapsed bubble or the expanded body.
     const errorMatch = content.match(/<error>([\s\S]*?)<\/error>/)
     if (errorMatch) {
       return `<span class="tool-inline">${tool_name} → ${escapeHtml(errorMatch[1]?.trim() || 'error')}</span>`
@@ -330,21 +327,18 @@ const renderTool = (content: string, tool_name: string | undefined): string => {
     if (updateError && updateError[1]) {
       return `<span class="tool-inline">${tool_name} → ${escapeHtml(updateError[1].trim()) || 'error'}</span>`
     }
-    // Estimate byte count from the inner envelope length as a
-    // rough "how big was this plan write" signal. We pull the
-    // inner envelope (stripping both <tool> and <update_plan>
-    // wrappers) so the number reflects the actual content, not
-    // the XML envelope chrome.
+    // Estimate byte count from the inner envelope length as a rough "how big was this plan write"
+    // signal. We pull the inner envelope (stripping both <tool> and <update_plan> wrappers) so the
+    // number reflects the actual content, not the XML envelope chrome.
     const innerPlanMatch = content.match(/<update_plan>([\s\S]*?)<\/update_plan>/)
     const innerBytes = innerPlanMatch?.[1]?.length ?? 0
     return `<span class="tool-inline">${tool_name} → wrote ${innerBytes}b of plan</span>`
   }
 
   if (tool_name === 'get_plan') {
-    // Collapsed-bubble summary for the inline tool pill in ChatView.
-    // Mirrors the structured GetPlan.vue card so users see "fetched
-    // current plan · N items" whether they look at the collapsed
-    // bubble or expand the structured card.
+    // Collapsed-bubble summary for the inline tool pill in ChatView. Mirrors the structured
+    // GetPlan.vue card so users see "fetched current plan · N items" whether they look at the
+    // collapsed bubble or expand the structured card.
     const getError = content.match(/<error>([\s\S]*?)<\/error>/)
     if (getError && getError[1]) {
       return `<span class="tool-inline">${tool_name} → ${escapeHtml(getError[1].trim()) || 'error'}</span>`
@@ -353,10 +347,9 @@ const renderTool = (content: string, tool_name: string | undefined): string => {
     if (/<empty\s*\/?>/.test(content)) {
       return `<span class="tool-inline">${tool_name} → no plan set</span>`
     }
-    // Count `- [ ]` / `- [x]` items in the CDATA-wrapped body for
-    // the "N items" hint. We strip the CDATA wrappers first so we
-    // only match checklist markers, not any literal `[ ]` text
-    // inside non-checklist prose.
+    // Count `- [ ]` / `- [x]` items in the CDATA-wrapped body for the "N items" hint. We strip the
+    // CDATA wrappers first so we only match checklist markers, not any literal `[ ]` text inside
+    // non-checklist prose.
     const cdataMatch = content.match(/<!\[CDATA\[([\s\S]*?)\]\]>/)
     const cdata = cdataMatch?.[1] ?? ''
     const itemMatches = cdata.match(/^- \[(x| )\]\s+/gim)

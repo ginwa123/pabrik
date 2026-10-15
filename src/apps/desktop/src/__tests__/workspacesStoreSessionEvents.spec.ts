@@ -62,10 +62,9 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
       configurable: true,
     })
 
-    // Install the bus BEFORE the store's `init()` is called —
-    // `installSessionEventHandlers` invokes `useSseBus()` which
-    // throws if the bus hasn't been installed yet. Replace the
-    // underlying SseClient so we never touch the network in tests.
+    // Install the bus BEFORE the store's `init()` is called — `installSessionEventHandlers` invokes
+    // `useSseBus()` which throws if the bus hasn't been installed yet. Replace the underlying
+    // SseClient so we never touch the network in tests.
     __resetSseBus()
     app = createApp({})
     installSseBus(app)
@@ -121,10 +120,8 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
     const ws = useWorkspacesStore()
     // First init — installs the handler, resets workspaces.value to [].
     await ws.init()
-    // Second init — must NOT double-register the handler. The
-    // install flag is closure-scoped inside the store, so a second
-    // init() in the same store IS the no-op path (the flag is
-    // already true).
+    // Second init — must NOT double-register the handler. The install flag is closure-scoped inside
+    // the store, so a second init() in the same store IS the no-op path (the flag is already true).
     await ws.init()
     // Seed after the second init so the handler has data to mutate.
     ws.workspaces = [
@@ -271,9 +268,8 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
   it('setActiveTask clears navigationStore.activeChatId on non-null taskId', async () => {
     const ws = await setupHandlersAndSeed()
     const nav = useNavigationStore()
-    // Simulate "user was viewing a chat, then clicks a task".
-    // navigationStore.setActiveChat prepends `chat-` to the session
-    // id passed in, so passing 'old_session' yields activeChatId
+    // Simulate "user was viewing a chat, then clicks a task". navigationStore.setActiveChat
+    // prepends `chat-` to the session id passed in, so passing 'old_session' yields activeChatId
     // === 'chat-old_session'.
     nav.setActiveChat('old_session', 'Old Chat')
     expect(nav.activeChatId).toBe('chat-old_session')
@@ -387,10 +383,9 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
   })
 
   it('fan-outs session.created events to onSessionEvent subscribers', async () => {
-    // The internal handler deliberately ignores 'created' (tasks
-    // are created via POST /tasks, not via session.created) — but
-    // external subscribers like ChatsList still need to see the
-    // event so the new session appears in their list.
+    // The internal handler deliberately ignores 'created' (tasks are created via POST /tasks, not
+    // via session.created) — but external subscribers like ChatsList still need to see the event so
+    // the new session appears in their list.
     const ws = await setupHandlersAndSeed()
 
     const cb = vi.fn()

@@ -299,10 +299,9 @@ export function installSseBus(_app?: App, options?: SseBusInstallOptions): SseBu
         workers: (e) => forward('worker', e),
         sessions: (e) => forward('session', e),
         kanban: (e) => forward('kanban', e),
-        // Design-mode element events. The `designSse` Pinia store
-        // subscribes via `bus.on('design', cb)` to receive all three
-        // action variants (created/updated/deleted) on the same
-        // callback and re-fetch the page's element list.
+        // Design-mode element events. The `designSse` Pinia store subscribes via `bus.on('design',
+        // cb)` to receive all three action variants (created/updated/deleted) on the same callback
+        // and re-fetch the page's element list.
         design: (e) => forward('design', e),
         // Bare 'llm' and bare 'queue' — backend broadcasts all sessions'
         // events on central keys. Frontend filter is `event.session_id ===
@@ -317,15 +316,13 @@ export function installSseBus(_app?: App, options?: SseBusInstallOptions): SseBu
         // emits on "skill_evals", frontend filters by `event.session_id`
         // in the Evals tab's store.
         skillEvals: (e) => forward('skillEvals', e),
-        // File stage/unstage — same central-broadcast pattern: backend
-        // emits on "git_file_stage", frontend filters by `event.cwd` in
-        // SidebarDiffPanel.vue and moves ONE row instead of re-fetching
-        // the whole git-status list.
+        // File stage/unstage — same central-broadcast pattern: backend emits on "git_file_stage",
+        // frontend filters by `event.cwd` in SidebarDiffPanel.vue and moves ONE row instead of
+        // re-fetching the whole git-status list.
         gitFileStage: (e) => forward('gitFileStage', e),
-        // Change-request state — same central-broadcast pattern: backend emits
-        // on "git_pr_state", frontend filters by `event.cwd` in the bridge that
-        // invalidates the shared PR-status cache (helpers/prStatusCache.ts), so
-        // a merge in ANOTHER tab still recolours this one's badges.
+        // Change-request state — same central-broadcast pattern: backend emits on "git_pr_state",
+        // frontend filters by `event.cwd` in the bridge that invalidates the shared PR-status cache
+        // (helpers/prStatusCache.ts), so a merge in ANOTHER tab still recolours this one's badges.
         gitPrState: (e) => forward('gitPrState', e),
       },
       onError: (err) => {
@@ -404,16 +401,14 @@ export function installSseBus(_app?: App, options?: SseBusInstallOptions): SseBu
     }
   }
 
-  // Expose `dispatch` to the module-level `__dispatchSseBus` so
-  // tests can inject synthetic events directly (bypassing the
-  // SseClient). Stored AFTER the closures are wired so the test
-  // escape hatch works from the first `installSseBus` call.
+  // Expose `dispatch` to the module-level `__dispatchSseBus` so tests can inject synthetic events
+  // directly (bypassing the SseClient). Stored AFTER the closures are wired so the test escape
+  // hatch works from the first `installSseBus` call.
   _dispatch = dispatch
 
-  // Start the connection. With tab sharing on, the coordinator decides whether
-  // THIS window owns it (leader) or receives events from the tab that does —
-  // so the BrowserProfile keeps exactly one SSE connection per origin no matter
-  // how many tabs are open.
+  // Start the connection. With tab sharing on, the coordinator decides whether THIS window owns it
+  // (leader) or receives events from the tab that does — so the BrowserProfile keeps exactly one
+  // SSE connection per origin no matter how many tabs are open.
   if (sharing) {
     _tabChannel = createTabChannel({
       ...options?.tabChannelOptions,
@@ -502,10 +497,8 @@ export function installSseBus(_app?: App, options?: SseBusInstallOptions): SseBu
       // that nulled `_globalClient` via `__resetSseBus` between
       // install and close still gets the original closed.
       const gc = _globalClient ?? createdClient
-      // NEW (sse-disconnect-diagnosis): pass a reason so the
-      // subsequent state log knows "bus was torn down" — useful
-      // when correlating SSE disconnects with App.vue unmount or
-      // HMR re-mounts.
+      // NEW (sse-disconnect-diagnosis): pass a reason so the subsequent state log knows "bus was
+      // torn down" — useful when correlating SSE disconnects with App.vue unmount or HMR re-mounts.
       gc?.close('bus-torn-down')
       // Detach the state-mirror listener and clear the test-only
       // handles so a subsequent `installSseBus` starts clean (and
@@ -538,10 +531,9 @@ export function __resetSseBus(): void {
   if (_instance) {
     _instance.close()
   }
-  // `close()` already nulls `_stateUnsub` + `_globalClient` +
-  // `_dispatch` + `_tabChannel`, but be defensive in case `__resetSseBus` is
-  // called before `installSseBus` (when `_instance` is null) AND a previous
-  // test leaked module-level state via a partial swap.
+  // `close()` already nulls `_stateUnsub` + `_globalClient` + `_dispatch` + `_tabChannel`, but be
+  // defensive in case `__resetSseBus` is called before `installSseBus` (when `_instance` is null)
+  // AND a previous test leaked module-level state via a partial swap.
   _globalClient = null
   if (_tabChannel) {
     try {
@@ -593,10 +585,9 @@ export function __setSseBusGlobalClient(client: SseClient): void {
     _stateUnsub()
     _stateUnsub = null
   }
-  // Close the old client (terminal — no further state transitions).
-  // Only when it's a different instance — the same object passed in
-  // twice would close-then-resubscribe-onto-the-same-thing, which is
-  // fine but wasteful.
+  // Close the old client (terminal — no further state transitions). Only when it's a different
+  // instance — the same object passed in twice would close-then-resubscribe-onto-the-same-thing,
+  // which is fine but wasteful.
   if (_globalClient && _globalClient !== client) {
     _globalClient.close()
   }

@@ -70,8 +70,7 @@ export interface AnchorMeasurement {
   /** Newly measured height in px (>0). */
   newHeight: number
   /**
-   * Previously stored height in px, or undefined when this item has
-   * never been measured before.
+   * Previously stored height in px, or undefined when this item has never been measured before. /
    */
   oldHeight: number | undefined
 }

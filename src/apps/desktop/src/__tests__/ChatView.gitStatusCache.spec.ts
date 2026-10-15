@@ -235,10 +235,9 @@ describe('ChatView git-status cache-first paint', () => {
 
     writeGitStatusCache(CWD, CACHED)
 
-    // Real user path: chip → "Refresh status" → checkGitStatus(). Hold
-    // the fetch pending so only the synchronous paint can change the
-    // chip. The gitStatusCwd gate must skip the localStorage read —
-    // if it didn't, the chip would flip back to 'cached-branch' here.
+    // Real user path: chip → "Refresh status" → checkGitStatus(). Hold the fetch pending so only
+    // the synchronous paint can change the chip. The gitStatusCwd gate must skip the localStorage
+    // read — if it didn't, the chip would flip back to 'cached-branch' here.
     let resolveFetch!: (s: api.GitStatus) => void
     const pending = new Promise<api.GitStatus>((resolve) => {
       resolveFetch = resolve

@@ -604,11 +604,9 @@ describe('PabrikConfigEditor (orchestrator)', () => {
   })
 
   it('mount with clean URL + stored tools → URL gains ?section=tools (mount normalization)', async () => {
-    // The reported bug: Tools active at /app/settings with no
-    // ?section=tools. The getter falls back to localStorage without
-    // touching the URL, and TabStrip skips its emit when
-    // saved==prop — so no router.replace ever runs. Mount must
-    // normalize the URL to the tab actually shown.
+    // The reported bug: Tools active at /app/settings with no ?section=tools. The getter falls back
+    // to localStorage without touching the URL, and TabStrip skips its emit when saved==prop — so
+    // no router.replace ever runs. Mount must normalize the URL to the tab actually shown.
     localStorage.setItem('pabrik-settings-active-tab', 'tools')
     const router = await makeSettingsRouter()
     mockGet.mockResolvedValueOnce({})

@@ -49,10 +49,9 @@ onMounted(async () => {
   }
 })
 
-// Re-fetch the worktree info against the CURRENT base branch value and
-// overwrite title + body. See design decision #11 for why this is
-// useful. Pass the current base explicitly so the diff is computed
-// against whatever the user has typed (not the auto-detected default).
+// Re-fetch the worktree info against the CURRENT base branch value and overwrite title + body. See
+// design decision #11 for why this is useful. Pass the current base explicitly so the diff is
+// computed against whatever the user has typed (not the auto-detected default).
 const onRegenerate = async () => {
   if (isRegenerating.value || isSubmitting.value) return
   isRegenerating.value = true

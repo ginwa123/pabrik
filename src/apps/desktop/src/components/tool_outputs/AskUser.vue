@@ -460,10 +460,9 @@ onMounted(() => {
   }
 })
 
-// Card-level Enter/Escape/number shortcuts live only while pending.
-// The submit handler above removes the listener when it resolves the
-// card; the prev-value guard below covers parent-driven transitions
-// (a fresh pending question arriving via props on an existing card).
+// Card-level Enter/Escape/number shortcuts live only while pending. The submit handler above
+// removes the listener when it resolves the card; the prev-value guard below covers parent-driven
+// transitions (a fresh pending question arriving via props on an existing card).
 const prevWaiting = ref(waiting.value)
 onUpdated(() => {
   const now = waiting.value

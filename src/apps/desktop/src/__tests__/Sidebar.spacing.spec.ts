@@ -46,10 +46,9 @@ const MENU_FILES = [
   'components/workspace/WorkspaceSwitcher.vue',
   'components/views/ChatsList.vue',
   'components/workspace/ProjectsList.vue',
-  // Documents section (Migration 095). Added to MENU_FILES so the
-  // arbitrary-padding / font-size / type-token bans below apply to it —
-  // a new sidebar section that skips the guard is how the panel drifts
-  // back to four different left edges.
+  // Documents section (Migration 095). Added to MENU_FILES so the arbitrary-padding / font-size /
+  // type-token bans below apply to it — a new sidebar section that skips the guard is how the panel
+  // drifts back to four different left edges.
   'components/workspace/DocumentsList.vue',
   'components/workspace/WorkspaceItem.vue',
   'components/workspace/WorkspaceItemTaskRow.vue',
@@ -60,10 +59,9 @@ const ROW_FILES = [
   'components/views/ChatsList.vue',
   'components/workspace/WorkspaceItem.vue',
   'components/workspace/WorkspaceItemTaskRow.vue',
-  // Documents rows (Migration 095) are the same kind of object as a chat
-  // row: one clickable line in a sidebar list. They must resolve their
-  // height and type off the same two tokens or the panel grows a fourth
-  // row rhythm.
+  // Documents rows (Migration 095) are the same kind of object as a chat row: one clickable line in
+  // a sidebar list. They must resolve their height and type off the same two tokens or the panel
+  // grows a fourth row rhythm.
   'components/workspace/DocumentsList.vue',
 ]
 
@@ -161,10 +159,9 @@ describe('sidebar spacing + type scale', () => {
   })
 
   it('has no leftover arbitrary font sizes in the menu rows', () => {
-    // Handled app-wide by type-scale.spec.ts; repeated here because the
-    // sidebar is the panel most likely to grow its own private scale
-    // back. A 9/10/14/15/16/20 in a menu row is exactly the drift this
-    // file exists to catch.
+    // Handled app-wide by type-scale.spec.ts; repeated here because the sidebar is the panel most
+    // likely to grow its own private scale back. A 9/10/14/15/16/20 in a menu row is exactly the
+    // drift this file exists to catch.
     const found = collect((line) => {
       const px = /text-\[(\d+)px\]/.exec(line)?.[1]
       return px !== undefined ? `text-[${px}px] — pick a step off the type scale` : null

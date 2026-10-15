@@ -46,18 +46,16 @@ function updateName(val: string) {
   emit('update:modelValue', { ...props.modelValue, name: val })
 }
 function updateConfig(cfg: LlmConfig) {
-  // Editing any field invalidates a previous test result — the profile
-  // may now be misconfigured even though the prior probe succeeded.
-  // Clearing prevents stale "looks good!" badges from lulling the user
-  // into saving a broken config.
+  // Editing any field invalidates a previous test result — the profile may now be misconfigured
+  // even though the prior probe succeeded. Clearing prevents stale "looks good!" badges from
+  // lulling the user into saving a broken config.
   testResult.value = null
   emit('update:modelValue', { ...props.modelValue, config: cfg })
 }
 
-// ─── Test button state ─────────────────────────────────────────────────────
-// Mirrors McpServerModal's probe UX: `testResult` carries the last
-// `POST /api/llm/test` response (null = "no probe yet"), `testing` is
-// the loading flag while the HTTP call is in-flight.
+// ─── Test button state ───────────────────────────────────────────────────── Mirrors
+// McpServerModal's probe UX: `testResult` carries the last `POST /api/llm/test` response (null =
+// "no probe yet"), `testing` is the loading flag while the HTTP call is in-flight.
 const testResult = ref<LlmTestResult | null>(null)
 const testing = ref(false)
 

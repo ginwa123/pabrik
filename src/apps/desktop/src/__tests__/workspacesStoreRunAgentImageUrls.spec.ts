@@ -76,10 +76,9 @@ describe('workspacesStore.runAgentOnNewTask — imageUrls forwarding', () => {
   })
 
   it('defaults imageUrls to undefined when not provided (back-compat)', async () => {
-    // The existing runAgentOnNewTask contract passes `undefined` for
-    // imageUrls. After the fix, callers that don't supply imageUrls
-    // should still work — the store should forward undefined to the
-    // API, not an empty array (the API contract distinguishes).
+    // The existing runAgentOnNewTask contract passes `undefined` for imageUrls. After the fix,
+    // callers that don't supply imageUrls should still work — the store should forward undefined to
+    // the API, not an empty array (the API contract distinguishes).
     const sendSpy = vi
       .spyOn(api, 'sendChatMessage')
       .mockResolvedValue({ status: 'send' })

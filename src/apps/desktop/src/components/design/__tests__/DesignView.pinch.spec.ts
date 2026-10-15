@@ -181,10 +181,9 @@ describe('DesignView pinch-to-zoom (Pointer Events)', () => {
         .element as HTMLElement
       stubPointerCapture(container)
 
-      // Two pointerdowns with pointerType='mouse' should NOT trigger
-      // any zoom — there's no third finger, just a single mouse button
-      // doing double duty. (Real mice can't pinch; this guards against
-      // accidentally firing the handler on a phantom 2nd mouse click.)
+      // Two pointerdowns with pointerType='mouse' should NOT trigger any zoom — there's no third
+      // finger, just a single mouse button doing double duty. (Real mice can't pinch; this guards
+      // against accidentally firing the handler on a phantom 2nd mouse click.)
       container.dispatchEvent(new PointerEvent('pointerdown', {
         pointerId: 1, pointerType: 'mouse',
         clientX: 200, clientY: 200, bubbles: true,
@@ -242,10 +241,9 @@ describe('DesignView pinch-to-zoom (Pointer Events)', () => {
         .element as HTMLElement
       stubPointerCapture(elementEl)
 
-      // Dispatch on the element so the bubbling pointerdown reaches
-      // the container with `event.target === elementEl`. The handler
-      // walks `target.closest('[data-design-element]')` → matches →
-      // bails before adding the pointer to pinchPointers.
+      // Dispatch on the element so the bubbling pointerdown reaches the container with
+      // `event.target === elementEl`. The handler walks `target.closest('[data-design-element]')` →
+      // matches → bails before adding the pointer to pinchPointers.
       elementEl.dispatchEvent(new PointerEvent('pointerdown', {
         pointerId: 10, pointerType: 'touch',
         clientX: 150, clientY: 150, bubbles: true,

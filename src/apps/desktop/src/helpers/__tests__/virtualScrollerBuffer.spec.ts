@@ -49,10 +49,9 @@ function mountScroller(props: {
       totalCount: props.items.length,
     },
   })
-  // Force a known container size so the visible-range math is
-  // deterministic in jsdom. `clientHeight` is read every scroll,
-  // so the ref is updated to this value the first time `onScroll`
-  // fires.
+  // Force a known container size so the visible-range math is deterministic in jsdom.
+  // `clientHeight` is read every scroll, so the ref is updated to this value the first time
+  // `onScroll` fires.
   const el = wrapper.element as HTMLElement
   Object.defineProperty(el, 'clientHeight', {
     value: props.clientHeight ?? 800,
@@ -76,10 +75,9 @@ function getRenderedCount(wrapper: ReturnType<typeof mountScroller>): number {
 
 describe('VirtualScroller buffer prop', () => {
   it('exposes renderedCount matching exactly 2*buffer + visible (no hidden overscan)', async () => {
-    // 100 items, 200px each, 800px viewport → 4 visible.
-    // Scroll to the middle (scrollTop=10000 → startIndex=50) so the
-    // buffer is on BOTH sides. buffer=20 → start=30, end=74, count=44.
-    // If the hardcoded +200 overscan is still present, count is 45.
+    // 100 items, 200px each, 800px viewport → 4 visible. Scroll to the middle (scrollTop=10000 →
+    // startIndex=50) so the buffer is on BOTH sides. buffer=20 → start=30, end=74, count=44. If the
+    // hardcoded +200 overscan is still present, count is 45.
     const wrapper = mountScroller({
       items: makeItems(100),
       buffer: 20,
@@ -96,10 +94,9 @@ describe('VirtualScroller buffer prop', () => {
   })
 
   it('counts buffer items on BOTH sides of the visible viewport (per-side, not total)', async () => {
-    // 100 items, 200px each, 800px viewport → 4 visible.
-    // Scroll to the middle (scrollTop=10000 → startIndex=50) so the
-    // buffer is on BOTH sides. buffer=5 → start=45, end=59, count=14.
-    // (No 5-total surprise.)
+    // 100 items, 200px each, 800px viewport → 4 visible. Scroll to the middle (scrollTop=10000 →
+    // startIndex=50) so the buffer is on BOTH sides. buffer=5 → start=45, end=59, count=14. (No
+    // 5-total surprise.)
     const wrapper = mountScroller({
       items: makeItems(100),
       buffer: 5,
@@ -153,9 +150,8 @@ describe('VirtualScroller buffer prop', () => {
   })
 
   it('renders zero items past the visible viewport when buffer=0 (no hidden overscan)', async () => {
-    // The smoke test for the hardcoded-+200 bug: with buffer=0,
-    // the rendered count must be exactly the visible count. If the
-    // +200 overscan is still there, the count is 5 (4 visible + 1
+    // The smoke test for the hardcoded-+200 bug: with buffer=0, the rendered count must be exactly
+    // the visible count. If the +200 overscan is still there, the count is 5 (4 visible + 1
     // overscan item), which fails this test.
     const wrapper = mountScroller({
       items: makeItems(100),

@@ -78,10 +78,9 @@ export function useSettingsSection(options: UseSettingsSectionOptions) {
       try {
         localStorage.setItem(storageKey, next)
       } catch {
-        // Best-effort persistence only: the URL (source of truth) is
-        // written below, and `local` already holds the new section, so a
-        // failed write only affects the next cold load's fallback — the
-        // failure cannot reach the user as a wrong section.
+        // Best-effort persistence only: the URL (source of truth) is written below, and `local`
+        // already holds the new section, so a failed write only affects the next cold load's
+        // fallback — the failure cannot reach the user as a wrong section.
       }
       if (!router || !route) return
       const rest = { ...route.query }

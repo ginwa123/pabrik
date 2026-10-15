@@ -291,9 +291,8 @@ export function useDesignHandlers(args?: UseDesignHandlersArgs) {
     // Selected ids is stored as a Set; the API expects an array.
     const childIds = Array.from(selectedIds.value)
     const defaultName = `Group ${childIds.length}`
-    // First-cut implementation: window.prompt. A future inline-rename
-    // affordance (plan §7.1) would replace this with an input UI
-    // bound to the new group's name. Tests pass `promptForName` to
+    // First-cut implementation: window.prompt. A future inline-rename affordance (plan §7.1) would
+    // replace this with an input UI bound to the new group's name. Tests pass `promptForName` to
     // bypass the real browser prompt.
     const promptFn = promptForName ?? ((defaultValue: string): string | null => window.prompt('Name the new group:', defaultValue))
     const name = promptFn(defaultName)
@@ -309,9 +308,8 @@ export function useDesignHandlers(args?: UseDesignHandlersArgs) {
       // fresh selection (Figma behavior — grouping collapses to the
       // new parent, then the user picks the next group).
       selectedIds.value = new Set()
-      // The notification store only exposes notifyError (a single
-      // success-vs-error style is overkill for the 1-shot success
-      // case here). Success notifications auto-dismiss in 5s like
+      // The notification store only exposes notifyError (a single success-vs-error style is
+      // overkill for the 1-shot success case here). Success notifications auto-dismiss in 5s like
       // error notifications, so the UX is consistent.
       notificationStore.notifyError(
         `Grouped ${childIds.length} elements into "${name}".`,
@@ -449,10 +447,9 @@ export function useDesignHandlers(args?: UseDesignHandlersArgs) {
           new_parent_id: null,
         },
       )
-      // Clear selection so the user can immediately Leave group
-      // again on a fresh selection (Figma behavior — the just-
-      // pulled-out element stays highlighted through spurious
-      // context menus unless we clear).
+      // Clear selection so the user can immediately Leave group again on a fresh selection (Figma
+      // behavior — the just- pulled-out element stays highlighted through spurious context menus
+      // unless we clear).
       args.selectedIds.value = new Set()
       notificationStore.notifyError(
         'Left group. Element moved to top-level.',

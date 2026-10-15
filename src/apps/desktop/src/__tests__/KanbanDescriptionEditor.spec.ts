@@ -170,9 +170,8 @@ describe('KanbanDescriptionEditor', () => {
     await fileButtons[1]!.trigger('click')
     await flushPromises()
     const updatedTextarea = wrapper.find('textarea').element as HTMLTextAreaElement
-    // The path is inserted WITHOUT the leading `@` (the user dropped
-    // the `@` prefix per the latest UX feedback; the chip detector
-    // matches `/path` directly). The path is RELATIVE to the cwd
+    // The path is inserted WITHOUT the leading `@` (the user dropped the `@` prefix per the latest
+    // UX feedback; the chip detector matches `/path` directly). The path is RELATIVE to the cwd
     // (mirrors FileInput.vue's `entry.path.replace(rootPath, '')`).
     expect(updatedTextarea.value).toContain('/main.zig')
     expect(updatedTextarea.value).not.toContain('@/main.zig')
@@ -291,9 +290,8 @@ describe('KanbanDescriptionEditor — create-mode image paste (no taskId)', () =
     const event = fakeClipboardEvent(file)
     const textarea = wrapper.find('textarea').element as HTMLTextAreaElement
     textarea.dispatchEvent(event)
-    // addImageFile awaits FileReader.onload which fires on the next
-    // macrotask (not microtask) tick — flushPromises alone isn't
-    // enough. A short setTimeout gives FileReader time to encode the
+    // addImageFile awaits FileReader.onload which fires on the next macrotask (not microtask) tick
+    // — flushPromises alone isn't enough. A short setTimeout gives FileReader time to encode the
     // File into a data URL before we read the textarea.
     await new Promise((resolve) => setTimeout(resolve, 50))
     await flushPromises()

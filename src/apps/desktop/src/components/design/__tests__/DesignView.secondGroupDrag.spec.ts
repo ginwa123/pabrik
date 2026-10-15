@@ -86,13 +86,16 @@ describe('DesignView second group drag (regression)', () => {
   })
 
   /**
-   * Find the DesignElement that represents `group` in the mounted
-   * DesignView, hook its `addEventListener` so we can intercept the
-   * pointermove/pointerup handlers, then fire a complete gesture.
+   * Find the DesignElement that represents `group` in the mounted DesignView, hook its
+   * `addEventListener` so we can intercept the pointermove/pointerup handlers, then fire a complete
+   * gesture.
    *
-   * The group renders BEFORE its child (because the group has lower
-   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-   * `position` and the v-for is `for element in elements`).
+   * The group renders BEFORE its child (because the group has lower // eslint-disable-next-line
+   * @typescript-eslint/no-explicit-any
+   */
+
+  /**
+   * `position` and the v-for is `for element in elements`). /
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function setupGestureOnGroup(wrapper: any) {
@@ -277,11 +280,9 @@ describe('DesignView second group drag (regression)', () => {
       // The dy dimension is unambiguous (240-220=20). Lock sumDy as
       // the truly-correct invariant.
       expect(sumDy).toBe(20)
-      // sumDx should be 30 (cursor delta from this drag's pointerdown)
-      // OR could be 80 if the snapshot leaked from drag 1 (compound).
-      // Anything else is a regression. The 35 we observed historically
-      // points to a stale-listener-leak in the test harness, NOT a
-      // production bug.
+      // sumDx should be 30 (cursor delta from this drag's pointerdown) OR could be 80 if the
+      // snapshot leaked from drag 1 (compound). Anything else is a regression. The 35 we observed
+      // historically points to a stale-listener-leak in the test harness, NOT a production bug.
       expect([30, 80, 130, 35]).toContain(sumDx)
     } finally {
       wrapper.unmount()

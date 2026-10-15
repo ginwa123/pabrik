@@ -20,9 +20,8 @@ import { defineComponent, h, provide } from 'vue'
 import Search from '../Search.vue'
 import { OPEN_IN_CODE_EDITOR_KEY, type OpenInCodeEditorFn } from '@/composables/useCodeEditor'
 
-// ────────────────────────────────────────────────────────────────────────
-// Test fixtures — match the JSON data shape in
-// docs/superpowers/plans/2026-09-18-agent-tool-output-json-schema.md §2.3
+// ──────────────────────────────────────────────────────────────────────── Test fixtures — match
+// the JSON data shape in docs/superpowers/plans/2026-09-18-agent-tool-output-json-schema.md §2.3
 // ────────────────────────────────────────────────────────────────────────
 
 interface MatchFixture {
@@ -128,10 +127,9 @@ describe('Search.vue — header rendering (operator-visible pattern + path)', ()
   it('renders the warning text from the payload', () => {
     const wrapper = makeWrapper({ content: noMatchData() })
 
-    // The header's right-hand side shows the warning body, styled orange.
-    // Locks in that the no-match warning surfaces the actionable message
-    // ("no matches for pattern...") so the operator can copy/paste it
-    // into a chat.
+    // The header's right-hand side shows the warning body, styled orange. Locks in that the
+    // no-match warning surfaces the actionable message ("no matches for pattern...") so the
+    // operator can copy/paste it into a chat.
     const html = wrapper.html()
     expect(html).toContain('no matches for pattern')
     expect(html).toContain('needle_NOT_FOUND')
@@ -139,10 +137,9 @@ describe('Search.vue — header rendering (operator-visible pattern + path)', ()
   })
 
   it('falls back to "unknown" only when the payload truly has no pattern', () => {
-    // Payload without pattern/path keys. We keep the "unknown" fallback
-    // for back-compat with stale rows. The fix's job is to ensure NEW
-    // results carry the keys; this test confirms we haven't broken the
-    // fallback.
+    // Payload without pattern/path keys. We keep the "unknown" fallback for back-compat with stale
+    // rows. The fix's job is to ensure NEW results carry the keys; this test confirms we haven't
+    // broken the fallback.
     const wrapper = makeWrapper({
       content: { warning: 'pattern not found', files: [] },
     })

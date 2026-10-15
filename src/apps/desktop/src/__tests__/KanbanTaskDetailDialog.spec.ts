@@ -179,10 +179,9 @@ describe('KanbanTaskDetailDialog — save / cancel', () => {
   })
 
   it('emits update:show=false on close (for v-model:show wiring)', async () => {
-    // Regression: KanbanView binds `v-model:show` which requires
-    // `update:show` events, not the legacy `close` event. Without
-    // this emit, the X / Cancel / backdrop / Escape handlers
-    // cannot close the dialog.
+    // Regression: KanbanView binds `v-model:show` which requires `update:show` events, not the
+    // legacy `close` event. Without this emit, the X / Cancel / backdrop / Escape handlers cannot
+    // close the dialog.
     const w = mountDialog()
     await flushPromises()
     clickInDom('[data-testid="kanban-task-detail-close"]')
@@ -492,9 +491,8 @@ describe('KanbanTaskDetailDialog — edit-mode cwd picker', () => {
       '[data-testid="kanban-task-detail-cwd-picker"]',
     )!.click()
     await flushPromises()
-    // Picker is now open. Synthesise a click somewhere completely
-    // outside the picker and outside the dialog (the kanban column
-    // body — a typical place the user might click while context-
+    // Picker is now open. Synthesise a click somewhere completely outside the picker and outside
+    // the dialog (the kanban column body — a typical place the user might click while context-
     // reading). The picker must NOT close on this click.
     const outside = document.createElement('div')
     outside.setAttribute('data-testid', 'kanban-column-body-fixture')
@@ -726,19 +724,17 @@ describe('KanbanTaskDetailDialog — create mode', () => {
   }
 
   it('renders the dialog with task=null (would be hidden in edit mode)', async () => {
-    // The whole point of the create-mode change: the dialog must
-    // render even when task is null, because in edit mode the
-    // v-if="show && task" guard hides it. The new guard is
-    // `show && (task || isCreateMode)`.
+    // The whole point of the create-mode change: the dialog must render even when task is null,
+    // because in edit mode the v-if="show && task" guard hides it. The new guard is `show && (task
+    // || isCreateMode)`.
     mountCreateDialog()
     await flushPromises()
     expect(findInDom('[data-testid="kanban-task-detail-dialog"]')).not.toBeNull()
   })
 
   it('starts the form empty even if a task is passed (caller contract: pass null)', async () => {
-    // Defensive: in create mode the form MUST start blank regardless
-    // of the task prop. The host's contract is `task=null`, but if
-    // a future refactor accidentally passes a stale task, the
+    // Defensive: in create mode the form MUST start blank regardless of the task prop. The host's
+    // contract is `task=null`, but if a future refactor accidentally passes a stale task, the
     // dialog should still present a blank form.
     document.body.innerHTML = ''
     wrapper = mount(KanbanTaskDetailDialog, {
@@ -774,10 +770,9 @@ describe('KanbanTaskDetailDialog — create mode', () => {
   it('hides the type + pinned badges in create mode (they only apply to existing tasks)', async () => {
     mountCreateDialog()
     await flushPromises()
-    // Even if column is null, the metadata strip is hidden in
-    // create mode when no column is provided. The type/pinned
-    // badges are explicitly gated off for create mode in the
-    // template (`v-if="!isCreateMode && ..."`).
+    // Even if column is null, the metadata strip is hidden in create mode when no column is
+    // provided. The type/pinned badges are explicitly gated off for create mode in the template
+    // (`v-if="!isCreateMode && ..."`).
     const strip = findInDom('[data-testid="kanban-task-detail-metadata"]')
     expect(strip).toBeNull()
   })
@@ -848,11 +843,9 @@ describe('KanbanTaskDetailDialog — create mode', () => {
         selectedProfile: '',
         // NEW (plan: 2026-08-06-kanban-no-base64-in-desc).
         pendingFiles: [],
-        // NEW (Migration 070 — kanban-cwd-session-optional plan).
-        // Empty string = no per-task cwd (falls back to kanban path
-        // + sandbox). The dialog's cwd picker was added in create
-        // mode; this test doesn't drive the picker so the field
-        // carries the default '' value.
+        // NEW (Migration 070 — kanban-cwd-session-optional plan). Empty string = no per-task cwd
+        // (falls back to kanban path + sandbox). The dialog's cwd picker was added in create mode;
+        // this test doesn't drive the picker so the field carries the default '' value.
         cwdSession: '',
       },
     ])
@@ -1267,10 +1260,9 @@ describe('KanbanTaskDetailDialog — layout', () => {
     expect(inlineStyle).not.toMatch(/color:\s*var\(--semantic-text-dim\)/)
   })
 
-  // When the cwd is NOT set (the "skip" / optional state), the folder
-  // picker text stays dim — this is intentional because the path slot
-  // shows the "Skip (no project root)" placeholder, which shouldn't
-  // look like an active selection.
+  // When the cwd is NOT set (the "skip" / optional state), the folder picker text stays dim — this
+  // is intentional because the path slot shows the "Skip (no project root)" placeholder, which
+  // shouldn't look like an active selection.
   it('create mode: folder picker text color is dim when cwd is empty', async () => {
     mountCreateDialog('')
     await flushPromises()
@@ -1328,11 +1320,9 @@ describe('KanbanTaskDetailDialog — layout', () => {
       // Open the picker.
       clickInDom('[data-testid="kanban-task-detail-cwd-picker"]')
       await flushPromises()
-      // The picker opens on the Recent tab by default (per
-      // 2026-08-14-folder-picker-recent-history plan). Switch to
-      // Browse to assert that the cwd's children loaded — Recent
-      // is empty for a fresh test fixture so we can't see items
-      // there.
+      // The picker opens on the Recent tab by default (per 2026-08-14-folder-picker-recent-history
+      // plan). Switch to Browse to assert that the cwd's children loaded — Recent is empty for a
+      // fresh test fixture so we can't see items there.
       clickInDom('[data-testid="file-picker-tab-browse"]')
       await flushPromises()
 

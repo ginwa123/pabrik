@@ -56,10 +56,9 @@ function mountChatsList() {
   return mount(ChatsList, {
     global: {
       mocks: { $router: { replace: vi.fn() } },
-      // Real Vue ref — ChatsList has `watch(processingState, ..., { deep: true })`
-      // (lines 110-119 and 367-372). A plain `{ value: {} }` object logs
-      // `[Vue warn]: Invalid watch source` and turns the watchers into silent
-      // no-ops, hiding reactivity regressions.
+      // Real Vue ref — ChatsList has `watch(processingState, ..., { deep: true })` (lines 110-119
+      // and 367-372). A plain `{ value: {} }` object logs `[Vue warn]: Invalid watch source` and
+      // turns the watchers into silent no-ops, hiding reactivity regressions.
       provide: { processingState: ref<Record<string, boolean>>({}) },
     },
   })
@@ -75,10 +74,9 @@ describe('sidebar active-state exclusivity', () => {
       writable: true,
       configurable: true,
     })
-    // ChatsList and AppLayout both call
-    // workspacesStore.onSessionEvent(cb) synchronously in setup,
-    // which now requires the sseBus to be installed (Chunk 6 of
-    // unify-frontend-sse). Install a stub bus before mounting.
+    // ChatsList and AppLayout both call workspacesStore.onSessionEvent(cb) synchronously in setup,
+    // which now requires the sseBus to be installed (Chunk 6 of unify-frontend-sse). Install a stub
+    // bus before mounting.
     __resetSseBus()
     app = createApp({})
     installSseBus(app)
@@ -153,10 +151,9 @@ describe('sidebar active-state exclusivity', () => {
       { id: 'chat_doomed', name: 'Doomed', active: false, processing: false },
     ]
     vi.spyOn(api, 'deleteChat').mockResolvedValue({ success: true })
-    // No @ts-expect-error needed here: `removeChat` is exposed via
-    // ChatsList.vue's `defineExpose({ ...removeChat, ... })`. Compare with
-    // the first test, which DOES need it for `setActive` (closure-only,
-    // not exposed). The asymmetry reflects `defineExpose` membership.
+    // No @ts-expect-error needed here: `removeChat` is exposed via ChatsList.vue's `defineExpose({
+    // ...removeChat, ... })`. Compare with the first test, which DOES need it for `setActive`
+    // (closure-only, not exposed). The asymmetry reflects `defineExpose` membership.
     await wrapper.vm.removeChat('chat_doomed')
 
     expect(ws.activeWorkspaceItemId).toBe('item_keep')
@@ -217,11 +214,9 @@ describe('AppLayout URL-driven chat navigation', () => {
     installSseBus(app)
     __setSseBusGlobalClient(makeStubClient('connecting'))
 
-    // Mock the workspace API calls triggered by
-    // `workspacesStore.initializeFromSystemFolder()` in onMounted. The
-    // call is fire-and-forget (no `await` in AppLayout) but we still
-    // mock it to avoid unhandled promise rejections / noisy console
-    // output in test logs.
+    // Mock the workspace API calls triggered by `workspacesStore.initializeFromSystemFolder()` in
+    // onMounted. The call is fire-and-forget (no `await` in AppLayout) but we still mock it to
+    // avoid unhandled promise rejections / noisy console output in test logs.
     vi.spyOn(api, 'getWorkspaces').mockResolvedValue({ workspaces: [] })
     vi.spyOn(api, 'getWorkspacesItems').mockResolvedValue({ items: [], count: 0 })
     vi.spyOn(api, 'getTasks').mockResolvedValue({ tasks: [], has_more: false, next_cursor: null })
@@ -349,11 +344,9 @@ describe('AppLayout URL-driven chat navigation', () => {
     // (initial URL was workspace, not chat).
     expect(ws.activeWorkspaceItemId).toBe('item_from_url_watch')
 
-    // Now navigate to a chat URL — the watch's chat branch must fire
-    // and reset the workspace-item active state. The guard
-    // `activeChatId.value !== 'chat-${sessionId}'` is true here
-    // (activeChatId is empty after the workspace mount), so the
-    // reset block executes.
+    // Now navigate to a chat URL — the watch's chat branch must fire and reset the workspace-item
+    // active state. The guard `activeChatId.value !== 'chat-${sessionId}'` is true here
+    // (activeChatId is empty after the workspace mount), so the reset block executes.
     routeObj.query = { view: 'chat', session: 'chat_new' }
     await flushPromises()
     wrapper.unmount()

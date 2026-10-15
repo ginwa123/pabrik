@@ -45,9 +45,8 @@ export interface UseDesignHistory {
 
 let nextEntryId = 1
 function generateEntryId(): string {
-  // Monotonic integer-based id; we don't need ULIDs here because
-  // the in-memory store doesn't deduplicate. Stable across
-  // localStorage round-trips would need a ULID; v1 doesn't promise
+  // Monotonic integer-based id; we don't need ULIDs here because the in-memory store doesn't
+  // deduplicate. Stable across localStorage round-trips would need a ULID; v1 doesn't promise
   // cross-session dedup.
   return `entry_${Date.now()}_${nextEntryId++}`
 }

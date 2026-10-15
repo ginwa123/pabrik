@@ -101,10 +101,9 @@ describe('WebSearchSection', () => {
   // ─── The regressions this section exists to prevent ──────────────────────
 
   it('submitting the MASKED key does not blank the stored key', async () => {
-    // The user opens Settings and hits Save without touching the key.
-    // The field still holds the backend's mask, and that mask is what
-    // goes back — never `""`, which would destroy the stored credential
-    // while looking exactly like "the user cleared the field".
+    // The user opens Settings and hits Save without touching the key. The field still holds the
+    // backend's mask, and that mask is what goes back — never `""`, which would destroy the stored
+    // credential while looking exactly like "the user cleared the field".
     const parsed = rows({ tinyfish: TINYFISH })
     const wrapper = mount(WebSearchSection, { props: { modelValue: parsed } })
     expect(fieldValue(wrapper, 'tinyfish', 'key-input')).toBe(MASKED)
@@ -123,10 +122,9 @@ describe('WebSearchSection', () => {
   })
 
   it('an EMPTY key is OMITTED from the payload, not sent as an empty string', () => {
-    // A self-hosted provider has no credential. `{"key": ""}` is a
-    // DIFFERENT thing to the backend than an absent key — an empty
-    // slice binds as SQL NULL and `isUsable` reads it as a declared but
-    // unusable credential — so the field must not be materialised.
+    // A self-hosted provider has no credential. `{"key": ""}` is a DIFFERENT thing to the backend
+    // than an absent key — an empty slice binds as SQL NULL and `isUsable` reads it as a declared
+    // but unusable credential — so the field must not be materialised.
     const saved = serializeWebSearchProviders(rows({ selfhosted: SELFHOSTED }))
     expect(savedProvider(saved, 'selfhosted')).not.toHaveProperty('key')
     expect(Object.keys(savedProvider(saved, 'selfhosted'))).not.toContain('key')

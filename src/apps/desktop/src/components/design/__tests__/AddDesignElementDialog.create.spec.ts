@@ -198,9 +198,8 @@ describe('DesignView: `@create` → `createElement` re-emit (link 2)', () => {
     )?.click()
     await flushPromises()
 
-    // The pre-fix bug was that this emit went nowhere on AppLayout.
-    // We prove here that DesignView itself DOES re-emit upward with
-    // the right shape; the AppLayout binding is verified by grep in
+    // The pre-fix bug was that this emit went nowhere on AppLayout. We prove here that DesignView
+    // itself DOES re-emit upward with the right shape; the AppLayout binding is verified by grep in
     // the verifier step of the bug-fix plan.
     const creates = wrapper.emitted('createElement') ?? []
     expect(creates.length).toBe(1)

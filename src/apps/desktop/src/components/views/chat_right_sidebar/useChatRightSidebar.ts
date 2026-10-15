@@ -104,9 +104,8 @@ export function useChatRightSidebar(chatType: string) {
     window.removeEventListener('keydown', onKeydown)
   })
 
-  // NOTE: `chatType` is a plain (non-reactive) parameter fixed per
-  // composable instance — observing it would never fire, since the source
-  // never changes. Each instance already hydrates via
+  // NOTE: `chatType` is a plain (non-reactive) parameter fixed per composable instance — observing
+  // it would never fire, since the source never changes. Each instance already hydrates via
   // `ref(loadOpen(chatType))` above, so there is nothing to re-sync.
 
   return {

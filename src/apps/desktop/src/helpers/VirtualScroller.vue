@@ -289,10 +289,9 @@ const emit = defineEmits<{
   contentShift: [shift: { topSpacer: number; bottomSpacer: number; total: number }]
 }>()
 
-// ── Deep-dive logger (2026-09-02) ──────────────────────────────────────────
-// When debugChatId is provided, internal sizer/measure/scrollToBottom
-// decisions are logged via the same scrollLogger infra as ChatView,
-// so a single `grep chat=task_...` shows both sides of the loop.
+// ── Deep-dive logger (2026-09-02) ────────────────────────────────────────── When debugChatId is
+// provided, internal sizer/measure/scrollToBottom decisions are logged via the same scrollLogger
+// infra as ChatView, so a single `grep chat=task_...` shows both sides of the loop.
 const vsLogger = computed(() => (props.debugChatId ? createScrollLogger(props.debugChatId) : null))
 
 const containerRef = ref<HTMLElement | null>(null)
@@ -1026,10 +1025,9 @@ const measureItems = () => {
   // The attribute is stamped by the renderer at mount time and always
   // matches the node it decorates.
   const pendingWrites: Array<[string, number, number]> = []
-  // Tail-gap cap inputs (see recordTailContentBottom): the summed real
-  // height of the rows currently in the DOM, plus the first/last indices
-  // they were stamped with. Read in this same pass so the recorded real
-  // bottom can never describe a previous window.
+  // Tail-gap cap inputs (see recordTailContentBottom): the summed real height of the rows currently
+  // in the DOM, plus the first/last indices they were stamped with. Read in this same pass so the
+  // recorded real bottom can never describe a previous window.
   let renderedChildrenSum = 0
   let firstRenderedIndex = -1
   let lastRenderedIndex = -1
@@ -1087,10 +1085,9 @@ const measureItems = () => {
       }
     }
   }
-  // Record the measured tail bottom on BOTH paths — a no-op pass still
-  // carries a fresh window geometry (e.g. the user scrolled: same stored
-  // heights, different rows on screen), and the cap must follow the
-  // window, not only the height writes.
+  // Record the measured tail bottom on BOTH paths — a no-op pass still carries a fresh window
+  // geometry (e.g. the user scrolled: same stored heights, different rows on screen), and the cap
+  // must follow the window, not only the height writes.
   recordTailContentBottom(renderedChildrenSum, firstRenderedIndex, lastRenderedIndex)
   if (!changed) {
     // Even a pass that wrote nothing establishes where the bottom is, and the
@@ -1190,10 +1187,9 @@ const measureItems = () => {
   // justify it. If it ever needs to be closed, that is the change to make — the
   // helper's `atBottomTarget > prevScrollTop` guard already makes it downward-only.
   if (result.shiftPx !== 0 && !isPreservingScroll.value) {
-    // Mark BEFORE the write: assigning .scrollTop fires a native scroll
-    // event that onScroll must label as programmatic (see the counter
-    // comment above — without this, a downward compensation is misread
-    // as "user scrolled up" and disengages ChatView's auto-stick).
+    // Mark BEFORE the write: assigning .scrollTop fires a native scroll event that onScroll must
+    // label as programmatic (see the counter comment above — without this, a downward compensation
+    // is misread as "user scrolled up" and disengages ChatView's auto-stick).
     if (vsLogger.value) {
       try {
         vsLogger.value.info({
@@ -1329,10 +1325,9 @@ const onScroll = (e: Event) => {
   // ONE component re-render and ONE visibleRange evaluation.
   scrollTop.value = st
   lastScrollTop.value = st
-  // Consume the programmatic flag BEFORE the emit: a markProgrammatic
-  // bump (from measureItems' compensation write or endPreserve's
-  // restoration) belongs to exactly THIS event — the next one is a
-  // fresh gesture (or another marked write).
+  // Consume the programmatic flag BEFORE the emit: a markProgrammatic bump (from measureItems'
+  // compensation write or endPreserve's restoration) belongs to exactly THIS event — the next one
+  // is a fresh gesture (or another marked write).
   const isProgrammatic = consumeProgrammaticScroll()
   emit('scroll', st, dir as 'up' | 'down', target, isProgrammatic)
 
@@ -1367,10 +1362,9 @@ const onScroll = (e: Event) => {
       if (st < threshold && props.items.length > 0) {
         emit('loadMore')
       } else if (st < threshold && props.items.length === 0) {
-        // User is near the top but there are no items yet — nothing
-        // to "load more of". This is the "empty list, scrolled to
-        // top" case (rare; usually we wouldn't be at the top of
-        // an empty list, but guard it).
+        // User is near the top but there are no items yet — nothing to "load more of". This is the
+        // "empty list, scrolled to top" case (rare; usually we wouldn't be at the top of an empty
+        // list, but guard it).
         emit('loadMoreSuppressed', 'no-items')
       }
       // else: user is just not near the top yet — normal scrolling,
@@ -1541,10 +1535,9 @@ const bottomScrollTop = (): number => {
   if (!el) return 0
   const clientHeight = el.clientHeight
   const domEdge = Math.max(0, el.scrollHeight - clientHeight)
-  // Real-bottom override (blank-viewport fix) — kept, but now safe because
-  // sizerHeight is stable (modelTotal only, no visibleRange dependency).
-  // Previously the sizer clamp + this override together caused the loop;
-  // with sizer stable, this is a one-time read that doesn't feedback.
+  // Real-bottom override (blank-viewport fix) — kept, but now safe because sizerHeight is stable
+  // (modelTotal only, no visibleRange dependency). Previously the sizer clamp + this override
+  // together caused the loop; with sizer stable, this is a one-time read that doesn't feedback.
   const range = visibleRange.value
   const content = el.querySelector('.virtual-scroller-content')
   const contentH = content ? (content as HTMLElement).offsetHeight : 0
@@ -1560,10 +1553,9 @@ const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
   if (!containerRef.value) return
   const target = bottomScrollTop()
   containerRef.value.scrollTo({ top: target, behavior })
-  // An explicit jump to the bottom is the strongest possible statement that the
-  // reader is following the tail, and the next measure pass has to honour it
-  // (see `settledBottom`). This is the gesture behind the jump-to-bottom
-  // arrow, and it is the exact moment the reported bug used to be armed.
+  // An explicit jump to the bottom is the strongest possible statement that the reader is following
+  // the tail, and the next measure pass has to honour it (see `settledBottom`). This is the gesture
+  // behind the jump-to-bottom arrow, and it is the exact moment the reported bug used to be armed.
   settledBottom = target
 }
 /**

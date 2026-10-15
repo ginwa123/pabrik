@@ -148,10 +148,9 @@ const checkedLabel = computed(() => {
   return `${Math.floor(diffSec / 86400)}d ago`
 })
 
-// `updated_at` arrives as ISO (`2026-10-12T06:34:01Z`); `new Date`
-// parses that natively. (helpers/formatRelativeTime targets the
-// SQLite-datetime wire shape and would read the trailing `Z` as
-// invalid, rendering every row as "now".)
+// `updated_at` arrives as ISO (`2026-10-12T06:34:01Z`); `new Date` parses that natively.
+// (helpers/formatRelativeTime targets the SQLite-datetime wire shape and would read the trailing
+// `Z` as invalid, rendering every row as "now".)
 const relTime = (iso: string): string => {
   if (!iso) return 'now'
   const ms = new Date(iso).getTime()

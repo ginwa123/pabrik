@@ -223,12 +223,14 @@ describe('DesignView single-element drag → translate emit', () => {
   })
 
   /**
-   * Regression: the OLD wire bailed when selectedIds had 2+ elements
-   * (the old assumption was "single-element drag ⇒ exactly one
-   * selected"); the NEW wire still fires because the `translate`
-   * event carries the elementId directly. The drag SOURCE is the
-   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-   * drag source — not the selection set.
+   * Regression: the OLD wire bailed when selectedIds had 2+ elements (the old assumption was
+   * "single-element drag ⇒ exactly one selected"); the NEW wire still fires because the `translate`
+   * event carries the elementId directly. The drag SOURCE is the // eslint-disable-next-line
+   * @typescript-eslint/no-explicit-any
+   */
+
+  /**
+   * drag source — not the selection set. /
    */
   it('still fires translate when selectedIds has multiple ids (drag source carries elementId)', async () => {
     const _store = useWorkspacesStore()

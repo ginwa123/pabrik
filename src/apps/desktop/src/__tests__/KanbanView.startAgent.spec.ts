@@ -79,11 +79,9 @@ describe('KanbanView.handleStartAgent', () => {
       },
     })
     await flushPromises()
-    // Set the active task id + open the dialog so handleStartAgent's
-    // guard passes and the "dialog stays open on error" assertions
-    // are meaningful. In production, handleViewTaskDetail sets both
-    // together; we replicate that here.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // Set the active task id + open the dialog so handleStartAgent's guard passes and the "dialog
+    // stays open on error" assertions are meaningful. In production, handleViewTaskDetail sets both
+    // together; we replicate that here. eslint-disable-next-line @typescript-eslint/no-explicit-any
     const vmInit: any = wrapper!.vm
     vmInit.activeTaskDetailId = 'task_existing'
     vmInit.showTaskDetail = true

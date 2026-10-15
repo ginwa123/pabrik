@@ -89,9 +89,8 @@ describe('CopyKanbanSpecDialog', () => {
   })
 
   function mountDialog() {
-    // Mount with show: false, then flip to true — the component's
-    // watcher on `() => props.show` only fires on a transition, and
-    // this is the lifecycle hook that auto-selects the first source
+    // Mount with show: false, then flip to true — the component's watcher on `() => props.show`
+    // only fires on a transition, and this is the lifecycle hook that auto-selects the first source
     // (matches the convention in AddKanbanDialog.spec.ts).
     wrapper = mount(CopyKanbanSpecDialog, {
       attachTo: document.body,

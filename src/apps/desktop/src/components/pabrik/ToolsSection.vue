@@ -34,10 +34,9 @@ const BUILTIN_DEFAULT_TOOLS: readonly string[] = [
   'list_directory',
   'search',
   'glob',
-  // Web search. Both halves ship default-on: `list_web_search_providers`
-  // is how the agent discovers what the user configured, and it answers
-  // with an explicit "none configured" envelope rather than failing —
-  // so enabling them costs nothing until a `web_search` provider exists.
+  // Web search. Both halves ship default-on: `list_web_search_providers` is how the agent discovers
+  // what the user configured, and it answers with an explicit "none configured" envelope rather
+  // than failing — so enabling them costs nothing until a `web_search` provider exists.
   'web_search',
   'list_web_search_providers',
   'update_plan',
@@ -46,19 +45,17 @@ const BUILTIN_DEFAULT_TOOLS: readonly string[] = [
   'save_memory',
   'load_memory',
   'read_workspace_session',
-  // Workspace-scoped documents (Migration 095). Default-on: writing a
-  // note the user asked for is a core agent behaviour, and both tools
-  // refuse cleanly outside a workspace-linked session, so enabling them
-  // by default costs nothing.
+  // Workspace-scoped documents (Migration 095). Default-on: writing a note the user asked for is a
+  // core agent behaviour, and both tools refuse cleanly outside a workspace-linked session, so
+  // enabling them by default costs nothing.
   'add_document',
   'edit_document',
   // Read-only, and a prerequisite for every edit: `edit_document` replaces
   // the whole body, so the agent has to be able to FIND the row first.
   'search_documents',
-  // `delete_document` is deliberately NOT in this preset. It is
-  // irreversible, so it belongs behind a tick in the checklist rather than
-  // inside the set every new agent starts with. It still shows up in the
-  // Documents group below, so it is one click away.
+  // `delete_document` is deliberately NOT in this preset. It is irreversible, so it belongs behind
+  // a tick in the checklist rather than inside the set every new agent starts with. It still shows
+  // up in the Documents group below, so it is one click away.
   'use_skill',
   'remove_skill',
   'add_skill',

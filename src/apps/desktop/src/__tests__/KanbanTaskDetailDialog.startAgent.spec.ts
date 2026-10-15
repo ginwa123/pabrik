@@ -51,10 +51,9 @@ describe('KanbanTaskDetailDialog — Start agent', () => {
       attachTo: document.body,
       props: { show: true, task: null, mode: 'edit', ...propsOverride },
       global: {
-        // Only include processingState when the test passes one —
-        // the dialog's `inject('processingState', undefined)` falls
-        // back to undefined when absent, so the "no provider"
-        // branch is also exercised by omitting this key.
+        // Only include processingState when the test passes one — the dialog's
+        // `inject('processingState', undefined)` falls back to undefined when absent, so the "no
+        // provider" branch is also exercised by omitting this key.
         provide: processingState !== undefined ? { processingState } : {},
       },
     })
@@ -116,11 +115,9 @@ describe('KanbanTaskDetailDialog — Start agent', () => {
   })
 
   it('enables the start-agent button when no processingState is provided at all', async () => {
-    // Defensive: the dialog's `inject('processingState', undefined)`
-    // defaults to undefined when the provider is missing (e.g. tests
-    // that mount the dialog in isolation). The button must still be
-    // enabled — we don't want to break the dialog if a future refactor
-    // forgets to provide the map.
+    // Defensive: the dialog's `inject('processingState', undefined)` defaults to undefined when the
+    // provider is missing (e.g. tests that mount the dialog in isolation). The button must still be
+    // enabled — we don't want to break the dialog if a future refactor forgets to provide the map.
     mountDialog(
       { task: { id: 'task_no_provider', name: 'NoProvider', task_type: 'standard' } as Task },
       undefined,

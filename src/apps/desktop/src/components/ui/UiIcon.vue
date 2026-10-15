@@ -43,10 +43,9 @@ const props = withDefaults(
 
 const paths = computed<readonly string[]>(() => ICON_PATHS[props.name] ?? [])
 
-// An inline SVG sits on the text baseline and opens up descender space
-// below it, which is how a 16px glyph quietly grows a 20px row. These
-// three classes keep the box equal to the glyph and stop flex/grid
-// parents from squashing it.
+// An inline SVG sits on the text baseline and opens up descender space below it, which is how a
+// 16px glyph quietly grows a 20px row. These three classes keep the box equal to the glyph and stop
+// flex/grid parents from squashing it.
 const baseClass = 'inline-block shrink-0 align-middle'
 </script>
 

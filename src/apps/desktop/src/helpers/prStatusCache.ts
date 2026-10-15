@@ -168,10 +168,9 @@ export function invalidatePrStatus(cwd: string, branch: string): void {
     bumpEpoch(k)
   }
   for (const cb of invalidationSubscribers) {
-    // A buggy badge must not stop the other badges from re-reading, nor fail
-    // the merge that triggered the invalidation. Each notification is its own
-    // Effect whose failure is REPORTED rather than propagated — no `catch`,
-    // whose binding would be `unknown` (local/no-try-catch).
+    // A buggy badge must not stop the other badges from re-reading, nor fail the merge that
+    // triggered the invalidation. Each notification is its own Effect whose failure is REPORTED
+    // rather than propagated — no `catch`, whose binding would be `unknown` (local/no-try-catch).
     Effect.runSync(
       Effect.try({
         try: () => cb({ cwd, branch }),
@@ -215,10 +214,9 @@ async function fetchWithRetry(cwd: string, branch: string, provider: string): Pr
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (attempt > 0) await sleep(RETRY_DELAYS_MS[attempt - 1] ?? 1000)
     try {
-      // Passing the provider lets the backend pick `glab` for a GitLab
-      // repo. Omitted when empty so the backend can auto-detect from the
-      // repo's `origin` remote, which is the accurate answer when the
-      // board badge has no stored provider to hand.
+      // Passing the provider lets the backend pick `glab` for a GitLab repo. Omitted when empty so
+      // the backend can auto-detect from the repo's `origin` remote, which is the accurate answer
+      // when the board badge has no stored provider to hand.
       const data = await getPrStatus(cwd, branch, { provider: provider || undefined })
       return {
         status: (data.status || data.state || '').toLowerCase(),

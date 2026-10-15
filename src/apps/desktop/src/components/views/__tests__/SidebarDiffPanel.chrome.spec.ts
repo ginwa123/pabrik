@@ -111,10 +111,9 @@ describe('SidebarDiffPanel chrome — status letter chips', () => {
   })
 
   it('splits a path into a dim directory and a bright filename', async () => {
-    // The whole point of the redesign: across 40 rows the shared
-    // `src/a/b/` prefix becomes skippable and the name is what the eye
-    // lands on. Both halves stay in the DOM so `.text()` still carries the
-    // full path.
+    // The whole point of the redesign: across 40 rows the shared `src/a/b/` prefix becomes
+    // skippable and the name is what the eye lands on. Both halves stay in the DOM so `.text()`
+    // still carries the full path.
     const { wrapper } = await mountPanel()
     const row = wrapper.get('[data-testid="sidebar-diff-file-unstaged-src/a/b/modified.vue"]')
     // The two halves of the path are the only coloured spans in the row;

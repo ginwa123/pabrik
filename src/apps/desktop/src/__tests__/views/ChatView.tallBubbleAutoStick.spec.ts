@@ -232,10 +232,9 @@ async function mountChatView(
     attachTo: document.body,
     global: { provide: { processingState } },
   })
-  // The scroller's mount gate is `!isInitializing && (isLoading ||
-  // messageGroups.length > 0)`, and `isInitializing` only clears once the
-  // history load settles — so the scroller's presence IS the signal, and
-  // waiting on it turns a silent "never rendered" into one clear error.
+  // The scroller's mount gate is `!isInitializing && (isLoading || messageGroups.length > 0)`, and
+  // `isInitializing` only clears once the history load settles — so the scroller's presence IS the
+  // signal, and waiting on it turns a silent "never rendered" into one clear error.
   for (let i = 0; i < 100; i++) {
     await new Promise((r) => setTimeout(r, 40))
     await nextTick()

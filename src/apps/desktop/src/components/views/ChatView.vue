@@ -529,10 +529,9 @@ const nav = useNavigationStore()
 const router = useRouter()
 const route = useRoute()
 
-// Chat-owned git-diff sidebar (git-diff-only scope). ChatView passes
-// its already-owned effectiveCwd + sessionId down, so each chat shows
-// its own working tree without AppLayout-level cwd plumbing. Hidden in
-// embedded/peek mode — the peek panel owns the right edge there.
+// Chat-owned git-diff sidebar (git-diff-only scope). ChatView passes its already-owned effectiveCwd
+// + sessionId down, so each chat shows its own working tree without AppLayout-level cwd plumbing.
+// Hidden in embedded/peek mode — the peek panel owns the right edge there.
 const chatSidebar = useChatRightSidebar(props.type ?? 'chat')
 const chatSidebarRef = ref<InstanceType<typeof ChatRightSidebar> | null>(null)
 // Attached PR URL for the sidebar's PR-changes mode (set_pull_request
@@ -541,10 +540,9 @@ const chatSidebarRef = ref<InstanceType<typeof ChatRightSidebar> | null>(null)
 const chatPrUrl = ref('')
 const chatPrProvider = ref('')
 
-// Persisted review comments (agnostic comment-box path). Saved to
-// localStorage instead of sent to the LLM — the diff comment box owns
-// per-line draft persistence; ChatView keeps the appended list (capped
-// at 200 entries).
+// Persisted review comments (agnostic comment-box path). Saved to localStorage instead of sent to
+// the LLM — the diff comment box owns per-line draft persistence; ChatView keeps the appended list
+// (capped at 200 entries).
 interface SavedReviewComment {
   filePath: string
   message: string
@@ -895,10 +893,9 @@ function stopCenterSpy() {
 }
 
 function syncDiffParam(path: string | null) {
-  // No router = nothing to keep in sync. Unit mounts (and any host that
-  // renders ChatView outside the router tree) have `useRoute() === undefined`,
-  // where a bare `route.query` throws from the currentPath watcher and fails
-  // the mount. There is no URL to be stale in that case.
+  // No router = nothing to keep in sync. Unit mounts (and any host that renders ChatView outside
+  // the router tree) have `useRoute() === undefined`, where a bare `route.query` throws from the
+  // currentPath watcher and fails the mount. There is no URL to be stale in that case.
   if (!route) return
   // Skip stale writes during chat switch: ChatsList replaces the URL
   // with the new session at the same time; a second replace from the
@@ -960,17 +957,15 @@ function maybeRefreshWorktreeBinding(role: string, toolName?: string) {
 }
 
 async function onChatSidebarRefresh() {
-  // Sidebar ↻ clicked: re-sync the binding FIRST (it may have changed
-  // since mount), then reload the panel. The panel's cwd watcher
-  // reloads automatically when the binding actually changed; the
+  // Sidebar ↻ clicked: re-sync the binding FIRST (it may have changed since mount), then reload the
+  // panel. The panel's cwd watcher reloads automatically when the binding actually changed; the
   // explicit refresh covers the unchanged-cwd case.
   await refreshWorktreeBinding()
   chatSidebarRef.value?.refresh()
 }
 
-// 2026-09-04 subagent-peek P1 fix: the peek lifecycle lives in
-// SubAgentPeekHost (setup scope, keyed by sessionId). Never call
-// useSubAgentPeek inside a computed — lifecycle hooks registered during
+// 2026-09-04 subagent-peek P1 fix: the peek lifecycle lives in SubAgentPeekHost (setup scope, keyed
+// by sessionId). Never call useSubAgentPeek inside a computed — lifecycle hooks registered during
 // render are unreliable (fetch fired 0/N times → permanent empty panel).
 
 /**
@@ -1075,10 +1070,9 @@ interface VirtualScrollerExposed {
 }
 const virtualScrollerRef = ref<VirtualScrollerExposed | null>(null)
 
-// Composer input ref — re-focus after the async mount chain (history +
-// stream snapshot + queued messages) so the cursor lands in the box on
-// every session switch, even if the child's own mount-focus raced the
-// history render.
+// Composer input ref — re-focus after the async mount chain (history + stream snapshot + queued
+// messages) so the cursor lands in the box on every session switch, even if the child's own
+// mount-focus raced the history render.
 const fileInputRef = ref<{ focusInput?: () => void } | null>(null)
 
 // Persist chat scroll position per-task across mount/unmount. The
@@ -1742,10 +1736,9 @@ const toolExpandKey = (msg: Message, groupIndex: number, idx: number): string =>
 // this fallback is for legacy/edge cases.
 const fallbackOpenInEditor = useInjectOpenInCodeEditor()
 const handleFallbackJumpToLine = (line: number) => {
-  // No-op: we don't have a target file path in the fallback context.
-  // The click affordance still works (hover/cursor change), but won't
-  // open the editor. Hook retained for future enhancement when we add a
-  // generic tool→path lookup.
+  // No-op: we don't have a target file path in the fallback context. The click affordance still
+  // works (hover/cursor change), but won't open the editor. Hook retained for future enhancement
+  // when we add a generic tool→path lookup.
   void fallbackOpenInEditor
   void line
 }
@@ -1765,10 +1758,9 @@ const checkGitStatus = async () => {
     gitStatusCwd = ''
     return
   }
-  // Stale-response guard: the worktree binding can flip twice in quick
-  // succession (session cwd → worktree A → worktree B). Without the seq
-  // check, the slower fetch for A resolves last and the bottom chip
-  // shows A's branch while the sidebar already follows B.
+  // Stale-response guard: the worktree binding can flip twice in quick succession (session cwd →
+  // worktree A → worktree B). Without the seq check, the slower fetch for A resolves last and the
+  // bottom chip shows A's branch while the sidebar already follows B.
   const seq = ++gitStatusSeq
   const cwd = effectiveCwd.value
   // Cache-first paint: on init or a cwd switch, synchronously show the
@@ -2014,10 +2006,9 @@ const jumpToUserGroup = (groupIndex: number, key: string) => {
   })
 }
 
-// Per-message envelope unwrap lookup. Keyed by message id; value is the
-// parsed envelope or null if the content is not a <tool> envelope (legacy
-// or non-tool content). Computed once when messages change so the
-// template can do a cheap O(1) lookup per tool component.
+// Per-message envelope unwrap lookup. Keyed by message id; value is the parsed envelope or null if
+// the content is not a <tool> envelope (legacy or non-tool content). Computed once when messages
+// change so the template can do a cheap O(1) lookup per tool component.
 const unwrappedByMessageId = computed((): Map<string, UnwrappedToolOutput | null> => {
   const map = new Map<string, UnwrappedToolOutput | null>()
   for (const m of messages.value) {
@@ -2030,11 +2021,9 @@ const unwrappedByMessageId = computed((): Map<string, UnwrappedToolOutput | null
   return map
 })
 
-// Helper used in the template: get the inner data to pass to a
-// tool-specific component. Returns the original content if the
-// envelope didn't parse (legacy fallback) or if there was an error
-// (the error message is shown via the envelope, not via the inner
-// component's own error path).
+// Helper used in the template: get the inner data to pass to a tool-specific component. Returns the
+// original content if the envelope didn't parse (legacy fallback) or if there was an error (the
+// error message is shown via the envelope, not via the inner component's own error path).
 const innerToolData = (m: Message): unknown => {
   const unwrapped = unwrappedByMessageId.value.get(m.id)
   if (unwrapped === null || unwrapped === undefined) return m.content // legacy
@@ -2054,10 +2043,9 @@ const bgShellContent = (m: { content?: string }): string => {
   const pr = m.content ? parseBackgroundCommandOutput(m.content) : null
   return pr ? backgroundToShellXml(pr) : (m.content ?? '')
 }
-// A user group made ONLY of background completions renders as a
-// transparent left-aligned tool card, not the blue right bubble
-// (background completions are role=user on the wire, tool-styled
-// in pixels — see helpers/isBackgroundCommandOutput).
+// A user group made ONLY of background completions renders as a transparent left-aligned tool card,
+// not the blue right bubble (background completions are role=user on the wire, tool-styled in
+// pixels — see helpers/isBackgroundCommandOutput).
 const isBgOnlyGroup = (group: { role: string; messages: { content?: string }[] }): boolean =>
   group.role === 'user' && group.messages.length > 0 && group.messages.every(isBgUserMsg)
 
@@ -2137,10 +2125,9 @@ const groupToolNames = computed((): (string | null)[] => {
       // window between tool_calls and tool_result would flash a stray
       // pill that immediately gets replaced by a structured card).
       if (msg.finish_reason === 'tool_calls') {
-        // We can't match by id here (tool_calls_json is missing), so
-        // fall back to the adjacency heuristic: if a tool group
-        // appears ANYWHERE in the transcript after this group, the
-        // tool call was rendered → no pill.
+        // We can't match by id here (tool_calls_json is missing), so fall back to the adjacency
+        // heuristic: if a tool group appears ANYWHERE in the transcript after this group, the tool
+        // call was rendered → no pill.
         let hasLaterTool = false
         for (let j = i + 1; j < messageGroups.value.length; j++) {
           if (messageGroups.value[j]?.role === 'tool') {
@@ -2435,10 +2422,9 @@ const currentLiveMessages = (): Message[] =>
  */
 const fetchOlderPage = async (cursor: string | null): Promise<BufferedOlderPage> => {
   const startedAt = performance.now()
-  // Cache-first older page: serve from IndexedDB when it holds rows older
-  // than the current oldest, so scroll-back avoids the network. The cursor
-  // is left unchanged on a hit so the next cache MISS resumes the network
-  // exactly where it left off; the commit's id-dedupe covers any overlap.
+  // Cache-first older page: serve from IndexedDB when it holds rows older than the current oldest,
+  // so scroll-back avoids the network. The cursor is left unchanged on a hit so the next cache MISS
+  // resumes the network exactly where it left off; the commit's id-dedupe covers any overlap.
   try {
     const oldest = messages.value[0]
     if (oldest) {
@@ -2660,11 +2646,9 @@ const commitOlderPage = async (
   const seenIds = new Set(messages.value.map((m) => m.id))
   const freshMessages = newMessages.filter((m) => !seenIds.has(m.id))
   messages.value = [...freshMessages.slice().reverse(), ...messages.value]
-  // 2026-09-09 user-pill pagination fix — cursor advance: the NEXT
-  // loadMore must continue from THIS page's cursor, not the initial
-  // one. These assignments previously lived only in the initial-load
-  // branch, so every 2nd+ loadMore re-sent the same cursor and
-  // re-prepended the same page forever.
+  // 2026-09-09 user-pill pagination fix — cursor advance: the NEXT loadMore must continue from THIS
+  // page's cursor, not the initial one. These assignments previously lived only in the initial-load
+  // branch, so every 2nd+ loadMore re-sent the same cursor and re-prepended the same page forever.
   messageCursor.value = page.nextCursor
   hasMoreMessages.value = page.hasMore
   await nextTick()
@@ -3009,10 +2993,9 @@ const applyDeltaExtra = (extra: {
  * it onto the Effect seam.
  */
 const runHistoryLoadAttempt = async () => {
-  // Cached mount: paint stored full-fidelity raws instantly (same mapper as
-  // the network path, so no shape drift), restore the cursor from sync_state,
-  // then refresh just the tail with cursor+asc. Miss/IDB failure falls
-  // through to the full-load path below unchanged.
+  // Cached mount: paint stored full-fidelity raws instantly (same mapper as the network path, so no
+  // shape drift), restore the cursor from sync_state, then refresh just the tail with cursor+asc.
+  // Miss/IDB failure falls through to the full-load path below unchanged.
   try {
     const sid = sessionId.value
     const cached = await runSyncEffectOr(
@@ -3151,11 +3134,9 @@ const runHistoryLoadAttempt = async () => {
 
   const newMessages = toChatMessages(data.messages)
 
-  // Initial load path. Set isInitialLoad BEFORE the messages
-  // assignment so the messages-length watcher's sync callback
-  // sees the flag and skips its own scrollToBottom (which would
-  // yank the user back to the bottom right after we restore a
-  // saved position).
+  // Initial load path. Set isInitialLoad BEFORE the messages assignment so the messages-length
+  // watcher's sync callback sees the flag and skips its own scrollToBottom (which would yank the
+  // user back to the bottom right after we restore a saved position).
   isInitialLoad = true
   try {
     const liveMessagesAtCommit = currentLiveMessages()
@@ -3259,10 +3240,9 @@ const runHistoryLoadAttempt = async () => {
     }
 
     setupCodeBlockCopyButtons()
-    // 2026-09-04 spawn-subagent-refresh-persist
-    // (task_1788505292766_1) — rehydrate live sub-agent rows after
-    // a (re)load. Fire-and-forget: the map update re-renders cards
-    // when snapshots land; failures keep Task 0's "starting…".
+    // 2026-09-04 spawn-subagent-refresh-persist (task_1788505292766_1) — rehydrate live sub-agent
+    // rows after a (re)load. Fire-and-forget: the map update re-renders cards when snapshots land;
+    // failures keep Task 0's "starting…".
     void rehydrateSubAgentProgress()
   } finally {
     isInitialLoad = false
@@ -3543,10 +3523,9 @@ const handleVirtualScroll = (
   // caller that doesn't supply a target (none today).
   const container = target ?? virtualScrollerRef.value?.containerRef
   if (!container) {
-    // Tripwire — with the target in hand this branch should be
-    // unreachable. If it ever fires, the VirtualScroller stopped
-    // passing the target through the emit (regression on the
-    // fix in VirtualScroller.vue `onScroll`).
+    // Tripwire — with the target in hand this branch should be unreachable. If it ever fires, the
+    // VirtualScroller stopped passing the target through the emit (regression on the fix in
+    // VirtualScroller.vue `onScroll`).
     console.warn('[scroll] handleVirtualScroll: no container (target and ref chain both null)', {
       reportedScrollTop: scrollTop,
       reportedDirection: direction,
@@ -3554,9 +3533,8 @@ const handleVirtualScroll = (
     return
   }
 
-  // The container is the source of truth for geometry — the
-  // `scrollTop` parameter is the VirtualScroller's reported value
-  // and may lag by a frame. We log the param for cross-validation
+  // The container is the source of truth for geometry — the `scrollTop` parameter is the
+  // VirtualScroller's reported value and may lag by a frame. We log the param for cross-validation
   // but use the container's value everywhere else.
   const { scrollHeight, clientHeight } = container
   const actualScrollTop = container.scrollTop
@@ -3642,11 +3620,9 @@ const handleVirtualScroll = (
   const newIsAtBottom = distanceFromBottom < atBottomTolerance
   const newIsAtTop = distanceFromTop < TOP_THRESHOLD
   const previousIsAtBottom = isAtBottom.value
-  // Deltas: how much scrollTop moved since the last event, and how
-  // much scrollHeight grew (or shrank — e.g. an image unmounted).
-  // Both are 0 on the first event. The `>= 0` guard on the
-  // previous-sentinel -1 is what makes the first call a no-op
-  // for delta-based logs.
+  // Deltas: how much scrollTop moved since the last event, and how much scrollHeight grew (or
+  // shrank — e.g. an image unmounted). Both are 0 on the first event. The `>= 0` guard on the
+  // previous-sentinel -1 is what makes the first call a no-op for delta-based logs.
   const deltaTop = previousScrollTop >= 0 ? actualScrollTop - previousScrollTop : 0
   const deltaHeight = previousScrollHeight >= 0 ? scrollHeight - previousScrollHeight : 0
   const directionChanged = previousDirection !== null && previousDirection !== direction
@@ -3779,10 +3755,9 @@ const handleVirtualScroll = (
     if (deltaTop < 0) prefetchAutoChain = 0
     // ARM as early as the geometry allows (fetch into the buffer, invisibly)…
     evaluateOlderPrefetch()
-    // …and COMMIT the moment the user is inside the scroller's own
-    // load-more band, instead of waiting out the 200 ms `@load-more`
-    // backstop. `maybeLoadOlder` re-runs every guard and claims the buffer
-    // synchronously, so this cannot double-commit with the backstop.
+    // …and COMMIT the moment the user is inside the scroller's own load-more band, instead of
+    // waiting out the 200 ms `@load-more` backstop. `maybeLoadOlder` re-runs every guard and claims
+    // the buffer synchronously, so this cannot double-commit with the backstop.
     const band = virtualScrollerRef.value?.effectiveLoadMoreThreshold ?? 200
     if (bufferedOlderPage && distanceFromTop < band) void maybeLoadOlder('edge')
   }
@@ -3897,9 +3872,8 @@ const handleVirtualScroll = (
   // contentShift hit the spacer-resize-skip guard — the gap below the
   // last message accumulated with each chunk and never self-healed.
   const userScrolledUp = !isProgrammatic && deltaTop < 0
-  // ── Fix: cap retention (2026-09-02) ───────────────────────────────
-  // Previously retained even with bottom=1730px gap, keeping
-  // isAtBottom=true forever and causing every contentShift to stick
+  // ── Fix: cap retention (2026-09-02) ─────────────────────────────── Previously retained even
+  // with bottom=1730px gap, keeping isAtBottom=true forever and causing every contentShift to stick
   // even when user is far from bottom. Only retain when gap is small.
   const retainedThroughGrowth =
     previousIsAtBottom && contentGrew && !userScrolledUp && distanceFromBottom < 100
@@ -4022,10 +3996,9 @@ const connectSse = () => {
     liveMessageIds.clear()
   }
 
-  // Defensive: if a previous connectSse didn't clean up (e.g. mid-mount
-  // session change), tear down before re-registering. The bus's single
-  // global EventSource is already open (App.vue opens it once), so we
-  // only need to manage our listener subscriptions here.
+  // Defensive: if a previous connectSse didn't clean up (e.g. mid-mount session change), tear down
+  // before re-registering. The bus's single global EventSource is already open (App.vue opens it
+  // once), so we only need to manage our listener subscriptions here.
   disconnectSse()
 
   streamingContent.value = ''
@@ -4140,18 +4113,16 @@ const connectSse = () => {
       (event.video_url && event.video_url.length > 0)
     )
     if (event.type === 'full' && event.finish_reason && hasRenderableFullPayload) {
-      // 2026-08-25 task_1787668954023_2: any non-error `full` event that
-      // passes the renderable gate means the agent is alive and
-      // producing output — clear the error card so it disappears the
+      // 2026-08-25 task_1787668954023_2: any non-error `full` event that passes the renderable gate
+      // means the agent is alive and producing output — clear the error card so it disappears the
       // moment the agent recovers from the retry chain.
       if (agentErrorStore.bySession[sid]) {
         console.log('[SSE ChatView] clearing agent error card on non-error full event')
         agentErrorStore.clearForSession(sid)
       }
-      // 2026-09-06 virtual-scroller shrink fix: capture the streaming
-      // group's height key BEFORE the filter drops the placeholder —
-      // the canonical row pushed below has a new DB id (new group key,
-      // no stored height → sizer dip). Transferred after the push.
+      // 2026-09-06 virtual-scroller shrink fix: capture the streaming group's height key BEFORE the
+      // filter drops the placeholder — the canonical row pushed below has a new DB id (new group
+      // key, no stored height → sizer dip). Transferred after the push.
       const streamingGroupKey = groupKeyForMessageId(
         messages.value.find((m) => m.id.startsWith('streaming-'))?.id ?? '',
       )
@@ -4209,10 +4180,9 @@ const connectSse = () => {
           if (event.total_tokens) {
             maxTotalTokens.value = event.total_tokens
           }
-          // Live skills: backend piggybacks session_skills on every llm_full
-          // (fresh on tool-result emit, stale on assistant emit — see
-          // handle_tool.zig:459 vs :745). REST remains initial source.
-          // Scoped by the event.session_id !== sid filter at handler entry.
+          // Live skills: backend piggybacks session_skills on every llm_full (fresh on tool-result
+          // emit, stale on assistant emit — see handle_tool.zig:459 vs :745). REST remains initial
+          // source. Scoped by the event.session_id !== sid filter at handler entry.
           if (Array.isArray(event.session_skills))
             sessionSkills.value = event.session_skills as api.SkillInfo[]
           maybeRefreshWorktreeBinding(role, event.tool_name)
@@ -4238,11 +4208,9 @@ const connectSse = () => {
       })
       if (
         dup &&
-        // 2026-08-23: the optimistic-user dedupe that lived here is
-        // gone — handleFileInputSubmit no longer pushes a local
-        // placeholder. User echoes arrive fresh with a stable DB id;
-        // a same-content repeat (server re-emit) collapses to one
-        // message via the dedupe above.
+        // 2026-08-23: the optimistic-user dedupe that lived here is gone — handleFileInputSubmit no
+        // longer pushes a local placeholder. User echoes arrive fresh with a stable DB id; a
+        // same-content repeat (server re-emit) collapses to one message via the dedupe above.
         role !== 'user'
       ) {
         console.log('[SSE ChatView] duplicate full event skipped', {
@@ -4290,9 +4258,8 @@ const connectSse = () => {
       // Write-through: persist the SSE `full` row with its full wire shape
       // so cached mounts render it identically. Best-effort.
       persistSseFullRowLocally(sid, event, role, messageId, messageTimestamp)
-      // 2026-09-06 virtual-scroller shrink fix: move the streaming
-      // group's measured height onto the canonical row's key so the
-      // sizer never dips through the 64px estimate for a frame.
+      // 2026-09-06 virtual-scroller shrink fix: move the streaming group's measured height onto the
+      // canonical row's key so the sizer never dips through the 64px estimate for a frame.
       // Best-effort — missing keys are a no-op (rekeyHeight guards).
       if (streamingGroupKey && event.id) {
         const newGroupKey = groupKeyForMessageId(event.id)
@@ -4345,10 +4312,9 @@ const connectSse = () => {
       if (event.total_tokens) {
         maxTotalTokens.value = event.total_tokens
       }
-      // Live skills: backend piggybacks session_skills on every llm_full
-      // (fresh on tool-result emit, stale on assistant emit — see
-      // handle_tool.zig:459 vs :745). REST remains initial source.
-      // Scoped by the event.session_id !== sid filter at handler entry.
+      // Live skills: backend piggybacks session_skills on every llm_full (fresh on tool-result
+      // emit, stale on assistant emit — see handle_tool.zig:459 vs :745). REST remains initial
+      // source. Scoped by the event.session_id !== sid filter at handler entry.
       if (Array.isArray(event.session_skills))
         sessionSkills.value = event.session_skills as api.SkillInfo[]
       maybeRefreshWorktreeBinding(role, event.tool_name)
@@ -4356,10 +4322,9 @@ const connectSse = () => {
       return
     }
 
-    // 2026-08-23 hidden-messages fix — reasoning chunks used to be
-    // console.log-only. Accumulate them onto the streaming assistant
-    // message so the collapsible reasoning section renders live while
-    // a thinking model works (before any final content arrives).
+    // 2026-08-23 hidden-messages fix — reasoning chunks used to be console.log-only. Accumulate
+    // them onto the streaming assistant message so the collapsible reasoning section renders live
+    // while a thinking model works (before any final content arrives).
     if (event.reasoning_content && !event.content) {
       console.log('Reasoning:', event.reasoning_content)
       const existingMsg = messages.value.find(
@@ -4436,9 +4401,8 @@ const connectSse = () => {
         }
       })()
     }) ?? null
-  // Set isStreaming LAST so external observers (tests, UI) can poll
-  // it as a "listeners are wired up" signal — flipping it before
-  // would race with test assertions that fire events into the bus
+  // Set isStreaming LAST so external observers (tests, UI) can poll it as a "listeners are wired
+  // up" signal — flipping it before would race with test assertions that fire events into the bus
   // expecting the listener to be registered.
   isStreaming.value = true
 }
@@ -4547,16 +4511,14 @@ onMounted(async () => {
   if (typeof route.query.diff === 'string' && !showCenterDiff.value) syncDiffParam(null)
 
   if (sessionId.value) {
-    // Seed the re-stick baseline BEFORE loadChatHistory so we catch the
-    // very first measurement-driven contentShift. The VirtualScroller's
-    // child component mounts before us (child before parent in Vue 3),
-    // so its containerRef is already populated.
+    // Seed the re-stick baseline BEFORE loadChatHistory so we catch the very first
+    // measurement-driven contentShift. The VirtualScroller's child component mounts before us
+    // (child before parent in Vue 3), so its containerRef is already populated.
     lastObservedScrollHeight = virtualScrollerRef.value?.containerRef?.scrollHeight ?? 0
 
-    // Subscribe before the history request. A tool can finish while the
-    // initial REST load is in flight; waiting until afterward misses that
-    // event permanently because the placeholder's creation-time cursor does
-    // not change when its result is updated in place.
+    // Subscribe before the history request. A tool can finish while the initial REST load is in
+    // flight; waiting until afterward misses that event permanently because the placeholder's
+    // creation-time cursor does not change when its result is updated in place.
     try {
       connectSse()
       startGitStatusPoll()
@@ -4592,10 +4554,9 @@ onMounted(async () => {
     } catch (err) {
       console.error('Failed to get queued messages:', err)
     }
-    // Session switch remounts this view — land the cursor in the
-    // message box so the user types immediately (no second click).
-    // Best-effort: focus must never reject the mount (e.g. peek-embed
-    // hides the input, so fileInputRef stays null).
+    // Session switch remounts this view — land the cursor in the message box so the user types
+    // immediately (no second click). Best-effort: focus must never reject the mount (e.g.
+    // peek-embed hides the input, so fileInputRef stays null).
     try {
       await nextTick()
       fileInputRef.value?.focusInput?.()
@@ -4620,10 +4581,9 @@ onUnmounted(() => {
 // Load available profiles (called once on mount)
 loadProfiles()
 document.addEventListener('click', closeOnOutsideClick)
-// `<html>` blocks auto-size themselves via postMessage (see
-// onHtmlFrameResize above). Registered here — paired with the
-// removeEventListener in onUnmounted — for the same lifetime as the
-// other window-level listener this view owns.
+// `<html>` blocks auto-size themselves via postMessage (see onHtmlFrameResize above). Registered
+// here — paired with the removeEventListener in onUnmounted — for the same lifetime as the other
+// window-level listener this view owns.
 window.addEventListener('message', onHtmlFrameResize)
 
 // Session-change entry point (replaces the two old sessionId watchers).
@@ -4650,10 +4610,9 @@ const onSessionChanged = async (newId: string) => {
   }
 }
 
-// Auto-stick on new messages (replaces the old messages.length watcher).
-// `onUpdated` with a prev-length guard fires for every append path (user
-// sends, SSE chunks, tool results) exactly like the watcher did, and the
-// isAtBottom gates keep scrolled-up readers undisturbed.
+// Auto-stick on new messages (replaces the old messages.length watcher). `onUpdated` with a
+// prev-length guard fires for every append path (user sends, SSE chunks, tool results) exactly like
+// the watcher did, and the isAtBottom gates keep scrolled-up readers undisturbed.
 let prevMessagesLength = messages.value.length
 onUpdated(() => {
   if (messages.value.length === prevMessagesLength) return
@@ -4724,9 +4683,8 @@ const handleFileInputSubmit = async (userMessage: string, files?: File[]) => {
 
   const currentSessionId = sessionId.value
 
-  // Converting attachments (especially video, up to 25 MB) to base64
-  // blocks the send for seconds with no feedback. Flip the Send
-  // button into its loading state for the whole convert + POST
+  // Converting attachments (especially video, up to 25 MB) to base64 blocks the send for seconds
+  // with no feedback. Flip the Send button into its loading state for the whole convert + POST
   // window so the user waits instead of double-clicking Send.
   isSendingAttachments.value = true
   let imageUrls: string[] = []

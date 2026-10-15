@@ -154,10 +154,9 @@ describe('WorkspaceItemTaskCard — kanban task notification icon (Chunk 6)', ()
   // ─────────────────────────────────────────────────────────────────
 
   it('renders nothing when finish_reason=tool_calls even if needs_human_review is true (defensive)', () => {
-    // The SQL predicate COALESCE(s.last_finish_reason,'')='stop'
-    // guarantees this in normal flow, but the UI also gates on it
-    // so a stale React prop doesn't paint a phantom dot during a
-    // state transition.
+    // The SQL predicate COALESCE(s.last_finish_reason,'')='stop' guarantees this in normal flow,
+    // but the UI also gates on it so a stale React prop doesn't paint a phantom dot during a state
+    // transition.
     wrapper = mountCard({
       id: 't1',
       name: 'Mid-tool',
@@ -168,11 +167,9 @@ describe('WorkspaceItemTaskCard — kanban task notification icon (Chunk 6)', ()
     expect(wrapper.find('[data-testid="task-reviewed"]').exists()).toBe(false)
   })
 
-  // ─────────────────────────────────────────────────────────────────
-  // Static-contract: the orange dot must use the project's palette
-  // — matches the existing yellow-spinner so the card doesn't
-  // introduce a third colour.
-  // ─────────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────── Static-contract: the orange
+  // dot must use the project's palette — matches the existing yellow-spinner so the card doesn't
+  // introduce a third colour. ─────────────────────────────────────────────────────────────────
 
   it('orange dot uses rgb(251, 146, 60) (orange-400, matches existing palette)', () => {
     wrapper = mountCard({
@@ -182,11 +179,9 @@ describe('WorkspaceItemTaskCard — kanban task notification icon (Chunk 6)', ()
       needs_human_review: true,
     })
     const dot = wrapper.find('[data-testid="task-needs-review"]')
-    // jsdom normalises inline rgb(...) per project memory
-    // `frontend-jsdom-normalizes-hex-colors`. We assert the
-    // inline-style bg colour contains the literal rgb() form
-    // (NOT the hex #fb923c — that would mean the browser never
-    // saw the literal).
+    // jsdom normalises inline rgb(...) per project memory `frontend-jsdom-normalizes-hex-colors`.
+    // We assert the inline-style bg colour contains the literal rgb() form (NOT the hex #fb923c —
+    // that would mean the browser never saw the literal).
     const style = dot.attributes('style') ?? ''
     expect(style).toMatch(/background-?color\s*:\s*rgb\(\s*251\s*,\s*146\s*,\s*60\s*\)/i)
   })
@@ -209,11 +204,9 @@ describe('WorkspaceItemTaskCard — kanban task notification icon (Chunk 6)', ()
   })
 
   it('DOES render the green checkmark on memory cards (memory shares the standard branch)', () => {
-    // Memory tasks render via the standard-branch template (the
-    // `v-if="isRoutine"` is false for memory, so memory goes into
-    // the `v-else` branch). The notification icon therefore
-    // applies to memory cards too — there's no separate memory
-    // branch affordance for AI-finished state.
+    // Memory tasks render via the standard-branch template (the `v-if="isRoutine"` is false for
+    // memory, so memory goes into the `v-else` branch). The notification icon therefore applies to
+    // memory cards too — there's no separate memory branch affordance for AI-finished state.
     wrapper = mountCard({
       id: 't1',
       name: 'project-notes',

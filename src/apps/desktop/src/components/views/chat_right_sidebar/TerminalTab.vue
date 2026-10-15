@@ -34,10 +34,9 @@ interface TermSession {
 const container = ref<HTMLElement | null>(null)
 const sessions = ref<TermSession[]>([])
 const activeId = ref<string | null>(null)
-// True while `restoreSessions` validates the stored ids against the
-// server. Without it the panel renders its "No terminal yet" empty
-// state during that window — a lie for a user who had three terminals
-// open before a reload.
+// True while `restoreSessions` validates the stored ids against the server. Without it the panel
+// renders its "No terminal yet" empty state during that window — a lie for a user who had three
+// terminals open before a reload.
 const isRestoring = ref(false)
 // Idle until the user explicitly starts a terminal — mounting the tab
 // (ChatRightSidebar keeps it mounted via v-show) must not spawn a PTY.
@@ -361,10 +360,9 @@ const newSession = async () => {
   status.value = 'connecting…'
   try {
     fit?.fit()
-    // effectiveCwd resolves shortly after mount (session load); wait
-    // briefly so a fresh shell spawns in the chat dir instead of the
-    // server-cwd fallback. Restored sessions skip this (re-attach by
-    // id needs no cwd).
+    // effectiveCwd resolves shortly after mount (session load); wait briefly so a fresh shell
+    // spawns in the chat dir instead of the server-cwd fallback. Restored sessions skip this
+    // (re-attach by id needs no cwd).
     const cwd = await awaitCwd()
     // The wait above can outlive the tab (unmount during the stability
     // window): never spawn into a dead component — leaked creates
@@ -499,10 +497,9 @@ onMounted(() => {
   })
   fit = new FitAddon()
   term.loadAddon(fit)
-  // Test hook (dev only): functional_ui tests drive a real browser and
-  // assert on the terminal buffer, which xterm renders to <canvas> (no
-  // DOM text to query). Exposes the live Terminal for buffer reads;
-  // never set in production builds.
+  // Test hook (dev only): functional_ui tests drive a real browser and assert on the terminal
+  // buffer, which xterm renders to <canvas> (no DOM text to query). Exposes the live Terminal for
+  // buffer reads; never set in production builds.
   if (import.meta.env.DEV) {
     ;(window as unknown as { __pabrikTerm?: Terminal }).__pabrikTerm = term
   }

@@ -105,10 +105,9 @@ const handleWorkerEvent = (event: api.WorkerEvent) => {
         ...processingState.value,
         [sessionId]: true,
       }
-      // Fold the event's timestamps into the activity map. `created` is the
-      // only event that carries a real `created_at`, so an `updated` must
-      // preserve whatever start time the row already has — otherwise every
-      // heartbeat would reset the elapsed clock to zero.
+      // Fold the event's timestamps into the activity map. `created` is the only event that carries
+      // a real `created_at`, so an `updated` must preserve whatever start time the row already has
+      // — otherwise every heartbeat would reset the elapsed clock to zero.
       const prev = workerActivity.value[sessionId]
       const startedAt = parseWorkerTimestamp(event.created_at) ?? prev?.startedAt ?? Date.now()
       const lastActivityAt = toMillis(event.last_activity) ?? prev?.lastActivityAt ?? Date.now()
@@ -138,10 +137,9 @@ function toMillis(value: number | string | null | undefined): number | null {
   return n < 1e11 ? n * 1000 : n
 }
 
-// Unix-ms from `worker.created_at`, which is a SQLite `CURRENT_TIMESTAMP`
-// UTC string ("YYYY-MM-DD HH:MM:SS"). The space separator is not valid ISO,
-// so it is swapped for 'T' and marked UTC — the same normalisation
-// `formatTaskTimestamp` does. Returns null for empty/unparseable input.
+// Unix-ms from `worker.created_at`, which is a SQLite `CURRENT_TIMESTAMP` UTC string ("YYYY-MM-DD
+// HH:MM:SS"). The space separator is not valid ISO, so it is swapped for 'T' and marked UTC — the
+// same normalisation `formatTaskTimestamp` does. Returns null for empty/unparseable input.
 function parseWorkerTimestamp(value: string | null | undefined): number | null {
   if (!value) return null
   const normalized = value.includes('T') ? value : value.replace(' ', 'T')
@@ -149,10 +147,9 @@ function parseWorkerTimestamp(value: string | null | undefined): number | null {
   return Number.isFinite(ms) ? ms : null
 }
 
-// Fetch initial worker state (fallback for when SSE connection starts)
-// Throttled: bus.state flips to 'open' on every reconnect, and without a
-// guard each reconnect would refetch workers (the columns/workers storm in
-// the Network panel). Skips when the last fetch was <10s ago.
+// Fetch initial worker state (fallback for when SSE connection starts) Throttled: bus.state flips
+// to 'open' on every reconnect, and without a guard each reconnect would refetch workers (the
+// columns/workers storm in the Network panel). Skips when the last fetch was <10s ago.
 let lastWorkersFetchAt = 0
 const fetchInitialWorkers = async () => {
   if (Date.now() - lastWorkersFetchAt < 10_000) return
@@ -165,10 +162,9 @@ const fetchInitialWorkers = async () => {
       const sessionId = worker.session_id || worker.id
       if (sessionId) {
         newState[sessionId] = true
-        // The REST list is the only source that carries `created_at`, so it
-        // is where the elapsed clock gets its real start time. A worker row
-        // with an unparseable `created_at` falls back to "now" rather than
-        // being dropped — the chip still shows a live run, just a young one.
+        // The REST list is the only source that carries `created_at`, so it is where the elapsed
+        // clock gets its real start time. A worker row with an unparseable `created_at` falls back
+        // to "now" rather than being dropped — the chip still shows a live run, just a young one.
         newActivity[sessionId] = {
           startedAt: parseWorkerTimestamp(worker.created_at) ?? Date.now(),
           lastActivityAt: toMillis(worker.last_activity) ?? Date.now(),
@@ -210,10 +206,9 @@ onMounted(() => {
   // chat tabs kept the generic "Chat" label after a rename).
   useTabsStore().initTitleFeed()
 
-  // Frontend log client (POST /api/logs) is DISABLED — the block below
-  // is now a harmless no-op: `window.__pabrikLogCtx` is never set by
-  // `main.ts`, so `logCtx` is undefined and the `if` is skipped. Kept
-  // so re-enabling is a one-line change in `main.ts`.
+  // Frontend log client (POST /api/logs) is DISABLED — the block below is now a harmless no-op:
+  // `window.__pabrikLogCtx` is never set by `main.ts`, so `logCtx` is undefined and the `if` is
+  // skipped. Kept so re-enabling is a one-line change in `main.ts`.
   const route = useRoute()
   const navigationStore = useNavigationStore()
   const logCtx = (
@@ -228,10 +223,9 @@ onMounted(() => {
     }
   ).__pabrikLogCtx
   if (logCtx) {
-    // route.fullPath already includes path + query + hash — concatenating
-    // route.path in front duplicates the path ("/app" + "/app?view=..." =
-    // "/app/app?view=..."). Use fullPath alone so logged route_path matches
-    // the browser address bar.
+    // route.fullPath already includes path + query + hash — concatenating route.path in front
+    // duplicates the path ("/app" + "/app?view=..." = "/app/app?view=..."). Use fullPath alone so
+    // logged route_path matches the browser address bar.
     logCtx.getRoutePath = () => route.fullPath
     logCtx.getSessionId = () => navigationStore.sessionId || null
   }

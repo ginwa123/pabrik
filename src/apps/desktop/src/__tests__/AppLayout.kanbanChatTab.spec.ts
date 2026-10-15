@@ -179,9 +179,8 @@ describe('AppLayout — kanban task chat as its own view', () => {
   // init() overwrites workspaces.value with the API response, so the mocks must
   // echo the per-test fixture set immediately before mount.
   function rewireApiForFixture(store: ReturnType<typeof useWorkspacesStore>) {
-    // Snapshot the fixture tree NOW (JSON): lazy init() replaces
-    // `workspaces.value` with empty-items rows BEFORE calling
-    // getWorkspacesItems, so a live read would see the wiped tree.
+    // Snapshot the fixture tree NOW (JSON): lazy init() replaces `workspaces.value` with
+    // empty-items rows BEFORE calling getWorkspacesItems, so a live read would see the wiped tree.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const snapshot = JSON.parse(JSON.stringify(store.workspaces)) as any[]
     vi.spyOn(api, 'getWorkspaces').mockImplementation(async () => {

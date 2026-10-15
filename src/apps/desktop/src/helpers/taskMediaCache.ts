@@ -91,9 +91,8 @@ function persist(): void {
     localStorage.setItem(userScopedKey(TASK_MEDIA_CACHE_KEY), JSON.stringify(Object.fromEntries(memCache)))
   } catch {
     try {
-      // Quota hit: drop the whole media namespace and retry once with
-      // just the current memo (which the cap below already trimmed).
-      // If that still fails (private mode), the session memo still
+      // Quota hit: drop the whole media namespace and retry once with just the current memo (which
+      // the cap below already trimmed). If that still fails (private mode), the session memo still
       // serves instant paints until reload.
       localStorage.removeItem(userScopedKey(TASK_MEDIA_CACHE_KEY))
       localStorage.setItem(userScopedKey(TASK_MEDIA_CACHE_KEY), JSON.stringify(Object.fromEntries(memCache)))

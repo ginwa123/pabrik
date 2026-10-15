@@ -343,10 +343,9 @@ function normalizeAddressInput(raw: string): string | null {
   return joinRelative(base, trimmed)
 }
 
-// Relative-path join with `..` support. Preserves a Windows drive/UNC
-// prefix on the base so `notes` from `C:\Users\ginwa` resolves to
-// `C:\Users\ginwa\notes` (not `/notes`). Purely lexical — no filesystem
-// access. POSIX inputs behave exactly like the old POSIX-only version.
+// Relative-path join with `..` support. Preserves a Windows drive/UNC prefix on the base so `notes`
+// from `C:\Users\ginwa` resolves to `C:\Users\ginwa\notes` (not `/notes`). Purely lexical — no
+// filesystem access. POSIX inputs behave exactly like the old POSIX-only version.
 function joinRelative(base: string, rel: string): string {
   const driveMatch = /^[A-Za-z]:/.exec(base)
   const uncMatch = !driveMatch ? /^[\\/]{2}[^\\/]+[\\/]+[^\\/]+/.exec(base) : null
@@ -481,10 +480,9 @@ function handleItemClick(item: T) {
 }
 
 function handleItemDoubleClick(item: T) {
-  // Double-click on a folder navigates INTO it — it must never
-  // select + close the dialog. Single click already selects the
-  // folder (folder/both mode); the Select button / Enter confirms.
-  // This mirrors Finder / Explorer / zenity --directory.
+  // Double-click on a folder navigates INTO it — it must never select + close the dialog. Single
+  // click already selects the folder (folder/both mode); the Select button / Enter confirms. This
+  // mirrors Finder / Explorer / zenity --directory.
   if (props.isExpandable(item)) {
     void navigateTo(props.pathFor(item))
     return
@@ -501,9 +499,8 @@ function handleItemDoubleClick(item: T) {
 function handleSelect() {
   const path = effectiveSelection.value
   if (!path) return
-  // Defense-in-depth (Windows cwd fix, 2026-09-05): never emit a relative
-  // path. Selections must be absolute on at least one platform — this is
-  // the last gate before a picked path is persisted as
+  // Defense-in-depth (Windows cwd fix, 2026-09-05): never emit a relative path. Selections must be
+  // absolute on at least one platform — this is the last gate before a picked path is persisted as
   // workspace_items.path and flows into sessions.cwd and the agent prompt.
   if (!isAbsPath(path)) return
   // Record every selection in the recent store (Recent rows AND Browse
@@ -541,10 +538,9 @@ const effectiveSelection = computed<string>(() => {
   return ''
 })
 
-// Whether the footer should show the "← current folder" hint. Only when
-// the fallback path is in use: folder mode, no explicit click, but a
-// non-root folder is open. Hidden in file mode (the fallback isn't active
-// there) and hidden after an explicit click (the click is more specific).
+// Whether the footer should show the "← current folder" hint. Only when the fallback path is in
+// use: folder mode, no explicit click, but a non-root folder is open. Hidden in file mode (the
+// fallback isn't active there) and hidden after an explicit click (the click is more specific).
 const showCurrentFolderHint = computed<boolean>(
   () =>
     mode.value === 'folder' &&
@@ -628,10 +624,9 @@ const filteredContent = computed<ContentItem[]>(() => {
 const treeFlat = computed<TreeRow[]>(() => {
   const result: TreeRow[] = []
   const cache = treeEntriesCache.value
-  // Root key is '/' on POSIX, '' when the dialog opened at the system root
-  // (resolved via getSystemFolder), or a drive/UNC root (`C:\`,
-  // `\\server\share`) on Windows. Prefer '' (a failed '/' load leaves a
-  // stale empty '/' entry behind after the system-root fallback).
+  // Root key is '/' on POSIX, '' when the dialog opened at the system root (resolved via
+  // getSystemFolder), or a drive/UNC root (`C:\`, `\\server\share`) on Windows. Prefer '' (a failed
+  // '/' load leaves a stale empty '/' entry behind after the system-root fallback).
   const rootKey =
     Object.keys(cache).find((k) => k === '') ??
     Object.keys(cache).find((k) => k === '/' || isRootPath(k))

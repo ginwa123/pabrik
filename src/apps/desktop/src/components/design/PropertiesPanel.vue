@@ -63,11 +63,9 @@ const isElementsLoading = computed(() => {
   return workspacesStore.isDesignElementsLoading(itemId, pageId)
 })
 
-// Undo/redo plan (Chunk 4): one history entry per field commit.
-// Pre-state is captured on input focus; post-state on @change.
-// We instantiate the composable here (rather than at DesignView)
-// so the capture is local to each field — no need to plumb ids
-// through props.
+// Undo/redo plan (Chunk 4): one history entry per field commit. Pre-state is captured on input
+// focus; post-state on @change. We instantiate the composable here (rather than at DesignView) so
+// the capture is local to each field — no need to plumb ids through props.
 const history = useDesignHistory(computed(() => workspacesStore.activeDesignPageId))
 
 const props = withDefaults(
@@ -81,9 +79,8 @@ const props = withDefaults(
     // the current selection into the right UI.
     elements: DesignElement[]
     readonly?: boolean
-    // When true, the parent canvas is in Preview mode (toggle in the
-    // canvas header bar). The form fields are hidden and replaced
-    // with a "you're previewing" banner — the user is interacting
+    // When true, the parent canvas is in Preview mode (toggle in the canvas header bar). The form
+    // fields are hidden and replaced with a "you're previewing" banner — the user is interacting
     // with the mockup, not editing its metadata.
     previewMode?: boolean
   }>(),
@@ -136,10 +133,9 @@ const handleStringChange = (field: StringField, value: string): void => {
   schedulePropertiesPanelCapturePost()
 }
 
-// Watch the single-element fields for actual change. When any
-// field updates (from a PropertiesPanel edit), we capture post-
-// state. The watcher is debounced to collapse rapid edits into a
-// single entry.
+// Watch the single-element fields for actual change. When any field updates (from a PropertiesPanel
+// edit), we capture post- state. The watcher is debounced to collapse rapid edits into a single
+// entry.
 const fieldsFingerprint = (el: DesignElement): string =>
   `${el.x}|${el.y}|${el.width}|${el.height}|${el.rotation}|${el.fill}|${el.stroke}|${el.stroke_width}|${el.corner_radius}|${el.opacity}|${el.name}|${el.text_content}|${el.image_url}|${el.type}`
 let propertiesPanelPostTimer: ReturnType<typeof setTimeout> | null = null
@@ -282,10 +278,9 @@ const handleHtmlSave = async (): Promise<void> => {
     // Push the html_edit entry with before/after body so undo can
     // restore the previous HTML body via PATCH.
     void history.capturePostState([el.id]).then(() => {
-      // capturePostState diffs element fields. We also need to
-      // attach the html body diff. The composable's capturePostState
-      // doesn't fetch HTML bodies (that would be slow on every
-      // drag); for html_edit we use a dedicated push.
+      // capturePostState diffs element fields. We also need to attach the html body diff. The
+      // composable's capturePostState doesn't fetch HTML bodies (that would be slow on every drag);
+      // for html_edit we use a dedicated push.
       const htmlHistoryStore = useDesignHistoryStore()
       htmlHistoryStore.push(workspacesStore.activeDesignPageId, {
         id: `entry_html_${Date.now()}_${Math.random()}`,

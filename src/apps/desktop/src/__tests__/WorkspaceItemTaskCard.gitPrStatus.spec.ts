@@ -98,10 +98,9 @@ describe('WorkspaceItemTaskCard — git branch PR status color', () => {
   })
 
   it('re-reads and recolours the badge after a merge invalidates the shared cache', async () => {
-    // The reported bug: the kanban item's branch badge kept the `open` green it
-    // fetched before the merge. The badge reads the shared 60s cache on mount (and
-    // on a branch/cwd change) and cannot see an invalidation, so the tick from
-    // `invalidatePrStatus` is what makes it re-ask the forge.
+    // The reported bug: the kanban item's branch badge kept the `open` green it fetched before the
+    // merge. The badge reads the shared 60s cache on mount (and on a branch/cwd change) and cannot
+    // see an invalidation, so the tick from `invalidatePrStatus` is what makes it re-ask the forge.
     getPrStatusMock.mockResolvedValue({ status: 'open', state: 'OPEN' })
     const wrapper = mountCard(makeTask({ git_branch: 'feature/x', cwd: '/repo' }), '/repo')
     await flushPromises()

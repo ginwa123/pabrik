@@ -278,10 +278,9 @@ describe('DesignChatDialog', () => {
   })
 
   it('keeps the pageName in the title when only the task id changes', async () => {
-    // Edge case: the parent may update only the task prop while
-    // keeping the same pageName (e.g. task renamed but same FK
-    // relationship). The title should NOT flicker to the task
-    // name — page context is more meaningful for the user.
+    // Edge case: the parent may update only the task prop while keeping the same pageName (e.g.
+    // task renamed but same FK relationship). The title should NOT flicker to the task name — page
+    // context is more meaningful for the user.
     wrapper = mountDialog({
       show: true,
       task: TASK_A,
@@ -328,9 +327,8 @@ describe('DesignChatDialog', () => {
     expect(title?.textContent).toContain('Chat')
   })
 
-  // Lock in the sizing so future refactors don't shrink it.
-  // The 3rd bump numbers (2026-08-06) — the user explicitly asked to
-  // make design's chatview dialog bigger, the same way they did for the
+  // Lock in the sizing so future refactors don't shrink it. The 3rd bump numbers (2026-08-06) — the
+  // user explicitly asked to make design's chatview dialog bigger, the same way they did for the
   // kanban chat while it was still a dialog.
   describe('dialog sizing', () => {
     it('uses 98vw width + 95vh height for viewport-relative sizing', async () => {

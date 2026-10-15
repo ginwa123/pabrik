@@ -97,10 +97,9 @@ export async function apiFetch<T = unknown>(url: string, opts: ApiFetchOptions =
 
     if (!response.ok) {
       const responseBody = await response.text().catch(() => '')
-      // Auth enforcement: expired/revoked session mid-use → bounce to
-      // /login?redirect=<current> (router guard covers boot; this covers
-      // in-app expiry). Skip for auth endpoints themselves and when
-      // already on /login to avoid loops.
+      // Auth enforcement: expired/revoked session mid-use → bounce to /login?redirect=<current>
+      // (router guard covers boot; this covers in-app expiry). Skip for auth endpoints themselves
+      // and when already on /login to avoid loops.
       if (response.status === 401 && !url.startsWith('/auth/')) {
         try {
           const loc = globalThis.location
@@ -147,10 +146,8 @@ function tryParseJsonErrorField(body: string): string | null {
   }
 }
 
-// Re-export SseClient so call sites that hold a reference
-// (e.g. `const workersSse: api.SseClient | null = null`) can
-// import it from the same place they import the factory
-// functions.
+// Re-export SseClient so call sites that hold a reference (e.g. `const workersSse: api.SseClient |
+// null = null`) can import it from the same place they import the factory functions.
 export type { SseClient } from '../helpers/sseClient'
 
 // Types matching backend responses
@@ -415,18 +412,14 @@ export interface Task {
   // pabrik-frontend-task-literal-typing-rule memory.
   is_pinned?: boolean
   pinned_position?: number
-  // NEW (Chunk 4 of workspace-item-kanban plan). Populated for
-  // tasks under `item_type === 'kanban'` parents. `kanban_column_id`
-  // is `null` (not undefined) when the task is unassigned (e.g. its
-  // column was deleted). Both optional so legacy task literals keep
-  // type-checking.
+  // NEW (Chunk 4 of workspace-item-kanban plan). Populated for tasks under `item_type === 'kanban'`
+  // parents. `kanban_column_id` is `null` (not undefined) when the task is unassigned (e.g. its
+  // column was deleted). Both optional so legacy task literals keep type-checking.
   kanban_column_id?: string | null
   kanban_position?: number
-  // NEW (kanban task tags, Migration 067). Array of free-form tag
-  // strings. Empty array = no tags. Optional so legacy task
-  // literals in tests keep type-checking. On the wire the field is
-  // a JSON-encoded array string; the store normalizes via
-  // `normalizeTaskTags` at every fetch site.
+  // NEW (kanban task tags, Migration 067). Array of free-form tag strings. Empty array = no tags.
+  // Optional so legacy task literals in tests keep type-checking. On the wire the field is a
+  // JSON-encoded array string; the store normalizes via `normalizeTaskTags` at every fetch site.
   tags?: string[]
   // NEW (kanban image urls, Migration 069). Array of base64 data
   // URLs (`data:image/<mime>;base64,<payload>`). Empty array = no
@@ -441,9 +434,8 @@ export interface Task {
   // URLs (`data:video/<mime>;base64,<payload>`). Empty array = no
   // videos. Same `||`-delimited wire convention as imageUrls.
   videoUrls?: string[]
-  // NEW (Media-flags change — lightweight list/get payload). The backend
-  // list/get return only these flags; the full base64 TEXT stays
-  // server-side for the lazy `getTaskMedia` endpoint below. The
+  // NEW (Media-flags change — lightweight list/get payload). The backend list/get return only these
+  // flags; the full base64 TEXT stays server-side for the lazy `getTaskMedia` endpoint below. The
   // frontend fetches media only when the flag is true.
   is_have_image?: boolean
   is_have_video?: boolean
@@ -539,10 +531,9 @@ export async function searchFiles(
 
 // Workspace API
 export async function getWorkspaces(): Promise<{ workspaces: Workspace[] }> {
-  // Items are loaded separately via getWorkspacesItems(workspace_id) —
-  // this keeps the workspaces list small and lets us fetch items lazily.
-  // Persists the list to the workspacesCache (fail-silent) so the next
-  // init can paint instantly and revalidate in the background.
+  // Items are loaded separately via getWorkspacesItems(workspace_id) — this keeps the workspaces
+  // list small and lets us fetch items lazily. Persists the list to the workspacesCache
+  // (fail-silent) so the next init can paint instantly and revalidate in the background.
   const res = await apiFetch<{ workspaces: Workspace[] }>('/workspaces?is_include_items=false')
   try {
     const { writeWorkspacesCache } = await import('../helpers/workspacesCache')
@@ -957,10 +948,9 @@ export async function createTask(
   if (params.isAutoRetryUntilStop === '1' && taskType === 'standard') {
     body.is_auto_retry_until_stop = '1'
   }
-  // Forward tags as a JSON-encoded array string (Migration 067).
-  // The backend's tags_validation.validateAndNormalizeTags parses
-  // and re-encodes the array, so the wire shape is a JSON string,
-  // not an array — single source of truth for JSON shape.
+  // Forward tags as a JSON-encoded array string (Migration 067). The backend's
+  // tags_validation.validateAndNormalizeTags parses and re-encodes the array, so the wire shape is
+  // a JSON string, not an array — single source of truth for JSON shape.
   if (params.tags && params.tags.length > 0) {
     body.tags = JSON.stringify(params.tags)
   }
@@ -1147,11 +1137,9 @@ export async function updateTaskSimple(
     // NEW (kanban task tags, Migration 067): array of tag strings.
     // Forwarded as JSON-encoded string. Empty array = clear tags.
     tags?: string[]
-    // NEW (kanban image urls, Migration 069): array of base64 data
-    // URLs. Forwarded as `||`-delimited string (matching the
-    // `llm_history.image_url` convention). Empty array = clear
-    // images. Plan: docs/superpowers/plans/2026-08-06-kanban-image-
-    // urls-column.md.
+    // NEW (kanban image urls, Migration 069): array of base64 data URLs. Forwarded as
+    // `||`-delimited string (matching the `llm_history.image_url` convention). Empty array = clear
+    // images. Plan: docs/superpowers/plans/2026-08-06-kanban-image- urls-column.md.
     imageUrls?: string[]
     // NEW (kanban video urls, Migration 090): same contract as imageUrls.
     videoUrls?: string[]
@@ -1399,10 +1387,9 @@ export interface Chat {
   /// present in the GET /api/sessions response (ChatsList uses this
   /// to render the `🔁 unattended` badge).
   is_auto_retry_until_stop?: string
-  /// Migration 082 — unix-ms string of the last time a HUMAN interacted
-  /// with this session. Empty string (NOT undefined) for legacy rows so
-  /// the ChatsList time pill can fall back to `updated_at` predictably.
-  /// Plan: docs/superpowers/plans/2026-08-29-chat-sidebar-last-human-touched.md
+  // Migration 082 — unix-ms string of the last time a HUMAN interacted with this session. Empty
+  // string (NOT undefined) for legacy rows so the ChatsList time pill can fall back to `updated_at`
+  // predictably. Plan: docs/superpowers/plans/2026-08-29-chat-sidebar-last-human-touched.md
   last_human_touched_at?: string
   /// Migration 104 — pinned sessions (PINNED section above RECENT).
   /// True when the user pinned via right-click menu. Always present
@@ -1495,10 +1482,9 @@ const EMPTY_CHAT_HISTORY: ChatHistoryResponse = {
   git_worktree_cwd: undefined,
   pr_url: undefined,
   pr_provider: undefined,
-  // 2026-08-07-profile-persist-read — preserve the field shape on
-  // the error path so ChatView's `loadChatHistory` branch can
-  // safely read `data.selected_profile_model` (it'll be
-  // `undefined`, which ChatView coerces to `null`).
+  // 2026-08-07-profile-persist-read — preserve the field shape on the error path so ChatView's
+  // `loadChatHistory` branch can safely read `data.selected_profile_model` (it'll be `undefined`,
+  // which ChatView coerces to `null`).
   selected_profile_model: undefined,
   max_total_tokens: undefined,
   max_capacity_total_tokens: undefined,
@@ -1680,11 +1666,9 @@ export const DEFAULT_CHAT_TOOLS = [
   'save_memory',
   'search_skills',
   'use_skill',
-  // Introspection: list the tools equipped for this session ("what
-  // tools do I have"). Read-only, sub-agent-safe. Seeded here so
-  // plain chat, design mode, and routine sessions (which all use
-  // this request body) get it; agent/kanban modes seed it via
-  // backend DEFAULT_AGENT_TOOLS.
+  // Introspection: list the tools equipped for this session ("what tools do I have"). Read-only,
+  // sub-agent-safe. Seeded here so plain chat, design mode, and routine sessions (which all use
+  // this request body) get it; agent/kanban modes seed it via backend DEFAULT_AGENT_TOOLS.
   'used_tools',
   // Interactive: ask the human a question (ends the turn until they answer).
   // Seeded in every mode by default — without it here the tool would be
@@ -1701,10 +1685,9 @@ export const DEFAULT_CHAT_TOOLS = [
   // chat agent cannot revise a note it wrote earlier without a way to
   // find the row first.
   'search_documents',
-  // `delete_document` is intentionally omitted — irreversible, and it does
-  // not belong in the set every plain chat starts with. It stays one click
-  // away in Settings → Tools, and an agent can also reach it through
-  // search_tool → use_tool, which bypasses the allowlist.
+  // `delete_document` is intentionally omitted — irreversible, and it does not belong in the set
+  // every plain chat starts with. It stays one click away in Settings → Tools, and an agent can
+  // also reach it through search_tool → use_tool, which bypasses the allowlist.
 ].join(',')
 
 export async function sendChatMessage(
@@ -1814,10 +1797,9 @@ export async function markSessionTouched(
   )
 }
 
-// Migration 104 — pin/unpin a session for the PINNED section above RECENT.
-// Mirrors `pinTask` (kanban). The backend bumps `pinned_position` to MAX+1
-// on pin (lands at bottom) and syncs the linked task row when
-// task.id == session_id, so kanban pin buttons stay in sync.
+// Migration 104 — pin/unpin a session for the PINNED section above RECENT. Mirrors `pinTask`
+// (kanban). The backend bumps `pinned_position` to MAX+1 on pin (lands at bottom) and syncs the
+// linked task row when task.id == session_id, so kanban pin buttons stay in sync.
 export async function pinSession(
   sessionId: string,
   isPinned: boolean,
@@ -1919,10 +1901,9 @@ export async function getChats(
   direction: 'asc' | 'desc' = 'desc',
   limit: number = 10,
   cursor?: string,
-  // Workspace scope (plan: 2026-09-22-revamp-ui-chats). When set, the
-  // backend returns only that workspace's sessions (task-linked +
-  // cwd-matched); empty/unknown → empty list (fail-closed). Omitted
-  // → global list (back-compat for non-scoped callers).
+  // Workspace scope (plan: 2026-09-22-revamp-ui-chats). When set, the backend returns only that
+  // workspace's sessions (task-linked + cwd-matched); empty/unknown → empty list (fail-closed).
+  // Omitted → global list (back-compat for non-scoped callers).
   workspaceId?: string,
 ): Promise<{
   sessions: Chat[]
@@ -1981,10 +1962,9 @@ export async function getChats(
           selected_profile_model: session.selected_profile_model || '',
           sub_agent_name: session.sub_agent_name || '',
           parent_session_id: session.parent_session_id || '',
-          // Sidebar git badge — forward the bound worktree path and
-          // the per-request resolved branch ("" = no badge). Empty
-          // string when absent so the ChatsList `v-if` is a defined
-          // check (NOT undefined).
+          // Sidebar git badge — forward the bound worktree path and the per-request resolved branch
+          // ("" = no badge). Empty string when absent so the ChatsList `v-if` is a defined check
+          // (NOT undefined).
           git_worktree_cwd: session.git_worktree_cwd || '',
           git_branch: session.git_branch || '',
           // Migration 063 — default to "0" (off) when omitted so the
@@ -2119,10 +2099,9 @@ async function fetchSessionDetail(sessionId: string): Promise<Session | null> {
       createdAt: data.created_at || '',
       agent: '',
       sessionName: data.name || '',
-      // 2026-08-07-profile-persist-read — pass through the persisted
-      // profile name. Empty string (= "no profile set" from the
-      // backend's COALESCE-on-NULL) is preserved here; ChatView
-      // coerces empty → null.
+      // 2026-08-07-profile-persist-read — pass through the persisted profile name. Empty string (=
+      // "no profile set" from the backend's COALESCE-on-NULL) is preserved here; ChatView coerces
+      // empty → null.
       selectedProfile: data.selected_profile_model,
       subAgentName: data.sub_agent_name,
       parentSessionId: data.parent_session_id,
@@ -3330,11 +3309,9 @@ export async function getMemoryDetail(name: string): Promise<MemoryDetailRespons
   try {
     return await apiFetch<MemoryDetailResponse>(`/memories/${encodeURIComponent(name)}`)
   } catch (err) {
-    // Preserve the "404 = not found" semantics — the caller uses the
-    // returned shape to decide whether to show a "create new memory"
-    // prompt vs. an error toast. apiFetch surfaces 404 as ApiError,
-    // so we translate it back into the original { memory: null,
-    // error_message } shape.
+    // Preserve the "404 = not found" semantics — the caller uses the returned shape to decide
+    // whether to show a "create new memory" prompt vs. an error toast. apiFetch surfaces 404 as
+    // ApiError, so we translate it back into the original { memory: null, error_message } shape.
     if (err instanceof ApiError && err.status === 404) {
       return { memory: null, error_message: 'Memory not found' }
     }
@@ -3396,11 +3373,9 @@ export async function getLocalMemoryDetail(
       `/local-memories/${encodeURIComponent(name)}${cwdQuery(cwd)}`,
     )
   } catch (err) {
-    // Preserve the "404 = not found" semantics — the caller uses
-    // the returned shape to decide whether to show a "create new
-    // memory" prompt vs. an error toast. apiFetch surfaces 404 as
-    // ApiError, so we translate it back into the original
-    // { memory: null, error_message } shape.
+    // Preserve the "404 = not found" semantics — the caller uses the returned shape to decide
+    // whether to show a "create new memory" prompt vs. an error toast. apiFetch surfaces 404 as
+    // ApiError, so we translate it back into the original { memory: null, error_message } shape.
     if (err instanceof ApiError && err.status === 404) {
       return { memory: null, error_message: 'Memory not found' }
     }
@@ -3620,10 +3595,9 @@ export async function getGitWorktreeInfo(
 export interface GitPrCreateResponse {
   success: boolean
   pr_url: string
-  // Renamed from `error_message` per PR review (git_pr_create.zig:60).
-  // The Zig struct field is `@"error"` (because `error` is a Zig keyword)
-  // and serializes to JSON `"error"`. This frontend field name matches
-  // the JSON wire format.
+  // Renamed from `error_message` per PR review (git_pr_create.zig:60). The Zig struct field is
+  // `@"error"` (because `error` is a Zig keyword) and serializes to JSON `"error"`. This frontend
+  // field name matches the JSON wire format.
   error: string
   // Which forge the PR/MR was opened on. Absent on older servers.
   provider?: string
@@ -3656,10 +3630,9 @@ export async function createGitPr(
   })
 }
 
-// ─── Git branches (kanban worktree base-branch picker) ────────────────────
-// Wire shape for `GET /api/git/branches?path=<repo>`. Feeds the "New task"
-// dialog's base-branch dropdown so a fresh worktree can branch from e.g.
-// `origin/main` instead of whatever the repo's current HEAD is.
+// ─── Git branches (kanban worktree base-branch picker) ──────────────────── Wire shape for `GET
+// /api/git/branches?path=<repo>`. Feeds the "New task" dialog's base-branch dropdown so a fresh
+// worktree can branch from e.g. `origin/main` instead of whatever the repo's current HEAD is.
 
 export interface GitBranchEntry {
   /** Short ref name, e.g. `origin/main` or `main`. This is the exact
@@ -3706,10 +3679,9 @@ export async function listGitBranches(repoPath: string): Promise<GitBranchesResp
   }
 }
 
-// ─── Git commits (read-only lazygit-style history) ────────────────────────
-// Wire shape for `GET /api/git/commits?path=<repo>[&limit=][&skip=]` and
-// `GET /api/git/commit?path=<repo>&sha=<sha>`. Read-only: list + detail,
-// no checkout/amend/rebase.
+// ─── Git commits (read-only lazygit-style history) ──────────────────────── Wire shape for `GET
+// /api/git/commits?path=<repo>[&limit=][&skip=]` and `GET /api/git/commit?path=<repo>&sha=<sha>`.
+// Read-only: list + detail, no checkout/amend/rebase.
 
 export interface GitCommit {
   sha: string
@@ -3853,10 +3825,9 @@ export interface SessionEvent {
   // task.is_auto_retry_until_stop in sync so the
   // KanbanTaskDetailDialog toggle shows the live value.
   is_auto_retry_until_stop?: string
-  // Migration 082 — the touched POST's SSE echo carries the fresh
-  // stamp (unix-ms integer string, raw column shape — NOT the SQLite
-  // datetime the REST list returns). Optional: older backends omit
-  // it. ChatsList uses it only for echo detection, never for display.
+  // Migration 082 — the touched POST's SSE echo carries the fresh stamp (unix-ms integer string,
+  // raw column shape — NOT the SQLite datetime the REST list returns). Optional: older backends
+  // omit it. ChatsList uses it only for echo detection, never for display.
   last_human_touched_at?: string
 }
 
@@ -3876,11 +3847,9 @@ export type QueueMessageEvent =
       session_id: string
     }
 
-// Background-process lifecycle SSE event (see
-// src/agentic_loop/background_process_events.zig). Both granular wire
-// names (`background_process_created` / `background_process_completed`)
-// share this payload; the consumer filters by `session_id` and
-// re-fetches the list.
+// Background-process lifecycle SSE event (see src/agentic_loop/background_process_events.zig). Both
+// granular wire names (`background_process_created` / `background_process_completed`) share this
+// payload; the consumer filters by `session_id` and re-fetches the list.
 export interface BackgroundProcessEvent {
   action: 'created' | 'completed'
   session_id: string
@@ -3888,11 +3857,9 @@ export interface BackgroundProcessEvent {
   command: string
 }
 
-// Skill-eval lifecycle SSE event (see
-// src/agentic_loop/skill_eval_events.zig). All three granular wire names
-// (`skill_evals_run_started` / `_run_finished` / `_result_applied`) share
-// this payload; the consumer filters by `session_id` and re-fetches the
-// eval list for the Evals tab.
+// Skill-eval lifecycle SSE event (see src/agentic_loop/skill_eval_events.zig). All three granular
+// wire names (`skill_evals_run_started` / `_run_finished` / `_result_applied`) share this payload;
+// the consumer filters by `session_id` and re-fetches the eval list for the Evals tab.
 export interface SkillEvalEvent {
   action: 'run_started' | 'run_finished' | 'result_applied'
   run_id: string
@@ -4336,11 +4303,9 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
       // onEvent ever fires — the list would never refresh.
       'background_process_created',
       'background_process_completed',
-      // Auth rejection (`event: auth_error`, see unified_events_sse.zig
-      // `terminateSseStream`). Without pre-registration the browser
-      // drops it before onEvent ever fires and the client sits in
-      // 'connecting' until the stream closes — indistinguishable
-      // from a dead backend.
+      // Auth rejection (`event: auth_error`, see unified_events_sse.zig `terminateSseStream`).
+      // Without pre-registration the browser drops it before onEvent ever fires and the client sits
+      // in 'connecting' until the stream closes — indistinguishable from a dead backend.
       'auth_error',
       // Skill-eval lifecycle (see src/agentic_loop/skill_eval_events.zig).
       // Three granular names share one payload; all route on the central
@@ -4609,10 +4574,9 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
         return
       }
 
-      // `design_page_deleted` shares the design channel (page-level
-      // delete; the consumer re-fetches). Registered so the browser
-      // doesn't drop it silently; forwarded best-effort like the
-      // element events above.
+      // `design_page_deleted` shares the design channel (page-level delete; the consumer
+      // re-fetches). Registered so the browser doesn't drop it silently; forwarded best-effort like
+      // the element events above.
       if (eventType === 'design_page_deleted') {
         if (!opts.channels.design) return
         try {
@@ -4648,10 +4612,9 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
         const jsonStart = defaultMessageBuf.value.indexOf('{')
         const jsonEnd = defaultMessageBuf.value.lastIndexOf('}')
         if (jsonStart === -1 || jsonEnd === -1 || jsonEnd <= jsonStart) {
-          // Incomplete JSON object — wait for more bytes. If the
-          // buffer grows unbounded (e.g. server sends invalid JSON),
-          // a future fix could add a size guard; current callers
-          // trust the backend's wire format.
+          // Incomplete JSON object — wait for more bytes. If the buffer grows unbounded (e.g.
+          // server sends invalid JSON), a future fix could add a size guard; current callers trust
+          // the backend's wire format.
           return
         }
         const jsonStr = defaultMessageBuf.value.slice(jsonStart, jsonEnd + 1)
@@ -4659,10 +4622,9 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
         try {
           parsed = JSON.parse(jsonStr)
         } catch {
-          // Invalid JSON; drop the leading bytes and keep accumulating.
-          // (Defensive — the backend's std.json.fmt should always
-          // emit valid JSON. But a buggy future emitter shouldn't
-          // crash the SSE.)
+          // Invalid JSON; drop the leading bytes and keep accumulating. (Defensive — the backend's
+          // std.json.fmt should always emit valid JSON. But a buggy future emitter shouldn't crash
+          // the SSE.)
           defaultMessageBuf.value = defaultMessageBuf.value.slice(jsonStart + 1)
           return
         }
@@ -5273,10 +5235,9 @@ export interface GitFileDiff {
   staged: boolean
 }
 
-// Batch file diffs — one POST replaces N parallel GET /git/file/diff.
-// Collapses the SidebarDiffPanel fan-out (20 files = 20 git spawns
-// holding 20 Io workers) into at most 2 server-side `git diff`
-// invocations. LIST mode: the client names the paths.
+// Batch file diffs — one POST replaces N parallel GET /git/file/diff. Collapses the
+// SidebarDiffPanel fan-out (20 files = 20 git spawns holding 20 Io workers) into at most 2
+// server-side `git diff` invocations. LIST mode: the client names the paths.
 export interface GitFileDiffsBatchItem {
   file: string
   staged: boolean
@@ -5451,9 +5412,8 @@ export async function listPrs(
   return await apiFetch<GitPrListResponse>(`/git/pr/list?${params.toString()}`, { silent: true })
 }
 
-// Close a PR/MR (POST /api/git/pr/close). `closed: false` with a
-// `detail` is NOT an error status — the forge accepted the command
-// but the re-read still shows it open, so the UI must render the
+// Close a PR/MR (POST /api/git/pr/close). `closed: false` with a `detail` is NOT an error status —
+// the forge accepted the command but the re-read still shows it open, so the UI must render the
 // forge's sentence rather than claim success.
 export interface GitPrCloseResponse {
   closed: boolean
@@ -5519,10 +5479,9 @@ export async function mergePr(
   prUrl: string,
   opts: MergePrOptions,
 ): Promise<GitPrMerge> {
-  // The route spawns a forge CLI against a network, so it is given a far
-  // larger budget than the 15 s default — the same reason `git_pr_merge.zig`
-  // runs the child under a 60 s deadline. `silent` because the box renders the
-  // server's own words inline instead of a toast.
+  // The route spawns a forge CLI against a network, so it is given a far larger budget than the 15
+  // s default — the same reason `git_pr_merge.zig` runs the child under a 60 s deadline. `silent`
+  // because the box renders the server's own words inline instead of a toast.
   return await apiFetch<GitPrMerge>('/git/pr/merge', {
     method: 'POST',
     silent: true,

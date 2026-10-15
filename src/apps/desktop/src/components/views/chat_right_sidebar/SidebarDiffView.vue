@@ -99,10 +99,9 @@ async function loadWholeFile(): Promise<void> {
   }
 }
 
-// Whole-file scope sync: mount covers a section mounting with the scope
-// already on (the state lives in ChatView, so remounting after a collapse
-// restores it); the prev-combo guard on update covers scope/path/cwd
-// switches. A path switch also resets the review progress below.
+// Whole-file scope sync: mount covers a section mounting with the scope already on (the state lives
+// in ChatView, so remounting after a collapse restores it); the prev-combo guard on update covers
+// scope/path/cwd switches. A path switch also resets the review progress below.
 const prevDiffKey = ref('')
 const diffKey = () =>
   `${props.wholeFile ? '1' : '0'}|${props.untracked ? '1' : '0'}|${props.path}|${props.staged ? '1' : '0'}|${props.cwd}`
@@ -125,10 +124,9 @@ onUpdated(() => {
   }
 })
 
-// ── token colors ──────────────────────────────────────────────────────────
-// One entry per rendered row, computed once per diff instead of once per
-// render — the row red/green background still carries added/removed, the
-// token spans only color the code inside the row.
+// ── token colors ────────────────────────────────────────────────────────── One entry per rendered
+// row, computed once per diff instead of once per render — the row red/green background still
+// carries added/removed, the token spans only color the code inside the row.
 const unifiedTokens = computed(() =>
   highlightLinesForFile(
     displayLines.value.map((line) => line.content),

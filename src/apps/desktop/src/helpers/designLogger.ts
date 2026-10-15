@@ -58,10 +58,9 @@ const STORAGE_KEY = 'pabrik.design-logger.enabled'
 
 const enabledRef = ref<boolean>(false)
 
-// Read from localStorage synchronously at module-load so the first
-// gesture in a fresh page already has the right setting. SSR-safe:
-// the typeof check protects against environments where localStorage
-// throws.
+// Read from localStorage synchronously at module-load so the first gesture in a fresh page already
+// has the right setting. SSR-safe: the typeof check protects against environments where
+// localStorage throws.
 if (typeof localStorage !== 'undefined') {
   try {
     enabledRef.value = localStorage.getItem(STORAGE_KEY) === 'on'
@@ -104,8 +103,7 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
 export const isDesignLoggerEnabled = (): boolean => enabledRef.value
 
 /**
- * Enable/disable at runtime. Writes the new value to localStorage so
- * the setting survives reload.
+ * Enable/disable at runtime. Writes the new value to localStorage so the setting survives reload. /
  */
 export const setDesignLoggerEnabled = (on: boolean): void => {
   enabledRef.value = on

@@ -135,11 +135,9 @@ describe('useWorkspacesStore.loadMoreTasksForColumn() — per-column pagination'
   }) {
     getWorkspacesMock.mockResolvedValueOnce({ workspaces: [baseWorkspace] })
     getWorkspacesItemsMock.mockResolvedValueOnce({ items: [baseItem], count: 1 })
-    // init() now skips kanban items (Option B — per-column init via
-    // KanbanView onMount). We fire the per-column fetch directly to
-    // seed the store state. The `firstPage.tasks` MUST have a
-    // consistent `kanban_column_id` (all of one column) since the
-    // backend filters per column.
+    // init() now skips kanban items (Option B — per-column init via KanbanView onMount). We fire
+    // the per-column fetch directly to seed the store state. The `firstPage.tasks` MUST have a
+    // consistent `kanban_column_id` (all of one column) since the backend filters per column.
     const store = useWorkspacesStore()
     await store.init()
     // Detect the column from the first task's kanban_column_id, fall
@@ -165,10 +163,9 @@ describe('useWorkspacesStore.loadMoreTasksForColumn() — per-column pagination'
         items: [baseItem as any],
       },
     ]
-    // Option B: fetch returns ONLY the column's tasks (backend
-    // filters by column_id server-side). col_b is NOT in the
-    // response — its columnPagination entry stays undefined until a
-    // separate fetch for col_b fires.
+    // Option B: fetch returns ONLY the column's tasks (backend filters by column_id server-side).
+    // col_b is NOT in the response — its columnPagination entry stays undefined until a separate
+    // fetch for col_b fires.
     getTasksMock.mockResolvedValueOnce({
       tasks: seedTasks(2, 'a', 'col_a'),
       has_more: true,

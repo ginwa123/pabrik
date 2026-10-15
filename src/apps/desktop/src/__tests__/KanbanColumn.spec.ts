@@ -97,11 +97,9 @@ describe('KanbanColumn — header rendering', () => {
   })
 
   it('renders cards in input order (backend applies the sort per-column via fetchKanbanTasks)', () => {
-    // The client-side sort was removed in 2026-08-06 (kanban-
-    // sort-independence, take 2). The backend's per-column fetch
-    // returns tasks in the column's own sort order — `cardsInColumn`
-    // here is a thin filter, no comparator. The wire order is what
-    // the user sees.
+    // The client-side sort was removed in 2026-08-06 (kanban- sort-independence, take 2). The
+    // backend's per-column fetch returns tasks in the column's own sort order — `cardsInColumn`
+    // here is a thin filter, no comparator. The wire order is what the user sees.
     wrapper = mountColumn(makeColumn(), [
       makeTask({ id: 't1', kanban_column_id: COL_TODO, kanban_position: 2 }),
       makeTask({ id: 't2', kanban_column_id: COL_TODO, kanban_position: 0 }),

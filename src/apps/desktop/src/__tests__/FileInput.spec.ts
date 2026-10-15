@@ -268,10 +268,9 @@ describe('FileInput — paste image (Ctrl+V) attaches to preview', () => {
       files: [] as File[],
       types: items.map((i) => i.type),
     } as unknown as DataTransfer
-    // jsdom doesn't expose a ClipboardEvent constructor (DOM v0.x), so we
-    // build a synthetic event with the clipboardData property attached.
-    // The DOM-level event dispatch (Element.dispatchEvent) only requires
-    // a non-null Event with bubbles=true.
+    // jsdom doesn't expose a ClipboardEvent constructor (DOM v0.x), so we build a synthetic event
+    // with the clipboardData property attached. The DOM-level event dispatch
+    // (Element.dispatchEvent) only requires a non-null Event with bubbles=true.
     const ev = new Event('paste', { bubbles: true, cancelable: true }) as unknown as ClipboardEvent
     Object.defineProperty(ev, 'clipboardData', { value: dataTransfer })
     return ev

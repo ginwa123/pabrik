@@ -53,10 +53,9 @@ import { useContextMenu } from '../../composables/useContextMenu'
 import { useTaskActions, type TaskComponentProps } from '../../composables/useTaskActions'
 import WorkerElapsedChip from '../WorkerElapsedChip.vue'
 import OpenInNewTabMenu from '../shell/OpenInNewTabMenu.vue'
-// 2026-08-29 agent-error-row (task_1787985074550_0) — sidebar
-// variant of the kanban-card indicator. Same store + helper as the
-// kanban card (Task 5); single source of truth so the indicator
-// stays in sync with the chat card across session switches.
+// 2026-08-29 agent-error-row (task_1787985074550_0) — sidebar variant of the kanban-card indicator.
+// Same store + helper as the kanban card (Task 5); single source of truth so the indicator stays in
+// sync with the chat card across session switches.
 import { useAgentErrorStore } from '../../stores/agentError'
 import { parseAgentErrorHeadline } from '../../helpers/parseAgentErrorHeadline'
 import { useWorkspacesStore } from '../../stores/workspaces'
@@ -121,9 +120,8 @@ const emit = defineEmits<{
 // menu never traverses the row.
 const { dropIndicatorBoxShadow, handleSelectTask } = useTaskActions(props, emit)
 
-// Right-click "Open in new tab" for this task. The menu position
-// lives in useContextMenu; the task ids come from props. The event
-// bubbles up (sidebar list or kanban board) where the host builds
+// Right-click "Open in new tab" for this task. The menu position lives in useContextMenu; the task
+// ids come from props. The event bubbles up (sidebar list or kanban board) where the host builds
 // the task chat URL and opens a real browser tab.
 const { menuPos, openAt, openAtPoint, close: closeTaskMenu } = useContextMenu()
 
@@ -142,15 +140,13 @@ const handleRowKeydown = (event: KeyboardEvent) => {
     handleSelectTask()
     return
   }
-  // ContextMenu / Shift+F10 open the action menu. Removing the hover
-  // buttons took away the only discoverable route to rename / delete,
-  // so the keyboard path is a hard requirement, not a nice-to-have —
-  // otherwise the change is an accessibility regression.
+  // ContextMenu / Shift+F10 open the action menu. Removing the hover buttons took away the only
+  // discoverable route to rename / delete, so the keyboard path is a hard requirement, not a
+  // nice-to-have — otherwise the change is an accessibility regression.
   if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
     event.preventDefault()
-    // Anchor at the row's centre — there is no cursor to follow on a
-    // keyboard gesture. Reuses the same viewport clamp as a real
-    // right-click so a row near the bottom-right corner doesn't push
+    // Anchor at the row's centre — there is no cursor to follow on a keyboard gesture. Reuses the
+    // same viewport clamp as a real right-click so a row near the bottom-right corner doesn't push
     // the menu off-screen.
     const rect = (event.currentTarget as HTMLElement | null)?.getBoundingClientRect()
     openAtPoint(
@@ -170,10 +166,9 @@ const openTaskMenuInBackground = () => {
   })
 }
 
-// Migration 104 — right-click Pin/Unpin on kanban task rows (session
-// list in kanban). Emits pinTask directly (handlePinToggle needs a click
-// event for stopPropagation; the menu has none). The backend syncs
-// sessions so the PINNED section updates.
+// Migration 104 — right-click Pin/Unpin on kanban task rows (session list in kanban). Emits pinTask
+// directly (handlePinToggle needs a click event for stopPropagation; the menu has none). The
+// backend syncs sessions so the PINNED section updates.
 const pinTaskFromMenu = () => {
   closeTaskMenu()
   emit('pinTask', props.workspaceId, props.itemId, props.task.id, !props.task.is_pinned)
@@ -246,11 +241,9 @@ const runAgentFromMenu = async () => {
   }
 }
 
-// 2026-08-29 agent-error-row — reactive read of the latest agent
-// error keyed by task.id == session_id (migration 052 invariant).
-// Same store + helper as the kanban card and ChatView's
-// AgentErrorCard — see stores/agentError.ts and
-// helpers/parseAgentErrorHeadline.ts.
+// 2026-08-29 agent-error-row — reactive read of the latest agent error keyed by task.id ==
+// session_id (migration 052 invariant). Same store + helper as the kanban card and ChatView's
+// AgentErrorCard — see stores/agentError.ts and helpers/parseAgentErrorHeadline.ts.
 const agentErrorStore = useAgentErrorStore()
 const agentError = computed(() => agentErrorStore.bySession[props.task.id] ?? null)
 const errorHeadline = computed(() =>

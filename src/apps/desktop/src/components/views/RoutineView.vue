@@ -161,10 +161,9 @@ const routineKnowledge = ref<api.AgentRoutineKnowledgeRow[]>([])
 const routineTools = ref<string[]>([])
 const routineSystemPrompts = ref<api.AgentRoutineSystemPromptRow[]>([])
 
-// True while `loadRoutineAgent` is in flight — AgentView's knowledge and
-// system-prompt panels gate their skeletons on this. Without it they
-// render "No knowledge files yet." during the fetch, which is a false
-// statement about the routine's data.
+// True while `loadRoutineAgent` is in flight — AgentView's knowledge and system-prompt panels gate
+// their skeletons on this. Without it they render "No knowledge files yet." during the fetch, which
+// is a false statement about the routine's data.
 const routineAgentLoading = ref(false)
 
 async function loadRoutineAgent() {

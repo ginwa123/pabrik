@@ -79,10 +79,9 @@ describe('getChats - Migration 082 last_human_touched_at wire shape', () => {
   })
 
   it('defaults last_human_touched_at to empty string when the backend omits it (legacy rows)', async () => {
-    // Pre-Migration-082 sessions in the DB don't have the column at all -
-    // the backend COALESCE renders them as '' in the SELECT, but this
-    // test guards the mapper fallback too in case the field is missing
-    // from the JSON entirely.
+    // Pre-Migration-082 sessions in the DB don't have the column at all - the backend COALESCE
+    // renders them as '' in the SELECT, but this test guards the mapper fallback too in case the
+    // field is missing from the JSON entirely.
     mockFetchOnce(200, {
       sessions: [
         {

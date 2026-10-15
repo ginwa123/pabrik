@@ -92,10 +92,9 @@ const selectedStaged = ref(false)
 // simply has no hunks to show yet.
 const diffCounts = ref(new Map<string, { added: number; removed: number }>())
 
-// PR mode has no batch fetch to lean on — but it does not need one: the
-// whole PR diff is already in hand as `prFiles[].text`, so the counts are
-// a pure computation over text we already hold. Cached in a computed so a
-// 35-file list does not re-scan 900-line chunks on every re-render.
+// PR mode has no batch fetch to lean on — but it does not need one: the whole PR diff is already in
+// hand as `prFiles[].text`, so the counts are a pure computation over text we already hold. Cached
+// in a computed so a 35-file list does not re-scan 900-line chunks on every re-render.
 const prDiffCounts = computed(() => {
   const counts = new Map<string, { added: number; removed: number }>()
   for (const file of prFiles.value) counts.set(file.path, countDiffLines(file.text))
@@ -217,10 +216,9 @@ const hasPrConflict = computed(() => {
   // GitHub says CONFLICTING / DIRTY.
   if (m === 'CONFLICTING') return true
   if (s === 'DIRTY') return true
-  // GitLab's `detailed_merge_status` has its own vocabulary. Without
-  // these rows a conflicted MR renders as mergeable, which is the worst
-  // direction to be wrong in — the user is told to merge something that
-  // cannot merge.
+  // GitLab's `detailed_merge_status` has its own vocabulary. Without these rows a conflicted MR
+  // renders as mergeable, which is the worst direction to be wrong in — the user is told to merge
+  // something that cannot merge.
   if (m === 'CONFLICTED') return true
   if (m === 'NOT_MERGEABLE') return true
   return false
@@ -233,11 +231,9 @@ const prConflictsUrl = computed(() => conflictsUrl(props.prProvider, props.prUrl
 // Provider-aware vocabulary: "pull request"/"PR"/"GitHub" on GitHub,
 // "merge request"/"MR"/"GitLab" on GitLab.
 const forge = computed(() => forgeWording(props.prProvider))
-// Last GET /api/git/pr/status failure, parsed from the server's
-// `{"error": ...}` body. Empty = unknown yet or last fetch worked.
-// Shown inline (the status fetch is silent:true, so no toast) so a
-// `gh` auth / bad-PR-number failure explains itself instead of just
-// hiding the badge.
+// Last GET /api/git/pr/status failure, parsed from the server's `{"error": ...}` body. Empty =
+// unknown yet or last fetch worked. Shown inline (the status fetch is silent:true, so no toast) so
+// a `gh` auth / bad-PR-number failure explains itself instead of just hiding the badge.
 const prStatusError = ref('')
 let prSeq = 0
 let prPollTimer: number | undefined
@@ -271,11 +267,9 @@ const conflictsOnly = ref(
     try {
       return readConflictsParam()
     } catch {
-      // Same guard and same reason as initialTab: no router means
-      // `route.query` throws, nothing was fetched, and there is no URL to
-      // keep in sync. `false` = show the full PR file list, this panel's
-      // pre-router default — logged rather than swallowed for the same
-      // reason.
+      // Same guard and same reason as initialTab: no router means `route.query` throws, nothing was
+      // fetched, and there is no URL to keep in sync. `false` = show the full PR file list, this
+      // panel's pre-router default — logged rather than swallowed for the same reason.
       console.warn('[SidebarDiffPanel] mounted without a router; defaulting ?conflicts to off')
       return false
     }
@@ -287,10 +281,9 @@ const setConflictsOnly = (on: boolean) => {
   syncConflictsParam(on)
 }
 
-// PR file list, narrowed to the conflicting ones when the filter is on.
-// An empty filter result is a real state (the section says so) — never
-// silently fall back to the full list, which would look like the filter
-// did nothing.
+// PR file list, narrowed to the conflicting ones when the filter is on. An empty filter result is a
+// real state (the section says so) — never silently fall back to the full list, which would look
+// like the filter did nothing.
 const conflictPathSet = computed(() => new Set(prConflictFiles.value))
 const visiblePrFiles = computed(() =>
   conflictsOnly.value
@@ -327,10 +320,9 @@ function pathParts(path: string): { dir: string; name: string } {
   return { dir: path.slice(0, i + 1), name: path.slice(i + 1) }
 }
 
-// Status as a letter chip rather than a colour emoji. Six emoji render at six
-// different pixel sizes next to 12px paths and cannot be asserted on; one
-// letter in a fixed 16px box cannot drift. See AGENTS.md ("No Emoji as
-// Icons").
+// Status as a letter chip rather than a colour emoji. Six emoji render at six different pixel sizes
+// next to 12px paths and cannot be asserted on; one letter in a fixed 16px box cannot drift. See
+// AGENTS.md ("No Emoji as Icons").
 type StatusChip = { letter: string; bg: string; fg: string; title: string }
 
 const STATUS_CHIPS: Record<string, StatusChip> = {
@@ -431,10 +423,9 @@ const worktreeHits = computed(
     filteredUntrackedFiles.value.length,
 )
 
-// Extract the server's `{"error": "..."}` message from an ApiError
-// (apiFetch throws ApiError with the raw body). Falls back to the
-// generic Error message when the body isn't JSON — so callers always
-// show WHY the backend failed instead of a canned string.
+// Extract the server's `{"error": "..."}` message from an ApiError (apiFetch throws ApiError with
+// the raw body). Falls back to the generic Error message when the body isn't JSON — so callers
+// always show WHY the backend failed instead of a canned string.
 const serverErrorMessage = (err: unknown, fallback: string): string => {
   if (err instanceof api.ApiError && err.body) {
     try {
@@ -685,10 +676,9 @@ const loadPrConflicts = async () => {
   }
 }
 
-// The forge says CONFLICTING but our local merge came back clean. Almost
-// always a stale local base ref (we deliberately never `git fetch`). Showing
-// an empty list next to a red badge would read as "nothing to do", so say so
-// instead and point at the ref the answer was computed from.
+// The forge says CONFLICTING but our local merge came back clean. Almost always a stale local base
+// ref (we deliberately never `git fetch`). Showing an empty list next to a red badge would read as
+// "nothing to do", so say so instead and point at the ref the answer was computed from.
 const prConflictUnreproduced = computed(
   () => prConflictLoaded.value && !prConflictError.value && prConflictFiles.value.length === 0,
 )
@@ -707,11 +697,9 @@ const selectPrFile = (file: SplitDiffFile) => {
 }
 
 const onRefreshClick = () => {
-  // Tell ChatView to re-sync the worktree binding first (it may have
-  // changed since mount); then reload this panel. ChatView also calls
-  // back into loadGitStatus via the exposed refresh() when the binding
-  // changed, so a stale-cwd click self-heals instead of re-showing
-  // the old branch.
+  // Tell ChatView to re-sync the worktree binding first (it may have changed since mount); then
+  // reload this panel. ChatView also calls back into loadGitStatus via the exposed refresh() when
+  // the binding changed, so a stale-cwd click self-heals instead of re-showing the old branch.
   emit('refresh')
   void refreshCurrentTab()
 }
@@ -909,10 +897,9 @@ const selectFile = (file: api.GitFileChange, staged: boolean) => {
   void loadDiff()
 }
 
-// Commit-history file click (GitCommits with inline-file-diff=false):
-// fetch the file's unified diff at that commit and show it in ChatView's
-// center column — the same show-diff flow as worktree/PR file rows.
-// Rename rows carry "old -> new"; the diff is fetched for the new side.
+// Commit-history file click (GitCommits with inline-file-diff=false): fetch the file's unified diff
+// at that commit and show it in ChatView's center column — the same show-diff flow as worktree/PR
+// file rows. Rename rows carry "old -> new"; the diff is fetched for the new side.
 const onCommitFileClick = async (payload: { commit: api.GitCommit; file: api.GitCommitFile }) => {
   if (!props.cwd) return
   const rawPath = payload.file.path
@@ -1251,10 +1238,9 @@ onMounted(() => {
   prPollTimer = window.setInterval(() => {
     if (showPr.value) void loadPrStatus()
   }, 30000)
-  // The backend pushes `git_file_staged` / `git_file_unstaged` after every
-  // `git add` / `git restore --staged`, so a +/− click moves ONE row instead
-  // of re-fetching the whole git-status list. A listener that throws must not
-  // take down the SSE client, so the callback is defensive.
+  // The backend pushes `git_file_staged` / `git_file_unstaged` after every `git add` / `git restore
+  // --staged`, so a +/− click moves ONE row instead of re-fetching the whole git-status list. A
+  // listener that throws must not take down the SSE client, so the callback is defensive.
   try {
     const bus = useSseBus()
     unsubscribeFileStage = bus.on('gitFileStage', (event: api.GitFileStageEvent) => {

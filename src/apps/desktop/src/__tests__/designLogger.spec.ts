@@ -102,10 +102,9 @@ describe('designLogger', () => {
     const w = window as unknown as {
       __designLogger?: { on: () => void; off: () => void; status: () => boolean }
     }
-    // The escape hatch is registered at module-load when
-    // `import.meta.env.DEV` is true (vitest's default).
-    // Production-style build: skip the assertion (the escape hatch
-    // is dev-only by design).
+    // The escape hatch is registered at module-load when `import.meta.env.DEV` is true (vitest's
+    // default). Production-style build: skip the assertion (the escape hatch is dev-only by
+    // design).
     if (!w.__designLogger) return
     w.__designLogger.on()
     expect(isDesignLoggerEnabled()).toBe(true)
@@ -114,10 +113,9 @@ describe('designLogger', () => {
   })
 
   it('persists the toggle in localStorage so a reload keeps the setting', () => {
-    // localStorage is jsdom-provided in vitest; the guard below is a
-    // safety net for non-jsdom environments (the original code path
-    // was `expect(true).toBe(true); return` inside the else branch,
-    // which oxlint's no-conditional-expect rejects).
+    // localStorage is jsdom-provided in vitest; the guard below is a safety net for non-jsdom
+    // environments (the original code path was `expect(true).toBe(true); return` inside the else
+    // branch, which oxlint's no-conditional-expect rejects).
     if (typeof localStorage === 'undefined') return
     setDesignLoggerEnabled(true)
     try {

@@ -169,10 +169,9 @@ describe('DesignView group drag — move-batch (server-side cascade)', () => {
     expect(geoBatchSpy).not.toHaveBeenCalled()
     expect(singleSpy).not.toHaveBeenCalled()
 
-    // Wire shape: ONE item per selected element, each carrying the
-    // cursor delta (rounded). Backend cascades the delta to
-    // descendants via the recursive CTE.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // Wire shape: ONE item per selected element, each carrying the cursor delta (rounded). Backend
+    // cascades the delta to descendants via the recursive CTE. eslint-disable-next-line
+    // @typescript-eslint/no-explicit-any
     const callArgs = moveSpy.mock.calls[0] as any[]
     const items = callArgs[3] as Array<{ element_id: string; dx: number; dy: number }>
     expect(items.length).toBe(3)

@@ -197,10 +197,9 @@ describe('VirtualScroller.scrollToPosition', () => {
 
     harness.scrollerRef.value?.scrollToPosition(500)
 
-    // The browser still sets scrollTop, but the scroller's own
-    // method should have been a no-op. With max <= 0, the spec is
-    // "no scroll needed" — the value stays at 0 because there's
-    // nothing to scroll past.
+    // The browser still sets scrollTop, but the scroller's own method should have been a no-op.
+    // With max <= 0, the spec is "no scroll needed" — the value stays at 0 because there's nothing
+    // to scroll past.
     expect(harness.container.scrollTop).toBe(0)
     harness.wrapper.unmount()
   })

@@ -186,10 +186,9 @@ const DiffSplitSide = defineComponent({
           h(
             'div',
             {
-              // The shared sizing wrapper: shrink-wraps to the widest
-              // row's content, floored at 100% of the scroll container
-              // (the pane). This is computed ONCE for the whole pane, so
-              // every row below inherits the same final width.
+              // The shared sizing wrapper: shrink-wraps to the widest row's content, floored at
+              // 100% of the scroll container (the pane). This is computed ONCE for the whole pane,
+              // so every row below inherits the same final width.
               style: { width: 'max-content', minWidth: '100%' },
             },
             props.rows.map((row, idx) => renderSplitRow(row, idx, props.side, props.language)),

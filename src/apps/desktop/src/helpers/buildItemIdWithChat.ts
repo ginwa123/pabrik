@@ -35,8 +35,7 @@ export function buildItemIdWithChat(itemId: string, chatTaskId: string | null): 
 }
 
 /**
- * Parse a raw `itemId` query value into a bare item id and an
- * optional chat task id.
+ * Parse a raw `itemId` query value into a bare item id and an optional chat task id. /
  */
 export function parseItemIdWithChat(raw: string): {
   itemId: string

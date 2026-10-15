@@ -20,9 +20,8 @@ import { mount } from '@vue/test-utils'
 import DesignPageRow from '../components/workspace/DesignPageRow.vue'
 import type { DesignPage } from '../api'
 
-// Stub vue-router — DesignPageRow reads useRoute() via useCurrentMainView()
-// to drive its active state. Mirrors the pattern at
-// sidebarHandleSelectTaskUrl.spec.ts:57-77. Default = empty route (no
+// Stub vue-router — DesignPageRow reads useRoute() via useCurrentMainView() to drive its active
+// state. Mirrors the pattern at sidebarHandleSelectTaskUrl.spec.ts:57-77. Default = empty route (no
 // active state); tests that need the active styling override per-test.
 const { useRouteMock } = vi.hoisted(() => ({
   useRouteMock: vi.fn(() => ({
@@ -187,10 +186,9 @@ describe('DesignPageRow.vue', () => {
   })
 
   it('clicking the ⋮ trigger does NOT emit selectPage (stopPropagation)', async () => {
-    // Regression: without @click.stop on the menu trigger, the outer
-    // row's click handler would also fire when the menu is opened,
-    // causing the user to navigate to the page right before the
-    // menu appears.
+    // Regression: without @click.stop on the menu trigger, the outer row's click handler would also
+    // fire when the menu is opened, causing the user to navigate to the page right before the menu
+    // appears.
     const wrapper = mountRow({
       page: makePage({ id: 'page_noop' }),
       isActivePage: false,

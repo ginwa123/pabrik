@@ -51,27 +51,22 @@ import { abbrevElement, designLogger } from '../../helpers/designLogger'
 const props = withDefaults(
   defineProps<{
     element: DesignElement
-    // Single-element shortcut (kept for backward compat with tests +
-    // simple use cases). True iff `selectedIds` has exactly this
-    // element and nothing else. The wrapper's `.selected` class is
-    // applied iff this is true OR the element is in a multi-selection
-    // that includes it.
+    // Single-element shortcut (kept for backward compat with tests + simple use cases). True iff
+    // `selectedIds` has exactly this element and nothing else. The wrapper's `.selected` class is
+    // applied iff this is true OR the element is in a multi-selection that includes it.
     selected?: boolean
-    // The full selection set (Figma multi-select model). When non-empty
-    // AND this element's id is in it, render the violet outline + resize
-    // handles. When only `selected === true` (no multi-selection context),
-    // the wrapper renders the legacy single-selection chrome.
+    // The full selection set (Figma multi-select model). When non-empty AND this element's id is in
+    // it, render the violet outline + resize handles. When only `selected === true` (no
+    // multi-selection context), the wrapper renders the legacy single-selection chrome.
     selectedIds?: string[]
     readonly?: boolean
-    // Current canvas zoom level (1.0 = 100%). When the canvas is
-    // CSS-scaled via `transform: scale(zoom)`, the cursor delta
-    // (screen-px) and the model's element coordinates (design-px)
+    // Current canvas zoom level (1.0 = 100%). When the canvas is CSS-scaled via `transform:
+    // scale(zoom)`, the cursor delta (screen-px) and the model's element coordinates (design-px)
     // differ — drag/resize math divides by zoom to keep them aligned.
     zoom?: number
-    // IDs needed to lazy-load the element's HTML body from the
-    // backend (the page+elements GET response excludes the body to
-    // keep payloads small). Defaults are empty so the component
-    // can mount without them; fetchHtml is a no-op when any is missing.
+    // IDs needed to lazy-load the element's HTML body from the backend (the page+elements GET
+    // response excludes the body to keep payloads small). Defaults are empty so the component can
+    // mount without them; fetchHtml is a no-op when any is missing.
     workspaceId?: string
     itemId?: string
     pageId?: string
@@ -150,10 +145,9 @@ const emit = defineEmits<{
   // parent can clear its snap guides. Fires after both the single-
   // element drag and the multi-selection group drag paths.
   dragEnd: []
-  // Undo/redo plan: emit on drag-start so the parent can capture
-  // pre-state for the eventual undo entry. Carries the moved
-  // ids so the parent can capture the full selection (not just
-  // this element).
+  // Undo/redo plan: emit on drag-start so the parent can capture pre-state for the eventual undo
+  // entry. Carries the moved ids so the parent can capture the full selection (not just this
+  // element).
   dragStart: [ids: string[]]
   htmlChanged: [html: string]
   delete: [elementId: string]
@@ -201,11 +195,9 @@ const isDragging = ref(false)
 // page elements (mirrored from the backend's `design_elements` array).
 const workspacesStore = useWorkspacesStore()
 
-// True when this element is nested inside a parent group/frame. The
-// backend's `COALESCE(parent_id, '')` returns '' for top-level rows,
-// non-empty for nested rows. Legacy / pre-migration shapes may
-// return `null` or `undefined` — both are treated as top-level so
-// legacy elements remain draggable.
+// True when this element is nested inside a parent group/frame. The backend's `COALESCE(parent_id,
+// '')` returns '' for top-level rows, non-empty for nested rows. Legacy / pre-migration shapes may
+// return `null` or `undefined` — both are treated as top-level so legacy elements remain draggable.
 const isChildOfGroup = computed(() => {
   const pid = props.element.parent_id
   return !!pid && pid !== ''
@@ -483,10 +475,9 @@ const startDrag = (event: PointerEvent, mode: DragMode): void => {
         target.releasePointerCapture(e.pointerId)
       }
       isDragging.value = false
-      // Trailing emit: capture the final position regardless of throttle.
-      // Use INCREMENTAL delta so the server's last ADD lands exactly
-      // on the cursor's end position. Without this the trailing emit
-      // would re-apply the FULL cumulative (compounding again).
+      // Trailing emit: capture the final position regardless of throttle. Use INCREMENTAL delta so
+      // the server's last ADD lands exactly on the cursor's end position. Without this the trailing
+      // emit would re-apply the FULL cumulative (compounding again).
       const incDx = pendingDx - lastEmittedDx
       const incDy = pendingDy - lastEmittedDy
       emit('groupDrag', { dx: incDx, dy: incDy })
@@ -574,9 +565,8 @@ const startDrag = (event: PointerEvent, mode: DragMode): void => {
     width: props.element.width,
     height: props.element.height,
   }
-  // Overwrite the drag:start:move info above with a more-specific
-  // reason (resize vs move) using `mode`. The earlier info line is
-  // a redundancy safety net in case this code path throws before
+  // Overwrite the drag:start:move info above with a more-specific reason (resize vs move) using
+  // `mode`. The earlier info line is a redundancy safety net in case this code path throws before
   // reaching here.
   designLogger.info({
     reason: mode === 'move' ? 'drag:start:move' : 'drag:start:resize',
@@ -813,10 +803,9 @@ onUpdated(() => {
 import { onUnmounted } from 'vue'
 
 const handleKeydown = (e: KeyboardEvent): void => {
-  // Chunk 2: gate on the full selection set, not just this element's
-  // `selected` flag. When the user has multi-selected several elements
-  // via Shift+click, hitting Delete should remove ALL of them — even
-  // though only ONE of them is the "active" one with `selected: true`.
+  // Chunk 2: gate on the full selection set, not just this element's `selected` flag. When the user
+  // has multi-selected several elements via Shift+click, hitting Delete should remove ALL of them —
+  // even though only ONE of them is the "active" one with `selected: true`.
   if (props.selectedIds.length === 0 && !props.selected) return
   if (props.readonly) return
   if (e.key !== 'Delete' && e.key !== 'Backspace') return

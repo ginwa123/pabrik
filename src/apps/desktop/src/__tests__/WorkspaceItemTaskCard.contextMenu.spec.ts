@@ -18,10 +18,9 @@ import { makeLocalStorageStub } from './helpers'
 
 const ITEM_ID = 'item_1'
 
-// Typed factory rather than a bare literal: KanbanColumn carries
-// workspace_item_id + created_at, and a plain object literal silently
-// drifts from the interface the component actually receives. Same
-// shape as makeColumn() in KanbanView.rowMode.spec.ts / KanbanRowView.spec.ts.
+// Typed factory rather than a bare literal: KanbanColumn carries workspace_item_id + created_at,
+// and a plain object literal silently drifts from the interface the component actually receives.
+// Same shape as makeColumn() in KanbanView.rowMode.spec.ts / KanbanRowView.spec.ts.
 const makeColumn = (overrides: Partial<KanbanColumn> = {}): KanbanColumn => ({
   id: 'col_todo',
   workspace_item_id: ITEM_ID,
@@ -134,10 +133,9 @@ describe('WorkspaceItemTaskCard — context menu', () => {
   })
 
   it('view details emits viewTaskDetail and does NOT also open the chat', async () => {
-    // The propagation trap: the old info button had to stopPropagation so
-    // the card root's @click didn't fire too. The teleported menu can't
-    // bubble to the card, so this asserts the behaviour survived the
-    // rewrite rather than relying on the stopPropagation.
+    // The propagation trap: the old info button had to stopPropagation so the card root's @click
+    // didn't fire too. The teleported menu can't bubble to the card, so this asserts the behaviour
+    // survived the rewrite rather than relying on the stopPropagation.
     const wrapper = mountCard({ id: 't1', name: 'Alpha' })
     await openMenu(wrapper)
     await clickItem('kanban-task-context-menu-details')

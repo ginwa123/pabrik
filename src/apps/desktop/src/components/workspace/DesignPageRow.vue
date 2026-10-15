@@ -90,20 +90,18 @@ const isCurrentMainView = computed(
     currentMainView.value.kind === 'workspace' && currentMainView.value.pageId === props.page.id,
 )
 
-// ⋮ menu state — mirrors the kanban-column ⋮ menu pattern
-// (kanban-sort-by plan, 2026-08-06). The dropdown closes when the
-// user clicks anywhere outside the menuRef container (document
-// mousedown handler attached on open, removed on close).
+// ⋮ menu state — mirrors the kanban-column ⋮ menu pattern (kanban-sort-by plan, 2026-08-06). The
+// dropdown closes when the user clicks anywhere outside the menuRef container (document mousedown
+// handler attached on open, removed on close).
 const menuOpen = ref(false)
 const menuRef = ref<HTMLElement | null>(null)
 
 const toggleMenu = () => {
   menuOpen.value = !menuOpen.value
   if (menuOpen.value) {
-    // Attach the document listener lazily so the menu works
-    // even when the component is mounted with menuOpen=false
-    // (the default). Removed on close to avoid leaking global
-    // listeners across the row list.
+    // Attach the document listener lazily so the menu works even when the component is mounted with
+    // menuOpen=false (the default). Removed on close to avoid leaking global listeners across the
+    // row list.
     document.addEventListener('mousedown', handleClickOutside)
   } else {
     document.removeEventListener('mousedown', handleClickOutside)
