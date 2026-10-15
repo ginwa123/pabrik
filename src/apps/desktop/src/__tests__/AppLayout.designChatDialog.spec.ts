@@ -182,7 +182,6 @@ describe('AppLayout — design chat dialog mount', () => {
   })
 
   // Mock the API calls in init() so they preserve the per-test fixture.
-
   // Each test calls this AFTER setting store.workspaces = [...] and
   // BEFORE mount, so init() doesn't wipe the fixture.
   function rewireApiForFixture(store: ReturnType<typeof useWorkspacesStore>) {
@@ -262,10 +261,10 @@ describe('AppLayout — design chat dialog mount', () => {
 
     // THE FIX: the dialog now gates on `activeDesignChatTaskId` (a local ref set by
     // handleDesignOpenChat from the workspaceItemTaskId FK), and uses a synthetic Task object for
-    // ChatView's API. This test simulates the full bug
+    // ChatView's API.
 
-    // scenario: design item with NO tasks (production state),
-    // user clicks 💬, dialog should appear.
+    // This test simulates the full bug scenario: design item with NO tasks (production state), user
+    // clicks 💬, dialog should appear.
     const store = useWorkspacesStore()
     store.workspaces = [
       {

@@ -16,7 +16,6 @@ import DiffThreads from './DiffThreads.vue'
 /** Shared full diff view: file header (collapse toggle, back/filename/stats, scope + mode, Open),
  * loading/error/empty states, the unified OR split render of the hunks, and the review mini-chat
  * popup. Presentational — data flows in via props, user actions flow out via emits. */
-
 /** Used full-height in ChatView's centre column; the sidebar panel is list-only. */
 const props = defineProps<{
   path: string
@@ -167,7 +166,6 @@ const openBoxAtRange = (start: number, end: number, context: string) => {
 }
 
 /** Open the review box for the line at `lineIdx` in the rendered lines. */
-
 /** Both renders funnel through here: unified passes the clicked row's index, split passes the
  * clicked side's SOURCE index — which is the same index space when whole-file scope replaced the
  * line list, because the split rows are paired from those very lines. */

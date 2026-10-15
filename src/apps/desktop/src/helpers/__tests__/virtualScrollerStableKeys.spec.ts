@@ -1,15 +1,12 @@
 /** Regression tests for the stable-key height cache (2026-08-26, follow-up to PR #349). Bug:
  * heights were keyed by ARRAY INDEX. ChatView renders `messageGroups` — a computed that
  * re-merges/re-filters on every SSE event. */
-
 /** A group-count change (thinking-only row dropped, tool row arriving, streaming row swapped)
  * SHIFTS every later index; the stored height for index k then described a DIFFERENT row (a 40px
  * tool-card height on a 2000px markdown message and vice versa). */
-
 /** The sizer became the sum of mismatched heights → wildly too tall → stick-to-bottom landed in
  * blank space (user screenshots: fully blank viewport with only the error card visible). Fix:
  * optional `itemKey` prop; heights keyed by stable identity. */
-
 /** A row keeps its own height wherever it moves — index shifts are harmless. */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'

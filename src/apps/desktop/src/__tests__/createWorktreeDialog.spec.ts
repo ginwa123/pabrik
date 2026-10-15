@@ -24,10 +24,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 
 // ─── Mocks ─────────────────────────────────────────────────────────────────
-
 // Stub the FilePickerDialog — we only care that the parent wires up the picker's events. Real
 // picker behavior is tested in FilePickerDialog.spec.ts.
-
 // IMPORTANT: the mock must use `modelValue` (not `show`) because the parent uses
 // `v-model="showPicker"` (no argument), which compiles to :modelValue="showPicker"
 // @update:modelValue="showPicker = $event". A prop named `show` would not be wired to v-model.

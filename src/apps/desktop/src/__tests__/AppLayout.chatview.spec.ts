@@ -138,11 +138,11 @@ describe('AppLayout — ?view=chat&session=X renders <ChatView>, not <Chats/> (r
     // paths).
 
     // Without these, jsdom's fetch throws an ERR_INVALID_URL on every test (no test server) — the
-    // error is caught by AppLayout's own try/catch so the test still
+    // error is caught by AppLayout's own try/catch so the test still passes, but it floods the
+    // output.
 
-    // passes, but it floods the output. Boot rewrite for ?view=chat resolves the owning workspace
-    // via the session-detail endpoint. Mock it so the async rewrite completes within the test's
-    // ticks (a real fetch would stall).
+    // Boot rewrite for ?view=chat resolves the owning workspace via the session-detail endpoint.
+    // Mock it so the async rewrite completes within the test's ticks (a real fetch would stall).
     vi.spyOn(api, 'getSessionWorkspaceId').mockResolvedValue('ws_chatview')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     vi.spyOn(api, 'getSession').mockResolvedValue({ cwd: '' } as any)

@@ -12,7 +12,6 @@
 // one buckets into "5m" / "2h" / "3d" and collapses everything under a
 // minute to "now", which is useless for a run that has been going for
 // 40 seconds. A running worker needs second-level resolution.
-
 /** Seconds of silence after which a running worker reads as stale. */
 export const WORKER_STALE_SECONDS = 300
 

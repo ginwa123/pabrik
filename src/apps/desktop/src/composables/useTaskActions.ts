@@ -38,14 +38,12 @@ export interface TaskComponentProps {
   workspaceId: string
   itemId: string
   /** Where to render the 2px yellow drop indicator on this row/card. */
-
   /** Set by the parent <WorkspaceItem> while the user is dragging another pinned row over this one
    * — 'above' draws the line on the top edge (insert-before), 'below' on the bottom edge
    * (insert-after), null means no indicator. */
   dropIndicator?: 'above' | 'below' | null
   /** Absolute path used as the root for `@`-trigger file pickers in descendant editors / markdown
    * renderers. Optional — task-list callers in <WorkspaceItem> don't pass it (no kanban context). */
-
   /** The kanban column passes it through so `@/path` references in the card's description resolve
    * against the kanban's filesystem path. */
   cwd?: string
@@ -68,7 +66,6 @@ export interface TaskComponentProps {
  * site. The handlers inside the composable still pass typed args to
  * `emit(...)`, so the contract is preserved end-to-end.
  */
- 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; the surrounding type is intentionally opaque.
 export type EmitFn = (event: any, ...args: any[]) => void
 

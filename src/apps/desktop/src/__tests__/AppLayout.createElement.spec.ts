@@ -230,11 +230,9 @@ describe('AppLayout.handleDesignCreateElement wire (bug: add element manual not 
 
     // The handler is exposed via defineExpose so we can invoke the SAME function the
     // @create-element template binding routes to.
-
     // If AppLayout's <DesignView> is missing @create-element, the template binding is dropped — but
     // the function itself (this same closure) still works for any caller that does fire it (e.g. a
     // future programmatic API).
-
     // This is the LOWER BOUND: we prove the handler is wired correctly and would route the payload
     // end-to-end if it were ever invoked.
     const exposed = wrapper.vm as unknown as {
@@ -260,10 +258,8 @@ describe('AppLayout.handleDesignCreateElement wire (bug: add element manual not 
   })
 
   it('is a quiet no-op when activeWorkspace or activeWorkspaceItem is missing', async () => {
-    // AppLayout's handler guards on the active workspace + item. If
-    // either is missing (race window during workspace/item switch)
-    // the handler must NOT call the api. Defensive guard matches
-     
+    // AppLayout's handler guards on the active workspace + item. If either is missing (race window
+    // during workspace/item switch) the handler must NOT call the api. Defensive guard matches
     // handleDesignUpdateElement / handleDesignDeleteElement.
     const store = useWorkspacesStore()
     // No activeWorkspace/Item set — the guard fires and bails.

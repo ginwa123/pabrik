@@ -1,15 +1,12 @@
 /** Zero-dependency code highlighter for read-only diff output. `detectLanguage` is the repo's
  * single extension→language table (moved verbatim from `CodeEditor.vue` so the diff card and the
  * full editor agree on language). */
-
 /** `highlightLine` is a small per-line regex scanner that splits a line into typed tokens; callers
  * render each token as a `<span class="tok-*">` and keep the row red/green background as the source
  * of truth for removed/added. */
-
 /** Token palette mirrors the `pabrik-dark` monaco theme in CodeEditor.vue: comment #7a8382 italic,
  * keyword #8992a7, string #87a987, number #c4b28a, type #8ba4b0, function #8ea4a2, plain inherits.
  * Safety: this module only *splits* text — it never builds HTML strings. */
-
 /** Render tokens as Vue text nodes (`h('span', {class}, token.text)`) so escaping stays with the
  * framework. Unknown / plaintext language returns a single `plain` token (callers render exactly as
  * before). */
@@ -342,7 +339,6 @@ export function highlightLines(lines: readonly string[], language: string): Toke
 /** Tokenize every line of one file for a render site that only knows the path — the diff reviews,
  * the git viewers. Pairing `detectLanguage` with `highlightLine` happens exactly once, here, so a
  * new code surface cannot drift from the others. */
-
 /** The result is parallel to `lines`: index it with the same row index the caller renders. A
  * `null`/unknown path yields `plaintext`, whose tokens are a single `plain` entry — byte-identical
  * to the un-highlighted rendering this replaced. */

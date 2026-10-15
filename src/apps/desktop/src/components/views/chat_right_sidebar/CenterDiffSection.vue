@@ -7,7 +7,6 @@ import type { ParsedDiffLine } from './parseUnifiedDiff'
 /** One lazily-mounted file section of the stacked center diff. The shell (id anchor +
  * content-visibility sizing) renders immediately so scroll position stays stable; the heavy
  * SidebarDiffView mounts when the section nears the viewport (400px prefetch margin). */
-
 /** A fixed-height placeholder holds layout until then. */
 const props = defineProps<{
   sectionId: string
@@ -65,11 +64,9 @@ onMounted(() => {
 /** Expanding a section must mount its body NOW. The observer is the only automatic gate, and a
  * COLLAPSED section never intersects — so relying on it alone would leave a section the user just
  * expanded as an empty stub, i.e. "expand all" would appear to do nothing. */
-
 /** The transition is what matters, not the value: `props.collapsed === false` at mount is today's
  * behaviour (the observer decides), while a real collapsed → expanded flip is the user asking for
  * this file's diff. */
-
 /** The flip is owned by the parent (this component only emits `toggle-collapse`), so it is picked
  * up here with a prev-value guard on update — same collapsed → expanded transition the watcher
  * caught. */

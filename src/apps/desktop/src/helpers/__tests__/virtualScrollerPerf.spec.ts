@@ -186,11 +186,12 @@ describe('AdaptiveItemHeightEstimator', () => {
     est.freeze()
     expect(est.estimate()).toBe(200)
 
-    // A whole window of much SHORTER rows arrives — exactly what scrolling
-    // into a run of one-liners does. The placeholder must not follow: the
-    // scroller multiplies it by the never-rendered item count, so following
-    // would rescale the list and the anchor compensation would turn that
-    // rescale into a scrollTop write.
+    // A whole window of much SHORTER rows arrives — exactly what scrolling into a run of one-liners
+    // does.
+
+    // The placeholder must not follow: the scroller multiplies it by the never-rendered item count,
+    // so following would rescale the list and the anchor compensation would turn that rescale into
+    // a scrollTop write.
     for (let i = 0; i < 8; i++) est.observe(40)
     expect(est.estimate()).toBe(200)
   })

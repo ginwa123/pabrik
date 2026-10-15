@@ -79,7 +79,6 @@ export type ParsedAppPath =
 /** First path segments that are route keywords, never workspace ids. Without this,
  * `/app/chat/sess_9` would parse as workspace `chat` — the legacy routes must stay `{ kind: 'other'
  * }` so the boot rewrite (not the normal view derivation) handles them. */
-
 /** `doc` is here for a different reason: a bare `/app/doc` is a malformed document URL, and
  * silently reading it as a workspace named "doc" would boot the user into a workspace that does not
  * exist. */
@@ -132,10 +131,8 @@ export function buildAppUrl(input: AppUrlTarget): AppUrlLocation {
 
 /** Where Settings lives, given the workspace in scope and a remembered section. The workspace rides
  * in the PATH, so no settings page ever has to guess which workspace it is about. */
-
 /** `/app/settings` - the user scope, General only, the one settings surface that genuinely is not
  * about any workspace - is the answer only when nothing names a workspace at all. */
-
 /** `section` is whatever the CALLER wants opened; the page itself ignores an id it does not render
  * and falls back to its stored/default section, so a stale value cannot render the wrong tab. */
 export function buildSettingsUrl(
@@ -188,7 +185,6 @@ export function isAppPath(rawPath: string): boolean {
 
 /** Path-shaped twin of `buildTaskUrlQuery` (same `TaskUrlContext` input, same
  * workspace/item/pageId/sorts resolution incl. URL breadcrumb fallback). */
-
 /** Emits `/app/{ws}/projects/{item}/chat/{task}` instead of the `?view=workspace&itemId=Y/chat/T`
  * query object, so overlay-close handlers and task navigations don't duplicate the resolution
  * rules. The `view` key `buildTaskUrlQuery` always emits is dropped — the path carries it. */

@@ -1,20 +1,15 @@
 /** Regression tests for the 2026-08-23 "hidden messages" fix. Background: several classes of
  * legitimately-saved messages were invisible in the chatview: F1. */
-
 /** `filteredMessages` dropped ANY message whose stripThinkingTags(content) was empty — including
  * image-only user messages (content='' + image_urls) and role='tool' rows whose cards render from
  * tool_name + envelope, not raw content. F2. */
-
 /** The user-group template rendered ONLY group.messages[0] — consecutive user messages beyond the
  * first were invisible. F3. No optimistic push of the user's own message on send — the bubble
  * appeared only after the SSE echo / history refresh. */
-
 /** B4(frontend). reasoning_content was console.log-only — thinking models' output never rendered. */
-
 /** The runtime paths are wired through Vue reactivity inside a 3500-line SFC (hard to mount in
  * isolation without the full ChatView harness — see ChatView.updatePlan.spec.ts for the heavyweight
  * variant). */
-
 /** These tests lock the SOURCE-LEVEL invariants so a refactor that reverts any fix is caught
  * immediately, following the project's source-grep convention (sseIsInputOutput.spec.ts). */
 import { describe, it, expect } from 'vitest'

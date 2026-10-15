@@ -1,10 +1,8 @@
 /** Tests for AddMemoryDialog — the modal that creates a new LOCAL memory file (at
  * `<cwd>/.pabrik/memories/<name>.md`). */
-
 /** Mirrors AddItemDialog.spec.ts's structure: covers the open/close lifecycle, the name + content
  * inputs, the folder picker (defaults from the cwd prop but can be changed by the user), the
  * validation rules (mirror of `memories.isValidMemoryName`), and the create event shape. */
-
 /** Mocks the api module so no network calls happen, and stubs FilePickerDialog (the real picker is
  * tested separately). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'

@@ -1,26 +1,20 @@
 /** Regression specs for the many-messages glitch audit (task_1788648119245_5: bounce / tall gap /
  * blank / shrink). Three independent failure mechanisms, one spec each: T1 — sizer must be
  * position-independent. */
-
 /** `sizerHeight` used to read `visibleRange` (a function of scrollTop) in its at-bottom branch,
  * expanding to `topSpacer + realContentHeight` where realContentHeight was STALE (the template ref
  * callback only fires on mount/replace, never on child updates — so it describes an OLD window). */
-
 /** Scrolling to the bottom with a stale tall window height blew the sizer up ~3x; scrolling up
  * collapsed it back to the model total. That expand↔collapse IS the bounce. Invariant: settled
  * sizer == modelTotal, everywhere. T2 — unmeasured tail must not collapse the sizer. */
-
 /** `estimateHeight` returned static 64px for every unmeasured item while real chat bubbles are
  * ~400px. With 100 messages the model total (and hence the sizer + scrollHeight) collapsed to less
  * than half the real height — the "list becomes small" symptom. */
-
 /** The adaptive median estimator must back unmeasured items. T3 — streaming→DB id swap must not
  * lose measured heights. */
-
 /** ChatView's groupKey is group.messages[0].id; on message-complete the `streaming-*` row is
  * replaced by the canonical DB row (new id, new key, no stored height) so the sizer suddenly
  * shrinks by (real − 64). */
-
 /** The scroller exposes rekeyHeight(oldKey, newKey) so ChatView can transfer the height at the swap
  * site. */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'

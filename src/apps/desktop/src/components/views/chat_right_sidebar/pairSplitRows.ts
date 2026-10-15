@@ -2,7 +2,6 @@ import type { ParsedDiffLine } from './parseUnifiedDiff'
 
 /** A row of the side-by-side (split) diff render. `oldText` / `newText` are the line bodies with
  * the diff prefix already stripped (that is what `parseUnifiedDiff` hands over). */
-
 /** A `null` side is a FILLER cell — the row is taller than one of the two files at that point (a
  * pure insertion has no old side; a pure deletion has no new side). Renderers must paint a filler
  * as empty, never as an unchanged line. */
@@ -24,14 +23,11 @@ export interface SplitRow {
 }
 
 /** Project a parsed unified diff onto side-by-side rows. */
-
 /** Inside one hunk git emits a removal run followed by an insertion run, so a change block is
  * paired INDEX-WISE: the 1st removal with the 1st insertion, the 2nd with the 2nd, and whatever is
  * left over on the longer side gets a filler cell opposite it. */
-
 /** That is deliberately naive (no similarity scoring — a rename block pairs by position, not by
  * looking alike) because it is predictable and it is what the reader can verify by eye. */
-
 /** Hunk headers span the full width; context (and empty) lines render on both sides with their own
  * old/new numbers, which is what makes the two gutters independently readable. Pure: no DOM, no IO.
  * Same input ⇒ same output. */
@@ -105,7 +101,6 @@ export function pairSplitRows(lines: ParsedDiffLine[]): SplitRow[] {
 /** Map every source line index to the split row that carries it. `SidebarDiffView` anchors review
  * threads to a source index; this is how the split render finds the right row for a thread the user
  * left in unified mode (and vice versa). */
-
 /** A row's indexes are unique and rows never share one, so the map is exact. */
 export function splitRowIndexBySourceIndex(rows: SplitRow[]): Map<number, number> {
   const map = new Map<number, number>()

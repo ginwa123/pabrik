@@ -1,11 +1,9 @@
 /** Unit tests for the kanban API client (createKanban, listKanbanColumns, addKanbanColumn,
  * updateKanbanColumn, deleteKanbanColumn, moveTask). Mocks global.fetch to assert URL, method, body
  * shape, and error handling without hitting the network. */
-
 /** Mirrors the apiMemories.spec.ts style: same mockFetchOnce helper (with `text()` so apiFetch's
  * non-OK path can extract the body for the error toast) and `setActivePinia(createPinia())` in
  * `beforeEach` (apiFetch calls `useNotificationStore()` on every non-2xx). */
-
 /** Plan: docs/superpowers/plans/2026-06-21-workspace-item-kanban.md Chunk 4 / Task 4.2 */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'

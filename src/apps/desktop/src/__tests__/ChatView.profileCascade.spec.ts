@@ -63,11 +63,9 @@ function makeStubClient(initial: SseState): SseClient {
   return stub as SseClient
 }
 
-// ─── mocks ────────────────────────────────────────────────────────────────
-
-// Per-test overrides via setup() so each test can change
-// getPabrikConfig / getSession responses without re-mounting the global
-// vi.mock() harness.
+// ─── mocks ──────────────────────────────────────────────────────────────── Per-test overrides via
+// setup() so each test can change getPabrikConfig / getSession responses without re-mounting the
+// global vi.mock() harness.
 
 function installChatViewMocks(opts: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -104,11 +102,9 @@ function installChatViewMocks(opts: {
   vi.spyOn(api, 'getPabrikConfig').mockResolvedValue(opts.config ?? { profiles: {} })
 }
 
-// ─── mount helper ────────────────────────────────────────────────────────
-
-// Mounts ChatView with the provided sessionId. Returns the wrapper plus
-// resolved refs once the component is mounted and the initial
-// async data (getPabrikConfig + getSession) has resolved.
+// ─── mount helper ──────────────────────────────────────────────────────── Mounts ChatView with
+// the provided sessionId. Returns the wrapper plus resolved refs once the component is mounted and
+// the initial async data (getPabrikConfig + getSession) has resolved.
 async function mountChatViewWithSession(sessionId: string) {
   const processingState = ref<Record<string, boolean>>({})
 

@@ -98,11 +98,9 @@ const { handleSelectTask, handleDeleteTask, handleRenameTask, handlePinToggle } 
   emit,
 )
 
-// ─── Active state ──────────────────────────────────────────────────────────
-
-// URL-driven, like the sidebar row: the highlight must survive refresh,
-// deep links and Back/Forward, so it is derived from the route rather
-// than from a store flag that can drift.
+// ─── Active state ────────────────────────────────────────────────────────── URL-driven, like the
+// sidebar row: the highlight must survive refresh, deep links and Back/Forward, so it is derived
+// from the route rather than from a store flag that can drift.
 const currentMainView = useCurrentMainView()
 const isActive = computed(
   () =>

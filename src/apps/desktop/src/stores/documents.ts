@@ -52,23 +52,19 @@ export const useDocumentsStore = defineStore('documents', () => {
 
   const toMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
-  /**
-   * Cache-first list load, then revalidate — the shape ChatsList uses for
-   * the sidebar's Recent chats.
-   *
-   * The cache paint comes first and clears `loading`, so a returning user
-   * sees document titles immediately instead of an empty section while the
-   * network answers. `loaded` is set on the cache paint too: a cached list
-   * of zero documents is still "loaded, and there are none", which is what
-   * keeps the empty state honest instead of flashing "Loading".
-   *
-   * The revalidation is a FULL replace rather than a merge: `listDocuments`
-   * returns the whole workspace, so a document deleted elsewhere has to
-   * disappear. A merge would keep it in the store forever.
-   *
-   * Failure is still not emptiness. A failed revalidation leaves the cached
-   * rows on screen and records `error`; it never blanks the list.
-   */
+  /** Cache-first list load, then revalidate — the shape ChatsList uses for the sidebar's Recent
+   * chats. The cache paint comes first and clears `loading`, so a returning user sees document
+   * titles immediately instead of an empty section while the network answers. */
+
+  /** `loaded` is set on the cache paint too: a cached list of zero documents is still "loaded, and
+   * there are none", which is what keeps the empty state honest instead of flashing "Loading". */
+
+  /** The revalidation is a FULL replace rather than a merge: `listDocuments` returns the whole
+   * workspace, so a document deleted elsewhere has to disappear. A merge would keep it in the store
+   * forever. Failure is still not emptiness. */
+
+  /** A failed revalidation leaves the cached rows on screen and records `error`; it never blanks
+   * the list. */
   async function fetchDocuments(workspaceId: string): Promise<void> {
     if (!workspaceId) return
     loading.value = true

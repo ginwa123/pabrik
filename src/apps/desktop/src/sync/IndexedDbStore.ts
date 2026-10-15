@@ -1,19 +1,16 @@
-/**
- * `IndexedDbStoreLive` — the production `SyncStore` Layer.
- *
- * One service, one database connection, three object stores. The previous
- * shape gave every engine its own `IndexedDbStore` instance, so the same
- * `pabrik-sync` file was opened three times (once per engine) with the
- * object-store name baked into the instance. Passing the store name per
- * call removes that duplication.
- *
- * The adapter keeps an in-memory mirror of everything it writes, exactly as
- * before, so a browser with IndexedDB disabled (or a rejected open) still
- * serves reads. It is now honest about failures though: an IndexedDB error
- * surfaces as `SyncStorageError` on the error channel instead of being
- * swallowed into a silent empty result, and the engine decides whether to
- * degrade. That decision previously lived in a bare `catch {}`.
- */
+/** `IndexedDbStoreLive` — the production `SyncStore` Layer. One service, one database connection,
+ * three object stores. */
+
+/** The previous shape gave every engine its own `IndexedDbStore` instance, so the same
+ * `pabrik-sync` file was opened three times (once per engine) with the object-store name baked into
+ * the instance. Passing the store name per call removes that duplication. */
+
+/** The adapter keeps an in-memory mirror of everything it writes, exactly as before, so a browser
+ * with IndexedDB disabled (or a rejected open) still serves reads. */
+
+/** It is now honest about failures though: an IndexedDB error surfaces as `SyncStorageError` on the
+ * error channel instead of being swallowed into a silent empty result, and the engine decides
+ * whether to degrade. That decision previously lived in a bare `catch {}`. */
 import { Effect, Layer } from 'effect'
 import { SyncStorageError } from './SyncError'
 import { SyncStore, type SyncStoreShape, sortNewestFirst } from './SyncStore'
@@ -22,18 +19,15 @@ import { getCurrentUserId } from '../helpers/userScope'
 
 const DB_NAME = 'pabrik-sync'
 
-/**
- * Per-user database name.
- *
- * The sync cache holds full message bodies, so one shared database means
- * B inherits A's cached chats. Splitting the DATABASE (rather than adding a
- * `userId` to every key path) needs no schema or key migration and makes a
- * cross-user read impossible by construction — the other user's rows are in
- * a different database.
- *
- * No identity (auth off, or `/api/auth/me` unresolved) keeps the legacy
- * `pabrik-sync` name, so the auth-off path is unchanged.
- */
+/** Per-user database name. The sync cache holds full message bodies, so one shared database means B
+ * inherits A's cached chats. */
+
+/** Splitting the DATABASE (rather than adding a `userId` to every key path) needs no schema or key
+ * migration and makes a cross-user read impossible by construction — the other user's rows are in a
+ * different database. */
+
+/** No identity (auth off, or `/api/auth/me` unresolved) keeps the legacy `pabrik-sync` name, so the
+ * auth-off path is unchanged. */
 function dbName(): string {
   const userId = getCurrentUserId()
   return userId ? `${DB_NAME}:${userId}` : DB_NAME

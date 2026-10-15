@@ -43,7 +43,6 @@ import {
 import type { SseClient } from '../helpers/sseClient'
 
 // Local SseClient stub. Mirrors sidebarKanbanSortUrl.spec.ts:30-46.
- 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function makeStubClient(initial: 'connecting'): any {
   return {
@@ -291,11 +290,11 @@ describe('Sidebar.handleSelectTask — APPEND URL, not REPLACE (better-url-brows
     ] as any
     // The URL is a deep link — no workspaceId in route.query. The new URL MUST add workspaceId from
     // the active store state (setActiveTask auto-discovers the parent item + workspace via
-    // workspacesStore.setActiveTask's parent-item lookup at
-     
-    // workspaces.ts:3366). This addresses the user's report (task_1785774094183): task URLs were
-    // missing `workspaceId` and the user wanted it added so the URL bar shows the kanban / design
-    // context (share / refresh / back work).
+    // workspacesStore.setActiveTask's parent-item lookup at workspaces.ts:3366).
+
+    // This addresses the user's report (task_1785774094183): task URLs were missing `workspaceId`
+    // and the user wanted it added so the URL bar shows the kanban / design context (share /
+    // refresh / back work).
     setRouteQuery({
       view: 'workspace',
       workspaceId: WS_ID,

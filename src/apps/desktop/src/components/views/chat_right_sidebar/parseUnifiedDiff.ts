@@ -128,14 +128,11 @@ export interface DiffLineCounts {
 /** `+added / -removed` for ONE file's diff chunk, without building the line array
  * `parseUnifiedDiff` returns. Why this exists: the file lists want a number per row, and the only
  * diff text they have is the chunk they already hold. */
-
 /** Parsing it into `ParsedDiffLine[]` just to read two counters allocates an object per line for a
  * 900-line file — on a 35-file list that is tens of thousands of objects to render two digits. */
-
 /** Deliberately mirrors `parseUnifiedDiff`'s line classification (same hunk regex, same "nothing
  * before the first hunk counts" rule) so a row's counts always agree with the diff the center
  * column shows for that file. */
-
 /** `\ No newline at end of file` and the `--- / +++` headers are therefore not counted, exactly as
  * in the parser. */
 export function countDiffLines(diffText: string): DiffLineCounts {

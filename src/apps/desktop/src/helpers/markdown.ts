@@ -91,15 +91,12 @@ const flattenCells = (cells: readonly unknown[]): string =>
     .trim()
 
 /** Walk the lexer output and keep only the words. */
-
 /** Emphasis, links, headings, blockquotes, list items and tables all wrap their text in a nested
  * `tokens` / `items` array, so the walk recurses; `Tokens.Generic` (an extension's custom token)
  * falls through to the same shape and therefore still contributes its text. */
-
 /** `sep` is the string placed BETWEEN two adjacent tokens at THIS level. It is `' '` at the top
  * (the lexer's top level is a list of blocks, so two blocks are two thoughts) and `''` one level
  * down (a paragraph's children are inline and already carry their own spacing). */
-
 /** That distinction is the whole point: joining a paragraph's children with spaces turns
  * `**staging**, but skip 087` into `staging , but skip 087`, which then renders in the header pill
  * and the answer chip. */
@@ -156,7 +153,6 @@ const flattenTokens = (tokens: readonly unknown[], sep: string): string => {
 
 /** Strip markdown syntax, keep the words. Blank → `''`. Whitespace collapses to single spaces, so a
  * multi-line question's first 60 characters read as one line in a header pill. */
-
 /** A real lexer pass (not a regex) means nested emphasis inside a list item and tables come out
  * right instead of leaving stray `*` behind. */
 export const stripMarkdownSyntax = (source: string | null | undefined): string => {

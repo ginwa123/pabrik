@@ -33,7 +33,6 @@ export function joinMediaUrlsWire(urls?: readonly string[]): string {
 
 /** Decode a wire `image_url` / `video_url` / `image_urls` string into the list of URLs a renderer
  * can `<img :src>`. */
-
 /** Returns `undefined` — not `[]` — when there is nothing to render, so the caller's
  * `v-if="image_urls?.length > 0"` hides the attachment row entirely instead of drawing an empty
  * container. */
@@ -47,11 +46,9 @@ export function splitMediaUrlsWire(joined?: string | null): string[] | undefined
 }
 
 /** Last line of defence for the renderer. */
-
 /** `splitMediaUrlsWire` already refuses to emit a blank entry, but a `Message` can also arrive from
  * a path this module does not own — a persisted SSE row replayed out of the local chat cache, a
  * future field on the wire, a hand-built message in a test. */
-
 /** `v-for` over such a list would bind `:src=""` and the browser would draw a broken-image icon
  * inside the transcript. Filtering in the template means the `<img>`/`<video>` element only ever
  * gets a non-blob URL, whatever produced the array. */

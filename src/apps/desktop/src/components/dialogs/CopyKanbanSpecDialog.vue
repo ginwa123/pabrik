@@ -62,7 +62,6 @@ const sourceColumns = ref<Array<{ id: string; name: string; description: string 
 const sourceColumnsLoading = ref<boolean>(false)
 
 // ─── Picker data ──────────────────────────────────────────────────────
-
 // All kanbans in the active workspace EXCEPT the target.
 const availableSources = computed<WorkspaceItem[]>(() => {
   return workspacesStore.workspaces
@@ -150,11 +149,9 @@ const onDocumentClick = (e: MouseEvent) => {
   }
 }
 
-// ─── Lifecycle ────────────────────────────────────────────────────────
-
-// Reset + preselect on every open (open-sync guard below) and detach
-// the outside-click listener after close (Transition after-leave).
-// onBeforeUnmount below remains as the unmount safety net.
+// ─── Lifecycle ──────────────────────────────────────────────────────── Reset + preselect on every
+// open (open-sync guard below) and detach the outside-click listener after close (Transition
+// after-leave). onBeforeUnmount below remains as the unmount safety net.
 const handleOpen = async () => {
   sourceItemId.value = ''
   mode.value = 'replace'

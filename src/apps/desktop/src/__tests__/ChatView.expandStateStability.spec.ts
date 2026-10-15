@@ -1,17 +1,13 @@
 /** Regression tests for the 2026-08-23 "auto-collapse on SSE" bug. Background: the chatview used
  * positional expand keys (`${groupIndex}-${idx}`) into the `messageGroups` computed. */
-
 /** Every SSE event mutated `messages`, `messageGroups` recomputed, group / message indices shifted,
  * and every stored expand key silently started pointing at a DIFFERENT card. */
-
 /** The user's manually-expanded tool card lost its key and collapsed itself; unrelated cards could
  * also pop open by accident. The fix keys expansion by STABLE per-message id (`msg.id` → falls back
  * to `tool_call_id` → falls back to positional last-resort). */
-
 /** Runtime paths are wired through Vue reactivity inside a 3500-line SFC — the helpers
  * (`toolExpandKey`, `toggleToolExpanded`, `expandedToolIds`) live in ChatView.vue and aren't easily
  * mount- testable in isolation. */
-
 /** These tests lock the SOURCE-LEVEL invariants so any refactor that reintroduces positional keys
  * is caught immediately, following the project's source-grep convention (sseIsInputOutput.spec.ts,
  * ChatView.hiddenMessages.spec.ts). */

@@ -11,7 +11,6 @@ import { makeLocalStorageStub } from './helpers'
 /** SettingsShell — the one chrome for user + workspace settings. User scope (`/app/settings`) is
  * Pabrik-only: the old Skills/Memories sidebar entries showed the ACTIVE workspace's rows without
  * saying so, so they moved to workspace scope, bound to the route workspace. */
-
 /** The open section rides in `?section=` (repo rule: every view switch syncs the browser URL); the
  * path itself is the scope. */
 

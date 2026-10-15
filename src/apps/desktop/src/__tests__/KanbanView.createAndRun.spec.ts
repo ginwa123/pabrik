@@ -78,7 +78,6 @@ describe('KanbanView.handleCreateTaskSave — create_and_run', () => {
     await flushPromises()
     // The host guards handleCreateTaskSave on `activeCreateColumnId`
     // (set when the user clicks + on a column). Set it directly via
-     
     // the vm so we don't have to drive the @add-task emit path.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(wrapper!.vm as any).activeCreateColumnId = 'col_todo'

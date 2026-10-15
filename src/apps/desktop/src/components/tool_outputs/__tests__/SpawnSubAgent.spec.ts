@@ -24,7 +24,6 @@ import type { SubAgentProgress } from '../../../helpers/subagentProgress'
 // ────────────────────────────────────────────────────────────────────────
 // Helpers
 // ────────────────────────────────────────────────────────────────────────
-
 // Loose props type: tests intentionally pass partial / loosely-typed values (e.g. `null` sessionId,
 // optional `progress`). vue-tsc independently type-checks the production component against its real
 // prop definitions; this cast only relaxes the test fixture.

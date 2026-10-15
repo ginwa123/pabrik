@@ -1,11 +1,9 @@
 <script setup lang="ts">
 /** ToolsSection — Tools tab in Pabrik settings. Renders the default tool checklist stored as
  * `config.json → "tools": [...]` (plan 2026-09-22-tools-menu-config-default-tools). */
-
 /** Catalog comes from `GET /api/agent-tools/registry` via the agentTools store — the checklist can
  * never contain a name the backend does not know. Grouping is frontend-only (static name → group
  * map below). */
-
 /** No local save button: the shared PabrikSaveBar in PabrikSettings handles save/reset through the
  * orchestrator's config snapshot. */
 import { computed, onMounted } from 'vue'

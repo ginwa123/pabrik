@@ -228,7 +228,6 @@ const toggleContent = (id: string): void => {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
-
 /** Truncate `s` to `max` chars, keeping both ends (more useful for
  *  long queries than a pure tail ellipsis). */
 function truncateMiddle(s: string, max: number): string {

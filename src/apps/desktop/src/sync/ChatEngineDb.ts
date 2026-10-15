@@ -1,6 +1,5 @@
 /** Chat child of the generic sync engine (cached mount + delta). Wires storeName='messages',
  * cursorOf/compareFn over created_at_nano, and fetchDelta over api.getChatHistory. */
-
 /** Each row keeps the full server object in `raw` so ChatView can render cached mounts through its
  * single toChatMessages mapper with no shape drift; sortKey stays created_at_nano (created_at*1e9
  * fallback) for older-page queries. */
@@ -30,11 +29,9 @@ export interface ChatMessage {
 export type ChatCtx = string
 
 /** Sync cursor for the next delta: the newest row seen so far. */
-
 /** The backend only returns `next_cursor` when `has_more` is true, so it cannot serve as the sync
  * cursor — persisting it wipes a good cursor to null after every small delta (and points at the
  * oldest row on a full page), forcing a full desc reload on the next mount. */
-
 /** Advance to the newest received row instead and never regress past the incoming cursor; an empty
  * delta keeps the previous cursor. */
 export function newestCursor(
@@ -156,7 +153,6 @@ export class ChatEngineDb extends BaseSyncEngine<ChatMessage, ChatCtx> {
   /** Background refresh for a cached mount: fetch the tail, persist it, advance the cursor.
    * `preserveIds` prevents a response that started before a live SSE update from overwriting that
    * newer row. */
-
   /** Now honest about failure — the old `catch { return null }` made a backend outage
    * indistinguishable from "no new messages". */
   loadDelta(

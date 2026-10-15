@@ -1,10 +1,8 @@
 /** CenterDiffSection — the collapse contract, and the ONE trap it hides. The `IntersectionObserver`
  * is the only automatic gate on mounting the heavy diff body, and a COLLAPSED section never
  * intersects. */
-
 /** So a section the user expands has to mount directly, or "Expand all" renders a column of empty
  * stubs and the promise "expanding still gets you the diff" is silently broken. */
-
 /** The other half of the contract is that the DEFAULT path is untouched: a section that starts
  * expanded still waits for the observer (that is what keeps a 40-file diff fast to scroll). */
 import { afterEach, describe, expect, it, vi } from 'vitest'

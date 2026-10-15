@@ -52,11 +52,9 @@ const appBarSrc = src('ChatAppBar.vue')
 const barHtml = (w: { get: (s: string) => { html: () => string } }) =>
   templateOf(w.get('[data-testid="chat-app-bar"]').html()).replace(/>\s+</g, '><').trim()
 
-// ─── A ChatView stand-in that honours the real showHeader contract ──────────
-
-// It renders the REAL ChatAppBar (so the assertions below run against
-// the shipped bar, not a copy) and re-emits `close` from the bar's ✕,
-// exactly like ChatView does.
+// ─── A ChatView stand-in that honours the real showHeader contract ────────── It renders the REAL
+// ChatAppBar (so the assertions below run against the shipped bar, not a copy) and re-emits `close`
+// from the bar's ✕, exactly like ChatView does.
 const ChatViewStub = defineComponent({
   name: 'ChatView',
   props: ['chatId', 'chatName', 'type', 'cwd', 'showHeader', 'embedded'],
