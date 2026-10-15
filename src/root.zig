@@ -82,6 +82,10 @@ pub const memory = @import("modules/agent/tools/memory.zig");
 pub const save_memory = memory;
 pub const load_memory = memory;
 pub const add_mcp_server = @import("modules/agent/tools/add_mcp_server.zig"); // 2026-08-28-add-mcp-server-agent-tool
+// The edit + delete halves of the MCP-server trio — same file, same
+// Config.zig primitives, same exec-side persist/reload helpers.
+pub const edit_mcp_server = add_mcp_server;
+pub const delete_mcp_server = add_mcp_server;
 pub const read_workspace_session_tool = @import("modules/agent/tools/read_workspace_session.zig");
 // Workspace credential discovery: names only, never a value.
 pub const list_secrets = @import("modules/agent/tools/list_secrets.zig");

@@ -1884,6 +1884,208 @@ pub const LlmConfig = struct {
         try rebuildMcpServersParsed(self);
     }
 
+    /// Input for `addMcpServerHttp` — the HTTP transport variant.
+    /// All string fields are borrowed; the primitive deep-copies them.
+    pub const AddMcpServerHttpInput = struct {
+        /// The server name (key in `mcp_servers`). Must be non-empty and
+        /// must not collide with an existing server.
+        name: []const u8,
+        /// The MCP server URL. Must be non-empty.
+        url: []const u8,
+        /// Optional request headers (e.g. `Authorization`). Each entry's
+        /// `name` + `value` are deep-copied into the new headers map.
+        headers: ?[]const McpHeaderInput = null,
+    };
+
+    /// One header entry for `addMcpServerHttp` / `editMcpServer`.
+    pub const McpHeaderInput = struct {
+        name: []const u8,
+        value: []const u8,
+    };
+
+    /// Add a new HTTP MCP server to the live config in-place. The stdio
+    /// sibling is `addMcpServerStdio`; both mutate the typed map AND
+    /// rebuild `mcpServers_parsed`. Errors: InvalidName, InvalidUrl,
+    pub fn addMcpServerHttp(
+        self: *LlmConfig,
+        input: AddMcpServerHttpInput,
+    ) !void {
+        if (input.name.len == 0) return error.InvalidName;
+        if (input.url.len == 0) return error.InvalidUrl;
+        if (self.mcp_servers.contains(input.name)) return error.DuplicateServer;
+
+        var entry: McpServerConfig = .{
+            .url = try self.allocator.dupe(u8, input.url),
+            .headers = McpHeadersMap.init(self.allocator),
+            .command = null,
+            .args = null,
+            .cwd = null,
+            .enabled = true,
+        };
+        errdefer freeMcpServerConfig(&entry, self.allocator);
+
+        if (input.headers) |hdrs| {
+            for (hdrs) |h| {
+                if (h.name.len == 0) continue;
+                const k = try self.allocator.dupe(u8, h.name);
+                errdefer self.allocator.free(k);
+                const v = try self.allocator.dupe(u8, h.value);
+                errdefer self.allocator.free(v);
+                try entry.headers.put(k, v);
+            }
+        }
+
+        const _key_dup = blk: {
+            const k = try self.allocator.dupe(u8, input.name);
+            errdefer self.allocator.free(k);
+            try self.mcp_servers.put(k, entry);
+            // Ownership transferred to the map — reset the local so the
+            // errdefer above cannot double-free the shared strings.
+            entry = .{
+                .url = null,
+                .headers = McpHeadersMap.init(self.allocator),
+                .command = null,
+                .args = null,
+                .cwd = null,
+                .enabled = true,
+            };
+            break :blk k;
+        };
+        _ = _key_dup;
+
+        try rebuildMcpServersParsed(self);
+    }
+
+    /// Input for `editMcpServer` — a partial update of an existing
+    /// server. Every field is optional; a null field means "leave the
+    /// stored value alone". `transport` REPLACES the entry's transport.
+    pub const EditMcpServerInput = struct {
+        /// The server to edit. Must already exist.
+        name: []const u8,
+        /// New transport. When present, the entry is rebuilt from the
+        /// supplied transport-specific fields (a stdio→http switch
+        /// drops `command`/`args`/`cwd`, and vice versa).
+        transport: ?[]const u8 = null,
+        /// stdio command. Required when `transport == "stdio"`.
+        command: ?[]const u8 = null,
+        /// stdio argv. `null` leaves the stored value; an empty slice
+        /// clears it.
+        args: ?[]const []const u8 = null,
+        /// HTTP URL. Required when `transport == "http"`.
+        url: ?[]const u8 = null,
+        /// HTTP headers. `null` leaves the stored map; an empty slice
+        /// clears it.
+        headers: ?[]const McpHeaderInput = null,
+        /// Enable/disable toggle. `null` leaves the stored flag.
+        enabled: ?bool = null,
+    };
+
+    /// Edit an existing MCP server in-place. Mutates the typed map AND
+    /// rebuilds `mcpServers_parsed`. A transport switch is a full
+    /// rebuild: the OLD transport's fields are dropped. Errors:
+    pub fn editMcpServer(
+        self: *LlmConfig,
+        input: EditMcpServerInput,
+    ) !void {
+        if (input.name.len == 0) return error.InvalidName;
+        const entry_ptr = self.mcp_servers.getPtr(input.name) orelse return error.ServerNotFound;
+
+        // Resolve the target transport first: an explicit `transport`
+        // wins, otherwise keep whatever the stored entry already is.
+        const target: McpServerConfig.Transport = blk: {
+            if (input.transport) |t| {
+                if (std.mem.eql(u8, t, "stdio")) break :blk .stdio;
+                if (std.mem.eql(u8, t, "http")) break :blk .http;
+                return error.InvalidTransport;
+            }
+            break :blk entry_ptr.transport();
+        };
+
+        // Build the replacement entry, then swap it in. Building first
+        // means a validation failure leaves the stored entry untouched.
+        var next: McpServerConfig = .{
+            .url = null,
+            .headers = McpHeadersMap.init(self.allocator),
+            .command = null,
+            .args = null,
+            .cwd = null,
+            .enabled = if (input.enabled) |e| e else entry_ptr.enabled,
+        };
+        errdefer freeMcpServerConfig(&next, self.allocator);
+
+        switch (target) {
+            .stdio => {
+                const cmd = input.command orelse entry_ptr.command orelse return error.InvalidCommand;
+                if (cmd.len == 0) return error.InvalidCommand;
+                next.command = try self.allocator.dupe(u8, cmd);
+                if (input.args) |src| {
+                    if (src.len == 0) {
+                        next.args = null;
+                    } else {
+                        const dup = try self.allocator.alloc([]const u8, src.len);
+                        errdefer self.allocator.free(dup);
+                        for (src, 0..) |a, i| dup[i] = try self.allocator.dupe(u8, a);
+                        next.args = dup;
+                    }
+                } else if (entry_ptr.args) |old| {
+                    const dup = try self.allocator.alloc([]const u8, old.len);
+                    errdefer self.allocator.free(dup);
+                    for (old, 0..) |a, i| dup[i] = try self.allocator.dupe(u8, a);
+                    next.args = dup;
+                }
+                // `cwd` is not editable through the agent tool (the
+                // parameter was dropped from `add_mcp_server` on
+                // 2026-10-14), so a stdio entry keeps its stored value.
+                if (entry_ptr.cwd) |c| next.cwd = try self.allocator.dupe(u8, c);
+            },
+            .http => {
+                const url = input.url orelse entry_ptr.url orelse return error.InvalidUrl;
+                if (url.len == 0) return error.InvalidUrl;
+                next.url = try self.allocator.dupe(u8, url);
+                if (input.headers) |hdrs| {
+                    for (hdrs) |h| {
+                        if (h.name.len == 0) continue;
+                        const k = try self.allocator.dupe(u8, h.name);
+                        errdefer self.allocator.free(k);
+                        const v = try self.allocator.dupe(u8, h.value);
+                        errdefer self.allocator.free(v);
+                        try next.headers.put(k, v);
+                    }
+                } else {
+                    // Carry the stored headers over.
+                    var it = entry_ptr.headers.iterator();
+                    while (it.next()) |h| {
+                        const k = try self.allocator.dupe(u8, h.key_ptr.*);
+                        errdefer self.allocator.free(k);
+                        const v = try self.allocator.dupe(u8, h.value_ptr.*);
+                        errdefer self.allocator.free(v);
+                        try next.headers.put(k, v);
+                    }
+                }
+            },
+        }
+
+        // Swap: free the old payload, install the new one. The map KEY
+        // is untouched — the server name is the identity and is not
+        // editable here (a rename is a delete + add).
+        freeMcpServerConfig(entry_ptr, self.allocator);
+        entry_ptr.* = next;
+
+        try rebuildMcpServersParsed(self);
+    }
+
+    /// Remove an MCP server from the live config in-place. Mutates the
+    /// typed map AND rebuilds `mcpServers_parsed`. Errors: InvalidName,
+    /// ServerNotFound.
+    pub fn removeMcpServer(self: *LlmConfig, name: []const u8) !void {
+        if (name.len == 0) return error.InvalidName;
+        const kv = self.mcp_servers.fetchRemove(name) orelse return error.ServerNotFound;
+        self.allocator.free(kv.key);
+        var removed = kv.value;
+        freeMcpServerConfig(&removed, self.allocator);
+        try rebuildMcpServersParsed(self);
+    }
+
     /// Serialize the typed `mcp_servers` map back into `mcpServers_parsed`.
     /// Called by `addMcpServerStdio` after each insert; safe to call when
     /// `mcpServers_parsed` is null (re-builds from scratch).
@@ -2200,6 +2402,234 @@ pub const LlmConfig = struct {
         const server = cfg.mcpServerConfig("leak-guard").?;
         try std.testing.expectEqualStrings("initial", server.command.?);
         try std.testing.expectEqualStrings("/initial", server.cwd.?);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Inline tests for addMcpServerHttp / editMcpServer / removeMcpServer
+    // ─────────────────────────────────────────────────────────────────────
+
+    test "addMcpServerHttp: valid entry persists url + headers" {
+        const allocator = std.testing.allocator;
+        var cfg = try addMcpServerStdioFixture(allocator);
+        defer cfg.deinit();
+
+        try cfg.addMcpServerHttp(.{
+            .name = "ctx7",
+            .url = "https://mcp.context7.com/mcp",
+            .headers = &.{
+                .{ .name = "Authorization", .value = "Bearer tok" },
+            },
+        });
+
+        try std.testing.expect(cfg.hasMcpServer("ctx7"));
+        const server = cfg.mcpServerConfig("ctx7").?;
+        try std.testing.expectEqual(LlmConfig.McpServerConfig.Transport.http, server.transport());
+        try std.testing.expect(server.isValid());
+        try std.testing.expectEqualStrings("https://mcp.context7.com/mcp", server.url.?);
+        try std.testing.expectEqual(@as(usize, 1), server.headers.count());
+        try std.testing.expectEqualStrings("Bearer tok", server.headers.get("Authorization").?);
+        // The JSON mirror carries the same shape the parser accepts.
+        const mirror = cfg.mcpServers().?.object.get("ctx7").?.object;
+        try std.testing.expectEqualStrings("https://mcp.context7.com/mcp", mirror.get("url").?.string);
+        try std.testing.expectEqualStrings("Bearer tok", mirror.get("headers").?.object.get("Authorization").?.string);
+    }
+
+    test "addMcpServerHttp: minimal entry (url only, no headers)" {
+        const allocator = std.testing.allocator;
+        var cfg = try addMcpServerStdioFixture(allocator);
+        defer cfg.deinit();
+
+        try cfg.addMcpServerHttp(.{ .name = "bare", .url = "https://x.test/mcp" });
+
+        const server = cfg.mcpServerConfig("bare").?;
+        try std.testing.expectEqual(@as(usize, 0), server.headers.count());
+        // Empty headers are omitted from the mirror (parse convention).
+        try std.testing.expect(cfg.mcpServers().?.object.get("bare").?.object.get("headers") == null);
+    }
+
+    test "addMcpServerHttp: empty name / empty url / duplicate are rejected" {
+        const allocator = std.testing.allocator;
+        var cfg = try addMcpServerStdioFixture(allocator);
+        defer cfg.deinit();
+
+        try std.testing.expectError(error.InvalidName, cfg.addMcpServerHttp(.{ .name = "", .url = "https://x" }));
+        try std.testing.expectError(error.InvalidUrl, cfg.addMcpServerHttp(.{ .name = "a", .url = "" }));
+
+        try cfg.addMcpServerHttp(.{ .name = "dup", .url = "https://x.test/mcp" });
+        try std.testing.expectError(error.DuplicateServer, cfg.addMcpServerHttp(.{ .name = "dup", .url = "https://y.test/mcp" }));
+        // The first entry survives the rejected second add.
+        try std.testing.expectEqualStrings("https://x.test/mcp", cfg.mcpServerConfig("dup").?.url.?);
+    }
+
+    test "addMcpServerHttp: coexists with a stdio server" {
+        const allocator = std.testing.allocator;
+        var cfg = try addMcpServerStdioFixture(allocator);
+        defer cfg.deinit();
+
+        try cfg.addMcpServerStdio(.{ .name = "local", .command = "mcp-hello-world" });
+        try cfg.addMcpServerHttp(.{ .name = "remote", .url = "https://x.test/mcp" });
+
+        try std.testing.expectEqual(@as(usize, 2), cfg.mcp_servers.count());
+        try std.testing.expectEqual(LlmConfig.McpServerConfig.Transport.stdio, cfg.mcpServerConfig("local").?.transport());
+        try std.testing.expectEqual(LlmConfig.McpServerConfig.Transport.http, cfg.mcpServerConfig("remote").?.transport());
+    }
+
+    test "editMcpServer: stdio command + args update in place" {
+        const allocator = std.testing.allocator;
+        var cfg = try addMcpServerStdioFixture(allocator);
+        defer cfg.deinit();
+        try cfg.addMcpServerStdio(.{ .name = "s", .command = "old", .args = &.{"--a"} });
+
+        try cfg.editMcpServer(.{ .name = "s", .command = "new", .args = &.{ "--b", "--c" } });
+
+        const server = cfg.mcpServerConfig("s").?;
+        try std.testing.expectEqualStrings("new", server.command.?);
+        try std.testing.expectEqual(@as(usize, 2), server.args.?.len);
+        try std.testing.expectEqualStrings("--b", server.args.?[0]);
+        try std.testing.expectEqualStrings("--c", server.args.?[1]);
+        // Mirror agrees.
+        const mirror = cfg.mcpServers().?.object.get("s").?.object;
+        try std.testing.expectEqualStrings("new", mirror.get("command").?.string);
+    }
+
+    test "editMcpServer: http url + headers update in place" {
+        const allocator = std.testing.allocator;
+        var cfg = try addMcpServerStdioFixture(allocator);
+        defer cfg.deinit();
+        try cfg.addMcpServerHttp(.{ .name = "h", .url = "https://old.test/mcp" });
+
+        try cfg.editMcpServer(.{
+            .name = "h",
+            .url = "https://new.test/mcp",
+            .headers = &.{.{ .name = "Authorization", .value = "Bearer new" }},
+        });
+
+        const server = cfg.mcpServerConfig("h").?;
+        try std.testing.expectEqualStrings("https://new.test/mcp", server.url.?);
+        try std.testing.expectEqualStrings("Bearer new", server.headers.get("Authorization").?);
+    }
+
+    test "editMcpServer: omitted fields keep their stored values" {
+        const allocator = std.testing.allocator;
+        var cfg = try addMcpServerStdioFixture(allocator);
+        defer cfg.deinit();
+        try cfg.addMcpServerStdio(.{ .name = "s", .command = "keep", .args = &.{"--keep"} });
+
+        // Only flip `enabled` — command + args must survive untouched.
+        try cfg.editMcpServer(.{ .name = "s", .enabled = false });
+
+        const server = cfg.mcpServerConfig("s").?;
+        try std.testing.expect(!server.enabled);
+        try std.testing.expectEqualStrings("keep", server.command.?);
+        try std.testing.expectEqualStrings("--keep", server.args.?[0]);
+    }
+
+    test "editMcpServer: stdio to http switch drops the stdio fields" {
+        const allocator = std.testing.allocator;
+        var cfg = try addMcpServerStdioFixture(allocator);
+        defer cfg.deinit();
+        try cfg.addMcpServerStdio(.{ .name = "s", .command = "cmd", .args = &.{"--a"} });
+
+        try cfg.editMcpServer(.{ .name = "s", .transport = "http", .url = "https://x.test/mcp" });
+
+        const server = cfg.mcpServerConfig("s").?;
+        try std.testing.expectEqual(LlmConfig.McpServerConfig.Transport.http, server.transport());
+        try std.testing.expect(server.isValid());
+        try std.testing.expect(server.command == null);
+        try std.testing.expect(server.args == null);
+        try std.testing.expectEqualStrings("https://x.test/mcp", server.url.?);
+    }
+
+    test "editMcpServer: http to stdio switch drops the http fields" {
+        const allocator = std.testing.allocator;
+        var cfg = try addMcpServerStdioFixture(allocator);
+        defer cfg.deinit();
+        try cfg.addMcpServerHttp(.{
+            .name = "h",
+            .url = "https://x.test/mcp",
+            .headers = &.{.{ .name = "Authorization", .value = "Bearer t" }},
+        });
+
+        try cfg.editMcpServer(.{ .name = "h", .transport = "stdio", .command = "mcp-hello-world" });
+
+        const server = cfg.mcpServerConfig("h").?;
+        try std.testing.expectEqual(LlmConfig.McpServerConfig.Transport.stdio, server.transport());
+        try std.testing.expect(server.isValid());
+        try std.testing.expect(server.url == null);
+        try std.testing.expectEqual(@as(usize, 0), server.headers.count());
+        try std.testing.expectEqualStrings("mcp-hello-world", server.command.?);
+    }
+
+    test "editMcpServer: unknown name / bad transport / missing field are rejected" {
+        const allocator = std.testing.allocator;
+        var cfg = try addMcpServerStdioFixture(allocator);
+        defer cfg.deinit();
+        try cfg.addMcpServerStdio(.{ .name = "s", .command = "cmd" });
+
+        try std.testing.expectError(error.ServerNotFound, cfg.editMcpServer(.{ .name = "nope", .command = "x" }));
+        try std.testing.expectError(error.InvalidTransport, cfg.editMcpServer(.{ .name = "s", .transport = "sse" }));
+        // Switching to http without a url leaves the stored entry intact.
+        try std.testing.expectError(error.InvalidUrl, cfg.editMcpServer(.{ .name = "s", .transport = "http" }));
+        try std.testing.expectEqualStrings("cmd", cfg.mcpServerConfig("s").?.command.?);
+        // Switching to stdio with an empty command is refused too.
+        try std.testing.expectError(error.InvalidCommand, cfg.editMcpServer(.{ .name = "s", .transport = "stdio", .command = "" }));
+        try std.testing.expectEqualStrings("cmd", cfg.mcpServerConfig("s").?.command.?);
+    }
+
+    test "editMcpServer: empty args slice clears the stored argv" {
+        const allocator = std.testing.allocator;
+        var cfg = try addMcpServerStdioFixture(allocator);
+        defer cfg.deinit();
+        try cfg.addMcpServerStdio(.{ .name = "s", .command = "cmd", .args = &.{"--a", "--b"} });
+
+        try cfg.editMcpServer(.{ .name = "s", .args = &.{} });
+
+        const server = cfg.mcpServerConfig("s").?;
+        try std.testing.expect(server.args == null);
+        try std.testing.expect(cfg.mcpServers().?.object.get("s").?.object.get("args") == null);
+    }
+
+    test "removeMcpServer: drops the entry and rebuilds the mirror" {
+        const allocator = std.testing.allocator;
+        var cfg = try addMcpServerStdioFixture(allocator);
+        defer cfg.deinit();
+        try cfg.addMcpServerStdio(.{ .name = "a", .command = "cmd-a" });
+        try cfg.addMcpServerHttp(.{ .name = "b", .url = "https://x.test/mcp" });
+
+        try cfg.removeMcpServer("a");
+
+        try std.testing.expect(!cfg.hasMcpServer("a"));
+        try std.testing.expect(cfg.hasMcpServer("b"));
+        try std.testing.expectEqual(@as(usize, 1), cfg.mcp_servers.count());
+        // The JSON mirror no longer carries the removed key.
+        try std.testing.expect(cfg.mcpServers().?.object.get("a") == null);
+        try std.testing.expect(cfg.mcpServers().?.object.get("b") != null);
+    }
+
+    test "removeMcpServer: removing the last server leaves an empty mirror" {
+        const allocator = std.testing.allocator;
+        var cfg = try addMcpServerStdioFixture(allocator);
+        defer cfg.deinit();
+        try cfg.addMcpServerStdio(.{ .name = "only", .command = "cmd" });
+
+        try cfg.removeMcpServer("only");
+
+        try std.testing.expectEqual(@as(usize, 0), cfg.mcp_servers.count());
+        try std.testing.expect(!cfg.hasMcpServers());
+        // An empty object, not null — `mcpServers()` stays well-formed.
+        try std.testing.expect(cfg.mcpServers().? == .object);
+        try std.testing.expectEqual(@as(usize, 0), cfg.mcpServers().?.object.count());
+    }
+
+    test "removeMcpServer: unknown name / empty name are rejected" {
+        const allocator = std.testing.allocator;
+        var cfg = try addMcpServerStdioFixture(allocator);
+        defer cfg.deinit();
+        try cfg.addMcpServerStdio(.{ .name = "keep", .command = "cmd" });
+
+        try std.testing.expectError(error.ServerNotFound, cfg.removeMcpServer("nope"));
+        try std.testing.expectError(error.InvalidName, cfg.removeMcpServer(""));
+        try std.testing.expect(cfg.hasMcpServer("keep"));
     }
 
     /// Look up a profile by name (the key in `profiles_models`). Returns null when

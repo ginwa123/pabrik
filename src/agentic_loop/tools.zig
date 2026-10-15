@@ -74,6 +74,10 @@ pub const execAskUser = @import("../modules/agent/tools/ask_user.zig").execAskUs
 // 2026-08-28 — add_mcp_server agent tool (Step 3 of
 // 2026-08-28-add-mcp-server-agent-tool.md).
 pub const execAddMcpServer = @import("../modules/agent/tools/add_mcp_server.zig").execAddMcpServer;
+// The edit + delete halves of the MCP-server trio. All three share the
+// persist/reload/tools-listing helpers inside add_mcp_server.zig.
+pub const execEditMcpServer = @import("../modules/agent/tools/add_mcp_server.zig").execEditMcpServer;
+pub const execDeleteMcpServer = @import("../modules/agent/tools/add_mcp_server.zig").execDeleteMcpServer;
 
 // Progressive tool search (plan 2026-09-12-progressive-tool-search): the three
 // meta-tools that browse and enable the catalog of tools this session does not

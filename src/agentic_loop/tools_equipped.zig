@@ -52,6 +52,10 @@ const run_skill_eval_mod = @import("run_skill_eval.zig");
 // 2026-08-28 — add_mcp_server agent tool (Step 5 of
 // 2026-08-28-add-mcp-server-agent-tool.md).
 const add_mcp_server_mod = pabrikcore.add_mcp_server;
+// The edit + delete halves of the MCP-server trio. Registered alongside
+// `add_mcp_server` so the agent can maintain the servers it registers.
+const edit_mcp_server_mod = pabrikcore.edit_mcp_server;
+const delete_mcp_server_mod = pabrikcore.delete_mcp_server;
 const glob_tool_mod = pabrikcore.glob_tool;
 const search_tool_mod = pabrikcore.search_tool;
 // 2026-08-14 — list_directory tool (Task 5 of ban-absolute-paths plan).
@@ -84,6 +88,11 @@ pub fn equips(allocator: std.mem.Allocator) []const AgentTool {
         used_tools_mod.used_tools_tool,
         // 2026-08-28 — add_mcp_server agent tool (Task 5).
         add_mcp_server_mod.add_mcp_server_tool,
+        // The edit + delete halves. `delete_mcp_server` is deliberately
+        // NOT in DEFAULT_AGENT_TOOLS (irreversible, like delete_document)
+        // but IS listed here so `filterAndMergeTools` can find it.
+        edit_mcp_server_mod.edit_mcp_server_tool,
+        delete_mcp_server_mod.delete_mcp_server_tool,
         search_skills_mod.search_skills_tool,
 
         // Web search.
@@ -184,6 +193,13 @@ pub fn UNIFIED_TOOL_REGISTRY() []const ToolInfo {
         // === MCP MANAGEMENT === 2026-08-28 — add_mcp_server (Task 5 of
         // 2026-08-28-add-mcp-server-agent-tool.md).
         .{ .name = "add_mcp_server", .exec = tools.execAddMcpServer, .tool_def = add_mcp_server_mod.add_mcp_server_tool },
+        // edit_mcp_server — PATCH an existing server. Every field except
+        // `name` is optional, and a call may switch transports.
+        .{ .name = "edit_mcp_server", .exec = tools.execEditMcpServer, .tool_def = edit_mcp_server_mod.edit_mcp_server_tool },
+        // delete_mcp_server — remove a server. Registered here (so it is
+        // dispatchable and appears in the Settings checklist) but
+        // deliberately absent from DEFAULT_AGENT_TOOLS.
+        .{ .name = "delete_mcp_server", .exec = tools.execDeleteMcpServer, .tool_def = delete_mcp_server_mod.delete_mcp_server_tool },
 
         // === PROGRESSIVE TOOL SEARCH === search_tool / view_tool / use_tool
         // browse and enable the catalog of tools this session does not
