@@ -11,7 +11,6 @@ import './style.css'
 // its spec for now; just don't install it. App.vue's context re-wiring
 // is now a harmless no-op (null-guarded).
 // See docs/plans/2026-07-17-frontend-error-logs-design.md.
-
 const app = createApp(App)
 
 const pinia = createPinia()

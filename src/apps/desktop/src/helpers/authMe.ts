@@ -28,7 +28,6 @@
  * bounces those to /login). The guard already fails open on network
  * errors, so serving a seconds-old decision matches existing behavior.
  */
-
 export interface AuthMeUser {
   id: string
   email: string

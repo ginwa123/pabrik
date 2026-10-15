@@ -14,7 +14,6 @@
 //
 // Returns '' for null/undefined/unparseable input so callers can guard
 // with v-if and avoid rendering an empty pill.
-
 export function formatTaskTimestamp(input: Date | string | number | null | undefined): string {
   if (input === null || input === undefined) return ''
   let d: Date

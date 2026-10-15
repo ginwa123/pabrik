@@ -61,7 +61,6 @@
  *     time, so a stale value isn't captured if the user navigates
  *     between events).
  */
-
 export type LogLevel = 'error' | 'warn' | 'info' | 'debug'
 export type LogKind =
   | 'window_error'

@@ -15,7 +15,6 @@
  * Zero dependencies, zero Vue coupling — plain DOM so it works even when
  * the app itself is mid-render (which is exactly when we want readings).
  */
-
 const OVERLAY_ID = 'pabrik-fps-overlay'
 
 let rafId: number | null = null
