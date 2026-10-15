@@ -358,10 +358,7 @@ const snapGuides = ref<SnapGuide[]>([])
 // handles, selection outline, drag handler) is suppressed. State is
 // transient — no localStorage, no backend roundtrip — a "play the
 // mockup" affordance. Default false.
-//
-// Keyboard:
-//   - Cmd/Ctrl+P: toggle Preview ↔ Edit
-//   - Esc: exit Preview (return to Edit)
+// Keyboard: - Cmd/Ctrl+P: toggle Preview ↔ Edit - Esc: exit Preview (return to Edit)
 const isPreviewMode = ref<boolean>(false)
 
 const togglePreviewMode = (): void => {
@@ -1110,12 +1107,9 @@ const handleSelectPage = (pageId: string): void => {
   emit('selectPage', pageId)
 }
 
-// Delete a design page.
-//
-// NEW (design-pages-in-workspace-tree plan, 2026-08-06): routes
-// through the store so the cache + `activeDesignPageId` fallback
-// happen in one place. The store's `deleteDesignPage` action picks
-// the next-active page (same index as the deleted one, falling
+// Delete a design page. NEW (design-pages-in-workspace-tree plan, 2026-08-06): routes through the
+// store so the cache + `activeDesignPageId` fallback happen in one place. The store's
+// `deleteDesignPage` action picks the next-active page (same index as the deleted one, falling
 
 // back to the previous; or empty if the item now has no pages).
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for diff readability.
@@ -1441,9 +1435,8 @@ const handleDesignMoveToPageDialogClose = (): void => {
 //
 // The fix: capture each element's position the FIRST time
 // `handleGroupDrag` fires (the drag start), then use that snapshot
-// for every subsequent PATCH in the same drag. The cursor's delta
-// is applied to the ORIGINAL position, so the PATCH is always the
-// correct absolute target — matching the single-element drag's
+// for every subsequent PATCH in the same drag. The cursor's delta is applied to the ORIGINAL
+// position, so the PATCH is always the correct absolute target — matching the single-element drag's
 // `start.x + dx` pattern in DesignElement.vue.
 let dragStartPositions: Map<string, { x: number; y: number }> | null = null
 
@@ -1573,10 +1566,9 @@ const handleGroupDrag = (delta: { dx: number; dy: number }): void => {
 // and PATCHes `firstOriginal + secondDelta` instead of
 // `secondOriginal + secondDelta` — the element lags the cursor
 // by `firstDelta` design-px on the second drag. Reset here
-// synchronously: `capturePostState` does not depend on the
-// snapshot (it reads from the store directly), so the order is
-// irrelevant to its correctness; synchronous is just safer for
-// a quick-follow-up second drag.
+// synchronously: `capturePostState` does not depend on the snapshot (it reads from the store
+// directly), so the order is irrelevant to its correctness; synchronous is just safer for a
+// quick-follow-up second drag.
 const handleDragStart = (ids: string[]): void => {
   void history.capturePreState(ids)
 }
@@ -1735,11 +1727,10 @@ const zoomFit = (): void => {
 // compute zoom from the ratio of current finger-distance to the
 // distance at pinch-start. Mouse pointerType is intentionally ignored
 // — a single-mouse user can't physically pinch.
-//
-// Pair this with `touch-action: pan-x pan-y` on the same container
-// (set in the template below) so the browser stops doing
-// viewport-level pinch-zoom there — only the canvas scales, not the
-// sidebar / chrome.
+
+// Pair this with `touch-action: pan-x pan-y` on the same container (set in the template below) so
+// the browser stops doing viewport-level pinch-zoom there — only the canvas scales, not the sidebar
+// / chrome.
 interface PinchPointer {
   startX: number
   startY: number

@@ -286,12 +286,9 @@ function normalizeTaskTags(task: Task): Task {
 // `createdAt` when `updatedAt` is missing).
 //
 // Why a separate helper instead of inlining into normalizeTaskDatesInPlace:
-//   - the same parsing logic is needed for other datetime fields
-//     in other parts of the codebase; keeping it as a pure function
-//     makes future call sites trivial.
-//   - the per-line parse is the kind of thing you want a TypeScript
-//     unit test against directly, not buried inside an in-place
-//     mutator.
+// - the same parsing logic is needed for other datetime fields in other parts of the codebase;
+// keeping it as a pure function makes future call sites trivial. - the per-line parse is the kind
+// of thing you want a TypeScript unit test against directly, not buried inside an in-place mutator.
 function parseBackendDatetime(value: unknown): Date | undefined {
   if (typeof value !== 'string' || value.length === 0) return undefined
   // Normalise "YYYY-MM-DD HH:MM:SS" → "YYYY-MM-DDTHH:MM:SS" so the Date ctor parses it. Then inject
@@ -412,12 +409,9 @@ function normalizeTaskVideoUrlsInPlace(task: Task): void {
 //
 // Why 1500 ms TTL: long enough to cover the round-trip + SSE round-trip
 // + Vue reactivity on slow networks; short enough that concurrent
-// edits from another client (chat-side, second tab) still propagate
-// within ~1.5 s. Figma uses ~1000 ms; 1500 ms is the safer default
-// for slower networks.
-//
-// Plan: docs/superpowers/plans/2026-07-30-design-drag-debounce-batch.md
-//   (Chunk 3, Task 3.1)
+// edits from another client (chat-side, second tab) still propagate within ~1.5 s. Figma uses ~1000
+// ms; 1500 ms is the safer default for slower networks. Plan:
+// docs/superpowers/plans/2026-07-30-design-drag-debounce-batch.md (Chunk 3, Task 3.1)
 export const RECENT_MUTATION_TTL_MS = 1500
 
 const recentLocalMutations = new Map<string, number>()

@@ -441,10 +441,9 @@ const PAGE_SIZE = 1000
 // Two flows reach the panel:
 //   1. 👁 click on a <SpawnSubAgent> row  →  SpawnSubAgent emits
 //      `peek`  →  ChatView calls `nav.openPeek(payload)`. The
-//      composable mounts on the next render.
-//   2. "Open full" in the panel  →  panel emits `openFull(sid)`
-//      →  ChatView closes the peek + navigates the URL to switch
-//      the main chat view to the sub-agent's session.
+// composable mounts on the next render. 2. "Open full" in the panel → panel emits `openFull(sid)` →
+// ChatView closes the peek + navigates the URL to switch the main chat view to the sub-agent's
+// session.
 const nav = useNavigationStore()
 const router = useRouter()
 const route = useRoute()
@@ -924,9 +923,8 @@ const queuedMessages = ref<api.QueuedMessage[]>([])
 //
 // Note: `containerRef` and the `isX`/`effectiveX` refs are AUTO-UNWRAPPED
 // by `defineExpose` — the exposed property is the ref's `.value`, not
-// the ref object. The existing `handleVirtualScroll` reads
-// `.containerRef.value` (double-unwrapped, which returns undefined);
-// it falls back to the event `target` so the bug is invisible. The
+// the ref object. The existing `handleVirtualScroll` reads `.containerRef.value` (double-unwrapped,
+// which returns undefined); it falls back to the event `target` so the bug is invisible. The
 // scroll-restore composable reads `.containerRef` directly.
 interface VirtualScrollerExposed {
   scrollToIndex: (index: number, behavior?: ScrollBehavior) => void
@@ -1106,10 +1104,9 @@ const lastAutoStickAt = ref(0)
 // asynchronously after VirtualScroller measures real item heights
 // (~50-100ms after mount, and again whenever new items scroll into view)
 // — we re-stick to the bottom IF the user was at bottom. This is
-// "stick-to-bottom" behavior and naturally handles both the initial-load
-// measurement drift and the chain-reaction where measuring one batch of
-// items reveals more items that get measured too. Once the user scrolls
-// up, isAtBottom flips to false and we stop fighting them.
+// "stick-to-bottom" behavior and naturally handles both the initial-load measurement drift and the
+// chain-reaction where measuring one batch of items reveals more items that get measured too. Once
+// the user scrolls up, isAtBottom flips to false and we stop fighting them.
 let spacerRafId: number | null = null
 let lastObservedScrollHeight = 0
 // True while a loadMore preserve window is in flight — contentShift
@@ -1380,10 +1377,9 @@ const loadProfiles = async () => {
 ///
 /// NOTE: we use `||` (not `??`) so an empty string from the session's
 /// `selected_profile_model` falls through to the active profile. `??` only
-/// catches `null` / `undefined`, but the per-session value arrives as `""`
-/// (empty string) when the user never picked one — see
-/// `api.getSession.selectedProfile` which returns the raw string. Falling
-/// through `||` makes the empty-string case match the cascade.
+// catches `null` / `undefined`, but the per-session value arrives as `""` (empty string) when the
+// user never picked one — see `api.getSession.selectedProfile` which returns the raw string.
+// Falling through `||` makes the empty-string case match the cascade.
 const effectiveProfile = computed<string | null>(() => {
   const sel = selectedProfile.value
   if (sel && sel.length > 0) return sel
@@ -1574,12 +1570,10 @@ const subAgentProgressMap = ref<SubAgentProgressMap>({})
 // screenshot. The card is also cleared as soon as ANY non-error `full`
 // SSE event arrives for this session (handled in the SSE listener below)
 /// — meaning the moment the agent recovers, the error card disappears.
-//
-// 2026-08-29 agent-error-persistent: state moved into the
-// `useAgentErrorStore` Pinia store so the card survives
-// AppLayout's `:key="activeChatId"` remounts on sidebar
-// navigation. The interface now lives in the store module;
-// here we read the per-session entry via a computed.
+
+// 2026-08-29 agent-error-persistent: state moved into the `useAgentErrorStore` Pinia store so the
+// card survives AppLayout's `:key="activeChatId"` remounts on sidebar navigation. The interface now
+// lives in the store module; here we read the per-session entry via a computed.
 const agentErrorStore = useAgentErrorStore()
 // Per-session derived read. Reads from the store (keyed by
 // sessionId) so the card survives ChatView remounts caused by
@@ -1709,11 +1703,10 @@ const stopGitStatusPoll = () => {
 //      own envelope from content — several tools legitimately carry
 //      whitespace-only or empty raw content while still rendering a
 //      meaningful card. Dropping them here broke the tool sequence.
-//
-//   3. `reasoning_content` present → KEEP. Thinking models can emit
-//      reasoning with an empty final text body; the message is not
-//      empty, and the assistant bubble now renders a collapsible
-//      reasoning section for it (see template, assistant branch).
+
+// 3. `reasoning_content` present → KEEP. Thinking models can emit reasoning with an empty final
+// text body; the message is not empty, and the assistant bubble now renders a collapsible reasoning
+// section for it (see template, assistant branch).
 const filteredMessages = computed(() =>
   messages.value.filter((m) => {
     // Always keep tool_calls messages even if content is only thinking tags
@@ -3351,10 +3344,9 @@ const handleLoadMoreSuppressed = (guard: string) => {
 // the logger — nothing else needs to react to it. Storing the
 // "did we just reach the top" transition is what powers the
 // `reached-top` / `left-top` log lines, which are the answer to
-// "user scrolled to the top of the chat — why didn't lazy load
-// fire?" If the `reached-top` line is followed by silence (no
-// `load-more-threshold-reached` and no `load-more-suppressed`),
-// the loadMore event was never fired in the first place.
+// "user scrolled to the top of the chat — why didn't lazy load fire?" If the `reached-top` line is
+// followed by silence (no `load-more-threshold-reached` and no `load-more-suppressed`), the
+// loadMore event was never fired in the first place.
 let previousIsAtTop = false
 // Module-scope state for the additional handleVirtualScroll logs
 // below. Like `previousIsAtTop`, these are pure diagnostics —

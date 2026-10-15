@@ -213,12 +213,10 @@ const cardsInColumn = computed<Task[]>(() => {
 // pagination). The store's `columnPagination[colId].isLoading` guard
 // makes concurrent calls no-ops, so the scroller's debounce is
 // belt-and-suspenders but harmless.
-//
-// For short columns where the scroller is NOT scrollable
-// (`scrollerIsScrollable === false`), we expose a manual "Load more"
-// button as a keyboard-only / no-scroll affordance.
-//
-// Plan: docs/superpowers/plans/2026-08-06-kanban-virtual-scroll.md
+
+// For short columns where the scroller is NOT scrollable (`scrollerIsScrollable === false`), we
+// expose a manual "Load more" button as a keyboard-only / no-scroll affordance. Plan:
+// docs/superpowers/plans/2026-08-06-kanban-virtual-scroll.md
 const workspacesStore = useWorkspacesStore()
 
 // Resolve the parent WorkspaceItem once. Used to read `hasMore` / `isLoading` for both the
@@ -393,10 +391,9 @@ const commitInlineRename = () => {
 // off) opening a task at all, since the chat replaces the board. Without this
 // the rebuilt column starts at `scrollTop = 0` and the user loses their place
 // in a long column.
-//
-// The key is item-scoped as well as column-scoped: column ids are globally
-// unique today, but a key that can only ever describe one board's one column
-// keeps that from becoming a silent cross-board collision later.
+// The key is item-scoped as well as column-scoped: column ids are globally unique today, but a key
+// that can only ever describe one board's one column keeps that from becoming a silent cross-board
+// collision later.
 const virtualScrollerRef = ref<ColumnScrollerExposed | null>(null)
 const scrollerContainerRef = computed<HTMLElement | null>(
   () => virtualScrollerRef.value?.containerRef ?? null,
@@ -497,11 +494,10 @@ const openSortModal = () => {
 // that event dispatches). The only reachable case is a click on an item,
 // where <KanbanSortMenu>'s own handler has already written the new
 // sortBy/direction via v-model before the event bubbles here.
-//
 // <KanbanRowView> uses the equivalent pair of single-source update handlers instead.
 // Both are correct; this one additionally fires on a re-pick of the same
 // value, which is the behaviour the comment above describes.
-//
+
 // Plan: docs/superpowers/plans/2026-08-06-kanban-sort-independence.md
 const handleSortModalSelect = () => {
   sortModalOpen.value = false

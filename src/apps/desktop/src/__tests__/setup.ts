@@ -66,10 +66,8 @@ if (typeof (globalThis as { ResizeObserver?: unknown }).ResizeObserver === 'unde
 // element. Tests that rely on `container.scrollTop === N` to assert
 // scroll-restore behavior (see ChatView.scrollRestore.spec.ts) require
 // a real assignment — a no-op polyfill would break those tests.
-//
-// `behavior: 'smooth'` is silently ignored (jsdom doesn't run animation
-// frames; tests that need to assert on smooth-scroll easing should mock
-// the component instead).
+// `behavior: 'smooth'` is silently ignored (jsdom doesn't run animation frames; tests that need to
+// assert on smooth-scroll easing should mock the component instead).
 if (typeof Element !== 'undefined' && !Element.prototype.scrollTo) {
   Element.prototype.scrollTo = function scrollToPolyfill(
     this: Element,

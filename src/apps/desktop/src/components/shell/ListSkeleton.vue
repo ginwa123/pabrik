@@ -7,11 +7,8 @@
 // own loading story — a centered spinner, or plain "Loading…" text.
 // A spinner in a `flex-1` container collapses the panel's scroll
 // height to ~40px and then jumps to full height when data lands; the
-// skeleton holds the layout instead.
-//
-// Shape mirrors a generic list row: full-width bar at `rowHeight` with
-// the same animate-pulse + --semantic-active-bg treatment as
-// SidebarSkeleton.vue.
+// skeleton holds the layout instead. Shape mirrors a generic list row: full-width bar at
+// `rowHeight` with the same animate-pulse + --semantic-active-bg treatment as SidebarSkeleton.vue.
 withDefaults(
   defineProps<{
     /** How many placeholder rows to render. */

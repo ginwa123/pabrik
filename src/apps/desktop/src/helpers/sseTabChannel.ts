@@ -22,11 +22,9 @@
 //     as it hears a higher-ranked leader it steps down. Steady state is exactly
 //     one connection; the overlap window is a task tick.
 //   * A HIDDEN tab only takes over by explicit `down` (and only after a longer
-//     delay), never on a heartbeat timeout — a throttled tab cannot serve the
-//     others.
-//
-// This module is transport- and app-agnostic: it knows nothing about SSE
-// payloads beyond "post it to the others" / "deliver it locally".
+// delay), never on a heartbeat timeout — a throttled tab cannot serve the others. This module is
+// transport- and app-agnostic: it knows nothing about SSE payloads beyond "post it to the others" /
+// "deliver it locally".
 
 export interface TabChannelLike {
   postMessage(message: unknown): void

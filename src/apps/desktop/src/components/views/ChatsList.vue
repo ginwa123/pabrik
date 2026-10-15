@@ -330,7 +330,7 @@ const openContextMenuInBackground = () => {
 //     Empty means CLEAR on the wire (session_update.zig:13), so a rename
 //     through this path would silently reset the chat's model profile AND
 //     bump updated_at, jumping the row to the top of a list sorted by it.
-//
+
 // Both end at the same `sessions.name`; only one touches anything else.
 // The cascade ends in a `session_updated` SSE broadcast, which the
 // onSessionEvent subscription above turns back into a loadChats().
@@ -487,10 +487,9 @@ const chatsResizeStartPx = ref(0)
 // navItems has its own shape (relativeTime, processing flag, etc.)
 // that's not derived from the workspace tree.
 //
-// Without this subscription, session events would update the
-// workspace tree but leave the sidebar stale until manual reload.
-// See `docs/superpowers/plans/2026-06-30-unify-sse-endpoints.md`
-// Chunk 5 / Task 5.3 for the migration context.
+// Without this subscription, session events would update the workspace tree but leave the sidebar
+// stale until manual reload. See `docs/superpowers/plans/2026-06-30-unify-sse-endpoints.md` Chunk 5
+// / Task 5.3 for the migration context.
 
 // Virtual scroller ref
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; the surrounding type is intentionally opaque.

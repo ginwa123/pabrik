@@ -589,9 +589,8 @@ describe('useChatScrollRestore asks the caller where the bottom is', () => {
 // runner the last settle lands on a short frame and the arrow is up when anything
 // samples it. That is the macOS flake in
 // `chatview_at_bottom_stick_ui_test.py::test_the_stick_survives_a_sizer_that_overshoots_the_content`.
-//
-// The fix: judge against `settledBottom` — where the bottom sat when the stick
-// LAST acted — which only changes when the scroller deliberately repositions.
+// The fix: judge against `settledBottom` — where the bottom sat when the stick LAST acted — which
+// only changes when the scroller deliberately repositions.
 
 describe('the live ruler is a moving target, and the stick must not care', () => {
   const clientHeight = 800

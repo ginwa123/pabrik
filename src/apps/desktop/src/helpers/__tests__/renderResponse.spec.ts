@@ -31,10 +31,8 @@ import { renderResponse, _resetRenderResponseCache } from '../renderResponse'
 // changed. Memoization collapses that to O(unique_messages_per_chat)
 // total parse calls (one per message per content mutation), removing
 // the visible "scroll jank during long chats" hot path.
-//
-// 2026-08-27 desktop scroll-perf cross-platform plan, follow-up to
-// task_1787761084050_0: the P1+P2 VirtualScroller fixes handled the
-// layout-pipeline side; this is the content-pipeline side.
+// 2026-08-27 desktop scroll-perf cross-platform plan, follow-up to task_1787761084050_0: the P1+P2
+// VirtualScroller fixes handled the layout-pipeline side; this is the content-pipeline side.
 
 describe('renderResponse memoization', () => {
   beforeEach(() => {

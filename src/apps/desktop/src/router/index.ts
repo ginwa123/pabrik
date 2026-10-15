@@ -115,11 +115,9 @@ const router = createRouter({
 // auth_enabled=false) — no redirect. Every view switch stays in the
 // URL (repo rule), so refresh/Back/shared links keep working.
 //
-// The top loading bar is driven here: start on beforeEach (covers the
-// async auth check, which is the slowest part of a redirect), finish
-// on afterEach/onError. Lazily resolved inside the guard so the router
-// module never hard-depends on an installed pinia (specs import the
-// router without one).
+// The top loading bar is driven here: start on beforeEach (covers the async auth check, which is
+// the slowest part of a redirect), finish on afterEach/onError. Lazily resolved inside the guard so
+// the router module never hard-depends on an installed pinia (specs import the router without one).
 function loadingStore() {
   try {
     return useLoadingStore()

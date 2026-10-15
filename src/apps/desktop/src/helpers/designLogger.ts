@@ -77,11 +77,9 @@ if (typeof localStorage !== 'undefined') {
 //
 // Detection: `window.__designLogger` was set by the bottom of this
 // file (the escape hatch install). If it's not present, the bundle
-// running is OLD (pre-logger) and the page should auto-enable so the
-// next page reload picks up the new bundle.
-//
-// We use a single-shot check at module-load time to avoid re-running
-// on every navigation.
+// running is OLD (pre-logger) and the page should auto-enable so the next page reload picks up the
+// new bundle. We use a single-shot check at module-load time to avoid re-running on every
+// navigation.
 if (import.meta.env.DEV && typeof window !== 'undefined') {
   const w = window as unknown as { __designLoggerAlreadyInstalled?: boolean }
   if (!w.__designLoggerAlreadyInstalled && !enabledRef.value) {

@@ -616,10 +616,9 @@ onMounted(() => {
   rehydratePreviews()
 })
 
-// ─── Rehydrate on external modelValue changes (e.g. dialog re-open) ──
-// We only re-hydrate when the modelValue grows (new image added externally).
-// `lastSeenText` is set by the bridge setter above, so the parent's
-// round-trip echo of our own keystrokes is recognised and skipped here.
+// ─── Rehydrate on external modelValue changes (e.g. dialog re-open) ── We only re-hydrate when the
+// modelValue grows (new image added externally). `lastSeenText` is set by the bridge setter above,
+// so the parent's round-trip echo of our own keystrokes is recognised and skipped here.
 const prevModelValue = ref(props.modelValue)
 onUpdated(() => {
   const v = props.modelValue

@@ -206,11 +206,9 @@ const isChildOfGroup = computed(() => {
 //   - the store doesn't have the workspace/item loaded
 //   - the parent can't be found in the elements array (orphan row)
 //
-// The reactivity means the parent is re-resolved when the page's
-// elements array changes (e.g. SSE `design_element_created` adds
-// the parent that this child references). For the common case
-// (the canvas is open + elements are fetched), the parent is found
-// on the first click.
+// The reactivity means the parent is re-resolved when the page's elements array changes (e.g. SSE
+// `design_element_created` adds the parent that this child references). For the common case (the
+// canvas is open + elements are fetched), the parent is found on the first click.
 const parentElement = computed<DesignElement | null>(() => {
   const pid = props.element.parent_id
   if (!pid || pid === '') return null

@@ -779,11 +779,9 @@ const handleCloseTaskRenameModal = () => {
 // the ids need to survive across the modal's close + reopen cycle.
 //
 // On confirm, calls `workspacesStore.renameDesignPage(...)`. The
-// store handles the optimistic update + rollback + PATCH
-// round-trip; Sidebar's only job is opening the modal + dispatching
-// the action. Failure surfaces as a toast via the store's catch
-// (renamed page = re-throws so the modal close awaits, then the
-// caller catches + notifies).
+// store handles the optimistic update + rollback + PATCH round-trip; Sidebar's only job is opening
+// the modal + dispatching the action. Failure surfaces as a toast via the store's catch (renamed
+// page = re-throws so the modal close awaits, then the caller catches + notifies).
 const handleRenameDesignPage = (
   workspaceId: string,
   itemId: string,
@@ -879,10 +877,9 @@ const createAndOpenStandardChat = async (workspaceId: string, itemId: string) =>
 // the button is instant.
 //
 // Everything past resolving the default is delegated to
-// createAndOpenStandardChat, unchanged: the race guard, the store flags,
-// and the router.replace that makes the new chat's URL deep-linkable and
-// Back/Forward-correct. Reimplementing any of that here is how two
-// subtly-different "new chat" paths get born.
+// createAndOpenStandardChat, unchanged: the race guard, the store flags, and the router.replace
+// that makes the new chat's URL deep-linkable and Back/Forward-correct. Reimplementing any of that
+// here is how two subtly-different "new chat" paths get born.
 const handleNewChat = async () => {
   const workspaceId = newChatWorkspaceId.value
   // No active workspace means no chat is possible. The button is disabled
@@ -1288,10 +1285,9 @@ const handleReorderPinnedTasks = (workspaceId: string, itemId: string, orderedId
 // owns the user-visible side effects (route to chat).
 //
 // NOTE: per-task routine handlers (handleRunRoutine,
-// handleEditRoutine + EditRoutineDialog plumbing) were deleted with
-// per-task routines (Migration 084, plan
-// 2026-09-10-workspace-items-routines). Workspace-level routines
-// fire via RoutineView → workspacesStore.runRoutineItem.
+// handleEditRoutine + EditRoutineDialog plumbing) were deleted with per-task routines (Migration
+// 084, plan 2026-09-10-workspace-items-routines). Workspace-level routines fire via RoutineView →
+// workspacesStore.runRoutineItem.
 
 // ─── Kanban handlers ────────────────────────────────────────────────────────
 //
@@ -1309,13 +1305,9 @@ const handleReorderPinnedTasks = (workspaceId: string, itemId: string, orderedId
 //   - handleAddKanbanTask    (replaced by AppLayout's call to
 //                             sidebarRef.openTaskPicker)
 //   - handleMoveKanbanTask   (moved to AppLayout's
-//                             handleKanbanMoveTask)
-//   - handleAddKanbanColumn  (moved to AppLayout's
-//                             handleKanbanAddColumn)
-//   - handleRenameKanbanColumn (moved to AppLayout's
-//                               handleKanbanRenameColumn)
-//   - handleDeleteKanbanColumn (moved to AppLayout's
-//                               handleKanbanDeleteColumn)
+// handleKanbanMoveTask) - handleAddKanbanColumn (moved to AppLayout's handleKanbanAddColumn) -
+// handleRenameKanbanColumn (moved to AppLayout's handleKanbanRenameColumn) -
+// handleDeleteKanbanColumn (moved to AppLayout's handleKanbanDeleteColumn)
 
 // Expose the task event handlers for AppLayout to call when the
 // kanban board (now mounted in the main content area, not the

@@ -422,9 +422,8 @@ const selectColumn = (id: string) => {
 // open guard below (openKey covers show, task id, and mode).
 // Initializing from the ref literal
 // (`ref<string>(props.cwd ?? '')`) used to work, but broke when the
-// parent re-mounted the dialog with a different cwd (the ref would
-// keep its first-mount value). The open guard handles BOTH initial
-// mount AND re-mount correctly. Plan:
+// parent re-mounted the dialog with a different cwd (the ref would keep its first-mount value). The
+// open guard handles BOTH initial mount AND re-mount correctly. Plan:
 // docs/superpowers/plans/2026-08-14-kanban-task-detail-edit-cwd.md
 const cwdSession = ref<string>('')
 const isCwdPickerOpen = ref(false)
@@ -525,9 +524,8 @@ const handleDocumentClickCwd = (event: MouseEvent) => {
 // was syntactically invalid and the browser silently dropped the
 // `color` and `background-color` properties. The picker looked
 // identical regardless of whether cwd was set. This computed is
-// the proper `:style` binding so the conditional resolves correctly
-// at render time. When cwd is set: bright text on the active-bg
-// (clearly reads as "you picked something"). When cwd is empty:
+// the proper `:style` binding so the conditional resolves correctly at render time. When cwd is
+// set: bright text on the active-bg (clearly reads as "you picked something"). When cwd is empty:
 // dim text on the sidebar-bg (clearly reads as "skip / optional").
 const cwdPickerStyle = computed<Record<string, string>>(() => ({
   backgroundColor: cwdSession.value ? 'var(--semantic-active-bg)' : 'var(--semantic-sidebar-bg)',
@@ -1137,11 +1135,9 @@ const filteredTagSuggestions = computed<string[]>(() => {
 // ref (mirrored into `pendingFiles` for the host to PATCH on save),
 // so the gallery is naturally empty until the task is persisted.
 //
-// Tracking `props.task?.imageUrls` directly (not a local ref) keeps
-// the gallery in sync with the host's optimistic
-// `updateTaskDetails({ imageUrls })` write — the store mutates the
-// task in place, the computed re-evaluates, the gallery re-renders
-// without any re-open dance.
+// Tracking `props.task?.imageUrls` directly (not a local ref) keeps the gallery in sync with the
+// host's optimistic `updateTaskDetails({ imageUrls })` write — the store mutates the task in place,
+// the computed re-evaluates, the gallery re-renders without any re-open dance.
 const imageUrls = computed<string[]>(() => props.task?.imageUrls ?? [])
 // Media-flags change — async lazy media: flags true but arrays still empty means the background
 // fetchTaskMedia hasn't resolved yet. Shows a lightweight loading hint instead of a blank gap.

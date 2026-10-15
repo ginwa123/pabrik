@@ -54,12 +54,9 @@ const props = withDefaults(
 //
 // Character class restrictions keep false positives low:
 //   - Must start with `/` (matches file paths, not URLs with schemes)
-//   - Allows word chars, dots, slashes, hyphens
-//   - Excludes whitespace, closing brackets, quotes, backticks
-//   - Excludes `<` to prevent capturing across HTML tag boundaries
-//
-// To opt out of chip rendering for a specific `/path`, wrap it in
-// backticks — the inline-code styling takes over.
+// - Allows word chars, dots, slashes, hyphens - Excludes whitespace, closing brackets, quotes,
+// backticks - Excludes `<` to prevent capturing across HTML tag boundaries To opt out of chip
+// rendering for a specific `/path`, wrap it in backticks — the inline-code styling takes over.
 const FILE_PATH_REGEX = /@?(\/[^\s)\]}>,"'<`]+)/g
 
 // The chip is built as an HTML string and injected with v-html, so a Vue

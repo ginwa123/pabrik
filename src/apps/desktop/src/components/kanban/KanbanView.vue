@@ -296,10 +296,9 @@ onMounted(loadColumnsAndTasks)
 // of scroll have to be persisted explicitly to survive the round-trip
 // and a refresh:
 //   - horizontal (this composable) — which column the user was looking at
-//   - vertical per column (useKanbanColumnScrollRestore, called inside
-//     <KanbanColumn>) — where they were in a 50-card column
-//
-// Plan: docs/superpowers/plans/2026-07-23-preserve-kanban-horizontal-scroll.md
+// - vertical per column (useKanbanColumnScrollRestore, called inside <KanbanColumn>) — where they
+// were in a 50-card column Plan:
+// docs/superpowers/plans/2026-07-23-preserve-kanban-horizontal-scroll.md
 const kanbanColumnsContainer = ref<HTMLElement | null>(null)
 const kanbanScrollStorageKey = computed(() => `kanban-scroll-${effectiveItemId.value}`)
 useKanbanScrollRestore(kanbanColumnsContainer, kanbanScrollStorageKey)
@@ -312,11 +311,9 @@ useKanbanScrollRestore(kanbanColumnsContainer, kanbanScrollStorageKey)
 // unreachable by all three. `columns` is the default and is stripped from
 // the URL to keep it clean.
 //
-// Precedence: URL (deep link) → localStorage (sticky preference) →
-// `columns`. A deep link must beat the stored preference.
-//
-// The stored preference is NOT user-scoped: it is a visual preference
-// like `sidebar-width`, and userScopedKey() is reserved for identity data.
+// Precedence: URL (deep link) → localStorage (sticky preference) → `columns`. A deep link must beat
+// the stored preference. The stored preference is NOT user-scoped: it is a visual preference like
+// `sidebar-width`, and userScopedKey() is reserved for identity data.
 type KanbanLayout = 'columns' | 'rows'
 const LAYOUT_PARAM = 'layout'
 const LAYOUT_STORAGE_KEY = 'pabrik-kanban-layout'
@@ -508,11 +505,9 @@ const tasks = computed<Task[]>(() => props.item.tasks ?? [])
 // q is treated as "no filter" (passed as undefined so the backend
 // omits the SQL WHERE clause). Component-local state — closing and
 // reopening the kanban clears it automatically (KanbanView is
-// mounted/unmounted on navigation between kanbans).
-//
-// Cursor resets on every query change (page 1 of the filtered set) —
-// mixing page 1 of the old query with page 2 of the new query would
-// return inconsistent results.
+// mounted/unmounted on navigation between kanbans). Cursor resets on every query change (page 1 of
+// the filtered set) — mixing page 1 of the old query with page 2 of the new query would return
+// inconsistent results.
 const searchQuery = ref('')
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -562,10 +557,8 @@ onUnmounted(clearSearchDebounce)
 //
 // The fetch is debounced (300ms) so rapid column-sort changes don't
 // fire N requests. Same pattern as the search-input handler above.
-//
-// URL format: `?sorts=col_1:name:asc,col_2:created_at:desc,...`
-// Comma-separated; each entry is `col_<id>:<sortBy>:<direction>`.
-// Validate on parse (typo / out-of-range → drop the entry).
+// URL format: `?sorts=col_1:name:asc,col_2:created_at:desc,...` Comma-separated; each entry is
+// `col_<id>:<sortBy>:<direction>`. Validate on parse (typo / out-of-range → drop the entry).
 
 interface SortEntry {
   columnId: string
@@ -635,10 +628,9 @@ const setColumnRef = (columnId: string) => (el: unknown) => {
 // changed.)
 //
 // Plan: docs/superpowers/plans/2026-08-06-kanban-sort-independence.md
-// URL mirror for per-column sorts (replaces the old columnSorts watcher).
-// Called explicitly from `handleColumnSortChange` and from the mount-time
-// URL restore in `loadColumnsAndTasks` (where it is a no-op — the URL
-// already carries the restored entries).
+// URL mirror for per-column sorts (replaces the old columnSorts watcher). Called explicitly from
+// `handleColumnSortChange` and from the mount-time URL restore in `loadColumnsAndTasks` (where it
+// is a no-op — the URL already carries the restored entries).
 const writeSortsToUrl = () => {
   const encoded = encodeSortsParam(Object.values(columnSorts.value))
   // Preserve sibling params (`?detail=`, `?layout=`, …) — rebuilding the
@@ -768,11 +760,9 @@ const handleOpenCreateDialog = () => {
 // directory". Surface a warning banner with a single click that
 // opens the folder picker and persists the chosen path via
 // workspacesStore.updateKanbanItemPath.
-//
-// The banner is purely informational (yellow tint, no destructive
-// action). It hides once a path is set. The picker reuses the
-// AddKanbanDialog's picker to keep the UX consistent — same data
-// source, same select-pick-cancel flow.
+// The banner is purely informational (yellow tint, no destructive action). It hides once a path is
+// set. The picker reuses the AddKanbanDialog's picker to keep the UX consistent — same data source,
+// same select-pick-cancel flow.
 import { getSystemFolder, listFolder, updateTaskSimple, type FolderEntry } from '../../api'
 import { updateSession as apiUpdateSession } from '../../api'
 import { listPrs } from '../../api'
@@ -1310,11 +1300,9 @@ const handleStopAllAgents = async (columnId: string) => {
 // message being queued.
 //
 // Unlike `handleStartAgent` there is no dialog to hold an inline
-// banner, so failures go to the notification store — the same
-// surface `addKanbanTask` uses for its partial-success path. The
-// per-task busy guard mirrors `startAgentBusy`: the menu row is
-// already hidden while a worker runs, this only closes the
-// double-click window before the SSE state lands.
+// banner, so failures go to the notification store — the same surface `addKanbanTask` uses for its
+// partial-success path. The per-task busy guard mirrors `startAgentBusy`: the menu row is already
+// hidden while a worker runs, this only closes the double-click window before the SSE state lands.
 const runAgentBusyByTask = ref<Record<string, boolean>>({})
 
 const handleRunAgentFromMenu = async (payload: { taskId: string }) => {
@@ -1453,14 +1441,9 @@ const handleViewCreateTask = (columnId: string) => {
 //                          first user message and starts the agent
 //                          in the background. The user stays on the
 //                          kanban view (no chat dialog opens); they
-//                          can click the new task card to open the
-//                          chat view any time.
-//
-// On error: keep the dialog open and surface the error message via
-// the dialog's `errorMessage` prop (the user can retry without
-// re-typing).
-//
-// Plan: docs/superpowers/plans/2026-08-06-kanban-create-task-run-agent.md
+// can click the new task card to open the chat view any time. On error: keep the dialog open and
+// surface the error message via the dialog's `errorMessage` prop (the user can retry without
+// re-typing). Plan: docs/superpowers/plans/2026-08-06-kanban-create-task-run-agent.md
 //   + 2026-08-06-kanban-no-base64-in-desc (pendingFiles upload step)
 //   + 2026-08-06-no-need-go-chatview (do NOT navigate to chatview on
 //     success path — keep the user on the kanban)

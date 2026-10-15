@@ -337,10 +337,8 @@ const runAgentFromMenu = () => {
 // Implemented as an inset box-shadow so it doesn't affect the card's
 // layout (no width change) and stacks naturally with the
 // dropIndicator box-shadow and the v6 3D base shadow.
-//
-// Returns a string suitable for use as the `boxShadow` CSS value,
-// or `''` for the no-stripe case (the caller's `||` chain keeps
-// the dropIndicator in place when the type stripe is absent).
+// Returns a string suitable for use as the `boxShadow` CSS value, or `''` for the no-stripe case
+// (the caller's `||` chain keeps the dropIndicator in place when the type stripe is absent).
 function typeAccentShadow(): string {
   const t = props.task.task_type
   if (t === 'memory') return 'inset 3px 0 0 0 rgb(96, 165, 250)' // blue-400
@@ -363,7 +361,7 @@ function typeAccentShadow(): string {
 //      inset shadows sit on TOP of the 3D base to keep the Jira-style
 //      left stripe and the pinned-region drag line working
 //      unchanged.
-//
+
 // CSS box-shadow stacking: FIRST value drawn on top. Outer shadows
 // come first (they're the dominant visual), inset accents last.
 const baseCardShadow =

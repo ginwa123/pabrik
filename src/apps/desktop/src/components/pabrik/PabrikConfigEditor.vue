@@ -972,7 +972,7 @@ async function setActiveProfile(name: string) {
 // failed). The empty-string sentinel works within the existing wire
 // contract — the handler at pabrik_config_put.zig:250 already maps
 // `ap.len == 0` to "clear" exactly for this purpose.
-//
+
 // Mirrors the existing `setActiveProfile` flow so the UI feedback
 // (success / error notification) is consistent.
 async function clearActiveProfile() {

@@ -61,10 +61,9 @@ import type { SseClient, SseState, SseStateInfo } from '../../helpers/sseClient'
 // nothing at all.
 //
 // `chatEngineDb` binds `fetchFn = getChatHistory` as a constructor default
-// evaluated at MODULE LOAD, so a spy installed later cannot reach it; and
-// ChatView calls `api.fetchChatHistoryEffect` directly. Both seams therefore
-// have to be a hoisted `vi.mock` factory (the pattern
-// ChatView.streamingStick.spec.ts documents at length).
+// evaluated at MODULE LOAD, so a spy installed later cannot reach it; and ChatView calls
+// `api.fetchChatHistoryEffect` directly. Both seams therefore have to be a hoisted `vi.mock`
+// factory (the pattern ChatView.streamingStick.spec.ts documents at length).
 const historyRows: unknown[] = []
 const historyResponse = () => ({
   messages: historyRows,

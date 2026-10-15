@@ -841,15 +841,15 @@ export function parseGenerateImage(data: unknown): ParsedGenerateImage {
 }
 
 // ─── web_search ────────────────────────────────────────────────────────────
-//
+
 // Parses the JSON `data` payload produced by `exec_web_search` in
 // `src/agentic_loop/tools_exec_web_search.zig`.
-//
+
 // On success the payload is UNTYPED PASSTHROUGH (D13): `response` holds the
 // provider's own JSON, verbatim and untouched.
-//
+
 //   {"provider":"tinyfish","status":200,"response":{…}}
-//
+
 // TinyFish answers `{results:[…]}`, Brave `{web:{results:[…]}}`, Serper
 // `{organic:[…]}` and a self-hosted SearxNG a bare `[{…}]`. There is
 // deliberately NO normalized result schema, so `response` stays `unknown`
@@ -1057,13 +1057,9 @@ export function parseListWebSearchProviders(data: unknown): ParsedListSearchProv
 //   {"path":"/proj","count":3,"entries":[
 //     {"name":"src","path":"/proj/src","is_directory":true,"is_symlink":false},
 //     {"name":"main.zig","path":"/proj/main.zig","is_directory":false,"is_symlink":false}
-//   ]}
-//
-// The sort order is whatever the backend produced (directories first,
-// then files, alphabetical) — the frontend does NOT re-sort.
-//
-// On error, `normalizeToolContent` unwraps the full envelope and the
-// parser reads the `error` key — see the `error !== null` branch below.
+// ]} The sort order is whatever the backend produced (directories first, then files, alphabetical)
+// — the frontend does NOT re-sort. On error, `normalizeToolContent` unwraps the full envelope and
+// the parser reads the `error` key — see the `error !== null` branch below.
 
 export interface ParsedListDirectoryEntry {
   name: string
@@ -1274,10 +1270,8 @@ export function parseMcp(toolName: string, data: unknown): ParsedMcp {
 //   already showed it):
 //     {"name":"n","kind":"...","equipped":true,
 //      "inserted":true|false,"wait_next_turn":true|false,
-//      "source":"session"|null,"note":"..."}
-//   use_tool miss:
-//     {"name":"n","equipped":false,"inserted":false,
-//      "error":"...","did_you_mean":[...],"hint":"..."}
+// "source":"session"|null,"note":"..."} use_tool miss:
+// {"name":"n","equipped":false,"inserted":false, "error":"...","did_you_mean":[...],"hint":"..."}
 
 export interface ProgressiveCatalogEntry {
   name: string

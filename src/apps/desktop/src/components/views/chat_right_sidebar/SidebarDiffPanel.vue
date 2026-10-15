@@ -80,11 +80,9 @@ const selectedStaged = ref(false)
 // Keyed by `folderDiffKey(staged, path)` — the same key the shared
 // folder-diff snapshot uses — so a row's counts and the diff it opens can
 // never disagree about which file they describe.
-//
-// A path ABSENT from the map has UNKNOWN counts and renders nothing. That
-// is deliberate and load-bearing: `+0 -0` would read as "this file is
-// unchanged", which is a lie whenever the diff fetch failed or the file
-// simply has no hunks to show yet.
+// A path ABSENT from the map has UNKNOWN counts and renders nothing. That is deliberate and
+// load-bearing: `+0 -0` would read as "this file is unchanged", which is a lie whenever the diff
+// fetch failed or the file simply has no hunks to show yet.
 const diffCounts = ref(new Map<string, { added: number; removed: number }>())
 
 // PR mode has no batch fetch to lean on — but it does not need one: the whole PR diff is already in

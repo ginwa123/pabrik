@@ -7,10 +7,8 @@
 // nothing at all — so a slow boot flashed empty sections before
 // rows arrived. One skeleton keeps the layout stable and the
 // behaviour identical everywhere.
-//
-// Shape mirrors the sidebar row: full-width bar at --sb-row height
-// with the same gutter, using the same animate-pulse +
-// --semantic-active-bg treatment as FilePickerDialog's skeleton.
+// Shape mirrors the sidebar row: full-width bar at --sb-row height with the same gutter, using the
+// same animate-pulse + --semantic-active-bg treatment as FilePickerDialog's skeleton.
 withDefaults(
   defineProps<{
     /** How many placeholder rows to render. */

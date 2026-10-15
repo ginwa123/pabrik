@@ -14,14 +14,9 @@
 //     — gated on currentView, which is 'workspace' here
 //   - workspace folder preview — gated on !activeWorkspaceItem, which
 //     is false here
-// None matched → right pane rendered BLANK.
-//
-// The fix added a new branch in AppLayout.vue that renders <ChatView>
-// directly when:
-//   activeWorkspaceItem &&
-//   activeWorkspaceItem.item_type !== 'kanban' &&
-//   activeWorkspaceItem.item_type !== 'design' &&
-//   activeTask
+// None matched → right pane rendered BLANK. The fix added a new branch in AppLayout.vue that
+// renders <ChatView> directly when: activeWorkspaceItem && activeWorkspaceItem.item_type !==
+// 'kanban' && activeWorkspaceItem.item_type !== 'design' && activeTask
 // using the task id as the chat session id (migration 052 invariant:
 // task.id == session.id).
 

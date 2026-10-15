@@ -54,11 +54,9 @@ import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 // is not a function` as an unhandled rejection, polluting the test
 // log. Polyfill a no-op `scrollTo` on the jsdom HTMLElement prototype
 // so the existing code path runs cleanly. Other tests in the
-// project that hit this path (e.g. other inline-preview specs)
-// continue to log the unhandled error — this is a pre-existing
-// issue in the test infrastructure, not a ChatView-specific
-// regression, and a global polyfill belongs in setup.ts (out of
-// scope for Chunk 8).
+// project that hit this path (e.g. other inline-preview specs) continue to log the unhandled error
+// — this is a pre-existing issue in the test infrastructure, not a ChatView-specific regression,
+// and a global polyfill belongs in setup.ts (out of scope for Chunk 8).
 if (
   typeof (globalThis as { HTMLElement?: { prototype: { scrollTo?: unknown } } }).HTMLElement
     ?.prototype.scrollTo === 'undefined'

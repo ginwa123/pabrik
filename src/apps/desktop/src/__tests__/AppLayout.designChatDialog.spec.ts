@@ -30,11 +30,9 @@
 //     dialog NOT rendered (kanban renders its chat as its own view)
 //   - The design dialog does NOT depend on the store's `activeTask`
 //     computed (the bug) — verified by NOT populating tasks on
-//     the design item, simulating the production state where init()
-//     strips them.
-//
-// The test follows the established vue-teleport-vitest-document-queryselector
-// pattern (attachTo: document.body + document.querySelector).
+// the design item, simulating the production state where init() strips them. The test follows the
+// established vue-teleport-vitest-document-queryselector pattern (attachTo: document.body +
+// document.querySelector).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'

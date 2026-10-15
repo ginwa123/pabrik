@@ -7,14 +7,9 @@
 // stacked underneath). That is what removed the original bug, where the
 // chat's floating chrome out-painted this overlay's z-index.
 //
-// Two modes, one textarea:
-//
-//   - Read: the rendered markdown.
-//   - Edit: a plain textarea over the raw source, with a live preview
-//     toggle.
-//
-// Rendering goes through `helpers/markdown.ts` rather than `marked`
-// directly: that helper escapes raw HTML BEFORE parsing, which is the
+// Two modes, one textarea: - Read: the rendered markdown. - Edit: a plain textarea over the raw
+// source, with a live preview toggle. Rendering goes through `helpers/markdown.ts` rather than
+// `marked` directly: that helper escapes raw HTML BEFORE parsing, which is the
 // repo's XSS model for every non-transcript markdown surface. A document
 // body is authored by an agent that may have quoted a file it read, so
 // this is not strictly self-XSS-only.

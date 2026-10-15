@@ -204,15 +204,15 @@ function findNode(
  * owned by Vue's reactivity and should be treated as immutable). The clone preserves `element`
  * references (no need to copy those — only the tree structure mutates). */
 // ─── Drag-and-drop state (Chunk 4 Task 4.2) ────────────────────────────
-//
+
 // LayersPanel owns the drag state machine via `useLayerDragDrop`.
 // The composable returns the drag handlers + per-row visual state
 // predicates; we pass those down to each <LayerRow>.
-//
+
 // Top-level drop zones (above the first top-level row, between each
 // pair, below the last) use the TOP_LEVEL_SENTINEL id — the same
 // sentinel the composable treats as "leave any group".
-//
+
 // Multi-drag: when the dragged row is in `selectedIds` AND the
 // selection has > 1 element, the composable sets draggedIds to the
 // FULL set. The LayerRow's per-row visual flags (`isBeingDragged`)

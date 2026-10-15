@@ -1532,12 +1532,9 @@ export async function sendChatMessage(
   }
 }
 
-// Update an existing session (selectedProfile, name, isAutoRetryUntilStop).
-//
-// Migration 063 — extends the update shape to carry the unattended-
-// mode flag. Pass `isAutoRetryUntilStop: '0'` to disable, '1' to
-// enable, or omit to leave unchanged (matches the backend's
-// `len > 0` guard).
+// Update an existing session (selectedProfile, name, isAutoRetryUntilStop). Migration 063 — extends
+// the update shape to carry the unattended- mode flag. Pass `isAutoRetryUntilStop: '0'` to disable,
+// '1' to enable, or omit to leave unchanged (matches the backend's `len > 0` guard).
 export async function updateSession(
   sessionId: string,
   updates: {
@@ -4675,10 +4672,9 @@ export async function savePabrikConfig(config: PabrikConfig): Promise<{ success:
 // user has to reconcile by hand. There is no reset/copy call: the boot seeding
 // IS the migration.
 //
-// `PUT` takes the same body as `savePabrikConfig`; the backend stores only
-// the workspace-scoped slice of it and 400s if the body carries none, so a
-// save that would silently do nothing is refused instead of reported as
-// successful.
+// `PUT` takes the same body as `savePabrikConfig`; the backend stores only the workspace-scoped
+// slice of it and 400s if the body carries none, so a save that would silently do nothing is
+// refused instead of reported as successful.
 
 /**  * `GET /api/workspaces/:id/config` — throws on a non-2xx (unlike the user-scope `getPabrikConfig`,
  * which swallows the failure into `{}`): the workspace page must be able to tell "inheriting" from
@@ -4804,10 +4800,8 @@ export async function testMcpServer(body: {
 // anything — used by the "Test" button in LlmConfigModal (Add/Edit
 // profile + sub-agent dialogs) so the user can verify the profile
 // actually works before clicking Save.
-//
-// Success: `{ ok: true, model, reply, latency_ms }`
-// Failure: `{ ok: false, error, details }`
-// Always HTTP 200 — failure is carried in the `ok` field, not the status.
+// Success: `{ ok: true, model, reply, latency_ms }` Failure: `{ ok: false, error, details }` Always
+// HTTP 200 — failure is carried in the `ok` field, not the status.
 export interface LlmTestRequest {
   model: string
   base_url: string
@@ -6022,10 +6016,9 @@ export async function disableAgentRoutineTool(
 // `(log file not found)` marker content; unknown (session, pid) is 404.
 //
 // Both fns pass `silent: true` — the list is SSE-push driven
-// (`background_process_created/completed`) with manual + resync refetch,
-// and the log tail polls every 2s only while expanded, so a toast on
-// every transient 404/5xx would be noise. Callers render
-// inline state (empty / error / marker) instead.
+// (`background_process_created/completed`) with manual + resync refetch, and the log tail polls
+// every 2s only while expanded, so a toast on every transient 404/5xx would be noise. Callers
+// render inline state (empty / error / marker) instead.
 
 export interface BackgroundProcess {
   pid: number
@@ -6259,11 +6252,9 @@ export async function deleteDocument(
 // POST/PATCH. Nothing above this module should retain one: a value held in
 // a Pinia ref, a component ref or a `title=` attribute is exactly how a
 // write-only secret becomes a readable one.
-//
-// Like documents, the backend scopes every read AND every write by the
-// `workspace_id` taken from the path, so there is no client-side filter
-// doing that work — adding one would be a second, weaker copy of a rule
-// that already lives in SQL, and the kind of duplicate that drifts.
+// Like documents, the backend scopes every read AND every write by the `workspace_id` taken from
+// the path, so there is no client-side filter doing that work — adding one would be a second,
+// weaker copy of a rule that already lives in SQL, and the kind of duplicate that drifts.
 
 /**  * One row of the `workspace_secrets` table. The absence of a value field is the contract, not an
  * oversight. A row this shape cannot be rendered with its credential in it because the credential

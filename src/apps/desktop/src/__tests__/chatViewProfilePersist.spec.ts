@@ -14,7 +14,7 @@
 // Fix: `getChatHistory` now extracts `data.selected_profile_model`
 // from the messages response, and ChatView's `loadChatHistory` reads
 // it into `selectedProfile.value` after the messages are rendered.
-//
+
 // These tests pin down the wire shape (TypeScript side) so a future
 // refactor of the API wrapper doesn't silently re-introduce the bug.
 

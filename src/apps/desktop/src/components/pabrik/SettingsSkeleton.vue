@@ -7,11 +7,9 @@
 // masked by PabrikSettings' whole-surface loading gate — replace that
 // gate with a skeleton and all four start flashing "No profiles yet"
 // on every cold load. Giving them a `loading` prop plus this
-// placeholder keeps the two changes honest together.
-//
-// Shape mirrors the row each section renders: a full-width bar at the
-// row's own height with the same gutter, using the same animate-pulse
-// + --semantic-active-bg treatment as SidebarSkeleton.vue.
+// placeholder keeps the two changes honest together. Shape mirrors the row each section renders: a
+// full-width bar at the row's own height with the same gutter, using the same animate-pulse +
+// --semantic-active-bg treatment as SidebarSkeleton.vue.
 withDefaults(
   defineProps<{
     /** How many placeholder rows to render. */

@@ -23,11 +23,9 @@ provide('processingState', processingState)
 // richer shape only `<WorkerElapsedChip>` needs, and is populated from the
 // same two sources (SSE worker events + the bootstrap refetch), so the two
 // maps can never disagree about which sessions are running.
-//
-// `startedAt` comes from `worker.created_at`; `lastActivityAt` from
-// `worker.last_activity_nano` (unix seconds on the wire). Both are
-// normalised to unix MILLISECONDS here so consumers can subtract them
-// from `Date.now()` without remembering which is which.
+// `startedAt` comes from `worker.created_at`; `lastActivityAt` from `worker.last_activity_nano`
+// (unix seconds on the wire). Both are normalised to unix MILLISECONDS here so consumers can
+// subtract them from `Date.now()` without remembering which is which.
 const workerActivity = ref<Record<string, WorkerActivity>>({})
 provide('workerActivity', workerActivity)
 

@@ -179,10 +179,9 @@ describe('useDesignSseStore (bus-backed)', () => {
 // Every locally-issued geometry PATCH registers the affected
 // element_id(s) in the `recentLocalMutations` Map (workspaces.ts). The
 // SSE handler reads this Map on every incoming event and SKIPS the
-// `fetchDesignElements` GET fan-out when the event is for a locally-
-// mutated element. Combined with the batch endpoint (1 PATCH instead
-// of N per-element PATCHes per pointermove), this is the dominant
-// backend-load reduction.
+// `fetchDesignElements` GET fan-out when the event is for a locally- mutated element. Combined with
+// the batch endpoint (1 PATCH instead of N per-element PATCHes per pointermove), this is the
+// dominant backend-load reduction.
 
 describe('designSse — local-mutation dedupe', () => {
   let localStubClient: SseClient

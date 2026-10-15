@@ -122,11 +122,9 @@ Element.prototype.scrollTo = function scrollToPolyfill(
 //   VIEWPORT   800px
 //   ROW        200px real (mocked offsetHeight)
 //   ROWS       100  →  real total 20000px, real bottom 19200px
-//   ESTIMATE   64px  →  estimated total 6400px, estimated bottom 5600px
-//
-// A reader who closed at 9000px is in the middle of the REAL transcript and far
-// above the ESTIMATED bottom — so the estimate cannot be the thing that decides
-// where they land, or the restore is meaningless.
+// ESTIMATE 64px → estimated total 6400px, estimated bottom 5600px A reader who closed at 9000px is
+// in the middle of the REAL transcript and far above the ESTIMATED bottom — so the estimate cannot
+// be the thing that decides where they land, or the restore is meaningless.
 const VIEWPORT = 800
 const ROW_HEIGHT = 200
 const ROW_COUNT = 100

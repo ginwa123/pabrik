@@ -13,7 +13,7 @@
 //    `useCurrentMainView`), never from a local flag. A local flag goes
 //    stale after a refresh, a Back/Forward, or a shared link — the exact
 //    bug `ChatsList.isCurrentChat` documents.
-//
+
 // 3. `router.replace`, not `push`, for a row click. Clicking through five
 //    documents should not bury the previous four under Back.
 import { computed, onMounted, onUpdated } from 'vue'

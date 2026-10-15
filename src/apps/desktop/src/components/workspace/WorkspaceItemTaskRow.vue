@@ -182,10 +182,8 @@ const pinTaskFromMenu = () => {
 // is Teleported to `body`, so its clicks never traverse the row and
 // there is nothing to stop; synthesising a MouseEvent to satisfy the
 // signature would be noise.
-//
-// The delete confirmation stays owned by whoever performs the delete
-// (Sidebar's ConfirmDialog) — the row contributes no dialog of its own,
-// so one "Delete task" can only ever open one confirm.
+// The delete confirmation stays owned by whoever performs the delete (Sidebar's ConfirmDialog) —
+// the row contributes no dialog of its own, so one "Delete task" can only ever open one confirm.
 const renameTaskFromMenu = () => {
   closeTaskMenu()
   emit('renameTask', props.workspaceId, props.itemId, props.task.id, props.task.name)

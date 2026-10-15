@@ -345,10 +345,9 @@ const activeWorkspace = computed(() => workspacesStore.activeWorkspace)
 // just update the client-side filter, no connection churn.
 // Empty string when no workspace is active (the store treats "" as
 // a valid workspaceId, but the activeWorkspace.value?.id falls
-// through to "" so no kanban event is ever dispatched to a
-// non-existent workspace — the workspacesStore.fetchKanbanColumns
-// helper no-ops if the (workspaceId, itemId) pair doesn't resolve to
-// a local item).
+// through to "" so no kanban event is ever dispatched to a non-existent workspace — the
+// workspacesStore.fetchKanbanColumns helper no-ops if the (workspaceId, itemId) pair doesn't
+// resolve to a local item).
 const kanbanSseStore = useKanbanSseStore()
 const activeWorkspaceId = computed(() => activeWorkspace.value?.id ?? '')
 
@@ -440,15 +439,13 @@ const pendingUrlRestore = ref<{
     return null
   })(),
 )
-// Keep one restore in flight while the target workspace lazily loads.
-// A seeded workspace can appear in the list before its items arrive;
-// checking that first snapshot would incorrectly clear the pending URL
-// restore and leave a project deep link on the blank Chats view.
+// Keep one restore in flight while the target workspace lazily loads. A seeded workspace can appear
+// in the list before its items arrive; checking that first snapshot would incorrectly clear the
+// pending URL restore and leave a project deep link on the blank Chats view.
 let urlRestoreInFlight = false
-// URL restore (replaces the old workspaces watcher). Runs once from
-// onMounted (covers fixtures seeded before mount) and from the store
-// subscription pump (covers the async initializeFromSystemFolder path).
-// Reads the live list by default so pump callers pass nothing.
+// URL restore (replaces the old workspaces watcher). Runs once from onMounted (covers fixtures
+// seeded before mount) and from the store subscription pump (covers the async
+// initializeFromSystemFolder path). Reads the live list by default so pump callers pass nothing.
 const restoreUrlState = async (wsList = workspacesStore.workspaces) => {
   if (urlRestoreInFlight) return
   const pending = pendingUrlRestore.value
@@ -1348,12 +1345,9 @@ const activeDesignChatTaskId = ref<string>('')
 // `workspaces.value[].items[].tasks` array is empty for design
 // items after init() (see the bug comment above), so the store's
 // `activeTask` computed returns null and we can't pass it
-// directly. Build a minimal Task from the captured FK info.
-//
-// `name` reads "Design Chat: <pageName>" when pageName is set,
-// otherwise falls back to "Design Chat" (matches the dialog's
-// header fallback). `taskType: 'standard'` matches the row created
-// at page-create time per the FK plan.
+// directly. Build a minimal Task from the captured FK info. `name` reads "Design Chat: <pageName>"
+// when pageName is set, otherwise falls back to "Design Chat" (matches the dialog's header
+// fallback). `taskType: 'standard'` matches the row created at page-create time per the FK plan.
 const activeDesignChatTask = computed<TaskType | null>(() => {
   if (!activeDesignChatTaskId.value) return null
   return {
@@ -1421,11 +1415,9 @@ const agentDataLoading = ref(false)
 // checkbox showed as unchecked, and clicking one POSTed against an
 // existing row → 409 "tool already enabled for this agent".
 //
-// Now: a dedicated watcher on `activeWorkspaceItemId` fetches the
-// agent data whenever the user lands on (or navigates between)
-// agent items, regardless of whether a chat task is active. The
-// `activeTask` watcher is reduced to only controlling the chat
-// dialog visibility (no fetch).
+// Now: a dedicated watcher on `activeWorkspaceItemId` fetches the agent data whenever the user
+// lands on (or navigates between) agent items, regardless of whether a chat task is active. The
+// `activeTask` watcher is reduced to only controlling the chat dialog visibility (no fetch).
 async function loadAgentData(agentItemId: string) {
   agentDataLoading.value = true
   try {
@@ -1827,11 +1819,9 @@ const syncTaskFromItemId = () => {
 // `router.replace`, the URL would still say `view=task&task=…`
 // after the close, which would force a re-mount of the standalone
 // task branch and the kanban would vanish.
-//
-// The chat list (ChatsList) is intentionally NOT touched here:
-// closing the kanban task's chatview is independent of the chat
-// list's active row (a kanban task has its own session, not a
-// chat-row session). Clearing activeTask is sufficient.
+// The chat list (ChatsList) is intentionally NOT touched here: closing the kanban task's chatview
+// is independent of the chat list's active row (a kanban task has its own session, not a chat-row
+// session). Clearing activeTask is sufficient.
 const handleCloseTaskView = () => {
   // Tab mode: a kanban task chat owns its own tab, so "close the chat" means
   // "close that tab". Falling through to the router.replace below would rewrite
@@ -1949,11 +1939,9 @@ const handleCloseTaskView = () => {
 // stopDesignResize / designColumnStyle) + the COLLAPSE state
 // machine (DESIGN_CHAT_COLLAPSED_KEY / loadDesignChatCollapsed /
 // designChatCollapsed / toggleDesignChat) have been REMOVED as part
-// of the design-chat-as-dialog plan (2026-08-06). The design chat
-// no longer sits in a 3-column split — it's a centred modal dialog
-// (DesignChatDialog) that opens on top of the full-width canvas.
-// The resize handle and collapse toggle are gone with the 3-column
-// branch.
+// of the design-chat-as-dialog plan (2026-08-06). The design chat no longer sits in a 3-column
+// split — it's a centred modal dialog (DesignChatDialog) that opens on top of the full-width
+// canvas. The resize handle and collapse toggle are gone with the 3-column branch.
 
 // ─── Kanban main-content view (was inline in WorkspaceItem.vue;
 // now mounted here so the board lives in the main content area, not
@@ -2074,11 +2062,9 @@ const handleKanbanColumnEditorDelete = () => {
 // header now pushes a vue-router path route instead of opening a
 // dialog. The new <KanbanSettingsView> component (mounted below)
 // is gated on currentView === 'kanban-settings'.
-//
-// The handlers below route the page's emits (addColumn, editColumn,
-// deleteColumn, renameItem, copySpec) to the existing
-// workspacesStore actions — same contract as the old dialog, no
-// backend changes.
+// The handlers below route the page's emits (addColumn, editColumn, deleteColumn, renameItem,
+// copySpec) to the existing workspacesStore actions — same contract as the old dialog, no backend
+// changes.
 const handleOpenKanbanSettings = () => {
   const itemId = activeWorkspaceItem.value?.id ?? ''
   if (!itemId) return
@@ -2309,11 +2295,9 @@ const handleKanbanPinTask = (
 //
 // Page CRUD (add / delete) used to live here too — we would bounce
 // the click event up from DesignView, call the API, and trust that
-// DesignView would re-fetch its pages list. It didn't, leaving the
-// user staring at stale tabs until they reloaded the page. The
-// fix moved the page CRUD into DesignView itself (which owns the
-// `pages` state), so AppLayout no longer needs addPage /
-// deletePage handlers.
+// DesignView would re-fetch its pages list. It didn't, leaving the user staring at stale tabs until
+// they reloaded the page. The fix moved the page CRUD into DesignView itself (which owns the
+// `pages` state), so AppLayout no longer needs addPage / deletePage handlers.
 const handleDesignSelectPage = (_pageId: string) => {
   // TODO (v2): workspacesStore.setActiveDesignPage(_pageId) once the
   // store tracks the active page. For now DesignView owns the page
@@ -2812,10 +2796,9 @@ const retryEditorRestore = () => {
 // what renders, and activating a tab is just a navigation. Only two pieces
 // are needed here — push the active tab's target into the URL, and turn
 // every URL change into tab state (create / focus / normalise).
-//
-// `replace`, never `push`: Back must keep meaning "go back inside the active
-// tab" rather than becoming a tab switcher. A normal navigation still uses
-// `push`, so history stays about navigation, not about tab switches.
+// `replace`, never `push`: Back must keep meaning "go back inside the active tab" rather than
+// becoming a tab switcher. A normal navigation still uses `push`, so history stays about
+// navigation, not about tab switches.
 
 /** The store side of a navigation.
  * The render chain reads the STORES (`workspacesStore.activeWorkspaceItem`,

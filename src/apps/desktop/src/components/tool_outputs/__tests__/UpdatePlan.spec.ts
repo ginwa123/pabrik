@@ -447,21 +447,11 @@ describe('UpdatePlan.vue — plan body from <plan> CDATA', () => {
 // the response envelope embeds `<plan><![CDATA[...]]></plan>` so the
 // component can render the checklist directly from `message.content`,
 // without depending on the dispatcher threading `parameters` through
-// (the agent's input args, which the dispatcher might forget).
-//
-// The full wire shape the test simulates:
-//   <tool>
-//     <name>update_plan</name>
-//     <parameters>{ "content": "..." }</parameters>  ← ignored by UpdatePlan.vue
-//     <success>true</success>
-//     <data>
-//       <update_plan>
-//         <session_id>...</session_id>
-//         <updated_at>...</updated_at>
-//         <plan><![CDATA[ ... ]]></plan>             ← source of truth
-//       </update_plan>
-//     </data>
-//   </tool>
+// (the agent's input args, which the dispatcher might forget). The full wire shape the test
+// simulates: <tool> <name>update_plan</name> <parameters>{ "content": "..." }</parameters> ←
+// ignored by UpdatePlan.vue <success>true</success> <data>
+// <update_plan> <session_id>...</session_id> <updated_at>...</updated_at> <plan><![CDATA[ ...
+// ]]></plan> ← source of truth </update_plan> </data> </tool>
 
 /**  * Build a full JSON wire envelope with the agent's input args in `parameters` and the just-written
  * plan body in `data.plan`. Mirrors the backend's `wrapToolOutput` shape (success path). */

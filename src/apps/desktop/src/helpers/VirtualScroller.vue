@@ -357,10 +357,8 @@ const consumeProgrammaticScroll = (): boolean => {
 // the running MEDIAN of measured heights (robust against one giant code-block
 // message) and supplies far better estimates for never-measured items → fewer
 // wrong spacers → fewer compensation shifts → smoother scroll.
-//
-// Reset when the items array is swapped for a different list (length → 0 or
-// identity change via the onUpdated prev-length guard below) so one chat's height
-// profile doesn't bleed into another's.
+// Reset when the items array is swapped for a different list (length → 0 or identity change via the
+// onUpdated prev-length guard below) so one chat's height profile doesn't bleed into another's.
 const heightEstimator = new AdaptiveItemHeightEstimator({
   seed: props.defaultItemHeight,
   maxSamples: 64,
@@ -1250,10 +1248,9 @@ const measureItems = () => {
 // scrollTop, which fires another scroll event → visibleRange recomputes
 // → the sync block would re-run. The guard breaks that cycle; the trailing
 // debounce below still catches any range change caused by the correction
-// itself (rare — compensation preserves the anchor's screen position).
-// `_prePaintScheduled` dedupes the onScroll call against the onUpdated
-// call for the same scroll gesture (the scroll handler runs first, the
-// update follows for the same range — one measure, not two).
+// itself (rare — compensation preserves the anchor's screen position). `_prePaintScheduled` dedupes
+// the onScroll call against the onUpdated call for the same scroll gesture (the scroll handler runs
+// first, the update follows for the same range — one measure, not two).
 let _inPrePaintMeasure = false
 let _prePaintTrailing: ReturnType<typeof setTimeout> | null = null
 let _prePaintScheduled = false
@@ -1631,10 +1628,9 @@ let ro: ResizeObserver | null = null
 // ONLY the content div's own box. Nothing in the measure path alters
 // that box — measureItems reads children; its writes move
 // topSpacer/transform (position, not size) and the sizer (a SIBLING
-// element). The callback additionally ignores sub-2px noise, skips
-// while preserving or pre-paint measuring, and stays quiet shortly
-// after a scroll event (the scroll path already measures — measuring
-// twice would just force extra layouts).
+// element). The callback additionally ignores sub-2px noise, skips while preserving or pre-paint
+// measuring, and stays quiet shortly after a scroll event (the scroll path already measures —
+// measuring twice would just force extra layouts).
 let contentRO: ResizeObserver | null = null
 let contentROTimer: ReturnType<typeof setTimeout> | null = null
 let lastContentH = -1

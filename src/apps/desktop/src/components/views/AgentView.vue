@@ -77,12 +77,9 @@ const loading = ref(true)
 // cheap and doesn't need debouncing.
 //
 // `toolsFilter` narrows the list by enabled state (All / Enabled /
-// Disabled chips) and COMPOSES with `searchQuery` — a tool must pass
-// both to be visible.
-//
-// `expandedTools` tracks which tool rows show their full (unclamped)
-// description. Descriptions default to a 2-line CSS clamp; clicking
-// the row's expander chevron toggles.
+// Disabled chips) and COMPOSES with `searchQuery` — a tool must pass both to be visible.
+// `expandedTools` tracks which tool rows show their full (unclamped) description. Descriptions
+// default to a 2-line CSS clamp; clicking the row's expander chevron toggles.
 const searchQuery = ref('')
 const toolsFilter = ref<'all' | 'enabled' | 'disabled'>('all')
 const expandedTools = ref(new Set<string>())
