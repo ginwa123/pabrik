@@ -98,16 +98,15 @@ describe('workspacesStore — design pages cache', () => {
   })
 
   it('addDesignPage auto-increments Untitled → Untitled 1 → Untitled 2', async () => {
-    // No existing pages. The first POST uses 'Untitled', the next
-    // uses 'Untitled 1', then 'Untitled 2'. The naming logic lives
-    // in the SIDEBAR's handleAddDesignPage (which picks the next
-    // name before calling the store), so this test goes through
-    // Sidebar.via's handler chain. We simulate the same
-    // call-named increment sequence by reading the body the store
-    // action would send for each input.
-    // Actually: addDesignPage just takes a name. The auto-increment
-    // logic lives in computeNextUntitledName (Sidebar.vue). Verify
-    // that contract here by passing 3 names computed the same way.
+    // No existing pages. The first POST uses 'Untitled', the next uses 'Untitled 1', then 'Untitled
+    // 2'. The naming logic lives in the SIDEBAR's handleAddDesignPage (which picks the next name
+    // before calling the store), so this test goes through Sidebar.via's handler chain.
+
+    // We simulate the same call-named increment sequence by reading the body the store action would
+    // send for each input. Actually: addDesignPage just takes a name. The auto-increment logic
+    // lives in computeNextUntitledName (Sidebar.vue).
+
+    // Verify that contract here by passing 3 names computed the same way.
     fetchMock
       .mockResolvedValueOnce({
         ok: true, status: 200,

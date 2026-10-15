@@ -125,11 +125,11 @@ describe('AddDesignElementDialog: `create` emit shape (link 1)', () => {
     nameInput.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
 
-    // Click Add. The dialog only auto-fills the HTML textarea when
-    // the type field CHANGES (the watch in AddDesignElementDialog.vue
-    // fires on `elementType` change, not on initial show). The submit
-    // handler `initialHtml.value.trim() || defaultHtmlFor(type)`
-    // falls back to the type default when the textarea is empty.
+    // Click Add. The dialog only auto-fills the HTML textarea when the type field CHANGES (the
+    // watch in AddDesignElementDialog.vue fires on `elementType` change, not on initial show).
+
+    // The submit handler `initialHtml.value.trim() || defaultHtmlFor(type)` falls back to the type
+    // default when the textarea is empty.
     findInDom<HTMLButtonElement>(
       '[data-testid="add-design-element-submit"]',
     )?.click()

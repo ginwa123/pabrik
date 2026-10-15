@@ -72,12 +72,11 @@ const emit = defineEmits<{
   moveToColumn: [columnId: string]
 }>()
 
-// ─── Submenu ────────────────────────────────────────────────────────────
-//
-// Hovering (or arrowing onto) the "Move to column" row opens this panel.
-// Two independent states, not one: `subOpen` is the intent and
-// `subPos` is where to paint it, because the panel is measured after
-// mount (its width depends on the longest column name).
+// ─── Submenu ──────────────────────────────────────────────────────────── Hovering (or arrowing
+// onto) the "Move to column" row opens this panel.
+
+// Two independent states, not one: `subOpen` is the intent and `subPos` is where to paint it,
+// because the panel is measured after mount (its width depends on the longest column name).
 const subOpen = ref(false)
 const subPos = ref({ left: 0, top: 0 })
 const subRef = ref<HTMLElement | null>(null)

@@ -1,16 +1,13 @@
 <script setup lang="ts">
-/**
- * ToolsSection — Tools tab in Pabrik settings.
- *
- * Renders the default tool checklist stored as `config.json →
- * "tools": [...]` (plan 2026-09-22-tools-menu-config-default-tools).
- * Catalog comes from `GET /api/agent-tools/registry` via the agentTools
- * store — the checklist can never contain a name the backend does not
- * know. Grouping is frontend-only (static name → group map below).
- *
- * No local save button: the shared PabrikSaveBar in PabrikSettings
- * handles save/reset through the orchestrator's config snapshot.
- */
+/** ToolsSection — Tools tab in Pabrik settings. Renders the default tool checklist stored as
+ * `config.json → "tools": [...]` (plan 2026-09-22-tools-menu-config-default-tools). */
+
+/** Catalog comes from `GET /api/agent-tools/registry` via the agentTools store — the checklist can
+ * never contain a name the backend does not know. Grouping is frontend-only (static name → group
+ * map below). */
+
+/** No local save button: the shared PabrikSaveBar in PabrikSettings handles save/reset through the
+ * orchestrator's config snapshot. */
 import { computed, onMounted } from 'vue'
 
 import { useAgentToolsStore, type AgentRegistryEntry } from '../../stores/agentTools'
@@ -18,12 +15,12 @@ import { useAgentToolsStore, type AgentRegistryEntry } from '../../stores/agentT
 const props = defineProps<{ modelValue: string[] | null }>()
 const emit = defineEmits<{ change: [list: string[]] }>()
 
-// Display selection while config.json has no `tools` key: the
-// built-in seed lists from src/agentic_loop/tools_equipped.zig —
-// DEFAULT_AGENT_TOOLS (26 names) + DEFAULT_KANBAN_TOOLS (kanban_list,
-// kanban_move_task). The first checkbox/All/None/group interaction
-// emits the full explicit array, which is what puts the key in
-// config.json.
+// Display selection while config.json has no `tools` key: the built-in seed lists from
+// src/agentic_loop/tools_equipped.zig — DEFAULT_AGENT_TOOLS (26 names) + DEFAULT_KANBAN_TOOLS
+// (kanban_list, kanban_move_task).
+
+// The first checkbox/All/None/group interaction emits the full explicit array, which is what puts
+// the key in config.json.
 const BUILTIN_DEFAULT_TOOLS: readonly string[] = [
   'command',
   'read_file',

@@ -224,11 +224,11 @@ describe('DesignView keyboard shortcuts (Chunk 4)', () => {
       )
       await flushPromises()
       const layers = wrapper.findComponent({ name: 'LayersPanel' })
-      // Selection should still be {el_a} — Cmd+A ignored because the
-      // event was dispatched on document (no target input). The
-      // input-target test is integrated into DesignElement.drag.spec
-      // via dispatch; here we cover the more practical regression:
-      // non-input focus does NOT block Cmd+A.
+      // Selection should still be {el_a} — Cmd+A ignored because the event was dispatched on
+      // document (no target input).
+
+      // The input-target test is integrated into DesignElement.drag.spec via dispatch; here we
+      // cover the more practical regression: non-input focus does NOT block Cmd+A.
       const ids = layers.props('selectedIds') as string[]
       expect(ids.length).toBeGreaterThanOrEqual(1)
     } finally {

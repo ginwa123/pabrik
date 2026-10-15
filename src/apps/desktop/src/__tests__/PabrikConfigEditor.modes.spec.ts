@@ -1,15 +1,10 @@
-/**
- * The editor's two VIEW modes and its two SCOPES.
- *
- * Modes: `Form` (the section forms) and `JSON` (the whole config as raw
- * text). Scopes: the user config and one workspace's overlay, which is what
- * `PabrikConfigSource` abstracts.
- *
- * Both are pinned here rather than in the orchestrator spec because both are
- * about the editor being the SAME component in two situations, and the
- * failure modes are quiet: an invalid JSON paste that reports success, or a
- * workspace page that writes to the user config.
- */
+/** The editor's two VIEW modes and its two SCOPES. Modes: `Form` (the section forms) and `JSON`
+ * (the whole config as raw text). Scopes: the user config and one workspace's overlay, which is
+ * what `PabrikConfigSource` abstracts. */
+
+/** Both are pinned here rather than in the orchestrator spec because both are about the editor
+ * being the SAME component in two situations, and the failure modes are quiet: an invalid JSON
+ * paste that reports success, or a workspace page that writes to the user config. */
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'

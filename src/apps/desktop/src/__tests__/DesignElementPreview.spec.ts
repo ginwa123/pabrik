@@ -1,16 +1,12 @@
-/**
- * Behavioural mount tests for DesignElementPreview.vue.
- *
- * The component renders a sandboxed iframe for the element's HTML
- * body. When `editable=true`, the iframe body becomes contenteditable
- * and emits `htmlChanged` on blur.
- *
- * Fill contract (2026-07-29, fix for "white in corner" bug): the
- * iframe's `background` style is bound to `props.fill`, NOT a
- * hardcoded 'white'. When `fill` is empty (or unset), the iframe
- * background is 'transparent' so the parent wrapper's
- * `backgroundColor: element.fill` shows through.
- */
+/** Behavioural mount tests for DesignElementPreview.vue. The component renders a sandboxed iframe
+ * for the element's HTML body. When `editable=true`, the iframe body becomes contenteditable and
+ * emits `htmlChanged` on blur. */
+
+/** Fill contract (2026-07-29, fix for "white in corner" bug): the iframe's `background` style is
+ * bound to `props.fill`, NOT a hardcoded 'white'. */
+
+/** When `fill` is empty (or unset), the iframe background is 'transparent' so the parent wrapper's
+ * `backgroundColor: element.fill` shows through. */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -41,15 +37,14 @@ describe('DesignElementPreview.vue — iframe background follows fill prop', () 
     wrapper = null
   })
 
-  // Regression for the "white in corner" bug: pre-fix the iframe's
-  // inline style was `background: 'white'` regardless of the
-  // element's fill. For elements with empty / transparent fills
-  // (input fields, buttons, modal backdrop with empty HTML), the
-  // canvas rendered as small white rectangles.
-  //
-  // Post-fix (this test): the iframe background inherits the
-  // element's `fill` prop. Empty fill → 'transparent' → the parent
-  // wrapper's fill shows through.
+  // Regression for the "white in corner" bug: pre-fix the iframe's inline style was `background:
+  // 'white'` regardless of the element's fill.
+
+  // For elements with empty / transparent fills (input fields, buttons, modal backdrop with empty
+  // HTML), the canvas rendered as small white rectangles. Post-fix (this test): the iframe
+  // background inherits the element's `fill` prop.
+
+  // Empty fill → 'transparent' → the parent wrapper's fill shows through.
   it('sets the iframe background to transparent when fill is empty', () => {
     wrapper = mountPreview({ html: '<div>x</div>', fill: '' })
     const iframe = wrapper.find('[data-testid="design-element-preview"]')

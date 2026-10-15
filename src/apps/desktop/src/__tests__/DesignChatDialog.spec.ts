@@ -249,10 +249,10 @@ describe('DesignChatDialog', () => {
   })
 
   it('swaps content when task + pageName props change (page→task pair)', async () => {
-    // In design mode each page is paired 1:1 with a task via the FK
-    // (per 2026-07-28-design-page-workspace-item-task-fk.md), so a
-    // "task swap" only happens when the user clicks a different
-    // page's 💬 button — both task AND pageName change together.
+    // In design mode each page is paired 1:1 with a task via the FK (per
+    // 2026-07-28-design-page-workspace-item-task-fk.md), so a "task swap" only happens when the
+    // user clicks a different page's 💬 button — both task AND pageName change together.
+
     // The title (pageName) updates AND ChatView remounts (new task.id).
     wrapper = mountDialog({
       show: true,

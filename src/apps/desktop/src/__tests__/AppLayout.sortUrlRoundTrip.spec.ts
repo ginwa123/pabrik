@@ -282,11 +282,11 @@ describe('AppLayout — kanban ?sorts= URL round-trip via task view', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ] as any
     rewireApiForFixture(store)
-    // No snapshot — user opened the task from a workspace that
-    // didn't have ?sorts= in its URL. The close handler must NOT
-    // add a sorts= param (that would produce ?view=workspace&sorts=
-    // which KanbanView's parseSortsParam treats as "empty" anyway,
-    // but it's still cleaner to not write the param at all).
+    // No snapshot — user opened the task from a workspace that didn't have ?sorts= in its URL.
+
+    // The close handler must NOT add a sorts= param (that would produce ?view=workspace&sorts=
+    // which KanbanView's parseSortsParam treats as "empty" anyway, but it's still cleaner to not
+    // write the param at all).
     expect(store.savedSortsParam).toBe('')
 
     const wrapper = mountAppLayout()

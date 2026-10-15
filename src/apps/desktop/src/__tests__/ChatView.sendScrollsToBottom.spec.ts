@@ -99,11 +99,12 @@ describe('ChatView — sending or queueing a turn takes the transcript to the bo
   })
 
   it('leaves the streaming auto-stick alone', () => {
-    // The other half of the contract, and the reason this fix is a helper and
-    // not a change to the gate. A run streaming into a transcript the reader
-    // has scrolled up in must still leave them where they are
-    // (`ChatView.streamingStick.spec.ts` proves that behaviour); only an
-    // explicit send or queue overrides it.
+    // The other half of the contract, and the reason this fix is a helper and not a change to the
+    // gate.
+
+    // A run streaming into a transcript the reader has scrolled up in must still leave them where
+    // they are (`ChatView.streamingStick.spec.ts` proves that behaviour); only an explicit send or
+    // queue overrides it.
     const contentShift = slice('const onContentShift = (shift:', 'const teardownContentShiftRaf')
     expect(contentShift).toContain('if (!isAtBottom.value)')
 

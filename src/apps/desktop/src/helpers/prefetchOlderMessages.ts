@@ -1,22 +1,20 @@
-/**
- * Decide when to PREFETCH older chat history — i.e. fetch the next older
- * page *before* the user's scroll reaches the load-more band, so the page
- * is already in memory (a buffer) when the band is crossed.
- *
- * Why this exists (task_1789505423062_0): `VirtualScroller`'s `loadMore`
- * check is positional AND debounced (200 ms, trailing edge, timer reset on
- * every scroll event — see `VirtualScroller.vue` `onScroll`). On a fling the
- * user therefore reaches the top edge before the request has even been
- * issued, and then waits out the round trip with nothing left to scroll.
- * Fetching early removes that wait from the critical path; committing the
- * buffered page at the positional band keeps the existing scroll-preservation
- * behaviour untouched (arm ≠ commit: prepending mid-fling would fight the
- * momentum scroll).
- *
- * Pure (no DOM, no Vue) so the decision matrix is unit-testable — the same
- * reason `virtualScrollerThreshold.ts` and `autoStickGate.ts` are standalone
- * files.
- */
+/** Decide when to PREFETCH older chat history — i.e. fetch the next older page *before* the user's
+ * scroll reaches the load-more band, so the page is already in memory (a buffer) when the band is
+ * crossed. */
+
+/** Why this exists (task_1789505423062_0): `VirtualScroller`'s `loadMore` check is positional AND
+ * debounced (200 ms, trailing edge, timer reset on every scroll event — see `VirtualScroller.vue`
+ * `onScroll`). */
+
+/** On a fling the user therefore reaches the top edge before the request has even been issued, and
+ * then waits out the round trip with nothing left to scroll. */
+
+/** Fetching early removes that wait from the critical path; committing the buffered page at the
+ * positional band keeps the existing scroll-preservation behaviour untouched (arm ≠ commit:
+ * prepending mid-fling would fight the momentum scroll). */
+
+/** Pure (no DOM, no Vue) so the decision matrix is unit-testable — the same reason
+ * `virtualScrollerThreshold.ts` and `autoStickGate.ts` are standalone files. */
 
 import { computeLoadMoreThreshold } from './virtualScrollerThreshold'
 
@@ -39,20 +37,20 @@ export const FETCH_EMA_ALPHA = 0.4
 export const FETCH_SAMPLE_MIN_MS = 60
 export const FETCH_SAMPLE_MAX_MS = 1200
 
-/** Arm radius in px: `max(800, 1.5 × containerHeight)`.
- * Delegates to `computeLoadMoreThreshold` so the "biggest of an absolute
- * floor and a viewport proportion" rule lives in exactly one place. Because
- * `max(800, 1.5h) > max(200, 0.5h)` for every `h ≥ 0`, the arm radius is
- * always strictly larger than the commit band (asserted in the spec). */
+/** Arm radius in px: `max(800, 1.5 × containerHeight)`. Delegates to `computeLoadMoreThreshold` so
+ * the "biggest of an absolute floor and a viewport proportion" rule lives in exactly one place. */
+
+/** Because `max(800, 1.5h) > max(200, 0.5h)` for every `h ≥ 0`, the arm radius is always strictly
+ * larger than the commit band (asserted in the spec). */
 export function armRadiusPx(containerHeight: number): number {
   return computeLoadMoreThreshold(ARM_RADIUS_FLOOR_PX, ARM_RADIUS_RATIO, containerHeight)
 }
 
-/** Exponential moving average of observed `getChatHistory` durations.
- * Recorded (and logged) even while the v1 trigger is distance-only, so the
- * PR can report "the page needed X ms and the user was given Y ms of head
- * start" — and so the velocity term can be switched on without re-deriving
- * state. Non-finite or out-of-range samples are ignored. */
+/** Exponential moving average of observed `getChatHistory` durations. */
+
+/** Recorded (and logged) even while the v1 trigger is distance-only, so the PR can report "the page
+ * needed X ms and the user was given Y ms of head start" — and so the velocity term can be switched
+ * on without re-deriving state. Non-finite or out-of-range samples are ignored. */
 export function nextFetchEstimate(prevMs: number, measuredMs: number): number {
   const prev = Number.isFinite(prevMs) && prevMs > 0 ? prevMs : PREFETCH_SAMPLE_INIT_MS
   if (!Number.isFinite(measuredMs) || measuredMs <= 0) return prev

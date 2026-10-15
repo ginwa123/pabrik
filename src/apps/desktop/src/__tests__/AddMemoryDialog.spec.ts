@@ -1,14 +1,12 @@
-/**
- * Tests for AddMemoryDialog — the modal that creates a new LOCAL
- * memory file (at `<cwd>/.pabrik/memories/<name>.md`). Mirrors
- * AddItemDialog.spec.ts's structure: covers the open/close
- * lifecycle, the name + content inputs, the folder picker
- * (defaults from the cwd prop but can be changed by the user),
- * the validation rules (mirror of `memories.isValidMemoryName`),
- * and the create event shape. Mocks the api module so no network
- * calls happen, and stubs FilePickerDialog (the real picker is
- * tested separately).
- */
+/** Tests for AddMemoryDialog — the modal that creates a new LOCAL memory file (at
+ * `<cwd>/.pabrik/memories/<name>.md`). */
+
+/** Mirrors AddItemDialog.spec.ts's structure: covers the open/close lifecycle, the name + content
+ * inputs, the folder picker (defaults from the cwd prop but can be changed by the user), the
+ * validation rules (mirror of `memories.isValidMemoryName`), and the create event shape. */
+
+/** Mocks the api module so no network calls happen, and stubs FilePickerDialog (the real picker is
+ * tested separately). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -66,14 +64,13 @@ function clickInDom(selector: string) {
 }
 
 function mountDialog(initialShow = true, cwd = TEST_CWD) {
-  // Wipe the body before each mount. attachTo: document.body creates
-  // a new <div data-v-app> for each mount, and these accumulate in
-  // jsdom even after wrapper.unmount() (the divs persist as empty
-  // containers). The accumulated divs cause weird interactions with
-  // subsequent mounts — most notably, the Teleport target can become
-  // confused when there are many empty data-v-app divs already in
-  // the body. Clearing the body here ensures a clean slate. Same
-  // pattern as AddItemDialog.spec.ts:70.
+  // Wipe the body before each mount. attachTo: document.body creates a new <div data-v-app> for
+  // each mount, and these accumulate in jsdom even after wrapper.unmount() (the divs persist as
+  // empty containers).
+
+  // The accumulated divs cause weird interactions with subsequent mounts — most notably, the
+  // Teleport target can become confused when there are many empty data-v-app divs already in the
+  // body. Clearing the body here ensures a clean slate. Same pattern as AddItemDialog.spec.ts:70.
   document.body.innerHTML = ''
   return mount(AddMemoryDialog, {
     attachTo: document.body,

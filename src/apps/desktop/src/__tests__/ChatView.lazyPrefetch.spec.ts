@@ -1,18 +1,15 @@
-/**
- * Source-contract tests for the older-history PREFETCH work
- * (task_1789505423062_0) — the "auto fetch before the scroll reaches the top"
- * fix.
- *
- * Why source-level: ChatView is a ~5.4k-line SFC and the existing mount-based
- * ChatView specs (`ChatView.scrollRestore.spec.ts`, `chatViewWorktree.spec.ts`)
- * fail on a clean `main` in this environment (`.virtual-scroller` never
- * renders), so a NEW mount spec here would be born red. The load-bearing
- * invariants of the prefetch are structural, so they are pinned textually the
- * same way `ChatView.userPillRail.spec.ts` pins the cursor-pagination fixes.
- *
- * The wire-level proof (request issued BEFORE the container reaches the top)
- * lives in `tests/functional_ui/chatview_lazy_prefetch_ui_test.py`.
- */
+/** Source-contract tests for the older-history PREFETCH work (task_1789505423062_0) — the "auto
+ * fetch before the scroll reaches the top" fix. */
+
+/** Why source-level: ChatView is a ~5.4k-line SFC and the existing mount-based ChatView specs
+ * (`ChatView.scrollRestore.spec.ts`, `chatViewWorktree.spec.ts`) fail on a clean `main` in this
+ * environment (`.virtual-scroller` never renders), so a NEW mount spec here would be born red. */
+
+/** The load-bearing invariants of the prefetch are structural, so they are pinned textually the
+ * same way `ChatView.userPillRail.spec.ts` pins the cursor-pagination fixes. */
+
+/** The wire-level proof (request issued BEFORE the container reaches the top) lives in
+ * `tests/functional_ui/chatview_lazy_prefetch_ui_test.py`. */
 import { describe, it, expect } from 'vitest'
 
 const readChatViewSource = async (): Promise<string> => {

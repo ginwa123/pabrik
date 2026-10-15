@@ -219,10 +219,9 @@ const handleItemDragStart = (event: DragEvent) => {
     // workspace or pinned-task payloads. Without this, the
     // WorkspaceItem's pinned-task handler (which fires before us
     // on a pinned-row dragstart via bubbling) would set
-    // `text/plain` first, then we'd overwrite it here with the
-    // item id, causing the pinned reorder drop to read the item
-    // id and silently fail (the task isn't in the item's pinned
-    // list — the store rejects the reorder).
+    // `text/plain` first, then we'd overwrite it here with the item id, causing the pinned reorder
+    // drop to read the item id and silently fail (the task isn't in the item's pinned list — the
+    // store rejects the reorder).
     event.dataTransfer.effectAllowed = 'move'
     event.dataTransfer.setData('application/x-item-id', itemId)
   }

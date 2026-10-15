@@ -132,25 +132,21 @@ export function useKanbanScrollRestore(
   }
 
   onMounted(async () => {
-    // Wait two animation frames so the content has geometry. A
-    // single rAF isn't enough: Vue mounts the DOM, then React-style
-    // effects (useLayoutEffect-like) may still settle, and the
-    // browser may need a second frame to fully compute
-    // scrollWidth / scrollHeight. Two is the minimum that
-    // consistently produces correct geometry in jsdom-less browsers
-    // (Chrome / Firefox).
+    // Wait two animation frames so the content has geometry. A single rAF isn't enough: Vue mounts
+    // the DOM, then React-style effects (useLayoutEffect-like) may still settle, and the browser
+    // may need a second frame to fully compute scrollWidth / scrollHeight.
+
+    // Two is the minimum that consistently produces correct geometry in jsdom-less browsers (Chrome
+    // / Firefox).
     await new Promise<void>((r) => requestAnimationFrame(() => r()))
     await new Promise<void>((r) => requestAnimationFrame(() => r()))
 
     const el = containerRef.value
     if (!el) return
 
-    // Attach listeners FIRST (regardless of whether there's a
-    // saved value to restore). The user might scroll from
-    // scratch — without an attached listener we'd never
-    // establish the first saved value.
-    //
-    // Passive scroll listener for the debounced fallback write.
+    // Attach listeners FIRST (regardless of whether there's a saved value to restore). The user
+    // might scroll from scratch — without an attached listener we'd never establish the first saved
+    // value. Passive scroll listener for the debounced fallback write.
     el.addEventListener('scroll', handleScroll, { passive: true })
 
     // scrollend is the fast path. Feature-detect by trying to set `onscrollend` (returns

@@ -54,11 +54,11 @@ let wsAttempt = 0
 let wsRetryTimer: ReturnType<typeof setTimeout> | null = null
 let sessionCounter = 0
 const mountedAt = Date.now()
-// Mount-time cwd resolution grace: with a git worktree the value
-// resolves as '' -> session dir -> worktree dir on every mount. Flips
-// inside this window are resolution, not scope changes — dropping
-// sessions here is what wiped restored terms on every chat return
-// ("always a new term" with worktrees).
+// Mount-time cwd resolution grace: with a git worktree the value resolves as '' -> session dir ->
+// worktree dir on every mount.
+
+// Flips inside this window are resolution, not scope changes — dropping sessions here is what wiped
+// restored terms on every chat return ("always a new term" with worktrees).
 
 const hasSessionKey = () => (props.sessionKey ?? '').length > 0
 const storageKey = () => `pabrik-terminal-sessions:${props.sessionKey}`
@@ -517,10 +517,10 @@ onMounted(() => {
 // had; no immediate run, matching the old watcher).
 async function syncCwdScope(next: string, prev: string) {
   if (next === prev || disposed) return
-  // Initial '' → dir resolution is NOT a scope change: fresh mounts
-  // already waited for cwd in newSession, and restored sessions
-  // re-attach by id (cwd-independent). Dropping here is what wiped
-  // restored sessions on every chat return ("always a new term").
+  // Initial '' → dir resolution is NOT a scope change: fresh mounts already waited for cwd in
+  // newSession, and restored sessions re-attach by id (cwd-independent). Dropping here is what
+  // wiped restored sessions on every chat return ("always a new term").
+
   // Only a real scope change (dir → different dir) restarts shells.
   if (!prev) return
   // Mount-time resolution grace (git worktree '' → session → worktree

@@ -228,14 +228,15 @@ describe('AppLayout.handleDesignCreateElement wire (bug: add element manual not 
     wrapper = mountAppLayout()
     await flushPromises()
 
-    // The handler is exposed via defineExpose so we can invoke the
-    // SAME function the @create-element template binding routes to.
-    // If AppLayout's <DesignView> is missing @create-element, the
-    // template binding is dropped — but the function itself (this
-    // same closure) still works for any caller that does fire it
-    // (e.g. a future programmatic API). This is the LOWER BOUND:
-    // we prove the handler is wired correctly and would route the
-    // payload end-to-end if it were ever invoked.
+    // The handler is exposed via defineExpose so we can invoke the SAME function the
+    // @create-element template binding routes to.
+
+    // If AppLayout's <DesignView> is missing @create-element, the template binding is dropped — but
+    // the function itself (this same closure) still works for any caller that does fire it (e.g. a
+    // future programmatic API).
+
+    // This is the LOWER BOUND: we prove the handler is wired correctly and would route the payload
+    // end-to-end if it were ever invoked.
     const exposed = wrapper.vm as unknown as {
       handleDesignCreateElement: (body: {
         name: string

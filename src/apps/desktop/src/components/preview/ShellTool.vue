@@ -87,12 +87,14 @@ const hasStderr = computed(() => {
   return stderr.value && stderr.value.trim() !== '' && stderr.value.trim() !== 'No errors.'
 })
 
-// The envelope's error string. EVERY tool result carries one - a failed
-// command, a rejected argument, a tool name that does not exist. It used to
-// be computed by `normalized` and then read by nobody, so a call that never
-// ran (success:false, data:null) rendered as a card with a name, a command
-// and no body at all: indistinguishable from a command that ran and printed
-// nothing. That is how a dead `bash` call got read as "the shell is flaky".
+// The envelope's error string. EVERY tool result carries one - a failed command, a rejected
+// argument, a tool name that does not exist.
+
+// It used to be computed by `normalized` and then read by nobody, so a call that never ran
+// (success:false, data:null) rendered as a card with a name, a command and no body at all:
+// indistinguishable from a command that ran and printed nothing.
+
+// That is how a dead `bash` call got read as "the shell is flaky".
 const envelopeError = computed((): string | null => {
   const err = normalized.value.error
   if (typeof err !== 'string') return null

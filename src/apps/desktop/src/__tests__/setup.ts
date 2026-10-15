@@ -50,16 +50,17 @@ if (typeof (globalThis as { ResizeObserver?: unknown }).ResizeObserver === 'unde
 // setTimeout / nextTick after the test's assertions have completed. Without
 // this polyfill, those post-test async callbacks throw
 // `TypeError: containerRef.value.scrollTo is not a function` and surface
-// as unhandled rejections in the vitest output (vitest reports them as
-// "caught unhandled errors" but `dangerouslyIgnoreUnhandledErrors` lets
-// the suite exit 0 — the warnings still pollute CI logs and obscure real
-// regressions).
-//
-// Implementation: parse the ScrollToOptions (or the two-arg form
-// ScrollToOptions-like), and assign scrollTop + scrollLeft on the
-// element. Tests that rely on `container.scrollTop === N` to assert
-// scroll-restore behavior (see ChatView.scrollRestore.spec.ts) require
-// a real assignment — a no-op polyfill would break those tests.
+// as unhandled rejections in the vitest output (vitest reports them as "caught unhandled errors"
+// but `dangerouslyIgnoreUnhandledErrors` lets the suite exit 0 — the warnings still pollute CI logs
+// and obscure real regressions).
+
+// Implementation: parse the ScrollToOptions (or the two-arg form ScrollToOptions-like), and assign
+// scrollTop + scrollLeft on the element.
+
+// Tests that rely on `container.scrollTop === N` to assert scroll-restore behavior (see
+// ChatView.scrollRestore.spec.ts) require a real assignment — a no-op polyfill would break those
+// tests.
+
 // `behavior: 'smooth'` is silently ignored (jsdom doesn't run animation frames; tests that need to
 // assert on smooth-scroll easing should mock the component instead).
 if (typeof Element !== 'undefined' && !Element.prototype.scrollTo) {

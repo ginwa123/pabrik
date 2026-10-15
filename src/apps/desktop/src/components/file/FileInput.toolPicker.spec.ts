@@ -342,12 +342,12 @@ describe('FileInput — /tool picker', () => {
     })
   })
 
-  // The discoverability step that precedes the picker: the user has typed
-  // enough to be heading for the tool command but not the dash yet, so
-  // the composer offers the one completion that exists. These specs pin
-  // the hint as its OWN surface (`tool-command-suggestion`) rather than
-  // reusing `tool-picker-list`, so the "a partial `/to` does not open
-  // the picker" specs above keep meaning what they say.
+  // The discoverability step that precedes the picker: the user has typed enough to be heading for
+  // the tool command but not the dash yet, so the composer offers the one completion that exists.
+
+  // These specs pin the hint as its OWN surface (`tool-command-suggestion`) rather than reusing
+  // `tool-picker-list`, so the "a partial `/to` does not open the picker" specs above keep meaning
+  // what they say.
   describe('the /tool- completion hint', () => {
     const HINT = '[data-testid="tool-command-suggestion"]'
     const PICKER = '[data-testid="tool-picker-list"]'

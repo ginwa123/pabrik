@@ -47,12 +47,12 @@ describe('ChatView empty state is gated on a server-confirmed empty transcript',
   })
 
   it('the transcript is fetched with the typed variant, not the swallowing one', () => {
-    // `getChatHistory` answering `[]` on failure IS the bug; the initial load
-    // must use `fetchChatHistoryEffect`, whose error channel keeps "the
-    // backend is down" separate from "there are no messages". Scoped to
-    // `runHistoryLoadAttempt` — `fetchOlderPage` legitimately keeps the
-    // swallowing variant (a failed speculative page must not block the
-    // foreground scroll-back path).
+    // `getChatHistory` answering `[]` on failure IS the bug; the initial load must use
+    // `fetchChatHistoryEffect`, whose error channel keeps "the backend is down" separate from
+    // "there are no messages".
+
+    // Scoped to `runHistoryLoadAttempt` — `fetchOlderPage` legitimately keeps the swallowing
+    // variant (a failed speculative page must not block the foreground scroll-back path).
     const attemptBody = chatViewSrc.slice(
       chatViewSrc.indexOf('const runHistoryLoadAttempt = async () =>'),
       chatViewSrc.indexOf('const runHistoryLoadAttemptEffect'),

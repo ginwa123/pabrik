@@ -1,18 +1,14 @@
-/**
- * Tests for AddKanbanDialog — the modal that creates a new project
- * kanban board. The user enters a name + picks a folder (the cwd for
- * the kanban's tasks); the backend seeds the default columns. After
- * the migration to FilePickerDialog (2026-06-24), the picker is mocked
- * with a stub (real picker behavior is in FilePickerDialog.spec.ts).
- *
- * Mirrors AddItemDialog.spec.ts: same `attachTo: document.body` +
- * `document.querySelector` pattern (the dialog uses <Teleport to="body">,
- * so wrapper.find(...) returns empty — we must inspect the document
- * directly).
- *
- * Plan: docs/superpowers/plans/2026-06-21-workspace-item-kanban.md
- *   Chunk 6 / Task 6.1
- */
+/** Tests for AddKanbanDialog — the modal that creates a new project kanban board. The user enters a
+ * name + picks a folder (the cwd for the kanban's tasks); the backend seeds the default columns. */
+
+/** After the migration to FilePickerDialog (2026-06-24), the picker is mocked with a stub (real
+ * picker behavior is in FilePickerDialog.spec.ts). */
+
+/** Mirrors AddItemDialog.spec.ts: same `attachTo: document.body` + `document.querySelector` pattern
+ * (the dialog uses <Teleport to="body">, so wrapper.find(...) returns empty — we must inspect the
+ * document directly). */
+
+/** Plan: docs/superpowers/plans/2026-06-21-workspace-item-kanban.md Chunk 6 / Task 6.1 */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import AddKanbanDialog from '../components/dialogs/AddKanbanDialog.vue'

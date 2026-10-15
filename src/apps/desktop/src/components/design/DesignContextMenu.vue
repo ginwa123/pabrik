@@ -81,12 +81,12 @@ const acc = (mac: string, linux: string): string => (isMac.value ? mac : linux)
 const hasSelection = computed(() => props.targetIds.length >= 1)
 const canGroup = computed(() => props.targetIds.length >= 2)
 
-// Leave group is enabled only when EXACTLY ONE element is selected
-// AND that element has a non-empty `parent_id` (it's currently nested
-// inside a group or frame). Mirrors Figma's "Pull out of group" — the
-// affordance is greyed out for already top-level rows. Independent of
-// `canUngroup`: a group/frame can ALSO be inside another group
-// (nested), in which case both Leave group AND Ungroup can fire.
+// Leave group is enabled only when EXACTLY ONE element is selected AND that element has a non-empty
+// `parent_id` (it's currently nested inside a group or frame). Mirrors Figma's "Pull out of group"
+// — the affordance is greyed out for already top-level rows.
+
+// Independent of `canUngroup`: a group/frame can ALSO be inside another group (nested), in which
+// case both Leave group AND Ungroup can fire.
 const canLeaveGroup = computed(() => {
   if (props.targetIds.length !== 1) return false
   const targetId = props.targetIds[0]

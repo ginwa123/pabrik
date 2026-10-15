@@ -37,17 +37,13 @@ vi.mock('../api', async (importOriginal) => {
   }
 })
 
-/**
- * The actual fixtures need to round-trip through the store. We use a
- * minimal stub of `useWorkspacesStore.normalizeTaskTags` — but the
- * helper is module-private. So we test it indirectly via the store's
- * public action surface (`fetchKanbanTasks` + `init`) which calls it.
- *
- * The pattern: mock `api.getTasks` to return a wire-shaped payload,
- * call the store action, then read the resulting tasks out of the
- * store and assert their `updatedAt` / `createdAt` are real Date
- * instances derived from the wire strings.
- */
+/** The actual fixtures need to round-trip through the store. We use a minimal stub of
+ * `useWorkspacesStore.normalizeTaskTags` — but the helper is module-private. So we test it
+ * indirectly via the store's public action surface (`fetchKanbanTasks` + `init`) which calls it. */
+
+/** The pattern: mock `api.getTasks` to return a wire-shaped payload, call the store action, then
+ * read the resulting tasks out of the store and assert their `updatedAt` / `createdAt` are real
+ * Date instances derived from the wire strings. */
 describe('normalizeTaskTags — wire→in-memory date mapping', () => {
   beforeEach(() => {
     setActivePinia(createPinia())

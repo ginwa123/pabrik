@@ -21,11 +21,11 @@ import { makeLocalStorageStub } from './helpers'
 
 const ITEM_ID = 'item_1'
 
-// Typed factory rather than a bare literal: KanbanColumn carries
-// workspace_item_id + created_at, and a plain object literal silently
-// drifts from the interface the component actually receives. The type is
-// aliased because this file also imports the <KanbanColumn> component —
-// same setup as KanbanColumn.spec.ts.
+// Typed factory rather than a bare literal: KanbanColumn carries workspace_item_id + created_at,
+// and a plain object literal silently drifts from the interface the component actually receives.
+
+// The type is aliased because this file also imports the <KanbanColumn> component — same setup as
+// KanbanColumn.spec.ts.
 const makeColumn = (overrides: Partial<KanbanColumnType> = {}): KanbanColumnType => ({
   id: 'col_todo',
   workspace_item_id: ITEM_ID,

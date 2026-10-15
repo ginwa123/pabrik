@@ -189,11 +189,11 @@ describe('useKanbanScrollRestore', () => {
     // Restore is a no-op: scrollLeft stays at 0.
     expect(harness.container.scrollLeft).toBe(0)
 
-    // The composable MUST still attach scroll listeners even when
-    // there's no saved value — the user might scroll from scratch,
-    // and without a listener the first saved value would never
-    // land in localStorage. Verify by scrolling + dispatching
-    // scrollend → localStorage should now have a non-null value.
+    // The composable MUST still attach scroll listeners even when there's no saved value — the user
+    // might scroll from scratch, and without a listener the first saved value would never land in
+    // localStorage.
+
+    // Verify by scrolling + dispatching scrollend → localStorage should now have a non-null value.
     harness.container.scrollLeft = 200
     harness.container.dispatchEvent(new Event('scrollend'))
     expect(localStorage.getItem('kanban-scroll-item_test')).toBe('200')

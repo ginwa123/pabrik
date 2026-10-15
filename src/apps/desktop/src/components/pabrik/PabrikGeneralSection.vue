@@ -85,12 +85,12 @@ function onRetryDelayInput(event: Event) {
   model.value = { ...model.value, retry_delay_ms: ms }
 }
 
-// `change` event fires when the user commits a value (blur / Enter),
-// which is the natural commit boundary for a number input. Listening
-// for `change` (NOT `input`) means vitest's `setValue()` (which fires
-// `change` by default) and the user's manual entry both reach the
-// handler. `input` fires on every keystroke which would re-emit
-// intermediate invalid states like "5" then "55".
+// `change` event fires when the user commits a value (blur / Enter), which is the natural commit
+// boundary for a number input. Listening for `change` (NOT `input`) means vitest's `setValue()`
+// (which fires `change` by default) and the user's manual entry both reach the handler.
+
+// `input` fires on every keystroke which would re-emit intermediate invalid states like "5" then
+// "55".
 function onRetryDelayChange(event: Event) {
   onRetryDelayInput(event)
 }

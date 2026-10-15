@@ -71,10 +71,10 @@ describe('workspaces store lazy per-workspace item loading', () => {
       configurable: true,
     })
 
-    // Declare the identity as resolved with no user (the auth-off case):
-    // `userScopedKey` then returns the legacy unscoped key, which is what
-    // these specs write via `workspacesCacheKey()`. Without this the store's
-    // first-paint gate (plan 2026-09-25, W5) refuses to read the cache,
+    // Declare the identity as resolved with no user (the auth-off case): `userScopedKey` then
+    // returns the legacy unscoped key, which is what these specs write via `workspacesCacheKey()`.
+
+    // Without this the store's first-paint gate (plan 2026-09-25, W5) refuses to read the cache,
     // because a real boot resolves `/api/auth/me` before any view mounts.
     resetUserScopeForTest()
     setCurrentUserId(null)

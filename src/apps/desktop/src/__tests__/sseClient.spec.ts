@@ -1082,9 +1082,8 @@ describe('createSseClient', () => {
   // browser's native EventSource eventually tears down the
   // underlying socket on unload, but it lingers in the network
   // panel as "open" / "pending" and the server does not know the
-  // client is gone until the server-side timeout fires. Listening
-  // for `pagehide` + `beforeunload` and calling close() makes the
-  // browser drop the stream immediately.
+  // client is gone until the server-side timeout fires. Listening for `pagehide` + `beforeunload`
+  // and calling close() makes the browser drop the stream immediately.
   it('closes the connection on pagehide so it is not still "open" after refresh', () => {
     const { ctor, instances } = createMockCtor()
     const { target: visTarget } = createMockTarget(false)

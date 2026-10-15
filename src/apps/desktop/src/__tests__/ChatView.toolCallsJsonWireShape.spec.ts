@@ -36,12 +36,12 @@ const readChatViewSource = () => readFile('components/views/ChatView.vue')
 describe('SseEvent interface — tool_calls_json field (source contract)', () => {
   it('declares tool_calls_json on the SseEvent interface', async () => {
     const source = await readApiSource()
-    // The SseEvent interface MUST carry tool_calls_json so the SSE
-    // full-handler in ChatView.vue can push it onto the message.
-    // Without this the field arrives as an untyped property and the
-    // Vue template can't see it — pill suppression is bypassed.
-    // Anchor on the interface declaration to make the assertion
-    // robust against surrounding field additions.
+    // The SseEvent interface MUST carry tool_calls_json so the SSE full-handler in ChatView.vue can
+    // push it onto the message. Without this the field arrives as an untyped property and the Vue
+    // template can't see it — pill suppression is bypassed.
+
+    // Anchor on the interface declaration to make the assertion robust against surrounding field
+    // additions.
     const ifaceStart = source.indexOf('export interface SseEvent {')
     expect(ifaceStart).toBeGreaterThan(-1)
     const ifaceEnd = source.indexOf('}', ifaceStart)

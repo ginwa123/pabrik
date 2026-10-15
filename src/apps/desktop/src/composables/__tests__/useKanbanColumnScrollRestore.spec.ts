@@ -247,11 +247,12 @@ describe('useKanbanColumnScrollRestore', () => {
   })
 
   it('wires up when the container appears LATE (the v-if card list)', async () => {
-    // The regression this composable exists for: a kanban column renders
-    // its VirtualScroller under `v-if="cardsInColumn.length > 0"`, so on a
-    // cold load (tasks still arriving) there is no element at setup time.
-    // If the listeners were attached only in onMounted, this column's
-    // position would never be saved in the first place.
+    // The regression this composable exists for: a kanban column renders its VirtualScroller under
+    // `v-if="cardsInColumn.length > 0"`, so on a cold load (tasks still arriving) there is no
+    // element at setup time.
+
+    // If the listeners were attached only in onMounted, this column's position would never be saved
+    // in the first place.
     localStorage.setItem(KEY, '640')
     const harness = mountHarness()
     await harness.setVisible(false)

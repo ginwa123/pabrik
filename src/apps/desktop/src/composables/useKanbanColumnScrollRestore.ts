@@ -65,10 +65,11 @@ export function useKanbanColumnScrollRestore(
   containerRef: Ref<HTMLElement | null>,
   storageKey: Ref<string> | string,
 ): void {
-  // Alias the key rather than mirroring it into a local ref — see the note in
-  // useChatScrollRestore. The snapshot + `{ immediate: true }` watcher this
-  // replaces could not cover a key that changed between setup and the first
-  // flush, and needed `immediate` only to paper over its own initial value.
+  // Alias the key rather than mirroring it into a local ref — see the note in useChatScrollRestore.
+
+  // The snapshot + `{ immediate: true }` watcher this replaces could not cover a key that changed
+  // between setup and the first flush, and needed `immediate` only to paper over its own initial
+  // value.
   const keyRef: Ref<string> = typeof storageKey === 'string' ? ref(storageKey) : storageKey
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null
