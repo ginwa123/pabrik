@@ -100,30 +100,24 @@ const emit = defineEmits<{
   /** DEPRECATED — replaced by `translate` (move) and `resize` (Figma parity with the backend's POST
    * /translate + POST /resize split — see
    * `docs/superpowers/plans/2026-08-06-split-move-resize.md`). */
-
   /** Kept for back-compat; new callers MUST emit the typed events. */
   update: [patch: Partial<DesignElement>]
   /** NEW (2026-08-06) — fires on every pointermove during a drag for a SINGLE element (leaf OR a
    * single-element drag of a group that didn't trigger the group-drag path). */
-
   /** Payload is the CURSOR DELTA `(dx, dy)` in design-px PLUS the source element's id — the parent
    * is responsible for adding the delta to the element's start position before calling
    * `workspacesStore.translateDesignElement`. */
-
   /** The `elementId` was added 2026-08-06 (post-#162 fix) because the single-element drag wire
    * previously relied on `selectedIds.size === 1` to identify the dragged element. */
-
   /** That check is fragile: if the user shift-clicked to deselect (toggling removed the dragged
    * id), or if a multi-select from earlier wasn't cleared, the parent's `handleElementTranslate`
    * bailed early — the element never moved. */
-
   /** Carrying the id in the event makes the wire self-contained. Replaces `update` for the move use
    * case. */
   translate: [payload: { elementId: string; dx: number; dy: number }]
   /** NEW (2026-08-06) — fires on every pointermove during a RESIZE gesture (dragging one of the 8
    * resize handles). Payload carries the absolute target `(x, y, width, height, rotation)` after
    * applying the cursor delta to the start geometry. */
-
   /** Parent calls `workspacesStore.resizeDesignElement` with this absolute patch. Replaces `update`
    * for the resize use case. */
   resize: [patch: Partial<DesignElement>]
@@ -222,18 +216,14 @@ const startDrag = (event: PointerEvent, mode: DragMode): void => {
   // The 8 resize handles are children of the .design-element wrapper. The wrapper also has a
   // @pointerdown handler (for 'move'). Without stopping propagation, clicking a handle would bubble
   // to the wrapper and start TWO gestures: the resize (on the handle) and a move (on the wrapper).
-
   // The wrapper's setPointerCapture then steals capture from the handle — the W3C Pointer Events
   // spec says most recent setPointerCapture wins — leaving the resize handler starved and the move
   // handler running instead. Result: the element MOVES instead of resizing.
-
   // Symptom: "design mode, when user want to resize the element move too". Fix: stopPropagation on
   // any non-'move' gesture.
-
   // The check runs before the readonly/previewMode/button early-returns so even an early-returning
   // handle click doesn't bubble (defensive — the bubble decision is independent of gesture
   // eligibility).
-
   // The canvas's @contextmenu (right-click menu) is a separate event and unaffected by pointerdown
   // propagation, so right-click handling still works.
   console.log('GIL START DDRAGGING', mode)
@@ -695,13 +685,12 @@ const startDrag = (event: PointerEvent, mode: DragMode): void => {
   target.addEventListener('pointercancel', onUp)
 }
 
-// ─── HTML preview wrapper ───────────────────────────────────────────────
+// ─── HTML preview wrapper ─────────────────────────────────────────────── ─── HTML preview wrapper
+// ─────────────────────────────────────────────── Lazy-load the element's stored HTML body so the
+// canvas can render the actual design (not just a placeholder rectangle).
 
-// ─── HTML preview wrapper ───────────────────────────────────────────────
-
-// Lazy-load the element's stored HTML body so the canvas can render the actual design (not just a
-// placeholder rectangle). The body is excluded from the page+elements GET response to keep payloads
-// small for designs with many elements, so we fetch per-element here.
+// The body is excluded from the page+elements GET response to keep payloads small for designs with
+// many elements, so we fetch per-element here.
 
 // Re-fetch when the element changes (different id), the file_path changes (the user updated the
 // HTML via Monaco), or the file's updated_at changes (the user re-saved via Monaco without changing

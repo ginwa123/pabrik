@@ -20,7 +20,6 @@ import { makeLocalStorageStub } from './helpers'
 
 /** Test-only stub SseClient. Mirrors the helper in `sseBus.spec.ts` (kept inline rather than shared
  * to avoid coupling between the two spec files). */
-
 /** Tracks state-listener callbacks on a non-public `__stateListeners` array so `emitStubState` can
  * fan out a transition to all subscribers — the production `SseClient` keeps the listener list in a
  * closure; tests reach it via `as any`. */
@@ -142,7 +141,6 @@ describe('App', () => {
     const wrapper = mount(App)
     // Read the provided `processingState` ref. When `mount(App)` is
     // used (root mount with no outer app), provides go to the root
-     
     // component instance under `vm.$.provides` (NOT `vm.$.appContext
     // .provides` — that's only for nested-app ancestors).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -230,9 +228,8 @@ describe('App', () => {
     // The host webview is now free to apply its native page-zoom on Ctrl+wheel / metaKey+wheel /
     // double-tap / pinch anywhere in the desktop app shell.
 
-    // Shared wrapper — every test in this block mounts via this
-    // and unmounts in afterEach so listeners from previous tests
-    // don't bleed into later ones.
+    // Shared wrapper — every test in this block mounts via this and unmounts in afterEach so
+    // listeners from previous tests don't bleed into later ones.
     let wrapper: ReturnType<typeof mount> | null = null
 
     afterEach(() => {

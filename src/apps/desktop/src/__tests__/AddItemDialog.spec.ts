@@ -1,14 +1,11 @@
 /** Tests for AddItemDialog — the modal that creates a new project from a folder. After the
  * migration to FilePickerDialog, the wrapper modal's own behavior is what we test here: open/close
  * lifecycle, name input, "Choose folder" button, the create event shape. */
-
 /** The picker itself is tested in FilePickerDialog.spec.ts. We mock FilePickerDialog with a stub
  * that exposes data-testids for the buttons we need to drive. */
-
 /** This follows the same pattern as createWorktreeDialog.spec.ts which mocks FolderExplorer — we
  * only need to verify the dialog wires up the picker's events, not test the picker itself. The
  * picker has its own test suite (FilePickerDialog.spec.ts). */
-
 /** The API is NOT mocked — the real FilePickerDialog is stubbed out entirely, so
  * listFolder/getSystemFolder are never called in these tests. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -16,7 +13,6 @@ import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import AddItemDialog from '../components/dialogs/AddItemDialog.vue'
 
 // ─── Mocks ─────────────────────────────────────────────────────────────────
-
 // Stub the FilePickerDialog — we only care that the parent wires up the
 // picker's events. Real picker behavior is tested in FilePickerDialog.spec.ts.
 //   - title prop (displayed in stub header)

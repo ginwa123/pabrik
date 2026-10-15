@@ -1,14 +1,10 @@
-/**
- * KanbanRowView — the row-mode body of a kanban board.
- *
- * Renders the same data as the column board as a vertical list grouped by
- * column: a collapsible section header per column (chevron + name + count
- * badge + ⋮ menu) with compact task rows underneath.
- *
- * This component is presentational: it reads `columns` / `tasks` props and
- * re-emits the same event set <KanbanColumn> emits. The only store access
- * is read-only (per-column pagination state) plus the "load more" action.
- */
+/** KanbanRowView — the row-mode body of a kanban board. Renders the same data as the column board
+ * as a vertical list grouped by column: a collapsible section header per column (chevron + name +
+ * count badge + ⋮ menu) with compact task rows underneath. */
+
+/** This component is presentational: it reads `columns` / `tasks` props and re-emits the same event
+ * set <KanbanColumn> emits. The only store access is read-only (per-column pagination state) plus
+ * the "load more" action. */
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -490,11 +486,9 @@ describe('KanbanRowView', () => {
     expect(wrapper.find('[data-testid="kanban-row-group-col_1-load-more"]').exists()).toBe(false)
   })
 
-  // ─── Readable row: metadata line ─────────────────────────────────────────
-
-  // The row used to render a name and nothing else, so two tasks in a
-  // group were indistinguishable. These guard the second line: every
-  // field here already ships on the Task payload the board fetches.
+  // ─── Readable row: metadata line ───────────────────────────────────────── The row used to
+  // render a name and nothing else, so two tasks in a group were indistinguishable. These guard the
+  // second line: every field here already ships on the Task payload the board fetches.
 
   it('renders the last-updated time in the metadata line', () => {
     const updated = new Date(Date.now() - 2 * 60 * 60 * 1000)
@@ -550,11 +544,9 @@ describe('KanbanRowView', () => {
     ).toBe(true)
   })
 
-  // ─── Readable row: status rail ───────────────────────────────────────────
-
-  // The rail is what makes a 110-row group scannable down its left
-  // margin. `data-kanban-row-state` is the assertion surface; the
-  // colour itself is a style binding.
+  // ─── Readable row: status rail ─────────────────────────────────────────── The rail is what
+  // makes a 110-row group scannable down its left margin. `data-kanban-row-state` is the assertion
+  // surface; the colour itself is a style binding.
 
   it('marks a task awaiting human review', () => {
     wrapper = mountRowView({

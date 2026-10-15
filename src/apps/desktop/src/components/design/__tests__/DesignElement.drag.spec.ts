@@ -235,10 +235,8 @@ describe('DesignElement drag', () => {
   // Symptom of the bug fixed in 2026-07-30: when the user clicks a resize handle, the handle's
   // pointerdown fires startDrag(e, { resize: handle }) which then bubbles to the wrapper's
   // @pointerdown (startDrag(e, 'move')).
-
   // The wrapper's setPointerCapture steals capture from the handle, and the wrapper's move handler
   // runs instead of the handle's resize handler. The element MOVES instead of resizing.
-
   // The simplest invariant to test is the duplicate handler invocation: with the bug, both handle
   // and wrapper fire startDrag, so 'select' is emitted twice. With the fix, only the handle fires
   // (startDrag calls event.stopPropagation() for any non-'move' mode), so 'select' is emitted once.
@@ -260,7 +258,6 @@ describe('DesignElement drag', () => {
     // Pre-fix: 'select' emitted TWICE (handle + wrapper).
     // Post-fix: 'select' emitted ONCE (handle only — wrapper's
     // @pointerdown never fired because the handle called
-     
     // event.stopPropagation()).
      
     const selects = wrapper.emitted('select') ?? []
@@ -370,22 +367,17 @@ describe('DesignElement drag', () => {
    * CUMULATIVE cursor delta from drag-start (`dx = e.clientX - startClientX`). The backend
    * interprets `dx` as "set x = x + dx", so each throttled emit compounded: after N //
    * eslint-disable-next-line @typescript-eslint/no-explicit-any */
-
   /** ticks of cursor movement d, the element ended up at d·N·(N+1)/2 // eslint-disable-next-line
    * @typescript-eslint/no-explicit-any */
-
   /**    * instead of d — making the element visibly leap ahead of the cursor (the "moves so fast" user
    * complaint). The fix sends the INCREMENTAL dx (delta since last emit). Each //
    * eslint-disable-next-line @typescript-eslint/no-explicit-any */
-
   /** emit carries only the cursor movement SINCE the previous emit. The backend still ADDs, but the
    * cumulative effect across emits now equals the cursor delta — not a quadratically-compounded
    * value. */
-
   /** This test pins the contract via `awplusTrick`-free simulates (no setTimeout-based waitFor): 3
    * sequential pointermoves with fake timestamps inside the same throttle window, then a pointerup
    * trailing emit. */
-
   /** We assert: (1) SUM of dx/dy across all emits equals cursor delta (30, 30) (2) each individual
    * emit carries delta ≤ |cursor delta| (never the cumulative) If anyone reverts to the cumulative
    * format, (2) catches it. / */
@@ -427,7 +419,6 @@ describe('DesignElement drag', () => {
     // (1) Sum across all emits equals cursor delta — server will
     // apply each emit with `x = x + dx`, so the cumulative effect
     // must equal the cursor movement (not compound to 30·4/2 = 60).
-     
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sumDx = translates.reduce((acc, t) => acc + (t[0] as any).dx, 0)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -480,7 +471,6 @@ describe('DesignElement drag', () => {
     root.dispatchEvent(new PointerEvent('pointerdown', { button: 0, pointerId: 1, clientX: 100, clientY: 100, bubbles: true }))
      
     // Move +50, +30 within the throttle window → only the trailing
-     
     // pointerup emit will fire, carrying the final delta.
     moveHandler(new PointerEvent('pointermove', { clientX: 150, clientY: 130, pointerId: 1 }))
     upHandler(new PointerEvent('pointerup', { pointerId: 1 }))
@@ -502,10 +492,8 @@ describe('DesignElement drag', () => {
     // emit's dx/dy is whatever landed before the trailing — depends on the throttle timing.
 
     // We don't pin groupDrags[groupDrags.length - 1][0].dx specifically here — see the
-    // throttles-rapid test for that invariant.
-
-    // Critically: this is a GROUP drag, so no `update` should fire.
-    // The parent decides where to route the per-element updates.
+    // throttles-rapid test for that invariant. Critically: this is a GROUP drag, so no `update`
+    // should fire. The parent decides where to route the per-element updates.
     expect(wrapper.emitted('update')).toBeUndefined()
   })
 
@@ -657,7 +645,6 @@ describe('DesignElement drag', () => {
   it('drag on a top-level element (parent_id === "") still emits translate (regression guard)', async () => {
      
     // parent_id is the empty string (the backend's COALESCE form for
-     
     // NULL). This is the boundary case — empty string means top-level.
     const TOP_LEVEL: DesignElementApi = {
       ...ELEMENT,
@@ -704,7 +691,6 @@ describe('DesignElement drag', () => {
   it('drag on a child element with parent_id = null (legacy shape) is treated as top-level', async () => {
     // Legacy elements returned by the API before parent_id was added
     // have `parent_id = null` (or undefined). They should be treated
-     
     // as top-level — drag is allowed.
     const LEGACY: DesignElementApi = {
       ...ELEMENT,
@@ -790,8 +776,8 @@ describe('DesignElement drag', () => {
   // Clicking a child element should now select the parent group (Figma-style deep grouping), so the
   // user can immediately drag the group without first clicking the header.
 
-  // Helper: register a parent element in the workspace store so
-  // `parentElement` (computed via `useWorkspacesStore`) can find it.
+  // Helper: register a parent element in the workspace store so `parentElement` (computed via
+  // `useWorkspacesStore`) can find it.
   const seedParentFor = (parentId: string): void => {
     const wsId = 'ws_test'
     const itemId = 'item_test'

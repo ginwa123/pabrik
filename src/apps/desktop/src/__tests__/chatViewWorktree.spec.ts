@@ -376,12 +376,9 @@ describe('ChatView worktree status button', () => {
     wrapper = await mountChatView('session_bus_isolation')
     const vm = wrapper!.vm as unknown as { streamingContent: string }
 
-    // Dispatch a chunk event for the WRONG session_id. The listener
-    // filter (`event.session_id !== sid`) must drop this — the bus's
-     
-    // single global EventSource delivers ALL sessions' events to the
-    // listener; the filter is the layer that scopes them to the
-    // active ChatView.
+    // Dispatch a chunk event for the WRONG session_id. The listener filter (`event.session_id !==
+    // sid`) must drop this — the bus's single global EventSource delivers ALL sessions' events to
+    // the listener; the filter is the layer that scopes them to the active ChatView.
     __dispatchSseBus('llm', {
       session_id: 'OTHER_SESSION',
       type: 'chunk',

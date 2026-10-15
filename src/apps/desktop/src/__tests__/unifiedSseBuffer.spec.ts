@@ -464,15 +464,12 @@ describe('createUnifiedSseConnection: single-buffer design (regression for Plan 
 
 /** Regression tests for Chunk 4 of docs/superpowers/plans/2026-06-30-single-sse-all-sessions.md:
  * The `UnifiedChannels.llm` / `.queue` shapes now accept an OPTIONAL `sessionId`. */
-
 /** When the caller omits it (the bus, in Chunk 2), the factory must send a BARE `llm` / `queue`
  * token (not `llm:` / `queue:`) so the backend's `parseChannels` routes to the central broadcast
  * keys. */
-
 /** When the caller provides a `sessionId`, the factory sends the per-session routing token
  * `llm:<sid>` / `queue:<sid>` (kept for back-compat with any future caller that wants server-side
  * filtering). */
-
 /** These tests capture the URL passed to `createSseClient` (the existing describe above captures
  * only `onEvent`; this one captures the URL via its own spy + a per-test reset). */
 describe('createUnifiedSseConnection: bare vs per-session tokens (Chunk 4)', () => {

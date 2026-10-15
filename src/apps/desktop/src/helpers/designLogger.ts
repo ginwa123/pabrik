@@ -40,13 +40,10 @@
 import { ref } from 'vue'
 
 // ─── Configuration ─────────────────────────────────────────────────────────
-
 /** Global logger enable. Default false to keep the production console quiet; flip via the Vue
  * devtools "design logger" toggle (a small boolean stored in localStorage + reactive ref). */
-
 /** We deliberately keep this SEPARATE from `import.meta.env.DEV` — `import.meta.env.DEV` is a
  * build-time constant that locks the decision to "always on in dev, always off in prod". */
-
 /** The design logger is intentionally toggleable at runtime because the bugs it catches
  * (group-cascade race, SSE-dedupe race) happen in production too, and a single `localStorage.dl=on`
  * line gets the diagnostic out the door without a rebuild. */
@@ -111,10 +108,8 @@ export const setDesignLoggerEnabled = (on: boolean): void => {
 }
 
 // ─── Reasons (the most useful field) ────────────────────────────────────────
-
 /** The set of `reason` values the design logger emits. Each one identifies a unique point in the
  * wire — a single DevTools `grep reason=…` isolates a layer. */
-
 /** Naming: a colon-separated path so a search like `reason=drag:start` matches all drag-start
  * events but `reason=drag:start:group` matches only group-drag starts. */
 export type DesignReason =
@@ -236,7 +231,6 @@ export interface DesignContext {
 }
 
 // ─── Throttling ────────────────────────────────────────────────────────────
-
 /**  * Drag pointermoves fire at 60+ Hz. Without throttling, the `drag:throttled-emit` lines would flood
  * the console. Coalesce them to the most recent per-gesture-id, flushing 200 ms after the last
  * fired (trailing edge so the final position is never lost). */
@@ -300,14 +294,11 @@ export const designLogger: DesignLogger = {
 }
 
 // ─── Console escape hatch ──────────────────────────────────────────────────
-
 // When `import.meta.env.DEV` is true, expose a `window.__designLogger`
 // so the user can toggle from DevTools without rebuilding:
-
 //   __designLogger.on()    // enable
 //   __designLogger.off()   // disable
 //   __designLogger.status() // is it on?
-
 // Production builds skip this entirely (so the toggle is dev-only).
 if (import.meta.env.DEV && typeof window !== 'undefined') {
   (window as unknown as { __designLogger: unknown }).__designLogger = {
@@ -386,7 +377,6 @@ const emitInternal = (ctx: DesignContext, level: 'debug' | 'info' | 'warn' | 'er
 }
 
 // ─── Helpers for callers ───────────────────────────────────────────────────
-
 /**  * Convert a DesignElement into the compact ElementInfo shape the logger prefers. Avoids passing 30+
  * fields when only 5 are useful for diagnostic output. */
 export const abbrevElement = (e: {

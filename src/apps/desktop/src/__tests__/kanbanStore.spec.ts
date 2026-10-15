@@ -1,12 +1,9 @@
 /** Unit tests for the kanban store actions (Chunk 5 of the workspace-item-kanban plan + the
  * follow-up fetchKanbanColumns action that fixes the "board renders empty after page reload" bug). */
-
 /** Covers: addKanbanItem, fetchKanbanColumns, addKanbanColumn, updateKanbanColumn,
  * deleteKanbanColumn, moveTaskToColumn. */
-
 /** Each action is mocked at the api.* boundary (the apiFetch wrappers in api/index.ts) and the test
  * asserts that the store's local state is updated correctly. */
-
 /** Mirrors the workspacesStoreTaskTypes.spec.ts pattern: a top-level `seedStore()` helper,
  * vi.spyOn(api, ...) per action, and `setActivePinia(createPinia())` in beforeEach. Plan:
  * docs/superpowers/plans/2026-06-21-workspace-item-kanban.md Chunk 5 / Task 5.1 */
@@ -182,7 +179,6 @@ describe('useWorkspacesStore — kanban actions', () => {
         item: {
           id: 'kanban_bare',
           // name missing — old backend shape
-         
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any,
          

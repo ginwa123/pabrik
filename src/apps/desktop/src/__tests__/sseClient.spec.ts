@@ -50,7 +50,6 @@ interface MockEventSource {
   emit(type: 'open' | 'error' | 'message' | string, data?: string): void
   /** Simulate the server's `connected` named event. This is what the SseClient uses as the
    * canonical "stream is live" signal (per the backend convention in `docs/sse-reconnect-plan.md`). */
-
   /** Native `EventSource` does not fire `connected` automatically — the SERVER sends it via `event:
    * connected\ndata: ...`. Our mock helper stands in for that server behavior. */
   simulateOpen(payload?: string): void

@@ -64,7 +64,6 @@ const makeTasks = (count: number, columnId = COL_TODO): Task[] =>
 /** Mount a KanbanColumn with a pre-populated workspaces store so `parentItem.columnPagination` is
  * non-null. Without this the `loadMoreTasksForColumn` no-ops at the store level (and so does the
  * @load-more handler — the action is the source of truth). */
-
 /** `moreTasksAvailable` and `loadingMoreTasks` are computed off the store's
  * `columnPagination[col.id]`. To exercise the @load-more handler end-to-end we need a real
  * `columnPagination[col.id]` entry with `hasMore: true` and a non-null cursor. */
@@ -450,10 +449,8 @@ describe('KanbanColumn — VirtualScroller integration', () => {
 /** First-page skeleton. Before this, a column whose page-1 fetch was still in flight rendered its
  * "No tasks yet" empty state — a false statement about the user's data, since the column may well
  * have tasks. */
-
 /** The store now exposes `isFirstPageLoading(itemId, columnId)` and the column gates a skeleton on
  * it. */
-
 /** Note the signal is deliberately NOT `columnPagination[colId]`: the ABSENCE of that entry is the
  * sentinel KanbanView's mount path uses to decide which columns still need fetching, so it cannot
  * be pre-created with `isLoading: true`. */

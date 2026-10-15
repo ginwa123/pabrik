@@ -38,7 +38,6 @@ export interface LlmConfig {
   /** Which TRANSPORT runs this profile's calls: `"http"` (default), `"claude-code"` (the local
    * `claude` CLI, subscription auth via `claude login`), or `"opencode"` (the local `opencode` CLI,
    * auth via `opencode login`). */
-
   /** Orthogonal to `url_style`, which keeps describing the HTTP body shape only. Optional on
    * purpose: an absent key IS the documented `"http"` default, so a profile that predates this
    * field needs no change. */
@@ -269,14 +268,12 @@ function onTemperatureInput(raw: string): void {
 // === Capability gating comes from the MODEL, not the wire shape =========
 // The old form showed a Reasoning-effort dropdown for every OpenAI-shaped
 // profile, including models that ignore the field entirely.
-
 /** True only when the catalog actually answered for this model. */
 const hasFacts = computed<boolean>(() => resolved.value?.source === 'catalog')
 
 /** Does the model support extended reasoning at all? With facts: its own `reasoning_options`.
  * WITHOUT facts — catalog unreachable, unknown model, first run — it degrades to the OLD
  * `url_style`-based gate rather than hiding a control because a request failed. */
-
 /** The user cannot tell "this model has no effort control" from "we could not ask", so we do not
  * pretend to. */
 const modelSupportsReasoning = computed<boolean>(() => {

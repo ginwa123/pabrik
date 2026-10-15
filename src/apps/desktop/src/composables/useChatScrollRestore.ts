@@ -99,11 +99,9 @@ export function useChatScrollRestore(
 ): {
   restore: () => number | null
   /** Whether a restoreable value is stored, judged WITHOUT the container. */
-
   /** `restore()` cannot answer this: it returns `null` both for "nothing saved" and for "the
    * container is not scrollable yet", and the caller must treat those two differently — fall
    * through to the bottom immediately versus wait for the scroller to measure. */
-
   /** See the header note. */
   hasSavedPosition: () => boolean
   restorePosition: (value: number) => void
@@ -246,7 +244,6 @@ export function useChatScrollRestore(
   /** True when localStorage holds a positive value for the current key. Deliberately reads NOTHING
    * from the container: the question is "did this reader ever leave a position behind?", which is a
    * fact about storage, not about layout. */
-
   /** Answering it from `restore()` instead would make a not-yet-measured scroller look like
    * "nothing to restore". */
   const hasSavedPosition = (): boolean =>

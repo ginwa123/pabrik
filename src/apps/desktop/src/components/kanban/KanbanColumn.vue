@@ -182,7 +182,6 @@ const setSortMode = (newSortBy: SortField, newDirection: SortDirection) => {
 defineExpose({ setSortMode })
 
 // ─── Derived data ──────────────────────────────────────────────────────────
-
 // Cards in this column. Just filters by the column id — the
 // backend's per-column fetch already returns tasks in the
 // column's own sort order (the `sortChange` handler in
@@ -490,7 +489,6 @@ const openSortModal = () => {
 // <KanbanRowView> uses the equivalent pair of single-source update handlers instead.
 // Both are correct; this one additionally fires on a re-pick of the same
 // value, which is the behaviour the comment above describes.
-
 // Plan: docs/superpowers/plans/2026-08-06-kanban-sort-independence.md
 const handleSortModalSelect = () => {
   sortModalOpen.value = false
@@ -673,11 +671,9 @@ const handleColumnDrop = (event: DragEvent) => {
   })
 }
 
-// ─── Footer add ────────────────────────────────────────────────────────────
-
-// REMOVED (plan: 2026-08-06-kanban-add-task-button-placement). The
-// single global + Add task button in the kanban header
-// (KanbanView.vue) replaces per-column footer add buttons.
+// ─── Footer add ──────────────────────────────────────────────────────────── REMOVED (plan:
+// 2026-08-06-kanban-add-task-button-placement). The single global + Add task button in the kanban
+// header (KanbanView.vue) replaces per-column footer add buttons.
 </script>
 
 <template>

@@ -329,7 +329,6 @@ const openContextMenuInBackground = () => {
 //     Empty means CLEAR on the wire (session_update.zig:13), so a rename
 //     through this path would silently reset the chat's model profile AND
 //     bump updated_at, jumping the row to the top of a list sorted by it.
-
 // Both end at the same `sessions.name`; only one touches anything else.
 // The cascade ends in a `session_updated` SSE broadcast, which the
 // onSessionEvent subscription above turns back into a loadChats().
@@ -480,14 +479,11 @@ const chatsResizeStartPx = ref(0)
 // ChatsList maintains its OWN navItems mirror of workspacesStore state, populated by loadChats().
 // To keep navItems in sync with session renames/deletes/creates, we subscribe to the store's
 // session event fan-out (registered via workspacesStore.onSessionEvent).
-
 // The callback re-runs loadChats() — the simplest correct path since navItems has its own shape
 // (relativeTime, processing flag, etc.) that's not derived from the workspace tree.
-
 // Without this subscription, session events would update the workspace tree but leave the sidebar
 // stale until manual reload. See `docs/superpowers/plans/2026-06-30-unify-sse-endpoints.md` Chunk 5
 // / Task 5.3 for the migration context.
-
 // Virtual scroller ref
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; the surrounding type is intentionally opaque.
 const virtualScrollerRef = ref<any>(null)
@@ -1089,7 +1085,6 @@ const removeChat = async (chatId: string) => {
 // each navItem is still rendered server-truth via SSE re-fetch, so
 // any other UI that wants to show unattended state (e.g. a status
 // icon) can read it from `item.is_auto_retry_until_stop === '1'`.
-
 // ─── Session Events via sseBus ─────────────────────────────────────────────────
 //
 // Session events (renames / deletes / creates) arrive through the
@@ -1101,7 +1096,6 @@ const removeChat = async (chatId: string) => {
 // list isn't derived from the workspace tree, so the internal
 // handler's match-by-task-id path is a no-op for us. See Chunk 6
 // of the unify-frontend-sse plan.
-
 // Lifecycle
 // Subscribe to session events at setup time (synchronously) so the
 // `onUnmounted` cleanup hook can also be registered synchronously

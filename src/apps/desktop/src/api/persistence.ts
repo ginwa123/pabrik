@@ -57,13 +57,10 @@ export interface FolderEntry {
   is_symlink: boolean
 }
 
-// ============================================
-// Workspace API Functions
+// ============================================ Workspace API Functions
 // ============================================
 
-/**
- * Fetch all workspaces
- */
+/** Fetch all workspaces */
 export async function getWorkspaces(): Promise<Workspace[]> {
   const response = await fetch(`${API_BASE}/persistence/workspaces`)
   if (!response.ok) {
@@ -126,13 +123,10 @@ export async function deleteWorkspace(id: string): Promise<void> {
   }
 }
 
-// ============================================
-// Workspace Item API Functions
+// ============================================ Workspace Item API Functions
 // ============================================
 
-/**
- * Create a new workspace item
- */
+/** Create a new workspace item */
 export async function createWorkspaceItem(
   workspaceId: string,
   name: string,
@@ -188,13 +182,10 @@ export async function deleteWorkspaceItem(workspaceId: string, itemId: string): 
   }
 }
 
-// ============================================
-// Task API Functions
+// ============================================ Task API Functions
 // ============================================
 
-/**
- * Create a new task
- */
+/** Create a new task */
 export async function createTask(
   itemId: string,
   name: string,
@@ -246,13 +237,10 @@ export async function deleteTask(itemId: string, taskId: string): Promise<void> 
   }
 }
 
-// ============================================
-// Chat API Functions
+// ============================================ Chat API Functions
 // ============================================
 
-/**
- * Fetch all chats
- */
+/** Fetch all chats */
 export async function getChats(): Promise<ChatNavItem[]> {
   const response = await fetch(`${API_BASE}/persistence/chats`)
   if (!response.ok) {
@@ -304,13 +292,10 @@ export async function deleteChat(id: string): Promise<void> {
   }
 }
 
-// ============================================
-// App State API Functions
+// ============================================ App State API Functions
 // ============================================
 
-/**
- * Fetch the current app state
- */
+/** Fetch the current app state */
 export async function getAppState(): Promise<AppState> {
   const response = await fetch(`${API_BASE}/persistence/app-state`)
   if (!response.ok) {

@@ -360,7 +360,6 @@ function typeAccentShadow(): string {
 //      inset shadows sit on TOP of the 3D base to keep the Jira-style
 //      left stripe and the pinned-region drag line working
 //      unchanged.
-
 // CSS box-shadow stacking: FIRST value drawn on top. Outer shadows
 // come first (they're the dominant visual), inset accents last.
 const baseCardShadow =
@@ -377,12 +376,11 @@ const hoverCardShadow =
 // business logic.
 const isHovered = ref(false)
 
-// Combined box-shadow for the card. Layered values, in CSS stacking
-// order (first on top): 3D base + Jira-style type accent (left
-// stripe) + yellow drop indicator (pinned-region drag).
+// Combined box-shadow for the card. Layered values, in CSS stacking order (first on top): 3D base +
+// Jira-style type accent (left stripe) + yellow drop indicator (pinned-region drag).
 
-// On hover the 3D base swaps to its hover variant; transition-shadow
-// in the template class animates the swap smoothly.
+// On hover the 3D base swaps to its hover variant; transition-shadow in the template class animates
+// the swap smoothly.
 const cardBoxShadow = computed<string>(() => {
   const accent = typeAccentShadow()
   const drop = dropIndicatorBoxShadow.value
@@ -395,11 +393,10 @@ const cardBoxShadow = computed<string>(() => {
 
 // The "time since" formatter for the meta row now lives in helpers/formatTaskTimestamp.ts, shared
 // with the row-mode row (KanbanTaskRow.vue) so a card and its row-mode twin can never disagree on
-// what "2h ago" means.
+// what "2h ago" means. The most-recent update timestamp available.
 
-// The most-recent update timestamp available. Falls back to `createdAt` when `updatedAt` is
-// missing. Returns null when neither is present (older task fixtures), which the meta row uses to
-// skip the time pill.
+// Falls back to `createdAt` when `updatedAt` is missing. Returns null when neither is present
+// (older task fixtures), which the meta row uses to skip the time pill.
 const lastUpdated = computed<Date | string | null>(() => {
   if (props.task.updatedAt) return props.task.updatedAt
   if (props.task.createdAt) return props.task.createdAt

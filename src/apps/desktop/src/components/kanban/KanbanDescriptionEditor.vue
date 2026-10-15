@@ -78,10 +78,9 @@ const emit = defineEmits<{
   'update:modelValue': [value: string]
 }>()
 
-// ─── State ──────────────────────────────────────────────────────────────
-
-// Local editable copy of the prop (uncontrolled between parent syncs: typing works even when the
-// parent does not round-trip our emits, e.g. in specs that mount without v-model).
+// ─── State ────────────────────────────────────────────────────────────── Local editable copy of
+// the prop (uncontrolled between parent syncs: typing works even when the parent does not
+// round-trip our emits, e.g. in specs that mount without v-model).
 
 // Every local write goes through commitText so the parent stays in sync and the rehydrate guard
 // below recognises our own keystrokes' round-trip echo.
@@ -537,7 +536,6 @@ const handlePreviewUpdate = (newFiles: PreviewFile[]) => {
 }
 
 // ─── Mount: re-hydrate previewFiles from existing modelValue ───────────
-
 // Decode a `data:<mime>;base64,<payload>` URL into a File. Avoids
 // `fetch(dataUrl)` because jsdom does not implement data: URL fetch.
 const dataUrlToFile = (dataUrl: string, name: string): File => {

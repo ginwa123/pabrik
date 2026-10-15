@@ -284,7 +284,6 @@ describe('computeAnchorCompensation', () => {
 
   it('clamps a bottom target at 0 rather than scrolling above the top', () => {
     // A degenerate short-list case: the whole transcript fits, so the bottom IS the top.
-
     // `bottomScrollTop()` cannot actually return a negative number (`Math.max(0, …)` on both of its
     // paths), so the target here is 0 rather than the -30 this test used to assert — but the clamp
     // still has to hold, because `Math.max(0, atBottomTarget)` is what keeps a 0 target from
@@ -408,7 +407,6 @@ describe('computeAnchorCompensation', () => {
 })
 
 // ─── Integration tests (mounted component) ───────────────────────────────────
-
 /** Mount a scroller with N items at the ChatView-like settings
  * (defaultItemHeight 64, buffer 30) and a fixed 800px viewport. */
 function mountScroller(n: number) {
@@ -459,7 +457,6 @@ function dispatchScroll(el: HTMLElement) {
 
 /** Give the rendered children fake offsetHeights: `tallPx` for items above `anchorIndex`,
  * `estimatePx` for the rest. Returns the expected compensation total for the above-anchor set. */
-
 /** Pass `onlyIndex` to make exactly ONE above-anchor item tall (the "single long message" case);
  * the rest keep the estimate. */
 function mockChildHeights(
@@ -706,7 +703,6 @@ describe('VirtualScroller measurement anchor compensation', () => {
     // — topSpacer shrinks by the 64px estimate while ~3000px of real content takes its place →
     // content under the viewport shifts immediately at RENDER time. The debounced measureItems only
     // compensates ≤50ms LATER, so the user sees a down-up bounce.
-
     // Fix contract: a watcher on rendered-range change must run measureItems inside nextTick
     // (pre-paint), so render + compensation land in the SAME frame. This test asserts the
     // correction WITHOUT advancing timers — if compensation needed the 50ms debounce, this fails.

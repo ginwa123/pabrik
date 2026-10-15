@@ -30,20 +30,17 @@ const props = defineProps<{
   reviewMode?: boolean
   /** True while the parent is waiting for the stop-session API call to resolve. Drives the Stop
    * button's spinner state + click-debounce. */
-
   /** The parent (ChatView) sets this to `true` immediately on click and resets it to `false` when
    * the LLM is no longer processing (driven by the SSE `worker deleted` event). */
   isStopping?: boolean
   /** Optional draft bucket. When set, typed-but-unsent text survives this component being remounted
    * — and remounting is exactly what every tab switch does (AppLayout keys each view by the active
    * tab), so without a bucket the text would silently vanish. */
-
   /** Parents that pass no `draftKey` (GitFileViewer) read and write nothing. */
   draftKey?: string
   /** True while the parent view is still running its initial load (ChatView's `isInitializing`:
    * session id unassigned or first history fetch outstanding). Disables the textarea + send button
    * so the user can't submit against an unloaded session. */
-
   /** Independent from `isLoading` (which also covers in-flight sends and flips the label to
    * "Queue"). */
   isInitializing?: boolean
@@ -52,11 +49,9 @@ const props = defineProps<{
 const emit = defineEmits<{
   submit: [message: string, files?: File[]]
   /** Emitted when the user clicks the Stop button. */
-
   /** Parent (ChatView) calls api.stopSession(sessionId) — the API call lives at the parent layer
    * because the input is shared across multiple chat views and the stop semantics are tied to the
    * chat's sessionId, not the input box. */
-
   /** The parent should also pass `:isStopping="true"` back via prop to show the spinner. */
   'stop-session': []
 }>()

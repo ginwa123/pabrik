@@ -36,7 +36,6 @@ export const KEY_PLACEHOLDER = '{key}'
 
 /** Editable row model for one provider. `id` is stable UI identity and is NEVER written to
  * config.json — the map key is `name`. */
-
 /** It exists because `name` is an editable text input: keying Vue's `:key` on it would destroy and
  * rebuild the input node on every keystroke, dropping focus mid-word. */
 export interface WebSearchProviderRow {
@@ -132,11 +131,9 @@ export function serializeWebSearchProviders(
 // ─── Host pin checks ──────────────────────────────────────────────────────── A TS port of
 // `hostOfUrl` / `isNonPublicHost` / `checkHostPolicy` from
 // `src/modules/agent/tools/web_search_curl.zig`.
-
 // Hand-rolled rather than `new URL` so a malformed URL produces a message instead of a thrown
 // `TypeError` from inside an input handler, and so the host rules stay line-for-line comparable
 // with the backend's.
-
 /** The `host[:port]` of a URL, or `''` when there is none. */
 function hostOfUrl(url: string): string {
   const schemeEnd = url.indexOf('://')
@@ -217,11 +214,9 @@ export function urlPinError(url: string): string | null {
 }
 
 // ─── Row validation ─────────────────────────────────────────────────────────
-
 /** Per-row messages keyed by `WebSearchProviderRow.id`, mirroring the rules the backend enforces on
  * `web_search`. One message per row: the first rule that fails, so the user is not handed a wall of
  * text about a row they are still halfway through typing. */
-
 /** Exported as a pure function so the parent can call it before writing `web_search` into the
  * config snapshot — the tests drive it directly. */
 export function validateWebSearchRows(rows: WebSearchProviderRow[]): Record<string, string> {
@@ -264,10 +259,8 @@ function validateWebSearchRow(row: WebSearchProviderRow): string | null {
 
 /** Route a rejected-save message onto the row it names. The settings save is one PUT of the whole
  * config, so a provider the backend refuses comes back as a single string. */
-
 /** Dropping that into a generic toast would leave the user hunting for which of N rows is broken —
  * the failure would be indistinguishable from a transport error. */
-
 /** This keeps the message verbatim and pins it to the row whose name it mentions; a message that
  * names no row yields `{}` and the caller falls back to the global notification. */
 export function webSearchRowErrorsFromMessage(

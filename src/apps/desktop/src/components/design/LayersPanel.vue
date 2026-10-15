@@ -181,7 +181,6 @@ const toggleCollapse = (elementId: string): void => {
 /** Walk the tree to find a node by id. Returns the node + its sibling array (the parent's children)
  * + the node's index within that array. Used by `handleMoveUp` / `handleMoveDown` to swap with the
  * previous / next sibling. */
-
 /** For a top-level element, `siblings` is `layerTree` (the top-level array) and `parent` is `null`.
  * For a nested element, `siblings` is the parent's `children` array. */
 function findNode(
@@ -198,18 +197,16 @@ function findNode(
   return null
 }
 
-/**  * Deep-clone the tree so we can swap siblings without mutating the `layerTree` computed (which is
+/** Deep-clone the tree so we can swap siblings without mutating the `layerTree` computed (which is
  * owned by Vue's reactivity and should be treated as immutable). The clone preserves `element`
  * references (no need to copy those — only the tree structure mutates). */
-// ─── Drag-and-drop state (Chunk 4 Task 4.2) ────────────────────────────
 
-// LayersPanel owns the drag state machine via `useLayerDragDrop`.
-// The composable returns the drag handlers + per-row visual state
-// predicates; we pass those down to each <LayerRow>.
+// ─── Drag-and-drop state (Chunk 4 Task 4.2) ──────────────────────────── LayersPanel owns the drag
+// state machine via `useLayerDragDrop`. The composable returns the drag handlers + per-row visual
+// state predicates; we pass those down to each <LayerRow>.
 
-// Top-level drop zones (above the first top-level row, between each
-// pair, below the last) use the TOP_LEVEL_SENTINEL id — the same
-// sentinel the composable treats as "leave any group".
+// Top-level drop zones (above the first top-level row, between each pair, below the last) use the
+// TOP_LEVEL_SENTINEL id — the same sentinel the composable treats as "leave any group".
 
 // Multi-drag: when the dragged row is in `selectedIds` AND the selection has > 1 element, the
 // composable sets draggedIds to the FULL set. The LayerRow's per-row visual flags
@@ -240,7 +237,6 @@ function cloneTree(nodes: LayerTreeNode[]): LayerTreeNode[] {
 /** Move the element at `elementId` up by one (toward the top of the panel). In a tree, "up" means
  * swapping with the previous SIBLING within the same parent's children array. For top-level
  * elements, the parent is the panel itself (the top-level `layerTree`). */
-
 /** Emits `reorder` with the new top-to-bottom depth-first id list. */
 const handleMoveUp = (elementId: string): void => {
   if (props.readonly) return

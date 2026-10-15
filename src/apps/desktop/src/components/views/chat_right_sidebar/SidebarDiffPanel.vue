@@ -31,7 +31,6 @@ const props = defineProps<{
   /** Branch from the bottom status bar (single source of truth, drilled via ChatRightSidebar from
    * ChatView's `sidebarBranch`). `undefined` while the status bar is still loading — the panel
    * falls back to its own fetched branch. */
-
   /** Kills the worktree-switch race where the panel's independent getGitChanges resolved with the
    * stale branch. */
   branch?: string
@@ -189,11 +188,9 @@ const prError = ref<string | null>(null)
 const prStatus = ref('')
 const prStatusTitle = ref('')
 /** The whole status payload, not just the derived strings above. */
-
 /** The merge box needs `head_sha` (the merge's head guard), `base_ref` (to say "into main"),
  * `number`/`title`/`head_ref` (the default commit message) and `mergeable` / `merge_state` (whether
  * a merge is allowed, and why not). */
-
 /** All of them arrive in the request the 30 s poll already makes, so keeping the object costs
  * nothing and a second fetch for them would be the expensive way to own two sources of truth. */
 const prStatusData = ref<api.GitPrStatus | null>(null)
@@ -299,9 +296,9 @@ const onConflictFileClick = (path: string) => {
   openFileInNewTab(path)
 }
 
-// ── Row anatomy ───────────────────────────────────────────────────────────
-// The panel shows 40+ rows of repo-relative paths that mostly share a long
-// identical prefix. Two helpers turn that into something scannable.
+// ── Row anatomy ─────────────────────────────────────────────────────────── The panel shows 40+
+// rows of repo-relative paths that mostly share a long identical prefix. Two helpers turn that into
+// something scannable.
 
 // `src/a/b/PrChecksPanel.vue` -> { dir: 'src/a/b/', name: 'PrChecksPanel.vue' } The template
 // renders dir dim and name bright, so the eye skips the shared prefix and lands on the one part
@@ -924,24 +921,19 @@ const onCommitFileClick = async (payload: { commit: api.GitCommit; file: api.Git
 // ── Surgical stage/unstage (SSE-driven) ───────────────────────────────── `+` / `−` used to answer
 // with `await loadGitStatus()` — a full `git status --porcelain -uall` plus untracked-directory
 // expansion, then a second folder-wide diff request.
-
 // On a 40-file worktree that is two git spawns and a re-render of every row, for a change that
 // moved exactly one path between two lists. The list visibly blanks and repopulates.
-
 // Now the backend emits `git_file_staged` / `git_file_unstaged` on the central `git_file_stage`
 // routing key (see src/agentic_loop/git_file_stage_events.zig) and this handler moves the ONE row
 // the event names. No list fetch, no blink.
-
 // The row move is a pure function of the three lists, so it is exported for the spec to drive
 // directly (see SidebarDiffPanel.stage.spec.ts).
-
 /** Which of the three worktree lists a path can sit in. */
 type StageList = 'staged' | 'unstaged' | 'untracked'
 
 /** Where a path belongs after a stage/unstage. Unstaging a file that was ONLY staged leaves it
  * modified in the worktree; unstaging one that was untracked-and-just-staged puts it back under
  * Untracked. */
-
 /** The backend's porcelain parse makes the same call: `??` → untracked, anything else with a
  * worktree status → modified. */
 function nextStageList(from: StageList, action: 'staged' | 'unstaged'): StageList {
@@ -952,7 +944,6 @@ function nextStageList(from: StageList, action: 'staged' | 'unstaged'): StageLis
 /** The list the row the user just acted on was in. Derived from the ACTION, not from list
  * precedence, because the action IS the evidence: the `+` button only exists on a Changes or
  * Untracked row and the `−` button only on a Staged one. */
-
 /** Precedence would get the both-lists case wrong — a path that is staged AND further modified
  * appears in Staged and Changes at once, and clicking the `+` on its Changes row must move THAT
  * row, not silently treat it as an unstage of the Staged one. */

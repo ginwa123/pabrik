@@ -119,7 +119,6 @@ function decideIsAtBottom(args: DecisionInput): boolean {
 
 /** The SHIPPED decision once the gap is measured against the STABLE anchor (`settledBottom`) rather
  * than a live `bottomScrollTop()`. */
-
 /** The tolerance widens to `AT_BOTTOM_STABLE_TOLERANCE_PX` because the anchor is written at the end
  * of a measure pass and the model can still converge by up to the tail gap before the next scroll
  * event is handled. That residual is the model's own movement, not the reader's. */
@@ -312,11 +311,9 @@ describe('reading history still disengages the stick', () => {
   })
 })
 
-// ── The real component ──────────────────────────────────────────────────────
-
-// Pure arithmetic cannot prove the component publishes the number the pure
-// function assumed. These mount VirtualScroller and read the actual
-// `bottomScrollTop()` off the exposed instance.
+// ── The real component ────────────────────────────────────────────────────── Pure arithmetic
+// cannot prove the component publishes the number the pure function assumed. These mount
+// VirtualScroller and read the actual `bottomScrollTop()` off the exposed instance.
 
 type Item = { id: string }
 const N = 120
@@ -563,7 +560,6 @@ describe('useChatScrollRestore asks the caller where the bottom is', () => {
 })
 
 // ── Wiring: the components must still call what the math assumed ────────────
-
 // ── The moving-target ruler (2026-10-10) ────────────────────────────────────
 //
 // The shared ruler fixed the DISAGREEMENT between two notions of the bottom. It

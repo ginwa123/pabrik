@@ -1,11 +1,9 @@
 /** Tests for KanbanTaskDetailDialog — focused, edit-in-place task detail view. Used by the kanban
  * tree to edit a task's name + description with optional metadata (column, type, pinned). Mount
  * pattern: same as KanbanSettingsDialog.spec.ts. */
-
 /** The dialog uses <Teleport to="body">, so the rendered DOM lives outside wrapper.element. We use
  * `attachTo: document.body` and query the teleported content via `document.querySelector` (NOT
  * `wrapper.find`). `wrapper.emitted` still works because it tracks the vm, not the DOM tree. */
-
 /** We use native `el.click()` and `dispatchEvent('input')` for interactions so v-model updates
  * synchronously. Plan: docs/superpowers/plans/2026-07-16-kanban-task-detail-dialog.md Chunk 3 /
  * Task 3.2 */

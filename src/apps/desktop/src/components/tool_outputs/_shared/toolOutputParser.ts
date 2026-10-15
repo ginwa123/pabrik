@@ -19,7 +19,6 @@
  *   - Optional strings return `null` when missing, not empty string.
  *   - Optional numbers return `null` when missing or unparseable.
  */
-
 /**
  * Decode XML entities produced by the backend's `toXmlSuccess` / `xmlError`.
  * Mirrors `llm_history.zig xmlEscape` (its inverse) exactly. The order matters:
@@ -90,11 +89,9 @@ export function extractInt(content: string, tag: string): number | null {
 // ─── JSON data-object helpers ────────────────────────────────────────────── Migrated parsers
 // (read_file, shell family, search, ask_user) take the envelope's `data` payload as a parsed object
 // and read fields directly — no tag extraction, no entity decoding (JSON needs none).
-
 // The helpers below are lenient by design: a JSON string is parsed, a full envelope object (or its
 // JSON string) is unwrapped one level to `.data`, and anything else yields safe defaults so a card
 // never throws.
-
 /** Coerce unknown input to a plain record. Unparseable input → {}. */
 function asRecord(data: unknown): Record<string, unknown> {
   if (typeof data === 'string') {
@@ -270,7 +267,6 @@ export function parseWriteFile(data: unknown): ParsedWriteFile {
 
 /** The name a skill tool acted on. `skill_name` is the canonical field on every skill tool payload;
  * `name` is the echo of what was requested and is absent from some rows. */
-
 /** An EMPTY `skill_name` counts as absent rather than winning — it would otherwise render a card
  * whose only label is blank, and `??` alone would not catch it because `''` is neither null nor
  * undefined. */
@@ -462,7 +458,6 @@ export function parseBash(data: unknown): ParsedBash {
 
 /** Parse a pwsh (PowerShell Core) tool result. Same JSON `data` shape as bash — per plan D2 + D10
  * the schema is structurally identical, only the `tool` field that wraps the envelope differs. */
-
 /** Functionally a clone of `parseBash` so future divergence (e.g. pwsh adds a `version` field for
  * the PowerShell version that ran) is a one-line change here. Tests in `toolOutputParser.spec.ts`
  * assert `parsePwsh(x) === parseBash(x)` to catch accidental drift. */
@@ -471,11 +466,9 @@ export function parsePwsh(data: unknown): ParsedBash {
 }
 
 /** Parse a `command` (unified shell) tool result. */
-
 /** Same JSON `data` shape as bash — the unified `command` tool reuses the identical 8-field payload
  * (`command`/`stdout`/`stderr`/`exit_code`/`truncated`/`timeout`/ `stdout_lines`/`stderr_lines`),
  * only the `tool` wrapper differs. */
-
 /** Functionally an alias of `parseBash` so future payload divergence is a one-line change here.
  * Tests assert `parseCommand(x) === parseBash(x)` to catch accidental drift. `parseBash` /
  * `parsePwsh` are intentionally left untouched. */
@@ -558,7 +551,6 @@ export function parseSearch(data: unknown): ParsedSearch {
 
 /** One row of a `search_skills` page. Identity is the name ALONE: the page is one workspace's
  * skills, so there is no tier to tag and no path to hand back. */
-
 /** A row that arrived with the old `scope` / `path` keys still parses — the extra keys are simply
  * not read, which keeps a cached transcript from rendering blank rows. */
 export interface SkillSearchRow {
@@ -777,14 +769,11 @@ export function parseMetadata(data: unknown): Record<string, string> {
 }
 
 // ─── generate_image ────────────────────────────────────────────────────────
-
 // Parses the JSON `data` payload produced by `execute_generate_image` in
 // `src/modules/agent/tools/generate_image.zig`:
-
 //   {"status":"generated","count":1,"model":"dall-e-3","size":"1024x1024",
 //    "images":[{"index":0,"path":"/cwd/.../img_xxx.png","bytes":12345,"mime":"image/png"}],
 //    "revised_prompt":"A vibrant watercolor painting of a hat-wearing cat","error":null}
-
 // On error:
 //   {"status":null,"count":null,"model":null,"size":null,"images":[],
 //    "revised_prompt":null,"error":"HTTP 400: ..."}
@@ -840,27 +829,19 @@ export function parseGenerateImage(data: unknown): ParsedGenerateImage {
 }
 
 // ─── web_search ────────────────────────────────────────────────────────────
-
 // Parses the JSON `data` payload produced by `exec_web_search` in
 // `src/agentic_loop/tools_exec_web_search.zig`.
-
 // On success the payload is UNTYPED PASSTHROUGH (D13): `response` holds the
 // provider's own JSON, verbatim and untouched.
-
 //   {"provider":"tinyfish","status":200,"response":{…}}
-
 // TinyFish answers `{results:[…]}`, Brave `{web:{results:[…]}}`, Serper `{organic:[…]}` and a
 // self-hosted SearxNG a bare `[{…}]`. There is deliberately NO normalized result schema, so
 // `response` stays `unknown` here and the renderer is the only layer allowed an opinion about it.
-
 // A shape this client has never seen is a normal outcome (D13), not an error.
-
 // A failure carries `error` plus a reason flag — `configured:false`, `unknown_provider` (+
 // `available`), `host_mismatch` (+ `pinned_host`, `requested_host`), `invalid_curl`, `exhausted` (+
 // `other_providers`), `unsafe_pinned_url`, `response_too_large` or `http_status`.
-
 // `transport` is the flagless one: DNS, TLS or timeout, and the message is the envelope.
-
 /** The nine reasons a `web_search` envelope can fail, as the card spells them. */
 export type WebSearchErrorFlag =
   | 'configured'
@@ -967,7 +948,6 @@ export function parseWebSearchError(o: Record<string, unknown>): ParsedWebSearch
 /** The exec wrapper reports a failure in TWO places: the envelope's `error` field, and — for the
  * reasons the model can recover from on its own — the whole inner JSON envelope as that field's
  * TEXT. */
-
 /** When it is a text envelope, read the flags out of it; when it is a plain sentence, report the
  * sentence and no flag, because a message with no reason key is not evidence of a transport
  * failure. */
@@ -1008,12 +988,9 @@ export function parseWebSearch(data: unknown): ParsedWebSearch {
 }
 
 // ─── list_web_search_providers ─────────────────────────────────────────────
-
 // The `exec_list_web_search_providers` payload (D14):
-
 //   {"providers":[{"name":"tinyfish","url":"https://api.search.tinyfish.ai",
 //                  "description":"…","curl":"curl 'https://…?key={key}'"}]}
-
 // `curl` is a TEMPLATE: it carries the literal text `{key}` where the
 // credential belongs, so the listing is safe by construction — nothing
 // secret reaches the model, and the card may render it verbatim.
