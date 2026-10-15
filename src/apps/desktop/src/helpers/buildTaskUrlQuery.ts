@@ -86,11 +86,9 @@ export interface TaskUrlContext {
   currentQuery?: UrlQueryInput | null | undefined
 }
 
-/**
- * Build a URL query object for chat-dialog navigation on a
+/** Build a URL query object for chat-dialog navigation on a
  * workspace item. Always emits `view: 'workspace'` and includes the
- * `/chat/<taskId>` suffix on `itemId`.
- */
+ * `/chat/<taskId>` suffix on `itemId`. */
 export function buildTaskUrlQuery(input: TaskUrlContext): Record<string, string> {
   const taskId = (input.taskId ?? '').toString().trim()
   if (!taskId) {

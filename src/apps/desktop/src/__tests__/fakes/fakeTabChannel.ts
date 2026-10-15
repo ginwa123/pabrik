@@ -125,11 +125,9 @@ export async function waitFor(pred: () => boolean, timeoutMs = 600): Promise<voi
   while (!pred() && Date.now() - start < timeoutMs) await settle(5)
 }
 
-/**
- * A minimal "another tab is already leading" participant: answers `who` with
+/** A minimal "another tab is already leading" participant: answers `who` with
  * `here` and emits periodic `beat`s, so the tab under test stays a follower.
- * Returns a stop function.
- */
+ * Returns a stop function. */
 export function fakeForeignLeader(
   hub: FakeTabChannelHub,
   channelName: string,

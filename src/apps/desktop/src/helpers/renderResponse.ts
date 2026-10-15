@@ -45,11 +45,9 @@ const MAX_CACHE_ENTRIES = 200
 // times). Tests reset via `_resetRenderResponseCache`.
 const cache = new Map<string, string>()
 
-/**
- * Test-only cache reset. Not exported through the helpers barrel
+/** Test-only cache reset. Not exported through the helpers barrel
  * (helpers/index.ts) so production callers can't accidentally
- * clobber the cache.
- */
+ * clobber the cache. */
 export const _resetRenderResponseCache = (): void => {
   cache.clear()
 }
@@ -60,11 +58,9 @@ const computeKey = (content: string, role: string, toolName: string | undefined)
   return `${role}|${toolName ?? ''}|${content.trim()}`
 }
 
-/**
- * The inline pill for a tool whose result carries no summary of its own:
+/** The inline pill for a tool whose result carries no summary of its own:
  * the tool name, plus whether it worked. Shared by the empty-content path and
- * the unregistered-tool fallback so the two cannot drift apart.
- */
+ * the unregistered-tool fallback so the two cannot drift apart. */
 const toolNamePill = (toolName: string, status?: 'ok' | 'failed', detail?: string): string => {
   const name = escapeHtml(toolName)
   if (status === 'failed') {

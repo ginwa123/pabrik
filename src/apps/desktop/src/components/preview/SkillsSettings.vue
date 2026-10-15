@@ -8,11 +8,9 @@ import { SyncRemoteError } from '../../sync/SyncError'
 import { runSyncResult } from '../../sync/runtime'
 
 const props = defineProps<{
-  /**
-   * Explicit workspace binding, forwarded to the list + detail halves.
+  /** Explicit workspace binding, forwarded to the list + detail halves.
    * The workspace settings page passes the route workspace id; absent
-   * keeps the previous behaviour (active workspace from the store).
-   */
+   * keeps the previous behaviour (active workspace from the store). */
   workspaceId?: string | null
 }>()
 

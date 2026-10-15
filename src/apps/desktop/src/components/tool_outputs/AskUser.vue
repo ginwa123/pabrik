@@ -264,11 +264,9 @@ function parseAnswers(raw: string): string[] {
   return [trimmed]
 }
 
-/**
- * True when the free-text box is the answer: either the user explicitly chose
+/** True when the free-text box is the answer: either the user explicitly chose
  * "Other", or they simply typed something without picking an option. Typing
- * IS answering — requiring a radio click first would silently drop the text.
- */
+ * IS answering — requiring a radio click first would silently drop the text. */
 const answerIsFreeText = computed(
   () => freeText.value.trim().length > 0 && (usingFreeText.value || selected.value.length === 0),
 )
@@ -297,11 +295,9 @@ function chooseFreeText(): void {
   selected.value = []
 }
 
-/**
- * Answer text is often a sentence or three (an id, a path, a caveat), so the
+/** Answer text is often a sentence or three (an id, a path, a caveat), so the
  * box grows with what is typed instead of staying two lines tall. Capped so a
- * pasted essay cannot push the composer off screen.
- */
+ * pasted essay cannot push the composer off screen. */
 const FREETEXT_MAX_PX = 220
 
 function autoGrow(event: Event): void {
@@ -445,11 +441,9 @@ const rightMeta = computed(() => {
   }
 })
 
-/**
- * Display-only. `answers` stays raw because `buildBody` POSTs the raw
+/** Display-only. `answers` stays raw because `buildBody` POSTs the raw
  * answer value; the chip just drops markdown syntax so a picked
- * `**Option 1**` does not read as asterisks next to its own "✓".
- */
+ * `**Option 1**` does not read as asterisks next to its own "✓". */
 const answerChip = computed(() =>
   answers.value.map((answer) => stripMarkdownSyntax(answer)).join(' · '),
 )

@@ -72,11 +72,9 @@ export function primeFolderDiffs(cwd: string, diffs: GitFileDiff[]): void {
   evictOldest()
 }
 
-/**
- * The diff for one file, or null when the snapshot is missing or expired.
+/** The diff for one file, or null when the snapshot is missing or expired.
  * A file the server did not report is null too — the caller decides whether
- * that means "clean file" (empty diff) or "ask again".
- */
+ * that means "clean file" (empty diff) or "ask again". */
 export function readFolderDiff(cwd: string, path: string, staged: boolean): GitFileDiff | null {
   if (!cwd || !path) return null
   const snap = snapshots.get(cwd)

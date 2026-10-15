@@ -28,10 +28,8 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  /**
-   * Fired when the user clicks the peek button on a sub-agent row. The parent
-   * (ChatView) opens <SubAgentPeekPanel> with this payload.
-   */
+  /** Fired when the user clicks the peek button on a sub-agent row. The parent
+   * (ChatView) opens <SubAgentPeekPanel> with this payload. */
   peek: [payload: { sessionId: string; agentName: string; instruction: string }]
 }>()
 

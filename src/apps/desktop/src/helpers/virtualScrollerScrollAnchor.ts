@@ -59,11 +59,9 @@
 // module: heights are plain numbers in px.
 type geometry_px = number
 
-/**
- * One pending height write from a measure pass. Carried on the debug
+/** One pending height write from a measure pass. Carried on the debug
  * log only — compensation itself no longer consumes per-item entries
- * (see the v2 note above).
- */
+ * (see the v2 note above). */
 export interface AnchorMeasurement {
   /** Item index in the full items array. */
   index: number
@@ -76,23 +74,17 @@ export interface AnchorMeasurement {
 }
 
 export interface AnchorCompensationInput {
-  /**
-   * Index of the first item at/under the viewport top edge BEFORE the
-   * height model changed (the anchor). Negative = empty list → no-op.
-   */
+  /** Index of the first item at/under the viewport top edge BEFORE the
+   * height model changed (the anchor). Negative = empty list → no-op. */
   anchorIndex: number
   /** scrollTop captured before the height model changed. */
   prevScrollTop: geometry_px
-  /**
-   * `accumulatedHeights[anchorIndex]` captured BEFORE the pass
-   * mutates the model — the model-space top edge of the anchor item.
-   */
+  /** `accumulatedHeights[anchorIndex]` captured BEFORE the pass
+   * mutates the model — the model-space top edge of the anchor item. */
   oldAnchorTop: geometry_px
-  /**
-   * `accumulatedHeights[anchorIndex]` after the pass rebuilt the
+  /** `accumulatedHeights[anchorIndex]` after the pass rebuilt the
    * model (measured heights written, estimator re-seeded, estimates
-   * refreshed).
-   */
+   * refreshed). */
   newAnchorTop: geometry_px
   /**
    * The bottom edge AFTER the pass (`bottomScrollTop()`), passed only when
@@ -141,10 +133,8 @@ export interface AnchorCompensationInput {
 }
 
 export interface AnchorCompensationResult {
-  /**
-   * Signed delta of the anchor's prefix sum. Positive = content above
-   * grew in the model → scrollTop must increase to stay stationary.
-   */
+  /** Signed delta of the anchor's prefix sum. Positive = content above
+   * grew in the model → scrollTop must increase to stay stationary. */
   shiftPx: geometry_px
   /** scrollTop after compensation, clamped at ≥ 0. */
   newScrollTop: geometry_px

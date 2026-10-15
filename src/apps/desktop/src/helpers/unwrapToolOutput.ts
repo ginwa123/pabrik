@@ -19,11 +19,9 @@ export interface UnwrappedToolOutput {
   data: unknown
 }
 
-/**
- * Parse a JSON tool envelope.
+/** Parse a JSON tool envelope.
  * Throws on malformed input — use `tryUnwrapToolOutput` for a null fallback.
- * Hard cut: legacy `<tool>…</tool>` XML is rejected, never parsed.
- */
+ * Hard cut: legacy `<tool>…</tool>` XML is rejected, never parsed. */
 export function unwrapToolOutput(content: string): UnwrappedToolOutput {
   let parsed: unknown
   try {

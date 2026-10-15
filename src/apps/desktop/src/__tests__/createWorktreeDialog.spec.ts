@@ -91,10 +91,8 @@ function clickInDom(selector: string) {
   el.click()
 }
 
-/**
- * Set the value of the basename input and dispatch a `change` event so
- * Vue's v-model picks it up. Mirrors the AddItemDialog test pattern.
- */
+/** Set the value of the basename input and dispatch a `change` event so
+ * Vue's v-model picks it up. Mirrors the AddItemDialog test pattern. */
 function setBasename(value: string) {
   const input = findInDom<HTMLInputElement>('[data-testid="create-worktree-name"]')
   if (!input) throw new Error('No basename input found')

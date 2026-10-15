@@ -113,11 +113,9 @@ function asRecord(data: unknown): Record<string, unknown> {
   return {}
 }
 
-/**
- * Unwrap one level when the input is a full tool envelope
+/** Unwrap one level when the input is a full tool envelope
  * (`{tool, parameters, success, data, error, v}` or its JSON string)
- * instead of the bare `data` payload. Otherwise coerce to a record.
- */
+ * instead of the bare `data` payload. Otherwise coerce to a record. */
 function unwrapDataRecord(data: unknown): Record<string, unknown> {
   const record = asRecord(data)
   if (
@@ -936,10 +934,8 @@ export interface ParsedWebSearch {
   error: ParsedWebSearchError | null
 }
 
-/**
- * Read a list of alternative providers. Accepts both spellings the backend
- * and the plan use: `[{name,url}]` objects, and a bare `["tinyfish"]` of names.
- */
+/** Read a list of alternative providers. Accepts both spellings the backend
+ * and the plan use: `[{name,url}]` objects, and a bare `["tinyfish"]` of names. */
 function providerRefs(o: Record<string, unknown>, key: string): WebSearchProviderRef[] {
   const raw = o[key]
   if (!Array.isArray(raw)) return []

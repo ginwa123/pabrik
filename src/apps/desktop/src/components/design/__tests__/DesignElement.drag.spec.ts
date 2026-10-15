@@ -375,10 +375,8 @@ describe('DesignElement drag', () => {
    * eslint-disable-next-line @typescript-eslint/no-explicit-any
    */
 
-  /**
-   * ticks of cursor movement d, the element ended up at d·N·(N+1)/2 // eslint-disable-next-line
-   * @typescript-eslint/no-explicit-any
-   */
+  /** ticks of cursor movement d, the element ended up at d·N·(N+1)/2 // eslint-disable-next-line
+   * @typescript-eslint/no-explicit-any */
 
   /**
    * instead of d — making the element visibly leap ahead of the cursor (the "moves so fast" user

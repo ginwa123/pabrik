@@ -79,11 +79,9 @@ const headerTitle = computed(() => {
   return bits.join('  ·  ')
 })
 
-/**
- * "Nothing matched this query" and "this workspace has no skills at all"
+/** "Nothing matched this query" and "this workspace has no skills at all"
  * are different facts and collapse into one row count, so branch on
- * whether the query was empty.
- */
+ * whether the query was empty. */
 const emptyMessage = computed(() =>
   isEmptyQuery.value
     ? 'No skills installed — nothing to list.'

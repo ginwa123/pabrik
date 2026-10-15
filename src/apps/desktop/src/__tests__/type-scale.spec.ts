@@ -26,11 +26,9 @@ import { dirname, join, relative, resolve } from 'node:path'
 
 const SRC = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
-/**
- * The scale, and the pixels behind it. This list is the SPEC; style.css is
+/** The scale, and the pixels behind it. This list is the SPEC; style.css is
  * the implementation. If someone retunes a step, this assertion is the one
- * place that has to be updated in step with it.
- */
+ * place that has to be updated in step with it. */
 const SCALE: Record<string, string> = {
   '--text-micro': '10px',
   '--text-meta': '11px',

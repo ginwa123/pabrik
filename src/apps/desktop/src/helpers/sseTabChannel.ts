@@ -120,10 +120,8 @@ function randomTabId(): string {
   return `t_${Math.random().toString(36).slice(2, 10)}`
 }
 
-/**
- * Create the coordinator. `start()` must be called once the caller's callbacks
- * are wired; everything after that is driven by channel messages and timers.
- */
+/** Create the coordinator. `start()` must be called once the caller's callbacks
+ * are wired; everything after that is driven by channel messages and timers. */
 export function createTabChannel(opts: TabChannelOptions): TabChannel {
   const channelName = opts.channelName ?? DEFAULTS.channelName
   const tabId = opts.tabId ?? randomTabId()

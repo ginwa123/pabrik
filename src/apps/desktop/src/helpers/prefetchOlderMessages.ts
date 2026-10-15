@@ -20,18 +20,14 @@
 
 import { computeLoadMoreThreshold } from './virtualScrollerThreshold'
 
-/**
- * Absolute floor for the arm radius, in px. Larger than the commit band's
+/** Absolute floor for the arm radius, in px. Larger than the commit band's
  * 200 px floor because the point is to start the round trip while the user
- * is still travelling.
- */
+ * is still travelling. */
 export const ARM_RADIUS_FLOOR_PX = 800
 
-/**
- * Proportional part of the arm radius: how many viewport heights away from
+/** Proportional part of the arm radius: how many viewport heights away from
  * the top the arm fires. Must stay strictly greater than the commit band's
- * `loadMoreThresholdRatio` (0.5) so the arm always precedes the commit.
- */
+ * `loadMoreThresholdRatio` (0.5) so the arm always precedes the commit. */
 export const ARM_RADIUS_RATIO = 1.5
 
 /** Cold-start fetch estimate (ms) used before any round trip is measured. */
@@ -104,10 +100,8 @@ export interface PrefetchInput {
   sessionId: string | null
   /** A recent arm failed and the backoff window is still open. */
   backoffActive: boolean
-  /**
-   * Phase 2 hook: smoothed upward velocity in px/ms (0/undefined disables the
-   * velocity term — v1 is distance-only).
-   */
+  /** Phase 2 hook: smoothed upward velocity in px/ms (0/undefined disables the
+   * velocity term — v1 is distance-only). */
   velocityPxPerMs?: number
   /** Phase 2 hook: estimated fetch duration in ms. */
   estimatedFetchMs?: number

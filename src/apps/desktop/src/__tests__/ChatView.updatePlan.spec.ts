@@ -145,11 +145,9 @@ function installChatViewMocks(opts: { messages: Message[]; sessionId: string }) 
   vi.spyOn(api, 'getPabrikConfig').mockResolvedValue({ profiles: {} })
 }
 
-/**
- * ChatView reads `route.query` and calls `router.replace` (diff deep-linking),
+/** ChatView reads `route.query` and calls `router.replace` (diff deep-linking),
  * so the mount needs a real router — without one `useRoute()` returns
- * undefined and the render throws. Catch-all route keeps the path opaque.
- */
+ * undefined and the render throws. Catch-all route keeps the path opaque. */
 async function makeRouter(): Promise<Router> {
   const router = createRouter({
     history: createMemoryHistory(),

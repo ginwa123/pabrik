@@ -71,20 +71,16 @@ export const CODE_VIEWER_STATE_KEY: InjectionKey<CodeViewerState> = Symbol(
   'codeViewerState',
 ) as InjectionKey<CodeViewerState>
 
-/**
- * Inject the open-file state provided by `AppLayout`. `null` outside an
+/** Inject the open-file state provided by `AppLayout`. `null` outside an
  * `AppLayout` subtree (unit tests) — callers then render nothing, which
- * is exactly the pre-existing behaviour for a chat with no file open.
- */
+ * is exactly the pre-existing behaviour for a chat with no file open. */
 export function useInjectCodeViewer(): CodeViewerState | null {
   return inject(CODE_VIEWER_STATE_KEY, null)
 }
 
-/**
- * Never-null projection of `CodeViewerState` for templates: the reactive
+/** Never-null projection of `CodeViewerState` for templates: the reactive
  * refs unwrapped to plain values, or an empty model when there is no
- * provider. A template can then bind one object without narrowing.
- */
+ * provider. A template can then bind one object without narrowing. */
 export type CodeViewerView = {
   file: FolderEntry | null
   content: string

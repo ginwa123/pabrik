@@ -63,11 +63,9 @@ async function mountInput(propsOverride: Record<string, unknown> = {}) {
   return wrapper
 }
 
-/**
- * Set the textarea value, park the cursor at the end, dispatch `input`
+/** Set the textarea value, park the cursor at the end, dispatch `input`
  * so `autoResize` updates `cursorPos`, then wait out the 150ms
- * detect debounce plus promise flushes.
- */
+ * detect debounce plus promise flushes. */
 async function typeInTextarea(
   textareaWrapper: ReturnType<VueWrapper['find']>,
   value: string,

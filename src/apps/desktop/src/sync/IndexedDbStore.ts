@@ -52,10 +52,8 @@ const keyPathFor = (store: string): string | string[] =>
 
 type IdbModule = typeof import('idb')
 
-/**
- * Builds the live `SyncStore`. Exported separately from the Layer so specs
- * can drive the adapter with a stubbed `idb` module.
- */
+/** Builds the live `SyncStore`. Exported separately from the Layer so specs
+ * can drive the adapter with a stubbed `idb` module. */
 export const makeIndexedDbSyncStore = (): SyncStoreShape => {
   let dbPromise: Promise<import('idb').IDBPDatabase> | null = null
   let idbFailed = false
@@ -104,10 +102,8 @@ export const makeIndexedDbSyncStore = (): SyncStoreShape => {
     }
   }
 
-  /**
-   * Wraps an IndexedDB operation so a rejection becomes a typed
-   * `SyncStorageError` instead of an unhandled promise rejection.
-   */
+  /** Wraps an IndexedDB operation so a rejection becomes a typed
+   * `SyncStorageError` instead of an unhandled promise rejection. */
   const attempt = <A>(
     store: string,
     op: string,

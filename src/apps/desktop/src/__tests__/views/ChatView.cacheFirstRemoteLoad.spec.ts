@@ -62,10 +62,8 @@ type RawRow = {
   finish_reason: string
 }
 
-/**
- * Everything the two mocked seams read at CALL time (never at factory time),
- * so a test can set up a scenario before the mount.
- */
+/** Everything the two mocked seams read at CALL time (never at factory time),
+ * so a test can set up a scenario before the mount. */
 const ctl = vi.hoisted(() => ({
   /** Rows `primeFromCache` answers with — ChatMessage-shaped: `{ id, raw }`. */
   cached: [] as unknown[],

@@ -61,11 +61,9 @@ const HYSTERESIS_PX = 50
 /** How far the reader may sit below the real bottom before the stick disengages. */
 const RETENTION_CAP_PX = 100
 
-/**
- * The state `VirtualScroller.scrollToBottom` computes internally, reduced to
+/** The state `VirtualScroller.scrollToBottom` computes internally, reduced to
  * the two numbers a caller needs. Mirrors `bottomScrollTop()` in
- * VirtualScroller.vue.
- */
+ * VirtualScroller.vue. */
 interface BottomPlan {
   /** Where the scroller parks the container. */
   target: number
@@ -108,10 +106,8 @@ interface DecisionInput {
   userScrolledUp: boolean
 }
 
-/**
- * Mirror of the at-bottom decision in ChatView.handleVirtualScroll, as shipped:
- * the gap comes from `bottomScrollTop()`.
- */
+/** Mirror of the at-bottom decision in ChatView.handleVirtualScroll, as shipped:
+ * the gap comes from `bottomScrollTop()`. */
 function decideIsAtBottom(args: DecisionInput): boolean {
   const newIsAtBottom = args.distanceFromBottom < BOTTOM_THRESHOLD_PX
   const retainedThroughGrowth =

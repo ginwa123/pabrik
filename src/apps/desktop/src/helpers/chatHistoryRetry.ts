@@ -37,11 +37,9 @@ export const INITIAL_HISTORY_TIMEOUT_MS = 45_000
  */
 export const INITIAL_HISTORY_RETRY_DELAYS_MS: readonly number[] = [0, 750, 2000, 5000]
 
-/**
- * The `Schedule` half of the policy: `len(delaysMs) - 1` retries, separated
+/** The `Schedule` half of the policy: `len(delaysMs) - 1` retries, separated
  * by `delaysMs[1..]`. The leading `0` is the "don't wait before the first
- * try" entry and is consumed by the caller, not scheduled.
- */
+ * try" entry and is consumed by the caller, not scheduled. */
 export const historyRetrySchedule = (delaysMs: readonly number[]): Schedule.Schedule<unknown> => {
   const backoffs = delaysMs.slice(1)
   if (backoffs.length === 0) return Schedule.stop

@@ -44,17 +44,13 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   refresh: []
-  /**
-   * File-row click: host swaps the center column to the full diff.
+  /** File-row click: host swaps the center column to the full diff.
    * `lines` travel by reference (no copy). `error` set when the
-   * worktree fetch failed (PR mode parses inline — always clean).
-   */
+   * worktree fetch failed (PR mode parses inline — always clean). */
   'show-diff': [selection: DiffSelection]
-  /**
-   * Full ordered list after a list load (PR: parsed chunks; worktree:
+  /** Full ordered list after a list load (PR: parsed chunks; worktree:
    * parallel per-file fetch). ChatView stacks every file in the center
-   * column; per-click `show-diff` stays instant and unchanged.
-   */
+   * column; per-click `show-diff` stays instant and unchanged. */
   'show-diff-list': [files: DiffSelection[]]
 }>()
 
@@ -1135,11 +1131,9 @@ function applyFileStageEvent(event: api.GitFileStageEvent): void {
   }
 }
 
-/**
- * Fetch one file's diff and fold it into the shared snapshot + the row's
+/** Fetch one file's diff and fold it into the shared snapshot + the row's
  * counts. A failure leaves the previous counts in place rather than showing
- * `+0 -0`, which would read as "this file is unchanged".
- */
+ * `+0 -0`, which would read as "this file is unchanged". */
 async function reprimeFileDiff(path: string, staged: boolean): Promise<void> {
   if (!props.cwd) return
   try {

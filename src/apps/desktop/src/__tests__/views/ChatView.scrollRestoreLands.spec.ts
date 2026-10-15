@@ -197,11 +197,9 @@ function installApiMocks(): void {
   vi.spyOn(api, 'getPabrikConfig').mockResolvedValue({ profiles: {} } as any)
 }
 
-/**
- * Give every rendered row a real, uniform height. `measureItems` reads
+/** Give every rendered row a real, uniform height. `measureItems` reads
  * `offsetHeight` per child, so this is what turns the estimate into a
- * measurement — the exact step the restore used to race.
- */
+ * measurement — the exact step the restore used to race. */
 function mockRowHeights(container: HTMLElement): void {
   const content = container.querySelector('.virtual-scroller-content')
   if (!content) return
@@ -240,11 +238,9 @@ function findScrollerContainer(wrapper: VueWrapper): HTMLElement {
   return el.element as HTMLElement
 }
 
-/**
- * Let the mount chain settle: the initial-load rAFs, the scroller's 100 ms
+/** Let the mount chain settle: the initial-load rAFs, the scroller's 100 ms
  * measure pass, and the trailing pre-paint sweep. Row heights are re-mocked
- * between waits because the rendered window changes as the model converges.
- */
+ * between waits because the rendered window changes as the model converges. */
 async function settleScroller(container: HTMLElement): Promise<void> {
   for (let i = 0; i < 6; i++) {
     mockRowHeights(container)

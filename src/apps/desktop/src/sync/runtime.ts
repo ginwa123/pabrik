@@ -36,11 +36,8 @@ const report = (op: string, error: SyncError): void => {
   if (import.meta.env?.DEV) console.warn(`[sync] ${op}: ${describeSyncError(error)}`)
 }
 
-/**
- * Run a fallible sync Effect for its value, degrading to `null` on failure.
- *
- * @param op Short label used in the dev-mode warning, e.g. `'sessions.loadDelta'`.
- */
+/** Run a fallible sync Effect for its value, degrading to `null` on failure.
+ * @param op Short label used in the dev-mode warning, e.g. `'sessions.loadDelta'`. */
 export async function runSyncEffect<A>(
   effect: Effect.Effect<A, SyncError>,
   op: string,
@@ -51,10 +48,8 @@ export async function runSyncEffect<A>(
   return null
 }
 
-/**
- * Run a fallible sync Effect for its value, degrading to `fallback` on
- * failure. Use when the "empty" answer is not `null` (e.g. `[]` for rows).
- */
+/** Run a fallible sync Effect for its value, degrading to `fallback` on
+ * failure. Use when the "empty" answer is not `null` (e.g. `[]` for rows). */
 export async function runSyncEffectOr<A>(
   effect: Effect.Effect<A, SyncError>,
   fallback: A,

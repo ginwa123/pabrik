@@ -35,11 +35,9 @@ let copiedTimer: ReturnType<typeof setTimeout> | null = null
 
 const threadKey = (thread: SavedComment) => `${thread.start}-${thread.end}`
 
-/**
- * `toLocaleString` on a Date built from a number does not throw — a bad `ts`
+/** `toLocaleString` on a Date built from a number does not throw — a bad `ts`
  * yields the string "Invalid Date". There is therefore no failure to hide
- * here, and no silent fallback to confuse with a real answer.
- */
+ * here, and no silent fallback to confuse with a real answer. */
 function formatSavedTime(ts: number): string {
   return new Date(ts).toLocaleString()
 }

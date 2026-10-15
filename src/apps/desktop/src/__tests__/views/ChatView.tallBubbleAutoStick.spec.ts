@@ -255,11 +255,9 @@ async function settle(ms = 250): Promise<void> {
   await nextTick()
 }
 
-/**
- * The app's own "is the reader at the bottom" answer, read from the DOM the
+/** The app's own "is the reader at the bottom" answer, read from the DOM the
  * way a user would: the jump-to-bottom arrow is rendered under
- * `v-if="!isAtBottom && …"`, so it is the flag itself.
- */
+ * `v-if="!isAtBottom && …"`, so it is the flag itself. */
 function stickDisarmed(wrapper: VueWrapper): boolean {
   return wrapper.find('.chat-scroll-to-bottom').exists()
 }

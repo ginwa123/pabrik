@@ -1,8 +1,6 @@
-/**
- * Regression tests for the "active state leaks across Chats ↔ workspace
+/** Regression tests for the "active state leaks across Chats ↔ workspace
  * item" bug. Selecting a chat must clear `activeWorkspaceItemId` in the
- * workspaces store, and vice versa. Before the fix these tests fail.
- */
+ * workspaces store, and vice versa. Before the fix these tests fail. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp, nextTick, reactive, ref } from 'vue'

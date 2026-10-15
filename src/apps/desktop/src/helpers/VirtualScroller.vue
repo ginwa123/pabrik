@@ -307,10 +307,8 @@ const accumulatedHeights = ref<number[]>([0])
 const isPreservingScroll = ref(false)
 const forceRenderUpTo = ref(-1)
 
-/**
- * Stable identity for the item at `index`. Falls back to the index
- * string when no `itemKey` prop is supplied (historical behavior).
- */
+/** Stable identity for the item at `index`. Falls back to the index
+ * string when no `itemKey` prop is supplied (historical behavior). */
 const keyOf = (index: number): string => {
   const item = props.items[index]
   if (item === undefined) return `#${index}`
@@ -749,11 +747,9 @@ const syncSizerHeightToDom = (): void => {
   sizer.style.height = px
 }
 
-/**
- * Highest `scrollTop` the container can reach as its geometry stands NOW. Read
+/** Highest `scrollTop` the container can reach as its geometry stands NOW. Read
  * after `syncSizerHeightToDom` so it describes the model this pass built rather
- * than the previous render's (see `maxScrollTop` on the compensation helper).
- */
+ * than the previous render's (see `maxScrollTop` on the compensation helper). */
 const reachableScrollTop = (): number => {
   const el = containerRef.value
   if (!el) return 0
@@ -1400,10 +1396,8 @@ const onScroll = (e: Event) => {
   schedulePrePaintMeasure()
 }
 
-/**
- * PHASE 1 — call BEFORE mutating items array.
- * Reads anchor (old item[0]) offsetTop while it is still in the DOM.
- */
+/** PHASE 1 — call BEFORE mutating items array.
+ * Reads anchor (old item[0]) offsetTop while it is still in the DOM. */
 const beginPreserve = (newItemsCount: number) => {
   if (!containerRef.value || newItemsCount <= 0) return
   isPreservingScroll.value = true
@@ -1431,10 +1425,8 @@ const beginPreserve = (newItemsCount: number) => {
   console.log('[beginPreserve] anchorEl found:', !!anchorEl, 'offsetTop:', _anchorOffsetTopBefore)
 }
 
-/**
- * PHASE 2 — call AFTER items array has been mutated.
- * Expands render window, waits for layout, sets scrollTop once accurately.
- */
+/** PHASE 2 — call AFTER items array has been mutated.
+ * Expands render window, waits for layout, sets scrollTop once accurately. */
 const endPreserve = async () => {
   if (!containerRef.value || _pendingNewItemsCount <= 0) {
     isPreservingScroll.value = false

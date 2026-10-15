@@ -38,11 +38,9 @@ import {
 } from './_shared/toolOutputParser'
 
 const props = defineProps<{
-  /**
-   * The tool row's payload — the inner `data` object on success, or the full
+  /** The tool row's payload — the inner `data` object on success, or the full
    * envelope on failure (ChatView's `innerToolData` falls back to the whole
-   * content when `data` is null, which is what a failure envelope carries).
-   */
+   * content when `data` is null, which is what a failure envelope carries). */
   content: unknown
   /** The JSON-stringified tool-call arguments: `{provider, curl}`. */
   parameters?: string
@@ -170,11 +168,9 @@ const hasResultRows = computed(() => rows.value !== null)
 
 // ─── Formatted JSON fallback ───────────────────────────────────────────────
 
-/**
- * Pretty-print an untyped payload. `JSON.stringify` can refuse (a cycle, a
+/** Pretty-print an untyped payload. `JSON.stringify` can refuse (a cycle, a
  * BigInt); the card then says the payload is unprintable instead of showing
- * an empty block that reads like "no results".
- */
+ * an empty block that reads like "no results". */
 const prettyResponse = computed(() => {
   const response = parsed.value.response
   if (response === null || response === undefined) return '(no response body)'

@@ -172,10 +172,8 @@ function tokenizeWords(line: string): string[] {
   return tokens
 }
 
-/**
- * Per-line word-level diff using LCS on tokens. Returns inline changes that
- * can be applied as `<span>` highlights.
- */
+/** Per-line word-level diff using LCS on tokens. Returns inline changes that
+ * can be applied as `<span>` highlights. */
 export function computeInlineWordChanges(before: string, after: string): InlineChange[] {
   const aTokens = tokenizeWords(before)
   const bTokens = tokenizeWords(after)
@@ -273,10 +271,8 @@ export function computeSplitView(before: string[], after: string[]): SplitRow[] 
   return rows
 }
 
-/**
- * Compute unified view with `contextLines` of context around changes and
- * `@@ -start,count +start,count @@` hunk headers between hunks.
- */
+/** Compute unified view with `contextLines` of context around changes and
+ * `@@ -start,count +start,count @@` hunk headers between hunks. */
 export function computeUnifiedView(
   before: string[],
   after: string[],

@@ -111,10 +111,8 @@ export function readTaskMediaCache(taskId: string): CachedTaskMedia | null {
   }
 }
 
-/**
- * Persists a successful media fetch (write-through: memo + storage).
- * Oversized payloads are skipped silently. Never throws.
- */
+/** Persists a successful media fetch (write-through: memo + storage).
+ * Oversized payloads are skipped silently. Never throws. */
 export function writeTaskMediaCache(taskId: string, media: CachedTaskMedia): void {
   try {
     const clean = normalizeEntry(media)
@@ -145,11 +143,9 @@ export function clearTaskMediaCache(): void {
   }
 }
 
-/**
- * Test-only escape hatch — drops the in-memory memo WITHOUT touching
+/** Test-only escape hatch — drops the in-memory memo WITHOUT touching
  * storage, so tests can stage raw blobs and exercise the parse path
- * step by step (the memo would otherwise pin the first parse).
- */
+ * step by step (the memo would otherwise pin the first parse). */
 export function resetTaskMediaCacheMemo(): void {
   memCache = null
 }

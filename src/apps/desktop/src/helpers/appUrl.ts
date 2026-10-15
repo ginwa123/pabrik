@@ -54,11 +54,9 @@ export interface AppUrlTarget {
   projectId?: string | null | undefined
   /** Task chat id open over a project (requires projectId). */
   chatTaskId?: string | null | undefined
-  /**
-   * Document id (Migration 095). Emits `/app/{ws}/doc/{id}` — a PAGE, not
+  /** Document id (Migration 095). Emits `/app/{ws}/doc/{id}` — a PAGE, not
    * a query overlay: the document replaces the main view, so it must not
-   * borrow the path of whatever page happened to be open underneath it.
-   */
+   * borrow the path of whatever page happened to be open underneath it. */
   documentId?: string | null | undefined
   /** Project sub-state (pageId / detail / sorts / panel …). Passed through. */
   query?: Record<string, string> | null | undefined
@@ -187,11 +185,9 @@ export function parseAppPath(rawPath: string): ParsedAppPath {
   return { kind: 'other', path }
 }
 
-/**
- * Canonicalize a path: strip trailing slashes (root `/` is kept).
+/** Canonicalize a path: strip trailing slashes (root `/` is kept).
  * `/app/ws_1/` → `/app/ws_1`. Ids never contain slashes in this
- * codebase, so a trailing slash is always noise, never content.
- */
+ * codebase, so a trailing slash is always noise, never content. */
 export function normalizeAppPath(rawPath: string): string {
   if (typeof rawPath !== 'string' || rawPath.length === 0) return '/app'
   if (rawPath === '/') return '/'

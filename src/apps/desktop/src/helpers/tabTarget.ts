@@ -18,11 +18,9 @@ import { parseItemIdWithChat } from './buildItemIdWithChat'
 
 export type TabQuery = Record<string, string>
 
-/**
- * Display hint only — drives the glyph and the close tooltip. It is
+/** Display hint only — drives the glyph and the close tooltip. It is
  * deliberately coarse: a pure function cannot know a workspace item's
- * `item_type`, and a wrong icon must never affect behaviour.
- */
+ * `item_type`, and a wrong icon must never affect behaviour. */
 export type TabKind = 'home' | 'chat' | 'workspace' | 'kanban-settings' | 'settings' | 'other'
 
 export interface Tab {
@@ -85,10 +83,8 @@ function sameNormalized(left: TabQuery, right: TabQuery): boolean {
   return true
 }
 
-/**
- * Same target? Ignores `tab`, because the tab's stored target must not
- * change just because it became active.
- */
+/** Same target? Ignores `tab`, because the tab's stored target must not
+ * change just because it became active. */
 export function sameTabTarget(
   a: Record<string, unknown> | null | undefined,
   b: Record<string, unknown> | null | undefined,
@@ -96,10 +92,8 @@ export function sameTabTarget(
   return sameNormalized(stripTabParam(a ?? {}), stripTabParam(b ?? {}))
 }
 
-/**
- * Same URL? Includes `tab` — used to decide whether a navigation is
- * actually needed, so naming a different tab IS a difference.
- */
+/** Same URL? Includes `tab` — used to decide whether a navigation is
+ * actually needed, so naming a different tab IS a difference. */
 export function sameRouteQuery(
   a: Record<string, unknown> | null | undefined,
   b: Record<string, unknown> | null | undefined,
@@ -107,11 +101,9 @@ export function sameRouteQuery(
   return sameNormalized(normalizeQuery(a, true), normalizeQuery(b, true))
 }
 
-/**
- * The URL contract is flat strings. Values that are arrays/objects (or
+/** The URL contract is flat strings. Values that are arrays/objects (or
  * empty) are dropped so two URLs that mean the same thing produce the
- * same key.
- */
+ * same key. */
 export function stripTabParam(query: Record<string, unknown> | null | undefined): TabQuery {
   return normalizeQuery(query, false)
 }
@@ -224,10 +216,8 @@ export function tabKeyVariants(
   return canonical === other ? [canonical] : [canonical, other]
 }
 
-/**
- * `Ctrl/Cmd+click` or a middle click means "open this in a background
- * tab" — the gesture users already have in their fingers from a browser.
- */
+/** `Ctrl/Cmd+click` or a middle click means "open this in a background
+ * tab" — the gesture users already have in their fingers from a browser. */
 export function isBackgroundOpenEvent(event: {
   ctrlKey?: boolean
   metaKey?: boolean
@@ -324,10 +314,8 @@ export function newTabId(): string {
   return `tab_${Date.now().toString(36)}${idSequence.toString(36)}${Math.random().toString(36).slice(2, 6)}`
 }
 
-/**
- * The "new tab page": the chats list. Reused both for the initial tab
- * and whenever the last tab is closed, so the strip is never empty.
- */
+/** The "new tab page": the chats list. Reused both for the initial tab
+ * and whenever the last tab is closed, so the strip is never empty. */
 export function homeTab(): Tab {
   return {
     id: newTabId(),
@@ -391,10 +379,8 @@ function freshList(): PersistedTabs {
   return { active: tab.id, tabs: [tab], closed: [] }
 }
 
-/**
- * Total: any input at all yields a usable list. A corrupt, older-version
- * or hand-edited value must never throw at boot — it starts over.
- */
+/** Total: any input at all yields a usable list. A corrupt, older-version
+ * or hand-edited value must never throw at boot — it starts over. */
 export function parseTabList(raw: string | null | undefined): PersistedTabs {
   if (!raw) return freshList()
   let parsed: unknown

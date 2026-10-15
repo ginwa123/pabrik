@@ -163,10 +163,8 @@ export abstract class BaseSyncEngine<T extends Syncable, C = string> {
     })
   }
 
-  /**
-   * Best-effort write-through (e.g. SSE `full` handler). Never fails: a cache
-   * write must not break the live update path that triggered it.
-   */
+  /** Best-effort write-through (e.g. SSE `full` handler). Never fails: a cache
+   * write must not break the live update path that triggered it. */
   putLocal(ctx: C, items: T[]): Effect.Effect<void> {
     if (items.length === 0) return Effect.void
     return this.store
@@ -181,11 +179,9 @@ export abstract class BaseSyncEngine<T extends Syncable, C = string> {
       .pipe(Effect.catchAll((e) => this.note(`removeLocal(${this.storeName})`, e)))
   }
 
-  /**
-   * Older-page read for scroll-back: cache first. An empty result means the
+  /** Older-page read for scroll-back: cache first. An empty result means the
    * caller should fetch from the network — an *error* now says the cache
-   * itself is unavailable, which the previous `catch { return [] }` could not.
-   */
+   * itself is unavailable, which the previous `catch { return [] }` could not. */
   loadOlderFromCache(
     ctx: C,
     beforeSortKey: string | number,

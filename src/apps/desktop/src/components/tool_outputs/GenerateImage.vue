@@ -66,10 +66,8 @@ const props = defineProps<{
    * card shows "X" without the user having to expand.
    */
   parameters?: string
-  /**
-   * Whether the row is already expanded in the parent chat (the
-   * "tool call loading placeholder" optimization — see AGENTS.md).
-   */
+  /** Whether the row is already expanded in the parent chat (the
+   * "tool call loading placeholder" optimization — see AGENTS.md). */
   expanded?: boolean
 }>()
 

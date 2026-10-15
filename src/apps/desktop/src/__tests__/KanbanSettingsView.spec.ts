@@ -112,10 +112,8 @@ function setInputValue(selector: string, value: string) {
   el.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
-/**
- * Seed the workspacesStore with a workspace that contains the given
- * kanban item. Returns the store so tests can inspect/assert.
- */
+/** Seed the workspacesStore with a workspace that contains the given
+ * kanban item. Returns the store so tests can inspect/assert. */
 function seedWorkspaces(item: WorkspaceItem | null = baseItem) {
   const store = useWorkspacesStore()
   // Force-create the workspace + items arrays; we don't need the full

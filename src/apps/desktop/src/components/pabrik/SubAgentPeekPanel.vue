@@ -29,11 +29,9 @@ const props = defineProps<{
   instruction: string
   status: PeekStatus
   errorMessage: string | null
-  /**
-   * Retained for backward compat — SubAgentPeekHost still passes the
+  /** Retained for backward compat — SubAgentPeekHost still passes the
    * composable's rows. The body renders via the embedded ChatView
-   * (which fetches the same session itself), not from this prop.
-   */
+   * (which fetches the same session itself), not from this prop. */
   messages: Message[]
   totalTokens?: number
 }>()

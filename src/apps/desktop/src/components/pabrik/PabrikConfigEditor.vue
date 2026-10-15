@@ -68,11 +68,9 @@ const props = withDefaults(
   defineProps<{
     /** Where the config is read from and written to. */
     source?: PabrikConfigSource
-    /**
-     * Which sections this editor offers. The settings shell renders the nav,
+    /** Which sections this editor offers. The settings shell renders the nav,
      * so this is the editor's ACCEPT list: a `?section=` outside it falls back
-     * to the first entry instead of rendering an empty pane.
-     */
+     * to the first entry instead of rendering an empty pane. */
     sections?: readonly Tab[]
   }>(),
   {
@@ -105,11 +103,9 @@ defineExpose({
 // computed below can fall back to it when the URL has no `?section=`.
 const TAB_STORAGE_KEY = 'pabrik-settings-active-tab'
 
-/**
- * The section ids this editor accepts. Derived from the `sections` prop, so a
+/** The section ids this editor accepts. Derived from the `sections` prop, so a
  * URL or a stored value pointing at a section this editor does not offer
- * falls back instead of rendering nothing.
- */
+ * falls back instead of rendering nothing. */
 const TAB_IDS = computed<readonly string[]>(() => props.sections)
 // ─── Edit mode: the form, or the raw JSON ────────────────────────────────
 // Some edits are far easier to express as JSON - pasting a whole profile map

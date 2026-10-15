@@ -415,11 +415,9 @@ describe('useKanbanScrollRestore', () => {
   })
 })
 
-/**
- * The `axis: 'y'` variant — used by the kanban row-mode list, which
+/** The `axis: 'y'` variant — used by the kanban row-mode list, which
  * scrolls vertically (the columns row scrolls horizontally). Same
- * contract, different offset property.
- */
+ * contract, different offset property. */
 describe('useKanbanScrollRestore (axis: y)', () => {
   function mountVerticalHarness(initialKey = 'kanban-row-scroll-item_test') {
     const itemIdRef = ref(initialKey)

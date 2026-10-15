@@ -46,10 +46,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   click: [item: WorkspaceItem]
-  /**
-   * Ctrl/Cmd+click / middle click on the row: the parent opens (or focuses) a
-   * background tab for this item instead of navigating.
-   */
+  /** Ctrl/Cmd+click / middle click on the row: the parent opens (or focuses) a
+   * background tab for this item instead of navigating. */
   openItemInBackground: [
     payload: { workspaceId: string; itemId: string; name: string; itemType?: string },
   ]

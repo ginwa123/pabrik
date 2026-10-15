@@ -224,11 +224,9 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-/**
- * The list load is cache-first now (IndexedDB read, then revalidate), so the
+/** The list load is cache-first now (IndexedDB read, then revalidate), so the
  * painted rows land on a promise boundary rather than a microtask. Four
- * `nextTick()`s no longer reach them — this does.
- */
+ * `nextTick()`s no longer reach them — this does. */
 const flush = async () => {
   await flushPromises()
   for (let i = 0; i < 2; i++) await nextTick()

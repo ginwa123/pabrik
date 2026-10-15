@@ -11,10 +11,8 @@ import type { ParsedDiffLine } from './parseUnifiedDiff'
  */
 export interface SplitRow {
   kind: 'hunk' | 'context' | 'change'
-  /**
-   * Full-width row content (a hunk header). `null` for the two-sided rows,
-   * whose content lives in `oldText` / `newText`.
-   */
+  /** Full-width row content (a hunk header). `null` for the two-sided rows,
+   * whose content lives in `oldText` / `newText`. */
   text: string | null
   oldLineNum: number | null
   oldText: string | null

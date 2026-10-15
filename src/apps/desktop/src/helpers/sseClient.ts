@@ -121,19 +121,15 @@
  */
 export type SseState = 'connecting' | 'open' | 'reconnecting' | 'closed' | 'failed'
 
-/**
- * Side-channel info attached to every state emission. Lets UI
+/** Side-channel info attached to every state emission. Lets UI
  * (and tests) distinguish "first error before open" from "Nth error
- * after open" without re-implementing the logic.
- */
+ * after open" without re-implementing the logic. */
 export interface SseStateInfo {
   /** 1 = first try, 2 = first retry, … */
   attempt: number
-  /**
-   * Set on `reconnecting`. The actual delay until the next attempt
+  /** Set on `reconnecting`. The actual delay until the next attempt
    * (after jitter), in ms. Tests use this to assert the backoff
-   * schedule deterministically.
-   */
+   * schedule deterministically. */
   nextDelayMs?: number
   /** Set on `reconnecting` / `failed`. The `error` event from the ES. */
   lastError?: Event
@@ -246,21 +242,15 @@ export interface SseClientOptions {
    * payload can read it from there.
    */
   onConnected?: () => void
-  /**
-   * Fires on every state transition. Use it to drive a Vue ref
-   * for reactive UI (e.g. the `SseStatusBadge`).
-   */
+  /** Fires on every state transition. Use it to drive a Vue ref
+   * for reactive UI (e.g. the `SseStatusBadge`). */
   onStateChange?: (state: SseState, info: SseStateInfo) => void
-  /**
-   * Initial backoff for the *first* retry. Doubles each subsequent
-   * retry, capped at `maxDelayMs`. Default: 1 000 ms.
-   */
+  /** Initial backoff for the *first* retry. Doubles each subsequent
+   * retry, capped at `maxDelayMs`. Default: 1 000 ms. */
   baseDelayMs?: number
-  /**
-   * Upper bound on the backoff delay (after jitter). Default:
+  /** Upper bound on the backoff delay (after jitter). Default:
    * 30 000 ms. The "Reconnecting…" badge can use this to give
-   * the user a sense of how long the next attempt will take.
-   */
+   * the user a sense of how long the next attempt will take. */
   maxDelayMs?: number
   /**
    * Hard cap on reconnect attempts. After this many failed retries
@@ -278,17 +268,13 @@ export interface SseClientOptions {
    * (full-jitter pattern, AWS-style).
    */
   random?: () => number
-  /**
-   * Pause the retry timer while `document.hidden === true`.
+  /** Pause the retry timer while `document.hidden === true`.
    * The retry fires immediately on `visibilitychange → visible`.
-   * Default: `true`. Set `false` for headless contexts or tests.
-   */
+   * Default: `true`. Set `false` for headless contexts or tests. */
   pauseWhenHidden?: boolean
-  /**
-   * Reconnect immediately on the browser's `online` event. Default:
+  /** Reconnect immediately on the browser's `online` event. Default:
    * `true`. The event target is `window` (override with
-   * `onlineTarget` for tests).
-   */
+   * `onlineTarget` for tests). */
   reconnectOnOnline?: boolean
   /**
    * Override the `EventSource` constructor. Default:
@@ -297,20 +283,14 @@ export interface SseClientOptions {
    * without a real network.
    */
   EventSourceCtor?: typeof EventSource
-  /**
-   * Override the `visibilitychange` target. Default: `document`.
-   * Tests may pass a mock to control visibility.
-   */
+  /** Override the `visibilitychange` target. Default: `document`.
+   * Tests may pass a mock to control visibility. */
   visibilityTarget?: Pick<Document, 'addEventListener' | 'removeEventListener' | 'hidden'>
-  /**
-   * Override the `online` event target. Default: `window`. Tests
-   * may pass a mock to fire synthetic `online` events.
-   */
+  /** Override the `online` event target. Default: `window`. Tests
+   * may pass a mock to fire synthetic `online` events. */
   onlineTarget?: Pick<Window, 'addEventListener' | 'removeEventListener'>
-  /**
-   * Override `setTimeout` / `clearTimeout` for fake-timer tests.
-   * Default: the global `setTimeout` / `clearTimeout`.
-   */
+  /** Override `setTimeout` / `clearTimeout` for fake-timer tests.
+   * Default: the global `setTimeout` / `clearTimeout`. */
   setTimeoutFn?: typeof setTimeout
   clearTimeoutFn?: typeof clearTimeout
   /**
@@ -329,17 +309,13 @@ export interface SseClientOptions {
    * listeners) or in headless contexts that have no `window`.
    */
   closeOnUnload?: boolean
-  /**
-   * Override the `pagehide` / `beforeunload` event target.
+  /** Override the `pagehide` / `beforeunload` event target.
    * Default: `window`. Tests may pass a mock to fire synthetic
-   * unload events.
-   */
+   * unload events. */
   unloadTarget?: Pick<Window, 'addEventListener' | 'removeEventListener'>
-  /**
-   * The SSE event name that signals "the stream is live". The
+  /** The SSE event name that signals "the stream is live". The
    * default `'connected'` matches the backend's convention; expose
-   * it for symmetry / future flexibility.
-   */
+   * it for symmetry / future flexibility. */
   connectedEventName?: string
   /**
    * Stall threshold in ms. While `state === 'open'`, if no event
@@ -352,11 +328,9 @@ export interface SseClientOptions {
    * Tests may pass a smaller value for determinism.
    */
   stallThresholdMs?: number
-  /**
-   * When true (default), a stall triggers `es.close()` +
+  /** When true (default), a stall triggers `es.close()` +
    * `scheduleRetry({ reason: 'stall' })` instead of only logging.
-   * Set false to restore log-only behaviour (e.g. for diagnosis).
-   */
+   * Set false to restore log-only behaviour (e.g. for diagnosis). */
   stallRecovery?: boolean
   /**
    * Max time in ms to wait for the server's `connected` handshake

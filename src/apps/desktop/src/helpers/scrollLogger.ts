@@ -253,11 +253,9 @@ export interface ScrollContext {
 /** Within this many px of the bottom counts as "at the bottom". */
 export const BOTTOM_THRESHOLD = 10
 
-/**
- * How far the height MODEL may sit above the real content bottom before
+/** How far the height MODEL may sit above the real content bottom before
  * `VirtualScroller.bottomScrollTop` switches to the real bottom. Mirrors the
- * scroller's own `HYSTERESIS_PX`.
- */
+ * scroller's own `HYSTERESIS_PX`. */
 export const MODEL_OVERSHOOT_HYSTERESIS_PX = 50
 
 /**
@@ -350,11 +348,9 @@ const flushPendingDebug = (): void => {
 // ─── Logger factory ───────────────────────────────────────────────────────────
 
 export interface ScrollLogger {
-  /**
-   * Throttled per-frame sample. Safe to call on every scroll event.
+  /** Throttled per-frame sample. Safe to call on every scroll event.
    * `origin` is optional: omit it to let the logger resolve from the
-   * `markProgrammatic` counter, or pass an explicit value to override.
-   */
+   * `markProgrammatic` counter, or pass an explicit value to override. */
   debug: (
     ctx: Omit<ScrollContext, 'chatId' | 'reason' | 'origin'> & {
       origin?: ScrollOrigin
@@ -385,11 +381,9 @@ export interface ScrollLogger {
       caller?: string
     },
   ) => void
-  /**
-   * Mark the next scroll event(s) as programmatic. Call BEFORE any
+  /** Mark the next scroll event(s) as programmatic. Call BEFORE any
    * `container.scrollTop = …` assignment. `count` defaults to 1 because
-   * each assignment usually produces exactly one scroll event.
-   */
+   * each assignment usually produces exactly one scroll event. */
   markProgrammatic: (count?: number) => void
 }
 
@@ -764,10 +758,8 @@ export const buildScrollContext = (
      * logger inspects both the ref and the component instance.
      */
     virtualScrollerRef?: { value: unknown } | null
-    /**
-     * The outer flex wrapper ref from ChatView. Optional — when
-     * omitted, `wrapperState` is not populated.
-     */
+    /** The outer flex wrapper ref from ChatView. Optional — when
+     * omitted, `wrapperState` is not populated. */
     wrapperRef?: { value: unknown } | null
   },
   partial: Partial<Pick<ScrollContext, 'origin' | 'reason' | 'extra' | 'caller'>> = {},

@@ -99,11 +99,9 @@ function parseJsonEnvelope(content: string): ParsedBackgroundCommandOutput | nul
   return shapeFromJson(outcome.right)
 }
 
-/**
- * Map a parsed value onto the card's fields, or `null` when it is not our
+/** Map a parsed value onto the card's fields, or `null` when it is not our
  * envelope after all. The wire names are the BACKEND's (`stdout`); `body` is the
- * card's name for the same thing.
- */
+ * card's name for the same thing. */
 function shapeFromJson(value: unknown): ParsedBackgroundCommandOutput | null {
   if (typeof value !== 'object' || value === null) return null
   const obj = value as Record<string, unknown>
@@ -205,11 +203,9 @@ function parseLegacyProse(content: string): ParsedBackgroundCommandOutput | null
   return { pid, command, body: content.slice(bodyStart, bodyEnd).trim(), truncated: false, logPath: null }
 }
 
-/**
- * Re-emit a parsed background completion as the foreground shell XML
+/** Re-emit a parsed background completion as the foreground shell XML
  * envelope. `command`/`stdout` are XML-escaped; `stderr` is empty (the
- * background logger merges streams); `truncated` comes from the envelope.
- */
+ * background logger merges streams); `truncated` comes from the envelope. */
 export function backgroundToShellXml(parsed: ParsedBackgroundCommandOutput): string {
   return (
     `<command>${escapeXml(parsed.command)}</command>` +

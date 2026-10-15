@@ -14,11 +14,9 @@ import * as api from '../api'
 export interface AgentRegistryEntry {
   name: string
   description: string
-  /**
-   * The tool's full parameter list. The panel does not render it yet; it is
+  /** The tool's full parameter list. The panel does not render it yet; it is
    * declared so the wire shape lives in one place, and so a future path/file
-   * affordance (or a `cwd`-required badge) has the data it needs.
-   */
+   * affordance (or a `cwd`-required badge) has the data it needs. */
   parameters?: Array<{ name: string; type: string; required: boolean }>
 }
 

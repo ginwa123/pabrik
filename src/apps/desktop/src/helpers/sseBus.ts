@@ -79,10 +79,8 @@ export interface SseBus {
    * is not yet installed.
    */
   on<K extends keyof SseEventMap>(type: K, cb: Listener<K>): () => void
-  /**
-   * Remove a previously-registered listener. No-op if `cb` was not
-   * registered for `type`. No-op if the bus is not yet installed.
-   */
+  /** Remove a previously-registered listener. No-op if `cb` was not
+   * registered for `type`. No-op if the bus is not yet installed. */
   off<K extends keyof SseEventMap>(type: K, cb: Listener<K>): void
   /**
    * Reactive read of the current SSE connection state (one of
@@ -98,11 +96,9 @@ export interface SseBus {
    * yet installed.
    */
   reconnectGlobal(): void
-  /**
-   * Close the bus. Terminal — stops all streams, clears retry
+  /** Close the bus. Terminal — stops all streams, clears retry
    * timers, leaves the bus uninstalled (a subsequent `installSseBus`
-   * rebuilds it). Safe to call multiple times.
-   */
+   * rebuilds it). Safe to call multiple times. */
   close(): void
   /**
    * Which role THIS window plays when cross-tab sharing is active:
@@ -378,10 +374,8 @@ export function installSseBus(_app?: App, options?: SseBusInstallOptions): SseBu
     }
   }
 
-  /**
-   * Deliver a locally-received event: to this window's listeners, and (from the
-   * leader) to every other tab so they behave as if they held the connection.
-   */
+  /** Deliver a locally-received event: to this window's listeners, and (from the
+   * leader) to every other tab so they behave as if they held the connection. */
   function forward<K extends keyof SseEventMap>(type: K, event: SseEventMap[K]): void {
     dispatch(type, event)
     _tabChannel?.broadcastEvent(type, event)

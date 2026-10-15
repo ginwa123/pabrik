@@ -172,10 +172,8 @@ export const useSecretsStore = defineStore('secrets', () => {
     return result.value.secret
   }
 
-  /**
-   * Rename a secret. Sends only the name, so the stored credential is
-   * untouched and never has to be re-supplied.
-   */
+  /** Rename a secret. Sends only the name, so the stored credential is
+   * untouched and never has to be re-supplied. */
   async function renameSecret(
     workspaceId: string,
     secretId: string,
@@ -247,11 +245,9 @@ export const useSecretsStore = defineStore('secrets', () => {
     return true
   }
 
-  /**
-   * Called on workspace switch so one workspace's secrets are never shown
+  /** Called on workspace switch so one workspace's secrets are never shown
    * under another workspace's header — and so a stale failure banner does
-   * not survive the switch.
-   */
+   * not survive the switch. */
   function reset(): void {
     secrets.value = []
     error.value = null

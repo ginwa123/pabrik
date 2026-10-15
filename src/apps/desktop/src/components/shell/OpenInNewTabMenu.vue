@@ -42,34 +42,24 @@ withDefaults(
      * share this menu have no agent to run.
      */
     showRunAgent?: boolean
-    /**
-     * A worker is already running on this task. Hides the "Run agent"
+    /** A worker is already running on this task. Hides the "Run agent"
      * row (the backend answers 409 in that state) and reveals
-     * "Stop agent" instead — the two are inverses and never coexist.
-     */
+     * "Stop agent" instead — the two are inverses and never coexist. */
     isAgentRunning?: boolean
-    /**
-     * Show "Add task" for a workspace-item row. The row's `+` is
+    /** Show "Add task" for a workspace-item row. The row's `+` is
      * hover-reveal only, so the menu is the always-available path to the
-     * same action — hover is undiscoverable and does nothing on touch.
-     */
+     * same action — hover is undiscoverable and does nothing on touch. */
     showAddTask?: boolean
-    /**
-     * Show "Delete project" for a workspace-item row. Same reason as
-     * `showAddTask`: the row's `×` is hover-reveal only.
-     */
+    /** Show "Delete project" for a workspace-item row. Same reason as
+     * `showAddTask`: the row's `×` is hover-reveal only. */
     showDeleteItem?: boolean
-    /**
-     * Show "Rename task" for a sidebar task row. The row's pencil was
+    /** Show "Rename task" for a sidebar task row. The row's pencil was
      * one of three hover buttons migrated into this menu, so the menu
-     * is now the only route to the action.
-     */
+     * is now the only route to the action. */
     showRename?: boolean
-    /**
-     * Show "Delete task" for a sidebar task row. Same migration as
+    /** Show "Delete task" for a sidebar task row. Same migration as
      * `showRename`; the host emits straight up and the confirmation
-     * stays owned by whoever performs the delete (Sidebar).
-     */
+     * stays owned by whoever performs the delete (Sidebar). */
     showDelete?: boolean
   }>(),
   { showChat: true, showRunAgent: false, isAgentRunning: false },

@@ -29,11 +29,9 @@ export interface SettingsSectionItem {
   id: string
   label: string
   icon: UiIconName
-  /**
-   * Heading this item sits under. A heading is rendered only where the group
+  /** Heading this item sits under. A heading is rendered only where the group
    * CHANGES, so the first group needs no separate label above the scope
-   * label the sidebar already shows.
-   */
+   * label the sidebar already shows. */
   group?: string
 }
 
@@ -142,11 +140,9 @@ function goWorkspace(id: string): void {
   void router.push({ path: `/app/${id}/settings` })
 }
 
-/**
- * The Workspace tab's target. The in-scope workspace wins; only a cold boot
+/** The Workspace tab's target. The in-scope workspace wins; only a cold boot
  * with neither a URL workspace nor an active one falls back to the first
- * listed row, because the tab has to resolve to something.
- */
+ * listed row, because the tab has to resolve to something. */
 function goWorkspaceScope(): void {
   goWorkspace(inScopeWorkspaceId.value || workspaceOptions.value[0]?.id || '')
 }

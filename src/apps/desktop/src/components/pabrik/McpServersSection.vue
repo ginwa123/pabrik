@@ -11,11 +11,9 @@ const emit = defineEmits<{
   add: []
 }>()
 
-/**
- * Mask a value to first 3 + last 3 chars, with the middle replaced
+/** Mask a value to first 3 + last 3 chars, with the middle replaced
  * by asterisks. For very short values the whole thing is shown as
- * asterisks (no first/last reveal that would expose it).
- */
+ * asterisks (no first/last reveal that would expose it). */
 function maskValue(v: string): string {
   if (v.length <= 8) return '*'.repeat(v.length)
   const head = v.slice(0, 3)

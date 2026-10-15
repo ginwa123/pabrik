@@ -227,11 +227,9 @@ async function userScrollTo(container: HTMLElement, top: number): Promise<void> 
   await nextTick()
 }
 
-/**
- * Simulate tail growth below the viewport (an SSE chunk / tool card
+/** Simulate tail growth below the viewport (an SSE chunk / tool card
  * landing while the user reads): raise scrollHeight, then emit the
- * exact event VirtualScroller fires when its measured total grows.
- */
+ * exact event VirtualScroller fires when its measured total grows. */
 async function growTail(
   wrapper: VueWrapper,
   container: HTMLElement,

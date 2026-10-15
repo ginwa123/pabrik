@@ -187,44 +187,34 @@ export interface ElementInfo {
 }
 
 export interface DesignContext {
-  /**
-   * Which component / function produced this log line — without it,
+  /** Which component / function produced this log line — without it,
    * `drag:start:move` from `DesignElement.vue` looks identical to
-   * `drag:start:move` from anywhere else.
-   */
+   * `drag:start:move` from anywhere else. */
   caller: string
 
   /** Stable reason code (see `DesignReason`). */
   reason: DesignReason
 
   // ── Drag gesture state ────────────────────────────────────────────
-  /**
-   * The element being interacted with (pointerdown target). Always
-   * populated for drag:* reasons.
-   */
+  /** The element being interacted with (pointerdown target). Always
+   * populated for drag:* reasons. */
   element?: ElementInfo
-  /**
-   * Cursor delta in design-px (zoom-adjusted). For drag:throttled-emit /
-   * drag:trailing-emit / emit:translate / emit:groupDrag.
-   */
+  /** Cursor delta in design-px (zoom-adjusted). For drag:throttled-emit /
+   * drag:trailing-emit / emit:translate / emit:groupDrag. */
   dx?: number
   dy?: number
   /**
    * Resize patch (absolute geometry). For emit:resize.
    */
   patch?: Partial<{ x: number; y: number; width: number; height: number; rotation: number }>
-  /**
-   * startClientX/Y captured at pointerdown — without these, a 5px
+  /** startClientX/Y captured at pointerdown — without these, a 5px
    * discrepancy in a delta looks like "wait, where did the extra 5
-   * come from?".
-   */
+   * come from?". */
   startClientX?: number
   startClientY?: number
-  /**
-   * True iff this gesture branched into triggerGroupDrag (group /
+  /** True iff this gesture branched into triggerGroupDrag (group /
    * frame / multi-select move). The single most useful invariant —
-   * `drag:start:group=true` vs `false` tells you which wire fired.
-   */
+   * `drag:start:group=true` vs `false` tells you which wire fired. */
   isGroup?: boolean
   /**
    * Whether the start fired dragStartPositions = null (the reset on
@@ -297,10 +287,8 @@ export interface DesignLogger {
   error: (ctx: Omit<DesignContext, 'caller' | 'reason'> & { reason: DesignReason; caller: string }) => void
 }
 
-/**
- * Singleton. The design-mode wire has no per-chat-id scoping (one
- * design canvas at a time), so a single global logger suffices.
- */
+/** Singleton. The design-mode wire has no per-chat-id scoping (one
+ * design canvas at a time), so a single global logger suffices. */
 export const designLogger: DesignLogger = {
   debug(partial) {
     const ctx = { ...partial, caller: partial.caller ?? 'unknown' } as DesignContext
@@ -419,11 +407,9 @@ const emitInternal = (ctx: DesignContext, level: 'debug' | 'info' | 'warn' | 'er
 
 // ─── Helpers for callers ───────────────────────────────────────────────────
 
-/**
- * Convert a DesignElement into the compact ElementInfo shape the
+/** Convert a DesignElement into the compact ElementInfo shape the
  * logger prefers. Avoids passing 30+ fields when only 5 are useful
- * for diagnostic output.
- */
+ * for diagnostic output. */
 export const abbrevElement = (e: {
   id: string
   type: string

@@ -29,11 +29,9 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import VirtualScroller from '../VirtualScroller.vue'
 
-/**
- * Mount a VirtualScroller with one item. The item content doesn't
+/** Mount a VirtualScroller with one item. The item content doesn't
  * matter for these tests — we're driving scroll events directly on
- * the root element.
- */
+ * the root element. */
 function mountScroller() {
   return mount(VirtualScroller, {
     props: {

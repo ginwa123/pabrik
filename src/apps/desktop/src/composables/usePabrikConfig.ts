@@ -33,11 +33,9 @@ export function usePabrikConfig(source: PabrikConfigSource = userConfigSource())
   const snapshot = ref<string>('')
   const saving = ref(false)
 
-  /**
-   * Number of leaf-level field changes since load. Counts each
+  /** Number of leaf-level field changes since load. Counts each
    * primitive change once. Used by PabrikSaveBar to show
-   * "● N unsaved changes".
-   */
+   * "● N unsaved changes". */
   const unsavedCount = computed(() => {
     if (!config.value) return 0
     if (!snapshot.value) return 0

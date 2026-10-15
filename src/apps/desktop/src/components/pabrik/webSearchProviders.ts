@@ -78,10 +78,8 @@ export function createWebSearchProviderRow(): WebSearchProviderRow {
   }
 }
 
-/**
- * Hydrate the editable list from the config's `web_search` map.
- * `null`/absent yields `[]` — same contract as `parseMcpServers`.
- */
+/** Hydrate the editable list from the config's `web_search` map.
+ * `null`/absent yields `[]` — same contract as `parseMcpServers`. */
 export function parseWebSearchProviders(
   raw: Record<string, PabrikWebSearchProvider> | null | undefined,
 ): WebSearchProviderRow[] {
@@ -160,11 +158,9 @@ function endsWithIgnoreCase(haystack: string, needle: string): boolean {
   return haystack.slice(-needle.length).toLowerCase() === needle.toLowerCase()
 }
 
-/**
- * True when `host` names a loopback, link-local, private or otherwise
+/** True when `host` names a loopback, link-local, private or otherwise
  * non-public address — a cloud metadata endpoint, most of all, since a
- * key sent to `169.254.169.254` is a stolen key.
- */
+ * key sent to `169.254.169.254` is a stolen key. */
 export function isNonPublicHost(host: string): boolean {
   let h = host
   if (h.startsWith('[')) {

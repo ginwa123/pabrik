@@ -1,7 +1,5 @@
-/**
- * V2 sidebar: header shows a quiet count, no search filter.
- * Every project is listed; actions are always visible; indent is compact.
- */
+/** V2 sidebar: header shows a quiet count, no search filter.
+ * Every project is listed; actions are always visible; indent is compact. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref } from 'vue'

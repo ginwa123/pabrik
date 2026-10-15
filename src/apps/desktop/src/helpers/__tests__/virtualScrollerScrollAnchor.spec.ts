@@ -408,10 +408,8 @@ describe('computeAnchorCompensation', () => {
 
 // ─── Integration tests (mounted component) ───────────────────────────────────
 
-/**
- * Mount a scroller with N items at the ChatView-like settings
- * (defaultItemHeight 64, buffer 30) and a fixed 800px viewport.
- */
+/** Mount a scroller with N items at the ChatView-like settings
+ * (defaultItemHeight 64, buffer 30) and a fixed 800px viewport. */
 function mountScroller(n: number) {
   const items = Array.from({ length: n }, (_, i) => ({ id: i }))
   const wrapper = mount(VirtualScroller, {

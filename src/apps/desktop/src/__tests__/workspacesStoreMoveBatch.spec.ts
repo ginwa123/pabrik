@@ -348,11 +348,9 @@ describe('workspacesStore.moveDesignElementsBatch', () => {
     expect(after[0].y).toBe(150)
   })
 
-  /**
-   * Same bug as above but verifying the canonical wire shape is also
+  /** Same bug as above but verifying the canonical wire shape is also
    * accepted (the new backend). Locks in that we don't regress the
-   * happy path while defending against the legacy shape.
-   */
+   * happy path while defending against the legacy shape. */
   it('local mirror preserves `type` when backend emits `type` (canonical wire shape)', async () => {
     const store = makeWorkspacesStore()
     const baseline = [

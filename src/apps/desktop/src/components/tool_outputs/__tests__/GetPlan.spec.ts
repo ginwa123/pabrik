@@ -24,10 +24,8 @@ import GetPlan from '../GetPlan.vue'
 // Helpers
 // ────────────────────────────────────────────────────────────────────────
 
-/**
- * Build a present-plan JSON envelope with the markdown body the backend
- * emits (`executeGetPlan` returns `{plan: <markdown>}`).
- */
+/** Build a present-plan JSON envelope with the markdown body the backend
+ * emits (`executeGetPlan` returns `{plan: <markdown>}`). */
 const makePresentContent = (markdown: string): string =>
   JSON.stringify({
     tool: 'get_plan',

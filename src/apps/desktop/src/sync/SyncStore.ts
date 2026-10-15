@@ -67,11 +67,9 @@ export function sortNewestFirst<T extends Syncable>(rows: ReadonlyArray<T>): T[]
 
 const cell = (store: string, key: string): string => `${store} ${key}`
 
-/**
- * In-memory `SyncStore`: the no-IndexedDB fallback (SSR, tests, private
+/** In-memory `SyncStore`: the no-IndexedDB fallback (SSR, tests, private
  * browsing) and the test double. It cannot fail, so its error channel is
- * `never` — which is precisely why substituting it needs no stubbing.
- */
+ * `never` — which is precisely why substituting it needs no stubbing. */
 export function makeMemorySyncStore(): SyncStoreShape {
   const rows = new Map<string, Syncable[]>()
   const cursors = new Map<string, string | null>()

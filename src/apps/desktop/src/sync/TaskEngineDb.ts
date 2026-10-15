@@ -141,11 +141,9 @@ export class TaskEngineDb extends BaseSyncEngine<TaskRow, TaskCtx> {
     )
   }
 
-  /**
-   * Revalidate the same first page used to build this cache context and
+  /** Revalidate the same first page used to build this cache context and
    * write the returned rows through. Older-page pagination is handled by
-   * the store and also writes through with putLocal.
-   */
+   * the store and also writes through with putLocal. */
   loadDelta(ctx: TaskCtx, limit: number): Effect.Effect<TaskDelta, SyncError> {
     // A generator's `this` is its own, so capture the engine outside.
     // oxlint-disable-next-line typescript-eslint/no-this-alias -- see SyncEngine.syncOnMount

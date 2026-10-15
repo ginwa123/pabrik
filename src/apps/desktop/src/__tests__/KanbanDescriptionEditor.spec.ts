@@ -37,11 +37,9 @@ vi.mock('@/api', async (importOriginal) => {
 
 const searchFilesMock = api.searchFiles as unknown as ReturnType<typeof vi.fn>
 
-/**
- * Mock `api.searchFiles` with pre-ranked server rows (Task 3: the server
+/** Mock `api.searchFiles` with pre-ranked server rows (Task 3: the server
  * owns ranking now — the old N-sequential-fetch full-tree walk via raw
- * `fetch` is deleted). The picker renders rows directly in server order.
- */
+ * `fetch` is deleted). The picker renders rows directly in server order. */
 function mockSearchResults(
   entries: Array<{ name: string; path: string; is_directory: boolean }>,
 ) {

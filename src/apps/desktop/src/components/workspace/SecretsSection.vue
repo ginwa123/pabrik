@@ -49,10 +49,8 @@ const rotateTarget = ref<Secret | null>(null)
 const rotateValue = ref('')
 const deleteTarget = ref<Secret | null>(null)
 
-/**
- * An empty value is not a secret. Silently swallowing the click would look
- * like a success that never happened, so the form says why instead.
- */
+/** An empty value is not a secret. Silently swallowing the click would look
+ * like a success that never happened, so the form says why instead. */
 const canAdd = computed(() => nameInput.value.trim().length > 0 && valueInput.value.length > 0)
 
 function handleAdd(): void {

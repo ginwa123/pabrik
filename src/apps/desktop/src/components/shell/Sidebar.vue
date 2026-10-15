@@ -387,11 +387,9 @@ const handleGoToSettings = (payload: {
   openInNewTab(router, buildAppUrl({ workspaceId: payload.workspaceId, projectId: payload.itemId }))
 }
 
-/**
- * Ctrl/Cmd+click (or middle click) on a workspace item: open a real
+/** Ctrl/Cmd+click (or middle click) on a workspace item: open a real
  * browser tab and stay where the user is. The click never navigates,
- * so nothing in the render chain has to know about it.
- */
+ * so nothing in the render chain has to know about it. */
 const handleOpenItemInBackground = (payload: {
   workspaceId: string
   itemId: string

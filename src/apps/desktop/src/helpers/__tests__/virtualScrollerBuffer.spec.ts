@@ -20,10 +20,8 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import VirtualScroller from '../VirtualScroller.vue'
 
-/**
- * Build a list of N items. Each item's `id` is its index, which is
- * useful for assertions on `data-vs-index` attributes.
- */
+/** Build a list of N items. Each item's `id` is its index, which is
+ * useful for assertions on `data-vs-index` attributes. */
 function makeItems(n: number): Array<{ id: number }> {
   return Array.from({ length: n }, (_, i) => ({ id: i }))
 }
@@ -64,11 +62,9 @@ function mountScroller(props: {
   return wrapper
 }
 
-/**
- * `defineExpose` auto-unwraps refs and computeds on the parent
+/** `defineExpose` auto-unwraps refs and computeds on the parent
  * instance, so `scroller.renderedCount` is already a plain number
- * (not a ref). This wrapper just types the access for the tests.
- */
+ * (not a ref). This wrapper just types the access for the tests. */
 function getRenderedCount(wrapper: ReturnType<typeof mountScroller>): number {
   return (wrapper.vm as unknown as { renderedCount: number }).renderedCount
 }

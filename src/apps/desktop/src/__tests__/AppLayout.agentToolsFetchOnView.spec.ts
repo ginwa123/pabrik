@@ -90,11 +90,9 @@ function setRoute(q: Record<string, string>, path = '/app') {
   } as any)
 }
 
-/**
- * Mount AppLayout with an agent item as the active workspace item
+/** Mount AppLayout with an agent item as the active workspace item
  * and NO chat task. Returns the wrapper so the test can inspect
- * the props passed to the AgentView stub.
- */
+ * the props passed to the AgentView stub. */
 function mountAgentView(): VueWrapper {
   const ws = useWorkspacesStore()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

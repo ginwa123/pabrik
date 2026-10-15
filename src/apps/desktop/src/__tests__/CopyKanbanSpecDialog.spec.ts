@@ -110,11 +110,9 @@ describe('CopyKanbanSpecDialog', () => {
     return w
   }
 
-  /**
-   * The custom dropdown starts CLOSED. Tests that need to see
+  /** The custom dropdown starts CLOSED. Tests that need to see
    * options click the trigger first, then await flushPromises so
-   * the v-if reactively renders the listbox.
-   */
+   * the v-if reactively renders the listbox. */
   async function openDropdown() {
     clickInDom('[data-testid="copy-kanban-spec-source-trigger"]')
     await flushPromises()

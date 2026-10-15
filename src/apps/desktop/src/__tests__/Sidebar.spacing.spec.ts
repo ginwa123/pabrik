@@ -29,10 +29,8 @@ import { dirname, resolve } from 'node:path'
 
 const SRC = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
-/**
- * Geometry only. There is deliberately no --sb-fs-* here: font size is
- * not a sidebar concern, it is an app-wide one (type-scale.spec.ts).
- */
+/** Geometry only. There is deliberately no --sb-fs-* here: font size is
+ * not a sidebar concern, it is an app-wide one (type-scale.spec.ts). */
 const TOKENS: Record<string, string> = {
   '--sb-gutter': '12px',
   '--sb-row': '32px',

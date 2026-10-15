@@ -36,11 +36,9 @@ const results = ref<SkillEvalResult[]>([])
 const counts = ref<{ verdict: string; n: number }[]>([])
 const total = ref(0)
 const loading = ref(false)
-/**
- * The failure is held in a ref the template RENDERS, never swallowed into an
+/** The failure is held in a ref the template RENDERS, never swallowed into an
  * empty list. "There is nothing new" and "we could not check" must not look
- * the same to the user.
- */
+ * the same to the user. */
 const error = ref<string | null>(null)
 const applying = ref<string | null>(null)
 const applyError = ref<string | null>(null)

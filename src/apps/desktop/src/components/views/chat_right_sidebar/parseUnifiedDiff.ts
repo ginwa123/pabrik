@@ -207,11 +207,9 @@ export function splitDiffByFile(diffText: string): SplitDiffFile[] {
   return out.filter((f) => f.text.trim().length > 0)
 }
 
-/**
- * Center-diff selection payload: panel row click → shell → ChatView.
+/** Center-diff selection payload: panel row click → shell → ChatView.
  * `lines` travel by reference (no copy). `error` set when the worktree
- * fetch failed (PR mode parses inline, so error is always null there).
- */
+ * fetch failed (PR mode parses inline, so error is always null there). */
 export interface DiffSelection {
   path: string
   staged: boolean

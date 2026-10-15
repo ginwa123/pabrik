@@ -29,21 +29,17 @@ import { getAuthMeCached } from './authMe'
 /** Separator between the logical key and the user id. */
 const USER_SUFFIX = '::u:'
 
-/**
- * The identity currently in effect. `null` means "no identity" — auth off, or
+/** The identity currently in effect. `null` means "no identity" — auth off, or
  * `/api/auth/me` has not resolved yet — and `userScopedKey` then returns the
- * key unchanged.
- */
+ * key unchanged. */
 let currentUserId: string | null = null
 
 /** True once `refreshCurrentUserId` has completed at least once. */
 let resolved = false
 
-/**
- * Synchronously set the identity. Called by the auth flow on login, logout,
+/** Synchronously set the identity. Called by the auth flow on login, logout,
  * and whenever `/api/auth/me` reports a different id. Passing `null` (or an
- * empty string) means "no identity" and disables scoping.
- */
+ * empty string) means "no identity" and disables scoping. */
 export function setCurrentUserId(userId: string | null | undefined): void {
   currentUserId = userId && userId.length > 0 ? userId : null
   resolved = true
@@ -84,11 +80,8 @@ export async function refreshCurrentUserId(): Promise<string | null> {
   }
 }
 
-/**
- * Map a logical storage key to its per-user physical key.
- *
- * No identity => the key unchanged (auth off, or before `/me` resolves).
- */
+/** Map a logical storage key to its per-user physical key.
+ * No identity => the key unchanged (auth off, or before `/me` resolves). */
 export function userScopedKey(key: string): string {
   if (!currentUserId) return key
   return `${key}${USER_SUFFIX}${currentUserId}`

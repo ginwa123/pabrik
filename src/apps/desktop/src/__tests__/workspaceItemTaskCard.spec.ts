@@ -139,11 +139,9 @@ describe('WorkspaceItemTaskCard data-attribute contract', () => {
   })
 })
 
-/**
- * Card-ux-v2 tests: the richer card layout (description with
+/** Card-ux-v2 tests: the richer card layout (description with
  * line-clamp-2 + meta row with last-updated time and task-type
- * badge).
- */
+ * badge). */
 describe('WorkspaceItemTaskCard card-ux-v2 (richer card layout)', () => {
   let wrapper: VueWrapper | null = null
 

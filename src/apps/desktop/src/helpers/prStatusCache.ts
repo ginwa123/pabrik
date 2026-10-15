@@ -89,10 +89,8 @@ export function clearPrStatusCache(): void {
   epoch.clear()
 }
 
-/**
- * The (cwd, branch) pair an invalidation dropped — exactly the pair a badge
- * holds, so a consumer can skip work that is not about it.
- */
+/** The (cwd, branch) pair an invalidation dropped — exactly the pair a badge
+ * holds, so a consumer can skip work that is not about it. */
 export interface PrStatusInvalidation {
   cwd: string
   branch: string
@@ -100,10 +98,8 @@ export interface PrStatusInvalidation {
 
 const invalidationSubscribers = new Set<(change: PrStatusInvalidation) => void>()
 
-/**
- * A registered badge threw while re-reading. Reported, never propagated: the
- * invalidation may be running inside a merge that already succeeded.
- */
+/** A registered badge threw while re-reading. Reported, never propagated: the
+ * invalidation may be running inside a merge that already succeeded. */
 class PrStatusSubscriberError extends Data.TaggedError('PrStatusSubscriberError')<{
   readonly reason: string
 }> {}
@@ -233,11 +229,9 @@ async function fetchWithRetry(cwd: string, branch: string, provider: string): Pr
   return { ...EMPTY_INFO }
 }
 
-/**
- * PR status + URL for a repo + branch. Never rejects — unknown
+/** PR status + URL for a repo + branch. Never rejects — unknown
  * (no cwd/branch, no PR, `gh` missing, fetch failing) resolves to
- * `{ status: '', prUrl: '' }`.
- */
+ * `{ status: '', prUrl: '' }`. */
 export function fetchPrInfoCached(cwd: string, branch: string, provider = ''): Promise<PrInfo> {
   if (!cwd || !branch) return Promise.resolve({ ...EMPTY_INFO })
   const k = cacheKey(cwd, branch, provider)
@@ -280,19 +274,15 @@ export function fetchPrInfoCached(cwd: string, branch: string, provider = ''): P
   return p
 }
 
-/**
- * Lowercase PR status (`open` | `merged` | `closed`) for a repo + branch,
+/** Lowercase PR status (`open` | `merged` | `closed`) for a repo + branch,
  * or `''` when unknown (no cwd/branch, no PR, `gh` missing, or the fetch
- * kept failing). Never rejects.
- */
+ * kept failing). Never rejects. */
 export function fetchPrStatusCached(cwd: string, branch: string, provider = ''): Promise<string> {
   return fetchPrInfoCached(cwd, branch, provider).then((info) => info.status)
 }
 
-/**
- * Full cached PR status including the mergeable flag, so card/row badges
- * can surface a conflict hint without an extra `gh` call. Never rejects.
- */
+/** Full cached PR status including the mergeable flag, so card/row badges
+ * can surface a conflict hint without an extra `gh` call. Never rejects. */
 export function fetchPrStatusFullCached(
   cwd: string,
   branch: string,
@@ -301,11 +291,9 @@ export function fetchPrStatusFullCached(
   return fetchPrInfoCached(cwd, branch, provider)
 }
 
-/**
- * Cached conflict flag for a repo + branch. True only when the PR reports
+/** Cached conflict flag for a repo + branch. True only when the PR reports
  * CONFLICTING (or DIRTY) — quiet (false) for mergeable, unknown, or failed
- * fetches. Never rejects.
- */
+ * fetches. Never rejects. */
 export function fetchPrConflictCached(
   cwd: string,
   branch: string,
@@ -316,10 +304,8 @@ export function fetchPrConflictCached(
   )
 }
 
-/**
- * The two URL shapes that identify a change-request, longest first so a
- * GitLab `/-/merge_requests/` URL is not mistaken for something else.
- */
+/** The two URL shapes that identify a change-request, longest first so a
+ * GitLab `/-/merge_requests/` URL is not mistaken for something else. */
 const PR_URL_MARKERS = ['/-/merge_requests/', '/pull/'] as const
 
 /**

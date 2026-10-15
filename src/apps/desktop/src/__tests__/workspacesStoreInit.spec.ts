@@ -1,8 +1,6 @@
-/**
- * Unit tests for the workspaces store's init() flow.
+/** Unit tests for the workspaces store's init() flow.
  * Mocks api.getWorkspaces, api.getWorkspacesItems, and api.getTasks
- * to assert the 3-call flow + task-attachment logic.
- */
+ * to assert the 3-call flow + task-attachment logic. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp } from 'vue'

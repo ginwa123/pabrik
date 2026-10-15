@@ -54,11 +54,9 @@ export function clampFrameHeight(
   return Math.max(min, Math.min(max, height))
 }
 
-/**
- * Grow a frame to its full reported content height with no upper bound.
+/** Grow a frame to its full reported content height with no upper bound.
  * HTML frames use this (not clampFrameHeight) so long reports never get
- * an inner scrollbar — the outer chat scroller owns scrolling.
- */
+ * an inner scrollbar — the outer chat scroller owns scrolling. */
 export function growFrameToContent(height: number, min: number = MIN_FRAME_HEIGHT): number {
   if (!Number.isFinite(height) || height <= 0) return min
   return Math.max(min, height)

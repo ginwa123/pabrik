@@ -455,11 +455,9 @@ export function isRecentLocalMutation(elementId: string): boolean {
   return true
 }
 
-/**
- * Test-only helper to clear the dedupe Map between tests. NOT exposed
+/** Test-only helper to clear the dedupe Map between tests. NOT exposed
  * in the production API surface — exported via the store's returned
- * object only for unit tests.
- */
+ * object only for unit tests. */
 export function _clearRecentLocalMutationsForTests(): void {
   recentLocalMutations.clear()
 }

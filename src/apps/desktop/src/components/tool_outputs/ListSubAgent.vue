@@ -98,11 +98,9 @@ const envelopeParams = computed(
   () => tryUnwrapToolOutput(props.message.content)?.parameters ?? '{}',
 )
 
-/**
- * Inner `data` payload for this tool message. The dispatcher passes the
+/** Inner `data` payload for this tool message. The dispatcher passes the
  * raw tool message, whose content is the full JSON envelope; we unwrap
- * one level here so the component is self-contained.
- */
+ * one level here so the component is self-contained. */
 function asRecord(v: unknown): Record<string, unknown> {
   if (typeof v === 'string') {
     try {

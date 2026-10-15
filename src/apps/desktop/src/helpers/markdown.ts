@@ -51,11 +51,9 @@ export const renderMarkdownHtml = (source: string | null | undefined): string =>
   }
 }
 
-/**
- * Inline-only markdown → HTML, for a `v-html` inside a text-flow element
+/** Inline-only markdown → HTML, for a `v-html` inside a text-flow element
  * (one cell, one line, no block wrapper). `**bold**`, `*em*`, `` `code` ``
- * and `[text](url)` survive; paragraphs and lists do not exist here.
- */
+ * and `[text](url)` survive; paragraphs and lists do not exist here. */
 export const renderInlineMarkdownHtml = (source: string | null | undefined): string => {
   if (!source) return ''
   try {
@@ -65,11 +63,9 @@ export const renderInlineMarkdownHtml = (source: string | null | undefined): str
   }
 }
 
-/**
- * The subset of `marked`'s token shape this walk needs. `Tokens.Generic`
+/** The subset of `marked`'s token shape this walk needs. `Tokens.Generic`
  * is part of marked's `Token` union, so a structural read is the honest
- * way to flatten the whole tree without a cast at every branch.
- */
+ * way to flatten the whole tree without a cast at every branch. */
 interface FlatToken {
   type?: string
   text?: string
@@ -85,11 +81,9 @@ interface FlatCell {
   tokens?: unknown[]
 }
 
-/**
- * A table's `header` / one of its `rows` → one space-joined line of words.
+/** A table's `header` / one of its `rows` → one space-joined line of words.
  * Each element is a `FlatCell`, so the recurse goes through `cell.tokens`;
- * the `text` fallback covers a cell with no inline tokens.
- */
+ * the `text` fallback covers a cell with no inline tokens. */
 const flattenCells = (cells: readonly unknown[]): string =>
   cells
     .map((cell) => {
