@@ -377,10 +377,8 @@ describe('AppLayout — design item URL persistence (Chunk 3 of design-url-persi
   })
 
   it('activeWorkspaceItem → URL watcher does NOT overwrite the URL when the chat suffix is present', async () => {
-    // SIMPLIFY-URL-BROWSER (2026-08-15): the legacy view=task shape
-
-    // is gone. The chat-open state is encoded as /chat/<taskId> on
-    // itemId while view=workspace. The watcher's chat-suffix guard
+    // SIMPLIFY-URL-BROWSER (2026-08-15): the legacy view=task shape is gone. The chat-open state is
+    // encoded as /chat/<taskId> on itemId while view=workspace. The watcher's chat-suffix guard
     // MUST preserve the suffix on every write.
     const replaceMock = vi.fn()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -718,7 +716,6 @@ describe('AppLayout — design item URL persistence (Chunk 3 of design-url-persi
 
   // ─── add-workspace-id-params plan (2026-08-06) ──────────────────
   //
-
   // When the user closes a git/skill/code-editor viewer while a
   // task is active (e.g. they opened a viewer from the chat
   // panel of a kanban task), the new URL must include workspaceId

@@ -66,7 +66,6 @@ function makeItems(n: number): Item[] {
 /** The FIXED version of the rAF re-stick body. Read scrollHeight and clientHeight ONCE inside the
  * rAF, compute the target explicitly, then assign. This is the function that should replace the raw
  * `container.scrollTop = container.scrollHeight` line in ChatView.vue's onContentShift rAF. */
-
 /** Returns `{ restuck, target }` so the test can assert what the function decided without needing
  * the container's scrollTop to actually change (jsdom doesn't enforce clamp semantics). */
 function restickToBottom(args: {

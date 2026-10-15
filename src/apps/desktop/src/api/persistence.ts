@@ -59,7 +59,6 @@ export interface FolderEntry {
 
 // ============================================ Workspace API Functions
 // ============================================
-
 /** Fetch all workspaces */
 export async function getWorkspaces(): Promise<Workspace[]> {
   const response = await fetch(`${API_BASE}/persistence/workspaces`)
@@ -125,7 +124,6 @@ export async function deleteWorkspace(id: string): Promise<void> {
 
 // ============================================ Workspace Item API Functions
 // ============================================
-
 /** Create a new workspace item */
 export async function createWorkspaceItem(
   workspaceId: string,
@@ -184,7 +182,6 @@ export async function deleteWorkspaceItem(workspaceId: string, itemId: string): 
 
 // ============================================ Task API Functions
 // ============================================
-
 /** Create a new task */
 export async function createTask(
   itemId: string,
@@ -239,7 +236,6 @@ export async function deleteTask(itemId: string, taskId: string): Promise<void> 
 
 // ============================================ Chat API Functions
 // ============================================
-
 /** Fetch all chats */
 export async function getChats(): Promise<ChatNavItem[]> {
   const response = await fetch(`${API_BASE}/persistence/chats`)
@@ -294,7 +290,6 @@ export async function deleteChat(id: string): Promise<void> {
 
 // ============================================ App State API Functions
 // ============================================
-
 /** Fetch the current app state */
 export async function getAppState(): Promise<AppState> {
   const response = await fetch(`${API_BASE}/persistence/app-state`)

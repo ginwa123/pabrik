@@ -253,10 +253,8 @@ describe('AppLayout — handleSelectTask does not get its URL overwritten by the
     await nextTick()
     await nextTick()
 
-    // The URL sync watcher must NOT have called replace that would
-     
-    // clobber the chat suffix. (view=workspace writes are still
-    // expected — the watcher's chat-suffix guard ensures itemId
+    // The URL sync watcher must NOT have called replace that would clobber the chat suffix.
+    // (view=workspace writes are still expected — the watcher's chat-suffix guard ensures itemId
     // stays in the /chat/<taskId> form.)
     const replaceCallsWithBareItemId = replaceMock.mock.calls.filter(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -281,9 +279,7 @@ describe('AppLayout — handleSelectTask does not get its URL overwritten by the
     // expanded in the sidebar but NOT yet the active item.
 
     // The user clicks the task under the folder. setActiveTask will set activeWorkspaceItemId from
-    // A to B — THIS IS the change that triggers the URL sync
-     
-    // watcher.
+    // A to B — THIS IS the change that triggers the URL sync watcher.
     const OTHER_ID = 'item_other'
     useRouteMock.mockReturnValue({
       query: { view: 'workspace', workspaceId: WS_ID, itemId: OTHER_ID },

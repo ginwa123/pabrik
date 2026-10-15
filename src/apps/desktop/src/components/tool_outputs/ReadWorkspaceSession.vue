@@ -49,7 +49,6 @@ import { normalizeToolContent } from './_shared/toolOutputParser'
  * tool rows, so a natural-language query matches tool output heavily and
  * the ratio is worth surfacing.
  */
-
 // ── Shared types ──────────────────────────────────────────────────────────
 
 interface WorkspaceSession {
@@ -471,7 +470,6 @@ const toggleContent = (id: string): void => {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
-
 /** Truncate `s` to `max` chars, keeping both ends (more useful for
  *  long paths/queries than a pure tail ellipsis). */
 function truncateMiddle(s: string, max: number): string {
@@ -483,10 +481,8 @@ function truncateMiddle(s: string, max: number): string {
 /** Split an FTS5 snippet into (text, isMatch) segments for `<mark>` rendering. The backend calls
  * `snippet(messages_fts, 0, '[', ']', '...', 10)`, so a real snippet wraps matches in BARE brackets
  * — `...a [portal] that refuses...` — and contains no tags at all. */
-
 /** `[match]` / `[/match]` is still accepted because tool results persisted before this card learned
  * the bare format may carry it. */
-
 /** A bracket span whose text contains a literal `[` (e.g. `[xdg-[portal]`) is split at the LAST
  * inner `[`, so the surrounding text stays visible instead of being highlighted wholesale. */
 function parseSnippet(snippet: string): { text: string; match: boolean }[] {

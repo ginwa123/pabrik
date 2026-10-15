@@ -152,7 +152,6 @@ const MESSAGE_COUNT = 1000
 
 /** A body long enough to fill the viewport on its own when rendered — the "content can be height is
  * very height until full screen" half. */
-
 /** In jsdom this does not lay out, but it IS the wire payload a tall bubble produces, and the
  * transcript here has to be the real shape for the handler paths under test (reasoning sections,
  * the streaming-row swap, message grouping) to be the same code a reader hits. */

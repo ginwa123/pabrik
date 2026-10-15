@@ -452,7 +452,6 @@ describe('UpdatePlan.vue — plan body from <plan> CDATA', () => {
 // ignored by UpdatePlan.vue <success>true</success> <data>
 // <update_plan> <session_id>...</session_id> <updated_at>...</updated_at> <plan><![CDATA[ ...
 // ]]></plan> ← source of truth </update_plan> </data> </tool>
-
 /**  * Build a full JSON wire envelope with the agent's input args in `parameters` and the just-written
  * plan body in `data.plan`. Mirrors the backend's `wrapToolOutput` shape (success path). */
 const wrapAsFullToolEnvelope = (

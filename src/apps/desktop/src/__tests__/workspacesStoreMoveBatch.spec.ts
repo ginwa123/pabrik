@@ -156,7 +156,6 @@ describe('workspacesStore.moveDesignElementsBatch', () => {
     expect(result.length).toBe(3)
 
     // Local cache mirrors the server response.
-     
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const elements = (store.workspaces[0] as any).items[0].design_elements
     expect(elements[0].x).toBe(100)
@@ -220,7 +219,6 @@ describe('workspacesStore.moveDesignElementsBatch', () => {
     const store = makeWorkspacesStore()
 
     // Initial baseline: stub getDesignPage to return the same
-     
     // elements array reference (NOT replaced by fetch).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const baseline = (store.workspaces[0] as any).items[0].design_elements
@@ -265,7 +263,6 @@ describe('workspacesStore.moveDesignElementsBatch', () => {
     ])
 
     // CRITICAL: the design_elements array must be the SAME reference
-     
     // after the mirror (Vue 3 reactivity depends on per-index writes
     // to the same reactive array).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -22,7 +22,6 @@
  * parent-DOM access. It reads its own document metrics and posts one plain
  * object. The parent's handler only writes a clamped pixel height.
  */
-
 /** Reporter tag for the inline preview HTML iframe. */
 export const PREVIEW_AUTO_RESIZE_SOURCE = 'show-preview-auto-resize'
 
@@ -35,7 +34,6 @@ export const MIN_FRAME_HEIGHT = 120
 
 /** Upper bound — runaway content (huge dashboards, infinite scroll) must not break the chat layout;
  * those frames stay scrollable instead. */
-
 /** NOTE (2026-09-20 no-inner-scrollbar): HTML frames no longer clamp to this max — they grow to
  * their full content height so the outer chat scroller owns scrolling and no inner scrollbar ever
  * appears. Kept for backward compat (clampFrameHeight default) only. */
@@ -62,7 +60,6 @@ export function growFrameToContent(height: number, min: number = MIN_FRAME_HEIGH
 
 /** CSS snippet injected into every HTML srcdoc shell so the frame document itself never shows
  * scrollbars. */
-
 /** The parent sizes the iframe element to the content height (see growFrameToContent), so
  * page-level scrolling inside the frame is never needed — inner `pre` blocks keep their own
  * `overflow-x:auto` for wide code. */
@@ -85,11 +82,9 @@ export function readAutoResizeHeight(event: MessageEvent, source: string): numbe
 
 /** Resolve the iframe that sent `event` by identity-comparing the message's `source` window against
  * the frames currently in the DOM. */
-
 /** A null-origin sandbox forbids reading `contentDocument`, but the `WindowProxy` is still
  * comparable — `event.source === frame.contentWindow` is the one handle the parent keeps on an
  * otherwise opaque frame. */
-
 /** Querying the DOM at message time (rather than holding refs) keeps this correct with
  * VirtualScroller, which mounts/unmounts message rows. Returns `null` when the sender isn't one of
  * ours. */
@@ -108,7 +103,6 @@ export function findSenderFrame(
 /** Build the reporter script for a frame's srcdoc. Injected into the srcdoc document itself, so it
  * runs at parse time inside the sandbox. It reports once immediately and again on load / resize /
  * DOM mutation (so streamed-in or script-driven content keeps the frame sized). */
-
 /** `</script>` is emitted as `<\/script>` so the literal can live inside the generated document
  * without closing the parent's script context. */
 export function autoResizeScript(source: string): string {

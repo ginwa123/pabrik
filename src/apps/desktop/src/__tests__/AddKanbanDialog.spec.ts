@@ -1,13 +1,10 @@
 /** Tests for AddKanbanDialog — the modal that creates a new project kanban board. The user enters a
  * name + picks a folder (the cwd for the kanban's tasks); the backend seeds the default columns. */
-
 /** After the migration to FilePickerDialog (2026-06-24), the picker is mocked with a stub (real
  * picker behavior is in FilePickerDialog.spec.ts). */
-
 /** Mirrors AddItemDialog.spec.ts: same `attachTo: document.body` + `document.querySelector` pattern
  * (the dialog uses <Teleport to="body">, so wrapper.find(...) returns empty — we must inspect the
  * document directly). */
-
 /** Plan: docs/superpowers/plans/2026-06-21-workspace-item-kanban.md Chunk 6 / Task 6.1 */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
@@ -110,11 +107,9 @@ describe('AddKanbanDialog', () => {
     expect(btn?.disabled).toBe(true)
   })
 
-  // ─── Visible "Name is required" error UX (mirrors AddItemDialog) ─────────
-
-  // The dialog now shows an inline error below the name input after
-  // the user has interacted with an empty/whitespace field, so the
-  // disabled Add button has a visible explanation.
+  // ─── Visible "Name is required" error UX (mirrors AddItemDialog) ───────── The dialog now shows
+  // an inline error below the name input after the user has interacted with an empty/whitespace
+  // field, so the disabled Add button has a visible explanation.
 
   // Plan: docs/superpowers/plans/2026-07-10-empty-workspace-item-bug.md
 

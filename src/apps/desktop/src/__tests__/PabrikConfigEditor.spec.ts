@@ -217,11 +217,8 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     mockSave.mockResolvedValueOnce({ success: true })
     const wrapper = await mountAt('profiles')
 
-    // Switch to Profiles tab. Plan 2026-08-25-notify-on-error moved
-    // General to index 0; Profiles is now at index 1.
-
-    // The active pill should show 'work' and the Reset button should
-    // be visible.
+    // Switch to Profiles tab. Plan 2026-08-25-notify-on-error moved General to index 0; Profiles is
+    // now at index 1. The active pill should show 'work' and the Reset button should be visible.
     expect(wrapper.text()).toContain('work')
     const resetBtn = wrapper.find('[data-testid="reset-active-btn"]')
     expect(resetBtn.exists()).toBe(true)
@@ -535,11 +532,9 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     expect(servers.hello).not.toHaveProperty('enabled')
   })
 
-  // ─── Tools tab (plan 2026-09-22-tools-menu-config-default-tools) ──────
-
-  // Memory-history router scoped to the settings path — same real-
-  // vue-router pattern as SidebarDiffPanel.tabs.spec (no guards, no
-  // window.location, query stays observable via currentRoute).
+  // ─── Tools tab (plan 2026-09-22-tools-menu-config-default-tools) ────── Memory-history router
+  // scoped to the settings path — same real- vue-router pattern as SidebarDiffPanel.tabs.spec (no
+  // guards, no window.location, query stays observable via currentRoute).
   async function makeSettingsRouter(query: Record<string, string> = {}) {
     const router = createRouter({
       history: createMemoryHistory(),

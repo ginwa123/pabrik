@@ -1,7 +1,6 @@
 /** KanbanRowView — the row-mode body of a kanban board. Renders the same data as the column board
  * as a vertical list grouped by column: a collapsible section header per column (chevron + name +
  * count badge + ⋮ menu) with compact task rows underneath. */
-
 /** This component is presentational: it reads `columns` / `tasks` props and re-emits the same event
  * set <KanbanColumn> emits. The only store access is read-only (per-column pagination state) plus
  * the "load more" action. */

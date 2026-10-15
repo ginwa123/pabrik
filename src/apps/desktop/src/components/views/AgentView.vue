@@ -34,11 +34,9 @@ interface Props {
   tools: string[]
   systemPrompts?: AgnosticSystemPromptRow[]
   /** True while the PARENT's agent-bundle fetch is in flight. */
-
   /** The three parents (AppLayout, KanbanSettingsView, RoutineView) fetch fire-and-forget with no
    * flag of their own, so `knowledge` and `systemPrompts` start as `[]` and the panels below render
    * their empty states — "No knowledge files yet." for an agent that has five. */
-
   /** This prop lets them hold a skeleton instead. Named `parentLoading`, not `loading`: the
    * component already owns a local `loading` ref for its OWN tool-registry fetch, and a same-named
    * prop is a `vue/no-dupe-keys` collision. */
@@ -103,7 +101,6 @@ function toggleToolExpanded(name: string) {
 }
 
 // ─── System Prompt panel UI state (plan 2026-08-21-agent-system-prompt) ──
-
 // `expandedPrompts` tracks which prompt rows show their full content —
 // same expand-chevron pattern as the Knowledge panel.
 const expandedPrompts = ref(new Set<string>())
@@ -120,11 +117,9 @@ function promptPreview(content: string): string {
   return oneLine.length > 60 ? oneLine.slice(0, 60) + '…' : oneLine
 }
 
-// ─── Knowledge panel UI state ───────────────────────────────────────────
-
-// `expandedKnowledge` tracks which knowledge rows are expanded. Expanded
-// inline rows reveal their full content in a scrollable block; expanded
-// file-backed rows show the absolute path + a hint line.
+// ─── Knowledge panel UI state ─────────────────────────────────────────── `expandedKnowledge`
+// tracks which knowledge rows are expanded. Expanded inline rows reveal their full content in a
+// scrollable block; expanded file-backed rows show the absolute path + a hint line.
 const expandedKnowledge = ref(new Set<string>())
 
 function toggleKnowledgeExpanded(id: string) {

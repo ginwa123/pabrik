@@ -12,8 +12,8 @@
 // ChatView's `loadChatHistory` reads it into `selectedProfile.value` after the messages are
 // rendered.
 
-// These tests pin down the wire shape (TypeScript side) so a future
-// refactor of the API wrapper doesn't silently re-introduce the bug.
+// These tests pin down the wire shape (TypeScript side) so a future refactor of the API wrapper
+// doesn't silently re-introduce the bug.
 
 import { describe, expect, it } from 'vitest'
 import * as api from '../api'

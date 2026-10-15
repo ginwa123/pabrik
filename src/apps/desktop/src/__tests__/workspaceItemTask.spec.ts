@@ -205,11 +205,9 @@ describe('WorkspaceItemTaskRow per-task row', () => {
   // ─── Right-click action menu ──────────────────────────────────────────── The row's three hover
   // buttons (pin / rename / delete) were migrated into <OpenInNewTabMenu>. Every action must still
   // fire with the SAME emitted payload, or the change silently removed functionality.
-
   // The menu is Teleported to `body`, so its rows are queried from the document rather than through
   // the wrapper — and because it never traverses the row, picking a row cannot also fire the row's
   // @click.
-
   // That is what the old stopPropagation guards protected against, so the "does NOT emit
   // selectTask" assertions below are the behaviour those guards used to provide, now asserted on
   // the outcome.
