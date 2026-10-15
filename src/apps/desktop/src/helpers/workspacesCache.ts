@@ -29,16 +29,13 @@ interface CachedWorkspace {
   items_count?: number
 }
 
-/**
- * Normalizes whatever JSON was stored into the minimal `Workspace`
+/** Normalizes whatever JSON was stored into the minimal `Workspace`
  * shape the store seeds from. Rows carry `items: []` + `expanded`
  * defaults here — the store restores `expanded` from its own
  * `pabrik-workspace-expanded` key and lazily fills `items` per visit,
  * so the cache never owns UI state or item trees.
- *
  * Returns null when the payload isn't recognizable at all, so corrupt
- * or foreign data under our key can never render a broken list.
- */
+ * or foreign data under our key can never render a broken list. */
 function normalizeWorkspaces(raw: unknown): Workspace[] | null {
   if (!Array.isArray(raw)) return null
   const out: Workspace[] = []

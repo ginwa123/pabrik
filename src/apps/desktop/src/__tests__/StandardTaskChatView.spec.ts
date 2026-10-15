@@ -105,9 +105,8 @@ describe('StandardTaskChatView', () => {
   })
 
   it('forwards the empty string when task.name is undefined', () => {
-    // Defensive against backend payloads that omit `name` — the
-    // inline AppLayout branch used `activeTask.name ?? ''`, this
-    // wrapper preserves that fallback so ChatView never receives
+    // Defensive against backend payloads that omit `name` — the inline AppLayout branch used
+    // `activeTask.name ?? ''`, this wrapper preserves that fallback so ChatView never receives
     // `undefined` for a prop that the type system declares string.
     const task: Task = { id: 'task_noname' } as Task
     const { wrapper: w } = mountWrapper({ task })
@@ -149,9 +148,8 @@ describe('StandardTaskChatView', () => {
   })
 
   it('turns the shared chat app bar on and re-emits its ✕ as close', async () => {
-    // Pre-fix this mode rendered NO bar at all: the sidebar toggle
-    // floated over the transcript and there was no way to leave the
-    // chat from the surface. It must now match the kanban and agent
+    // Pre-fix this mode rendered NO bar at all: the sidebar toggle floated over the transcript and
+    // there was no way to leave the chat from the surface. It must now match the kanban and agent
     // modes — see ChatAppBarParity.spec.ts for the cross-mode proof.
     const task: Task = { id: 'task_a', name: 'A' } as Task
     const { wrapper: w } = mountWrapper({ task })

@@ -43,15 +43,13 @@ const props = defineProps<{
   x: number
   y: number
   targetIds: string[]
-  /**
-   * The full element list for the active page. Used to determine
+  /** The full element list for the active page. Used to determine
    * whether the current `targetIds` selection contains exactly one
    * group/frame (the only state in which Ungroup can fire —
    * matches Figma: Ungroup is greyed out unless the single selection
    * is a group), and whether the single selection has a `parent_id`
    * set (the only state in which Leave group can fire — matches
-   * Figma: "Pull out of group" is greyed out for top-level elements).
-   */
+   * Figma: "Pull out of group" is greyed out for top-level elements). */
   // `parent_id` accepts the same shape the API returns: a non-empty
   // string means the element is currently inside a group/frame;
   // empty string (`COALESCE(parent_id, '')`) or null/undefined means
@@ -95,10 +93,9 @@ const canLeaveGroup = computed(() => {
   if (!targetId) return false
   const target = props.elements.find((e) => e.id === targetId)
   if (!target) return false
-  // `parent_id` arrives as '' (empty string) for top-level elements
-  // (the backend uses COALESCE(parent_id, '')) or is undefined when
-  // the API returned an older shape. Both count as "not inside a
-  // group" → disabled.
+  // `parent_id` arrives as '' (empty string) for top-level elements (the backend uses
+  // COALESCE(parent_id, '')) or is undefined when the API returned an older shape. Both count as
+  // "not inside a group" → disabled.
   return !!target.parent_id && target.parent_id !== ''
 })
 
@@ -114,10 +111,9 @@ const canUngroup = computed(() => {
   return target.type === 'group' || target.type === 'frame'
 })
 
-// Items dispatched through `v-for` to avoid repeating the same
-// button markup 4 times. Each entry maps to one of the design's
-// 4 reorder events. The single `reorder` handler below routes to
-// the right emit by name.
+// Items dispatched through `v-for` to avoid repeating the same button markup 4 times. Each entry
+// maps to one of the design's 4 reorder events. The single `reorder` handler below routes to the
+// right emit by name.
 const reorderItems = computed(() => [
   { id: 'bring-to-front', label: 'Bring to front', acc: acc('⌘⇧]', 'Ctrl+Shift+]'), emitName: 'bringToFront' as const },
   { id: 'bring-forward', label: 'Bring forward', acc: acc('⌘]', 'Ctrl+]'), emitName: 'bringForward' as const },
@@ -129,10 +125,9 @@ const reorderItems = computed(() => [
 // Mirrors Q2 (single element only, button greyed when multi-select).
 const canMoveToPage = computed(() => props.targetIds.length === 1)
 
-// Estimated menu footprint for viewport edge clamping. Counted
-// from the items[] below: 11 buttons + 2 separators = 13 rows × 40px
-// tall; 220px wide minimum. (Updated to include "Move to page…"
-// which sits before the reorder items.)
+// Estimated menu footprint for viewport edge clamping. Counted from the items[] below: 11 buttons +
+// 2 separators = 13 rows × 40px tall; 220px wide minimum. (Updated to include "Move to page…" which
+// sits before the reorder items.)
 const MENU_WIDTH = 220
 const MENU_ROW_HEIGHT = 40
 const MENU_ROWS = 13
@@ -155,10 +150,9 @@ const edgeClampedStyle = computed(() => {
 })
 
 function dispatchReorder(item: typeof reorderItems.value[number]): void {
-  // Switch on emitName (typed `as const`) so TS narrows the
-  // emit() call to the matching overload. A simple
-  // `emit(item.emitName, ...)` is rejected by TS2769 because the
-  // union of emit names doesn't auto-narrow to a single overload.
+  // Switch on emitName (typed `as const`) so TS narrows the emit() call to the matching overload. A
+  // simple `emit(item.emitName, ...)` is rejected by TS2769 because the union of emit names doesn't
+  // auto-narrow to a single overload.
   switch (item.emitName) {
     case 'bringToFront': emit('bringToFront', [...props.targetIds]); return
     case 'bringForward': emit('bringForward', [...props.targetIds]); return

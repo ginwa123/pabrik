@@ -49,10 +49,9 @@ const nameInput = ref<HTMLInputElement | null>(null)
 const description = ref('')
 const descriptionInput = ref<HTMLTextAreaElement | null>(null)
 
-// 500-char cap matches the project's convention for short text
-// fields. The textarea enforces it via `maxlength`; the backend
-// does NOT re-validate the cap (Zig error sets grow with every
-// constraint; we accept "client says 500, server trusts it" for v1).
+// 500-char cap matches the project's convention for short text fields. The textarea enforces it via
+// `maxlength`; the backend does NOT re-validate the cap (Zig error sets grow with every constraint;
+// we accept "client says 500, server trusts it" for v1).
 const DESCRIPTION_MAX = 500
 
 // ─── Computed labels & description per mode ────────────────────────────────
@@ -131,10 +130,9 @@ const handleKeydown = (event: KeyboardEvent) => {
 
 // ─── Lifecycle ─────────────────────────────────────────────────────────────
 
-// Seed the name field on first render (so a rename modal opened with
-// show=true at mount time has the column's name pre-filled, not an
-// empty string), and reset + refocus on every subsequent open via
-// the open-sync guard below.
+// Seed the name field on first render (so a rename modal opened with show=true at mount time has
+// the column's name pre-filled, not an empty string), and reset + refocus on every subsequent open
+// via the open-sync guard below.
 name.value = props.initialName ?? ''
 const handleOpen = async () => {
   name.value = props.initialName ?? ''
@@ -152,10 +150,9 @@ onBeforeUnmount(() => {
   document.body.style.overflow = ''
 })
 
-// Open-reset without watch(): seed on mount (initial show=true) and on
-// closed->open updates. A Transition before-enter hook cannot do this — it
-// never fires on initial mount (no `appear`) and VTU stubs Transition, so
-// specs that mount then setProps(show=true) would see empty fields.
+// Open-reset without watch(): seed on mount (initial show=true) and on closed->open updates. A
+// Transition before-enter hook cannot do this — it never fires on initial mount (no `appear`) and
+// VTU stubs Transition, so specs that mount then setProps(show=true) would see empty fields.
 const wasShown = ref(props.show)
 onMounted(() => {
   if (props.show) void handleOpen()

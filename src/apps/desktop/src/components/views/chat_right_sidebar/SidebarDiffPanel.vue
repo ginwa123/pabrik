@@ -44,17 +44,12 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   refresh: []
-  /**
-   * File-row click: host swaps the center column to the full diff.
-   * `lines` travel by reference (no copy). `error` set when the
-   * worktree fetch failed (PR mode parses inline — always clean).
-   */
+  /**    * File-row click: host swaps the center column to the full diff. `lines` travel by reference (no
+   * copy). `error` set when the worktree fetch failed (PR mode parses inline — always clean). */
   'show-diff': [selection: DiffSelection]
-  /**
-   * Full ordered list after a list load (PR: parsed chunks; worktree:
-   * parallel per-file fetch). ChatView stacks every file in the center
-   * column; per-click `show-diff` stays instant and unchanged.
-   */
+  /**    * Full ordered list after a list load (PR: parsed chunks; worktree: parallel per-file fetch).
+   * ChatView stacks every file in the center column; per-click `show-diff` stays instant and
+   * unchanged. */
   'show-diff-list': [files: DiffSelection[]]
 }>()
 
@@ -85,17 +80,14 @@ const selectedStaged = ref(false)
 // Keyed by `folderDiffKey(staged, path)` — the same key the shared
 // folder-diff snapshot uses — so a row's counts and the diff it opens can
 // never disagree about which file they describe.
-//
-// A path ABSENT from the map has UNKNOWN counts and renders nothing. That
-// is deliberate and load-bearing: `+0 -0` would read as "this file is
-// unchanged", which is a lie whenever the diff fetch failed or the file
-// simply has no hunks to show yet.
+// A path ABSENT from the map has UNKNOWN counts and renders nothing. That is deliberate and
+// load-bearing: `+0 -0` would read as "this file is unchanged", which is a lie whenever the diff
+// fetch failed or the file simply has no hunks to show yet.
 const diffCounts = ref(new Map<string, { added: number; removed: number }>())
 
-// PR mode has no batch fetch to lean on — but it does not need one: the
-// whole PR diff is already in hand as `prFiles[].text`, so the counts are
-// a pure computation over text we already hold. Cached in a computed so a
-// 35-file list does not re-scan 900-line chunks on every re-render.
+// PR mode has no batch fetch to lean on — but it does not need one: the whole PR diff is already in
+// hand as `prFiles[].text`, so the counts are a pure computation over text we already hold. Cached
+// in a computed so a 35-file list does not re-scan 900-line chunks on every re-render.
 const prDiffCounts = computed(() => {
   const counts = new Map<string, { added: number; removed: number }>()
   for (const file of prFiles.value) counts.set(file.path, countDiffLines(file.text))
@@ -195,16 +187,13 @@ const prError = ref<string | null>(null)
 // Empty = unknown (fetch failed or not yet loaded) — badge hidden.
 const prStatus = ref('')
 const prStatusTitle = ref('')
-/**
- * The whole status payload, not just the derived strings above.
- *
+/** The whole status payload, not just the derived strings above.
  * The merge box needs `head_sha` (the merge's head guard), `base_ref` (to say
  * "into main"), `number`/`title`/`head_ref` (the default commit message) and
  * `mergeable` / `merge_state` (whether a merge is allowed, and why not). All of
  * them arrive in the request the 30 s poll already makes, so keeping the object
  * costs nothing and a second fetch for them would be the expensive way to own
- * two sources of truth.
- */
+ * two sources of truth. */
 const prStatusData = ref<api.GitPrStatus | null>(null)
 // Conflict flag from the same payload (`mergeable`/`merge_state`).
 // Quiet-when-clean: only CONFLICTING/DIRTY surfaces UI; every other
@@ -217,10 +206,9 @@ const hasPrConflict = computed(() => {
   // GitHub says CONFLICTING / DIRTY.
   if (m === 'CONFLICTING') return true
   if (s === 'DIRTY') return true
-  // GitLab's `detailed_merge_status` has its own vocabulary. Without
-  // these rows a conflicted MR renders as mergeable, which is the worst
-  // direction to be wrong in — the user is told to merge something that
-  // cannot merge.
+  // GitLab's `detailed_merge_status` has its own vocabulary. Without these rows a conflicted MR
+  // renders as mergeable, which is the worst direction to be wrong in — the user is told to merge
+  // something that cannot merge.
   if (m === 'CONFLICTED') return true
   if (m === 'NOT_MERGEABLE') return true
   return false
@@ -233,11 +221,9 @@ const prConflictsUrl = computed(() => conflictsUrl(props.prProvider, props.prUrl
 // Provider-aware vocabulary: "pull request"/"PR"/"GitHub" on GitHub,
 // "merge request"/"MR"/"GitLab" on GitLab.
 const forge = computed(() => forgeWording(props.prProvider))
-// Last GET /api/git/pr/status failure, parsed from the server's
-// `{"error": ...}` body. Empty = unknown yet or last fetch worked.
-// Shown inline (the status fetch is silent:true, so no toast) so a
-// `gh` auth / bad-PR-number failure explains itself instead of just
-// hiding the badge.
+// Last GET /api/git/pr/status failure, parsed from the server's `{"error": ...}` body. Empty =
+// unknown yet or last fetch worked. Shown inline (the status fetch is silent:true, so no toast) so
+// a `gh` auth / bad-PR-number failure explains itself instead of just hiding the badge.
 const prStatusError = ref('')
 let prSeq = 0
 let prPollTimer: number | undefined
@@ -271,11 +257,9 @@ const conflictsOnly = ref(
     try {
       return readConflictsParam()
     } catch {
-      // Same guard and same reason as initialTab: no router means
-      // `route.query` throws, nothing was fetched, and there is no URL to
-      // keep in sync. `false` = show the full PR file list, this panel's
-      // pre-router default — logged rather than swallowed for the same
-      // reason.
+      // Same guard and same reason as initialTab: no router means `route.query` throws, nothing was
+      // fetched, and there is no URL to keep in sync. `false` = show the full PR file list, this
+      // panel's pre-router default — logged rather than swallowed for the same reason.
       console.warn('[SidebarDiffPanel] mounted without a router; defaulting ?conflicts to off')
       return false
     }
@@ -287,10 +271,9 @@ const setConflictsOnly = (on: boolean) => {
   syncConflictsParam(on)
 }
 
-// PR file list, narrowed to the conflicting ones when the filter is on.
-// An empty filter result is a real state (the section says so) — never
-// silently fall back to the full list, which would look like the filter
-// did nothing.
+// PR file list, narrowed to the conflicting ones when the filter is on. An empty filter result is a
+// real state (the section says so) — never silently fall back to the full list, which would look
+// like the filter did nothing.
 const conflictPathSet = computed(() => new Set(prConflictFiles.value))
 const visiblePrFiles = computed(() =>
   conflictsOnly.value
@@ -327,10 +310,9 @@ function pathParts(path: string): { dir: string; name: string } {
   return { dir: path.slice(0, i + 1), name: path.slice(i + 1) }
 }
 
-// Status as a letter chip rather than a colour emoji. Six emoji render at six
-// different pixel sizes next to 12px paths and cannot be asserted on; one
-// letter in a fixed 16px box cannot drift. See AGENTS.md ("No Emoji as
-// Icons").
+// Status as a letter chip rather than a colour emoji. Six emoji render at six different pixel sizes
+// next to 12px paths and cannot be asserted on; one letter in a fixed 16px box cannot drift. See
+// AGENTS.md ("No Emoji as Icons").
 type StatusChip = { letter: string; bg: string; fg: string; title: string }
 
 const STATUS_CHIPS: Record<string, StatusChip> = {
@@ -431,10 +413,9 @@ const worktreeHits = computed(
     filteredUntrackedFiles.value.length,
 )
 
-// Extract the server's `{"error": "..."}` message from an ApiError
-// (apiFetch throws ApiError with the raw body). Falls back to the
-// generic Error message when the body isn't JSON — so callers always
-// show WHY the backend failed instead of a canned string.
+// Extract the server's `{"error": "..."}` message from an ApiError (apiFetch throws ApiError with
+// the raw body). Falls back to the generic Error message when the body isn't JSON — so callers
+// always show WHY the backend failed instead of a canned string.
 const serverErrorMessage = (err: unknown, fallback: string): string => {
   if (err instanceof api.ApiError && err.body) {
     try {
@@ -621,13 +602,9 @@ const loadPrStatus = async () => {
   }
 }
 
-/**
- * A merge landed (or was accepted) — re-read NOW.
- *
- * The poll would pick it up within 30 s, but the user just took a destructive
- * action and the badge has to agree with it immediately; a PR still reading
- * "Open" one second after "Confirm and merge" looks like the merge failed.
- */
+/**  * A merge landed (or was accepted) — re-read NOW. The poll would pick it up within 30 s, but the
+ * user just took a destructive action and the badge has to agree with it immediately; a PR still
+ * reading "Open" one second after "Confirm and merge" looks like the merge failed. */
 const onMerged = () => {
   void loadPrStatus()
 }
@@ -685,10 +662,9 @@ const loadPrConflicts = async () => {
   }
 }
 
-// The forge says CONFLICTING but our local merge came back clean. Almost
-// always a stale local base ref (we deliberately never `git fetch`). Showing
-// an empty list next to a red badge would read as "nothing to do", so say so
-// instead and point at the ref the answer was computed from.
+// The forge says CONFLICTING but our local merge came back clean. Almost always a stale local base
+// ref (we deliberately never `git fetch`). Showing an empty list next to a red badge would read as
+// "nothing to do", so say so instead and point at the ref the answer was computed from.
 const prConflictUnreproduced = computed(
   () => prConflictLoaded.value && !prConflictError.value && prConflictFiles.value.length === 0,
 )
@@ -707,11 +683,9 @@ const selectPrFile = (file: SplitDiffFile) => {
 }
 
 const onRefreshClick = () => {
-  // Tell ChatView to re-sync the worktree binding first (it may have
-  // changed since mount); then reload this panel. ChatView also calls
-  // back into loadGitStatus via the exposed refresh() when the binding
-  // changed, so a stale-cwd click self-heals instead of re-showing
-  // the old branch.
+  // Tell ChatView to re-sync the worktree binding first (it may have changed since mount); then
+  // reload this panel. ChatView also calls back into loadGitStatus via the exposed refresh() when
+  // the binding changed, so a stale-cwd click self-heals instead of re-showing the old branch.
   emit('refresh')
   void refreshCurrentTab()
 }
@@ -909,10 +883,9 @@ const selectFile = (file: api.GitFileChange, staged: boolean) => {
   void loadDiff()
 }
 
-// Commit-history file click (GitCommits with inline-file-diff=false):
-// fetch the file's unified diff at that commit and show it in ChatView's
-// center column — the same show-diff flow as worktree/PR file rows.
-// Rename rows carry "old -> new"; the diff is fetched for the new side.
+// Commit-history file click (GitCommits with inline-file-diff=false): fetch the file's unified diff
+// at that commit and show it in ChatView's center column — the same show-diff flow as worktree/PR
+// file rows. Rename rows carry "old -> new"; the diff is fetched for the new side.
 const onCommitFileClick = async (payload: { commit: api.GitCommit; file: api.GitCommitFile }) => {
   if (!props.cwd) return
   const rawPath = payload.file.path
@@ -962,29 +935,23 @@ const onCommitFileClick = async (payload: { commit: api.GitCommit; file: api.Git
 /** Which of the three worktree lists a path can sit in. */
 type StageList = 'staged' | 'unstaged' | 'untracked'
 
-/**
- * Where a path belongs after a stage/unstage.
- *
+/** Where a path belongs after a stage/unstage.
  * Unstaging a file that was ONLY staged leaves it modified in the worktree;
  * unstaging one that was untracked-and-just-staged puts it back under
  * Untracked. The backend's porcelain parse makes the same call: `??` →
- * untracked, anything else with a worktree status → modified.
- */
+ * untracked, anything else with a worktree status → modified. */
 function nextStageList(from: StageList, action: 'staged' | 'unstaged'): StageList {
   if (action === 'staged') return 'staged'
   return from === 'untracked' ? 'untracked' : 'unstaged'
 }
 
-/**
- * The list the row the user just acted on was in.
- *
+/** The list the row the user just acted on was in.
  * Derived from the ACTION, not from list precedence, because the action IS
  * the evidence: the `+` button only exists on a Changes or Untracked row and
  * the `−` button only on a Staged one. Precedence would get the
  * both-lists case wrong — a path that is staged AND further modified appears
  * in Staged and Changes at once, and clicking the `+` on its Changes row
- * must move THAT row, not silently treat it as an unstage of the Staged one.
- */
+ * must move THAT row, not silently treat it as an unstage of the Staged one. */
 function actingList(
   lists: {
     staged: api.GitFileChange[]
@@ -1106,14 +1073,9 @@ const unstageFile = async (file: api.GitFileChange) => {
   }
 }
 
-/**
- * Apply one `git_file_stage` SSE event: move the row it names and re-prime
- * only that file's diff and counts.
- *
- * Deliberately does NOT call `loadGitStatus()` — that is the whole point of
- * the channel. The manual ↻ refresh and the commit flow keep the full
- * reload path.
- */
+/**  * Apply one `git_file_stage` SSE event: move the row it names and re-prime only that file's diff
+ * and counts. Deliberately does NOT call `loadGitStatus()` — that is the whole point of the
+ * channel. The manual ↻ refresh and the commit flow keep the full reload path. */
 function applyFileStageEvent(event: api.GitFileStageEvent): void {
   // A failed git command must not move anything: the row stays where it is
   // and the user sees the file still listed on the side they left it.
@@ -1148,11 +1110,9 @@ function applyFileStageEvent(event: api.GitFileStageEvent): void {
   }
 }
 
-/**
- * Fetch one file's diff and fold it into the shared snapshot + the row's
- * counts. A failure leaves the previous counts in place rather than showing
- * `+0 -0`, which would read as "this file is unchanged".
- */
+/**  * Fetch one file's diff and fold it into the shared snapshot + the row's counts. A failure leaves
+ * the previous counts in place rather than showing `+0 -0`, which would read as "this file is
+ * unchanged". */
 async function reprimeFileDiff(path: string, staged: boolean): Promise<void> {
   if (!props.cwd) return
   try {
@@ -1251,10 +1211,9 @@ onMounted(() => {
   prPollTimer = window.setInterval(() => {
     if (showPr.value) void loadPrStatus()
   }, 30000)
-  // The backend pushes `git_file_staged` / `git_file_unstaged` after every
-  // `git add` / `git restore --staged`, so a +/− click moves ONE row instead
-  // of re-fetching the whole git-status list. A listener that throws must not
-  // take down the SSE client, so the callback is defensive.
+  // The backend pushes `git_file_staged` / `git_file_unstaged` after every `git add` / `git restore
+  // --staged`, so a +/− click moves ONE row instead of re-fetching the whole git-status list. A
+  // listener that throws must not take down the SSE client, so the callback is defensive.
   try {
     const bus = useSseBus()
     unsubscribeFileStage = bus.on('gitFileStage', (event: api.GitFileStageEvent) => {

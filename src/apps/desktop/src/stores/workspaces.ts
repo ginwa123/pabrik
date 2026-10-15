@@ -15,14 +15,12 @@ export interface KanbanColumn {
   id: string
   workspace_item_id: string
   name: string
-  /**
-   * Free-text description of the column's meaning. Empty string
+  /** Free-text description of the column's meaning. Empty string
    * when no description has been set. Mirrors the
    * `KanbanColumn` interface in `api/index.ts` so test fixtures
    * that import this type see the same shape. Optional for
    * backwards compat with legacy column literals in test files
-   * (see pabrik-frontend-task-literal-typing-rule).
-   */
+   * (see pabrik-frontend-task-literal-typing-rule). */
   description?: string | null
   position: number
   created_at: string
@@ -63,11 +61,9 @@ export interface WorkspaceItem {
   // per-column and independent of `isLoading` (which is for the folder
   // entry fetch). See `loadMoreTasksForColumn` action below.
   columnPagination?: Record<string, ColumnPaginationState>
-  // NEW (Chunk 4 of workspace-item-kanban plan). Populated for
-  // `item_type === 'kanban'` items. Optional so legacy literals
-  // (5+ test files construct WorkspaceItem without this field) keep
-  // type-checking — see the pabrik-frontend-task-literal-typing-rule
-  // memory.
+  // NEW (Chunk 4 of workspace-item-kanban plan). Populated for `item_type === 'kanban'` items.
+  // Optional so legacy literals (5+ test files construct WorkspaceItem without this field) keep
+  // type-checking — see the pabrik-frontend-task-literal-typing-rule memory.
   kanban_columns?: KanbanColumn[]
   // NEW (Chunk 6 of design-mode-redesign plan). Populated for
   // `item_type === 'design'` items when the active page is open.
@@ -129,11 +125,9 @@ export interface Task {
   id: string
   name: string
   description?: string
-  // NEW (Chunk 5 of task-routines plan, deleted Migration 084).
-  // Optional for backwards compat with legacy task literals
-  // (tests + offline fallbacks). 'memory' added in 2026-06-20
-  // for the markdown-memory feature
-  // (plan: docs/plans/2026-06-20-add-markdown-memory.md).
+  // NEW (Chunk 5 of task-routines plan, deleted Migration 084). Optional for backwards compat with
+  // legacy task literals (tests + offline fallbacks). 'memory' added in 2026-06-20 for the
+  // markdown-memory feature (plan: docs/plans/2026-06-20-add-markdown-memory.md).
   task_type?: 'standard' | 'memory'
   // NEW: present iff task_type === 'memory'. Captures the .md
   // file name (no extension in the path; just the basename like
@@ -143,15 +137,12 @@ export interface Task {
   createdAt?: Date
   updatedAt?: Date
   // NEW (pinned-tasks feature, plan:
-  // docs/superpowers/plans/2026-06-20-pinned-workspace-item-tasks.md).
-  // Both optional so legacy task literals (8+ test files construct
   // Task without these fields) keep type-checking — see the
   // pabrik-frontend-task-literal-typing-rule memory.
   is_pinned?: boolean
   pinned_position?: number
-  // NEW (Chunk 4 of workspace-item-kanban plan). Populated for
-  // tasks under `item_type === 'kanban'` parents. `kanban_column_id`
-  // is `null` (not undefined) when the task is unassigned. Both
+  // NEW (Chunk 4 of workspace-item-kanban plan). Populated for tasks under `item_type === 'kanban'`
+  // parents. `kanban_column_id` is `null` (not undefined) when the task is unassigned. Both
   // optional so legacy task literals keep type-checking.
   kanban_column_id?: string | null
   kanban_position?: number
@@ -295,17 +286,13 @@ function normalizeTaskTags(task: Task): Task {
 // `createdAt` when `updatedAt` is missing).
 //
 // Why a separate helper instead of inlining into normalizeTaskDatesInPlace:
-//   - the same parsing logic is needed for other datetime fields
-//     in other parts of the codebase; keeping it as a pure function
-//     makes future call sites trivial.
-//   - the per-line parse is the kind of thing you want a TypeScript
-//     unit test against directly, not buried inside an in-place
-//     mutator.
+// - the same parsing logic is needed for other datetime fields in other parts of the codebase;
+// keeping it as a pure function makes future call sites trivial. - the per-line parse is the kind
+// of thing you want a TypeScript unit test against directly, not buried inside an in-place mutator.
 function parseBackendDatetime(value: unknown): Date | undefined {
   if (typeof value !== 'string' || value.length === 0) return undefined
-  // Normalise "YYYY-MM-DD HH:MM:SS" → "YYYY-MM-DDTHH:MM:SS" so the
-  // Date ctor parses it. Then inject an explicit `Z` (UTC) when the
-  // string has no timezone marker — the backend stores UTC strings
+  // Normalise "YYYY-MM-DD HH:MM:SS" → "YYYY-MM-DDTHH:MM:SS" so the Date ctor parses it. Then inject
+  // an explicit `Z` (UTC) when the string has no timezone marker — the backend stores UTC strings
   // without an explicit zone.
   const isoish = value.includes('T') ? value : value.replace(' ', 'T')
   const hasZone = isoish.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(isoish)
@@ -323,9 +310,8 @@ function parseBackendDatetime(value: unknown): Date | undefined {
 // `updatedAt: new Date()` directly. A re-fetch must never overwrite a
 // fresh optimistic Date with a stale wire string.
 function normalizeTaskDatesInPlace(task: Task): void {
-  // The wire fields aren't declared on the local `Task` interface
-  // (only the camelCase Date variants are), so we cast through
-  // `unknown` to access them. This is the same pattern used by the
+  // The wire fields aren't declared on the local `Task` interface (only the camelCase Date variants
+  // are), so we cast through `unknown` to access them. This is the same pattern used by the
   // existing tags + imageUrls normalizers in this file.
   const wire = task as unknown as Record<string, unknown>
   if (task.updatedAt === undefined) {
@@ -365,12 +351,9 @@ function normalizeTaskImageUrlsInPlace(task: Task): void {
   }
   // Already an array (legacy code paths / optimistic local writes).
   if (Array.isArray(task.imageUrls)) return
-  // Wire format: `||`-delimited base64 data URLs.
-  //   ''           → [] (no images)
-  //   'data:...'   → ['data:...'] (one image)
-  //   'a||b||c'    → ['a', 'b', 'c'] (multiple images)
-  // Filter empty segments so trailing/consecutive `||` don't leak
-  // through as empty entries.
+  // Wire format: `||`-delimited base64 data URLs. '' → [] (no images) 'data:...' → ['data:...']
+  // (one image) 'a||b||c' → ['a', 'b', 'c'] (multiple images) Filter empty segments so
+  // trailing/consecutive `||` don't leak through as empty entries.
   if (typeof task.imageUrls === 'string') {
     const joined = task.imageUrls as string
     if (joined === '') {
@@ -407,10 +390,6 @@ function normalizeTaskVideoUrlsInPlace(task: Task): void {
 }
 
 // Decode the `||`-delimited `image_urls` wire string into a `string[]`
-// (Migration 069 — kanban image urls column). Applied at every
-// `api.getTasks` fetch site (folded into normalizeTaskTags below)
-// so the rest of the codebase can treat imageUrls as a plain array.
-// Plan: docs/superpowers/plans/2026-08-06-kanban-image-urls-column.md.
 // (REMOVED — folded into normalizeTaskTags above. The InPlace
 // helper handles the imageUrls branch.)
 
@@ -430,12 +409,9 @@ function normalizeTaskVideoUrlsInPlace(task: Task): void {
 //
 // Why 1500 ms TTL: long enough to cover the round-trip + SSE round-trip
 // + Vue reactivity on slow networks; short enough that concurrent
-// edits from another client (chat-side, second tab) still propagate
-// within ~1.5 s. Figma uses ~1000 ms; 1500 ms is the safer default
-// for slower networks.
-//
-// Plan: docs/superpowers/plans/2026-07-30-design-drag-debounce-batch.md
-//   (Chunk 3, Task 3.1)
+// edits from another client (chat-side, second tab) still propagate within ~1.5 s. Figma uses ~1000
+// ms; 1500 ms is the safer default for slower networks. Plan:
+// docs/superpowers/plans/2026-07-30-design-drag-debounce-batch.md (Chunk 3, Task 3.1)
 export const RECENT_MUTATION_TTL_MS = 1500
 
 const recentLocalMutations = new Map<string, number>()
@@ -453,14 +429,9 @@ export function registerRecentLocalMutations(ids: string[], expiryMs: number): v
   }
 }
 
-/**
- * True iff `elementId` was mutated by this client within the last
- * `RECENT_MUTATION_TTL_MS` milliseconds. Read by the SSE handler to
- * decide whether to skip the GET fan-out for an incoming event.
- *
- * Exported for `stores/designSse.ts`. Side effect: expired entries are
- * lazily GC'd on read.
- */
+/**  * True iff `elementId` was mutated by this client within the last `RECENT_MUTATION_TTL_MS`
+ * milliseconds. Read by the SSE handler to decide whether to skip the GET fan-out for an incoming
+ * event. Exported for `stores/designSse.ts`. Side effect: expired entries are lazily GC'd on read. */
 export function isRecentLocalMutation(elementId: string): boolean {
   const exp = recentLocalMutations.get(elementId)
   if (exp === undefined) return false
@@ -471,20 +442,16 @@ export function isRecentLocalMutation(elementId: string): boolean {
   return true
 }
 
-/**
- * Test-only helper to clear the dedupe Map between tests. NOT exposed
- * in the production API surface — exported via the store's returned
- * object only for unit tests.
- */
+/**  * Test-only helper to clear the dedupe Map between tests. NOT exposed in the production API surface
+ * — exported via the store's returned object only for unit tests. */
 export function _clearRecentLocalMutationsForTests(): void {
   recentLocalMutations.clear()
 }
 
 import * as api from '../api'
-// Aliases for design-mode API functions whose names collide with
-// the store action wrappers below (Task 6.1 of design-mode-redesign
-// plan). `getDesignPage` doesn't collide so it stays as a bare api
-// lookup (no `api.getDesignPage(...)` in the action).
+// Aliases for design-mode API functions whose names collide with the store action wrappers below
+// (Task 6.1 of design-mode-redesign plan). `getDesignPage` doesn't collide so it stays as a bare
+// api lookup (no `api.getDesignPage(...)` in the action).
 import {
   addDesignElement as addDesignElementApi,
   updateDesignElement as updateDesignElementApi,
@@ -903,11 +870,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
   // never invalidate the loaded mark. A re-init wipes the tree, so it
   // wipes the marks too (see init below).
 
-  // The init() currently in flight (null before the first call and
-  // after it settles). ensureWorkspaceItemsLoaded awaits it when
-  // called before the workspace list has been seeded (URL restore
-  // racing boot) — otherwise its await would resolve without loading
-  // anything.
+  // The init() currently in flight (null before the first call and after it settles).
+  // ensureWorkspaceItemsLoaded awaits it when called before the workspace list has been seeded (URL
+  // restore racing boot) — otherwise its await would resolve without loading anything.
   let currentInit: Promise<void> | null = null
   const workspaceItemsLoaded = new Set<string>()
   const workspaceItemsInFlight = new Map<string, Promise<void>>()
@@ -941,11 +906,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     await Promise.all(
       (items || []).map(async (item: WorkspaceItem) => {
         if (item.item_type === 'kanban' || item.item_type === 'design') {
-          // Kanban: defer to KanbanView onMount — fires
-          // per-column fetches with column_id set (per Option B).
-          // Design: design items have no tasks list; the
-          // sidebar shows design pages instead (see
-          // design-pages-in-workspace-tree plan).
+          // Kanban: defer to KanbanView onMount — fires per-column fetches with column_id set (per
+          // Option B). Design: design items have no tasks list; the sidebar shows design pages
+          // instead (see design-pages-in-workspace-tree plan).
           return
         }
         try {
@@ -1094,15 +1057,13 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     }))
   }
 
-  /**
-   * Idempotent loader for ONE workspace's items (lazy loading — plan
+  /** Idempotent loader for ONE workspace's items (lazy loading — plan
    * above). Already loaded → no-op; in flight → shares the same
    * promise (dedupe); not yet loaded → loadWorkspaceItems + mark.
    * Failures are logged, never rethrown: fire-and-forget callers
    * (workspace switch, URL restore) must not see unhandled
    * rejections, and a failed id stays out of the loaded set so the
-   * NEXT visit retries.
-   */
+   * NEXT visit retries. */
   async function ensureWorkspaceItemsLoaded(workspaceId: string): Promise<void> {
     if (workspaceItemsLoaded.has(workspaceId)) return
     const pending = workspaceItemsInFlight.get(workspaceId)
@@ -1110,9 +1071,8 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
 
     let target = workspaces.value.find((ws) => ws.id === workspaceId)
     if (!target && isLoading.value && currentInit) {
-      // Called before init() seeded the list (URL restore racing
-      // boot) — wait for init, then re-check (init's own load may
-      // cover this id meanwhile). Without this, the await below would
+      // Called before init() seeded the list (URL restore racing boot) — wait for init, then
+      // re-check (init's own load may cover this id meanwhile). Without this, the await below would
       // resolve while the workspace's items are still unloaded.
       try {
         await currentInit
@@ -1126,9 +1086,8 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     }
     if (!target) return
 
-    // Seeded rows already carry items (spec fixtures that assign
-    // `ws.workspaces` directly, or a row populated before the loaded
-    // set was cleared): treat them as loaded so the fetch below does
+    // Seeded rows already carry items (spec fixtures that assign `ws.workspaces` directly, or a row
+    // populated before the loaded set was cleared): treat them as loaded so the fetch below does
     // not clobber fixture data with a mocked-empty response.
     if (target.items && target.items.length > 0) {
       workspaceItemsLoaded.add(workspaceId)
@@ -1176,10 +1135,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     workspaceItemsLoaded.clear()
     workspaceItemsInFlight.clear()
 
-    // Install the bus-backed session-event listeners (idempotent —
-    // safe to call on every init, including HMR re-mounts). The bus
-    // is opened once by App.vue, so we don't own the SSE connection
-    // here anymore (Chunk 6 of unify-frontend-sse).
+    // Install the bus-backed session-event listeners (idempotent — safe to call on every init,
+    // including HMR re-mounts). The bus is opened once by App.vue, so we don't own the SSE
+    // connection here anymore (Chunk 6 of unify-frontend-sse).
     installSessionEventHandlers()
 
     // Seed helper: every row starts with EMPTY items — the list
@@ -1287,11 +1245,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     return allWorkspaceItems.value.find((item) => item.id === activeWorkspaceItemId.value)
   })
 
-  // Get active workspace. Precedence (plan decision log):
-  // explicit selection (dropdown / URL restore) → persisted choice
-  // → workspace owning the active item (legacy fallback) → first
-  // workspace, so the dropdown and Projects section always have a
-  // target once any workspace exists.
+  // Get active workspace. Precedence (plan decision log): explicit selection (dropdown / URL
+  // restore) → persisted choice → workspace owning the active item (legacy fallback) → first
+  // workspace, so the dropdown and Projects section always have a target once any workspace exists.
   const activeWorkspace = computed(() => {
     return (
       workspaces.value.find((ws) => ws.id === activeWorkspaceId.value) ||
@@ -1611,9 +1567,8 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
         // Migration 069 — pass image_urls through (the api helper
         // `||`-joins the array for the wire).
         imageUrls: params.imageUrls,
-        // Migration 070 — pass the per-task cwd through (absolute
-        // path on disk or '' for cwd-less). The api helper forwards
-        // verbatim; the backend's validated_cwd block re-validates
+        // Migration 070 — pass the per-task cwd through (absolute path on disk or '' for cwd-less).
+        // The api helper forwards verbatim; the backend's validated_cwd block re-validates
         // (absolute, ≤ 4 KiB, no control chars) before INSERT.
         cwd: params.cwd,
       })
@@ -1622,10 +1577,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
       return newTask.id
     } catch (err) {
       console.error('Failed to create task:', err)
-      // Fallback to local creation if API fails. Match the
-      // pre-existing fallback contract (returns a taskId, populates
-      // the item's tasks list) and now also carry task_type +
-      // memory so the offline UI still branches correctly.
+      // Fallback to local creation if API fails. Match the pre-existing fallback contract (returns
+      // a taskId, populates the item's tasks list) and now also carry task_type + memory so the
+      // offline UI still branches correctly.
       const taskId = `task-${Date.now()}`
       item.tasks.unshift({
         id: taskId,
@@ -1987,10 +1941,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
   ): Promise<void> {
     const item = findItem(workspaceId, itemId)
     if (!item) return
-    // Mark this column's first page as in-flight so KanbanColumn /
-    // KanbanRowView can show a skeleton instead of the "No tasks yet"
-    // empty state. Only for page-1 (no cursor) — a "Load more" fetch
-    // already has rows on screen and its own `isLoading` flag.
+    // Mark this column's first page as in-flight so KanbanColumn / KanbanRowView can show a
+    // skeleton instead of the "No tasks yet" empty state. Only for page-1 (no cursor) — a "Load
+    // more" fetch already has rows on screen and its own `isLoading` flag.
     const isFirstPage = !cursor
     if (isFirstPage) {
       firstPageLoadingColumns.value.add(firstPageLoadingKey(itemId, columnId))
@@ -2061,9 +2014,8 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
       // flash to empty on a transient network blip. The next SSE
       // event will trigger another fetch.
     } finally {
-      // Clear the first-page flag on BOTH paths — a failed fetch must
-      // not park the skeleton forever (the column falls back to its
-      // empty state, which is the honest answer when the request
+      // Clear the first-page flag on BOTH paths — a failed fetch must not park the skeleton forever
+      // (the column falls back to its empty state, which is the honest answer when the request
       // failed).
       if (isFirstPage) {
         firstPageLoadingColumns.value.delete(firstPageLoadingKey(itemId, columnId))
@@ -2181,10 +2133,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     const result = await api.updateKanbanColumn(workspaceId, itemId, columnId, patch)
     const item = findItem(workspaceId, itemId)
     if (!item) return
-    // Mirror the backend's full board — replaces the previous
-    // `item.kanban_columns[i] = result` bug, which corrupted the
-    // single-column slot with the `{columns, count}` envelope and
-    // made every UI field on the saved column read as undefined.
+    // Mirror the backend's full board — replaces the previous `item.kanban_columns[i] = result`
+    // bug, which corrupted the single-column slot with the `{columns, count}` envelope and made
+    // every UI field on the saved column read as undefined.
     item.kanban_columns = [...result.columns].sort((a, b) => a.position - b.position)
   }
 
@@ -2232,10 +2183,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     if (!item?.kanban_columns) return
     const target = item.kanban_columns.find((c) => c.id === targetColumnId)
     if (!target) return
-    // PATCH the moved column to the target's position. The backend's
-    // reorderColumn shifts the siblings (dense renumber) and returns
-    // the moved column's NEW position; we ignore the return value
-    // because we'll re-fetch the whole list next.
+    // PATCH the moved column to the target's position. The backend's reorderColumn shifts the
+    // siblings (dense renumber) and returns the moved column's NEW position; we ignore the return
+    // value because we'll re-fetch the whole list next.
     await api.updateKanbanColumn(workspaceId, itemId, columnId, {
       position: target.position,
     })
@@ -2244,10 +2194,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     await fetchKanbanColumns(workspaceId, itemId)
   }
 
-  // Delete a kanban column. The backend unassigns tasks in the
-  // column (sets kanban_column_id to NULL) — we mirror that by
-  // clearing `kanban_column_id` on any matching tasks in the
-  // local store so the "Unassigned" view is consistent.
+  // Delete a kanban column. The backend unassigns tasks in the column (sets kanban_column_id to
+  // NULL) — we mirror that by clearing `kanban_column_id` on any matching tasks in the local store
+  // so the "Unassigned" view is consistent.
   async function deleteKanbanColumn(
     workspaceId: string,
     itemId: string,
@@ -2304,10 +2253,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     item.tasks.splice(insertIdx, 0, task)
   }
 
-  // Move a task to a different column and/or position. The
-  // backend does the move + sibling re-numbering in a single
-  // transaction; we update the local task's `kanban_column_id`
-  // + `kanban_position` so the UI snaps to the new position.
+  // Move a task to a different column and/or position. The backend does the move + sibling
+  // re-numbering in a single transaction; we update the local task's `kanban_column_id` +
+  // `kanban_position` so the UI snaps to the new position.
   async function moveTaskToColumn(
     workspaceId: string,
     itemId: string,
@@ -2446,10 +2394,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
   ): Promise<void> {
     const item = findItem(workspaceId, itemId)
     if (!item) return
-    // Mark this page's element fetch in flight so DesignView's canvas,
-    // LayersPanel and PropertiesPanel can hold a skeleton instead of
-    // rendering their empty states — "Click + Element to add your first
-    // element" is a false statement while the fetch is outstanding.
+    // Mark this page's element fetch in flight so DesignView's canvas, LayersPanel and
+    // PropertiesPanel can hold a skeleton instead of rendering their empty states — "Click +
+    // Element to add your first element" is a false statement while the fetch is outstanding.
     designElementsLoadingKey.value = `${itemId}:${pageId}`
     try {
       const { elements } = await api.getDesignPage(workspaceId, itemId, pageId)
@@ -2492,10 +2439,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
       // Build a Map<id, incomingElement> for O(1) lookup.
       const incomingById = new Map<string, (typeof elements)[number]>()
       for (const el of elements) incomingById.set(el.id, el)
-      // Walk the local array. For each existing row:
-      //   - if its id is in the incoming set, replace in place
-      //   - if its id is NOT in the incoming set, mark for splice
-      // We splice from the end so the live indices stay valid.
+      // Walk the local array. For each existing row: - if its id is in the incoming set, replace in
+      // place - if its id is NOT in the incoming set, mark for splice We splice from the end so the
+      // live indices stay valid.
       const toSplice: number[] = []
       for (let i = 0; i < item.design_elements.length; i++) {
         const existing = item.design_elements[i]!
@@ -2556,11 +2502,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     return newElem
   }
 
-  // Patch an element's fields (full update — backend applies a
-  // sparse merge). Replaces the local copy in place so the canvas
-  // re-renders the patched element immediately. Used by the
-  // PropertiesPanel (form input changes) and the LLM tool-driven
-  // update_element handler.
+  // Patch an element's fields (full update — backend applies a sparse merge). Replaces the local
+  // copy in place so the canvas re-renders the patched element immediately. Used by the
+  // PropertiesPanel (form input changes) and the LLM tool-driven update_element handler.
   async function updateDesignElement(
     workspaceId: string,
     itemId: string,
@@ -2946,18 +2890,15 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
       for (const updated of result.updated) {
         const idx = idxById.get(updated.id)
         if (idx !== undefined) {
-          // Normalize `type` from either `type` (canonical) or
-          // `elem_type` (legacy). Without this the local mirror
-          // clobbers the element's `type` field with `undefined`,
-          // which silently disables the cascade path on every drag
-          // after the first (BUG 2026-08-06).
+          // Normalize `type` from either `type` (canonical) or `elem_type` (legacy). Without this
+          // the local mirror clobbers the element's `type` field with `undefined`, which silently
+          // disables the cascade path on every drag after the first (BUG 2026-08-06).
           item.design_elements[idx] = normalizeDesignElementType(updated) as DesignElement
         }
       }
     }
-    // Register all cascaded ids so the SSE handler skips the GET
-    // fan-out. The cascade can include descendants the user didn't
-    // explicitly select (e.g. clicking a group with 4 children follows
+    // Register all cascaded ids so the SSE handler skips the GET fan-out. The cascade can include
+    // descendants the user didn't explicitly select (e.g. clicking a group with 4 children follows
     // with all 4 ids).
     registerRecentLocalMutations(
       result.updated.map((e) => e.id),
@@ -3018,10 +2959,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
       mode,
       element_ids: elementIds,
     })
-    // Mirror the server's `reordered` rows into the local
-    // design_elements array so the layers panel + canvas re-render
-    // immediately. We replace matching ids in place (preserves the
-    // local array's ordering for any ids NOT in the response).
+    // Mirror the server's `reordered` rows into the local design_elements array so the layers panel
+    // + canvas re-render immediately. We replace matching ids in place (preserves the local array's
+    // ordering for any ids NOT in the response).
     const item = findItem(workspaceId, itemId)
     if (item?.design_elements) {
       for (const updated of result.reordered) {
@@ -3045,9 +2985,8 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
       // Append the new parent (preserves backend ordering: highest
       // position last).
       item.design_elements.push(result.parent)
-      // Replace each child in place. We don't filter the array first
-      // because the backend's returned children are already updated
-      // versions; the originals are still useful for comparison in
+      // Replace each child in place. We don't filter the array first because the backend's returned
+      // children are already updated versions; the originals are still useful for comparison in
       // tests but the in-place replace keeps the array length stable.
       for (const updated of result.children) {
         const idx = item.design_elements.findIndex((e) => e.id === updated.id)
@@ -3142,10 +3081,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
       ...designPagesByItemId.value,
       [itemId]: remaining,
     }
-    // 2. If the deleted page was active, fall back to a sensible
-    // next page. The pre-fix convention (VS Code / Figma parity):
-    // prefer the page AT THE SAME INDEX in the OLD order (i.e. what
-    // used to be next), or the previous one if we deleted the last.
+    // 2. If the deleted page was active, fall back to a sensible next page. The pre-fix convention
+    // (VS Code / Figma parity): prefer the page AT THE SAME INDEX in the OLD order (i.e. what used
+    // to be next), or the previous one if we deleted the last.
     if (activeDesignPageId.value === pageId) {
       if (remaining.length === 0) {
         activeDesignPageId.value = ''
@@ -3156,11 +3094,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     }
   }
 
-  // NEW (design-pages-in-workspace-tree plan, 2026-08-06). Fetch
-  // pages for a design workspace item from the backend and cache
-  // them in `designPagesByItemId`. Concurrent calls for the same
-  // item share the same in-flight promise (no double-fetch on
-  // sidebar-expand + DesignView-mount race).
+  // NEW (design-pages-in-workspace-tree plan, 2026-08-06). Fetch pages for a design workspace item
+  // from the backend and cache them in `designPagesByItemId`. Concurrent calls for the same item
+  // share the same in-flight promise (no double-fetch on sidebar-expand + DesignView-mount race).
   async function fetchDesignPages(workspaceId: string, itemId: string): Promise<DesignPage[]> {
     const inFlight = designPagesInFlight.get(itemId)
     if (inFlight) return await inFlight
@@ -3267,7 +3203,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
   // Manually fire a workspace routine. Returns the backend's
   // `{ session_id }` on success, or `undefined` on failure (the
   // caller's responsibility to navigate / show an error).
-  //
+
   // We deliberately do NOT navigate here — that's a UI concern
   // owned by the RoutineView. The store action is pure: it calls
   // the API and returns the result.
@@ -3366,9 +3302,8 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
       queueMessage: string
       cwd: string
       isAutoRetryUntilStop?: '0' | '1'
-      // NEW (plan: 2026-08-06-kanban-task-profile-selector). Empty /
-      // undefined = backend default ("Default (top-level config)").
-      // When set, the chatview's picker will reflect the chosen
+      // NEW (plan: 2026-08-06-kanban-task-profile-selector). Empty / undefined = backend default
+      // ("Default (top-level config)"). When set, the chatview's picker will reflect the chosen
       // profile immediately on landing.
       selectedProfile?: string
       // NEW (plan: 2026-08-06-kanban-image-base64-in-chatview, replaces
@@ -3487,17 +3422,15 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
 
     try {
       const res = await api.createKanbanTask(workspaceId, itemId, wirePayload)
-      // Media-flags change — the create response carries only
-      // `is_have_image` / `is_have_video` flags (no base64 payload).
-      // Normalize in place for tags/dates; the detail dialog
-      // lazy-loads media via fetchTaskMedia when a flag is true.
+      // Media-flags change — the create response carries only `is_have_image` / `is_have_video`
+      // flags (no base64 payload). Normalize in place for tags/dates; the detail dialog lazy-loads
+      // media via fetchTaskMedia when a flag is true.
       if (res.task) normalizeTaskTags(res.task)
       return res
     } catch (err) {
       if (mode === 'create_and_run') {
-        // Partial-success path: the backend's task INSERT may have
-        // succeeded even when the run step failed (the session INSERT
-        // might have failed but the task row is still there). Surface
+        // Partial-success path: the backend's task INSERT may have succeeded even when the run step
+        // failed (the session INSERT might have failed but the task row is still there). Surface
         // the error as a toast so the user can click the card to retry.
         const msg = err instanceof Error ? err.message : String(err)
         useNotificationStore().notifyError(msg, 'Task created — agent did not start')
@@ -3519,11 +3452,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     }
   }
 
-  // Workspace routine item (Migration 084, plan
-  // 2026-09-10-workspace-items-routines). Mirrors addAgentItem —
-  // POST /api/workspaces/:wsId/items/routine and push the new item
-  // into the local store. Routine metadata is fetched lazily by
-  // RoutineView via api.getRoutineItem on mount.
+  // Workspace routine item (Migration 084, plan 2026-09-10-workspace-items-routines). Mirrors
+  // addAgentItem — POST /api/workspaces/:wsId/items/routine and push the new item into the local
+  // store. Routine metadata is fetched lazily by RoutineView via api.getRoutineItem on mount.
   async function addRoutineItem(
     workspaceId: string,
     name: string,
@@ -3587,11 +3518,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     const previousIsPinned = task.is_pinned ?? false
     const previousPinnedPosition = task.pinned_position ?? 0
 
-    // Compute the optimistic pinned_position. When pinning,
-    // bump to MAX+1 across the item's currently-pinned tasks
-    // (excluding the row being pinned — its current value
-    // would otherwise be the new MAX). When unpinning, reset
-    // to 0 (the value is irrelevant for unpinned rows).
+    // Compute the optimistic pinned_position. When pinning, bump to MAX+1 across the item's
+    // currently-pinned tasks (excluding the row being pinned — its current value would otherwise be
+    // the new MAX). When unpinning, reset to 0 (the value is irrelevant for unpinned rows).
     let optimisticPosition = previousPinnedPosition
     if (isPinned) {
       const maxPinned = item.tasks.reduce<number>((acc, t) => {
@@ -3654,11 +3583,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     // Snapshot for rollback.
     const previousOrder = item.tasks.slice()
 
-    // Optimistic local reorder: rebuild the tasks array as
-    // [ordered pinned rows in the new order, ...unpinned
-    // rows]. Unpinned rows keep their existing relative
-    // order (the unpinned-region ORDER BY is unchanged by the
-    // reorder).
+    // Optimistic local reorder: rebuild the tasks array as [ordered pinned rows in the new order,
+    // ...unpinned rows]. Unpinned rows keep their existing relative order (the unpinned-region
+    // ORDER BY is unchanged by the reorder).
     const pinnedById = new Map(currentPinned.map((t) => [t.id, t]))
     const reorderedPinned: Task[] = []
     for (const id of orderedIds) {
@@ -3780,9 +3707,8 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
 
     colState.isLoading = true
     try {
-      // Kanban task search (Chunk 4): forward the active q so
-      // "Load more" fetches the next page of MATCHES, not the next
-      // page of everything. Read from activeSearchQueries (set by
+      // Kanban task search (Chunk 4): forward the active q so "Load more" fetches the next page of
+      // MATCHES, not the next page of everything. Read from activeSearchQueries (set by
       // fetchKanbanTasks(q)).
       const activeQ = activeSearchQueries.get(itemId)
       // Kanban sort-by (Chunk 3): forward the active sort. The
@@ -4083,10 +4009,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     if (fields.description !== undefined) {
       patch.description = fields.description
     }
-    // Migration 067 — kanban task tags. Empty array = clear all
-    // tags; undefined = leave unchanged. The api.updateTaskSimple
-    // helper detects `tags !== undefined` and JSON-encodes the
-    // array for the wire; the backend validates + persists.
+    // Migration 067 — kanban task tags. Empty array = clear all tags; undefined = leave unchanged.
+    // The api.updateTaskSimple helper detects `tags !== undefined` and JSON-encodes the array for
+    // the wire; the backend validates + persists.
     if (fields.tags !== undefined) {
       patch.tags = fields.tags
     }
@@ -4184,10 +4109,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
           if (!item.tasks) continue
           const idx = item.tasks.findIndex((t) => t.id === taskId)
           if (idx === -1) continue
-          // Replace the cached task object entirely. The Task
-          // interface is loose enough (mostly optional fields) that
-          // this preserves all caller state. The dialog re-derives
-          // its local form state from the new task via its watcher.
+          // Replace the cached task object entirely. The Task interface is loose enough (mostly
+          // optional fields) that this preserves all caller state. The dialog re-derives its local
+          // form state from the new task via its watcher.
           item.tasks.splice(idx, 1, freshTask)
           await cacheTaskMutation(
             workspaceId,
@@ -4249,8 +4173,6 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
   }
 
   // Paints a task's last-known thumbnail from the local media cache.
-  // Only fills sides whose flag is true and whose arrays are still empty
-  // (never clobbers live data, never paints onto a flag-less task).
   // Returns true when anything was painted — the caller then revalidates
   // that task in the background instead of treating it as loaded.
   function applyCachedMedia(task: Task): boolean {
@@ -4359,10 +4281,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
       await Promise.allSettled(alreadyRunning)
       return
     }
-    // Note: the `finally` below deletes map entries unconditionally.
-    // Safe: a new request for the same id can only start when the map
-    // holds no entry, and entries are removed only here — no caller
-    // can replace an in-flight entry mid-run (single-threaded).
+    // Note: the `finally` below deletes map entries unconditionally. Safe: a new request for the
+    // same id can only start when the map holds no entry, and entries are removed only here — no
+    // caller can replace an in-flight entry mid-run (single-threaded).
     const run = (async (): Promise<void> => {
       try {
         const results = await api.getTasksMedia(workspaceId, itemId, pending)
@@ -4476,9 +4397,8 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     // copying the slice gives us a moment-in-time view.
     const previousOrder = current.slice()
 
-    // Optimistic local reorder: build a new array by looking up each
-    // id in the current array. If an id is missing (defensive — the
-    // length-mismatch check above should have caught this), fall
+    // Optimistic local reorder: build a new array by looking up each id in the current array. If an
+    // id is missing (defensive — the length-mismatch check above should have caught this), fall
     // back to keeping the original row at its original position.
     const byId = new Map(current.map((w) => [w.id, w]))
     const reordered: Workspace[] = []
@@ -4547,9 +4467,8 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     // Snapshot for rollback.
     const previousOrder = current.slice()
 
-    // Optimistic local reorder. The workspace is a ref inside the
-    // workspaces array; mutating `workspace.items` in place preserves
-    // Vue reactivity (the workspace's items array is what the
+    // Optimistic local reorder. The workspace is a ref inside the workspaces array; mutating
+    // `workspace.items` in place preserves Vue reactivity (the workspace's items array is what the
     // sidebar's v-for is bound to).
     const byId = new Map(current.map((i) => [i.id, i]))
     const reordered: WorkspaceItem[] = []
@@ -4610,26 +4529,21 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
   // unloads on close).
   let sessionHandlersInstalled = false
 
-  /**
-   * Subscribe to session events. The callback fires once per
+  /** Subscribe to session events. The callback fires once per
    * session event (after the internal workspacesStore handler runs).
    * Returns an unsubscribe function.
-   *
    * Use this when you have a SEPARATE data structure that needs to
    * stay in sync with session renames/deletes/creates — for
-   * example, ChatsList.vue's `navItems` mirror.
-   */
+   * example, ChatsList.vue's `navItems` mirror. */
   function onSessionEvent(cb: (event: api.SessionEvent) => void): () => void {
     const bus = useSseBus()
     return bus.on('session', (event) => {
       try {
         cb(event)
       } catch (e) {
-        // Swallow subscriber errors so a buggy callback can't take
-        // down sibling subscribers (the bus's own dispatch already
-        // wraps the listener call in try/catch — this is defense
-        // in depth: it also covers the case where a future bus
-        // implementation drops that wrapping).
+        // Swallow subscriber errors so a buggy callback can't take down sibling subscribers (the
+        // bus's own dispatch already wraps the listener call in try/catch — this is defense in
+        // depth: it also covers the case where a future bus implementation drops that wrapping).
         console.error('[workspacesStore] session event subscriber threw:', e)
       }
     })
@@ -4698,11 +4612,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
           }
         }
       }
-      // 'created' events are deliberately ignored here: tasks are
-      // only ever created via POST /workspaces/:w/items/:i/tasks
-      // (which the addTask action handles directly). A 'created'
-      // SSE event for an unbound session is a no-op for the
-      // workspace tree.
+      // 'created' events are deliberately ignored here: tasks are only ever created via POST
+      // /workspaces/:w/items/:i/tasks (which the addTask action handles directly). A 'created' SSE
+      // event for an unbound session is a no-op for the workspace tree.
     })
   }
 
@@ -4748,11 +4660,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     activeWorkspaceItemId,
     expandedItemIds,
     activeTaskId,
-    // FIX (task-url-overwrite, task_1785959660154, 2026-08-06):
-    // Navigation flag the AppLayout URL sync watcher checks before
-    // mirroring activeWorkspaceItemId / activeDesignPageId to the
-    // URL. Set true at the start of Sidebar.handleSelectTask and
-    // cleared after the router.push resolves.
+    // FIX (task-url-overwrite, task_1785959660154, 2026-08-06): Navigation flag the AppLayout URL
+    // sync watcher checks before mirroring activeWorkspaceItemId / activeDesignPageId to the URL.
+    // Set true at the start of Sidebar.handleSelectTask and cleared after the router.push resolves.
     isNavigatingToTask,
     // Kanban sort-by round-trip preservation (plan 2026-08-06):
     // snapshots the active `?sorts=` when the user enters a task
@@ -4767,9 +4677,8 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     // Kanban task search (Chunk 4): exposed so SSE handlers can read
     // the active q and forward it on refetch.
     activeSearchQueries,
-    // Kanban sort-by (Chunk 3): exposed so SSE handlers can read the
-    // active sort and forward it on refetch. The cursor is tied to
-    // the sort order — using a different sort on a refetch would
+    // Kanban sort-by (Chunk 3): exposed so SSE handlers can read the active sort and forward it on
+    // refetch. The cursor is tied to the sort order — using a different sort on a refetch would
     // fetch a meaningless page.
     activeSortBy,
     activeSortDirection,
@@ -4793,10 +4702,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     activeTaskWorkspaceItemId,
     // Actions
     init,
-    // Lazy per-workspace items (plan: 2026-09-22-revamp-ui-chats):
-    // loads one workspace's items/tasks/design pages on demand;
-    // runInit uses it for the active workspace, setActiveWorkspace
-    // for every switch. Idempotent + in-flight deduped.
+    // Lazy per-workspace items (plan: 2026-09-22-revamp-ui-chats): loads one workspace's
+    // items/tasks/design pages on demand; runInit uses it for the active workspace,
+    // setActiveWorkspace for every switch. Idempotent + in-flight deduped.
     ensureWorkspaceItemsLoaded,
     toggleWorkspaceItem,
     toggleExpandedItem,
@@ -4806,9 +4714,8 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     // active design page id from DesignView. Called on mount + tab
     // switch, and cleared on unmount.
     setActiveDesignPage,
-    // NEW (design-pages-in-workspace-tree plan, 2026-08-06): the
-    // design-pages cache + the actions that mutate it. Both
-    // WorkspaceItem.vue (sidebar tree) and DesignView.vue consume
+    // NEW (design-pages-in-workspace-tree plan, 2026-08-06): the design-pages cache + the actions
+    // that mutate it. Both WorkspaceItem.vue (sidebar tree) and DesignView.vue consume
     // `designPagesByItemId.value[itemId]` directly.
     designPagesByItemId,
     fetchDesignPages,
@@ -4828,17 +4735,14 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     ensureDefaultProject,
     toggleTask,
     deleteTask,
-    // Per-column pagination (kanban-per-column-pagination plan,
-    // 2026-08-06). Replaces the old board-wide `loadMoreTasks`.
-    // Each kanban column paginates independently — the column's
-    // auto-load sentinel + manual "Load more" button call this
-    // action with the column's id.
+    // Per-column pagination (kanban-per-column-pagination plan, 2026-08-06). Replaces the old
+    // board-wide `loadMoreTasks`. Each kanban column paginates independently — the column's
+    // auto-load sentinel + manual "Load more" button call this action with the column's id.
     loadMoreTasksForColumn,
     renameTask,
-    // NEW (kanban-task-detail-dialog plan, Chunk 2). Edit a task's
-    // name and/or description in one API call from the detail
-    // dialog. Uses the same PUT /api/workspaces/tasks/:task_id
-    // endpoint as renameTask — only the body shape is wider.
+    // NEW (kanban-task-detail-dialog plan, Chunk 2). Edit a task's name and/or description in one
+    // API call from the detail dialog. Uses the same PUT /api/workspaces/tasks/:task_id endpoint as
+    // renameTask — only the body shape is wider.
     updateTaskDetails,
     // NEW (auto-retry-until-stop fix): re-fetch a single task from
     // the server (with the JOINed is_auto_retry_until_stop column)
@@ -4850,10 +4754,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     fetchTasksMedia,
     runRoutineItem,
     runAgentOnNewTask,
-    // NEW (plan: 2026-08-18-kanban-task-detail-start-agent). Triggers
-    // a worker on an existing task's session without queueing a new
-    // user message. Sibling of runAgentOnNewTask (create-time) and
-    // runRoutineItem (workspace-routine manual fire).
+    // NEW (plan: 2026-08-18-kanban-task-detail-start-agent). Triggers a worker on an existing
+    // task's session without queueing a new user message. Sibling of runAgentOnNewTask
+    // (create-time) and runRoutineItem (workspace-routine manual fire).
     startAgentOnTask,
     // NEW (plan: 2026-09-09-run-all-agents-by-column, Task 4, Option C).
     // Bulk run for one column — server owns the task list.
@@ -4875,10 +4778,9 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     // creates an agent-mode workspace item. POSTs to
     // /api/workspaces/:wsId/items/agent and pushes the new item.
     addAgentItem,
-    // Workspace routines (Migration 084, plan
-    // 2026-09-10-workspace-items-routines): creates a routine-mode
-    // workspace item. POSTs to /api/workspaces/:wsId/items/routine
-    // and pushes the new item.
+    // Workspace routines (Migration 084, plan 2026-09-10-workspace-items-routines): creates a
+    // routine-mode workspace item. POSTs to /api/workspaces/:wsId/items/routine and pushes the new
+    // item.
     addRoutineItem,
     addKanbanColumn,
     updateKanbanColumn,
@@ -4894,14 +4796,12 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     // source-column copy AND adds the fresh destination-column copy,
     // producing a visible duplicate in the UI until refresh.
     mirrorKanbanTaskMove,
-    // Read helper for the kanbanSse single-row fast path: a
-    // moved/assigned task that is already cached needs only a
-    // refreshTask (1 row), while an uncached one still needs the
-    // full column fetch to materialize the missing row.
+    // Read helper for the kanbanSse single-row fast path: a moved/assigned task that is already
+    // cached needs only a refreshTask (1 row), while an uncached one still needs the full column
+    // fetch to materialize the missing row.
     findCachedTask,
-    // NEW (chatview-open api-spam fix, 2026-08-24): in-place
-    // needs_human_review patch for `human_touched` SSE events —
-    // replaces the 7× tasks?limit=100 refetch that fired every time
+    // NEW (chatview-open api-spam fix, 2026-08-24): in-place needs_human_review patch for
+    // `human_touched` SSE events — replaces the 7× tasks?limit=100 refetch that fired every time
     // the user opened a task's chatview.
     applyHumanTouched,
     updateKanbanItemPath,

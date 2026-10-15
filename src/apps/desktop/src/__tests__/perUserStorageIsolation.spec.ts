@@ -62,10 +62,9 @@ describe('per-user storage isolation', () => {
     purgeForeignScopedKeys()
     expect(readWorkspacesCache()).toBeNull()
 
-    // A signs back in: the scoped key was purged on logout, so the cache is
-    // gone — a fresh fetch repopulates it. (Asserting the purge, not a
-    // resurrection: keeping A's cache across a logout would leave it on disk
-    // for the next user on a shared profile.)
+    // A signs back in: the scoped key was purged on logout, so the cache is gone — a fresh fetch
+    // repopulates it. (Asserting the purge, not a resurrection: keeping A's cache across a logout
+    // would leave it on disk for the next user on a shared profile.)
     setCurrentUserId('user_a')
     expect(readWorkspacesCache()).toBeNull()
     writeWorkspacesCache([ws('ws_a', 'A private again')])

@@ -57,10 +57,9 @@ const props = withDefaults(
   defineProps<{
     html: string
     editable?: boolean
-    // Pointer-events mode for the iframe. The canvas passes
-    // 'none' so clicks fall through to the parent element (drag /
-    // resize / select); the editable Monaco preview would pass
-    // 'auto' so the user can interact with the iframe content.
+    // Pointer-events mode for the iframe. The canvas passes 'none' so clicks fall through to the
+    // parent element (drag / resize / select); the editable Monaco preview would pass 'auto' so the
+    // user can interact with the iframe content.
     pointerEvents?: 'auto' | 'none'
     // The element's CSS fill color. Applied to the iframe's inline
     // background so the element renders with its true color when the

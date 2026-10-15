@@ -64,9 +64,8 @@ function mountChatsList() {
 }
 
 async function flushLoadChats() {
-  // loadChats() in onMounted is async (awaits api.getChats). The
-  // mocked api.getChats resolves on the next microtask. Wait one
-  // macrotask + two Vue ticks so the render queue flushes before we
+  // loadChats() in onMounted is async (awaits api.getChats). The mocked api.getChats resolves on
+  // the next microtask. Wait one macrotask + two Vue ticks so the render queue flushes before we
   // assert on the DOM.
   await new Promise((r) => setTimeout(r, 0))
   await nextTick()
@@ -130,9 +129,8 @@ describe('ChatsList — chat row active state stays in sync with URL', () => {
     expect(chatButton).toBeDefined()
     expect(chatButton!.attributes('style')).toContain('--semantic-active-bg')
 
-    // Phase 2: user navigates to a workspace view → row should NOT be
-    // highlighted anymore. Pre-fix, the `active` flag set in
-    // loadChats() stayed truthy. Post-fix, the template's
+    // Phase 2: user navigates to a workspace view → row should NOT be highlighted anymore. Pre-fix,
+    // the `active` flag set in loadChats() stayed truthy. Post-fix, the template's
     // `isCurrentChat(item.id)` re-evaluates reactively.
     route.query = { view: 'workspace', itemId: 'item_x' }
     await nextTick()

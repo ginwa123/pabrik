@@ -47,10 +47,9 @@ describe('useWorkspacesStore.renameDesignPage', () => {
     updateDesignPageMock.mockReset()
   })
 
-  // Seed the store directly with one workspace / item + a design-pages
-  // cache for that item. Skipping init() keeps these tests focused on
-  // the rename contract. The cache is the source of truth for design
-  // page metadata — both the sidebar tree and DesignView read from it.
+  // Seed the store directly with one workspace / item + a design-pages cache for that item.
+  // Skipping init() keeps these tests focused on the rename contract. The cache is the source of
+  // truth for design page metadata — both the sidebar tree and DesignView read from it.
   function seedStore() {
     const ws = useWorkspacesStore()
     ws.workspaces = [

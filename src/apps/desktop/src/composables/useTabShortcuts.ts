@@ -78,10 +78,8 @@ export function resolveTabShortcut(event: {
   return null
 }
 
-/**
- * A modal owns the keyboard while it is open — never steal its keys.
- * (`EventTarget` from a window-level dispatch has no `closest`.)
- */
+/** A modal owns the keyboard while it is open — never steal its keys.
+ * (`EventTarget` from a window-level dispatch has no `closest`.) */
 export function isTabShortcutBlocked(target: EventTarget | null | undefined): boolean {
   const element = target as (HTMLElement & { closest?: (selector: string) => Element | null }) | null
   if (!element || typeof element.closest !== 'function') return false

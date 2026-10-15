@@ -95,9 +95,8 @@ describe('workspacesStore.setActiveTask — kanban notification icon stamp (Chun
   })
 
   it('does NOT call markTaskHumanTouched when setActiveTask(null) clears the active task', async () => {
-    // Clearing the active task (closing the chat, navigating away)
-    // is NOT a "human touch" — the user isn't engaging with the
-    // task anymore. We must not stamp in this branch, otherwise
+    // Clearing the active task (closing the chat, navigating away) is NOT a "human touch" — the
+    // user isn't engaging with the task anymore. We must not stamp in this branch, otherwise
     // closing a chat would silently mark every task as "reviewed".
     const store = useWorkspacesStore()
     store.workspaces = [makeWorkspaceWithTask()]

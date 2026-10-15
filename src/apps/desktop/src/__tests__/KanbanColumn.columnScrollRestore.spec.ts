@@ -65,12 +65,9 @@ beforeAll(() => {
   }
 })
 
-/**
- * Stand-in for <VirtualScroller> that exposes a real, geometry-controllable
- * `containerRef`. It deliberately does NOT render the default slot: the cards
- * are irrelevant here and rendering them would drag in KanbanCard's whole prop
- * surface for no benefit.
- */
+/**  * Stand-in for <VirtualScroller> that exposes a real, geometry-controllable `containerRef`. It
+ * deliberately does NOT render the default slot: the cards are irrelevant here and rendering them
+ * would drag in KanbanCard's whole prop surface for no benefit. */
 const ScrollerStub = defineComponent({
   name: 'VirtualScroller',
   setup(_props, { expose }) {

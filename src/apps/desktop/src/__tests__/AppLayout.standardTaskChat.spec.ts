@@ -14,14 +14,9 @@
 //     — gated on currentView, which is 'workspace' here
 //   - workspace folder preview — gated on !activeWorkspaceItem, which
 //     is false here
-// None matched → right pane rendered BLANK.
-//
-// The fix added a new branch in AppLayout.vue that renders <ChatView>
-// directly when:
-//   activeWorkspaceItem &&
-//   activeWorkspaceItem.item_type !== 'kanban' &&
-//   activeWorkspaceItem.item_type !== 'design' &&
-//   activeTask
+// None matched → right pane rendered BLANK. The fix added a new branch in AppLayout.vue that
+// renders <ChatView> directly when: activeWorkspaceItem && activeWorkspaceItem.item_type !==
+// 'kanban' && activeWorkspaceItem.item_type !== 'design' && activeTask
 // using the task id as the chat session id (migration 052 invariant:
 // task.id == session.id).
 
@@ -183,10 +178,8 @@ describe('AppLayout — standard task chat (folder / memory / chat items)', () =
   })
 
   it('renders <ChatView> when active task belongs to a folder item (regression: blank chatview)', async () => {
-    // Pre-fix: NO branch matched → right pane rendered blank.
-    // Post-fix: this v-else-if matches:
-    //   activeWorkspaceItem.item_type !== 'kanban' && !== 'design'
-    //   && activeTask
+    // Pre-fix: NO branch matched → right pane rendered blank. Post-fix: this v-else-if matches:
+    // activeWorkspaceItem.item_type !== 'kanban' && !== 'design' && activeTask
     const ws = useWorkspacesStore()
     ws.workspaces = [
       {
@@ -244,9 +237,8 @@ describe('AppLayout — standard task chat (folder / memory / chat items)', () =
   })
 
   it('does NOT render <ChatView> when no active task is set on the folder item', async () => {
-    // activeWorkspaceItem is set (folder) but activeTask is null →
-    // the new branch's `&& activeTask` guard fails, falling through
-    // to the workspace-folder-preview empty state. No chat renders
+    // activeWorkspaceItem is set (folder) but activeTask is null → the new branch's `&& activeTask`
+    // guard fails, falling through to the workspace-folder-preview empty state. No chat renders
     // because there's nothing to chat with.
     const ws = useWorkspacesStore()
     ws.workspaces = [
@@ -335,10 +327,9 @@ describe('AppLayout — standard task chat (folder / memory / chat items)', () =
     await nextTick()
     const chatView = wrapper.find('[data-testid="chatview-stub"]')
     expect(chatView.exists()).toBe(true)
-    // The :cwd prop must be the folder's path — ChatView's onMounted
-    // reads `if (props.cwd) sessionCwd.value = props.cwd`, which
-    // becomes the `cwd_session` field on every api.sendChatMessage
-    // call. Without this, the field was `""`.
+    // The :cwd prop must be the folder's path — ChatView's onMounted reads `if (props.cwd)
+    // sessionCwd.value = props.cwd`, which becomes the `cwd_session` field on every
+    // api.sendChatMessage call. Without this, the field was `""`.
     expect(chatView.attributes('data-chat-cwd')).toBe(FOLDER_PATH)
     wrapper.unmount()
   })

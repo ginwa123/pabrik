@@ -24,10 +24,8 @@ import type { OpenInCodeEditorOptions } from './useCodeEditor'
 // delegates here. The viewer is read-only, so there is no save step:
 // the backend registers no write route (only `GET /api/system/folder`).
 
-// An absolute path is shown as-is; only relative paths are joined
-// with the cwd. Mirrors the backend `is_abs` check in
-// src/http_handlers/system_folder.zig (POSIX `/`, Windows drive
-// `C:`, UNC `\\`).
+// An absolute path is shown as-is; only relative paths are joined with the cwd. Mirrors the backend
+// `is_abs` check in src/http_handlers/system_folder.zig (POSIX `/`, Windows drive `C:`, UNC `\\`).
 export function isAbsolutePath(p: string): boolean {
   if (!p) return false
   if (p.startsWith('/')) return true
@@ -53,9 +51,8 @@ export function parseRequestedLine(param: unknown): number | null {
   return Number.isFinite(n) && (n as number) > 0 ? (n as number) : null
 }
 
-// URL-safe file-path encoding: UTF-8 bytes → base64url (no padding).
-// UTF-8 matters because raw `btoa` throws on non-latin1 paths
-// (e.g. Cyrillic filenames); base64url matters because `+/=` are
+// URL-safe file-path encoding: UTF-8 bytes → base64url (no padding). UTF-8 matters because raw
+// `btoa` throws on non-latin1 paths (e.g. Cyrillic filenames); base64url matters because `+/=` are
 // reserved in query strings.
 export function encodeFilePath(path: string): string {
   const bytes = new TextEncoder().encode(path)

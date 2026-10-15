@@ -1,11 +1,8 @@
-/**
- * PrChecksPanel — the panel's own contract.
- *
+/** PrChecksPanel — the panel's own contract.
  * The rule this file exists to protect: "this PR has no failing checks"
  * and "we could not reach the backend" must render differently. A
  * `catch { return [] }` would make an unreachable backend look like a
- * green build, which is the one wrong answer a CI panel can give.
- */
+ * green build, which is the one wrong answer a CI panel can give. */
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import PrChecksPanel from '../components/views/chat_right_sidebar/PrChecksPanel.vue'

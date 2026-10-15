@@ -25,9 +25,8 @@ import UiIcon from '../ui/UiIcon.vue'
 const props = withDefaults(
   defineProps<{
     modelValue: string
-    /** Absolute path of the repo whose refs are listed. Empty = the
-     *  dialog could not resolve a project root; the picker then shows an
-     *  empty list and relies on hand-typed input. */
+    /**      * Absolute path of the repo whose refs are listed. Empty = the dialog could not resolve a
+     * project root; the picker then shows an empty list and relies on hand-typed input. */
     repoPath?: string
     disabled?: boolean
   }>(),
@@ -40,9 +39,8 @@ const open = ref(false)
 const search = ref('')
 const loading = ref(false)
 const branches = ref<GitBranchEntry[]>([])
-/** Cache key: the repo path the current `branches` were loaded for, so
- *  re-opening the same dropdown does not refetch but switching project
- *  roots does. */
+/**  * Cache key: the repo path the current `branches` were loaded for, so re-opening the same dropdown
+ * does not refetch but switching project roots does. */
 const loadedFor = ref<string | null>(null)
 /** True once a load has completed (successfully or not) for `loadedFor`.
  *  Drives the "no branches found" message so it is not shown mid-load. */

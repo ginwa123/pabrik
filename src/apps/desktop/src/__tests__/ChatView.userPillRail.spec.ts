@@ -103,10 +103,9 @@ describe('user-pill rail wiring', () => {
 
 describe('pill-rail gutter — the rail must not overlap the transcript', () => {
   it('the wrapper carries has-pill-rail on the SAME condition as the rail', async () => {
-    // The gutter must exist exactly when the rail does. Two separate
-    // conditions would drift: a rail with no gutter paints over the
-    // messages, a gutter with no rail is dead space in a 1-user-group
-    // chat. Pin the binding to the rail's own `v-if` expression.
+    // The gutter must exist exactly when the rail does. Two separate conditions would drift: a rail
+    // with no gutter paints over the messages, a gutter with no rail is dead space in a
+    // 1-user-group chat. Pin the binding to the rail's own `v-if` expression.
     const source = await readChatViewSource()
     const wrapper = source.match(
       /class="relative flex-1 min-h-0 flex flex-col messages-scroll-hide-native"\s*\n\s*:class="\{[^}]*\}"/,

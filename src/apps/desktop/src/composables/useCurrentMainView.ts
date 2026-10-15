@@ -74,10 +74,9 @@ export type CurrentMainView =
   | {
       kind: 'workspace'
       workspaceId?: string
-      /** Optional: absent for a standalone `?workspaceId=X` selection
-       *  with no item open (header dropdown switch — revamp plan
-       *  2026-09-22). Row-highlight consumers compare against it, so
-       *  `undefined` simply means "no row active". */
+      /**        * Optional: absent for a standalone `?workspaceId=X` selection with no item open (header
+       * dropdown switch — revamp plan 2026-09-22). Row-highlight consumers compare against it, so
+       * `undefined` simply means "no row active". */
       itemId?: string
       pageId?: string
       chatTaskId?: string

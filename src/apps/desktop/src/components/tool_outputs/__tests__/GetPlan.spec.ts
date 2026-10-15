@@ -24,10 +24,8 @@ import GetPlan from '../GetPlan.vue'
 // Helpers
 // ────────────────────────────────────────────────────────────────────────
 
-/**
- * Build a present-plan JSON envelope with the markdown body the backend
- * emits (`executeGetPlan` returns `{plan: <markdown>}`).
- */
+/** Build a present-plan JSON envelope with the markdown body the backend
+ * emits (`executeGetPlan` returns `{plan: <markdown>}`). */
 const makePresentContent = (markdown: string): string =>
   JSON.stringify({
     tool: 'get_plan',
@@ -58,12 +56,9 @@ const makeErrorContent = (msg = 'database is locked') =>
     v: 1,
   })
 
-/**
- * Wrap the inner data payload in the full JSON wire envelope the
- * dispatcher actually passes through. Mirrors the backend's
- * `wrapToolOutput`. Accepts a data object (or a full envelope string,
- * passed through unchanged).
- */
+/**  * Wrap the inner data payload in the full JSON wire envelope the dispatcher actually passes
+ * through. Mirrors the backend's `wrapToolOutput`. Accepts a data object (or a full envelope
+ * string, passed through unchanged). */
 const wrapInToolEnvelope = (inner: string): string => {
   if (inner.trim().startsWith('{')) {
     try {

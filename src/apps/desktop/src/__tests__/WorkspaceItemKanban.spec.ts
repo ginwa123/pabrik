@@ -124,17 +124,15 @@ describe('WorkspaceItem — item_type branching (post-kanban-migration)', () => 
   })
 
   it("does NOT render KanbanColumnEditor for kanban items (modal moved to AppLayout)", async () => {
-    // The KanbanColumnEditor used to live inside WorkspaceItem
-    // (gated by `v-if="item.item_type === 'kanban'"`). After the
-    // migration it lives in AppLayout's template. WorkspaceItem
-    // should not render it.
+    // The KanbanColumnEditor used to live inside WorkspaceItem (gated by `v-if="item.item_type ===
+    // 'kanban'"`). After the migration it lives in AppLayout's template. WorkspaceItem should not
+    // render it.
     wrapper = mountItem(makeKanbanItem())
     expandItem()
     await nextTick()
-    // The editor uses a Teleport to body, so even if it tried to
-    // mount, we'd find the modal root by class. Easier check:
-    // there is no "Add Column" / "+Column" button in the sidebar
-    // (those live in <KanbanView>'s header in the main content).
+    // The editor uses a Teleport to body, so even if it tried to mount, we'd find the modal root by
+    // class. Easier check: there is no "Add Column" / "+Column" button in the sidebar (those live
+    // in <KanbanView>'s header in the main content).
     expect(wrapper.findAll(`[data-testid="kanban-view-${ITEM_ID}-add-column"]`)).toHaveLength(0)
   })
 
@@ -218,9 +216,8 @@ describe('WorkspaceItem — kanban click behavior', () => {
     )
     expandItem()
     await nextTick()
-    // Even after the click + expand (no-op for kanban), no kanban
-    // events should appear. (Folder items never emitted them
-    // either, so this guard ensures the migration didn't leave any
+    // Even after the click + expand (no-op for kanban), no kanban events should appear. (Folder
+    // items never emitted them either, so this guard ensures the migration didn't leave any
     // stragglers.)
     expect(wrapper.emitted('addKanbanTask')).toBeUndefined()
     expect(wrapper.emitted('moveKanbanTask')).toBeUndefined()

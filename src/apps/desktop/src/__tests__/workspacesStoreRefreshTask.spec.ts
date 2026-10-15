@@ -163,10 +163,9 @@ describe('useWorkspacesStore.refreshTask', () => {
 
     // Cached task unchanged; failure is logged via console.warn.
     expect(ws.workspaces[0]!.items[0]!.tasks![0]!.is_auto_retry_until_stop).toBe('1')
-    // We don't assert on console.warn here — vi.restoreAllMocks() in
-    // afterEach would reset a module-level spy. The "does not throw"
-    // promise is the contract that matters for the dialog UX; the
-    // log line is incidental observability.
+    // We don't assert on console.warn here — vi.restoreAllMocks() in afterEach would reset a
+    // module-level spy. The "does not throw" promise is the contract that matters for the dialog
+    // UX; the log line is incidental observability.
   })
 
   it('only patches the task whose id matches (does not touch sibling tasks)', async () => {

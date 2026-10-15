@@ -1,13 +1,9 @@
-/**
- * Behavioural tests for the group-drag move-batch wire.
- *
+/** Behavioural tests for the group-drag move-batch wire.
  * Plan: docs/superpowers/plans/2026-08-06-move-element-with-descendants.md
  * (Chunk 4, Task 4.3)
- *
  * The drag path now uses `moveDesignElementsBatch` (server-side
  * cascade) instead of `updateDesignElementsGeometryBatch` (frontend
- * expansion + N x/y pairs). The tests below exercise the new wire.
- */
+ * expansion + N x/y pairs). The tests below exercise the new wire. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -169,10 +165,9 @@ describe('DesignView group drag — move-batch (server-side cascade)', () => {
     expect(geoBatchSpy).not.toHaveBeenCalled()
     expect(singleSpy).not.toHaveBeenCalled()
 
-    // Wire shape: ONE item per selected element, each carrying the
-    // cursor delta (rounded). Backend cascades the delta to
-    // descendants via the recursive CTE.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // Wire shape: ONE item per selected element, each carrying the cursor delta (rounded). Backend
+    // cascades the delta to descendants via the recursive CTE. eslint-disable-next-line
+    // @typescript-eslint/no-explicit-any
     const callArgs = moveSpy.mock.calls[0] as any[]
     const items = callArgs[3] as Array<{ element_id: string; dx: number; dy: number }>
     expect(items.length).toBe(3)

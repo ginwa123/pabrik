@@ -194,14 +194,11 @@ const PENDING: MergeWording = {
   canMerge: false,
 }
 
-/**
- * The box's whole state, from the two fields the poll already carries.
- *
+/** The box's whole state, from the two fields the poll already carries.
  * `merged` and `closed` short-circuit first: a merged PR's mergeable state is
  * meaningless (GitHub reports UNKNOWN for it), and rendering "Merge status is
  * being calculated" over a merged pull request is the class of lie this
- * module exists to prevent.
- */
+ * module exists to prevent. */
 export function mergeWording(s: MergeSignals): MergeWording {
   const status = (s.status || '').trim().toLowerCase()
   if (status === 'merged') {
@@ -226,9 +223,8 @@ export function mergeWording(s: MergeSignals): MergeWording {
 
 export type MergeMethod = 'merge' | 'squash' | 'rebase'
 
-/** The three methods both CLIs expose. `gh pr merge` needs exactly one of
- *  them — with no strategy flag it prompts, and a non-tty child cannot
- *  answer. Order is GitHub's. */
+/**  * The three methods both CLIs expose. `gh pr merge` needs exactly one of them — with no strategy
+ * flag it prompts, and a non-tty child cannot answer. Order is GitHub's. */
 export const MERGE_METHODS: readonly MergeMethod[] = ['merge', 'squash', 'rebase'] as const
 
 export function methodLabel(m: MergeMethod): string {
@@ -245,16 +241,13 @@ export function methodDetail(m: MergeMethod, target: string): string {
 
 const METHOD_KEY = 'pabrik-pr-merge-method'
 
-/**
- * A stable key for "this repository": everything between the host and the
+/** A stable key for "this repository": everything between the host and the
  * change request, e.g. `ginwa123/pabrik` on GitHub and `g/sub/repo` on GitLab
  * (a GitLab project path keeps its nested namespace). The same repo reached
  * through two worktrees therefore remembers ONE method choice.
- *
  * The `(?:-\/)?` is load-bearing: GitLab inserts a `/-/` discriminator before
  * `merge_requests`, and a pattern that ignored it would key the memory on the
- * project name alone — colliding with a same-named project elsewhere.
- */
+ * project name alone — colliding with a same-named project elsewhere. */
 export function repoKeyFor(prUrl: string, fallback: string): string {
   const m = /^https?:\/\/[^/]+\/(.+?)\/(?:-\/)?(?:pull|merge_requests)\/\d+/.exec(
     (prUrl || '').trim(),
@@ -263,14 +256,11 @@ export function repoKeyFor(prUrl: string, fallback: string): string {
   return path ? path.replace(/\.git$/, '') : fallback
 }
 
-/**
- * The last method used for this repo, or `squash`.
- *
+/** The last method used for this repo, or `squash`.
  * Squash is the default because it is what this project actually does: every
  * merged PR in this repo so far was squashed, so a merge commit as the
  * default would be wrong more often than right. The choice is remembered per
- * repo, so the second merge onwards is one click.
- */
+ * repo, so the second merge onwards is one click. */
 export function rememberedMethod(key: string): MergeMethod {
   try {
     if (typeof localStorage === 'undefined') return 'squash'

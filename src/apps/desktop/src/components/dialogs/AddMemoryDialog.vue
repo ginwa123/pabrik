@@ -46,24 +46,18 @@ import UiIcon from '../ui/UiIcon.vue'
 
 const props = withDefaults(defineProps<{
   show: boolean
-  /**
-   * The initial cwd to scope the new memory to. Used as the starting
-   * value of the local `cwd` ref; the user can change it via the
-   * folder picker before submitting. Typically passed by the parent
-   * as the workspace's first folder item's path, but any valid
-   * absolute path works.
-   */
+  /**    * The initial cwd to scope the new memory to. Used as the starting value of the local `cwd` ref;
+   * the user can change it via the folder picker before submitting. Typically passed by the parent
+   * as the workspace's first folder item's path, but any valid absolute path works. */
   cwd: string
-  /**
-   * 'standalone' (default) — the legacy flow: this dialog calls
+  /** 'standalone' (default) — the legacy flow: this dialog calls
    * `createLocalMemory` and emits `create(name, path)`.
    * 'task' — the new flow (2026-06-20): this dialog does NOT call
    * the API. It emits `create(name, content, path)` and the parent
    * calls `addTask(..., { taskType: 'memory', memory: { name, content } })`.
    * The backend's `task_create.zig` for memory tasks handles both
    * the file write AND the task-row insert in a single POST, so the
-   * parent only needs to make one API call.
-   */
+   * parent only needs to make one API call. */
   mode?: 'standalone' | 'task'
 }>(), {
   mode: 'standalone',
@@ -103,13 +97,9 @@ const notificationStore = useNotificationStore()
 
 // ─── Validation ─────────────────────────────────────────────────────────────
 
-/**
- * Mirrors `memories.isValidMemoryName` from
- * `src/modules/agent/tools/memories.zig:372` — kept in sync so the
- * dialog rejects obvious typos before hitting the server. The
- * server is the source of truth; if the two ever drift, the
- * server-side check returns 400.
- */
+/**  * Mirrors `memories.isValidMemoryName` from `src/modules/agent/tools/memories.zig:372` — kept in
+ * sync so the dialog rejects obvious typos before hitting the server. The server is the source of
+ * truth; if the two ever drift, the server-side check returns 400. */
 function isValidMemoryName(rawName: string): boolean {
   const trimmed = rawName.trim()
   if (trimmed.length === 0) return false
@@ -121,10 +111,9 @@ function isValidMemoryName(rawName: string): boolean {
 
 // ─── Picker data source ────────────────────────────────────────────────────
 
-// Adapts the existing listFolder/getSystemFolder API to the picker's
-// agnostic (path: string) => Promise<T[]> contract. When path is
-// empty we return the system folder root entries. Same pattern as
-// AddItemDialog.vue:44.
+// Adapts the existing listFolder/getSystemFolder API to the picker's agnostic (path: string) =>
+// Promise<T[]> contract. When path is empty we return the system folder root entries. Same pattern
+// as AddItemDialog.vue:44.
 const loadItemsForPicker = async (path: string): Promise<FolderEntry[]> => {
   const data = path ? await listFolder(path) : await getSystemFolder()
   return (data.entries || []) as FolderEntry[]
@@ -175,10 +164,9 @@ const handleCreate = async () => {
       return
     }
     const result = await createLocalMemory(trimmedName, content.value, cwd.value)
-    // createLocalMemory returns { memory: { name, title, path, size } } on
-    // success. The ApiError throw handles the non-2xx case (toast is
-    // auto-fired by apiFetch), so reaching this line means the memory
-    // exists.
+    // createLocalMemory returns { memory: { name, title, path, size } } on success. The ApiError
+    // throw handles the non-2xx case (toast is auto-fired by apiFetch), so reaching this line means
+    // the memory exists.
     emit('create', result.memory.name, content.value, result.memory.path)
     handleClose()
   } catch (err) {
@@ -216,10 +204,9 @@ const handleOpen = async () => {
   nameInput.value?.focus()
 }
 
-// Open-reset without watch(): seed on mount (initial show=true) and on
-// closed->open updates. A Transition before-enter hook cannot do this — it
-// never fires on initial mount (no `appear`) and VTU stubs Transition, so
-// specs that mount then setProps(show=true) would see empty fields.
+// Open-reset without watch(): seed on mount (initial show=true) and on closed->open updates. A
+// Transition before-enter hook cannot do this — it never fires on initial mount (no `appear`) and
+// VTU stubs Transition, so specs that mount then setProps(show=true) would see empty fields.
 const wasShown = ref(props.show)
 onMounted(() => {
   if (props.show) void handleOpen()

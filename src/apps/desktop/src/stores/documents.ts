@@ -41,12 +41,9 @@ export const useDocumentsStore = defineStore('documents', () => {
   const saving = ref(false)
   /** Last failure message, or null. Rendered by the view — never write-only. */
   const error = ref<string | null>(null)
-  /**
-   * True once a list has been fetched for SOME workspace. Distinguishes
-   * "not loaded yet" (render nothing) from "loaded, and there are none"
-   * (render the empty state) — without it a fresh sidebar shows a
-   * misleading "No documents yet" before the first request returns.
-   */
+  /**    * True once a list has been fetched for SOME workspace. Distinguishes "not loaded yet" (render
+   * nothing) from "loaded, and there are none" (render the empty state) — without it a fresh
+   * sidebar shows a misleading "No documents yet" before the first request returns. */
   const loaded = ref(false)
 
   const count = computed(() => documents.value.length)
@@ -91,10 +88,9 @@ export const useDocumentsStore = defineStore('documents', () => {
         loading.value = false
       }
 
-      // 2. Revalidate in the background and replace with the server's truth.
-      //    `runSyncResult` (not `runSyncEffect`) because this failure is
-      //    RENDERED: the section shows `error` instead of the empty state,
-      //    so the reason has to survive to the UI.
+      // 2. Revalidate in the background and replace with the server's truth. `runSyncResult` (not
+      // `runSyncEffect`) because this failure is RENDERED: the section shows `error` instead of the
+      // empty state, so the reason has to survive to the UI.
       const result = await runSyncResult(
         documentEngineDb.loadDelta(workspaceId),
         'documents.loadDelta',
@@ -105,10 +101,9 @@ export const useDocumentsStore = defineStore('documents', () => {
       } else {
         error.value = result.reason
         if (cached.length === 0) {
-          // Cold miss AND a revalidation that never arrived: there is
-          // nothing painted to protect, so the list stays empty and the
-          // error block carries the reason. A populated list is NEVER
-          // blanked here — the cached rows stay on screen above it.
+          // Cold miss AND a revalidation that never arrived: there is nothing painted to protect,
+          // so the list stays empty and the error block carries the reason. A populated list is
+          // NEVER blanked here — the cached rows stay on screen above it.
           documents.value = []
         }
       }
@@ -192,12 +187,9 @@ export const useDocumentsStore = defineStore('documents', () => {
     }
   }
 
-  /**
-   * Fetch a single document for the editor. The list response already
-   * carries every body, so this is a no-op when the row is cached and
-   * only reaches the network for a deep link opened before the sidebar
-   * list loaded.
-   */
+  /**    * Fetch a single document for the editor. The list response already carries every body, so this
+   * is a no-op when the row is cached and only reaches the network for a deep link opened before
+   * the sidebar list loaded. */
   async function loadDocument(workspaceId: string, documentId: string): Promise<Document | null> {
     if (!workspaceId || !documentId) return null
     error.value = null

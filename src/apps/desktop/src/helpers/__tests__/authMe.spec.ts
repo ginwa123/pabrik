@@ -1,11 +1,8 @@
-/**
- * Behavioural tests for the cached `/api/auth/me` client.
- *
+/** Behavioural tests for the cached `/api/auth/me` client.
  * The cache's contract: navigation guards must never block on a slow
  * `/me` (fresh cache = no network), concurrent callers share one live
  * fetch, failures never throw (guard fails open), and login/logout
- * invalidation forces the next guard to see the new session.
- */
+ * invalidation forces the next guard to see the new session. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { clearAuthMeCache, fetchAuthMeLive, getAuthMeCached, invalidateAuthMe } from '../authMe'

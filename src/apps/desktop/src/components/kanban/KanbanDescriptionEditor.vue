@@ -55,11 +55,9 @@ const props = withDefaults(
   defineProps<{
     modelValue: string
     cwd: string
-    // Required for image upload. The kanban task id is used as the
-    // upload bucket — files land in
+    // Required for image upload. The kanban task id is used as the upload bucket — files land in
     // `<item.path>/.pabrik/attachments/<taskId>/<n>.<ext>`.
-    // Empty string disables image upload (the editor still works for
-    // text + @path references).
+    // Empty string disables image upload (the editor still works for text + @path references).
     taskId?: string
     // Optional cap. `undefined` (default) = unlimited, no maxlength
     // enforcement. When set, the textarea enforces it via `maxlength`
@@ -122,8 +120,6 @@ const counterText = computed<string>(() =>
 
 // ─── @-trigger file picker ──────────────────────────────────────────────
 // Ported 1:1 from FileInput.vue Task 2 (plan:
-// docs/superpowers/plans/2026-09-08-chatview-search-files-perf.md).
-// Single round-trip per query via `api.searchFiles` — replaces the old
 // N-sequential-fetch full-tree walk (`loadAllFiles`, deleted).
 let fileSearchTimer: ReturnType<typeof setTimeout> | null = null
 let fileSearchGen = 0
@@ -282,9 +278,8 @@ const selectFile = (file: FileEntry) => {
   const pos = textareaRef.value.selectionStart ?? 0
   const before = text.value.slice(0, pos)
   const after = text.value.slice(pos)
-  // Strip the `@` trigger token but keep the file path verbatim
-  // (e.g. `/src/main.zig` inserts as-is — no `@` prefix). The path
-  // chip detector in <MarkdownDescription> matches `/path/to/file`
+  // Strip the `@` trigger token but keep the file path verbatim (e.g. `/src/main.zig` inserts as-is
+  // — no `@` prefix). The path chip detector in <MarkdownDescription> matches `/path/to/file`
   // directly, so a leading `@` is unnecessary noise.
   const atMatch = before.match(/@([\w./\\:-]*)$/)
   const insertText = file.path
@@ -525,19 +520,16 @@ const handlePreviewUpdate = (newFiles: PreviewFile[]) => {
   }
   for (const r of removed) {
     if (r.previewUrl.startsWith('blob:')) URL.revokeObjectURL(r.previewUrl)
-    // In edit mode the description carries an `![name](<url>)` block
-    // we need to strip — same logic as before. In create mode the
-    // description never received a markdown block (the file is only
-    // in previewFiles/pendingFiles), so the regex find/replace is a
-    // safe no-op (nothing matches).
+    // In edit mode the description carries an `![name](<url>)` block we need to strip — same logic
+    // as before. In create mode the description never received a markdown block (the file is only
+    // in previewFiles/pendingFiles), so the regex find/replace is a safe no-op (nothing matches).
     const fileName = r.file.name
     const escapedName = fileName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const blockRegex = new RegExp(`!\\[${escapedName}\\]\\([^)]+\\)`, 'g')
     commitText(text.value.replace(blockRegex, '').replace(/[ \t]+(\n|$)/g, '$1'))
     // Drop the corresponding entry from pendingFiles (create mode).
-    // The user's intent on removing a preview is "don't upload this
-    // either" — otherwise the host would silently upload a file the
-    // user already discarded.
+    // The user's intent on removing a preview is "don't upload this either" — otherwise the host
+    // would silently upload a file the user already discarded.
     const pendingIdx = pendingFiles.value.findIndex((p) => p.previewUrl === r.previewUrl)
     if (pendingIdx !== -1) pendingFiles.value.splice(pendingIdx, 1)
   }
@@ -624,10 +616,9 @@ onMounted(() => {
   rehydratePreviews()
 })
 
-// ─── Rehydrate on external modelValue changes (e.g. dialog re-open) ──
-// We only re-hydrate when the modelValue grows (new image added externally).
-// `lastSeenText` is set by the bridge setter above, so the parent's
-// round-trip echo of our own keystrokes is recognised and skipped here.
+// ─── Rehydrate on external modelValue changes (e.g. dialog re-open) ── We only re-hydrate when the
+// modelValue grows (new image added externally). `lastSeenText` is set by the bridge setter above,
+// so the parent's round-trip echo of our own keystrokes is recognised and skipped here.
 const prevModelValue = ref(props.modelValue)
 onUpdated(() => {
   const v = props.modelValue

@@ -1,13 +1,10 @@
-/**
- * Tests for McpTool.vue — the universal renderer for ANY `mcp_*` tool.
- *
+/** Tests for McpTool.vue — the universal renderer for ANY `mcp_*` tool.
  * Verifies:
  *  - header shows `server · subTool` + line-count meta
  *  - raw text output renders in the expanded body
  *  - JSON output is pretty-printed
  *  - error envelope renders the red error block
- *  - Arguments <details> appears only for non-empty params
- */
+ *  - Arguments <details> appears only for non-empty params */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 

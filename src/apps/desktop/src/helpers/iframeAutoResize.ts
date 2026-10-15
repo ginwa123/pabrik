@@ -42,9 +42,8 @@ export const MIN_FRAME_HEIGHT = 120
  *  backward compat (clampFrameHeight default) only. */
 export const MAX_FRAME_HEIGHT = 2000
 
-/** Clamp a reported content height into the accepted range. `NaN` (a metric
- *  that could not be read) falls back to the minimum; infinities clamp to
- *  the matching bound. */
+/**  * Clamp a reported content height into the accepted range. `NaN` (a metric that could not be read)
+ * falls back to the minimum; infinities clamp to the matching bound. */
 export function clampFrameHeight(
   height: number,
   min: number = MIN_FRAME_HEIGHT,
@@ -54,34 +53,26 @@ export function clampFrameHeight(
   return Math.max(min, Math.min(max, height))
 }
 
-/**
- * Grow a frame to its full reported content height with no upper bound.
- * HTML frames use this (not clampFrameHeight) so long reports never get
- * an inner scrollbar — the outer chat scroller owns scrolling.
- */
+/**  * Grow a frame to its full reported content height with no upper bound. HTML frames use this (not
+ * clampFrameHeight) so long reports never get an inner scrollbar — the outer chat scroller owns
+ * scrolling. */
 export function growFrameToContent(height: number, min: number = MIN_FRAME_HEIGHT): number {
   if (!Number.isFinite(height) || height <= 0) return min
   return Math.max(min, height)
 }
 
-/**
- * CSS snippet injected into every HTML srcdoc shell so the frame document
+/** CSS snippet injected into every HTML srcdoc shell so the frame document
  * itself never shows scrollbars. The parent sizes the iframe element to
  * the content height (see growFrameToContent), so page-level scrolling
  * inside the frame is never needed — inner `pre` blocks keep their own
- * `overflow-x:auto` for wide code.
- */
+ * `overflow-x:auto` for wide code. */
 export const FRAME_NO_SCROLLBAR_STYLE =
   'html,body{overflow:hidden!important;scrollbar-width:none!important}' +
   'html::-webkit-scrollbar,body::-webkit-scrollbar{display:none!important}'
 
-/**
- * Read a sender's reported height out of a `message` event.
- *
- * Returns `null` for anything that isn't this protocol (a different
- * `source` tag, a non-object payload, a missing/NaN height) so callers can
- * bail before touching the DOM.
- */
+/**  * Read a sender's reported height out of a `message` event. Returns `null` for anything that isn't
+ * this protocol (a different `source` tag, a non-object payload, a missing/NaN height) so callers
+ * can bail before touching the DOM. */
 export function readAutoResizeHeight(event: MessageEvent, source: string): number | null {
   const data: unknown = event.data
   if (!data || typeof data !== 'object') return null

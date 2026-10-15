@@ -1,11 +1,8 @@
-/**
- * Tests for myersDiff.ts — Myers O(ND) line/word diff + renderers.
- *
+/** Tests for myersDiff.ts — Myers O(ND) line/word diff + renderers.
  * Critical: the position-based `isLineChanged = (idx) => beforeLines[idx] !== afterLines[idx]`
  * (the OLD broken approach this replaces) treated every line after an insertion as
  * "changed" because indices shifted. Tests here verify the new algorithm does NOT
- * have that bug — a line shift at position N must NOT mark line N+1 as changed.
- */
+ * have that bug — a line shift at position N must NOT mark line N+1 as changed. */
 import { describe, expect, it } from 'vitest'
 import {
   computeInlineWordChanges,

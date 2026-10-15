@@ -76,10 +76,9 @@ describe('api.kanban', () => {
       expect(url).toContain('/api/workspaces/ws_1/items/kanban')
       expect(init.method).toBe('POST')
       const body = JSON.parse(init.body as string)
-      // path defaults to '' when omitted (matches the API: NULLIF(?, '')
-      // turns '' into NULL on the backend). The frontend always passes
-      // a non-empty path via the AddKanbanDialog picker; the ''
-      // fallback is just for direct API callers / tests.
+      // path defaults to '' when omitted (matches the API: NULLIF(?, '') turns '' into NULL on the
+      // backend). The frontend always passes a non-empty path via the AddKanbanDialog picker; the
+      // '' fallback is just for direct API callers / tests.
       expect(body).toEqual({ name: 'My Sprint', path: '' })
       expect(result.item.id).toBe('kanban_1')
       expect(result.item.name).toBe('My Sprint')
@@ -207,11 +206,9 @@ describe('api.kanban', () => {
 
   describe('updateKanbanColumn', () => {
     it('PATCHes the column with the patch and returns the full updated board', async () => {
-      // The backend's PATCH handler returns the full kanban board
-      // (same {columns, count} envelope as listKanbanColumns) on
-      // success so the frontend can mirror sibling renumbering in a
-      // single round-trip. Assert the wire shape here so any future
-      // drift is caught at the API boundary.
+      // The backend's PATCH handler returns the full kanban board (same {columns, count} envelope
+      // as listKanbanColumns) on success so the frontend can mirror sibling renumbering in a single
+      // round-trip. Assert the wire shape here so any future drift is caught at the API boundary.
       mockFetchOnce(200, {
         columns: [
           {

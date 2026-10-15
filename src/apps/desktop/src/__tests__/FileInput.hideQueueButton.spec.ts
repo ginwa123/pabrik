@@ -76,11 +76,9 @@ describe('FileInput — Send/Queue button (hidden while isLLMProcessing)', () =>
   })
 
   it('E: when isLoading is true (network in-flight) but isLLMProcessing is false, the button still shows with spinner + "Queue" label', async () => {
-    // During the brief window between "user pressed Send" and the SSE
-    // worker-created event landing in processingState, the local
-    // isLoading flag is true while isLLMProcessing is still false.
-    // The button should still be visible in this window — only the
-    // agent-processing state hides it.
+    // During the brief window between "user pressed Send" and the SSE worker-created event landing
+    // in processingState, the local isLoading flag is true while isLLMProcessing is still false.
+    // The button should still be visible in this window — only the agent-processing state hides it.
     const wrapper = await mountInput({ isLoading: true })
     const btn = wrapper.find('[data-testid="send-message-button"]')
     expect(btn.exists()).toBe(true)

@@ -203,10 +203,9 @@ describe('ChatView — Stop button (cancel running agent)', () => {
     const btn = wrapper!.find('[data-testid="stop-session-button"]')
     expect(btn.exists()).toBe(true)
 
-    // Two rapid clicks. FileInput's `handleStopClick` short-circuits
-    // on the second click because `isStopping` is true after the
-    // first emit. We mirror that here by setting isStopping=true
-    // via setProps after the first click, then clicking again.
+    // Two rapid clicks. FileInput's `handleStopClick` short-circuits on the second click because
+    // `isStopping` is true after the first emit. We mirror that here by setting isStopping=true via
+    // setProps after the first click, then clicking again.
     await btn.trigger('click')
     // After the first emit, FileInput flips isStopping to true.
     // Verify the spinner is now showing.
@@ -236,16 +235,13 @@ describe('ChatView — Stop button (cancel running agent)', () => {
     // Simulate the backend cancelling + deleting the worker by
     // dispatching the SSE `worker deleted` event the workflow
      
-    // emits after the loop break. In production this is what
-    // App.vue's `handleWorkerEvent` listens for and translates into
-    // a removal from `processingState`. We bypass App.vue (it's not
-    // mounted in this test) and directly mutate the provided ref
-    // via the `processingState` instance ref kept by the mount
-    // helper. We rebuild the whole object reference so the ref's
-    // `.value` reassignment triggers Vue's reactivity reliably
-    // (delete on the inner object also works with a proxy, but
-    // the reassignment is the documented contract for `ref`).
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // emits after the loop break. In production this is what App.vue's `handleWorkerEvent` listens
+    // for and translates into a removal from `processingState`. We bypass App.vue (it's not mounted
+    // in this test) and directly mutate the provided ref via the `processingState` instance ref
+    // kept by the mount helper. We rebuild the whole object reference so the ref's `.value`
+    // reassignment triggers Vue's reactivity reliably (delete on the inner object also works with a
+    // proxy, but the reassignment is the documented contract for `ref`). eslint-disable-next-line
+    // @typescript-eslint/no-explicit-any
     const provides = (wrapper!.vm as any).$.provides as Record<string, unknown>
     const ps = provides['processingState'] as Ref<Record<string, boolean>>
      
@@ -308,11 +304,9 @@ describe('ChatView — Stop button (cancel running agent)', () => {
     await btn.trigger('click')
     await flushPromises()
 
-    // Button is still visible because processingState[sessionId]
-    // is still true (the API rejection didn't trigger an SSE event
-    // for this test; the backend DID receive the cancel via the
-    // network call, but we're simulating a transport-layer failure
-    // before the backend processes it).
+    // Button is still visible because processingState[sessionId] is still true (the API rejection
+    // didn't trigger an SSE event for this test; the backend DID receive the cancel via the network
+    // call, but we're simulating a transport-layer failure before the backend processes it).
     expect(wrapper!.find('[data-testid="stop-session-button"]').exists()).toBe(true)
   })
 })

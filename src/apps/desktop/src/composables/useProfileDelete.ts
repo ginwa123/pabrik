@@ -72,10 +72,9 @@ function formatErrorMessage(name: string, err: unknown): string {
   if (!(err instanceof Error)) {
     return `Failed to delete profile "${name}"`
   }
-  // 404 gets a friendlier message because it's a common case (profile
-  // already deleted in another tab, race with another user's delete).
-  // All other errors fall through to the generic format which includes
-  // the original error message for debuggability.
+  // 404 gets a friendlier message because it's a common case (profile already deleted in another
+  // tab, race with another user's delete). All other errors fall through to the generic format
+  // which includes the original error message for debuggability.
   if (err.message.includes('HTTP 404')) {
     return `Profile "${name}" not found on server (it may have been already deleted)`
   }

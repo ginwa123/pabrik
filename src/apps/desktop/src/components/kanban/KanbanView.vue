@@ -96,10 +96,9 @@ const route = useRoute()
 // though the seeded 3 default columns exist in the DB.
 const effectiveItemId = computed(() => props.itemId || props.item.id)
 
-// NOTE: KanbanView no longer owns a chat pane. The kanban task chat is
-// a separate branch at AppLayout level (its own tab), and the kanban
-// renders only the full-width board. The `workspacesStore.activeTask`
-// getter is consumed by that chat branch, not by this component.
+// NOTE: KanbanView no longer owns a chat pane. The kanban task chat is a separate branch at
+// AppLayout level (its own tab), and the kanban renders only the full-width board. The
+// `workspacesStore.activeTask` getter is consumed by that chat branch, not by this component.
 
 // Per-column initial fetch (Option B, 2026-08-06): KanbanView
 // must load columns FIRST (their ids are needed to issue the
@@ -171,17 +170,15 @@ const loadColumnsAndTasks = async () => {
     (e) => !(e.sortBy === 'position' && e.direction === 'asc'),
   )
 
-  // Step 1b: mirror the URL's `?layout=` into the local ref so a deep
-  // link wins over the stored preference. The ref is initialised from
-  // the URL at setup time, but this re-runs on item navigation, where
-  // the query carries over to a different board.
+  // Step 1b: mirror the URL's `?layout=` into the local ref so a deep link wins over the stored
+  // preference. The ref is initialised from the URL at setup time, but this re-runs on item
+  // navigation, where the query carries over to a different board.
   const urlLayout = readLayoutParam()
   if (urlLayout && urlLayout !== layout.value) layout.value = urlLayout
 
-  // Step 2: mirror URL sorts into columnSorts (drives the
-  // watcher's URL write — no-op since the URL already matches,
-  // no fetch). Also fires the column's local setSortMode on
-  // the next tick so the UI's "active sort" highlight matches.
+  // Step 2: mirror URL sorts into columnSorts (drives the watcher's URL write — no-op since the URL
+  // already matches, no fetch). Also fires the column's local setSortMode on the next tick so the
+  // UI's "active sort" highlight matches.
   if (urlEntries.length > 0) {
     const next: Record<string, SortEntry> = {}
     for (const entry of urlEntries) {
@@ -221,10 +218,9 @@ const loadColumnsAndTasks = async () => {
     direction?: 'asc' | 'desc'
   }>
 
-  // Build a set of columns mentioned in the URL (default or
-  // non-default). Used by the "fetch other columns with default
-  // sort" path to skip columns that already have an explicit URL
-  // entry (their fetch carries the URL sort instead).
+  // Build a set of columns mentioned in the URL (default or non-default). Used by the "fetch other
+  // columns with default sort" path to skip columns that already have an explicit URL entry (their
+  // fetch carries the URL sort instead).
   const urlEntryColumnIds = new Set(urlEntries.map((e) => e.columnId))
 
   if (nonDefaultUrlEntries.length > 0) {
@@ -253,11 +249,9 @@ const loadColumnsAndTasks = async () => {
     // or have data, OR the URL restore is purely cosmetic.)
     return
   } else {
-    // No non-default URL entries AND unpaginated columns exist
-    // → fetch all unpaginated columns with default sort. This
-    // is the "first-time visit" path (no URL sort history) AND
-    // the "URL has only default entries" path (those columns
-    // re-fetch with default sort on mount).
+    // No non-default URL entries AND unpaginated columns exist → fetch all unpaginated columns with
+    // default sort. This is the "first-time visit" path (no URL sort history) AND the "URL has only
+    // default entries" path (those columns re-fetch with default sort on mount).
     fetchPlan = needFetch.map((col) => ({ columnId: col.id }))
   }
 
@@ -302,10 +296,9 @@ onMounted(loadColumnsAndTasks)
 // of scroll have to be persisted explicitly to survive the round-trip
 // and a refresh:
 //   - horizontal (this composable) — which column the user was looking at
-//   - vertical per column (useKanbanColumnScrollRestore, called inside
-//     <KanbanColumn>) — where they were in a 50-card column
-//
-// Plan: docs/superpowers/plans/2026-07-23-preserve-kanban-horizontal-scroll.md
+// - vertical per column (useKanbanColumnScrollRestore, called inside <KanbanColumn>) — where they
+// were in a 50-card column Plan:
+// docs/superpowers/plans/2026-07-23-preserve-kanban-horizontal-scroll.md
 const kanbanColumnsContainer = ref<HTMLElement | null>(null)
 const kanbanScrollStorageKey = computed(() => `kanban-scroll-${effectiveItemId.value}`)
 useKanbanScrollRestore(kanbanColumnsContainer, kanbanScrollStorageKey)
@@ -318,11 +311,9 @@ useKanbanScrollRestore(kanbanColumnsContainer, kanbanScrollStorageKey)
 // unreachable by all three. `columns` is the default and is stripped from
 // the URL to keep it clean.
 //
-// Precedence: URL (deep link) → localStorage (sticky preference) →
-// `columns`. A deep link must beat the stored preference.
-//
-// The stored preference is NOT user-scoped: it is a visual preference
-// like `sidebar-width`, and userScopedKey() is reserved for identity data.
+// Precedence: URL (deep link) → localStorage (sticky preference) → `columns`. A deep link must beat
+// the stored preference. The stored preference is NOT user-scoped: it is a visual preference like
+// `sidebar-width`, and userScopedKey() is reserved for identity data.
 type KanbanLayout = 'columns' | 'rows'
 const LAYOUT_PARAM = 'layout'
 const LAYOUT_STORAGE_KEY = 'pabrik-kanban-layout'
@@ -363,10 +354,9 @@ const setLayout = (next: KanbanLayout) => {
   writeStoredLayout(next)
   try {
     const query = flatQuery()
-    // `sorts` is written from the reactive ref, not read back off the
-    // (possibly stale) `route.query` snapshot — the sorts watcher can fire
-    // in the same tick as this switch, and a stale read would clobber it.
-    // Mirrors the protection the sorts watcher applies to `layout`.
+    // `sorts` is written from the reactive ref, not read back off the (possibly stale)
+    // `route.query` snapshot — the sorts watcher can fire in the same tick as this switch, and a
+    // stale read would clobber it. Mirrors the protection the sorts watcher applies to `layout`.
     const encoded = encodeSortsParam(Object.values(columnSorts.value))
     if (encoded) query.sorts = encoded
     else delete query.sorts
@@ -418,7 +408,7 @@ const setRowDensity = (next: KanbanRowDensity) => {
 }
 
 // ─── Row-mode group collapse ──────────────────────────────────────────────
-//
+
 // Per board, persisted in localStorage as a JSON array of collapsed
 // column ids. Collapse is a density preference, not a view switch, so it
 // deliberately does NOT go in the URL.
@@ -477,37 +467,29 @@ const emit = defineEmits<{
   deleteTask: [workspaceId: string, itemId: string, taskId: string]
   renameTask: [workspaceId: string, itemId: string, taskId: string, currentName: string]
   pinTask: [workspaceId: string, itemId: string, taskId: string, isPinned: boolean]
-  // Open the per-task detail dialog (kanban-task-detail-dialog
-  // feature). Consumed INTERNALLY here — the dialog is mounted in
-  // this file's template (we own the kanban's columns & tasks, so
-  // resolving the matching column is trivial). AppLayout doesn't
-  // need to know about this dialog.
+  // Open the per-task detail dialog (kanban-task-detail-dialog feature). Consumed INTERNALLY here —
+  // the dialog is mounted in this file's template (we own the kanban's columns & tasks, so
+  // resolving the matching column is trivial). AppLayout doesn't need to know about this dialog.
   viewTaskDetail: [taskId: string]
   // The column's "⋮" menu sends these; the host opens
   // KanbanColumnEditor in the right mode.
   requestRenameColumn: [columnId: string]
   requestDeleteColumn: [columnId: string]
-  /**
-   * Fired when the user renames the kanban via the inline pencil
-   * on the header title. Mirrors KanbanSettingsDialog's
-   * rename-item emit so AppLayout handles both with one handler.
-   *
-   * Plan: docs/superpowers/plans/2026-06-30-edit-workspace-item-name.md
-   */
+  /**    * Fired when the user renames the kanban via the inline pencil on the header title. Mirrors
+   * KanbanSettingsDialog's rename-item emit so AppLayout handles both with one handler. Plan:
+   * docs/superpowers/plans/2026-06-30-edit-workspace-item-name.md */
   renameItem: [name: string]
-  // Chat pane (kanban-embed-chatview plan, Task 2+4). Fired when
-  // ChatView's header close button is clicked. AppLayout's handler
-  // clears activeTask + navigates to view=workspace (URL is the
-  // source of truth).
+  // Chat pane (kanban-embed-chatview plan, Task 2+4). Fired when ChatView's header close button is
+  // clicked. AppLayout's handler clears activeTask + navigates to view=workspace (URL is the source
+  // of truth).
   closeChat: []
 }>()
 
 // ─── Derived data ──────────────────────────────────────────────────────────
 
-// Columns sorted by position ascending (defensive — the backend
-// already returns them in order, but we sort again locally so a
-// reorder never produces an out-of-order board even before the
-// API response lands).
+// Columns sorted by position ascending (defensive — the backend already returns them in order, but
+// we sort again locally so a reorder never produces an out-of-order board even before the API
+// response lands).
 const sortedColumns = computed(() => {
   return (props.item.kanban_columns ?? []).slice().sort((a, b) => a.position - b.position)
 })
@@ -523,11 +505,9 @@ const tasks = computed<Task[]>(() => props.item.tasks ?? [])
 // q is treated as "no filter" (passed as undefined so the backend
 // omits the SQL WHERE clause). Component-local state — closing and
 // reopening the kanban clears it automatically (KanbanView is
-// mounted/unmounted on navigation between kanbans).
-//
-// Cursor resets on every query change (page 1 of the filtered set) —
-// mixing page 1 of the old query with page 2 of the new query would
-// return inconsistent results.
+// mounted/unmounted on navigation between kanbans). Cursor resets on every query change (page 1 of
+// the filtered set) — mixing page 1 of the old query with page 2 of the new query would return
+// inconsistent results.
 const searchQuery = ref('')
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -577,10 +557,8 @@ onUnmounted(clearSearchDebounce)
 //
 // The fetch is debounced (300ms) so rapid column-sort changes don't
 // fire N requests. Same pattern as the search-input handler above.
-//
-// URL format: `?sorts=col_1:name:asc,col_2:created_at:desc,...`
-// Comma-separated; each entry is `col_<id>:<sortBy>:<direction>`.
-// Validate on parse (typo / out-of-range → drop the entry).
+// URL format: `?sorts=col_1:name:asc,col_2:created_at:desc,...` Comma-separated; each entry is
+// `col_<id>:<sortBy>:<direction>`. Validate on parse (typo / out-of-range → drop the entry).
 
 interface SortEntry {
   columnId: string
@@ -612,9 +590,8 @@ const parseSortsParam = (raw: string | string[] | undefined): SortEntry[] => {
   return entries
 }
 
-// Encode the per-column sorts into a URL-safe `sorts` string.
-// Default sorts (position + asc) are OMITTED so the URL stays clean.
-// Returns null when no non-default sorts exist (caller writes no
+// Encode the per-column sorts into a URL-safe `sorts` string. Default sorts (position + asc) are
+// OMITTED so the URL stays clean. Returns null when no non-default sorts exist (caller writes no
 // `sorts` param).
 const encodeSortsParam = (entries: SortEntry[]): string | null => {
   const filtered = entries.filter((e) => !(e.sortBy === 'position' && e.direction === 'asc'))
@@ -627,10 +604,9 @@ const encodeSortsParam = (entries: SortEntry[]): string | null => {
 // fetch watcher.
 const columnSorts = ref<Record<string, SortEntry>>({})
 
-// Template refs to each KanbanColumn instance — needed so we can
-// call the columns' setSortMode() (defineExpose seam) on URL
-// restore. Map keyed by column.id, populated by the `ref="..."`
-// callback in the template.
+// Template refs to each KanbanColumn instance — needed so we can call the columns' setSortMode()
+// (defineExpose seam) on URL restore. Map keyed by column.id, populated by the `ref="..."` callback
+// in the template.
 const columnRefs = ref<Record<string, unknown>>({})
 const setColumnRef = (columnId: string) => (el: unknown) => {
   if (el) columnRefs.value[columnId] = el
@@ -652,10 +628,9 @@ const setColumnRef = (columnId: string) => (el: unknown) => {
 // changed.)
 //
 // Plan: docs/superpowers/plans/2026-08-06-kanban-sort-independence.md
-// URL mirror for per-column sorts (replaces the old columnSorts watcher).
-// Called explicitly from `handleColumnSortChange` and from the mount-time
-// URL restore in `loadColumnsAndTasks` (where it is a no-op — the URL
-// already carries the restored entries).
+// URL mirror for per-column sorts (replaces the old columnSorts watcher). Called explicitly from
+// `handleColumnSortChange` and from the mount-time URL restore in `loadColumnsAndTasks` (where it
+// is a no-op — the URL already carries the restored entries).
 const writeSortsToUrl = () => {
   const encoded = encodeSortsParam(Object.values(columnSorts.value))
   // Preserve sibling params (`?detail=`, `?layout=`, …) — rebuilding the
@@ -785,11 +760,9 @@ const handleOpenCreateDialog = () => {
 // directory". Surface a warning banner with a single click that
 // opens the folder picker and persists the chosen path via
 // workspacesStore.updateKanbanItemPath.
-//
-// The banner is purely informational (yellow tint, no destructive
-// action). It hides once a path is set. The picker reuses the
-// AddKanbanDialog's picker to keep the UX consistent — same data
-// source, same select-pick-cancel flow.
+// The banner is purely informational (yellow tint, no destructive action). It hides once a path is
+// set. The picker reuses the AddKanbanDialog's picker to keep the UX consistent — same data source,
+// same select-pick-cancel flow.
 import { getSystemFolder, listFolder, updateTaskSimple, type FolderEntry } from '../../api'
 import { updateSession as apiUpdateSession } from '../../api'
 import { listPrs } from '../../api'
@@ -846,10 +819,9 @@ const showTaskDetail = ref(false)
 // On success the dialog closes; on failure the dialog stays open
 // and the banner surfaces the backend status / network error.
 const startAgentError = ref<string | null>(null)
-// 1-shot re-entrancy guard for the Start agent click. Independent
-// of the dialog's `:disabled="isWorkerRunning"` (which only catches
-// the cross-session SSE race) — protects against double-clicks
-// during the in-flight POST.
+// 1-shot re-entrancy guard for the Start agent click. Independent of the dialog's
+// `:disabled="isWorkerRunning"` (which only catches the cross-session SSE race) — protects against
+// double-clicks during the in-flight POST.
 const startAgentBusy = ref(false)
 
 const activeTaskDetail = computed<Task | null>(() => {
@@ -866,11 +838,9 @@ const activeTaskDetailColumn = computed<KanbanColumnType | null>(() => {
 const handleViewTaskDetail = (taskId: string) => {
   activeTaskDetailId.value = taskId
   showTaskDetail.value = true
-  // Deep-link the inline panel so "Open details in new tab" +
-  // refresh/share round-trip. PUSH (not replace) preserves the
-  // board URL in history so browser Back drops the param and the
-  // route guard closes the panel back to the plain board.
-  // Preserves existing query (sorts etc).
+  // Deep-link the inline panel so "Open details in new tab" + refresh/share round-trip. PUSH (not
+  // replace) preserves the board URL in history so browser Back drops the param and the route guard
+  // closes the panel back to the plain board. Preserves existing query (sorts etc).
   try {
     void router.push({ query: { ...route.query, detail: taskId } })
   } catch {
@@ -955,10 +925,9 @@ const prPluralLabel = computed(() =>
 )
 
 const readPrsParam = (): PrListTab | null => {
-  // No try/catch here: `local/no-silent-fallback-catch` counts this
-  // file's fallbacks against a baseline, and a `catch → null` would
-  // be an 8th. Optional chaining is total on null/undefined, so
-  // there is nothing to catch.
+  // No try/catch here: `local/no-silent-fallback-catch` counts this file's fallbacks against a
+  // baseline, and a `catch → null` would be an 8th. Optional chaining is total on null/undefined,
+  // so there is nothing to catch.
   const raw: unknown = route?.query?.[PRS_PARAM]
   return raw === 'open' || raw === 'closed' ? raw : null
 }
@@ -1075,10 +1044,9 @@ const closeTaskDetail = () => {
   }
 }
 
-// Open the inline panel for a ?detail=<taskId> value (deep-link from
-// "Open details in new tab", refresh, or shared link). Unknown ids are
-// ignored so a stale link renders the plain board instead of an empty
-// panel.
+// Open the inline panel for a ?detail=<taskId> value (deep-link from "Open details in new tab",
+// refresh, or shared link). Unknown ids are ignored so a stale link renders the plain board instead
+// of an empty panel.
 const openDetailFromId = (detailId: string) => {
   if (!detailId) return
   if (activeTaskDetailId.value === detailId && showTaskDetail.value) return
@@ -1161,10 +1129,9 @@ onBeforeRouteUpdate((to) => {
 // (The old ?layout= watcher lived here — now handled by the
 // `onBeforeRouteUpdate` guard above.)
 
-// Panel visibility handler (replaces the old showTaskDetail watcher).
-// When the panel closes via X / Cancel / Esc inside the panel, drop
-// the ?detail= param so the URL stays truthful, and clear the id so a
-// re-open always goes through handleViewTaskDetail's refresh path.
+// Panel visibility handler (replaces the old showTaskDetail watcher). When the panel closes via X /
+// Cancel / Esc inside the panel, drop the ?detail= param so the URL stays truthful, and clear the
+// id so a re-open always goes through handleViewTaskDetail's refresh path.
 const onDetailShowUpdate = (open: boolean) => {
   if (open) {
     showTaskDetail.value = true
@@ -1173,9 +1140,8 @@ const onDetailShowUpdate = (open: boolean) => {
   closeTaskDetail()
 }
 
-// Dialog save handler — delegates to the store action which runs the
-// optimistic update + API call + rollback-on-error. We close the
-// dialog only on success; on error we keep it open so the user can
+// Dialog save handler — delegates to the store action which runs the optimistic update + API call +
+// rollback-on-error. We close the dialog only on success; on error we keep it open so the user can
 // retry without re-typing.
 const handleTaskDetailSave = async (payload: {
   name: string
@@ -1253,8 +1219,6 @@ const handleStartAgent = async (payload: { taskId: string }) => {
 const runAllBusyByColumn = ref<Record<string, boolean>>({})
 const runAllSummary = ref<string | null>(null)
 // In-flight state for the per-column bulk "Stop all agents" action.
-// Mirror of `runAllBusyByColumn` — the "⋮" menu's "Stop all agents"
-// item is disabled while the stop POST for that column is in flight.
 // The summary reuses `runAllSummary` (one banner slot; a stop that lands
 // after a run overwrites it, which matches the single-action UX).
 const stopAllBusyByColumn = ref<Record<string, boolean>>({})
@@ -1336,11 +1300,9 @@ const handleStopAllAgents = async (columnId: string) => {
 // message being queued.
 //
 // Unlike `handleStartAgent` there is no dialog to hold an inline
-// banner, so failures go to the notification store — the same
-// surface `addKanbanTask` uses for its partial-success path. The
-// per-task busy guard mirrors `startAgentBusy`: the menu row is
-// already hidden while a worker runs, this only closes the
-// double-click window before the SSE state lands.
+// banner, so failures go to the notification store — the same surface `addKanbanTask` uses for its
+// partial-success path. The per-task busy guard mirrors `startAgentBusy`: the menu row is already
+// hidden while a worker runs, this only closes the double-click window before the SSE state lands.
 const runAgentBusyByTask = ref<Record<string, boolean>>({})
 
 const handleRunAgentFromMenu = async (payload: { taskId: string }) => {
@@ -1479,14 +1441,9 @@ const handleViewCreateTask = (columnId: string) => {
 //                          first user message and starts the agent
 //                          in the background. The user stays on the
 //                          kanban view (no chat dialog opens); they
-//                          can click the new task card to open the
-//                          chat view any time.
-//
-// On error: keep the dialog open and surface the error message via
-// the dialog's `errorMessage` prop (the user can retry without
-// re-typing).
-//
-// Plan: docs/superpowers/plans/2026-08-06-kanban-create-task-run-agent.md
+// can click the new task card to open the chat view any time. On error: keep the dialog open and
+// surface the error message via the dialog's `errorMessage` prop (the user can retry without
+// re-typing). Plan: docs/superpowers/plans/2026-08-06-kanban-create-task-run-agent.md
 //   + 2026-08-06-kanban-no-base64-in-desc (pendingFiles upload step)
 //   + 2026-08-06-no-need-go-chatview (do NOT navigate to chatview on
 //     success path — keep the user on the kanban)
@@ -1506,9 +1463,8 @@ const handleCreateTaskSave = async (payload: {
   // repo HEAD). Only consumed on create_and_run.
   worktreeBaseBranch?: string
   tags?: string[]
-  // NEW (plan: 2026-08-06-kanban-task-profile-selector). Empty
-  // string = backend default / "Default (top-level config)". Threaded
-  // through to runAgentOnNewTask only (Path A — plain create doesn't
+  // NEW (plan: 2026-08-06-kanban-task-profile-selector). Empty string = backend default / "Default
+  // (top-level config)". Threaded through to runAgentOnNewTask only (Path A — plain create doesn't
   // persist the choice; user can set from chatview later).
   selectedProfile?: string
   // NEW (plan: 2026-08-06-kanban-image-base64-in-chatview, replaces
@@ -1630,11 +1586,9 @@ const handleCreateTaskSave = async (payload: {
     // server-side now. The imageUrls forwarding on the wire is what
     // makes them visible to the chatview's first user message.
 
-    // CHANGED: do NOT emit `selectTask` even on success. The user
-    // asked to stay on the kanban view after clicking "Create task
-    // & run agent" — the agent runs in the background; the user
-    // can click the task card to open the chat view any time.
-    // (Same UX as the pre-refactor flow.)
+    // CHANGED: do NOT emit `selectTask` even on success. The user asked to stay on the kanban view
+    // after clicking "Create task & run agent" — the agent runs in the background; the user can
+    // click the task card to open the chat view any time. (Same UX as the pre-refactor flow.)
 
     showCreateDialog.value = false
     activeCreateColumnId.value = null

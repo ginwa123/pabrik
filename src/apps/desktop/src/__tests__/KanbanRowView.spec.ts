@@ -491,7 +491,7 @@ describe('KanbanRowView', () => {
   })
 
   // ─── Readable row: metadata line ─────────────────────────────────────────
-  //
+
   // The row used to render a name and nothing else, so two tasks in a
   // group were indistinguishable. These guard the second line: every
   // field here already ships on the Task payload the board fetches.
@@ -551,7 +551,7 @@ describe('KanbanRowView', () => {
   })
 
   // ─── Readable row: status rail ───────────────────────────────────────────
-  //
+
   // The rail is what makes a 110-row group scannable down its left
   // margin. `data-kanban-row-state` is the assertion surface; the
   // colour itself is a style binding.

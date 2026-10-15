@@ -1,11 +1,6 @@
-/**
- * Regression tests for the Recent list in ChatsList.
- *
- * The section title is "Recent". A row shows the icon-only
- * `chat-git-branch` badge only when the session has both a branch and
- * a known pull-request status. Worktree bindings and branches without
- * a pull request show no git badge.
- */
+/**  * Regression tests for the Recent list in ChatsList. The section title is "Recent". A row shows the
+ * icon-only `chat-git-branch` badge only when the session has both a branch and a known
+ * pull-request status. Worktree bindings and branches without a pull request show no git badge. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp, nextTick, ref } from 'vue'
@@ -32,9 +27,8 @@ function makeStubClient(initial: SseState): SseClient {
   return stub as SseClient
 }
 
-// ChatsList calls useRouter() in setup; the `mocks: { $router: ... }`
-// option below only patches `this.$router` (Options API), so we
-// stub the composable at module level — same as
+// ChatsList calls useRouter() in setup; the `mocks: { $router: ... }` option below only patches
+// `this.$router` (Options API), so we stub the composable at module level — same as
 // sidebarActiveState.spec.ts.
 const { useRouteMock, useRouterMock } = vi.hoisted(() => ({
   useRouteMock: vi.fn(() => ({ query: {} as Record<string, string>, path: '/', fullPath: '/' })),
@@ -72,9 +66,8 @@ describe('ChatsList git icon', () => {
       writable: true,
       configurable: true,
     })
-    // ChatsList setup calls workspacesStore.onSessionEvent(cb)
-    // synchronously, which now requires the sseBus to be installed
-    // (Chunk 6 of unify-frontend-sse). Install a stub bus before
+    // ChatsList setup calls workspacesStore.onSessionEvent(cb) synchronously, which now requires
+    // the sseBus to be installed (Chunk 6 of unify-frontend-sse). Install a stub bus before
     // mounting the component.
     __resetSseBus()
     app = createApp({})
@@ -148,11 +141,9 @@ describe('ChatsList git icon', () => {
   })
 
   it('does NOT render the worktree icon when git_worktree_cwd is missing from the session', async () => {
-    // Belt-and-suspenders: some old sessions predate the
-    // set_git_worktree tool, so the field is absent (undefined) on
-    // the wire. The ChatsList loadChats mapper uses
-    // `session.git_worktree_cwd || ''` which collapses both empty
-    // and missing into the falsy default, hiding the badge.
+    // Belt-and-suspenders: some old sessions predate the set_git_worktree tool, so the field is
+    // absent (undefined) on the wire. The ChatsList loadChats mapper uses `session.git_worktree_cwd
+    // || ''` which collapses both empty and missing into the falsy default, hiding the badge.
     vi.spyOn(api, 'getChats').mockResolvedValue({
       sessions: [
         {

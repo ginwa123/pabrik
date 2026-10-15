@@ -40,10 +40,9 @@ const TASK_WITH_TAGS: Task = {
   tags: ['bug'],
 }
 
-// The dialog reads the parent kanban's workspace_item_id from the
-// `column` prop (Task itself doesn't carry workspace_item_id). All
-// `mountDialog()` calls below pass this so the composable has a
-// valid item id to fetch suggestions for.
+// The dialog reads the parent kanban's workspace_item_id from the `column` prop (Task itself
+// doesn't carry workspace_item_id). All `mountDialog()` calls below pass this so the composable has
+// a valid item id to fetch suggestions for.
 const COLUMN: KanbanColumn = {
   id: 'col_x',
   workspace_item_id: 'item_x',

@@ -47,10 +47,9 @@ const formatSize = (bytes: number): string => {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-// Drive mode from prop changes.
-// `isCreating=true` short-circuits the fetch — set up an empty create form.
-// Prev-value guard on update — same fetch/setup the watcher did; the mount
-// call covers the initial load (the old `immediate: true`).
+// Drive mode from prop changes. `isCreating=true` short-circuits the fetch — set up an empty create
+// form. Prev-value guard on update — same fetch/setup the watcher did; the mount call covers the
+// initial load (the old `immediate: true`).
 async function syncMemoryMode(newName: string | null, creating: boolean) {
   // Create mode: skip the fetch entirely, set up an empty create form.
   if (creating) {
@@ -134,10 +133,9 @@ const saveEdit = async () => {
   try {
     await updateLocalMemory(detail.value.name, editContent.value, props.cwd)
     mode.value = 'view'
-    // Refresh the local size to reflect the new content length (avoid
-    // a second round-trip to the server — the only field that changes
-    // on edit is size, and we can compute it client-side from the new
-    // content string).
+    // Refresh the local size to reflect the new content length (avoid a second round-trip to the
+    // server — the only field that changes on edit is size, and we can compute it client-side from
+    // the new content string).
     if (detail.value) {
       detail.value = {
         ...detail.value,

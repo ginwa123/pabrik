@@ -22,10 +22,9 @@ import { useDesignHistory } from '../composables/useDesignHistory'
 import { useDesignHistoryStore } from '../stores/designHistory'
 import type { DesignElement } from '../api'
 
-// Mock the workspaces store actions so the composable's inverse/forward
-// can call them without hitting the network. We keep the real store's
-// reactive state (so the composable can read design_elements) but
-// stub the mutating actions.
+// Mock the workspaces store actions so the composable's inverse/forward can call them without
+// hitting the network. We keep the real store's reactive state (so the composable can read
+// design_elements) but stub the mutating actions.
 vi.mock('../stores/workspaces', async () => {
   const actual = await vi.importActual<typeof import('../stores/workspaces')>(
     '../stores/workspaces',

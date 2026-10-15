@@ -133,10 +133,9 @@ describe('buildTaskUrlQuery — emits view=workspace + /chat/<taskId> suffix (si
   })
 
   it('preserves an existing /chat/<taskId> suffix in the URL breadcrumb (re-navigation)', () => {
-    // The URL already carries the chat suffix from a previous click.
-    // The new URL must keep that suffix (not replace it with a new
-    // one for a different task that we don't know about — that's a
-    // caller bug). The helper reads the bare item id from the URL.
+    // The URL already carries the chat suffix from a previous click. The new URL must keep that
+    // suffix (not replace it with a new one for a different task that we don't know about — that's
+    // a caller bug). The helper reads the bare item id from the URL.
     const query = buildTaskUrlQuery({
       taskId: TASK_ID,
       currentQuery: {

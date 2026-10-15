@@ -95,10 +95,8 @@ function renderedIndices(el: HTMLElement): number[] {
   )
 }
 
-/**
- * The invariant the cap guarantees: the sizer never reserves more room
- * below the MEASURED content bottom than `maxTailGap`.
- */
+/** The invariant the cap guarantees: the sizer never reserves more room
+ * below the MEASURED content bottom than `maxTailGap`. */
 function expectCapHolds(el: HTMLElement, gap = 100, slack = 2): void {
   const sizer = sizerTotal(el)
   const content = contentEl(el)
@@ -120,11 +118,8 @@ describe('VirtualScroller tail-gap cap', () => {
     vi.useRealTimers()
   })
 
-  /**
-   * Build the reported state: a tall median learned from the top window,
-   * then a tail whose rows the DOM cannot measure (height 0) — so the
-   * model keeps the median estimate for every one of them.
-   */
+  /**    * Build the reported state: a tall median learned from the top window, then a tail whose rows the
+   * DOM cannot measure (height 0) — so the model keeps the median estimate for every one of them. */
   async function mountOvershootingTail(maxTailGap?: number) {
     const mounted = mountScroller(maxTailGap === undefined ? undefined : { maxTailGap })
     const { wrapper, el } = mounted

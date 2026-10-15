@@ -7,14 +7,9 @@
 // stacked underneath). That is what removed the original bug, where the
 // chat's floating chrome out-painted this overlay's z-index.
 //
-// Two modes, one textarea:
-//
-//   - Read: the rendered markdown.
-//   - Edit: a plain textarea over the raw source, with a live preview
-//     toggle.
-//
-// Rendering goes through `helpers/markdown.ts` rather than `marked`
-// directly: that helper escapes raw HTML BEFORE parsing, which is the
+// Two modes, one textarea: - Read: the rendered markdown. - Edit: a plain textarea over the raw
+// source, with a live preview toggle. Rendering goes through `helpers/markdown.ts` rather than
+// `marked` directly: that helper escapes raw HTML BEFORE parsing, which is the
 // repo's XSS model for every non-transcript markdown surface. A document
 // body is authored by an agent that may have quoted a file it read, so
 // this is not strictly self-XSS-only.
@@ -58,10 +53,9 @@ const isDirty = computed(
 
 const renderedHtml = computed(() => renderMarkdownHtml(draftContent.value))
 
-// Load on mount AND on id change: a Back/Forward between two documents
-// keeps the same component mounted, so an `onMounted`-only fetch would
-// leave the previous document's body on screen under the new title.
-// Prev-value guard on update — same load the watcher did.
+// Load on mount AND on id change: a Back/Forward between two documents keeps the same component
+// mounted, so an `onMounted`-only fetch would leave the previous document's body on screen under
+// the new title. Prev-value guard on update — same load the watcher did.
 async function loadForDocument(id: string) {
   if (!id || !workspaceId.value) return
   const doc = await documentsStore.loadDocument(workspaceId.value, id)
@@ -120,10 +114,9 @@ const remove = async () => {
   if (!workspaceId.value) return
   const ok = await documentsStore.deleteDocument(workspaceId.value, props.documentId)
   if (!ok) return
-  // Leaving a deleted document selected would render a permanently empty
-  // view. The document owns its path, so there is no query param to drop
-  // — leave the page by going back to the workspace root, which is where
-  // the user was before they opened any document.
+  // Leaving a deleted document selected would render a permanently empty view. The document owns
+  // its path, so there is no query param to drop — leave the page by going back to the workspace
+  // root, which is where the user was before they opened any document.
   router.replace(buildAppUrl({ workspaceId: workspaceId.value })).catch(() => {
     // Nothing to recover: a rejected duplicate navigation already means
     // the URL is what the user asked for.

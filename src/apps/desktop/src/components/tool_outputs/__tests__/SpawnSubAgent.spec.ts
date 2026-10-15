@@ -25,10 +25,9 @@ import type { SubAgentProgress } from '../../../helpers/subagentProgress'
 // Helpers
 // ────────────────────────────────────────────────────────────────────────
 
-// Loose props type: tests intentionally pass partial / loosely-typed
-// values (e.g. `null` sessionId, optional `progress`). vue-tsc
-// independently type-checks the production component against its
-// real prop definitions; this cast only relaxes the test fixture.
+// Loose props type: tests intentionally pass partial / loosely-typed values (e.g. `null` sessionId,
+// optional `progress`). vue-tsc independently type-checks the production component against its real
+// prop definitions; this cast only relaxes the test fixture.
 type TestProps = {
   content?: unknown
   expanded?: boolean
@@ -162,9 +161,8 @@ describe('SpawnSubAgent.vue — live progress', () => {
 
   it('tolerates empty progress array without crashing (shows starting placeholder, not 0)', () => {
     const wrapper = mountAt({ content: '', progress: [] })
-    // Without progress AND without parsed-results content, the card is
-    // still in the Phase 1 placeholder state (tool running, no
-    // <results> yet) — 2026-09-04 refresh fix shows an honest
+    // Without progress AND without parsed-results content, the card is still in the Phase 1
+    // placeholder state (tool running, no <results> yet) — 2026-09-04 refresh fix shows an honest
     // "starting…" loading card instead of the confusing "0 sub-agents".
     expect(wrapper.text()).toContain('starting')
     expect(wrapper.text()).not.toContain('0 sub-agents')
@@ -221,10 +219,9 @@ describe('SpawnSubAgent.vue — envelope precedence', () => {
   }
 
   it('renders the parsed <results> envelope even if progress prop is also passed', async () => {
-    // Once the tool result lands, the envelope wins — progress prop is
-    // ignored. This matches the PR #299 dedupe principle: the source
-    // of truth is the llm_history row, never the SSE-only progress
-    // stream (which is ephemeral).
+    // Once the tool result lands, the envelope wins — progress prop is ignored. This matches the PR
+    // #299 dedupe principle: the source of truth is the llm_history row, never the SSE-only
+    // progress stream (which is ephemeral).
     const progress: SubAgentProgress[] = [
       sampleProgress('running', { name: 'stale', index: 0, total: 1 }),
     ]

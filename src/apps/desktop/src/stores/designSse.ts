@@ -86,11 +86,9 @@ export const useDesignSseStore = defineStore('designSse', () => {
    * point the bus is ready).
    */
   async function initDesignSse(workspaceId: string): Promise<void> {
-    // Set the filter first — if we're called for the first time,
-    // the listener (registered below) will read this value on its
-    // first event. If we're called for a re-init with a new
-    // workspaceId, the existing listener sees the new value on its
-    // next event.
+    // Set the filter first — if we're called for the first time, the listener (registered below)
+    // will read this value on its first event. If we're called for a re-init with a new
+    // workspaceId, the existing listener sees the new value on its next event.
     activeWorkspaceId.value = workspaceId
 
     // Already subscribed — just refresh the filter and return.
@@ -98,9 +96,8 @@ export const useDesignSseStore = defineStore('designSse', () => {
 
     const bus = useSseBus()
     offDesign = bus.on('design', (event: DesignElementEvent) => {
-      // Drop events for other workspaces — the backend fans out
-      // design events globally, so any connected client receives
-      // them all. Skipping the no-op fetch keeps the local store's
+      // Drop events for other workspaces — the backend fans out design events globally, so any
+      // connected client receives them all. Skipping the no-op fetch keeps the local store's
       // re-fetch rate at 1 per actual mutation.
       if (event.workspace_id !== activeWorkspaceId.value) return
       // Chunk 3 (design-drag-debounce-batch): LOCAL-MUTATION DEDUPE.
@@ -179,10 +176,9 @@ export const useDesignSseStore = defineStore('designSse', () => {
         itemId: event.item_id,
         pageId: event.page_id,
       })
-      // Defensive: unknown event shapes are silently dropped. The
-      // backend's on_event_sent_design.zig emits three shapes
-      // (`created` / `updated` / `deleted`) but they share the same
-      // payload struct, so no per-action branching is needed.
+      // Defensive: unknown event shapes are silently dropped. The backend's
+      // on_event_sent_design.zig emits three shapes (`created` / `updated` / `deleted`) but they
+      // share the same payload struct, so no per-action branching is needed.
     })
 
     // Re-sync the design state from the DB on every (re)connect of
@@ -220,12 +216,9 @@ export const useDesignSseStore = defineStore('designSse', () => {
     }) ?? null
   }
 
-  /**
-   * Tear down the design-event handlers. Called on AppLayout unmount
-   * (and at the end of each test). Mirrors the pre-migration
-   * `closeKanbanSse` contract but for the bus listener instead of a
-   * self-managed SseClient.
-   */
+  /**    * Tear down the design-event handlers. Called on AppLayout unmount (and at the end of each test).
+   * Mirrors the pre-migration `closeKanbanSse` contract but for the bus listener instead of a
+   * self-managed SseClient. */
   function closeDesignSse(): void {
     if (offDesign) {
       offDesign()
@@ -286,18 +279,16 @@ export const useDesignSseStore = defineStore('designSse', () => {
     // workspace we just (re)connected for — otherwise we'd hit a
     // foreign item with stale state.
     if (!parentWs || parentWs.id !== workspaceId) return
-    // No-op until Chunk 7 wires the active page id. When Chunk 7
-    // lands, this will read `activePageId` from the workspaces store
-    // (or a related design-mode ref) and call
+    // No-op until Chunk 7 wires the active page id. When Chunk 7 lands, this will read
+    // `activePageId` from the workspaces store (or a related design-mode ref) and call
     // `ws.fetchDesignElements(workspaceId, item.id, activePageId)`.
     void workspaceId
   }
 
   return {
-    // Expose the active workspace id so tests + Chunk-7 diagnostics
-    // can read it. The filter update in AppLayout's `initSseStores`
-    // will also benefit — for now
-    // it's only read by the SSE handler closure.
+    // Expose the active workspace id so tests + Chunk-7 diagnostics can read it. The filter update
+    // in AppLayout's `initSseStores` will also benefit — for now it's only read by the SSE handler
+    // closure.
     activeWorkspaceId,
     initDesignSse,
     closeDesignSse,
@@ -305,13 +296,9 @@ export const useDesignSseStore = defineStore('designSse', () => {
   }
 })
 
-/**
- * Extract the list of element ids from a design SSE event. The
- * single-element wire shape carries `element_id`; the batch wire
- * shape (Chunk 3 of design-drag-debounce-batch) carries
- * `element_ids`. Defensive: missing fields → empty array → SSE
- * handler falls through to the normal fetch path.
- */
+/**  * Extract the list of element ids from a design SSE event. The single-element wire shape carries
+ * `element_id`; the batch wire shape (Chunk 3 of design-drag-debounce-batch) carries `element_ids`.
+ * Defensive: missing fields → empty array → SSE handler falls through to the normal fetch path. */
 function extractElementIds(event: DesignElementEvent): string[] {
   const e = event as unknown as {
     element_id?: string

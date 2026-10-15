@@ -550,13 +550,9 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     return router
   }
 
-  /**
-   * Mount the editor with a section already open.
-   *
-   * The editor no longer owns a tab strip - the settings shell navigates and
-   * the section lives in `?section=` - so a spec opens a section the way the
-   * app does: through the URL.
-   */
+  /**    * Mount the editor with a section already open. The editor no longer owns a tab strip - the
+   * settings shell navigates and the section lives in `?section=` - so a spec opens a section the
+   * way the app does: through the URL. */
   async function mountAt(section: string, query: Record<string, string> = {}) {
     const router = await makeSettingsRouter(section === 'general' ? query : { ...query, section })
     const wrapper = mount(PabrikConfigEditor, {
@@ -604,11 +600,9 @@ describe('PabrikConfigEditor (orchestrator)', () => {
   })
 
   it('mount with clean URL + stored tools → URL gains ?section=tools (mount normalization)', async () => {
-    // The reported bug: Tools active at /app/settings with no
-    // ?section=tools. The getter falls back to localStorage without
-    // touching the URL, and TabStrip skips its emit when
-    // saved==prop — so no router.replace ever runs. Mount must
-    // normalize the URL to the tab actually shown.
+    // The reported bug: Tools active at /app/settings with no ?section=tools. The getter falls back
+    // to localStorage without touching the URL, and TabStrip skips its emit when saved==prop — so
+    // no router.replace ever runs. Mount must normalize the URL to the tab actually shown.
     localStorage.setItem('pabrik-settings-active-tab', 'tools')
     const router = await makeSettingsRouter()
     mockGet.mockResolvedValueOnce({})

@@ -20,10 +20,9 @@ import SecretsSection from '../components/workspace/SecretsSection.vue'
 import WorkspaceSettingsView from '../components/views/WorkspaceSettingsView.vue'
 import { makeLocalStorageStub } from './helpers'
 
-// Only the four secrets calls are stubbed; everything else stays real so
-// this spec can also import the real router (which pulls AppLayout, and
-// through it the rest of the api module) without half of that module
-// going undefined underneath it.
+// Only the four secrets calls are stubbed; everything else stays real so this spec can also import
+// the real router (which pulls AppLayout, and through it the rest of the api module) without half
+// of that module going undefined underneath it.
 vi.mock('../api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api')>()
   return {

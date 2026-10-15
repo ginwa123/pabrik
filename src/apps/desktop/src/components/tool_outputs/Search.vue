@@ -66,14 +66,11 @@ const hasTruncation = computed(
   () => parsed.value.truncated || parsed.value.outputTruncated || !!truncationHint.value,
 )
 
-/**
- * Collection summary (`returned`/`total`/`truncated`). Null when the payload
+/** Collection summary (`returned`/`total`/`truncated`). Null when the payload
  * carries no counts, and the header keeps its plain wording.
- *
  * `truncated` is the operator-visible half of the backend's truncation
  * contract: a capped search (max_output/max_results/head/tail) renders a
- * bounded summary instead of looking exhaustive.
- */
+ * bounded summary instead of looking exhaustive. */
 interface SearchSummary {
   returned: number
   total: number

@@ -119,11 +119,9 @@ interface CompactionEntry {
   tool_name?: string
 }
 
-// Show more entries by default; the .compaction-entries style adds
-// max-height + overflow-y so a 359-message compaction renders as a
-// scrollable list rather than a 359-row wall. The "Show all" toggle
-// remains for accessibility (keyboard-only users can expand without
-// scrolling).
+// Show more entries by default; the .compaction-entries style adds max-height + overflow-y so a
+// 359-message compaction renders as a scrollable list rather than a 359-row wall. The "Show all"
+// toggle remains for accessibility (keyboard-only users can expand without scrolling).
 const MAX_ENTRIES_VISIBLE = 50
 
 const metadata = ref<CompactionMetadata>({})
@@ -154,10 +152,9 @@ const toggleSummary = () => {
 }
 
 const parse = (raw: string) => {
-  // Defensive: don't crash on malformed XML. The Zig-side envelope is
-  // well-formed by construction, but a DB row that got truncated mid-write
-  // (e.g. interrupted saveMessage) should still render the card, even if
-  // some sections are empty.
+  // Defensive: don't crash on malformed XML. The Zig-side envelope is well-formed by construction,
+  // but a DB row that got truncated mid-write (e.g. interrupted saveMessage) should still render
+  // the card, even if some sections are empty.
   let doc: Document
   try {
     doc = new DOMParser().parseFromString(raw, 'text/xml')

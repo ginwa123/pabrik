@@ -21,11 +21,9 @@ vi.mock('../api', () => ({
   getModelCatalog: vi.fn(),
 }))
 
-/**
- * Typed explicitly: with `as const`-style inference the nullable fields narrow
- * to the literal `null`, so passing an override that sets one to a NUMBER is a
- * type error (`vue-tsc` catches it; `vitest` alone would not).
- */
+/**  * Typed explicitly: with `as const`-style inference the nullable fields narrow to the literal
+ * `null`, so passing an override that sets one to a NUMBER is a type error (`vue-tsc` catches it;
+ * `vitest` alone would not). */
 interface FormValue {
   model: string
   base_url: string

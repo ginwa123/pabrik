@@ -23,11 +23,9 @@
     (Migration 084).
 -->
 <script setup lang="ts">
-// Extracted from WorkspaceItemTask.vue on 2026-07-02. The shared
-// logic (event handlers + drop indicator) now lives in
-// composables/useTaskActions.ts; this file owns ONLY the card
-// layout and the card-specific computeds (description preview, meta
-// row, Jira-style type accent).
+// Extracted from WorkspaceItemTask.vue on 2026-07-02. The shared logic (event handlers + drop
+// indicator) now lives in composables/useTaskActions.ts; this file owns ONLY the card layout and
+// the card-specific computeds (description preview, meta row, Jira-style type accent).
 import { inject, ref, computed, onMounted, onUnmounted, onUpdated, type Ref } from 'vue'
 import { useWorkspacesStore } from '../../stores/workspaces'
 import { useAgentErrorStore } from '../../stores/agentError'
@@ -102,9 +100,8 @@ const errorRetryLabel = computed(() =>
   agentError.value ? parseAgentErrorHeadline(agentError.value.content).retryLabel : null,
 )
 
-// `columns` / `currentColumnId` back the context menu's "Move to
-// column" submenu. They are NOT part of the shared TaskComponentProps
-// because the sidebar-row variant (<WorkspaceItemTaskRow>) has no
+// `columns` / `currentColumnId` back the context menu's "Move to column" submenu. They are NOT part
+// of the shared TaskComponentProps because the sidebar-row variant (<WorkspaceItemTaskRow>) has no
 // board to move between and passes neither.
 const props = withDefaults(
   defineProps<
@@ -133,10 +130,9 @@ const emit = defineEmits<{
   viewTaskDetail: [taskId: string]
   openTaskInBackground: [payload: { workspaceId: string; itemId: string; taskId: string }]
   openTaskDetailInBackground: [payload: { workspaceId: string; itemId: string; taskId: string }]
-  // Context-menu "Move to column". We emit only the DESTINATION — the
-  // append position depends on how many tasks the target column holds,
-  // which this component can't see. <KanbanColumn> resolves it and
-  // re-emits the existing `moveTask` shape its host already handles.
+  // Context-menu "Move to column". We emit only the DESTINATION — the append position depends on
+  // how many tasks the target column holds, which this component can't see. <KanbanColumn> resolves
+  // it and re-emits the existing `moveTask` shape its host already handles.
   moveTaskToColumn: [payload: { taskId: string; columnId: string }]
   // Context-menu "Run agent". Starts a worker on this task's existing
   // session without queueing a new user message — the same
@@ -186,9 +182,8 @@ const handleCardKeydown = (event: KeyboardEvent) => {
   }
   if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
     event.preventDefault()
-    // Anchor at the card's centre — there is no cursor to follow on a
-    // keyboard gesture. Reuses the same viewport clamp as a real
-    // right-click so a card near the bottom-right corner doesn't push
+    // Anchor at the card's centre — there is no cursor to follow on a keyboard gesture. Reuses the
+    // same viewport clamp as a real right-click so a card near the bottom-right corner doesn't push
     // the menu off-screen.
     const rect = (event.currentTarget as HTMLElement | null)?.getBoundingClientRect()
     openAtPoint(
@@ -259,10 +254,9 @@ const openTaskDetailMenuInBackground = () => {
   })
 }
 
-// Right-click menu on the git-branch badge: open GitHub branch / PR
-// URLs in a new tab. Separate position state from the card menu so a
-// badge right-click never opens the chat menu. URLs resolve via the
-// shared PR-info cache; the branch URL derives from the PR repo base.
+// Right-click menu on the git-branch badge: open GitHub branch / PR URLs in a new tab. Separate
+// position state from the card menu so a badge right-click never opens the chat menu. URLs resolve
+// via the shared PR-info cache; the branch URL derives from the PR repo base.
 const { menuPos: gitMenuPos, openAt: openGitMenuAt, close: closeGitMenu } = useContextMenu()
 const gitMenuBranchUrl = ref('')
 const gitMenuPrUrl = ref('')
@@ -343,10 +337,8 @@ const runAgentFromMenu = () => {
 // Implemented as an inset box-shadow so it doesn't affect the card's
 // layout (no width change) and stacks naturally with the
 // dropIndicator box-shadow and the v6 3D base shadow.
-//
-// Returns a string suitable for use as the `boxShadow` CSS value,
-// or `''` for the no-stripe case (the caller's `||` chain keeps
-// the dropIndicator in place when the type stripe is absent).
+// Returns a string suitable for use as the `boxShadow` CSS value, or `''` for the no-stripe case
+// (the caller's `||` chain keeps the dropIndicator in place when the type stripe is absent).
 function typeAccentShadow(): string {
   const t = props.task.task_type
   if (t === 'memory') return 'inset 3px 0 0 0 rgb(96, 165, 250)' // blue-400
@@ -369,7 +361,7 @@ function typeAccentShadow(): string {
 //      inset shadows sit on TOP of the 3D base to keep the Jira-style
 //      left stripe and the pinned-region drag line working
 //      unchanged.
-//
+
 // CSS box-shadow stacking: FIRST value drawn on top. Outer shadows
 // come first (they're the dominant visual), inset accents last.
 const baseCardShadow =
@@ -389,7 +381,7 @@ const isHovered = ref(false)
 // Combined box-shadow for the card. Layered values, in CSS stacking
 // order (first on top): 3D base + Jira-style type accent (left
 // stripe) + yellow drop indicator (pinned-region drag).
-//
+
 // On hover the 3D base swaps to its hover variant; transition-shadow
 // in the template class animates the swap smoothly.
 const cardBoxShadow = computed<string>(() => {
@@ -402,15 +394,13 @@ const cardBoxShadow = computed<string>(() => {
   return layers.join(', ')
 })
 
-// The "time since" formatter for the meta row now lives in
-// helpers/formatTaskTimestamp.ts, shared with the row-mode row
-// (KanbanTaskRow.vue) so a card and its row-mode twin can never disagree
-// on what "2h ago" means.
+// The "time since" formatter for the meta row now lives in helpers/formatTaskTimestamp.ts, shared
+// with the row-mode row (KanbanTaskRow.vue) so a card and its row-mode twin can never disagree on
+// what "2h ago" means.
 
-// The most-recent update timestamp available. Falls back to
-// `createdAt` when `updatedAt` is missing. Returns null when neither
-// is present (older task fixtures), which the meta row uses to skip
-// the time pill.
+// The most-recent update timestamp available. Falls back to `createdAt` when `updatedAt` is
+// missing. Returns null when neither is present (older task fixtures), which the meta row uses to
+// skip the time pill.
 const lastUpdated = computed<Date | string | null>(() => {
   if (props.task.updatedAt) return props.task.updatedAt
   if (props.task.createdAt) return props.task.createdAt
@@ -422,10 +412,9 @@ const lastUpdated = computed<Date | string | null>(() => {
 // when no timestamp is present.
 const lastUpdatedLabel = computed<string>(() => formatRelativeTime(lastUpdated.value))
 
-// Visible tags for the chip row (Migration 067). Caps at 3 to
-// keep the card compact; the "+N more" affordance covers the rest.
-// `task.tags` is `[]` for tasks without tags — the v-if on the
-// tags row in the template handles the "no tags" case.
+// Visible tags for the chip row (Migration 067). Caps at 3 to keep the card compact; the "+N more"
+// affordance covers the rest. `task.tags` is `[]` for tasks without tags — the v-if on the tags row
+// in the template handles the "no tags" case.
 const VISIBLE_TAGS_MAX = 3
 const visibleTags = computed<string[]>(() => {
   const tags = props.task.tags ?? []
@@ -474,11 +463,6 @@ const typeBadge = computed<string | null>(() => {
 })
 
 // Git-branch badge (plan:
-//   docs/superpowers/plans/2026-08-06-kanban-task-git-branch.md).
-// Returns the branch name to display, or null when:
-//   - the task has no git_branch field (undefined / null)
-//   - the backend returned an empty string (not a git repo, detached
-//     HEAD, spawn failure)
 // Null results in NO badge rendered (graceful no-op for non-git
 // workspaces / tasks without worktree + non-git cwd).
 const gitBranchBadge = computed<string | null>(() => {

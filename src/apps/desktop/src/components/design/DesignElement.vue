@@ -51,27 +51,22 @@ import { abbrevElement, designLogger } from '../../helpers/designLogger'
 const props = withDefaults(
   defineProps<{
     element: DesignElement
-    // Single-element shortcut (kept for backward compat with tests +
-    // simple use cases). True iff `selectedIds` has exactly this
-    // element and nothing else. The wrapper's `.selected` class is
-    // applied iff this is true OR the element is in a multi-selection
-    // that includes it.
+    // Single-element shortcut (kept for backward compat with tests + simple use cases). True iff
+    // `selectedIds` has exactly this element and nothing else. The wrapper's `.selected` class is
+    // applied iff this is true OR the element is in a multi-selection that includes it.
     selected?: boolean
-    // The full selection set (Figma multi-select model). When non-empty
-    // AND this element's id is in it, render the violet outline + resize
-    // handles. When only `selected === true` (no multi-selection context),
-    // the wrapper renders the legacy single-selection chrome.
+    // The full selection set (Figma multi-select model). When non-empty AND this element's id is in
+    // it, render the violet outline + resize handles. When only `selected === true` (no
+    // multi-selection context), the wrapper renders the legacy single-selection chrome.
     selectedIds?: string[]
     readonly?: boolean
-    // Current canvas zoom level (1.0 = 100%). When the canvas is
-    // CSS-scaled via `transform: scale(zoom)`, the cursor delta
-    // (screen-px) and the model's element coordinates (design-px)
+    // Current canvas zoom level (1.0 = 100%). When the canvas is CSS-scaled via `transform:
+    // scale(zoom)`, the cursor delta (screen-px) and the model's element coordinates (design-px)
     // differ — drag/resize math divides by zoom to keep them aligned.
     zoom?: number
-    // IDs needed to lazy-load the element's HTML body from the
-    // backend (the page+elements GET response excludes the body to
-    // keep payloads small). Defaults are empty so the component
-    // can mount without them; fetchHtml is a no-op when any is missing.
+    // IDs needed to lazy-load the element's HTML body from the backend (the page+elements GET
+    // response excludes the body to keep payloads small). Defaults are empty so the component can
+    // mount without them; fetchHtml is a no-op when any is missing.
     workspaceId?: string
     itemId?: string
     pageId?: string
@@ -102,12 +97,10 @@ const emit = defineEmits<{
   // Shift+click can toggle membership in the multi-selection Set
   // (Figma parity with the layers panel which already supports it).
   select: [payload: { elementId: string; additive: boolean }]
-  /**
-   * DEPRECATED — replaced by `translate` (move) and `resize` (Figma
+  /** DEPRECATED — replaced by `translate` (move) and `resize` (Figma
    * parity with the backend's POST /translate + POST /resize split —
    * see `docs/superpowers/plans/2026-08-06-split-move-resize.md`).
-   * Kept for back-compat; new callers MUST emit the typed events.
-   */
+   * Kept for back-compat; new callers MUST emit the typed events. */
   update: [patch: Partial<DesignElement>]
   /**
    * NEW (2026-08-06) — fires on every pointermove during a drag for
@@ -129,15 +122,12 @@ const emit = defineEmits<{
    * Replaces `update` for the move use case.
    */
   translate: [payload: { elementId: string; dx: number; dy: number }]
-  /**
-   * NEW (2026-08-06) — fires on every pointermove during a RESIZE
+  /** NEW (2026-08-06) — fires on every pointermove during a RESIZE
    * gesture (dragging one of the 8 resize handles). Payload carries
    * the absolute target `(x, y, width, height, rotation)` after
    * applying the cursor delta to the start geometry. Parent calls
    * `workspacesStore.resizeDesignElement` with this absolute patch.
-   *
-   * Replaces `update` for the resize use case.
-   */
+   * Replaces `update` for the resize use case. */
   resize: [patch: Partial<DesignElement>]
   // Chunk 2: when the user drags an element that's part of a
   // multi-selection, the WHOLE selection moves. The parent
@@ -150,10 +140,9 @@ const emit = defineEmits<{
   // parent can clear its snap guides. Fires after both the single-
   // element drag and the multi-selection group drag paths.
   dragEnd: []
-  // Undo/redo plan: emit on drag-start so the parent can capture
-  // pre-state for the eventual undo entry. Carries the moved
-  // ids so the parent can capture the full selection (not just
-  // this element).
+  // Undo/redo plan: emit on drag-start so the parent can capture pre-state for the eventual undo
+  // entry. Carries the moved ids so the parent can capture the full selection (not just this
+  // element).
   dragStart: [ids: string[]]
   htmlChanged: [html: string]
   delete: [elementId: string]
@@ -201,11 +190,9 @@ const isDragging = ref(false)
 // page elements (mirrored from the backend's `design_elements` array).
 const workspacesStore = useWorkspacesStore()
 
-// True when this element is nested inside a parent group/frame. The
-// backend's `COALESCE(parent_id, '')` returns '' for top-level rows,
-// non-empty for nested rows. Legacy / pre-migration shapes may
-// return `null` or `undefined` — both are treated as top-level so
-// legacy elements remain draggable.
+// True when this element is nested inside a parent group/frame. The backend's `COALESCE(parent_id,
+// '')` returns '' for top-level rows, non-empty for nested rows. Legacy / pre-migration shapes may
+// return `null` or `undefined` — both are treated as top-level so legacy elements remain draggable.
 const isChildOfGroup = computed(() => {
   const pid = props.element.parent_id
   return !!pid && pid !== ''
@@ -219,11 +206,9 @@ const isChildOfGroup = computed(() => {
 //   - the store doesn't have the workspace/item loaded
 //   - the parent can't be found in the elements array (orphan row)
 //
-// The reactivity means the parent is re-resolved when the page's
-// elements array changes (e.g. SSE `design_element_created` adds
-// the parent that this child references). For the common case
-// (the canvas is open + elements are fetched), the parent is found
-// on the first click.
+// The reactivity means the parent is re-resolved when the page's elements array changes (e.g. SSE
+// `design_element_created` adds the parent that this child references). For the common case (the
+// canvas is open + elements are fetched), the parent is found on the first click.
 const parentElement = computed<DesignElement | null>(() => {
   const pid = props.element.parent_id
   if (!pid || pid === '') return null
@@ -483,10 +468,9 @@ const startDrag = (event: PointerEvent, mode: DragMode): void => {
         target.releasePointerCapture(e.pointerId)
       }
       isDragging.value = false
-      // Trailing emit: capture the final position regardless of throttle.
-      // Use INCREMENTAL delta so the server's last ADD lands exactly
-      // on the cursor's end position. Without this the trailing emit
-      // would re-apply the FULL cumulative (compounding again).
+      // Trailing emit: capture the final position regardless of throttle. Use INCREMENTAL delta so
+      // the server's last ADD lands exactly on the cursor's end position. Without this the trailing
+      // emit would re-apply the FULL cumulative (compounding again).
       const incDx = pendingDx - lastEmittedDx
       const incDy = pendingDy - lastEmittedDy
       emit('groupDrag', { dx: incDx, dy: incDy })
@@ -574,9 +558,8 @@ const startDrag = (event: PointerEvent, mode: DragMode): void => {
     width: props.element.width,
     height: props.element.height,
   }
-  // Overwrite the drag:start:move info above with a more-specific
-  // reason (resize vs move) using `mode`. The earlier info line is
-  // a redundancy safety net in case this code path throws before
+  // Overwrite the drag:start:move info above with a more-specific reason (resize vs move) using
+  // `mode`. The earlier info line is a redundancy safety net in case this code path throws before
   // reaching here.
   designLogger.info({
     reason: mode === 'move' ? 'drag:start:move' : 'drag:start:resize',
@@ -813,10 +796,9 @@ onUpdated(() => {
 import { onUnmounted } from 'vue'
 
 const handleKeydown = (e: KeyboardEvent): void => {
-  // Chunk 2: gate on the full selection set, not just this element's
-  // `selected` flag. When the user has multi-selected several elements
-  // via Shift+click, hitting Delete should remove ALL of them — even
-  // though only ONE of them is the "active" one with `selected: true`.
+  // Chunk 2: gate on the full selection set, not just this element's `selected` flag. When the user
+  // has multi-selected several elements via Shift+click, hitting Delete should remove ALL of them —
+  // even though only ONE of them is the "active" one with `selected: true`.
   if (props.selectedIds.length === 0 && !props.selected) return
   if (props.readonly) return
   if (e.key !== 'Delete' && e.key !== 'Backspace') return

@@ -160,11 +160,9 @@ describe('VirtualScroller stable-key height cache', () => {
   })
 
   it('scrollToBottom targets the REAL content bottom when the model overshoots (blank-viewport fix)', async () => {
-    // The user's screenshot: sizer 29389px but the real rendered
-    // content was far shorter — stick-to-bottom computed from
-    // scrollHeight landed PAST the last row into blank space. With the
-    // real-bottom override, the stick targets topSpacer + rendered
-    // content height instead.
+    // The user's screenshot: sizer 29389px but the real rendered content was far shorter —
+    // stick-to-bottom computed from scrollHeight landed PAST the last row into blank space. With
+    // the real-bottom override, the stick targets topSpacer + rendered content height instead.
     const { wrapper, el } = mountKeyed(20)
     await nextTick()
 

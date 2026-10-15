@@ -1,8 +1,6 @@
-/**
- * Unit tests for the `api.testLlmProfile` function. Mocks `global.fetch`
+/** Unit tests for the `api.testLlmProfile` function. Mocks `global.fetch`
  * to assert URL, method, body, and response parsing without hitting the
- * network. Mirrors `apiDeleteProfile.spec.ts`.
- */
+ * network. Mirrors `apiDeleteProfile.spec.ts`. */
 import { afterEach, assert, describe, expect, it, vi } from 'vitest'
 
 import { testLlmProfile } from '../api'

@@ -168,10 +168,9 @@ describe('ChatView stacking containment — document overlay must cover the chat
     const column = wrapper!.element.querySelector('.chat-column') as HTMLElement
     expect(column).toBeTruthy()
 
-    // `position: relative` alone is NOT enough — with z-index auto it
-    // does not create a stacking context, which is precisely why the
-    // chat chrome used to paint over the document overlay. The `relative`
-    // class is here because the composer dock anchors to this column.
+    // `position: relative` alone is NOT enough — with z-index auto it does not create a stacking
+    // context, which is precisely why the chat chrome used to paint over the document overlay. The
+    // `relative` class is here because the composer dock anchors to this column.
     expect(column.classList.contains('relative')).toBe(true)
 
     // The scoped rule in the SFC is what actually opens the stacking
@@ -184,10 +183,9 @@ describe('ChatView stacking containment — document overlay must cover the chat
   })
 
   it('the isolation is declared in the stylesheet, not only in a test-visible class', () => {
-    // Guards against the class being dropped from the class attribute
-    // while the declaration is what actually does the work, and vice
-    // versa: the runtime check above needs the rule to EXIST, and the
-    // rule needs the element to CARRY it. Pin both ends.
+    // Guards against the class being dropped from the class attribute while the declaration is what
+    // actually does the work, and vice versa: the runtime check above needs the rule to EXIST, and
+    // the rule needs the element to CARRY it. Pin both ends.
     expect(chatColumnIsolation()).toBe('isolate')
   })
 
@@ -211,11 +209,9 @@ describe('ChatView stacking containment — document overlay must cover the chat
   })
 
   it('the chrome element named in the bug report is inside the chat column', async () => {
-    // Locks the blast radius to the composer dock — the element the
-    // screenshot showed sitting on top of the document. If a future
-    // refactor moves it OUT of the column it stops being contained, and
-    // the isolation stops covering it, so this must stay true for the
-    // fix to hold.
+    // Locks the blast radius to the composer dock — the element the screenshot showed sitting on
+    // top of the document. If a future refactor moves it OUT of the column it stops being
+    // contained, and the isolation stops covering it, so this must stay true for the fix to hold.
     await mountChat()
 
     const column = wrapper!.element.querySelector('.chat-column') as HTMLElement

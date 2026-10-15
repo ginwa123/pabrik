@@ -148,14 +148,12 @@ Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
 /** "1000 messages" — the volume half of the report. */
 const MESSAGE_COUNT = 1000
 
-/**
- * A body long enough to fill the viewport on its own when rendered — the
+/** A body long enough to fill the viewport on its own when rendered — the
  * "content can be height is very height until full screen" half. In jsdom this
  * does not lay out, but it IS the wire payload a tall bubble produces, and
  * the transcript here has to be the real shape for the handler paths under
  * test (reasoning sections, the streaming-row swap, message grouping) to be
- * the same code a reader hits.
- */
+ * the same code a reader hits. */
 const FULL_SCREEN_BODY = Array.from({ length: 40 }, (_, i) =>
   `Paragraph ${i} of a very long pasted log or diff body. `.repeat(12),
 ).join('\n\n')
@@ -232,10 +230,9 @@ async function mountChatView(
     attachTo: document.body,
     global: { provide: { processingState } },
   })
-  // The scroller's mount gate is `!isInitializing && (isLoading ||
-  // messageGroups.length > 0)`, and `isInitializing` only clears once the
-  // history load settles — so the scroller's presence IS the signal, and
-  // waiting on it turns a silent "never rendered" into one clear error.
+  // The scroller's mount gate is `!isInitializing && (isLoading || messageGroups.length > 0)`, and
+  // `isInitializing` only clears once the history load settles — so the scroller's presence IS the
+  // signal, and waiting on it turns a silent "never rendered" into one clear error.
   for (let i = 0; i < 100; i++) {
     await new Promise((r) => setTimeout(r, 40))
     await nextTick()
@@ -256,11 +253,8 @@ async function settle(ms = 250): Promise<void> {
   await nextTick()
 }
 
-/**
- * The app's own "is the reader at the bottom" answer, read from the DOM the
- * way a user would: the jump-to-bottom arrow is rendered under
- * `v-if="!isAtBottom && …"`, so it is the flag itself.
- */
+/**  * The app's own "is the reader at the bottom" answer, read from the DOM the way a user would: the
+ * jump-to-bottom arrow is rendered under `v-if="!isAtBottom && …"`, so it is the flag itself. */
 function stickDisarmed(wrapper: VueWrapper): boolean {
   return wrapper.find('.chat-scroll-to-bottom').exists()
 }

@@ -109,10 +109,9 @@ describe('stripMarkdownSyntax', () => {
   })
 
   it('does not inject a space where an inline token ends', () => {
-    // Regression: joining a paragraph's inline children with ' ' turned
-    // `**staging**, but skip 087` into `staging , but skip 087`, which
-    // then rendered in the ask_user header pill and the answer chip.
-    // Blocks are space-joined; inline tokens concatenate.
+    // Regression: joining a paragraph's inline children with ' ' turned `**staging**, but skip 087`
+    // into `staging , but skip 087`, which then rendered in the ask_user header pill and the answer
+    // chip. Blocks are space-joined; inline tokens concatenate.
     expect(stripMarkdownSyntax('**staging**, but skip `087`')).toBe('staging, but skip 087')
     expect(stripMarkdownSyntax('mirror `linux/window.zig` in `mac/render.zig`')).toBe(
       'mirror linux/window.zig in mac/render.zig',

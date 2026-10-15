@@ -58,16 +58,12 @@ const props = defineProps<{
   /** Explicit language override; defaults to the file extension. */
   language?: string
   cwd?: string
-  /**
-   * Optional 1-based line to jump to once the viewer mounts (threaded
-   * from the diff review's "open at this line" / `?line=` deep link).
-   * The target row is marked and scrolled to the middle of the viewport.
-   */
+  /**    * Optional 1-based line to jump to once the viewer mounts (threaded from the diff review's "open
+   * at this line" / `?line=` deep link). The target row is marked and scrolled to the middle of the
+   * viewport. */
   line?: number
-  /**
-   * Whole-file unified diff (`git diff -U<all>`). Drives the gutter bars,
-   * the Diff view, and the change navigator. Self-fetched when absent.
-   */
+  /** Whole-file unified diff (`git diff -U<all>`). Drives the gutter bars,
+   * the Diff view, and the change navigator. Self-fetched when absent. */
   diffText?: string
   /** Inline blame annotations. Self-fetched when absent. */
   blame?: LineBlame[]
@@ -206,10 +202,8 @@ const diffRowClass = (type: string): string => {
   return ''
 }
 
-/**
- * Bring a line into view. Best-effort: jsdom has no
- * `scrollIntoView`, and a `?line=` beyond EOF is simply ignored.
- */
+/** Bring a line into view. Best-effort: jsdom has no
+ * `scrollIntoView`, and a `?line=` beyond EOF is simply ignored. */
 async function scrollToLine(line: number | null): Promise<void> {
   if (line === null) return
   await nextTick()
@@ -235,10 +229,9 @@ function goToBlock(direction: 1 | -1): void {
   void scrollToLine(block.startLine)
 }
 
-// Annotation identity: file + cwd + content length + explicit props.
-// A change resets fetched state and re-fetches (prev-value guard on
-// update — same pattern the line/content scroll uses; mount covers the
-// initial load).
+// Annotation identity: file + cwd + content length + explicit props. A change resets fetched state
+// and re-fetches (prev-value guard on update — same pattern the line/content scroll uses; mount
+// covers the initial load).
 const annoKey = () =>
   `${props.filePath}|${props.cwd ?? ''}|${props.content?.length ?? 0}|${props.diffText ?? ''}|${props.blame ? 'b' : ''}`
 

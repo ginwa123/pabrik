@@ -121,19 +121,13 @@
  */
 export type SseState = 'connecting' | 'open' | 'reconnecting' | 'closed' | 'failed'
 
-/**
- * Side-channel info attached to every state emission. Lets UI
- * (and tests) distinguish "first error before open" from "Nth error
- * after open" without re-implementing the logic.
- */
+/**  * Side-channel info attached to every state emission. Lets UI (and tests) distinguish "first error
+ * before open" from "Nth error after open" without re-implementing the logic. */
 export interface SseStateInfo {
   /** 1 = first try, 2 = first retry, … */
   attempt: number
-  /**
-   * Set on `reconnecting`. The actual delay until the next attempt
-   * (after jitter), in ms. Tests use this to assert the backoff
-   * schedule deterministically.
-   */
+  /**    * Set on `reconnecting`. The actual delay until the next attempt (after jitter), in ms. Tests use
+   * this to assert the backoff schedule deterministically. */
   nextDelayMs?: number
   /** Set on `reconnecting` / `failed`. The `error` event from the ES. */
   lastError?: Event
@@ -246,71 +240,44 @@ export interface SseClientOptions {
    * payload can read it from there.
    */
   onConnected?: () => void
-  /**
-   * Fires on every state transition. Use it to drive a Vue ref
-   * for reactive UI (e.g. the `SseStatusBadge`).
-   */
+  /** Fires on every state transition. Use it to drive a Vue ref
+   * for reactive UI (e.g. the `SseStatusBadge`). */
   onStateChange?: (state: SseState, info: SseStateInfo) => void
-  /**
-   * Initial backoff for the *first* retry. Doubles each subsequent
-   * retry, capped at `maxDelayMs`. Default: 1 000 ms.
-   */
+  /** Initial backoff for the *first* retry. Doubles each subsequent
+   * retry, capped at `maxDelayMs`. Default: 1 000 ms. */
   baseDelayMs?: number
-  /**
-   * Upper bound on the backoff delay (after jitter). Default:
-   * 30 000 ms. The "Reconnecting…" badge can use this to give
-   * the user a sense of how long the next attempt will take.
-   */
+  /**    * Upper bound on the backoff delay (after jitter). Default: 30 000 ms. The "Reconnecting…" badge
+   * can use this to give the user a sense of how long the next attempt will take. */
   maxDelayMs?: number
-  /**
-   * Hard cap on reconnect attempts. After this many failed retries
+  /** Hard cap on reconnect attempts. After this many failed retries
    * (post-open), state becomes `failed` and no further retries
    * are scheduled. The first attempt does NOT count against this
    * cap (a 4xx on the first try already goes to `failed`
    * immediately). Default: `Infinity` (an SSE stream is expected
-   * to live the lifetime of the page).
-   */
+   * to live the lifetime of the page). */
   maxAttempts?: number
-  /**
-   * Random source for jitter. Override in tests to make the
-   * backoff schedule deterministic. Default: `Math.random`.
-   * Jitter formula: `delay = exp * (0.5 + 0.5 * random())`
-   * (full-jitter pattern, AWS-style).
-   */
+  /**    * Random source for jitter. Override in tests to make the backoff schedule deterministic.
+   * Default: `Math.random`. Jitter formula: `delay = exp * (0.5 + 0.5 * random())` (full-jitter
+   * pattern, AWS-style). */
   random?: () => number
-  /**
-   * Pause the retry timer while `document.hidden === true`.
-   * The retry fires immediately on `visibilitychange → visible`.
-   * Default: `true`. Set `false` for headless contexts or tests.
-   */
+  /**    * Pause the retry timer while `document.hidden === true`. The retry fires immediately on
+   * `visibilitychange → visible`. Default: `true`. Set `false` for headless contexts or tests. */
   pauseWhenHidden?: boolean
-  /**
-   * Reconnect immediately on the browser's `online` event. Default:
-   * `true`. The event target is `window` (override with
-   * `onlineTarget` for tests).
-   */
+  /**    * Reconnect immediately on the browser's `online` event. Default: `true`. The event target is
+   * `window` (override with `onlineTarget` for tests). */
   reconnectOnOnline?: boolean
-  /**
-   * Override the `EventSource` constructor. Default:
-   * `globalThis.EventSource`. Tests pass a mock factory here so
-   * they can fire synthetic `open` / `error` / `message` events
-   * without a real network.
-   */
+  /**    * Override the `EventSource` constructor. Default: `globalThis.EventSource`. Tests pass a mock
+   * factory here so they can fire synthetic `open` / `error` / `message` events without a real
+   * network. */
   EventSourceCtor?: typeof EventSource
-  /**
-   * Override the `visibilitychange` target. Default: `document`.
-   * Tests may pass a mock to control visibility.
-   */
+  /** Override the `visibilitychange` target. Default: `document`.
+   * Tests may pass a mock to control visibility. */
   visibilityTarget?: Pick<Document, 'addEventListener' | 'removeEventListener' | 'hidden'>
-  /**
-   * Override the `online` event target. Default: `window`. Tests
-   * may pass a mock to fire synthetic `online` events.
-   */
+  /** Override the `online` event target. Default: `window`. Tests
+   * may pass a mock to fire synthetic `online` events. */
   onlineTarget?: Pick<Window, 'addEventListener' | 'removeEventListener'>
-  /**
-   * Override `setTimeout` / `clearTimeout` for fake-timer tests.
-   * Default: the global `setTimeout` / `clearTimeout`.
-   */
+  /** Override `setTimeout` / `clearTimeout` for fake-timer tests.
+   * Default: the global `setTimeout` / `clearTimeout`. */
   setTimeoutFn?: typeof setTimeout
   clearTimeoutFn?: typeof clearTimeout
   /**
@@ -329,34 +296,23 @@ export interface SseClientOptions {
    * listeners) or in headless contexts that have no `window`.
    */
   closeOnUnload?: boolean
-  /**
-   * Override the `pagehide` / `beforeunload` event target.
-   * Default: `window`. Tests may pass a mock to fire synthetic
-   * unload events.
-   */
+  /**    * Override the `pagehide` / `beforeunload` event target. Default: `window`. Tests may pass a mock
+   * to fire synthetic unload events. */
   unloadTarget?: Pick<Window, 'addEventListener' | 'removeEventListener'>
-  /**
-   * The SSE event name that signals "the stream is live". The
-   * default `'connected'` matches the backend's convention; expose
-   * it for symmetry / future flexibility.
-   */
+  /**    * The SSE event name that signals "the stream is live". The default `'connected'` matches the
+   * backend's convention; expose it for symmetry / future flexibility. */
   connectedEventName?: string
-  /**
-   * Stall threshold in ms. While `state === 'open'`, if no event
+  /** Stall threshold in ms. While `state === 'open'`, if no event
    * (message / heartbeat / connected) arrives within this window,
    * the client treats the stream as silently dead and reconnects
    * (see `stallRecovery`). Default: 30_000 — well ABOVE the ~15s
    * backend keep-alive (`sse_manager.sendHeartbeat`), with margin
    * for timer jitter. A threshold below the heartbeat interval
    * guarantees false-positive reconnects on every idle window.
-   * Tests may pass a smaller value for determinism.
-   */
+   * Tests may pass a smaller value for determinism. */
   stallThresholdMs?: number
-  /**
-   * When true (default), a stall triggers `es.close()` +
-   * `scheduleRetry({ reason: 'stall' })` instead of only logging.
-   * Set false to restore log-only behaviour (e.g. for diagnosis).
-   */
+  /**    * When true (default), a stall triggers `es.close()` + `scheduleRetry({ reason: 'stall' })`
+   * instead of only logging. Set false to restore log-only behaviour (e.g. for diagnosis). */
   stallRecovery?: boolean
   /**
    * Max time in ms to wait for the server's `connected` handshake
@@ -399,17 +355,12 @@ export interface SseClient {
    */
   reconnect(reason?: string): void
   /**
-   * Synchronous read of the current state. Returns the most
-   * recently emitted state.
+   * Synchronous read of the current state. Returns the most recently emitted state. /
    */
   getState(): SseState
-  /**
-   * Subscribe to state transitions. Returns an unsubscribe
-   * function. Subscribers are NOT called for the state that was
-   * current at the time of subscription — only for transitions
-   * that happen AFTER subscribing. (If you need the current state
-   * at subscription time, call `getState()` too.)
-   */
+  /**    * Subscribe to state transitions. Returns an unsubscribe function. Subscribers are NOT called for
+   * the state that was current at the time of subscription — only for transitions that happen AFTER
+   * subscribing. (If you need the current state at subscription time, call `getState()` too.) */
   onStateChange(cb: (s: SseState, info: SseStateInfo) => void): () => void
 }
 
@@ -485,11 +436,9 @@ export function createSseClient(opts: SseClientOptions): SseClient {
   let lastEventBytes: number = 0
   let heartbeatCount: number = 0
   let eventCount: number = 0
-  // Stall detector: while state='open', if no event arrives within
-  // `stallThresholdMs` of the previous one, emit a warning so the
-  // operator can see "data stopped 10s ago" before the eventual
-  // onerror fires. Disabled by default; activated via the global
-  // toggle below.
+  // Stall detector: while state='open', if no event arrives within `stallThresholdMs` of the
+  // previous one, emit a warning so the operator can see "data stopped 10s ago" before the eventual
+  // onerror fires. Disabled by default; activated via the global toggle below.
   const stallDetectorOn: boolean =
     (globalThis as { __sseStallDetector?: boolean }).__sseStallDetector !== false
   const stallThresholdMs: number = opts.stallThresholdMs ?? 30_000 // 30s — well above the ~15s backend heartbeat
@@ -520,11 +469,9 @@ export function createSseClient(opts: SseClientOptions): SseClient {
   // because the user backgrounded the tab" — a common cause of
   // EventSource silence that is NOT a disconnect.
   let tabHiddenAtMs: number | null = null
-  // Tracks when the browser last fired the `offline` event. Cleared
-  // on `online`. Surfaced in the same diagnostic logs for the same
-  // reason — `navigator.onLine === false` is a stronger signal than
-  // "we haven't seen bytes in 19s" because it points squarely at the
-  // network layer.
+  // Tracks when the browser last fired the `offline` event. Cleared on `online`. Surfaced in the
+  // same diagnostic logs for the same reason — `navigator.onLine === false` is a stronger signal
+  // than "we haven't seen bytes in 19s" because it points squarely at the network layer.
   let navigatorOfflineAtMs: number | null = null
   // Capture the stack frame at the time the consumer called
   // `.close(reason?)` and `.reconnect(reason?)`. Surfaced in every
@@ -537,10 +484,9 @@ export function createSseClient(opts: SseClientOptions): SseClient {
   let lastReconnectReason: string | null = null
   let _lastReconnectCaller: string | null = null
   let lastReconnectAtMs: number | null = null
-  // Capture the constructor's caller frame so we can answer
-  // "who instantiated this SseClient?" — useful when several
-  // components share the bus and you want to know which one owns
-  // the long-lived stream.
+  // Capture the constructor's caller frame so we can answer "who instantiated this SseClient?" —
+  // useful when several components share the bus and you want to know which one owns the long-lived
+  // stream.
   const constructedAtCaller = (() => {
     const stack = new Error('sseClient::captureCaller').stack
     if (!stack) return '(no stack)'
@@ -600,11 +546,9 @@ export function createSseClient(opts: SseClientOptions): SseClient {
       sinceLastReconnectMs,
       sinceLastEventMs,
     } = snapshot
-    // User-code close is the strongest signal — if close() was
-    // called within the last few seconds, the disconnect is by
-    // definition intentional. We give this priority over network/
-    // backend so the operator doesn't see a confusing
-    // "backend/network" diagnosis for a deliberate close.
+    // User-code close is the strongest signal — if close() was called within the last few seconds,
+    // the disconnect is by definition intentional. We give this priority over network/ backend so
+    // the operator doesn't see a confusing "backend/network" diagnosis for a deliberate close.
     if (sinceLastCloseMs !== null && sinceLastCloseMs < 5_000) {
       return 'user-code'
     }
@@ -612,11 +556,9 @@ export function createSseClient(opts: SseClientOptions): SseClient {
     if (networkOnline === false) {
       return 'network'
     }
-    // Tab hidden AND the stall started AFTER the hide transition —
-    // browser throttled the connection. Excludes the case where the
-    // tab was hidden for hours before the stall started, which is
-    // unlikely in practice but flagged as 'unknown' below if it does
-    // happen.
+    // Tab hidden AND the stall started AFTER the hide transition — browser throttled the
+    // connection. Excludes the case where the tab was hidden for hours before the stall started,
+    // which is unlikely in practice but flagged as 'unknown' below if it does happen.
     if (hidden !== null && now() - hidden < sinceLastEventMs + 5_000) {
       return 'browser'
     }
@@ -687,10 +629,9 @@ export function createSseClient(opts: SseClientOptions): SseClient {
       // No event in stallThresholdMs while we should be open. Log it.
       const sinceLast = lastEventAt !== null ? now() - lastEventAt : -1
       const readiness = ['CONNECTING', 'OPEN', 'CLOSED'][es?.readyState ?? 0] ?? 'UNKNOWN'
-      // `navigator.onLine` may be missing (jsdom without the polyfill,
-      // SSR without a Navigator) — fall back to a boolean rather than
-      // letting `undefined` propagate, which JSON.stringify would strip
-      // out of the log payload and confuse the operator.
+      // `navigator.onLine` may be missing (jsdom without the polyfill, SSR without a Navigator) —
+      // fall back to a boolean rather than letting `undefined` propagate, which JSON.stringify
+      // would strip out of the log payload and confuse the operator.
       const networkOnline: boolean | null =
         typeof navigator === 'undefined'
           ? null
@@ -737,9 +678,8 @@ export function createSseClient(opts: SseClientOptions): SseClient {
         suspect,
         navigatorOnline: networkOnline,
         tabHiddenAtMs,
-        // `sinceLastUserActionMs` makes it easy to correlate this
-        // stall with a route change, a click, a navigation, etc. The
-        // operator can cross-reference the value with browser
+        // `sinceLastUserActionMs` makes it easy to correlate this stall with a route change, a
+        // click, a navigation, etc. The operator can cross-reference the value with browser
         // DevTools timeline.
         sinceLastCloseMs: lastCloseAtMs !== null ? Math.round(now() - lastCloseAtMs) : null,
         sinceLastReconnectMs:
@@ -747,10 +687,9 @@ export function createSseClient(opts: SseClientOptions): SseClient {
         lastCloseReason,
         lastReconnectReason,
         constructedBy: constructedAtCaller,
-        // `conclusion` is the operator's TL;DR — one sentence that
-        // tells them what we think happened. Composed from the same
-        // snapshot via `formatConclusion` so the STALL DETECTED and
-        // DISCONNECT DIAGNOSIS conclusions are consistent.
+        // `conclusion` is the operator's TL;DR — one sentence that tells them what we think
+        // happened. Composed from the same snapshot via `formatConclusion` so the STALL DETECTED
+        // and DISCONNECT DIAGNOSIS conclusions are consistent.
         conclusion: formatConclusion(suspect, {
           readiness,
           networkOnline,
@@ -782,18 +721,14 @@ export function createSseClient(opts: SseClientOptions): SseClient {
     }, stallThresholdMs)
   }
 
-  // Fires from `handleError` (the 'onerror' path) and from
-  // `onPageHide` (the page-unload path) — but ONLY on the
-  // onerror path. Synthesizes every signal we have into one log so
-  // the operator can answer "was this the backend, the frontend,
-  // or the network?" by reading a single line.
+  // Fires from `handleError` (the 'onerror' path) and from `onPageHide` (the page-unload path) —
+  // but ONLY on the onerror path. Synthesizes every signal we have into one log so the operator can
+  // answer "was this the backend, the frontend, or the network?" by reading a single line.
   function logDisconnectDiagnosis(reason: 'error-event' | 'page-unload' | 'non-recoverable'): void {
     const sinceLast = lastEventAt !== null ? now() - lastEventAt : -1
-    // Use the readiness captured at stall-time if available —
-    // that's the smoking gun. The current readiness is typically
-    // CONNECTING (browser is in its internal retry state) which
-    // would mislead the classifier. Falls back to current
-    // readiness if no stall ever fired.
+    // Use the readiness captured at stall-time if available — that's the smoking gun. The current
+    // readiness is typically CONNECTING (browser is in its internal retry state) which would
+    // mislead the classifier. Falls back to current readiness if no stall ever fired.
     const readiness =
       stallFiredAtReadiness ?? ['CONNECTING', 'OPEN', 'CLOSED'][es?.readyState ?? 0] ?? 'UNKNOWN'
     const networkOnline =
@@ -817,9 +752,8 @@ export function createSseClient(opts: SseClientOptions): SseClient {
     log('DISCONNECT DIAGNOSIS', {
       // Top-level signal — what we think caused this.
       suspect,
-      // Why we're logging the diagnosis. 'error-event' = the browser
-      // fired EventSource.onerror. 'page-unload' = we're tearing
-      // down because the user is leaving. 'non-recoverable' = the
+      // Why we're logging the diagnosis. 'error-event' = the browser fired EventSource.onerror.
+      // 'page-unload' = we're tearing down because the user is leaving. 'non-recoverable' = the
       // server returned a 4xx/5xx on the first attempt.
       reason,
       // EventSource lifecycle state at the moment of diagnosis.
@@ -891,10 +825,9 @@ export function createSseClient(opts: SseClientOptions): SseClient {
   // must NOT reset this — a stream that pings without handshaking
   // is exactly the hang this guards against.
   const connectedTimeoutMs: number = opts.connectedTimeoutMs ?? 15_000
-  // Heartbeat data to silently drop from the default 'message' event.
-  // Default: 'ping' (matches sse_manager.sendHeartbeat's literal
-  // `data: ping\n\n`). `null` disables the filter entirely — see the
-  // `heartbeatData` option doc for why this exists.
+  // Heartbeat data to silently drop from the default 'message' event. Default: 'ping' (matches
+  // sse_manager.sendHeartbeat's literal `data: ping\n\n`). `null` disables the filter entirely —
+  // see the `heartbeatData` option doc for why this exists.
   const heartbeatData: string | null =
     opts.heartbeatData === undefined ? 'ping' : opts.heartbeatData
   // Deduplicated list of custom named event types the consumer wants
@@ -940,18 +873,16 @@ export function createSseClient(opts: SseClientOptions): SseClient {
   function emitState(next: SseState, info: SseStateInfo): void {
     state = next
     if (next !== 'open') {
-      // Clear the stall detector when leaving 'open' — otherwise its
-      // setTimeout keeps the timer count non-zero in tests and
-      // could fire a misleading STALL warning while we're already in
+      // Clear the stall detector when leaving 'open' — otherwise its setTimeout keeps the timer
+      // count non-zero in tests and could fire a misleading STALL warning while we're already in
       // 'reconnecting' / 'failed' / 'closed'.
       if (stallTimer !== null) {
         clearTimeoutFn(stallTimer)
         stallTimer = null
       }
-      // 'open' is logged by the 'connected' event listener at the
-      // exact moment we receive the server handshake (more
-      // diagnostic value than logging every state transition once
-      // the connection is stable).
+      // 'open' is logged by the 'connected' event listener at the exact moment we receive the
+      // server handshake (more diagnostic value than logging every state transition once the
+      // connection is stable).
       log('state', {
         next,
         attempt: info.attempt,
@@ -963,10 +894,9 @@ export function createSseClient(opts: SseClientOptions): SseClient {
       try {
         cb(next, info)
       } catch (err) {
-        // A buggy subscriber must not poison the others or the
-        // connection. Log to console.error (not throw) so the
-        // surface stays usable in dev. Production code is
-        // expected to be careful; this is just defense-in-depth.
+        // A buggy subscriber must not poison the others or the connection. Log to console.error
+        // (not throw) so the surface stays usable in dev. Production code is expected to be
+        // careful; this is just defense-in-depth.
         console.error('[SseClient] onStateChange subscriber threw:', err)
       }
     }
@@ -991,9 +921,8 @@ export function createSseClient(opts: SseClientOptions): SseClient {
     connectedTimer = setTimeoutFn(() => {
       connectedTimer = null
       if (closed) return
-      // The stream is alive enough to hold the socket but never
-      // handshook (or died before handshaking). Route through the
-      // normal error path so first-attempt hangs land in 'failed'
+      // The stream is alive enough to hold the socket but never handshook (or died before
+      // handshaking). Route through the normal error path so first-attempt hangs land in 'failed'
       // (badge shows Retry) and post-open hangs back off.
       log('connected timeout', { attempt, connectedTimeoutMs })
       handleError({ reason: 'error' })
@@ -1068,10 +997,9 @@ export function createSseClient(opts: SseClientOptions): SseClient {
         bytes: raw.length,
         eventCount,
         heartbeatCount,
-        // NEW (sse-disconnect-diagnosis): include the time since
-        // the last close/reconnect so the operator can see the
-        // duration of the gap. Useful for diagnosing "the app
-        // was closed for X minutes — was the reconnect prompt?".
+        // NEW (sse-disconnect-diagnosis): include the time since the last close/reconnect so the
+        // operator can see the duration of the gap. Useful for diagnosing "the app was closed for X
+        // minutes — was the reconnect prompt?".
         sinceLastCloseMs: lastCloseAtMs !== null ? Math.round(now() - lastCloseAtMs) : null,
         sinceLastReconnectMs:
           lastReconnectAtMs !== null ? Math.round(now() - lastReconnectAtMs) : null,
@@ -1167,11 +1095,9 @@ export function createSseClient(opts: SseClientOptions): SseClient {
         // here is the smoking gun: the browser thinks the SSE
         // endpoint is gone.
         readyStateLabel: ['CONNECTING', 'OPEN', 'CLOSED'][instance.readyState] ?? 'UNKNOWN',
-        // Time since the last received event — the most important
-        // diagnostic field. If this is ~0ms, the connection died
-        // mid-stream. If it's ~5000ms, the heartbeat just stopped
-        // arriving. If it's ~15000ms or larger, an idle/keep-alive
-        // timeout fired.
+        // Time since the last received event — the most important diagnostic field. If this is
+        // ~0ms, the connection died mid-stream. If it's ~5000ms, the heartbeat just stopped
+        // arriving. If it's ~15000ms or larger, an idle/keep-alive timeout fired.
         sinceLastEventMs,
         lastEventKind,
         heartbeatCount,
@@ -1188,10 +1114,9 @@ export function createSseClient(opts: SseClientOptions): SseClient {
         // this is typically ~12s.
         wasStalledBefore: stallFiredAt !== null,
         stallToErrorMs,
-        // NEW (sse-disconnect-diagnosis): tab visibility at error
-        // time. Browsers throttle backgrounded tabs, so a hidden
-        // tab + silence is much less alarming than a visible tab
-        // + silence.
+        // NEW (sse-disconnect-diagnosis): tab visibility at error time. Browsers throttle
+        // backgrounded tabs, so a hidden tab + silence is much less alarming than a visible tab +
+        // silence.
         tabHiddenAtMs,
       })
     })
@@ -1225,10 +1150,9 @@ export function createSseClient(opts: SseClientOptions): SseClient {
     if (closed) return
     clearConnectedTimer()
 
-    // Close the dead EventSource so it cannot fire onerror again.
-    // Browsers fire onerror both on the initial error AND on every
-    // internal retry attempt — we want exactly one error → one
-    // attempt counter increment.
+    // Close the dead EventSource so it cannot fire onerror again. Browsers fire onerror both on the
+    // initial error AND on every internal retry attempt — we want exactly one error → one attempt
+    // counter increment.
     if (es) {
       log('es.close() before handleError path', { attempt, infoReason: info.reason })
       try {
@@ -1239,17 +1163,14 @@ export function createSseClient(opts: SseClientOptions): SseClient {
       es = null
     }
 
-    // First-attempt failure (4xx/5xx, DNS error, etc.) is NOT
-    // recoverable by retrying. The server actively rejected us
-    // (or the URL is wrong). Going into a backoff loop here would
-    // just hammer the server.
+    // First-attempt failure (4xx/5xx, DNS error, etc.) is NOT recoverable by retrying. The server
+    // actively rejected us (or the URL is wrong). Going into a backoff loop here would just hammer
+    // the server.
     log('handleError branch', { hasBeenOpen, attempt, infoReason: info.reason })
     if (!hasBeenOpen) {
-      // NEW (sse-disconnect-diagnosis): fire the comprehensive
-      // diagnosis log on the terminal 'failed' path too, so the
-      // operator sees one log line answering "why did the very
-      // first attempt fail?". Uses reason 'non-recoverable' so
-      // downstream tooling can branch on it.
+      // NEW (sse-disconnect-diagnosis): fire the comprehensive diagnosis log on the terminal
+      // 'failed' path too, so the operator sees one log line answering "why did the very first
+      // attempt fail?". Uses reason 'non-recoverable' so downstream tooling can branch on it.
       logDisconnectDiagnosis(info.reason === 'non-recoverable' ? 'non-recoverable' : 'error-event')
       emitState('failed', {
         attempt,
@@ -1286,11 +1207,9 @@ export function createSseClient(opts: SseClientOptions): SseClient {
     if (closed) return
     clearRetry()
 
-    // While the tab is hidden, do not burn battery or hit the
-    // server with retries. Wait for visibilitychange → visible
-    // to fire `start()` instead. Tests that need to bypass this
-    // can set `pauseWhenHidden: false` and pre-set
-    // `visibilityTarget.hidden = false` (jsdom default).
+    // While the tab is hidden, do not burn battery or hit the server with retries. Wait for
+    // visibilitychange → visible to fire `start()` instead. Tests that need to bypass this can set
+    // `pauseWhenHidden: false` and pre-set `visibilityTarget.hidden = false` (jsdom default).
     if (pauseWhenHidden && visibilityTarget && visibilityTarget.hidden) {
       log('scheduleRetry paused (tab hidden)', { reason: reasonInfo.reason })
       emitState('reconnecting', {
@@ -1300,12 +1219,9 @@ export function createSseClient(opts: SseClientOptions): SseClient {
       return
     }
 
-    // Exponential backoff, full jitter (AWS pattern).
-    //   exp = min(base * 2^(n-1), max)
-    //   jitter = 0.5 + 0.5 * random()   // range [0.5, 1.0)
-    //   delay = exp * jitter
-    // With base=1s, max=30s, attempt=1, random=0.5:
-    //   exp = 1000, jitter = 0.75, delay = 750 ms
+    // Exponential backoff, full jitter (AWS pattern). exp = min(base * 2^(n-1), max) jitter = 0.5 +
+    // 0.5 * random() // range [0.5, 1.0) delay = exp * jitter With base=1s, max=30s, attempt=1,
+    // random=0.5: exp = 1000, jitter = 0.75, delay = 750 ms
     const exp = Math.min(baseDelayMs * 2 ** (attempt - 1), maxDelayMs)
     const jitter = 0.5 + 0.5 * random()
     const delay = exp * jitter
@@ -1374,9 +1290,8 @@ export function createSseClient(opts: SseClientOptions): SseClient {
     }
   }
 
-  // NEW (sse-disconnect-diagnosis): 'offline' listener. Tracks
-  // when the browser reported the network as down. Surfaced in
-  // every diagnostic log as `navigatorOfflineAtMs` (and surfaced
+  // NEW (sse-disconnect-diagnosis): 'offline' listener. Tracks when the browser reported the
+  // network as down. Surfaced in every diagnostic log as `navigatorOfflineAtMs` (and surfaced
   // inline as `navigatorOnline: false` for direct read).
   function onOffline(): void {
     if (closed) return
@@ -1422,11 +1337,9 @@ export function createSseClient(opts: SseClientOptions): SseClient {
     unloadTarget.addEventListener('beforeunload', onPageHide)
   }
 
-  // Wire the optional `opts.onStateChange` into the same
-  // subscriber set the `.onStateChange(cb)` method uses. This
-  // way the two entry points are equivalent and a throwing
-  // opts.onStateChange is caught by the same try/catch in
-  // `emitState` (it cannot break the connection).
+  // Wire the optional `opts.onStateChange` into the same subscriber set the `.onStateChange(cb)`
+  // method uses. This way the two entry points are equivalent and a throwing opts.onStateChange is
+  // caught by the same try/catch in `emitState` (it cannot break the connection).
   if (opts.onStateChange) {
     subscribers.add(opts.onStateChange)
   }
@@ -1451,11 +1364,9 @@ export function createSseClient(opts: SseClientOptions): SseClient {
   // later than before, but still before any reconnect could fire).
   setTimeout(start, 0)
 
-  // Shared cleanup path. Called by both the public `.close()`
-  // method and the `pagehide` / `beforeunload` listener. Idempotent
-  // (the `closed` guard at the top makes repeat calls a no-op),
-  // so it is safe to call from a stale unload handler after
-  // `.close()` has already been invoked.
+  // Shared cleanup path. Called by both the public `.close()` method and the `pagehide` /
+  // `beforeunload` listener. Idempotent (the `closed` guard at the top makes repeat calls a no-op),
+  // so it is safe to call from a stale unload handler after `.close()` has already been invoked.
   function teardown(): void {
     if (closed) return
     closed = true

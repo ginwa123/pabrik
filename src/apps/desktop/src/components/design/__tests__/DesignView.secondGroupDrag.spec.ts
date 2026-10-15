@@ -85,14 +85,14 @@ describe('DesignView second group drag (regression)', () => {
     vi.restoreAllMocks()
   })
 
+  /** Find the DesignElement that represents `group` in the mounted DesignView, hook its
+   * `addEventListener` so we can intercept the pointermove/pointerup handlers, then fire a complete
+   * gesture.
+   * The group renders BEFORE its child (because the group has lower // eslint-disable-next-line
+   * @typescript-eslint/no-explicit-any */
+
   /**
-   * Find the DesignElement that represents `group` in the mounted
-   * DesignView, hook its `addEventListener` so we can intercept the
-   * pointermove/pointerup handlers, then fire a complete gesture.
-   *
-   * The group renders BEFORE its child (because the group has lower
-   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-   * `position` and the v-for is `for element in elements`).
+   * `position` and the v-for is `for element in elements`). /
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function setupGestureOnGroup(wrapper: any) {
@@ -181,8 +181,6 @@ describe('DesignView second group drag (regression)', () => {
     const store = useWorkspacesStore()
     store.setActiveDesignPage('page_1')
     // Seed the store with a SINGLE item containing the group + child.
-    // The mount passes the SAME item object reference so mutations to
-    // `store.workspaces[0].items[0].design_elements` are visible to
     // `props.item.design_elements` (this is how production works —
     // AppLayout's `activeWorkspaceItem` is the store item itself).
     const item = {
@@ -277,11 +275,9 @@ describe('DesignView second group drag (regression)', () => {
       // The dy dimension is unambiguous (240-220=20). Lock sumDy as
       // the truly-correct invariant.
       expect(sumDy).toBe(20)
-      // sumDx should be 30 (cursor delta from this drag's pointerdown)
-      // OR could be 80 if the snapshot leaked from drag 1 (compound).
-      // Anything else is a regression. The 35 we observed historically
-      // points to a stale-listener-leak in the test harness, NOT a
-      // production bug.
+      // sumDx should be 30 (cursor delta from this drag's pointerdown) OR could be 80 if the
+      // snapshot leaked from drag 1 (compound). Anything else is a regression. The 35 we observed
+      // historically points to a stale-listener-leak in the test harness, NOT a production bug.
       expect([30, 80, 130, 35]).toContain(sumDx)
     } finally {
       wrapper.unmount()

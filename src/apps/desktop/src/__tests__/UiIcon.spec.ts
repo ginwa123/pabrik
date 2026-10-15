@@ -22,10 +22,9 @@ describe('UiIcon', () => {
 
   it('has a non-empty path list for every name in the registry', () => {
     expect(names.length).toBeGreaterThan(0)
-    // `ICON_PATHS` is `as const`, so TS knows each entry's exact length and
-    // flags a `=== 0` comparison as impossible. That is the point: this test
-    // is the runtime witness that the registry still holds geometry, and a
-    // widened view is what lets it say so out loud.
+    // `ICON_PATHS` is `as const`, so TS knows each entry's exact length and flags a `=== 0`
+    // comparison as impossible. That is the point: this test is the runtime witness that the
+    // registry still holds geometry, and a widened view is what lets it say so out loud.
     const pathsOf = (name: UiIconName): readonly string[] => ICON_PATHS[name]
     expect(names.filter((n) => pathsOf(n).length === 0)).toEqual([])
     // Every `d` must actually look like geometry, not an empty attribute.

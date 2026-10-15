@@ -151,10 +151,9 @@ describe('kanbanSse — mirror local task on move/assign/unassign (fix duplicate
   it('moved event: mirrors local task column_id to the destination BEFORE refresh resolves', async () => {
     const { ws, wsId, itemId, taskId } = seedKanbanWithTask({})
 
-    // Spy on refreshTask but DON'T resolve immediately so we can
-    // observe the local state between dispatch and refresh resolution.
-    // Definite-assignment assertion on the resolve callback because
-    // the inner closure assigns before the outer code reads it.
+    // Spy on refreshTask but DON'T resolve immediately so we can observe the local state between
+    // dispatch and refresh resolution. Definite-assignment assertion on the resolve callback
+    // because the inner closure assigns before the outer code reads it.
     let resolveRefresh!: () => void
     const refreshSpy = vi.spyOn(ws, 'refreshTask').mockImplementation(
       () =>
@@ -182,9 +181,8 @@ describe('kanbanSse — mirror local task on move/assign/unassign (fix duplicate
     expect(refreshSpy).toHaveBeenCalledWith(wsId, itemId, taskId)
     expect(fetchSpy).not.toHaveBeenCalled()
 
-    // The local task's column_id was mirrored to 'colB' BEFORE the
-    // awaited refresh resolves — this is the fix. Pre-fix this would
-    // still be 'colA' and the subsequent merge would duplicate the
+    // The local task's column_id was mirrored to 'colB' BEFORE the awaited refresh resolves — this
+    // is the fix. Pre-fix this would still be 'colA' and the subsequent merge would duplicate the
     // task.
     const localTask = ws.workspaces[0]!.items[0]!.tasks!.find((t) => t.id === taskId)!
     expect(localTask.kanban_column_id).toBe('colB')
@@ -294,10 +292,9 @@ describe('kanbanSse — mirror local task on move/assign/unassign (fix duplicate
     // the unassigned state AND the source column (visible duplicate).
     const { ws, wsId, itemId, taskId } = seedKanbanWithTask({})
 
-    // The unassigned branch fires fetchKanbanTasksForAllColumns which
-    // iterates each column and re-fetches. Mock api.getTasks to return
-    // an empty list for every column — the task is unassigned, so the
-    // server returns it nowhere.
+    // The unassigned branch fires fetchKanbanTasksForAllColumns which iterates each column and
+    // re-fetches. Mock api.getTasks to return an empty list for every column — the task is
+    // unassigned, so the server returns it nowhere.
     vi.spyOn(api, 'getTasks').mockResolvedValue({
       tasks: [],
       has_more: false,
@@ -480,11 +477,9 @@ describe('kanbanSse — mirror local task on move/assign/unassign (fix duplicate
   })
 
   it('moved event: mirror slots the card at new_position among destination cards', async () => {
-    // colB already holds [t2, t3]; the agent moves task_1 from colA
-    // to colB position 1. The mirror must splice the card between
-    // t2 and t3 (display order IS array order — cardsInColumn just
-    // filters), so the board is correct with zero network beyond
-    // the single-row refresh.
+    // colB already holds [t2, t3]; the agent moves task_1 from colA to colB position 1. The mirror
+    // must splice the card between t2 and t3 (display order IS array order — cardsInColumn just
+    // filters), so the board is correct with zero network beyond the single-row refresh.
     const { ws, wsId, itemId, taskId } = seedKanbanWithTask({
       extraTasks: [
         { id: 't2', columnId: 'colB' },

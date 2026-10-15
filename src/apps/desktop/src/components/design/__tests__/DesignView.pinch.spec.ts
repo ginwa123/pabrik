@@ -56,14 +56,12 @@ const ITEM = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 } as any
 
-/**
- * jsdom 29 doesn't implement `setPointerCapture` / `releasePointerCapture`
+/** jsdom 29 doesn't implement `setPointerCapture` / `releasePointerCapture`
  * / `hasPointerCapture` on HTMLElement. The native browser equivalents
  * require a real pointer-id-to-element binding that jsdom can't model.
  * We stub them to no-ops so the Vue handlers don't crash; the
  * pointer-state-tracking we actually want to test lives in the
- * `pinchPointers` Map inside the component.
- */
+ * `pinchPointers` Map inside the component. */
 function stubPointerCapture(el: HTMLElement): void {
   el.setPointerCapture = () => {}
   el.releasePointerCapture = () => {}
@@ -181,10 +179,9 @@ describe('DesignView pinch-to-zoom (Pointer Events)', () => {
         .element as HTMLElement
       stubPointerCapture(container)
 
-      // Two pointerdowns with pointerType='mouse' should NOT trigger
-      // any zoom — there's no third finger, just a single mouse button
-      // doing double duty. (Real mice can't pinch; this guards against
-      // accidentally firing the handler on a phantom 2nd mouse click.)
+      // Two pointerdowns with pointerType='mouse' should NOT trigger any zoom — there's no third
+      // finger, just a single mouse button doing double duty. (Real mice can't pinch; this guards
+      // against accidentally firing the handler on a phantom 2nd mouse click.)
       container.dispatchEvent(new PointerEvent('pointerdown', {
         pointerId: 1, pointerType: 'mouse',
         clientX: 200, clientY: 200, bubbles: true,
@@ -242,10 +239,9 @@ describe('DesignView pinch-to-zoom (Pointer Events)', () => {
         .element as HTMLElement
       stubPointerCapture(elementEl)
 
-      // Dispatch on the element so the bubbling pointerdown reaches
-      // the container with `event.target === elementEl`. The handler
-      // walks `target.closest('[data-design-element]')` → matches →
-      // bails before adding the pointer to pinchPointers.
+      // Dispatch on the element so the bubbling pointerdown reaches the container with
+      // `event.target === elementEl`. The handler walks `target.closest('[data-design-element]')` →
+      // matches → bails before adding the pointer to pinchPointers.
       elementEl.dispatchEvent(new PointerEvent('pointerdown', {
         pointerId: 10, pointerType: 'touch',
         clientX: 150, clientY: 150, bubbles: true,

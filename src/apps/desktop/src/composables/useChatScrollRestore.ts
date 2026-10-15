@@ -98,14 +98,11 @@ export function useChatScrollRestore(
   resolveBottomEdge?: (container: HTMLElement) => number,
 ): {
   restore: () => number | null
-  /**
-   * Whether a restoreable value is stored, judged WITHOUT the container.
-   *
+  /** Whether a restoreable value is stored, judged WITHOUT the container.
    * `restore()` cannot answer this: it returns `null` both for "nothing
    * saved" and for "the container is not scrollable yet", and the caller must
    * treat those two differently — fall through to the bottom immediately
-   * versus wait for the scroller to measure. See the header note.
-   */
+   * versus wait for the scroller to measure. See the header note. */
   hasSavedPosition: () => boolean
   restorePosition: (value: number) => void
 } {
@@ -206,11 +203,9 @@ export function useChatScrollRestore(
   })
 
   async function attachListenersWhenScrollable(el: HTMLElement): Promise<void> {
-    // VirtualScroller takes ~100ms to measure items after mount.
-    // Wait for `scrollHeight > clientHeight` so restore() can compute
-    // a meaningful max. If the chat is empty / not scrollable, fall
-    // through and attach anyway — the listener still serves future
-    // scrolls.
+    // VirtualScroller takes ~100ms to measure items after mount. Wait for `scrollHeight >
+    // clientHeight` so restore() can compute a meaningful max. If the chat is empty / not
+    // scrollable, fall through and attach anyway — the listener still serves future scrolls.
     const start = Date.now()
     while (Date.now() - start < 500) {
       if (el.scrollHeight > el.clientHeight) break
@@ -239,22 +234,18 @@ export function useChatScrollRestore(
     if (!el) return null
     const max = el.scrollHeight - el.clientHeight
     if (max <= 0) return null
-    // "Near bottom" branch: if the saved position is within
-    // BOTTOM_THRESHOLD_PX of the bottom edge, treat as "still at bottom"
-    // → let the caller fall through to scrollToBottom. The edge is the
+    // "Near bottom" branch: if the saved position is within BOTTOM_THRESHOLD_PX of the bottom edge,
+    // treat as "still at bottom" → let the caller fall through to scrollToBottom. The edge is the
     // caller's, not the DOM's — see `resolveBottomEdge`.
     if (savedScrollTop >= bottomEdgeOf(el) - BOTTOM_THRESHOLD_PX) return null
     return savedScrollTop
   }
 
-  /**
-   * True when localStorage holds a positive value for the current key.
-   *
+  /** True when localStorage holds a positive value for the current key.
    * Deliberately reads NOTHING from the container: the question is "did this
    * reader ever leave a position behind?", which is a fact about storage, not
    * about layout. Answering it from `restore()` instead would make a
-   * not-yet-measured scroller look like "nothing to restore".
-   */
+   * not-yet-measured scroller look like "nothing to restore". */
   const hasSavedPosition = (): boolean =>
     savedScrollTop !== null && savedScrollTop > 0
 

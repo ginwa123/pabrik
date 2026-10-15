@@ -46,17 +46,14 @@ const agentChatViewSrc = templateOf(src('AgentChatView.vue'))
 const standardTaskChatViewSrc = templateOf(src('StandardTaskChatView.vue'))
 const appBarSrc = src('ChatAppBar.vue')
 
-/**
- * The bar's rendered markup, normalised. Vue leaves `<!--v-if-->`
- * markers where a slot rendered nothing, and the indentation of a
- * slotted-but-empty `extras` differs from an absent slot — neither is
- * a visual difference, so both are stripped before comparing.
- */
+/**  * The bar's rendered markup, normalised. Vue leaves `<!--v-if-->` markers where a slot rendered
+ * nothing, and the indentation of a slotted-but-empty `extras` differs from an absent slot —
+ * neither is a visual difference, so both are stripped before comparing. */
 const barHtml = (w: { get: (s: string) => { html: () => string } }) =>
   templateOf(w.get('[data-testid="chat-app-bar"]').html()).replace(/>\s+</g, '><').trim()
 
 // ─── A ChatView stand-in that honours the real showHeader contract ──────────
-//
+
 // It renders the REAL ChatAppBar (so the assertions below run against
 // the shipped bar, not a copy) and re-emits `close` from the bar's ✕,
 // exactly like ChatView does.
@@ -95,10 +92,9 @@ describe('app-bar parity — the three workspace-item chat modes', () => {
   })
 
   it('the visual contract lives in exactly one file', () => {
-    // The four things that made the three bars look different: the
-    // height, the padding, the background token, the border. They are
-    // declared once, in ChatAppBar.vue — no host re-declares any of
-    // them, so a mode cannot opt out of the shared look.
+    // The four things that made the three bars look different: the height, the padding, the
+    // background token, the border. They are declared once, in ChatAppBar.vue — no host re-declares
+    // any of them, so a mode cannot opt out of the shared look.
     for (const token of ['h-11', 'px-3', '--semantic-sidebar-bg', 'border-bottom']) {
       expect(appBarSrc).toContain(token)
       expect(agentChatViewSrc).not.toContain(token)

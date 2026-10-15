@@ -31,11 +31,9 @@ vi.mock('@/api', async (importOriginal) => {
 
 const searchFilesMock = api.searchFiles as unknown as ReturnType<typeof vi.fn>
 
-/**
- * Mock `api.searchFiles` with pre-ranked server rows (Task 2: the server
- * owns ranking now — the old N-sequential-fetch full-tree walk via raw
- * `fetch` is deleted). Each test sets the rows its query should return.
- */
+/**  * Mock `api.searchFiles` with pre-ranked server rows (Task 2: the server owns ranking now — the old
+ * N-sequential-fetch full-tree walk via raw `fetch` is deleted). Each test sets the rows its query
+ * should return. */
 function mockSearchResults(
   entries: Array<{ name: string; path: string; is_directory: boolean }>,
 ) {
@@ -44,12 +42,9 @@ function mockSearchResults(
   })
 }
 
-/**
- * Set the textarea's value and explicitly position the cursor at the
- * end, then dispatch `input` so the component's `autoResize` handler
- * runs and updates `cursorPos`. jsdom does not always move
- * `selectionStart` to the end of a programmatically-set `.value`.
- */
+/**  * Set the textarea's value and explicitly position the cursor at the end, then dispatch `input` so
+ * the component's `autoResize` handler runs and updates `cursorPos`. jsdom does not always move
+ * `selectionStart` to the end of a programmatically-set `.value`. */
 async function typeInTextarea(
   textareaWrapper: ReturnType<VueWrapper['find']>,
   value: string,
@@ -230,12 +225,9 @@ describe('FileInput — paste image (Ctrl+V) attaches to preview', () => {
     delete (navigator as unknown as { clipboard?: unknown }).clipboard
   })
 
-  /**
-   * Build a minimal DataTransferItem-like object. jsdom doesn't expose
-   * DataTransferItem constructor in the test env, so we use the closest
-   * shape and rely on the handler's duck-typing checks (kind, type,
-   * getAsFile()).
-   */
+  /**    * Build a minimal DataTransferItem-like object. jsdom doesn't expose DataTransferItem constructor
+   * in the test env, so we use the closest shape and rely on the handler's duck-typing checks
+   * (kind, type, getAsFile()). */
   function fakeImageItem(
     type = 'image/png',
     withName = '',
@@ -268,10 +260,9 @@ describe('FileInput — paste image (Ctrl+V) attaches to preview', () => {
       files: [] as File[],
       types: items.map((i) => i.type),
     } as unknown as DataTransfer
-    // jsdom doesn't expose a ClipboardEvent constructor (DOM v0.x), so we
-    // build a synthetic event with the clipboardData property attached.
-    // The DOM-level event dispatch (Element.dispatchEvent) only requires
-    // a non-null Event with bubbles=true.
+    // jsdom doesn't expose a ClipboardEvent constructor (DOM v0.x), so we build a synthetic event
+    // with the clipboardData property attached. The DOM-level event dispatch
+    // (Element.dispatchEvent) only requires a non-null Event with bubbles=true.
     const ev = new Event('paste', { bubbles: true, cancelable: true }) as unknown as ClipboardEvent
     Object.defineProperty(ev, 'clipboardData', { value: dataTransfer })
     return ev

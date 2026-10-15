@@ -7,11 +7,9 @@ import DesignContextMenu from '../components/design/DesignContextMenu.vue'
 describe('DesignContextMenu', () => {
   let wrapper: VueWrapper | null = null
 
-  // Helper: a page-element list containing one of each interesting
-  // type. Tests pick the id(s) they need from this constant. Some
-  // rows have a `parent_id` (currently inside a group/frame) so
-  // the Leave-group button can be tested in both enabled and
-  // disabled states from a single fixture.
+  // Helper: a page-element list containing one of each interesting type. Tests pick the id(s) they
+  // need from this constant. Some rows have a `parent_id` (currently inside a group/frame) so the
+  // Leave-group button can be tested in both enabled and disabled states from a single fixture.
   const elements = [
     { id: 'a', type: 'rectangle', parent_id: '' },
     { id: 'b', type: 'rectangle', parent_id: '' },
@@ -44,10 +42,9 @@ describe('DesignContextMenu', () => {
 
   it('renders the menu container when visible is true, positioned at x/y', async () => {
     wrapper = mount(DesignContextMenu, {
-      // Use small x/y so viewport edge-clamping (40px × 10 rows = 400px
-      // tall, 220px wide) doesn't shift the menu. Chunk 9 added 1 more
-      // menu row (Ungroup), so we keep y small to test the un-clamped
-      // positioning contract.
+      // Use small x/y so viewport edge-clamping (40px × 10 rows = 400px tall, 220px wide) doesn't
+      // shift the menu. Chunk 9 added 1 more menu row (Ungroup), so we keep y small to test the
+      // un-clamped positioning contract.
       props: { visible: true, x: 50, y: 50, targetIds: ['a', 'b'], elements },
       attachTo: document.body,
     })
@@ -207,9 +204,8 @@ describe('DesignContextMenu', () => {
   })
 
   it('Leave group is enabled when the single selected element is itself a nested group/frame (has parent_id)', async () => {
-    // Mutate the fixture to put `g` (a group) inside an outer group
-    // `outer-g`, then select `g`. The Leave-group button should fire
-    // because the group is currently nested — Leave group pulls it
+    // Mutate the fixture to put `g` (a group) inside an outer group `outer-g`, then select `g`. The
+    // Leave-group button should fire because the group is currently nested — Leave group pulls it
     // out, doesn't dissolve it (Ungroup handles dissolution).
     wrapper = mount(DesignContextMenu, {
       props: {
@@ -229,10 +225,9 @@ describe('DesignContextMenu', () => {
     const ungroupBtn = document.querySelector<HTMLButtonElement>(
       '[data-testid="design-context-menu-ungroup"]',
     )!
-    // Both Leave group AND Ungroup can fire on a nested group/frame.
-    // They're orthogonal: Leave group moves the selected element to
-    // top-level (group survives); Ungroup dissolves the selected
-    // group (children move to its parent).
+    // Both Leave group AND Ungroup can fire on a nested group/frame. They're orthogonal: Leave
+    // group moves the selected element to top-level (group survives); Ungroup dissolves the
+    // selected group (children move to its parent).
     expect(ungroupBtn.disabled).toBe(false)
   })
 
@@ -252,10 +247,9 @@ describe('DesignContextMenu', () => {
   })
 
   it('Leave group is disabled when more than one element is selected', async () => {
-    // Multi-select: Leave group would need to pull each element to
-    // a different top-level row (some may be inside, some may
-    // already be top-level), so the action is undefined. Greyed
-    // out — matches Figma.
+    // Multi-select: Leave group would need to pull each element to a different top-level row (some
+    // may be inside, some may already be top-level), so the action is undefined. Greyed out —
+    // matches Figma.
     wrapper = mount(DesignContextMenu, {
       props: { visible: true, x: 100, y: 100, targetIds: ['a', 'nested-g'], elements },
       attachTo: document.body,

@@ -106,10 +106,9 @@ describe('DesignView keyboard shortcuts (Chunk 4)', () => {
     const _store = useWorkspacesStore()
     _store.setActiveDesignPage('page_1')
     vi.spyOn(_store, 'deleteDesignElement').mockImplementation(deleteDesignElementSpy)
-    // NOTE: do NOT mock `store.reorderDesignElements` — that would
-    // short-circuit the real store action before it can call the
-    // (mocked) api function. The api spy alone catches the call
-    // and records the api-level args (4-tuple, not 5-tuple).
+    // NOTE: do NOT mock `store.reorderDesignElements` — that would short-circuit the real store
+    // action before it can call the (mocked) api function. The api spy alone catches the call and
+    // records the api-level args (4-tuple, not 5-tuple).
     const wrapper = mount(DesignView, {
       props: { item: { ...ITEM, design_elements: elements }, workspaceId: 'ws_1', itemId: 'item_1' },
     })

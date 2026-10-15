@@ -13,13 +13,11 @@ import { fetchWholeFileDiff, type WholeFileDiff } from './wholeFileDiff'
 import SplitDiffTable from './SplitDiffTable.vue'
 import DiffThreads from './DiffThreads.vue'
 
-/**
- * Shared full diff view: file header (collapse toggle, back/filename/stats,
+/** Shared full diff view: file header (collapse toggle, back/filename/stats,
  * scope + mode, Open), loading/error/empty states, the unified OR split
  * render of the hunks, and the review mini-chat popup. Presentational — data
  * flows in via props, user actions flow out via emits. Used full-height in
- * ChatView's centre column; the sidebar panel is list-only.
- */
+ * ChatView's centre column; the sidebar panel is list-only. */
 const props = defineProps<{
   path: string
   lines: ParsedDiffLine[]
@@ -69,9 +67,9 @@ const wholeFileError = ref<string | null>(null)
 
 const wholeFileRefused = computed(() => wholeFileResult.value?.refused === true)
 
-/** The lines actually rendered: the whole file when we have it, otherwise the
- * hunks we were handed. A refusal falls back to the hunks rather than to
- * nothing — the user still gets their diff, plus a notice. */
+/**  * The lines actually rendered: the whole file when we have it, otherwise the hunks we were handed.
+ * A refusal falls back to the hunks rather than to nothing — the user still gets their diff, plus a
+ * notice. */
 const displayLines = computed<ParsedDiffLine[]>(() => {
   if (!props.wholeFile) return props.lines
   const result = wholeFileResult.value
@@ -99,10 +97,9 @@ async function loadWholeFile(): Promise<void> {
   }
 }
 
-// Whole-file scope sync: mount covers a section mounting with the scope
-// already on (the state lives in ChatView, so remounting after a collapse
-// restores it); the prev-combo guard on update covers scope/path/cwd
-// switches. A path switch also resets the review progress below.
+// Whole-file scope sync: mount covers a section mounting with the scope already on (the state lives
+// in ChatView, so remounting after a collapse restores it); the prev-combo guard on update covers
+// scope/path/cwd switches. A path switch also resets the review progress below.
 const prevDiffKey = ref('')
 const diffKey = () =>
   `${props.wholeFile ? '1' : '0'}|${props.untracked ? '1' : '0'}|${props.path}|${props.staged ? '1' : '0'}|${props.cwd}`
@@ -125,10 +122,9 @@ onUpdated(() => {
   }
 })
 
-// ── token colors ──────────────────────────────────────────────────────────
-// One entry per rendered row, computed once per diff instead of once per
-// render — the row red/green background still carries added/removed, the
-// token spans only color the code inside the row.
+// ── token colors ────────────────────────────────────────────────────────── One entry per rendered
+// row, computed once per diff instead of once per render — the row red/green background still
+// carries added/removed, the token spans only color the code inside the row.
 const unifiedTokens = computed(() =>
   highlightLinesForFile(
     displayLines.value.map((line) => line.content),
@@ -170,14 +166,11 @@ const openBoxAtRange = (start: number, end: number, context: string) => {
   showMiniChat.value = true
 }
 
-/**
- * Open the review box for the line at `lineIdx` in the rendered lines.
- *
+/** Open the review box for the line at `lineIdx` in the rendered lines.
  * Both renders funnel through here: unified passes the clicked row's index,
  * split passes the clicked side's SOURCE index — which is the same index
  * space when whole-file scope replaced the line list, because the split rows
- * are paired from those very lines.
- */
+ * are paired from those very lines. */
 const openMiniChatAt = (event: MouseEvent, lineIdx: number) => {
   const lines = displayLines.value
   const line = lines[lineIdx]

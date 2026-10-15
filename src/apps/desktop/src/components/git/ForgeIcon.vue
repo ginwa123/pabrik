@@ -34,11 +34,8 @@ const props = withDefaults(
     provider?: string | null
     /** Tailwind sizing class. Defaults to 16px, the inline-glyph step. */
     sizeClass?: string
-    /**
-     * Accessible name. Leave unset when a visible label already names
-     * the forge — the icon is then decorative and must be aria-hidden,
-     * not announced as "GitHub" after "GitHub".
-     */
+    /**      * Accessible name. Leave unset when a visible label already names the forge — the icon is then
+     * decorative and must be aria-hidden, not announced as "GitHub" after "GitHub". */
     title?: string | null
   }>(),
   { provider: null, sizeClass: 'w-4 h-4', title: null },

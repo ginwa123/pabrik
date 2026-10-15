@@ -1,8 +1,6 @@
-/**
- * Unit tests for the `api.deleteProfile` function. Mocks `global.fetch`
+/** Unit tests for the `api.deleteProfile` function. Mocks `global.fetch`
  * to assert URL, method, and error handling without hitting the
- * network.
- */
+ * network. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

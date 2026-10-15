@@ -208,10 +208,9 @@ export function useSubAgentPeek(opts: UseSubAgentPeekOptions): UseSubAgentPeekRe
     const bus = useSseBus()
     const sid = opts.sessionId
     offLlm = bus.on('llm', (event: SseEvent) => {
-      // 2026-09-04 subagent-peek P2: completion signals are parent-scoped
-      // (progress events carry session_id=parent + subagent_session_id=child).
-      // When OUR child completes, refetch — the panel may have opened
-      // mid-run with 0 rows committed and missed the live chunks.
+      // 2026-09-04 subagent-peek P2: completion signals are parent-scoped (progress events carry
+      // session_id=parent + subagent_session_id=child). When OUR child completes, refetch — the
+      // panel may have opened mid-run with 0 rows committed and missed the live chunks.
       if (event.role === 'subagent_progress') {
         if (
           event.subagent_session_id === sid &&

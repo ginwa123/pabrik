@@ -121,10 +121,9 @@ describe('createUnifiedSseConnection: single-buffer design (regression for Plan 
     // All 100 worker events dispatched.
     expect(workersCb).toHaveBeenCalledTimes(100)
 
-    // Now fire 1 session-shape event. If the buffer were leaked (per-
-    // channel buffers), this event would be appended to a "session
-    // buffer" that already contains 100 worker events, and the parser
-    // would produce malformed JSON → session cb fires 0 times.
+    // Now fire 1 session-shape event. If the buffer were leaked (per- channel buffers), this event
+    // would be appended to a "session buffer" that already contains 100 worker events, and the
+    // parser would produce malformed JSON → session cb fires 0 times.
     const sessionEvent = JSON.stringify({
       action: 'updated',
       id: 'session-final',
@@ -173,9 +172,8 @@ describe('createUnifiedSseConnection: single-buffer design (regression for Plan 
     }
     expect(workersCb).toHaveBeenCalledTimes(100)
 
-    // Fire an llm chunk event. The llm discriminator requires
-    // `type === 'chunk' | 'full'`. If the buffer were leaked, this
-    // would never dispatch (parse throws on malformed multi-object
+    // Fire an llm chunk event. The llm discriminator requires `type === 'chunk' | 'full'`. If the
+    // buffer were leaked, this would never dispatch (parse throws on malformed multi-object
     // string).
     const llmChunk = JSON.stringify({
       type: 'chunk',
@@ -740,10 +738,9 @@ describe('createUnifiedSseConnection: pre-registers all granular event names', (
 
     expect(capturedOnEvent).not.toBeNull()
 
-    // Simulate the wire-format payload the backend emits on
-    // updateSessionName cascade (see
-    // agentic_loop/update_session_name.zig:24-34 + the
-    // OnEventInputSessions struct in sse_on_event_send_session.zig:7-17).
+    // Simulate the wire-format payload the backend emits on updateSessionName cascade (see
+    // agentic_loop/update_session_name.zig:24-34 + the OnEventInputSessions struct in
+    // sse_on_event_send_session.zig:7-17).
     const payload = JSON.stringify({
       action: 'updated',
       id: 'session_abc',

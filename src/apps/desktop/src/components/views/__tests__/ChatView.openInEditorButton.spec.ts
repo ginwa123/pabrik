@@ -124,11 +124,8 @@ describe('ChatView center-diff ⤴ opens the file in the code viewer', () => {
   let app: VueApp | null = null
   let openInEditor: Mock<OpenInCodeEditorFn>
 
-  /**
-   * Mount ChatView under a real `OPEN_IN_CODE_EDITOR_KEY` provider —
-   * the same provide AppLayout does — then open a center diff so the
-   * stacked sections (and their ⤴ buttons) actually render.
-   */
+  /**    * Mount ChatView under a real `OPEN_IN_CODE_EDITOR_KEY` provider — the same provide AppLayout
+   * does — then open a center diff so the stacked sections (and their ⤴ buttons) actually render. */
   async function mountChatWithDiff() {
     openInEditor = vi.fn<OpenInCodeEditorFn>()
     const Host = defineComponent({
@@ -142,9 +139,8 @@ describe('ChatView center-diff ⤴ opens the file in the code viewer', () => {
     await flushPromises()
     for (let i = 0; i < 30; i++) await nextTick()
 
-    // Drive the REAL user path: the chat-owned right sidebar emits
-    // `show-diff`, ChatView stores it, and the stacked center sections
-    // (which host the ⤴ button) render. Nothing reaches into the
+    // Drive the REAL user path: the chat-owned right sidebar emits `show-diff`, ChatView stores it,
+    // and the stacked center sections (which host the ⤴ button) render. Nothing reaches into the
     // component's internals — this is the same chain a click takes.
     const sidebar = wrapper.findComponent(ChatRightSidebar)
     expect(sidebar.exists()).toBe(true)
@@ -211,10 +207,9 @@ describe('ChatView center-diff ⤴ opens the file in the code viewer', () => {
   })
 
   it('keeps the injection at setup scope (the grep that would have caught it)', () => {
-    // Assert the SCOPE, not just the string. `inject()` must be called
-    // in the setup body — i.e. the `const` starts at column 0, never
-    // indented inside a function. On the pre-fix source this line is
-    // indented two spaces (nested in onChatSidebarOpenFile) and fails.
+    // Assert the SCOPE, not just the string. `inject()` must be called in the setup body — i.e. the
+    // `const` starts at column 0, never indented inside a function. On the pre-fix source this line
+    // is indented two spaces (nested in onChatSidebarOpenFile) and fails.
     expect(chatViewSrc).toMatch(/^const openInEditor = useInjectOpenInCodeEditor\(\)$/m)
     // …and the handler itself must NOT call the injector.
     const handler = chatViewSrc.slice(

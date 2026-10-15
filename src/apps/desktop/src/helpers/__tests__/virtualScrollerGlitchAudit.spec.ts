@@ -201,9 +201,8 @@ describe('VirtualScroller many-messages glitch audit', () => {
   })
 
   it('T4: a settled measure pass writes scrollTop zero times (no redundant compensation)', async () => {
-    // Anchor compensation writes container.scrollTop directly; each
-    // write fires a native scroll event into ChatView's isAtBottom
-    // machine. A second measure pass with no DOM changes must find
+    // Anchor compensation writes container.scrollTop directly; each write fires a native scroll
+    // event into ChatView's isAtBottom machine. A second measure pass with no DOM changes must find
     // nothing to do (changed=false early return) and write zero times.
     const { wrapper, el } = mountScroller(255)
     await nextTick()

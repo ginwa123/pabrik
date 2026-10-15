@@ -76,19 +76,17 @@ describe('ChatView — sending or queueing a turn takes the transcript to the bo
   })
 
   it('pins again once the request settles', () => {
-    // There is no optimistic push (see the 2026-08-23 note in the handler), so
-    // the first pin aims at the bottom of the content as it stood BEFORE the
-    // turn. The bottom moves when the turn renders; without a second pin the
-    // newest turn is one screen below the fold.
+    // There is no optimistic push (see the 2026-08-23 note in the handler), so the first pin aims
+    // at the bottom of the content as it stood BEFORE the turn. The bottom moves when the turn
+    // renders; without a second pin the newest turn is one screen below the fold.
     const settled = submitHandler.slice(submitHandler.indexOf('} finally {'))
     expect(settled).toContain('followNewestTurn(')
   })
 
   it('arms the stick for a queue, which renders no row at all', () => {
-    // A queued turn produces no transcript row — it only appears in the
-    // composer's queue panel — and the row that finally reaches the transcript
-    // is the worker draining it, possibly much later. `queuedMessages` alone is
-    // not a scroll problem; the stick it has to arm is.
+    // A queued turn produces no transcript row — it only appears in the composer's queue panel —
+    // and the row that finally reaches the transcript is the worker draining it, possibly much
+    // later. `queuedMessages` alone is not a scroll problem; the stick it has to arm is.
     const queuedBranch = queueHandler.slice(0, queueHandler.indexOf("event.action === 'deleted'"))
     expect(queuedBranch).toContain("event.action === 'queued'")
     expect(queuedBranch).toContain('followNewestTurn(')

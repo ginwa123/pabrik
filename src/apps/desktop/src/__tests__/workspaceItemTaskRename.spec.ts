@@ -96,10 +96,9 @@ describe('WorkspaceItem task rename button', () => {
   })
 
   it('does NOT emit selectTask when the rename row is picked', async () => {
-    // The pencil used to sit inside the row's @click, so it needed
-    // event.stopPropagation or the click bubbled and selected the task
-    // as a side-effect. The teleported menu never traverses the row, so
-    // this asserts the outcome survived rather than the guard.
+    // The pencil used to sit inside the row's @click, so it needed event.stopPropagation or the
+    // click bubbled and selected the task as a side-effect. The teleported menu never traverses the
+    // row, so this asserts the outcome survived rather than the guard.
     const { wrapper } = mountWorkspaceItem()
     expandItem()
     await nextTick()
@@ -113,10 +112,9 @@ describe('WorkspaceItem task rename button', () => {
   })
 
   it('offers rename and delete in the menu, so neither action is stranded', async () => {
-    // Regression guard: the pencil was inserted *before* the existing
-    // delete button. A future refactor that drops one of the two menu
-    // rows would silently break that feature — the row has no other
-    // route to it.
+    // Regression guard: the pencil was inserted *before* the existing delete button. A future
+    // refactor that drops one of the two menu rows would silently break that feature — the row has
+    // no other route to it.
     const { wrapper } = mountWorkspaceItem()
     expandItem()
     await nextTick()

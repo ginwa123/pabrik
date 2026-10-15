@@ -83,9 +83,8 @@ describe('KanbanView search filter wiring', () => {
     vi.advanceTimersByTime(350)
     await flushPromises()
 
-    // Per-column initial fetch (Option B): the search watcher calls
-    // fetchKanbanTasksForAllColumns, not fetchKanbanTasks directly.
-    // The underlying per-column fetches happen as
+    // Per-column initial fetch (Option B): the search watcher calls fetchKanbanTasksForAllColumns,
+    // not fetchKanbanTasks directly. The underlying per-column fetches happen as
     // Promise.all(map(col => fetchKanbanTasks(...))).
     expect(spyForAllColumns).toHaveBeenCalledWith(WS_ID, ITEM_ID, 10, 'design')
   })

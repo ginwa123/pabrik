@@ -39,10 +39,9 @@ if (typeof (globalThis as { EventSource?: unknown }).EventSource === 'undefined'
   ;(globalThis as { EventSource: unknown }).EventSource = EventSourceStub
 }
 
-// jsdom does not ship ResizeObserver, but VirtualScroller.vue instantiates
-// one in onMounted. The stub matches the EventSource polyfill above: inert,
-// accepts the calls, never fires — tests that need real resize behavior
-// should mock the component instead of relying on this stub.
+// jsdom does not ship ResizeObserver, but VirtualScroller.vue instantiates one in onMounted. The
+// stub matches the EventSource polyfill above: inert, accepts the calls, never fires — tests that
+// need real resize behavior should mock the component instead of relying on this stub.
 if (typeof (globalThis as { ResizeObserver?: unknown }).ResizeObserver === 'undefined') {
   ;(globalThis as { ResizeObserver: unknown }).ResizeObserver = class {
     observe(): void {}
@@ -67,10 +66,8 @@ if (typeof (globalThis as { ResizeObserver?: unknown }).ResizeObserver === 'unde
 // element. Tests that rely on `container.scrollTop === N` to assert
 // scroll-restore behavior (see ChatView.scrollRestore.spec.ts) require
 // a real assignment — a no-op polyfill would break those tests.
-//
-// `behavior: 'smooth'` is silently ignored (jsdom doesn't run animation
-// frames; tests that need to assert on smooth-scroll easing should mock
-// the component instead).
+// `behavior: 'smooth'` is silently ignored (jsdom doesn't run animation frames; tests that need to
+// assert on smooth-scroll easing should mock the component instead).
 if (typeof Element !== 'undefined' && !Element.prototype.scrollTo) {
   Element.prototype.scrollTo = function scrollToPolyfill(
     this: Element,
@@ -145,9 +142,8 @@ import { installSseBus, __setSseBusGlobalClient } from '../helpers/sseBus'
 
 installSseBus(createApp({}))
 __setSseBusGlobalClient({
-  // `state` is a private field on the real SseClient class; the cast
-  // is fine because the stub is never type-checked against the
-  // interface contract (no test asserts on it directly).
+  // `state` is a private field on the real SseClient class; the cast is fine because the stub is
+  // never type-checked against the interface contract (no test asserts on it directly).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   state: 'open' as any,
   lastError: null,

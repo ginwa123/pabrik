@@ -220,10 +220,9 @@ describe('AppLayout — handleSelectTask does not get its URL overwritten by the
     })
     await nextTick()
     await nextTick()
-    // AppLayout.onMounted calls initializeFromSystemFolder() which
-    // calls init() which overwrites `workspaces.value` with the
-    // (empty) API mock result. Re-set workspaces so the URL
-    // watcher's lookup of activeWorkspace succeeds.
+    // AppLayout.onMounted calls initializeFromSystemFolder() which calls init() which overwrites
+    // `workspaces.value` with the (empty) API mock result. Re-set workspaces so the URL watcher's
+    // lookup of activeWorkspace succeeds.
     const ws = useWorkspacesStore()
     ws.workspaces = [makeWorkspace()]
     // Restore active workspace item (pendingUrlRestore would have
@@ -378,11 +377,9 @@ describe('AppLayout — handleSelectTask does not get its URL overwritten by the
 
  
 
-    // The URL sync watcher must NOT have clobbered the URL with
-    // view=workspace pointing at OTHER_ID (the pre-click active
-    // item). That was the bug: the watcher fired before
-    // router.push applied, read stale URL, called
-    // router.replace({ view: 'workspace', itemId: OTHER_ID }).
+    // The URL sync watcher must NOT have clobbered the URL with view=workspace pointing at OTHER_ID
+    // (the pre-click active item). That was the bug: the watcher fired before router.push applied,
+    // read stale URL, called router.replace({ view: 'workspace', itemId: OTHER_ID }).
     const replaceCallsWithViewWorkspace = replaceMock.mock.calls.filter(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (call: any[]) => call[0]?.query?.view === 'workspace',
@@ -463,10 +460,9 @@ describe('AppLayout — handleSelectTask does not get its URL overwritten by the
 
  
 
-    // The flag is NOT set (we're simulating a buggy caller that
-    // forgot to flip it). The watcher SHOULD overwrite the URL —
-    // the flag is the only guard, and it's intentionally
-    // conservative (no flag → URL gets synced normally).
+    // The flag is NOT set (we're simulating a buggy caller that forgot to flip it). The watcher
+    // SHOULD overwrite the URL — the flag is the only guard, and it's intentionally conservative
+    // (no flag → URL gets synced normally).
     ws.setActiveTask(TASK_ID)
     await nextTick()
     await nextTick()

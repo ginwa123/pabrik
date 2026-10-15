@@ -14,17 +14,15 @@ const props = defineProps<{
   width: number
   minWidth?: number
   maxWidth?: number
-  /** Branch from the bottom status bar (single source of truth).
-   * `undefined` while loading — the panel falls back to its own
-   * fetched branch. Drilled from ChatView's `sidebarBranch`. */
+  /**    * Branch from the bottom status bar (single source of truth). `undefined` while loading — the
+   * panel falls back to its own fetched branch. Drilled from ChatView's `sidebarBranch`. */
   branch?: string
   /** Attached PR URL — switches the panel to PR-changes mode. */
   prUrl?: string
   /** Effective provider for the attached PR. */
   prProvider?: string
-  /** Per-chat persistence key (ChatView's chatId). When set, terminal
-   * session ids persist in localStorage and re-attach on return;
-   * without it sessions die with the tab (legacy behavior). */
+  /**    * Per-chat persistence key (ChatView's chatId). When set, terminal session ids persist in
+   * localStorage and re-attach on return; without it sessions die with the tab (legacy behavior). */
   sessionKey?: string
 }>()
 
@@ -106,10 +104,9 @@ const setPanel = (panel: SidebarPanel) => {
   }
 }
 
-// Explorer file-click opens in the in-app CodeEditor (same flow as the
-// center diff's Open button). Captured at setup: inject() only resolves
-// during setup — calling it inside the click handler would return null.
-// Null-guarded for mounts outside an AppLayout subtree (unit tests).
+// Explorer file-click opens in the in-app CodeEditor (same flow as the center diff's Open button).
+// Captured at setup: inject() only resolves during setup — calling it inside the click handler
+// would return null. Null-guarded for mounts outside an AppLayout subtree (unit tests).
 const openInEditor = useInjectOpenInCodeEditor()
 const onExplorerFileClick = (file: FolderEntry) => {
   if (!openInEditor || !props.cwd) return
@@ -141,9 +138,8 @@ const startResize = (e: MouseEvent) => {
 
 const close = () => emit('update:open', false)
 
-// No cwd watcher here: SidebarDiffPanel already watches props.cwd
-// itself (clears its tab cache + reloads). A second fetch from this
-// level doubled every worktree switch and the two concurrent
+// No cwd watcher here: SidebarDiffPanel already watches props.cwd itself (clears its tab cache +
+// reloads). A second fetch from this level doubled every worktree switch and the two concurrent
 // getGitChanges calls could resolve out of order (stale branch wins).
 
 defineExpose({

@@ -8,11 +8,9 @@ import { SyncRemoteError } from '../../sync/SyncError'
 import { runSyncResult } from '../../sync/runtime'
 
 const props = defineProps<{
-  /**
-   * Explicit workspace binding, forwarded to the list + detail halves.
+  /** Explicit workspace binding, forwarded to the list + detail halves.
    * The workspace settings page passes the route workspace id; absent
-   * keeps the previous behaviour (active workspace from the store).
-   */
+   * keeps the previous behaviour (active workspace from the store). */
   workspaceId?: string | null
 }>()
 
@@ -29,10 +27,9 @@ const scopeCaption = computed(() =>
 const selectedSkillName = ref<string | null>(null)
 const skillListRef = ref<InstanceType<typeof SkillList> | null>(null)
 
-// The create form. A skill is a row, so "new" is three fields and no
-// directory: the name is the natural key inside the workspace, and the
-// body is stored verbatim — frontmatter included, because `skill_eval`
-// identities are sha256(body) and trimming it would stale every verdict.
+// The create form. A skill is a row, so "new" is three fields and no directory: the name is the
+// natural key inside the workspace, and the body is stored verbatim — frontmatter included, because
+// `skill_eval` identities are sha256(body) and trimming it would stale every verdict.
 const isCreating = ref(false)
 const newName = ref('')
 const newDescription = ref('')

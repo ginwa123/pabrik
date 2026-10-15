@@ -113,11 +113,8 @@ function asRecord(data: unknown): Record<string, unknown> {
   return {}
 }
 
-/**
- * Unwrap one level when the input is a full tool envelope
- * (`{tool, parameters, success, data, error, v}` or its JSON string)
- * instead of the bare `data` payload. Otherwise coerce to a record.
- */
+/**  * Unwrap one level when the input is a full tool envelope (`{tool, parameters, success, data,
+ * error, v}` or its JSON string) instead of the bare `data` payload. Otherwise coerce to a record. */
 function unwrapDataRecord(data: unknown): Record<string, unknown> {
   const record = asRecord(data)
   if (
@@ -169,12 +166,9 @@ function boolField(o: Record<string, unknown>, key: string, defaultValue = false
   return defaultValue
 }
 
-/**
- * Normalized view of whatever a tool card's `content` prop carries:
- * either the bare `data` object (ChatView's success path) or a full
- * envelope JSON string/object (ChatView's error fallback, `m.content`).
- * Empty or unparseable input yields null data with no error (running state).
- */
+/**  * Normalized view of whatever a tool card's `content` prop carries: either the bare `data` object
+ * (ChatView's success path) or a full envelope JSON string/object (ChatView's error fallback,
+ * `m.content`). Empty or unparseable input yields null data with no error (running state). */
 export interface NormalizedToolContent {
   data: unknown
   error: string | null
@@ -275,15 +269,12 @@ export function parseWriteFile(data: unknown): ParsedWriteFile {
   }
 }
 
-/**
- * The name a skill tool acted on.
- *
+/** The name a skill tool acted on.
  * `skill_name` is the canonical field on every skill tool payload; `name`
  * is the echo of what was requested and is absent from some rows. An EMPTY
  * `skill_name` counts as absent rather than winning — it would otherwise
  * render a card whose only label is blank, and `??` alone would not catch
- * it because `''` is neither null nor undefined.
- */
+ * it because `''` is neither null nor undefined. */
 function skillNameField(o: Record<string, unknown>): string {
   const primary = strOrNullField(o, 'skill_name')
   if (primary !== null && primary.trim() !== '') return primary
@@ -470,40 +461,32 @@ export function parseBash(data: unknown): ParsedBash {
   }
 }
 
-/**
- * Parse a pwsh (PowerShell Core) tool result. Same JSON `data` shape as bash —
+/** Parse a pwsh (PowerShell Core) tool result. Same JSON `data` shape as bash —
  * per plan D2 + D10 the schema is structurally identical, only the
  * `tool` field that wraps the envelope differs.
- *
  * Functionally a clone of `parseBash` so future divergence (e.g. pwsh adds a
  * `version` field for the PowerShell version that ran) is a one-line change
  * here. Tests in `toolOutputParser.spec.ts` assert `parsePwsh(x) === parseBash(x)`
- * to catch accidental drift.
- */
+ * to catch accidental drift. */
 export function parsePwsh(data: unknown): ParsedBash {
   return parseBash(data)
 }
 
-/**
- * Parse a `command` (unified shell) tool result. Same JSON `data` shape as
+/** Parse a `command` (unified shell) tool result. Same JSON `data` shape as
  * bash — the unified `command` tool reuses the identical 8-field payload
  * (`command`/`stdout`/`stderr`/`exit_code`/`truncated`/`timeout`/
  * `stdout_lines`/`stderr_lines`), only the `tool` wrapper
  * differs. Functionally an alias of `parseBash` so future payload
  * divergence is a one-line change here. Tests assert
  * `parseCommand(x) === parseBash(x)` to catch accidental drift.
- * `parseBash` / `parsePwsh` are intentionally left untouched.
- */
+ * `parseBash` / `parsePwsh` are intentionally left untouched. */
 export function parseCommand(data: unknown): ParsedBash {
   return parseBash(data)
 }
 
-/**
- * Dispatcher: parse a tool result based on the `toolName` it was registered
- * under. 'bash' / 'pwsh' / 'run_command' (legacy alias) / 'command'
- * (unified shell) all use the same payload. New shells with divergent
- * payload shapes must add their own branch here.
- */
+/**  * Dispatcher: parse a tool result based on the `toolName` it was registered under. 'bash' / 'pwsh'
+ * / 'run_command' (legacy alias) / 'command' (unified shell) all use the same payload. New shells
+ * with divergent payload shapes must add their own branch here. */
 export function parseShell(toolName: string, data: unknown): ParsedBash {
   switch (toolName) {
     case 'bash':
@@ -574,13 +557,11 @@ export function parseSearch(data: unknown): ParsedSearch {
   }
 }
 
-/**
- * One row of a `search_skills` page. Identity is the name ALONE: the page
+/** One row of a `search_skills` page. Identity is the name ALONE: the page
  * is one workspace's skills, so there is no tier to tag and no path to
  * hand back. A row that arrived with the old `scope` / `path` keys still
  * parses — the extra keys are simply not read, which keeps a cached
- * transcript from rendering blank rows.
- */
+ * transcript from rendering blank rows. */
 export interface SkillSearchRow {
   name: string
   description: string
@@ -797,14 +778,14 @@ export function parseMetadata(data: unknown): Record<string, string> {
 }
 
 // ─── generate_image ────────────────────────────────────────────────────────
-//
+
 // Parses the JSON `data` payload produced by `execute_generate_image` in
 // `src/modules/agent/tools/generate_image.zig`:
-//
+
 //   {"status":"generated","count":1,"model":"dall-e-3","size":"1024x1024",
 //    "images":[{"index":0,"path":"/cwd/.../img_xxx.png","bytes":12345,"mime":"image/png"}],
 //    "revised_prompt":"A vibrant watercolor painting of a hat-wearing cat","error":null}
-//
+
 // On error:
 //   {"status":null,"count":null,"model":null,"size":null,"images":[],
 //    "revised_prompt":null,"error":"HTTP 400: ..."}
@@ -860,15 +841,15 @@ export function parseGenerateImage(data: unknown): ParsedGenerateImage {
 }
 
 // ─── web_search ────────────────────────────────────────────────────────────
-//
+
 // Parses the JSON `data` payload produced by `exec_web_search` in
 // `src/agentic_loop/tools_exec_web_search.zig`.
-//
+
 // On success the payload is UNTYPED PASSTHROUGH (D13): `response` holds the
 // provider's own JSON, verbatim and untouched.
-//
+
 //   {"provider":"tinyfish","status":200,"response":{…}}
-//
+
 // TinyFish answers `{results:[…]}`, Brave `{web:{results:[…]}}`, Serper
 // `{organic:[…]}` and a self-hosted SearxNG a bare `[{…}]`. There is
 // deliberately NO normalized result schema, so `response` stays `unknown`
@@ -902,14 +883,9 @@ export interface WebSearchProviderRef {
 export interface ParsedWebSearchError {
   /** The backend's sentence, verbatim. */
   message: string
-  /**
-   * Which reasons this envelope claims, in a fixed order so two renderings
-   * of the same failure never disagree.
-   *
-   * `transport` is the residual: it is the one failure with no key of its
-   * own, so a flagless error is reported as it. Every other flag is read
-   * off a key the backend sets.
-   */
+  /**    * Which reasons this envelope claims, in a fixed order so two renderings of the same failure
+   * never disagree. `transport` is the residual: it is the one failure with no key of its own, so a
+   * flagless error is reported as it. Every other flag is read off a key the backend sets. */
   flags: WebSearchErrorFlag[]
   /** True only for `configured:false` — nothing is set up in Settings yet. */
   configured: boolean
@@ -936,10 +912,8 @@ export interface ParsedWebSearch {
   error: ParsedWebSearchError | null
 }
 
-/**
- * Read a list of alternative providers. Accepts both spellings the backend
- * and the plan use: `[{name,url}]` objects, and a bare `["tinyfish"]` of names.
- */
+/** Read a list of alternative providers. Accepts both spellings the backend
+ * and the plan use: `[{name,url}]` objects, and a bare `["tinyfish"]` of names. */
 function providerRefs(o: Record<string, unknown>, key: string): WebSearchProviderRef[] {
   const raw = o[key]
   if (!Array.isArray(raw)) return []
@@ -991,14 +965,12 @@ export function parseWebSearchError(o: Record<string, unknown>): ParsedWebSearch
   }
 }
 
-/**
- * The exec wrapper reports a failure in TWO places: the envelope's `error`
+/** The exec wrapper reports a failure in TWO places: the envelope's `error`
  * field, and — for the reasons the model can recover from on its own — the
  * whole inner JSON envelope as that field's TEXT. When it is a text
  * envelope, read the flags out of it; when it is a plain sentence, report
  * the sentence and no flag, because a message with no reason key is not
- * evidence of a transport failure.
- */
+ * evidence of a transport failure. */
 export function parseWebSearchErrorText(text: string): ParsedWebSearchError {
   const o = asRecord(text)
   if (typeof o.error === 'string' && Object.keys(o).length > 1) return parseWebSearchError(o)
@@ -1036,12 +1008,12 @@ export function parseWebSearch(data: unknown): ParsedWebSearch {
 }
 
 // ─── list_web_search_providers ─────────────────────────────────────────────
-//
+
 // The `exec_list_web_search_providers` payload (D14):
-//
+
 //   {"providers":[{"name":"tinyfish","url":"https://api.search.tinyfish.ai",
 //                  "description":"…","curl":"curl 'https://…?key={key}'"}]}
-//
+
 // `curl` is a TEMPLATE: it carries the literal text `{key}` where the
 // credential belongs, so the listing is safe by construction — nothing
 // secret reaches the model, and the card may render it verbatim.
@@ -1085,13 +1057,9 @@ export function parseListWebSearchProviders(data: unknown): ParsedListSearchProv
 //   {"path":"/proj","count":3,"entries":[
 //     {"name":"src","path":"/proj/src","is_directory":true,"is_symlink":false},
 //     {"name":"main.zig","path":"/proj/main.zig","is_directory":false,"is_symlink":false}
-//   ]}
-//
-// The sort order is whatever the backend produced (directories first,
-// then files, alphabetical) — the frontend does NOT re-sort.
-//
-// On error, `normalizeToolContent` unwraps the full envelope and the
-// parser reads the `error` key — see the `error !== null` branch below.
+// ]} The sort order is whatever the backend produced (directories first, then files, alphabetical)
+// — the frontend does NOT re-sort. On error, `normalizeToolContent` unwraps the full envelope and
+// the parser reads the `error` key — see the `error !== null` branch below.
 
 export interface ParsedListDirectoryEntry {
   name: string
@@ -1302,10 +1270,8 @@ export function parseMcp(toolName: string, data: unknown): ParsedMcp {
 //   already showed it):
 //     {"name":"n","kind":"...","equipped":true,
 //      "inserted":true|false,"wait_next_turn":true|false,
-//      "source":"session"|null,"note":"..."}
-//   use_tool miss:
-//     {"name":"n","equipped":false,"inserted":false,
-//      "error":"...","did_you_mean":[...],"hint":"..."}
+// "source":"session"|null,"note":"..."} use_tool miss:
+// {"name":"n","equipped":false,"inserted":false, "error":"...","did_you_mean":[...],"hint":"..."}
 
 export interface ProgressiveCatalogEntry {
   name: string

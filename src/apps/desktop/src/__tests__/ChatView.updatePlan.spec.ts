@@ -42,10 +42,9 @@ import type { Message } from '../api'
 vi.mock('../components/tool_outputs/UpdatePlan.vue', () => ({
   default: {
     name: 'UpdatePlan',
-    // No `parameters` prop — the component parses the plan body
-    // directly from the inner <plan><![CDATA[...]]></plan> block of
-    // the <tool> envelope (mirrors get_plan's wire shape). The
-    // dispatcher doesn't thread anything extra.
+    // No `parameters` prop — the component parses the plan body directly from the inner
+    // <plan><![CDATA[...]]></plan> block of the <tool> envelope (mirrors get_plan's wire shape).
+    // The dispatcher doesn't thread anything extra.
     props: ['message'],
     template:
       '<div class="update-plan-stub" :data-tool-name="message.tool_name" :data-msg-id="message.id"></div>',
@@ -110,10 +109,9 @@ const getPlanPresentEnvelope = (markdown: string): unknown => ({ plan: markdown 
 
 const getPlanEmptyEnvelope = (): unknown => ({ empty: true })
 
-// ────────────────────────────────────────────────────────────────────────
-// Test helpers — mock the api module + SSE bus + localStorage so the
-// mount is fast and stable (parity with profileCascade.spec.ts).
-// ────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────── Test helpers — mock the
+// api module + SSE bus + localStorage so the mount is fast and stable (parity with
+// profileCascade.spec.ts). ────────────────────────────────────────────────────────────────────────
 
 function installChatViewMocks(opts: { messages: Message[]; sessionId: string }) {
   vi.spyOn(api, 'getChatHistory').mockResolvedValue({
@@ -147,11 +145,9 @@ function installChatViewMocks(opts: { messages: Message[]; sessionId: string }) 
   vi.spyOn(api, 'getPabrikConfig').mockResolvedValue({ profiles: {} })
 }
 
-/**
- * ChatView reads `route.query` and calls `router.replace` (diff deep-linking),
- * so the mount needs a real router — without one `useRoute()` returns
- * undefined and the render throws. Catch-all route keeps the path opaque.
- */
+/**  * ChatView reads `route.query` and calls `router.replace` (diff deep-linking), so the mount needs a
+ * real router — without one `useRoute()` returns undefined and the render throws. Catch-all route
+ * keeps the path opaque. */
 async function makeRouter(): Promise<Router> {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -164,12 +160,9 @@ async function makeRouter(): Promise<Router> {
 
 let mountSeq = 0
 
-/**
- * Each call mounts a FRESH session id on purpose: ChatView primes its
- * messages from the IndexedDB-backed `chatEngineDb` cache keyed by session
- * id, so reusing one id made test N+1 paint test N's rows instead of the
- * freshly-mocked `getChatHistory` response.
- */
+/**  * Each call mounts a FRESH session id on purpose: ChatView primes its messages from the
+ * IndexedDB-backed `chatEngineDb` cache keyed by session id, so reusing one id made test N+1 paint
+ * test N's rows instead of the freshly-mocked `getChatHistory` response. */
 async function mountChatViewWithMessages(messages: Message[]) {
   const chatId = `s_plan_${++mountSeq}`
   installChatViewMocks({ messages, sessionId: chatId })

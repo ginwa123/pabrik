@@ -1,13 +1,10 @@
-/**
- * Behavioural tests for DesignView's `<LayersPanel @reparent>`
+/** Behavioural tests for DesignView's `<LayersPanel @reparent>`
  * wire (Chunk 4 Task 4.3 of drag-to-reparent plan). Mounts
  * DesignView, dispatches the `handleLayerReparent` handler directly
  * on the VM with the composable result shape, and asserts the
  * store's `reparentDesignElementsBatch` action was called with the
  * right payload.
- *
- * Plan: docs/superpowers/plans/2026-07-30-design-layer-drag-join-or-leave-group.md
- */
+ * Plan: docs/superpowers/plans/2026-07-30-design-layer-drag-join-or-leave-group.md */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -180,9 +177,8 @@ describe('DesignView LayersPanel @reparent wire (Chunk 4 Task 4.3)', () => {
    
   it('handleLayerReparent is a quiet no-op when activePageId is empty', async () => {
     const store = useWorkspacesStore()
-    // Mount with workspaceId='' so useDesignHandlers.reparentLayers
-    // short-circuits (workspaceId empty → no-op). This exercises
-    // the same guard as "activeDesignPageId empty" in production —
+    // Mount with workspaceId='' so useDesignHandlers.reparentLayers short-circuits (workspaceId
+    // empty → no-op). This exercises the same guard as "activeDesignPageId empty" in production —
     // the composable short-circuits when ANY of the three ids is empty.
     const storeSpy = vi
       .spyOn(store, 'reparentDesignElementsBatch')

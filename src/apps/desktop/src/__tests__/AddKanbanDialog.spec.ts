@@ -19,9 +19,6 @@ import AddKanbanDialog from '../components/dialogs/AddKanbanDialog.vue'
 
 // Stub the FilePickerDialog — we only care that the parent wires up the
 // picker's events. Real picker behavior is tested in FilePickerDialog.spec.ts.
-// The stub mirrors the picker's public API:
-//   - v-model:show (modelValue + update:modelValue)
-//   - @select(path)
 //   - title prop (displayed in stub header)
 vi.mock('../components/FilePickerDialog.vue', () => ({
   default: {
@@ -118,11 +115,11 @@ describe('AddKanbanDialog', () => {
   })
 
   // ─── Visible "Name is required" error UX (mirrors AddItemDialog) ─────────
-  //
+
   // The dialog now shows an inline error below the name input after
   // the user has interacted with an empty/whitespace field, so the
   // disabled Add button has a visible explanation.
-  //
+
   // Plan: docs/superpowers/plans/2026-07-10-empty-workspace-item-bug.md
 
   it('whitespace-only name shows visible "Name is required" error', async () => {
@@ -173,10 +170,9 @@ describe('AddKanbanDialog', () => {
     nameInput.value = 'Sprint 12'
     nameInput.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
-    // No folder picked → button is STILL enabled (path is optional
-    // since 2026-08-06 — the backend stores NULL when the path
-    // is empty; the kanban is cwd-less until the user backfills
-    // via the "Set project root" banner in KanbanView).
+    // No folder picked → button is STILL enabled (path is optional since 2026-08-06 — the backend
+    // stores NULL when the path is empty; the kanban is cwd-less until the user backfills via the
+    // "Set project root" banner in KanbanView).
     const btn = findInDom<HTMLButtonElement>('[data-testid="add-kanban-submit"]')
     expect(btn?.disabled).toBe(false)
   })

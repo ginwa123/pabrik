@@ -80,11 +80,9 @@ describe('DesignElement.vue — elementStyle applies z_index as inline CSS z-ind
     wrapper = null
   })
 
-  // The wrapper div carries the dynamic testid `design-element-<id>`
-  // AND a static `data-design-element="true"` attribute (per the
-  // component's contract at lines 732-733). Use the static attribute
-  // for test selectors so a change in element.id doesn't break the
-  // test.
+  // The wrapper div carries the dynamic testid `design-element-<id>` AND a static
+  // `data-design-element="true"` attribute (per the component's contract at lines 732-733). Use the
+  // static attribute for test selectors so a change in element.id doesn't break the test.
   const rootSelector = '[data-design-element="true"]'
 
   it('renders inline z-index: 0 for an element with z_index=0', async () => {

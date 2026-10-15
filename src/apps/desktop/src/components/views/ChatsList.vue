@@ -76,6 +76,9 @@ const rowErrorRetryLabel = (id: string): string | null => {
 // the URL so the chat row's active background stays in sync with
 // refresh / deep links / browser back / forward — no store flag can
 // drift. See useCurrentMainView for the full contract.
+// URL-driven "what is the main content area showing?". Derived from the URL so the chat row's
+// active background stays in sync with refresh / deep links / browser back / forward — no store
+// flag can drift. See useCurrentMainView for the full contract.
 const currentMainView = useCurrentMainView()
 
 // Workspace scope for the CHATS list (plan: 2026-09-22-revamp-ui-chats).
@@ -91,17 +94,13 @@ const scopedWorkspaceId = computed(() => {
   return workspacesStore.activeWorkspace?.id
 })
 
-// Reactive active check for a chat row. Called from the template on
-// every render so the row's highlight stays in sync with URL changes
-// (pre-fix, `active` was set as a one-shot flag inside `loadChats()`
-// — leaving it stale after a chat → workspace navigation).
+// Reactive active check for a chat row. Called from the template on every render so the row's
+// highlight stays in sync with URL changes (pre-fix, `active` was set as a one-shot flag inside
+// `loadChats()` — leaving it stale after a chat → workspace navigation).
 const isCurrentChat = (sessionId: string): boolean =>
   currentMainView.value.kind === 'chat' && currentMainView.value.sessionId === sessionId
 
 // Migration 082 - "AI is ahead of you" stale-dot check.
-// True when the AI has touched the chat since the human's last touch
-// (updated_at > last_human_touched_at). Empty / null human-time means
-// "never touched" - no comparison to make, no dot.
 // Both come from the backend as unix-ms strings (Migration 075
 // convention) - we compare as numbers.
 const isStale = (human: string | undefined, updated: string | undefined): boolean => {
@@ -331,7 +330,7 @@ const openContextMenuInBackground = () => {
 //     Empty means CLEAR on the wire (session_update.zig:13), so a rename
 //     through this path would silently reset the chat's model profile AND
 //     bump updated_at, jumping the row to the top of a list sorted by it.
-//
+
 // Both end at the same `sessions.name`; only one touches anything else.
 // The cascade ends in a `session_updated` SSE broadcast, which the
 // onSessionEvent subscription above turns back into a loadChats().
@@ -488,10 +487,9 @@ const chatsResizeStartPx = ref(0)
 // navItems has its own shape (relativeTime, processing flag, etc.)
 // that's not derived from the workspace tree.
 //
-// Without this subscription, session events would update the
-// workspace tree but leave the sidebar stale until manual reload.
-// See `docs/superpowers/plans/2026-06-30-unify-sse-endpoints.md`
-// Chunk 5 / Task 5.3 for the migration context.
+// Without this subscription, session events would update the workspace tree but leave the sidebar
+// stale until manual reload. See `docs/superpowers/plans/2026-06-30-unify-sse-endpoints.md` Chunk 5
+// / Task 5.3 for the migration context.
 
 // Virtual scroller ref
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; the surrounding type is intentionally opaque.
@@ -546,10 +544,9 @@ const stopChatsResize = () => {
   document.body.style.cursor = ''
 }
 
-// Public methods for parent to call
-// Amber stale-dot clear (yellow-dot-fix): optimistic patch + best-effort
-// backend touch. isStale() predicate is unchanged — clearing the dot
-// is done by aligning last_human_touched_at to updated_at.
+// Public methods for parent to call Amber stale-dot clear (yellow-dot-fix): optimistic patch +
+// best-effort backend touch. isStale() predicate is unchanged — clearing the dot is done by
+// aligning last_human_touched_at to updated_at.
 const optimisticClearStaleDot = (id: string) => {
   const item = navItems.value.find((i) => i.id === id)
   if (item && item.updated_at) {
@@ -595,10 +592,9 @@ const sessionCacheKey = (): string => scopedWorkspaceId.value ?? 'all'
 const toNavItem = (session: any) => ({
   id: session.session_id,
   name: session.session_name || 'New Chat',
-  // active state now derives from the URL via isCurrentChat() in
-  // the template (sidebar-single-active fix 2026-08-06). Storing
-  // it here would freeze the highlight at loadChats() time and
-  // leave stale `active: true` after navigation away from chat.
+  // active state now derives from the URL via isCurrentChat() in the template
+  // (sidebar-single-active fix 2026-08-06). Storing it here would freeze the highlight at
+  // loadChats() time and leave stale `active: true` after navigation away from chat.
   active: false,
   // Migration 082 — prefer human-touched timestamp when present.
   relativeTime: formatRelativeTime(session.last_human_touched_at || session.updated_at),
@@ -889,10 +885,9 @@ const restoreActiveFromUrl = () => {
 
   const current = currentMainView.value
   if (current.kind === 'chat' && current.sessionId) {
-    // Fresh-tab title: a deep link never left-clicks, so
-    // activeChatName is empty/stale and the browser tab would read
-    // plain "Pabrik". The name is usually already in this list —
-    // fall back to a single-session fetch past page 1.
+    // Fresh-tab title: a deep link never left-clicks, so activeChatName is empty/stale and the
+    // browser tab would read plain "Pabrik". The name is usually already in this list — fall back
+    // to a single-session fetch past page 1.
     const match = navItems.value.find((i) => i.id === current.sessionId)
     if (match && match.name && match.name !== 'New Chat') {
       navigationStore.setActiveChatName(match.name)
@@ -997,12 +992,9 @@ onUpdated(() => {
   }
 })
 
-/**
- * Ctrl/Cmd+click, middle click and the context menu open a chat in a
- * real browser tab (window.open) instead of navigating — the browser
- * gesture. A plain click keeps the previous behaviour. Path-based
- * (plan: 2026-09-22-revamp-ui-chats): /app/{ws}/chat/{sid}.
- */
+/**  * Ctrl/Cmd+click, middle click and the context menu open a chat in a real browser tab (window.open)
+ * instead of navigating — the browser gesture. A plain click keeps the previous behaviour.
+ * Path-based (plan: 2026-09-22-revamp-ui-chats): /app/{ws}/chat/{sid}. */
 const openChatInNewTab = (item: { id: string }) => {
   const wsId = scopedWorkspaceId.value
   if (wsId) {

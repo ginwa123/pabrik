@@ -33,11 +33,8 @@ function mountHost() {
   return mount(Host, { attachTo: document.body })
 }
 
-/**
- * Open the menu the way a real `@contextmenu.prevent` handler does: the
- * event's `currentTarget` is the row the handler is bound to, and that is
- * what the scoped scroll dismiss keys off.
- */
+/**  * Open the menu the way a real `@contextmenu.prevent` handler does: the event's `currentTarget` is
+ * the row the handler is bound to, and that is what the scoped scroll dismiss keys off. */
 function openMenuFrom(wrapper: ReturnType<typeof mountHost>, anchor: HTMLElement) {
   const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
   Object.defineProperty(event, 'currentTarget', { value: anchor, configurable: true })

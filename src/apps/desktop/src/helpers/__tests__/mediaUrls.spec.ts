@@ -104,10 +104,9 @@ describe('splitMediaUrlsWire', () => {
 
 describe('renderableMediaUrls', () => {
   it('drops blanks from an array that did not come from splitMediaUrlsWire', () => {
-    // The renderer guard. A message can reach the template from a path this
-    // module does not own (a persisted SSE row replayed from the local chat
-    // cache, a future wire field), and `v-for` over a blank entry binds
-    // :src="".
+    // The renderer guard. A message can reach the template from a path this module does not own (a
+    // persisted SSE row replayed from the local chat cache, a future wire field), and `v-for` over
+    // a blank entry binds :src="".
     expect(renderableMediaUrls([PNG_A, '', PNG_B])).toEqual([PNG_A, PNG_B])
     expect(renderableMediaUrls(['   ', PNG_A])).toEqual([PNG_A])
   })

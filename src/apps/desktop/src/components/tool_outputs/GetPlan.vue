@@ -49,9 +49,8 @@ import ToolCardHeader from './_shared/ToolCardHeader.vue'
 import ToolParameters from './_shared/ToolParameters.vue'
 import { tryUnwrapToolOutput } from '../../helpers/unwrapToolOutput'
 
-// Minimal shape we need from the parent. ChatView.vue defines a
-// LOCAL `Message` interface (different from `api.Message`) so we
-// declare just the fields we read — this keeps the component
+// Minimal shape we need from the parent. ChatView.vue defines a LOCAL `Message` interface
+// (different from `api.Message`) so we declare just the fields we read — this keeps the component
 // decoupled from whichever Message type the parent uses.
 interface ToolMessageLike {
   id?: string
@@ -84,15 +83,13 @@ const props = defineProps<{
 
 const isExpanded = ref(true)
 
-/**
- * Envelope `<parameters>` for this tool message (Task 6).
+/** Envelope `<parameters>` for this tool message (Task 6).
  * `get_plan` takes no input, so this is `{}` on the real wire and
  * <ToolParameters> renders nothing (its hasArgs guard skips '' / '{}').
  * Derived here — NOT threaded as a prop — because this component takes
  * `:message` (whole role=tool message), never `:content`/`:parameters`.
  * Kept (rather than omitted) so any future input args surface with zero
- * template changes. Falls back to '{}' for legacy raw-inner envelopes.
- */
+ * template changes. Falls back to '{}' for legacy raw-inner envelopes. */
 const envelopeParams = computed(() => tryUnwrapToolOutput(props.message.content)?.parameters ?? '{}')
 
 function asRecord(v: unknown): Record<string, unknown> {
@@ -118,12 +115,9 @@ function strOrNull(v: unknown): string | null {
   return null
 }
 
-/**
- * Unwrap the message content to the inner `data` record. Accepts the full
- * JSON envelope string (normal wire shape) or a bare data-object JSON
- * string (defensive fallback for direct callers). Returns null when the
- * content is not parseable JSON at all.
- */
+/**  * Unwrap the message content to the inner `data` record. Accepts the full JSON envelope string
+ * (normal wire shape) or a bare data-object JSON string (defensive fallback for direct callers).
+ * Returns null when the content is not parseable JSON at all. */
 function innerDataOf(content: string): { data: Record<string, unknown>; error: string | null } | null {
   const unwrapped = tryUnwrapToolOutput(content)
   if (unwrapped) {

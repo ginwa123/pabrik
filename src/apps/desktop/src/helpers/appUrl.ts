@@ -54,11 +54,9 @@ export interface AppUrlTarget {
   projectId?: string | null | undefined
   /** Task chat id open over a project (requires projectId). */
   chatTaskId?: string | null | undefined
-  /**
-   * Document id (Migration 095). Emits `/app/{ws}/doc/{id}` — a PAGE, not
-   * a query overlay: the document replaces the main view, so it must not
-   * borrow the path of whatever page happened to be open underneath it.
-   */
+  /**    * Document id (Migration 095). Emits `/app/{ws}/doc/{id}` — a PAGE, not a query overlay: the
+   * document replaces the main view, so it must not borrow the path of whatever page happened to be
+   * open underneath it. */
   documentId?: string | null | undefined
   /** Project sub-state (pageId / detail / sorts / panel …). Passed through. */
   query?: Record<string, string> | null | undefined
@@ -78,26 +76,21 @@ export type ParsedAppPath =
   | { kind: 'projectChat'; workspaceId: string; projectId: string; chatTaskId: string }
   | { kind: 'other'; path: string }
 
-/**
- * First path segments that are route keywords, never workspace ids.
+/** First path segments that are route keywords, never workspace ids.
  * Without this, `/app/chat/sess_9` would parse as workspace `chat` —
  * the legacy routes must stay `{ kind: 'other' }` so the boot rewrite
  * (not the normal view derivation) handles them. `doc` is here for a
  * different reason: a bare `/app/doc` is a malformed document URL, and
  * silently reading it as a workspace named "doc" would boot the user
- * into a workspace that does not exist.
- */
+ * into a workspace that does not exist. */
 const RESERVED_FIRST_SEGMENTS = new Set(['chat', 'doc', 'task', 'settings', 'kanban', 'projects'])
 
 const nonEmpty = (v: string | null | undefined): v is string =>
   typeof v === 'string' && v.length > 0
 
-/**
- * Build a router location for the given target. Always emits the
- * canonical no-trailing-slash path. Throws when the combination is
- * incoherent (chatTaskId without projectId, chatSessionId without
- * workspaceId, or a chatSessionId alongside a project).
- */
+/**  * Build a router location for the given target. Always emits the canonical no-trailing-slash path.
+ * Throws when the combination is incoherent (chatTaskId without projectId, chatSessionId without
+ * workspaceId, or a chatSessionId alongside a project). */
 export function buildAppUrl(input: AppUrlTarget): AppUrlLocation {
   const workspaceId = (input.workspaceId ?? '').toString().trim()
   const chatSessionId = (input.chatSessionId ?? '').toString().trim()
@@ -160,12 +153,9 @@ export function buildSettingsUrl(
   return { path: `/app/${id}/settings`, query }
 }
 
-/**
- * Parse an app path into its kind + ids. Trailing slashes are ignored
- * (canonical form has none). Anything that is not one of the five app
- * shapes — settings, kanban-settings, legacy routes, unknown — comes
- * back as `{ kind: 'other', path }` so callers can fall through.
- */
+/**  * Parse an app path into its kind + ids. Trailing slashes are ignored (canonical form has none).
+ * Anything that is not one of the five app shapes — settings, kanban-settings, legacy routes,
+ * unknown — comes back as `{ kind: 'other', path }` so callers can fall through. */
 export function parseAppPath(rawPath: string): ParsedAppPath {
   const path = normalizeAppPath(rawPath)
   if (path === '/app') return { kind: 'landing' }
@@ -187,11 +177,8 @@ export function parseAppPath(rawPath: string): ParsedAppPath {
   return { kind: 'other', path }
 }
 
-/**
- * Canonicalize a path: strip trailing slashes (root `/` is kept).
- * `/app/ws_1/` → `/app/ws_1`. Ids never contain slashes in this
- * codebase, so a trailing slash is always noise, never content.
- */
+/**  * Canonicalize a path: strip trailing slashes (root `/` is kept). `/app/ws_1/` → `/app/ws_1`. Ids
+ * never contain slashes in this codebase, so a trailing slash is always noise, never content. */
 export function normalizeAppPath(rawPath: string): string {
   if (typeof rawPath !== 'string' || rawPath.length === 0) return '/app'
   if (rawPath === '/') return '/'
@@ -203,15 +190,13 @@ export function isAppPath(rawPath: string): boolean {
   return parseAppPath(rawPath).kind !== 'other'
 }
 
-/**
- * Path-shaped twin of `buildTaskUrlQuery` (same `TaskUrlContext`
+/** Path-shaped twin of `buildTaskUrlQuery` (same `TaskUrlContext`
  * input, same workspace/item/pageId/sorts resolution incl. URL
  * breadcrumb fallback). Emits `/app/{ws}/projects/{item}/chat/{task}`
  * instead of the `?view=workspace&itemId=Y/chat/T` query object, so
  * overlay-close handlers and task navigations don't duplicate the
  * resolution rules. The `view` key `buildTaskUrlQuery` always emits
- * is dropped — the path carries it.
- */
+ * is dropped — the path carries it. */
 export function buildTaskAppUrl(input: TaskUrlContext): AppUrlLocation {
   const q = buildTaskUrlQuery(input)
   const wsId = q.workspaceId ?? ''

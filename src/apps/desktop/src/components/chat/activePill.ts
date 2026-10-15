@@ -4,12 +4,9 @@ export interface PillIndex {
   groupIndex: number
 }
 
-/**
- * Whether a message group deserves a rail pill. Real user turns only:
- * background completions are `role=user` on the wire but render as
- * left-aligned tool cards (never the blue bubble), and compaction
- * envelopes are system artifacts — neither is a user turn to jump to.
- */
+/**  * Whether a message group deserves a rail pill. Real user turns only: background completions are
+ * `role=user` on the wire but render as left-aligned tool cards (never the blue bubble), and
+ * compaction envelopes are system artifacts — neither is a user turn to jump to. */
 export function isPillGroup(role: string, isBgOnly: boolean, isCompaction: boolean): boolean {
   return role === 'user' && !isBgOnly && !isCompaction
 }
@@ -36,13 +33,11 @@ export function estimateViewportEnd(
   return Math.max(start, end - buffer)
 }
 
-/**
- * Returns the groupIndex of the last pill at or below the bound index
+/** Returns the groupIndex of the last pill at or below the bound index
  * (usually the estimated viewport bottom — i.e. the latest user turn
  * the user has seen), or null when no pill is at/above the bound (the
  * user hasn't scrolled to their first message yet).
- * `pills` must be sorted ascending by groupIndex (as ChatView builds them).
- */
+ * `pills` must be sorted ascending by groupIndex (as ChatView builds them). */
 export function pickActivePillIndex(
   pills: readonly PillIndex[],
   boundIndex: number,

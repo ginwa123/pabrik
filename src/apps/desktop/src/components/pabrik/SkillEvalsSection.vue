@@ -33,20 +33,17 @@ export interface SkillEvalsSettings {
 
 const model = defineModel<SkillEvalsSettings>({ required: true })
 
-/** Whether the backend reported the block at all. A config with no
- * `skill_evals` key still comes back with the object (defaults), so this
- * is only false if the GET failed entirely — worth surfacing, because it
- * means the value on screen is a guess rather than the server's state. */
+/**  * Whether the backend reported the block at all. A config with no `skill_evals` key still comes
+ * back with the object (defaults), so this is only false if the GET failed entirely — worth
+ * surfacing, because it means the value on screen is a guess rather than the server's state. */
 const props = defineProps<{ loaded?: boolean }>()
 const isLoaded = computed(() => props.loaded !== false)
 
-/**
- * Assign a FRESH object rather than mutating `model.enabled` in place —
+/** Assign a FRESH object rather than mutating `model.enabled` in place —
  * `defineModel` only emits `update:modelValue` on reassignment, so an
  * in-place write would leave the orchestrator's watcher (and therefore
  * the dirty pill) unaware that anything changed. Same shape as
- * PabrikGeneralSection's toggle handlers.
- */
+ * PabrikGeneralSection's toggle handlers. */
 function onToggle(event: Event) {
   model.value = { ...model.value, enabled: (event.target as HTMLInputElement).checked }
 }

@@ -125,10 +125,9 @@ describe('VirtualScroller idle content-size observer', () => {
     await drain()
     expect(modelTotalOf(wrapper)).toBe(2000)
 
-    // Async growth with NO scroll (image decode / fetch resolving).
-    // Only the content observer can pick this up: without the fix the
-    // model parks at 2000 until the user's next scroll applies the
-    // whole correction at once.
+    // Async growth with NO scroll (image decode / fetch resolving). Only the content observer can
+    // pick this up: without the fix the model parks at 2000 until the user's next scroll applies
+    // the whole correction at once.
     mockAllChildren(el, 200)
     mockContentH(el, 4000)
     fireContentRO()
@@ -177,9 +176,8 @@ describe('VirtualScroller idle content-size observer', () => {
     await drain()
     expect(modelTotalOf(wrapper)).toBe(2000)
 
-    // Sync the observer baseline: fire once at the settled box size
-    // (in a real browser the observer fires on every change and the
-    // baseline tracks; in jsdom it only fires when the test says so).
+    // Sync the observer baseline: fire once at the settled box size (in a real browser the observer
+    // fires on every change and the baseline tracks; in jsdom it only fires when the test says so).
     // The scheduled measure is a no-op (children already exact).
     fireContentRO()
     await drain()

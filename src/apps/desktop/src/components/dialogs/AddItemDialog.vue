@@ -66,10 +66,9 @@ const loadItemsForPicker = async (path: string): Promise<FolderEntry[]> => {
 
 const handleFolderSelected = (path: string) => {
   selectedPath.value = path
-  // Close the picker on selection — matches the expected UX (the picker
-  // dismisses and the user is returned to the AddItemDialog with the
-  // chosen path filled in). The real FilePickerDialog has a `closeOnSelect`
-  // prop but it defaults to false, so we close from the parent instead.
+  // Close the picker on selection — matches the expected UX (the picker dismisses and the user is
+  // returned to the AddItemDialog with the chosen path filled in). The real FilePickerDialog has a
+  // `closeOnSelect` prop but it defaults to false, so we close from the parent instead.
   showPicker.value = false
 }
 
@@ -111,10 +110,9 @@ onBeforeUnmount(() => {
   document.body.style.overflow = ''
 })
 
-// Open-reset without watch(): seed on mount (initial show=true) and on
-// closed->open updates. A Transition before-enter hook cannot do this — it
-// never fires on initial mount (no `appear`) and VTU stubs Transition, so
-// specs that mount then setProps(show=true) would see empty fields.
+// Open-reset without watch(): seed on mount (initial show=true) and on closed->open updates. A
+// Transition before-enter hook cannot do this — it never fires on initial mount (no `appear`) and
+// VTU stubs Transition, so specs that mount then setProps(show=true) would see empty fields.
 const wasShown = ref(props.show)
 onMounted(() => {
   if (props.show) void handleOpen()

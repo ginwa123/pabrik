@@ -55,11 +55,9 @@ const WorkspaceItemStub = defineComponent({
           'data-workspace-id': props.workspaceId,
           class: { 'opacity-50': props.isItemDragging },
           style: {
-            // Mirror the real WorkspaceItem's drop indicator:
-            // top-line on top-half hover, bottom-line on bottom-
-            // half hover. The test asserts on the rendered
-            // boxShadow so any future regression that desyncs the
-            // visual from the drop logic fails here.
+            // Mirror the real WorkspaceItem's drop indicator: top-line on top-half hover,
+            // bottom-line on bottom- half hover. The test asserts on the rendered boxShadow so any
+            // future regression that desyncs the visual from the drop logic fails here.
             boxShadow:
               props.isItemDragOver && !props.isItemDragging
                 ? props.isItemDragOverInsertAfter
@@ -95,12 +93,9 @@ describe('ProjectsList item drag-and-drop', () => {
     })
   })
 
-  /**
-   * Build a fake DragEvent with a writable dataTransfer. JSDOM does
-   * not provide the browser's `DataTransfer` class, so we use a
-   * minimal in-memory stub that implements just the surface our
-   * component touches (`setData` / `getData`).
-   */
+  /**    * Build a fake DragEvent with a writable dataTransfer. JSDOM does not provide the browser's
+   * `DataTransfer` class, so we use a minimal in-memory stub that implements just the surface our
+   * component touches (`setData` / `getData`). */
   function makeDragStore() {
     const store = new Map<string, string>()
     return {
@@ -222,10 +217,9 @@ describe('ProjectsList item drag-and-drop', () => {
   })
 
   it('is a no-op (no emit) when an item is dropped on an item from a different workspace', async () => {
-    // Cross-workspace drop is out of scope for this plan; the
-    // handler must silently no-op (no event emitted) so the
-    // source workspace's order stays intact and no API call
-    // is made for a drop the backend would reject.
+    // Cross-workspace drop is out of scope for this plan; the handler must silently no-op (no event
+    // emitted) so the source workspace's order stays intact and no API call is made for a drop the
+    // backend would reject.
     const workspaces = [
       makeWorkspace('ws_a', 'A', [makeItem('item1', '1'), makeItem('item2', '2')]),
       makeWorkspace('ws_b', 'B', [makeItem('item3', '3'), makeItem('item4', '4')]),
@@ -242,10 +236,9 @@ describe('ProjectsList item drag-and-drop', () => {
     // ws_a's items are in the DOM.
     expect(items.length).toBe(2)
 
-    // Drag item1 (workspace A) onto item2 with a FORGED foreign
-    // workspace id — ProjectsList can't render ws_b, but the guard
-    // only reads `data-workspace-id` off the target <li>, so this
-    // still exercises the cross-workspace no-op.
+    // Drag item1 (workspace A) onto item2 with a FORGED foreign workspace id — ProjectsList can't
+    // render ws_b, but the guard only reads `data-workspace-id` off the target <li>, so this still
+    // exercises the cross-workspace no-op.
     const dt = makeDragStore()
     items[1]!.element.setAttribute('data-workspace-id', 'ws_b')
     items[0]!.element.dispatchEvent(makeDragEvent('dragstart', dt))

@@ -33,17 +33,14 @@ export const TOP_LEVEL_SENTINEL = '__design_top_level__'
 
 export interface LayerDragDropArgs {
   /** Reactive list of all elements on the active page. Accepts:
-   *  - a plain array (one-shot reads)
-   *  - a Ref<array> (live updates — recommended for production)
    *  - a getter () => array | Ref<array> (for live computed refs)
    */
   elements:
     | DesignElement[]
     | Ref<DesignElement[]>
     | (() => DesignElement[] | Ref<DesignElement[]>)
-  /** Optional reactive selectedIds (same union). When the dragged
-   *  row is in this Set AND its size > 1, the whole set is dragged
-   *  together. */
+  /**    * Optional reactive selectedIds (same union). When the dragged row is in this Set AND its size >
+   * 1, the whole set is dragged together. */
   selectedIds?: Set<string> | Ref<Set<string>> | (() => Set<string> | null)
 }
 
@@ -79,11 +76,9 @@ export function useLayerDragDrop(args: LayerDragDropArgs) {
 
   const elements = computed<DesignElement[]>(resolveElements)
 
-  // Walk the parent_id chain upward from `descendant_id`. Returns
-  // true iff `ancestor_id` is `descendant_id`'s parent OR any
-  // ancestor of `descendant_id` (i.e., reparenting
-  // `descendant_id` under `ancestor_id` would be valid — not a
-  // cycle).
+  // Walk the parent_id chain upward from `descendant_id`. Returns true iff `ancestor_id` is
+  // `descendant_id`'s parent OR any ancestor of `descendant_id` (i.e., reparenting `descendant_id`
+  // under `ancestor_id` would be valid — not a cycle).
   function isAncestor(targetAncestor: string, descendantId: string): boolean {
     let current: string | null = descendantId
     for (let depth = 0; depth < 1024; depth++) {
@@ -96,21 +91,18 @@ export function useLayerDragDrop(args: LayerDragDropArgs) {
     return false
   }
 
-  // A target is a valid drop zone iff:
-  //   - For TOP_LEVEL_SENTINEL: always valid.
-  //   - For a real row id: that row is `group` or `frame`, AND NONE
-  //     of the dragged elements is the target itself OR a
-  //     descendant of the target (cycle check).
+  // A target is a valid drop zone iff: - For TOP_LEVEL_SENTINEL: always valid. - For a real row id:
+  // that row is `group` or `frame`, AND NONE of the dragged elements is the target itself OR a
+  // descendant of the target (cycle check).
   function isValidDropTarget(targetId: string, sourceIds: Set<string>): boolean {
     if (targetId === TOP_LEVEL_SENTINEL) return true
     const t = elements.value.find((e) => e.id === targetId)
     if (!t) return false
     // Only group/frame can contain children.
     if (t.type !== 'group' && t.type !== 'frame') return false
-    // Block ANY dragged element being the target itself OR an
-    // ancestor of the target (cycle check: reparenting src under
-    // targetId would close a cycle if src is reachable from
-    // targetId's parent chain).
+    // Block ANY dragged element being the target itself OR an ancestor of the target (cycle check:
+    // reparenting src under targetId would close a cycle if src is reachable from targetId's parent
+    // chain).
     for (const src of sourceIds) {
       if (targetId === src) return false
       if (isAncestor(src, targetId)) return false

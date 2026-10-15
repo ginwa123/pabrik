@@ -49,10 +49,8 @@ const rotateTarget = ref<Secret | null>(null)
 const rotateValue = ref('')
 const deleteTarget = ref<Secret | null>(null)
 
-/**
- * An empty value is not a secret. Silently swallowing the click would look
- * like a success that never happened, so the form says why instead.
- */
+/** An empty value is not a secret. Silently swallowing the click would look
+ * like a success that never happened, so the form says why instead. */
 const canAdd = computed(() => nameInput.value.trim().length > 0 && valueInput.value.length > 0)
 
 function handleAdd(): void {
@@ -109,10 +107,9 @@ function formatTimestamp(value: string): string {
   return parsed.toLocaleString()
 }
 
-// The empty state's CTA focuses the name field. Kept as a function in the
-// script block rather than an inline arrow in the template: `document` is not
-// on the component's instance type, so a template expression fails the
-// `vue-tsc --build` type-check that the pre-push hook runs.
+// The empty state's CTA focuses the name field. Kept as a function in the script block rather than
+// an inline arrow in the template: `document` is not on the component's instance type, so a
+// template expression fails the `vue-tsc --build` type-check that the pre-push hook runs.
 function focusAddName(): void {
   document.getElementById('secret-name')?.focus()
 }

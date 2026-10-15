@@ -1,11 +1,8 @@
-/**
- * Unit tests for the kanban tag suggestions API client
+/** Unit tests for the kanban tag suggestions API client
  * (getKanbanTagSuggestions). Mocks global.fetch to assert URL, method,
  * query shape, and graceful degradation without hitting the network.
- *
  * Plan: docs/superpowers/plans/2026-07-30-kanban-task-tags-autocomplete.md
- *   Chunk 2 / Tasks 2.1 + 2.2
- */
+ *   Chunk 2 / Tasks 2.1 + 2.2 */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -16,10 +13,9 @@ describe('getKanbanTagSuggestions', () => {
   const fetchMock = vi.fn()
 
   beforeEach(() => {
-    // apiFetch calls useNotificationStore() on every non-2xx response
-    // to fire an error toast. Without an active Pinia the call
-    // throws. setActivePinia(createPinia()) mounts a fresh store for
-    // each test so the toast path can run without crashing.
+    // apiFetch calls useNotificationStore() on every non-2xx response to fire an error toast.
+    // Without an active Pinia the call throws. setActivePinia(createPinia()) mounts a fresh store
+    // for each test so the toast path can run without crashing.
     setActivePinia(createPinia())
   })
 

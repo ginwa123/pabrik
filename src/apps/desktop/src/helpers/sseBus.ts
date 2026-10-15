@@ -72,54 +72,36 @@ type SseEventMap = {
 type Listener<K extends keyof SseEventMap> = (event: SseEventMap[K]) => void
 
 export interface SseBus {
-  /**
-   * Register a listener for events of `type`. Returns an unsubscribe
-   * function. The same `cb` registered twice for the same `type`
-   * counts twice (callers must dedupe themselves). No-op if the bus
-   * is not yet installed.
-   */
+  /**    * Register a listener for events of `type`. Returns an unsubscribe function. The same `cb`
+   * registered twice for the same `type` counts twice (callers must dedupe themselves). No-op if
+   * the bus is not yet installed. */
   on<K extends keyof SseEventMap>(type: K, cb: Listener<K>): () => void
-  /**
-   * Remove a previously-registered listener. No-op if `cb` was not
-   * registered for `type`. No-op if the bus is not yet installed.
-   */
+  /** Remove a previously-registered listener. No-op if `cb` was not
+   * registered for `type`. No-op if the bus is not yet installed. */
   off<K extends keyof SseEventMap>(type: K, cb: Listener<K>): void
-  /**
-   * Reactive read of the current SSE connection state (one of
-   * `connecting | open | reconnecting | closed | failed`). Updates
-   * synchronously on every state transition emitted by the
-   * underlying `SseClient`.
-   */
+  /**    * Reactive read of the current SSE connection state (one of `connecting | open | reconnecting |
+   * closed | failed`). Updates synchronously on every state transition emitted by the underlying
+   * `SseClient`. */
   readonly state: ShallowRef<SseState>
-  /**
-   * Force a reconnect of the global (non-session-scoped) channels
-   * and reset the attempt counter. Use this for a user-driven
-   * "Retry" button on the `failed` badge. No-op if the bus is not
-   * yet installed.
-   */
+  /**    * Force a reconnect of the global (non-session-scoped) channels and reset the attempt counter.
+   * Use this for a user-driven "Retry" button on the `failed` badge. No-op if the bus is not yet
+   * installed. */
   reconnectGlobal(): void
-  /**
-   * Close the bus. Terminal — stops all streams, clears retry
-   * timers, leaves the bus uninstalled (a subsequent `installSseBus`
-   * rebuilds it). Safe to call multiple times.
-   */
+  /**    * Close the bus. Terminal — stops all streams, clears retry timers, leaves the bus uninstalled (a
+   * subsequent `installSseBus` rebuilds it). Safe to call multiple times. */
   close(): void
-  /**
-   * Which role THIS window plays when cross-tab sharing is active:
+  /** Which role THIS window plays when cross-tab sharing is active:
    * `leader` owns the single EventSource, `follower` receives events
    * over the BroadcastChannel. `off` = sharing disabled (every window
    * opens its own connection, the pre-tab-sharing behaviour).
-   * Optional so existing test doubles typed as `SseBus` stay valid.
-   */
+   * Optional so existing test doubles typed as `SseBus` stay valid. */
   readonly tabRole?: ShallowRef<TabSharingRole>
-  /**
-   * Subscribe to "your view may be stale, refresh from the API" signals.
+  /** Subscribe to "your view may be stale, refresh from the API" signals.
    * Fires when this window takes over the shared connection (events emitted
    * during the handover gap reached nobody) and when it returns from being
    * hidden long enough to have been frozen/throttled. Coalesced.
    * Returns an unsubscribe function. No-op when tab sharing is off, because
-   * a window that holds its own connection never misses a delivery.
-   */
+   * a window that holds its own connection never misses a delivery. */
   readonly onResync?: (cb: (reason: string) => void) => () => void
   /**
    * Subscribe to SSE connection-state transitions
@@ -299,10 +281,9 @@ export function installSseBus(_app?: App, options?: SseBusInstallOptions): SseBu
         workers: (e) => forward('worker', e),
         sessions: (e) => forward('session', e),
         kanban: (e) => forward('kanban', e),
-        // Design-mode element events. The `designSse` Pinia store
-        // subscribes via `bus.on('design', cb)` to receive all three
-        // action variants (created/updated/deleted) on the same
-        // callback and re-fetch the page's element list.
+        // Design-mode element events. The `designSse` Pinia store subscribes via `bus.on('design',
+        // cb)` to receive all three action variants (created/updated/deleted) on the same callback
+        // and re-fetch the page's element list.
         design: (e) => forward('design', e),
         // Bare 'llm' and bare 'queue' — backend broadcasts all sessions'
         // events on central keys. Frontend filter is `event.session_id ===
@@ -317,15 +298,13 @@ export function installSseBus(_app?: App, options?: SseBusInstallOptions): SseBu
         // emits on "skill_evals", frontend filters by `event.session_id`
         // in the Evals tab's store.
         skillEvals: (e) => forward('skillEvals', e),
-        // File stage/unstage — same central-broadcast pattern: backend
-        // emits on "git_file_stage", frontend filters by `event.cwd` in
-        // SidebarDiffPanel.vue and moves ONE row instead of re-fetching
-        // the whole git-status list.
+        // File stage/unstage — same central-broadcast pattern: backend emits on "git_file_stage",
+        // frontend filters by `event.cwd` in SidebarDiffPanel.vue and moves ONE row instead of
+        // re-fetching the whole git-status list.
         gitFileStage: (e) => forward('gitFileStage', e),
-        // Change-request state — same central-broadcast pattern: backend emits
-        // on "git_pr_state", frontend filters by `event.cwd` in the bridge that
-        // invalidates the shared PR-status cache (helpers/prStatusCache.ts), so
-        // a merge in ANOTHER tab still recolours this one's badges.
+        // Change-request state — same central-broadcast pattern: backend emits on "git_pr_state",
+        // frontend filters by `event.cwd` in the bridge that invalidates the shared PR-status cache
+        // (helpers/prStatusCache.ts), so a merge in ANOTHER tab still recolours this one's badges.
         gitPrState: (e) => forward('gitPrState', e),
       },
       onError: (err) => {
@@ -381,10 +360,8 @@ export function installSseBus(_app?: App, options?: SseBusInstallOptions): SseBu
     }
   }
 
-  /**
-   * Deliver a locally-received event: to this window's listeners, and (from the
-   * leader) to every other tab so they behave as if they held the connection.
-   */
+  /** Deliver a locally-received event: to this window's listeners, and (from the
+   * leader) to every other tab so they behave as if they held the connection. */
   function forward<K extends keyof SseEventMap>(type: K, event: SseEventMap[K]): void {
     dispatch(type, event)
     _tabChannel?.broadcastEvent(type, event)
@@ -404,16 +381,14 @@ export function installSseBus(_app?: App, options?: SseBusInstallOptions): SseBu
     }
   }
 
-  // Expose `dispatch` to the module-level `__dispatchSseBus` so
-  // tests can inject synthetic events directly (bypassing the
-  // SseClient). Stored AFTER the closures are wired so the test
-  // escape hatch works from the first `installSseBus` call.
+  // Expose `dispatch` to the module-level `__dispatchSseBus` so tests can inject synthetic events
+  // directly (bypassing the SseClient). Stored AFTER the closures are wired so the test escape
+  // hatch works from the first `installSseBus` call.
   _dispatch = dispatch
 
-  // Start the connection. With tab sharing on, the coordinator decides whether
-  // THIS window owns it (leader) or receives events from the tab that does —
-  // so the BrowserProfile keeps exactly one SSE connection per origin no matter
-  // how many tabs are open.
+  // Start the connection. With tab sharing on, the coordinator decides whether THIS window owns it
+  // (leader) or receives events from the tab that does — so the BrowserProfile keeps exactly one
+  // SSE connection per origin no matter how many tabs are open.
   if (sharing) {
     _tabChannel = createTabChannel({
       ...options?.tabChannelOptions,
@@ -502,10 +477,8 @@ export function installSseBus(_app?: App, options?: SseBusInstallOptions): SseBu
       // that nulled `_globalClient` via `__resetSseBus` between
       // install and close still gets the original closed.
       const gc = _globalClient ?? createdClient
-      // NEW (sse-disconnect-diagnosis): pass a reason so the
-      // subsequent state log knows "bus was torn down" — useful
-      // when correlating SSE disconnects with App.vue unmount or
-      // HMR re-mounts.
+      // NEW (sse-disconnect-diagnosis): pass a reason so the subsequent state log knows "bus was
+      // torn down" — useful when correlating SSE disconnects with App.vue unmount or HMR re-mounts.
       gc?.close('bus-torn-down')
       // Detach the state-mirror listener and clear the test-only
       // handles so a subsequent `installSseBus` starts clean (and
@@ -528,20 +501,16 @@ export function useSseBus(): SseBus {
   return _instance
 }
 
-/**
- * Test-only: clears the singleton. Closes the global client (via
- * `bus.close()`) so the EventSource stub's retry timer / state
- * listeners are torn down before the next test installs a fresh
- * bus. Safe to call before `installSseBus` (no-op).
- */
+/**  * Test-only: clears the singleton. Closes the global client (via `bus.close()`) so the EventSource
+ * stub's retry timer / state listeners are torn down before the next test installs a fresh bus.
+ * Safe to call before `installSseBus` (no-op). */
 export function __resetSseBus(): void {
   if (_instance) {
     _instance.close()
   }
-  // `close()` already nulls `_stateUnsub` + `_globalClient` +
-  // `_dispatch` + `_tabChannel`, but be defensive in case `__resetSseBus` is
-  // called before `installSseBus` (when `_instance` is null) AND a previous
-  // test leaked module-level state via a partial swap.
+  // `close()` already nulls `_stateUnsub` + `_globalClient` + `_dispatch` + `_tabChannel`, but be
+  // defensive in case `__resetSseBus` is called before `installSseBus` (when `_instance` is null)
+  // AND a previous test leaked module-level state via a partial swap.
   _globalClient = null
   if (_tabChannel) {
     try {
@@ -559,12 +528,9 @@ export function __resetSseBus(): void {
   _dispatch = null
 }
 
-/**
- * Test-only: dispatches a synthetic event into the bus's listener
- * Maps. Bypasses the SseClient entirely (the test owns the event
- * payload shape — `as any` casts at the call site are intentional
- * to keep this helper loose). No-op if the bus is not installed.
- */
+/**  * Test-only: dispatches a synthetic event into the bus's listener Maps. Bypasses the SseClient
+ * entirely (the test owns the event payload shape — `as any` casts at the call site are intentional
+ * to keep this helper loose). No-op if the bus is not installed. */
 export function __dispatchSseBus<K extends keyof SseEventMap>(
   type: K,
   event: SseEventMap[K],
@@ -593,10 +559,9 @@ export function __setSseBusGlobalClient(client: SseClient): void {
     _stateUnsub()
     _stateUnsub = null
   }
-  // Close the old client (terminal — no further state transitions).
-  // Only when it's a different instance — the same object passed in
-  // twice would close-then-resubscribe-onto-the-same-thing, which is
-  // fine but wasteful.
+  // Close the old client (terminal — no further state transitions). Only when it's a different
+  // instance — the same object passed in twice would close-then-resubscribe-onto-the-same-thing,
+  // which is fine but wasteful.
   if (_globalClient && _globalClient !== client) {
     _globalClient.close()
   }
@@ -616,12 +581,9 @@ export function __setSseBusGlobalClient(client: SseClient): void {
   _instance.state.value = client.getState()
 }
 
-/**
- * Test-only: returns the currently-installed global SseClient, or
- * null if the bus is not yet installed (or has been closed).
- * Useful for asserting that `__setSseBusGlobalClient` swapped the
- * right client, and for spying on `.close()` to verify cleanup.
- */
+/**  * Test-only: returns the currently-installed global SseClient, or null if the bus is not yet
+ * installed (or has been closed). Useful for asserting that `__setSseBusGlobalClient` swapped the
+ * right client, and for spying on `.close()` to verify cleanup. */
 export function __getSseBusGlobalClient(): SseClient | null {
   return _globalClient
 }

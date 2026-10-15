@@ -11,12 +11,9 @@ import {
 import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 import * as api from '../api'
 
-/**
- * Test-only stub SseClient. Tracks state-listener callbacks on a
- * non-public `__stateListeners` array so `emitStubState` can fan out
- * a transition to all subscribers (the production `SseClient` keeps
- * the listener list in a closure; tests reach it via `as any`).
- */
+/**  * Test-only stub SseClient. Tracks state-listener callbacks on a non-public `__stateListeners`
+ * array so `emitStubState` can fan out a transition to all subscribers (the production `SseClient`
+ * keeps the listener list in a closure; tests reach it via `as any`). */
 function makeStubClient(initial: SseState): SseClient {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const stub: any = {

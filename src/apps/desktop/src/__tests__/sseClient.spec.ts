@@ -49,14 +49,12 @@ interface MockEventSource {
   addEventListener: (type: string, listener: EventListenerOrEventListenerObject) => void
   removeEventListener: (type: string, listener: EventListenerOrEventListenerObject) => void
   emit(type: 'open' | 'error' | 'message' | string, data?: string): void
-  /**
-   * Simulate the server's `connected` named event. This is what
+  /** Simulate the server's `connected` named event. This is what
    * the SseClient uses as the canonical "stream is live" signal
    * (per the backend convention in `docs/sse-reconnect-plan.md`).
    * Native `EventSource` does not fire `connected` automatically
    * — the SERVER sends it via `event: connected\ndata: ...`. Our
-   * mock helper stands in for that server behavior.
-   */
+   * mock helper stands in for that server behavior. */
   simulateOpen(payload?: string): void
   /** All listeners, by type. */
   _listeners: Map<string, Set<EventListenerOrEventListenerObject>>
@@ -198,9 +196,8 @@ function createMockOnlineTarget(): {
   }
 }
 
-// Mock `window` for the `pagehide` / `beforeunload` listeners.
-// Same shape as the online target — both `addEventListener` and
-// `removeEventListener` accounting, plus a `fire(type)` helper to
+// Mock `window` for the `pagehide` / `beforeunload` listeners. Same shape as the online target —
+// both `addEventListener` and `removeEventListener` accounting, plus a `fire(type)` helper to
 // simulate the browser firing the unload event.
 function createMockUnloadTarget(): {
   target: Pick<Window, 'addEventListener' | 'removeEventListener'> & {
@@ -411,10 +408,9 @@ describe('createSseClient', () => {
     expect(client.getState()).toBe('reconnecting')
     expect(instances.length).toBe(1)
 
-    // Now open a second instance (simulating the SseClient's
-    // internal start() during retry) and emit 'open' for it.
-    // We need to advance the timer for start() to fire, then
-    // open the new instance.
+    // Now open a second instance (simulating the SseClient's internal start() during retry) and
+    // emit 'open' for it. We need to advance the timer for start() to fire, then open the new
+    // instance.
     vi.advanceTimersByTime(750)
     expect(instances.length).toBe(2)
     // Even though the retry fired, no new error yet — the open
@@ -554,11 +550,9 @@ describe('createSseClient', () => {
     // attempt 2: open then error → reconnecting (attempt 2)
     instances[1]!.simulateOpen()
     instances[1]!.emit('error')
-    // Advance to fire retry. The retry creates a third
-    // EventSource and bumps `attempt` to 3, but the connection
-    // is not yet `failed` — `failed` is only emitted by
-    // `handleError` when the new instance errors and
-    // `attempt > maxAttempts`.
+    // Advance to fire retry. The retry creates a third EventSource and bumps `attempt` to 3, but
+    // the connection is not yet `failed` — `failed` is only emitted by `handleError` when the new
+    // instance errors and `attempt > maxAttempts`.
     vi.advanceTimersByTime(60_000)
     expect(instances.length).toBe(3)
     // Open + error the 3rd instance. attempt=3 > maxAttempts=2
@@ -843,10 +837,9 @@ describe('createSseClient', () => {
     client.close()
   })
 
-  // 9e. additionalEventTypes dedupes reserved names. Passing
-  // `connected` or `message` in the list must NOT register a
-  // second listener (which would cause onEvent to fire twice per
-  // event, doubling the consumer's parse work).
+  // 9e. additionalEventTypes dedupes reserved names. Passing `connected` or `message` in the list
+  // must NOT register a second listener (which would cause onEvent to fire twice per event,
+  // doubling the consumer's parse work).
   it('silently de-duplicates reserved names (`connected`, `message`) in additionalEventTypes', () => {
     const { ctor, instances } = createMockCtor()
     const { target: visTarget } = createMockTarget(false)
@@ -885,11 +878,9 @@ describe('createSseClient', () => {
     client.close()
   })
 
-  // 9f. additionalEventTypes listeners are re-registered on
-  // reconnect. When a retry fires `start()` again, a fresh
-  // EventSource is built and the previous instance's listeners
-  // are gone — the new instance must get the same named-event
-  // listeners.
+  // 9f. additionalEventTypes listeners are re-registered on reconnect. When a retry fires `start()`
+  // again, a fresh EventSource is built and the previous instance's listeners are gone — the new
+  // instance must get the same named-event listeners.
   it('re-registers additionalEventTypes listeners after a reconnect', () => {
     const { ctor, instances } = createMockCtor()
     const { target: visTarget } = createMockTarget(false)
@@ -901,10 +892,9 @@ describe('createSseClient', () => {
       EventSourceCtor: ctor,
       visibilityTarget: visTarget,
       onlineTarget: onlineTarget,
-      // Deterministic random: returns the midpoint (0.5) so jitter
-      // is always 0.75 of the exponential value. With
-      // baseDelayMs=1000, the first retry's exp = 1000 * 2^0 = 1000
-      // and delay = 750ms — easy to advance past.
+      // Deterministic random: returns the midpoint (0.5) so jitter is always 0.75 of the
+      // exponential value. With baseDelayMs=1000, the first retry's exp = 1000 * 2^0 = 1000 and
+      // delay = 750ms — easy to advance past.
       random: () => 0.5,
       pauseWhenHidden: false,
       baseDelayMs: 1_000,
@@ -919,10 +909,9 @@ describe('createSseClient', () => {
     // First instance: listener registered.
     expect(instances[0]!._listeners.get('queue_message')?.size ?? 0).toBe(1)
 
-    // Simulate a connect → error → reconnect cycle. The error
-    // calls es.close() (releasing listeners on the dead ES) and
-    // schedules a retry; advancing the timer fires the retry and
-    // constructs a new EventSource.
+    // Simulate a connect → error → reconnect cycle. The error calls es.close() (releasing listeners
+    // on the dead ES) and schedules a retry; advancing the timer fires the retry and constructs a
+    // new EventSource.
     instances[0]!.emit('connected', '{"ok":true}')
     instances[0]!.emit('error')
 
@@ -942,9 +931,8 @@ describe('createSseClient', () => {
     client.close()
   })
 
-  // 9g. Default 'message' events whose payload equals `'ping'`
-  // (the backend's keepalive) are silently dropped. The consumer
-  // never sees them, so JSON-buffering adapters don't grow an
+  // 9g. Default 'message' events whose payload equals `'ping'` (the backend's keepalive) are
+  // silently dropped. The consumer never sees them, so JSON-buffering adapters don't grow an
   // unbounded buffer of "ping\nping\n..." between real events.
   it('silently drops `ping` heartbeat messages from the default `message` event', () => {
     const { ctor, instances } = createMockCtor()
@@ -983,10 +971,9 @@ describe('createSseClient', () => {
     client.close()
   })
 
-  // 9h. Setting `heartbeatData: null` disables the heartbeat
-  // filter — every default `message` event reaches `onEvent`,
-  // including the `'ping'` keepalive. Useful for tests, or for
-  // consumers that want to count heartbeats.
+  // 9h. Setting `heartbeatData: null` disables the heartbeat filter — every default `message` event
+  // reaches `onEvent`, including the `'ping'` keepalive. Useful for tests, or for consumers that
+  // want to count heartbeats.
   it('disables the heartbeat filter when heartbeatData is null', () => {
     const { ctor, instances } = createMockCtor()
     const { target: visTarget } = createMockTarget(false)
@@ -1198,10 +1185,8 @@ describe('createSseClient', () => {
     client.close()
     expect(client.getState()).toBe('closed')
 
-    // Stale pagehide (e.g. browser fires it after Vue's
-    // onUnmounted called .close() and the page finally unloads).
-    // Must not throw, must not create a new instance, must not
-    // change state.
+    // Stale pagehide (e.g. browser fires it after Vue's onUnmounted called .close() and the page
+    // finally unloads). Must not throw, must not create a new instance, must not change state.
     unloadTarget.fire('pagehide')
     expect(client.getState()).toBe('closed')
     expect(instances.length).toBe(1)

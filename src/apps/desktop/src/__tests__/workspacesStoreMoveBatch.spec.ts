@@ -1,9 +1,5 @@
-/**
- * Behavioural tests for `workspacesStore.moveDesignElementsBatch`.
- *
- * Plan: docs/superpowers/plans/2026-08-06-move-element-with-descendants.md
- * (Chunk 3, Task 3.3)
- */
+/**  * Behavioural tests for `workspacesStore.moveDesignElementsBatch`. Plan:
+ * docs/superpowers/plans/2026-08-06-move-element-with-descendants.md (Chunk 3, Task 3.3) */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -348,11 +344,8 @@ describe('workspacesStore.moveDesignElementsBatch', () => {
     expect(after[0].y).toBe(150)
   })
 
-  /**
-   * Same bug as above but verifying the canonical wire shape is also
-   * accepted (the new backend). Locks in that we don't regress the
-   * happy path while defending against the legacy shape.
-   */
+  /**    * Same bug as above but verifying the canonical wire shape is also accepted (the new backend).
+   * Locks in that we don't regress the happy path while defending against the legacy shape. */
   it('local mirror preserves `type` when backend emits `type` (canonical wire shape)', async () => {
     const store = makeWorkspacesStore()
     const baseline = [

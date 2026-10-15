@@ -31,11 +31,9 @@ import { runSyncResult } from '../../sync/runtime'
 
 const props = defineProps<{
   skillName: string | null
-  /**
-   * Explicit workspace binding. When set, detail reads/deletes in this
+  /** Explicit workspace binding. When set, detail reads/deletes in this
    * workspace instead of the active one — the workspace settings page binds
-   * the route workspace. Absent = previous behaviour (active workspace).
-   */
+   * the route workspace. Absent = previous behaviour (active workspace). */
   workspaceId?: string | null
 }>()
 
@@ -165,11 +163,9 @@ const cancelEdit = () => {
   saveError.value = null
 }
 
-/**
- * A save with nothing changed is refused by the server (409), so the
+/** A save with nothing changed is refused by the server (409), so the
  * button is disabled rather than letting the user discover that from a
- * toast. Both fields are compared, because either one alone is a change.
- */
+ * toast. Both fields are compared, because either one alone is a change. */
 const canSave = computed(() => {
   const detail = skillDetail.value
   if (!detail) return false
