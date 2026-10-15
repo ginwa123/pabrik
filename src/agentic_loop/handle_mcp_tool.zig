@@ -509,14 +509,40 @@ test "handle_mcp_tool_run: disabled server returns MCPServerDisabled (no spawn)"
 // must never wait on it unboundedly and Stop has to reach that wait. These
 // tests drive the real `handle_mcp_tool_run` against local children.
 
-/// Server names must have NO underscore: `mcp_<server>_<tool>` splits on the
-/// first one (`:38-48`).
-const never_reading_server_json = "{\"command\": \"sleep\", \"args\": [\"30\"]}";
-const never_reading_argv: []const []const u8 = &.{ "sleep", "30" };
+/// A child that never reads its stdin and stays alive long enough to hold a
+/// lease. Host table on purpose (CODING_STANDARDS.md §2): the tests below run
+/// on every platform, and a host the table does not name fails the spawn.
+fn neverReadingArgv() []const []const u8 {
+    return switch (builtin.os.tag) {
+        .windows => &.{ "cmd.exe", "/C", "ping", "-n", "30", "127.0.0.1" },
+        .linux, .macos => &.{ "sleep", "30" },
+        else => &.{},
+    };
+}
+
+/// The same child as a config entry — `mcp_<server>_<tool>` splits on the first
+/// underscore, so server names carry none.
+fn neverReadingServerJson() []const u8 {
+    return switch (builtin.os.tag) {
+        .windows => "{\"command\": \"cmd.exe\", \"args\": [\"/C\", \"ping\", \"-n\", \"30\", \"127.0.0.1\"]}",
+        .linux, .macos => "{\"command\": \"sleep\", \"args\": [\"30\"]}",
+        else => "{\"command\": \"pabrik-no-such-child\", \"args\": []}",
+    };
+}
+
+/// A child that echoes what it reads (`cat` / `more`), so a round-trip is
+/// observable. Same host table, same rule.
+fn echoServerJson() []const u8 {
+    return switch (builtin.os.tag) {
+        .windows => "{\"command\": \"cmd.exe\", \"args\": [\"/C\", \"more\"]}",
+        .linux, .macos => "{\"command\": \"cat\", \"args\": []}",
+        else => "{\"command\": \"pabrik-no-such-child\", \"args\": []}",
+    };
+}
 
 /// One stdio MCP server entry + everything `handle_mcp_tool_run` needs, wired
-/// to a real local child (`cat` / `sleep`) and to a log file the tests read to
-/// count lease attempts (`.err` is the only level it keeps).
+/// to a real local child and to a log file the tests read to count lease
+/// attempts (`.err` is the only level it keeps).
 const StdioCallFixture = struct {
     threaded: std.Io.Threaded,
     logger: logger_mod.Logger,
@@ -610,13 +636,12 @@ fn elapsedMsSince(io: std.Io, start_ns: i128) u64 {
 }
 
 test "handle_mcp_tool_run: a server another session holds reports MCPServerBusy within ONE lease budget" {
-    if (builtin.os.tag == .windows) return error.SkipZigTest; // `sleep` child
-    var fx = try StdioCallFixture.init("busysrv", never_reading_server_json, "./test_mcp_lease_busy.log");
+    var fx = try StdioCallFixture.init("busysrv", neverReadingServerJson(), "./test_mcp_lease_busy.log");
     defer fx.deinit();
 
     // Arrange: another session is mid-transaction on this server.
     const reg = pabrik_mod.mcpStdioRegistry(testing.allocator);
-    var held = try reg.acquire("busysrv", never_reading_argv, .{});
+    var held = try reg.acquire("busysrv", neverReadingArgv(), .{});
     defer held.release();
 
     const start = std.Io.Timestamp.now(fx.io, .real).nanoseconds;
@@ -636,8 +661,7 @@ test "handle_mcp_tool_run: a server another session holds reports MCPServerBusy 
 }
 
 test "handle_mcp_tool_run: a cancelled session stops waiting for a busy stdio server" {
-    if (builtin.os.tag == .windows) return error.SkipZigTest;
-    var fx = try StdioCallFixture.init("cancsrv", never_reading_server_json, "./test_mcp_lease_cancelled.log");
+    var fx = try StdioCallFixture.init("cancsrv", neverReadingServerJson(), "./test_mcp_lease_cancelled.log");
     defer fx.deinit();
 
     // The Stop button's state, read from where the loop writes it: the worker row.
@@ -648,7 +672,7 @@ test "handle_mcp_tool_run: a cancelled session stops waiting for a busy stdio se
     try db.exec(testing.allocator, "INSERT INTO worker (id, cancelled) VALUES ('sess_cancelled', 1)", &.{});
 
     const reg = pabrik_mod.mcpStdioRegistry(testing.allocator);
-    var held = try reg.acquire("cancsrv", never_reading_argv, .{});
+    var held = try reg.acquire("cancsrv", neverReadingArgv(), .{});
     defer held.release();
 
     const start = std.Io.Timestamp.now(fx.io, .real).nanoseconds;
@@ -665,11 +689,10 @@ test "handle_mcp_tool_run: a cancelled session stops waiting for a busy stdio se
 }
 
 test "handle_mcp_tool_run: a session that is NOT cancelled still waits out the busy server" {
-    // The other half of the contract: the cancel hook must fire on the row's
-    // value, not on its mere presence — otherwise every MCP call would abort
-    // the moment its session row existed.
-    if (builtin.os.tag == .windows) return error.SkipZigTest;
-    var fx = try StdioCallFixture.init("livewsrv", never_reading_server_json, "./test_mcp_lease_uncancelled.log");
+    // The other half of the contract: the cancel hook fires on the row's VALUE,
+    // not on its mere presence — otherwise every MCP call would abort the
+    // moment its session row existed.
+    var fx = try StdioCallFixture.init("livewsrv", neverReadingServerJson(), "./test_mcp_lease_uncancelled.log");
     defer fx.deinit();
 
     var db: sqlite.SqliteBackend = .{};
@@ -679,7 +702,7 @@ test "handle_mcp_tool_run: a session that is NOT cancelled still waits out the b
     try db.exec(testing.allocator, "INSERT INTO worker (id, cancelled) VALUES ('sess_live', 0)", &.{});
 
     const reg = pabrik_mod.mcpStdioRegistry(testing.allocator);
-    var held = try reg.acquire("livewsrv", never_reading_argv, .{});
+    var held = try reg.acquire("livewsrv", neverReadingArgv(), .{});
     defer held.release();
 
     const start = std.Io.Timestamp.now(fx.io, .real).nanoseconds;
@@ -699,18 +722,14 @@ test "handle_mcp_tool_run: a session that is NOT cancelled still waits out the b
 test "handle_mcp_tool_run: an unheld stdio server answers the call" {
     // Happy path through the new bounded send: an unheld server must still
     // round-trip the request and hand the child's body back as the tool output.
-    var fx = try StdioCallFixture.init("idlesrv", "{\"command\": \"cat\", \"args\": []}", "./test_mcp_lease_unheld.log");
+    var fx = try StdioCallFixture.init("idlesrv", echoServerJson(), "./test_mcp_lease_unheld.log");
     defer fx.deinit();
 
-    const result = fx.call("mcp_idlesrv_ping", .{}) catch |err| {
-        // Windows CI without `cat` on PATH.
-        if (builtin.os.tag == .windows) return error.SkipZigTest;
-        return err;
-    };
+    const result = try fx.call("mcp_idlesrv_ping", .{});
     defer testing.allocator.free(result);
 
-    // `cat` echoes the JSON-RPC request; it carries no `result.content[0].text`,
-    // so the raw echoed body is what the model receives.
+    // The echo child returns the JSON-RPC request, which carries no
+    // `result.content[0].text`, so the raw body is what the model receives.
     try testing.expect(std.mem.indexOf(u8, result, "\"method\":\"tools/call\"") != null);
     try testing.expect(std.mem.indexOf(u8, result, "\"name\":\"ping\"") != null);
 }

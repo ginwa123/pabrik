@@ -56,8 +56,8 @@ test {
     _ = @import("design_model.zig"); // Phase 6 — inline updateElementsBatch + indexOf tests
     _ = @import("workflow_compact_message.zig"); // merged 2026-09-10 (ex-workflow_commpact_message.zig typo): url_style regression + envelope + prompt/envelope helpers
     _ = @import("handle_tool.zig"); // 2026-08-06-fix-refactor-zig-imports — 16 inline parseDiffViewFromResult tests
-    // MCP tool dispatch: the bounded + cancellable lease contract (a second
-    // session must never wait forever for another session's stdio call).
+    // MCP tool dispatch: the bounded + cancellable lease contract (runs without
+    // this line too; registration is the project convention).
     _ = @import("handle_mcp_tool.zig");
     // (on_event_sent.zig, workflow.zig and tools_wrap_output.zig are already
     // registered above; their tool_calls_json wire-shape lock, fetch-once MCP

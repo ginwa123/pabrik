@@ -1420,9 +1420,9 @@ test "recv aborts on cancel with truly-silent child" {
     try testing.expect(elapsed_ms < 2000);
 }
 
-/// A real pipe nobody drains: the deterministic stand-in for a child that
-/// stopped reading its stdin — no subprocess, no environment. POSIX-only, so
-/// `open` reports PipeUnsupported on Windows and the callers skip.
+/// A pipe that accepts bytes and is never drained. POSIX-only: the CRT `pipe`
+/// takes HANDLEs on Windows, where `waitWritable` fail-opens — a path the
+/// host-table test below covers with an assertion of its own instead.
 const TestPipe = struct {
     read_fd: std.c.fd_t,
     write_file: std.Io.File,
@@ -1444,85 +1444,82 @@ const TestPipe = struct {
         _ = std.c.close(self.read_fd);
         _ = std.c.close(self.write_file.handle);
     }
-
-    fn readBack(self: *TestPipe, buf: []u8) usize {
-        var total: usize = 0;
-        while (total < buf.len) {
-            const n = std.c.read(self.read_fd, buf[total..].ptr, buf.len - total);
-            if (n <= 0) break;
-            total += @intCast(n);
-        }
-        return total;
-    }
 };
 
-test "writeAllBounded returns SendTimeout instead of parking when the pipe never drains" {
-    // The send-side twin of "recv times out on truly-silent child": an
-    // unbounded write parks the caller AND this server's lease, so every other
-    // session on it waits too, with no way for Stop to reach them.
-    if (builtin.os.tag == .windows) return error.SkipZigTest; // waitWritable is POSIX-only
-    var pipe = TestPipe.open() catch return error.SkipZigTest;
-    defer pipe.close();
+test "writeAllBounded delivers every byte to a sink that accepts them, across chunk boundaries" {
+    // Host-independent: a temp file accepts every byte on every platform, so
+    // this asserts the write path itself rather than one platform's pipe.
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
 
-    // Past any platform pipe buffer (64 KiB on Linux), so the first chunks fit
-    // and the rest can only end via the deadline.
-    const payload = try testing.allocator.alloc(u8, 256 * 1024);
-    defer testing.allocator.free(payload);
-    @memset(payload, 'x');
-
-    const start = std.Io.Timestamp.now(testing.io, .real).nanoseconds;
-    const result = writeAllBounded(testing.io, pipe.write_file, payload, 300 * std.time.ns_per_ms, null);
-    const elapsed_ms: u64 = @intCast(@divTrunc(
-        std.Io.Timestamp.now(testing.io, .real).nanoseconds - start,
-        std.time.ns_per_ms,
-    ));
-    try testing.expect(result == error.SendTimeout);
-    // 200ms lower bound: the poll really waited for pipe space. 5s upper bound:
-    // the deadline fired — an unbounded write blocks here until a reader
-    // appears, which never happens.
-    try testing.expect(elapsed_ms >= 200);
-    try testing.expect(elapsed_ms < 5000);
-}
-
-test "writeAllBounded aborts when the cancel hook fires, even with a huge budget" {
-    if (builtin.os.tag == .windows) return error.SkipZigTest;
-    var pipe = TestPipe.open() catch return error.SkipZigTest;
-    defer pipe.close();
-
-    const cancel = struct {
-        fn call() bool {
-            return true;
-        }
-    }.call;
-
-    const start = std.Io.Timestamp.now(testing.io, .real).nanoseconds;
-    // The 30s budget is irrelevant: cancel is polled before the first write.
-    const result = writeAllBounded(testing.io, pipe.write_file, "payload", 30 * std.time.ns_per_s, &cancel);
-    const elapsed_ms: u64 = @intCast(@divTrunc(
-        std.Io.Timestamp.now(testing.io, .real).nanoseconds - start,
-        std.time.ns_per_ms,
-    ));
-    try testing.expect(result == error.SendTimeout);
-    try testing.expect(elapsed_ms < 2000);
-}
-
-test "writeAllBounded delivers every byte to a live reader, across chunk boundaries" {
-    var pipe = TestPipe.open() catch return error.SkipZigTest;
-    defer pipe.close();
-
-    // 10 KB crosses the 4 KiB write ceiling (three writes) and stays under the
-    // pipe buffer, so a healthy reader gets it back byte-for-byte.
+    // 10 KB crosses the 4 KiB write ceiling (three writes).
     const payload = try testing.allocator.alloc(u8, 10_000);
     defer testing.allocator.free(payload);
     for (payload, 0..) |*b, i| b.* = @intCast('a' + (i % 26));
 
-    try writeAllBounded(testing.io, pipe.write_file, payload, 5_000 * std.time.ns_per_ms, null);
+    {
+        const sink = try tmp.dir.createFile(testing.io, "sink.bin", .{ .truncate = true });
+        defer sink.close(testing.io);
+        try writeAllBounded(testing.io, sink, payload, 5_000 * std.time.ns_per_ms, null);
+    }
 
-    const got = try testing.allocator.alloc(u8, payload.len);
+    const got = try tmp.dir.readFileAlloc(testing.io, "sink.bin", testing.allocator, .limited(payload.len + 1));
     defer testing.allocator.free(got);
-    const n = pipe.readBack(got);
-    try testing.expectEqual(payload.len, n);
-    try testing.expectEqualStrings(payload, got[0..n]);
+    try testing.expectEqualStrings(payload, got);
+}
+
+test "writeAllBounded bounds a stalled sink where the gate polls, and fail-opens where it does not" {
+    // One body, both hosts: where `waitWritable` polls a pipe (POSIX) the
+    // deadline and cancel end a stalled write; on Windows it fail-opens, so
+    // that branch is asserted here. An unlisted host FAILS.
+    const gated = switch (builtin.os.tag) {
+        .linux, .macos => true,
+        .windows => false,
+        else => return error.UnlistedHost,
+    };
+
+    if (comptime gated) {
+        var pipe = try TestPipe.open();
+        defer pipe.close();
+
+        // Past any platform pipe buffer (64 KiB on Linux), so the first chunks
+        // fit and the rest can only end via the deadline.
+        const payload = try testing.allocator.alloc(u8, 256 * 1024);
+        defer testing.allocator.free(payload);
+        @memset(payload, 'x');
+
+        const start = std.Io.Timestamp.now(testing.io, .real).nanoseconds;
+        const result = writeAllBounded(testing.io, pipe.write_file, payload, 300 * std.time.ns_per_ms, null);
+        const elapsed_ms: u64 = @intCast(@divTrunc(
+            std.Io.Timestamp.now(testing.io, .real).nanoseconds - start,
+            std.time.ns_per_ms,
+        ));
+        try testing.expect(result == error.SendTimeout);
+        // 200ms lower bound: the poll actually waited for pipe space. 5s upper
+        // bound: the deadline fired. Unbounded, this write never returns.
+        try testing.expect(elapsed_ms >= 200);
+        try testing.expect(elapsed_ms < 5000);
+
+        const cancel = struct {
+            fn call() bool {
+                return true;
+            }
+        }.call;
+        const cancel_start = std.Io.Timestamp.now(testing.io, .real).nanoseconds;
+        // The 30s budget is irrelevant: cancel is polled before the first write.
+        const cancelled = writeAllBounded(testing.io, pipe.write_file, payload, 30 * std.time.ns_per_s, &cancel);
+        const cancel_ms: u64 = @intCast(@divTrunc(
+            std.Io.Timestamp.now(testing.io, .real).nanoseconds - cancel_start,
+            std.time.ns_per_ms,
+        ));
+        try testing.expect(cancelled == error.SendTimeout);
+        try testing.expect(cancel_ms < 2000);
+    } else {
+        // Windows: the gate is a documented no-op — an already-expired
+        // deadline still reports writable instead of parking the writer.
+        const past_deadline_ns = std.Io.Timestamp.now(testing.io, .real).nanoseconds - std.time.ns_per_s;
+        try testing.expect(waitWritable(testing.io, std.Io.File.stderr(), past_deadline_ns, std.time.ns_per_ms, null));
+    }
 }
 
 test "recv with deadline still delivers data (happy path)" {

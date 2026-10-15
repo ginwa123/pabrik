@@ -345,15 +345,17 @@ Two design points worth the reviewer's attention:
 
 Regression tests (behaviour, deterministic fixtures — no network):
 
-* `mcp_stdio.zig` — the bounded writer against a **real pipe nobody drains**
-  (no subprocess, so the fixture cannot depend on the runner's environment):
-  the deadline ⇒ `SendTimeout`; the cancel hook aborts it; a live reader gets
-  every byte back across the 4 KiB chunk boundary.
+* `mcp_stdio.zig` — two host-table tests (CODING_STANDARDS.md §2: a test handles
+  every platform, or it is not a test — zero skips): a temp-file sink gets every
+  byte back across the 4 KiB chunk boundary on *every* platform, and the
+  stalled-sink test asserts the deadline + cancel where the gate polls (POSIX,
+  a real never-drained pipe) and the documented fail-open branch on Windows.
 * `handle_mcp_tool.zig` — a held server ⇒ `MCPServerBusy` after **one** lease
   attempt (not three), counted from the acquire-failure lines the call logs,
   because wall-clock cannot tell one attempt from three on a coarse-timer host;
   a cancelled session stops waiting while a non-cancelled one waits it out; an
-  unheld server round-trips a real child's answer end-to-end.
+  unheld server round-trips a real child's answer end-to-end. The child is a
+  host table (`sleep` / `cmd.exe /C ping`), so all three platforms run these.
 * Both files are now registered for `zig build test` discovery
   (`agentic_loop/test_runner.zig`, `root.zig`'s test block) — `handle_mcp_tool`
   and `mcp_stdio` were carrying inline tests that never ran.

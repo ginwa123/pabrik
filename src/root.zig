@@ -340,9 +340,9 @@ test {
     // modules/agent/mcp/mcp/mcp_http.zig has inline tests for the SSE parser
     // + spec-compliant header builder.
     _ = @import("modules/agent/mcp/mcp/mcp_http.zig");
-    // mcp_stdio.zig's lease / framing / bounded-send contracts. Registered for
-    // the same discovery reason as mcp_http above — the `pub const mcp_stdio`
-    // re-export alone does not pull its `test \"...\"` blocks in.
+    // mcp_stdio.zig's lease / framing / bounded-send contracts (these run even
+    // without this line — measured — but the project convention is to register
+    // every test-bearing file explicitly).
     _ = @import("modules/agent/mcp/mcp/mcp_stdio.zig");
     // Browser-mode (web launch) random port picker (plan
     // 2026-09-10-web-launch-toggle): impl + unit tests in one file.
