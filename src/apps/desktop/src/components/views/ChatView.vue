@@ -1969,7 +1969,7 @@ const userPills = computed((): UserPill[] => {
       .join('\n')
       .trim()
     const preview = text.slice(0, 60) || 'Image'
-    pills.push({ groupIndex: i, key: groupKey(g), preview, title: `${preview}` })
+    pills.push({ groupIndex: i, key: groupKey(g), preview })
   })
   return pills
 })
@@ -4920,6 +4920,7 @@ const compactSession = async () => {
         v-show="!showCenterStage"
         ref="messagesWrapperRef"
         class="relative flex-1 min-h-0 flex flex-col messages-scroll-hide-native"
+        :class="{ 'has-pill-rail': userPills.length >= 2 }"
       >
         <!-- Changes-sidebar toggle for the headerless standalone layout
              (the kanban layout has its toggle button in the header above). -->
@@ -6628,6 +6629,47 @@ const compactSession = async () => {
 /* Make room for the slider track at the extreme right edge. */
 .messages-scroll-hide-native :deep(.user-pill-rail) {
   right: 18px;
+}
+
+/* ─── Pill-rail gutter ────────────────────────────────────────────────────
+   The rail is `position: absolute` on the transcript wrapper, so it is
+   OUT of flow: nothing reserves space for it and its pills paint straight
+   over the message bubbles (the "pillbar overlaps the chat" report). The
+   rail itself cannot fix that — an absolutely-positioned element never
+   pushes siblings — so the wrapper reserves the strip instead.
+
+   `--pill-rail-gutter` is the width of the rail's own footprint, measured
+   from the wrapper's right edge:
+       right: 18px  +  rail padding 4px  +  pill 24px  =  46px
+   rounded up to 48px so the pill's `scaleX(1.25)` hover growth (24 → 30px)
+   still lands inside the gutter rather than on a bubble.
+
+   Declared on the WRAPPER, not on the scroller: the agent-error band is a
+   sibling of the VirtualScroller, so a property set on the scroller would
+   not reach it and the strip would break across that band.
+
+   Applied as `padding-right` on the rows, NOT as a margin or a width on
+   the scroller: VirtualScroller's `measureItems()` reads `el.offsetHeight`,
+   so a horizontal padding is invisible to the height model — the sizer,
+   `scrollToBottom` and the scroll-restore anchors all keep working
+   unchanged. A `padding-bottom` would have been folded into the height and
+   shifted every anchor.
+
+   The class is bound on the wrapper with the SAME condition as the rail's
+   own `v-if="userPills.length >= 2"`, so the gutter exists exactly when
+   the rail does — no dead space in a 1-user-group chat, and no pills
+   without a gutter. */
+.messages-scroll-hide-native.has-pill-rail {
+  --pill-rail-gutter: 48px;
+}
+
+/* The rows are the scroller's slot content, so the gutter has to reach
+   them through `:deep()`. The agent-error band is a plain descendant of
+   the wrapper (outside the scroller's height model), so it takes the same
+   padding directly — the strip stays continuous down the transcript. */
+.messages-scroll-hide-native.has-pill-rail :deep([data-group-key]),
+.messages-scroll-hide-native.has-pill-rail .agent-error-list {
+  padding-right: var(--pill-rail-gutter, 48px);
 }
 
 /* ─── Floating composer ──────────────────────────────────────────────────
