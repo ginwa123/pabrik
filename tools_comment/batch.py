@@ -10,6 +10,11 @@ failing reverts the file and reports it:
   every comment's words in file order; a re-flow that adds, drops or
   reorders a single word changes the result.
 
+  CODE — every non-comment, non-blank line must be unchanged. This is the
+  guard that catches a deleted `const x = ref()`: the prose check cannot see
+  it (it is not a comment) and the parse check cannot either when the file
+  still parses without it.
+
   PARSE — the file must still parse. A `.vue` file is checked with the Vue
   SFC parser (template) AND the TypeScript parser (each `<script>` block);
   a `.ts` file with the TypeScript parser. Both parsers are loaded by Node
@@ -31,7 +36,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DESKTOP = WT + 'src/apps/desktop'
 sys.path.insert(0, HERE)
 
-from prose import prose  # noqa: E402
+from prose import code, prose  # noqa: E402
 
 VUE_PARSER = (_glob.glob(DESKTOP + '/node_modules/.pnpm/'
                          'vue-eslint-parser@*/node_modules/vue-eslint-parser') or [''])[0]
@@ -136,6 +141,7 @@ def main():
             print(f'MISSING {rel}')
             continue
         before = prose(path)
+        code_before = code(path)
         r = subprocess.run([sys.executable, os.path.join(HERE, 'reflow.py'), rel]
                            + (['--apply'] if apply_changes else []),
                            capture_output=True, text=True, cwd=WT)
@@ -143,6 +149,11 @@ def main():
         if prose(path) != before:
             subprocess.run(['git', 'checkout', '--', rel], cwd=WT)
             print(f'REVERTED (prose changed) {rel} :: {line}')
+            fail += 1
+            continue
+        if code(path) != code_before:
+            subprocess.run(['git', 'checkout', '--', rel], cwd=WT)
+            print(f'REVERTED (code changed) {rel} :: {line}')
             fail += 1
             continue
         if apply_changes and not parses(path):

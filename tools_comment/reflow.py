@@ -238,19 +238,31 @@ def reflow_token(kind, lines):
     return new, None
 
 
+def is_comment_line(l):
+    """True when the line carries no code byte — the rule's own test."""
+    return bool(re.match(r'^\s*(?://|/\*|\*)', l)) or not l.strip()
+
+
 def clamp_to_comment_lines(lines, start, end):
     """Shrink a reported block range so it holds ONLY comment lines.
 
-    The rule reports a block as a run of comment LINES, but a block's range
-    can be followed immediately by code with no blank line between. Trusting
-    the reported end line verbatim once deleted five lines of live test code
-    (`const ws = await setupHandlersAndSeed()` and friends), so the range is
-    trimmed from the end until every line in it is a comment line.
+    The rule reports a block as a run of comment LINES, but the range it
+    hands back is not guaranteed to be comment-only at either end: a block can
+    be followed immediately by code with no blank line between, and a block
+    can also START on a line that carries code before the comment.
+
+    Trusting the range verbatim deleted live code twice — five lines of test
+    setup in workspacesStoreSessionEvents.spec.ts and a
+    `const isPreviewMode = ref<boolean>(false)` in DesignView.vue. So the
+    range is trimmed from BOTH ends until every line in it is a comment line,
+    and a range that cannot be made comment-only is refused outright.
     """
-    def is_comment_line(l):
-        return bool(re.match(r'^\s*(?://|/\*|\*)', l)) or not l.strip()
-    while end > start and not is_comment_line(lines[end - 1]):
+    while end >= start and not is_comment_line(lines[end - 1]):
         end -= 1
+    while start <= end and not is_comment_line(lines[start - 1]):
+        start += 1
+    if end < start:
+        return None
     return start, end
 
 
@@ -258,10 +270,11 @@ def process(path, ranges, apply_changes):
     lines = open(path).read().split('\n')
     edits, skipped = [], []
     for (start, end) in ranges:
-        start, end = clamp_to_comment_lines(lines, start, end)
-        if end < start:
+        clamped = clamp_to_comment_lines(lines, start, end)
+        if clamped is None:
             skipped.append((start, 'no-comment-lines'))
             continue
+        start, end = clamped
         block = lines[start - 1:end]
         tokens = split_tokens(block)
         if not tokens:
