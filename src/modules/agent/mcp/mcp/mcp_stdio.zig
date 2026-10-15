@@ -284,48 +284,114 @@ fn readFramedWithReader(
     return body;
 }
 
+/// Largest single write attempt: ≤ `PIPE_BUF` (4096 on Linux) is atomic, so a
+/// write is only issued after `waitWritable` reported space — which is what
+/// makes `writeAllBounded`'s deadline a real bound.
+const WRITE_CHUNK_BYTES: usize = 4096;
+
+/// Wait until `file` accepts bytes (space in the child's stdin pipe) or the
+/// deadline / cancel fires. The send-side twin of `waitReadable`: without it a
+/// child that stopped draining stdin parks the per-server lease for everyone.
+fn waitWritable(
+    io: std.Io,
+    file: std.Io.File,
+    deadline_abs: i128,
+    deadline_ns: u64,
+    is_cancelled: ?*const fn () bool,
+) bool {
+    if (comptime builtin.os.tag == .windows) {
+        return true;
+    } else {
+        const has_deadline = deadline_ns != 0;
+        while (true) {
+            if (is_cancelled) |cb| if (cb()) return false;
+            const now_ns = std.Io.Timestamp.now(io, .real).nanoseconds;
+            if (has_deadline and now_ns >= deadline_abs) return false;
+            // Poll in ≤100ms slices so the cancel callback stays responsive
+            // and the deadline check above runs often (same as waitReadable).
+            const chunk_ms: i32 = if (has_deadline) blk: {
+                const rem_ns: i128 = deadline_abs - now_ns;
+                const rem_ms: i128 = @divTrunc(rem_ns, std.time.ns_per_ms);
+                const clamped: i128 = @min(@max(rem_ms, 1), 100);
+                break :blk @intCast(clamped);
+            } else 100;
+            var pfds = [_]std.posix.pollfd{.{
+                .fd = file.handle,
+                .events = std.posix.POLL.OUT,
+                .revents = 0,
+            }};
+            // Fail-open: if poll itself errors, let the write decide (same
+            // stance as waitReadable — never worse than the old behaviour).
+            const n = std.posix.poll(&pfds, chunk_ms) catch return true;
+            if (n > 0) return true;
+        }
+    }
+}
+
+/// Write every byte of `bytes`, bounded by `deadline_ns` (relative, 0 = none)
+/// and abortable via `is_cancelled`. Each chunk is gated on `waitWritable`, so
+/// a full pipe surfaces as `SendTimeout` instead of parking the caller.
+fn writeAllBounded(
+    io: std.Io,
+    file: std.Io.File,
+    bytes: []const u8,
+    deadline_ns: u64,
+    is_cancelled: ?*const fn () bool,
+) !void {
+    // Compute the absolute deadline ONCE on entry (same contract as
+    // `readFramed` / `writeFramed`).
+    const deadline_abs: i128 = if (deadline_ns == 0) std.math.maxInt(i128) else blk: {
+        const now_ns = std.Io.Timestamp.now(io, .real).nanoseconds;
+        const dline_i128: i128 = @intCast(deadline_ns);
+        break :blk now_ns + dline_i128;
+    };
+
+    var off: usize = 0;
+    while (off < bytes.len) {
+        if (!waitWritable(io, file, deadline_abs, deadline_ns, is_cancelled)) {
+            return StdioError.SendTimeout;
+        }
+        const end = @min(off + WRITE_CHUNK_BYTES, bytes.len);
+        const n = std.Io.File.writeStreaming(file, io, &.{}, &.{bytes[off..end]}, 1) catch
+            return StdioError.BrokenPipe;
+        if (n == 0) return StdioError.BrokenPipe;
+        off += n;
+    }
+}
+
 /// Write a newline-delimited JSON message (NDJSON). Used for MCP stdio
 /// servers that expect `JSON.stringify(msg) + '\n'` (the SDK default for both
 /// Node and Python).
-fn writeNDJSON(io: std.Io, file: std.Io.File, body: []const u8) !void {
+fn writeNDJSON(
+    io: std.Io,
+    file: std.Io.File,
+    body: []const u8,
+    deadline_ns: u64,
+    is_cancelled: ?*const fn () bool,
+) !void {
     // Fast path: body + '\n' fits in a small stack buffer
     var stack_buf: [8192]u8 = undefined;
     if (body.len + 1 <= stack_buf.len) {
         @memcpy(stack_buf[0..body.len], body);
         stack_buf[body.len] = '\n';
-        try std.Io.File.writeStreamingAll(file, io, stack_buf[0 .. body.len + 1]);
+        try writeAllBounded(io, file, stack_buf[0 .. body.len + 1], deadline_ns, is_cancelled);
     } else {
-        try std.Io.File.writeStreamingAll(file, io, body);
-        try std.Io.File.writeStreamingAll(file, io, "\n");
+        try writeAllBounded(io, file, body, deadline_ns, is_cancelled);
+        try writeAllBounded(io, file, "\n", deadline_ns, is_cancelled);
     }
 }
 
-/// Write a Content-Length-framed message. Pair with `readFramed`.
+/// Write a Content-Length-framed message. Pair with `readFramed`. The deadline
+/// is a REAL bound: both halves go through `writeAllBounded`, so a child that
+/// stopped draining stdin cannot park the write (or the lease) forever.
 fn writeFramed(io: std.Io, file: std.Io.File, body: []const u8, deadline_ns: u64) !void {
-    // `deadline_ns` is a relative duration in nanoseconds (0 = no timeout) —
-    // see readFramed's contract. Convert to an absolute deadline once on
-    // entry so the per-write check is a single i128 comparison.
-    const deadline_abs: i128 = if (deadline_ns == 0) std.math.maxInt(i128) else blk: {
-        const now = std.Io.Timestamp.now(io, .real).nanoseconds;
-        const dline_i128: i128 = @intCast(deadline_ns);
-        break :blk now + dline_i128;
-    };
-
     // Use a stack-allocated header buffer to avoid the Io.Writer abstraction
     // (which has subtle flush semantics in Zig 0.16's threaded runtime — an
     // explicit `flush()` on a 4 KiB writer buffer spins waiting for more
     var header_buf: [64]u8 = undefined;
     const header = std.fmt.bufPrint(&header_buf, "Content-Length: {d}\r\n\r\n", .{body.len}) catch return StdioError.InvalidFrame;
-    if (deadline_ns != 0) {
-        const now_ns = std.Io.Timestamp.now(io, .real).nanoseconds;
-        if (now_ns >= deadline_abs) return StdioError.SendTimeout;
-    }
-    std.Io.File.writeStreamingAll(file, io, header) catch return StdioError.BrokenPipe;
-    if (deadline_ns != 0) {
-        const now_ns = std.Io.Timestamp.now(io, .real).nanoseconds;
-        if (now_ns >= deadline_abs) return StdioError.SendTimeout;
-    }
-    std.Io.File.writeStreamingAll(file, io, body) catch return StdioError.BrokenPipe;
+    try writeAllBounded(io, file, header, deadline_ns, null);
+    try writeAllBounded(io, file, body, deadline_ns, null);
 }
 
 // ============================================================================
@@ -390,12 +456,17 @@ pub const StdioClient = struct {
         try writeFramed(self.io, stdin, body, deadline_ns);
     }
 
-    /// Send a newline-delimited JSON message (NDJSON) to the child. Used for
-    /// MCP servers that expect `JSON.stringify(msg) + '\n'` (the default for
-    /// both Node and Python SDKs).
-    pub fn sendNDJSON(self: *StdioClient, body: []const u8) !void {
+    /// Send a newline-delimited JSON message (NDJSON) — `JSON.stringify(msg) +
+    /// '\n'`, the Node/Python SDK default. `deadline_ns` (relative, 0 = none)
+    /// and `is_cancelled` bound the wait for pipe space.
+    pub fn sendNDJSON(
+        self: *StdioClient,
+        body: []const u8,
+        deadline_ns: u64,
+        is_cancelled: ?*const fn () bool,
+    ) !void {
         const stdin = self.stdin orelse return StdioError.BrokenPipe;
-        try writeNDJSON(self.io, stdin, body);
+        try writeNDJSON(self.io, stdin, body, deadline_ns, is_cancelled);
     }
 
     /// Convenience overload of `send` that uses no timeout. Preserves
@@ -1347,6 +1418,107 @@ test "recv aborts on cancel with truly-silent child" {
     ));
     try testing.expect(result == error.RecvTimeout);
     try testing.expect(elapsed_ms < 2000);
+}
+
+/// A real pipe nobody drains: the deterministic stand-in for a child that
+/// stopped reading its stdin. It needs no subprocess and no environment, which
+/// a spawned-child fixture does.
+const TestPipe = struct {
+    read_fd: std.posix.fd_t,
+    write_file: std.Io.File,
+
+    fn open() !TestPipe {
+        var fds: [2]std.posix.fd_t = undefined;
+        if (std.c.pipe(&fds) != 0) return error.PipeFailed;
+        return .{
+            .read_fd = fds[0],
+            .write_file = .{ .handle = fds[1], .flags = .{ .nonblocking = false } },
+        };
+    }
+
+    fn close(self: *TestPipe) void {
+        _ = std.c.close(self.read_fd);
+        _ = std.c.close(self.write_file.handle);
+    }
+
+    fn readBack(self: *TestPipe, buf: []u8) usize {
+        var total: usize = 0;
+        while (total < buf.len) {
+            const n = std.c.read(self.read_fd, buf[total..].ptr, buf.len - total);
+            if (n <= 0) break;
+            total += @intCast(n);
+        }
+        return total;
+    }
+};
+
+test "writeAllBounded returns SendTimeout instead of parking when the pipe never drains" {
+    // The send-side twin of "recv times out on truly-silent child": an
+    // unbounded write parks the caller AND this server's lease, so every other
+    // session on it waits too, with no way for Stop to reach them.
+    if (builtin.os.tag == .windows) return error.SkipZigTest; // waitWritable is POSIX-only
+    var pipe = try TestPipe.open();
+    defer pipe.close();
+
+    // Past any platform pipe buffer (64 KiB on Linux), so the first chunks fit
+    // and the rest can only end via the deadline.
+    const payload = try testing.allocator.alloc(u8, 256 * 1024);
+    defer testing.allocator.free(payload);
+    @memset(payload, 'x');
+
+    const start = std.Io.Timestamp.now(testing.io, .real).nanoseconds;
+    const result = writeAllBounded(testing.io, pipe.write_file, payload, 300 * std.time.ns_per_ms, null);
+    const elapsed_ms: u64 = @intCast(@divTrunc(
+        std.Io.Timestamp.now(testing.io, .real).nanoseconds - start,
+        std.time.ns_per_ms,
+    ));
+    try testing.expect(result == error.SendTimeout);
+    // 200ms lower bound: the poll really waited for pipe space. 5s upper bound:
+    // the deadline fired — an unbounded write blocks here until a reader
+    // appears, which never happens.
+    try testing.expect(elapsed_ms >= 200);
+    try testing.expect(elapsed_ms < 5000);
+}
+
+test "writeAllBounded aborts when the cancel hook fires, even with a huge budget" {
+    if (builtin.os.tag == .windows) return error.SkipZigTest;
+    var pipe = try TestPipe.open();
+    defer pipe.close();
+
+    const cancel = struct {
+        fn call() bool {
+            return true;
+        }
+    }.call;
+
+    const start = std.Io.Timestamp.now(testing.io, .real).nanoseconds;
+    // The 30s budget is irrelevant: cancel is polled before the first write.
+    const result = writeAllBounded(testing.io, pipe.write_file, "payload", 30 * std.time.ns_per_s, &cancel);
+    const elapsed_ms: u64 = @intCast(@divTrunc(
+        std.Io.Timestamp.now(testing.io, .real).nanoseconds - start,
+        std.time.ns_per_ms,
+    ));
+    try testing.expect(result == error.SendTimeout);
+    try testing.expect(elapsed_ms < 2000);
+}
+
+test "writeAllBounded delivers every byte to a live reader, across chunk boundaries" {
+    var pipe = try TestPipe.open();
+    defer pipe.close();
+
+    // 10 KB crosses the 4 KiB write ceiling (three writes) and stays under the
+    // pipe buffer, so a healthy reader gets it back byte-for-byte.
+    const payload = try testing.allocator.alloc(u8, 10_000);
+    defer testing.allocator.free(payload);
+    for (payload, 0..) |*b, i| b.* = @intCast('a' + (i % 26));
+
+    try writeAllBounded(testing.io, pipe.write_file, payload, 5_000 * std.time.ns_per_ms, null);
+
+    const got = try testing.allocator.alloc(u8, payload.len);
+    defer testing.allocator.free(got);
+    const n = pipe.readBack(got);
+    try testing.expectEqual(payload.len, n);
+    try testing.expectEqualStrings(payload, got[0..n]);
 }
 
 test "recv with deadline still delivers data (happy path)" {

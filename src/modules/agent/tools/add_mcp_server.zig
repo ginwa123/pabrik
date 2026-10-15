@@ -1100,7 +1100,12 @@ fn listAndAppendToolsStdio(
     }
 
     const reg = exec_pabrikcore.mcpStdioRegistry(ctx.allocator);
-    var lease = reg.acquire(server_name, argv, .{}) catch return inner_json;
+    var lease = reg.acquire(server_name, argv, .{
+        // Bounded: this runs on a session's loop thread and shares the
+        // per-server child with every other session, so `AcquireOptions{}`
+        // (wait forever) would park the session with no deadline at all.
+        .wait_ns = 60 * std.time.ns_per_s,
+    }) catch return inner_json;
     defer lease.release();
     const client = lease.client();
     const req = ctx.allocator.dupe(u8,

@@ -518,6 +518,14 @@ fn dispatchMCP(ctx: ToolContext, tool_call: agent.ToolCall) !ToolResult {
         ctx.logger,
         tool_call,
         ctx.config,
+        // The Stop button must reach the MCP lease wait and the child reads:
+        // a second session on the same stdio server otherwise waits forever
+        // for the first one with no way out.
+        .{ .cancel_session = .{
+            .db = ctx.db,
+            .session_id = ctx.session_id,
+            .io = ctx.io,
+        } },
     );
     // Return success with tool output
     return ToolResult{ .output = result };
@@ -972,6 +980,13 @@ pub fn handle_tool(
                     logger,
                     mcp_call,
                     config,
+                    // Same session-scoped cancel as `dispatchMCP`: Stop must
+                    // break an MCP lease wait / child read, not just this loop.
+                    .{ .cancel_session = .{
+                        .db = db,
+                        .session_id = session_id,
+                        .io = io,
+                    } },
                 ) catch |err| {
                     const err_msg = try std.fmt.allocPrint(allocator, "MCP tool {s} failed: {s}", .{
                         mcp_call.function.name,

@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const pabrik_mod = @import("pabrikcore");
 const agent = pabrik_mod.agent;
 const logger_mod = pabrik_mod.loggermod;
@@ -8,6 +9,72 @@ const custom_http_client = @import("kabelweb").client;
 const config_mod = pabrik_mod.config;
 const mcp_stdio = pabrik_mod.mcp_stdio;
 const mcp_http = pabrik_mod.mcp_http;
+const is_worker_cancelled_mod = @import("is_worker_cancelled.zig");
+
+/// Session identity that owns a `tools/call`, so the Stop button can reach
+/// the lease wait and the transport reads/writes.
+pub const CancelSession = struct {
+    db: *sqlite.SqliteBackend,
+    session_id: []const u8,
+    io: std.Io,
+};
+
+/// Same order of magnitude as one `tools/call` budget (`:86`): a waiter never
+/// waits longer than the holder's own worst case, and every wait is finite.
+pub const DEFAULT_LEASE_WAIT_NS: u64 = 60 * std.time.ns_per_s;
+
+/// Injectable knobs, both defaulted to production behaviour. They are
+/// parameters rather than constants so a test can drive the busy and cancelled
+/// paths without a 60 s wall-clock wait.
+pub const CallOptions = struct {
+    /// How long to wait for another session's in-flight call on the SAME stdio
+    /// server before reporting the server busy. Never pass 0 — that is the
+    /// `AcquireOptions` sentinel for "wait forever".
+    lease_wait_ns: u64 = DEFAULT_LEASE_WAIT_NS,
+    /// The session whose Stop button must break this call. Null = no hook
+    /// (tests, and callers with no session).
+    cancel_session: ?CancelSession = null,
+};
+
+/// `AcquireOptions.is_cancelled`/`recv` take a bare `fn () bool`, so the session
+/// rides on a threadlocal — the shape `workflow.zig` uses for `llm_cancel_thunk`.
+/// The hook is throttled (50 ms, latched) because it is polled per BYTE.
+const session_cancel = struct {
+    const POLL_INTERVAL_NS: i96 = 50 * std.time.ns_per_ms;
+
+    threadlocal var state: ?CancelSession = null;
+    threadlocal var last_poll_ns: i96 = 0;
+    threadlocal var latched: bool = false;
+
+    fn call() bool {
+        if (latched) return true;
+        const s = state orelse return false;
+
+        const now_ns = std.Io.Clock.now(.real, s.io).nanoseconds;
+        if (last_poll_ns != 0 and now_ns - last_poll_ns < POLL_INTERVAL_NS) return false;
+        last_poll_ns = now_ns;
+
+        const cancelled = is_worker_cancelled_mod.isWorkerCancelled(.{
+            .allocator = std.heap.page_allocator,
+            .db = s.db,
+            .session_id = s.session_id,
+        });
+        if (cancelled) latched = true;
+        return cancelled;
+    }
+
+    fn register(s: CancelSession) void {
+        state = s;
+        last_poll_ns = 0;
+        latched = false;
+    }
+
+    fn unregister() void {
+        state = null;
+        last_poll_ns = 0;
+        latched = false;
+    }
+};
 
 /// Handle an MCP tool call by forwarding it to the MCP server IMPORTANT: This
 /// function allocates directly from parent_allocator to avoid nested arena
@@ -17,7 +84,12 @@ pub fn handle_mcp_tool_run(
     logger: *logger_mod.Logger,
     tool_call: agent.ToolCall,
     config: *const config_mod.LlmConfig,
+    opts: CallOptions,
 ) ![]const u8 {
+    // Register BEFORE the first `acquire`: the lease wait and every transport
+    // read/write below reach the hook through `call`.
+    if (opts.cancel_session) |s| session_cancel.register(s);
+    defer if (opts.cancel_session != null) session_cancel.unregister();
     // Use parent_allocator directly to avoid nested arena memory issues
     const allocator = parent_allocator;
 
@@ -84,7 +156,7 @@ pub fn handle_mcp_tool_run(
         // mid-loop tool calls can legitimately take longer because the work
         // itself is unbounded).
         const deadline_ns: u64 = 60 * std.time.ns_per_s;
-        return callViaStdio(allocator, logger, server_name, actual_tool_name, tool_call.function.arguments, server_obj, deadline_ns);
+        return callViaStdio(allocator, logger, server_name, actual_tool_name, tool_call.function.arguments, server_obj, deadline_ns, opts);
     }
 
     const url_value = server_obj.get("url") orelse {
@@ -192,7 +264,12 @@ fn callViaStdio(
     arguments_json: []const u8,
     server_obj: std.json.ObjectMap,
     deadline_ns: u64,
+    opts: CallOptions,
 ) ![]const u8 {
+    // `handle_mcp_tool_run` has already registered the session (if any), so
+    // this is the live hook every wait below shares.
+    const cancel_fn: ?*const fn () bool =
+        if (opts.cancel_session != null) &session_cancel.call else null;
     // Build argv: [command, args...]
     var argv_list: std.ArrayList([]const u8) = .empty;
     defer argv_list.deinit(allocator);
@@ -238,9 +315,19 @@ fn callViaStdio(
         if (held) |*h| h.release();
     }
     while (attempt < 3) : (attempt += 1) {
-        var lease = reg.acquire(server_name, argv, .{}) catch |err| {
-            logger.errFmt("stdio MCP spawn failed for {s}.{s}: {s}", .{ server_name, tool_name, @errorName(err) });
+        // Bounded + cancellable lease wait: `AcquireOptions{}` means
+        // `wait_ns = 0` = wait forever, parking a neighbour session with no
+        // deadline and no way for Stop to reach it.
+        var lease = reg.acquire(server_name, argv, .{
+            .wait_ns = opts.lease_wait_ns,
+            .is_cancelled = cancel_fn,
+        }) catch |err| {
+            logger.errFmt("stdio MCP lease failed for {s}.{s}: {s}", .{ server_name, tool_name, @errorName(err) });
             last_err = err;
+            // Busy is contention, not a broken child: retrying would stack the
+            // wait budget and pin this session (and its neighbours) three times
+            // as long. Report it and let the model decide.
+            if (err == error.LeaseTimeout) return error.MCPServerBusy;
             if (attempt + 1 < 3) {
                 continue;
             }
@@ -254,8 +341,10 @@ fn callViaStdio(
         const req = try buildToolCallRequestBody(allocator, tool_name, arguments_json);
         defer allocator.free(req);
 
-        // Send as NDJSON (JSON + '\n'), not Content-Length
-        client.sendNDJSON(req) catch |err| {
+        // Send as NDJSON (JSON + '\n'), not Content-Length. The send shares the
+        // call's budget and the cancel hook: a child that stopped draining its
+        // stdin must not hold this lease (and every waiter behind it) open.
+        client.sendNDJSON(req, deadline_ns, cancel_fn) catch |err| {
             logger.errFmt("stdio MCP send failed for {s}.{s}: {s}", .{ server_name, tool_name, @errorName(err) });
             last_err = err;
             if (err == error.SendTimeout or err == error.BrokenPipe) lease.markStale();
@@ -265,7 +354,7 @@ fn callViaStdio(
             }
             return error.FailedToCallMCPServer;
         };
-        const r = client.recv(deadline_ns, null) catch |err| {
+        const r = client.recv(deadline_ns, cancel_fn) catch |err| {
             logger.errFmt("stdio MCP recv failed for {s}.{s}: {s}", .{ server_name, tool_name, @errorName(err) });
             last_err = err;
             if (err == error.RecvTimeout) lease.markStale();
@@ -412,6 +501,190 @@ test "handle_mcp_tool_run: disabled server returns MCPServerDisabled (no spawn)"
     // No-op when the gate above holds (no spawn attempted); cleans up the
     // global registry if a regression ever lets a spawn through.
     defer mcp_stdio.StdioRegistry.deinitGlobal();
-    const err = handle_mcp_tool_run(testing.allocator, &logger, tool_call, &cfg);
+    const err = handle_mcp_tool_run(testing.allocator, &logger, tool_call, &cfg, .{});
     try testing.expectError(error.MCPServerDisabled, err);
+}
+
+// ── Lease-wait behaviour: one stdio child per server per process, so a call
+// must never wait on it unboundedly and Stop has to reach that wait. These
+// tests drive the real `handle_mcp_tool_run` against local children.
+
+/// Server names must have NO underscore: `mcp_<server>_<tool>` splits on the
+/// first one (`:38-48`).
+const never_reading_server_json = "{\"command\": \"sleep\", \"args\": [\"30\"]}";
+const never_reading_argv: []const []const u8 = &.{ "sleep", "30" };
+
+/// One stdio MCP server entry + everything `handle_mcp_tool_run` needs, wired
+/// to a real local child process (`cat` / `sleep`) rather than a network double.
+const StdioCallFixture = struct {
+    threaded: std.Io.Threaded,
+    logger: logger_mod.Logger,
+    servers: std.json.Parsed(std.json.Value),
+    cfg: config_mod.LlmConfig,
+    io: std.Io,
+
+    fn init(server_name: []const u8, server_json: []const u8) !StdioCallFixture {
+        const allocator = testing.allocator;
+        var threaded = std.Io.Threaded.init(allocator, .{});
+        errdefer threaded.deinit();
+        const io = threaded.io();
+
+        var logger = logger_mod.Logger.init(allocator, io, .{
+            .min_level = .err,
+            .include_location = false,
+            .include_request_id = false,
+            .include_timestamp = false,
+        });
+        errdefer logger.deinit();
+
+        const json_text = try std.fmt.allocPrint(allocator, "{{\"{s}\": {s}}}", .{ server_name, server_json });
+        defer allocator.free(json_text);
+        var servers = try std.json.parseFromSlice(std.json.Value, allocator, json_text, .{});
+        errdefer servers.deinit();
+
+        return .{
+            .threaded = threaded,
+            .logger = logger,
+            .servers = servers,
+            .io = io,
+            // No cfg.deinit: the string fields borrow static literals and both
+            // maps stay empty, so `servers.deinit()` is the whole teardown.
+            .cfg = .{
+                .allocator = allocator,
+                .api_key = "",
+                .model = "",
+                .base_url = "",
+                .model_compaction_size_kb = 100,
+                .mcpServers_parsed = servers,
+                .mcp_servers = config_mod.LlmConfig.McpServersMap.init(allocator),
+                .profiles_models = config_mod.LlmConfig.ProfilesMap.init(allocator),
+                .sub_agents = &.{},
+                .url_style = "openai",
+            },
+        };
+    }
+
+    /// Call `mcp_<server>_<tool>` through the real entry point.
+    fn call(self: *StdioCallFixture, tool_name: []const u8, opts: CallOptions) anyerror![]const u8 {
+        const tool_call = agent.ToolCall{
+            .id = "tc_lease",
+            .function = .{ .name = tool_name, .arguments = "{}" },
+        };
+        return handle_mcp_tool_run(testing.allocator, &self.logger, tool_call, &self.cfg, opts);
+    }
+
+    fn deinit(self: *StdioCallFixture) void {
+        // Kills the child this fixture spawned via the process-global registry.
+        mcp_stdio.StdioRegistry.deinitGlobal();
+        self.logger.deinit();
+        self.threaded.deinit();
+        self.servers.deinit();
+    }
+};
+
+fn elapsedMsSince(io: std.Io, start_ns: i128) u64 {
+    return @intCast(@divTrunc(
+        std.Io.Timestamp.now(io, .real).nanoseconds - start_ns,
+        std.time.ns_per_ms,
+    ));
+}
+
+test "handle_mcp_tool_run: a server another session holds reports MCPServerBusy within ONE lease budget" {
+    if (builtin.os.tag == .windows) return error.SkipZigTest; // `sleep` child
+    var fx = try StdioCallFixture.init("busysrv", never_reading_server_json);
+    defer fx.deinit();
+
+    // Arrange: another session is mid-transaction on this server.
+    const reg = pabrik_mod.mcpStdioRegistry(testing.allocator);
+    var held = try reg.acquire("busysrv", never_reading_argv, .{});
+    defer held.release();
+
+    const start = std.Io.Timestamp.now(fx.io, .real).nanoseconds;
+    const result = fx.call("mcp_busysrv_ping", .{ .lease_wait_ns = 200 * std.time.ns_per_ms });
+    const elapsed_ms = elapsedMsSince(fx.io, start);
+
+    try testing.expect(result == error.MCPServerBusy);
+    // ONE budget, not three: a busy lease is contention, not a broken child,
+    // so the retry loop must not stack the wait (pre-fix the caller waited
+    // forever and this test never returned at all).
+    try testing.expect(elapsed_ms >= 150);
+    try testing.expect(elapsed_ms < 1000);
+}
+
+test "handle_mcp_tool_run: a cancelled session stops waiting for a busy stdio server" {
+    if (builtin.os.tag == .windows) return error.SkipZigTest;
+    var fx = try StdioCallFixture.init("cancsrv", never_reading_server_json);
+    defer fx.deinit();
+
+    // The Stop button's state, read from where the loop writes it: the worker row.
+    var db: sqlite.SqliteBackend = .{};
+    defer db.deinit();
+    try db.init(fx.io, ":memory:");
+    try db.exec(testing.allocator, "CREATE TABLE worker (id TEXT PRIMARY KEY, cancelled INTEGER DEFAULT 0)", &.{});
+    try db.exec(testing.allocator, "INSERT INTO worker (id, cancelled) VALUES ('sess_cancelled', 1)", &.{});
+
+    const reg = pabrik_mod.mcpStdioRegistry(testing.allocator);
+    var held = try reg.acquire("cancsrv", never_reading_argv, .{});
+    defer held.release();
+
+    const start = std.Io.Timestamp.now(fx.io, .real).nanoseconds;
+    const result = fx.call("mcp_cancsrv_ping", .{
+        // A budget far beyond this test: only the cancel may end the wait.
+        .lease_wait_ns = 60 * std.time.ns_per_s,
+        .cancel_session = .{ .db = &db, .session_id = "sess_cancelled", .io = fx.io },
+    });
+    const elapsed_ms = elapsedMsSince(fx.io, start);
+
+    try testing.expect(result == error.MCPServerBusy);
+    try testing.expect(elapsed_ms < 2000);
+}
+
+test "handle_mcp_tool_run: a session that is NOT cancelled still waits out the busy server" {
+    // The other half of the contract: the cancel hook must fire on the row's
+    // value, not on its mere presence — otherwise every MCP call would abort
+    // the moment its session row existed.
+    if (builtin.os.tag == .windows) return error.SkipZigTest;
+    var fx = try StdioCallFixture.init("livewsrv", never_reading_server_json);
+    defer fx.deinit();
+
+    var db: sqlite.SqliteBackend = .{};
+    defer db.deinit();
+    try db.init(fx.io, ":memory:");
+    try db.exec(testing.allocator, "CREATE TABLE worker (id TEXT PRIMARY KEY, cancelled INTEGER DEFAULT 0)", &.{});
+    try db.exec(testing.allocator, "INSERT INTO worker (id, cancelled) VALUES ('sess_live', 0)", &.{});
+
+    const reg = pabrik_mod.mcpStdioRegistry(testing.allocator);
+    var held = try reg.acquire("livewsrv", never_reading_argv, .{});
+    defer held.release();
+
+    const start = std.Io.Timestamp.now(fx.io, .real).nanoseconds;
+    const result = fx.call("mcp_livewsrv_ping", .{
+        .lease_wait_ns = 400 * std.time.ns_per_ms,
+        .cancel_session = .{ .db = &db, .session_id = "sess_live", .io = fx.io },
+    });
+    const elapsed_ms = elapsedMsSince(fx.io, start);
+
+    try testing.expect(result == error.MCPServerBusy);
+    // Waited the budget, then reported busy — it did not abort early.
+    try testing.expect(elapsed_ms >= 350);
+    try testing.expect(elapsed_ms < 1500);
+}
+
+test "handle_mcp_tool_run: an unheld stdio server answers the call" {
+    // Happy path through the new bounded send: an unheld server must still
+    // round-trip the request and hand the child's body back as the tool output.
+    var fx = try StdioCallFixture.init("idlesrv", "{\"command\": \"cat\", \"args\": []}");
+    defer fx.deinit();
+
+    const result = fx.call("mcp_idlesrv_ping", .{}) catch |err| {
+        // Windows CI without `cat` on PATH.
+        if (builtin.os.tag == .windows) return error.SkipZigTest;
+        return err;
+    };
+    defer testing.allocator.free(result);
+
+    // `cat` echoes the JSON-RPC request; it carries no `result.content[0].text`,
+    // so the raw echoed body is what the model receives.
+    try testing.expect(std.mem.indexOf(u8, result, "\"method\":\"tools/call\"") != null);
+    try testing.expect(std.mem.indexOf(u8, result, "\"name\":\"ping\"") != null);
 }

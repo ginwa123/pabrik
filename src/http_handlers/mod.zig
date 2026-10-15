@@ -1520,14 +1520,18 @@ fn mcpTestStdio(
 
     var attempt: u8 = 1;
     while (true) : (attempt += 1) {
-        // One lease per attempt, taken for the whole request/response
-        // transaction so a concurrent session can't drive the same child
-        // while we're mid-frame.
-        var lease = reg.acquire(preview_name, argv, .{}) catch |err| {
-            logger.warnFmt("[mcp_test] stdio spawn failed for command '{s}': {s}", .{ req.command, @errorName(err) });
-            const msg = std.fmt.allocPrint(allocator, "spawn:{s}", .{@errorName(err)}) catch null;
+        // Bounded + cancellable lease: one child per server, shared with the
+        // agent sessions, and the retry loop below would multiply an unbounded
+        // wait by TEST_STDIO_MAX_ATTEMPTS.
+        var lease = reg.acquire(preview_name, argv, .{
+            .wait_ns = 60 * std.time.ns_per_s,
+        }) catch |err| {
+            logger.warnFmt("[mcp_test] stdio lease failed for command '{s}': {s}", .{ req.command, @errorName(err) });
+            const msg = std.fmt.allocPrint(allocator, "lease:{s}", .{@errorName(err)}) catch null;
             freeStderrs(allocator, &stderrs_buf, attempts_used);
             out_err_detail.* = msg;
+            // Busy is NOT a spawn failure — retrying stacks the wait budget.
+            if (err == error.LeaseTimeout) return McpTestError.Timeout;
             return McpTestError.SpawnFailed;
         };
         defer lease.release();

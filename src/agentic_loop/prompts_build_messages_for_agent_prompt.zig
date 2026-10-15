@@ -639,10 +639,16 @@ fn fetchToolsFromServerStdio(
     var last_err: anyerror = error.MCPServerSpawnFailed;
     var attempt: u8 = 0;
     while (attempt < retry_attempts) : (attempt += 1) {
-        // One lease per attempt, released when this iteration's block
-        // exits: a second session on the same server waits its turn
-        // instead of driving the same `StdioClient` reader at once.
-        var lease = reg.acquire(server_name, argv, .{}) catch {
+        // Bounded + cancellable: an unbounded wait here is multiplied by the
+        // ten attempts below, so a busy server would park a session (and every
+        // session behind it) for as long as the holder ran.
+        var lease = reg.acquire(server_name, argv, .{
+            .wait_ns = 60 * std.time.ns_per_s,
+            .is_cancelled = cancel_fn,
+        }) catch |err| {
+            // Busy is not a spawn failure — retrying stacks the budget ten
+            // times over. Report it instead.
+            if (err == error.LeaseTimeout) return error.MCPServerBusy;
             last_err = error.MCPServerSpawnFailed;
             if (attempt + 1 < retry_attempts) {
                 std.Io.Clock.Duration.sleep(
@@ -667,10 +673,12 @@ fn fetchToolsFromServerStdio(
         // Send all three as NDJSON in one go (like Test does)
         const do_handshake = struct {
             fn call(c: *mcp_stdio.StdioClient, deadline: u64, cancel: ?*const fn () bool) ![]u8 {
-                // Send initialize + initialized + tools/list as NDJSON
-                try c.sendNDJSON(init_body);
-                try c.sendNDJSON(initialized_body);
-                try c.sendNDJSON(tools_list_body);
+                // Send initialize + initialized + tools/list as NDJSON. Every
+                // send shares the same budget + cancel hook as the reads: an
+                // unbounded send would hold this server's lease open.
+                try c.sendNDJSON(init_body, deadline, cancel);
+                try c.sendNDJSON(initialized_body, deadline, cancel);
+                try c.sendNDJSON(tools_list_body, deadline, cancel);
                 // Read initialize response
                 const init_resp = try c.recv(deadline, cancel);
                 defer c.allocator().free(init_resp);

@@ -86,7 +86,12 @@ subscriber (a socket, a pipe) can be a stall for every session — see §2.2.
 
 ## 2. The cross-session blocking inventory
 
-### 2.1 ❌ MCP stdio lease — unbounded, cancel-proof (worst finding)
+### 2.1 ✅ MCP stdio lease — was unbounded and cancel-proof (FIXED in this branch)
+
+> **Status:** fixed. Every production lease site now passes a finite
+> `wait_ns` plus the session's Stop hook, and both halves of the transaction
+> (send **and** recv) are deadline-bounded. See §5.1 for the diff map and the
+> regression tests.
 
 `tools/call` over the **stdio** transport takes a per-server exclusive lease for
 the whole request/response transaction:
@@ -310,15 +315,51 @@ consumed by agent runs — a long turn does not cup the API's capacity.
 
 ## 5. Recommended order of work
 
-1. **Fix the MCP lease wait (finding §2.1)** — pass
-   `.{ .wait_ns = <budget>, .is_cancelled = <session cancel thunk> }` at
-   `handle_mcp_tool.zig:241` (and `add_mcp_server.zig:1103`), and give
-   `writeNDJSON` (`mcp_stdio.zig:290`) a deadline so the *send* half of the
-   transaction cannot hold the lease forever either. Add a regression test: a
-   stub MCP child that never reads stdin + two sessions on one server ⇒ the
-   second `acquire` returns `LeaseTimeout` **within the budget** and is
-   cancellable, instead of hanging. Test infra already exists for exactly this
-   ("`acquire honours is_cancelled under contention …`", `mcp_stdio.zig:1642`).
+### 5.1 Fix the MCP lease wait — DONE in this branch
+
+The user's constraint was explicit: *the fix must not add blocking* — a stalled
+session must never park a parallel session, nothing may wait unboundedly, and no
+new global lock. What changed:
+
+| Site | Before | After |
+|---|---|---|
+| `handle_mcp_tool.zig` (`tools/call`) | `acquire(…, .{})` = wait forever, no cancel; unbounded `sendNDJSON`; `recv(deadline, null)` | `CallOptions{ lease_wait_ns, cancel_session }`; acquire gets both; `LeaseTimeout` ⇒ `error.MCPServerBusy` **without** retrying (3 × budget was the pre-fix shape); send and recv share the budget + cancel |
+| `mcp_stdio.zig` send path | `writeNDJSON` → `writeStreamingAll`: no deadline, blocks until the child drains stdin | `waitWritable` (POLLOUT, ≤100 ms slices, deadline + cancel) gating `writeAllBounded` in ≤4 KiB chunks ⇒ `SendTimeout` |
+| `mcp_stdio.zig` framed send | `writeFramed`'s deadline was an *advisory* pre-check — a full pipe still blocked | both halves go through `writeAllBounded`, so the deadline is real |
+| `prompts_build_messages_for_agent_prompt.zig` (tools/list) | `acquire(…, .{})` × 10 attempts = wait-forever × 10; unbounded sends | bounded wait + existing `cancel_fn`, `LeaseTimeout` returns immediately, sends take the same budget |
+| `add_mcp_server.zig` | `acquire(…, .{})` | bounded wait (best-effort path, contract unchanged) |
+| `http_handlers/mod.zig` (mcp test) | `acquire(…, .{})` × 20 attempts | bounded wait; busy ⇒ `McpTestError.Timeout` (no retry stacking) |
+| `handle_tool.zig` (both MCP paths) | no session context passed | passes `.{ .db, .session_id, .io }` so **Stop breaks the wait** |
+
+Two design points worth the reviewer's attention:
+
+* **The cancel hook is rate-limited and latched** (`session_cancel` in
+  `handle_mcp_tool.zig`). `readFramedWithReader` polls it *between bytes* and
+  `tryLockUntil` every 2 ms, so an unthrottled hook would issue one SQLite query
+  per byte — a shared-resource storm that would hurt other sessions more than the
+  wait it bounds. 50 ms interval, latched once true (same shape as
+  `workflow.zig`'s `llm_cancel_thunk`).
+* **No new lock, no new shared state.** The added state is per-thread
+  (`threadlocal`) and per-child (the existing lease); the only new waits are
+  finite and cancellable.
+
+Regression tests (behaviour, deterministic fixtures — no network):
+
+* `mcp_stdio.zig` — the bounded writer against a **real pipe nobody drains**
+  (no subprocess, so the fixture cannot depend on the runner's environment):
+  the deadline ⇒ `SendTimeout`; the cancel hook aborts it; a live reader gets
+  every byte back across the 4 KiB chunk boundary.
+* `handle_mcp_tool.zig` — a held server ⇒ `MCPServerBusy` within **one** budget
+  (not three); a cancelled session stops waiting while a non-cancelled one waits
+  it out; an unheld server round-trips a real child's answer end-to-end (that
+  last one covers `sendNDJSON` + `recv` byte-for-byte through the real entry
+  point).
+* Both files are now registered for `zig build test` discovery
+  (`agentic_loop/test_runner.zig`, `root.zig`'s test block) — `handle_mcp_tool`
+  and `mcp_stdio` were carrying inline tests that never ran.
+
+### 5.2 Still open (hardening, not defects)
+
 2. **Make `forwardToClients` unable to block the loop** (`unified_events_sse.zig:11`)
    — per-client outbound queue drained by the existing SSE loops, so an emit is
    enqueue-only. That removes the last "loop thread inside a shared lock" hop and
@@ -326,10 +367,6 @@ consumed by agent runs — a long turn does not cup the API's capacity.
 3. **Optional:** bound `writeStreamingAll` to fd 2 (`Logger.zig:323`) or make the
    global logger never block on the sink (§2.4); and stop masking a failed MCP
    tools fetch as "retry forever per iteration" (§2.5).
-
-Only #1 is a defect with a clear correctness smell (an unbounded,
-uncancellable wait contradicting a test in the same module). #2 and #3 are
-hardening.
 
 ---
 
