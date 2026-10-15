@@ -454,19 +454,14 @@ export async function getWorkspacesItems(
 // Cold-start fallback for the "New Chat" action.
 //
 // The invariant is "every workspace has a default project, and a miss
-// creates one" — and `GET /workspaces/:id/items` (above) already enforces
-// it server-side, so `getWorkspacesItems` normally comes back with the
-// default in it and a client lookup is a pure local find.
+// creates one" — `GET /workspaces/:id/items` already enforces it
+// server-side, so a client lookup is normally a pure local find.
 //
-// This endpoint exists for the one case the list cannot cover: the app
-// was open when Migration 094 ran, so the list the store already holds
-// predates the `is_default` column. Without this, a New Chat tap would be
-// a no-op until the user manually refetched.
+// This endpoint covers the one case the list cannot: the app was open when
+// Migration 094 ran, so the store's list predates the `is_default` column.
 //
 // Idempotent — 200 + `created: false` when it already existed, 201 +
-// `created: true` when this call created it. Takes no body: it is a
-// command ("give me the default"), and the name and path are fixed by the
-// invariant.
+// `created: true` when this call created it. Takes no body.
 export async function getOrCreateDefaultProject(
   workspace_id: string,
 ): Promise<{ item: WorkspaceItem; created: boolean }> {
@@ -502,18 +497,12 @@ export async function updateWorkspace(id: string, data: Partial<Workspace>): Pro
 
 /**
  * Persist a new top-to-bottom display order for workspaces.
- * POST /api/workspaces/reorder with body `{ordered_ids: [...]}`. The
- * server reverses the array when assigning position values (top of
- * list = highest position). On any non-2xx response, throws
- * `new Error("HTTP <status>")` so the caller can roll back its
- * optimistic update.
+ * POST /api/workspaces/reorder with body `{ordered_ids: [...]}`. The server
+ * reverses the array (top of list = highest position) and throws on non-2xx
+ * so the caller can roll back its optimistic update.
  *
- * The list shape is the *full* ordered set, not a delta. Reordering
- * two adjacent rows means re-sending ALL workspace IDs in their new
- * order. The backend is idempotent — a second call with the same
- * array leaves the data unchanged.
- *
- * Plan: docs/plans/2026-06-12-workspace-drag-and-drop.md
+ * The list is the *full* ordered set, not a delta — reordering two adjacent
+ * rows re-sends every workspace ID. The backend is idempotent.
  */
 export async function reorderWorkspaces(
   orderedIds: string[],
@@ -525,18 +514,10 @@ export async function reorderWorkspaces(
 }
 
 /**
- * Persist a new top-to-bottom display order for the items of a single
- * workspace. POST /api/workspaces/:workspace_id/items/reorder with
- * body `{ordered_ids: [...]}`. The server reverses the array when
- * assigning position values (top of list = highest position). On any
- * non-2xx response, throws `new Error("HTTP <status>")` so the caller
- * can roll back its optimistic update.
- *
- * Mirrors `reorderWorkspaces` but scoped to a single workspace's
- * items. The list shape is the *full* ordered set for that
- * workspace, not a delta.
- *
- * Plan: docs/superpowers/plans/2026-06-16-workspace-item-position-reorder.md
+ * Persist a new top-to-bottom display order for one workspace's items.
+ * POST /api/workspaces/:workspace_id/items/reorder with body
+ * `{ordered_ids: [...]}`. Mirrors `reorderWorkspaces` but scoped to a
+ * single workspace; the list is the *full* ordered set, not a delta.
  */
 export async function reorderWorkspaceItems(
   workspaceId: string,
@@ -597,19 +578,12 @@ export async function getTasks(
   itemId: string,
   limit = 10,
   cursor?: string,
-  // NEW (2026-08-06): NO default values. The frontend used to send
-  // `sort_by=updated_at&direction=desc` on every task-fetch — even
-  // when the user hadn't picked a sort, the URL had no sort, and
-  // the backend would have used its own identical default. The
-  // user feedback was "no need set default when load task kanban" —
-  // pass `undefined` for both when no sort is in play, and let the
-  // backend's default (`updated_at desc`) handle it. Same wire
-  // result, cleaner URL, less coupling.
+  // NEW (2026-08-06): NO default values. Pass `undefined` for both when no
+  // sort is in play and let the backend's default (`updated_at desc`)
+  // handle it — same wire result, cleaner URL, less coupling.
   //
-  // Both must be provided together — we don't send `sort_by` without
-  // `direction` (or vice versa) because the backend's cursor format
-  // depends on the sort field. If only one is passed, we fall back
-  // to "no sort params" and let the backend default apply.
+  // Both must be provided together: the backend's cursor format depends on
+  // the sort field, so sending only one falls back to "no sort params".
   sortBy?: 'created_at' | 'updated_at' | 'name',
   direction?: 'asc' | 'desc',
   columnId?: string,
