@@ -24,6 +24,10 @@ const shutdown = pabrikcore.boot_shutdown;
 const cli_dispatch = pabrikcore.boot_cli_dispatch;
 const headless_dispatch = pabrikcore.boot_headless_dispatch;
 const server_boot = pabrikcore.boot_server_boot;
+// The DB policy and its `--db-*` overrides, plus the reader-pool reaper that
+// keeps the elastic pool from holding a burst's readers forever.
+const db_config = pabrikcore.boot_db_config;
+const reap_idle_readers = pabrikcore.reap_idle_readers;
 const static_serve = pabrikcore.http_static_serve;
 
 pub fn main(init: std.process.Init) !void {
@@ -72,7 +76,25 @@ pub fn main(init: std.process.Init) !void {
     errdefer allocator.destroy(initial_llm_config_ptr);
     initial_llm_config_ptr.* = llm_config;
 
-    var db_handles = try server_boot.openDatabase(allocator, io, environment);
+    // `--db-*` flags retune the connection policy (page cache, reader pool,
+    // mmap window). Parsed here rather than inside `cli_args` because they
+    // belong to the DB module that owns the defaults, and a bad one must be
+
+    // reported before the database is opened.
+    var db_overrides: std.ArrayList(db_config.Override) = .empty;
+    defer db_overrides.deinit(allocator);
+    if (db_config.parseOverrides(allocator, argv_flat.items, &db_overrides)) |_| {} else |err| {
+        // Name the offending flag: `parseOverrides` stops at the first bad
+        // one, so the last `--db-*` in argv is the one that failed.
+        for (argv_flat.items) |arg| {
+            if (std.mem.startsWith(u8, arg, "--db-") or std.mem.startsWith(u8, arg, "--db_")) {
+                db_config.reportOverrideError(arg, err);
+            }
+        }
+        return error.InvalidArgs;
+    }
+
+    var db_handles = try server_boot.openDatabase(allocator, io, environment, db_overrides.items);
     defer db_handles.deinit(allocator);
     const dbSqlite = &db_handles.db;
 
@@ -330,6 +352,18 @@ pub fn main(init: std.process.Init) !void {
         boot_unix,
     ) catch |err| {
         std.debug.print("Failed to register cleanup_stale_background_process cron: {s}\n", .{@errorName(err)});
+    };
+    // The reader pool is elastic and uncapped, so a burst leaves readers
+    // open; the pool only reaps inline on `release`, which never happens
+    // when traffic stops. This tick is what actually gives the memory back.
+    _ = gs.cronjob_manager.register(
+        "* * * * *",
+        "reap_idle_readers",
+        reap_idle_readers.handle,
+        null,
+        boot_unix,
+    ) catch |err| {
+        std.debug.print("Failed to register reap_idle_readers cron: {s}\n", .{@errorName(err)});
     };
 
     try gs.listenEventLoop(.{ .dispatch_mode = .worker_pool });

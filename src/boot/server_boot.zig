@@ -107,18 +107,22 @@ pub const DatabaseHandles = struct {
 };
 
 /// Resolve the DB path, open it with `boot/db_config.zig`'s measured policy
-/// (WAL + `.normal`, reader pooling, 8 MiB page cache per connection, 256 MiB
-/// mmap window), log the live config, and run migrations.
+/// (WAL + `.full`, elastic reader pooling, 512 KiB page cache per connection,
+/// 256 MiB mmap window), log the live config, and run migrations.
 pub fn openDatabase(
+    //
+    // `overrides` are the `--db-*` flags from argv; an empty slice means the
+    // defaults. They are applied on top of `db_config.best`.
     allocator: std.mem.Allocator,
     io: std.Io,
     env: *std.process.Environ.Map,
+    overrides: []const db_config.Override,
 ) !DatabaseHandles {
     const db_path = try helpers.db_path.getDbPath(allocator, io, env);
     errdefer allocator.free(db_path);
     var db: database.Db = .{};
     errdefer db.deinit();
-    try database.openWithConfig(&db, io, .{ .sqlite_path = db_path }, db_config.best);
+    try database.openWithConfig(&db, io, .{ .sqlite_path = db_path }, db_config.resolve(overrides));
     shutdown.logSqliteConfig(allocator, &db);
     try runMigrations(allocator, &db);
     return .{ .db_path = db_path, .db = db };

@@ -139,6 +139,15 @@ pub fn printUsage() void {
     logger_mod.debugPrint("  --no-static-dir      API only: serve no static files at / (overrides --static-dir)\n", .{});
     logger_mod.debugPrint("  --http2 h2c|off      Also accept HTTP/2 cleartext (h2c) clients on the same port (default: off)\n", .{});
     logger_mod.debugPrint("  --auth               Require login (session cookie + middleware). When off, all endpoints are open.\n", .{});
+    logger_mod.debugPrint("Database policy (defaults are tuned for low RAM; override to trade RAM for throughput):\n", .{});
+    logger_mod.debugPrint("  --db-read-conns=N              Readers opened at boot (warm floor)\n", .{});
+    logger_mod.debugPrint("  --db-max-read-conns=N          Ceiling on pooled readers (0 = uncapped)\n", .{});
+    logger_mod.debugPrint("  --db-cache-size-kb=N           Page cache PER connection, in KiB\n", .{});
+    logger_mod.debugPrint("  --db-mmap-size-bytes=N         mmap window per connection (0 = off)\n", .{});
+    logger_mod.debugPrint("  --db-journal-size-limit-bytes=N  WAL/journal size cap\n", .{});
+    logger_mod.debugPrint("  --db-wal-autocheckpoint-pages=N Pages between WAL checkpoints\n", .{});
+    logger_mod.debugPrint("  --db-busy-timeout-ms=N         How long SQLite waits for a lock\n", .{});
+    logger_mod.debugPrint("  --db-max-idle-time-ms=N        How long an idle reader is kept before it is closed\n", .{});
 }
 
 const testing = std.testing;
