@@ -28,16 +28,12 @@ export interface ApiFetchOptions extends Omit<RequestInit, 'body'> {
   body?: unknown
   /** When true, skip the error notification (caller handles UI inline). */
   silent?: boolean
-  /**
-   * When false, skip the top loading bar. Defaults to true — the bar tracks
+  /** When false, skip the top loading bar. Defaults to true — the bar tracks
    * network activity, orthogonal to error visibility. Pass false for
-   * background pollers so the bar can idle while they keep polling.
-   */
+   * background pollers so the bar can idle while they keep polling. */
   track?: boolean
-  /**
-   * Timeout in ms. Default 15_000; 0 disables. A caller-provided `signal` is
-   * respected and no timeout signal is added.
-   */
+  /** Timeout in ms. Default 15_000; 0 disables. A caller-provided `signal` is
+   * respected and no timeout signal is added. */
   timeoutMs?: number
 }
 
@@ -174,11 +170,9 @@ export interface KanbanColumn {
   id: string
   workspace_item_id: string
   name: string
-  /**
-   * Free-text description of the column's meaning. Empty string when unset;
+  /** Free-text description of the column's meaning. Empty string when unset;
    * the Settings UI renders an "Add a description..." placeholder. Optional
-   * for backwards compat with legacy column literals in test files.
-   */
+   * for backwards compat with legacy column literals in test files. */
   description?: string | null
   position: number
   created_at: string
@@ -193,11 +187,9 @@ export interface DesignPage {
   id: string
   workspace_item_id: string
   name: string
-  /**
-   * 1:1 FK to `workspace_item_tasks.id`, set at page-create time. Resolves
+  /** 1:1 FK to `workspace_item_tasks.id`, set at page-create time. Resolves
    * the page's chat task directly — no name matching, no legacy migration,
-   * no `taskHasMessages` probe.
-   */
+   * no `taskHasMessages` probe. */
   workspace_item_task_id: string
   width: number
   height: number
@@ -302,11 +294,9 @@ export interface DesignElementEvent {
   item_id: string
   page_id: string
   element_id: string
-  /**
-   * Batch event variant (`design_elements_geometry_batch_updated`). When
-   * set, the SSE handler reads `element_ids` instead of `element_id` to
-   * drive the local-mutation dedupe.
-   */
+  /** Batch event variant (`design_elements_geometry_batch_updated`). When set,
+   * the SSE handler reads `element_ids` instead of `element_id` to drive the
+   * local-mutation dedupe. */
   element_ids?: string[]
 }
 
