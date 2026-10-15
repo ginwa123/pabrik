@@ -292,10 +292,9 @@ export interface WorkspaceItem {
   id: string
   name: string
   item_type: string
-  // The on-disk cwd for kanban items. Optional: legacy kanbans predate the
-  // field, folder items keep their path on each child, and test fixtures
-  // omit it. `null` is allowed so the SQLite NULL → JSON null round-trip
-  // type-checks; `v-if="!item.path"` treats null/undefined/"" alike.
+  // The on-disk cwd for kanban items. Optional: legacy kanbans predate the field, folder items keep
+  // their path on each child, and test fixtures omit it. `null` is allowed so the SQLite NULL →
+  // JSON null round-trip type-checks; `v-if="!item.path"` treats null/undefined/"" alike.
   path?: string | null
   entries?: FolderEntry[]
   isLoaded?: boolean
@@ -348,10 +347,9 @@ export interface Task {
   // frontend fetches media only when the flag is true.
   is_have_image?: boolean
   is_have_video?: boolean
-  // NEW (Migration 070 — kanban-cwd-session-optional plan). Per-task cwd
-  // override (absolute path, or '' for cwd-less). Optional so legacy task
-  // literals in tests keep type-checking. Threaded into the 3-level cwd
-  // fallback chain: per-task cwd → kanban-level path → sandbox.
+  // NEW (Migration 070 — kanban-cwd-session-optional plan). Per-task cwd override (absolute path,
+  // or '' for cwd-less). Optional so legacy task literals in tests keep type-checking. Threaded
+  // into the 3-level cwd fallback chain: per-task cwd → kanban-level path → sandbox.
   cwd?: string
   // NEW (kanban task git-branch badge). The current git branch for the
   // task's cwd — worktree cwd if bound, else the parent item's `path`.

@@ -37,10 +37,9 @@ import { computed, ref } from 'vue'
 import ToolCardHeader from './_shared/ToolCardHeader.vue'
 import { tryUnwrapToolOutput } from '../../helpers/unwrapToolOutput'
 
-// Minimal shape we need from the parent. ChatView.vue defines a LOCAL
-// `Message` interface (different from `api.Message`) so we declare just the
-// fields we read — this keeps the component decoupled from whichever Message
-// type the parent uses.
+// Minimal shape we need from the parent. ChatView.vue defines a LOCAL `Message` interface
+// (different from `api.Message`) so we declare just the fields we read — this keeps the component
+// decoupled from whichever Message type the parent uses.
 interface ToolMessageLike {
   id?: string
   role?: string

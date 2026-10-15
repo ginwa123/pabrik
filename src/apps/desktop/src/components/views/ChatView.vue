@@ -250,10 +250,9 @@ const setupCodeBlockCopyButtons = () => {
 // so a long chat's messages don't re-parse the same markdown on every
 // re-render: O(unique_messages) per mutation instead of per render.
 
-// ─── <html> wrapper-tag rendering ─────────────────────────────────────────
-// When the LLM wraps raw HTML in <html>...</html>, the chat UI renders each
-// block as a live sandboxed iframe (null origin — the security boundary;
-// inner scripts can't touch parent DOM/cookies).
+// ─── <html> wrapper-tag rendering ───────────────────────────────────────── When the LLM wraps raw
+// HTML in <html>...</html>, the chat UI renders each block as a live sandboxed iframe (null origin
+// — the security boundary; inner scripts can't touch parent DOM/cookies).
 
 interface HtmlSegment {
   /** Text before this html block (markdown-rendered inline). */
@@ -435,10 +434,9 @@ const isLLMProcessing = computed(() => !!processingState.value[sessionId.value])
 
 // Pagination state
 const messageCursor = ref<string | null>(null)
-// 2026-09-09 user-pill pagination fix: 1000 rows per page defeated
-// pagination (slow TTFB with base64 image_urls + tool JSON, memory spike,
-// VirtualScroller height-estimate blowup). Large pages risk that tradeoff;
-// the load-more threshold drives histories beyond one page.
+// 2026-09-09 user-pill pagination fix: 1000 rows per page defeated pagination (slow TTFB with
+// base64 image_urls + tool JSON, memory spike, VirtualScroller height-estimate blowup). Large pages
+// risk that tradeoff; the load-more threshold drives histories beyond one page.
 const PAGE_SIZE = 1000
 
 // ── Sub-agent peek ────────────────────────────────────────────────

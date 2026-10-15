@@ -156,10 +156,9 @@ async function runPickerSearch(): Promise<void> {
     catalogState.value = res.catalog
     pickerError.value = null
   } catch (err) {
-    // A picker that cannot reach the catalog must not break typing — the field
-    // stays free text. But the reason is KEPT and rendered below, because
-    // "this model has no matches" and "we could not search" are different
-    // answers and must not look the same.
+    // A picker that cannot reach the catalog must not break typing — the field stays free text. But
+    // the reason is KEPT and rendered below, because "this model has no matches" and "we could not
+    // search" are different answers and must not look the same.
     pickerError.value = err instanceof Error ? err.message : String(err)
     pickerResults.value = []
     pickerTotal.value = 0

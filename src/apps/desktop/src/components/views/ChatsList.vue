@@ -76,6 +76,9 @@ const rowErrorRetryLabel = (id: string): string | null => {
 // the URL so the chat row's active background stays in sync with
 // refresh / deep links / browser back / forward — no store flag can
 // drift. See useCurrentMainView for the full contract.
+// URL-driven "what is the main content area showing?". Derived from the URL so the chat row's
+// active background stays in sync with refresh / deep links / browser back / forward — no store
+// flag can drift. See useCurrentMainView for the full contract.
 const currentMainView = useCurrentMainView()
 
 // Workspace scope for the CHATS list (plan: 2026-09-22-revamp-ui-chats).
@@ -91,10 +94,9 @@ const scopedWorkspaceId = computed(() => {
   return workspacesStore.activeWorkspace?.id
 })
 
-// Reactive active check for a chat row. Called from the template on
-// every render so the row's highlight stays in sync with URL changes
-// (pre-fix, `active` was set as a one-shot flag inside `loadChats()`
-// — leaving it stale after a chat → workspace navigation).
+// Reactive active check for a chat row. Called from the template on every render so the row's
+// highlight stays in sync with URL changes (pre-fix, `active` was set as a one-shot flag inside
+// `loadChats()` — leaving it stale after a chat → workspace navigation).
 const isCurrentChat = (sessionId: string): boolean =>
   currentMainView.value.kind === 'chat' && currentMainView.value.sessionId === sessionId
 
@@ -543,10 +545,9 @@ const stopChatsResize = () => {
   document.body.style.cursor = ''
 }
 
-// Public methods for parent to call
-// Amber stale-dot clear (yellow-dot-fix): optimistic patch + best-effort
-// backend touch. isStale() predicate is unchanged — clearing the dot
-// is done by aligning last_human_touched_at to updated_at.
+// Public methods for parent to call Amber stale-dot clear (yellow-dot-fix): optimistic patch +
+// best-effort backend touch. isStale() predicate is unchanged — clearing the dot is done by
+// aligning last_human_touched_at to updated_at.
 const optimisticClearStaleDot = (id: string) => {
   const item = navItems.value.find((i) => i.id === id)
   if (item && item.updated_at) {
@@ -592,10 +593,9 @@ const sessionCacheKey = (): string => scopedWorkspaceId.value ?? 'all'
 const toNavItem = (session: any) => ({
   id: session.session_id,
   name: session.session_name || 'New Chat',
-  // active state now derives from the URL via isCurrentChat() in
-  // the template (sidebar-single-active fix 2026-08-06). Storing
-  // it here would freeze the highlight at loadChats() time and
-  // leave stale `active: true` after navigation away from chat.
+  // active state now derives from the URL via isCurrentChat() in the template
+  // (sidebar-single-active fix 2026-08-06). Storing it here would freeze the highlight at
+  // loadChats() time and leave stale `active: true` after navigation away from chat.
   active: false,
   // Migration 082 — prefer human-touched timestamp when present.
   relativeTime: formatRelativeTime(session.last_human_touched_at || session.updated_at),
@@ -886,10 +886,9 @@ const restoreActiveFromUrl = () => {
 
   const current = currentMainView.value
   if (current.kind === 'chat' && current.sessionId) {
-    // Fresh-tab title: a deep link never left-clicks, so
-    // activeChatName is empty/stale and the browser tab would read
-    // plain "Pabrik". The name is usually already in this list —
-    // fall back to a single-session fetch past page 1.
+    // Fresh-tab title: a deep link never left-clicks, so activeChatName is empty/stale and the
+    // browser tab would read plain "Pabrik". The name is usually already in this list — fall back
+    // to a single-session fetch past page 1.
     const match = navItems.value.find((i) => i.id === current.sessionId)
     if (match && match.name && match.name !== 'New Chat') {
       navigationStore.setActiveChatName(match.name)
