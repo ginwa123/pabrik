@@ -203,4 +203,19 @@ describe('ChatsList — status badge (red / yellow / green)', () => {
     expect(badgesIn(rowFor('recent_reviewed')!)).toEqual(['chat-status-reviewed'])
     wrapper.unmount()
   })
+
+  it('shows a single badge when awaiting-review overlaps the stale condition', async () => {
+    const wrapper = await mountWith([
+      session('chat_double', 'Double', {
+        last_finish_reason: 'stop',
+        needs_human_review: true,
+        last_human_touched_at: '2026-10-14 08:00:00',
+        updated_at: '2026-10-14 10:00:00',
+      }),
+    ])
+    const row = rowFor('chat_double')!
+    expect(badgesIn(row)).toEqual(['chat-status-awaiting-review'])
+    expect(row.querySelector('[data-testid="chat-stale-dot"]')).toBeNull()
+    wrapper.unmount()
+  })
 })
