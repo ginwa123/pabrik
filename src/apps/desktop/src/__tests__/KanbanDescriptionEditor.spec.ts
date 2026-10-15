@@ -203,26 +203,21 @@ describe('KanbanDescriptionEditor', () => {
   })
 })
 
-/**
- * Tests for create-mode image paste (no taskId yet).
- *
- * Bug: when the dialog opens in create mode (taskId=''), pasting an image
- * used to fall back to writing the inline `data:image/png;base64,…` payload
- * into the description text. A 4 MB image → ~5.5 MB of base64 → the
- * counter showed 487 052 / 5000 and the task couldn't be saved.
- *
- * Fix: in create mode, the editor stages pasted images in a `pendingFiles`
- * array exposed via defineExpose. The description textarea is NOT modified.
- * The host (KanbanView.handleCreateTaskSave) reads pendingFiles AFTER the
- * task is created (and has a real taskId), uploads each via the existing
- * `api.uploadTaskAttachment` endpoint, then PATCHes the description with
- * appended `![name](url)` markdown.
- *
- * These tests exercise the editor's side of the contract: no base64 in the
- * description, the file lands in pendingFiles, removing the preview drops
- * the file from pendingFiles, and editing the existing task still uploads
- * inline (the legacy contract from before this fix).
- */
+/** Tests for create-mode image paste (no taskId yet). Bug: when the dialog opens in create mode
+ * (taskId=''), pasting an image used to fall back to writing the inline `data:image/png;base64,…`
+ * payload into the description text. */
+
+/** A 4 MB image → ~5.5 MB of base64 → the counter showed 487 052 / 5000 and the task couldn't be
+ * saved. Fix: in create mode, the editor stages pasted images in a `pendingFiles` array exposed via
+ * defineExpose. The description textarea is NOT modified. */
+
+/** The host (KanbanView.handleCreateTaskSave) reads pendingFiles AFTER the task is created (and has
+ * a real taskId), uploads each via the existing `api.uploadTaskAttachment` endpoint, then PATCHes
+ * the description with appended `![name](url)` markdown. */
+
+/** These tests exercise the editor's side of the contract: no base64 in the description, the file
+ * lands in pendingFiles, removing the preview drops the file from pendingFiles, and editing the
+ * existing task still uploads inline (the legacy contract from before this fix). */
 describe('KanbanDescriptionEditor — create-mode image paste (no taskId)', () => {
   // Minimal valid PNG (1x1 transparent) so the editor does not try to
   // decode/parse anything during the test — we only care about the
@@ -388,12 +383,11 @@ describe('KanbanDescriptionEditor — create-mode image paste (no taskId)', () =
   })
 
   it('edit mode stages the pasted file into pendingFiles for the host to PATCH (Migration 069)', async () => {
-    // Migration 069 changed edit mode to use the same staged-
-    // pendingFiles flow as create mode (the old `uploadTaskAttachment`
-    // endpoint was deleted entirely). The editor's job is just to
-    // expose the file; the host's `updateTaskDetails({ imageUrls })`
-    // does the persistence. The textarea stays untouched — the
-    // new column carries the images.
+    // Migration 069 changed edit mode to use the same staged- pendingFiles flow as create mode (the
+    // old `uploadTaskAttachment` endpoint was deleted entirely). The editor's job is just to expose
+    // the file; the host's `updateTaskDetails({ imageUrls })` does the persistence.
+
+    // The textarea stays untouched — the new column carries the images.
     const wrapper = await mountEditor({ modelValue: '', taskId: 'task_x' })
     await pasteImage(wrapper, makeFile('inline.png'))
 

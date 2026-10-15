@@ -1,16 +1,12 @@
-/**
- * Unit tests for the kanban API client (createKanban, listKanbanColumns,
- * addKanbanColumn, updateKanbanColumn, deleteKanbanColumn, moveTask).
- * Mocks global.fetch to assert URL, method, body shape, and error
- * handling without hitting the network. Mirrors the apiMemories.spec.ts
- * style: same mockFetchOnce helper (with `text()` so apiFetch's
- * non-OK path can extract the body for the error toast) and
- * `setActivePinia(createPinia())` in `beforeEach` (apiFetch calls
- * `useNotificationStore()` on every non-2xx).
- *
- * Plan: docs/superpowers/plans/2026-06-21-workspace-item-kanban.md
- *   Chunk 4 / Task 4.2
- */
+/** Unit tests for the kanban API client (createKanban, listKanbanColumns, addKanbanColumn,
+ * updateKanbanColumn, deleteKanbanColumn, moveTask). Mocks global.fetch to assert URL, method, body
+ * shape, and error handling without hitting the network. */
+
+/** Mirrors the apiMemories.spec.ts style: same mockFetchOnce helper (with `text()` so apiFetch's
+ * non-OK path can extract the body for the error toast) and `setActivePinia(createPinia())` in
+ * `beforeEach` (apiFetch calls `useNotificationStore()` on every non-2xx). */
+
+/** Plan: docs/superpowers/plans/2026-06-21-workspace-item-kanban.md Chunk 4 / Task 4.2 */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -28,10 +24,10 @@ describe('api.kanban', () => {
   const fetchMock = vi.fn()
 
   beforeEach(() => {
-    // apiFetch calls useNotificationStore() on every non-2xx response
-    // to fire an error toast. Without an active Pinia the call
-    // throws. setActivePinia(createPinia()) mounts a fresh store for
-    // each test so the toast path can run without crashing.
+    // apiFetch calls useNotificationStore() on every non-2xx response to fire an error toast.
+    // Without an active Pinia the call throws. setActivePinia(createPinia()) mounts a fresh store
+    // for each test so the toast path can run without crashing.
+
     // (See project memory apiFetch-mock-must-include-text-and-pinia.)
     setActivePinia(createPinia())
   })
@@ -191,15 +187,15 @@ describe('api.kanban', () => {
 
       const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
       const body = JSON.parse(init.body as string)
-      // apiFetch wraps via JSON.stringify(body), and JSON.stringify
-      // strips `undefined` values from objects — so the optional
-      // `position` is omitted from the wire payload when the caller
-      // didn't supply it. `description` defaults to the empty
-      // string ("no description" sentinel) so the backend's
-      // parseFromSliceLeaky sees a string (not null) for the
-      // NOT NULL DEFAULT '' column. The backend's parseFromSliceLeaky
-      // treats the absent field as `null` for `?i64` / `?[]const u8`
-      // types (matches how addColumn / addTask do it elsewhere).
+      // apiFetch wraps via JSON.stringify(body), and JSON.stringify strips `undefined` values from
+      // objects — so the optional `position` is omitted from the wire payload when the caller
+      // didn't supply it.
+
+      // `description` defaults to the empty string ("no description" sentinel) so the backend's
+      // parseFromSliceLeaky sees a string (not null) for the NOT NULL DEFAULT '' column.
+
+      // The backend's parseFromSliceLeaky treats the absent field as `null` for `?i64` / `?[]const
+      // u8` types (matches how addColumn / addTask do it elsewhere).
       expect(body).toEqual({ name: 'review', description: '' })
     })
   })

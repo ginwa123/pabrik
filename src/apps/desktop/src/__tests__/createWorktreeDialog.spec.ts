@@ -25,14 +25,12 @@ import { mount, type VueWrapper } from '@vue/test-utils'
 
 // ─── Mocks ─────────────────────────────────────────────────────────────────
 
-// Stub the FilePickerDialog — we only care that the parent wires up
-// the picker's events. Real picker behavior is tested in
-// FilePickerDialog.spec.ts.
-//
-// IMPORTANT: the mock must use `modelValue` (not `show`) because the
-// parent uses `v-model="showPicker"` (no argument), which compiles to
-//   :modelValue="showPicker" @update:modelValue="showPicker = $event".
-// A prop named `show` would not be wired to v-model.
+// Stub the FilePickerDialog — we only care that the parent wires up the picker's events. Real
+// picker behavior is tested in FilePickerDialog.spec.ts.
+
+// IMPORTANT: the mock must use `modelValue` (not `show`) because the parent uses
+// `v-model="showPicker"` (no argument), which compiles to :modelValue="showPicker"
+// @update:modelValue="showPicker = $event". A prop named `show` would not be wired to v-model.
 vi.mock('../components/FilePickerDialog.vue', () => ({
   default: {
     name: 'FilePickerDialog',
@@ -101,10 +99,10 @@ function setBasename(value: string) {
 }
 
 function mountDialog(initialCwd?: string) {
-  // Wipe the body before each mount. attachTo: document.body creates a
-  // new <div data-v-app> for each mount, and these accumulate in jsdom
-  // even after wrapper.unmount(). Clearing the body here ensures a
-  // clean slate for each test (otherwise Teleport + body event
+  // Wipe the body before each mount. attachTo: document.body creates a new <div data-v-app> for
+  // each mount, and these accumulate in jsdom even after wrapper.unmount().
+
+  // Clearing the body here ensures a clean slate for each test (otherwise Teleport + body event
   // listeners from the previous test can interfere with the new one).
   document.body.innerHTML = ''
   return mount(CreateWorktreeDialog, {

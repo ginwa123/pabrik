@@ -432,12 +432,12 @@ describe('FileInput — paste image (Ctrl+V) attaches to preview', () => {
     await flushPromises()
     await new Promise((r) => setTimeout(r, 10))
 
-    // After unmount, the unmounted instance's listener shouldn't add another
-    // preview to the (now-unmounted) FileInput's DOM. We assert via the
-    // readonly `clipboardReadMock` — it should not have been called for the
-    // post-unmount event (scope check fails because the textarea ref is
-    // gone from the document, but the assertion is stronger: we expect the
-    // listener to be entirely gone).
+    // After unmount, the unmounted instance's listener shouldn't add another preview to the
+    // (now-unmounted) FileInput's DOM.
+
+    // We assert via the readonly `clipboardReadMock` — it should not have been called for the
+    // post-unmount event (scope check fails because the textarea ref is gone from the document, but
+    // the assertion is stronger: we expect the listener to be entirely gone).
     expect(clipboardReadMock).not.toHaveBeenCalled()
     expect(previewsBefore).toBe(1)
   })

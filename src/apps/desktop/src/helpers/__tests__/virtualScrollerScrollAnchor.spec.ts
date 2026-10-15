@@ -283,11 +283,11 @@ describe('computeAnchorCompensation', () => {
   })
 
   it('clamps a bottom target at 0 rather than scrolling above the top', () => {
-    // A degenerate short-list case: the whole transcript fits, so the bottom IS
-    // the top. `bottomScrollTop()` cannot actually return a negative number
-    // (`Math.max(0, …)` on both of its paths), so the target here is 0 rather
-    // than the -30 this test used to assert — but the clamp still has to hold,
-    // because `Math.max(0, atBottomTarget)` is what keeps a 0 target from
+    // A degenerate short-list case: the whole transcript fits, so the bottom IS the top.
+
+    // `bottomScrollTop()` cannot actually return a negative number (`Math.max(0, …)` on both of its
+    // paths), so the target here is 0 rather than the -30 this test used to assert — but the clamp
+    // still has to hold, because `Math.max(0, atBottomTarget)` is what keeps a 0 target from
     // becoming a negative scrollTop write.
     const result = computeAnchorCompensation({
       ...base,
@@ -703,16 +703,13 @@ describe('VirtualScroller measurement anchor compensation', () => {
   it('corrects a tall item rendering above the viewport PRE-PAINT (no timer advance)', async () => {
     // The residual jump (task_1787496087806_6 follow-up): when ONE long
     // message scrolls into the top buffer, Vue renders it in one commit
-    // — topSpacer shrinks by the 64px estimate while ~3000px of real
-    // content takes its place → content under the viewport shifts
-    // immediately at RENDER time. The debounced measureItems only
+    // — topSpacer shrinks by the 64px estimate while ~3000px of real content takes its place →
+    // content under the viewport shifts immediately at RENDER time. The debounced measureItems only
     // compensates ≤50ms LATER, so the user sees a down-up bounce.
-    //
-    // Fix contract: a watcher on rendered-range change must run
-    // measureItems inside nextTick (pre-paint), so render + compensation
-    // land in the SAME frame. This test asserts the correction WITHOUT
-    // advancing timers — if compensation needed the 50ms debounce, this
-    // fails.
+
+    // Fix contract: a watcher on rendered-range change must run measureItems inside nextTick
+    // (pre-paint), so render + compensation land in the SAME frame. This test asserts the
+    // correction WITHOUT advancing timers — if compensation needed the 50ms debounce, this fails.
     const { wrapper, el } = mountScroller(255)
     await nextTick()
 

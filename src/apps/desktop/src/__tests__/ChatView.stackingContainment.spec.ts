@@ -190,15 +190,13 @@ describe('ChatView stacking containment — document overlay must cover the chat
   })
 
   it('every chat chrome tier outranks the remaining app overlays without the containment', () => {
-    // The isolation above is what makes this ordering irrelevant to the
-    // result — but these ARE the numbers that regressed the bug, so keep
-    // them visible. If someone drops `isolation`, this is exactly the
-    // comparison that lets the chat win.
-    //
-    // AppLayout is the source, not DocumentsView: the document is a page
-    // now and carries no z-index at all. GitFileViewer / the Skill Viewer
-    // / the code-editor overlay are still `absolute inset-0` at z-10 in
-    // the same <main>, and still overlay a mounted chat.
+    // The isolation above is what makes this ordering irrelevant to the result — but these ARE the
+    // numbers that regressed the bug, so keep them visible. If someone drops `isolation`, this is
+    // exactly the comparison that lets the chat win.
+
+    // AppLayout is the source, not DocumentsView: the document is a page now and carries no z-index
+    // at all. GitFileViewer / the Skill Viewer / the code-editor overlay are still `absolute
+    // inset-0` at z-10 in the same <main>, and still overlay a mounted chat.
     const overlayZ = Number(appLayoutSrc.match(/z-index:\s*(\d+)/)?.[1])
     const tierZ = CHROME_Z_TIERS.map((t) => t.z)
     expect({ overlayZ, tierZ, allChatTiersWin: tierZ.every((z) => z > overlayZ) }).toEqual({

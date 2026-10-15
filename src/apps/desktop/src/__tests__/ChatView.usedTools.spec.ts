@@ -172,13 +172,13 @@ async function makeRouter(): Promise<Router> {
 
 let mountSeq = 0
 
-/** Mount ChatView with `messages` and return the per-test container. Queries
- * must be scoped to the returned container (`document.querySelector` would see
- * the previous test's tree when a mount leaves anything behind).
- * Each test gets a FRESH `chatId` on purpose: ChatView primes its messages
- * from the IndexedDB-backed `chatEngineDb` cache keyed by session id, so
- * reusing one id would make test N+1 paint test N's rows instead of the
- * mocked `getChatHistory` response. */
+/** Mount ChatView with `messages` and return the per-test container. Queries must be scoped to the
+ * returned container (`document.querySelector` would see the previous test's tree when a mount
+ * leaves anything behind). */
+
+/** Each test gets a FRESH `chatId` on purpose: ChatView primes its messages from the
+ * IndexedDB-backed `chatEngineDb` cache keyed by session id, so reusing one id would make test N+1
+ * paint test N's rows instead of the mocked `getChatHistory` response. */
 async function mountChatViewWithMessages(messages: Message[]) {
   const chatId = `s_used_tools_${++mountSeq}`
   installChatViewMocks({ messages, sessionId: chatId })

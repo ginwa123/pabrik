@@ -29,13 +29,12 @@ function makeStubClient(initial: SseState): SseClient {
   return stub as SseClient
 }
 
-// ChatsList calls useRouter() in setup; the `mocks: { $router: ... }`
-// option below only patches `this.$router` (Options API), so we must
-// stub the composable at module level. The AppLayout tests below
-// override `useRouteMock.mockReturnValue(...)` per-test to drive the
-// URL-driven chat navigation paths. We pass-through the real
-// `createMemoryHistory` / `createRouter` from `importActual` so any
-// future test that wants a real router can use it.
+// ChatsList calls useRouter() in setup; the `mocks: { $router: ... }` option below only patches
+// `this.$router` (Options API), so we must stub the composable at module level.
+
+// The AppLayout tests below override `useRouteMock.mockReturnValue(...)` per-test to drive the
+// URL-driven chat navigation paths. We pass-through the real `createMemoryHistory` / `createRouter`
+// from `importActual` so any future test that wants a real router can use it.
 const { useRouteMock, useRouterMock } = vi.hoisted(() => ({
   useRouteMock: vi.fn(() => ({ query: {} as Record<string, string>, path: '/', fullPath: '/' })),
   useRouterMock: vi.fn(() => ({ replace: vi.fn(), push: vi.fn() })),
@@ -202,11 +201,12 @@ describe('AppLayout URL-driven chat navigation', () => {
       writable: true,
       configurable: true,
     })
-    // AppLayout now includes <SseStatusBadge /> (Chunk 7), which calls
-    // `useSseBus()` synchronously in setup. Without a bus install, the
-    // badge throws "useSseBus called before installSseBus" and the
-    // whole mount fails. Install a stub bus first — the badge only
-    // reads `state` and doesn't subscribe to any event channels.
+    // AppLayout now includes <SseStatusBadge /> (Chunk 7), which calls `useSseBus()` synchronously
+    // in setup. Without a bus install, the badge throws "useSseBus called before installSseBus" and
+    // the whole mount fails.
+
+    // Install a stub bus first — the badge only reads `state` and doesn't subscribe to any event
+    // channels.
     __resetSseBus()
     app = createApp({})
     installSseBus(app)
@@ -300,19 +300,18 @@ describe('AppLayout URL-driven chat navigation', () => {
     ws.setActiveWorkspaceItem('item_from_url_watch')
     expect(ws.activeWorkspaceItemId).toBe('item_from_url_watch')
 
-    // Mount with a non-chat initial route so onMounted's chat branch
-    // (lines 38-43) does NOT fire. This test exercises site 4 of the 5
-    // reset sites: the `watch(() => route.query, ...)` callback in
-    // AppLayout.vue (lines 403-508), specifically the
-    // `view === 'chat' && sessionId` branch at lines 479-496.
-    //
-    // NOTE on the reactive wrapper: `route = useRoute()` is captured
-    // at setup time (AppLayout.vue line 23), so a post-mount
-    // `useRouteMock.mockReturnValue(...)` would NOT update `route`
-    // and the watch would never fire. We instead return a `reactive`
-    // object from the mock and mutate its `query` directly — that's
-    // the only way to trigger Vue's reactivity for a captured
-    // (non-reactive) mock return value.
+    // Mount with a non-chat initial route so onMounted's chat branch (lines 38-43) does NOT fire.
+
+    // This test exercises site 4 of the 5 reset sites: the `watch(() => route.query, ...)` callback
+    // in AppLayout.vue (lines 403-508), specifically the `view === 'chat' && sessionId` branch at
+    // lines 479-496.
+
+    // NOTE on the reactive wrapper: `route = useRoute()` is captured at setup time (AppLayout.vue
+    // line 23), so a post-mount `useRouteMock.mockReturnValue(...)` would NOT update `route` and
+    // the watch would never fire.
+
+    // We instead return a `reactive` object from the mock and mutate its `query` directly — that's
+    // the only way to trigger Vue's reactivity for a captured (non-reactive) mock return value.
     const routeObj = reactive({
       query: { view: 'workspace' } as Record<string, string>,
 

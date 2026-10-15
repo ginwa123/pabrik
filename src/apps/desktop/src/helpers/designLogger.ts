@@ -41,19 +41,15 @@ import { ref } from 'vue'
 
 // ─── Configuration ─────────────────────────────────────────────────────────
 
-/**
- * Global logger enable. Default false to keep the production console
- * quiet; flip via the Vue devtools "design logger" toggle (a small
- * boolean stored in localStorage + reactive ref).
- *
- * We deliberately keep this SEPARATE from `import.meta.env.DEV` —
- * `import.meta.env.DEV` is a build-time constant that locks the
- * decision to "always on in dev, always off in prod". The design
- * logger is intentionally toggleable at runtime because the bugs it
- * catches (group-cascade race, SSE-dedupe race) happen in production
- * too, and a single `localStorage.dl=on` line gets the diagnostic out
- * the door without a rebuild.
- */
+/** Global logger enable. Default false to keep the production console quiet; flip via the Vue
+ * devtools "design logger" toggle (a small boolean stored in localStorage + reactive ref). */
+
+/** We deliberately keep this SEPARATE from `import.meta.env.DEV` — `import.meta.env.DEV` is a
+ * build-time constant that locks the decision to "always on in dev, always off in prod". */
+
+/** The design logger is intentionally toggleable at runtime because the bugs it catches
+ * (group-cascade race, SSE-dedupe race) happen in production too, and a single `localStorage.dl=on`
+ * line gets the diagnostic out the door without a rebuild. */
 const STORAGE_KEY = 'pabrik.design-logger.enabled'
 
 const enabledRef = ref<boolean>(false)
@@ -69,17 +65,16 @@ if (typeof localStorage !== 'undefined') {
   }
 }
 
-// AUTO-ENABLE: a developer-mode browser that has the `__designLogger`
-// escape hatch registered must have loaded the new bundle. If the user
-// reloads the page or the `__designLogger` flag wasn't set, fall back
-// to "auto on" so they immediately see diagnostics. The user can
-// still call `__designLogger.off()` to silence it. This is dev-only.
-//
-// Detection: `window.__designLogger` was set by the bottom of this
-// file (the escape hatch install). If it's not present, the bundle
-// running is OLD (pre-logger) and the page should auto-enable so the next page reload picks up the
-// new bundle. We use a single-shot check at module-load time to avoid re-running on every
-// navigation.
+// AUTO-ENABLE: a developer-mode browser that has the `__designLogger` escape hatch registered must
+// have loaded the new bundle. If the user reloads the page or the `__designLogger` flag wasn't set,
+// fall back to "auto on" so they immediately see diagnostics.
+
+// The user can still call `__designLogger.off()` to silence it. This is dev-only. Detection:
+// `window.__designLogger` was set by the bottom of this file (the escape hatch install).
+
+// If it's not present, the bundle running is OLD (pre-logger) and the page should auto-enable so
+// the next page reload picks up the new bundle. We use a single-shot check at module-load time to
+// avoid re-running on every navigation.
 if (import.meta.env.DEV && typeof window !== 'undefined') {
   const w = window as unknown as { __designLoggerAlreadyInstalled?: boolean }
   if (!w.__designLoggerAlreadyInstalled && !enabledRef.value) {
@@ -117,12 +112,11 @@ export const setDesignLoggerEnabled = (on: boolean): void => {
 
 // ─── Reasons (the most useful field) ────────────────────────────────────────
 
-/** The set of `reason` values the design logger emits. Each one
- * identifies a unique point in the wire — a single DevTools
- * `grep reason=…` isolates a layer.
- * Naming: a colon-separated path so a search like
- * `reason=drag:start` matches all drag-start events but
- * `reason=drag:start:group` matches only group-drag starts. */
+/** The set of `reason` values the design logger emits. Each one identifies a unique point in the
+ * wire — a single DevTools `grep reason=…` isolates a layer. */
+
+/** Naming: a colon-separated path so a search like `reason=drag:start` matches all drag-start
+ * events but `reason=drag:start:group` matches only group-drag starts. */
 export type DesignReason =
   // ── Element layer (DesignElement.vue) ─────────────────────────────
   | 'drag:start:move'              // pointerdown on a leaf/body, single-element

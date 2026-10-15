@@ -105,12 +105,12 @@ describe('WorkspaceItem — item_type branching (post-kanban-migration)', () => 
   })
 
   it("does NOT render KanbanView inline when item_type='kanban' (board lives in AppLayout)", async () => {
-    // Pre-migration, this test verified that KanbanView rendered
-    // inline in the sidebar. Post-migration, the kanban board lives
-    // in <AppLayout> (rendered in the main content area when
-    // activeWorkspaceItem.item_type === 'kanban'). WorkspaceItem
-    // should NOT render any board-related DOM — just the item row
-    // and the task list (for folder items).
+    // Pre-migration, this test verified that KanbanView rendered inline in the sidebar.
+    // Post-migration, the kanban board lives in <AppLayout> (rendered in the main content area when
+    // activeWorkspaceItem.item_type === 'kanban').
+
+    // WorkspaceItem should NOT render any board-related DOM — just the item row and the task list
+    // (for folder items).
     wrapper = mountItem(makeKanbanItem())
     expandItem()
     await nextTick()
@@ -204,11 +204,11 @@ describe('WorkspaceItem — kanban click behavior', () => {
   })
 
   it("does NOT emit kanban-* events for any item type (the events come from KanbanView in AppLayout now)", async () => {
-    // Pre-migration, WorkspaceItem re-emitted kanban-* events
-    // bubbled up from its inline <KanbanView>. Post-migration,
-    // WorkspaceItem has no <KanbanView>, so it cannot bubble any
-    // kanban events. The new flow: <KanbanView> in AppLayout
-    // emits directly to AppLayout's handlers.
+    // Pre-migration, WorkspaceItem re-emitted kanban-* events bubbled up from its inline
+    // <KanbanView>. Post-migration, WorkspaceItem has no <KanbanView>, so it cannot bubble any
+    // kanban events.
+
+    // The new flow: <KanbanView> in AppLayout emits directly to AppLayout's handlers.
     wrapper = mountItem(
       makeKanbanItem({
         kanban_columns: [makeColumn({ id: 'col_x', position: 0 })],

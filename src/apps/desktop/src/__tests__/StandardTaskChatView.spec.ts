@@ -44,11 +44,11 @@ function mountWrapper(props: { task: Task; cwd?: string }): {
     props,
     global: {
       stubs: {
-        // Custom ChatView stub: the default `true` stub renders no
-        // HTML and drops props. Bind the props to data attributes so
-        // the test can assert what StandardTaskChatView forwarded.
-        // Also push each mount's :key into `mountedKeys` so we can
-        // verify the wrapper's :key reactivity rule (test #5).
+        // Custom ChatView stub: the default `true` stub renders no HTML and drops props. Bind the
+        // props to data attributes so the test can assert what StandardTaskChatView forwarded.
+
+        // Also push each mount's :key into `mountedKeys` so we can verify the wrapper's :key
+        // reactivity rule (test #5).
         ChatView: {
           name: 'ChatView',
           template:
@@ -164,11 +164,11 @@ describe('StandardTaskChatView', () => {
   })
 
   it('forces a fresh ChatView mount when the task prop changes (useChatScrollRestore key rule)', async () => {
-    // The wrapper pins `:key="chat-${task.id}"` on <ChatView>. When
-    // the user switches tasks (e.g. via Sidebar), a new key remounts
-    // ChatView fresh — preserving scroll-restore across switches and
-    // clearing the previous task's message cache. Pre-fix (inline
-    // branch) had the same behaviour; this wrapper preserves it.
+    // The wrapper pins `:key="chat-${task.id}"` on <ChatView>. When the user switches tasks (e.g.
+    // via Sidebar), a new key remounts ChatView fresh — preserving scroll-restore across switches
+    // and clearing the previous task's message cache.
+
+    // Pre-fix (inline branch) had the same behaviour; this wrapper preserves it.
     const taskA: Task = { id: 'task_a', name: 'A' } as Task
     const taskB: Task = { id: 'task_b', name: 'B' } as Task
     const { wrapper: w } = mountWrapper({ task: taskA })

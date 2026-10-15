@@ -1,23 +1,20 @@
-/** P1 performance helpers for VirtualScroller.vue
- * (task_1787551495337_9, "make virtual scroller more smooth").
- * Pure functions/classes only — no DOM, no Vue imports — so every branch
- * is unit-testable without mounting (same convention as
- * virtualScrollerScrollAnchor.ts / virtualScrollerThreshold.ts). */
+/** P1 performance helpers for VirtualScroller.vue (task_1787551495337_9, "make virtual scroller
+ * more smooth"). */
 
-/**
- * Round a measured height to an integer pixel value ≥ 1.
- *
- * WHY: `offsetHeight` in Chromium can be fractional under sub-pixel
- * layout. Fractional stored heights re-quantize differently between our
- * prefix sums and the browser's own layout, producing ±1px spacer drift
- * that shows up as micro-jitter while scrolling. Integers make the
- * hysteresis dead-band (`HYSTERESIS_PX`) exact and the accumulated
- * heights stable across frames.
- *
- * Non-finite / non-positive inputs collapse to 1 (defense-in-depth —
- * the scroller already filters `h > 0` before measuring, but jsdom and
- * detached nodes can still hand back 0/NaN).
- */
+/** Pure functions/classes only — no DOM, no Vue imports — so every branch is unit-testable without
+ * mounting (same convention as virtualScrollerScrollAnchor.ts / virtualScrollerThreshold.ts). */
+
+/** Round a measured height to an integer pixel value ≥ 1. WHY: `offsetHeight` in Chromium can be
+ * fractional under sub-pixel layout. */
+
+/** Fractional stored heights re-quantize differently between our prefix sums and the browser's own
+ * layout, producing ±1px spacer drift that shows up as micro-jitter while scrolling. */
+
+/** Integers make the hysteresis dead-band (`HYSTERESIS_PX`) exact and the accumulated heights
+ * stable across frames. */
+
+/** Non-finite / non-positive inputs collapse to 1 (defense-in-depth — the scroller already filters
+ * `h > 0` before measuring, but jsdom and detached nodes can still hand back 0/NaN). */
 export function quantizePx(value: number): number {
   if (!Number.isFinite(value) || value <= 0) return 1
   return Math.round(value)
@@ -125,11 +122,12 @@ export class AdaptiveItemHeightEstimator {
     return this.frozen !== null
   }
 
-  /** Stop `estimate()` from moving. The current value is kept forever (until
-   * `reset()`), even as `observe()` keeps recording samples.
-   * Call this once the estimate is well-founded — see the class docstring for
-   * the scroll jump a moving placeholder causes. Idempotent: freezing twice
-   * keeps the FIRST frozen value, so a late caller cannot reopen the window. */
+  /** Stop `estimate()` from moving. The current value is kept forever (until `reset()`), even as
+   * `observe()` keeps recording samples. Call this once the estimate is well-founded — see the
+   * class docstring for the scroll jump a moving placeholder causes. */
+
+  /** Idempotent: freezing twice keeps the FIRST frozen value, so a late caller cannot reopen the
+   * window. */
   freeze(): void {
     if (this.frozen !== null) return
     this.frozen = this.estimate()

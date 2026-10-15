@@ -81,13 +81,13 @@ async function settle(): Promise<void> {
   await nextTick()
 }
 
-/** The documents list is cache-first now, and `documentEngineDb` is a module
- * singleton whose IndexedDB fallback is a module-level Map — so rows cached
- * by one test are still primed by the next one. Every test in this file
- * asserts a COLD start ("no documents were cached yet"), so each one begins
- * from an empty cache. Without this, the first successful test silently
- * supplies `documents` to every later test and the empty/error assertions
- * pass for the wrong reason. */
+/** The documents list is cache-first now, and `documentEngineDb` is a module singleton whose
+ * IndexedDB fallback is a module-level Map — so rows cached by one test are still primed by the
+ * next one. */
+
+/** Every test in this file asserts a COLD start ("no documents were cached yet"), so each one
+ * begins from an empty cache. Without this, the first successful test silently supplies `documents`
+ * to every later test and the empty/error assertions pass for the wrong reason. */
 async function clearDocumentsCache(workspaceId = 'ws_1'): Promise<void> {
   const { documentEngineDb } = await import('../sync/DocumentEngineDb')
   const { runSyncVoid } = await import('../sync/runtime')
@@ -310,15 +310,13 @@ describe('DocumentsList — failure is not emptiness', () => {
     await store.fetchDocuments('ws_1')
     await settle()
 
-    // Blanking the list on a failed refresh would make a transient
-    // network error look like data loss.
-    //
-    // The message is now the sync engine's (`sync remote
-    // documents.fetchDelta failed: boom`), because the list load went
-    // through the Effect seam. The assertion is on the REASON surviving
-    // to the UI, not on the exact prefix — `toBe('boom')` would have
-    // caught a regression that dropped the error, but would also break
-    // on any future wording change for no gain.
+    // Blanking the list on a failed refresh would make a transient network error look like data
+    // loss. The message is now the sync engine's (`sync remote documents.fetchDelta failed: boom`),
+    // because the list load went through the Effect seam.
+
+    // The assertion is on the REASON surviving to the UI, not on the exact prefix — `toBe('boom')`
+    // would have caught a regression that dropped the error, but would also break on any future
+    // wording change for no gain.
     expect(store.error).toContain('boom')
     expect(store.documents).toHaveLength(2)
     expect(wrapper.find('[data-testid="document-row-doc_1"]').exists()).toBe(true)
