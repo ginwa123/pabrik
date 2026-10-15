@@ -130,11 +130,6 @@ const props = withDefaults(
     // active kanban.
     availableColumns?: KanbanColumn[]
     // NEW (plan: 2026-08-24-kanban-create-run-disable-double-click).
-    // True while the host's create request is in flight. Disables
-    // BOTH create-mode commit buttons ("Create task" and
-    // "▶ Create task & run agent") and swaps their labels to
-    // "Creating…" so a double-click can't emit `create` /
-    // `create-and-run` twice and spawn duplicate tasks/agents.
     // Edit mode ignores it (the host only binds it on the
     // create-mode mount).
     creating?: boolean
@@ -238,8 +233,6 @@ const emit = defineEmits<{
     },
   ]
   // Emitted in edit mode when the user flips the unattended toggle.
-  // The host persists via api.updateSession(task.id, { isAutoRetryUntilStop }).
-  // value is '1' when toggled ON, '0' when toggled OFF. Emitted
   // BEFORE the optimistic UI flip so the host can capture the
   // pre-toggle value (in case it needs to roll back on PUT failure).
   'update-unattended': [payload: { value: '0' | '1'; previous: '0' | '1' }]
@@ -753,9 +746,6 @@ onUnmounted(() => {
 
 // Dirty tracking — the Save button enables only when the form is
 // ready to submit. Two semantics:
-//   - edit mode: the form must differ from the props.task baseline
-//     (saves a wasted API call on a no-op Save click).
-//   - create mode: any non-empty name is "dirty enough to submit"
 //     (the task doesn't exist yet so there's nothing to compare to).
 const isDirty = computed<boolean>(() => {
   if (isCreateMode.value) return isValid.value

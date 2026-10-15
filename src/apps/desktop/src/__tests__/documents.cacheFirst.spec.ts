@@ -133,7 +133,7 @@ describe('useDocumentsStore — cache-first contract', () => {
     // Seed the cache the way a previous session would have, then throw away
     // every scrap of in-memory state. This is the user scenario the cache
     // exists for: reload the app offline and still see the documents.
-    //
+
     // Deliberately does NOT go through `fetchDocuments` first to populate
     // it — that would leave `documents` populated in the pinia store, and
     // the pre-cache code would pass this assertion by accident.

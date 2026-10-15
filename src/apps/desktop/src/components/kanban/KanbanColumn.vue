@@ -693,7 +693,7 @@ const handleColumnDrop = (event: DragEvent) => {
 }
 
 // ─── Footer add ────────────────────────────────────────────────────────────
-//
+
 // REMOVED (plan: 2026-08-06-kanban-add-task-button-placement). The
 // single global + Add task button in the kanban header
 // (KanbanView.vue) replaces per-column footer add buttons.

@@ -411,7 +411,7 @@ const setRowDensity = (next: KanbanRowDensity) => {
 }
 
 // ─── Row-mode group collapse ──────────────────────────────────────────────
-//
+
 // Per board, persisted in localStorage as a JSON array of collapsed
 // column ids. Collapse is a density preference, not a view switch, so it
 // deliberately does NOT go in the URL.
@@ -1233,8 +1233,6 @@ const handleStartAgent = async (payload: { taskId: string }) => {
 const runAllBusyByColumn = ref<Record<string, boolean>>({})
 const runAllSummary = ref<string | null>(null)
 // In-flight state for the per-column bulk "Stop all agents" action.
-// Mirror of `runAllBusyByColumn` — the "⋮" menu's "Stop all agents"
-// item is disabled while the stop POST for that column is in flight.
 // The summary reuses `runAllSummary` (one banner slot; a stop that lands
 // after a run overwrites it, which matches the single-action UX).
 const stopAllBusyByColumn = ref<Record<string, boolean>>({})

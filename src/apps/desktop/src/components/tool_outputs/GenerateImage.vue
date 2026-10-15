@@ -76,7 +76,7 @@ const props = defineProps<{
 const isExpanded = ref(props.expanded ?? false)
 
 // ─── Inner-envelope parsing (typed) ───────────────────────────────────────
-//
+
 // Pulled from the project-wide parser in `_shared/toolOutputParser.ts`
 // so the same regexes don't drift between the parser test and the
 // component. Always XML — never JSON.

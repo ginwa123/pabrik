@@ -332,14 +332,14 @@ export const designLogger: DesignLogger = {
 }
 
 // ─── Console escape hatch ──────────────────────────────────────────────────
-//
+
 // When `import.meta.env.DEV` is true, expose a `window.__designLogger`
 // so the user can toggle from DevTools without rebuilding:
-//
+
 //   __designLogger.on()    // enable
 //   __designLogger.off()   // disable
 //   __designLogger.status() // is it on?
-//
+
 // Production builds skip this entirely (so the toggle is dev-only).
 if (import.meta.env.DEV && typeof window !== 'undefined') {
   (window as unknown as { __designLogger: unknown }).__designLogger = {

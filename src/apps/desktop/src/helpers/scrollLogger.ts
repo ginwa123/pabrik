@@ -476,7 +476,7 @@ export const createScrollLogger = (chatId: string): ScrollLogger => {
 }
 
 // ─── Emit ─────────────────────────────────────────────────────────────────────
-//
+
 // Single console.* call site so the formatting is consistent and the
 // production gate is in one place.
 
@@ -565,14 +565,14 @@ const emit = (ctx: ScrollContext, level: 'debug' | 'info' | 'warn' | 'error'): v
     `msgs=${ctx.messages}`
 
   // ── Lazy stack capture for hard-to-debug cases ─────────────────────────
-  //
+
   // `new Error().stack` is expensive (allocates an Error + walks the
   // stack), so we only do it when the log line is actually hard to
   // diagnose from the other fields:
-  //
+
   //   - container is null (the "no idea where this came from" case)
   //   - level is warn or error (something went wrong)
-  //
+
   // Normal info/debug lines skip this entirely. The stack is stripped
   // to the first 5 frames so it stays scannable.
   if (!ctx.stack && (ctx.containerInfo.null || level === 'warn' || level === 'error')) {

@@ -324,7 +324,7 @@ describe('reading history still disengages the stick', () => {
 })
 
 // ── The real component ──────────────────────────────────────────────────────
-//
+
 // Pure arithmetic cannot prove the component publishes the number the pure
 // function assumed. These mount VirtualScroller and read the actual
 // `bottomScrollTop()` off the exposed instance.

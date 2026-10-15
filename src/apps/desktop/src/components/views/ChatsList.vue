@@ -99,9 +99,6 @@ const isCurrentChat = (sessionId: string): boolean =>
   currentMainView.value.kind === 'chat' && currentMainView.value.sessionId === sessionId
 
 // Migration 082 - "AI is ahead of you" stale-dot check.
-// True when the AI has touched the chat since the human's last touch
-// (updated_at > last_human_touched_at). Empty / null human-time means
-// "never touched" - no comparison to make, no dot.
 // Both come from the backend as unix-ms strings (Migration 075
 // convention) - we compare as numbers.
 const isStale = (human: string | undefined, updated: string | undefined): boolean => {

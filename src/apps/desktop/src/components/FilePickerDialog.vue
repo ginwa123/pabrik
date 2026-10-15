@@ -549,11 +549,11 @@ const showCurrentFolderHint = computed<boolean>(
 )
 
 // ─── Tab state (Recent / Browse) ─────────────────────────────────────────────
-//
+
 // Default: Recent. The Recent tab is the user's primary path — most-of-the-time
 // they pick a folder they've picked before. The Browse tab is the
 // power-user / unfamiliar-folder flow.
-//
+
 // The active tab is a ref (not persisted) — the user always re-enters via
 // Recent on each open.
 const activeTab = ref<'recent' | 'browse'>('recent')

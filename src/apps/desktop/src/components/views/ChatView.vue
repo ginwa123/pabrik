@@ -1718,8 +1718,6 @@ const toggleToolExpanded = (msgId: string) => {
 }
 
 // Stable expand-state key for a tool message. Falls back through:
-//   1. msg.id (DB nanos id or SSE-minted synthetic id — always present)
-//   2. tool_call_id (stable across the whole turn)
 //   3. positional `${groupIndex}-${idx}` — last resort for legacy rows
 //      with no id at all; better than nothing, same behaviour as before.
 const toolExpandKey = (msg: Message, groupIndex: number, idx: number): string => {
@@ -3442,7 +3440,7 @@ const followNewestTurn = (trigger: string) => {
 
 // Triggered by VirtualScroller when the user scrolls within `loadMoreThreshold`
 // of the top (because `loadMoreAtTop` is true). Auto-paginates older messages.
-//
+
 // Thin wrapper: the guard chain + buffered-page commit live in
 // `maybeLoadOlder` (which the positional commit in `handleVirtualScroll` and
 // the manual button also call), so every trigger shares one implementation.

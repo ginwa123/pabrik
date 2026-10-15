@@ -33,8 +33,6 @@ export const TOP_LEVEL_SENTINEL = '__design_top_level__'
 
 export interface LayerDragDropArgs {
   /** Reactive list of all elements on the active page. Accepts:
-   *  - a plain array (one-shot reads)
-   *  - a Ref<array> (live updates — recommended for production)
    *  - a getter () => array | Ref<array> (for live computed refs)
    */
   elements:

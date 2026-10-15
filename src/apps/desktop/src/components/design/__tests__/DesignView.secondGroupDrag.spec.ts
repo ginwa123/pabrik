@@ -184,8 +184,6 @@ describe('DesignView second group drag (regression)', () => {
     const store = useWorkspacesStore()
     store.setActiveDesignPage('page_1')
     // Seed the store with a SINGLE item containing the group + child.
-    // The mount passes the SAME item object reference so mutations to
-    // `store.workspaces[0].items[0].design_elements` are visible to
     // `props.item.design_elements` (this is how production works —
     // AppLayout's `activeWorkspaceItem` is the store item itself).
     const item = {

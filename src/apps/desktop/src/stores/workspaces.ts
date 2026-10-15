@@ -139,8 +139,6 @@ export interface Task {
   createdAt?: Date
   updatedAt?: Date
   // NEW (pinned-tasks feature, plan:
-  // docs/superpowers/plans/2026-06-20-pinned-workspace-item-tasks.md).
-  // Both optional so legacy task literals (8+ test files construct
   // Task without these fields) keep type-checking — see the
   // pabrik-frontend-task-literal-typing-rule memory.
   is_pinned?: boolean
@@ -397,10 +395,6 @@ function normalizeTaskVideoUrlsInPlace(task: Task): void {
 }
 
 // Decode the `||`-delimited `image_urls` wire string into a `string[]`
-// (Migration 069 — kanban image urls column). Applied at every
-// `api.getTasks` fetch site (folded into normalizeTaskTags below)
-// so the rest of the codebase can treat imageUrls as a plain array.
-// Plan: docs/superpowers/plans/2026-08-06-kanban-image-urls-column.md.
 // (REMOVED — folded into normalizeTaskTags above. The InPlace
 // helper handles the imageUrls branch.)
 
@@ -3227,7 +3221,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
   // Manually fire a workspace routine. Returns the backend's
   // `{ session_id }` on success, or `undefined` on failure (the
   // caller's responsibility to navigate / show an error).
-  //
+
   // We deliberately do NOT navigate here — that's a UI concern
   // owned by the RoutineView. The store action is pure: it calls
   // the API and returns the result.
@@ -4197,8 +4191,6 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
   }
 
   // Paints a task's last-known thumbnail from the local media cache.
-  // Only fills sides whose flag is true and whose arrays are still empty
-  // (never clobbers live data, never paints onto a flag-less task).
   // Returns true when anything was painted — the caller then revalidates
   // that task in the background instead of treating it as loaded.
   function applyCachedMedia(task: Task): boolean {

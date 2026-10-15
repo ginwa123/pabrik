@@ -80,8 +80,6 @@ const MIN_IFRAME_HEIGHT = 200
 
 function onIframeMessage(e: MessageEvent) {
   // Filter by source — only messages from our own auto-resize script.
-  // The parser lives in helpers/iframeAutoResize.ts so ChatView's
-  // `<html>` frames share the same protocol (with their own source tag).
   // Grows to the FULL content height (no upper cap) so no inner
   // scrollbar ever appears — the outer chat scroller owns scrolling.
   const reported = readAutoResizeHeight(e, PREVIEW_AUTO_RESIZE_SOURCE)

@@ -779,8 +779,6 @@ describe('FilePickerDialog — address bar (type a path)', () => {
 
   it('lexical POSIX: from /home/user/docs, "../user" goes up then INTO user → /home/user/user', async () => {
     // Documents the deliberate POSIX semantics of the joinRelative helper.
-    // The resolve is purely lexical — it does NOT ask the FS whether `user`
-    // exists under the popped base. So `../user` from /home/user/docs is
     // `/home/user/user`, the same way `cd /home/user/docs && cd ../user`
     // resolves in POSIX shells.
     const loadItems = makeLoadItems()

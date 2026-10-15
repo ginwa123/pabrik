@@ -21,9 +21,7 @@ import type { WorkspaceItem } from '../../stores/workspaces'
 import UiIcon from '../ui/UiIcon.vue'
 
 /** Agnostic row types — AgentView is reused for `item_type='agent'`, kanban boards and routines.
- *  Agent rows use `agent_id`, kanban rows use `kanban_id`, routine rows use
  *  `routine_id`; all other fields are identical.
- *  The component only reads `id`, `label`, `file_path`, `content` (knowledge) and
  *  `id`, `title`, `content` (system prompts), so a union is safe. */
 export type AgnosticKnowledgeRow = api.AgentKnowledgeRow | api.AgentKanbanKnowledgeRow | api.AgentRoutineKnowledgeRow
 export type AgnosticSystemPromptRow = api.AgentSystemPromptRow | api.AgentKanbanSystemPromptRow | api.AgentRoutineSystemPromptRow
@@ -112,7 +110,7 @@ function toggleToolExpanded(name: string) {
 }
 
 // ─── System Prompt panel UI state (plan 2026-08-21-agent-system-prompt) ──
-//
+
 // `expandedPrompts` tracks which prompt rows show their full content —
 // same expand-chevron pattern as the Knowledge panel.
 const expandedPrompts = ref(new Set<string>())
@@ -130,7 +128,7 @@ function promptPreview(content: string): string {
 }
 
 // ─── Knowledge panel UI state ───────────────────────────────────────────
-//
+
 // `expandedKnowledge` tracks which knowledge rows are expanded. Expanded
 // inline rows reveal their full content in a scrollable block; expanded
 // file-backed rows show the absolute path + a hint line.

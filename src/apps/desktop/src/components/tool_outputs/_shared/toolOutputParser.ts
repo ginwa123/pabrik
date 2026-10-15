@@ -797,14 +797,14 @@ export function parseMetadata(data: unknown): Record<string, string> {
 }
 
 // ─── generate_image ────────────────────────────────────────────────────────
-//
+
 // Parses the JSON `data` payload produced by `execute_generate_image` in
 // `src/modules/agent/tools/generate_image.zig`:
-//
+
 //   {"status":"generated","count":1,"model":"dall-e-3","size":"1024x1024",
 //    "images":[{"index":0,"path":"/cwd/.../img_xxx.png","bytes":12345,"mime":"image/png"}],
 //    "revised_prompt":"A vibrant watercolor painting of a hat-wearing cat","error":null}
-//
+
 // On error:
 //   {"status":null,"count":null,"model":null,"size":null,"images":[],
 //    "revised_prompt":null,"error":"HTTP 400: ..."}
@@ -1036,12 +1036,12 @@ export function parseWebSearch(data: unknown): ParsedWebSearch {
 }
 
 // ─── list_web_search_providers ─────────────────────────────────────────────
-//
+
 // The `exec_list_web_search_providers` payload (D14):
-//
+
 //   {"providers":[{"name":"tinyfish","url":"https://api.search.tinyfish.ai",
 //                  "description":"…","curl":"curl 'https://…?key={key}'"}]}
-//
+
 // `curl` is a TEMPLATE: it carries the literal text `{key}` where the
 // credential belongs, so the listing is safe by construction — nothing
 // secret reaches the model, and the card may render it verbatim.

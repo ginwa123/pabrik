@@ -112,7 +112,7 @@ const groups = computed(() =>
 const isCollapsed = (columnId: string): boolean => props.collapsedIds.includes(columnId)
 
 // ─── Per-column pagination ─────────────────────────────────────────────────
-//
+
 // Mirrors <KanbanColumn>: the parent WorkspaceItem carries
 // `columnPagination[colId]`, populated by fetchKanbanTasks and reset on
 // SSE refetch / search / sort.
@@ -143,7 +143,7 @@ const handleLoadMore = (columnId: string) => {
 }
 
 // ─── Per-group ⋮ menu ──────────────────────────────────────────────────────
-//
+
 // One open menu at a time, keyed by column id. Click-outside + Esc close
 // it — same lifecycle as <KanbanColumn>'s menu.
 const openMenuColumnId = ref<string | null>(null)
@@ -222,7 +222,7 @@ const handleSortModalBackdrop = () => {
 }
 
 // ─── Inline column rename ──────────────────────────────────────────────────
-//
+
 // Single-clicking a group name starts an edit-in-place, matching
 // <KanbanColumn>. Enter commits, Escape/blur cancels.
 const renamingColumnId = ref<string | null>(null)

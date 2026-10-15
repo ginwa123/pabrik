@@ -205,7 +205,7 @@ describe('Glob.vue — warning data still shows Arguments (empty/no-match)', () 
 
 // ────────────────────────────────────────────────────────────────────────
 // Error/empty states — the "not showing output" fix.
-//
+
 // - Envelope failures render a red error block instead of a bare "0 files".
 // - Expanded empty results show the warning/empty state, not just Arguments.
 // ────────────────────────────────────────────────────────────────────────

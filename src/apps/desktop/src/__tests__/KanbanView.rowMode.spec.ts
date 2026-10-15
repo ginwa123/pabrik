@@ -514,7 +514,7 @@ describe('KanbanView row mode', () => {
   })
 
   // ─── Row density (comfortable ⇄ compact) ────────────────────────────────
-  //
+
   // Density is a localStorage preference, NOT a URL param — it is a
   // legibility trade-off, not a distinct view, so a deep link should not
   // carry it (same rule as group collapse).

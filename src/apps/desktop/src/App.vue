@@ -34,7 +34,7 @@ provide('workerActivity', workerActivity)
 // One app-wide 1s ticker, provided so every <WorkerElapsedChip> can render
 // a counting label without owning an interval of its own. A sidebar mounts
 // one chip per row; a timer per row would be a timer per row.
-//
+
 // Started and stopped from the two places that change whether anything is
 // running — the SSE worker handler and the bootstrap refetch — i.e. from the
 // event handlers that cause the change, so no component needs a watcher.

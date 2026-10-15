@@ -263,7 +263,7 @@ describe('Documents — a project click still counts as "a workspace is selected
     // DocumentsView receives only `documentId` — it has to learn the
     // workspace from the store itself. Pre-fix its `watch` bailed on a
     // null workspace, so no fetch ever happened.
-    //
+
     // The documents store is deliberately LEFT EMPTY: `loadDocument`
     // short-circuits on a cache hit, so seeding it would make the spec
     // pass on the broken code. The fetch call is the assertion.

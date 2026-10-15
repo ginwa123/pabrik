@@ -143,7 +143,7 @@ const createdAt = computed(() => strOrNull(dataRecord.value.created_at))
 const updatedAt = computed(() => strOrNull(dataRecord.value.updated_at))
 
 // ---- The saved body + tags -------------------------------------------------
-//
+
 // Precedence: result `data` first (a future backend may echo the stored
 // row), then the tool-call args. `content` is the memory body; it can be
 // an empty string only for a rejected call, which never reaches success.

@@ -64,7 +64,7 @@ function makeStubClient(initial: SseState): SseClient {
 }
 
 // ─── mocks ────────────────────────────────────────────────────────────────
-//
+
 // Per-test overrides via setup() so each test can change
 // getPabrikConfig / getSession responses without re-mounting the global
 // vi.mock() harness.
@@ -105,7 +105,7 @@ function installChatViewMocks(opts: {
 }
 
 // ─── mount helper ────────────────────────────────────────────────────────
-//
+
 // Mounts ChatView with the provided sessionId. Returns the wrapper plus
 // resolved refs once the component is mounted and the initial
 // async data (getPabrikConfig + getSession) has resolved.

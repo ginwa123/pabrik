@@ -1462,7 +1462,6 @@ async function loadAgentData(agentItemId: string) {
 }
 
 // Load agent bundle for agent items (replaces the old item-id watcher).
-// Runs from onMounted (covers direct landing, keeps
 // AppLayout.agentToolsFetchOnView green) + the store subscription pump
 // (covers in-app navigation to an agent item).
 let lastAgentLoadItemId: string | null = null
@@ -1481,8 +1480,6 @@ const maybeLoadAgentData = () => {
 maybeLoadAgentData()
 
 // Agent knowledge dialog open state + last-targeted agent id.
-// `show` drives `AgentKnowledgeDialog`'s v-model:show. We capture
-// `agentId` at open-time so the create handler doesn't depend on
 // `activeWorkspaceItem` still being set when the user submits (the
 // user could navigate away mid-dialog).
 const agentKnowledgeDialogOpen = ref(false)

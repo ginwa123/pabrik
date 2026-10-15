@@ -122,8 +122,6 @@ const counterText = computed<string>(() =>
 
 // ─── @-trigger file picker ──────────────────────────────────────────────
 // Ported 1:1 from FileInput.vue Task 2 (plan:
-// docs/superpowers/plans/2026-09-08-chatview-search-files-perf.md).
-// Single round-trip per query via `api.searchFiles` — replaces the old
 // N-sequential-fetch full-tree walk (`loadAllFiles`, deleted).
 let fileSearchTimer: ReturnType<typeof setTimeout> | null = null
 let fileSearchGen = 0

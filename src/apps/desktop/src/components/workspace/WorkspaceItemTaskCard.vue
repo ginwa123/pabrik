@@ -383,7 +383,7 @@ const isHovered = ref(false)
 // Combined box-shadow for the card. Layered values, in CSS stacking
 // order (first on top): 3D base + Jira-style type accent (left
 // stripe) + yellow drop indicator (pinned-region drag).
-//
+
 // On hover the 3D base swaps to its hover variant; transition-shadow
 // in the template class animates the swap smoothly.
 const cardBoxShadow = computed<string>(() => {
@@ -465,11 +465,6 @@ const typeBadge = computed<string | null>(() => {
 })
 
 // Git-branch badge (plan:
-//   docs/superpowers/plans/2026-08-06-kanban-task-git-branch.md).
-// Returns the branch name to display, or null when:
-//   - the task has no git_branch field (undefined / null)
-//   - the backend returned an empty string (not a git repo, detached
-//     HEAD, spawn failure)
 // Null results in NO badge rendered (graceful no-op for non-git
 // workspaces / tasks without worktree + non-git cwd).
 const gitBranchBadge = computed<string | null>(() => {
