@@ -30,14 +30,12 @@ const emit = defineEmits<{
   jump: [groupIndex: number, key: string]
 }>()
 
-// Which pill's message box is open. Keyed by the pill's STABLE key (not
-// its index) so an SSE append that shifts positions cannot leave the box
-// hanging off the wrong pill — the same reason `jumpToUserGroup` resolves
-// by key at click time.
-//
-// Hover and focus share one slot on purpose: a keyboard user tabbing
-// through the rail gets the same preview a mouse user does, and moving
-// from one pill to the next swaps the box rather than closing it.
+// Which pill's message box is open. Keyed by the pill's STABLE key (not its index) so an SSE append
+// that shifts positions cannot leave the box hanging off the wrong pill — the same reason
+// `jumpToUserGroup` resolves by key at click time.
+// Hover and focus share one slot on purpose: a keyboard user tabbing through the rail gets the same
+// preview a mouse user does, and moving from one pill to the next swaps the box rather than closing
+// it.
 const openKey = ref<string | null>(null)
 
 const open = (key: string): void => {
@@ -67,10 +65,9 @@ const openPillIndex = computed((): number => {
 })
 
 // Vertical centre of the open pill, measured from the rail's top edge.
-// Reads the SAME custom properties the rail's own layout uses
-// (`--pill-pad`, `--pill-pitch`, `--pill-h`), so the box cannot drift
-// away from its pill if the stack's spacing is ever retuned — the
-// geometry lives in exactly one place.
+// Reads the SAME custom properties the rail's own layout uses (`--pill-pad`, `--pill-pitch`,
+// `--pill-h`), so the box cannot drift away from its pill if the stack's spacing is ever retuned —
+// the geometry lives in exactly one place.
 const pillCentreTop = computed((): string => {
   if (openPillIndex.value < 0) return '50%'
   return `calc(var(--pill-pad) + ${openPillIndex.value} * var(--pill-pitch) + var(--pill-h) / 2)`

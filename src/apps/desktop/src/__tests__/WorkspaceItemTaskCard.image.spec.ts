@@ -1,17 +1,11 @@
-/**
- * Behavioural tests for the image thumbnail strip in
- * WorkspaceItemTaskCard (kanban board card).
- *
- * Plan: docs/superpowers/plans/2026-08-24-kanban-task-image-urls-read-path.md
- *   (Task 4 — kanban card thumbnail).
- *
- * The backend now returns `image_urls` (||-delimited wire string,
- * split to string[] by the store's normalizeTaskTags). The card
- * renders the FIRST image as a 48px-tall thumbnail + a `+N` badge
- * when more images exist. Clicking the thumb opens the detail
- * dialog (viewTaskDetail) — same affordance as the `+N more` tags
- * link.
- */
+/** Behavioural tests for the image thumbnail strip in WorkspaceItemTaskCard (kanban board card).
+ * Plan: docs/superpowers/plans/2026-08-24-kanban-task-image-urls-read-path.md (Task 4 — kanban card
+ * thumbnail). */
+/** The backend now returns `image_urls` (||-delimited wire string, split to string[] by the store's
+ * normalizeTaskTags). The card renders the FIRST image as a 48px-tall thumbnail + a `+N` badge when
+ * more images exist. */
+/** Clicking the thumb opens the detail dialog (viewTaskDetail) — same affordance as the `+N more`
+ * tags link. */
 import { describe, expect, it, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

@@ -1,8 +1,7 @@
-/** Tests for WorkspaceItemMemoriesView.vue. Covers the 4 rendering states
- * (empty cwd, empty list, populated list, header subtitle) and asserts
- * that the API is not called when cwd is falsy.
- * Mocks the api module so no network calls happen. Mirrors the
- * MemoryList.spec.ts pattern (vi.mock + setActivePinia). */
+/** Tests for WorkspaceItemMemoriesView.vue. Covers the 4 rendering states (empty cwd, empty list,
+ * populated list, header subtitle) and asserts that the API is not called when cwd is falsy. Mocks
+ * the api module so no network calls happen. */
+/** Mirrors the MemoryList.spec.ts pattern (vi.mock + setActivePinia). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

@@ -1,15 +1,9 @@
-/**
- * Tests for KanbanView.handleStartAgent — the edit-mode "Start agent"
- * button host handler. Calls workspacesStore.startAgentOnTask (which
- * POSTs to the new /api/.../tasks/:task_id/start_agent endpoint);
- * closes the dialog + clears the active task on success; keeps the
- * dialog open with the errorMessage banner on failure.
- *
- * Distinct from KanbanView.createAndRun.spec.ts (which covers the
- * create-mode create_and_run flow).
- *
- * Plan: docs/superpowers/specs/2026-08-18-kanban-task-detail-start-agent.md
- */
+/** Tests for KanbanView.handleStartAgent — the edit-mode "Start agent" button host handler. */
+/** Calls workspacesStore.startAgentOnTask (which POSTs to the new
+ * /api/.../tasks/:task_id/start_agent endpoint); closes the dialog + clears the active task on
+ * success; keeps the dialog open with the errorMessage banner on failure. */
+/** Distinct from KanbanView.createAndRun.spec.ts (which covers the create-mode create_and_run
+ * flow). Plan: docs/superpowers/specs/2026-08-18-kanban-task-detail-start-agent.md */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

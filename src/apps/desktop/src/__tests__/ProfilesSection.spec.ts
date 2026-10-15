@@ -216,13 +216,12 @@ describe('ProfilesSection', () => {
     expect(wrapper.emitted('deleteSubAgent')?.[0]).toEqual(['work', 'coder'])
   })
 
-  // ─── Clear active profile ───────────────────────────────────────────
-  // Plan 2026-08-06-reset-active-profile: when a profile is marked
-  // active, the header shows a "Reset" button next to the pill. Clicking
-  // it emits `clearActive` so the parent (PabrikConfigEditor) can save
-  // `active_profile: null` to config.json. After the save, the cascade
-  // in `workflow.zig::resolveProfileField` falls through to the top-level
-  // config and every chat session / task uses the bare defaults.
+  // ─── Clear active profile ─────────────────────────────────────────── Plan
+  // 2026-08-06-reset-active-profile: when a profile is marked active, the header shows a "Reset"
+  // button next to the pill.
+  // Clicking it emits `clearActive` so the parent (PabrikConfigEditor) can save `active_profile:
+  // null` to config.json. After the save, the cascade in `workflow.zig::resolveProfileField` falls
+  // through to the top-level config and every chat session / task uses the bare defaults.
   it('shows a Reset button next to the active pill when an active profile is set', async () => {
     const wrapper = await mountOpen(ProfilesSection, {
       props: { modelValue: [baseProfile], activeProfile: 'work' },

@@ -25,13 +25,13 @@ const isEmptyContent = (c: unknown): boolean =>
   // NOT running — it renders the empty/success state instead.
   c === null || c === undefined || (typeof c === 'string' && c.trim().length === 0)
 
-// Keep local toggle state in sync with the parent's `expanded` prop so the
-// component behaves as a *controlled* component (parent owns the truth).
-// Without this sync, mount({expanded:true}) → setProps({expanded:false})
-// leaves the local ref out of sync with the prop, which is wrong for any
-// caller that programmatically expands/collapses from outside (e.g. tests,
-// a "collapse all" toolbar, etc.). Prev-prop guard on update: local
-// toggles via handleToggle don't touch the prop, so they never clobber.
+// Keep local toggle state in sync with the parent's `expanded` prop so the component behaves as a
+// *controlled* component (parent owns the truth).
+// Without this sync, mount({expanded:true}) → setProps({expanded:false}) leaves the local ref out
+// of sync with the prop, which is wrong for any caller that programmatically expands/collapses from
+// outside (e.g. tests, a "collapse all" toolbar, etc.).
+// Prev-prop guard on update: local toggles via handleToggle don't touch the prop, so they never
+// clobber.
 const prevExpandedProp = ref(props.expanded ?? false)
 onMounted(() => {
   isExpanded.value = props.expanded ?? false
@@ -81,12 +81,11 @@ const paramStr = (obj: Record<string, unknown> | null, ...keys: string[]): strin
   return null
 }
 
-// Diff content: prefer explicit props.diffviewBefore/After, then the
-// envelope's before/after, then the call parameters. The parameter fallback
-// is useful for successful results whose legacy diff fields are absent, but
-// the result is gated by `parsed.success` below before anything is rendered.
-// Null-safe: the SSE/REST layer may deliver explicit null (DB column null),
-// which must fall through — passing null into DiffView crashes splitLines.
+// Diff content: prefer explicit props.diffviewBefore/After, then the envelope's before/after, then
+// the call parameters. The parameter fallback is useful for successful results whose legacy diff
+// fields are absent, but the result is gated by `parsed.success` below before anything is rendered.
+// Null-safe: the SSE/REST layer may deliver explicit null (DB column null), which must fall through
+// — passing null into DiffView crashes splitLines.
 const diffBefore = computed(() => {
   if (props.diffviewBefore != null && props.diffviewBefore !== '') return props.diffviewBefore
   if (parsed.value.before !== '') return parsed.value.before
@@ -147,12 +146,11 @@ const diffLanguage = computed(() => detectLanguage(displayPath.value ?? ''))
 
 const openInEditor = useInjectOpenInCodeEditor()
 
-// Forward the diff-view's @jump-to-line to the in-app code editor so the
-// user can click a line number in the diff and land on that exact line
-// in the file viewer. We require both `cwd` and a path (the target file
-// must be on disk + a workspace) before forwarding; otherwise we silently
-// ignore the click (the line-number still renders the hover affordance
-// but won't do anything, which is correct for tests / standalone renders).
+// Forward the diff-view's @jump-to-line to the in-app code editor so the user can click a line
+// number in the diff and land on that exact line in the file viewer.
+// We require both `cwd` and a path (the target file must be on disk + a workspace) before
+// forwarding; otherwise we silently ignore the click (the line-number still renders the hover
+// affordance but won't do anything, which is correct for tests / standalone renders).
 const handleJumpToLine = (line: number) => {
   const targetPath = displayPath.value ?? parsed.value.path
   if (!openInEditor || !props.cwd || !targetPath) return

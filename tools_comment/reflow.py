@@ -233,6 +233,43 @@ def emit_jsdoc(groups, indent):
     return out
 
 
+def indent_of(block):
+    return re.match(r'^\s*', block[0]).group(0)
+
+
+def merge_jsdoc_pieces(pieces, indent):
+    """Merge several reflowed JSDoc pieces into ONE block, or None if it will not fit.
+
+    Each piece is already a legal one-to-three-line JSDoc block. Merging them
+    means stripping each piece's delimiters and re-emitting the whole prose as
+    a single block — which is only honest when the result still fits the
+    ceiling. When it does not, None is returned and the caller keeps the pieces
+    separate, because a merged block over the ceiling is a finding either way
+    and the separate pieces at least do not pretend to be three documents.
+    """
+    prose_lines = []
+    for piece in pieces:
+        for l in piece:
+            t = l.strip()
+            if t in ('/**', '*/'):
+                continue
+            if t.startswith('/**'):
+                t = t[3:].strip()
+            if t.endswith('*/'):
+                t = t[:-2].strip()
+            if t.startswith('*'):
+                t = t[1:].strip()
+            if t:
+                prose_lines.append(t)
+    if not prose_lines:
+        return None
+    txt = ' '.join(prose_lines)
+    width = W - len(indent) - 4
+    if len(wrap(txt, width)) > 3:
+        return None
+    return emit_jsdoc([sentences(txt)], indent)
+
+
 def reflow_token(kind, lines):
     indent = re.match(r'^\s*', lines[0]).group(0)
     prose = strip_markers(lines, kind)
@@ -314,9 +351,22 @@ def process(path, ranges, apply_changes):
         # The pieces are joined with NO blank line. A blank line between two
         # comment tokens ends the first block, which is the split-to-cheat
         # shape `local/no-floating-comments` reports.
+        #
+        # Adjacent JSDoc tokens are also MERGED into one block rather than
+        # emitted as several `/** … */` back to back: three separate JSDoc
+        # blocks above one declaration is the same dodge in a different
+        # spelling, and a reader sees three documents where there was one.
         new_block = []
-        for p in pieces:
-            new_block.extend(p)
+        if all(kind == 'jsdoc' for kind, _ in tokens) and len(pieces) > 1:
+            merged = merge_jsdoc_pieces(pieces, indent_of(block))
+            if merged is not None:
+                new_block = merged
+            else:
+                for p in pieces:
+                    new_block.extend(p)
+        else:
+            for p in pieces:
+                new_block.extend(p)
         if new_block == block:
             skipped.append((start, 'no-change'))
             continue

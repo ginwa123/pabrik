@@ -1,14 +1,8 @@
-/**
- * Behavioural tests for the git-branch badge in WorkspaceItemTaskCard.
- *
- * Plan: docs/superpowers/plans/2026-08-06-kanban-task-git-branch.md
- *   (Task 7 — frontend wiring).
- *
- * The backend (commit 1130e5cd) populates `task.git_branch` per task
- * by shelling out to `git -C <cwd>` (worktree cwd or workspace item
- * path). The frontend just renders a small fork/branch SVG icon +
- * the branch name in the meta row.
- */
+/** Behavioural tests for the git-branch badge in WorkspaceItemTaskCard. Plan:
+ * docs/superpowers/plans/2026-08-06-kanban-task-git-branch.md (Task 7 — frontend wiring). */
+/** The backend (commit 1130e5cd) populates `task.git_branch` per task by shelling out to `git -C
+ * <cwd>` (worktree cwd or workspace item path). The frontend just renders a small fork/branch SVG
+ * icon + the branch name in the meta row. */
 import { describe, expect, it, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
