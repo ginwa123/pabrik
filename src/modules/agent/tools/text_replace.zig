@@ -545,7 +545,6 @@ pub const text_replace_tool: AgentTool = .{
     },
 };
 
-const text_replace = @import("text_replace.zig");
 const absPath = @import("helpers").test_path.absPath;
 
 fn createTestFile(path: []const u8, content: []const u8) !void {
@@ -578,7 +577,7 @@ test "text_replace - unified diff contains diff markers" {
     const test_path = try absPath(&test_path_buf, "test_diff_view_unified.txt");
     try createTestFile(test_path, "Hello World\n");
 
-    var result = try text_replace.executeTextReplace(
+    var result = try executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
@@ -609,7 +608,7 @@ test "text_replace - split diff_view before contains original content" {
     const test_path = try absPath(&test_path_buf, "test_diff_view_before.txt");
     try createTestFile(test_path, "Hello World\n");
 
-    var result = try text_replace.executeTextReplace(
+    var result = try executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
@@ -635,7 +634,7 @@ test "text_replace - split diff_view after contains replacement content" {
     const test_path = try absPath(&test_path_buf, "test_diff_view_after.txt");
     try createTestFile(test_path, "Hello World\n");
 
-    var result = try text_replace.executeTextReplace(
+    var result = try executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
@@ -661,7 +660,7 @@ test "text_replace - split diff_view before and after are distinct" {
     const test_path = try absPath(&test_path_buf, "test_diff_view_distinct.txt");
     try createTestFile(test_path, "original text\n");
 
-    var result = try text_replace.executeTextReplace(
+    var result = try executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
@@ -691,7 +690,7 @@ test "text_replace - unified diff shows line removal" {
     const test_path = try absPath(&test_path_buf, "test_diff_view_removal.txt");
     try createTestFile(test_path, "line1\nline2\nline3\n");
 
-    var result = try text_replace.executeTextReplace(
+    var result = try executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
@@ -721,7 +720,7 @@ test "text_replace - unified diff shows line insertion" {
     const test_path = try absPath(&test_path_buf, "test_diff_view_insert.txt");
     try createTestFile(test_path, "line1\nline3\n");
 
-    var result = try text_replace.executeTextReplace(
+    var result = try executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
@@ -756,7 +755,7 @@ test "text_replace - unified diff shows multiline replacement" {
         \\}
     );
 
-    var result = try text_replace.executeTextReplace(
+    var result = try executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
@@ -786,7 +785,7 @@ test "text_replace - unified diff includes hunk header with line numbers" {
     const test_path = try absPath(&test_path_buf, "test_diff_view_hunk.txt");
     try createTestFile(test_path, "line1\nline2\nline3\nline4\nline5\n");
 
-    var result = try text_replace.executeTextReplace(
+    var result = try executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
@@ -812,7 +811,7 @@ test "text_replace - lines_changed reflects actual change count" {
     const test_path = try absPath(&test_path_buf, "test_diff_view_lines.txt");
     try createTestFile(test_path, "line1\nline2\nline3\n");
 
-    var result = try text_replace.executeTextReplace(
+    var result = try executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
@@ -844,7 +843,7 @@ test "generateUnifiedDiff output contains git merge conflict markers" {
     const test_path = try absPath(&test_path_buf, "test_git_conflict_markers.txt");
     try createTestFile(test_path, "line1\nline2\nline3\n");
 
-    var result = try text_replace.executeTextReplace(
+    var result = try executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
@@ -870,7 +869,7 @@ test "generateUnifiedDiff split view shows old_str under <<<<<<<" {
     const test_path = try absPath(&test_path_buf, "test_split_before.txt");
     try createTestFile(test_path, "Hello World\n");
 
-    var result = try text_replace.executeTextReplace(
+    var result = try executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
@@ -899,7 +898,7 @@ test "generateUnifiedDiff split view shows new_str under =======" {
     const test_path = try absPath(&test_path_buf, "test_split_after.txt");
     try createTestFile(test_path, "Hello World\n");
 
-    var result = try text_replace.executeTextReplace(
+    var result = try executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
@@ -930,7 +929,7 @@ test "generateUnifiedDiff before field equals old_str exactly" {
     const test_path = try absPath(&test_path_buf, "test_before_exact.txt");
     try createTestFile(test_path, "Hello World\n");
 
-    var result = try text_replace.executeTextReplace(
+    var result = try executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
@@ -954,7 +953,7 @@ test "generateUnifiedDiff after field equals new_str exactly" {
     const test_path = try absPath(&test_path_buf, "test_after_exact.txt");
     try createTestFile(test_path, "Hello World\n");
 
-    var result = try text_replace.executeTextReplace(
+    var result = try executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
@@ -982,7 +981,7 @@ test "generateUnifiedDiff multiline old_str shows all lines in split view" {
         \\}
     );
 
-    var result = try text_replace.executeTextReplace(
+    var result = try executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
@@ -1014,7 +1013,7 @@ test "generateUnifiedDiff unified output has both traditional diff and conflict 
     const test_path = try absPath(&test_path_buf, "test_unified_and_conflict.txt");
     try createTestFile(test_path, "line1\nline2\nline3\n");
 
-    var result = try text_replace.executeTextReplace(
+    var result = try executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
@@ -1044,7 +1043,7 @@ test "generateUnifiedDiff unified output has both traditional diff and conflict 
 
 test "toJSONSuccess keeps raw path with & and < (JSON needs no escaping)" {
     const allocator = std.testing.allocator;
-    var result: text_replace.TextReplaceResult = .{ .ok = {} };
+    var result: TextReplaceResult = .{ .ok = {} };
     defer result.deinit(allocator);
     const before = allocator.dupe(u8, "x") catch @panic("dupe failed for the text_replace before fixture");
     const after = allocator.dupe(u8, "y") catch @panic("dupe failed for the text_replace after fixture");
@@ -1055,7 +1054,7 @@ test "toJSONSuccess keeps raw path with & and < (JSON needs no escaping)" {
         .after = after,
         .lines_changed = 1,
     };
-    const payload = try text_replace.toJSONSuccess(allocator, result, "/abs/path with & and < and > and \"");
+    const payload = try toJSONSuccess(allocator, result, "/abs/path with & and < and > and \"");
     defer allocator.free(payload);
 
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, payload, .{});
@@ -1071,9 +1070,9 @@ test "toJSONSuccess keeps raw path with & and < (JSON needs no escaping)" {
 
 test "toJSONSuccess emits null diff fields when diff_view is absent" {
     const allocator = std.testing.allocator;
-    var result: text_replace.TextReplaceResult = .{ .ok = {} };
+    var result: TextReplaceResult = .{ .ok = {} };
     defer result.deinit(allocator);
-    const payload = try text_replace.toJSONSuccess(allocator, result, "/x");
+    const payload = try toJSONSuccess(allocator, result, "/x");
     defer allocator.free(payload);
 
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, payload, .{});
@@ -1089,7 +1088,7 @@ test "toJSONSuccess emits null diff fields when diff_view is absent" {
 
 test "toJSONSuccess includes the unified diff field" {
     const allocator = std.testing.allocator;
-    var result: text_replace.TextReplaceResult = .{ .ok = {} };
+    var result: TextReplaceResult = .{ .ok = {} };
     defer result.deinit(allocator);
     const before = allocator.dupe(u8, "old line") catch @panic("dupe failed for the text_replace before fixture");
     const after = allocator.dupe(u8, "new line") catch @panic("dupe failed for the text_replace after fixture");
@@ -1100,7 +1099,7 @@ test "toJSONSuccess includes the unified diff field" {
         .after = after,
         .lines_changed = 1,
     };
-    const payload = try text_replace.toJSONSuccess(allocator, result, "/x");
+    const payload = try toJSONSuccess(allocator, result, "/x");
     defer allocator.free(payload);
 
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, payload, .{});
@@ -1114,7 +1113,7 @@ test "toJSONSuccess includes the unified diff field" {
 
 test "toJSONErrorDetailed carries error, path, old_str and new_str" {
     const allocator = std.testing.allocator;
-    const payload = try text_replace.toJSONErrorDetailed(
+    const payload = try toJSONErrorDetailed(
         allocator,
         "make & sure",
         "/path with &",
@@ -1134,7 +1133,7 @@ test "toJSONErrorDetailed carries error, path, old_str and new_str" {
 
 test "toJSONError maps OldStrNotFound to a helpful message" {
     const allocator = std.testing.allocator;
-    const payload = try text_replace.toJSONError(allocator, error.OldStrNotFound, "/x", "missing");
+    const payload = try toJSONError(allocator, error.OldStrNotFound, "/x", "missing");
     defer allocator.free(payload);
 
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, payload, .{});
@@ -1147,43 +1146,43 @@ test "toJSONError maps OldStrNotFound to a helpful message" {
 }
 
 test "lfToCrlf - empty string returns empty" {
-    const out = try text_replace.lfToCrlf(std.testing.allocator, "");
+    const out = try lfToCrlf(std.testing.allocator, "");
     defer std.testing.allocator.free(out);
     try std.testing.expect(out.len == 0);
 }
 
 test "lfToCrlf - no newlines returns duped content" {
-    const out = try text_replace.lfToCrlf(std.testing.allocator, "no newlines here");
+    const out = try lfToCrlf(std.testing.allocator, "no newlines here");
     defer std.testing.allocator.free(out);
     try std.testing.expect(std.mem.eql(u8, out, "no newlines here"));
 }
 
 test "lfToCrlf - single LF converted to CRLF" {
-    const out = try text_replace.lfToCrlf(std.testing.allocator, "\n");
+    const out = try lfToCrlf(std.testing.allocator, "\n");
     defer std.testing.allocator.free(out);
     try std.testing.expect(std.mem.eql(u8, out, "\r\n"));
 }
 
 test "lfToCrlf - text ending with newline" {
-    const out = try text_replace.lfToCrlf(std.testing.allocator, "hello\n");
+    const out = try lfToCrlf(std.testing.allocator, "hello\n");
     defer std.testing.allocator.free(out);
     try std.testing.expect(std.mem.eql(u8, out, "hello\r\n"));
 }
 
 test "lfToCrlf - text starting with newline" {
-    const out = try text_replace.lfToCrlf(std.testing.allocator, "\nhello");
+    const out = try lfToCrlf(std.testing.allocator, "\nhello");
     defer std.testing.allocator.free(out);
     try std.testing.expect(std.mem.eql(u8, out, "\r\nhello"));
 }
 
 test "lfToCrlf - multiple LF all converted" {
-    const out = try text_replace.lfToCrlf(std.testing.allocator, "a\nb\nc\n");
+    const out = try lfToCrlf(std.testing.allocator, "a\nb\nc\n");
     defer std.testing.allocator.free(out);
     try std.testing.expect(std.mem.eql(u8, out, "a\r\nb\r\nc\r\n"));
 }
 
 test "lfToCrlf - consecutive newlines" {
-    const out = try text_replace.lfToCrlf(std.testing.allocator, "a\n\n\nb");
+    const out = try lfToCrlf(std.testing.allocator, "a\n\n\nb");
     defer std.testing.allocator.free(out);
     try std.testing.expect(std.mem.eql(u8, out, "a\r\n\r\n\r\nb"));
 }
@@ -1191,7 +1190,7 @@ test "lfToCrlf - consecutive newlines" {
 test "lfToCrlf - bare CR (not followed by LF) preserved" {
     // Old-Mac line ending: a single \r. The function converts LF to CRLF and
     // does NOT touch bare \r.
-    const out = try text_replace.lfToCrlf(std.testing.allocator, "a\rb");
+    const out = try lfToCrlf(std.testing.allocator, "a\rb");
     defer std.testing.allocator.free(out);
     try std.testing.expect(std.mem.eql(u8, out, "a\rb"));
 }
@@ -1200,20 +1199,20 @@ test "lfToCrlf - existing CRLF gets EXTRA CR prepended (known quirk)" {
     // Documenting the existing behavior: lfToCrlf converts ALL \n → \r\n,
     // even if the \n is already preceded by \r. The caller is responsible
     // for only feeding LF-only content. The output is \r\r\n.
-    const out = try text_replace.lfToCrlf(std.testing.allocator, "a\r\nb");
+    const out = try lfToCrlf(std.testing.allocator, "a\r\nb");
     defer std.testing.allocator.free(out);
     try std.testing.expect(std.mem.eql(u8, out, "a\r\r\nb"));
 }
 
 test "lfToCrlf - mixed LF and CRLF input" {
     // See above: the LF in the CRLF pair gets a \r prepended.
-    const out = try text_replace.lfToCrlf(std.testing.allocator, "lf\ncrlf\r\nlf\n");
+    const out = try lfToCrlf(std.testing.allocator, "lf\ncrlf\r\nlf\n");
     defer std.testing.allocator.free(out);
     try std.testing.expect(std.mem.eql(u8, out, "lf\r\ncrlf\r\r\nlf\r\n"));
 }
 
 test "lfToCrlf - content with special chars and LF" {
-    const out = try text_replace.lfToCrlf(std.testing.allocator, "<a>\n&b;\n\"c\"");
+    const out = try lfToCrlf(std.testing.allocator, "<a>\n&b;\n\"c\"");
     defer std.testing.allocator.free(out);
     try std.testing.expect(std.mem.eql(u8, out, "<a>\r\n&b;\r\n\"c\""));
 }
@@ -1222,7 +1221,7 @@ test "lfToCrlf - single newline byte in long content" {
     // Verify the duped branch (no \n) returns the original content
     // character-for-character, not a re-encoded copy.
     const input = "x" ** 100;
-    const out = try text_replace.lfToCrlf(std.testing.allocator, input);
+    const out = try lfToCrlf(std.testing.allocator, input);
     defer std.testing.allocator.free(out);
     try std.testing.expect(out.len == 100);
     try std.testing.expect(std.mem.eql(u8, out, input));
@@ -1233,28 +1232,28 @@ test "lfToCrlf - single newline byte in long content" {
 // ============================================================================
 
 test "normalizeLineEndings - empty content returns duped empty" {
-    const out = try text_replace.normalizeLineEndings(std.testing.allocator, "");
+    const out = try normalizeLineEndings(std.testing.allocator, "");
     defer std.testing.allocator.free(out);
     try std.testing.expect(out.len == 0);
 }
 
 test "normalizeLineEndings - pure LF content (no CRLF) returns duped" {
     const input = "line1\nline2\nline3\n";
-    const out = try text_replace.normalizeLineEndings(std.testing.allocator, @constCast(input));
+    const out = try normalizeLineEndings(std.testing.allocator, @constCast(input));
     defer std.testing.allocator.free(out);
     try std.testing.expect(std.mem.eql(u8, out, "line1\nline2\nline3\n"));
 }
 
 test "normalizeLineEndings - pure CRLF content all converted" {
     const input = "line1\r\nline2\r\nline3\r\n";
-    const out = try text_replace.normalizeLineEndings(std.testing.allocator, @constCast(input));
+    const out = try normalizeLineEndings(std.testing.allocator, @constCast(input));
     defer std.testing.allocator.free(out);
     try std.testing.expect(std.mem.eql(u8, out, "line1\nline2\nline3\n"));
 }
 
 test "normalizeLineEndings - mixed LF and CRLF all become LF" {
     const input = "a\r\nb\nc\r\nd";
-    const out = try text_replace.normalizeLineEndings(std.testing.allocator, @constCast(input));
+    const out = try normalizeLineEndings(std.testing.allocator, @constCast(input));
     defer std.testing.allocator.free(out);
     try std.testing.expect(std.mem.eql(u8, out, "a\nb\nc\nd"));
 }
@@ -1264,42 +1263,42 @@ test "normalizeLineEndings - bare CR (not paired with LF) preserved" {
     // bare \r (Old-Mac line ending, or a literal carriage return in data)
     // is left untouched.
     const input = "a\rb\rc\r\nd";
-    const out = try text_replace.normalizeLineEndings(std.testing.allocator, @constCast(input));
+    const out = try normalizeLineEndings(std.testing.allocator, @constCast(input));
     defer std.testing.allocator.free(out);
     try std.testing.expect(std.mem.eql(u8, out, "a\rb\rc\nd"));
 }
 
 test "normalizeLineEndings - CRLF at very start of content" {
     const input = "\r\nhello\n";
-    const out = try text_replace.normalizeLineEndings(std.testing.allocator, @constCast(input));
+    const out = try normalizeLineEndings(std.testing.allocator, @constCast(input));
     defer std.testing.allocator.free(out);
     try std.testing.expect(std.mem.eql(u8, out, "\nhello\n"));
 }
 
 test "normalizeLineEndings - CRLF at very end of content" {
     const input = "hello\r\n";
-    const out = try text_replace.normalizeLineEndings(std.testing.allocator, @constCast(input));
+    const out = try normalizeLineEndings(std.testing.allocator, @constCast(input));
     defer std.testing.allocator.free(out);
     try std.testing.expect(std.mem.eql(u8, out, "hello\n"));
 }
 
 test "normalizeLineEndings - consecutive CRLF pairs" {
     const input = "a\r\n\r\n\r\nb";
-    const out = try text_replace.normalizeLineEndings(std.testing.allocator, @constCast(input));
+    const out = try normalizeLineEndings(std.testing.allocator, @constCast(input));
     defer std.testing.allocator.free(out);
     try std.testing.expect(std.mem.eql(u8, out, "a\n\n\nb"));
 }
 
 test "normalizeLineEndings - content with only CRLF pairs and no other text" {
     const input = "\r\n\r\n";
-    const out = try text_replace.normalizeLineEndings(std.testing.allocator, @constCast(input));
+    const out = try normalizeLineEndings(std.testing.allocator, @constCast(input));
     defer std.testing.allocator.free(out);
     try std.testing.expect(std.mem.eql(u8, out, "\n\n"));
 }
 
 test "normalizeLineEndings - single line with no newline at all" {
     const input = "single line content";
-    const out = try text_replace.normalizeLineEndings(std.testing.allocator, @constCast(input));
+    const out = try normalizeLineEndings(std.testing.allocator, @constCast(input));
     defer std.testing.allocator.free(out);
     try std.testing.expect(std.mem.eql(u8, out, "single line content"));
 }
@@ -1307,17 +1306,17 @@ test "normalizeLineEndings - single line with no newline at all" {
 test "normalizeLineEndings - CRLF then LF in sequence (\\r\\n\\n)" {
     // The first \r\n is collapsed to \n; the second bare \n stays \n.
     const input = "a\r\n\nb";
-    const out = try text_replace.normalizeLineEndings(std.testing.allocator, @constCast(input));
+    const out = try normalizeLineEndings(std.testing.allocator, @constCast(input));
     defer std.testing.allocator.free(out);
     try std.testing.expect(std.mem.eql(u8, out, "a\n\nb"));
 }
 
 test "normalizeLineEndings - returns new allocation when CRLF present" {
     const input = "a\r\nb";
-    const out1 = try text_replace.normalizeLineEndings(std.testing.allocator, @constCast(input));
+    const out1 = try normalizeLineEndings(std.testing.allocator, @constCast(input));
     defer std.testing.allocator.free(out1);
     // Calling again should allocate a fresh buffer (NOT alias the input)
-    const out2 = try text_replace.normalizeLineEndings(std.testing.allocator, @constCast(input));
+    const out2 = try normalizeLineEndings(std.testing.allocator, @constCast(input));
     defer std.testing.allocator.free(out2);
     try std.testing.expect(out1.ptr != out2.ptr);
     try std.testing.expect(std.mem.eql(u8, out1, out2));
@@ -1325,7 +1324,7 @@ test "normalizeLineEndings - returns new allocation when CRLF present" {
 
 test "normalizeLineEndings - returns new allocation when no CRLF (duped)" {
     const input = "no crlf here";
-    const out = try text_replace.normalizeLineEndings(std.testing.allocator, @constCast(input));
+    const out = try normalizeLineEndings(std.testing.allocator, @constCast(input));
     defer std.testing.allocator.free(out);
     // The duped buffer is a separate allocation — even though content is identical,
     // freeing it must not corrupt the input.
@@ -1340,7 +1339,7 @@ test "normalizeLineEndings - returns new allocation when no CRLF (duped)" {
 test "generateUnifiedDiff - empty file content with single replacement" {
     // raw = "" means 1 "empty line" (the split loop appends one entry for the
     // is_end branch).
-    const result = try text_replace.generateUnifiedDiff(
+    const result = try generateUnifiedDiff(
         std.testing.allocator,
         "",
         0,
@@ -1358,7 +1357,7 @@ test "generateUnifiedDiff - empty file content with single replacement" {
 }
 
 test "generateUnifiedDiff - single line file (no trailing newline)" {
-    const result = try text_replace.generateUnifiedDiff(
+    const result = try generateUnifiedDiff(
         std.testing.allocator,
         "the only line",
         0,
@@ -1387,7 +1386,7 @@ test "generateUnifiedDiff - replacement at first line (1:1 line replacement)" {
     // body shows context lines (no -/+ markers) — the SPLIT VIEW
     // (<<<<<<< / ======= / >>>>>>>) is where the change is visible.
     const raw = "first\nsecond\nthird\n";
-    const result = try text_replace.generateUnifiedDiff(
+    const result = try generateUnifiedDiff(
         std.testing.allocator,
         raw,
         0,
@@ -1413,7 +1412,7 @@ test "generateUnifiedDiff - replacement at first line (1:1 line replacement)" {
 test "generateUnifiedDiff - replacement at last line (1:1 line replacement)" {
     const raw = "first\nsecond\nlast\n";
     const last_offset = "first\n".len + "second\n".len; // byte offset of "last\n"
-    const result = try text_replace.generateUnifiedDiff(
+    const result = try generateUnifiedDiff(
         std.testing.allocator,
         raw,
         last_offset,
@@ -1438,7 +1437,7 @@ test "generateUnifiedDiff - replacement removes lines (2 old → 1 new)" {
     // "delete2", ""] (3 entries: 2 lines + trailing empty) -
     const raw = "keep1\ndelete1\ndelete2\nkeep2\n";
     const first = std.mem.indexOf(u8, raw, "delete1").?;
-    const result = try text_replace.generateUnifiedDiff(
+    const result = try generateUnifiedDiff(
         std.testing.allocator,
         raw,
         first,
@@ -1472,7 +1471,7 @@ test "generateUnifiedDiff - replacement adds many lines (1 old → 6 new)" {
     const raw = "before\nTARGET\nafter\n";
     const first = std.mem.indexOf(u8, raw, "TARGET").?;
     const new_str = "TARGET\nextra1\nextra2\nextra3\nextra4\nextra5\n";
-    const result = try text_replace.generateUnifiedDiff(
+    const result = try generateUnifiedDiff(
         std.testing.allocator,
         raw,
         first,
@@ -1499,7 +1498,7 @@ test "generateUnifiedDiff - replacement adds many lines (1 old → 6 new)" {
 test "generateUnifiedDiff - new_str is single line with no trailing newline" {
     const raw = "a\nb\nc\n";
     const first = std.mem.indexOf(u8, raw, "b\n").?;
-    const result = try text_replace.generateUnifiedDiff(
+    const result = try generateUnifiedDiff(
         std.testing.allocator,
         raw,
         first,
@@ -1524,7 +1523,7 @@ test "generateUnifiedDiff - old_str has no trailing newline (mid-line offset)" {
     // the middle of a line.
     const raw = "alpha\nbeta\ngamma\n";
     const first = std.mem.indexOf(u8, raw, "beta").?; // points to 'b' (middle of beta)
-    const result = try text_replace.generateUnifiedDiff(
+    const result = try generateUnifiedDiff(
         std.testing.allocator,
         raw,
         first,
@@ -1557,7 +1556,7 @@ test "generateUnifiedDiff - very long file (>10 lines) — context window is 3" 
     const raw = raw_buf[0..pos];
 
     const first = std.mem.indexOf(u8, raw, "TARGET\n").?;
-    const result = try text_replace.generateUnifiedDiff(
+    const result = try generateUnifiedDiff(
         std.testing.allocator,
         raw,
         first,
@@ -1584,7 +1583,7 @@ test "generateUnifiedDiff - very long file (>10 lines) — context window is 3" 
 test "generateUnifiedDiff - unicode content in old/new_str" {
     const raw = "line1\n中文内容\nline3\n";
     const first = std.mem.indexOf(u8, raw, "中文内容").?;
-    const result = try text_replace.generateUnifiedDiff(
+    const result = try generateUnifiedDiff(
         std.testing.allocator,
         raw,
         first,
@@ -1605,7 +1604,7 @@ test "generateUnifiedDiff - new_str shorter than old_str (3 old → 1 new)" {
     // "old2", "old3", "after", ""] (6 entries) line_idx = 1 (old1)
     const raw = "before\nold1\nold2\nold3\nafter\n";
     const first = std.mem.indexOf(u8, raw, "old1").?;
-    const result = try text_replace.generateUnifiedDiff(
+    const result = try generateUnifiedDiff(
         std.testing.allocator,
         raw,
         first,
@@ -1628,7 +1627,7 @@ test "generateUnifiedDiff - new_str shorter than old_str (3 old → 1 new)" {
 test "generateUnifiedDiff - hunk header has correct start line (1-indexed)" {
     const raw = "l1\nl2\nl3\nl4\nl5\nTARGET\nl7\nl8\nl9\n";
     const first = std.mem.indexOf(u8, raw, "TARGET").?;
-    const result = try text_replace.generateUnifiedDiff(
+    const result = try generateUnifiedDiff(
         std.testing.allocator,
         raw,
         first,
@@ -1645,7 +1644,7 @@ test "generateUnifiedDiff - hunk header has correct start line (1-indexed)" {
 test "generateUnifiedDiff - single-line new_str (no newlines)" {
     const raw = "header\nbody\nfooter\n";
     const first = std.mem.indexOf(u8, raw, "body").?;
-    const result = try text_replace.generateUnifiedDiff(
+    const result = try generateUnifiedDiff(
         std.testing.allocator,
         raw,
         first,
@@ -1668,7 +1667,7 @@ test "generateUnifiedDiff - replacement at exactly the 3rd line (context boundar
     // line_idx = 2 (TARGET), context_start = max(2-3, 0) = 0.
     const raw = "l1\nl2\nTARGET\nl4\nl5\n";
     const first = std.mem.indexOf(u8, raw, "TARGET\n").?;
-    const result = try text_replace.generateUnifiedDiff(
+    const result = try generateUnifiedDiff(
         std.testing.allocator,
         raw,
         first,
@@ -1688,7 +1687,7 @@ test "generateUnifiedDiff - replacement at exactly the 3rd line (context boundar
 }
 
 test "generateUnifiedDiff - output always ends with AFTER marker" {
-    const result = try text_replace.generateUnifiedDiff(
+    const result = try generateUnifiedDiff(
         std.testing.allocator,
         "abc\ndef\n",
         0,
@@ -1707,7 +1706,7 @@ test "generateUnifiedDiff - first parameter is the offset, not byte content" {
     // raw = "aaa\nTARGET\nbbb\n" — TARGET at offset 4. The line-finding
     // loop picks line_idx=1 (the TARGET line). We pass first=4.
     const raw = "aaa\nTARGET\nbbb\n";
-    const result = try text_replace.generateUnifiedDiff(
+    const result = try generateUnifiedDiff(
         std.testing.allocator,
         raw,
         4, // offset of TARGET
@@ -1724,7 +1723,7 @@ test "generateUnifiedDiff - first parameter is the offset, not byte content" {
 test "generateUnifiedDiff - line_idx calc when offset points to trailing empty line" {
     // raw = "abc\n" — only 1 line "abc", plus a trailing empty line.
     // first=4 (just after the \n) → line_idx = 1 (the trailing empty line)
-    const result = try text_replace.generateUnifiedDiff(
+    const result = try generateUnifiedDiff(
         std.testing.allocator,
         "abc\n",
         4,
@@ -1743,18 +1742,18 @@ test "generateUnifiedDiff - line_idx calc when offset points to trailing empty l
 // ============================================================================
 
 test "executeTextReplace - empty path returns PathNotFound" {
-    const result = text_replace.executeTextReplace(
+    const result = executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         "",
         "foo",
         "bar",
     );
-    try std.testing.expectError(text_replace.TextReplaceError.PathNotFound, result);
+    try std.testing.expectError(TextReplaceError.PathNotFound, result);
 }
 
 test "executeTextReplace - non-existent file returns FileNotFound" {
-    const result = text_replace.executeTextReplace(
+    const result = executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         "/tmp/this_file_does_not_exist_anywhere_zzz_unique.txt",
@@ -1770,14 +1769,14 @@ test "executeTextReplace - old_str not found returns OldStrNotFound" {
     try createTestFile(test_path, "line1\nline2\nline3\n");
     defer deleteTestFile(test_path);
 
-    const result = text_replace.executeTextReplace(
+    const result = executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
         "DOES_NOT_EXIST",
         "anything",
     );
-    try std.testing.expectError(text_replace.TextReplaceError.OldStrNotFound, result);
+    try std.testing.expectError(TextReplaceError.OldStrNotFound, result);
 }
 
 test "executeTextReplace - old_str not unique returns OldStrNotUnique" {
@@ -1786,14 +1785,14 @@ test "executeTextReplace - old_str not unique returns OldStrNotUnique" {
     try createTestFile(test_path, "foo\nfoo\nfoo\n");
     defer deleteTestFile(test_path);
 
-    const result = text_replace.executeTextReplace(
+    const result = executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
         "foo",
         "bar",
     );
-    try std.testing.expectError(text_replace.TextReplaceError.OldStrNotUnique, result);
+    try std.testing.expectError(TextReplaceError.OldStrNotUnique, result);
 }
 
 test "executeTextReplace - empty new_str deletes content" {
@@ -1802,7 +1801,7 @@ test "executeTextReplace - empty new_str deletes content" {
     try createTestFile(test_path, "before\nDELETE_ME\nafter\n");
     defer deleteTestFile(test_path);
 
-    var result = try text_replace.executeTextReplace(
+    var result = try executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
@@ -1826,7 +1825,7 @@ test "executeTextReplace - file with no trailing newline" {
     try createTestFile(test_path, "no newline at end");
     defer deleteTestFile(test_path);
 
-    var result = try text_replace.executeTextReplace(
+    var result = try executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
@@ -1859,14 +1858,14 @@ test "executeTextReplace - empty file (zero-byte file)" {
     // The empty file has no content to replace, so use a replacement that
     // targets an empty region (position 0) with non-empty content. Actually:
     // indexOf for "X" in "" returns null → OldStrNotFound.
-    const result = text_replace.executeTextReplace(
+    const result = executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
         "X",
         "new content",
     );
-    try std.testing.expectError(text_replace.TextReplaceError.OldStrNotFound, result);
+    try std.testing.expectError(TextReplaceError.OldStrNotFound, result);
 }
 
 test "executeTextReplace - file with only a single newline" {
@@ -1877,7 +1876,7 @@ test "executeTextReplace - file with only a single newline" {
     try createTestFile(test_path, "\n");
     defer deleteTestFile(test_path);
 
-    var result = try text_replace.executeTextReplace(
+    var result = try executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
@@ -1899,7 +1898,7 @@ test "executeTextReplace - file with CRLF line endings" {
     try createTestFile(test_path, "line1\r\nline2\r\nTARGET\r\nline4\r\n");
     defer deleteTestFile(test_path);
 
-    var result = try text_replace.executeTextReplace(
+    var result = try executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
@@ -1923,7 +1922,7 @@ test "executeTextReplace - file with Unicode content" {
     try createTestFile(test_path, "before\n中文内容\nafter\n");
     defer deleteTestFile(test_path);
 
-    var result = try text_replace.executeTextReplace(
+    var result = try executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
@@ -1945,7 +1944,7 @@ test "executeTextReplace - replacement at very end of file (no trailing newline)
     try createTestFile(test_path, "line1\nline2\nFINAL");
     defer deleteTestFile(test_path);
 
-    var result = try text_replace.executeTextReplace(
+    var result = try executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
@@ -1968,14 +1967,14 @@ test "executeTextReplace - replacement of identical-looking content (case sensit
     try createTestFile(test_path, "FOO\n");
     defer deleteTestFile(test_path);
 
-    const result = text_replace.executeTextReplace(
+    const result = executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
         "foo", // lowercase — does NOT match "FOO" in file
         "BAR",
     );
-    try std.testing.expectError(text_replace.TextReplaceError.OldStrNotFound, result);
+    try std.testing.expectError(TextReplaceError.OldStrNotFound, result);
 }
 
 test "executeTextReplace - multi-line replacement that crosses line boundaries" {
@@ -1984,7 +1983,7 @@ test "executeTextReplace - multi-line replacement that crosses line boundaries" 
     try createTestFile(test_path, "header\nmiddle1\nmiddle2\nmiddle3\nfooter\n");
     defer deleteTestFile(test_path);
 
-    var result = try text_replace.executeTextReplace(
+    var result = try executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
@@ -2021,7 +2020,7 @@ test "executeTextReplace - large file (50 lines) succeeds" {
     try createTestFile(test_path, content_buf[0..pos]);
     defer deleteTestFile(test_path);
 
-    var result = try text_replace.executeTextReplace(
+    var result = try executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
@@ -2055,7 +2054,7 @@ test "executeTextReplace - special XML chars in old_str (search works on raw byt
     try createTestFile(test_path, "before\nif (a < b && c > d)\nafter\n");
     defer deleteTestFile(test_path);
 
-    var result = try text_replace.executeTextReplace(
+    var result = try executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
@@ -2081,7 +2080,7 @@ test "executeTextReplace - JSON output preserves raw bytes, diff_view unescaped"
     try createTestFile(test_path, "before\n<tag>\nafter\n");
     defer deleteTestFile(test_path);
 
-    var result = try text_replace.executeTextReplace(
+    var result = try executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
@@ -2098,7 +2097,7 @@ test "executeTextReplace - JSON output preserves raw bytes, diff_view unescaped"
     }
 
     // toJSONSuccess: raw bytes preserved (JSON needs no XML escaping)
-    const payload = try text_replace.toJSONSuccess(std.testing.allocator, result, "/x");
+    const payload = try toJSONSuccess(std.testing.allocator, result, "/x");
     defer std.testing.allocator.free(payload);
     const parsed = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, payload, .{});
     defer parsed.deinit();
@@ -2115,7 +2114,7 @@ test "executeTextReplace - replacement succeeds when old_str is at byte 0" {
     try createTestFile(test_path, "FIRST\nrest of file\n");
     defer deleteTestFile(test_path);
 
-    var result = try text_replace.executeTextReplace(
+    var result = try executeTextReplace(
         std.testing.allocator,
         std.testing.io,
         test_path,
@@ -2133,3 +2132,422 @@ test "executeTextReplace - replacement succeeds when old_str is at byte 0" {
         try std.testing.expect(std.mem.indexOf(u8, dv.unified, "@@") != null);
     }
 }
+
+// Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
+// The tool definition above and its executor below live in ONE file.
+
+const pabrikcore = @import("pabrikcore");
+const tools = @import("../../../agentic_loop/tools.zig");
+const ToolExecContext = tools.ToolExecContext;
+const ToolExecResult = tools.ToolExecResult;
+const agent = pabrikcore.agent;
+const text_replace_mod = pabrikcore.text_replace_tool;
+const wrapToolOutput = tools.wrapToolOutput;
+const args_repair = @import("../../../agentic_loop/tools_args_repair.zig");
+const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+const exec_path_validate = @import("helpers").path_validate;
+const testing = std.testing;
+const required_field_help = "text_replace takes exactly four fields: `path`, `old_str`, `new_str`, `cwd`.";
+/// Build the tool-facing message for arguments that did not decode into
+/// `TextReplaceInput`.
+fn describeArgsFailure(allocator: std.mem.Allocator, args: []const u8, err: anyerror) ![]u8 {
+    if (err != error.MissingField) {
+        return std.fmt.allocPrint(
+            allocator,
+            "text_replace arguments are not valid JSON. " ++
+                "The usual cause is a Windows path written with single backslashes " ++
+                "(write `C:\\Users\\me` as `C:\\\\Users\\\\me` inside the JSON string). " ++
+                "Also check that the call was not cut off mid-object and that no " ++
+                "```json fence wrapped it. Re-send the arguments as one valid JSON object. " ++
+                "({s}: {s})",
+            .{ @errorName(err), if (args.len > 200) args[0..200] else args },
+        );
+    }
+
+    // Valid JSON, but not all three fields.
+    const required = [_][]const u8{ "path", "old_str", "new_str", "cwd" };
+    const near_misses = [_][]const u8{ "new_string", "old_string", "file_path", "filepath", "path_str" };
+
+    var missing: std.ArrayList(u8) = .empty;
+    errdefer missing.deinit(allocator);
+    var unknown_hint: ?[]const u8 = null;
+
+    if (std.json.parseFromSlice(std.json.Value, allocator, args, .{})) |p| {
+        defer p.deinit();
+        if (p.value == .object) {
+            const obj = &p.value.object;
+            for (required) |field| {
+                if (obj.get(field) == null) {
+                    if (missing.items.len > 0) try missing.appendSlice(allocator, ", ");
+                    try missing.appendSlice(allocator, field);
+                }
+            }
+            for (near_misses) |near| {
+                if (unknown_hint == null and obj.get(near) != null) unknown_hint = near;
+            }
+        }
+    } else |_| {}
+
+    if (missing.items.len == 0) try missing.appendSlice(allocator, "path, old_str, new_str");
+
+    if (unknown_hint) |near| {
+        defer missing.deinit(allocator);
+        return std.fmt.allocPrint(
+            allocator,
+            "text_replace is missing required field(s): {s}. " ++
+                "You sent `{s}`, which is not a field of this tool — rename it to the " ++
+                "exact field name. {s}",
+            .{ missing.items, near, required_field_help },
+        );
+    }
+    defer missing.deinit(allocator);
+    return std.fmt.allocPrint(
+        allocator,
+        "text_replace is missing required field(s): {s}. {s}",
+        .{ missing.items, required_field_help },
+    );
+}
+
+pub fn execTextReplace(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
+    // A Windows path is the one argument string a tool call cannot avoid, and
+    // it is full of backslashes.
+    const repaired_args = (try args_repair.repairToolCallArguments(ctx.allocator, tc.function.arguments));
+    defer if (repaired_args) |r| r.deinit(ctx.allocator);
+    const args = if (repaired_args) |r| r.slice() else tc.function.arguments;
+
+    const parsed = std.json.parseFromSlice(
+        text_replace_mod.TextReplaceInput,
+        ctx.allocator,
+        args,
+        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
+    ) catch |err| {
+        const err_msg = try describeArgsFailure(ctx.allocator, tc.function.arguments, err);
+        const output = try wrapToolOutput(ctx.allocator, "text_replace", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer parsed.deinit();
+
+    // The repair cannot leave a legal escape alone, so `…\.config\pabrik`
+    // decodes to a real newline in the middle of the path.
+    var owned_path: ?[]u8 = null;
+    defer if (owned_path) |p| ctx.allocator.free(p);
+    const path = if (try args_repair.reexpandPathControlChars(ctx.allocator, parsed.value.path)) |fixed| blk: {
+        owned_path = fixed;
+        break :blk fixed;
+    } else parsed.value.path;
+
+    // `cwd` is a path as well, so it needs the SAME re-expansion the block
+    // above gives `path`.
+    var owned_cwd: ?[]u8 = null;
+    defer if (owned_cwd) |c| ctx.allocator.free(c);
+    const cwd = if (try args_repair.reexpandPathControlChars(ctx.allocator, parsed.value.cwd)) |fixed| blk: {
+        owned_cwd = fixed;
+        break :blk fixed;
+    } else parsed.value.cwd;
+
+    // Same rule as every other path-taking tool: `cwd` is REQUIRED (the
+    // directory this call works in — see helpers/exec_path_validate.zig) and a
+    // relative `path` is resolved against it BEFORE any file is touched (an
+    exec_path_validate.validateCwd(cwd) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "text_replace", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    const path_abs = try exec_path_validate.resolveAgainstCwd(ctx.allocator, cwd, path);
+    defer ctx.allocator.free(path_abs);
+
+    var tr_result = text_replace_mod.executeTextReplace(
+        ctx.allocator,
+        ctx.io,
+        path_abs,
+        parsed.value.old_str,
+        parsed.value.new_str,
+    ) catch |err| {
+        const inner = try text_replace_mod.toJSONError(
+            ctx.allocator,
+            err,
+            path_abs,
+            parsed.value.old_str,
+        );
+        const err_msg = try text_replace_mod.errorMessageFor(ctx.allocator, err, path_abs);
+        const output = try wrapToolOutput(ctx.allocator, "text_replace", tc.function.arguments, false, err_msg, inner);
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+
+    defer tr_result.deinit(ctx.allocator);
+
+    const inner = try text_replace_mod.toJSONSuccess(ctx.allocator, tr_result, path_abs);
+    const output = try wrapToolOutput(ctx.allocator, "text_replace", tc.function.arguments, true, null, inner);
+    return ToolExecResult{ .output = output, .output_allocated = true };
+}
+
+test "execTextReplace: a missing cwd is refused with an actionable message" {
+    // `cwd` is required, and the refusal is the only thing that teaches the
+    // model the field exists — so the message must NAME it.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    const env = try runTr(a, "{\"path\":\"/tmp/x.go\",\"old_str\":\"a\",\"new_str\":\"b\"}");
+    try testing.expect(!env.object.get("success").?.bool);
+    const msg = env.object.get("error").?.string;
+    try testing.expect(std.mem.indexOf(u8, msg, "cwd") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "required") != null);
+    // The raw Zig error name never reaches the model.
+    try testing.expect(std.mem.indexOf(u8, msg, "MandatoryCwdMissing") == null);
+}
+
+// ---------------------------------------------------------------------------
+// Overwrite-contract regression tests (added 2026-08-15) text_replace
+// internally writes the modified content back to disk via
+
+fn minimalCtxTr(allocator: std.mem.Allocator) ToolExecContext {
+    var dummy_f32: f32 = 0.0;
+    var dummy_bool: bool = false;
+    return .{
+        .allocator = allocator,
+        .io = testing.io,
+        .db = undefined,
+        .logger = undefined,
+        .session_id = "test_session",
+        .model = "test_model",
+        .cwd = "/tmp",
+        .api_key = "test_key",
+        .base_url = "test_base",
+        .config = undefined,
+        .agent_temperature = &dummy_f32,
+        .is_thinking = &dummy_bool,
+        .environment = null,
+    };
+}
+
+/// Helper: assert the exec output is a success JSON envelope whose
+/// `data.path` equals the expected path.
+fn expectTextReplaceSuccess(output: []const u8, expected_path: []const u8) !void {
+    const parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, output, .{});
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+    try testing.expect(obj.get("success").?.bool);
+    try testing.expectEqualStrings(expected_path, obj.get("data").?.object.get("path").?.string);
+}
+
+/// Args JSON for one `text_replace` call.
+fn trArgs(a: std.mem.Allocator, target_path: []const u8, old_str: []const u8, new_str: []const u8) ![]u8 {
+    return std.json.Stringify.valueAlloc(a, .{
+        .path = target_path,
+        .old_str = old_str,
+        .new_str = new_str,
+        .cwd = std.fs.path.dirname(target_path) orelse target_path,
+    }, .{});
+}
+
+fn readAllTr(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
+    return std.Io.Dir.cwd().readFileAlloc(testing.io, path, allocator, .limited(4 << 20));
+}
+
+// CONTRACT: execTextReplace must overwrite the target file (truncate + write
+// new content), not append.
+test "execTextReplace: writes back the full modified file (truncates + overwrites, no append)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(testing.io, &path_buf);
+    const root_abs = path_buf[0..n];
+
+    const target_name = "tr_overwrite.txt";
+    const target_path = try std.fs.path.join(a, &.{ root_abs, target_name });
+
+    // Pre-seed with a long string containing the marker we'll replace
+    const original = "<<<REPLACE_ME>>> then keep this trailing junk after the marker to detect any append-mode corruption";
+    {
+        const f = try tmp.dir.createFile(testing.io, target_name, .{});
+        defer f.close(testing.io);
+        try std.Io.File.writeStreamingAll(f, testing.io, original);
+    }
+
+    // Build args: replace the marker with a SHORTER string. If createFile
+    // appended instead of truncating, the trailing junk would still be
+    // visible AFTER the new short content.
+    {
+        const args = try trArgs(a, target_path, "<<<REPLACE_ME>>>", "[OK]");
+        const tc = agent.ToolCall{
+            .id = "call_tr_ow1",
+            .type = "function",
+            .function = .{ .name = "text_replace", .arguments = args },
+        };
+
+        const result = try execTextReplace(minimalCtxTr(a), tc);
+        defer if (result.output_allocated) a.free(result.output);
+
+        try expectTextReplaceSuccess(result.output, target_path);
+
+        // Read back — file must be EXACTLY "[OK] then keep this trailing junk
+        // after the marker to detect any append-mode corruption"
+        const expected = "[OK] then keep this trailing junk after the marker to detect any append-mode corruption";
+        const read = try readAllTr(a, target_path);
+        try testing.expectEqualStrings(expected, read);
+        // File size must match the new length (not original.len) — proves
+        // truncation happened, not append.
+        try testing.expectEqual(@as(usize, expected.len), read.len);
+        try testing.expect(read.len != original.len); // sanity: the two really differ
+    }
+}
+
+// CONTRACT: execTextReplace must OVERWRITE, not fail or skip, when called
+// on an existing file with content that exactly matches old_str.
+test "execTextReplace: existing file with matching content is modified in place" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(testing.io, &path_buf);
+    const root_abs = path_buf[0..n];
+
+    const target_name = "tr_match.txt";
+    const target_path = try std.fs.path.join(a, &.{ root_abs, target_name });
+
+    {
+        const f = try tmp.dir.createFile(testing.io, target_name, .{});
+        defer f.close(testing.io);
+        try std.Io.File.writeStreamingAll(f, testing.io, "Hello World\n");
+    }
+
+    {
+        const args2 = try trArgs(a, target_path, "Hello", "Goodbye");
+        const tc = agent.ToolCall{
+            .id = "call_tr_match",
+            .type = "function",
+            .function = .{ .name = "text_replace", .arguments = args2 },
+        };
+
+        const result = try execTextReplace(minimalCtxTr(a), tc);
+        defer if (result.output_allocated) a.free(result.output);
+
+        try expectTextReplaceSuccess(result.output, target_path);
+        const read = try readAllTr(a, target_path);
+        try testing.expectEqualStrings("Goodbye World\n", read);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Windows: absolute paths are the one string a tool call cannot avoid, and on
+// Windows they are full of `\` separators.
+
+/// Runs `execTextReplace` and returns the parsed envelope.
+fn runTr(a: std.mem.Allocator, args: []const u8) !std.json.Value {
+    const tc = agent.ToolCall{
+        .id = "call_tr_win",
+        .type = "function",
+        .function = .{ .name = "text_replace", .arguments = args },
+    };
+    const result = try execTextReplace(minimalCtxTr(a), tc);
+    defer if (result.output_allocated) a.free(result.output);
+    const parsed = try std.json.parseFromSlice(std.json.Value, a, result.output, .{});
+    return parsed.value;
+}
+
+fn errorTextOf(env: std.json.Value) []const u8 {
+    return env.object.get("error").?.string;
+}
+
+// A Windows path arriving with RAW backslashes must still replace text. This
+// has to be provable on Linux too, or the bug stays invisible until a Windows
+// user hits it.
+test "execTextReplace: Windows path with raw backslashes is repaired, not rejected" {
+    const builtin = @import("builtin");
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(testing.io, &path_buf);
+    const root = path_buf[0..n];
+
+    const file_name = if (builtin.os.tag == .windows) "win_raw.txt" else "win\\raw.txt";
+    {
+        const f = try tmp.dir.createFile(testing.io, file_name, .{});
+        defer f.close(testing.io);
+        try std.Io.File.writeStreamingAll(f, testing.io, "Hello World\n");
+    }
+    // `/` on both hosts: on Windows the tmpdir path already carries the
+    // backslashes that matter, and `std.fs` accepts `/` there too, so the
+    // file is still found.
+    const target_path = try std.fmt.allocPrint(a, "{s}/{s}", .{ root, file_name });
+
+    // `cwd` must be exercised on BOTH hosts, not just Windows.
+    const cwd_rel: []const u8 = if (builtin.os.tag == .windows) "" else "win\\tcwd";
+    if (cwd_rel.len > 0) try tmp.dir.createDirPath(testing.io, cwd_rel);
+    const cwd_abs = if (cwd_rel.len == 0)
+        root
+    else
+        try std.fmt.allocPrint(a, "{s}/{s}", .{ root, cwd_rel });
+
+    // The arguments a model writes when it pastes the path verbatim: every
+    // separator is a single `\`, which is what RFC 8259 §7 rejects.
+    const args = try std.fmt.allocPrint(
+        a,
+        "{{\"path\":\"{s}\",\"cwd\":\"{s}\",\"old_str\":\"Hello\",\"new_str\":\"Goodbye\"}}",
+        .{ target_path, cwd_abs },
+    );
+    try testing.expect(std.mem.indexOf(u8, args, "\\") != null);
+
+    const env = try runTr(a, args);
+    if (!env.object.get("success").?.bool) {
+        std.debug.print("text_replace said: {s}\n", .{errorTextOf(env)});
+    }
+    try testing.expect(env.object.get("success").?.bool);
+    try testing.expectEqualStrings(target_path, env.object.get("data").?.object.get("path").?.string);
+
+    const read = try readAllTr(a, target_path);
+    try testing.expectEqualStrings("Goodbye World\n", read);
+}
+
+// The reported failure mode: the arguments are the ones a model emitted on
+// Windows, and the model also mis-keyed the replacement field.
+test "execTextReplace: wrong field name is reported as a named, actionable error" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    // Shape lifted from the reported call: `new_string` instead of
+    // `new_str`, and no `old_str` at all.
+    const args =
+        \\{"path":"C:\\Users\\gilang.trisetya\\.config\\pabrik\\.worktrees\\sb02\\internal\\domain\\sales_invoice\\test.go","new_string":"x"}
+    ;
+
+    const env = try runTr(a, args);
+    try testing.expect(!env.object.get("success").?.bool);
+
+    const err = errorTextOf(env);
+    // Names the fields, not the Zig error.
+    try testing.expect(std.mem.indexOf(u8, err, "old_str") != null);
+    try testing.expect(std.mem.indexOf(u8, err, "new_str") != null);
+    // Spells out the near-miss key the model actually sent.
+    try testing.expect(std.mem.indexOf(u8, err, "new_string") != null);
+    // Must not leak a raw Zig error name at the model.
+    try testing.expect(std.mem.indexOf(u8, err, "MissingField") == null);
+}
+
+test "execTextReplace: unparseable arguments report the real problem, not MissingField" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    // Truncated mid-call (max_tokens ran out) — nothing to repair.
+    const env = try runTr(a, "{\"path\":\"/tmp/a.go\",\"old_str\":\"x\"");
+    try testing.expect(!env.object.get("success").?.bool);
+    const err = errorTextOf(env);
+    try testing.expect(std.mem.indexOf(u8, err, "valid JSON") != null);
+    try testing.expect(std.mem.indexOf(u8, err, "MissingField") == null);
+}
+

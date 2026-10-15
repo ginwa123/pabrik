@@ -3,16 +3,16 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
-const tools = @import("tools.zig");
+const tools = @import("../../../agentic_loop/tools.zig");
 const agent = pabrikcore.agent;
 const web_search_mod = pabrikcore.web_search;
-const web_search_config = @import("web_search_config.zig");
+const web_search_config = @import("../../../agentic_loop/web_search_config.zig");
 const config_mod = pabrikcore.config;
 
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const wrapToolOutput = tools.wrapToolOutput;
-const error_explain = @import("tools_error_explain.zig");
+const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
 
 fn render(
     ctx: ToolExecContext,

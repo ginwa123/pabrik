@@ -262,7 +262,6 @@ fn optClean(allocator: std.mem.Allocator, s: []const u8) !?[]u8 {
 }
 
 const testing = std.testing;
-const set_design_page = @import("set_design_page.zig");
 fn expectJSONError(alloc: std.mem.Allocator, str: []const u8, needle: []const u8) !void {
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, str, .{});
     defer parsed.deinit();
@@ -307,7 +306,7 @@ test "toJSON on page with no elements produces an empty elements array" {
         alloc.free(page.created_at);
         alloc.free(page.updated_at);
     }
-    const json = try set_design_page.toJSON(alloc, page, &.{});
+    const json = try toJSON(alloc, page, &.{});
     defer alloc.free(json);
     var parsed = try expectNoJSONError(alloc, json);
     defer parsed.deinit();
@@ -369,7 +368,7 @@ test "toJSON renders element objects with v6 fields" {
     };
     defer design_model.freeElement(alloc, elem);
     const elements = [_]design_model.DesignElement{elem};
-    const json = try set_design_page.toJSON(alloc, page, &elements);
+    const json = try toJSON(alloc, page, &elements);
     defer alloc.free(json);
     var parsed = try expectNoJSONError(alloc, json);
     defer parsed.deinit();
@@ -438,7 +437,7 @@ test "toJSON renders parent_id for a nested element" {
     };
     defer design_model.freeElement(alloc, elem);
     const elements = [_]design_model.DesignElement{elem};
-    const json = try set_design_page.toJSON(alloc, page, &elements);
+    const json = try toJSON(alloc, page, &elements);
     defer alloc.free(json);
     var parsed = try expectNoJSONError(alloc, json);
     defer parsed.deinit();
@@ -449,7 +448,7 @@ test "toJSON renders parent_id for a nested element" {
 
 test "errorJSON on missing field returns an error object" {
     const alloc = testing.allocator;
-    const json = try set_design_page.errorJSON(alloc, "item_id is required");
+    const json = try errorJSON(alloc, "item_id is required");
     defer alloc.free(json);
     try expectJSONError(alloc, json, "item_id is required");
 }
@@ -547,11 +546,11 @@ test "executeSetDesignPageToString creates a page when none exists" {
     defer alloc.free(s.item_id);
     defer alloc.free(s.item_path);
 
-    const input = set_design_page.SetDesignPageInput{
+    const input = SetDesignPageInput{
         .item_id = s.item_id,
         .page_name = "Login",
     };
-    const json = try set_design_page.executeSetDesignPageToString(alloc, &s.db, input);
+    const json = try executeSetDesignPageToString(alloc, &s.db, input);
     defer alloc.free(json);
 
     var parsed = try expectNoJSONError(alloc, json);
@@ -571,13 +570,13 @@ test "executeSetDesignPageToString is idempotent on second call with same name" 
     defer alloc.free(s.item_id);
     defer alloc.free(s.item_path);
 
-    const input = set_design_page.SetDesignPageInput{
+    const input = SetDesignPageInput{
         .item_id = s.item_id,
         .page_name = "Login",
         .width = 800,
         .height = 600,
     };
-    const json1 = try set_design_page.executeSetDesignPageToString(alloc, &s.db, input);
+    const json1 = try executeSetDesignPageToString(alloc, &s.db, input);
     defer alloc.free(json1);
     var parsed1 = try expectNoJSONError(alloc, json1);
     defer parsed1.deinit();
@@ -586,13 +585,13 @@ test "executeSetDesignPageToString is idempotent on second call with same name" 
 
     // Second call with same name → must reuse the same page id (idempotent
     // upsert via setDesignPage), and pick up the new dimensions.
-    const input2 = set_design_page.SetDesignPageInput{
+    const input2 = SetDesignPageInput{
         .item_id = s.item_id,
         .page_name = "Login",
         .width = 1920,
         .height = 1080,
     };
-    const json2 = try set_design_page.executeSetDesignPageToString(alloc, &s.db, input2);
+    const json2 = try executeSetDesignPageToString(alloc, &s.db, input2);
     defer alloc.free(json2);
     var parsed2 = try expectNoJSONError(alloc, json2);
     defer parsed2.deinit();
@@ -613,11 +612,11 @@ test "executeSetDesignPageToString returns error JSON when item_id is empty" {
     defer alloc.free(s.item_id);
     defer alloc.free(s.item_path);
 
-    const input = set_design_page.SetDesignPageInput{
+    const input = SetDesignPageInput{
         .item_id = "",
         .page_name = "Login",
     };
-    const json = try set_design_page.executeSetDesignPageToString(alloc, &s.db, input);
+    const json = try executeSetDesignPageToString(alloc, &s.db, input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "item_id");
 }
@@ -630,11 +629,11 @@ test "executeSetDesignPageToString returns error JSON when item_id looks like a 
     defer alloc.free(s.item_id);
     defer alloc.free(s.item_path);
 
-    const input = set_design_page.SetDesignPageInput{
+    const input = SetDesignPageInput{
         .item_id = "task_1782442569739",
         .page_name = "Login",
     };
-    const json = try set_design_page.executeSetDesignPageToString(alloc, &s.db, input);
+    const json = try executeSetDesignPageToString(alloc, &s.db, input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "task_");
     // Should mention the correct id source so the LLM self-corrects.
@@ -651,11 +650,11 @@ test "executeSetDesignPageToString returns error JSON when item_id looks like a 
     defer alloc.free(s.item_id);
     defer alloc.free(s.item_path);
 
-    const input = set_design_page.SetDesignPageInput{
+    const input = SetDesignPageInput{
         .item_id = "page_1782442554112",
         .page_name = "Login",
     };
-    const json = try set_design_page.executeSetDesignPageToString(alloc, &s.db, input);
+    const json = try executeSetDesignPageToString(alloc, &s.db, input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "page_");
 }
@@ -668,11 +667,11 @@ test "executeSetDesignPageToString returns error JSON when item_id looks like an
     defer alloc.free(s.item_id);
     defer alloc.free(s.item_path);
 
-    const input = set_design_page.SetDesignPageInput{
+    const input = SetDesignPageInput{
         .item_id = "elem_1782442554112",
         .page_name = "Login",
     };
-    const json = try set_design_page.executeSetDesignPageToString(alloc, &s.db, input);
+    const json = try executeSetDesignPageToString(alloc, &s.db, input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "elem_");
 }
@@ -685,11 +684,11 @@ test "executeSetDesignPageToString returns error JSON when item_id looks like a 
     defer alloc.free(s.item_id);
     defer alloc.free(s.item_path);
 
-    const input = set_design_page.SetDesignPageInput{
+    const input = SetDesignPageInput{
         .item_id = "ws_test",
         .page_name = "Login",
     };
-    const json = try set_design_page.executeSetDesignPageToString(alloc, &s.db, input);
+    const json = try executeSetDesignPageToString(alloc, &s.db, input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "WORKSPACE");
 }
@@ -702,11 +701,11 @@ test "executeSetDesignPageToString returns error JSON when item_id has unrecogni
     defer alloc.free(s.item_id);
     defer alloc.free(s.item_path);
 
-    const input = set_design_page.SetDesignPageInput{
+    const input = SetDesignPageInput{
         .item_id = "foo_123",
         .page_name = "Login",
     };
-    const json = try set_design_page.executeSetDesignPageToString(alloc, &s.db, input);
+    const json = try executeSetDesignPageToString(alloc, &s.db, input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "unrecognized");
 }
@@ -719,11 +718,11 @@ test "executeSetDesignPageToString returns error JSON when page_name is empty" {
     defer alloc.free(s.item_id);
     defer alloc.free(s.item_path);
 
-    const input = set_design_page.SetDesignPageInput{
+    const input = SetDesignPageInput{
         .item_id = s.item_id,
         .page_name = "",
     };
-    const json = try set_design_page.executeSetDesignPageToString(alloc, &s.db, input);
+    const json = try executeSetDesignPageToString(alloc, &s.db, input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "page_name");
 }
@@ -736,11 +735,11 @@ test "executeSetDesignPageToString returns error JSON when page_name contains '/
     defer alloc.free(s.item_id);
     defer alloc.free(s.item_path);
 
-    const input = set_design_page.SetDesignPageInput{
+    const input = SetDesignPageInput{
         .item_id = s.item_id,
         .page_name = "Login/Foo",
     };
-    const json = try set_design_page.executeSetDesignPageToString(alloc, &s.db, input);
+    const json = try executeSetDesignPageToString(alloc, &s.db, input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "/");
 }
@@ -757,14 +756,75 @@ test "executeSetDesignPageToString returns ItemPathMissing error when item has n
     try s.db.exec(alloc, "INSERT INTO workspace_items (id, workspace_id, item_type, name, path) " ++
         "VALUES ('item_no_path', 'ws_test', 'design', 'No path', '')", &.{});
 
-    const input = set_design_page.SetDesignPageInput{
+    const input = SetDesignPageInput{
         .item_id = "item_no_path",
         .page_name = "Login",
     };
-    const json = try set_design_page.executeSetDesignPageToString(alloc, &s.db, input);
+    const json = try executeSetDesignPageToString(alloc, &s.db, input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "no path");
     var nopath_parsed = try std.json.parseFromSlice(std.json.Value, alloc, json, .{});
     defer nopath_parsed.deinit();
     try testing.expect(contains(nopath_parsed.value.object.get("error").?.string, "AddDesignDialog"));
 }
+
+// Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
+// The tool definition above and its executor below live in ONE file.
+
+const exec_pabrikcore = @import("pabrikcore");
+const tools = @import("../../../agentic_loop/tools.zig");
+const ToolExecContext = tools.ToolExecContext;
+const ToolExecResult = tools.ToolExecResult;
+const agent = exec_pabrikcore.agent;
+const wrapToolOutput = tools.wrapToolOutput;
+const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+pub fn execSetDesignPage(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
+    const parsed = std.json.parseFromSlice(
+        SetDesignPageInput,
+        ctx.allocator,
+        tc.function.arguments,
+        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "set_design_page", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer parsed.deinit();
+
+    // executeSetDesignPageToString returns a JSON string. Errors are
+    // encoded as {"error":...</error></page> so the LLM sees a
+    // structured failure rather than a tool crash.
+    const inner = executeSetDesignPageToString(
+        ctx.allocator,
+        ctx.db,
+        parsed.value,
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "set_design_page", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer ctx.allocator.free(inner);
+
+    // Detect {{"error":...}} and surface it as a tool failure (so the
+    // LLM sees `success=false` rather than a successful wrapper around
+    // an error body).
+    const json_err_msg: ?[]u8 = blk: {
+        const inner_parsed = std.json.parseFromSlice(std.json.Value, ctx.allocator, inner, .{}) catch break :blk null;
+        defer inner_parsed.deinit();
+        if (inner_parsed.value != .object) break :blk null;
+        const e = inner_parsed.value.object.get("error") orelse break :blk null;
+        if (e != .string) break :blk null;
+        break :blk try ctx.allocator.dupe(u8, e.string);
+    };
+    if (json_err_msg) |err_msg| {
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "set_design_page", tc.function.arguments, false, err_msg, inner);
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    }
+
+    const output = try wrapToolOutput(ctx.allocator, "set_design_page", tc.function.arguments, true, null, inner);
+    return ToolExecResult{ .output = output, .output_allocated = true };
+}
+

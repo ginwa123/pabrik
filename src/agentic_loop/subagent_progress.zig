@@ -109,7 +109,7 @@ pub fn buildProgressEventJson(allocator: std.mem.Allocator, input: ProgressEvent
 }
 
 /// One-shot emitter used by `runSubAgent` inside
-/// tools_exec_spawn_sub_agent.zig.
+/// spawn_sub_agent.zig.
 pub fn emitProgressEvent(input: ProgressEventInput) void {
     emitProgressEventWith(.{ .allocator = null, .logger = null }, input);
 }

@@ -639,7 +639,6 @@ pub fn executeKanbanTaskToJSON(
 }
 
 const testing = std.testing;
-const create_kanban_task = @import("create_kanban_task.zig");
 fn contains(haystack: []const u8, needle: []const u8) bool {
     return std.mem.indexOf(u8, haystack, needle) != null;
 }
@@ -826,7 +825,7 @@ test "executeKanbanTaskToJSON returns success JSON on happy path" {
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
+    const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
         .name = "new task",
@@ -834,7 +833,7 @@ test "executeKanbanTaskToJSON returns success JSON on happy path" {
     });
     defer alloc.free(json);
 
-    const parsed = try std.json.parseFromSlice(create_kanban_task.CreateKanbanTaskOutput, alloc, json, .{ .allocate = .alloc_always });
+    const parsed = try std.json.parseFromSlice(CreateKanbanTaskOutput, alloc, json, .{ .allocate = .alloc_always });
     defer parsed.deinit();
     try std.testing.expect(parsed.value.success);
     try std.testing.expect((parsed.value.task_id orelse @as([]const u8, "")).len > 0);
@@ -849,7 +848,7 @@ test "executeKanbanTaskToJSON inserts a row into workspace_item_tasks" {
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
+    const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
         .name = "insert me",
@@ -870,7 +869,7 @@ test "executeKanbanTaskToJSON always inserts sessions row without flag or profil
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
+    const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
         .name = "plain card",
@@ -900,7 +899,7 @@ test "executeKanbanTaskToJSON sessions row honors flag and profile" {
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
+    const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
         .name = "flagged card",
@@ -926,7 +925,7 @@ test "executeKanbanTaskToJSON inserts initial user llm_history row" {
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
+    const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
         .name = "seed me",
@@ -970,7 +969,7 @@ test "executeKanbanTaskToJSON appends at MAX(kanban_position)+1 when column has 
         &[_][]const u8{},
     );
 
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
+    const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
         .name = "third",
@@ -989,7 +988,7 @@ test "executeKanbanTaskToJSON returns error when workspace_id is empty" {
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
+    const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "",
         .item_id = "item_k1",
         .name = "x",
@@ -1008,7 +1007,7 @@ test "executeKanbanTaskToJSON returns error when item_id is empty" {
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
+    const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "",
         .name = "x",
@@ -1027,7 +1026,7 @@ test "executeKanbanTaskToJSON returns error when name is empty" {
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
+    const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
         .name = "",
@@ -1046,7 +1045,7 @@ test "executeKanbanTaskToJSON returns error when name is whitespace-only" {
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
+    const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
         .name = "   \t\n  ",
@@ -1069,7 +1068,7 @@ test "executeKanbanTaskToJSON returns error when description is empty" {
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
+    const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
         .name = "no desc",
@@ -1088,7 +1087,7 @@ test "executeKanbanTaskToJSON returns error when description is whitespace-only"
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
+    const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
         .name = "whitespace desc",
@@ -1114,7 +1113,7 @@ test "executeKanbanTaskToJSON returns error when parent item_type is not kanban"
         &[_][]const u8{},
     );
 
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
+    const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
         .name = "x",
@@ -1137,7 +1136,7 @@ test "executeKanbanTaskToJSON returns error when kanban has zero columns" {
     // Delete all 3 seeded columns — the kanban is now column-less.
     try s.db.exec(alloc, "DELETE FROM kanban_columns WHERE workspace_item_id = 'item_k1'", &[_][]const u8{});
 
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
+    const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
         .name = "x",
@@ -1156,7 +1155,7 @@ test "executeKanbanTaskToJSON honors explicit column_id" {
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
+    const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
         .name = "explicit placement",
@@ -1193,7 +1192,7 @@ test "executeKanbanTaskToJSON rejects column_id that does not belong to the item
     // Try to place the new task in 'col_other' while item_id points
     // to 'item_k1'. The tool must reject this — the column does not
     // belong to the item.
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
+    const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
         .name = "x",
@@ -1219,7 +1218,7 @@ test "executeKanbanTaskToJSON persists tags when supplied" {
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
+    const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
         .name = "tagged",
@@ -1241,7 +1240,7 @@ test "executeKanbanTaskToJSON persists image_urls when supplied" {
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
+    const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
         .name = "with images",
@@ -1266,7 +1265,7 @@ test "executeKanbanTaskToJSON takes the card's cwd from the kanban item's path" 
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
+    const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
         .name = "inherits item path",
@@ -1292,7 +1291,7 @@ test "executeKanbanTaskToJSON stamps last_human_touched_at on happy path" {
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
+    const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
         .name = "stamped",
@@ -1317,7 +1316,7 @@ test "executeKanbanTaskToJSON creates sessions row when is_auto_retry_until_stop
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
+    const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
         .name = "unattended",
@@ -1339,7 +1338,7 @@ test "executeKanbanTaskToJSON persists selected_profile_model when supplied" {
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
+    const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
         .name = "with profile",
@@ -1361,7 +1360,7 @@ test "executeKanbanTaskToJSON writes both unattended and profile in single sessi
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
+    const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
         .name = "combined",
@@ -1392,7 +1391,7 @@ test "executeKanbanTaskToJSON persists sessions.name == trimmed task name (unatt
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
+    const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
         .name = "workspace item task nama and session name",
@@ -1416,7 +1415,7 @@ test "executeKanbanTaskToJSON persists sessions.name == trimmed task name (profi
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
+    const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
         // Leading/trailing whitespace; the tool trims before INSERT
@@ -1441,7 +1440,7 @@ test "executeKanbanTaskToJSON rejects malformed tags" {
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
+    const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
         .name = "bad tags",
@@ -1461,7 +1460,7 @@ test "executeKanbanTaskToJSON rejects invalid image_urls" {
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const json = try create_kanban_task.executeKanbanTaskToJSON(alloc, &s.db, .{
+    const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
         .name = "bad images",
@@ -1478,3 +1477,60 @@ test "executeKanbanTaskToJSON rejects invalid image_urls" {
 // Pin the registration contract: a future refactor that drops
 // `create_kanban_task` from any of the registry / re-export / tools_equipped
 // surfaces would silently disable the tool. These tests catch that.
+
+// Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
+// The tool definition above and its executor below live in ONE file.
+
+const exec_pabrikcore = @import("pabrikcore");
+const tools = @import("../../../agentic_loop/tools.zig");
+const ToolExecContext = tools.ToolExecContext;
+const ToolExecResult = tools.ToolExecResult;
+const agent = exec_pabrikcore.agent;
+const wrapToolOutput = tools.wrapToolOutput;
+const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+pub fn execCreateKanbanTask(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
+    const parsed = std.json.parseFromSlice(
+        CreateKanbanTaskInput,
+        ctx.allocator,
+        tc.function.arguments,
+        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "create_kanban_task", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer parsed.deinit();
+
+    // Seed the session's chat with a real model id.
+    var input = parsed.value;
+    input.resolved_model = ctx.model;
+
+    // executeKanbanTaskToJSON returns a JSON string.
+    const inner = executeKanbanTaskToJSON(
+        ctx.allocator,
+        ctx.db,
+        input,
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "create_kanban_task", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer ctx.allocator.free(inner);
+
+    // Detect the {"success":false,"error":...} shape via the top-level
+    // "error" key (parsed, not substring-matched) and surface it as a tool
+    // failure (so the LLM sees success=false rather than a successful wrapper
+    if (std.json.parseFromSlice(struct { @"error": ?[]const u8 = null }, ctx.allocator, inner, .{ .allocate = .alloc_always, .ignore_unknown_fields = true }) catch null) |probe| {
+        defer probe.deinit();
+        if (probe.value.@"error") |err_msg| {
+            const output = try wrapToolOutput(ctx.allocator, "create_kanban_task", tc.function.arguments, false, err_msg, inner);
+            return ToolExecResult{ .output = output, .output_allocated = true };
+        }
+    }
+
+    const output = try wrapToolOutput(ctx.allocator, "create_kanban_task", tc.function.arguments, true, null, inner);
+    return ToolExecResult{ .output = output, .output_allocated = true };
+}
+

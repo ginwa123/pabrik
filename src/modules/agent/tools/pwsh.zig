@@ -41,7 +41,6 @@ pub const pwsh_tool = AgentTool{
 // tool.
 const builtin = @import("builtin");
 const testing = std.testing;
-const pwsh = @import("pwsh.zig");
 
 /// Probe whether `pwsh` is on $PATH. Skips gracefully when it isn't.
 /// Equivalent to the bash.zig `if builtin.os.tag != .linux and builtin.os.tag != .macos` skip —
@@ -62,12 +61,12 @@ fn pwsh_available() bool {
 }
 
 test "pwsh_tool schema: tool name is 'pwsh'" {
-    try testing.expectEqualStrings("pwsh", pwsh.pwsh_tool.function.name);
+    try testing.expectEqualStrings("pwsh", pwsh_tool.function.name);
 }
 
 test "pwsh_tool schema: required fields match bash (command, cwd, timeout)" {
     // The wire contract mirrors bash: same three required fields.
-    const params = pwsh.pwsh_tool.function.parameters;
+    const params = pwsh_tool.function.parameters;
     try testing.expectEqualStrings("object", params.type);
     try testing.expectEqual(@as(usize, 3), params.required.len);
 

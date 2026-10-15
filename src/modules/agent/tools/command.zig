@@ -1,4 +1,4 @@
-// command.zig — unified shell-exec tool, merged from bash.zig + pwsh.zig.
+// zig — unified shell-exec tool, merged from bash.zig + pwsh.zig.
 const std = @import("std");
 const builtin = @import("builtin");
 const shell = @import("shell.zig");
@@ -127,7 +127,7 @@ pub const command_tool = AgentTool{
                 .{
                     .name = "stdin_data",
                     .type = "string",
-                    .description = "Optional stdin input for the command.",
+                    .description = "Optional stdin input for the ",
                 },
                 .{
                     .name = "mode",
@@ -182,13 +182,12 @@ pub const command_tool = AgentTool{
 // here; bash_test.zig + the pwsh.zig inline tests keep covering the shim
 
 const testing = std.testing;
-const command = @import("command.zig");
 
 test "command_tool schema: no `timeout` prefix rule in the LLM-facing text" {
     // The tool description and system prompt used to instruct the model to
     // write `timeout <seconds> <cmd>`.
-    const desc = command.command_tool.function.description;
-    const prompt = command.command_tool_system_prompt;
+    const desc = command_tool.function.description;
+    const prompt = command_tool_system_prompt;
 
     const banned = [_][]const u8{
         "start with `timeout",
@@ -214,7 +213,7 @@ test "command_tool schema: no `timeout` prefix rule in the LLM-facing text" {
     try testing.expect(std.mem.indexOf(u8, desc, "do not add one") != null);
     try testing.expect(std.mem.indexOf(u8, prompt, "Do NOT prefix commands") != null);
     // The `command` param's own examples must not open with a timeout either.
-    for (command.command_tool.function.parameters.properties) |prop| {
+    for (command_tool.function.parameters.properties) |prop| {
         if (!std.mem.eql(u8, prop.name, "command")) continue;
         try testing.expect(std.mem.indexOf(u8, prop.description, "timeout 10 ") == null);
         try testing.expect(std.mem.indexOf(u8, prop.description, "Do NOT prefix") != null);
@@ -223,8 +222,8 @@ test "command_tool schema: no `timeout` prefix rule in the LLM-facing text" {
 
 test "command_tool schema: exactly ONE deadline param, and it is required" {
     // This test used to read "a `timeout` param must NOT exist" — it was the
-    // guard against the tool growing a second way to bound a command.
-    const params = command.command_tool.function.parameters;
+    // guard against the tool growing a second way to bound a 
+    const params = command_tool.function.parameters;
 
     var deadline_count: usize = 0;
     var found: []const u8 = "";
@@ -254,7 +253,7 @@ test "command_tool schema: the field named `timeout` is NOT the shell timeout ut
     // The rename put the model's word for the FIELD and its word for the
     // banned UTILITY on the same string.
     var timeout_desc: ?[]const u8 = null;
-    for (command.command_tool.function.parameters.properties) |prop| {
+    for (command_tool.function.parameters.properties) |prop| {
         if (std.mem.eql(u8, prop.name, "timeout")) timeout_desc = prop.description;
     }
     try testing.expect(timeout_desc != null);
@@ -263,21 +262,21 @@ test "command_tool schema: the field named `timeout` is NOT the shell timeout ut
 
     // ...and the tool-level prose still names the utility as forbidden, so a
     // model that reads only the Rules block sees it too.
-    try testing.expect(std.mem.indexOf(u8, command.command_tool.function.description, "shell `timeout`") != null);
+    try testing.expect(std.mem.indexOf(u8, command_tool.function.description, "shell `timeout`") != null);
 
     // ...and the utility is still not RECOMMENDED anywhere, which is what the
     // banned-substring test above enforces.
-    try testing.expect(std.mem.indexOf(u8, command.command_tool_system_prompt, "Do NOT prefix commands") != null);
+    try testing.expect(std.mem.indexOf(u8, command_tool_system_prompt, "Do NOT prefix commands") != null);
 }
 
-test "command.execute_command still enforces timeout at runtime" {
+test "execute_command still enforces timeout at runtime" {
     // The prompt-text change is cosmetic; the CODE enforcement is the
     // contract.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     try testing.expectError(
         error.TimeoutMissing,
-        command.execute_command(testing.allocator, std.testing.io, .{
+        execute_command(testing.allocator, std.testing.io, .{
             .command = "echo hi",
             .cwd = "/tmp",
             .timeout = null,
@@ -285,7 +284,7 @@ test "command.execute_command still enforces timeout at runtime" {
     );
     try testing.expectError(
         error.TimeoutMissing,
-        command.execute_command(testing.allocator, std.testing.io, .{
+        execute_command(testing.allocator, std.testing.io, .{
             .command = "echo hi",
             .cwd = "/tmp",
             .timeout = 0,
@@ -294,11 +293,11 @@ test "command.execute_command still enforces timeout at runtime" {
 }
 
 test "command_tool schema: tool name is 'command'" {
-    try testing.expectEqualStrings("command", command.command_tool.function.name);
+    try testing.expectEqualStrings("command", command_tool.function.name);
 }
 
 test "command_tool schema: required fields are (command, cwd, timeout)" {
-    const params = command.command_tool.function.parameters;
+    const params = command_tool.function.parameters;
     try testing.expectEqualStrings("object", params.type);
     try testing.expectEqual(@as(usize, 3), params.required.len);
 
@@ -319,7 +318,7 @@ test "command_tool schema: is_stop is optional boolean and states its whole cont
     // `is_stop` is the model's own "I am done" signal: it ends the TURN, it
     // kills NOTHING, and a `background=true` process in the same call keeps
     // running.
-    const params = command.command_tool.function.parameters;
+    const params = command_tool.function.parameters;
 
     var is_stop: ?@TypeOf(params.properties[0]) = null;
     for (params.properties) |prop| {
@@ -348,12 +347,12 @@ test "command_tool schema: is_stop is optional boolean and states its whole cont
 test "command_tool schema: the is_stop rule reaches the description AND the system prompt" {
     // The description is what the provider embeds in the tool schema; the
     // system prompt is the prose reminder.
-    try testing.expect(std.mem.indexOf(u8, command.command_tool.function.description, "is_stop=true") != null);
-    try testing.expect(std.mem.indexOf(u8, command.command_tool_system_prompt, "is_stop=true") != null);
+    try testing.expect(std.mem.indexOf(u8, command_tool.function.description, "is_stop=true") != null);
+    try testing.expect(std.mem.indexOf(u8, command_tool_system_prompt, "is_stop=true") != null);
 }
 
 test "CommandInput is the same type as ShellInput (alias liveness check)" {
-    const command_input = command.CommandInput{ .command = "" };
+    const command_input = CommandInput{ .command = "" };
     const shell_input = shell.ShellInput{ .command = "" };
     try testing.expectEqualStrings(@typeName(@TypeOf(command_input)), @typeName(@TypeOf(shell_input)));
 
@@ -370,26 +369,26 @@ test "CommandInput is the same type as ShellInput (alias liveness check)" {
 }
 
 test "command argv prefixes have the expected shape" {
-    try testing.expectEqual(@as(usize, 2), command.COMMAND_BASH_PREFIX.len);
-    try testing.expectEqualStrings("bash", command.COMMAND_BASH_PREFIX[0]);
-    try testing.expectEqualStrings("-c", command.COMMAND_BASH_PREFIX[1]);
-    try testing.expectEqual(@as(usize, 4), command.COMMAND_PWSH_PREFIX.len);
-    try testing.expectEqualStrings("pwsh", command.COMMAND_PWSH_PREFIX[0]);
-    try testing.expectEqualStrings("-NoProfile", command.COMMAND_PWSH_PREFIX[1]);
-    try testing.expectEqualStrings("-NonInteractive", command.COMMAND_PWSH_PREFIX[2]);
-    try testing.expectEqualStrings("-Command", command.COMMAND_PWSH_PREFIX[3]);
+    try testing.expectEqual(@as(usize, 2), COMMAND_BASH_PREFIX.len);
+    try testing.expectEqualStrings("bash", COMMAND_BASH_PREFIX[0]);
+    try testing.expectEqualStrings("-c", COMMAND_BASH_PREFIX[1]);
+    try testing.expectEqual(@as(usize, 4), COMMAND_PWSH_PREFIX.len);
+    try testing.expectEqualStrings("pwsh", COMMAND_PWSH_PREFIX[0]);
+    try testing.expectEqualStrings("-NoProfile", COMMAND_PWSH_PREFIX[1]);
+    try testing.expectEqualStrings("-NonInteractive", COMMAND_PWSH_PREFIX[2]);
+    try testing.expectEqualStrings("-Command", COMMAND_PWSH_PREFIX[3]);
     // T1 RED (cmd.exe fallback): the Windows branch retries with cmd when
     // pwsh is missing — the prefix const must exist with this exact shape.
-    try testing.expectEqual(@as(usize, 2), command.COMMAND_CMD_PREFIX.len);
-    try testing.expectEqualStrings("cmd.exe", command.COMMAND_CMD_PREFIX[0]);
-    try testing.expectEqualStrings("/c", command.COMMAND_CMD_PREFIX[1]);
+    try testing.expectEqual(@as(usize, 2), COMMAND_CMD_PREFIX.len);
+    try testing.expectEqualStrings("cmd.exe", COMMAND_CMD_PREFIX[0]);
+    try testing.expectEqualStrings("/c", COMMAND_CMD_PREFIX[1]);
 }
 
-test "command.execute_command runs on the host shell (bash off-Windows)" {
+test "execute_command runs on the host shell (bash off-Windows)" {
     if (builtin.os.tag == .windows) return;
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
-    const out = try command.execute_command(testing.allocator, std.testing.io, .{
+    const out = try execute_command(testing.allocator, std.testing.io, .{
         .command = "echo hello-command",
         .cwd = "/tmp",
         .timeout = 5,
@@ -429,3 +428,383 @@ test "cmd_available probe does not crash" {
     _ = available;
     try testing.expect(true);
 }
+
+// Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
+// The tool definition above and its executor below live in ONE file.
+
+const pabrikcore = @import("pabrikcore");
+const tools = @import("../../../agentic_loop/tools.zig");
+const exec_builtin = @import("builtin");
+const sqlite = pabrikcore.sqlite;
+const ToolExecContext = tools.ToolExecContext;
+const ToolExecResult = tools.ToolExecResult;
+const agent = pabrikcore.agent;
+const tool_models = pabrikcore.tool_models;
+const command_tool_mod = pabrikcore.command_tool;
+const background_process = @import("../../../agentic_loop/background_process.zig");
+const background_process_events = @import("../../../agentic_loop/background_process_events.zig");
+const background_watcher = @import("../../../agentic_loop/background_watcher.zig");
+const wrapToolOutput = tools.wrapToolOutput;
+const bash_args = @import("exec_bash_args.zig");
+const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+/// What `runWithContext` hands back: the LLM-facing payload, plus the
+/// loop-control request parsed out of the same arguments.
+pub const RunResult = struct {
+    payload: []const u8,
+    /// `is_stop` from the arguments. False on the parse-failure path: the
+    /// field could not be read, so nothing may be assumed about it.
+    stop_loop: bool = false,
+};
+
+/// Merged exec body for the unified `command` tool (Phase A+B of the unify
+/// plan — shared logic moved here from `zig` /
+/// `zig`, which are now thin shims over this module).
+pub fn runWithContext(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    tool_call: agent.ToolCall,
+    db: ?*sqlite.SqliteBackend,
+    session_id: ?[]const u8,
+) !RunResult {
+    const input = switch (bash_args.parseShellArgs(allocator, tool_call.function.arguments)) {
+        .success => |in| in,
+        .failure => |info| {
+            // Both the rendered message and the `got` slice it interpolates
+            // are allocated by the parser; free them once the envelope has
+            // copied the text. The exec_testing allocator catches this path.
+            const err_msg = try bash_args.formatInvalidField(allocator, info);
+            defer allocator.free(err_msg);
+            defer allocator.free(info.got);
+            const output = try wrapToolOutput(allocator, "command", tool_call.function.arguments, false, err_msg, "");
+            // `.stop_loop` stays false: the arguments did not parse, so
+            // `is_stop` was never read. Ending a turn on a malformed call
+            // would hide the error the envelope exists to report.
+            return .{ .payload = output };
+        },
+    };
+    // parseShellArgs dups every string field it produces (command / cwd /
+    // stdin_data) so the caller can hold the slice past the JSON value's
+    // lifetime. Free them once execute_command returns.
+    defer {
+        allocator.free(input.command);
+        if (input.cwd) |c| allocator.free(c);
+        if (input.stdin_data) |s| allocator.free(s);
+    }
+
+    // The RESOLVED mode: `background=true` and `mode="background"` are the same
+    // thing by the time they get here (the parser folds them).
+    const mode = pabrikcore.shell_tool.resolvedMode(input);
+
+    const command_output = try command_tool_mod.execute_command(allocator, io, input);
+
+    // Record a detached process so it can be listed, read, and stopped later.
+    // `kind` decides whether it is ever NOTIFIED about — see migration 107.
+    if (mode.isDetached() and db != null and session_id != null) {
+        const db_ptr = db.?;
+        const sess_id = session_id.?;
+
+        // Parse PID from command output (format: "PID: {pid}\nLog: {path}")
+        const stdout = command_output.stdout;
+        if (stdout.len > 5) {
+            // Skip "PID: " prefix
+            const pid_start = 5;
+            var pid_end: usize = 4;
+            while (pid_end < stdout.len and stdout[pid_end] != '\n') : (pid_end += 1) {}
+
+            if (pid_end > pid_start) {
+                const pid_str = stdout[pid_start..pid_end];
+                const pid = std.fmt.parseInt(u32, pid_str, 10) catch 0;
+
+                if (pid > 0) {
+                    // Extract log path from "Log: {path}" part
+                    var log_start: usize = 0;
+                    while (log_start < stdout.len and stdout[log_start] != '\n') : (log_start += 1) {}
+                    log_start += 1; // skip newline
+
+                    // Find "Log: " prefix
+                    var log_path_start = log_start;
+                    while (log_path_start < stdout.len and log_path_start < log_start + 5) : (log_path_start += 1) {}
+
+                    if (log_path_start < stdout.len) {
+                        const log_path = stdout[log_path_start..];
+
+                        // Save to database
+                        const ts = std.Io.Clock.now(.real, io);
+                        const started_at: i64 = ts.toSeconds();
+                        background_process.save(db_ptr, allocator, sess_id, pid, input.command, log_path, started_at, mode.kindFor()) catch {
+                            // Log error but don't fail the tool execution
+                        };
+                        // Immediate watcher: poll the PID every 2s and queue
+                        // the completion the moment it exits (no cron wait).
+                        if (pabrikcore.getSingleton() catch null) |di| {
+                            background_process_events.emitCreated(allocator, di.event_bus, sess_id, pid, input.command);
+                            // The two detached modes differ in ONE
+                            // obligation: whether the agent is told when the
+                            // process exits.
+                            if (mode == .background) {
+                                background_watcher.spawnCompletionWatcher(di, sess_id, pid, input.command, log_path);
+                            } else {
+                                background_watcher.spawnServiceReaper(di, sess_id, pid, input.command, log_path);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    const res_command = try command_tool_mod.command_result_to_json(allocator, command_output);
+
+    return .{ .payload = res_command, .stop_loop = input.is_stop };
+}
+
+pub fn execCommand(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
+    // Catch ANY remaining error from the run path (e.g. from
+    // `execute_command` itself — fork failures, permission errors, etc.) and
+    // wrap it in the standard tool-error envelope, matching execReadFile /
+    const inner = runWithContext(ctx.allocator, ctx.io, tc, ctx.db, ctx.session_id) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "command", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    // `runWithContext` returns an ALREADY-WRAPPED envelope on its
+    // parse-failure path (it has no other way to report a structured field
+    // error), and a bare payload on the success path.
+    if (looksWrapped(inner.payload)) {
+        return ToolExecResult{ .output = inner.payload, .output_allocated = true };
+    }
+    defer ctx.allocator.free(inner.payload);
+    const output = try wrapToolOutput(ctx.allocator, "command", tc.function.arguments, true, null, inner.payload);
+    return ToolExecResult{
+        .output = output,
+        .output_allocated = true,
+        .stop_loop = inner.stop_loop,
+    };
+}
+
+/// True when `s` is already a tool envelope rather than a bare payload.
+fn looksWrapped(s: []const u8) bool {
+    return std.mem.startsWith(u8, std.mem.trimStart(u8, s, " \t\r\n"), "{\"tool\":");
+}
+
+// ============================================================================
+// Error-envelope tests — the message must let the model repair its own call.
+// ============================================================================
+
+const exec_testing = std.testing;
+
+var test_temperature: f32 = 0.0;
+var test_thinking: bool = false;
+
+fn commandTestCtx(allocator: std.mem.Allocator, io: std.Io) ToolExecContext {
+    return ToolExecContext{
+        .allocator = allocator,
+        .io = io,
+        .db = undefined,
+        .logger = undefined,
+        .session_id = "test-session",
+        .model = "test-model",
+        .cwd = "/tmp",
+        .api_key = "test",
+        .base_url = "test",
+        .config = undefined,
+        .agent_temperature = &test_temperature,
+        .is_thinking = &test_thinking,
+        .environment = null,
+    };
+}
+
+fn envelopeError(allocator: std.mem.Allocator, output: []const u8) !?[]const u8 {
+    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, output, .{});
+    defer parsed.deinit();
+    const err_value = parsed.value.object.get("error") orelse return null;
+    if (err_value != .string) return null;
+    return try allocator.dupe(u8, err_value.string);
+}
+
+test "execCommand: a missing timeout explains the field and the fix" {
+    if (exec_builtin.os.tag != .linux and exec_builtin.os.tag != .macos) return;
+
+    const allocator = exec_testing.allocator;
+    const ctx = commandTestCtx(allocator, exec_testing.io);
+    const tc = agent.ToolCall{
+        .id = "call-no-timeout",
+        .type = "function",
+        .function = .{
+            .name = "command",
+            .arguments = "{\"command\":\"ls -la\",\"cwd\":\"/tmp\"}",
+        },
+    };
+
+    var result = try execCommand(ctx, tc);
+    defer result.deinit(allocator);
+
+    const err_msg = try envelopeError(allocator, result.output);
+    defer if (err_msg) |m| allocator.free(m);
+    try exec_testing.expect(err_msg != null);
+    try exec_testing.expect(std.mem.indexOf(u8, err_msg.?, "timeout") != null);
+    try exec_testing.expect(std.mem.indexOf(u8, err_msg.?, "required") != null);
+    try exec_testing.expect(std.mem.indexOf(u8, err_msg.?, "TimeoutMissing") == null);
+}
+
+test "execCommand: timeout = 0 gets the same explanation as a missing one" {
+    if (exec_builtin.os.tag != .linux and exec_builtin.os.tag != .macos) return;
+
+    const allocator = exec_testing.allocator;
+    const ctx = commandTestCtx(allocator, exec_testing.io);
+    const tc = agent.ToolCall{
+        .id = "call-zero-timeout",
+        .type = "function",
+        .function = .{
+            .name = "command",
+            .arguments = "{\"command\":\"ls\",\"cwd\":\"/tmp\",\"timeout\":0}",
+        },
+    };
+
+    var result = try execCommand(ctx, tc);
+    defer result.deinit(allocator);
+
+    const err_msg = try envelopeError(allocator, result.output);
+    defer if (err_msg) |m| allocator.free(m);
+    try exec_testing.expect(err_msg != null);
+    try exec_testing.expect(std.mem.indexOf(u8, err_msg.?, "timeout") != null);
+    try exec_testing.expect(std.mem.indexOf(u8, err_msg.?, "TimeoutMissing") == null);
+}
+
+test "execCommand: a missing cwd explains the field, the wrong-tree risk and the fix" {
+    // `cwd` is required. Without it the shell inherits the SERVER's working
+    // directory, so the command acts on the wrong tree and the caller never
+    // learns that it did.
+    if (exec_builtin.os.tag != .linux and exec_builtin.os.tag != .macos) return;
+
+    const allocator = exec_testing.allocator;
+    const ctx = commandTestCtx(allocator, exec_testing.io);
+    const tc = agent.ToolCall{
+        .id = "call-no-cwd",
+        .type = "function",
+        .function = .{
+            .name = "command",
+            .arguments = "{\"command\":\"ls -la\",\"timeout\":30}",
+        },
+    };
+
+    var result = try execCommand(ctx, tc);
+    defer result.deinit(allocator);
+
+    const err_msg = try envelopeError(allocator, result.output);
+    defer if (err_msg) |m| allocator.free(m);
+    try exec_testing.expect(err_msg != null);
+    try exec_testing.expect(std.mem.indexOf(u8, err_msg.?, "cwd") != null);
+    try exec_testing.expect(std.mem.indexOf(u8, err_msg.?, "required") != null);
+    // "the SERVER's working directory" is the fact that makes the omission
+    // dangerous — without it the correction reads as arbitrary pedantry.
+    try exec_testing.expect(std.mem.indexOf(u8, err_msg.?, "SERVER") != null);
+    // The error NAME never leaks into the envelope; the model gets prose.
+    try exec_testing.expect(std.mem.indexOf(u8, err_msg.?, "MandatoryCwdMissing") == null);
+}
+
+test "execCommand: a relative cwd is refused with the absolute-path rule" {
+    if (exec_builtin.os.tag != .linux and exec_builtin.os.tag != .macos) return;
+
+    const allocator = exec_testing.allocator;
+    const ctx = commandTestCtx(allocator, exec_testing.io);
+    const tc = agent.ToolCall{
+        .id = "call-relative-cwd",
+        .type = "function",
+        .function = .{
+            .name = "command",
+            .arguments = "{\"command\":\"ls\",\"cwd\":\"src/modules\",\"timeout\":5}",
+        },
+    };
+
+    var result = try execCommand(ctx, tc);
+    defer result.deinit(allocator);
+
+    const err_msg = try envelopeError(allocator, result.output);
+    defer if (err_msg) |m| allocator.free(m);
+    try exec_testing.expect(err_msg != null);
+    try exec_testing.expect(std.mem.indexOf(u8, err_msg.?, "ABSOLUTE") != null);
+    try exec_testing.expect(std.mem.indexOf(u8, err_msg.?, "CwdNotAbsolute") == null);
+}
+
+test "execCommand: a malformed-arguments failure names the offending field" {
+    const allocator = exec_testing.allocator;
+    const ctx = commandTestCtx(allocator, exec_testing.io);
+    const tc = agent.ToolCall{
+        .id = "call-bad-args",
+        .type = "function",
+        .function = .{
+            .name = "command",
+            .arguments = "{\"command\":\"ls\",\"timeout\":\"not-a-number\"}",
+        },
+    };
+
+    var result = try execCommand(ctx, tc);
+    defer result.deinit(allocator);
+
+    const err_msg = try envelopeError(allocator, result.output);
+    defer if (err_msg) |m| allocator.free(m);
+    try exec_testing.expect(err_msg != null);
+    try exec_testing.expect(std.mem.indexOf(u8, err_msg.?, "timeout") != null);
+    try exec_testing.expect(std.mem.indexOf(u8, err_msg.?, "not-a-number") != null);
+}
+
+test "execCommand: an over-max timeout states the ceiling and the alternative" {
+    if (exec_builtin.os.tag != .linux and exec_builtin.os.tag != .macos) return;
+
+    const allocator = exec_testing.allocator;
+    const ctx = commandTestCtx(allocator, exec_testing.io);
+    const tc = agent.ToolCall{
+        .id = "call-huge-timeout",
+        .type = "function",
+        .function = .{
+            .name = "command",
+            .arguments = "{\"command\":\"ls\",\"cwd\":\"/tmp\",\"timeout\":99999}",
+        },
+    };
+
+    var result = try execCommand(ctx, tc);
+    defer result.deinit(allocator);
+
+    const err_msg = try envelopeError(allocator, result.output);
+    defer if (err_msg) |m| allocator.free(m);
+    try exec_testing.expect(err_msg != null);
+    // The ceiling, and the way out that is not "retry the same call".
+    try exec_testing.expect(std.mem.indexOf(u8, err_msg.?, "600 seconds or fewer") != null);
+    try exec_testing.expect(std.mem.indexOf(u8, err_msg.?, "mode=\"background\"") != null);
+    try exec_testing.expect(std.mem.indexOf(u8, err_msg.?, "TimeoutTooLarge") == null);
+}
+
+test "execCommand: a well-formed call is not refused by the argument validator" {
+    // Positive control for the four tests above. They all assert on the ERROR
+    // envelope, so without this one they could pass vacuously on a tool that
+    // refuses every call.
+    if (exec_builtin.os.tag != .linux and exec_builtin.os.tag != .macos) return;
+
+    const allocator = exec_testing.allocator;
+    const ctx = commandTestCtx(allocator, exec_testing.io);
+    const tc = agent.ToolCall{
+        .id = "call-bad-cwd",
+        .type = "function",
+        .function = .{
+            .name = "command",
+            .arguments = "{\"command\":\"echo hi\",\"cwd\":\"/no/such/dir/pabrik-test\",\"timeout\":5}",
+        },
+    };
+
+    var result = try execCommand(ctx, tc);
+    defer result.deinit(allocator);
+
+    const err_msg = try envelopeError(allocator, result.output);
+    defer if (err_msg) |m| allocator.free(m);
+    try exec_testing.expect(err_msg != null);
+    // Not the argument-validation messages the four tests above assert on.
+    try exec_testing.expect(std.mem.indexOf(u8, err_msg.?, "timeout") == null);
+    try exec_testing.expect(std.mem.indexOf(u8, err_msg.?, "not-a-number") == null);
+    // And not a bare Zig error name either — whatever the shell layer
+    // reported, it arrived as a sentence.
+    try exec_testing.expect(std.mem.indexOf(u8, err_msg.?, "command failed:") == null);
+    try exec_testing.expect(err_msg.?.len > 20);
+}
+

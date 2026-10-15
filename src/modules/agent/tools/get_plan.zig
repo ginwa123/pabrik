@@ -71,7 +71,6 @@ pub fn executeGetPlan(
 const testing = std.testing;
 const migration = @import("../../../migrations/migration.zig");
 
-const get_plan_mod = @import("get_plan.zig");
 const update_plan_mod = @import("update_plan.zig");
 
 const TestCtx = struct {
@@ -114,7 +113,7 @@ test "executeGetPlan: returns the plan when present, in the plan field" {
     });
     defer alloc.free(seed_result);
 
-    const result = try get_plan_mod.executeGetPlan(alloc, &ctx.db, session_id);
+    const result = try executeGetPlan(alloc, &ctx.db, session_id);
     defer alloc.free(result);
 
     // Payload shape: {"plan":"<markdown body>"}.
@@ -139,7 +138,7 @@ test "executeGetPlan: returns empty:true when no plan exists (D6)" {
     defer ctx.db.deinit();
 
     // No prior update_plan call — session has no row in session_plan.
-    const result = try get_plan_mod.executeGetPlan(alloc, &ctx.db, "nonexistent");
+    const result = try executeGetPlan(alloc, &ctx.db, "nonexistent");
     defer alloc.free(result);
 
     // Payload shape: {"empty":true} — the agent uses the absence
@@ -167,7 +166,7 @@ test "executeGetPlan: JSON preserves raw special chars verbatim (no XML escape)"
     });
     defer alloc.free(seed_result);
 
-    const result = try get_plan_mod.executeGetPlan(alloc, &ctx.db, session_id);
+    const result = try executeGetPlan(alloc, &ctx.db, session_id);
     defer alloc.free(result);
 
     // Raw `<hello>` and `&` MUST appear in the payload verbatim —
@@ -199,7 +198,7 @@ test "executeGetPlan: ]]> inside plan body round-trips verbatim" {
     });
     defer alloc.free(seed_result);
 
-    const result = try get_plan_mod.executeGetPlan(alloc, &ctx.db, session_id);
+    const result = try executeGetPlan(alloc, &ctx.db, session_id);
     defer alloc.free(result);
 
     const parsed = try parseTestJson(alloc, result);
@@ -210,7 +209,7 @@ test "executeGetPlan: ]]> inside plan body round-trips verbatim" {
 // ─── Test 5: JSON schema shape (name / required / properties) ───────────────
 
 test "get_plan_tool JSON schema: name='get_plan', no required params, no properties" {
-    const tool = get_plan_mod.get_plan_tool;
+    const tool = get_plan_tool;
 
     // Top-level type must be 'function' (OpenAI conventions).
     try testing.expectEqualStrings("function", tool.type);
@@ -232,3 +231,155 @@ test "get_plan_tool JSON schema: name='get_plan', no required params, no propert
     // Properties: empty slice — no input parameters at all.
     try testing.expectEqual(@as(usize, 0), tool.function.parameters.properties.len);
 }
+
+// Exec adapter — merged from `get_plan.zig` (2026-10-14, task_1791993404141_2).
+// The tool definition above and its executor below live in ONE file.
+
+const exec_testing = std.testing;
+const exec_pabrikcore = @import("pabrikcore");
+const tools = @import("../../../agentic_loop/tools.zig");
+const exec_migration = @import("../../../migrations/migration.zig");
+const exec_sqlite = exec_pabrikcore.sqlite;
+const exec_update_plan_mod = exec_pabrikcore.update_plan;
+const ToolExecContext = tools.ToolExecContext;
+const ToolExecResult = tools.ToolExecResult;
+const agent = exec_pabrikcore.agent;
+const wrapToolOutput = tools.wrapToolOutput;
+const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+pub fn execGetPlan(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
+    // No input to parse — the schema declares zero required params.
+    // Use `tc.function.arguments` for the envelope's `<parameters>`
+    // block verbatim (the LLM is expected to send `{}`).
+    const inner = executeGetPlan(ctx.allocator, ctx.db, ctx.session_id) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "get_plan", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer ctx.allocator.free(inner);
+
+    const output = try wrapToolOutput(ctx.allocator, "get_plan", tc.function.arguments, true, null, inner);
+    return ToolExecResult{ .output = output, .output_allocated = true };
+}
+
+const exec_TestCtx = struct {
+    db: exec_sqlite.SqliteBackend,
+    threaded: std.Io.Threaded,
+};
+
+fn exec_setupDb() !exec_TestCtx {
+    const alloc = exec_testing.allocator;
+    var threaded = std.Io.Threaded.init(alloc, .{});
+    errdefer threaded.deinit();
+    const io = threaded.io();
+    var db: exec_sqlite.SqliteBackend = .{};
+    errdefer db.deinit();
+    try db.init(io, ":memory:");
+
+    var manager = exec_migration.MigrationManager.init(alloc, &db);
+    defer manager.deinit();
+    try exec_migration.registerAllMigrations(&manager);
+    try manager.runMigrations();
+    return .{ .db = db, .threaded = threaded };
+}
+
+/// Build a `ToolExecContext` that the exec wrapper can use.
+fn makeTestCtx(allocator: std.mem.Allocator, db: *exec_sqlite.SqliteBackend, session_id: []const u8) ToolExecContext {
+    var dummy_f32: f32 = 0.0;
+    var dummy_bool: bool = false;
+    return .{
+        .allocator = allocator,
+        .io = std.testing.io,
+        .db = db,
+        .logger = undefined,
+        .session_id = session_id,
+        .model = "test-model",
+        .cwd = "/tmp",
+        .api_key = "test-key",
+        .base_url = "http://test",
+        .config = undefined,
+        .agent_temperature = &dummy_f32,
+        .is_thinking = &dummy_bool,
+        .environment = null,
+    };
+}
+
+fn fakeToolCall(name: []const u8) agent.ToolCall {
+    // get_plan takes no params — `{}` is the canonical empty-args input.
+    return .{
+        .id = "call_1",
+        .type = "function",
+        .function = .{ .name = name, .arguments = "{}" },
+    };
+}
+
+// ─── Test 1: absent plan returns wrapped `<empty/>` (D6) ───────────────────
+
+test "execGetPlan: absent plan returns wrapped envelope with empty:true" {
+    const alloc = exec_testing.allocator;
+    var ctx = try exec_setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const tcx = makeTestCtx(alloc, &ctx.db, "sess_no_plan");
+    const tc = fakeToolCall("get_plan");
+
+    const result = try execGetPlan(tcx, tc);
+    defer if (result.output_allocated) alloc.free(result.output);
+
+    try exec_testing.expect(result.output_allocated);
+    const env_parsed = try std.json.parseFromSlice(std.json.Value, alloc, result.output, .{});
+    defer env_parsed.deinit();
+    const env = env_parsed.value.object;
+    try exec_testing.expectEqualStrings("get_plan", env.get("tool").?.string);
+    try exec_testing.expect(env.get("success").?.bool);
+    try exec_testing.expect(env.get("error").? == .null);
+
+    // The inner payload is the `empty` absent signal — no `plan` field.
+    const data = env.get("data").?.object;
+    try exec_testing.expect(data.get("empty").?.bool);
+    try exec_testing.expect(data.get("plan") == null);
+}
+
+// ─── Test 2: present plan returns wrapped plan field ────────────────
+
+test "execGetPlan: present plan returns wrapped envelope with plan field" {
+    const alloc = exec_testing.allocator;
+    var ctx = try exec_setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    // Seed the plan via the pure-fn layer (mirrors production wiring: an
+    // earlier update_plan call already populated the row).
+    {
+        const seed_envelope = try exec_update_plan_mod.executeUpdatePlan(alloc, &ctx.db, "sess_with_plan", .{
+            .content = "# Goal\n\n- [x] done\n- [ ] pending\n",
+        });
+        defer alloc.free(seed_envelope);
+    }
+
+    const tcx = makeTestCtx(alloc, &ctx.db, "sess_with_plan");
+    const tc = fakeToolCall("get_plan");
+
+    const result = try execGetPlan(tcx, tc);
+    defer if (result.output_allocated) alloc.free(result.output);
+
+    try exec_testing.expect(result.output_allocated);
+    const env2 = try std.json.parseFromSlice(std.json.Value, alloc, result.output, .{});
+    defer env2.deinit();
+    const env = env2.value.object;
+    try exec_testing.expectEqualStrings("get_plan", env.get("tool").?.string);
+    try exec_testing.expect(env.get("success").?.bool);
+    try exec_testing.expect(env.get("error").? == .null);
+
+    // The inner payload carries the plan body in the `plan` field.
+    const data = env.get("data").?.object;
+    const plan = data.get("plan").?.string;
+    try exec_testing.expect(std.mem.indexOf(u8, plan, "# Goal") != null);
+    try exec_testing.expect(std.mem.indexOf(u8, plan, "[x] done") != null);
+    try exec_testing.expect(std.mem.indexOf(u8, plan, "[ ] pending") != null);
+
+    // No `empty` marker on the present branch.
+    try exec_testing.expect(data.get("empty") == null);
+}
+

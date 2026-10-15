@@ -10,77 +10,77 @@ pub const wrapToolOutput = @import("tools_wrap_output.zig").wrapToolOutput;
 
 // Re-export every migrated exec function. Tool_Registry.zig references
 // these via `agentic_loop_mod.tools.execXxx` etc.
-pub const execReadFile = @import("tools_exec_read_file.zig").execReadFile;
-pub const execTextReplace = @import("tools_exec_text_replace.zig").execTextReplace;
-pub const execWriteFile = @import("tools_exec_write_file.zig").execWriteFile;
-pub const execSearchSkills = @import("tools_exec_skills.zig").execSearchSkills;
-pub const execListMemory = @import("tools_exec_list_memory.zig").execListMemory;
-pub const execSaveMemory = @import("tools_exec_memory.zig").execSaveMemory;
-pub const execLoadMemory = @import("tools_exec_memory.zig").execLoadMemory;
-pub const execReadWorkspaceSession = @import("tools_exec_read_workspace_session.zig").execReadWorkspaceSession;
+pub const execReadFile = @import("../modules/agent/tools/read_file.zig").execReadFile;
+pub const execTextReplace = @import("../modules/agent/tools/text_replace.zig").execTextReplace;
+pub const execWriteFile = @import("../modules/agent/tools/write_file.zig").execWriteFile;
+pub const execSearchSkills = @import("../modules/agent/tools/skill_tools.zig").execSearchSkills;
+pub const execListMemory = @import("../modules/agent/tools/list_memory.zig").execListMemory;
+pub const execSaveMemory = @import("../modules/agent/tools/memory.zig").execSaveMemory;
+pub const execLoadMemory = @import("../modules/agent/tools/memory.zig").execLoadMemory;
+pub const execReadWorkspaceSession = @import("../modules/agent/tools/read_workspace_session.zig").execReadWorkspaceSession;
 // Workspace credential DISCOVERY. The value never leaves the store — this
-// adapter lists names only (see tools_exec_list_secrets.zig).
-pub const execListSecrets = @import("tools_exec_list_secrets.zig").execListSecrets;
-pub const execAddDocument = @import("tools_exec_document.zig").execAddDocument;
-pub const execEditDocument = @import("tools_exec_document.zig").execEditDocument;
-pub const execDeleteDocument = @import("tools_exec_document.zig").execDeleteDocument;
-pub const execSearchDocuments = @import("tools_exec_document.zig").execSearchDocuments;
-pub const execUseSkill = @import("tools_exec_skills.zig").execUseSkill;
-pub const execRemoveSkill = @import("tools_exec_skills.zig").execRemoveSkill;
-pub const execAddSkill = @import("tools_exec_skills.zig").execAddSkill;
-pub const execEditSkill = @import("tools_exec_skills.zig").execEditSkill;
-pub const execRemoveFile = @import("tools_exec_remove_file.zig").execRemoveFile;
-pub const execSetGitWorktree = @import("tools_exec_set_git_worktree.zig").execSetGitWorktree;
-pub const execSetPullRequest = @import("tools_exec_set_pull_request.zig").execSetPullRequest;
-pub const execStatusPullRequest = @import("tools_exec_status_pull_request.zig").execStatusPullRequest;
-pub const execKanbanList = @import("tools_exec_kanban_list.zig").execKanbanList;
-pub const execKanbanMoveTask = @import("tools_exec_kanban_move_task.zig").execKanbanMoveTask;
-pub const execCreateKanbanTask = @import("tools_exec_create_kanban_task.zig").execCreateKanbanTask;
-pub const execSetDesignPage = @import("tools_exec_set_design_page.zig").execSetDesignPage;
-pub const execAddElement = @import("tools_exec_add_element.zig").execAddElement;
-pub const execUpdateElement = @import("tools_exec_update_element.zig").execUpdateElement;
-pub const execGroupElements = @import("tools_exec_group_elements.zig").execGroupElements;
-pub const execSetElementParent = @import("tools_exec_set_element_parent.zig").execSetElementParent;
-pub const execMoveDesignElement = @import("tools_exec_move_design_element.zig").execMoveDesignElement;
-pub const execMoveElementToPage = @import("tools_exec_move_element_to_page.zig").execMoveElementToPage;
-pub const execPresentFiles = @import("tools_exec_present_files.zig").execPresentFiles;
-pub const execGenerateImage = @import("tools_exec_generate_image.zig").execGenerateImage;
-pub const execGetDesignContext = @import("tools_exec_get_design_context.zig").execGetDesignContext;
-pub const execPreviewDesignPage = @import("tools_exec_preview_design_page.zig").execPreviewDesignPage;
-pub const execWebSearch = @import("tools_exec_web_search.zig").execWebSearch;
-pub const execListWebSearchProviders = @import("tools_exec_list_web_search_providers.zig").execListWebSearchProviders;
-pub const execGlob = @import("tools_exec_glob.zig").execGlob;
-pub const execSearch = @import("tools_exec_search.zig").execSearch;
-pub const execBash = @import("tools_exec_bash.zig").execBash;
-pub const execPwsh = @import("tools_exec_pwsh.zig").execPwsh;
-pub const execCommand = @import("tools_exec_command.zig").execCommand;
+// adapter lists names only (see list_secrets.zig).
+pub const execListSecrets = @import("../modules/agent/tools/list_secrets.zig").execListSecrets;
+pub const execAddDocument = @import("../modules/agent/tools/document.zig").execAddDocument;
+pub const execEditDocument = @import("../modules/agent/tools/document.zig").execEditDocument;
+pub const execDeleteDocument = @import("../modules/agent/tools/document.zig").execDeleteDocument;
+pub const execSearchDocuments = @import("../modules/agent/tools/document.zig").execSearchDocuments;
+pub const execUseSkill = @import("../modules/agent/tools/skill_tools.zig").execUseSkill;
+pub const execRemoveSkill = @import("../modules/agent/tools/skill_tools.zig").execRemoveSkill;
+pub const execAddSkill = @import("../modules/agent/tools/skill_tools.zig").execAddSkill;
+pub const execEditSkill = @import("../modules/agent/tools/skill_tools.zig").execEditSkill;
+pub const execRemoveFile = @import("../modules/agent/tools/remove_file.zig").execRemoveFile;
+pub const execSetGitWorktree = @import("../modules/agent/tools/set_git_worktree.zig").execSetGitWorktree;
+pub const execSetPullRequest = @import("../modules/agent/tools/set_pull_request.zig").execSetPullRequest;
+pub const execStatusPullRequest = @import("../modules/agent/tools/status_pull_request.zig").execStatusPullRequest;
+pub const execKanbanList = @import("../modules/agent/tools/kanban_list.zig").execKanbanList;
+pub const execKanbanMoveTask = @import("../modules/agent/tools/kanban_move_task.zig").execKanbanMoveTask;
+pub const execCreateKanbanTask = @import("../modules/agent/tools/create_kanban_task.zig").execCreateKanbanTask;
+pub const execSetDesignPage = @import("../modules/agent/tools/set_design_page.zig").execSetDesignPage;
+pub const execAddElement = @import("../modules/agent/tools/add_design_element.zig").execAddElement;
+pub const execUpdateElement = @import("../modules/agent/tools/update_design_element.zig").execUpdateElement;
+pub const execGroupElements = @import("../modules/agent/tools/group_design_elements.zig").execGroupElements;
+pub const execSetElementParent = @import("../modules/agent/tools/set_element_parent.zig").execSetElementParent;
+pub const execMoveDesignElement = @import("../modules/agent/tools/move_design_element.zig").execMoveDesignElement;
+pub const execMoveElementToPage = @import("../modules/agent/tools/move_element_to_page.zig").execMoveElementToPage;
+pub const execPresentFiles = @import("../modules/agent/tools/present_files.zig").execPresentFiles;
+pub const execGenerateImage = @import("../modules/agent/tools/generate_image.zig").execGenerateImage;
+pub const execGetDesignContext = @import("../modules/agent/tools/get_design_context.zig").execGetDesignContext;
+pub const execPreviewDesignPage = @import("../modules/agent/tools/preview_design_page.zig").execPreviewDesignPage;
+pub const execWebSearch = @import("../modules/agent/tools/web_search.zig").execWebSearch;
+pub const execListWebSearchProviders = @import("../modules/agent/tools/exec_list_web_search_providers.zig").execListWebSearchProviders;
+pub const execGlob = @import("../modules/agent/tools/glob.zig").execGlob;
+pub const execSearch = @import("../modules/agent/tools/search.zig").execSearch;
+pub const execBash = @import("../modules/agent/tools/command.zig").execBash;
+pub const execPwsh = @import("../modules/agent/tools/command.zig").execPwsh;
+pub const execCommand = @import("../modules/agent/tools/command.zig").execCommand;
 /// `process` — read the delta of a detached process's log, stop it (tree
 /// included), or list what this session started.
-pub const execProcess = @import("tools_exec_process.zig").execProcess;
+pub const execProcess = @import("../modules/agent/tools/process.zig").execProcess;
 // 2026-08-14 — list_directory agent tool (Task 5 of ban-absolute-paths plan).
-pub const execListDirectory = @import("tools_exec_list_directory.zig").execListDirectory;
-pub const execSpawnSubAgent = @import("tools_exec_spawn_sub_agent.zig").execSpawnSubAgent;
+pub const execListDirectory = @import("../modules/agent/tools/list_directory.zig").execListDirectory;
+pub const execSpawnSubAgent = @import("../modules/agent/tools/spawn_sub_agent.zig").execSpawnSubAgent;
 
 // 2026-08-19 — session_plan agent tools (Task 4 of 2026-08-19-session-plan-agent-tool.md).
 // update_plan (UPSERT) + get_plan (fetch) — the markdown task plan that
 // persists across iterations and gets re-injected into the system prompt.
-pub const execUpdatePlan = @import("tools_exec_update_plan.zig").execUpdatePlan;
-pub const execGetPlan = @import("tools_exec_get_plan.zig").execGetPlan;
-pub const execListSubAgent = @import("tools_exec_list_sub_agent.zig").execListSubAgent;
-pub const execUsedTools = @import("tools_exec_used_tools.zig").execUsedTools;
+pub const execUpdatePlan = @import("../modules/agent/tools/update_plan.zig").execUpdatePlan;
+pub const execGetPlan = @import("../modules/agent/tools/get_plan.zig").execGetPlan;
+pub const execListSubAgent = @import("../modules/agent/tools/list_sub_agent.zig").execListSubAgent;
+pub const execUsedTools = @import("../modules/agent/tools/used_tools.zig").execUsedTools;
 // 2026-09-16 — ask_user: ends the turn so the human can answer in their own
 // time; the answer rewrites this call's tool-result row and resumes a run.
-pub const execAskUser = @import("tools_exec_ask_user.zig").execAskUser;
+pub const execAskUser = @import("../modules/agent/tools/ask_user.zig").execAskUser;
 // 2026-08-28 — add_mcp_server agent tool (Step 3 of
 // 2026-08-28-add-mcp-server-agent-tool.md).
-pub const execAddMcpServer = @import("tools_exec_add_mcp_server.zig").execAddMcpServer;
+pub const execAddMcpServer = @import("../modules/agent/tools/add_mcp_server.zig").execAddMcpServer;
 
 // Progressive tool search (plan 2026-09-12-progressive-tool-search): the three
 // meta-tools that browse and enable the catalog of tools this session does not
 // already have (MCP tools + not-enabled built-ins).
-pub const execSearchTool = @import("tools_exec_progressive_tools.zig").execSearchTool;
-pub const execViewTool = @import("tools_exec_progressive_tools.zig").execViewTool;
-pub const execUseTool = @import("tools_exec_progressive_tools.zig").execUseTool;
+pub const execSearchTool = @import("../modules/agent/tools/progressive_tools.zig").execSearchTool;
+pub const execViewTool = @import("../modules/agent/tools/progressive_tools.zig").execViewTool;
+pub const execUseTool = @import("../modules/agent/tools/progressive_tools.zig").execUseTool;
 
 pub const SkillSaveInfo = struct {
     name: []const u8,

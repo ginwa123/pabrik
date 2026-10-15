@@ -653,7 +653,6 @@ fn extractOpenAiErrorMessage(allocator: std.mem.Allocator, body: []const u8) ?[]
 const builtin = @import("builtin");
 const testing = std.testing;
 const pabrikcore = @import("pabrikcore");
-const generate_image = @import("generate_image.zig");
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
@@ -669,43 +668,43 @@ fn setupIo() std.Io.Threaded {
 
 test "validateModelSize accepts dall-e-2 with 256x256" {
     const alloc = testing.allocator;
-    const err = try generate_image.validateModelSize(alloc, "dall-e-2", "256x256");
+    const err = try validateModelSize(alloc, "dall-e-2", "256x256");
     try testing.expect(err == null);
 }
 
 test "validateModelSize accepts dall-e-2 with 512x512" {
     const alloc = testing.allocator;
-    const err = try generate_image.validateModelSize(alloc, "dall-e-2", "512x512");
+    const err = try validateModelSize(alloc, "dall-e-2", "512x512");
     try testing.expect(err == null);
 }
 
 test "validateModelSize accepts dall-e-2 with 1024x1024" {
     const alloc = testing.allocator;
-    const err = try generate_image.validateModelSize(alloc, "dall-e-2", "1024x1024");
+    const err = try validateModelSize(alloc, "dall-e-2", "1024x1024");
     try testing.expect(err == null);
 }
 
 test "validateModelSize accepts dall-e-3 with 1024x1024" {
     const alloc = testing.allocator;
-    const err = try generate_image.validateModelSize(alloc, "dall-e-3", "1024x1024");
+    const err = try validateModelSize(alloc, "dall-e-3", "1024x1024");
     try testing.expect(err == null);
 }
 
 test "validateModelSize accepts dall-e-3 with 1792x1024" {
     const alloc = testing.allocator;
-    const err = try generate_image.validateModelSize(alloc, "dall-e-3", "1792x1024");
+    const err = try validateModelSize(alloc, "dall-e-3", "1792x1024");
     try testing.expect(err == null);
 }
 
 test "validateModelSize accepts dall-e-3 with 1024x1792" {
     const alloc = testing.allocator;
-    const err = try generate_image.validateModelSize(alloc, "dall-e-3", "1024x1792");
+    const err = try validateModelSize(alloc, "dall-e-3", "1024x1792");
     try testing.expect(err == null);
 }
 
 test "validateModelSize rejects dall-e-3 with 512x512" {
     const alloc = testing.allocator;
-    const err = try generate_image.validateModelSize(alloc, "dall-e-3", "512x512");
+    const err = try validateModelSize(alloc, "dall-e-3", "512x512");
     try testing.expect(err != null);
     if (err) |msg| {
         defer alloc.free(msg);
@@ -716,7 +715,7 @@ test "validateModelSize rejects dall-e-3 with 512x512" {
 
 test "validateModelSize rejects dall-e-2 with 1792x1024" {
     const alloc = testing.allocator;
-    const err = try generate_image.validateModelSize(alloc, "dall-e-2", "1792x1024");
+    const err = try validateModelSize(alloc, "dall-e-2", "1792x1024");
     try testing.expect(err != null);
     if (err) |msg| {
         defer alloc.free(msg);
@@ -725,7 +724,7 @@ test "validateModelSize rejects dall-e-2 with 1792x1024" {
 
 test "validateModelSize rejects unknown model" {
     const alloc = testing.allocator;
-    const err = try generate_image.validateModelSize(alloc, "dalle-4", "1024x1024");
+    const err = try validateModelSize(alloc, "dalle-4", "1024x1024");
     try testing.expect(err != null);
     if (err) |msg| {
         defer alloc.free(msg);
@@ -735,7 +734,7 @@ test "validateModelSize rejects unknown model" {
 
 test "validateModelSize rejects unknown size" {
     const alloc = testing.allocator;
-    const err = try generate_image.validateModelSize(alloc, "dall-e-3", "4096x4096");
+    const err = try validateModelSize(alloc, "dall-e-3", "4096x4096");
     try testing.expect(err != null);
     if (err) |msg| {
         defer alloc.free(msg);
@@ -746,8 +745,8 @@ test "validateModelSize rejects unknown size" {
 
 test "buildJsonRequestBody produces correct shape for minimal input (prompt only)" {
     const alloc = testing.allocator;
-    const input = generate_image.GenerateImageInput{ .prompt = "a cat" };
-    const body = try generate_image.buildJsonRequestBody(alloc, input);
+    const input = GenerateImageInput{ .prompt = "a cat" };
+    const body = try buildJsonRequestBody(alloc, input);
     defer alloc.free(body);
 
     // Must contain the prompt and the default model + n + response_format
@@ -760,8 +759,8 @@ test "buildJsonRequestBody produces correct shape for minimal input (prompt only
 
 test "buildJsonRequestBody omits optional fields when null (no nulls in JSON)" {
     const alloc = testing.allocator;
-    const input = generate_image.GenerateImageInput{ .prompt = "a cat" };
-    const body = try generate_image.buildJsonRequestBody(alloc, input);
+    const input = GenerateImageInput{ .prompt = "a cat" };
+    const body = try buildJsonRequestBody(alloc, input);
     defer alloc.free(body);
 
     // quality, style, user should NOT appear (they're null)
@@ -773,7 +772,7 @@ test "buildJsonRequestBody omits optional fields when null (no nulls in JSON)" {
 
 test "buildJsonRequestBody includes all fields when provided" {
     const alloc = testing.allocator;
-    const input = generate_image.GenerateImageInput{
+    const input = GenerateImageInput{
         .prompt = "a hat-wearing cat",
         .model = "dall-e-2",
         .n = 3,
@@ -783,7 +782,7 @@ test "buildJsonRequestBody includes all fields when provided" {
         .response_format = "url",
         .user = "user-42",
     };
-    const body = try generate_image.buildJsonRequestBody(alloc, input);
+    const body = try buildJsonRequestBody(alloc, input);
     defer alloc.free(body);
 
     try testing.expect(std.mem.indexOf(u8, body, "\"prompt\":\"a hat-wearing cat\"") != null);
@@ -798,8 +797,8 @@ test "buildJsonRequestBody includes all fields when provided" {
 
 test "buildJsonRequestBody defaults model to dall-e-3 and n to 1" {
     const alloc = testing.allocator;
-    const input = generate_image.GenerateImageInput{ .prompt = "x" };
-    const body = try generate_image.buildJsonRequestBody(alloc, input);
+    const input = GenerateImageInput{ .prompt = "x" };
+    const body = try buildJsonRequestBody(alloc, input);
     defer alloc.free(body);
     try testing.expect(std.mem.indexOf(u8, body, "\"model\":\"dall-e-3\"") != null);
     try testing.expect(std.mem.indexOf(u8, body, "\"n\":1") != null);
@@ -807,8 +806,8 @@ test "buildJsonRequestBody defaults model to dall-e-3 and n to 1" {
 
 test "buildJsonRequestBody defaults response_format to b64_json" {
     const alloc = testing.allocator;
-    const input = generate_image.GenerateImageInput{ .prompt = "x" };
-    const body = try generate_image.buildJsonRequestBody(alloc, input);
+    const input = GenerateImageInput{ .prompt = "x" };
+    const body = try buildJsonRequestBody(alloc, input);
     defer alloc.free(body);
     try testing.expect(std.mem.indexOf(u8, body, "\"response_format\":\"b64_json\"") != null);
 }
@@ -820,7 +819,7 @@ test "parseImageResponse accepts a single-image response with b64_json" {
     const body =
         \\{"created":1700000000,"data":[{"b64_json":"iVBORw0KGgo=","revised_prompt":"a happy cat"}]}
     ;
-    const images = try generate_image.parseImageResponse(alloc, body);
+    const images = try parseImageResponse(alloc, body);
     defer {
         for (images) |img| {
             if (img.b64_json) |b| alloc.free(b);
@@ -843,7 +842,7 @@ test "parseImageResponse accepts a multi-image response with n=2 (DALL-E 2)" {
         \\  {"b64_json":"BBBB"}
         \\]}
     ;
-    const images = try generate_image.parseImageResponse(alloc, body);
+    const images = try parseImageResponse(alloc, body);
     defer {
         for (images) |img| {
             if (img.b64_json) |b| alloc.free(b);
@@ -862,7 +861,7 @@ test "parseImageResponse extracts revised_prompt when present" {
     const body =
         \\{"created":1,"data":[{"b64_json":"x","revised_prompt":"A vibrant watercolor painting of a cat"}]}
     ;
-    const images = try generate_image.parseImageResponse(alloc, body);
+    const images = try parseImageResponse(alloc, body);
     defer {
         for (images) |img| {
             if (img.b64_json) |b| alloc.free(b);
@@ -880,7 +879,7 @@ test "parseImageResponse handles URL response_format (URL only, no b64_json)" {
     const body =
         \\{"created":1,"data":[{"url":"https://example.com/img.png"}]}
     ;
-    const images = try generate_image.parseImageResponse(alloc, body);
+    const images = try parseImageResponse(alloc, body);
     defer {
         for (images) |img| {
             if (img.b64_json) |b| alloc.free(b);
@@ -900,7 +899,7 @@ test "parseImageResponse surfaces OpenAI error envelope (HTTP 400-style body)" {
     const body =
         \\{"error":{"message":"Invalid model","type":"invalid_request_error","code":"model_not_found"}}
     ;
-    const result = generate_image.parseImageResponse(alloc, body);
+    const result = parseImageResponse(alloc, body);
     try testing.expectError(error.OpenAiError, result);
 }
 
@@ -909,7 +908,7 @@ test "parseImageResponse rejects empty data array" {
     const body =
         \\{"created":1,"data":[]}
     ;
-    const result = generate_image.parseImageResponse(alloc, body);
+    const result = parseImageResponse(alloc, body);
     try testing.expectError(error.NoImagesReturned, result);
 }
 
@@ -929,7 +928,7 @@ test "saveImageToDisk writes base64 bytes to <cwd>/generated_images/img_<ts>_<id
     // "iVBORw0KGgo=" decodes to 8 bytes (PNG signature prefix + IHDR start).
     // We don't need a valid PNG for the save test — we just verify the
     // bytes round-trip through disk.
-    const path = try generate_image.saveImageToDisk(alloc, io, tmp_cwd, "iVBORw0KGgo=", 0, "image/png");
+    const path = try saveImageToDisk(alloc, io, tmp_cwd, "iVBORw0KGgo=", 0, "image/png");
     defer alloc.free(path);
 
     try testing.expect(std.mem.endsWith(u8, path, ".png"));
@@ -960,7 +959,7 @@ test "saveImageToDisk creates the generated_images subdirectory if missing" {
     const tmp_cwd = dir_buf[0..dir_len];
 
     // generated_images/ does NOT exist yet — saveImageToDisk must create it.
-    const path = try generate_image.saveImageToDisk(alloc, io, tmp_cwd, "AAAA", 0, "image/png");
+    const path = try saveImageToDisk(alloc, io, tmp_cwd, "AAAA", 0, "image/png");
     defer alloc.free(path);
 
     // Verify the dir now exists by writing a sentinel file inside it
@@ -977,7 +976,7 @@ test "saveImageToDisk rejects when the base64 payload is not valid base64" {
 
     // "not_valid_base64!!!" contains '!' and ' ' which are not in the
     // base64 alphabet. std.base64.standard.Decoder rejects them.
-    const result = generate_image.saveImageToDisk(alloc, io, "/tmp/pabrik-generate-image-bad-b64", "not_valid_base64!!!", 0, "image/png");
+    const result = saveImageToDisk(alloc, io, "/tmp/pabrik-generate-image-bad-b64", "not_valid_base64!!!", 0, "image/png");
     try testing.expectError(error.InvalidBase64, result);
 }
 
@@ -985,10 +984,10 @@ test "saveImageToDisk rejects when the base64 payload is not valid base64" {
 
 test "toJSONSuccess produces the expected payload shape" {
     const alloc = testing.allocator;
-    const images = [_]generate_image.SavedImage{
+    const images = [_]SavedImage{
         .{ .path = "/cwd/generated_images/img_1_0.png", .bytes = 12345, .mime = "image/png" },
     };
-    const payload = try generate_image.toJSONSuccess(alloc, "dall-e-3", "1024x1024", &images, "A cat");
+    const payload = try toJSONSuccess(alloc, "dall-e-3", "1024x1024", &images, "A cat");
     defer alloc.free(payload);
 
     const parsed = try std.json.parseFromSlice(std.json.Value, alloc, payload, .{});
@@ -1008,10 +1007,10 @@ test "toJSONSuccess produces the expected payload shape" {
 
 test "toJSONSuccess omits revised_prompt when null (DALL-E 2)" {
     const alloc = testing.allocator;
-    const images = [_]generate_image.SavedImage{
+    const images = [_]SavedImage{
         .{ .path = "/x.png", .bytes = 100, .mime = "image/png" },
     };
-    const payload = try generate_image.toJSONSuccess(alloc, "dall-e-2", "512x512", &images, null);
+    const payload = try toJSONSuccess(alloc, "dall-e-2", "512x512", &images, null);
     defer alloc.free(payload);
     const parsed = try std.json.parseFromSlice(std.json.Value, alloc, payload, .{});
     defer parsed.deinit();
@@ -1020,10 +1019,10 @@ test "toJSONSuccess omits revised_prompt when null (DALL-E 2)" {
 
 test "toJSONSuccess keeps special chars raw (JSON needs no XML escaping)" {
     const alloc = testing.allocator;
-    const images = [_]generate_image.SavedImage{
+    const images = [_]SavedImage{
         .{ .path = "/x.png", .bytes = 100, .mime = "image/png" },
     };
-    const payload = try generate_image.toJSONSuccess(alloc, "dall-e-3", "1024x1024", &images, "A <cat> & a <dog>");
+    const payload = try toJSONSuccess(alloc, "dall-e-3", "1024x1024", &images, "A <cat> & a <dog>");
     defer alloc.free(payload);
     const parsed = try std.json.parseFromSlice(std.json.Value, alloc, payload, .{});
     defer parsed.deinit();
@@ -1032,7 +1031,7 @@ test "toJSONSuccess keeps special chars raw (JSON needs no XML escaping)" {
 
 test "toJSONError produces status error with message" {
     const alloc = testing.allocator;
-    const payload = try generate_image.toJSONError(alloc, "HTTP 401: Invalid API key");
+    const payload = try toJSONError(alloc, "HTTP 401: Invalid API key");
     defer alloc.free(payload);
     const parsed = try std.json.parseFromSlice(std.json.Value, alloc, payload, .{});
     defer parsed.deinit();
@@ -1040,3 +1039,97 @@ test "toJSONError produces status error with message" {
     try testing.expectEqualStrings("error", obj.get("status").?.string);
     try testing.expectEqualStrings("HTTP 401: Invalid API key", obj.get("error").?.string);
 }
+
+// Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
+// The tool definition above and its executor below live in ONE file.
+
+const exec_pabrikcore = @import("pabrikcore");
+const tools = @import("../../../agentic_loop/tools.zig");
+const ToolExecContext = tools.ToolExecContext;
+const ToolExecResult = tools.ToolExecResult;
+const agent = exec_pabrikcore.agent;
+const wrapToolOutput = tools.wrapToolOutput;
+const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+pub fn execGenerateImage(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
+    // 1. Parse the LLM-provided JSON arguments.
+    const parsed = std.json.parseFromSlice(
+        GenerateImageInput,
+        ctx.allocator,
+        tc.function.arguments,
+        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(
+            ctx.allocator,
+            "generate_image",
+            tc.function.arguments,
+            false,
+            err_msg,
+            "",
+        );
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer parsed.deinit();
+
+    // 2. Call the impl with the active profile's API endpoint + the session's
+    // working directory. Any tool-level error (HTTP, validation,
+    // save-to-disk) is already encoded in the JSON payload — we just wrap it.
+    const inner = execute_generate_image(
+        ctx.allocator,
+        ctx.io,
+        parsed.value,
+        ctx.base_url,
+        ctx.api_key,
+        ctx.cwd,
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(
+            ctx.allocator,
+            "generate_image",
+            tc.function.arguments,
+            false,
+            err_msg,
+            "",
+        );
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer ctx.allocator.free(inner);
+
+    // 3. Detect the {status:"error", error:...} shape and surface it to the
+    // LLM as success=false.
+    {
+        const inner_parsed = std.json.parseFromSlice(std.json.Value, ctx.allocator, inner, .{}) catch null;
+        if (inner_parsed) |pv| {
+            defer pv.deinit();
+            if (pv.value == .object) {
+                if (pv.value.object.get("error")) |err_val| {
+                    if (err_val != .null and err_val == .string) {
+                        const output = try wrapToolOutput(
+                            ctx.allocator,
+                            "generate_image",
+                            tc.function.arguments,
+                            false,
+                            err_val.string,
+                            inner,
+                        );
+                        return ToolExecResult{ .output = output, .output_allocated = true };
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. Success path — pass the payload through as-is.
+    const output = try wrapToolOutput(
+        ctx.allocator,
+        "generate_image",
+        tc.function.arguments,
+        true,
+        null,
+        inner,
+    );
+    return ToolExecResult{ .output = output, .output_allocated = true };
+}
+

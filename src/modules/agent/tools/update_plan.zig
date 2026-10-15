@@ -121,7 +121,6 @@ fn jsonError(allocator: std.mem.Allocator, msg: []const u8) ![]u8 {
 const testing = std.testing;
 const migration = @import("../../../migrations/migration.zig");
 
-const update_plan_mod = @import("update_plan.zig");
 
 const TestCtx = struct {
     db: sqlite.SqliteBackend,
@@ -158,7 +157,7 @@ test "executeUpdatePlan: success returns payload with session_id + updated_at + 
 
     const session_id = "test_session_success";
     const content = "# My Plan\n\n- [ ] step 1\n- [x] step 2\n";
-    const result = try update_plan_mod.executeUpdatePlan(alloc, &ctx.db, session_id, .{
+    const result = try executeUpdatePlan(alloc, &ctx.db, session_id, .{
         .content = content,
     });
     defer alloc.free(result);
@@ -191,7 +190,7 @@ test "executeUpdatePlan: JSON preserves raw <, >, & inside plan body" {
     defer ctx.db.deinit();
 
     const content = "## Notes\nIf arr[i] > 0 && x < 10, then... & done.";
-    const result = try update_plan_mod.executeUpdatePlan(alloc, &ctx.db, "cd_session", .{
+    const result = try executeUpdatePlan(alloc, &ctx.db, "cd_session", .{
         .content = content,
     });
     defer alloc.free(result);
@@ -221,7 +220,7 @@ test "executeUpdatePlan: ]]> inside plan body round-trips verbatim" {
     defer ctx.db.deinit();
 
     const content = "before ]]> middle ]]> after";
-    const result = try update_plan_mod.executeUpdatePlan(alloc, &ctx.db, "cdata_split_session", .{
+    const result = try executeUpdatePlan(alloc, &ctx.db, "cdata_split_session", .{
         .content = content,
     });
     defer alloc.free(result);
@@ -239,7 +238,7 @@ test "executeUpdatePlan: empty content returns error payload mentioning 'non-emp
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    const result = try update_plan_mod.executeUpdatePlan(alloc, &ctx.db, "any_session", .{
+    const result = try executeUpdatePlan(alloc, &ctx.db, "any_session", .{
         .content = "",
     });
     defer alloc.free(result);
@@ -265,11 +264,11 @@ test "executeUpdatePlan: oversized content (> MAX_PLAN_BYTES) returns error payl
     defer ctx.db.deinit();
 
     // Allocate MAX_PLAN_BYTES + 1 byte of garbage.
-    const big = try alloc.alloc(u8, update_plan_mod.MAX_PLAN_BYTES + 1);
+    const big = try alloc.alloc(u8, MAX_PLAN_BYTES + 1);
     defer alloc.free(big);
     @memset(big, 'x');
 
-    const result = try update_plan_mod.executeUpdatePlan(alloc, &ctx.db, "big_session", .{
+    const result = try executeUpdatePlan(alloc, &ctx.db, "big_session", .{
         .content = big,
     });
     defer alloc.free(result);
@@ -283,7 +282,7 @@ test "executeUpdatePlan: oversized content (> MAX_PLAN_BYTES) returns error payl
 // ─── Test 4: JSON schema shape (name / required / properties) ──────────────
 
 test "update_plan_tool JSON schema: name='update_plan', required=['content'], properties=[content]" {
-    const tool = update_plan_mod.update_plan_tool;
+    const tool = update_plan_tool;
 
     // Top-level type must be 'function' (OpenAI conventions).
     try testing.expectEqualStrings("function", tool.type);
@@ -306,3 +305,261 @@ test "update_plan_tool JSON schema: name='update_plan', required=['content'], pr
     try testing.expectEqualStrings("content", tool.function.parameters.properties[0].name);
     try testing.expectEqualStrings("string", tool.function.parameters.properties[0].type);
 }
+
+// Exec adapter — merged from `update_plan.zig` (2026-10-14, task_1791993404141_2).
+// The tool definition above and its executor below live in ONE file.
+
+const exec_testing = std.testing;
+const exec_pabrikcore = @import("pabrikcore");
+const tools = @import("../../../agentic_loop/tools.zig");
+const exec_migration = @import("../../../migrations/migration.zig");
+const exec_sqlite = exec_pabrikcore.sqlite;
+const exec_session_plan = @import("../../../agentic_loop/session_plan.zig");
+const ToolExecContext = tools.ToolExecContext;
+const ToolExecResult = tools.ToolExecResult;
+const agent = exec_pabrikcore.agent;
+const wrapToolOutput = tools.wrapToolOutput;
+const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+pub fn execUpdatePlan(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
+    const parsed = std.json.parseFromSlice(
+        UpdatePlanInput,
+        ctx.allocator,
+        tc.function.arguments,
+        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "update_plan", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer parsed.deinit();
+
+    const inner = executeUpdatePlan(
+        ctx.allocator,
+        ctx.db,
+        ctx.session_id,
+        parsed.value,
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "update_plan", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer ctx.allocator.free(inner);
+
+    // Detect the `{"error":...}` shape and surface it as a tool failure (so
+    // the LLM sees success=false rather than a successful wrapper around an
+    // error body).
+    var inner_parsed: ?std.json.Parsed(std.json.Value) = std.json.parseFromSlice(std.json.Value, ctx.allocator, inner, .{}) catch null;
+    defer if (inner_parsed) |*par| par.deinit();
+    if (inner_parsed) |par| {
+        if (par.value == .object) {
+            if (par.value.object.get("error")) |e| {
+                if (e == .string and e.string.len > 0) {
+                    const output = try wrapToolOutput(ctx.allocator, "update_plan", tc.function.arguments, false, e.string, inner);
+                    return ToolExecResult{ .output = output, .output_allocated = true };
+                }
+            }
+        }
+    }
+
+    const output = try wrapToolOutput(ctx.allocator, "update_plan", tc.function.arguments, true, null, inner);
+    return ToolExecResult{ .output = output, .output_allocated = true };
+}
+
+const exec_TestCtx = struct {
+    db: exec_sqlite.SqliteBackend,
+    threaded: std.Io.Threaded,
+};
+
+fn exec_setupDb() !exec_TestCtx {
+    const alloc = exec_testing.allocator;
+    var threaded = std.Io.Threaded.init(alloc, .{});
+    errdefer threaded.deinit();
+    const io = threaded.io();
+    var db: exec_sqlite.SqliteBackend = .{};
+    errdefer db.deinit();
+    try db.init(io, ":memory:");
+
+    var manager = exec_migration.MigrationManager.init(alloc, &db);
+    defer manager.deinit();
+    try exec_migration.registerAllMigrations(&manager);
+    try manager.runMigrations();
+    return .{ .db = db, .threaded = threaded };
+}
+
+/// Build a `ToolExecContext` that the exec wrapper can use.
+fn makeTestCtx(allocator: std.mem.Allocator, db: *exec_sqlite.SqliteBackend) ToolExecContext {
+    var dummy_f32: f32 = 0.0;
+    var dummy_bool: bool = false;
+    return .{
+        .allocator = allocator,
+        .io = std.testing.io,
+        .db = db,
+        .logger = undefined,
+        .session_id = "sess_exec",
+        .model = "test-model",
+        .cwd = "/tmp",
+        .api_key = "test-key",
+        .base_url = "http://test",
+        .config = undefined,
+        .agent_temperature = &dummy_f32,
+        .is_thinking = &dummy_bool,
+        .environment = null,
+    };
+}
+
+fn fakeToolCall(name: []const u8, args: []const u8) agent.ToolCall {
+    return .{
+        .id = "call_1",
+        .type = "function",
+        .function = .{ .name = name, .arguments = args },
+    };
+}
+
+// ─── Test 1: success path ──────────────────────────────────────────────────
+
+test "execUpdatePlan: writes to session_plan and returns wrapped success" {
+    const alloc = exec_testing.allocator;
+    var ctx = try exec_setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const tcx = makeTestCtx(alloc, &ctx.db);
+    const tc = fakeToolCall("update_plan", "{\"content\":\"# Plan\\n- [ ] step\"}");
+
+    const result = try execUpdatePlan(tcx, tc);
+    defer if (result.output_allocated) alloc.free(result.output);
+
+    // The wrapped envelope carries success=true with the inner payload
+    // in `data`.
+    try exec_testing.expect(result.output_allocated);
+    const env_parsed = try std.json.parseFromSlice(std.json.Value, alloc, result.output, .{});
+    defer env_parsed.deinit();
+    const env = env_parsed.value.object;
+    try exec_testing.expectEqualStrings("update_plan", env.get("tool").?.string);
+    try exec_testing.expect(env.get("success").?.bool);
+    try exec_testing.expect(env.get("error").? == .null);
+    const data = env.get("data").?.object;
+    try exec_testing.expectEqualStrings("sess_exec", data.get("session_id").?.string);
+    try exec_testing.expect(data.get("updated_at").?.string.len > 0);
+
+    // The inner payload MUST echo the just-written plan body via the
+    // `plan` field — the frontend renders the checklist from this
+    // field, NOT from the tool's input arguments.
+    try exec_testing.expectEqualStrings("# Plan\n- [ ] step", data.get("plan").?.string);
+
+    // Verify the row landed in exec_session_plan.
+    const stored = try exec_session_plan.getPlan(alloc, &ctx.db, "sess_exec");
+    defer alloc.free(stored);
+    try exec_testing.expectEqualStrings("# Plan\n- [ ] step", stored);
+}
+
+// ─── Test 2: empty content returns wrapped error with success=false ────────
+
+test "execUpdatePlan: empty content returns wrapped error envelope" {
+    const alloc = exec_testing.allocator;
+    var ctx = try exec_setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const tcx = makeTestCtx(alloc, &ctx.db);
+    const tc = fakeToolCall("update_plan", "{\"content\":\"\"}");
+
+    const result = try execUpdatePlan(tcx, tc);
+    defer if (result.output_allocated) alloc.free(result.output);
+
+    try exec_testing.expect(result.output_allocated);
+    // Error path: success=false, `error` message, `data` null.
+    // (wrapToolOutput deliberately nulls `data` on the error branch — the
+    // inner pure-fn JSON is intentionally not surfaced.
+    const env2 = try std.json.parseFromSlice(std.json.Value, alloc, result.output, .{});
+    defer env2.deinit();
+    try exec_testing.expect(!env2.value.object.get("success").?.bool);
+    try exec_testing.expect(std.mem.indexOf(u8, env2.value.object.get("error").?.string, "non-empty") != null);
+    try exec_testing.expect(env2.value.object.get("data").? == .null);
+
+    // DB has no row for "sess_exec" — empty content is rejected.
+    const stored = try exec_session_plan.getPlan(alloc, &ctx.db, "sess_exec");
+    defer alloc.free(stored);
+    try exec_testing.expectEqualStrings("", stored);
+}
+
+// ─── Test 3: malformed JSON returns wrapped parse error ─────────────────────
+
+test "execUpdatePlan: malformed JSON returns wrapped parse error" {
+    const alloc = exec_testing.allocator;
+    var ctx = try exec_setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const tcx = makeTestCtx(alloc, &ctx.db);
+    // Garbage JSON — not parseable as UpdatePlanInput.
+    const tc = fakeToolCall("update_plan", "{not json at all");
+
+    const result = try execUpdatePlan(tcx, tc);
+    defer if (result.output_allocated) alloc.free(result.output);
+
+    try exec_testing.expect(result.output_allocated);
+    const env3 = try std.json.parseFromSlice(std.json.Value, alloc, result.output, .{});
+    defer env3.deinit();
+    try exec_testing.expect(!env3.value.object.get("success").?.bool);
+    // The message must tell the model WHAT was wrong with its JSON, not
+    // just name the Zig error. `{not json at all` is a syntax error, so
+    // the explanation names JSON and the usual causes.
+    const plan_err = env3.value.object.get("error").?.string;
+    try exec_testing.expect(std.mem.indexOf(u8, plan_err, "JSON") != null);
+    try exec_testing.expect(std.mem.indexOf(u8, plan_err, "SyntaxError") == null);
+
+    // No DB write happened.
+    const stored = try exec_session_plan.getPlan(alloc, &ctx.db, "sess_exec");
+    defer alloc.free(stored);
+    try exec_testing.expectEqualStrings("", stored);
+}
+
+// ─── Test 4 (regression): plan mentioning "error" text still succeeds ─────
+// The success payload echoes plan markdown in the `plan` field.
+test "execUpdatePlan: plan containing error-like text does not misfire" {
+    const alloc = exec_testing.allocator;
+    var ctx = try exec_setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const tcx = makeTestCtx(alloc, &ctx.db);
+    const tc = fakeToolCall("update_plan", "{\"content\":\"# Plan\\nHandle <error> case\\n- [ ] step\"}");
+
+    const result = try execUpdatePlan(tcx, tc);
+    defer if (result.output_allocated) alloc.free(result.output);
+
+    try exec_testing.expect(result.output_allocated);
+    const env4 = try std.json.parseFromSlice(std.json.Value, alloc, result.output, .{});
+    defer env4.deinit();
+    try exec_testing.expect(env4.value.object.get("success").?.bool);
+    try exec_testing.expectEqualStrings("# Plan\nHandle <error> case\n- [ ] step", env4.value.object.get("data").?.object.get("plan").?.string);
+
+    const stored = try exec_session_plan.getPlan(alloc, &ctx.db, "sess_exec");
+    defer alloc.free(stored);
+    try exec_testing.expectEqualStrings("# Plan\nHandle <error> case\n- [ ] step", stored);
+}
+
+// ─── Test 5 (regression): plan with error-like JSON text still succeeds ───
+// Even when the plan text contains an `"error":...`-looking fragment, the
+// payload is a success object without a top-level `error` string field, so
+test "execUpdatePlan: plan containing error-like JSON text still succeeds" {
+    const alloc = exec_testing.allocator;
+    var ctx = try exec_setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const tcx = makeTestCtx(alloc, &ctx.db);
+    const tc = fakeToolCall("update_plan", "{\"content\":\"# Plan\\n<error>oops</error>\\n- [ ] step\"}");
+
+    const result = try execUpdatePlan(tcx, tc);
+    defer if (result.output_allocated) alloc.free(result.output);
+
+    try exec_testing.expect(result.output_allocated);
+    const env5 = try std.json.parseFromSlice(std.json.Value, alloc, result.output, .{});
+    defer env5.deinit();
+    try exec_testing.expect(env5.value.object.get("success").?.bool);
+}
+

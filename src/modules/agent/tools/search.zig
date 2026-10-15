@@ -1193,7 +1193,7 @@ fn buildTruncationHint(allocator: std.mem.Allocator, result: SearchResult) !?[]c
 
 pub const search_tool_system_prompt =
     \\## Search Tool — Behavior
-    \\Use `search` for full-text code search. Always prefer this over `bash` with `rg`/`grep`.
+    \\Use `search` for full-text code  Always prefer this over `bash` with `rg`/`grep`.
     \\- Returns structured JSON with file paths + line numbers, respects `.gitignore`.
     \\- Use `word_boundary`, `literal`, `only_matching` flags as needed.
     \\- Narrow noisy trees with `glob` (e.g. `*.zig`) instead of post-filtering mentally.
@@ -1331,7 +1331,6 @@ test {
 
 const builtin = @import("builtin");
 const testing = std.testing;
-const search = @import("search.zig");
 
 // =============================================================================
 // Validation tests (no ripgrep invocation; run on all platforms)
@@ -1341,7 +1340,7 @@ test "search: empty pattern returns EmptyPattern error" {
     const allocator = testing.allocator;
     const io = testing.io;
 
-    const result = search.executeSearch(allocator, io, "/tmp", .{
+    const result = executeSearch(allocator, io, "/tmp", .{
         .pattern = "",
         .path = ".",
     });
@@ -1355,7 +1354,7 @@ test "search: pattern with NUL byte returns PatternContainsNulByte error" {
 
     const pattern_with_nul: []const u8 = &[_]u8{ 'f', 'o', 'o', 0, 'b', 'a', 'r' };
 
-    const result = search.executeSearch(allocator, io, "/tmp", .{
+    const result = executeSearch(allocator, io, "/tmp", .{
         .pattern = pattern_with_nul,
         .path = ".",
     });
@@ -1367,7 +1366,7 @@ test "search: max_output = 0 returns InvalidMaxOutput error" {
     const allocator = testing.allocator;
     const io = testing.io;
 
-    const result = search.executeSearch(allocator, io, "/tmp", .{
+    const result = executeSearch(allocator, io, "/tmp", .{
         .pattern = "hello",
         .path = ".",
         .max_output = 0,
@@ -1380,10 +1379,10 @@ test "search: max_output > 100MB ceiling returns MaxOutputTooLarge error" {
     const allocator = testing.allocator;
     const io = testing.io;
 
-    const result = search.executeSearch(allocator, io, "/tmp", .{
+    const result = executeSearch(allocator, io, "/tmp", .{
         .pattern = "hello",
         .path = ".",
-        .max_output = search.max_output_hard_limit + 1,
+        .max_output = max_output_hard_limit + 1,
     });
 
     try testing.expectError(error.MaxOutputTooLarge, result);
@@ -1393,7 +1392,7 @@ test "search: max_results = 0 returns InvalidMaxResults error" {
     const allocator = testing.allocator;
     const io = testing.io;
 
-    const result = search.executeSearch(allocator, io, "/tmp", .{
+    const result = executeSearch(allocator, io, "/tmp", .{
         .pattern = "hello",
         .path = ".",
         .max_results = 0,
@@ -1406,7 +1405,7 @@ test "search: head AND tail both set returns HeadAndTailMutuallyExclusive error"
     const allocator = testing.allocator;
     const io = testing.io;
 
-    const result = search.executeSearch(allocator, io, "/tmp", .{
+    const result = executeSearch(allocator, io, "/tmp", .{
         .pattern = "hello",
         .path = ".",
         .head = 5,
@@ -1420,7 +1419,7 @@ test "search: respect_ignore_files = false does NOT return a validation error" {
     const allocator = testing.allocator;
     const io = testing.io;
 
-    if (search.executeSearch(allocator, io, "/tmp", .{
+    if (executeSearch(allocator, io, "/tmp", .{
         .pattern = "anything",
         .path = ".",
         .respect_ignore_files = false,
@@ -1444,7 +1443,7 @@ test "search: word_boundary = true does NOT return a validation error" {
 
     // The word_boundary field is a flag, not a numeric limit — there's no
     // value that could fail up-front validation.
-    if (search.executeSearch(allocator, io, "/tmp", .{
+    if (executeSearch(allocator, io, "/tmp", .{
         .pattern = "anything",
         .path = ".",
         .word_boundary = true,
@@ -1463,7 +1462,7 @@ test "search: literal = true does NOT return a validation error" {
 
     // The literal field is a flag, not a numeric limit — there's no value
     // that could fail up-front validation.
-    if (search.executeSearch(allocator, io, "/tmp", .{
+    if (executeSearch(allocator, io, "/tmp", .{
         .pattern = "anything",
         .path = ".",
         .literal = true,
@@ -1482,7 +1481,7 @@ test "search: only_matching = true does NOT return a validation error" {
 
     // The only_matching field is a flag, not a numeric limit — there's no
     // value that could fail up-front validation.
-    if (search.executeSearch(allocator, io, "/tmp", .{
+    if (executeSearch(allocator, io, "/tmp", .{
         .pattern = "anything",
         .path = ".",
         .only_matching = true,
@@ -1535,7 +1534,7 @@ test "search: pattern starting with -- is NOT interpreted as rg flag" {
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "--help",
         .path = ".",
     });
@@ -1572,7 +1571,7 @@ test "search: pattern 'foo' in a dir with literal 'foo' finds it" {
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "foo",
         .path = ".",
     });
@@ -1596,7 +1595,7 @@ test "search: pattern with invalid regex returns RegexParseError" {
     });
 
     // Unmatched paren — rg should reject with a regex parse error.
-    const result = search.executeSearch(allocator, io, "/tmp", .{
+    const result = executeSearch(allocator, io, "/tmp", .{
         .pattern = "(unclosed",
         .path = &tmpdir.sub_path,
     });
@@ -1610,7 +1609,7 @@ test "search: path that doesn't exist returns PathError" {
     const allocator = testing.allocator;
     const io = testing.io;
 
-    const result = search.executeSearch(allocator, io, "/tmp", .{
+    const result = executeSearch(allocator, io, "/tmp", .{
         .pattern = "anything",
         .path = "/nonexistent/path/that/does/not/exist/12345",
     });
@@ -1624,7 +1623,7 @@ test "search: cwd that doesn't exist returns an error" {
     const allocator = testing.allocator;
     const io = testing.io;
 
-    const result = search.executeSearch(allocator, io, "/tmp", .{
+    const result = executeSearch(allocator, io, "/tmp", .{
         .pattern = "anything",
         .path = ".",
         .cwd = "/nonexistent/cwd/that/does/not/exist/12345",
@@ -1671,7 +1670,7 @@ test "search: binary snippet is sanitized to valid UTF-8" {
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "match_here",
         .path = ".",
         .max_output = 65536,
@@ -1720,7 +1719,7 @@ test "search: max_results cap honored" {
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "foo",
         .path = ".",
         .max_results = 5,
@@ -1759,7 +1758,7 @@ test "search: respect_ignore_files = true (default) skips .gitignored dirs" {
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, "/tmp", .{
+    var result = try executeSearch(allocator, io, "/tmp", .{
         .pattern = "MARKER_TOKEN_NODE_MODULES",
         .path = ".",
         .cwd = tmpdir_path,
@@ -1801,7 +1800,7 @@ test "search: respect_ignore_files = false searches .gitignored dirs" {
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, "/tmp", .{
+    var result = try executeSearch(allocator, io, "/tmp", .{
         .pattern = "MARKER_TOKEN_NODE_MODULES_FALSE",
         .path = ".",
         .cwd = tmpdir_path,
@@ -1853,7 +1852,7 @@ test "search: respect_ignore_files = false also un-respects .ignore / .rgignore"
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, "/tmp", .{
+    var result = try executeSearch(allocator, io, "/tmp", .{
         .pattern = "MARKER_TOKEN_IGNORE_FILE",
         .path = ".",
         .cwd = tmpdir_path,
@@ -1897,7 +1896,7 @@ test "search: word_boundary = true matches whole words only" {
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "foo",
         .path = ".",
         .word_boundary = true,
@@ -1933,7 +1932,7 @@ test "search: word_boundary = false (default) matches substrings" {
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "foo",
         .path = ".",
         // word_boundary explicitly false — same as omitting it
@@ -1966,7 +1965,7 @@ test "search: word_boundary works at start of file (offset 0)" {
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "foo",
         .path = ".",
         .word_boundary = true,
@@ -1996,7 +1995,7 @@ test "search: word_boundary works at end of file (no trailing newline)" {
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "world",
         .path = ".",
         .word_boundary = true,
@@ -2026,7 +2025,7 @@ test "search: word_boundary treats underscore as a WORD char (no match inside fo
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "foo",
         .path = ".",
         .word_boundary = true,
@@ -2057,7 +2056,7 @@ test "search: word_boundary treats hyphen as a boundary (matches foo-bar and foo
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "foo",
         .path = ".",
         .word_boundary = true,
@@ -2089,7 +2088,7 @@ test "search: word_boundary with punctuation boundaries matches each occurrence"
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "foo",
         .path = ".",
         .word_boundary = true,
@@ -2119,7 +2118,7 @@ test "search: word_boundary with multi-line file matches only the line containin
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "target",
         .path = ".",
         .word_boundary = true,
@@ -2155,7 +2154,7 @@ test "search: literal = true matches metacharacters literally" {
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "foo.bar",
         .path = ".",
         .literal = true,
@@ -2188,7 +2187,7 @@ test "search: literal = true does NOT fire RegexParseError for invalid regex pat
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    const result_or_err = search.executeSearch(allocator, io, tmpdir_path, .{
+    const result_or_err = executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "*invalid",
         .path = ".",
         .literal = true,
@@ -2228,7 +2227,7 @@ test "search: literal = false (default) treats metacharacters as regex" {
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "foo.bar",
         .path = ".",
         // literal omitted — defaults to false, rg treats "." as wildcard
@@ -2263,7 +2262,7 @@ test "search: literal = true matches backslashes literally" {
     // Pattern is the 3-byte literal "\bx" (backslash + b + x).
     const pattern_bs: []const u8 = &[_]u8{ '\\', 'b', 'x' };
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = pattern_bs,
         .path = ".",
         .literal = true,
@@ -2294,7 +2293,7 @@ test "search: literal = true matches combined regex special chars as opaque byte
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "(?:foo)+",
         .path = ".",
         .literal = true,
@@ -2324,7 +2323,7 @@ test "search: literal = true with unmatched bracket does NOT fire RegexParseErro
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "[unclosed",
         .path = ".",
         .literal = true,
@@ -2360,7 +2359,7 @@ test "search: literal = true with multi-byte UTF-8 pattern matches byte-for-byte
     // sequence explicit (c=0x63, a=0x61, f=0x66, é=0xC3 0xA9).
     const pattern_utf8: []const u8 = &[_]u8{ 'c', 'a', 'f', 0xC3, 0xA9 };
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = pattern_utf8,
         .path = ".",
         .literal = true,
@@ -2391,7 +2390,7 @@ test "search: literal = true combined with word_boundary = true matches bounded 
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "foo.bar",
         .path = ".",
         .literal = true,
@@ -2426,7 +2425,7 @@ test "search: only_matching = true strips surrounding context from snippet" {
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "needle",
         .path = ".",
         .only_matching = true,
@@ -2462,7 +2461,7 @@ test "search: only_matching = true with multiple submatches on same line joins t
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "alpha|beta",
         .path = ".",
         .only_matching = true,
@@ -2493,7 +2492,7 @@ test "search: only_matching = false (default) keeps surrounding context in snipp
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "needle",
         .path = ".",
     });
@@ -2524,7 +2523,7 @@ test "search: only_matching = true returns multiple match events for multi-line 
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "target",
         .path = ".",
         .only_matching = true,
@@ -2562,7 +2561,7 @@ test "search: only_matching = true combined with literal = true matches literal 
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "a.b",
         .path = ".",
         .literal = true,
@@ -2595,7 +2594,7 @@ test "search: only_matching = true combined with word_boundary = true matches wh
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "needle",
         .path = ".",
         .word_boundary = true,
@@ -2627,7 +2626,7 @@ test "search: only_matching = true with literal + word_boundary matches bounded 
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "foo.bar",
         .path = ".",
         .literal = true,
@@ -2672,7 +2671,7 @@ test "search: only_matching = true respects head slicing" {
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "needle",
         .path = ".",
         .head = 2,
@@ -2718,7 +2717,7 @@ test "search: only_matching = true respects max_results cap" {
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "needle",
         .path = ".",
         .max_results = 10,
@@ -2752,7 +2751,7 @@ test "search: only_matching = true with group_by_file = false renders text=needl
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "needle",
         .path = ".",
         .only_matching = true,
@@ -2762,7 +2761,7 @@ test "search: only_matching = true with group_by_file = false renders text=needl
 
     try testing.expectEqual(@as(usize, 3), result.matches.items.len);
 
-    const out = try search.search_result_to_json_flat(
+    const out = try search_result_to_json_flat(
         allocator,
         result,
         "needle",
@@ -2793,12 +2792,12 @@ test "search: only_matching = true with group_by_file = false renders text=needl
 test "search: search_result_to_json_flat with no matches emits JSON header" {
     const allocator = testing.allocator;
 
-    const result = search.SearchResult{
-        .matches = std.ArrayList(search.SearchMatch).empty,
+    const result = SearchResult{
+        .matches = std.ArrayList(SearchMatch).empty,
         .warning = "<warning>pattern not found</warning>",
     };
 
-    const out = try search.search_result_to_json_flat(
+    const out = try search_result_to_json_flat(
         allocator,
         result,
         "nonexistent_pattern",
@@ -2837,7 +2836,7 @@ test "search: executeSearch no-match warning includes the actual pattern and pat
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "needle_NOT_FOUND",
         .path = "empty.txt",
     });
@@ -2861,12 +2860,12 @@ test "search: search_result_to_json_grouped no-match carries pattern/path/warnin
     // Warning body now includes the pattern + path so the operator sees
     // what was searched even when narrow UIs truncate the header fields.
     // Body text is the durable source of truth.
-    const result = search.SearchResult{
-        .matches = std.ArrayList(search.SearchMatch).empty,
+    const result = SearchResult{
+        .matches = std.ArrayList(SearchMatch).empty,
         .warning = "<warning>no matches for pattern \"needle_NOT_FOUND\" in path \"/tmp/x\"</warning>",
     };
 
-    const out = try search.search_result_to_json_grouped(
+    const out = try search_result_to_json_grouped(
         allocator,
         result,
         "needle_NOT_FOUND",
@@ -2892,12 +2891,12 @@ test "search: search_result_to_json_grouped no-match carries pattern/path/warnin
 test "search: search_result_to_json_flat no-match carries pattern/path/warning fields" {
     const allocator = testing.allocator;
 
-    const result = search.SearchResult{
-        .matches = std.ArrayList(search.SearchMatch).empty,
+    const result = SearchResult{
+        .matches = std.ArrayList(SearchMatch).empty,
         .warning = "<warning>no matches for pattern \"foo\" in path \"bar\"</warning>",
     };
 
-    const out = try search.search_result_to_json_flat(
+    const out = try search_result_to_json_flat(
         allocator,
         result,
         "foo",
@@ -2917,21 +2916,21 @@ test "search: search_result_to_json_flat no-match carries pattern/path/warning f
 
 test "search: output truncation hint is serialized before result arrays" {
     const allocator = testing.allocator;
-    const result = search.SearchResult{
-        .matches = std.ArrayList(search.SearchMatch).empty,
+    const result = SearchResult{
+        .matches = std.ArrayList(SearchMatch).empty,
         .total_matches = 20,
         .truncated = true,
         .output_truncated = true,
         .output_bytes = 50_000,
     };
 
-    const grouped = try search.search_result_to_json_grouped(allocator, result, "foo", ".");
+    const grouped = try search_result_to_json_grouped(allocator, result, "foo", ".");
     defer allocator.free(grouped);
     const grouped_hint = std.mem.indexOf(u8, grouped, "\"truncated_hint\"").?;
     const grouped_files = std.mem.indexOf(u8, grouped, "\"files\"").?;
     try testing.expect(grouped_hint < grouped_files);
 
-    const flat = try search.search_result_to_json_flat(allocator, result, "foo", ".");
+    const flat = try search_result_to_json_flat(allocator, result, "foo", ".");
     defer allocator.free(flat);
     const flat_hint = std.mem.indexOf(u8, flat, "\"truncated_hint\"").?;
     const flat_matches = std.mem.indexOf(u8, flat, "\"matches\"").?;
@@ -2941,7 +2940,7 @@ test "search: output truncation hint is serialized before result arrays" {
 test "search: search_result_to_json_flat renders file/line/text per match" {
     const allocator = testing.allocator;
 
-    const matches = std.ArrayList(search.SearchMatch).empty;
+    const matches = std.ArrayList(SearchMatch).empty;
     var owned_matches = matches;
     defer {
         for (owned_matches.items) |m| {
@@ -2964,12 +2963,12 @@ test "search: search_result_to_json_flat renders file/line/text per match" {
         .snippet = try allocator.dupe(u8, "    pub fn hello() void {}"),
     });
 
-    const result = search.SearchResult{
+    const result = SearchResult{
         .matches = owned_matches,
         .warning = "",
     };
 
-    const out = try search.search_result_to_json_flat(
+    const out = try search_result_to_json_flat(
         allocator,
         result,
         "fn",
@@ -3002,12 +3001,12 @@ test "search: search_result_to_json_flat renders file/line/text per match" {
 test "search: search_result_to_json_grouped with no matches emits JSON header" {
     const allocator = testing.allocator;
 
-    const result = search.SearchResult{
-        .matches = std.ArrayList(search.SearchMatch).empty,
+    const result = SearchResult{
+        .matches = std.ArrayList(SearchMatch).empty,
         .warning = "<warning>pattern not found</warning>",
     };
 
-    const out = try search.search_result_to_json_grouped(
+    const out = try search_result_to_json_grouped(
         allocator,
         result,
         "anything",
@@ -3029,7 +3028,7 @@ test "search: search_result_to_json_grouped with no matches emits JSON header" {
 test "search: search_result_to_json_grouped renders files entries" {
     const allocator = testing.allocator;
 
-    const matches = std.ArrayList(search.SearchMatch).empty;
+    const matches = std.ArrayList(SearchMatch).empty;
     var owned_matches = matches;
     defer {
         for (owned_matches.items) |m| {
@@ -3046,12 +3045,12 @@ test "search: search_result_to_json_grouped renders files entries" {
         .snippet = try allocator.dupe(u8, "    const x = 1;"),
     });
 
-    const result = search.SearchResult{
+    const result = SearchResult{
         .matches = owned_matches,
         .warning = "",
     };
 
-    const out = try search.search_result_to_json_grouped(
+    const out = try search_result_to_json_grouped(
         allocator,
         result,
         "const",
@@ -3082,7 +3081,7 @@ test "search: timeout_ms=0 returns Timeout without spawning rg" {
     // worker forever. timeout_ms=0 must fail fast with error.Timeout before
     const allocator = testing.allocator;
     const io = testing.io;
-    const result = search.executeSearch(allocator, io, "/tmp", .{
+    const result = executeSearch(allocator, io, "/tmp", .{
         .pattern = "foo",
         .path = ".",
         .timeout_ms = 0,
@@ -3096,7 +3095,7 @@ test "search: bogus rg_binary returns RgNotFound (not generic PathError)" {
     // the LLM down the wrong path. A missing binary must be distinguishable.
     const allocator = testing.allocator;
     const io = testing.io;
-    const result = search.executeSearch(allocator, io, "/tmp", .{
+    const result = executeSearch(allocator, io, "/tmp", .{
         .pattern = "foo",
         .path = ".",
         .rg_binary = "/nonexistent-rg-binary-xyz-123",
@@ -3105,7 +3104,7 @@ test "search: bogus rg_binary returns RgNotFound (not generic PathError)" {
 }
 
 test "search: default search timeout is 30s" {
-    try testing.expectEqual(@as(u64, 30_000), search.default_search_timeout_ms);
+    try testing.expectEqual(@as(u64, 30_000), default_search_timeout_ms);
 }
 
 // =============================================================================
@@ -3142,7 +3141,7 @@ fn buildMatchingLines(allocator: std.mem.Allocator, count: u32, prefix: []const 
 }
 
 test "search: head = 0 returns InvalidHeadTail without spawning rg" {
-    const result = search.executeSearch(testing.allocator, testing.io, "/tmp", .{
+    const result = executeSearch(testing.allocator, testing.io, "/tmp", .{
         .pattern = "foo",
         .path = ".",
         .head = 0,
@@ -3151,7 +3150,7 @@ test "search: head = 0 returns InvalidHeadTail without spawning rg" {
 }
 
 test "search: tail = 0 returns InvalidHeadTail without spawning rg" {
-    const result = search.executeSearch(testing.allocator, testing.io, "/tmp", .{
+    const result = executeSearch(testing.allocator, testing.io, "/tmp", .{
         .pattern = "foo",
         .path = ".",
         .tail = 0,
@@ -3186,7 +3185,7 @@ test "search: max_output overflow returns a successful partial result" {
     var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const tmpdir_path = try resolveTmpDir(tmpdir.dir, io, &path_buf);
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "FOUND_MARKER",
         .path = ".",
         .max_results = 100,
@@ -3202,9 +3201,9 @@ test "search: max_output overflow returns a successful partial result" {
     try testing.expect(result.matches.items.len > 0);
     try testing.expectEqualStrings("", result.warning);
 
-    const grouped = try search.search_result_to_json_grouped(allocator, result, "FOUND_MARKER", ".");
+    const grouped = try search_result_to_json_grouped(allocator, result, "FOUND_MARKER", ".");
     defer allocator.free(grouped);
-    const flat = try search.search_result_to_json_flat(allocator, result, "FOUND_MARKER", ".");
+    const flat = try search_result_to_json_flat(allocator, result, "FOUND_MARKER", ".");
     defer allocator.free(flat);
 
     for ([_][]const u8{ grouped, flat }) |json_text| {
@@ -3233,7 +3232,7 @@ test "search: max_output cap before the first complete record is not a no-match"
     var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const tmpdir_path = try resolveTmpDir(tmpdir.dir, io, &path_buf);
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "NEEDLE",
         .path = ".",
         .max_output = 1,
@@ -3246,7 +3245,7 @@ test "search: max_output cap before the first complete record is not a no-match"
     try testing.expectEqual(@as(usize, 1), result.total_matches);
     try testing.expectEqualStrings("", result.warning);
 
-    const out = try search.search_result_to_json_grouped(allocator, result, "NEEDLE", ".");
+    const out = try search_result_to_json_grouped(allocator, result, "NEEDLE", ".");
     defer allocator.free(out);
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, out, .{});
     defer parsed.deinit();
@@ -3270,7 +3269,7 @@ test "search: max_results truncation is reported (returned/total/truncated/trunc
     var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const tmpdir_path = try resolveTmpDir(tmpdir.dir, io, &path_buf);
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "foo",
         .path = ".",
         .max_results = 3,
@@ -3282,7 +3281,7 @@ test "search: max_results truncation is reported (returned/total/truncated/trunc
     try testing.expectEqual(@as(usize, 20), result.total_matches);
     try testing.expect(result.truncated);
 
-    const out = try search.search_result_to_json_grouped(allocator, result, "foo", ".");
+    const out = try search_result_to_json_grouped(allocator, result, "foo", ".");
     defer allocator.free(out);
 
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, out, .{});
@@ -3308,7 +3307,7 @@ test "search: complete result reports truncated=false and null truncated_hint" {
     var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const tmpdir_path = try resolveTmpDir(tmpdir.dir, io, &path_buf);
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "foo",
         .path = ".",
     });
@@ -3317,7 +3316,7 @@ test "search: complete result reports truncated=false and null truncated_hint" {
     try testing.expect(!result.truncated);
     try testing.expectEqual(@as(usize, 1), result.total_matches);
 
-    const out = try search.search_result_to_json_grouped(allocator, result, "foo", ".");
+    const out = try search_result_to_json_grouped(allocator, result, "foo", ".");
     defer allocator.free(out);
 
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, out, .{});
@@ -3345,7 +3344,7 @@ test "search: head keeps the FIRST N matches and reports the truncation" {
     var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const tmpdir_path = try resolveTmpDir(tmpdir.dir, io, &path_buf);
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "foo",
         .path = ".",
         .head = 2,
@@ -3378,7 +3377,7 @@ test "search: tail keeps the LAST N matches of the whole search (aliasing-panic 
     // tail = 8 with 10 matches is the exact shape that used to abort: the
     // post-hoc slice shifted the kept rows down with an aliasing @memcpy
     // (src = items[2..], dst = items[0..]), which Zig 0.16 rejects outright.
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "foo",
         .path = ".",
         .tail = 8,
@@ -3410,7 +3409,7 @@ test "search: tail scans past max_results (last N is not last-N-of-the-first-max
     var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const tmpdir_path = try resolveTmpDir(tmpdir.dir, io, &path_buf);
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "foo",
         .path = ".",
         .tail = 2,
@@ -3439,7 +3438,7 @@ test "search: glob filter narrows the matches to matching file names" {
     var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const tmpdir_path = try resolveTmpDir(tmpdir.dir, io, &path_buf);
 
-    var only_zig = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var only_zig = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "GLOB_MARKER",
         .path = ".",
         .glob = "*.zig",
@@ -3449,7 +3448,7 @@ test "search: glob filter narrows the matches to matching file names" {
     try testing.expectEqual(@as(usize, 1), only_zig.matches.items.len);
     try testing.expectEqualStrings("a.zig", stripDotSlash(only_zig.matches.items[0].file));
 
-    var none = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var none = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "GLOB_MARKER",
         .path = ".",
         .glob = "*.rs",
@@ -3460,7 +3459,7 @@ test "search: glob filter narrows the matches to matching file names" {
 }
 
 test "search: glob with a NUL byte returns GlobContainsNulByte without spawning rg" {
-    const result = search.executeSearch(testing.allocator, testing.io, "/tmp", .{
+    const result = executeSearch(testing.allocator, testing.io, "/tmp", .{
         .pattern = "foo",
         .path = ".",
         .glob = &[_]u8{ '*', 0, 'z' },
@@ -3484,7 +3483,7 @@ test "search: hidden = true reaches dotdirs, default does not" {
     var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const tmpdir_path = try resolveTmpDir(tmpdir.dir, io, &path_buf);
 
-    var default_run = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var default_run = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "HIDDEN_MARKER",
         .path = ".",
     });
@@ -3492,7 +3491,7 @@ test "search: hidden = true reaches dotdirs, default does not" {
     try testing.expectEqual(@as(usize, 1), default_run.matches.items.len);
     try testing.expectEqualStrings("visible.txt", stripDotSlash(default_run.matches.items[0].file));
 
-    var with_hidden = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var with_hidden = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "HIDDEN_MARKER",
         .path = ".",
         .hidden = true,
@@ -3520,7 +3519,7 @@ test "search: respect_ignore_files = false does NOT reach hidden dirs (doc claim
     // --no-ignore disables ignore-FILE filtering only; rg still skips hidden
     // entries. The tool description used to claim `.git/` becomes searchable
     // with respect_ignore_files=false — it does not.
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "CI_MARKER",
         .path = ".",
         .respect_ignore_files = false,
@@ -3550,14 +3549,14 @@ test "search: snippets need no escaping in JSON (raw text, one files entry)" {
     var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const tmpdir_path = try resolveTmpDir(tmpdir.dir, io, &path_buf);
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = ".",
         .path = ".",
     });
     defer result.deinit(allocator);
     try testing.expectEqual(@as(usize, 3), result.matches.items.len);
 
-    const out = try search.search_result_to_json_grouped(allocator, result, ".", ".");
+    const out = try search_result_to_json_grouped(allocator, result, ".", ".");
     defer allocator.free(out);
 
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, out, .{});
@@ -3598,14 +3597,14 @@ test "search: pattern with quotes rides as a raw JSON string" {
     const tmpdir_path = try resolveTmpDir(tmpdir.dir, io, &path_buf);
 
     const pattern = "\"hello\"";
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = pattern,
         .path = ".",
     });
     defer result.deinit(allocator);
     try testing.expectEqual(@as(usize, 1), result.matches.items.len);
 
-    const out = try search.search_result_to_json_grouped(allocator, result, pattern, ".");
+    const out = try search_result_to_json_grouped(allocator, result, pattern, ".");
     defer allocator.free(out);
 
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, out, .{});
@@ -3639,7 +3638,7 @@ test "search: long lines are windowed around the match (default cap)" {
     var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const tmpdir_path = try resolveTmpDir(tmpdir.dir, io, &path_buf);
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "NEEDLE",
         .path = ".",
     });
@@ -3649,7 +3648,7 @@ test "search: long lines are windowed around the match (default cap)" {
     const snippet = result.matches.items[0].snippet;
     // Windowed (cap + the two "..." markers), still containing the match and
     // marked on both sides so the reader knows text was elided.
-    try testing.expect(snippet.len <= search.default_snippet_max_chars + 8);
+    try testing.expect(snippet.len <= default_snippet_max_chars + 8);
     try testing.expect(std.mem.indexOf(u8, snippet, "NEEDLE") != null);
     try testing.expect(std.mem.startsWith(u8, snippet, "..."));
     try testing.expect(std.mem.endsWith(u8, snippet, "..."));
@@ -3678,7 +3677,7 @@ test "search: snippet_max_chars = 0 disables the window" {
     var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const tmpdir_path = try resolveTmpDir(tmpdir.dir, io, &path_buf);
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "NEEDLE",
         .path = ".",
         .snippet_max_chars = 0,
@@ -3719,7 +3718,7 @@ test "search: windowing never splits a multi-byte UTF-8 sequence" {
     var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const tmpdir_path = try resolveTmpDir(tmpdir.dir, io, &path_buf);
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "NEEDLE",
         .path = ".",
     });
@@ -3746,7 +3745,7 @@ test "search: grouped output preserves the collector's file order (was hash orde
     var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const tmpdir_path = try resolveTmpDir(tmpdir.dir, io, &path_buf);
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "ORDER_MARKER",
         .path = ".",
     });
@@ -3768,7 +3767,7 @@ test "search: grouped output preserves the collector's file order (was hash orde
     }
     try testing.expectEqual(@as(usize, 3), expected_len);
 
-    const out = try search.search_result_to_json_grouped(allocator, result, "ORDER_MARKER", ".");
+    const out = try search_result_to_json_grouped(allocator, result, "ORDER_MARKER", ".");
     defer allocator.free(out);
 
     // Each files entry must appear in that same order (a StringHashMap
@@ -3801,13 +3800,13 @@ test "search: <file> total= is matched lines for this search, not the file's lin
     var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const tmpdir_path = try resolveTmpDir(tmpdir.dir, io, &path_buf);
 
-    var result = try search.executeSearch(allocator, io, tmpdir_path, .{
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "foo",
         .path = ".",
     });
     defer result.deinit(allocator);
 
-    const out = try search.search_result_to_json_grouped(allocator, result, "foo", ".");
+    const out = try search_result_to_json_grouped(allocator, result, "foo", ".");
     defer allocator.free(out);
 
     // rg's stats.matched_lines for this search (2) — NOT the file's 6 lines.
@@ -3828,7 +3827,7 @@ test "search: tool schema documents the new params and drops the stale claims" {
     var saw_hidden = false;
     var saw_glob = false;
     var saw_snippet_cap = false;
-    for (search.search_tool.function.parameters.properties) |prop| {
+    for (search_tool.function.parameters.properties) |prop| {
         if (std.mem.eql(u8, prop.name, "hidden")) saw_hidden = true;
         if (std.mem.eql(u8, prop.name, "glob")) saw_glob = true;
         if (std.mem.eql(u8, prop.name, "snippet_max_chars")) saw_snippet_cap = true;
@@ -3843,7 +3842,7 @@ test "search: tool schema documents the new params and drops the stale claims" {
     try testing.expect(saw_glob);
     try testing.expect(saw_snippet_cap);
 
-    const desc = search.search_tool.function.description;
+    const desc = search_tool.function.description;
     // Stale claims retired: `s` is windowed (not "~100 chars"), and
     // respect_ignore_files=false does NOT reach .git/.
     try testing.expect(std.mem.indexOf(u8, desc, "~100 chars") == null);
@@ -3853,9 +3852,339 @@ test "search: tool schema documents the new params and drops the stale claims" {
     try testing.expect(std.mem.indexOf(u8, desc, "output_truncated") != null);
     try testing.expect(std.mem.indexOf(u8, desc, "snippet_max_chars") != null);
     var max_output_description: ?[]const u8 = null;
-    for (search.search_tool.function.parameters.properties) |prop| {
+    for (search_tool.function.parameters.properties) |prop| {
         if (std.mem.eql(u8, prop.name, "max_output")) max_output_description = prop.description;
     }
     try testing.expect(max_output_description != null);
     try testing.expect(std.mem.indexOf(u8, max_output_description.?, "truncated_hint") != null);
 }
+
+// Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
+// The tool definition above and its executor below live in ONE file.
+
+const pabrikcore = @import("pabrikcore");
+const tools = @import("../../../agentic_loop/tools.zig");
+const ToolExecContext = tools.ToolExecContext;
+const ToolExecResult = tools.ToolExecResult;
+const agent = pabrikcore.agent;
+const search_tool_mod = pabrikcore.search_tool;
+const wrapToolOutput = tools.wrapToolOutput;
+const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+const path_validate = @import("helpers").path_validate;
+/// Parse the model-provided JSON and normalize zero-valued optional head/tail
+/// placeholders.
+fn parseSearchInput(allocator: std.mem.Allocator, args: []const u8) !std.json.Parsed(search_tool_mod.SearchInput) {
+    var raw = try std.json.parseFromSlice(
+        std.json.Value,
+        allocator,
+        args,
+        .{ .allocate = .alloc_always },
+    );
+    defer raw.deinit();
+
+    if (raw.value == .object) {
+        for ([_][]const u8{ "head", "tail" }) |field_name| {
+            const value = raw.value.object.getPtr(field_name) orelse continue;
+            if (value.* == .integer and value.*.integer == 0) {
+                value.* = .null;
+            }
+        }
+    }
+
+    return std.json.parseFromValue(
+        search_tool_mod.SearchInput,
+        allocator,
+        raw.value,
+        .{ .ignore_unknown_fields = true },
+    );
+}
+
+pub fn execSearch(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
+    const args = tc.function.arguments;
+    const args_to_parse: []const u8 = if (args.len == 0) "{}" else args;
+
+    const parsed = parseSearchInput(ctx.allocator, args_to_parse) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "search", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer parsed.deinit();
+
+    // `cwd` is REQUIRED on every path-taking tool: it is the directory this
+    // call works in, and it is ALSO the directory ripgrep is spawned in (see
+    // `executeSearch`'s `cwd` argument) — the two used to be able to
+    const cwd = parsed.value.cwd orelse "";
+    path_validate.validateCwd(cwd) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "search", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    const path_abs = try path_validate.resolveAgainstCwd(ctx.allocator, cwd, parsed.value.path);
+    defer ctx.allocator.free(path_abs);
+
+    // rg receives the RESOLVED path, so its own cwd cannot reinterpret it.
+    var input = parsed.value;
+    input.path = path_abs;
+    input.cwd = cwd;
+
+    var search_result = search_tool_mod.executeSearch(ctx.allocator, ctx.io, cwd, input) catch |err| {
+        // Map domain errors to LLM-friendly messages. A normal stdout
+        // max_output overflow no longer appears here: executeSearch returns
+        // a successful SearchResult with output_truncated metadata instead.
+        var owned_err_msg: ?[]const u8 = null;
+        defer if (owned_err_msg) |msg| ctx.allocator.free(msg);
+        const err_msg: []const u8 = blk: {
+            switch (err) {
+                error.OutputReadFailed => break :blk "could not capture the search output stream — retry; if it persists, narrow the path or use a smaller result window",
+                error.StderrTooLong => break :blk "ripgrep diagnostics exceeded the output limit — narrow the path or use a more specific pattern to reduce diagnostics",
+                error.EmptyPattern => break :blk "search pattern was empty — pass a non-empty pattern (this is a caller bug, not 'no match')",
+                error.PatternContainsNulByte => break :blk "search pattern contained a NUL (0x00) byte — patterns must be valid UTF-8 with no embedded NULs",
+                error.InvalidMaxOutput => break :blk "max_output must be > 0 (use 1048576 for the 1MB default)",
+                error.MaxOutputTooLarge => break :blk "max_output exceeded the 100MB hard ceiling — narrow your search path or use a more specific pattern to reduce output",
+                error.InvalidMaxResults => break :blk "max_results must be > 0 (use the default of 50 if you don't need a specific cap)",
+                error.HeadAndTailMutuallyExclusive => break :blk "head and tail are mutually exclusive — set only one and omit the other",
+                error.InvalidHeadTail => break :blk "head/tail must be > 0 — omit the flag (or use max_results) instead of passing 0, which would look like a no-match",
+                error.GlobContainsNulByte => break :blk "the glob filter contained a NUL (0x00) byte — globs must be valid UTF-8 with no embedded NULs",
+                error.RegexParseError => break :blk "search pattern is not a valid regex — check for unmatched parentheses, unescaped metacharacters, or an invalid character class",
+                error.PathError => {
+                    // Naming the path AND the cwd it was resolved against is
+                    // the whole fix for the failure this branch used to
+                    // report: a bare "could not access search path" named
+                    owned_err_msg = try std.fmt.allocPrint(
+                        ctx.allocator,
+                        "could not access search path \"{s}\" from cwd \"{s}\" — verify both exist and are readable. `cwd` is the directory ripgrep runs in; `path` is resolved against it.",
+                        .{ path_abs, cwd },
+                    );
+                    break :blk owned_err_msg.?;
+                },
+                error.Timeout => break :blk "search timed out (30s default) — narrow your search path, use a more specific pattern, or pass a larger timeout_ms",
+                error.RgNotFound => break :blk "ripgrep (rg) is not installed or not on PATH — install it first, then retry the search",
+                else => {},
+            }
+            const msg = error_explain.explain(ctx.allocator, err, null) catch {
+                break :blk "search failed with an unknown error";
+            };
+            owned_err_msg = msg;
+            break :blk msg;
+        };
+        const output = try wrapToolOutput(ctx.allocator, "search", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer search_result.deinit(ctx.allocator);
+
+    // Honor group_by_file flag — use the flat variant when requested. Both
+    // formatters carry the same truncation metadata, including a successful
+    // partial result when max_output was reached.
+    const inner = if (parsed.value.group_by_file)
+        try search_tool_mod.search_result_to_json_grouped(
+            ctx.allocator,
+            search_result,
+            parsed.value.pattern,
+            parsed.value.path,
+        )
+    else
+        try search_tool_mod.search_result_to_json_flat(
+            ctx.allocator,
+            search_result,
+            parsed.value.pattern,
+            parsed.value.path,
+        );
+    defer ctx.allocator.free(inner);
+    const output = try wrapToolOutput(ctx.allocator, "search", tc.function.arguments, true, null, inner);
+    return ToolExecResult{ .output = output, .output_allocated = true };
+}
+
+test "search JSON parser treats a zero-valued unused head/tail as omitted" {
+    const args =
+        \\{"pattern":"Open chat in new tab","path":"/tmp/example","max_results":100,
+        \\ "head":100,"tail":0,"max_output":20000,"group_by_file":true,
+        \\ "respect_ignore_files":true,"word_boundary":false,"literal":true,
+        \\ "only_matching":false,"snippet_max_chars":300,"hidden":false,
+        \\ "glob":"*.{vue,ts,tsx,js}","timeout_ms":30000}
+    ;
+
+    var parsed = try parseSearchInput(std.testing.allocator, args);
+    defer parsed.deinit();
+
+    try std.testing.expectEqual(@as(usize, 100), parsed.value.head.?);
+    try std.testing.expect(parsed.value.tail == null);
+}
+
+test "TDD: execSearch accepts head=100 with tail=0 and returns a successful match envelope" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    const io = std.testing.io;
+
+    var tmpdir = std.testing.tmpDir(.{});
+    defer tmpdir.cleanup();
+    try tmpdir.dir.writeFile(io, .{
+        .sub_path = "open-chat.txt",
+        .data = "Open chat in new tab\nOpen chat in new tab again\n",
+    });
+
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const path_len = try tmpdir.dir.realPath(io, &path_buf);
+    const tmpdir_path: []const u8 = path_buf[0..path_len];
+
+    // This is the model-call shape from the failing UI request: head is
+    // selected, while the unused optional tail is emitted as 0.
+    const args_json = try std.json.Stringify.valueAlloc(allocator, .{
+        .pattern = "Open chat in new tab",
+        .path = ".",
+        // `cwd` is required: the directory this call works in, and the base
+        // `path` (here ".") resolves against.
+        .cwd = tmpdir_path,
+        .max_results = 100,
+        .head = 100,
+        .tail = 0,
+        .max_output = 20_000,
+        .group_by_file = true,
+        .respect_ignore_files = true,
+        .word_boundary = false,
+        .literal = true,
+        .only_matching = false,
+        .snippet_max_chars = 300,
+        .hidden = false,
+        .glob = "*.txt",
+        .timeout_ms = 30_000,
+    }, .{});
+
+    var dummy_temperature: f32 = 0.0;
+    var dummy_thinking: bool = false;
+    const ctx = ToolExecContext{
+        .allocator = allocator,
+        .io = io,
+        .db = undefined,
+        .logger = undefined,
+        .session_id = "test-session",
+        .model = "test-model",
+        .cwd = tmpdir_path,
+        .api_key = "test",
+        .base_url = "test",
+        .config = undefined,
+        .agent_temperature = &dummy_temperature,
+        .is_thinking = &dummy_thinking,
+        .environment = null,
+    };
+    const tool_call = agent.ToolCall{
+        .id = "call-search-tail-zero",
+        .type = "function",
+        .function = .{ .name = "search", .arguments = args_json },
+    };
+
+    // Before zero-placeholder normalization, this call reached executeSearch
+    // with both optionals non-null and returned success=false with
+    // HeadAndTailMutuallyExclusive. This assertion is the red/green regression.
+    const exec_result = try execSearch(ctx, tool_call);
+    defer exec_result.deinit(allocator);
+
+    var envelope = try std.json.parseFromSlice(std.json.Value, allocator, exec_result.output, .{});
+    defer envelope.deinit();
+    const root = envelope.value.object;
+    const success = root.get("success").?.bool;
+    if (!success) {
+        const error_value = root.get("error").?;
+        if (error_value == .string and std.mem.indexOf(u8, error_value.string, "ripgrep (rg) is not installed") != null) return;
+    }
+
+    try std.testing.expect(success);
+    try std.testing.expect(root.get("error").? == .null);
+    const data = root.get("data").?.object;
+    try std.testing.expectEqual(@as(i64, 2), data.get("returned").?.integer);
+    const files = data.get("files").?.array.items;
+    try std.testing.expectEqual(@as(usize, 1), files.len);
+    const matches = files[0].object.get("matches").?.array.items;
+    try std.testing.expectEqual(@as(usize, 2), matches.len);
+    try std.testing.expectEqual(@as(i64, 1), matches[0].object.get("line").?.integer);
+    try std.testing.expectEqual(@as(i64, 2), matches[1].object.get("line").?.integer);
+}
+
+test "execSearch returns success for an oversized stdout search with a truncation hint" {
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
+    var tmpdir = std.testing.tmpDir(.{});
+    defer tmpdir.cleanup();
+    try tmpdir.dir.writeFile(io, .{
+        .sub_path = "large.txt",
+        .data = "FOUND_MARKER line\nFOUND_MARKER again\n",
+    });
+
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const path_len = try tmpdir.dir.realPath(io, &path_buf);
+    const tmpdir_path: []const u8 = path_buf[0..path_len];
+    const args_json = try std.json.Stringify.valueAlloc(allocator, .{
+        .pattern = "FOUND_MARKER",
+        .path = ".",
+        .cwd = tmpdir_path,
+        .max_output = 1,
+        .group_by_file = true,
+        .literal = true,
+    }, .{});
+    defer allocator.free(args_json);
+
+    var dummy_temperature: f32 = 0.0;
+    var dummy_thinking: bool = false;
+    const ctx = ToolExecContext{
+        .allocator = allocator,
+        .io = io,
+        .db = undefined,
+        .logger = undefined,
+        .session_id = "test-session",
+        .model = "test-model",
+        .cwd = tmpdir_path,
+        .api_key = "test",
+        .base_url = "test",
+        .config = undefined,
+        .agent_temperature = &dummy_temperature,
+        .is_thinking = &dummy_thinking,
+        .environment = null,
+    };
+    const tool_call = agent.ToolCall{
+        .id = "call-search-output-cap",
+        .type = "function",
+        .function = .{ .name = "search", .arguments = args_json },
+    };
+
+    const exec_result = try execSearch(ctx, tool_call);
+    defer exec_result.deinit(allocator);
+    var envelope = try std.json.parseFromSlice(std.json.Value, allocator, exec_result.output, .{});
+    defer envelope.deinit();
+    const root = envelope.value.object;
+    if (!root.get("success").?.bool) {
+        const error_value = root.get("error").?;
+        if (error_value == .string and std.mem.indexOf(u8, error_value.string, "ripgrep (rg) is not installed") != null) return;
+    }
+    try std.testing.expect(root.get("success").?.bool);
+    try std.testing.expect(root.get("error").? == .null);
+    const data = root.get("data").?.object;
+    try std.testing.expect(data.get("truncated").?.bool);
+    try std.testing.expect(data.get("output_truncated").?.bool);
+    try std.testing.expect(std.mem.indexOf(u8, data.get("truncated_hint").?.string, "max_output") != null);
+    try std.testing.expect(std.mem.indexOf(u8, exec_result.output, "Search output exceeded max_output" ++ " limit") == null);
+}
+
+test "search JSON parser lets head with tail=0 reach execution as head-only" {
+    var parsed = try parseSearchInput(std.testing.allocator,
+        \\{"pattern":"needle","path":".","head":100,"tail":0,"timeout_ms":0}
+    );
+    defer parsed.deinit();
+
+    try std.testing.expectError(
+        error.Timeout,
+        search_tool_mod.executeSearch(std.testing.allocator, std.testing.io, "/tmp", parsed.value),
+    );
+}
+
+test "search JSON parser preserves positive head and tail for strict validation" {
+    var parsed = try parseSearchInput(std.testing.allocator,
+        \\{"pattern":"needle","path":".","head":5,"tail":5}
+    );
+    defer parsed.deinit();
+
+    try std.testing.expectEqual(@as(usize, 5), parsed.value.head.?);
+    try std.testing.expectEqual(@as(usize, 5), parsed.value.tail.?);
+}
+

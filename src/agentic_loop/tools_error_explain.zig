@@ -1,5 +1,5 @@
 //! Model-facing explanations for the errors that reach a tool envelope. Every
-//! `tools_exec_*.zig` adapter used to render a failure as `<tool> failed:
+//! An exec adapter used to render a failure as `<tool> failed:
 //! <@errorName>`.
 
 const std = @import("std");

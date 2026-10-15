@@ -379,7 +379,6 @@ pub const KanbanMoveOutput = struct {
 };
 
 const testing = std.testing;
-const kanban_move_task = @import("kanban_move_task.zig");
 const kanban_model = pabrikcore.ai_mod.kanban_model;
 fn contains(haystack: []const u8, needle: []const u8) bool {
     return std.mem.indexOf(u8, haystack, needle) != null;
@@ -389,9 +388,9 @@ fn contains(haystack: []const u8, needle: []const u8) bool {
 
 test "errorJSON on missing field returns parsed error payload" {
     const alloc = testing.allocator;
-    const json = try kanban_move_task.errorJSON(alloc, "Missing required field: workspace_id");
+    const json = try errorJSON(alloc, "Missing required field: workspace_id");
     defer alloc.free(json);
-    const parsed = try std.json.parseFromSlice(kanban_move_task.KanbanMoveOutput, alloc, json, .{ .allocate = .alloc_always });
+    const parsed = try std.json.parseFromSlice(KanbanMoveOutput, alloc, json, .{ .allocate = .alloc_always });
     defer parsed.deinit();
     try std.testing.expect(!parsed.value.success);
     try std.testing.expectEqualStrings("Missing required field: workspace_id", parsed.value.@"error" orelse "");
@@ -399,7 +398,7 @@ test "errorJSON on missing field returns parsed error payload" {
 
 test "successJSON renders all fields, parsed" {
     const alloc = testing.allocator;
-    const json = try kanban_move_task.successJSON(
+    const json = try successJSON(
         alloc,
         "task_123",
         "My task",
@@ -408,7 +407,7 @@ test "successJSON renders all fields, parsed" {
         2,
     );
     defer alloc.free(json);
-    const parsed = try std.json.parseFromSlice(kanban_move_task.KanbanMoveOutput, alloc, json, .{ .allocate = .alloc_always });
+    const parsed = try std.json.parseFromSlice(KanbanMoveOutput, alloc, json, .{ .allocate = .alloc_always });
     defer parsed.deinit();
     try std.testing.expect(parsed.value.success);
     try std.testing.expectEqualStrings("task_123", parsed.value.task_id orelse "");
@@ -421,7 +420,7 @@ test "successJSON renders all fields, parsed" {
 
 test "successJSON keeps raw characters, parsed" {
     const alloc = testing.allocator;
-    const json = try kanban_move_task.successJSON(
+    const json = try successJSON(
         alloc,
         "task_&x",
         "<fancy>",
@@ -431,7 +430,7 @@ test "successJSON keeps raw characters, parsed" {
     );
     defer alloc.free(json);
     // Raw text needs no escaping in JSON — parse and compare verbatim.
-    const parsed = try std.json.parseFromSlice(kanban_move_task.KanbanMoveOutput, alloc, json, .{ .allocate = .alloc_always });
+    const parsed = try std.json.parseFromSlice(KanbanMoveOutput, alloc, json, .{ .allocate = .alloc_always });
     defer parsed.deinit();
     try std.testing.expectEqualStrings("task_&x", parsed.value.task_id orelse "");
     try std.testing.expectEqualStrings("<fancy>", parsed.value.task_name orelse "");
@@ -510,8 +509,8 @@ test "findColumnsByName case-insensitive match" {
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const matches = try kanban_move_task.findColumnsByName(alloc, &s.db, "item_1", "DONE");
-    defer kanban_move_task.freeColumnMatches(alloc, matches);
+    const matches = try findColumnsByName(alloc, &s.db, "item_1", "DONE");
+    defer freeColumnMatches(alloc, matches);
     try testing.expectEqual(@as(usize, 1), matches.len);
     try testing.expectEqualStrings("col_done", matches[0].id);
     try testing.expectEqualStrings("done", matches[0].name);
@@ -523,8 +522,8 @@ test "findColumnsByName returns empty when no match" {
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const matches = try kanban_move_task.findColumnsByName(alloc, &s.db, "item_1", "nonexistent");
-    defer kanban_move_task.freeColumnMatches(alloc, matches);
+    const matches = try findColumnsByName(alloc, &s.db, "item_1", "nonexistent");
+    defer freeColumnMatches(alloc, matches);
     try testing.expectEqual(@as(usize, 0), matches.len);
 }
 
@@ -534,8 +533,8 @@ test "findColumnsByName trims whitespace" {
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const matches = try kanban_move_task.findColumnsByName(alloc, &s.db, "item_1", "  done  ");
-    defer kanban_move_task.freeColumnMatches(alloc, matches);
+    const matches = try findColumnsByName(alloc, &s.db, "item_1", "  done  ");
+    defer freeColumnMatches(alloc, matches);
     try testing.expectEqual(@as(usize, 1), matches.len);
     try testing.expectEqualStrings("done", matches[0].name);
 }
@@ -546,8 +545,8 @@ test "findColumnsByName matches 'in progress' with space" {
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const matches = try kanban_move_task.findColumnsByName(alloc, &s.db, "item_1", "In Progress");
-    defer kanban_move_task.freeColumnMatches(alloc, matches);
+    const matches = try findColumnsByName(alloc, &s.db, "item_1", "In Progress");
+    defer freeColumnMatches(alloc, matches);
     try testing.expectEqual(@as(usize, 1), matches.len);
     try testing.expectEqualStrings("col_ip", matches[0].id);
 }
@@ -558,17 +557,17 @@ test "executeKanbanMoveTaskToJSON returns success JSON on valid move" {
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const input = kanban_move_task.KanbanMoveTaskInput{
+    const input = KanbanMoveTaskInput{
         .workspace_id = "ws_1",
         .item_id = "item_1",
         .task_id = "t1",
         .target_column_id = "col_done",
         .position = 0,
     };
-    const json = try kanban_move_task.executeKanbanMoveTaskToJSON(alloc, &s.db, input);
+    const json = try executeKanbanMoveTaskToJSON(alloc, &s.db, input);
     defer alloc.free(json);
 
-    const parsed = try std.json.parseFromSlice(kanban_move_task.KanbanMoveOutput, alloc, json, .{ .allocate = .alloc_always });
+    const parsed = try std.json.parseFromSlice(KanbanMoveOutput, alloc, json, .{ .allocate = .alloc_always });
     defer parsed.deinit();
     try std.testing.expect(parsed.value.success);
     try std.testing.expectEqualStrings("t1", parsed.value.task_id orelse "");
@@ -583,7 +582,7 @@ test "executeKanbanMoveTaskToJSON resolves column name to id" {
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const input = kanban_move_task.KanbanMoveTaskInput{
+    const input = KanbanMoveTaskInput{
         .workspace_id = "ws_1",
         .item_id = "item_1",
         .task_id = "t1",
@@ -591,7 +590,7 @@ test "executeKanbanMoveTaskToJSON resolves column name to id" {
         .target_column_name = "DONE", // case-insensitive match against "done"
         .position = 0,
     };
-    const json = try kanban_move_task.executeKanbanMoveTaskToJSON(alloc, &s.db, input);
+    const json = try executeKanbanMoveTaskToJSON(alloc, &s.db, input);
     defer alloc.free(json);
     try testing.expect(contains(json, "\"success\":true"));
     try testing.expect(contains(json, "\"column_id\":\"col_done\""));
@@ -603,13 +602,13 @@ test "executeKanbanMoveTaskToJSON returns Column not found error" {
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const input = kanban_move_task.KanbanMoveTaskInput{
+    const input = KanbanMoveTaskInput{
         .workspace_id = "ws_1",
         .item_id = "item_1",
         .task_id = "t1",
         .target_column_name = "nonexistent",
     };
-    const json = try kanban_move_task.executeKanbanMoveTaskToJSON(alloc, &s.db, input);
+    const json = try executeKanbanMoveTaskToJSON(alloc, &s.db, input);
     defer alloc.free(json);
     try testing.expect(contains(json, "\"success\":false"));
     try testing.expect(contains(json, "Column not found"));
@@ -621,13 +620,13 @@ test "executeKanbanMoveTaskToJSON returns Need target_column_id/name error" {
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const input = kanban_move_task.KanbanMoveTaskInput{
+    const input = KanbanMoveTaskInput{
         .workspace_id = "ws_1",
         .item_id = "item_1",
         .task_id = "t1",
         // Both target_column_id and target_column_name are null.
     };
-    const json = try kanban_move_task.executeKanbanMoveTaskToJSON(alloc, &s.db, input);
+    const json = try executeKanbanMoveTaskToJSON(alloc, &s.db, input);
     defer alloc.free(json);
     try testing.expect(contains(json, "\"success\":false"));
     try testing.expect(contains(json, "target_column_id or target_column_name"));
@@ -639,13 +638,13 @@ test "executeKanbanMoveTaskToJSON returns TaskNotFound error" {
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const input = kanban_move_task.KanbanMoveTaskInput{
+    const input = KanbanMoveTaskInput{
         .workspace_id = "ws_1",
         .item_id = "item_1",
         .task_id = "nonexistent_task",
         .target_column_id = "col_done",
     };
-    const json = try kanban_move_task.executeKanbanMoveTaskToJSON(alloc, &s.db, input);
+    const json = try executeKanbanMoveTaskToJSON(alloc, &s.db, input);
     defer alloc.free(json);
     try testing.expect(contains(json, "\"success\":false"));
     try testing.expect(contains(json, "TaskNotFound"));
@@ -657,13 +656,13 @@ test "executeKanbanMoveTaskToJSON returns Missing required field for empty works
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    const input = kanban_move_task.KanbanMoveTaskInput{
+    const input = KanbanMoveTaskInput{
         .workspace_id = "",
         .item_id = "item_1",
         .task_id = "t1",
         .target_column_id = "col_done",
     };
-    const json = try kanban_move_task.executeKanbanMoveTaskToJSON(alloc, &s.db, input);
+    const json = try executeKanbanMoveTaskToJSON(alloc, &s.db, input);
     defer alloc.free(json);
     try testing.expect(contains(json, "\"success\":false"));
     try testing.expect(contains(json, "workspace_id"));
@@ -680,16 +679,68 @@ test "executeKanbanMoveTaskToJSON without position appends to end of column" {
     try s.db.exec(alloc, "INSERT INTO kanban (workspace_item_task_id, kanban_column_id, kanban_position) VALUES ('t_done', 'col_done', 0)", &.{});
 
     // Move t1 to col_done with no position.
-    const input = kanban_move_task.KanbanMoveTaskInput{
+    const input = KanbanMoveTaskInput{
         .workspace_id = "ws_1",
         .item_id = "item_1",
         .task_id = "t1",
         .target_column_id = "col_done",
         // position = null → end-of-column
     };
-    const json = try kanban_move_task.executeKanbanMoveTaskToJSON(alloc, &s.db, input);
+    const json = try executeKanbanMoveTaskToJSON(alloc, &s.db, input);
     defer alloc.free(json);
     try testing.expect(contains(json, "\"success\":true"));
     // The position should be MAX(0) + 1 = 1
     try testing.expect(contains(json, "\"position\":1"));
 }
+
+// Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
+// The tool definition above and its executor below live in ONE file.
+
+const exec_pabrikcore = @import("pabrikcore");
+const tools = @import("../../../agentic_loop/tools.zig");
+const ToolExecContext = tools.ToolExecContext;
+const ToolExecResult = tools.ToolExecResult;
+const agent = exec_pabrikcore.agent;
+const wrapToolOutput = tools.wrapToolOutput;
+const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+pub fn execKanbanMoveTask(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
+    const parsed = std.json.parseFromSlice(
+        KanbanMoveTaskInput,
+        ctx.allocator,
+        tc.function.arguments,
+        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "kanban_move_task", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer parsed.deinit();
+
+    const inner = executeKanbanMoveTaskToJSON(
+        ctx.allocator,
+        ctx.db,
+        parsed.value,
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "kanban_move_task", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer ctx.allocator.free(inner);
+
+    // Detect {"success":false,"error":...} via the top-level "error" key
+    // (parsed, not substring-matched, so task/column names containing
+    // the word "error" can't false-positive).
+    if (std.json.parseFromSlice(struct { @"error": ?[]const u8 = null }, ctx.allocator, inner, .{ .allocate = .alloc_always, .ignore_unknown_fields = true }) catch null) |probe| {
+        defer probe.deinit();
+        if (probe.value.@"error") |err_msg| {
+            const output = try wrapToolOutput(ctx.allocator, "kanban_move_task", tc.function.arguments, false, err_msg, inner);
+            return ToolExecResult{ .output = output, .output_allocated = true };
+        }
+    }
+
+    const output = try wrapToolOutput(ctx.allocator, "kanban_move_task", tc.function.arguments, true, null, inner);
+    return ToolExecResult{ .output = output, .output_allocated = true };
+}
+

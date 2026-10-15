@@ -283,7 +283,6 @@ pub fn executeGroupElementsToString(
 }
 
 const testing = std.testing;
-const group_elements = @import("group_design_elements.zig");
 fn expectJSONError(alloc: std.mem.Allocator, str: []const u8, needle: []const u8) !void {
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, str, .{});
     defer parsed.deinit();
@@ -309,7 +308,7 @@ fn contains(haystack: []const u8, needle: []const u8) bool {
 
 test "errorJSON on missing field returns an error object" {
     const alloc = testing.allocator;
-    const json = try group_elements.errorJSON(alloc, "page_id is required");
+    const json = try errorJSON(alloc, "page_id is required");
     defer alloc.free(json);
     try expectJSONError(alloc, json, "page_id is required");
 }
@@ -317,7 +316,7 @@ test "errorJSON on missing field returns an error object" {
 test "errorJSONOwned takes ownership and frees the message" {
     const alloc = testing.allocator;
     const msg = try alloc.dupe(u8, "child_ids must be at least 2 elements");
-    const json = try group_elements.errorJSONOwned(alloc, msg);
+    const json = try errorJSONOwned(alloc, msg);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "child_ids must be at least 2 elements");
     // msg has been freed by errorJSONOwned — using `msg` here would
@@ -444,11 +443,11 @@ test "executeGroupElementsToString wraps two elements into a parent with union b
     defer alloc.free(s.element_b);
     defer alloc.free(s.element_c);
 
-    const input = group_elements.GroupElementsInput{
+    const input = GroupElementsInput{
         .page_id = s.page_id,
         .child_ids = &.{ s.element_a, s.element_b },
     };
-    const json = try group_elements.executeGroupElementsToString(alloc, &s.db, input);
+    const json = try executeGroupElementsToString(alloc, &s.db, input);
     defer alloc.free(json);
 
     var parsed = try expectNoJSONError(alloc, json);
@@ -487,13 +486,13 @@ test "executeGroupElementsToString honours custom name and type=frame" {
     defer alloc.free(s.element_b);
     defer alloc.free(s.element_c);
 
-    const input = group_elements.GroupElementsInput{
+    const input = GroupElementsInput{
         .page_id = s.page_id,
         .child_ids = &.{ s.element_b, s.element_c },
         .name = "Kanban-view",
         .type = "frame",
     };
-    const json = try group_elements.executeGroupElementsToString(alloc, &s.db, input);
+    const json = try executeGroupElementsToString(alloc, &s.db, input);
     defer alloc.free(json);
 
     var parsed = try expectNoJSONError(alloc, json);
@@ -520,11 +519,11 @@ test "executeGroupElementsToString returns error JSON when page_id is empty" {
     defer alloc.free(s.element_b);
     defer alloc.free(s.element_c);
 
-    const input = group_elements.GroupElementsInput{
+    const input = GroupElementsInput{
         .page_id = "",
         .child_ids = &.{ s.element_a, s.element_b },
     };
-    const json = try group_elements.executeGroupElementsToString(alloc, &s.db, input);
+    const json = try executeGroupElementsToString(alloc, &s.db, input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "page_id");
 }
@@ -540,11 +539,11 @@ test "executeGroupElementsToString returns error JSON when child_ids is empty" {
     defer alloc.free(s.element_b);
     defer alloc.free(s.element_c);
 
-    const input = group_elements.GroupElementsInput{
+    const input = GroupElementsInput{
         .page_id = s.page_id,
         .child_ids = &.{},
     };
-    const json = try group_elements.executeGroupElementsToString(alloc, &s.db, input);
+    const json = try executeGroupElementsToString(alloc, &s.db, input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "child_ids");
 }
@@ -560,11 +559,11 @@ test "executeGroupElementsToString returns error JSON when child_ids has only 1 
     defer alloc.free(s.element_b);
     defer alloc.free(s.element_c);
 
-    const input = group_elements.GroupElementsInput{
+    const input = GroupElementsInput{
         .page_id = s.page_id,
         .child_ids = &.{s.element_a},
     };
-    const json = try group_elements.executeGroupElementsToString(alloc, &s.db, input);
+    const json = try executeGroupElementsToString(alloc, &s.db, input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "child_ids");
 }
@@ -580,12 +579,12 @@ test "executeGroupElementsToString returns error JSON when type is invalid" {
     defer alloc.free(s.element_b);
     defer alloc.free(s.element_c);
 
-    const input = group_elements.GroupElementsInput{
+    const input = GroupElementsInput{
         .page_id = s.page_id,
         .child_ids = &.{ s.element_a, s.element_b },
         .type = "rectangle",
     };
-    const json = try group_elements.executeGroupElementsToString(alloc, &s.db, input);
+    const json = try executeGroupElementsToString(alloc, &s.db, input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "type must be one of");
 }
@@ -601,11 +600,11 @@ test "executeGroupElementsToString returns error JSON when page_id does not exis
     defer alloc.free(s.element_b);
     defer alloc.free(s.element_c);
 
-    const input = group_elements.GroupElementsInput{
+    const input = GroupElementsInput{
         .page_id = "page_does_not_exist",
         .child_ids = &.{ s.element_a, s.element_b },
     };
-    const json = try group_elements.executeGroupElementsToString(alloc, &s.db, input);
+    const json = try executeGroupElementsToString(alloc, &s.db, input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "page_id");
 }
@@ -621,11 +620,11 @@ test "executeGroupElementsToString returns error JSON when a child_id does not e
     defer alloc.free(s.element_b);
     defer alloc.free(s.element_c);
 
-    const input = group_elements.GroupElementsInput{
+    const input = GroupElementsInput{
         .page_id = s.page_id,
         .child_ids = &.{ s.element_a, "elem_does_not_exist" },
     };
-    const json = try group_elements.executeGroupElementsToString(alloc, &s.db, input);
+    const json = try executeGroupElementsToString(alloc, &s.db, input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "child_id is invalid");
 }
@@ -645,11 +644,71 @@ test "executeGroupElementsToString returns error JSON when a child is already pa
     // in the DB). The model rejects children whose parent_id is set.
     try s.db.exec(alloc, "UPDATE design_page_elements SET parent_id = 'elem_orphan' WHERE id = ?", &.{s.element_b});
 
-    const input = group_elements.GroupElementsInput{
+    const input = GroupElementsInput{
         .page_id = s.page_id,
         .child_ids = &.{ s.element_a, s.element_b },
     };
-    const json = try group_elements.executeGroupElementsToString(alloc, &s.db, input);
+    const json = try executeGroupElementsToString(alloc, &s.db, input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "parented");
 }
+
+// Exec adapter — merged from `group_design_elements.zig` (2026-10-14, task_1791993404141_2).
+// The tool definition above and its executor below live in ONE file.
+
+const exec_pabrikcore = @import("pabrikcore");
+const tools = @import("../../../agentic_loop/tools.zig");
+const ToolExecContext = tools.ToolExecContext;
+const ToolExecResult = tools.ToolExecResult;
+const agent = exec_pabrikcore.agent;
+const wrapToolOutput = tools.wrapToolOutput;
+const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+pub fn execGroupElements(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
+    const parsed = std.json.parseFromSlice(
+        GroupElementsInput,
+        ctx.allocator,
+        tc.function.arguments,
+        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "group_elements", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer parsed.deinit();
+
+    // group_elements doesn't need Io (groupElements handles its own
+    // mkdir-p via the SqliteBackend's io).
+    const inner = executeGroupElementsToString(
+        ctx.allocator,
+        ctx.db,
+        parsed.value,
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "group_elements", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer ctx.allocator.free(inner);
+
+    // Detect {{"error":...}} and surface it as a tool failure (so the
+    // LLM sees `success=false` rather than a successful wrapper around
+    // an error body).
+    const json_err_msg: ?[]u8 = blk: {
+        const inner_parsed = std.json.parseFromSlice(std.json.Value, ctx.allocator, inner, .{}) catch break :blk null;
+        defer inner_parsed.deinit();
+        if (inner_parsed.value != .object) break :blk null;
+        const e = inner_parsed.value.object.get("error") orelse break :blk null;
+        if (e != .string) break :blk null;
+        break :blk try ctx.allocator.dupe(u8, e.string);
+    };
+    if (json_err_msg) |err_msg| {
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "group_elements", tc.function.arguments, false, err_msg, inner);
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    }
+
+    const output = try wrapToolOutput(ctx.allocator, "group_elements", tc.function.arguments, true, null, inner);
+    return ToolExecResult{ .output = output, .output_allocated = true };
+}
+

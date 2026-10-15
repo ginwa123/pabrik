@@ -386,7 +386,6 @@ pub fn executeAddElementToString(
 }
 
 const testing = std.testing;
-const add_element = @import("add_design_element.zig");
 
 fn expectJSONFloat(v: std.json.Value, want: f64) !void {
     const got: f64 = switch (v) {
@@ -421,20 +420,20 @@ fn contains(haystack: []const u8, needle: []const u8) bool {
 // ─── ElementType parser ───────────────────────────────────────────────────
 
 test "parseElementType accepts all 6 valid types" {
-    try testing.expect(add_element.parseElementType("rectangle") == .rectangle);
-    try testing.expect(add_element.parseElementType("ellipse") == .ellipse);
-    try testing.expect(add_element.parseElementType("text") == .text);
-    try testing.expect(add_element.parseElementType("image") == .image);
-    try testing.expect(add_element.parseElementType("frame") == .frame);
-    try testing.expect(add_element.parseElementType("group") == .group);
+    try testing.expect(parseElementType("rectangle") == .rectangle);
+    try testing.expect(parseElementType("ellipse") == .ellipse);
+    try testing.expect(parseElementType("text") == .text);
+    try testing.expect(parseElementType("image") == .image);
+    try testing.expect(parseElementType("frame") == .frame);
+    try testing.expect(parseElementType("group") == .group);
 }
 
 test "parseElementType returns null for invalid types" {
-    try testing.expect(add_element.parseElementType("box") == null);
-    try testing.expect(add_element.parseElementType("circle") == null);
-    try testing.expect(add_element.parseElementType("Rectangle") == null); // case-sensitive
-    try testing.expect(add_element.parseElementType("") == null);
-    try testing.expect(add_element.parseElementType("div") == null);
+    try testing.expect(parseElementType("box") == null);
+    try testing.expect(parseElementType("circle") == null);
+    try testing.expect(parseElementType("Rectangle") == null); // case-sensitive
+    try testing.expect(parseElementType("") == null);
+    try testing.expect(parseElementType("div") == null);
 }
 
 // ─── JSON serialization ──────────────────────────────────────────────────
@@ -468,7 +467,7 @@ test "elementToJSON renders element with all v6 fields" {
     };
     defer design_model.freeElement(alloc, elem);
 
-    const json = try add_element.elementToJSON(alloc, elem);
+    const json = try elementToJSON(alloc, elem);
     defer alloc.free(json);
 
     var parsed = try expectNoJSONError(alloc, json);
@@ -526,7 +525,7 @@ test "elementToJSON renders explicit nulls for empty optional fields" {
     };
     defer design_model.freeElement(alloc, elem);
 
-    const json = try add_element.elementToJSON(alloc, elem);
+    const json = try elementToJSON(alloc, elem);
     defer alloc.free(json);
 
     // Empty strings become explicit nulls (never omitted, never "").
@@ -544,7 +543,7 @@ test "elementToJSON renders explicit nulls for empty optional fields" {
 
 test "errorJSON on bad page_id returns an error object" {
     const alloc = testing.allocator;
-    const json = try add_element.errorJSON(alloc, "page_id is required");
+    const json = try errorJSON(alloc, "page_id is required");
     defer alloc.free(json);
     try expectJSONError(alloc, json, "page_id is required");
 }
@@ -647,13 +646,13 @@ test "executeAddElementToString creates an element with default geometry" {
     defer alloc.free(s.item_id);
     defer alloc.free(s.page_id);
 
-    const input = add_element.AddElementInput{
+    const input = AddElementInput{
         .page_id = s.page_id,
         .name = "login-card",
         .type = "rectangle",
         .html = "<div>Hello</div>",
     };
-    const json = try add_element.executeAddElementToString(alloc, &s.db, s.threaded.io(), input);
+    const json = try executeAddElementToString(alloc, &s.db, s.threaded.io(), input);
     defer alloc.free(json);
 
     var parsed = try expectNoJSONError(alloc, json);
@@ -679,7 +678,7 @@ test "executeAddElementToString respects explicit geometry" {
     defer alloc.free(s.item_id);
     defer alloc.free(s.page_id);
 
-    const input = add_element.AddElementInput{
+    const input = AddElementInput{
         .page_id = s.page_id,
         .name = "login-button",
         .type = "rectangle",
@@ -692,7 +691,7 @@ test "executeAddElementToString respects explicit geometry" {
         .corner_radius = 8,
         .opacity = 0.95,
     };
-    const json = try add_element.executeAddElementToString(alloc, &s.db, s.threaded.io(), input);
+    const json = try executeAddElementToString(alloc, &s.db, s.threaded.io(), input);
     defer alloc.free(json);
 
     var parsed = try expectNoJSONError(alloc, json);
@@ -720,13 +719,13 @@ test "executeAddElementToString accepts all 6 element types" {
     for (types, 0..) |t, i| {
         const name = try std.fmt.allocPrint(alloc, "elem-{s}-{d}", .{ t, i });
         defer alloc.free(name);
-        const input = add_element.AddElementInput{
+        const input = AddElementInput{
             .page_id = s.page_id,
             .name = name,
             .type = t,
             .html = "<div></div>",
         };
-        const json = try add_element.executeAddElementToString(alloc, &s.db, s.threaded.io(), input);
+        const json = try executeAddElementToString(alloc, &s.db, s.threaded.io(), input);
         defer alloc.free(json);
         var parsed = try expectNoJSONError(alloc, json);
         defer parsed.deinit();
@@ -744,13 +743,13 @@ test "executeAddElementToString returns error JSON on invalid type" {
     defer alloc.free(s.item_id);
     defer alloc.free(s.page_id);
 
-    const input = add_element.AddElementInput{
+    const input = AddElementInput{
         .page_id = s.page_id,
         .name = "x",
         .type = "box", // not one of the 6 valid types
         .html = "<div></div>",
     };
-    const json = try add_element.executeAddElementToString(alloc, &s.db, s.threaded.io(), input);
+    const json = try executeAddElementToString(alloc, &s.db, s.threaded.io(), input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "type must be one of");
 }
@@ -763,13 +762,13 @@ test "executeAddElementToString returns error JSON when page_id is empty" {
     defer alloc.free(s.item_id);
     defer alloc.free(s.page_id);
 
-    const input = add_element.AddElementInput{
+    const input = AddElementInput{
         .page_id = "",
         .name = "x",
         .type = "rectangle",
         .html = "<div></div>",
     };
-    const json = try add_element.executeAddElementToString(alloc, &s.db, s.threaded.io(), input);
+    const json = try executeAddElementToString(alloc, &s.db, s.threaded.io(), input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "page_id");
 }
@@ -782,13 +781,13 @@ test "executeAddElementToString returns error JSON when page_id has wrong prefix
     defer alloc.free(s.item_id);
     defer alloc.free(s.page_id);
 
-    const input = add_element.AddElementInput{
+    const input = AddElementInput{
         .page_id = "elem_1782442554112",
         .name = "x",
         .type = "rectangle",
         .html = "<div></div>",
     };
-    const json = try add_element.executeAddElementToString(alloc, &s.db, s.threaded.io(), input);
+    const json = try executeAddElementToString(alloc, &s.db, s.threaded.io(), input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "elem_");
 }
@@ -802,7 +801,7 @@ test "executeAddElementToString accepts parent_id (nests new element under exist
     defer alloc.free(s.page_id);
 
     // Add a parent frame first.
-    const parent_json = try add_element.executeAddElementToString(alloc, &s.db, s.threaded.io(), .{
+    const parent_json = try executeAddElementToString(alloc, &s.db, s.threaded.io(), .{
         .page_id = s.page_id,
         .name = "login-card",
         .type = "frame",
@@ -822,7 +821,7 @@ test "executeAddElementToString accepts parent_id (nests new element under exist
     try testing.expect(std.mem.startsWith(u8, parent_elem_id, "elem_"));
 
     // Add a child rectangle with parent_id pointing to the frame.
-    const child_input = add_element.AddElementInput{
+    const child_input = AddElementInput{
         .page_id = s.page_id,
         .name = "login-button",
         .type = "rectangle",
@@ -834,7 +833,7 @@ test "executeAddElementToString accepts parent_id (nests new element under exist
         .fill = "#22c55e",
         .parent_id = parent_elem_id,
     };
-    const child_json = try add_element.executeAddElementToString(alloc, &s.db, s.threaded.io(), child_input);
+    const child_json = try executeAddElementToString(alloc, &s.db, s.threaded.io(), child_input);
     defer alloc.free(child_json);
     // Response JSON must include the parent_id key (the LLM needs
     // to confirm the nesting took effect).
@@ -851,14 +850,14 @@ test "executeAddElementToString rejects parent_id with invalid prefix" {
     defer alloc.free(s.item_id);
     defer alloc.free(s.page_id);
 
-    const input = add_element.AddElementInput{
+    const input = AddElementInput{
         .page_id = s.page_id,
         .name = "x",
         .type = "rectangle",
         .html = "<div></div>",
         .parent_id = "page_does_not_start_with_elem",
     };
-    const json = try add_element.executeAddElementToString(alloc, &s.db, s.threaded.io(), input);
+    const json = try executeAddElementToString(alloc, &s.db, s.threaded.io(), input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "parent_id");
 }
@@ -871,13 +870,13 @@ test "executeAddElementToString returns error JSON when name is empty" {
     defer alloc.free(s.item_id);
     defer alloc.free(s.page_id);
 
-    const input = add_element.AddElementInput{
+    const input = AddElementInput{
         .page_id = s.page_id,
         .name = "",
         .type = "rectangle",
         .html = "<div></div>",
     };
-    const json = try add_element.executeAddElementToString(alloc, &s.db, s.threaded.io(), input);
+    const json = try executeAddElementToString(alloc, &s.db, s.threaded.io(), input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "name");
 }
@@ -890,13 +889,13 @@ test "executeAddElementToString returns error JSON when name contains '/'" {
     defer alloc.free(s.item_id);
     defer alloc.free(s.page_id);
 
-    const input = add_element.AddElementInput{
+    const input = AddElementInput{
         .page_id = s.page_id,
         .name = "card/sub",
         .type = "rectangle",
         .html = "<div></div>",
     };
-    const json = try add_element.executeAddElementToString(alloc, &s.db, s.threaded.io(), input);
+    const json = try executeAddElementToString(alloc, &s.db, s.threaded.io(), input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "/");
 }
@@ -909,13 +908,13 @@ test "executeAddElementToString returns error JSON when html is empty" {
     defer alloc.free(s.item_id);
     defer alloc.free(s.page_id);
 
-    const input = add_element.AddElementInput{
+    const input = AddElementInput{
         .page_id = s.page_id,
         .name = "x",
         .type = "rectangle",
         .html = "",
     };
-    const json = try add_element.executeAddElementToString(alloc, &s.db, s.threaded.io(), input);
+    const json = try executeAddElementToString(alloc, &s.db, s.threaded.io(), input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "html");
 }
@@ -928,13 +927,74 @@ test "executeAddElementToString returns PageNotFound error when page_id doesn't 
     defer alloc.free(s.item_id);
     defer alloc.free(s.page_id);
 
-    const input = add_element.AddElementInput{
+    const input = AddElementInput{
         .page_id = "page_does_not_exist",
         .name = "x",
         .type = "rectangle",
         .html = "<div></div>",
     };
-    const json = try add_element.executeAddElementToString(alloc, &s.db, s.threaded.io(), input);
+    const json = try executeAddElementToString(alloc, &s.db, s.threaded.io(), input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "page_id");
 }
+
+// Exec adapter — merged from `add_design_element.zig` (2026-10-14, task_1791993404141_2).
+// The tool definition above and its executor below live in ONE file.
+
+const exec_pabrikcore = @import("pabrikcore");
+const tools = @import("../../../agentic_loop/tools.zig");
+const ToolExecContext = tools.ToolExecContext;
+const ToolExecResult = tools.ToolExecResult;
+const agent = exec_pabrikcore.agent;
+const wrapToolOutput = tools.wrapToolOutput;
+const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+pub fn execAddElement(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
+    const parsed = std.json.parseFromSlice(
+        AddElementInput,
+        ctx.allocator,
+        tc.function.arguments,
+        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "add_element", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer parsed.deinit();
+
+    // addElement needs Io for the mkdir-p + atomic file write of the
+    // HTML body. ctx.io is the per-request Io runtime.
+    const inner = executeAddElementToString(
+        ctx.allocator,
+        ctx.db,
+        ctx.io,
+        parsed.value,
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "add_element", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer ctx.allocator.free(inner);
+
+    // Detect {{"error":...}} and surface it as a tool failure (so the
+    // LLM sees `success=false` rather than a successful wrapper around
+    // an error body).
+    const json_err_msg: ?[]u8 = blk: {
+        const inner_parsed = std.json.parseFromSlice(std.json.Value, ctx.allocator, inner, .{}) catch break :blk null;
+        defer inner_parsed.deinit();
+        if (inner_parsed.value != .object) break :blk null;
+        const e = inner_parsed.value.object.get("error") orelse break :blk null;
+        if (e != .string) break :blk null;
+        break :blk try ctx.allocator.dupe(u8, e.string);
+    };
+    if (json_err_msg) |err_msg| {
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "add_element", tc.function.arguments, false, err_msg, inner);
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    }
+
+    const output = try wrapToolOutput(ctx.allocator, "add_element", tc.function.arguments, true, null, inner);
+    return ToolExecResult{ .output = output, .output_allocated = true };
+}
+

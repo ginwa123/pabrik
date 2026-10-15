@@ -354,7 +354,6 @@ pub fn executeUpdateElementToString(
 }
 
 const testing = std.testing;
-const update_element = @import("update_design_element.zig");
 fn expectJSONFloat(v: std.json.Value, want: f64) !void {
     const got: f64 = switch (v) {
         .float => |f| f,
@@ -389,7 +388,7 @@ fn contains(haystack: []const u8, needle: []const u8) bool {
 
 test "errorJSON on missing field returns an error object" {
     const alloc = testing.allocator;
-    const json = try update_element.errorJSON(alloc, "element_id is required");
+    const json = try errorJSON(alloc, "element_id is required");
     defer alloc.free(json);
     try expectJSONError(alloc, json, "element_id is required");
 }
@@ -499,12 +498,12 @@ test "executeUpdateElementToString updates x and y only" {
     defer alloc.free(s.page_id);
     defer alloc.free(s.element_id);
 
-    const input = update_element.UpdateElementInput{
+    const input = UpdateElementInput{
         .element_id = s.element_id,
         .x = 250,
         .y = 350,
     };
-    const json = try update_element.executeUpdateElementToString(alloc, &s.db, input);
+    const json = try executeUpdateElementToString(alloc, &s.db, input);
     defer alloc.free(json);
 
     var parsed = try expectNoJSONError(alloc, json);
@@ -530,11 +529,11 @@ test "executeUpdateElementToString updates fill" {
     defer alloc.free(s.page_id);
     defer alloc.free(s.element_id);
 
-    const input = update_element.UpdateElementInput{
+    const input = UpdateElementInput{
         .element_id = s.element_id,
         .fill = "#22c55e",
     };
-    const json = try update_element.executeUpdateElementToString(alloc, &s.db, input);
+    const json = try executeUpdateElementToString(alloc, &s.db, input);
     defer alloc.free(json);
 
     var parsed = try expectNoJSONError(alloc, json);
@@ -551,11 +550,11 @@ test "executeUpdateElementToString updates name" {
     defer alloc.free(s.page_id);
     defer alloc.free(s.element_id);
 
-    const input = update_element.UpdateElementInput{
+    const input = UpdateElementInput{
         .element_id = s.element_id,
         .name = "primary-card",
     };
-    const json = try update_element.executeUpdateElementToString(alloc, &s.db, input);
+    const json = try executeUpdateElementToString(alloc, &s.db, input);
     defer alloc.free(json);
 
     var parsed = try expectNoJSONError(alloc, json);
@@ -572,11 +571,11 @@ test "executeUpdateElementToString updates type" {
     defer alloc.free(s.page_id);
     defer alloc.free(s.element_id);
 
-    const input = update_element.UpdateElementInput{
+    const input = UpdateElementInput{
         .element_id = s.element_id,
         .type = "ellipse",
     };
-    const json = try update_element.executeUpdateElementToString(alloc, &s.db, input);
+    const json = try executeUpdateElementToString(alloc, &s.db, input);
     defer alloc.free(json);
 
     var parsed = try expectNoJSONError(alloc, json);
@@ -593,11 +592,11 @@ test "executeUpdateElementToString returns error JSON on invalid type" {
     defer alloc.free(s.page_id);
     defer alloc.free(s.element_id);
 
-    const input = update_element.UpdateElementInput{
+    const input = UpdateElementInput{
         .element_id = s.element_id,
         .type = "hexagon",
     };
-    const json = try update_element.executeUpdateElementToString(alloc, &s.db, input);
+    const json = try executeUpdateElementToString(alloc, &s.db, input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "type must be one of");
 }
@@ -611,11 +610,11 @@ test "executeUpdateElementToString returns error JSON when element_id is empty" 
     defer alloc.free(s.page_id);
     defer alloc.free(s.element_id);
 
-    const input = update_element.UpdateElementInput{
+    const input = UpdateElementInput{
         .element_id = "",
         .x = 100,
     };
-    const json = try update_element.executeUpdateElementToString(alloc, &s.db, input);
+    const json = try executeUpdateElementToString(alloc, &s.db, input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "element_id");
 }
@@ -629,11 +628,11 @@ test "executeUpdateElementToString returns error JSON when element_id has wrong 
     defer alloc.free(s.page_id);
     defer alloc.free(s.element_id);
 
-    const input = update_element.UpdateElementInput{
+    const input = UpdateElementInput{
         .element_id = "page_1782442554112",
         .x = 100,
     };
-    const json = try update_element.executeUpdateElementToString(alloc, &s.db, input);
+    const json = try executeUpdateElementToString(alloc, &s.db, input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "page_");
 }
@@ -647,11 +646,11 @@ test "executeUpdateElementToString returns ElementNotFound error when element_id
     defer alloc.free(s.page_id);
     defer alloc.free(s.element_id);
 
-    const input = update_element.UpdateElementInput{
+    const input = UpdateElementInput{
         .element_id = "elem_does_not_exist",
         .x = 100,
     };
-    const json = try update_element.executeUpdateElementToString(alloc, &s.db, input);
+    const json = try executeUpdateElementToString(alloc, &s.db, input);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "element_id");
 }
@@ -667,10 +666,10 @@ test "executeUpdateElementToString with only element_id is a no-op success" {
     defer alloc.free(s.page_id);
     defer alloc.free(s.element_id);
 
-    const input = update_element.UpdateElementInput{
+    const input = UpdateElementInput{
         .element_id = s.element_id,
     };
-    const json = try update_element.executeUpdateElementToString(alloc, &s.db, input);
+    const json = try executeUpdateElementToString(alloc, &s.db, input);
     defer alloc.free(json);
     var parsed = try expectNoJSONError(alloc, json);
     defer parsed.deinit();
@@ -691,15 +690,76 @@ test "executeUpdateElementToString updates rotation and opacity" {
     defer alloc.free(s.page_id);
     defer alloc.free(s.element_id);
 
-    const input = update_element.UpdateElementInput{
+    const input = UpdateElementInput{
         .element_id = s.element_id,
         .rotation = 45.0,
         .opacity = 0.7,
     };
-    const json = try update_element.executeUpdateElementToString(alloc, &s.db, input);
+    const json = try executeUpdateElementToString(alloc, &s.db, input);
     defer alloc.free(json);
     var parsed = try expectNoJSONError(alloc, json);
     defer parsed.deinit();
     try expectJSONFloat(parsed.value.object.get("rotation").?, 45.0);
     try expectJSONFloat(parsed.value.object.get("opacity").?, 0.7);
 }
+
+// Exec adapter — merged from `update_design_element.zig` (2026-10-14, task_1791993404141_2).
+// The tool definition above and its executor below live in ONE file.
+
+const exec_pabrikcore = @import("pabrikcore");
+const tools = @import("../../../agentic_loop/tools.zig");
+const ToolExecContext = tools.ToolExecContext;
+const ToolExecResult = tools.ToolExecResult;
+const agent = exec_pabrikcore.agent;
+const wrapToolOutput = tools.wrapToolOutput;
+const error_explain = @import("../../../agentic_loop/tools_error_explain.zig");
+pub fn execUpdateElement(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
+    const parsed = std.json.parseFromSlice(
+        UpdateElementInput,
+        ctx.allocator,
+        tc.function.arguments,
+        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "update_element", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer parsed.deinit();
+
+    // updateElement doesn't need Io (no mkdir-p required). It uses the
+    // existing file_path and rewrites in place. If the file is missing
+    // (orphan), it internally looks up the path via JOIN and rebuilds it.
+    const inner = executeUpdateElementToString(
+        ctx.allocator,
+        ctx.db,
+        parsed.value,
+    ) catch |err| {
+        const err_msg = try error_explain.explain(ctx.allocator, err, null);
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "update_element", tc.function.arguments, false, err_msg, "");
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    };
+    defer ctx.allocator.free(inner);
+
+    // Detect {{"error":...}} and surface it as a tool failure (so the
+    // LLM sees `success=false` rather than a successful wrapper around
+    // an error body).
+    const json_err_msg: ?[]u8 = blk: {
+        const inner_parsed = std.json.parseFromSlice(std.json.Value, ctx.allocator, inner, .{}) catch break :blk null;
+        defer inner_parsed.deinit();
+        if (inner_parsed.value != .object) break :blk null;
+        const e = inner_parsed.value.object.get("error") orelse break :blk null;
+        if (e != .string) break :blk null;
+        break :blk try ctx.allocator.dupe(u8, e.string);
+    };
+    if (json_err_msg) |err_msg| {
+        defer ctx.allocator.free(err_msg);
+        const output = try wrapToolOutput(ctx.allocator, "update_element", tc.function.arguments, false, err_msg, inner);
+        return ToolExecResult{ .output = output, .output_allocated = true };
+    }
+
+    const output = try wrapToolOutput(ctx.allocator, "update_element", tc.function.arguments, true, null, inner);
+    return ToolExecResult{ .output = output, .output_allocated = true };
+}
+

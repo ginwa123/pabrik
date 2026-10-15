@@ -100,4 +100,8 @@ test {
     // present_files + its shared file_sandbox rule (the sandbox tests below
     // need the tool's own tests discoverable from one `--test-filter`).
     _ = @import("tools/present_files.zig");
+    // Two exec adapters with no definition file (task_1791993404141_2):
+    // `exec_bash_args` is a shared arg parser, `exec_list_web_search_providers` has no def.
+    _ = @import("tools/exec_bash_args.zig");
+    _ = @import("tools/exec_list_web_search_providers.zig");
 }
