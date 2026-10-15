@@ -1,22 +1,15 @@
-/**
- * Behavioural tests for the no-default-sort-by behavior of
- * `api.getTasks` (kanban default-URL, 2026-08-06).
- *
- * Why. The frontend used to send `sort_by=updated_at&direction=desc`
- * on every task-fetch — even when the URL had no `sorts` param and
- * the user hadn't picked a sort. The backend's default is also
- * `updated_at desc`, so the wire payload was redundant and noisy in
- * the network tab. The user feedback: "no need set default when
- * load task kanban".
- *
- * New behaviour: `api.getTasks` only adds `sort_by` and `direction`
- * to the URL params when BOTH are explicitly provided. Missing
- * either → both omitted → backend defaults apply.
- *
- * Match-up: the URL round-trip end-to-end tests in
- * `AppLayout.urlPersist.spec.ts` and `KanbanView.sortByApi.spec.ts`
- * cover the higher-level "click sort → URL → fetch" flow.
- */
+/** Behavioural tests for the no-default-sort-by behavior of `api.getTasks` (kanban default-URL,
+ * 2026-08-06). Why. The frontend used to send `sort_by=updated_at&direction=desc` on every
+ * task-fetch — even when the URL had no `sorts` param and the user hadn't picked a sort. */
+
+/** The backend's default is also `updated_at desc`, so the wire payload was redundant and noisy in
+ * the network tab. The user feedback: "no need set default when load task kanban". */
+
+/** New behaviour: `api.getTasks` only adds `sort_by` and `direction` to the URL params when BOTH
+ * are explicitly provided. Missing either → both omitted → backend defaults apply. */
+
+/** Match-up: the URL round-trip end-to-end tests in `AppLayout.urlPersist.spec.ts` and
+ * `KanbanView.sortByApi.spec.ts` cover the higher-level "click sort → URL → fetch" flow. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api'
 

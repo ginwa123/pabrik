@@ -16,7 +16,6 @@
  * correct; the bug this replaces was three components each hardcoding
  * `github.com` prose.
  */
-
 /** The vocabulary of one forge. `noun` is sentence case, `short` is caps. */
 export interface ForgeWording {
   noun: string
@@ -49,10 +48,10 @@ const GITLAB: ForgeWording = {
   hasConflictPage: false,
 }
 
-/** Wording for `provider`, defaulting to GitHub when it is empty or
- * unrecognised. Defaulting matters: `pr_provider` is empty on every
- * session created before GitLab support existed, and those are all
- * GitHub — so an unknown provider is a known-GitHub one far more often
+/** Wording for `provider`, defaulting to GitHub when it is empty or unrecognised. */
+
+/** Defaulting matters: `pr_provider` is empty on every session created before GitLab support
+ * existed, and those are all GitHub — so an unknown provider is a known-GitHub one far more often
  * than not, and guessing wrong is cosmetic while guessing blank is not. */
 export function forgeWording(provider?: string | null): ForgeWording {
   return provider === 'gitlab' ? GITLAB : GITHUB

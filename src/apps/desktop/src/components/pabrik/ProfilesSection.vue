@@ -8,7 +8,6 @@ import type { PabrikProfile, SubAgent } from '../../api'
 /** One row in the Profiles tab. The backend stores profiles as `Record<name, PabrikProfile>` (name
  * is the map key, not a field on the profile object). The orchestrator flattens this into an array
  * of `ProfileRow` with the name attached so the UI can iterate cleanly. */
-
 /** `sub_agents` is the profile's OWN sub-agent list (plan 2026-09-04-subagents-per-profile:
  * per-profile only, no global list, no inheritance). Each profile owns its sub-agents; sessions
  * that use this profile resolve `spawn_sub_agent` names against this list only. */
@@ -73,7 +72,6 @@ function fmtTokens(n: number): string {
 
 /** Line 2 of the row. The old row printed the full base URL, a sub-agent count, and `Compaction:
  * 97% @ 1000k tokens` — four lines that mostly restated the raw fields. */
-
 /** This states the two facts that decide what the profile DOES: where the context window comes
  * from, and where compaction fires. A `null` override is not "default" (which read as "nothing is
  * going on"); it is "the catalog's window" and "the global threshold". */

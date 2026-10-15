@@ -13,7 +13,6 @@
 // `item_type === 'kanban'`, so a chat branch written as `v-if` — or placed
 // after the KanbanView branch — would render the board AND the chat at once.
 // The old modal could not catch that: a Teleport rendered outside the chain.
-
 // This spec used to be `AppLayout.kanbanChatDialog.spec.ts` and queried
 // `document` for the teleported dialog. There is no modal any more, so it
 // queries the mounted wrapper instead.

@@ -93,7 +93,6 @@ beforeAll(() => {
 })
 
 /** The composable returns { restore, restorePosition }. */
-
 /** The harness captures the return value via a module-scope slot so the test can assert on the
  * saved value (mirrors the `restore`-time contract: the parent reads `restore()` AFTER its own
  * `await rAF × 2` so the saved value is computed by then). */

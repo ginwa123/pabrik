@@ -1,6 +1,5 @@
 /** Tests for ReadCompactedMessages.vue — the chat-bubble renderer for the
  * `<read_compacted_messages>` envelope returned by the `read_compacted_messages` tool. */
-
 /** Purely presentational (parses a string, no API calls, no clipboard mocks), so no setup beyond
  * `mount` is needed. Mirrors the style of `CompactionCard.spec.ts`. */
 import { mount } from '@vue/test-utils'

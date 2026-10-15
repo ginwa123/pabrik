@@ -30,7 +30,6 @@ import type { SseEvent } from '../api'
 // to suppress (because strings would suddenly be allowed). In that
 // case, `bun run build` (vue-tsc) would fail with an "unused"
 // directive error, pointing directly at the regression.
-
 // Valid: assign actual booleans. No directive needed; type matches.
 const _typeCheck: Pick<SseEvent, 'is_input' | 'is_output'> = {
   is_input: true,

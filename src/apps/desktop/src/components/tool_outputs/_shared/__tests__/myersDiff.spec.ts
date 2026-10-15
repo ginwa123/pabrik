@@ -1,7 +1,6 @@
 /** Tests for myersDiff.ts — Myers O(ND) line/word diff + renderers. Critical: the position-based
  * `isLineChanged = (idx) => beforeLines[idx] !== afterLines[idx]` (the OLD broken approach this
  * replaces) treated every line after an insertion as "changed" because indices shifted. */
-
 /** Tests here verify the new algorithm does NOT have that bug — a line shift at position N must NOT
  * mark line N+1 as changed. */
 import { describe, expect, it } from 'vitest'
@@ -139,7 +138,6 @@ describe('myersDiff', () => {
     // We compare at line granularity — each line is atomic. Two single-line inputs where one line
     // is a strict prefix of the other: LCS length is 0 (they're different lines), so SES is "delete
     // + insert".
-
     // This verifies the algorithm completes in finite time on 10k-char lines without pathological
     // behaviour.
     const longBefore = 'x'.repeat(10_000)

@@ -1,11 +1,11 @@
 import { inject, type InjectionKey, type Ref } from 'vue'
 import type { FolderEntry } from '../api'
 
-/** Options for opening a file in the in-app CodeEditor.
- * Provided by `AppLayout` and consumed by tool output components
- * (TextReplace, WriteFile, ReadFile, Search, Glob, RemoveFile) so they
- * can offer an "Open in editor" button that drives the same code-editor
- * flow as the right-sidebar file explorer. */
+/** Options for opening a file in the in-app CodeEditor. */
+
+/** Provided by `AppLayout` and consumed by tool output components (TextReplace, WriteFile,
+ * ReadFile, Search, Glob, RemoveFile) so they can offer an "Open in editor" button that drives the
+ * same code-editor flow as the right-sidebar file explorer. */
 export type OpenInCodeEditorOptions = {
   filePath: string
   fileName?: string

@@ -25,13 +25,12 @@ export const useNavigationStore = defineStore('navigation', () => {
   // Chats sort direction
   const chatsSortDirection = ref(loadChatsSortDirection())
 
-  // Sub-agent peek panel state. When set, <ChatView> renders
-  // <SubAgentPeekPanel> for the given sub-agent session. The payload
-  // carries everything the panel needs from the spawn_sub_agent tool
-  // card (so we don't have to re-parse the message). Set via
-  // openPeek() from the SpawnSubAgent card's row click handler;
-  // cleared via closePeek() from the panel's close button or route
-  // change away from the parent chat.
+  // Sub-agent peek panel state. When set, <ChatView> renders <SubAgentPeekPanel> for the given
+  // sub-agent session. The payload carries everything the panel needs from the spawn_sub_agent tool
+  // card (so we don't have to re-parse the message).
+
+  // Set via openPeek() from the SpawnSubAgent card's row click handler; cleared via closePeek()
+  // from the panel's close button or route change away from the parent chat.
   const peekPanel = ref<{
     sessionId: string
     agentName: string

@@ -37,7 +37,6 @@ export function useContextMenu(options: { width?: number; height?: number } = {}
 
   /** The element the menu was opened from, captured at open time. Read from `event.currentTarget`
    * (the row the `@contextmenu` handler is bound to) or passed explicitly by the keyboard path. */
-
   /** It lives here rather than in the host because the host would have to thread it through every
    * call site, and because the anchor is only meaningful to the dismiss logic that consumes it. */
   let anchorEl: HTMLElement | null = null
@@ -52,7 +51,6 @@ export function useContextMenu(options: { width?: number; height?: number } = {}
   /** Open at an explicit point with an explicit anchor. Split out of `openAt` so the keyboard path
    * (ContextMenu / Shift+F10) can open the menu from a bounding-rect centre and still get the same
    * dismiss wiring. */
-
   /** Before this, that path assigned `menuPos` directly and never attached a single listener — no
    * Escape, no outside-click, no scroll dismiss. */
   const openAtPoint = (x: number, y: number, anchor: HTMLElement | null) => {

@@ -43,11 +43,12 @@ import { normalizeToolContent, parseKanbanMove } from './_shared/toolOutputParse
 const props = defineProps<{
   content: unknown
   expanded?: boolean
-  /** Tool-call args (XML from jsonArgsToXml, or JSON). The backend input
-   *  shape (`KanbanMoveTaskInput`) uses `task_id` + `target_column_id` /
-   *  `target_column_name` — none of which appear in the result envelope
-   *  until the move completes. Used as a fallback so a still-running tool
-   *  (empty content) shows its target instead of "unknown". */
+  /** Tool-call args (XML from jsonArgsToXml, or JSON). The backend input shape
+   * (`KanbanMoveTaskInput`) uses `task_id` + `target_column_id` / `target_column_name` — none of
+   * which appear in the result envelope until the move completes. */
+
+  /** Used as a fallback so a still-running tool (empty content) shows its target instead of
+   * "unknown". */
   parameters?: string
 }>()
 
@@ -103,7 +104,6 @@ const position = computed(() => {
 const errorMessage = computed(() => parsed.value.error)
 
 // ---- Derived display values ------------------------------------------------
-
 // Running: result envelope is still empty (no data yet).
 const isEmptyContent = (c: unknown): boolean =>
   // Running means the tool has not returned yet: the dispatcher passes an

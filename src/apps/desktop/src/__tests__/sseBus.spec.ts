@@ -35,7 +35,6 @@ function makeStubClient(initial: SseState): SseClient {
 
 function emitStubState(c: SseClient, s: SseState): void {
   // Walk the internal listener list. The stub stores it as a non-public
-
   // property — we use `as any` to reach it from the test.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const listeners = (c as any).__stateListeners as
@@ -159,11 +158,11 @@ describe('sseBus', () => {
     const stubCloseSpy = vi.spyOn(stub, 'close')
     __setSseBusGlobalClient(stub)
 
-    // The swap itself already called `original.close()` exactly once
-    // (the `_globalClient && _globalClient !== client` branch in
-    // __setSseBusGlobalClient). The test asserts bus.close() does NOT
-    // call it again — which would happen if bus.close() reads the
-    // closure-scoped `globalClient` (the pre-fix bug).
+    // The swap itself already called `original.close()` exactly once (the `_globalClient &&
+    // _globalClient !== client` branch in __setSseBusGlobalClient).
+
+    // The test asserts bus.close() does NOT call it again — which would happen if bus.close() reads
+    // the closure-scoped `globalClient` (the pre-fix bug).
     expect(originalCloseSpy).toHaveBeenCalledTimes(1)
 
     const bus = useSseBus()

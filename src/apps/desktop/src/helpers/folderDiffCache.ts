@@ -114,13 +114,13 @@ function fetchSnapshot(cwd: string): Promise<Map<string, GitFileDiff>> {
   return tracked
 }
 
-/** Diff for one file, from the shared snapshot. Revalidates with a single
- * folder request when the snapshot is missing or older than the TTL;
- * concurrent callers share that one request.
- * Resolves to a diff entry even when the path is absent from the payload —
- * the server only reports CHANGED paths, so a missing path means "no diff",
- * which is what the per-file endpoint used to answer with empty content.
- * REJECTS when the fetch itself fails; callers render that as an error. */
+/** Diff for one file, from the shared snapshot. Revalidates with a single folder request when the
+ * snapshot is missing or older than the TTL; concurrent callers share that one request. */
+
+/** Resolves to a diff entry even when the path is absent from the payload — the server only reports
+ * CHANGED paths, so a missing path means "no diff", which is what the per-file endpoint used to
+ * answer with empty content. REJECTS when the fetch itself fails; callers render that as an
+ * error. */
 export async function fetchFolderDiff(
   cwd: string,
   path: string,

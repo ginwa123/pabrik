@@ -1,11 +1,9 @@
-// Pinia store for the Agent Mode tool registry.
+// Pinia store for the Agent Mode tool registry. Holds the canonical tool list (fetched once from
+// `/api/agent-tools/registry` and cached for the session). The Tools panel in AgentView reads
+// `registry` to render checkboxes.
 
-// Holds the canonical tool list (fetched once from
-// `/api/agent-tools/registry` and cached for the session). The Tools
-// panel in AgentView reads `registry` to render checkboxes.
-
-// Plan: docs/superpowers/plans/2026-08-15-agent-mode.md (Task 14)
-// Spec: docs/superpowers/specs/2026-08-15-agent-mode-design.md (D9)
+// Plan: docs/superpowers/plans/2026-08-15-agent-mode.md (Task 14) Spec:
+// docs/superpowers/specs/2026-08-15-agent-mode-design.md (D9)
 
 import { defineStore } from 'pinia'
 import { ref } from 'vue'

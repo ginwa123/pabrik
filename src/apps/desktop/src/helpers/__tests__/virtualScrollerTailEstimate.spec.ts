@@ -74,15 +74,14 @@ describe('VirtualScroller tail estimation (no gap below last message)', () => {
   })
 
   it('estimates unmeasured history AND tail at the learned median', async () => {
-    // The P1 win must survive: unmeasured history items BEFORE the last
-    // measured index estimate at the median, while only the TAIL (after
-    // the last measured index) falls back to the prop.
-    //
-    // Geometry: 200 items, scroll to index ~90, measure the rendered
-    // window (indices 85..107) at 300px. maxMeasuredIndex=107.
-    // Median-300 backs every unmeasured item: 23 measured at 300 plus
-    // 177 unmeasured at median 300 = 200*300 = 60000. The old
-    // 23*300+177*64=18228 collapsed the sizer (the shrink symptom).
+    // The P1 win must survive: unmeasured history items BEFORE the last measured index estimate at
+    // the median, while only the TAIL (after the last measured index) falls back to the prop.
+
+    // Geometry: 200 items, scroll to index ~90, measure the rendered window (indices 85..107) at
+    // 300px. maxMeasuredIndex=107. Median-300 backs every unmeasured item: 23 measured at 300 plus
+    // 177 unmeasured at median 300 = 200*300 = 60000.
+
+    // The old 23*300+177*64=18228 collapsed the sizer (the shrink symptom).
     const { wrapper, el } = mountScroller(200)
     await nextTick()
 

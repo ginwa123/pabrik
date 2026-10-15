@@ -3,23 +3,16 @@ import { mount } from '@vue/test-utils'
 import { defineComponent, nextTick } from 'vue'
 import { useContextMenu } from '../composables/useContextMenu'
 
-/**
- * Root-cause reproduction for "the right-click context menu sometimes
- * suddenly closes".
- *
- * `useContextMenu` used to attach a capture-phase `wheel` listener and a
- * capture-phase `scroll` listener that BOTH called `close()`
- * unconditionally. Neither checked whether the event came from the user,
- * from the menu's own subtree, or from a programmatic scroll the app
- * performs on its own.
- *
- * The consequence: any scroll anywhere in the document — including one the
- * app itself performs — dismissed an open menu with no user intent.
- *
- * The fix scopes the scroll dismiss to the anchor the menu was opened
- * from, and drops the `wheel` dismiss entirely. These tests pin both the
- * bug (as a regression guard) and the fix.
- */
+/** Root-cause reproduction for "the right-click context menu sometimes suddenly closes".
+ * `useContextMenu` used to attach a capture-phase `wheel` listener and a capture-phase `scroll`
+ * listener that BOTH called `close()` unconditionally. */
+
+/** Neither checked whether the event came from the user, from the menu's own subtree, or from a
+ * programmatic scroll the app performs on its own. The consequence: any scroll anywhere in the
+ * document — including one the app itself performs — dismissed an open menu with no user intent. */
+
+/** The fix scopes the scroll dismiss to the anchor the menu was opened from, and drops the `wheel`
+ * dismiss entirely. These tests pin both the bug (as a regression guard) and the fix. */
 
 const Host = defineComponent({
   setup() {

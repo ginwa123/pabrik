@@ -1,20 +1,17 @@
-// Static-contract regression test: the task-delete confirmation must
-// have exactly ONE owner.
-//
-// Bug (task_1791030815108_1, PR #786): the kanban card mounted its own
-// <ConfirmDialog> whose handler only re-emitted `deleteTask` — it never
-// deleted anything. That event still reached AppLayout -> Sidebar, whose
-// ConfirmDialog is the real owner, so one "Delete task" opened two stacked
-// popups.
-//
-// The component-level spec (WorkspaceItemTaskCard.contextMenu.spec.ts)
-// mounts the card in ISOLATION and asserts it mounts no dialog. That is
-// necessary but not sufficient: it cannot see a duplicate owned by an
-// ANCESTOR, and Sidebar is not in that test tree. These assertions close
-// that gap by pinning the ownership in the source itself, so a future
-// "just add a confirm here" cannot silently re-create the duplicate.
+// Static-contract regression test: the task-delete confirmation must have exactly ONE owner. Bug
+// (task_1791030815108_1, PR #786): the kanban card mounted its own <ConfirmDialog> whose handler
+// only re-emitted `deleteTask` — it never deleted anything.
 
-// Related skill: find-the-terminal-owner-before-adding-a-confirm
+// That event still reached AppLayout -> Sidebar, whose ConfirmDialog is the real owner, so one
+// "Delete task" opened two stacked popups.
+
+// The component-level spec (WorkspaceItemTaskCard.contextMenu.spec.ts) mounts the card in ISOLATION
+// and asserts it mounts no dialog. That is necessary but not sufficient: it cannot see a duplicate
+// owned by an ANCESTOR, and Sidebar is not in that test tree.
+
+// These assertions close that gap by pinning the ownership in the source itself, so a future "just
+// add a confirm here" cannot silently re-create the duplicate. Related skill:
+// find-the-terminal-owner-before-adding-a-confirm
 
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'

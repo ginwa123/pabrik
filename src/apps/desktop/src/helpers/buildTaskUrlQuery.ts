@@ -134,14 +134,15 @@ export function buildTaskUrlQuery(input: TaskUrlContext): Record<string, string>
     else if (urlPageId) query.pageId = urlPageId
   }
 
-  // ─── sorts (kanban view-specific, lives in URL only) ─────────────
-  // The kanban per-column sort state (`?sorts=col_X:name:asc,...`)
-  // lives in the URL and is NOT tracked by the workspaces store.
-  // The user expects it to survive the workspace → chat round-trip
-  // (the close-restore flow in AppLayout.handleCloseTaskView reads
-  // savedSortsParam, which is snapshot from route.query.sorts at
-  // handleSelectTask time). Preserve it in the new task URL so the
-  // URL stays self-describing ("I'm on kanban X with sort S,
+  // ─── sorts (kanban view-specific, lives in URL only) ───────────── The kanban per-column sort
+  // state (`?sorts=col_X:name:asc,...`) lives in the URL and is NOT tracked by the workspaces
+  // store.
+
+  // The user expects it to survive the workspace → chat round-trip (the close-restore flow in
+  // AppLayout.handleCloseTaskView reads savedSortsParam, which is snapshot from route.query.sorts
+  // at handleSelectTask time).
+
+  // Preserve it in the new task URL so the URL stays self-describing ("I'm on kanban X with sort S,
   // viewing chat Y").
   if (urlBreadcrumb.sorts) query.sorts = urlBreadcrumb.sorts
 

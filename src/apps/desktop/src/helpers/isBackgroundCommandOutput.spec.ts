@@ -35,7 +35,6 @@ const xmlEnvelope = (
 // `std.json.Stringify`) rather than built by a helper, because a helper here
 // would let the two sides drift again while both stayed green. When the
 // backend's shape changes, this literal is the thing that fails.
-
 /** Non-truncated: `total_bytes` and `log_path` are null. */
 const jsonEnvelope = (pid: number, command: string, stdout: string) =>
   `{"pid":${pid},"command":${JSON.stringify(command)},"stdout":${JSON.stringify(stdout)},"truncated":false,"total_bytes":null,"log_path":null}`

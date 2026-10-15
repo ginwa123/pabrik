@@ -42,7 +42,6 @@ import type { UiIconName } from '../ui/icons'
  * The component is presentational: `AppLayout` owns the open-file session
  * (file / content / loading / error) and passes the text down.
  */
-
 /** One inline blame annotation: author + pre-formatted age. */
 export interface LineBlame {
   line: number

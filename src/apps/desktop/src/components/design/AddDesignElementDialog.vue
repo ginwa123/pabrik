@@ -108,11 +108,9 @@ const handleKeydown = (event: KeyboardEvent): void => {
   }
 }
 
-// ─── Lifecycle ─────────────────────────────────────────────────────────
-
-// Reset all state when the dialog opens. We deliberately do NOT
-// preserve any field across open/close — matches AddKanbanDialog's
-// UX and avoids surprising the user with stale data.
+// ─── Lifecycle ───────────────────────────────────────────────────────── Reset all state when the
+// dialog opens. We deliberately do NOT preserve any field across open/close — matches
+// AddKanbanDialog's UX and avoids surprising the user with stale data.
 const handleOpen = async () => {
   name.value = ''
   elementType.value = 'rectangle'

@@ -1,11 +1,10 @@
-// Behavioural tests for addAgentKnowledge's `content` param
-// (plan 2026-08-21-agent-knowledge-manual-text, Task 5).
-//
-// Mocking pattern: stub `global.fetch` — same approach as
-// workspacesStoreUngroup.spec.ts. `vi.spyOn(api, 'apiFetch')` can't
-// intercept the internal call (ESM live bindings), but the real
-// apiFetch runs, so this exercises the REAL wrapper (signature +
-// body shape) while stubbing only the network boundary.
+// Behavioural tests for addAgentKnowledge's `content` param (plan
+// 2026-08-21-agent-knowledge-manual-text, Task 5). Mocking pattern: stub `global.fetch` — same
+// approach as workspacesStoreUngroup.spec.ts.
+
+// `vi.spyOn(api, 'apiFetch')` can't intercept the internal call (ESM live bindings), but the real
+// apiFetch runs, so this exercises the REAL wrapper (signature + body shape) while stubbing only
+// the network boundary.
 
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'

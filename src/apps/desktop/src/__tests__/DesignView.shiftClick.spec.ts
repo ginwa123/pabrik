@@ -112,7 +112,6 @@ describe('DesignView canvas Shift+click multi-select toggle', () => {
   }
 
   // Helper: dispatch a pointerdown on a <DesignElement>'s root.
-   
   // jsdom 29 makes PointerEvent.button a readonly getter, so we use native dispatchEvent.
   // setPointerCapture stubbed to a noop so the drag handler doesn't blow up in jsdom.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

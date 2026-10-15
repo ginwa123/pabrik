@@ -195,11 +195,9 @@ describe('ChatsList — chat row active state from URL', () => {
   })
 
   it('chat row active state reflects the URL at the time loadChats runs', async () => {
-    // The fix's invariant: loadChats() derives active from
-    // useCurrentMainView() at call time. So calling loadChats()
-    // with a different URL between renders should produce a
-     
-    // different active state.
+    // The fix's invariant: loadChats() derives active from useCurrentMainView() at call time. So
+    // calling loadChats() with a different URL between renders should produce a different active
+    // state.
     const route = reactive({
       query: {} as Record<string, string>,
       path: '/app',

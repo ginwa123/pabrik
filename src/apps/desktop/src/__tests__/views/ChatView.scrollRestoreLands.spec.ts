@@ -140,7 +140,6 @@ const SAVED_POSITION = 9000
 /** jsdom has no layout, so `scrollHeight` is whatever we say. The scroller's sizer is a real DOM
  * element with a real inline `height`, and a browser derives the container's scrollHeight from it —
  * so mirror that: the container reports the sizer's current height. */
-
 /** That makes the estimate-vs-measured gap REAL rather than asserted, which is the only way this
  * test can tell "restored to the saved position" apart from "clamped to whatever the model
  * currently claims". */

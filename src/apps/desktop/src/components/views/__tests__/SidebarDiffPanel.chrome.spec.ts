@@ -4,17 +4,15 @@ import { createRouter, createMemoryHistory } from 'vue-router'
 import SidebarDiffPanel from '../chat_right_sidebar/SidebarDiffPanel.vue'
 import { clearFolderDiffCache } from '../../../helpers/folderDiffCache'
 
-/**
- * The chrome redesign (docs/plans/2026-10-04-right-sidebar-redesign.md).
- *
- * These lock the NEW behaviour the redesign introduced. Everything the old
- * panel already guaranteed stays guaranteed by the existing specs —
- * `SidebarDiffPanel.tabs.spec.ts` owns the tab style contract,
- * `pr.spec.ts` / `prConflict.spec.ts` own the exact PR strings, and
- * `ChatView.worktreeSidebar.spec.ts` owns the source greps. This file only
- * covers what did not exist before: the letter chip, the dim/bright path
- * split, the filter, and the one-word tab labels.
- */
+/** The chrome redesign (docs/plans/2026-10-04-right-sidebar-redesign.md). These lock the NEW
+ * behaviour the redesign introduced. */
+
+/** Everything the old panel already guaranteed stays guaranteed by the existing specs —
+ * `SidebarDiffPanel.tabs.spec.ts` owns the tab style contract, `pr.spec.ts` / `prConflict.spec.ts`
+ * own the exact PR strings, and `ChatView.worktreeSidebar.spec.ts` owns the source greps. */
+
+/** This file only covers what did not exist before: the letter chip, the dim/bright path split, the
+ * filter, and the one-word tab labels. */
 
 const { getGitChangesMock, getGitFolderDiffsMock, getPrDiffMock, getPrStatusMock, getGitCommitsMock } =
   vi.hoisted(() => ({

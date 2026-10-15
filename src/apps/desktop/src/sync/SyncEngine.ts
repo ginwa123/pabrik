@@ -112,7 +112,6 @@ export abstract class BaseSyncEngine<T extends Syncable, C = string> {
 
   /** Cache-then-delta: return cached rows immediately when present, then fetch the network delta,
    * merge (dedupe by id), persist, and advance the cursor. */
-
   /** Never fails — a broken cache or an unreachable backend degrades to the painted cache — but
    * `error` now records why, which the previous bare `catch` discarded. */
   syncOnMount(ctx: C, limit: number): Effect.Effect<SyncMountResult<T>> {

@@ -1,7 +1,6 @@
 /** Tests for the "Start agent" button in KanbanTaskDetailDialog (edit mode). Mount pattern: same as
  * KanbanTaskDetailDialog.runAgent.spec.ts — <Teleport to="body">, so use `attachTo: document.body`
  * + `document.querySelector` (NOT `wrapper.find`). */
-
 /** Plan: docs/superpowers/specs/2026-08-18-kanban-task-detail-start-agent.md */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
@@ -34,7 +33,6 @@ describe('KanbanTaskDetailDialog — Start agent', () => {
   /** Mount the dialog with optional props and an optional `processingState` provider. The
    * `processingState` map mirrors the one App.vue provides — a Record<sessionId, boolean> where
    * `true` means a worker is currently running for that session. */
-
   /** Assigns to the outer `wrapper` so the afterEach hook can unmount it. */
   function mountDialog(
     propsOverride: Record<string, unknown> = {},

@@ -37,7 +37,6 @@
  * are not the same: the auto-stick is a per-frame concern, the LLM
  * being busy is a session-lifetime concern.
  */
-
 /**
  * How recent the last auto-stick must be (in ms) for the gate to
  * consider the auto-stick "active" and suppress `loadMore`.

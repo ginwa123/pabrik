@@ -44,7 +44,6 @@ function clickInDom(selector: string) {
 }
 
 // Mock Windows tree (backslash-joined, like the backend's `std.fs.path.join` produces on Windows):
-
 // C:\ └── Users └── ginwa ├── ginwaaitoolbox (dir, empty) └── notes (dir, one file)
 const winTree: Record<string, Array<{ name: string; path: string; is_directory: boolean }>> = {
   'C:\\': [{ name: 'Users', path: 'C:\\Users', is_directory: true }],

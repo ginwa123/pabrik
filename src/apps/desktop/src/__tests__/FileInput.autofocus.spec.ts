@@ -1,7 +1,8 @@
-/** FileInput autofocus — clicking a chat session should land the cursor
- * in the message box with no second mouse click.
- * Plan: docs/superpowers/plans/2026-09-09-chat-input-autofocus-on-session-switch.md
- * Task 1 (RED): FileInput exposes focusInput() and auto-focuses on mount. */
+/** FileInput autofocus — clicking a chat session should land the cursor in the message box with no
+ * second mouse click. */
+
+/** Plan: docs/superpowers/plans/2026-09-09-chat-input-autofocus-on-session-switch.md Task 1 (RED):
+ * FileInput exposes focusInput() and auto-focuses on mount. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

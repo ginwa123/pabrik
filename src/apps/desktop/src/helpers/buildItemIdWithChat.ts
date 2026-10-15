@@ -53,7 +53,6 @@ export type UrlQueryInput = Record<string, unknown>
 /** Pick breadcrumb params (`workspaceId`, `itemId`, `pageId`, `sorts`) from a vue-router
  * LocationQuery and return them as a plain `Record<string, string>`. Used to preserve context when
  * building task URLs that append to the current URL. */
-
 /** Moved from `buildTaskUrlQuery.ts` (where it was inlined) so the helpers can be co-located and
  * the `pickBreadcrumbFromQuery` import remains a one-line re-export. */
 export function pickBreadcrumbFromQuery(query: Record<string, unknown>): Record<string, string> {

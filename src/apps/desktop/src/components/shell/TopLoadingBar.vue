@@ -2,7 +2,6 @@
 /** Global top loading bar (NProgress-style, zero deps). Visible while the loading store reports
  * route navigation or in-flight API activity. A 150ms show-delay suppresses flicker on fast
  * requests; hide is immediate with a 200ms fade. */
-
 /** The indeterminate slide animation degrades to a static bar under `prefers-reduced-motion`.
  * Mounted once in App.vue above <router-view/> so it covers every route including /login. */
 import { ref, onMounted, onUnmounted } from 'vue'

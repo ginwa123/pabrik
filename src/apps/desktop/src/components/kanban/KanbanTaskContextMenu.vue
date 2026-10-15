@@ -107,11 +107,9 @@ const closeSub = () => {
   subOpen.value = false
 }
 
-// ─── Keyboard navigation ────────────────────────────────────────────────
-
-// The menu is not mouse-only: the card root handles the ContextMenu /
-// F10 keys and opens this menu, so the menu has to be arrow-navigable
-// too. `focusIdx` indexes the flat list of enabled rows.
+// ─── Keyboard navigation ──────────────────────────────────────────────── The menu is not
+// mouse-only: the card root handles the ContextMenu / F10 keys and opens this menu, so the menu has
+// to be arrow-navigable too. `focusIdx` indexes the flat list of enabled rows.
 const focusIdx = ref(-1)
 const rootRef = ref<HTMLElement | null>(null)
 

@@ -262,11 +262,11 @@ describe('DesignContextMenu', () => {
   })
 
   it('Leave group is enabled even when the single selection is a group/frame (Figma "Pull out of group")', async () => {
-    // `g` has parent_id='' (top-level) — so Leave group is disabled
-    // here. But for a nested group/frame (parent_id set), Leave
-    // group is enabled even though Ungroup also fires. Verified
-    // by the "Leave group is enabled when the single selected
-    // element is itself a nested group/frame" test above.
+    // `g` has parent_id='' (top-level) — so Leave group is disabled here. But for a nested
+    // group/frame (parent_id set), Leave group is enabled even though Ungroup also fires.
+
+    // Verified by the "Leave group is enabled when the single selected element is itself a nested
+    // group/frame" test above.
     wrapper = mount(DesignContextMenu, {
       props: { visible: true, x: 100, y: 100, targetIds: ['nested-g'], elements },
       attachTo: document.body,

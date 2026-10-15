@@ -54,7 +54,6 @@
  * Pure function (no DOM, no Vue) so every branch is unit-testable,
  * mirroring `virtualScrollerThreshold.ts`.
  */
-
 // Keep the wire shape honest without importing DOM types into a pure
 // module: heights are plain numbers in px.
 type geometry_px = number

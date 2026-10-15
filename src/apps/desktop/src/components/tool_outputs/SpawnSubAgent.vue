@@ -13,7 +13,6 @@ const props = defineProps<{
   /** 2026-08-23 spawn-subagent-live-progress: live per-sub-agent progress fed from ChatView's
    * per-tool_call_id map. When set AND `content` has no parsed <results> envelope, the component
    * renders these rows directly (auto-expanded — no toggle needed). */
-
   /** When `content` contains an envelope (after the tool result lands), the parsed-results view
    * wins and this prop is ignored — the envelope is the source of truth on completion. The map is
    * then deleted from ChatView via `clearProgressFor(tool_call_id)`. */
