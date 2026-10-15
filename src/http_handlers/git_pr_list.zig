@@ -384,36 +384,34 @@ fn handlerCli(
 
 const testing = std.testing;
 const builtin_t = @import("builtin");
+const hf = @import("helpers").host_fixture;
 
-fn skipOnWindows() bool {
-    return builtin_t.os.tag == .windows;
-}
-
-/// A throwaway directory plus executable fixture scripts — the same shape the
-/// `git_pr_create.zig` / `git_pr_status.zig` suites use, so the whole path
-/// (argv → spawn → capture → parse) runs with no real `gh` on PATH and no
+/// A throwaway directory plus fixture programs, written by `host_fixture`
+/// so they run on POSIX and Windows alike. The whole path (argv → spawn →
+/// capture → parse) runs with no real `gh` on PATH and no platform declined.
 const Fixture = struct {
-    tmp: std.testing.TmpDir,
-    root: []u8,
+    inner: hf.Fixture,
     allocator: std.mem.Allocator,
 
     fn init(allocator: std.mem.Allocator) !Fixture {
-        var tmp = std.testing.tmpDir(.{});
-        errdefer tmp.cleanup();
-        var buf: [512]u8 = undefined;
-        const root = try tmp.dir.realPath(testing.io, &buf);
-        return .{ .tmp = tmp, .root = try allocator.dupe(u8, buf[0..root]), .allocator = allocator };
+        return .{ .inner = try hf.Fixture.init(allocator), .allocator = allocator };
     }
 
     fn deinit(self: *Fixture) void {
-        self.tmp.cleanup();
-        self.allocator.free(self.root);
+        self.inner.deinit();
     }
 
-    fn writeExec(self: *Fixture, name: []const u8, script: []const u8) ![]u8 {
-        try self.tmp.dir.writeFile(testing.io, .{ .sub_path = name, .data = script });
-        if (!skipOnWindows()) try self.tmp.dir.setFilePermissions(testing.io, name, .executable_file, .{});
-        return std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ self.root, name });
+    /// The fixture root, as an absolute path.
+    fn root(self: *Fixture) []const u8 {
+        return self.inner.root;
+    }
+
+    fn writeProgram(self: *Fixture, name: []const u8, payload: hf.Payload) ![]u8 {
+        return self.inner.writeProgram(name, payload);
+    }
+
+    fn writeProgramText(self: *Fixture, name: []const u8, script: []const u8) ![]u8 {
+        return self.inner.writeProgramText(name, script);
     }
 };
 
@@ -440,7 +438,7 @@ fn freeListResponse(a: std.mem.Allocator, res: http_response.GitPrListResponse) 
 /// A git repo inside the fixture (the use case gates on `rev-parse`).
 fn makeGitRepo(fx: *Fixture) ![]u8 {
     const a = fx.allocator;
-    const repo = try std.fmt.allocPrint(a, "{s}/repo", .{fx.root});
+    const repo = try std.fmt.allocPrint(a, "{s}/repo", .{fx.root()});
     var init = run_captured.run(a, testing.io, &.{ "git", "init", "-q", "-b", "main", repo }, .{ .timeout_ms = 30_000 }) catch return error.SkipZigTest;
     defer init.deinit(a);
     if (init.term.exited != 0) return error.SkipZigTest;
@@ -449,15 +447,7 @@ fn makeGitRepo(fx: *Fixture) ![]u8 {
 
 /// A `gh`/`glab` stand-in that records its argv and prints `payload`.
 fn scriptPrinting(fx: *Fixture, name: []const u8, argv_file: []const u8, payload: []const u8) ![]u8 {
-    // The script text is only needed until `writeExec` has written it — the
-    // child reads the FILE — so it is freed here rather than left for the leak
-    // detector. (CI reports every unfreed byte in a test as a failure.)
-    const script = try std.fmt.allocPrint(fx.allocator,
-        "#!/bin/sh\nfor a in \"$@\"; do echo \"$a\"; done > '{s}'\ncat <<'JSONEOF'\n{s}\nJSONEOF\n",
-        .{ argv_file, payload },
-    );
-    defer fx.allocator.free(script);
-    return fx.writeExec(name, script);
+    return fx.writeProgram(name, .{ .argv_file = argv_file, .stdout = payload });
 }
 
 test "parseLimit: default, explicit, and the values it refuses" {
@@ -563,14 +553,13 @@ test "parseGlabList reads the iid/web_url spelling and the draft aliases" {
 }
 
 test "list: github asks by state and limit, and the recorded argv says so" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();
     const repo = try makeGitRepo(&fx);
     defer a.free(repo);
 
-    const argv_file = try std.fmt.allocPrint(a, "{s}/argv", .{fx.root});
+    const argv_file = try std.fmt.allocPrint(a, "{s}/argv", .{fx.root()});
     defer a.free(argv_file);
     const payload =
         \\[{"number":909,"title":"T","url":"https://github.com/a/b/pull/909","state":"OPEN","isDraft":false,"headRefName":"worktree/x","baseRefName":"main","author":{"login":"me"},"updatedAt":"2026-10-12T06:34:01Z"}]
@@ -596,14 +585,13 @@ test "list: github asks by state and limit, and the recorded argv says so" {
 }
 
 test "list: a full page reports truncated, and an empty stdout is an empty result" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();
     const repo = try makeGitRepo(&fx);
     defer a.free(repo);
 
-    const argv_file = try std.fmt.allocPrint(a, "{s}/argv", .{fx.root});
+    const argv_file = try std.fmt.allocPrint(a, "{s}/argv", .{fx.root()});
     defer a.free(argv_file);
 
     // Exactly `limit` rows: we cannot know whether more exist.
@@ -621,7 +609,7 @@ test "list: a full page reports truncated, and an empty stdout is an empty resul
 
     // A CLI that prints nothing on the JSON flag exited cleanly with nothing
     // to report — an empty list with a note, never an error.
-    const silent = try fx.writeExec("gh-silent", "#!/bin/sh\nexit 0\n");
+    const silent = try fx.writeProgram("gh-silent", .{});
     defer a.free(silent);
     var detail2: ?[]u8 = null;
     const none = try listUseCaseWithPrograms(a, testing.io, .{ .gh = silent }, repo, .open, 30, "github", &detail2);
@@ -632,14 +620,16 @@ test "list: a full page reports truncated, and an empty stdout is an empty resul
 }
 
 test "list: a failing CLI surfaces its own stderr rather than an empty list" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();
     const repo = try makeGitRepo(&fx);
     defer a.free(repo);
 
-    const fail = try fx.writeExec("gh-fail", "#!/bin/sh\necho 'To get started with GitHub CLI, please run: gh auth login' >&2\nexit 4\n");
+    const fail = try fx.writeProgram("gh-fail", .{
+        .stderr = "To get started with GitHub CLI, please run: gh auth login",
+        .exit_code = 4,
+    });
     defer a.free(fail);
 
     var detail: ?[]u8 = null;
@@ -651,7 +641,6 @@ test "list: a failing CLI surfaces its own stderr rather than an empty list" {
 }
 
 test "list: a missing CLI is CliMissing (422), not a fetch failure" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();
@@ -667,7 +656,6 @@ test "list: a non-repository path is refused before any CLI runs" {
     // Three guards, all copied from the status suite's repo-gate test rather
     // than invented here — each one is a way this assertion was already known
     // to lie: 1.
-    if (skipOnWindows()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();
@@ -681,7 +669,6 @@ test "list: a non-repository path is refused before any CLI runs" {
 }
 
 test "list: the generic provider has no CLI, and says so instead of an empty list" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();

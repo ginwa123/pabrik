@@ -624,48 +624,43 @@ test "execute missing CLI reports install guidance, not a stack trace" {
 // parse) so both forges are proven end to end without a CLI install, auth, or
 
 const builtin_t = @import("builtin");
+const hf = @import("helpers").host_fixture;
 
-fn skipOnWindows() bool {
-    return builtin_t.os.tag == .windows;
-}
-
+/// A throwaway directory plus fixture programs, written by `host_fixture`
+/// so they run on POSIX (`#!/bin/sh`) and Windows (`.cmd`) alike.
 const Fixture = struct {
-    tmp: std.testing.TmpDir,
-    root: []u8,
+    inner: hf.Fixture,
     allocator: std.mem.Allocator,
 
     fn init(allocator: std.mem.Allocator) !Fixture {
-        var tmp = std.testing.tmpDir(.{});
-        errdefer tmp.cleanup();
-        var buf: [std.fs.max_path_bytes]u8 = undefined;
-        const root = try tmp.dir.realPath(std.testing.io, &buf);
-        const owned = try allocator.dupe(u8, buf[0..root]);
-        return .{ .tmp = tmp, .root = owned, .allocator = allocator };
+        return .{ .inner = try hf.Fixture.init(allocator), .allocator = allocator };
     }
 
     fn deinit(self: *Fixture) void {
-        self.tmp.cleanup();
-        self.allocator.free(self.root);
+        self.inner.deinit();
     }
 
-    fn writeExec(self: *Fixture, name: []const u8, script: []const u8) ![]u8 {
-        try self.tmp.dir.writeFile(std.testing.io, .{
-            .sub_path = name,
-            .data = script,
-        });
-        if (builtin_t.os.tag != .windows) {
-            try self.tmp.dir.setFilePermissions(std.testing.io, name, .executable_file, .{});
-        }
-        return std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ self.root, name });
+    /// The fixture root, as an absolute path.
+    fn root(self: *Fixture) []const u8 {
+        return self.inner.root;
+    }
+
+    fn writeProgram(self: *Fixture, name: []const u8, payload: hf.Payload) ![]u8 {
+        return self.inner.writeProgram(name, payload);
+    }
+
+    /// Write a body this file rendered for the current host.
+    fn writeProgramText(self: *Fixture, name: []const u8, script: []const u8) ![]u8 {
+        return self.inner.writeProgramText(name, script);
     }
 };
 
 fn scriptPrintingJson(allocator: std.mem.Allocator, payload: []const u8) ![]u8 {
-    return std.fmt.allocPrint(allocator, "#!/bin/sh\nprintf '%s' '{s}'\n", .{payload});
+    return hf.renderProgram(allocator, .{ .stdout = payload });
 }
 
 fn scriptFailingWith(allocator: std.mem.Allocator, message: []const u8) ![]u8 {
-    return std.fmt.allocPrint(allocator, "#!/bin/sh\nprintf '%s' '{s}' >&2\nexit 1\n", .{message});
+    return hf.renderProgram(allocator, .{ .stderr = message, .exit_code = 1 });
 }
 
 const FIXTURE_OPEN_PR_JSON =
@@ -677,7 +672,6 @@ const FIXTURE_OPEN_MR_JSON =
 ;
 
 test "execute github run path reports open status through a fixture gh" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const alloc = std.testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
@@ -687,10 +681,10 @@ test "execute github run path reports open status through a fixture gh" {
     defer fx.deinit();
     const script = try scriptPrintingJson(alloc, FIXTURE_OPEN_PR_JSON);
     defer alloc.free(script);
-    const prog = try fx.writeExec("gh", script);
+    const prog = try fx.writeProgramText("gh", script);
     defer alloc.free(prog);
 
-    const out = try executeStatusPullRequestToJSON(alloc, io, fx.root, "584", .github, prog);
+    const out = try executeStatusPullRequestToJSON(alloc, io, fx.root(), "584", .github, prog);
     defer alloc.free(out);
     const parsed = try parseTestJson(alloc, out);
     defer parsed.deinit();
@@ -703,7 +697,6 @@ test "execute github run path reports open status through a fixture gh" {
 }
 
 test "execute gitlab run path reports open status through a fixture glab" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const alloc = std.testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
@@ -713,10 +706,10 @@ test "execute gitlab run path reports open status through a fixture glab" {
     defer fx.deinit();
     const script = try scriptPrintingJson(alloc, FIXTURE_OPEN_MR_JSON);
     defer alloc.free(script);
-    const prog = try fx.writeExec("glab", script);
+    const prog = try fx.writeProgramText("glab", script);
     defer alloc.free(prog);
 
-    const out = try executeStatusPullRequestToJSON(alloc, io, fx.root, "https://gitlab.com/acme/sub/app/-/merge_requests/7", .gitlab, prog);
+    const out = try executeStatusPullRequestToJSON(alloc, io, fx.root(), "https://gitlab.com/acme/sub/app/-/merge_requests/7", .gitlab, prog);
     defer alloc.free(out);
     const parsed = try parseTestJson(alloc, out);
     defer parsed.deinit();
@@ -729,7 +722,6 @@ test "execute gitlab run path reports open status through a fixture glab" {
 }
 
 test "execute run path maps a not-found CLI stderr onto a no-pr error" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const alloc = std.testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
@@ -739,10 +731,10 @@ test "execute run path maps a not-found CLI stderr onto a no-pr error" {
     defer fx.deinit();
     const script = try scriptFailingWith(alloc, "no pull requests found for branch nope");
     defer alloc.free(script);
-    const prog = try fx.writeExec("gh", script);
+    const prog = try fx.writeProgramText("gh", script);
     defer alloc.free(prog);
 
-    const out = try executeStatusPullRequestToJSON(alloc, io, fx.root, "nope", .github, prog);
+    const out = try executeStatusPullRequestToJSON(alloc, io, fx.root(), "nope", .github, prog);
     defer alloc.free(out);
     const parsed = try parseTestJson(alloc, out);
     defer parsed.deinit();
@@ -752,7 +744,6 @@ test "execute run path maps a not-found CLI stderr onto a no-pr error" {
 }
 
 test "execute run path surfaces an auth-failure stderr instead of not-found" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const alloc = std.testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
@@ -762,10 +753,10 @@ test "execute run path surfaces an auth-failure stderr instead of not-found" {
     defer fx.deinit();
     const script = try scriptFailingWith(alloc, "HTTP 401: Bad credentials (https://api.github.com/...)");
     defer alloc.free(script);
-    const prog = try fx.writeExec("gh", script);
+    const prog = try fx.writeProgramText("gh", script);
     defer alloc.free(prog);
 
-    const out = try executeStatusPullRequestToJSON(alloc, io, fx.root, "42", .github, prog);
+    const out = try executeStatusPullRequestToJSON(alloc, io, fx.root(), "42", .github, prog);
     defer alloc.free(out);
     const parsed = try parseTestJson(alloc, out);
     defer parsed.deinit();

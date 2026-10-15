@@ -622,73 +622,50 @@ test "GhPrView parses open-PR payload with null mergedAt/closedAt" {
 // Behavioural test suite for the `gh pr view` child-process path.
 
 const builtin_t = @import("builtin");
+const hf = @import("helpers").host_fixture;
 
-/// `/bin/sh` fixtures only work on POSIX hosts. Windows CI skips the
-/// behavioural suite (the pure parsing / wiring tests above still run).
-fn skipOnWindows() bool {
-    return builtin_t.os.tag == .windows;
-}
-
-/// A throwaway directory under `.zig-cache/tmp` plus fixture scripts
-/// inside it. `root` is the absolute path; scripts are chmod 0755 so
-/// `execvp` can run them.
+/// A throwaway directory under `.zig-cache/tmp` plus fixture programs,
+/// written by `host_fixture` so the spawn -> capture -> parse path under
+/// test runs on every host instead of being skipped on Windows.
 const Fixture = struct {
-    tmp: std.testing.TmpDir,
-    root: []u8,
+    inner: hf.Fixture,
     allocator: std.mem.Allocator,
 
     fn init(allocator: std.mem.Allocator) !Fixture {
-        var tmp = std.testing.tmpDir(.{});
-        errdefer tmp.cleanup();
-        var buf: [std.fs.max_path_bytes]u8 = undefined;
-        const root = try tmp.dir.realPath(std.testing.io, &buf);
-        const owned = try allocator.dupe(u8, buf[0..root]);
-        return .{ .tmp = tmp, .root = owned, .allocator = allocator };
+        return .{ .inner = try hf.Fixture.init(allocator), .allocator = allocator };
     }
 
     fn deinit(self: *Fixture) void {
-        self.tmp.cleanup();
-        self.allocator.free(self.root);
+        self.inner.deinit();
     }
 
-    /// Write `script` to `<root>/<name>` and mark it executable.
-    /// Returns the absolute path.
-    fn writeExec(self: *Fixture, name: []const u8, script: []const u8) ![]u8 {
-        try self.tmp.dir.writeFile(std.testing.io, .{
-            .sub_path = name,
-            .data = script,
-        });
-        if (builtin_t.os.tag != .windows) {
-            try self.tmp.dir.setFilePermissions(std.testing.io, name, .executable_file, .{});
-        }
-        return std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ self.root, name });
+    /// The fixture root, as an absolute path.
+    fn root(self: *Fixture) []const u8 {
+        return self.inner.root;
     }
 
-    /// `writeExec` for a script the caller allocated: writes it, frees
-    /// it, and returns the executable path. Keeps the test allocator
-    /// honest (no leak) without every call site juggling a `defer`.
-    fn writeScript(self: *Fixture, name: []const u8, script: []const u8) ![]u8 {
-        defer self.allocator.free(script);
-        return self.writeExec(name, script);
+    /// Write a fixture program that behaves as `payload` describes.
+    fn writeProgram(self: *Fixture, name: []const u8, payload: hf.Payload) ![]u8 {
+        return self.inner.writeProgram(name, payload);
+    }
+
+    /// `writeProgram` for a payload the caller built inline.
+    fn writeScript(self: *Fixture, name: []const u8, payload: hf.Payload) ![]u8 {
+        return self.inner.writeProgram(name, payload);
     }
 
     /// A subdirectory of the fixture root, created on demand.
     fn subDir(self: *Fixture, name: []const u8) ![]u8 {
-        self.tmp.dir.createDirPath(std.testing.io, name) catch |err| switch (err) {
-            error.PathAlreadyExists => {},
-            else => return err,
-        };
-        return std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ self.root, name });
+        return self.inner.subDir(name);
     }
 };
 
-/// A fixture script that prints `payload` (verbatim, no trailing
+/// A fixture program that prints `payload` (verbatim, no trailing
 /// newline) on stdout — the shape of a real `gh pr view --json`.
 fn scriptPrintingJson(allocator: std.mem.Allocator, payload: []const u8) ![]u8 {
-    // `printf '%s'`, not a heredoc: a heredoc always appends a newline,
-    // and `gh pr view --json` output has none. The fixture must be
-    // byte-exact or "returns gh stdout verbatim" proves nothing.
-    return std.fmt.allocPrint(allocator, "#!/bin/sh\nprintf '%s' '{s}'\n", .{payload});
+    // The fixture must be byte-exact or "returns gh stdout verbatim"
+    // proves nothing, so the payload is emitted with no added newline.
+    return hf.renderProgram(allocator, .{ .stdout = payload });
 }
 
 /// A realistic `glab mr view --output json` payload for an OPEN MR: GitLab's
@@ -789,73 +766,75 @@ fn openFdCount() ?usize {
 // ─────────────────────────── runGhPrView ───────────────────────────
 
 test "runGhPrView returns gh stdout verbatim" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();
 
-    const gh = try fx.writeScript("gh", try scriptPrintingJson(a, "{\"number\":7,\"state\":\"OPEN\"}"));
+    const gh = try fx.writeProgram("gh", .{ .stdout = "{\"number\":7,\"state\":\"OPEN\"}" });
     defer a.free(gh);
 
     var detail: ?[]u8 = null;
     defer if (detail) |d| a.free(d);
-    const out = try runGhPrView(a, testing.io, gh, fx.root, "", 10_000, &detail);
+    const out = try runGhPrView(a, testing.io, gh, fx.root(), "", 10_000, &detail);
     defer a.free(out);
     try testing.expectEqualStrings("{\"number\":7,\"state\":\"OPEN\"}", out);
     try testing.expect(detail == null);
 }
 
 test "runGhPrView builds `pr view --json <fields>` and omits an empty pr arg" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();
 
-    const gh = try fx.writeExec("gh", "#!/bin/sh\nprintf '%s\\n' \"$@\"\n");
+    const argv_file = try std.fmt.allocPrint(a, "{s}/argv", .{fx.root()});
+    defer a.free(argv_file);
+    const gh = try fx.writeProgram("gh", .{ .argv_file = argv_file });
     defer a.free(gh);
 
     var detail: ?[]u8 = null;
     defer if (detail) |d| a.free(d);
-    const out = try runGhPrView(a, testing.io, gh, fx.root, "", 10_000, &detail);
+    const out = try runGhPrView(a, testing.io, gh, fx.root(), "", 10_000, &detail);
     defer a.free(out);
 
-    // Exactly four lines when pr_arg is empty: pr / view / --json / fields
-    var it = std.mem.splitScalar(u8, std.mem.trim(u8, out, "\n"), '\n');
-    try testing.expectEqualStrings("pr", it.next().?);
-    try testing.expectEqualStrings("view", it.next().?);
-    try testing.expectEqualStrings("--json", it.next().?);
-    try testing.expectEqualStrings(GH_JSON_FIELDS, it.next().?);
-    try testing.expect(it.next() == null);
+    // Exactly four arguments when pr_arg is empty: pr / view / --json / fields
+    const recorded = try std.Io.Dir.cwd().readFileAlloc(testing.io, argv_file, a, .limited(64 * 1024));
+    defer a.free(recorded);
+    try testing.expect(hf.recordedArgvContainsSequence(recorded, &.{ "pr", "view", "--json", GH_JSON_FIELDS }));
+    // Nothing else was passed — in particular no empty pr argument.
+    try testing.expect(!hf.recordedArgvContains(recorded, ""));
 }
 
 test "runGhPrView passes a pr number / URL / branch through verbatim" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();
 
-    const gh = try fx.writeExec("gh", "#!/bin/sh\nprintf '%s\\n' \"$@\"\n");
+    const argv_file = try std.fmt.allocPrint(a, "{s}/argv", .{fx.root()});
+    defer a.free(argv_file);
+    const gh = try fx.writeProgram("gh", .{ .argv_file = argv_file });
     defer a.free(gh);
 
     for ([_][]const u8{ "42", "https://github.com/acme/app/pull/9", "feature-x" }) |pr_arg| {
         var detail: ?[]u8 = null;
         defer if (detail) |d| a.free(d);
-        const out = try runGhPrView(a, testing.io, gh, fx.root, pr_arg, 10_000, &detail);
+        const out = try runGhPrView(a, testing.io, gh, fx.root(), pr_arg, 10_000, &detail);
         defer a.free(out);
-        var it = std.mem.splitScalar(u8, std.mem.trim(u8, out, "\n"), '\n');
-        try testing.expectEqualStrings("pr", it.next().?);
-        try testing.expectEqualStrings("view", it.next().?);
-        try testing.expectEqualStrings(pr_arg, it.next().?);
+        // The fixture records the argv it was handed, so read the record
+        // back rather than the (empty) stdout.
+        const recorded = try std.Io.Dir.cwd().readFileAlloc(testing.io, argv_file, a, .limited(64 * 1024));
+        defer a.free(recorded);
+        // The pr argument is passed through verbatim, in position, after
+        // `pr view` — not quoted, rewritten or dropped.
+        try testing.expect(hf.recordedArgvContainsSequence(recorded, &.{ "pr", "view", pr_arg }));
     }
 }
 
 test "runGhPrView runs the child in the requested cwd" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();
 
-    const gh = try fx.writeExec("gh", "#!/bin/sh\npwd\n");
+    const gh = try fx.writeProgram("gh", .{ .print_cwd = true });
     defer a.free(gh);
     const repo = try fx.subDir("repo");
     defer a.free(repo);
@@ -868,7 +847,6 @@ test "runGhPrView runs the child in the requested cwd" {
 }
 
 test "runGhPrView: 'no pull requests found' maps to NoAssociatedPr" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();
@@ -878,75 +856,64 @@ test "runGhPrView: 'no pull requests found' maps to NoAssociatedPr" {
         "no pull request found for branch",
         "could not find any pull request",
     }) |msg| {
-        const gh = try fx.writeScript("gh", try std.fmt.allocPrint(a,
-            \\#!/bin/sh
-            \\printf '%s' '{s}' 1>&2
-            \\exit 1
-        , .{msg}));
+        const gh = try fx.writeProgram("gh", .{ .stderr = msg, .exit_code = 1 });
         defer a.free(gh);
 
         var detail: ?[]u8 = null;
         defer if (detail) |d| a.free(d);
         try testing.expectError(
             error.NoAssociatedPr,
-            runGhPrView(a, testing.io, gh, fx.root, "", 10_000, &detail),
+            runGhPrView(a, testing.io, gh, fx.root(), "", 10_000, &detail),
         );
     }
 }
 
 test "runGhPrView: auth failure surfaces the real gh stderr in fetch_detail" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();
 
-    const gh = try fx.writeExec("gh",
-        \\#!/bin/sh
-        \\printf 'gh: To use GitHub CLI in a GitHub Actions workflow, set the GH_TOKEN environment variable.\n' 1>&2
-        \\exit 4
-    );
+    const gh = try fx.writeProgram("gh", .{
+        .stderr = "gh: To use GitHub CLI in a GitHub Actions workflow, set the GH_TOKEN environment variable.",
+        .exit_code = 4,
+    });
     defer a.free(gh);
 
     var detail: ?[]u8 = null;
     defer if (detail) |d| a.free(d);
-    try testing.expectError(error.FetchFailed, runGhPrView(a, testing.io, gh, fx.root, "", 10_000, &detail));
+    try testing.expectError(error.FetchFailed, runGhPrView(a, testing.io, gh, fx.root(), "", 10_000, &detail));
     try testing.expect(detail != null);
     try testing.expect(std.mem.indexOf(u8, detail.?, "GH_TOKEN") != null);
 }
 
 test "runGhPrView: a non-zero exit with empty stderr still records the code" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();
 
-    const gh = try fx.writeExec("gh", "#!/bin/sh\nexit 9\n");
+    const gh = try fx.writeProgram("gh", .{ .exit_code = 9 });
     defer a.free(gh);
 
     var detail: ?[]u8 = null;
     defer if (detail) |d| a.free(d);
-    try testing.expectError(error.FetchFailed, runGhPrView(a, testing.io, gh, fx.root, "", 10_000, &detail));
+    try testing.expectError(error.FetchFailed, runGhPrView(a, testing.io, gh, fx.root(), "", 10_000, &detail));
     try testing.expect(detail != null);
     try testing.expect(std.mem.indexOf(u8, detail.?, "exited with code 9") != null);
 }
 
 test "runGhPrView: >64 KiB of gh stderr does NOT deadlock (crash-class regression)" {
     // THE regression test for the production hang.
-    if (skipOnWindows()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();
 
-    const gh = try fx.writeExec("gh",
-        \\#!/bin/sh
-        \\i=0
-        \\while [ $i -lt 1024 ]; do
-        \\  i=$((i+1))
-        \\  dd if=/dev/zero bs=1024 count=1 2>/dev/null | tr '\0' 'E' 1>&2
-        \\done
-        \\printf 'never-reached-json'
-        \\exit 1
-    );
+    // 1024 x 1 KiB of stderr: far past one pipe buffer, so the drain has
+    // to keep reading while the child keeps writing or it deadlocks.
+    const gh = try fx.writeProgram("gh", .{
+        .stderr = "E" ** 1024,
+        .repeat_stderr = 1024,
+        .exit_code = 1,
+    });
     defer a.free(gh);
 
     var detail: ?[]u8 = null;
@@ -956,46 +923,43 @@ test "runGhPrView: >64 KiB of gh stderr does NOT deadlock (crash-class regressio
     // suite the way the pre-fix code hung the worker thread.
     try testing.expectError(
         error.FetchFailed,
-        runGhPrView(a, testing.io, gh, fx.root, "", 20_000, &detail),
+        runGhPrView(a, testing.io, gh, fx.root(), "", 20_000, &detail),
     );
     // 1 MiB of stderr was drained, then trimmed down to MAX_FETCH_DETAIL.
     try testing.expectEqual(@as(usize, MAX_FETCH_DETAIL), detail.?.len);
 }
 
 test "runGhPrView: a gh that never exits is killed at the deadline" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();
 
-    const gh = try fx.writeExec("gh", "#!/bin/sh\nsleep 60\n");
+    const gh = try fx.writeProgram("gh", .{ .sleep_ms = 60_000 });
     defer a.free(gh);
 
     var detail: ?[]u8 = null;
     defer if (detail) |d| a.free(d);
-    try testing.expectError(error.FetchFailed, runGhPrView(a, testing.io, gh, fx.root, "", 300, &detail));
+    try testing.expectError(error.FetchFailed, runGhPrView(a, testing.io, gh, fx.root(), "", 300, &detail));
     try testing.expect(detail != null);
     try testing.expect(std.mem.indexOf(u8, detail.?, "timed out") != null);
 }
 
 test "runGhPrView: a gh killed by a signal is reported, not a success" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();
 
-    const gh = try fx.writeExec("gh", "#!/bin/sh\nkill -9 $$\n");
+    const gh = try fx.writeProgram("gh", .{ .kill_self = true });
     defer a.free(gh);
 
     var detail: ?[]u8 = null;
     defer if (detail) |d| a.free(d);
-    try testing.expectError(error.FetchFailed, runGhPrView(a, testing.io, gh, fx.root, "", 10_000, &detail));
+    try testing.expectError(error.FetchFailed, runGhPrView(a, testing.io, gh, fx.root(), "", 10_000, &detail));
     try testing.expect(detail != null);
     try testing.expect(std.mem.indexOf(u8, detail.?, "signal") != null);
 }
 
 test "runGhPrView: a missing gh binary maps to CliMissing" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();
@@ -1006,7 +970,7 @@ test "runGhPrView: a missing gh binary maps to CliMissing" {
         a,
         testing.io,
         "/pabrik/definitely/not/gh",
-        fx.root,
+        fx.root(),
         "",
         10_000,
         &detail,
@@ -1014,17 +978,16 @@ test "runGhPrView: a missing gh binary maps to CliMissing" {
 }
 
 test "runGhPrView: empty gh stdout is an empty slice, not a silent failure" {
-    if (skipOnWindows()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();
 
-    const gh = try fx.writeExec("gh", "#!/bin/sh\nexit 0\n");
+    const gh = try fx.writeProgram("gh", .{});
     defer a.free(gh);
 
     var detail: ?[]u8 = null;
     defer if (detail) |d| a.free(d);
-    const out = try runGhPrView(a, testing.io, gh, fx.root, "", 10_000, &detail);
+    const out = try runGhPrView(a, testing.io, gh, fx.root(), "", 10_000, &detail);
     defer a.free(out);
     try testing.expectEqual(@as(usize, 0), out.len);
     try testing.expect(detail == null);
@@ -1057,13 +1020,12 @@ fn concurrentGhWorker(ctx: *ConcurrentGhCtx) void {
 test "runGhPrView: 8 concurrent callers never trip the double-close abort" {
     // The reported crash was a `closeFd` EBADF inside `childCleanupPosix` on
     // a worker-pool thread, so it only ever showed up under concurrency.
-    if (skipOnWindows()) return error.SkipZigTest;
     if (builtin_t.os.tag != .linux) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();
 
-    const gh = try fx.writeScript("gh", try scriptPrintingJson(a, "{\"number\":1,\"state\":\"OPEN\"}"));
+    const gh = try fx.writeProgram("gh", .{ .stdout = "{\"number\":1,\"state\":\"OPEN\"}" });
     defer a.free(gh);
 
     const before = openFdCount() orelse return error.SkipZigTest;
@@ -1076,7 +1038,7 @@ test "runGhPrView: 8 concurrent callers never trip the double-close abort" {
 
     for (0..8) |i| {
         oks[i] = false;
-        ctxs[i] = .{ .a = a, .gh = gh, .root = fx.root, .ok = &oks[i] };
+        ctxs[i] = .{ .a = a, .gh = gh, .root = fx.root(), .ok = &oks[i] };
         threads[i] = try std.Thread.spawn(.{}, concurrentGhWorker, .{&ctxs[i]});
     }
     for (threads) |t| t.join();
@@ -1089,7 +1051,6 @@ test "runGhPrView: 8 concurrent callers never trip the double-close abort" {
 // ───────────────────────────── useCase ─────────────────────────────
 
 test "useCase maps a valid gh payload onto GitPrStatusResponse" {
-    if (skipOnWindows()) return error.SkipZigTest;
     if (!haveGit()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
@@ -1097,7 +1058,7 @@ test "useCase maps a valid gh payload onto GitPrStatusResponse" {
     const repo = try makeGitRepo(&fx);
     defer a.free(repo);
 
-    const gh = try fx.writeScript("gh", try scriptPrintingJson(a, OPEN_PR_JSON));
+    const gh = try fx.writeProgram("gh", .{ .stdout = OPEN_PR_JSON });
     defer a.free(gh);
 
     var detail: ?[]u8 = null;
@@ -1124,7 +1085,6 @@ test "useCase maps a valid gh payload onto GitPrStatusResponse" {
 }
 
 test "useCase: a non-git path never spawns gh (repo-gate regression)" {
-    if (skipOnWindows()) return error.SkipZigTest;
     if (!haveGit()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
@@ -1139,13 +1099,12 @@ test "useCase: a non-git path never spawns gh (repo-gate regression)" {
     // A `gh` that succeeds AND drops a sentinel: if the repo gate ever fails
     // to short-circuit, the sentinel appears and this test fails with a
     // message that names the actual problem.
-    const sentinel = try std.fmt.allocPrint(a, "{s}/gh-was-run", .{fx.root});
+    const sentinel = try std.fmt.allocPrint(a, "{s}/gh-was-run", .{fx.root()});
     defer a.free(sentinel);
-    const gh = try fx.writeScript("gh", try std.fmt.allocPrint(a,
-        \\#!/bin/sh
-        \\touch '{s}'
-        \\printf '{{"number":1,"state":"OPEN"}}'
-    , .{sentinel}));
+    const gh = try fx.writeProgram("gh", .{
+        .touch_file = sentinel,
+        .stdout = "{\"number\":1,\"state\":\"OPEN\"}",
+    });
     defer a.free(gh);
 
     var detail: ?[]u8 = null;
@@ -1162,7 +1121,6 @@ test "useCase: a non-git path never spawns gh (repo-gate regression)" {
 }
 
 test "useCase: a missing path is NotARepository" {
-    if (skipOnWindows()) return error.SkipZigTest;
     if (!haveGit()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
@@ -1177,7 +1135,6 @@ test "useCase: a missing path is NotARepository" {
 }
 
 test "useCase: an unknown provider string is rejected" {
-    if (skipOnWindows()) return error.SkipZigTest;
     if (!haveGit()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
@@ -1199,7 +1156,6 @@ test "useCase: the generic provider is rejected — it has no forge CLI" {
     // `generic` is a legitimate provider for DIFFING (pure local refs,
     // git_pr_diff.zig) but there is no CLI to ask for status, so the request
     // is unanswerable and must say so rather than silently falling back to
-    if (skipOnWindows()) return error.SkipZigTest;
     if (!haveGit()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
@@ -1220,7 +1176,6 @@ test "useCase: the generic provider is rejected — it has no forge CLI" {
 test "useCase: a GitLab MR URL routes to the glab path, not gh" {
     // The regression this pins: before GitLab support, a GitLab MR URL
     // was rejected with "not a GitHub URL". Now it must spawn `glab`.
-    if (skipOnWindows()) return error.SkipZigTest;
     if (!haveGit()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
@@ -1229,13 +1184,12 @@ test "useCase: a GitLab MR URL routes to the glab path, not gh" {
     defer a.free(repo);
 
     // Records its argv so we can prove `glab mr view` ran, not `gh`.
-    const glab_argv = try std.fmt.allocPrint(a, "{s}/glab-argv", .{fx.root});
+    const glab_argv = try std.fmt.allocPrint(a, "{s}/glab-argv", .{fx.root()});
     defer a.free(glab_argv);
-    const glab = try fx.writeScript("glab", try std.fmt.allocPrint(a,
-        \\#!/bin/sh
-        \\printf '%s\n' "$@" > '{s}'
-        \\printf '{s}'
-    , .{ glab_argv, OPEN_MR_JSON }));
+    const glab = try fx.writeProgram("glab", .{
+        .argv_file = glab_argv,
+        .stdout = OPEN_MR_JSON,
+    });
     defer a.free(glab);
 
     var detail: ?[]u8 = null;
@@ -1256,7 +1210,6 @@ test "useCase: a GitLab MR URL routes to the glab path, not gh" {
 test "useCase: the origin remote decides the forge when no provider is given" {
     // This is the badge/refresh path: the frontend calls pr/status with
     // no provider for a GitLab repo, so the remote is the only signal.
-    if (skipOnWindows()) return error.SkipZigTest;
     if (!haveGit()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
@@ -1268,7 +1221,7 @@ test "useCase: the origin remote decides the forge when no provider is given" {
     defer set.deinit(a);
     if (set.term.exited != 0) return error.SkipZigTest;
 
-    const glab = try fx.writeScript("glab", try scriptPrintingJson(a, OPEN_MR_JSON));
+    const glab = try fx.writeProgram("glab", .{ .stdout = OPEN_MR_JSON });
     defer a.free(glab);
 
     var detail: ?[]u8 = null;
@@ -1279,7 +1232,6 @@ test "useCase: the origin remote decides the forge when no provider is given" {
 }
 
 test "useCase: a GitHub repo with a gh origin still routes to gh" {
-    if (skipOnWindows()) return error.SkipZigTest;
     if (!haveGit()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
@@ -1292,7 +1244,7 @@ test "useCase: a GitHub repo with a gh origin still routes to gh" {
 
     // `gh` is the only working fixture here; a glab route would fail to
     // spawn and the test would not get to assert the provider.
-    const gh = try fx.writeScript("gh", try scriptPrintingJson(a, OPEN_PR_JSON));
+    const gh = try fx.writeProgram("gh", .{ .stdout = OPEN_PR_JSON });
     defer a.free(gh);
 
     var detail: ?[]u8 = null;
@@ -1303,7 +1255,6 @@ test "useCase: a GitHub repo with a gh origin still routes to gh" {
 }
 
 test "useCase: a GitHub PR URL is accepted" {
-    if (skipOnWindows()) return error.SkipZigTest;
     if (!haveGit()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
@@ -1311,7 +1262,7 @@ test "useCase: a GitHub PR URL is accepted" {
     const repo = try makeGitRepo(&fx);
     defer a.free(repo);
 
-    const gh = try fx.writeScript("gh", try scriptPrintingJson(a, OPEN_PR_JSON));
+    const gh = try fx.writeProgram("gh", .{ .stdout = OPEN_PR_JSON });
     defer a.free(gh);
 
     var detail: ?[]u8 = null;
@@ -1330,7 +1281,6 @@ test "useCase: a GitHub PR URL is accepted" {
 }
 
 test "useCase: garbage stdout from gh is a FetchFailed with a size hint" {
-    if (skipOnWindows()) return error.SkipZigTest;
     if (!haveGit()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
@@ -1338,7 +1288,7 @@ test "useCase: garbage stdout from gh is a FetchFailed with a size hint" {
     const repo = try makeGitRepo(&fx);
     defer a.free(repo);
 
-    const gh = try fx.writeExec("gh", "#!/bin/sh\nprintf 'not json at all'\n");
+    const gh = try fx.writeProgram("gh", .{ .stdout = "not json at all" });
     defer a.free(gh);
 
     var detail: ?[]u8 = null;
@@ -1349,7 +1299,6 @@ test "useCase: garbage stdout from gh is a FetchFailed with a size hint" {
 }
 
 test "useCase: an empty stdout from gh is a FetchFailed, never a bogus 200" {
-    if (skipOnWindows()) return error.SkipZigTest;
     if (!haveGit()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
@@ -1357,7 +1306,7 @@ test "useCase: an empty stdout from gh is a FetchFailed, never a bogus 200" {
     const repo = try makeGitRepo(&fx);
     defer a.free(repo);
 
-    const gh = try fx.writeExec("gh", "#!/bin/sh\nexit 0\n");
+    const gh = try fx.writeProgram("gh", .{});
     defer a.free(gh);
 
     var detail: ?[]u8 = null;
@@ -1366,7 +1315,6 @@ test "useCase: an empty stdout from gh is a FetchFailed, never a bogus 200" {
 }
 
 test "useCase: 'no pull requests found' surfaces as NoAssociatedPr" {
-    if (skipOnWindows()) return error.SkipZigTest;
     if (!haveGit()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
@@ -1374,11 +1322,10 @@ test "useCase: 'no pull requests found' surfaces as NoAssociatedPr" {
     const repo = try makeGitRepo(&fx);
     defer a.free(repo);
 
-    const gh = try fx.writeExec("gh",
-        \\#!/bin/sh
-        \\printf 'no pull requests found for branch "worktree/x"\n' 1>&2
-        \\exit 1
-    );
+    const gh = try fx.writeProgram("gh", .{
+        .stderr = "no pull requests found for branch \"worktree/x\"",
+        .exit_code = 1,
+    });
     defer a.free(gh);
 
     var detail: ?[]u8 = null;
@@ -1387,7 +1334,6 @@ test "useCase: 'no pull requests found' surfaces as NoAssociatedPr" {
 }
 
 test "useCase: a missing gh binary surfaces as CliMissing" {
-    if (skipOnWindows()) return error.SkipZigTest;
     if (!haveGit()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
@@ -1421,7 +1367,6 @@ test "normalizeStatus maps GitLab's opened/merged/locked states" {
 }
 
 test "GlabMrView maps a real glab payload onto GitPrStatusResponse" {
-    if (skipOnWindows()) return error.SkipZigTest;
     if (!haveGit()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
@@ -1429,12 +1374,12 @@ test "GlabMrView maps a real glab payload onto GitPrStatusResponse" {
     const repo = try makeGitRepo(&fx);
     defer a.free(repo);
 
-    const glab = try fx.writeScript("glab", try scriptPrintingJson(a, OPEN_MR_JSON));
+    const glab = try fx.writeProgram("glab", .{ .stdout = OPEN_MR_JSON });
     defer a.free(glab);
 
     var detail: ?[]u8 = null;
     defer if (detail) |d| a.free(d);
-    const res = try useCaseWithPrograms(a, testing.io, .{ .gh = "/bin/sh", .glab = glab }, repo, "", "gitlab", &detail);
+    const res = try useCaseWithPrograms(a, testing.io, .{ .gh = "/pabrik/no/such/gh", .glab = glab }, repo, "", "gitlab", &detail);
     defer freeResponse(a, res);
 
     try testing.expectEqualStrings("gitlab", res.provider);

@@ -96,11 +96,24 @@ cd "$REPO_ROOT"
 # Lowering one is always safe and is the point of the notice below;
 # raising one needs a reviewer to see it in a diff that also says which
 # test got a new platform gate.
+#
+# 91 -> 50 (2026-10-16): the `/bin/sh` fixture families were converted to
+# `helpers.host_fixture`, which writes a `#!/bin/sh` script on POSIX and a
+# `.cmd` batch file on Windows. Zig 0.16's Windows spawn
+# (`windowsCreateProcessPathExt`) routes a `.cmd` through
+# `cmd.exe /d /e:ON /v:OFF /c`, so the same payload is spawnable on every
+# host and the suites no longer decline Windows:
+#   run_captured 16, git_pr_status 25, git_pr_list 6, git_pr_create 5,
+#   git_pr_close 3, status_pull_request 4  = 59 tests converted.
+# The remaining 50 are the families that still need a real Windows run to
+# verify (mcp_stdio's NDJSON speaker, the symlink / /proc / setenv sites,
+# and the ~84 vacuous `return;` passes, which count as PASS and are
+# therefore not in this number at all).
 baseline_for() {
   case "$1" in
     linux)   echo "${PABRIK_ZIG_TEST_SKIPS_LINUX:-10}" ;;
     macos)   echo "${PABRIK_ZIG_TEST_SKIPS_MACOS:-15}" ;;
-    windows) echo "${PABRIK_ZIG_TEST_SKIPS_WINDOWS:-91}" ;;
+    windows) echo "${PABRIK_ZIG_TEST_SKIPS_WINDOWS:-50}" ;;
     *) return 1 ;;
   esac
 }
@@ -322,7 +335,11 @@ EOF
   # 10. End to end: the verifier, not just its parts.
   # 12. A log AT the ceiling for the platform must pass, and one ABOVE it
   #     must fail — the boundary the whole rule turns on.
-  printf 'Build Summary: 14/14 steps succeeded; 4163/4257 tests passed (91 skipped)\n' > "$tmp/at_ceiling.log"
+  # Derived from the pinned ceiling, never hardcoded: the last version of
+  # this line said 91 and silently failed the day the ceiling was lowered.
+  local win_ceiling
+  win_ceiling="$(baseline_for windows)"
+  printf 'Build Summary: 14/14 steps succeeded; 4163/4257 tests passed (%s skipped)\n' "$win_ceiling" > "$tmp/at_ceiling.log"
   rc=0; check_log "$tmp/at_ceiling.log" windows 0 >/dev/null 2>&1 || rc=$?
   check "a log AT the windows ceiling passes" 0 "$rc"
   rc=0; check_log "$tmp/windows.log" windows 0 >/dev/null 2>&1 || rc=$?
