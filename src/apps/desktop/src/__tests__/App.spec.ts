@@ -18,12 +18,12 @@ import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 import { useTabsStore } from '../stores/tabs'
 import { makeLocalStorageStub } from './helpers'
 
-/** Test-only stub SseClient. Mirrors the helper in `sseBus.spec.ts`
- * (kept inline rather than shared to avoid coupling between the two
- * spec files). Tracks state-listener callbacks on a non-public
- * `__stateListeners` array so `emitStubState` can fan out a
- * transition to all subscribers — the production `SseClient` keeps
- * the listener list in a closure; tests reach it via `as any`. */
+/** Test-only stub SseClient. Mirrors the helper in `sseBus.spec.ts` (kept inline rather than shared
+ * to avoid coupling between the two spec files). */
+
+/** Tracks state-listener callbacks on a non-public `__stateListeners` array so `emitStubState` can
+ * fan out a transition to all subscribers — the production `SseClient` keeps the listener list in a
+ * closure; tests reach it via `as any`. */
 function makeStubClient(initial: SseState): SseClient {
    
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -61,12 +61,12 @@ describe('App', () => {
 
   beforeEach(() => {
     __resetSseBus()
-    // App.vue's onMounted calls `useNavigationStore()` (to wire the
-    // frontend-log-client context). Without an active Pinia the call
-    // throws (`getActivePinia()` was called but there was no active
-    // Pinia). The existing AppLayout.* tests already use this
-    // `setActivePinia(createPinia())` pattern (see AppLayout.chatview
-    // .spec.ts:112). One fresh Pinia per test keeps stores isolated.
+    // App.vue's onMounted calls `useNavigationStore()` (to wire the frontend-log-client context).
+    // Without an active Pinia the call throws (`getActivePinia()` was called but there was no
+    // active Pinia).
+
+    // The existing AppLayout.* tests already use this `setActivePinia(createPinia())` pattern (see
+    // AppLayout.chatview .spec.ts:112). One fresh Pinia per test keeps stores isolated.
     setActivePinia(createPinia())
     // jsdom 29 dropped localStorage from its default globals; the navigation store reads from
     // localStorage during setup (`loadSidebarCollapsed()`). Install a Map-backed stub for the
@@ -197,14 +197,15 @@ describe('App', () => {
 
   it('unmounting App.vue calls bus.close() on the bus singleton', () => {
     const wrapper = mount(App)
-    // `bus.close()` should clear the singleton — verify by checking
-    // that a subsequent `useSseBus()` throws. We don't spy on any
-    // specific SseClient's close() because App.vue's onUnmounted
-    // delegates to `useSseBus().close()`, which delegates to the
-    // bus's internal global client (the closure-scoped one from
-    // installSseBus). Spying on it would couple the test to bus
-    // internals; checking the singleton-cleared invariant is a
-    // stronger behavioral contract anyway.
+    // `bus.close()` should clear the singleton — verify by checking that a subsequent `useSseBus()`
+    // throws.
+
+    // We don't spy on any specific SseClient's close() because App.vue's onUnmounted delegates to
+    // `useSseBus().close()`, which delegates to the bus's internal global client (the
+    // closure-scoped one from installSseBus).
+
+    // Spying on it would couple the test to bus internals; checking the singleton-cleared invariant
+    // is a stronger behavioral contract anyway.
     expect(() => useSseBus()).not.toThrow()
 
     wrapper.unmount()
@@ -216,18 +217,17 @@ describe('App', () => {
   })
 
   describe('no app-level zoom suppression (desktop-app only)', () => {
-    // The desktop app uses the host webview's native page-zoom
-    // (Ctrl+wheel / multi-finger pinch). The previous global
-    // wheel-zoom suppressor in App.vue was removed — letting the
-    // native behaviour run. The design canvas has its own
-    // `@wheel="handleCanvasWheel"` handler in `DesignView.vue` that
-    // calls `preventDefault()` and performs cursor-anchored zoom on
-    // the canvas only.
-    //
-    // These tests lock in the NEW contract: App.vue must NOT
-    // install any capture-phase wheel listener that calls
-    // `preventDefault()`. The host webview is now free to apply
-    // its native page-zoom on Ctrl+wheel / metaKey+wheel /
+    // The desktop app uses the host webview's native page-zoom (Ctrl+wheel / multi-finger pinch).
+    // The previous global wheel-zoom suppressor in App.vue was removed — letting the native
+    // behaviour run.
+
+    // The design canvas has its own `@wheel="handleCanvasWheel"` handler in `DesignView.vue` that
+    // calls `preventDefault()` and performs cursor-anchored zoom on the canvas only.
+
+    // These tests lock in the NEW contract: App.vue must NOT install any capture-phase wheel
+    // listener that calls `preventDefault()`.
+
+    // The host webview is now free to apply its native page-zoom on Ctrl+wheel / metaKey+wheel /
     // double-tap / pinch anywhere in the desktop app shell.
 
     // Shared wrapper — every test in this block mounts via this

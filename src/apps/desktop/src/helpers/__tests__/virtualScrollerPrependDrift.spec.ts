@@ -1,24 +1,20 @@
-/**
- * Regression test: sizer drift over a long chat with loadMore prepends.
- *
- * User report (task_1787551495337_9 follow-up): with ~100 messages the
- * chat developed persistent gaps — messages clustered at the top of the
- * scroller with empty space below, and stick-to-bottom landing wrong.
- *
- * Root cause: stored heights are keyed by ARRAY INDEX. Every loadMore
- * prepend shifts every item's index by +N, but the height map kept its
- * old keys — so after the first prepend EVERY stored height described
- * the wrong message. Over a long session the sizer drifted hundreds of
- * px away from the real content: scroll math (findStartIndex,
- * stick-to-bottom, anchor compensation) all computed against a phantom
- * layout.
- *
- * Fix: beginPreserve remaps the height map (+N per key) BEFORE the
- * items array is mutated, so each stored height stays attached to its
- * own item. This test drives a realistic lifecycle — mixed-height
- * messages, scroll-measure passes, a prepend, streaming appends — and
- * asserts the sizer converges to Σ real heights.
- */
+/** Regression test: sizer drift over a long chat with loadMore prepends. */
+
+/** User report (task_1787551495337_9 follow-up): with ~100 messages the chat developed persistent
+ * gaps — messages clustered at the top of the scroller with empty space below, and stick-to-bottom
+ * landing wrong. Root cause: stored heights are keyed by ARRAY INDEX. */
+
+/** Every loadMore prepend shifts every item's index by +N, but the height map kept its old keys —
+ * so after the first prepend EVERY stored height described the wrong message. */
+
+/** Over a long session the sizer drifted hundreds of px away from the real content: scroll math
+ * (findStartIndex, stick-to-bottom, anchor compensation) all computed against a phantom layout. */
+
+/** Fix: beginPreserve remaps the height map (+N per key) BEFORE the items array is mutated, so each
+ * stored height stays attached to its own item. */
+
+/** This test drives a realistic lifecycle — mixed-height messages, scroll-measure passes, a
+ * prepend, streaming appends — and asserts the sizer converges to Σ real heights. */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -114,11 +110,11 @@ describe('VirtualScroller prepend height remap (100-message lifecycle)', () => {
       await flushMeasure()
     }
 
-    // FINAL: 43 items at indices 0..42. Heights stored through the
-    // prepend must still describe their own items, so the sizer equals
-    // Σ realHeight(i) for i in 0..42 — measured ones exactly, unmeasured
-    // ones within estimate tolerance. With buffer=30 and an 800px
-    // viewport, most items get measured; assert the sizer is within 5%
+    // FINAL: 43 items at indices 0..42. Heights stored through the prepend must still describe
+    // their own items, so the sizer equals Σ realHeight(i) for i in 0..42 — measured ones exactly,
+    // unmeasured ones within estimate tolerance.
+
+    // With buffer=30 and an 800px viewport, most items get measured; assert the sizer is within 5%
     // of the true total (tight convergence, no phantom layout).
     let expected = 0
     for (let i = 0; i < 43; i++) expected += realHeight(i)
@@ -128,18 +124,19 @@ describe('VirtualScroller prepend height remap (100-message lifecycle)', () => {
   })
 
   it('a prepended item keeps its own measured height (stable-key cache, no remap needed)', async () => {
-    // Focused unit — UPDATED for the stable-key cache (2026-08-26).
-    // The old design remapped index keys by +N inside beginPreserve;
-    // the new design keys heights by itemKey, so heights travel with
-    // their items automatically and the remap is gone. The OUTCOME
-    // contract is unchanged: after a prepend, each item's stored
-    // height still describes its own item.
-    //
-    // Sizer math at the assert instant (items.length still 3, ids
-    // "0","1","2" measured at 100/200/300): the map is keyed by id, so
-    // beginPreserve(2) changes nothing about stored heights — acc[3]
-    // stays 100+200+300 = 600. (The old index-remap produced 500 here
-    // by shifting keys; that intermediate state no longer exists.)
+    // Focused unit — UPDATED for the stable-key cache (2026-08-26). The old design remapped index
+    // keys by +N inside beginPreserve; the new design keys heights by itemKey, so heights travel
+    // with their items automatically and the remap is gone.
+
+    // The OUTCOME contract is unchanged: after a prepend, each item's stored height still describes
+    // its own item.
+
+    // Sizer math at the assert instant (items.length still 3, ids "0","1","2" measured at
+    // 100/200/300): the map is keyed by id, so beginPreserve(2) changes nothing about stored
+    // heights — acc[3] stays 100+200+300 = 600.
+
+    // (The old index-remap produced 500 here by shifting keys; that intermediate state no longer
+    // exists.)
     const wrapper = mount(VirtualScroller, {
       props: {
         items: mk(3),

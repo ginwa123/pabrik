@@ -83,14 +83,13 @@ export interface SubAgentProgress {
 /** Per-batch map keyed by parent tool_call_id. */
 export type SubAgentProgressMap = Record<string, SubAgentProgress[]>
 
-/** True when a tool message is a spawn_sub_agent row still in Phase 1
- * placeholder state (no `<summary>` → the tool hasn't completed).
- * Used by ChatView.rehydrateSubAgentProgress to decide which rows
- * need a snapshot fetch. Mirrors SpawnSubAgent.vue's `isStarting`
- * (agents==0 && summary==null && no live rows) at the message-list
- * level: the final envelope in `tools_exec_spawn_sub_agent.zig`
- * always prints `<summary succeeded= failed= />`, so its absence
- * means the batch is still running. */
+/** True when a tool message is a spawn_sub_agent row still in Phase 1 placeholder state (no
+ * `<summary>` → the tool hasn't completed). Used by ChatView.rehydrateSubAgentProgress to decide
+ * which rows need a snapshot fetch. */
+
+/** Mirrors SpawnSubAgent.vue's `isStarting` (agents==0 && summary==null && no live rows) at the
+ * message-list level: the final envelope in `tools_exec_spawn_sub_agent.zig` always prints
+ * `<summary succeeded= failed= />`, so its absence means the batch is still running. */
 export function isPlaceholderSpawnRow(msg: {
   role?: string
   tool_name?: string | null
@@ -110,13 +109,12 @@ export function isPlaceholderSpawnRow(msg: {
   )
 }
 
-/** Pure reducer: apply ONE progress event to the current map and
- * return a NEW map. Vue reactivity demands map-by-replacement; we
- * never mutate the input.
- * Defensive: ignores events that don't carry the required fields
- * (no role / tool_call_id / status / agent_index). Such events
- * would indicate a backend regression — return the original map
- * so the UI keeps its previous state. */
+/** Pure reducer: apply ONE progress event to the current map and return a NEW map. Vue reactivity
+ * demands map-by-replacement; we never mutate the input. Defensive: ignores events that don't carry
+ * the required fields (no role / tool_call_id / status / agent_index). */
+
+/** Such events would indicate a backend regression — return the original map so the UI keeps its
+ * previous state. */
 export function applyProgressEvent(
   map: SubAgentProgressMap,
   event: SubAgentProgressEvent,
@@ -152,11 +150,11 @@ export function applyProgressEvent(
   const statusForUi: SubAgentRowStatus =
     status === 'completed' ? 'done' : status === 'failed' ? 'failed' : 'running'
 
-  // Don't regress: a `launched` event arriving AFTER `completed`
-  // (out-of-order delivery on a real network is rare but possible)
-  // must NOT downgrade a done row back to running. Only `failed`
-  // can override `done` (a sub-agent that succeeded but then had its
-  // result truncated is a real edge case worth showing).
+  // Don't regress: a `launched` event arriving AFTER `completed` (out-of-order delivery on a real
+  // network is rare but possible) must NOT downgrade a done row back to running.
+
+  // Only `failed` can override `done` (a sub-agent that succeeded but then had its result truncated
+  // is a real edge case worth showing).
   let finalStatus: SubAgentRowStatus = statusForUi
   if (prev.status === 'done' && statusForUi === 'running') {
     finalStatus = 'done'
@@ -189,14 +187,13 @@ export function clearProgressFor(
   return next
 }
 
-/** 2026-09-04 refresh rehydrate (task_1788505292766_1): fold a
- * `GET /api/subagent/progress` snapshot into the map. Each snapshot
- * row maps 1:1 onto a `SubAgentProgressEvent`, so we reuse the tested
- * `applyProgressEvent` reducer (including its done→running guard).
- * Backend "" session ids normalize to undefined — same as the
- * omitted wire field on the live SSE path (peek stays disabled).
- * Returns a NEW map (map-by-replacement for Vue reactivity); an
- * empty snapshot leaves the map untouched. */
+/** 2026-09-04 refresh rehydrate (task_1788505292766_1): fold a `GET /api/subagent/progress`
+ * snapshot into the map. Each snapshot row maps 1:1 onto a `SubAgentProgressEvent`, so we reuse the
+ * tested `applyProgressEvent` reducer (including its done→running guard). */
+
+/** Backend "" session ids normalize to undefined — same as the omitted wire field on the live SSE
+ * path (peek stays disabled). Returns a NEW map (map-by-replacement for Vue reactivity); an empty
+ * snapshot leaves the map untouched. */
 export function applySnapshotRows(
   map: SubAgentProgressMap,
   toolCallId: string,

@@ -454,12 +454,12 @@ describe('DiffView', () => {
     const changed = wrapper.findAll('[data-changed="true"]')
     expect(changed.length).toBeGreaterThan(0)
     for (const row of changed) {
-      // Nothing inside a changed row may carry an `!important` text tint
-      // (`!text-red-500`): it wins over `.tok-*` in the compiled CSS and
-      // paints the whole line one color. The row BACKGROUND is what marks
-      // added/removed. (jsdom loads no stylesheet, so asserting the DOM
-      // class is the only honest witness here — and it is exactly the class
-      // whose removal makes the tokens visible in a browser.)
+      // Nothing inside a changed row may carry an `!important` text tint (`!text-red-500`): it wins
+      // over `.tok-*` in the compiled CSS and paints the whole line one color. The row BACKGROUND
+      // is what marks added/removed.
+
+      // (jsdom loads no stylesheet, so asserting the DOM class is the only honest witness here —
+      // and it is exactly the class whose removal makes the tokens visible in a browser.)
       expect(importantTextTints(row)).toEqual([])
       expect(row.findAll('.tok-keyword').length).toBeGreaterThan(0)
     }

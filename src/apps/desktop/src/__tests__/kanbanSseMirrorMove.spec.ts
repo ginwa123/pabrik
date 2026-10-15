@@ -283,13 +283,13 @@ describe('kanbanSse — mirror local task on move/assign/unassign (fix duplicate
   })
 
   it('unassigned event (full integration): task preserved as unassigned after wire response', async () => {
-    // After unassign: task stays in item.tasks with kanban_column_id
-    // = null (the "unassigned limbo" state). The UI hides it from all
-    // columns because no column matches null, but the task itself is
-    // not deleted — the user can re-assign it. Pre-fix the local
-    // task was stuck in the SOURCE column's `kanban_column_id`, so
-    // after `fetchKanbanTasks(colA)`'s merge the task was kept in BOTH
-    // the unassigned state AND the source column (visible duplicate).
+    // After unassign: task stays in item.tasks with kanban_column_id = null (the "unassigned limbo"
+    // state). The UI hides it from all columns because no column matches null, but the task itself
+    // is not deleted — the user can re-assign it.
+
+    // Pre-fix the local task was stuck in the SOURCE column's `kanban_column_id`, so after
+    // `fetchKanbanTasks(colA)`'s merge the task was kept in BOTH the unassigned state AND the
+    // source column (visible duplicate).
     const { ws, wsId, itemId, taskId } = seedKanbanWithTask({})
 
     // The unassigned branch fires fetchKanbanTasksForAllColumns which iterates each column and
@@ -399,14 +399,13 @@ describe('kanbanSse — mirror local task on move/assign/unassign (fix duplicate
   it('human_touched event: no column change (the SSE payload carries null), local untouched', async () => {
     const { ws, wsId, itemId, taskId } = seedKanbanWithTask({})
 
-    // REGRESSION (2026-08-24): human_touched has new_column_id: null.
-    // Pre-fix, the event fell into the unassign refetch branch and
-    // fired fetchKanbanTasksForAllColumns → one tasks?limit=100 per
-    // column EVERY time the user opened a task's chatview. The wire
-    // payload already carries the after-state (needs_human_review:
-    // false), so the handler must patch the local task in place and
-    // fetch NOTHING. The getTasks spy is deliberately left unmocked —
-    // any accidental network call would blow up the test.
+    // REGRESSION (2026-08-24): human_touched has new_column_id: null. Pre-fix, the event fell into
+    // the unassign refetch branch and fired fetchKanbanTasksForAllColumns → one tasks?limit=100 per
+    // column EVERY time the user opened a task's chatview.
+
+    // The wire payload already carries the after-state (needs_human_review: false), so the handler
+    // must patch the local task in place and fetch NOTHING. The getTasks spy is deliberately left
+    // unmocked — any accidental network call would blow up the test.
     const getTasksSpy = vi.spyOn(api, 'getTasks')
 
     // Seed the "awaiting review" state the card shows before the

@@ -407,19 +407,17 @@ describe('AppLayout — design item URL persistence (Chunk 3 of design-url-persi
     wrapper.unmount()
   })
 
-  // FIX (chatview-bug, task_1785726648589): when the user navigates
-  // from a design item to a kanban (or folder), the store's
-  // `activeDesignPageId` is NOT reset by `setActiveWorkspaceItem` —
-  // it stays whatever the design's active page was. The URL
-  // watcher reads `[activeWorkspaceItemId, activeDesignPageId]` and
-  // writes the URL based on both. Pre-fix, the watcher included
-  // `pageId` in the URL purely because `activeDesignPageId` was
-  // truthy, without checking whether the new active item is a
-  // design. The URL ended up as
-  // `?view=workspace&itemId=KANBAN_ID&pageId=DESIGN_PAGE_ID` —
-  // stale, and a reload would try to restore the design page
-  // against a kanban that doesn't have pages. The fix: only
-  // include `pageId` in the URL when the active item is a design.
+  // FIX (chatview-bug, task_1785726648589): when the user navigates from a design item to a kanban
+  // (or folder), the store's `activeDesignPageId` is NOT reset by `setActiveWorkspaceItem` — it
+  // stays whatever the design's active page was.
+
+  // The URL watcher reads `[activeWorkspaceItemId, activeDesignPageId]` and writes the URL based on
+  // both. Pre-fix, the watcher included `pageId` in the URL purely because `activeDesignPageId` was
+  // truthy, without checking whether the new active item is a design.
+
+  // The URL ended up as `?view=workspace&itemId=KANBAN_ID&pageId=DESIGN_PAGE_ID` — stale, and a
+  // reload would try to restore the design page against a kanban that doesn't have pages. The fix:
+  // only include `pageId` in the URL when the active item is a design.
   it('activeWorkspaceItem → URL watcher does NOT leak stale pageId when switching from design to kanban', async () => {
     const replaceMock = vi.fn()
 
@@ -1197,12 +1195,12 @@ describe('AppLayout — readable code-editor URLs (keep-append)', () => {
 })
 
 describe('AppLayout — code viewer surface (the right sidebar must survive)', () => {
-  // Regression: opening a file from the right-sidebar Explorer replaced
-  // the WHOLE <main> with the viewer overlay, so ChatView — which owns
-  // that sidebar, the header and the composer — was never mounted and
-  // the sidebar (plus its composer underneath) vanished.
-  // The viewer now renders inside ChatView; the overlay is a fallback
-  // for contexts with no chat on screen.
+  // Regression: opening a file from the right-sidebar Explorer replaced the WHOLE <main> with the
+  // viewer overlay, so ChatView — which owns that sidebar, the header and the composer — was never
+  // mounted and the sidebar (plus its composer underneath) vanished.
+
+  // The viewer now renders inside ChatView; the overlay is a fallback for contexts with no chat on
+  // screen.
   beforeEach(() => {
     setActivePinia(createPinia())
     installBusForTests()

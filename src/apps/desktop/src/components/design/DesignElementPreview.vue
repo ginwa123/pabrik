@@ -61,21 +61,20 @@ const props = withDefaults(
     // parent element (drag / resize / select); the editable Monaco preview would pass 'auto' so the
     // user can interact with the iframe content.
     pointerEvents?: 'auto' | 'none'
-    // The element's CSS fill color. Applied to the iframe's inline
-    // background so the element renders with its true color when the
-    // srcdoc HTML is empty / transparent. Empty string = transparent
-    // (the wrapper's fill shows through). Default ''.
-    //
-    // Pre-fix history: the iframe had a hardcoded `background: white`
-    // which leaked through any element with `fill: ''` / transparent
-    // fill, producing visible white rectangles wherever small
+    // The element's CSS fill color. Applied to the iframe's inline background so the element
+    // renders with its true color when the srcdoc HTML is empty / transparent. Empty string =
+    // transparent (the wrapper's fill shows through). Default ''.
+
+    // Pre-fix history: the iframe had a hardcoded `background: white` which leaked through any
+    // element with `fill: ''` / transparent fill, producing visible white rectangles wherever small
     // elements (input fields, buttons, labels) sat on the canvas.
-    // For the "Task Dialog" design this was particularly visible —
-    // the backdrop (which should be a dark semi-transparent overlay)
-    // rendered as a huge white slab because its empty HTML body
-    // relied on the wrapper's fill. See project memory
-    // "design-element-rectangle-covers-iframe" for the parallel
-    // white-rectangle bug; this fix completes the white-bleed story.
+
+    // For the "Task Dialog" design this was particularly visible — the backdrop (which should be a
+    // dark semi-transparent overlay) rendered as a huge white slab because its empty HTML body
+    // relied on the wrapper's fill.
+
+    // See project memory "design-element-rectangle-covers-iframe" for the parallel white-rectangle
+    // bug; this fix completes the white-bleed story.
     fill?: string
   }>(),
   {
@@ -104,11 +103,11 @@ const iframeHtml = computed(() => `<style>html,body{margin:0;height:100%;}</styl
 
 const iframeRef = ref<HTMLIFrameElement | null>(null)
 
-// Wire up contenteditable + blur handler on the iframe's body once
-// the iframe has loaded its srcdoc. We can't do this in `onMounted`
-// because the srcdoc is async — by the time `iframeRef.value` is
-// attached, the inner document may not exist yet. A `load` listener
-// on the iframe fires after srcdoc parse completes.
+// Wire up contenteditable + blur handler on the iframe's body once the iframe has loaded its
+// srcdoc. We can't do this in `onMounted` because the srcdoc is async — by the time
+// `iframeRef.value` is attached, the inner document may not exist yet.
+
+// A `load` listener on the iframe fires after srcdoc parse completes.
 const onIframeLoad = (): void => {
   if (!props.editable) return
   const iframe = iframeRef.value
@@ -124,11 +123,12 @@ const onIframeLoad = (): void => {
   })
 }
 
-// Re-attach the listener when `editable` flips from false to true
-// (the user just opened the edit panel). The load event fires only
-// once per srcdoc change, so a prev-value guard on update covers the
-// readonly→editable transition; onIframeLoad itself already guards on
-// `props.editable` for the mount path.
+// Re-attach the listener when `editable` flips from false to true (the user just opened the edit
+// panel).
+
+// The load event fires only once per srcdoc change, so a prev-value guard on update covers the
+// readonly→editable transition; onIframeLoad itself already guards on `props.editable` for the
+// mount path.
 const prevEditable = ref(props.editable)
 onUpdated(() => {
   if (props.editable && !prevEditable.value) onIframeLoad()

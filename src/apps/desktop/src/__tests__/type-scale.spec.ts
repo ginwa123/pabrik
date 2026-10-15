@@ -155,22 +155,21 @@ describe('type scale', () => {
   })
 
   it('writes no raw font-size inside a component <style> block', () => {
-    // The hole that let 96 off-scale values survive the class migration:
-    // `collect()` reads every line of every component, but it only looks
-    // for Tailwind CLASSES. A `font-size: 0.8125rem` inside a .vue
-    // <style> block is not a class, so nothing here saw it.
-    //
-    // Scanned as whole BLOCK TEXT, not line by line. A per-line
-    // `^\s*font-size:` test is vacuous: it misses the single-line rule
-    // `.probe { font-size: 13px; }` outright. (It was proved vacuous by
-    // injecting exactly that and watching the spec stay green.)
+    // The hole that let 96 off-scale values survive the class migration: `collect()` reads every
+    // line of every component, but it only looks for Tailwind CLASSES. A `font-size: 0.8125rem`
+    // inside a .vue <style> block is not a class, so nothing here saw it.
+
+    // Scanned as whole BLOCK TEXT, not line by line. A per-line `^\s*font-size:` test is vacuous:
+    // it misses the single-line rule `.probe { font-size: 13px; }` outright. (It was proved vacuous
+    // by injecting exactly that and watching the spec stay green.)
     const RAW_CSS_SIZE_RE = /font-size:\s*[0-9.]+(?:px|rem)/g
-    // A block tag must be ALONE on its line. WorkspaceItemTaskCard.vue:591
-    // carries a comment reading "…lives in the scoped <style> block" and
-    // KanbanView.vue:1641 one reading "<script setup>. Do NOT remove…";
-    // a looser match flips the tracker on there and never off, which
-    // silently skips the rest of the file. The tracker must therefore be
-    // able to prove it balanced, hence the assert below.
+    // A block tag must be ALONE on its line. WorkspaceItemTaskCard.vue:591 carries a comment
+    // reading "…lives in the scoped <style> block" and KanbanView.vue:1641 one reading "<script
+    // setup>.
+
+    // Do NOT remove…"; a looser match flips the tracker on there and never off, which silently
+    // skips the rest of the file. The tracker must therefore be able to prove it balanced, hence
+    // the assert below.
     const blockTag = (tag: string, closing: boolean) =>
       new RegExp(`^\\s*${closing ? '</' : '<'}${tag}\\b[^>]*>\\s*$`)
 
@@ -204,15 +203,13 @@ describe('type scale', () => {
   })
 
   it('writes no raw font-size in a template style="" attribute', () => {
-    // The same hole by the other door: an inline `style="font-size: 8px"`
-    // carries its size mid-line, so neither the class scan nor the
-    // whole-line CSS scan can see it. Two sibling task components shipped
-    // the same warning glyph at 8px and 10px for exactly this reason.
-    //
-    // Skipped inside <script>, where the same text is DATA: the default
-    // body of a design element the user then edits in Monaco, and the
-    // xterm/Monaco fontSize options, which take a number and cannot take
-    // var() at all.
+    // The same hole by the other door: an inline `style="font-size: 8px"` carries its size
+    // mid-line, so neither the class scan nor the whole-line CSS scan can see it. Two sibling task
+    // components shipped the same warning glyph at 8px and 10px for exactly this reason.
+
+    // Skipped inside <script>, where the same text is DATA: the default body of a design element
+    // the user then edits in Monaco, and the xterm/Monaco fontSize options, which take a number and
+    // cannot take var() at all.
     const INLINE_RAW_RE = /style="[^"]*font-size:\s*[0-9.]+(px|rem)/
     const blockTag = (tag: string, closing: boolean) =>
       new RegExp(`^\\s*${closing ? '</' : '<'}${tag}\\b[^>]*>\\s*$`)

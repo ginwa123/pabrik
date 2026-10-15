@@ -238,10 +238,30 @@ def reflow_token(kind, lines):
     return new, None
 
 
+def clamp_to_comment_lines(lines, start, end):
+    """Shrink a reported block range so it holds ONLY comment lines.
+
+    The rule reports a block as a run of comment LINES, but a block's range
+    can be followed immediately by code with no blank line between. Trusting
+    the reported end line verbatim once deleted five lines of live test code
+    (`const ws = await setupHandlersAndSeed()` and friends), so the range is
+    trimmed from the end until every line in it is a comment line.
+    """
+    def is_comment_line(l):
+        return bool(re.match(r'^\s*(?://|/\*|\*)', l)) or not l.strip()
+    while end > start and not is_comment_line(lines[end - 1]):
+        end -= 1
+    return start, end
+
+
 def process(path, ranges, apply_changes):
     lines = open(path).read().split('\n')
     edits, skipped = [], []
     for (start, end) in ranges:
+        start, end = clamp_to_comment_lines(lines, start, end)
+        if end < start:
+            skipped.append((start, 'no-comment-lines'))
+            continue
         block = lines[start - 1:end]
         tokens = split_tokens(block)
         if not tokens:

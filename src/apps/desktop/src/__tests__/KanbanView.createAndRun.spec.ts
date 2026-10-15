@@ -229,12 +229,12 @@ describe('KanbanView.handleCreateTaskSave — create_and_run', () => {
 
      
     expect(view.emitted('selectTask')).toBeUndefined()
-    // Partial-success: the store action's catch block decides whether
-    // to surface a toast. In the new contract the store action's
-    // mocked-resolved path (not rejected) bypasses the catch — the
-    // store's notifyError lives in the catch path. The component
-    // surfaces its own error via `createError` (the dialog stays
-    // open for retry). We don't re-toast here to avoid duplicates.
+    // Partial-success: the store action's catch block decides whether to surface a toast. In the
+    // new contract the store action's mocked-resolved path (not rejected) bypasses the catch — the
+    // store's notifyError lives in the catch path.
+
+    // The component surfaces its own error via `createError` (the dialog stays open for retry). We
+    // don't re-toast here to avoid duplicates.
    
   })
 
