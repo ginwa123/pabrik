@@ -43,7 +43,6 @@ const emit = defineEmits<{
 }>()
 
 // ─── State ─────────────────────────────────────────────────────────────────
-
 const name = ref('')
 const nameInput = ref<HTMLInputElement | null>(null)
 const description = ref('')
@@ -94,7 +93,6 @@ const submitLabel = computed(() => {
 const isDestructive = computed(() => props.mode === 'delete')
 
 // ─── Handlers ──────────────────────────────────────────────────────────────
-
 const handleSubmit = () => {
   if (props.mode === 'delete') {
     emit('delete')

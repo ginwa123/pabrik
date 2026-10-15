@@ -103,7 +103,6 @@ const emit = defineEmits<{
 // patch object and emits `update`.
 // We use dedicated handlers (instead of inline @change on every input) so the emit always carries
 // the exact field that changed — the parent's store action treats it as a sparse merge.
-
 type NumericField = 'x' | 'y' | 'width' | 'height' | 'rotation' | 'stroke_width' | 'corner_radius' | 'opacity'
 type StringField = 'name' | 'fill' | 'stroke' | 'text_content' | 'text_style' | 'image_url'
 
@@ -147,7 +146,6 @@ function schedulePropertiesPanelCapturePost(): void {
 }
 
 // ─── Confirm-before-delete state ───────────────────────────────────────
-
 const showDeleteConfirm = ref(false)
 
 const handleDeleteClick = (): void => {
@@ -167,7 +165,6 @@ const handleDeleteCancel = (): void => {
 }
 
 // ─── HTML editor (Monaco lazy-load) ────────────────────────────────────
-
 const htmlExpanded = ref(false)
 const htmlDraft = ref('')
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; the surrounding type is intentionally opaque.
@@ -310,7 +307,6 @@ onBeforeUnmount(() => {
 })
 
 // ─── Computed helpers ──────────────────────────────────────────────────
-
 const isTextElement = computed(() => singleElement.value?.type === 'text')
 const isImageElement = computed(() => singleElement.value?.type === 'image')
 const showGeometrySection = computed(() => singleElement.value !== null)

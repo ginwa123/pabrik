@@ -92,7 +92,6 @@ describe('KanbanView — header rendering', () => {
   // (AppLayout) mounts KanbanSettingsDialog and forwards its
   // `addColumn`/`editColumn`/`deleteColumn` emits to the store.
   // Tests for the actual "+ Column" form live in KanbanSettingsDialog.spec.ts.
-
   it('renders the "Settings" button in the header', () => {
     wrapper = mountView(makeItem())
     const btn = wrapper.find(`[data-testid="kanban-view-${ITEM_ID}-open-settings"]`)
@@ -111,7 +110,6 @@ describe('KanbanView — header rendering', () => {
   // URL/persistence behaviour is covered in KanbanView.rowMode.spec.ts (which mocks vue-router).
   // Here we only pin that the control renders in the header and that the default is the column
   // board — this file mounts without a router.
-
   it('renders the Columns/Rows layout toggle in the header', () => {
     wrapper = mountView(makeItem())
     expect(wrapper.find(`[data-testid="kanban-view-${ITEM_ID}-layout-columns"]`).exists()).toBe(
@@ -456,7 +454,6 @@ describe('KanbanView — "Set project root" banner', () => {
 // Clicking the pencil swaps to an <input> + Save/Cancel buttons; pressing Save emits `rename-item`
 // with the trimmed new value, which the host (AppLayout) delegates to
 // workspacesStore.updateKanbanItemName.
-
 describe('KanbanView — inline rename pencil', () => {
   let wrapper: VueWrapper | null = null
 
@@ -513,7 +510,6 @@ describe('KanbanView — inline rename pencil', () => {
 //      viewTaskDetail → KanbanView's handler ran" passes).
 //   2. The handler resolves the active task + opens the dialog
 //      (visualized by the dialog's data-testid teleporting to body).
-
 describe('KanbanView — viewTaskDetail (task detail dialog)', () => {
   let wrapper: VueWrapper | null = null
 

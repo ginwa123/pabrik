@@ -311,7 +311,6 @@ describe('McpServerModal — stdio transport', () => {
   // user tests what they see in the textareas).
   // Result panel: green ✓ + tool list on success, red ✗ + error on failure. Both clear when any
   // field changes.
-
   it('renders a Test button in the footer', async () => {
     wrapper = mountModal(baseStdioServer)
     await wrapper.vm.$nextTick()

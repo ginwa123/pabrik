@@ -53,7 +53,6 @@ describe('ReadCompactedMessages', () => {
   })
 
   // ── Header / summary ───────────────────────────────────────────────────
-
   it('renders the tool name + mode + count + session_id in the header', () => {
     wrapper = mount(ReadCompactedMessages, {
       props: { content: FULL_INDEX_ENVELOPE },
@@ -101,7 +100,6 @@ describe('ReadCompactedMessages', () => {
   })
 
   // ── Entry rendering ────────────────────────────────────────────────────
-
   it('renders id, role, created_at, and preview for each entry', async () => {
     wrapper = mount(ReadCompactedMessages, {
       props: { content: FULL_INDEX_ENVELOPE, expanded: true },
@@ -149,7 +147,6 @@ describe('ReadCompactedMessages', () => {
   })
 
   // ── Full-mode content ──────────────────────────────────────────────────
-
   it('renders a "Show content" toggle when entry.content is present (mode=full)', async () => {
     wrapper = mount(ReadCompactedMessages, {
       props: { content: FULL_MODE_ENVELOPE, expanded: true },
@@ -170,7 +167,6 @@ describe('ReadCompactedMessages', () => {
   })
 
   // ── Error state ────────────────────────────────────────────────────────
-
   it('renders error state when <error>...</error> is present', () => {
     wrapper = mount(ReadCompactedMessages, {
       props: { content: ERROR_ENVELOPE },
@@ -196,7 +192,6 @@ describe('ReadCompactedMessages', () => {
   })
 
   // ── Empty (0 entries) state ────────────────────────────────────────────
-
   it('renders an empty-state placeholder when count is 0', async () => {
     wrapper = mount(ReadCompactedMessages, {
       props: { content: EMPTY_INDEX_ENVELOPE, expanded: true },

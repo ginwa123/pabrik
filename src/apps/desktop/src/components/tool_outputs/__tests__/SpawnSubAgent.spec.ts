@@ -64,7 +64,6 @@ afterEach(() => {
 // ────────────────────────────────────────────────────────────────────────
 // Live-progress rendering (NEW — 2026-08-23 feature)
 // ────────────────────────────────────────────────────────────────────────
-
 describe('SpawnSubAgent.vue — live progress', () => {
   it('renders one row per progress entry when content has no <results> envelope yet', () => {
     const progress: SubAgentProgress[] = [
@@ -201,7 +200,6 @@ describe('SpawnSubAgent.vue — live progress', () => {
 // ────────────────────────────────────────────────────────────────────────
 // Envelope vs progress precedence (NEW — 2026-08-23 feature)
 // ────────────────────────────────────────────────────────────────────────
-
 describe('SpawnSubAgent.vue — envelope precedence', () => {
   const envelope = {
     results: [
@@ -241,7 +239,6 @@ describe('SpawnSubAgent.vue — envelope precedence', () => {
 // ────────────────────────────────────────────────────────────────────────
 // Pre-thread failure (starting-state error — task_1789301896347_4)
 // ────────────────────────────────────────────────────────────────────────
-
 describe('SpawnSubAgent.vue — pre-thread failure envelope', () => {
   // What the card receives when exec fails before any thread emits:
   // innerToolData falls back to the FULL envelope (data is null), which

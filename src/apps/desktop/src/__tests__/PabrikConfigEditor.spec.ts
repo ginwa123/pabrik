@@ -271,7 +271,6 @@ describe('PabrikConfigEditor (orchestrator)', () => {
   // Each one must (a) hydrate from the API response, (b) flip the
   // dirty pill when the user changes it, (c) round-trip through the
   // PUT body on save.
-
   it('hydrates the General tab from the loaded config (notify_on_complete + notify_on_error + retry_delay_ms)', async () => {
     mockGet.mockResolvedValueOnce({
       notify_on_complete: true,

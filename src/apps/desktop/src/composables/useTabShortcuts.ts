@@ -6,7 +6,6 @@
 /** There is no desktop-vs-web detection flag in this repo, hence "opportunistic" rather than
  * conditional. The resolver is pure so the whole map is testable with synthetic KeyboardEvents, and
  * the listener is a plain function returning its own teardown (no lifecycle coupling). */
-
 export type TabCommand = 'new' | 'close' | 'reopen' | 'next' | 'previous' | `select:${number}`
 
 export interface TabShortcutHandlers {

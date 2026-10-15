@@ -25,7 +25,6 @@ import { OPEN_IN_CODE_EDITOR_KEY, type OpenInCodeEditorFn } from '@/composables/
 // (GlobJSON: {pattern,total,returned,offset,truncated,
 // truncated_by_size,files[],warning}).
 // ────────────────────────────────────────────────────────────────────────
-
 const matchData = (pattern = '**/*.zig', total = 3) => ({
   pattern,
   total,
@@ -72,7 +71,6 @@ afterEach(() => {
 // ────────────────────────────────────────────────────────────────────────
 // De-bubble contract — the whole point of this migration
 // ────────────────────────────────────────────────────────────────────────
-
 describe('Glob.vue — de-bubble contract (renders like bash/ShellTool)', () => {
   it('root element carries the shared .chat-tool-card class', () => {
     const wrapper = makeWrapper({ content: matchData() })
@@ -115,7 +113,6 @@ describe('Glob.vue — de-bubble contract (renders like bash/ShellTool)', () => 
 // ────────────────────────────────────────────────────────────────────────
 // Behaviour preserved from pre-migration
 // ────────────────────────────────────────────────────────────────────────
-
 describe('Glob.vue — behaviour preserved', () => {
   it('shows file count summary for match results', () => {
     const wrapper = makeWrapper({ content: matchData() })
@@ -167,7 +164,6 @@ describe('Glob.vue — behaviour preserved', () => {
 // Bug: the expanded body was `v-if="isExpanded && filePaths.length > 0"` and toggle() refused to
 // expand on a warning/empty envelope, so a no-match glob (warning envelope) could never show its
 // Arguments block. ────────────────────────────────────────────────────────────────────────
-
 describe('Glob.vue — warning data still shows Arguments (empty/no-match)', () => {
   const warningContent = {
     pattern: 'foo',
@@ -206,7 +202,6 @@ describe('Glob.vue — warning data still shows Arguments (empty/no-match)', () 
 // - Envelope failures render a red error block instead of a bare "0 files".
 // - Expanded empty results show the warning/empty state, not just Arguments.
 // ────────────────────────────────────────────────────────────────────────
-
 describe('Glob.vue — error/empty states', () => {
   it('shows a red error block for envelope failures', async () => {
     const envelope = {

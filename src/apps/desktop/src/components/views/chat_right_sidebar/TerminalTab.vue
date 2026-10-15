@@ -58,7 +58,6 @@ const mountedAt = Date.now()
 // worktree dir on every mount.
 // Flips inside this window are resolution, not scope changes — dropping sessions here is what wiped
 // restored terms on every chat return ("always a new term" with worktrees).
-
 const hasSessionKey = () => (props.sessionKey ?? '').length > 0
 const storageKey = () => `pabrik-terminal-sessions:${props.sessionKey}`
 

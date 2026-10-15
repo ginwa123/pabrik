@@ -23,7 +23,6 @@
  * trivially testable in isolation. DesignView imports the function
  * and calls it on every pointermove.
  */
-
 export interface Bbox { id: string; x: number; y: number; width: number; height: number }
 export interface SnapGuide { axis: 'x' | 'y'; position: number }
 export interface SnapResult {

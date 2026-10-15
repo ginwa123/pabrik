@@ -1,6 +1,5 @@
 // API Service - Centralized API calls for desktop backend
 // All components should use this file instead of making direct fetch calls
-
 import { createSseClient, type SseClient } from '../helpers/sseClient'
 import { readGitStatusCache, writeGitStatusCache } from '../helpers/gitStatusCache'
 import { Cause, Data, Effect, Exit, Option } from 'effect'
@@ -2182,7 +2181,6 @@ export async function moveTask(
 }
 
 /** Plan: docs/superpowers/plans/2026-07-30-kanban-task-tags-autocomplete.md */
-
 export interface KanbanTagSuggestion {
   name: string
   count: number
@@ -3167,7 +3165,6 @@ export async function createGitPr(
 // ─── Git branches (kanban worktree base-branch picker) ──────────────────── Wire shape for `GET
 // /api/git/branches?path=<repo>`. Feeds the "New task" dialog's base-branch dropdown so a fresh
 // worktree can branch from e.g. `origin/main` instead of whatever the repo's current HEAD is.
-
 export interface GitBranchEntry {
   /** Short ref name, e.g. `origin/main` or `main`. This is the exact
    *  string baked into the create-task message's `Base:` line. */
@@ -3212,7 +3209,6 @@ export async function listGitBranches(repoPath: string): Promise<GitBranchesResp
 // ─── Git commits (read-only lazygit-style history) ──────────────────────── Wire shape for `GET
 // /api/git/commits?path=<repo>[&limit=][&skip=]` and `GET /api/git/commit?path=<repo>&sha=<sha>`.
 // Read-only: list + detail, no checkout/amend/rebase.
-
 export interface GitCommit {
   sha: string
   short_sha: string
@@ -3424,7 +3420,6 @@ export interface GitPrStateEvent {
 }
 
 // ─── Skill Evals read surface (GET /api/skill-evals/*) ──────────────────
-
 export interface SkillEvalRun {
   id: string
   session_id: string
@@ -5037,7 +5032,6 @@ export async function commitGitChanges(
 // Mirrors the kanban wrappers above — same error contract (ApiError on 4xx/5xx), same {item, agent}
 // envelope shape on create, same comma-joined tool_names semantics on the allowlist CRUD.
 // =====================================================================
-
 export interface Agent {
   id: string
   workspace_item_id: string
@@ -5137,7 +5131,6 @@ export async function updateAgent(
 // per-task routines.
 // Plan: docs/superpowers/plans/2026-09-10-workspace-items-routines.md
 // =====================================================================
-
 export interface WorkspaceRoutine {
   id: string
   workspace_item_id: string
@@ -5260,7 +5253,6 @@ export async function reorderAgentKnowledge(
 }
 
 // ─── Agent System Prompt (Migration 080) ────────────────────────────────
-
 export interface AgentSystemPromptRow {
   id: string
   agent_id: string
@@ -5346,7 +5338,6 @@ export async function disableAgentTool(agentId: string, toolName: string): Promi
 // ─── Agent-Kanbans Mirror (Migration 081) ─────────────────────────────── Mirrors the Agent Mode
 // block above onto kanban boards. The config row (`agent_kanbans`) is OPT-IN — `getAgentKanban`
 // resolves to `null` (silently, no error toast) when the board has no config yet.
-
 export interface AgentKanban {
   id: string
   workspace_item_id: string
@@ -5543,7 +5534,6 @@ export async function disableAgentKanbanTool(
 // block above onto routine items.
 // Unlike kanbans, the config row (`agent_routines`) is SEEDED on routine creation and backfilled
 // for pre-existing routines (Migration 088) — same silent-null contract on 404 kept anyway.
-
 export interface AgentRoutine {
   id: string
   workspace_item_id: string
@@ -5746,7 +5736,6 @@ export async function disableAgentRoutineTool(
 // (`background_process_created/completed`) with manual + resync refetch, and the log tail polls
 // every 2s only while expanded, so a toast on every transient 404/5xx would be noise.
 // Callers render inline state (empty / error / marker) instead.
-
 export interface BackgroundProcess {
   pid: number
   command: string
@@ -5799,7 +5788,6 @@ export async function getBackgroundProcessLog(
 // terminal_create/input/output/resize/delete.zig (in-memory PTY registry, no migration).
 // All fns pass `silent: true` — output is a ~300ms poll, so a toast on every transient failure
 // would be noise. Callers render inline state instead.
-
 export interface TerminalSession {
   id: string
   pid: number
@@ -6043,7 +6031,6 @@ export async function deleteSecret(
 // `resolveModel` is the one call the profile dialog makes: it answers "what will this profile
 // actually do", and — just as importantly — WHERE the answer came from. `source: 'builtin'` means
 // the number is pabrik's 200k placeholder, not knowledge about the model.
-
 export type ModelCatalogState = 'fresh' | 'stale' | 'absent'
 
 export interface ModelCatalogEntry {

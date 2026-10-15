@@ -54,7 +54,6 @@ const emit = defineEmits<{
 const workspacesStore = useWorkspacesStore()
 
 // ─── State ────────────────────────────────────────────────────────────
-
 const sourceItemId = ref<string>('')
 const mode = ref<'replace' | 'append'>('replace')
 const sourceDropdownOpen = ref<boolean>(false)
@@ -89,7 +88,6 @@ const targetName = computed<string>(() => {
 })
 
 // ─── Source columns preview ───────────────────────────────────────────
-
 async function loadSourceColumns(itemId: string) {
   if (!itemId || !props.workspaceId) {
     sourceColumns.value = []
@@ -111,7 +109,6 @@ async function loadSourceColumns(itemId: string) {
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────
-
 const handleCopy = () => {
   if (!sourceItemId.value) return
   emit('copy', sourceItemId.value, mode.value)

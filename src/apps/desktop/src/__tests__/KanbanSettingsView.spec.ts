@@ -323,7 +323,6 @@ describe('KanbanSettingsView', () => {
   })
 
   // ─── Agent tab (reuses AgentView — unified Knowledge + Tools + System Prompt) ───
-
   it('renders the Agent tab button (visible regardless of item.path)', async () => {
     seedWorkspaces({ ...baseItem, path: null })
     mountView()
@@ -451,7 +450,6 @@ describe('KanbanSettingsView', () => {
   })
 
   // ─── Agent tab — embedded Local Memories section ───
-
   it('renders Local Memories inside Agent tab when kanban has a path', async () => {
     seedWorkspaces({ ...baseItem, path: '/tmp/some-folder' })
     setupRoute({ section: 'agent' })

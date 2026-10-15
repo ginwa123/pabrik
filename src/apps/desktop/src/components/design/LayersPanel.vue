@@ -206,7 +206,6 @@ function findNode(
 // Multi-drag: when the dragged row is in `selectedIds` AND the selection has > 1 element, the
 // composable sets draggedIds to the FULL set. The LayerRow's per-row visual flags
 // (`isBeingDragged`) reflect that — every selected row gets the dragging class.
-
 const dragDrop = useLayerDragDrop({
   elements: () => props.elements,
   selectedIds: () => new Set(props.selectedIds),

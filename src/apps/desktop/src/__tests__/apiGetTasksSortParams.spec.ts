@@ -25,7 +25,6 @@ describe('api.getTasks — sort params (2026-08-06 no-default behavior)', () => 
   })
 
   // ─── 1. No sort params → URL omits sort_by + direction ──────────────
-
   it('omits sort_by + direction when neither is provided', async () => {
     fetchSpy.mockResolvedValueOnce(
       new Response(
@@ -93,7 +92,6 @@ describe('api.getTasks — sort params (2026-08-06 no-default behavior)', () => 
   })
 
   // ─── 2. Both provided → URL has sort_by + direction ─────────────────
-
   it('includes sort_by + direction when both are provided', async () => {
     fetchSpy.mockResolvedValueOnce(
       new Response(
@@ -125,7 +123,6 @@ describe('api.getTasks — sort params (2026-08-06 no-default behavior)', () => 
   })
 
   // ─── 3. Other params (column_id, q, cursor) still sent ──────────────
-
   it('still includes column_id, q, and cursor when no sort provided', async () => {
     fetchSpy.mockResolvedValueOnce(
       new Response(

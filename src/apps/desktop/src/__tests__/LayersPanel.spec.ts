@@ -23,7 +23,6 @@ import LayersPanel from '../components/design/LayersPanel.vue'
 import type { DesignElement } from '../api'
 
 // ─── Behavioral mount tests (Chunk 7 — tree render) ────────────────────────
-
 function makeElement(overrides: Partial<DesignElement> = {}): DesignElement {
   return {
     id: 'elem_1',

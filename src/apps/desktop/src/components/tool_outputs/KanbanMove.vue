@@ -54,7 +54,6 @@ const props = defineProps<{
 const isExpanded = ref(props.expanded ?? false)
 
 // ---- Parsers ---------------------------------------------------------------
-
 const normalized = computed(() => normalizeToolContent(props.content))
 const parsed = computed(() => {
   const p = parseKanbanMove(normalized.value.data)

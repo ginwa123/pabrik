@@ -76,7 +76,6 @@ const canSubmit = computed(() => {
 })
 
 // ─── Handlers ──────────────────────────────────────────────────────────────
-
 const handleFolderSelected = (path: string) => {
   parentDir.value = path
   // Close the picker on selection — matches the expected UX (the picker dismisses and the user is

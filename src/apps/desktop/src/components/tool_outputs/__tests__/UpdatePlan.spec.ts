@@ -19,7 +19,6 @@ import { tryUnwrapToolOutput } from '@/helpers/unwrapToolOutput'
 // ────────────────────────────────────────────────────────────────────────
 // Helpers
 // ────────────────────────────────────────────────────────────────────────
-
 const makeEnvelope = (data: unknown, success = true, error: string | null = null): string =>
   JSON.stringify({
     tool: 'update_plan',
@@ -141,7 +140,6 @@ describe('UpdatePlan.vue — happy path', () => {
     })
 
     // Click the header to expand.
-
     expect(wrapper.find('[data-testid="update-plan-session-row"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="update-plan-updated-row"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('s_1787073929852_8')
@@ -308,7 +306,6 @@ describe('UpdatePlan.vue — inner envelope extraction', () => {
 // arguments.
 // Same UX as expanding a GetPlan card — users see what the agent just wrote without having to call
 // get_plan separately. ────────────────────────────────────────────────────────────────────────
-
 describe('UpdatePlan.vue — plan body from <plan> CDATA', () => {
   it('renders the plan body as a checklist inside the expanded body', async () => {
     const body = '- [x] step 1 done\n- [ ] step 2 todo\n- [ ] step 3 todo'

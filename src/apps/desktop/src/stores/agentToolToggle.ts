@@ -2,7 +2,6 @@
 // handleAgentToggleTool so the toggle logic is unit-testable without booting the full AppLayout
 // component tree (which has Vue Router, Pinia, etc. dependencies).
 // Plan: docs/superpowers/plans/2026-08-19-agent-tools-toggle-wire.md (Task 4)
-
 export interface ToggleCallbacks {
   enableAgentTool: (agentId: string, toolName: string) => Promise<unknown>
   disableAgentTool: (agentId: string, toolName: string) => Promise<unknown>

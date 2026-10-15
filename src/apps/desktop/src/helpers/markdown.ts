@@ -31,7 +31,6 @@ import { marked } from 'marked'
  * while leaving every legitimate markdown construct (emphasis, code, lists,
  * links, tables) intact.
  */
-
 const escapeHtmlChars = (text: string): string =>
   text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 

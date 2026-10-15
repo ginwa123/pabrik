@@ -23,7 +23,6 @@ import ReadWorkspaceSession from '../ReadWorkspaceSession.vue'
 // ────────────────────────────────────────────────────────────────────────
 // Test helpers
 // ────────────────────────────────────────────────────────────────────────
-
 const makeSearchContent = (
   opts: {
     behavior?: 'search' | 'search-within'
@@ -171,7 +170,6 @@ const makeErrorContent = (msg = 'Database query failed: SyntaxError') => ({ erro
 // ────────────────────────────────────────────────────────────────────────
 // jsdom doesn't ship a clipboard by default; provide a minimal stub.
 // ────────────────────────────────────────────────────────────────────────
-
 let clipboardWrites: string[] = []
 
 beforeEach(() => {
@@ -194,7 +192,6 @@ afterEach(() => {
 // ────────────────────────────────────────────────────────────────────────
 // Tests
 // ────────────────────────────────────────────────────────────────────────
-
 describe('ReadWorkspaceSession.vue — envelope dispatch', () => {
   it('renders behavior="search" header with query + entry count', () => {
     const wrapper = mount(ReadWorkspaceSession, {

@@ -24,7 +24,6 @@
  * mocked `api.getTasks` returning wire-shaped payloads (same pattern
  * as workspacesStoreNormalizeTaskDates.spec.ts).
  */
-
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import * as api from '../api'

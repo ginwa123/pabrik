@@ -106,7 +106,6 @@ describe('useDesignSseStore (bus-backed)', () => {
   //      dispatched event).
   //   2. closeDesignSse clears activeWorkspaceId (so a later
   //      initDesignSse can re-bind cleanly).
-
   it('initDesignSse is idempotent — second call does NOT add a second listener', async () => {
     // Spy on workspacesStore.fetchDesignElements and count how many
     // times it fires per dispatched event. If initDesignSse added a
@@ -182,7 +181,6 @@ describe('useDesignSseStore (bus-backed)', () => {
 // `fetchDesignElements` GET fan-out when the event is for a locally- mutated element. Combined with
 // the batch endpoint (1 PATCH instead of N per-element PATCHes per pointermove), this is the
 // dominant backend-load reduction.
-
 describe('designSse — local-mutation dedupe', () => {
   let localStubClient: SseClient
 

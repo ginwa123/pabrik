@@ -1,12 +1,10 @@
 // Persistence API - API calls for desktop state persistence
 // Replaces localStorage calls with server-side persistence
-
 const API_BASE = '/api'
 
 // ============================================
 // Type Definitions
 // ============================================
-
 export interface Workspace {
   id: string
   name: string

@@ -349,7 +349,6 @@ describe('Sidebar.handleSelectTask — APPEND URL, not REPLACE (better-url-brows
   // (task_1785774094183): task URLs were missing `workspaceId`.
   // These tests lock in the new contract: when the user clicks a task in kanban / design mode, the
   // new task URL MUST include workspaceId (from the active store state).
-
   it('writes workspaceId from the active store even when the URL breadcrumb lacks it (add-workspace-id-params, 2026-08-06)', async () => {
     const store = useWorkspacesStore()
     store.workspaces = [

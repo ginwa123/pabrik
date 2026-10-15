@@ -46,7 +46,6 @@ describe('KanbanColumnEditor', () => {
   })
 
   // ─── mode='add' ──────────────────────────────────────────────────────────
-
   describe("mode='add'", () => {
     it('shows the "Add Column" header and a name input', async () => {
       wrapper = mountEditor('add')
@@ -131,7 +130,6 @@ describe('KanbanColumnEditor', () => {
   })
 
   // ─── mode='rename' ───────────────────────────────────────────────────────
-
   describe("mode='rename'", () => {
     it('pre-fills the name input with the initial column name', async () => {
       wrapper = mountEditor('rename', true, 'todo')
@@ -176,7 +174,6 @@ describe('KanbanColumnEditor', () => {
   })
 
   // ─── mode='delete' ───────────────────────────────────────────────────────
-
   describe("mode='delete'", () => {
     it('shows confirmation message with the column name', async () => {
       wrapper = mountEditor('delete', true, 'todo')
@@ -217,7 +214,6 @@ describe('KanbanColumnEditor', () => {
   })
 
   // ─── show=false (any mode) ───────────────────────────────────────────────
-
   describe('show=false', () => {
     it('renders nothing in any mode', () => {
       wrapper = mountEditor('add', false)
@@ -233,7 +229,6 @@ describe('KanbanColumnEditor', () => {
 })
 
 // ─── description field (Chunk 2 of kanban-column-description-settings) ─────
-
 describe('KanbanColumnEditor description field', () => {
   afterEach(() => {
     document.body.innerHTML = ''
@@ -244,7 +239,6 @@ describe('KanbanColumnEditor description field', () => {
   // because the editor renders inside <Teleport to="body"> — Vue Test Utils' wrapper.find() does
   // not traverse the teleport destination.
   // Same convention as the existing tests at the top of this file.
-
   it('shows a description textarea in add mode', async () => {
     document.body.innerHTML = ''
     const wrapper = mount(KanbanColumnEditor, {

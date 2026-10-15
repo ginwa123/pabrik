@@ -338,7 +338,6 @@ const handlePaste = async (e: ClipboardEvent) => {
     } catch (err) {
       // Permission denied, clipboard unavailable, or no images present.
       // Silent fall-through — the user can still type and send text.
-
       console.debug(
         '[paste] navigator.clipboard.read() fallback skipped:',
         err instanceof Error ? err.message : err,

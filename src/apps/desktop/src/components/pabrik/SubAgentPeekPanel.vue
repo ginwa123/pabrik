@@ -35,7 +35,6 @@ const emit = defineEmits<{
 }>()
 
 // ── Derived display values ────────────────────────────────────────────
-
 const instructionPreview = computed(() => {
   const max = 200
   return props.instruction.length > max

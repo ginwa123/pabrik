@@ -39,7 +39,6 @@ vi.mock('../components/FilePickerDialog.vue', () => ({
 }))
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
-
 function findInDom<T extends Element = Element>(selector: string): T | null {
   return document.querySelector<T>(selector)
 }
@@ -65,7 +64,6 @@ function mountDialog(initialShow = true) {
 }
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
-
 describe('AddItemDialog — open/close lifecycle', () => {
   let wrapper: VueWrapper | null = null
 
@@ -250,7 +248,6 @@ describe('AddItemDialog — name input', () => {
   // The error explains why Add is disabled — without it, the disabled button looks like a renderer
   // bug to users who can't see why nothing happens. Plan:
   // docs/superpowers/plans/2026-07-10-empty-workspace-item-bug.md
-
   it('whitespace-only name shows visible "Name is required" error', async () => {
     wrapper = mountDialog(true)
     await flushPromises()

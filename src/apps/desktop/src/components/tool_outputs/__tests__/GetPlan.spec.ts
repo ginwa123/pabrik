@@ -82,7 +82,6 @@ const wrapInToolEnvelope = (inner: string): string => {
 // ────────────────────────────────────────────────────────────────────────
 // Tests
 // ────────────────────────────────────────────────────────────────────────
-
 describe('GetPlan.vue — present plan', () => {
   let clipboardWrites: string[] = []
 

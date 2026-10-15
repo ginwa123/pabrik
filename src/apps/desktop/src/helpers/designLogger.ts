@@ -36,7 +36,6 @@
  * Design mirrors scrollLogger.ts (info / warn / error, lazy stack
  * capture on warn+error, caller field, single emit site).
  */
-
 import { ref } from 'vue'
 
 // ─── Configuration ─────────────────────────────────────────────────────────
@@ -157,7 +156,6 @@ export type DesignReason =
   | 'fetch:replaced-array'          // array reference replaced (the OLD bug)
 
 // ─── Context (the per-line state snapshot) ────────────────────────────────
-
 export interface ElementInfo {
   id: string
   type: string
@@ -251,7 +249,6 @@ const flushKey = (key: string): void => {
 }
 
 // ─── Public surface ────────────────────────────────────────────────────────
-
 export interface DesignLogger {
   debug: (ctx: Omit<DesignContext, 'caller' | 'reason'> & { reason: DesignReason; caller?: string }) => void
   info: (ctx: Omit<DesignContext, 'caller' | 'reason'> & { reason: DesignReason; caller: string }) => void
@@ -307,7 +304,6 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
 }
 
 // ─── Emit ──────────────────────────────────────────────────────────────────
-
 let eventCounter = 0
 
 const emitInternal = (ctx: DesignContext, level: 'debug' | 'info' | 'warn' | 'error'): void => {

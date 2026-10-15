@@ -23,7 +23,6 @@
  * unambiguous. It also means a legacy (unscoped) key can never collide with a
  * scoped one.
  */
-
 import { getAuthMeCached } from './authMe'
 
 /** Separator between the logical key and the user id. */

@@ -51,7 +51,6 @@ const props = defineProps<{
 const isExpanded = ref(props.expanded ?? false)
 
 // ─── Envelope ──────────────────────────────────────────────────────────────
-
 const normalized = computed(() => normalizeToolContent(props.content))
 
 const parsed = computed<ParsedWebSearch>(() => {
@@ -90,7 +89,6 @@ const args = computed<WebSearchArgs>(() => {
 const provider = computed(() => parsed.value.provider || args.value.provider || null)
 
 // ─── The results convention ────────────────────────────────────────────────
-
 interface ResultRow {
   key: string
   title: string
@@ -175,7 +173,6 @@ const prettyResponse = computed(() => {
 const copyValue = computed(() => (parsed.value.success ? prettyResponse.value : ''))
 
 // ─── Failure detail ────────────────────────────────────────────────────────
-
 const alternatives = computed(() => {
   const error = parsed.value.error
   if (!error) return []
@@ -191,7 +188,6 @@ const hostMismatch = computed(() => {
 const httpStatus = computed(() => parsed.value.error?.httpStatus ?? null)
 
 // ─── Header ────────────────────────────────────────────────────────────────
-
 const rightMeta = computed(() => {
   if (!parsed.value.success) return null
   if (hasResultRows.value) {

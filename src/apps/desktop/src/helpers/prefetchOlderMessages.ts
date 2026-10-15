@@ -11,7 +11,6 @@
  * prepending mid-fling would fight the momentum scroll). */
 /** Pure (no DOM, no Vue) so the decision matrix is unit-testable — the same reason
  * `virtualScrollerThreshold.ts` and `autoStickGate.ts` are standalone files. */
-
 import { computeLoadMoreThreshold } from './virtualScrollerThreshold'
 
 /**  * Absolute floor for the arm radius, in px. Larger than the commit band's 200 px floor because the

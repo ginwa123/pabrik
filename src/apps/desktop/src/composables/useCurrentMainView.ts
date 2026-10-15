@@ -131,7 +131,6 @@ export function useCurrentMainView(): ComputedRef<CurrentMainView> {
     }
     // `other` (settings, kanban-settings, legacy routes, unknown):
     // fall through to the query + path-param handling below.
-
     const view = q.view
     if (view === 'chat') {
       if (typeof q.session === 'string' && q.session.length > 0) {

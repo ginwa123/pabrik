@@ -2,7 +2,6 @@
  * Enter, add via comma, ✕ removes, backspace-on-empty removes last, case-insensitive dedupe (silent
  * no-op), forbidden char error, length cap error. */
 /** Plan: docs/superpowers/plans/2026-07-28-kanban-task-tags.md (Task 10) */
-
 import { describe, it, expect, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'

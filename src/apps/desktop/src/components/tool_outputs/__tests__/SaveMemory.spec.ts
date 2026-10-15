@@ -29,7 +29,6 @@ import SaveMemory from '../SaveMemory.vue'
 // ────────────────────────────────────────────────────────────────────────
 // jsdom clipboard stub (matches ReadWorkspaceSession.spec.ts pattern)
 // ────────────────────────────────────────────────────────────────────────
-
 let clipboardWrites: string[] = []
 
 beforeEach(() => {
@@ -51,7 +50,6 @@ afterEach(() => {
 // ────────────────────────────────────────────────────────────────────────
 // Helpers
 // ────────────────────────────────────────────────────────────────────────
-
 const makeSuccessContent = (
   opts: {
     id?: string
@@ -81,7 +79,6 @@ const makeParams = (content: string, tags: string | null = TAGS) =>
 // ────────────────────────────────────────────────────────────────────────
 // Tests
 // ────────────────────────────────────────────────────────────────────────
-
 describe('SaveMemory.vue — happy path', () => {
   it('renders the tool name pill + the id in the header on success', () => {
     const wrapper = mount(SaveMemory, {
@@ -237,7 +234,6 @@ describe('SaveMemory.vue — empty envelope edge case', () => {
 // ────────────────────────────────────────────────────────────────────────
 // The saved body.
 // ────────────────────────────────────────────────────────────────────────
-
 describe('SaveMemory.vue — saved body', () => {
   it('renders the note body from the tool-call args when expanded', () => {
     const wrapper = mount(SaveMemory, {
@@ -350,7 +346,6 @@ describe('SaveMemory.vue — saved body', () => {
 // ────────────────────────────────────────────────────────────────────────
 // Id + tags: header only, in both states.
 // ────────────────────────────────────────────────────────────────────────
-
 describe('SaveMemory.vue — id + tags live in the header', () => {
   it('shows the id and the tags on ONE header line, in the collapsed state', () => {
     const wrapper = mount(SaveMemory, {

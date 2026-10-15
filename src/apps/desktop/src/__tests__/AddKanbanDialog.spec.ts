@@ -111,7 +111,6 @@ describe('AddKanbanDialog', () => {
   // an inline error below the name input after the user has interacted with an empty/whitespace
   // field, so the disabled Add button has a visible explanation.
   // Plan: docs/superpowers/plans/2026-07-10-empty-workspace-item-bug.md
-
   it('whitespace-only name shows visible "Name is required" error', async () => {
     wrapper = mountDialog(true)
     await flushPromises()
@@ -181,7 +180,6 @@ describe('AddKanbanDialog', () => {
   // The "Set project root" banner in KanbanView surfaces after
   // creation, offering the user a way to backfill the path via
   // the same FilePickerDialog.
-
   it('emits create(name, "") when Add is clicked without picking a folder (cwd-less kanban)', async () => {
     wrapper = mountDialog(true)
     await flushPromises()

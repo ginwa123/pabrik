@@ -161,7 +161,6 @@ describe('WorkspaceItemTaskCard — agent-error indicator', () => {
     const store = useAgentErrorStore()
     store.setError('task_a', RETRY_CONTENT)
     // task_b is intentionally NOT errored.
-
     const wrapperA = mount(WorkspaceItemTaskCard, {
       props: { task: makeTask({ id: 'task_a' }), workspaceId: 'ws_1', itemId: 'item_1' },
     })

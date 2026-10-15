@@ -2,7 +2,6 @@
 // KanbanAgentPanel in iteration 2 of the kanban-agent-as-tab plan: 2026-08-27). Mounted as the
 // ?tab=tools tab body inside KanbanSettingsView.
 // Hosts ONLY the tools checkbox grid; knowledge + system prompts live in KanbanKnowledgePanel.
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { flushPromises } from '@vue/test-utils'
@@ -132,7 +131,6 @@ describe('KanbanToolsPanel', () => {
   // auto-seeds the row in agent_kanban_tools_create.zig.
   // After success the panel refetches the bundle so config is populated and the unconfigured banner
   // disappears.
-
   it('lets the user bootstrap the config by enabling a tool from the unconfigured state', async () => {
     // First GET resolves to null (no config yet).
     const getSpy = vi.spyOn(api, 'getAgentKanban')
@@ -203,7 +201,6 @@ describe('KanbanToolsPanel', () => {
   })
 
   // ─── Search filter ──────────────────────────────────────────────────────
-
   it('filters the tools grid by name when the user types into the search box', async () => {
     mountPanel()
     await flushPromises()
@@ -231,7 +228,6 @@ describe('KanbanToolsPanel', () => {
   })
 
   // ─── Recommended starter set ───────────────────────────────────────────
-
   it('enables the recommended starter set when the user clicks the preset button', async () => {
     // Use an empty-tools bundle so preset has clean work to do.
     vi.spyOn(api, 'getAgentKanban').mockResolvedValue({

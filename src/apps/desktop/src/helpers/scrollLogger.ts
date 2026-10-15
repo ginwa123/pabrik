@@ -30,7 +30,6 @@
  *     in DevTools by matching ids.
  */
 // ─── Types ────────────────────────────────────────────────────────────────────
-
 export type ScrollOrigin = 'user' | 'programmatic'
 
 /**
@@ -263,7 +262,6 @@ const DEBUG_THROTTLE_MS = 200
 // Pattern: `scrollToBottom()` calls `markProgrammatic()` BEFORE assigning scrollTop, so the
 // resulting scroll event reads `origin: 'programmatic'` even though the browser fires it
 // asynchronously.
-
 let programmaticScrollsRemaining = 0
 let programmaticScrollsResetTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -292,7 +290,6 @@ export const consumeProgrammatic = (): boolean => {
 // scroll event.
 // This gives you 5 samples/sec instead of 60, with the final position always represented
 // (trailing-edge flush).
-
 let pendingDebugContext: ScrollContext | null = null
 let pendingDebugTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -306,7 +303,6 @@ const flushPendingDebug = (): void => {
 }
 
 // ─── Logger factory ───────────────────────────────────────────────────────────
-
 export interface ScrollLogger {
   /**    * Throttled per-frame sample. Safe to call on every scroll event. `origin` is optional: omit it
    * to let the logger resolve from the `markProgrammatic` counter, or pass an explicit value to
@@ -428,7 +424,6 @@ export const createScrollLogger = (chatId: string): ScrollLogger => {
 // ─── Emit ─────────────────────────────────────────────────────────────────────
 // Single console.* call site so the formatting is consistent and the
 // production gate is in one place.
-
 let eventCounter = 0
 
 const emit = (ctx: ScrollContext, level: 'debug' | 'info' | 'warn' | 'error'): void => {

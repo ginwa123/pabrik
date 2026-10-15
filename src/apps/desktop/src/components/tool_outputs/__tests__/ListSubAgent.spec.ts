@@ -33,7 +33,6 @@ import ListSubAgent from '../ListSubAgent.vue'
 // ────────────────────────────────────────────────────────────────────────
 // Helpers
 // ────────────────────────────────────────────────────────────────────────
-
 const subAgent = (opts: {
   name: string
   model?: string
@@ -98,7 +97,6 @@ const makeEmpty = (profile = 'dev'): string => makeEnvelope({ profile, count: 0,
 // ────────────────────────────────────────────────────────────────────────
 // Tests
 // ────────────────────────────────────────────────────────────────────────
-
 describe('ListSubAgent.vue — populated', () => {
   it('header chip shows count + profile name', () => {
     const wrapper = mount(ListSubAgent, { props: { message: { content: makePopulated() } } })

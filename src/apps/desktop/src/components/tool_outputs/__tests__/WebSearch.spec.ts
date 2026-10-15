@@ -24,7 +24,6 @@ import WebSearch from '../WebSearch.vue'
 import { parseWebSearch, parseWebSearchErrorText } from '../_shared/toolOutputParser'
 
 // ─── Envelopes, shaped like the ones the backend emits ─────────────────────
-
 const successEnvelope = (provider: string, response: unknown, status = 200) => ({
   provider,
   status,
@@ -60,7 +59,6 @@ const tinyfish = {
 }
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
-
 describe('WebSearch', () => {
   it('renders the card', () => {
     const wrapper = mount(WebSearch, {
@@ -70,7 +68,6 @@ describe('WebSearch', () => {
   })
 
   // ─── matrix row 69: the `results` convention ────────────────────────────
-
   it('69: renders one row per result of a top-level `results` array', () => {
     const wrapper = mount(WebSearch, {
       props: { content: successEnvelope('tinyfish', tinyfish), expanded: true },
@@ -120,7 +117,6 @@ describe('WebSearch', () => {
   })
 
   // ─── matrix row 70: the fallback, and never a throw ─────────────────────
-
   it.each([
     ['Brave nests the same array under `web`', { web: { results: [{ title: 'B' }] } }],
     ['Serper calls it `organic`', { organic: [{ title: 'O', link: 'https://o.test' }] }],
@@ -169,7 +165,6 @@ describe('WebSearch', () => {
   })
 
   // ─── matrix row 71: the provider badge ──────────────────────────────────
-
   it('71: the provider badge comes from the envelope', () => {
     const wrapper = mount(WebSearch, {
       props: {
@@ -236,7 +231,6 @@ describe('WebSearch', () => {
   })
 
   // ─── failures ───────────────────────────────────────────────────────────
-
   it('renders the reason flag and the message of a failure envelope', () => {
     const wrapper = mount(WebSearch, {
       props: {
@@ -297,7 +291,6 @@ describe('WebSearch', () => {
   })
 
   // ─── parser ─────────────────────────────────────────────────────────────
-
   it('parseWebSearch reads the provider, status and untyped response', () => {
     const parsed = parseWebSearch(successEnvelope('tinyfish', tinyfish))
 

@@ -124,7 +124,6 @@ describe('workspacesStore.updateDesignElementGeometry (single)', () => {
   }
 
   // ── Invariant 1: local mirror (the bug fix) ─────────────────────────
-
   it('mirrors the API response into item.design_elements[].x/y (the visual-drag freeze fix)', async () => {
     seedItem('item_1', [makeElement('el_1', 0, 0)])
 
@@ -217,7 +216,6 @@ describe('workspacesStore.updateDesignElementGeometry (single)', () => {
   })
 
   // ── Invariant 2: SSE dedupe registration (existing behaviour) ───────
-
   it('registers the mutated element_id in the SSE dedupe Map', async () => {
     seedItem('item_1', [makeElement('el_1', 0, 0)])
 
@@ -231,7 +229,6 @@ describe('workspacesStore.updateDesignElementGeometry (single)', () => {
   })
 
   // ── Wire shape ───────────────────────────────────────────────────────
-
   it('calls PATCH /geometry (not the batch endpoint)', async () => {
     seedItem('item_1', [makeElement('el_1', 0, 0)])
 

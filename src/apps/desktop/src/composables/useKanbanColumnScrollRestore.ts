@@ -178,7 +178,6 @@ export function useKanbanColumnScrollRestore(
       el.addEventListener('scrollend', handleScrollEnd, { passive: true })
     }
     // else: the debounced `scroll` handler covers it.
-
     void restoreInto(el)
   }
 

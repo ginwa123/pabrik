@@ -16,7 +16,6 @@
 // This spec used to be `AppLayout.kanbanChatDialog.spec.ts` and queried
 // `document` for the teleported dialog. There is no modal any more, so it
 // queries the mounted wrapper instead.
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'

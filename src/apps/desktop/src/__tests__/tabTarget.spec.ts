@@ -24,7 +24,6 @@ import { makeLocalStorageStub } from './helpers'
 /**  * Task 1 of the tab-mode plan: every rule that decides WHICH target a tab represents, which
  * navigations never become tabs, and how a persisted list is validated. These are pure functions on
  * purpose — the store and the strip are tested separately. */
-
 describe('isBackgroundOpenEvent', () => {
   it('matches the browser gesture for "open in a background tab"', () => {
     expect(isBackgroundOpenEvent({ ctrlKey: true })).toBe(true)

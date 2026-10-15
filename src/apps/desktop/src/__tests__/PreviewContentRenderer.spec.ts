@@ -1,7 +1,6 @@
 /**  * Behavioural tests for the <PreviewContentRenderer> component. The renderer renders text content
  * inline inside the chat bubble (used by <PresentFiles> for per-file text previews). Covers the
  * 5-branch pipeline (markdown / text / code / image / html) plus the HTML "Open in new tab" action. */
-
 import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import PreviewContentRenderer from '../components/preview/PreviewContentRenderer.vue'

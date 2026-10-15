@@ -250,7 +250,6 @@ const setupCodeBlockCopyButtons = () => {
 // ─── <html> wrapper-tag rendering ───────────────────────────────────────── When the LLM wraps raw
 // HTML in <html>...</html>, the chat UI renders each block as a live sandboxed iframe (null origin
 // — the security boundary; inner scripts can't touch parent DOM/cookies).
-
 interface HtmlSegment {
   /** Text before this html block (markdown-rendered inline). */
   before: string
@@ -1020,7 +1019,6 @@ const messagesWrapperRef = ref<HTMLElement | null>(null)
 // its `scrollToBottom` (`realBottom = topSpacer + contentH`) lands on the
 // padded bottom, so auto-stick keeps the last message visible with no change
 // to the scroller's height model.
-
 let chatColumnEl: HTMLElement | null = null
 const setChatColumnEl = (el: unknown) => {
   chatColumnEl = (el as HTMLElement | null) ?? null
@@ -2114,7 +2112,6 @@ const rehydrateSubAgentProgress = async () => {
 //      prepend the same page.
 //   4. A buffer is dropped when its cursor or generation no longer matches
 //      (session switch, refresh, or another path advancing the cursor).
-
 interface BufferedOlderPage {
   /** Cursor this page was requested with — must still equal `messageCursor` to commit. */
   fetchedWithCursor: string | null
@@ -4197,7 +4194,6 @@ const updateStreamingMessage = () => {
 }
 
 // ─── Init ──────────────────────────────────────────────────────────────────────
-
 onMounted(async () => {
   sessionId.value = props.chatId.replace(/^chat-/, '')
   // Replaces the old sessionId watchers (profile load + scroll-logger
@@ -4380,7 +4376,6 @@ const noteCwdMutation = (prevCwd: string) => {
 }
 
 // ─── Send Message ─────────────────────────────────────────────────────────────
-
 const handleFileInputSubmit = async (userMessage: string, files?: File[]) => {
   await nextTick()
   followNewestTurn('send-message')
@@ -4430,7 +4425,6 @@ const handleFileInputSubmit = async (userMessage: string, files?: File[]) => {
   // Now we let the SSE echo deliver the canonical row. The user sees
   // a brief gap (server round-trip) but the rendered card carries the
   // real DB id from the start, with stable expansion semantics.
-
   try {
     await api.sendChatMessage(
       currentSessionId,
@@ -4487,7 +4481,6 @@ const formatTime = (date: Date) => {
 }
 
 // ─── Compact ──────────────────────────────────────────────────────────────────
-
 const isCompacting = ref(false)
 const compactError = ref<string | null>(null)
 

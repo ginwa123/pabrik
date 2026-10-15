@@ -247,7 +247,6 @@ describe('KanbanTaskDetailDialog — create mode image attachments', () => {
     })
     await flushPromises()
     // Trigger a save (name unchanged → still dirty via description change).
-     
     setInputValue('[data-testid="kanban-task-detail-description"]', 'Edited text')
     await flushPromises()
     clickInDom('[data-testid="kanban-task-detail-save"]')

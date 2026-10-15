@@ -1196,7 +1196,6 @@ export function createSseClient(opts: SseClientOptions): SseClient {
   // ── DOM listeners ─────────────────────────────────────────────────────
   // Only attach when the target is available. In tests, callers
   // can pass mock targets or set `pauseWhenHidden: false`.
-
   function onVisibilityChange(): void {
     if (closed) return
     if (!visibilityTarget) return

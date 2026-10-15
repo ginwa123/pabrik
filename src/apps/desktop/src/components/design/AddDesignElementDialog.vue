@@ -45,7 +45,6 @@ const emit = defineEmits<{
 }>()
 
 // ─── Form state ────────────────────────────────────────────────────────
-
 const ELEMENT_TYPES: { value: DesignElementType; label: string }[] = [
   { value: 'rectangle', label: 'Rectangle' },
   { value: 'ellipse', label: 'Ellipse' },
@@ -82,7 +81,6 @@ const defaultHtmlFor = (t: DesignElementType): string => {
 }
 
 // ─── Handlers ──────────────────────────────────────────────────────────
-
 const handleCreate = (): void => {
   const trimmedName = name.value.trim()
   if (!trimmedName) return

@@ -11,7 +11,6 @@ import { useContextMenu } from '../composables/useContextMenu'
  * document — including one the app itself performs — dismissed an open menu with no user intent. */
 /** The fix scopes the scroll dismiss to the anchor the menu was opened from, and drops the `wheel`
  * dismiss entirely. These tests pin both the bug (as a regression guard) and the fix. */
-
 const Host = defineComponent({
   setup() {
     const { menuPos, openAt, openAtPoint, close } = useContextMenu()
@@ -38,7 +37,6 @@ describe('useContextMenu — dismiss paths', () => {
   })
 
   // ─── The bug, pinned as a regression guard ───────────────────────────
-
   it('REGRESSION: a wheel event anywhere in the document no longer closes the menu', async () => {
     const wrapper = mountHost()
     const anchor = document.createElement('div')
@@ -120,7 +118,6 @@ describe('useContextMenu — dismiss paths', () => {
   })
 
   // ─── The dismissals that must survive ────────────────────────────────
-
   it('a scroll of the anchor itself closes the menu', async () => {
     const wrapper = mountHost()
     const anchor = document.createElement('div')
@@ -224,7 +221,6 @@ describe('useContextMenu — dismiss paths', () => {
   })
 
   // ─── The keyboard path ───────────────────────────────────────────────
-
   it('openAtPoint attaches the same dismiss wiring as openAt', async () => {
     const wrapper = mountHost()
     const anchor = document.createElement('div')

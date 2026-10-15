@@ -1,5 +1,4 @@
 /** Pure helper: which rail pill is active for a given visible range. No DOM. */
-
 export interface PillIndex {
   groupIndex: number
 }

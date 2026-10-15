@@ -19,7 +19,6 @@
 // 'kanban' && activeWorkspaceItem.item_type !== 'design' && activeTask
 // using the task id as the chat session id (migration 052 invariant:
 // task.id == session.id).
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, type VueWrapper } from '@vue/test-utils'

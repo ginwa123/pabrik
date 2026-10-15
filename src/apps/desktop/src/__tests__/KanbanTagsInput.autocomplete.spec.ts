@@ -207,7 +207,6 @@ describe('KanbanTagsInput — autocomplete dropdown', () => {
   })
 
   // ─── Pagination tests ──────────────────────────────────────────────────
-
   it('renders the scroll sentinel when hasMore is true', async () => {
     const wrapper = mount(KanbanTagsInput, {
       props: {
@@ -255,7 +254,6 @@ describe('KanbanTagsInput — autocomplete dropdown', () => {
     // callback with isIntersecting=true synchronously.
     // Note: the vitest tsconfig has `"lib": []` (no DOM types), so we use `any` for the captured
     // cb/opts instead of the global IntersectionObserver types (which are undeclared).
-     
     const originalIO = globalThis.IntersectionObserver
      
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

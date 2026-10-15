@@ -55,7 +55,6 @@
  * If a future refactor adds 3 per-channel buffers, this test
  * will fail with `expected session cb to fire 1 times, got 0`.
  */
-
 import { assert, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createUnifiedSseConnection } from '../api'

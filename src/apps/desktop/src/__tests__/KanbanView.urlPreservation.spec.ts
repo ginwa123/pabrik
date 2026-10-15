@@ -120,7 +120,6 @@ describe('KanbanView — URL preservation (real router)', () => {
   })
 
   // ─── B1: the sorts watcher must not emit the legacy URL shape ────────────
-
   it('picking a column sort keeps the canonical path (not the legacy /app?view= shape)', async () => {
     const router = await makeRouter({
       path: `/app/${WS_ID}/projects/${ITEM_ID}`,
@@ -185,7 +184,6 @@ describe('KanbanView — URL preservation (real router)', () => {
   })
 
   // ─── B3: setLayout must not clobber ?sorts= from a stale snapshot ────────
-
   it('switching layout preserves ?sorts= in the committed URL', async () => {
     const router = await makeRouter({
       path: `/app/${WS_ID}/projects/${ITEM_ID}`,
@@ -227,7 +225,6 @@ describe('KanbanView — URL preservation (real router)', () => {
   })
 
   // ─── B2: closing the detail panel must not drop ?layout= ─────────────────
-
   it('closing the detail panel preserves ?layout= in the committed URL', async () => {
     const router = await makeRouter({
       path: `/app/${WS_ID}/projects/${ITEM_ID}`,
@@ -255,7 +252,6 @@ describe('KanbanView — URL preservation (real router)', () => {
   })
 
   // ─── Round-trip: the URL survives a reload ───────────────────────────────
-
   it('a ?layout=rows deep link restores row mode on a fresh mount', async () => {
     const router = await makeRouter({
       path: `/app/${WS_ID}/projects/${ITEM_ID}`,

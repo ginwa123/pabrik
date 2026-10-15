@@ -282,7 +282,6 @@ const emit = defineEmits<{
 }>()
 
 // ─── Form state ──────────────────────────────────────────────────────────
-
 const name = ref('')
 const description = ref('')
 const unattended = ref<'0' | '1'>('1')
@@ -1029,7 +1028,6 @@ const selectProfile = (name: string) => {
 }
 
 // ─── Metadata helpers ───────────────────────────────────────────────────
-
 const taskTypeLabel = computed<string | null>(() => {
   const t = props.task?.task_type
   if (t === 'memory') return 'Memory'

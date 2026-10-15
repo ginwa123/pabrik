@@ -22,7 +22,6 @@
 // rendered as an empty list. `loaded` carries the third state — "not
 // fetched yet" — so a fresh view shows neither a misleading empty state
 // nor a stale one.
-
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { Cause, Data, Effect, Exit } from 'effect'

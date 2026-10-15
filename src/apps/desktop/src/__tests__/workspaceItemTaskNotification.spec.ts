@@ -65,7 +65,6 @@ describe('WorkspaceItemTaskCard — kanban task notification icon (Chunk 6)', ()
   // ─────────────────────────────────────────────────────────────────
   // State 2: orange "awaiting review" dot
   // ─────────────────────────────────────────────────────────────────
-
   it('renders the orange needs-review dot when needs_human_review=true and not running', () => {
     wrapper = mountCard({
       id: 't1',
@@ -107,7 +106,6 @@ describe('WorkspaceItemTaskCard — kanban task notification icon (Chunk 6)', ()
   // ─────────────────────────────────────────────────────────────────
   // State 3: green "reviewed" checkmark
   // ─────────────────────────────────────────────────────────────────
-
   it('renders the green reviewed checkmark when finish_reason=stop AND needs_human_review=false AND not running', () => {
     wrapper = mountCard({
       id: 't1',
@@ -127,7 +125,6 @@ describe('WorkspaceItemTaskCard — kanban task notification icon (Chunk 6)', ()
   // ─────────────────────────────────────────────────────────────────
   // State 4: never ran (no last_finish_reason)
   // ─────────────────────────────────────────────────────────────────
-
   it('renders nothing when last_finish_reason is missing AND needs_human_review is false (default empty task)', () => {
     wrapper = mountCard({ id: 't1', name: 'Brand new' })
     expect(wrapper.find('[data-testid="task-needs-review"]').exists()).toBe(false)
@@ -152,7 +149,6 @@ describe('WorkspaceItemTaskCard — kanban task notification icon (Chunk 6)', ()
   // the dot, even if needs_human_review somehow became true
   // (e.g. cache stale during a session-status flip).
   // ─────────────────────────────────────────────────────────────────
-
   it('renders nothing when finish_reason=tool_calls even if needs_human_review is true (defensive)', () => {
     // The SQL predicate COALESCE(s.last_finish_reason,'')='stop' guarantees this in normal flow,
     // but the UI also gates on it so a stale React prop doesn't paint a phantom dot during a state
@@ -170,7 +166,6 @@ describe('WorkspaceItemTaskCard — kanban task notification icon (Chunk 6)', ()
   // ───────────────────────────────────────────────────────────────── Static-contract: the orange
   // dot must use the project's palette — matches the existing yellow-spinner so the card doesn't
   // introduce a third colour. ─────────────────────────────────────────────────────────────────
-
   it('orange dot uses rgb(251, 146, 60) (orange-400, matches existing palette)', () => {
     wrapper = mountCard({
       id: 't1',
@@ -191,7 +186,6 @@ describe('WorkspaceItemTaskCard — kanban task notification icon (Chunk 6)', ()
   // task types (per-task routine branches were deleted in
   // Migration 084 — there is no separate routine branch anymore).
   // ─────────────────────────────────────────────────────────────────
-
   it('renders the orange dot on legacy routine-typed cards (single branch now)', () => {
     wrapper = mountCard({
       id: 't1',

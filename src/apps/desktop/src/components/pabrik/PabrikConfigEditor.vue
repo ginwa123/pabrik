@@ -432,7 +432,6 @@ function syncFromConfig() {
 // The profile dialog's "falls back to top-level defaults" pointed at a setting no user could reach.
 // They stay NULL by default. `null` is not a number, it is "ask the catalog, then the built-in" —
 // which is why the inputs are empty rather than pre-filled with 80 or 200000.
-
 const catalogFreshness = ref<'fresh' | 'stale' | 'absent'>('absent')
 const catalogModelTotal = ref<number | null>(null)
 const catalogError = ref<string | null>(null)

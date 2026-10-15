@@ -193,7 +193,6 @@ const handleChevronClick = (event: MouseEvent): void => {
 // parent LayersPanel, which owns the drag state machine via `useLayerDragDrop`.
 // The row itself stays passive — all logic (cycle check, multi-drag, top-level zones) lives in the
 // composable so it can be tested without mounting the component.
-
 const handleDragStart = (event: DragEvent): void => {
   if (props.kind === 'drop-zone' || props.readonly) {
     event.preventDefault()

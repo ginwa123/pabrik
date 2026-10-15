@@ -3,7 +3,6 @@
 // correct.
 // Spec: docs/superpowers/specs/2026-08-15-simplify-url-browser-design.md Plan:
 // docs/superpowers/plans/2026-08-15-simplify-url-browser.md
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref } from 'vue'

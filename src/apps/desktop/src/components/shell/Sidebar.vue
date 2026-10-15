@@ -118,7 +118,6 @@ const openTaskPicker = (workspaceId: string, itemId: string) => {
 // internally. (Removed in the kanban-add-task-via-detail-dialog feature: the kanban now handles its
 // own "+ Add" flow locally via KanbanTaskDetailDialog in create mode.
 // Sidebar no longer needs to expose this.)
-
 const workspacesStore = useWorkspacesStore()
 const sidebarStore = useSidebarStore()
 
@@ -233,7 +232,6 @@ onUnmounted(() => {
 // real sessions SSE connection lives in `ChatsList.vue` (which mounts alongside the sidebar).
 // Sidebar exposes the chats list via a ref and doesn't need its own connection — the stubs have
 // been removed as part of the SSE refactor.
-
 const toggleCollapse = () => emit('toggle-collapse')
 const goToSettings = () => emit('navigate', 'settings')
 
@@ -1065,7 +1063,6 @@ const handleSelectTask = async (taskId: string) => {
 // pickBreadcrumbFromQuery moved to `helpers/buildTaskUrlQuery.ts`
 // (add-workspace-id-params plan, 2026-08-06) so it can be shared
 // across Sidebar, AppLayout, and any future task-URL builders.
-
 const handleLoadMoreTasks = (workspaceId: string, itemId: string) => {
   // Click-to-load pagination: invoked by the "Load more" button in WorkspaceItem.vue. The store
   // action is the only place that calls api.getTasks with a cursor — no auto-load / scroll listener

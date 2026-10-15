@@ -25,7 +25,6 @@
 // delay), never on a heartbeat timeout — a throttled tab cannot serve the others. This module is
 // transport- and app-agnostic: it knows nothing about SSE payloads beyond "post it to the others" /
 // "deliver it locally".
-
 export interface TabChannelLike {
   postMessage(message: unknown): void
   addEventListener(type: 'message', listener: (event: { data: unknown }) => void): void

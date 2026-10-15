@@ -37,7 +37,6 @@ import type { Message } from '../api'
 // ──────────────────────────────────────────────────────────────────────── Stubs — we only assert
 // WHICH renderer the dispatcher picked, so the stubs are thin markers rather than the real
 // components. ────────────────────────────────────────────────────────────────────────
-
 vi.mock('../components/tool_outputs/UsedTools.vue', () => ({
   default: {
     name: 'UsedTools',
@@ -84,7 +83,6 @@ function makeStubClient(initial: SseState): SseClient {
 // ──────────────────────────────────────────────────────────────────────── Wire helpers (mirror the
 // backend `wrapToolOutput` shape for `used_tools` — see src/agentic_loop/tools_exec_used_tools.zig)
 // ────────────────────────────────────────────────────────────────────────
-
 const usedToolsEnvelope = (tools: { name: string; description: string }[]): string =>
   JSON.stringify({
     tool: 'used_tools',
@@ -125,7 +123,6 @@ const assistantToolCall = (toolName: string, id = 'tc1'): Message => ({
 // Test helpers — mock the api module + SSE bus + localStorage so the
 // mount is fast and stable (parity with ChatView.updatePlan.spec.ts).
 // ────────────────────────────────────────────────────────────────────────
-
 function installChatViewMocks(opts: { messages: Message[]; sessionId: string }) {
   vi.spyOn(api, 'getChatHistory').mockResolvedValue({
     messages: opts.messages,
@@ -235,7 +232,6 @@ afterEach(() => {
 // ────────────────────────────────────────────────────────────────────────
 // Tests
 // ────────────────────────────────────────────────────────────────────────
-
 describe('ChatView tool dispatcher — used_tools', () => {
   it('routes a used_tools tool result to the <UsedTools> component', async () => {
     const el = await mountChatViewWithMessages([

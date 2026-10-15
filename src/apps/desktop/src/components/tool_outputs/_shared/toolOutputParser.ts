@@ -776,7 +776,6 @@ export function parseMetadata(data: unknown): Record<string, string> {
 // On error:
 //   {"status":null,"count":null,"model":null,"size":null,"images":[],
 //    "revised_prompt":null,"error":"HTTP 400: ..."}
-
 export interface ParsedGenerateImage {
   status: string | null
   count: number | null
@@ -993,7 +992,6 @@ export function parseWebSearch(data: unknown): ParsedWebSearch {
 // `curl` is a TEMPLATE: it carries the literal text `{key}` where the
 // credential belongs, so the listing is safe by construction — nothing
 // secret reaches the model, and the card may render it verbatim.
-
 export interface ParsedSearchProviderEntry {
   name: string
   url: string
@@ -1036,7 +1034,6 @@ export function parseListWebSearchProviders(data: unknown): ParsedListSearchProv
 // ]} The sort order is whatever the backend produced (directories first, then files, alphabetical)
 // — the frontend does NOT re-sort. On error, `normalizeToolContent` unwraps the full envelope and
 // the parser reads the `error` key — see the `error !== null` branch below.
-
 export interface ParsedListDirectoryEntry {
   name: string
   path: string
@@ -1103,7 +1100,6 @@ export function parseListDirectory(data: unknown): ParsedListDirectory {
 // `toolName` is the full registry name (`mcp_<server>_<tool>`). The server is
 // the segment between the first and second underscore; the sub-tool is the
 // remainder (which may itself contain underscores, e.g. `graph_stats`).
-
 export interface ParsedMcp {
   /** Full registry name (e.g. `mcp_graphify_graph_stats`). */
   toolName: string
@@ -1248,7 +1244,6 @@ export function parseMcp(toolName: string, data: unknown): ParsedMcp {
 //      "inserted":true|false,"wait_next_turn":true|false,
 // "source":"session"|null,"note":"..."} use_tool miss:
 // {"name":"n","equipped":false,"inserted":false, "error":"...","did_you_mean":[...],"hint":"..."}
-
 export interface ProgressiveCatalogEntry {
   name: string
   kind: string
@@ -1449,7 +1444,6 @@ export { extractParam } from '../../../helpers/extractParam'
 //   ],"error":null}
 //
 // Error shape: {"status":null,"count":0,"files":[],"error":"..."}
-
 export interface ParsedPresentFile {
   path: string
   bytes: number

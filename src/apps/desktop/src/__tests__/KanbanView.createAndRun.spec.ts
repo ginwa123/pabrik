@@ -139,7 +139,6 @@ describe('KanbanView.handleCreateTaskSave — create_and_run', () => {
     // CHANGED (2026-08-06, "no need go chatview"): on the SUCCESS path we deliberately do NOT emit
     // `selectTask`. The user stays on the kanban view (no chat dialog opens); the agent runs in the
     // background and the user can click the new task card to open the chat view any time they want.
-     
     expect(view.emitted('selectTask')).toBeUndefined()
   })
 
@@ -233,7 +232,6 @@ describe('KanbanView.handleCreateTaskSave — create_and_run', () => {
     // store's notifyError lives in the catch path.
     // The component surfaces its own error via `createError` (the dialog stays open for retry). We
     // don't re-toast here to avoid duplicates.
-   
   })
 
   it('still creates the task in plain create mode (existing behavior unchanged)', async () => {
@@ -293,7 +291,6 @@ describe('KanbanView.handleCreateTaskSave — create_and_run', () => {
 
     // The flow: single addKanbanTask call (the new endpoint handles
     // create + run agent server-side in one round-trip).
-     
     expect(store.addKanbanTask).toHaveBeenCalledOnce()
     // But the chat view does NOT open.
     expect(view.emitted('selectTask')).toBeUndefined()
@@ -335,7 +332,6 @@ describe('KanbanView.handleCreateTaskSave — create_and_run', () => {
 // ===================================================================== Plain "Create task" button
 // → mode='create_session' (plan: 2026-08-19-kanban-create-task-inits-session.md)
 // =====================================================================
-
 describe('KanbanView.handleCreateTaskSave — create_session (plain Create task button)', () => {
   let wrapper: VueWrapper | null = null
 
@@ -454,7 +450,6 @@ describe('KanbanView.handleCreateTaskSave — create_session (plain Create task 
 // dialog's disabled buttons cover the normal case; this covers the
 // same-tick race + any future caller that bypasses the dialog.
 // =====================================================================
-
 describe('KanbanView.handleCreateTaskSave — double-click re-entry guard', () => {
   let wrapper: VueWrapper | null = null
 

@@ -14,7 +14,6 @@ import type { DesignElement } from '../api'
 // `useDesignHistory.HistoryEntry` (kept in sync — there is no shared types module yet because Pinia
 // stores and composables resolve their own types lazily).
 // When adding a new field, update both places.
-
 export type EntryKind =
   | 'update'
   | 'delete'
@@ -113,7 +112,6 @@ export const useDesignHistoryStore = defineStore('designHistory', () => {
   // ─── localStorage helpers ────────────────────────────────────────
   // The composable owns the debounce. These are pure read/write
   // helpers keyed by `(workspaceId, itemId, pageId)`.
-
   function storageKey(workspaceId: string, itemId: string, pageId: string): string {
     return `design-history:${SCHEMA_VERSION}:${workspaceId}:${itemId}:${pageId}`
   }

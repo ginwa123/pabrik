@@ -18,7 +18,6 @@
  * exists to prevent: `"A||B".split('|')` yields `["A", "", "B"]`, and the `""`
  * becomes `<img src="">` — a broken-image icon in the transcript.
  */
-
 export const MEDIA_URLS_WIRE_DELIMITER = '||'
 
 /**  * Join staged attachments into the wire string. Empty / blank entries are dropped so a

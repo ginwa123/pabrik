@@ -23,7 +23,6 @@
 //   6. `:show-header` is set and ChatView's `close` is re-emitted,
 //      so this mode renders the same shared ChatAppBar as the kanban
 //      and agent modes (cross-mode proof: ChatAppBarParity.spec.ts).
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'

@@ -37,7 +37,6 @@ import type { Message } from '../api'
 // the right tool_name to the right component.
 // The stubs expose `data-tool-name` so we can verify the vnode was emitted with the expected
 // `msg.tool_name` prop. ────────────────────────────────────────────────────────────────────────
-
 vi.mock('../components/tool_outputs/UpdatePlan.vue', () => ({
   default: {
     name: 'UpdatePlan',
@@ -88,7 +87,6 @@ function makeStubClient(initial: SseState): SseClient {
 // ────────────────────────────────────────────────────────────────────────
 // Wire envelope helpers (mirrors the backend's JSON `wrapToolOutput` shape)
 // ────────────────────────────────────────────────────────────────────────
-
 const wireToolEnvelope = (inner: unknown, paramsJson: string): string =>
   JSON.stringify({
     tool: 'tool',
@@ -111,7 +109,6 @@ const getPlanEmptyEnvelope = (): unknown => ({ empty: true })
 // ──────────────────────────────────────────────────────────────────────── Test helpers — mock the
 // api module + SSE bus + localStorage so the mount is fast and stable (parity with
 // profileCascade.spec.ts). ────────────────────────────────────────────────────────────────────────
-
 function installChatViewMocks(opts: { messages: Message[]; sessionId: string }) {
   vi.spyOn(api, 'getChatHistory').mockResolvedValue({
     messages: opts.messages,
@@ -226,7 +223,6 @@ afterEach(() => {
 // ────────────────────────────────────────────────────────────────────────
 // Tests
 // ────────────────────────────────────────────────────────────────────────
-
 describe('ChatView tool dispatcher — update_plan + get_plan', () => {
   it('routes an update_plan tool result to the <UpdatePlan> component', async () => {
     await mountChatViewWithMessages([

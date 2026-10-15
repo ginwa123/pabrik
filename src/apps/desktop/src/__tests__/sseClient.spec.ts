@@ -29,7 +29,6 @@
  *   - getState() returns the current state synchronously
  *   - closeOnUnload: false skips the unload listeners
  */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createSseClient, type SseState } from '../helpers/sseClient'
@@ -38,7 +37,6 @@ import { createSseClient, type SseState } from '../helpers/sseClient'
 // replacement for the browser-native EventSource. Captures every listener registered, every close()
 // call, and lets tests fire synthetic events.
 // Also tracks addEventListener/removeEventListener so we can assert listener cleanup in `close()`.
-
 interface MockEventSource {
   url: string
   readyState: number
@@ -119,7 +117,6 @@ function createMockCtor(): {
 }
 
 // ─── Mock visibility / online targets ───────────────────────────────────
-
 function createMockTarget(hidden = false): {
   target: Pick<Document, 'addEventListener' | 'removeEventListener' | 'hidden'> & {
     _listeners: Map<string, Set<EventListenerOrEventListenerObject>>
@@ -227,7 +224,6 @@ function createMockUnloadTarget(): {
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-
 describe('createSseClient', () => {
   beforeEach(() => {
     vi.useFakeTimers()

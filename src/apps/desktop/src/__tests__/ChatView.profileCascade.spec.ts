@@ -66,7 +66,6 @@ function makeStubClient(initial: SseState): SseClient {
 // ─── mocks ──────────────────────────────────────────────────────────────── Per-test overrides via
 // setup() so each test can change getPabrikConfig / getSession responses without re-mounting the
 // global vi.mock() harness.
-
 function installChatViewMocks(opts: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   config?: any
@@ -172,7 +171,6 @@ function readChip(wrapper: VueWrapper): {
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────
-
 describe('ChatView profile chip — cascade display', () => {
   it('shows the active profile when no chat session has been opened yet (active = default)', async () => {
     installChatViewMocks({

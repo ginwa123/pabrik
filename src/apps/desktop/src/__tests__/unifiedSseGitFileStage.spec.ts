@@ -16,7 +16,6 @@
  * The spy-on-`createSseClient` harness is the one `unifiedSseBuffer.spec.ts`
  * established — no mock EventSource, no fake timers.
  */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createUnifiedSseConnection } from '../api'

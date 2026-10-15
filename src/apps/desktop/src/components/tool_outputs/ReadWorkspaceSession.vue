@@ -50,7 +50,6 @@ import { normalizeToolContent } from './_shared/toolOutputParser'
  * the ratio is worth surfacing.
  */
 // ── Shared types ──────────────────────────────────────────────────────────
-
 interface WorkspaceSession {
   id: string
   name: string
@@ -162,7 +161,6 @@ const normalized = computed(() => normalizeToolContent(props.content))
 const dataRecord = computed(() => asRecord(normalized.value.data))
 
 // ── Parse outer envelope ─────────────────────────────────────────────────
-
 type Behavior = 'list' | 'search' | 'search-within' | 'read' | 'denied' | 'error' | 'unknown'
 
 const behavior = computed((): Behavior => {
@@ -218,7 +216,6 @@ const deniedSessionId = computed((): string | null => strOrNull(dataRecord.value
 const deniedMessage = computed((): string | null => strOrNull(dataRecord.value.message))
 
 // ── Parse entries ────────────────────────────────────────────────────────
-
 const listSessions = computed((): WorkspaceSession[] => {
   const results: WorkspaceSession[] = []
   const raw = dataRecord.value.sessions
@@ -391,7 +388,6 @@ const readEntries = computed((): ReadEntry[] => {
 })
 
 // ── Header summary text ──────────────────────────────────────────────────
-
 const summaryText = computed((): string => {
   if (errorMessage.value) return errorMessage.value
   if (behavior.value === 'denied') {
@@ -445,7 +441,6 @@ const hasArgs = computed(() => {
 })
 
 // ── Actions ──────────────────────────────────────────────────────────────
-
 const toggle = () => {
   if (hasEntries.value || isError.value || isDenied.value || hasArgs.value) {
     isExpanded.value = !isExpanded.value

@@ -54,7 +54,6 @@ const router = useRouter()
 const workspacesStore = useWorkspacesStore()
 
 // ─── Emits ─────────────────────────────────────────────────────────────────
-
 const emit = defineEmits<{
   close: []
   addColumn: [name: string, description: string]
@@ -172,7 +171,6 @@ const emptyHint = computed(() => !itemId.value)
 // (accepts both AgentKnowledgeRow and AgentKanbanKnowledgeRow via union).
 // The parent (this view) owns the data + API calls; AgentView is a dumb presentational component
 // that emits intents.
-
 const kanbanKnowledge = ref<api.AgentKanbanKnowledgeRow[]>([])
 const kanbanTools = ref<string[]>([])
 const kanbanSystemPrompts = ref<api.AgentKanbanSystemPromptRow[]>([])
@@ -222,7 +220,6 @@ onUpdated(() => {
 })
 
 // ─── AgentView dialog state (mirrors AppLayout's agent dialogs) ─────────────
-
 const kanbanKnowledgeDialogOpen = ref(false)
 const kanbanKnowledgeError = ref<string | null>(null)
 const kanbanKnowledgeBusy = ref(false)
@@ -462,7 +459,6 @@ async function handleKanbanToggleToolsBulk(toolNames: string[], enabled: boolean
 }
 
 // ─── Handlers (mirror KanbanSettingsDialog 1:1) ────────────────────────────
-
 const handleAddSubmit = () => {
   const trimmedName = newColumnName.value.trim()
   if (!trimmedName) return
@@ -515,7 +511,6 @@ const handleSettingsEditorDelete = () => {
 }
 
 // ─── Navigation ────────────────────────────────────────────────────────────
-
 const goBack = () => {
   // The workspaceId is derived from the store (workspaceId computed
   // above). itemId comes from route.params. If either is missing,

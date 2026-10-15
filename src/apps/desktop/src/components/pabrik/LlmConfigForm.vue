@@ -27,7 +27,6 @@ import {
  * to "what will this profile do", including WHERE the answer came from
  * (`models.dev` vs `built-in`).
  */
-
 export interface LlmConfig {
   model: string
   base_url: string
@@ -101,7 +100,6 @@ const errorStyle = { color: 'var(--color-red)' }
 // === The one call this dialog makes =====================================
 // Resolve (model, provider) into facts. Runs on mount, on a debounced input,
 // and immediately when a picker row is chosen.
-
 const resolved = ref<ModelResolve | null>(null)
 const resolveError = ref<string | null>(null)
 const resolving = ref(false)
@@ -136,7 +134,6 @@ function scheduleResolve(): void {
 onMounted(() => void runResolve())
 
 // === Model picker =======================================================
-
 const pickerOpen = ref(false)
 const pickerResults = ref<ModelCatalogEntry[]>([])
 const pickerTotal = ref(0)
@@ -187,7 +184,6 @@ function chooseModel(entry: ModelCatalogEntry): void {
 }
 
 // === The fact line ======================================================
-
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`
   if (n >= 1_000) return `${Math.round(n / 1_000)}k`
@@ -244,7 +240,6 @@ const isCliBackend = computed<boolean>(() => isClaudeCodeBackend.value || isOpen
 const isHttpBackend = computed<boolean>(() => !isCliBackend.value)
 
 // === Temperature (free text: "auto" or 0–1) =============================
-
 const temperatureDraft = ref(props.modelValue.temperature)
 
 const temperatureError = computed<string | null>(() => {
@@ -297,7 +292,6 @@ const showsEffort = computed<boolean>(
 // is `null` until the user types.
 // An empty field is the ONLY spelling of "inherit" — there is no checkbox, and a cleared field
 // emits `null`, never `""` (an empty slice binds as SQL NULL server-side).
-
 const advancedOpen = ref(false)
 const showKey = ref(false)
 

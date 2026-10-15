@@ -47,7 +47,6 @@ import VirtualScroller from '../VirtualScroller.vue'
 import { computeAnchorCompensation } from '../virtualScrollerScrollAnchor'
 
 // ─── Pure helper tests ────────────────────────────────────────────────────────
-
 describe('computeAnchorCompensation', () => {
   const base = {
     anchorIndex: 50,
@@ -137,7 +136,6 @@ describe('computeAnchorCompensation', () => {
   // whose window expanded 34 → 66 rows produced a −15,900px prefix delta and
   // dragged the reader that far up, which ChatView read as leaving the bottom
   // and which disarmed the auto-stick for every remaining chunk.
-
   it('targets the bottom, not the anchor, when the reader was at the bottom', () => {
     const result = computeAnchorCompensation({
       ...base,
@@ -314,7 +312,6 @@ describe('computeAnchorCompensation', () => {
   // silently — which is a teleport rather than a no-op (the pass meant to hold the reader's view
   // still leaves them short, and the next pass compensates from the displaced position).
   // Measured 2026-10-12: a +22,235px compensation written as 138,880 and held at 120,074.
-
   it('cuts a target that exceeds the reachable range and says so', () => {
     const result = computeAnchorCompensation({
       ...base,
@@ -569,7 +566,6 @@ describe('VirtualScroller measurement anchor compensation', () => {
   // ChatView reads that write — programmatic or not — as "the user left the bottom", the stick
   // disarms, and every remaining chunk lands off-screen. The reader at the bottom has no view to
   // preserve, so the pass must re-target them at the bottom instead of around the anchor.
-
   it('keeps a reader AT THE BOTTOM on the bottom when the model above the anchor shifts', async () => {
     const { wrapper, el } = mountScroller(255)
     const vm = wrapper.vm as unknown as {

@@ -60,7 +60,6 @@ describe('api.updateDesignElement — reposition field', () => {
     await updateDesignElement('ws_1', 'item_1', 'page_1', 'elem_a', {
       // The wire type allows reposition?; we cast via the call site to
       // assert it lands in the body.
-       
       parent_id: 'group_1',
       reposition: 'last_in_parent',
      

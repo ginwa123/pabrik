@@ -72,11 +72,9 @@ vi.mock('../components/FilePickerDialog.vue', () => ({
 }))
 
 // ─── Imports ───────────────────────────────────────────────────────────────
-
 import CreateWorktreeDialog from '../components/dialogs/CreateWorktreeDialog.vue'
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
-
 function findInDom<T extends Element = Element>(selector: string): T | null {
   return document.querySelector<T>(selector)
 }
@@ -109,7 +107,6 @@ function mountDialog(initialCwd?: string) {
 }
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
-
 describe('CreateWorktreeDialog — initial state', () => {
   let wrapper: VueWrapper | null = null
 

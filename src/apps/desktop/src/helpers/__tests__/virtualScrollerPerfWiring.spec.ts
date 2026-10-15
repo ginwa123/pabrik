@@ -70,7 +70,6 @@ function getVm(wrapper: ReturnType<typeof mount>) {
 }
 
 // ─── 1. Scroll pipeline coalescing ───────────────────────────────────────────
-
 describe('VirtualScroller scroll pipeline', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -116,7 +115,6 @@ describe('VirtualScroller scroll pipeline', () => {
 })
 
 // ─── 2. Batched height writes ────────────────────────────────────────────────
-
 describe('VirtualScroller batched height measurement', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -174,7 +172,6 @@ describe('VirtualScroller batched height measurement', () => {
 })
 
 // ─── 3. Adaptive defaultItemHeight ───────────────────────────────────────────
-
 describe('VirtualScroller adaptive item-height estimation', () => {
   beforeEach(() => {
     vi.useFakeTimers()

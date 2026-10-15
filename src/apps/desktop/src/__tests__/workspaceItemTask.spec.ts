@@ -209,7 +209,6 @@ describe('WorkspaceItemTaskRow per-task row', () => {
   // That is what the old stopPropagation guards protected against, so the "does NOT emit
   // selectTask" assertions below are the behaviour those guards used to provide, now asserted on
   // the outcome.
-
   const openRowMenu = async (wrapper: ReturnType<typeof mountTask>['wrapper']) => {
     await wrapper.find('[data-task-row]').trigger('contextmenu', { clientX: 40, clientY: 80 })
     await nextTick()

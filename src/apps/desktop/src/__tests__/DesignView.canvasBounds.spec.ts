@@ -16,7 +16,6 @@
  * If a future refactor reintroduces any of these (e.g., "let's add
  * the canvas back"), the tests fail loudly.
  */
-
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { describe, expect, it } from 'vitest'

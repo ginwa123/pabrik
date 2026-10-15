@@ -295,7 +295,6 @@ describe('App', () => {
 // ────────────────────────────────────────────────────────────────────────
 // workerActivity — the additive second provide key
 // ────────────────────────────────────────────────────────────────────────
-
 describe('App workerActivity', () => {
   let app: VueApp
   let stub: SseClient

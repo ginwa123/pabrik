@@ -74,7 +74,6 @@ import { onBeforeUnmount, onMounted, onUpdated, ref, type Ref } from 'vue'
  * anchor-tracking mechanism. This composable is for the persistent
  * across-mount case.
  */
-
 const BOTTOM_THRESHOLD_PX = 40
 
 export function useChatScrollRestore(

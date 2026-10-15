@@ -226,7 +226,6 @@ async function handleDesignContextMenuDelete(targetIds: string[]): Promise<void>
 }
 
 // ─── Effective ids ─────────────────────────────────────────────────────
-
 const effectiveItemId = computed(() => props.itemId || props.item.id)
 
 // ─── Pages state ─────────────────────────────────────────────────────── NEW
@@ -270,7 +269,6 @@ const elementNameForMoveDialog = computed<string>(() => {
 })
 
 // ─── Elements state (mirrors item.design_elements) ─────────────────────
-
 const elements = computed<DesignElementApi[]>(() => {
   // The store's `design_elements` array is the source of truth (other
   // tabs / SSE events update it). When it doesn't match the active
@@ -359,7 +357,6 @@ const togglePreviewMode = (): void => {
 }
 
 // ─── Right sidebar width (drag-resize handle) ──────────────────────────
-
 const SIDEBAR_WIDTH_KEY = 'design-view-sidebar-width'
 const SIDEBAR_DEFAULT_WIDTH = 320
 const SIDEBAR_MIN_WIDTH = 220
@@ -413,7 +410,6 @@ const startSidebarResize = (event: MouseEvent): void => {
 }
 
 // ─── Vertical split between Layers and Properties (within sidebar) ─────
-
 const LAYERS_HEIGHT_KEY = 'design-view-layers-height'
 const LAYERS_DEFAULT_HEIGHT_RATIO = 0.4
 
@@ -468,14 +464,12 @@ const startLayersResize = (event: MouseEvent): void => {
 }
 
 // ─── Add element dialog state ──────────────────────────────────────────
-
 const showAddElementDialog = ref(false)
 const openAddElementDialog = (): void => {
   showAddElementDialog.value = true
 }
 
 // ─── Lifecycle: fetch pages on mount ──────────────────────────────────
-
 const loadPages = async (): Promise<void> => {
   if (!props.workspaceId || !effectiveItemId.value) return
   pagesLoading.value = true
@@ -855,7 +849,6 @@ onUnmounted(() => {
 })
 
 // ─── Handlers ──────────────────────────────────────────────────────────
-
 const handleCanvasClick = (event: MouseEvent): void => {
   // In Preview mode, canvas clicks are user-typed values inside iframes or pan gestures — neither
   // should clear the selection.

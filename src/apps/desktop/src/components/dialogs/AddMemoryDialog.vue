@@ -74,7 +74,6 @@ const emit = defineEmits<{
 }>()
 
 // ─── State ─────────────────────────────────────────────────────────────────
-
 const name = ref('')
 // Local cwd — starts as the prop value but the user can change it
 // via the file picker. Decoupled from `props.cwd` so the parent
@@ -110,7 +109,6 @@ const loadItemsForPicker = async (path: string): Promise<FolderEntry[]> => {
 }
 
 // ─── Handlers ──────────────────────────────────────────────────────────────
-
 const handleFolderSelected = (path: string) => {
   cwd.value = path
   // Close the picker on selection — matches the AddItemDialog

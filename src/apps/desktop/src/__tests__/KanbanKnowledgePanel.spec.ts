@@ -5,7 +5,6 @@
 // ?tab=knowledge tab body inside KanbanSettingsView.
 // Hosts the 2 persona-content sections + the 3 reused sub-dialogs. Tools checkbox grid moved to
 // KanbanToolsPanel.
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { flushPromises } from '@vue/test-utils'

@@ -43,7 +43,6 @@ const applying = ref<string | null>(null)
 const applyError = ref<string | null>(null)
 
 // ─── the URL param ──────────────────────────────────────────────────────
-
 const readRunParam = (): string => {
   const v = route.query.eval_run
   return typeof v === 'string' ? v : ''
@@ -77,7 +76,6 @@ function openSettings() {
 }
 
 // ─── loading ────────────────────────────────────────────────────────────
-
 async function load() {
   loading.value = true
   error.value = null
@@ -130,7 +128,6 @@ async function apply(result: SkillEvalResult) {
 }
 
 // ─── lifecycle ──────────────────────────────────────────────────────────
-
 let unsubscribe: (() => void) | null = null
 
 onMounted(() => {
@@ -188,7 +185,6 @@ onUpdated(() => {
 })
 
 // ─── derived ────────────────────────────────────────────────────────────
-
 const missingPaths = (r: SkillEvalResult): string[] => {
   try {
     const parsed = JSON.parse(r.missing_paths || '[]')

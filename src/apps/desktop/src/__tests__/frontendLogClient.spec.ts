@@ -28,7 +28,6 @@
  * `afterEach`, `handle.close()` in `afterEach` so listeners and
  * console patches don't leak across tests).
  */
-
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 import {
@@ -119,7 +118,6 @@ function fireListeners(
 }
 
 // ─── Test suite ──────────────────────────────────────────────────────────
-
 describe('frontendLogClient', () => {
   let fetchMock: ReturnType<typeof vi.fn>
   let beaconMock: ReturnType<typeof vi.fn>

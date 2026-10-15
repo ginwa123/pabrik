@@ -178,7 +178,6 @@ describe('useCurrentMainView', () => {
   // itemId comes from route.params; workspaceId is optional and
   // comes from ?workspaceId=X query (used by the back navigation).
   // ──────────────────────────────────────────────────────────────────
-
   it('returns kanban-settings view when URL is /app/kanban/:itemId/settings', () => {
     mockRoute({}, '/app/kanban/item_kanban/settings', { itemId: 'item_kanban' })
     let v!: ReturnType<typeof useCurrentMainView>
@@ -260,7 +259,6 @@ describe('useCurrentMainView', () => {
 
   // Path-based contract (2026-09-22 revamp). A project is a workspace
   // item, so path projects map onto the `workspace` kind.
-
   it('returns none for the /app landing', () => {
     mockRoute({}, '/app', {})
     let v!: ReturnType<typeof useCurrentMainView>
@@ -345,7 +343,6 @@ describe('useCurrentMainView', () => {
   // open.
   // `?doc=` is kept below as a legacy fallback so a pre-migration bookmark still opens the document
   // until AppLayout's boot rewrite moves it.
-
   it('returns the document view for a /doc/ path', () => {
     mockRoute({}, '/app/ws_1/doc/doc_1')
     let v!: ReturnType<typeof useCurrentMainView>

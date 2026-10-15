@@ -140,7 +140,6 @@ describe('KanbanColumn — VirtualScroller integration', () => {
   })
 
   // ─── 1. Renders VirtualScroller with the column's cards as items ──────
-
   it('renders a <VirtualScroller> when the column has cards', () => {
     wrapper = mountColumnWithPagination(makeColumn(), makeTasks(5))
 
@@ -169,7 +168,6 @@ describe('KanbanColumn — VirtualScroller integration', () => {
   })
 
   // ─── 2. Only a slice of cards is in the DOM ─────────────────────────────
-
   it('does NOT mount every card to the DOM when there are many', async () => {
     // 50 tasks but the scroller only mounts the visible range. jsdom doesn't have a real layout, so
     // the visible range may include more than the production default of ~10 — but it MUST be far
@@ -190,7 +188,6 @@ describe('KanbanColumn — VirtualScroller integration', () => {
   })
 
   // ─── 3. @load-more from VirtualScroller → calls loadMoreTasksForColumn
-
   it('emitting @load-more from the scroller calls loadMoreTasksForColumn', async () => {
     const tasks = makeTasks(3)
     wrapper = mountColumnWithPagination(makeColumn(), tasks, {
@@ -243,7 +240,6 @@ describe('KanbanColumn — VirtualScroller integration', () => {
   })
 
   // ─── 4. @scrollability-change drives the manual "Load more" button ─────
-
   it('manual "Load more" button is hidden when the scroller IS scrollable', async () => {
     const tasks = makeTasks(10)
     wrapper = mountColumnWithPagination(makeColumn(), tasks, {
@@ -319,7 +315,6 @@ describe('KanbanColumn — VirtualScroller integration', () => {
   })
 
   // ─── 5. Empty column → no VirtualScroller, empty placeholder shows ─────
-
   it('does NOT render VirtualScroller when the column has no cards', () => {
     wrapper = mountColumnWithPagination(makeColumn(), [], {
       hasMore: false,
@@ -340,7 +335,6 @@ describe('KanbanColumn — VirtualScroller integration', () => {
   // Result: the user is stuck clicking "Load more" repeatedly even though the backend has more. The
   // auto-fetch watcher in KanbanColumn watches `cardsInColumn.length < PAGE_SIZE &&
   // moreTasksAvailable && !scrollerIsScrollable` and fires `loadMoreTasksForColumn` itself.
-
   it('auto-fetches when hasMore=true and the page fits in the viewport', async () => {
     // 9 cards (< PAGE_SIZE=10) so the watcher's `cardsInColumn.length < PAGE_SIZE` branch fires.
     // hasMore=true so `moreTasksAvailable` is true. scrollerIsScrollable defaults to false (no
@@ -413,7 +407,6 @@ describe('KanbanColumn — VirtualScroller integration', () => {
   })
 
   // ─── 6. Drop zone handlers still fire on the wrapper ───────────────────
-
   it('dragover on the cards wrapper sets the visual feedback', async () => {
     const tasks = makeTasks(3)
     wrapper = mountColumnWithPagination(makeColumn(), tasks)

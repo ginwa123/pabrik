@@ -77,7 +77,6 @@ const globalOpts = { stubs: { ChatView: ChatViewStub } }
 
 describe('app-bar parity — the three workspace-item chat modes', () => {
   // ── Static contract: one app bar, three callers ──────────────────────────
-
   it('ChatAppBar.vue is the only component that renders a chat app bar', () => {
     // Nothing else in the views tree may mint the bar's testid — if a
     // mode grows its own bar again, it shows up here.
@@ -140,7 +139,6 @@ describe('app-bar parity — the three workspace-item chat modes', () => {
   })
 
   // ── Behavioural parity ──────────────────────────────────────────────────
-
   it('kanban mode renders the shared bar with the task name as title', () => {
     // The kanban branch mounts ChatView directly with
     // :show-header="true" — same contract the two wrappers forward.
@@ -212,7 +210,6 @@ describe('app-bar parity — the three workspace-item chat modes', () => {
   })
 
   // ── Close routing ───────────────────────────────────────────────────────
-
   it('the ✕ closes an agent chat (forwards ChatView close)', async () => {
     const wrapper = mount(AgentChatView, {
       props: {
@@ -246,7 +243,6 @@ describe('app-bar parity — the three workspace-item chat modes', () => {
   })
 
   // ── Agent-mode extras ───────────────────────────────────────────────────
-
   it('the agent busy spinner renders inside the shared bar', async () => {
     const processingState: Ref<Record<string, boolean>> = ref({ task_busy: true })
     const wrapper = mount(AgentChatView, {

@@ -4,7 +4,6 @@
 // `vi.spyOn(api, 'apiFetch')` can't intercept the internal call (ESM live bindings), but the real
 // apiFetch runs, so this exercises the REAL wrapper (signature + body shape) while stubbing only
 // the network boundary.
-
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import * as api from '../api'

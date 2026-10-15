@@ -170,7 +170,6 @@ describe('stripThinkingTags — filter interplay (unit)', () => {
 // -------------------------------------------------------------------------
 // <html> wrapper tag rendering (2026-08-23 html-tag-support, Task 3)
 // -------------------------------------------------------------------------
-
 describe('HTML tag support — ChatView render branch (source contract)', () => {
   it('imports the html helpers from @/helpers', async () => {
     const source = await readChatViewSource()

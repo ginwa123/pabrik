@@ -25,7 +25,6 @@ import { describe, expect, it } from 'vitest'
 import GenerateImage from '../GenerateImage.vue'
 
 // ─── Test helpers ──────────────────────────────────────────────────────────
-
 const makeSuccessContent = (opts: {
   model?: string
   size?: string
@@ -65,7 +64,6 @@ const makeParameters = (prompt: string) =>
   JSON.stringify({ prompt, model: 'dall-e-3', size: '1024x1024', n: 1 })
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
-
 describe('GenerateImage', () => {
   it('renders the card with a data-testid', () => {
     const wrapper = mount(GenerateImage, {

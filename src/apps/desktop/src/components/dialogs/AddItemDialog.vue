@@ -31,7 +31,6 @@ const emit = defineEmits<{
 }>()
 
 // ─── State ─────────────────────────────────────────────────────────────────
-
 const name = ref('')
 const selectedPath = ref('')
 const showPicker = ref(false)
@@ -59,7 +58,6 @@ const loadItemsForPicker = async (path: string): Promise<FolderEntry[]> => {
 }
 
 // ─── Handlers ──────────────────────────────────────────────────────────────
-
 const handleFolderSelected = (path: string) => {
   selectedPath.value = path
   // Close the picker on selection — matches the expected UX (the picker dismisses and the user is

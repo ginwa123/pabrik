@@ -14,7 +14,6 @@ import { makeLocalStorageStub } from './helpers'
  *   2. closing the active tab activates right-then-left;
  *   3. `?tab=` is honoured only when it names exactly this target;
  *   4. persistence is per window and corrupt storage never throws. */
-
 const WINDOW_ID = 'w_testwindow'
 
 const chat = (session: string) => ({ view: 'chat', session })

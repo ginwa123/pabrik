@@ -185,7 +185,6 @@ describe('sseBus', () => {
     expect(spy).toHaveBeenCalledTimes(1)
     const callArg = spy.mock.calls[0]![0]
     // The bus must wire up workers, sessions, kanban, llm, queue.
-
     expect(callArg.channels.workers).toBeDefined()
 
     expect(callArg.channels.sessions).toBeDefined()

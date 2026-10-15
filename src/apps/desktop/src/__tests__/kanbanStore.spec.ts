@@ -99,7 +99,6 @@ describe('useWorkspacesStore — kanban actions', () => {
   }
 
   // ─── addKanbanItem ──────────────────────────────────────────────────────
-
   describe('addKanbanItem', () => {
     it('calls api.createKanban and pushes the new item with its columns into the workspace', async () => {
       const store = seedStore()
@@ -199,7 +198,6 @@ describe('useWorkspacesStore — kanban actions', () => {
   })
 
   // ─── addKanbanColumn ────────────────────────────────────────────────────
-
   describe('addKanbanColumn', () => {
     it('calls api.addKanbanColumn and appends the new column sorted by position', async () => {
       const store = seedStore([
@@ -281,7 +279,6 @@ describe('useWorkspacesStore — kanban actions', () => {
   })
 
   // ─── updateKanbanColumn ────────────────────────────────────────────────
-
   describe('updateKanbanColumn', () => {
     it('calls api.updateKanbanColumn and replaces the local board with the backend\'s full response', async () => {
       const store = seedStore([
@@ -417,7 +414,6 @@ describe('useWorkspacesStore — kanban actions', () => {
   //      store is stale)
   //   3. no-op when the item has no kanban_columns yet
   //      (defensive — same reason)
-
   describe('reorderKanbanColumn', () => {
     it('calls api.updateKanbanColumn with the target column\'s position and re-fetches via listKanbanColumns', async () => {
       const store = seedStore([
@@ -519,7 +515,6 @@ describe('useWorkspacesStore — kanban actions', () => {
   })
 
   // ─── deleteKanbanColumn ─────────────────────────────────────────────────
-
   describe('deleteKanbanColumn', () => {
     it('calls api.deleteKanbanColumn, removes the column, and unassigns tasks in that column', async () => {
       const store = seedStore([
@@ -560,7 +555,6 @@ describe('useWorkspacesStore — kanban actions', () => {
   })
 
   // ─── moveTaskToColumn ───────────────────────────────────────────────────
-
   describe('moveTaskToColumn', () => {
     it('calls api.moveTask and updates the local task\'s kanban_column_id and kanban_position', async () => {
       const store = seedStore([
@@ -599,7 +593,6 @@ describe('useWorkspacesStore — kanban actions', () => {
   // Without this action, item.kanban_columns stays undefined (the workspaces/items endpoint does
   // not embed columns) and the user sees an empty board even though the seeded 3 default columns
   // live in the DB.
-
   describe('fetchKanbanColumns', () => {
     it('calls api.listKanbanColumns and populates item.kanban_columns', async () => {
       const store = seedStore([
@@ -706,7 +699,6 @@ describe('useWorkspacesStore — kanban actions', () => {
   // immediately; roll back on error.
   // The PUT handler accepts `{name}` and writes the column; when the API call throws, `item.name`
   // must be restored to the pre-call value (so the UI doesn't lie about the rename).
-
   describe('updateKanbanItemName', () => {
     it('calls api.updateWorkspaceItem with the new name and optimistic-updates the local store', async () => {
       const store = seedStore([

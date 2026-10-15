@@ -103,7 +103,6 @@ onUnmounted(() => {
 // frames.
 // Same security contract as before: the sandboxed (NULL-origin) frame only reports its own
 // scrollHeight/scrollWidth; the parent only writes a clamped iframe.style.height.
-
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')

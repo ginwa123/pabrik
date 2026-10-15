@@ -118,7 +118,6 @@ describe('api.createKanbanTask', () => {
   // =====================================================================
   // mode='create_session' (plan: 2026-08-19-kanban-create-task-inits-session)
   // =====================================================================
-
   it("POSTs with mode='create_session' + selected_profile_model + NO queue_message", async () => {
     const fakeTask = {
       id: 'task_new',

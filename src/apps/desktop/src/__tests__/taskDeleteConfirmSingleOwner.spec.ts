@@ -9,7 +9,6 @@
 // These assertions close that gap by pinning the ownership in the source itself, so a future "just
 // add a confirm here" cannot silently re-create the duplicate. Related skill:
 // find-the-terminal-owner-before-adding-a-confirm
-
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
 import { resolve, join } from 'node:path'

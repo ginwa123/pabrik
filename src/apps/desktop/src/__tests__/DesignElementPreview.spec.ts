@@ -12,7 +12,6 @@ import { nextTick } from 'vue'
 import DesignElementPreview from '../components/design/DesignElementPreview.vue'
 
 // ─── Behavioural mount tests (2026-07-29 — fill-aware iframe bg) ──────────
-
 function mountPreview(props: { html: string; fill?: string; pointerEvents?: 'auto' | 'none' }): VueWrapper {
   return mount(DesignElementPreview, {
     props: {

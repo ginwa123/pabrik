@@ -72,7 +72,6 @@ const props = defineProps<Props>()
 // ---------------------------------------------------------------------------
 // Envelope parsing
 // ---------------------------------------------------------------------------
-
 function asRecord(v: unknown): Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
     ? (v as Record<string, unknown>)
@@ -386,7 +385,6 @@ function onKeydown(event: KeyboardEvent): void {
 // ---------------------------------------------------------------------------
 // Presentation
 // ---------------------------------------------------------------------------
-
 const waiting = computed(() => state.value === 'pending')
 
 /** The question is model-authored MARKDOWN — `ask_user.zig`'s schema says "Markdown allowed" — so

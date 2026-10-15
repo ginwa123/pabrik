@@ -8,7 +8,6 @@
 // prevents regressions if the chain order changes in the future).
 //
 // See plan: docs/superpowers/plans/2026-07-21-local-memories-workspace-item.md
-
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'

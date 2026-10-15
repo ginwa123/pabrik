@@ -15,7 +15,6 @@
 //   - document.querySelector for DOM assertions (NOT wrapper.find —
 //     the teleported content is not in the wrapper's DOM tree)
 //   - afterEach: wrapper.unmount() + force-remove teleported nodes
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'

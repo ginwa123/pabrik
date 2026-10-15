@@ -27,7 +27,6 @@
 // back so `error` can still be rendered. That distinction is the whole
 // point: degrading to an empty list here would resurrect the exact bug
 // the paragraph above describes, just with a cache in front of it.
-
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import * as api from '../api'

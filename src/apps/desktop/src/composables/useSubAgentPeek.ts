@@ -243,7 +243,6 @@ export function useSubAgentPeek(opts: UseSubAgentPeekOptions): UseSubAgentPeekRe
   // sessionId), and `opts` is a plain snapshot object — so observing `opts.sessionId` never fires
   // (the source never changes).
   // The mount fetch above is the only load path; reuse without remount has no trigger to preserve.
-
   onUnmounted(() => {
     closeSse()
   })

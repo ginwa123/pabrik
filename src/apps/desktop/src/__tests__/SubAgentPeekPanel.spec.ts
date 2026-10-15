@@ -148,7 +148,6 @@ describe('SubAgentPeekPanel', () => {
   // ── ChatView embed (task_1788604407681_2) ─────────────────────────── The panel body reuses
   // ChatView in read-only mode instead of a hand-mirrored tool-dispatch chain. Message bubbles,
   // tool cards, markdown, and error cards are ChatView's responsibility.
-
   it('embeds ChatView with the sub-agent session id + name', () => {
     const wrapper = mount(SubAgentPeekPanel, { props: makeBaseProps() })
     const stub = wrapper.find('[data-testid="chatview-stub"]')

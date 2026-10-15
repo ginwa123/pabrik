@@ -166,7 +166,6 @@ const statusTestId = computed<string | null>(() => {
 })
 
 // ─── Metadata line ────────────────────────────────────────────────────────
-
 const lastUpdated = computed<Date | string | null>(() => {
   if (props.task.updatedAt) return props.task.updatedAt
   if (props.task.createdAt) return props.task.createdAt

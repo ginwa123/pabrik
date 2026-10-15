@@ -1,5 +1,4 @@
 // Behavioural tests for AgentChatView (inline, non-dialog).
-
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick, ref, type Ref } from 'vue'

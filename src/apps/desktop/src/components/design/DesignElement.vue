@@ -140,7 +140,6 @@ const emit = defineEmits<{
 }>()
 
 // ─── Geometry ───────────────────────────────────────────────────────────
-
 const elementStyle = computed(() => ({
   left: `${props.element.x}px`,
   top: `${props.element.y}px`,
@@ -169,7 +168,6 @@ const elementStyle = computed(() => ({
 }))
 
 // ─── Drag (move) ────────────────────────────────────────────────────────
-
 type DragMode = 'move' | { resize: ResizeHandle }
 
 type ResizeHandle = 'nw' | 'n' | 'ne' | 'w' | 'e' | 'sw' | 's' | 'se'

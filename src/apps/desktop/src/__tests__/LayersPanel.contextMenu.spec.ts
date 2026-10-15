@@ -134,7 +134,6 @@ describe('LayersPanel context menu', () => {
   })
 
   // ─── Ctrl/Cmd+click toggles multi-select (Plan: design-multiselect-ctrl-fix) ──
-
   it('Ctrl+click on a row toggles additive selection (Figma parity for Linux/Windows users)', async () => {
     const elements = [
       makeElement({ id: 'elem_a', z_index: 2 }),
@@ -225,7 +224,6 @@ describe('LayersPanel context menu', () => {
   // ─── Leave group (2026-08-06, design-leave-group plan) ──────────────── The LayersPanel forwards
   // the menu's @leave-group emit upward as the @leaveGroup emit. The test confirms the forward
   // works — the actual reparent is in DesignView (out of scope here).
-
   it('forwards the menu leaveGroup click as a top-level @leaveGroup emit with the single id', async () => {
     // `elem_b` is a child of `elem_a` (parent_id set). Right-click,
     // then click the menu's Leave-group button. LayersPanel must

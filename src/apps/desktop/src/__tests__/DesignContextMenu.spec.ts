@@ -124,7 +124,6 @@ describe('DesignContextMenu', () => {
   })
 
   // ─── Chunk 9 — Ungroup ────────────────────────────────────────────────
-
   it('Ungroup is enabled when exactly one group is selected', async () => {
     wrapper = mount(DesignContextMenu, {
       props: { visible: true, x: 100, y: 100, targetIds: ['g'], elements },
@@ -188,7 +187,6 @@ describe('DesignContextMenu', () => {
   })
 
   // ─── Leave group (2026-08-06, design-leave-group plan) ────────────────
-
   it('Leave group is enabled when the single selected element has a parent_id (inside a group)', async () => {
     // `nested-g` has parent_id='g' — a child row inside the `g`
     // group. The Leave-group affordance should be enabled.

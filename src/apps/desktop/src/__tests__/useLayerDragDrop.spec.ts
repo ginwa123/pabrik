@@ -10,7 +10,6 @@ import { useLayerDragDrop, TOP_LEVEL_SENTINEL } from '../composables/useLayerDra
 import type { DesignElement } from '../api'
 
 // ─── Fixtures ──────────────────────────────────────────────────────────────
-
 function makeElement(
   id: string,
   type: 'rectangle' | 'frame' | 'group' | 'text' | 'image' | 'ellipse',
@@ -52,7 +51,6 @@ const STANDARD_ELEMENTS = () => [
 ]
 
 // ─── Tests ────────────────────────────────────────────────────────────────
-
 describe('useLayerDragDrop — single-element drag', () => {
   it('onDragStart with empty selection records the dragged element id', () => {
     const { handlers, state } = useLayerDragDrop({

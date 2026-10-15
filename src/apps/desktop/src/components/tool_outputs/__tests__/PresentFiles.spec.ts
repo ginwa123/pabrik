@@ -51,7 +51,6 @@ afterEach(() => {
 })
 
 // ─── Test helpers ──────────────────────────────────────────────────────────
-
 const makeSuccessContent = () => ({
   status: 'presented',
   count: 2,
@@ -69,7 +68,6 @@ const mountCard = (content: unknown, sessionId = 'sess_123', expanded = true) =>
   mount(PresentFiles, { props: { content, sessionId, expanded } as never })
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
-
 describe('PresentFiles', () => {
   it('renders the card with a data-testid', () => {
     const wrapper = mountCard(makeSuccessContent())

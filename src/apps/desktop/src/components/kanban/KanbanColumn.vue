@@ -340,7 +340,6 @@ onUpdated(() => {
 })
 
 // ─── Inline rename state ───────────────────────────────────────────────────
-
 const isRenaming = ref(false)
 const renameValue = ref('')
 const renameInput = ref<HTMLInputElement | null>(null)
@@ -390,7 +389,6 @@ const columnScrollStorageKey = computed(
 useKanbanColumnScrollRestore(scrollerContainerRef, columnScrollStorageKey)
 
 // ─── "⋮" menu state ────────────────────────────────────────────────────────
-
 const menuOpen = ref(false)
 const menuRef = ref<HTMLElement | null>(null)
 
@@ -516,7 +514,6 @@ onUnmounted(() => {
 // compute the drop position) and update visual feedback in real-time.
 // For v1 we compute the position as the END of the receiving column on drop (matches the plan's
 // "append to end" semantics — the user can always reorder within a column in a future iteration).
-
 const isDragOver = ref(false)
 const isDragging = ref(false)
 
@@ -601,7 +598,6 @@ const handleDragEndCapture = () => {
 // `application/x-kanban-task-id` (cards).
 // The dragover/drop handlers on the header only react when the drag carries the column MIME — card
 // drags are ignored here, so a card drag onto a header doesn't trigger a column reorder.
-
 const isColumnDragOver = ref(false)
 
 const handleColumnDragStart = (event: DragEvent) => {

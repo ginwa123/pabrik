@@ -247,7 +247,6 @@ describe('useWorkspacesStore.init()', () => {
   // header it show, can you make all of that instant open") is exactly this regression.
   // The fix awaits the fetch in init() so the sidebar's <DesignPageRow> children render populated
   // as soon as init() resolves.
-
   it('fetches design pages for every design item in init()', async () => {
     getWorkspacesMock.mockResolvedValueOnce({
       workspaces: [{ id: 'ws_1', name: 'W1', icon: '📁' }],
@@ -382,7 +381,6 @@ describe('useWorkspacesStore.init()', () => {
   // showed columns-with-counts but empty bodies until the fetches landed. The user reported
   // "spinner is show after i click a kanban workspace" — exactly this gap.
   // The fix awaits the fetches in init() so the kanban renders fully when isLoading flips to false.
-
   it('fetches kanban columns + per-column tasks for every kanban item in init()', async () => {
     // 1 kanban item with 2 columns → 1 listKanbanColumns call +
     // 2 getTasks calls (one per column, both with column_id set).

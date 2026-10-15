@@ -245,7 +245,6 @@ describe('KanbanTaskDetailDialog — Use git worktree toggle', () => {
   })
 
   // ─── Base branch (the `Base:` line) ───────────────────────────────────
-
   function findItemByText(text: string): HTMLButtonElement | null {
     return (
       findAllInDom<HTMLButtonElement>(

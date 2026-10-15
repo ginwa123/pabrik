@@ -18,7 +18,6 @@ import { useWorkspacesStore } from '../stores/workspaces'
  * strip, and the page used to fake an assistant turn — so a future "just one quick action", a
  * reintroduced canned message, or a chat list should fail here rather than ship. */
 /** The create-workspace form is the deliberate, asserted exception. */
-
 describe('Chats — Pabrik landing page', () => {
   beforeEach(() => {
     setActivePinia(createPinia())

@@ -56,7 +56,6 @@ void _typeCheckBadString2
 // expectations: the event payload's is_input / is_output must arrive
 // as real booleans, and the comparison `event.is_output === true` must
 // succeed where the old `=== '1'` would have failed.
-
 describe('SseEvent.is_input / is_output wire format', () => {
   it('exposes is_input and is_output as booleans on the event payload', () => {
     // Runtime belt-and-suspenders: even if the type checker passes, a wrong-shape value should be

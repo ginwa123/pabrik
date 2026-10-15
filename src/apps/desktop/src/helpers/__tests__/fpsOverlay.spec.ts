@@ -8,7 +8,6 @@ import { mount, unmount } from '../fpsOverlay'
 //   - unmount() stops the loop and removes the chip.
 //   - In production builds (import.meta.env.DEV === false) both calls
 //     are no-ops — zero cost in shipped binaries.
-
 describe('fpsOverlay', () => {
   let rafCallbacks: Array<(t: number) => void>
 

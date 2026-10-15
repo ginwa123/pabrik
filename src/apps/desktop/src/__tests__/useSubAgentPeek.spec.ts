@@ -389,7 +389,6 @@ describe('useSubAgentPeek', () => {
     expect(peekB.messages.value.some((m) => m.content === 'for-A')).toBe(false)
 
     // Event for SID_B must mutate peekB only.
-     
     __dispatchSseBus('llm', {
       session_id: SID_B,
       id: 'b1',

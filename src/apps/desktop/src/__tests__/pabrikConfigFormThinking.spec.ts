@@ -8,7 +8,6 @@
 //  - The input emits `null` for blank values, parsed integers for
 //    valid input, and clamps to >= 1024.
 //  - Hidden fields preserve values (not nulled) on style switch.
-
 import { describe, it, expect } from 'vitest'
 import { mount, VueWrapper } from '@vue/test-utils'
 import LlmConfigForm from '../components/pabrik/LlmConfigForm.vue'
@@ -50,7 +49,6 @@ describe('LlmConfigForm Thinking fields', () => {
   })
 
   // ─── Per-style gating (plan 2026-09-01) ───
-
   it('anthropic + thinking=on: shows budget, hides effort', async () => {
     const wrapper = await mountOpen(LlmConfigForm, {
       props: { modelValue: { ...baseConfig, url_style: 'anthropic', thinking: 'on' } },

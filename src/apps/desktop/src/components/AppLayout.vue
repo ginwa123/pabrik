@@ -88,7 +88,6 @@ onUnmounted(() => {
 })
 
 // Settings overlay state (now driven by route)
-
 onMounted(() => {
   void handleBootUrl()
 })
@@ -659,7 +658,6 @@ const syncItemToUrl = (oldItemId: string | null) => {
   }
   // A document is its own path, so this mirror never targets one — there
   // is no `doc` query for a store write to strip.
-
   let target: AppUrlLocation | null = null
   if (wsId && safeItemId) {
     target = buildAppUrl({
@@ -2242,7 +2240,6 @@ const handleDesignSelectElement = (_elementId: string) => {
 // pre-FK code that lived here (name matching, N+1 message probe,
 // one-shot legacy migration) is removed; see the plan for the
 // historical context.
-
 const handleDesignOpenChat = async (payload: {
   pageId: string
   pageName: string

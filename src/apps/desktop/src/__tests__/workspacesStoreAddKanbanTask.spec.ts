@@ -129,7 +129,6 @@ describe('workspacesStore.addKanbanTask', () => {
   // =====================================================================
   // mode='create_session' (plan: 2026-08-19-kanban-create-task-inits-session)
   // =====================================================================
-
   it("mode='create_session' calls api.createKanbanTask with mode='create_session' + selected_profile_model + returns session", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fakeTask = { id: 'task_new', name: 'Fix bug', task_type: 'standard' } as any

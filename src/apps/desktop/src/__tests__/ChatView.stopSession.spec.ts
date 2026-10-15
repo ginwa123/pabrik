@@ -204,7 +204,6 @@ describe('ChatView — Stop button (cancel running agent)', () => {
     // Second click: the button is `:disabled`, so the test-utils
     // click doesn't even reach handleStopClick (the disabled flag
     // suppresses the click event). Still, ensure no extra call.
-     
     await btn.trigger('click')
     await flushPromises()
 

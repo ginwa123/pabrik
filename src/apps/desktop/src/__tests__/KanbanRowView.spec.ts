@@ -77,7 +77,6 @@ describe('KanbanRowView', () => {
   })
 
   // ─── Grouping ────────────────────────────────────────────────────────────
-
   it('renders one group per column, in the order given', () => {
     wrapper = mountRowView({
       columns: [
@@ -154,7 +153,6 @@ describe('KanbanRowView', () => {
   })
 
   // ─── Empty states ────────────────────────────────────────────────────────
-
   it('renders the board-level empty state when there are no columns', () => {
     wrapper = mountRowView({ columns: [], tasks: [] })
     expect(wrapper.find(`[data-testid="kanban-view-${ITEM_ID}-rows-empty"]`).exists()).toBe(true)
@@ -174,7 +172,6 @@ describe('KanbanRowView', () => {
   })
 
   // ─── Collapse ────────────────────────────────────────────────────────────
-
   it('renders rows when the group is expanded', () => {
     wrapper = mountRowView({ tasks: [makeTask({ id: 't1' })], collapsedIds: [] })
     expect(wrapper.find('[data-testid="kanban-row-group-col_1-rows"]').exists()).toBe(true)
@@ -206,7 +203,6 @@ describe('KanbanRowView', () => {
   })
 
   // ─── Group header: description + inline rename ───────────────────────────
-
   it('renders the column description when present', () => {
     wrapper = mountRowView({ columns: [makeColumn({ description: 'Things to do' })] })
     expect(wrapper.find('[data-testid="kanban-row-group-col_1-description"]').text()).toBe(
@@ -259,7 +255,6 @@ describe('KanbanRowView', () => {
   })
 
   // ─── Group ⋮ menu ────────────────────────────────────────────────────────
-
   it('the ⋮ menu is closed by default', () => {
     wrapper = mountRowView()
     expect(wrapper.find('[data-testid="kanban-row-group-col_1-menu"]').exists()).toBe(false)
@@ -322,7 +317,6 @@ describe('KanbanRowView', () => {
   })
 
   // ─── Sort modal ──────────────────────────────────────────────────────────
-
   it('Sort tasks… opens the sort modal for that column', async () => {
     wrapper = mountRowView()
     await wrapper.find('[data-testid="kanban-row-group-col_1-menu-trigger"]').trigger('click')
@@ -365,7 +359,6 @@ describe('KanbanRowView', () => {
   })
 
   // ─── Row events ──────────────────────────────────────────────────────────
-
   it('clicking a row emits selectTask', async () => {
     wrapper = mountRowView({ tasks: [makeTask({ id: 't1' })] })
     await wrapper.find('[data-kanban-row="t1"] [data-task-row]').trigger('click')
@@ -385,7 +378,6 @@ describe('KanbanRowView', () => {
   })
 
   // ─── Pagination ──────────────────────────────────────────────────────────
-
   it('shows no Load more button when the column has no further pages', () => {
     wrapper = mountRowView({ tasks: [makeTask({ id: 't1' })] })
     expect(wrapper.find('[data-testid="kanban-row-group-col_1-load-more"]').exists()).toBe(false)
@@ -488,7 +480,6 @@ describe('KanbanRowView', () => {
   // ─── Readable row: metadata line ───────────────────────────────────────── The row used to
   // render a name and nothing else, so two tasks in a group were indistinguishable. These guard the
   // second line: every field here already ships on the Task payload the board fetches.
-
   it('renders the last-updated time in the metadata line', () => {
     const updated = new Date(Date.now() - 2 * 60 * 60 * 1000)
     wrapper = mountRowView({ tasks: [makeTask({ id: 't1', updatedAt: updated })] })
@@ -546,7 +537,6 @@ describe('KanbanRowView', () => {
   // ─── Readable row: status rail ─────────────────────────────────────────── The rail is what
   // makes a 110-row group scannable down its left margin. `data-kanban-row-state` is the assertion
   // surface; the colour itself is a style binding.
-
   it('marks a task awaiting human review', () => {
     wrapper = mountRowView({
       tasks: [makeTask({ id: 't1', needs_human_review: true, last_finish_reason: 'stop' })],
@@ -596,7 +586,6 @@ describe('KanbanRowView', () => {
   })
 
   // ─── Readable row: actions ───────────────────────────────────────────────
-
   it('clicking the pin toggle emits pinTask and does not select the task', async () => {
     wrapper = mountRowView({ tasks: [makeTask({ id: 't1' })] })
     await wrapper.find('[data-kanban-row="t1"] [data-testid="task-pin-toggle"]').trigger('click')
@@ -637,7 +626,6 @@ describe('KanbanRowView', () => {
   })
 
   // ─── Density ─────────────────────────────────────────────────────────────
-
   it('renders the metadata line by default (comfortable)', () => {
     wrapper = mountRowView({
       tasks: [makeTask({ id: 't1', updatedAt: new Date(Date.now() - 60_000) })],

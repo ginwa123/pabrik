@@ -219,7 +219,6 @@ export function mergeWording(s: MergeSignals): MergeWording {
 }
 
 // ── The method menu ───────────────────────────────────────────────────────
-
 export type MergeMethod = 'merge' | 'squash' | 'rebase'
 
 /**  * The three methods both CLIs expose. `gh pr merge` needs exactly one of them — with no strategy

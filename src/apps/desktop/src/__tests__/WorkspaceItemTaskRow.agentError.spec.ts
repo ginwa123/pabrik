@@ -156,7 +156,6 @@ describe('WorkspaceItemTaskRow — agent-error indicator', () => {
     const store = useAgentErrorStore()
     store.setError('task_a', RETRY_CONTENT)
     // task_b is intentionally NOT errored.
-
     const wrapperA = mountRow(makeTask({ id: 'task_a' }))
     const wrapperB = mountRow(makeTask({ id: 'task_b' }))
     await nextTick()

@@ -23,7 +23,6 @@ import LoadMemory from '../LoadMemory.vue'
 // ────────────────────────────────────────────────────────────────────────
 // jsdom clipboard stub (matches ReadWorkspaceSession.spec.ts pattern)
 // ────────────────────────────────────────────────────────────────────────
-
 let clipboardWrites: string[] = []
 
 beforeEach(() => {
@@ -45,7 +44,6 @@ afterEach(() => {
 // ────────────────────────────────────────────────────────────────────────
 // Helpers
 // ────────────────────────────────────────────────────────────────────────
-
 const makeSuccessContent = (
   opts: {
     query?: string
@@ -109,7 +107,6 @@ const makeEmptyContent = (query = 'no-such-memory') => ({
 // ────────────────────────────────────────────────────────────────────────
 // Tests
 // ────────────────────────────────────────────────────────────────────────
-
 describe('LoadMemory.vue — happy path', () => {
   it('renders the tool name pill + query + count in the header', () => {
     const wrapper = mount(LoadMemory, {

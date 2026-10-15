@@ -98,7 +98,6 @@ describe('DesignView single-element drag → translate emit', () => {
 
       // 2. simulate the pointermove + pointerup that DesignElement's
       // `startDrag` registers on the element's addEventListener.
-       
       let moveHandler: ((e: PointerEvent) => void) | null = null
       let upHandler: ((e: PointerEvent) => void) | null = null
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

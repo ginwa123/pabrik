@@ -195,7 +195,6 @@ const handleLoadMoreTasks = (workspaceId: string, itemId: string) => {
 // The handlers use `event.target.closest(...)` to find the `<li>` the cursor is over. The `<ul>` is
 // also a better anchor than each `<li>` because the `<li>` has children (the clickable button, the
 // spinner, etc.) whose DnD events bubble up here, so we get one consistent handler for all of them.
-
 const handleItemDragStart = (event: DragEvent) => {
   const target = event.target as HTMLElement | null
   const li = target?.closest('[data-item-id]') as HTMLElement | null

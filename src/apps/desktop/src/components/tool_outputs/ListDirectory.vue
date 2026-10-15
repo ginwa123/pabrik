@@ -75,7 +75,6 @@ const parsed = computed(() => {
 })
 
 // ---- Derived display values ------------------------------------------------
-
 const contentPath = computed((): string | null => {
   const v = parsed.value.path
   return v && v.trim() !== '' ? v : null
@@ -122,7 +121,6 @@ const headerTitle = computed(() => {
 })
 
 // ─── Interactions ──────────────────────────────────────────────────────────
-
 const toggle = () => {
   isExpanded.value = !isExpanded.value
 }

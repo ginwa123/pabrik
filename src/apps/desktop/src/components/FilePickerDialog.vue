@@ -60,7 +60,6 @@ interface TreeRow {
 }
 
 // ─── Props ─────────────────────────────────────────────────────────────────
-
 const props = defineProps<{
   modelValue: boolean
   mode?: Mode
@@ -121,7 +120,6 @@ const enableRecent = computed<boolean>(() =>
 )
 
 // ─── Emits ─────────────────────────────────────────────────────────────────
-
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   'select': [path: string]
@@ -129,7 +127,6 @@ const emit = defineEmits<{
 }>()
 
 // ─── State ─────────────────────────────────────────────────────────────────
-
 const dialogRef = ref<HTMLElement | null>(null)
 const contentRef = ref<HTMLElement | null>(null)
 const searchInput = ref<HTMLInputElement | null>(null)
@@ -367,7 +364,6 @@ function joinRelative(base: string, rel: string): string {
 }
 
 // ─── Data loading ──────────────────────────────────────────────────────────
-
 async function loadPath(path: string): Promise<T[]> {
   isLoading.value = true
   loadError.value = null
@@ -452,7 +448,6 @@ async function toggleTreeNode(path: string) {
 }
 
 // ─── Selection ─────────────────────────────────────────────────────────────
-
 function handleItemClick(item: T) {
   const path = props.pathFor(item)
   const expandable = props.isExpandable(item)
@@ -570,7 +565,6 @@ function toSqliteUtc(ms: number): string {
 }
 
 // ─── Filtered view ─────────────────────────────────────────────────────────
-
 const filteredContent = computed<ContentItem[]>(() => {
   const entries = contentEntries.value ?? []
   const items: ContentItem[] = entries.map((raw) => {
@@ -640,7 +634,6 @@ const treeFlat = computed<TreeRow[]>(() => {
 })
 
 // ─── Keyboard ──────────────────────────────────────────────────────────────
-
 function scrollHighlightedIntoView() {
   nextTick(() => {
     const el = contentRef.value?.querySelector(
@@ -798,7 +791,6 @@ function cancelPathEdit() {
 }
 
 // ─── Lifecycle ─────────────────────────────────────────────────────────────
-
 async function openDialog() {
   const startPath = initialPath.value
   currentPath.value = startPath

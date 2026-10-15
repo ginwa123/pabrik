@@ -70,7 +70,6 @@ const isExpanded = ref(props.expanded ?? false)
 // ─── Inner-envelope parsing (typed) ─────────────────────────────────────── Pulled from the
 // project-wide parser in `_shared/toolOutputParser.ts` so the same regexes don't drift between the
 // parser test and the component. Always XML — never JSON.
-
 const normalized = computed(() => normalizeToolContent(props.content))
 const parsed = computed<ParsedGenerateImage>(() => {
   const p = parseGenerateImage(normalized.value.data)
@@ -81,7 +80,6 @@ const parsed = computed<ParsedGenerateImage>(() => {
 })
 
 // ─── Parameter parsing (header context) ───────────────────────────────────
-
 interface GenerateImageArgs {
   prompt?: string
   model?: string
@@ -100,7 +98,6 @@ const args = computed<GenerateImageArgs>(() => {
 })
 
 // ─── Derived display values ───────────────────────────────────────────────
-
 const isSuccess = computed(() => parsed.value.error === null && parsed.value.status === 'generated')
 
 const statusIndicator = computed(() => (isSuccess.value ? '✓' : '✗'))
@@ -143,7 +140,6 @@ const headerTitle = computed(() => {
 })
 
 // ─── Event handlers ───────────────────────────────────────────────────────
-
 const toggle = () => {
   isExpanded.value = !isExpanded.value
 }

@@ -19,7 +19,6 @@ import { OPEN_IN_CODE_EDITOR_KEY, type OpenInCodeEditorFn } from '@/composables/
 // ────────────────────────────────────────────────────────────────────────
 // Test helpers
 // ────────────────────────────────────────────────────────────────────────
-
 const makeContent = (opts: { path?: string; success?: boolean; error?: string } = {}) => {
   const path = opts.path ?? '/repo/src/foo.ts'
   const success = opts.success ?? true
@@ -59,7 +58,6 @@ const makeWrapper = (
 // ────────────────────────────────────────────────────────────────────────
 // Tests
 // ────────────────────────────────────────────────────────────────────────
-
 beforeAll(() => {
   // jsdom 29 dropped localStorage from default globals — install a stub.
   // TextReplace itself doesn't read localStorage, but the DiffView child does.

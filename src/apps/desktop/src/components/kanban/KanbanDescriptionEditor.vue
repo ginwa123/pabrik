@@ -356,7 +356,6 @@ const onTextareaInput = (event: Event) => {
 }
 
 // ─── Image paste (mirrors FileInput.vue strategy 1 + 2) ────────────────
-
 const isImageFile = (file: File): boolean => file.type.startsWith('image/')
 const isVideoFile = (file: File): boolean => file.type.startsWith('video/')
 const isMediaFile = (file: File): boolean => isImageFile(file) || isVideoFile(file)
@@ -486,7 +485,6 @@ const handlePaste = async (event: ClipboardEvent) => {
 }
 
 // ─── Native file picker (paperclip) ────────────────────────────────────
-
 const triggerFilePicker = () => {
   nativeFileInput.value?.click()
 }
@@ -504,7 +502,6 @@ const handleNativeFileSelect = async (event: Event) => {
 }
 
 // ─── Preview removal — strips the matching data URL from the markdown ──
-
 const handlePreviewUpdate = (newFiles: PreviewFile[]) => {
   // Find removed files (in old but not in new).
   const removed = previewFiles.value.filter((old) => !newFiles.includes(old))

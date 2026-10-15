@@ -118,7 +118,6 @@ describe('DesignView undo/redo feature is hidden (2026-08-06)', () => {
   })
 
   // ─── DOM assertions (buttons not rendered) ─────────────────────────
-
   it('DesignView does NOT render the design-history-buttons wrapper', async () => {
     const wrapper = mount(DesignView, {
       props: { item: ITEM, workspaceId: 'ws_1', itemId: 'item_1' },
@@ -131,7 +130,6 @@ describe('DesignView undo/redo feature is hidden (2026-08-06)', () => {
   })
 
   // ─── Keyboard shortcut assertions (handlers removed) ────────────────
-
   it('Cmd+Z does NOT call history.undo() even when canUndo is true', async () => {
     canUndoRef.value = true
     nextUndoLabelRef.value = 'Move element'
@@ -181,7 +179,6 @@ describe('DesignView undo/redo feature is hidden (2026-08-06)', () => {
   })
 
   // ─── Keyboard event passthrough (browser-native Cmd+Z works again) ─
-
   it('Cmd+Z is NOT preventDefault()ed (browser-native Cmd+Z should still work)', async () => {
     const wrapper = mount(DesignView, {
       props: { item: ITEM, workspaceId: 'ws_1', itemId: 'item_1' },

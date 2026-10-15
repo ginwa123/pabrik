@@ -3,7 +3,6 @@
 // resulting store state + chat dialog visibility.
 // Spec: docs/superpowers/specs/2026-08-15-simplify-url-browser-design.md Plan:
 // docs/superpowers/plans/2026-08-15-simplify-url-browser.md
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'

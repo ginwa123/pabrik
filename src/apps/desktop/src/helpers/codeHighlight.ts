@@ -10,7 +10,6 @@
 /** Render tokens as Vue text nodes (`h('span', {class}, token.text)`) so escaping stays with the
  * framework. Unknown / plaintext language returns a single `plain` token (callers render exactly as
  * before). */
-
 export type TokenType = 'keyword' | 'string' | 'comment' | 'number' | 'function' | 'type' | 'plain'
 
 export interface Token {

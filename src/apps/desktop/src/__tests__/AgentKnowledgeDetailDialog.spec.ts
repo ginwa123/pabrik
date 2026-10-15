@@ -6,7 +6,6 @@
 // nested FilePickerDialog), so wrapper.find() can't see the teleported DOM.
 // Mount with attachTo: document.body and assert via document.querySelector + native .click();
 // wrapper.emitted() still works because it tracks the vm, not the DOM tree.
-
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'

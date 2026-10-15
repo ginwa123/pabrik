@@ -40,7 +40,6 @@
  * file. Both halves must change together — the comment in that spec calls the
  * drift between them "the exact failure mode that let Bug C ship".
  */
-
 import { mount, type ComponentMountingOptions } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
@@ -142,7 +141,6 @@ function decideIsAtBottomDomRuler(args: DecisionInput & { domGap: number }): boo
 const QUIET_FRAME = { previousIsAtBottom: true, contentGrew: false, userScrolledUp: false }
 
 // ── The reported bug, stated as arithmetic ───────────────────────────────────
-
 describe('the two rulers, and the disarm they caused', () => {
   it('with the tail cap latched the rulers disagree by exactly maxTailGap', () => {
     const realBottom = 24000
@@ -200,7 +198,6 @@ describe('the two rulers, and the disarm they caused', () => {
 })
 
 // ── The edge matrix: every overshoot, both rulers ────────────────────────────
-
 describe('overshoot matrix — when does the DOM ruler break the stick?', () => {
   const clientHeight = 800
   const realBottom = 24000
@@ -259,7 +256,6 @@ describe('overshoot matrix — when does the DOM ruler break the stick?', () => 
 })
 
 // ── The cases the fix must NOT break ────────────────────────────────────────
-
 describe('reading history still disengages the stick', () => {
   it('a genuine upward gesture past the tolerance disengages', () => {
     expect(
@@ -314,7 +310,6 @@ describe('reading history still disengages the stick', () => {
 // ── The real component ────────────────────────────────────────────────────── Pure arithmetic
 // cannot prove the component publishes the number the pure function assumed. These mount
 // VirtualScroller and read the actual `bottomScrollTop()` off the exposed instance.
-
 type Item = { id: string }
 const N = 120
 
@@ -455,7 +450,6 @@ describe('VirtualScroller publishes the bottom it actually lands on', () => {
 })
 
 // ── The logger cannot contradict the decision ───────────────────────────────
-
 describe('buildScrollContext reports the same gap the decision used', () => {
   const container = document.createElement('div')
   Object.defineProperty(container, 'scrollHeight', { value: 24500, configurable: true })
@@ -502,7 +496,6 @@ describe('buildScrollContext reports the same gap the decision used', () => {
 })
 
 // ── The scroll-restore composable ────────────────────────────────────────────
-
 describe('useChatScrollRestore asks the caller where the bottom is', () => {
   function withLocalStorage(): void {
     const store: Record<string, string> = {}
@@ -586,7 +579,6 @@ describe('useChatScrollRestore asks the caller where the bottom is', () => {
 // `chatview_at_bottom_stick_ui_test.py::test_the_stick_survives_a_sizer_that_overshoots_the_content`.
 // The fix: judge against `settledBottom` — where the bottom sat when the stick LAST acted — which
 // only changes when the scroller deliberately repositions.
-
 describe('the live ruler is a moving target, and the stick must not care', () => {
   const clientHeight = 800
 

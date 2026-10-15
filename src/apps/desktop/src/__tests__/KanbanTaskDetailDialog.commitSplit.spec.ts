@@ -74,7 +74,6 @@ describe('KanbanTaskDetailDialog — commit split button', () => {
   }
 
   // ── structure ────────────────────────────────────────────────────────
-
   it('create mode: the run action is the primary half and plain create is in the menu', async () => {
     mountDialog()
     await flushPromises()
@@ -105,7 +104,6 @@ describe('KanbanTaskDetailDialog — commit split button', () => {
   })
 
   // ── caret behaviour ──────────────────────────────────────────────────
-
   it('the caret opens and closes the menu, and reports it via aria-expanded', async () => {
     mountDialog()
     await flushPromises()

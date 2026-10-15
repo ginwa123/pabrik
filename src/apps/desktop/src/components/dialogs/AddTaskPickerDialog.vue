@@ -6,7 +6,6 @@
 // creation flow to open based on the emitted `pick` value.
 // Style match: backdrop + card wrapper copied verbatim from AddTaskDialog.vue:44-143 so the visual
 // language is consistent with every other dialog in the app.
-
 import UiIcon from '../ui/UiIcon.vue'
 
 defineProps<{

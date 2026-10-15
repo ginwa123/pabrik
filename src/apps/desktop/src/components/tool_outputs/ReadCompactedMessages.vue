@@ -39,7 +39,6 @@ import { normalizeToolContent } from './_shared/toolOutputParser'
  * fixed shape. DOMParser (used by CompactionCard) would also work but is
  * heavier than necessary here.
  */
-
 interface MessageEntry {
   id: string
   role: string
@@ -59,7 +58,6 @@ const props = defineProps<{
 const isExpanded = ref(props.expanded ?? false)
 
 // ── Parse the outer envelope ────────────────────────────────────────────────
-
 function asRecord(v: unknown): Record<string, unknown> {
   if (typeof v === 'string') {
     try {
@@ -121,7 +119,6 @@ const count = computed((): number | null => numOrNull(dataRecord.value.count))
 const errorMessage = computed((): string | null => normalized.value.error ?? strOrNull(dataRecord.value.error))
 
 // ── Parse the message index rows ───────────────────────────────────
-
 const entries = computed((): MessageEntry[] => {
   const results: MessageEntry[] = []
   const raw = dataRecord.value.message_index ?? dataRecord.value.entries
@@ -142,7 +139,6 @@ const entries = computed((): MessageEntry[] => {
 })
 
 // ── Header summary text ─────────────────────────────────────────────────────
-
 const summaryText = computed((): string => {
   if (errorMessage.value) return errorMessage.value
 
@@ -162,7 +158,6 @@ const isError = computed(() => !!errorMessage.value)
 const hasEntries = computed(() => entries.value.length > 0)
 
 // ── Actions ─────────────────────────────────────────────────────────────────
-
 const toggle = () => {
   if (hasEntries.value || isError.value) {
     isExpanded.value = !isExpanded.value

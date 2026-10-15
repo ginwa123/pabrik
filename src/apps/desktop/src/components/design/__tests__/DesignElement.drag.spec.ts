@@ -251,19 +251,16 @@ describe('DesignElement drag', () => {
     // Deliberately do NOT stub addEventListener on the handle — let both the handle's and the
     // wrapper's listeners register normally so we can verify the bubble behaviour. (Stubbing the
     // handle's addEventListener is what hid the bug in the existing test.)
-
     nwEl.dispatchEvent(new PointerEvent('pointerdown', { button: 0, pointerId: 1, clientX: 100, clientY: 100, bubbles: true }))
 
     // Pre-fix: 'select' emitted TWICE (handle + wrapper).
     // Post-fix: 'select' emitted ONCE (handle only — wrapper's
     // @pointerdown never fired because the handle called
     // event.stopPropagation()).
-     
     const selects = wrapper.emitted('select') ?? []
     expect(selects).toHaveLength(1)
     // Also assert 'dragStart' is emitted once (same duplicate-handler
     // pattern would cause a duplicate dragStart).
-     
     const dragStarts = wrapper.emitted('dragStart') ?? []
     expect(dragStarts).toHaveLength(1)
   })
@@ -296,7 +293,6 @@ describe('DesignElement drag', () => {
     moveHandler(new PointerEvent('pointermove', { clientX: 120, clientY: 120, pointerId: 1 }))
     moveHandler(new PointerEvent('pointermove', { clientX: 130, clientY: 130, pointerId: 1 }))
     // Snapshot BEFORE pointerup — the trailing emit happens on pointerup.
-     
     const emitsBeforeUp = (wrapper.emitted('translate') ?? []).length
      
     // Throttled: 0 emits (none past the 50ms window). Unthrottled: 3 emits.
@@ -328,7 +324,6 @@ describe('DesignElement drag', () => {
   })
 
   // ─── Chunk 2: multi-select ────────────────────────────────────────
-
   it('emits select with the element id on pointerdown', async () => {
     const wrapper = mount(DesignElement, {
       props: { element: ELEMENT, selectedIds: [], zoom: 1.0 },
@@ -534,7 +529,6 @@ describe('DesignElement drag', () => {
   // Wire-form note: the backend uses `COALESCE(parent_id, '')` so a top-level element arrives as
   // `parent_id = ''`. A nested element arrives as `parent_id = 'elem_<parent>'`. Legacy shapes may
   // have `parent_id = null` or `undefined` — both are treated as top-level.
-
   it('drag on a child element (parent_id set) does NOT emit translate', async () => {
     const CHILD: DesignElementApi = {
       ...ELEMENT,
@@ -866,7 +860,6 @@ describe('DesignElement drag', () => {
     }
     setActivePinia(createPinia())
     // No need to seed a parent — the lookup returns null for top-level.
-
     const wrapper = mount(DesignElement, {
       props: { element: TOP, selected: true, zoom: 1.0 },
     })

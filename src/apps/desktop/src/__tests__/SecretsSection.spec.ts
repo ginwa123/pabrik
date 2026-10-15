@@ -6,7 +6,6 @@
 // hovering the masked text hands over the secret.
 // The server never returns a value for a secret at all, and this component keeps it that way in
 // both directions — nothing to render, and nothing to keep after a save.
-
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
@@ -254,7 +253,6 @@ describe('SecretsSection', () => {
 // The repo rule is that every view switch writes the URL, so the tab strip below is a writable
 // computed over `?section=` — the same shape `NalarSettings.vue` uses, and `section` is the key it
 // owns. (`?tab=` belongs to browser tab-mode.)
-
 async function makeSettingsRouter(query: Record<string, string> = {}) {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -369,7 +367,6 @@ describe('WorkspaceSettingsView (URL-backed sections)', () => {
 // workspace view and no test of the view itself would notice.
 // This asserts against the REAL route table, not a hand-rolled copy of it, so it fails if the entry
 // is ever moved below its catch.
-
 describe('workspace settings route registration', () => {
   it('resolves /app/:workspaceId/settings to the workspace-settings route', async () => {
     const real = (await import('../router/index')).default

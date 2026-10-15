@@ -140,7 +140,6 @@ const close = () => emit('update:open', false)
 // No cwd watcher here: SidebarDiffPanel already watches props.cwd itself (clears its tab cache +
 // reloads). A second fetch from this level doubled every worktree switch and the two concurrent
 // getGitChanges calls could resolve out of order (stale branch wins).
-
 defineExpose({
   // Reload the panel's current tab (PR tab re-syncs merge state too).
   // Falls back to git status for older panel refs without refresh().

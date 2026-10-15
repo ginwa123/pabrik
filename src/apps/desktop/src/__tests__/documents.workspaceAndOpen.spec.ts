@@ -214,7 +214,6 @@ const flush = async () => {
 }
 
 // ─── BUG 1 ────────────────────────────────────────────────────────────────
-
 describe('Documents — a project click still counts as "a workspace is selected"', () => {
   it('the sidebar section lists documents instead of "No workspace selected"', async () => {
     seedProjectClickNavigation()
@@ -269,7 +268,6 @@ describe('Documents — a project click still counts as "a workspace is selected
 })
 
 // ─── BUG 2 ────────────────────────────────────────────────────────────────
-
 const STUB_CONFIG = {
   Sidebar: true,
   RightSidebar: true,

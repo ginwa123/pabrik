@@ -187,7 +187,6 @@ describe('DiffView', () => {
   // ─────────────────────────────────────────────────────────────────────
   // jump-to-line emit (chunks 5+6)
   // ─────────────────────────────────────────────────────────────────────
-
   it('emits jump-to-line when an after-side line number is clicked (split view)', async () => {
     const wrapper = mount(DiffView, {
       props: {
@@ -257,7 +256,6 @@ describe('DiffView', () => {
   //        child — the bg is on the row itself. NO inline highlights
   //        (no <span class="...line-through...">, no per-word bg).
   // ─────────────────────────────────────────────────────────────────────
-
   it('split view: changed row has bg color on itself, NO inline highlights', () => {
     // User feedback: the previous version mixed row bg + per-word strikethrough + per-word
     // highlights on the same line, which was unreadable. The new design is row bg on the row
@@ -372,7 +370,6 @@ describe('DiffView', () => {
   // ─────────────────────────────────────────────────────────────────────
   // Code coloring (text_replace output code coloring)
   // ─────────────────────────────────────────────────────────────────────
-
   it('colorizes tokens when filePath has a known extension', () => {
     const wrapper = mount(DiffView, {
       props: {

@@ -11,7 +11,6 @@ import { clearFolderDiffCache } from '../../../helpers/folderDiffCache'
  * own the exact PR strings, and `ChatView.worktreeSidebar.spec.ts` owns the source greps. */
 /** This file only covers what did not exist before: the letter chip, the dim/bright path split, the
  * filter, and the one-word tab labels. */
-
 const { getGitChangesMock, getGitFolderDiffsMock, getPrDiffMock, getPrStatusMock, getGitCommitsMock } =
   vi.hoisted(() => ({
     getGitChangesMock: vi.fn(),

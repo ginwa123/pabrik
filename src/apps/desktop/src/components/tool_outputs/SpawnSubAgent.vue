@@ -164,7 +164,6 @@ const copyResponse = async (e: Event, response: string) => {
 //   - Rows render even when expandedAgents is empty
 //   - The toggle caret becomes a no-op (replaces '+' with nothing)
 //   - Failed rows get the red error styling immediately
-
 const liveProgress = computed(() => props.progress ?? [])
 
 const inLiveMode = computed(

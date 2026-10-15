@@ -30,7 +30,6 @@ import {
 } from '@/composables/useCodeEditor'
 
 // ─── Test helpers ──────────────────────────────────────────────────────────
-
 const makeSuccessContent = (opts: {
   path?: string
   entries?: Array<{
@@ -105,7 +104,6 @@ afterEach(() => {
 })
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
-
 describe('ListDirectory.vue — happy path', () => {
   it('renders the card with a data-testid', () => {
     const wrapper = makeWrapper({ content: makeSuccessContent() })

@@ -70,7 +70,6 @@ vi.mock('../api/index', async () => {
 })
 
 // Import the mocked module AFTER vi.mock so the spy binding is in place.
-
 function makeSession(overrides: Partial<Chat> = {}): Chat {
   return {
     session_id: 'sess_default',

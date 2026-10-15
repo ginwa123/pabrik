@@ -38,7 +38,6 @@ import { describe, it, expect } from 'vitest'
 import { quantizePx, AdaptiveItemHeightEstimator } from '../virtualScrollerPerf'
 
 // ─── quantizePx ───────────────────────────────────────────────────────────────
-
 describe('quantizePx', () => {
   it('rounds fractional heights to integers', () => {
     expect(quantizePx(100.2)).toBe(100)
@@ -63,7 +62,6 @@ describe('quantizePx', () => {
 })
 
 // ─── AdaptiveItemHeightEstimator ──────────────────────────────────────────────
-
 describe('AdaptiveItemHeightEstimator', () => {
   it('starts at the seed value', () => {
     const est = new AdaptiveItemHeightEstimator({ seed: 64 })
@@ -160,7 +158,6 @@ describe('AdaptiveItemHeightEstimator', () => {
   })
 
   // ── freeze() — the placeholder must stop moving under the reader ──────────
-
   it('reports its sample count, capped at maxSamples', () => {
     const est = new AdaptiveItemHeightEstimator({ seed: 64, maxSamples: 3 })
     expect(est.sampleCount).toBe(0)

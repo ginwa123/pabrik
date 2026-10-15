@@ -974,7 +974,6 @@ const measureItems = () => {
       //   lets the sizer converge to the real content bottom instead
       //   of parking up to 50 px per item too tall.
       //
-
       const aboveAnchor = realIndex < anchorIndex
       const admitted =
         prev === undefined ||

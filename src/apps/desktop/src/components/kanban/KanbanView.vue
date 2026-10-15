@@ -536,7 +536,6 @@ onUnmounted(clearSearchDebounce)
 // fire N requests. Same pattern as the search-input handler above.
 // URL format: `?sorts=col_1:name:asc,col_2:created_at:desc,...` Comma-separated; each entry is
 // `col_<id>:<sortBy>:<direction>`. Validate on parse (typo / out-of-range → drop the entry).
-
 interface SortEntry {
   columnId: string
   sortBy: 'position' | 'created_at' | 'updated_at' | 'name'
@@ -1519,7 +1518,6 @@ const handleCreateTaskSave = async (payload: {
     // The user asked to stay on the kanban view after clicking "Create task & run agent" — the
     // agent runs in the background; the user can click the task card to open the chat view any
     // time. (Same UX as the pre-refactor flow.)
-
     showCreateDialog.value = false
     activeCreateColumnId.value = null
   } catch (err) {

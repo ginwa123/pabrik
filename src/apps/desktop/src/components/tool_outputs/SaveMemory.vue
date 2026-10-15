@@ -79,7 +79,6 @@ const MAX_TOOLTIP_CHARS = 500
 const ARGS_EXCLUDE = ['content']
 
 // ---- Parsers ---------------------------------------------------------------
-
 function asRecord(v: unknown): Record<string, unknown> {
   if (typeof v === 'string') {
     try {
@@ -144,7 +143,6 @@ const updatedAt = computed(() => strOrNull(dataRecord.value.updated_at))
 // ---- The saved body + tags ------------------------------------------------- Precedence: result
 // `data` first (a future backend may echo the stored row), then the tool-call args. `content` is
 // the memory body; it can be an empty string only for a rejected call, which never reaches success.
-
 const savedContent = computed((): string | null => {
   const fromData = strOrNull(dataRecord.value.content)
   if (fromData !== null) return fromData
@@ -176,7 +174,6 @@ const savedTags = computed((): string[] => {
 })
 
 // ---- Derived display values ------------------------------------------------
-
 const isSuccess = computed(() => errorMessage.value === null)
 
 const statusIndicator = computed(() => (isRunning.value ? '…' : isSuccess.value ? '✓' : '✗'))
@@ -235,7 +232,6 @@ const hasBody = computed(() => {
 })
 
 // ---- Actions ---------------------------------------------------------------
-
 const toggle = () => {
   // Always expandable on success (id + tags + the body) or error (1 row). On empty/missing
   // envelopes (no id + no error) we still allow expansion so the user sees "what's in here" — but
@@ -259,7 +255,6 @@ const copyContent = async () => {
 }
 
 // ---- Helpers ---------------------------------------------------------------
-
 function clip(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) : s
 }

@@ -23,7 +23,6 @@ import { OPEN_IN_CODE_EDITOR_KEY, type OpenInCodeEditorFn } from '@/composables/
 // ──────────────────────────────────────────────────────────────────────── Test fixtures — match
 // the JSON data shape in docs/superpowers/plans/2026-09-18-agent-tool-output-json-schema.md §2.3
 // ────────────────────────────────────────────────────────────────────────
-
 interface MatchFixture {
   line: number
   text: string
@@ -88,7 +87,6 @@ afterEach(() => {
 // ────────────────────────────────────────────────────────────────────────
 // Header rendering — the operator's first-glance view of what was searched
 // ────────────────────────────────────────────────────────────────────────
-
 describe('Search.vue — header rendering (operator-visible pattern + path)', () => {
   it('shows the actual pattern from the payload, not "unknown" (regression: bug 2026-08-06)', () => {
     const wrapper = makeWrapper({ content: noMatchData('needle_NOT_FOUND', '/tmp/x') })
@@ -151,7 +149,6 @@ describe('Search.vue — header rendering (operator-visible pattern + path)', ()
 // ────────────────────────────────────────────────────────────────────────
 // Match-found payload — must still work after the no-match fix
 // ────────────────────────────────────────────────────────────────────────
-
 describe('Search.vue — match-found payload (regression guard)', () => {
   it('renders the pattern + path on match results', () => {
     const wrapper = makeWrapper({
@@ -178,7 +175,6 @@ describe('Search.vue — match-found payload (regression guard)', () => {
 // Bug: the expanded body was `v-if="isExpanded && fileResults.length > 0"` and toggle() refused to
 // expand on a warning/empty payload, so a no-match search (warning payload) could never show its
 // Arguments block. ────────────────────────────────────────────────────────────────────────
-
 describe('Search.vue — warning payload still shows Arguments (empty/no-match)', () => {
   const warningContent = {
     pattern: 'foo',
@@ -220,7 +216,6 @@ describe('Search.vue — warning payload still shows Arguments (empty/no-match)'
 // inside a snippet must NOT become a file row — and a capped search must
 // not look exhaustive.
 // ────────────────────────────────────────────────────────────────────────
-
 const payloadWithSummary = (
   file: { path: string; total: number; count: number; lines: MatchFixture[] },
   summary: { returned: number; total: number; truncated: boolean },
