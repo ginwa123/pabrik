@@ -47,17 +47,13 @@ export interface LayerTreeNode {
   children: LayerTreeNode[]
 }
 
-// Vue 3 requires either a script-level `name: 'LayerRow'` declaration
-// OR `defineOptions({ name: 'LayerRow' })` in <script setup> for the
-// recursive `<LayerRow>` usage in the template to type-check under
-// vue-tsc. Without this, vue-tsc reports:
-//
-//   "Component LayerRow is not registered in any module"
-//
-// which silently passes in `bunx vitest run` but FAILS the strict
-// type-check in `bun run build`. See
-// `.pabrik/memories/pabrik-frontend-patterns.md` §"bun run build is
-// the type-check" for the bun/Node vue-tsc split.
+// Vue 3 requires either a script-level `name: 'LayerRow'` declaration OR `defineOptions({ name:
+// 'LayerRow' })` in <script setup> for the recursive `<LayerRow>` usage in the template to
+// type-check under vue-tsc.
+// Without this, vue-tsc reports: "Component LayerRow is not registered in any module" which
+// silently passes in `bunx vitest run` but FAILS the strict type-check in `bun run build`.
+// See `.pabrik/memories/pabrik-frontend-patterns.md` §"bun run build is the type-check" for the
+// bun/Node vue-tsc split.
 defineOptions({ name: 'LayerRow' })
 
 const props = withDefaults(
@@ -193,11 +189,9 @@ const handleChevronClick = (event: MouseEvent): void => {
   emit('toggleCollapse', props.node.element.id)
 }
 
-// ─── Drag-and-drop handlers (Chunk 4 Task 4.1) ──────────────────────────
-//
-// These forward to the parent LayersPanel, which owns the drag state
-// machine via `useLayerDragDrop`. The row itself stays passive —
-// all logic (cycle check, multi-drag, top-level zones) lives in the
+// ─── Drag-and-drop handlers (Chunk 4 Task 4.1) ────────────────────────── These forward to the
+// parent LayersPanel, which owns the drag state machine via `useLayerDragDrop`.
+// The row itself stays passive — all logic (cycle check, multi-drag, top-level zones) lives in the
 // composable so it can be tested without mounting the component.
 
 const handleDragStart = (event: DragEvent): void => {

@@ -34,6 +34,12 @@ def comment_tokens(path):
                 j += 2
             chunks.append(src[i + 2:j])
             i = j
+        elif src.startswith('<!--', i):
+            # An HTML comment in a `<template>`. `local/max-comment-lines` and
+            # `local/no-floating-comments` both document this surface as out of
+            # scope, so it is skipped here too rather than counted as prose.
+            j = src.find('-->', i + 4)
+            i = n if j < 0 else j + 3
         elif src[i] in QUOTES:
             q = src[i]
             i += 1
@@ -94,6 +100,11 @@ def code(path):
             else:
                 j += 2
             i = j
+        elif src.startswith('<!--', i):
+            # An HTML comment in a `<template>`: out of scope for both comment
+            # rules, so it is neither prose nor code here.
+            j = src.find('-->', i + 4)
+            i = n if j < 0 else j + 3
         elif src[i] in QUOTES:
             q = src[i]
             line_has_code = True

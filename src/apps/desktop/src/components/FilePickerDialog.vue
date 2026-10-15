@@ -90,11 +90,9 @@ const props = defineProps<{
   selectedPath?: string
   /** NEW: show the Recent tab + tabstrip. Pass `true` to enable (the default), omit to keep the
    * default, pass `false` to opt out for the single-pane tree. */
-
   /** Vue 3.5's runtime default for `boolean?` is `false`, so the JS-side computed below treats
    * `undefined` (caller didn't pass anything) as "default on" — this is the inverse of Vue's
    * runtime default. */
-
   /** No caller today passes `false`; the legacy opt-out is supported for symmetry with the existing
    * `showHidden?: boolean` prop. */
   enableRecentHistory?: boolean
@@ -113,11 +111,9 @@ const selectLabel = computed(() => props.selectButtonText ?? 'Select')
 // Default enableRecentHistory to true (Recent tab is the user's primary flow). Vue 3.5's runtime
 // default for `boolean?` is `false`, so we treat `false` AND `undefined` as "use default" and
 // `true` as "on".
-
 // An explicit `false` is therefore ambiguous — callers who want to opt out today would also need to
 // pass `false` AND see it preserved. To disambiguate, callers must NOT pass `false` (they pass
 // `undefined` or nothing).
-
 // For now, this is consistent with the existing `showHidden?: boolean` which Vue 3.5 also defaults
 // to false on absence.
 const enableRecent = computed<boolean>(() =>
@@ -161,18 +157,15 @@ const showHiddenLocal = computed<boolean>({
 // ── Address-bar editing state ────────────────────────────────────────── When isPathEditing is
 // true the clickable breadcrumb is replaced with a single text input pre-filled with currentPath.
 // Enter navigates to whatever is typed (after normalization); Escape reverts.
-
 // See beginPathEdit / commitPathEdit / cancelPathEdit below.
 const isPathEditing = ref(false)
 const pathDraft = ref('')
 let previouslyFocused: HTMLElement | null = null
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
-
 // ── Cross-platform path helpers (Windows fix, 2026-09-05) ──────────────
 // See the file header for the full rationale. POSIX inputs produce
 // byte-identical results to the old POSIX-only implementations.
-
 /** True for Windows absolutes: `C:\...`, `C:/...`, UNC `\\s\s` / `//s/s`. */
 function isWindowsAbs(path: string): boolean {
   if (!path) return false
@@ -334,7 +327,6 @@ function normalizeAddressInput(raw: string): string | null {
 
   // Relative path: resolve against currentPath so a bare "docs" jumps into "./docs" inside the
   // current view instead of being treated as invalid.
-
   // Dot-prefixed relpaths ('./a', '../a/b') are normalized as path concatenation (no realpath — we
   // don't have access to a filesystem here and the upstream caller's loadItems will be the one that
   // surfaces "not found" if the path doesn't exist).
@@ -551,14 +543,10 @@ const showCurrentFolderHint = computed<boolean>(
     !!effectiveSelection.value,
 )
 
-// ─── Tab state (Recent / Browse) ─────────────────────────────────────────────
-
-// Default: Recent. The Recent tab is the user's primary path — most-of-the-time
-// they pick a folder they've picked before. The Browse tab is the
-// power-user / unfamiliar-folder flow.
-
-// The active tab is a ref (not persisted) — the user always re-enters via
-// Recent on each open.
+// ─── Tab state (Recent / Browse) ───────────────────────────────────────────── Default: Recent.
+// The Recent tab is the user's primary path — most-of-the-time they pick a folder they've picked
+// before. The Browse tab is the power-user / unfamiliar-folder flow.
+// The active tab is a ref (not persisted) — the user always re-enters via Recent on each open.
 const activeTab = ref<'recent' | 'browse'>('recent')
 const recentStore = useRecentFoldersStore()
 const recentList = computed(() => recentStore.list())
@@ -834,7 +822,6 @@ async function openDialog() {
   // Windows first-open fallback: the POSIX default '/' doesn't exist on Windows, so the chain above
   // loads nothing and sets loadError. Retry once at the system root ('') which the callers resolve
   // via getSystemFolder (backend home / USERPROFILE).
-
   // On POSIX '/' virtually always loads, so this branch never fires there.
   if (startPath === '/' && contentEntries.value.length === 0 && loadError.value) {
     loadError.value = null
@@ -854,7 +841,6 @@ function closeDialog() {
 
 // Open guard: run openDialog on mount when the parent created this dialog with modelValue already
 // true (the common v-if + v-model="show" pattern) plus closed->open updates.
-
 // Without the mount run the dialog renders but contentEntries / treeEntriesCache stay empty, so the
 // user sees "No folders / Empty folder" until they navigate manually.
 const wasOpen = ref(props.modelValue)

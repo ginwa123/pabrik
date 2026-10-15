@@ -51,10 +51,9 @@ import {
 import ToolParameters from './_shared/ToolParameters.vue'
 
 const props = defineProps<{
-  /** The inner `<data>` XML from the generate_image tool's
-   * `<tool>` envelope (already unwrapped by the parent's
-   * `tryUnwrapToolOutput` pipeline). Always XML — never JSON —
-   * because the backend's `wrapToolOutput` always wraps the impl's
+  /** The inner `<data>` XML from the generate_image tool's `<tool>` envelope (already unwrapped by
+   * the parent's `tryUnwrapToolOutput` pipeline). */
+  /** Always XML — never JSON — because the backend's `wrapToolOutput` always wraps the impl's
    * `<generate_image>...</generate_image>` response verbatim. */
   content: unknown
   /**    * The JSON-stringified tool-call arguments (e.g. `'{"prompt":"a cat",...}'`). Used to display the
@@ -68,11 +67,9 @@ const props = defineProps<{
 
 const isExpanded = ref(props.expanded ?? false)
 
-// ─── Inner-envelope parsing (typed) ───────────────────────────────────────
-
-// Pulled from the project-wide parser in `_shared/toolOutputParser.ts`
-// so the same regexes don't drift between the parser test and the
-// component. Always XML — never JSON.
+// ─── Inner-envelope parsing (typed) ─────────────────────────────────────── Pulled from the
+// project-wide parser in `_shared/toolOutputParser.ts` so the same regexes don't drift between the
+// parser test and the component. Always XML — never JSON.
 
 const normalized = computed(() => normalizeToolContent(props.content))
 const parsed = computed<ParsedGenerateImage>(() => {
@@ -108,11 +105,10 @@ const isSuccess = computed(() => parsed.value.error === null && parsed.value.sta
 
 const statusIndicator = computed(() => (isSuccess.value ? '✓' : '✗'))
 
-// Header label: parameter prompt (truncated) on success, "error" on failure.
-// Fall back to the envelope's count + model when the prompt is missing
-// (e.g. legacy row without parameters). When falling back, only show
-// the `× count` suffix when count > 1 — mirrors `rightMeta` below so the
-// header doesn't say "1× dall-e-3" when there's only one image.
+// Header label: parameter prompt (truncated) on success, "error" on failure. Fall back to the
+// envelope's count + model when the prompt is missing (e.g. legacy row without parameters).
+// When falling back, only show the `× count` suffix when count > 1 — mirrors `rightMeta` below so
+// the header doesn't say "1× dall-e-3" when there's only one image.
 const headerLabel = computed(() => {
   if (!isSuccess.value) return parsed.value.error ?? 'error'
   const prompt = args.value.prompt
