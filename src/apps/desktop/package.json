@@ -13,7 +13,7 @@
     "type-check": "vue-tsc --build",
     "lint": "run-s lint:*",
     "lint:check": "oxlint . && eslint . --cache",
-    "lint:banned-baseline": "eslint . --suppress-rule local/max-comment-lines --suppress-rule local/no-derived-state-watch --suppress-rule local/no-silent-fallback-catch --suppress-rule local/no-watch",
+    "lint:banned-baseline": "eslint . --suppress-rule local/no-derived-state-watch --suppress-rule local/no-silent-fallback-catch --suppress-rule local/no-watch",
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache",
     "format": "prettier --write --experimental-cli src/",

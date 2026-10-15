@@ -1,521 +1,10 @@
 {
   "src/App.vue": {
-    "local/max-comment-lines": {
-      "count": 15
-    },
     "local/no-try-catch": {
       "count": 1
     }
   },
-  "src/__tests__/AddItemDialog.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/__tests__/AddKanbanDialog.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 5
-    }
-  },
-  "src/__tests__/AddMemoryDialog.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/__tests__/AddTaskPickerDialog.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/__tests__/AgentChatView.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/AgentErrorCard.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/AgentKnowledgeDetailDialog.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/AgentSystemPromptDialog.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/App.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 11
-    }
-  },
-  "src/__tests__/AppLayout.agentToolsFetchOnView.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/AppLayout.backForwardReconcile.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/AppLayout.chatClickUrlOverwrite.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/__tests__/AppLayout.chatPathWorkspaceAdoption.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/AppLayout.chatSuffixRoundTrip.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/AppLayout.chatview.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 6
-    }
-  },
-  "src/__tests__/AppLayout.codeEditorChatSwitch.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/AppLayout.createElement.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/AppLayout.designChatDialog.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 8
-    }
-  },
-  "src/__tests__/AppLayout.kanban.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 15
-    }
-  },
-  "src/__tests__/AppLayout.kanbanChatTab.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/AppLayout.memoriesGate.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/AppLayout.simplifyUrl.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/AppLayout.sortUrlRoundTrip.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/__tests__/AppLayout.standardTaskChat.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 7
-    }
-  },
-  "src/__tests__/AppLayout.taskClickUrlOverwrite.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 8
-    }
-  },
-  "src/__tests__/AppLayout.urlPersist.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 16
-    }
-  },
-  "src/__tests__/AppLayout.workspaceSwitcherUrl.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/ChatAppBar.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/ChatView.agentErrorPersistence.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 10
-    }
-  },
-  "src/__tests__/ChatView.centerDiffToolbar.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/ChatView.composerToolbar.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/ChatView.expandStateStability.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/ChatView.floatingComposer.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/ChatView.gitStatusCache.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/ChatView.hiddenMessages.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/__tests__/ChatView.initializing.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/ChatView.lazyPrefetch.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/ChatView.profileCascade.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 5
-    }
-  },
-  "src/__tests__/ChatView.profilePickerScope.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/ChatView.sendScrollsToBottom.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/__tests__/ChatView.stackingContainment.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 6
-    }
-  },
-  "src/__tests__/ChatView.stopSession.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 7
-    }
-  },
-  "src/__tests__/ChatView.toolCallsJsonWireShape.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/ChatView.toolsPillStability.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 6
-    }
-  },
-  "src/__tests__/ChatView.updatePlan.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 6
-    }
-  },
-  "src/__tests__/ChatView.usedTools.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 6
-    }
-  },
-  "src/__tests__/ChatView.userPillRail.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/ChatsLanding.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/ChatsList.activeFromUrl.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/ChatsList.activeFromUrlReactive.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/ChatsList.emptyRefresh.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/ChatsList.lastHumanTouched.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/ChatsList.noDeleteX.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/ChatsList.prConflict.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/ChatsList.touchedLoop.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/ChatsList.workspaceScoped.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/CompactionCard.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/CopyKanbanSpecDialog.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/DesignChatDialog.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/__tests__/DesignContextMenu.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 6
-    }
-  },
-  "src/__tests__/DesignElement.zIndexInlineStyle.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/DesignElementPreview.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/DesignHistoryButtons.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/DesignPageRow.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/__tests__/DesignView.canvasBounds.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/DesignView.endToEnd.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/DesignView.gestureCapture.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/DesignView.groupDrag.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/DesignView.handPan.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/DesignView.reparent.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/DesignView.shiftClick.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/DesignView.shortcut.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/DesignView.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 5
-    }
-  },
-  "src/__tests__/DesignView.undoHidden.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/DocumentsList.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/__tests__/DocumentsView.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/ErrorNotification.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/FileInput.autofocus.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/FileInput.hideQueueButton.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/FileInput.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 7
-    }
-  },
-  "src/__tests__/FileInput.stopButton.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/FileInput.toolbarSlot.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/FilePickerDialog.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 11
-    }
-  },
-  "src/__tests__/FilePickerDialog.windows.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/ForgeIcon.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/GitBaseBranchSelect.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/GitBranchMenu.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/KanbanCard.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/KanbanCardAsyncMedia.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/KanbanColumn.columnScrollRestore.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/KanbanColumn.runAllAgents.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/KanbanColumn.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/KanbanColumn.stopAllAgents.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/KanbanColumn.virtualScroller.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 13
-    }
-  },
-  "src/__tests__/KanbanColumnDescription.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/KanbanColumnEditor.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/KanbanDescriptionEditor.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 8
-    }
-  },
-  "src/__tests__/KanbanKnowledgePanel.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/KanbanList.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/KanbanMove.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/KanbanPrList.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
   "src/__tests__/KanbanRowView.preview.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -523,1181 +12,42 @@
       "count": 1
     }
   },
-  "src/__tests__/KanbanRowView.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/KanbanSearchInput.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/KanbanSettingsView.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 5
-    }
-  },
-  "src/__tests__/KanbanSortMenu.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/KanbanTagsInput.autocomplete.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 5
-    }
-  },
-  "src/__tests__/KanbanTagsInput.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/KanbanTaskDetailDialog.autocomplete.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/__tests__/KanbanTaskDetailDialog.commitSplit.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/KanbanTaskDetailDialog.createAttachments.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/KanbanTaskDetailDialog.creatingGuard.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/KanbanTaskDetailDialog.imagePreview.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/KanbanTaskDetailDialog.lazyMedia.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/KanbanTaskDetailDialog.profile.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/KanbanTaskDetailDialog.runAgent.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/KanbanTaskDetailDialog.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 26
-    }
-  },
-  "src/__tests__/KanbanTaskDetailDialog.startAgent.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/__tests__/KanbanTaskDetailDialog.useGitWorktree.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/KanbanTaskRow.runAgent.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/KanbanToolsPanel.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/KanbanView.createAndRun.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 9
-    }
-  },
-  "src/__tests__/KanbanView.createWithImages.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/KanbanView.rowMode.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/KanbanView.runAgentFromMenu.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/KanbanView.runAllAgents.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/KanbanView.searchFilter.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/KanbanView.sortByApi.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 7
-    }
-  },
-  "src/__tests__/KanbanView.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 19
-    }
-  },
-  "src/__tests__/KanbanView.startAgent.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/KanbanView.stopAllAgents.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/KanbanView.urlPreservation.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/LayerRow.dragDrop.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/LayersPanel.contextMenu.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/LayersPanel.dragDrop.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/LayersPanel.reorder.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/LayersPanel.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/LlmConfigForm.modelsDev.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/LlmConfigForm.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/__tests__/LlmConfigModal.testButton.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/MarkdownDescription.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/McpServerModal.stdio.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 7
-    }
-  },
-  "src/__tests__/MemoryDetail.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/MemoryList.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/MergeBox.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/NotificationContainer.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/PabrikConfigEditor.modes.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/PabrikConfigEditor.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 7
-    }
-  },
-  "src/__tests__/PabrikGeneralSection.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/PabrikSaveBar.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/PrChecksPanel.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/PreviewContentRenderer.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/ProfilesSection.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/ProjectsList.addMenuDisabledFeatures.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/ProjectsList.expandedNoActiveBg.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/ProjectsList.v3Minimal.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/PropertiesPanel.htmlSave.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/ReadCompactedMessages.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/RoutineView.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/SecretsSection.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/__tests__/SetGitWorktree.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/SettingsShell.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/Sidebar.agentDirectChat.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/Sidebar.deleteDesignPageConfirm.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/Sidebar.documentsSectionPlacement.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/Sidebar.loadingSkeleton.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/Sidebar.newChat.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 5
-    }
-  },
-  "src/__tests__/Sidebar.spacing.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 6
-    }
-  },
-  "src/__tests__/Sidebar.switcher.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/SidebarDiffPanel.checksTab.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/SidebarDiffPanel.evalsTab.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/SkillEvalsSection.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/SpawnSubAgent.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/StandardTaskChatView.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 5
-    }
-  },
-  "src/__tests__/SubAgentPeekPanel.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 5
-    }
-  },
-  "src/__tests__/ToolsSection.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/UiIcon.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/WebSearchSection.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/WorkspaceItemAgentClick.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/WorkspaceItemHideTasksForDesign.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/WorkspaceItemKanban.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 6
-    }
-  },
-  "src/__tests__/WorkspaceItemKanbanAddButton.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/WorkspaceItemMemoriesView.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/WorkspaceItemRowAlignment.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/__tests__/WorkspaceItemRowLayout.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/WorkspaceItemTaskCard.agentError.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/__tests__/WorkspaceItemTaskCard.contextMenu.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/__tests__/WorkspaceItemTaskCard.gitBranch.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/WorkspaceItemTaskCard.gitPrConflict.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/WorkspaceItemTaskCard.gitPrStatus.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/WorkspaceItemTaskCard.image.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/WorkspaceItemTaskCard.moveToColumn.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/WorkspaceItemTaskCard.tags.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/WorkspaceItemTaskRow.agentError.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/WorkspaceItemTaskRow.contextMenu.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/WorkspaceSettingsView.agentSections.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/WorkspaceSwitcher.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/agentError.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/api-agent-knowledge-content.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/apiConfigTypes.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/apiDeleteProfile.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/apiDesign.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/apiGetChats.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/apiGetTask.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/apiGetTasksSortParams.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/apiKanbanTagSuggestions.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/apiLocalMemories.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/apiMemories.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/apiReparent.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/apiTasks.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/apiTestLlmProfile.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/autoStickGate.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/bannedCodeRules.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 11
-    }
-  },
-  "src/__tests__/buildTaskCreateMessage.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/chatViewProfilePersist.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/chatViewWorktree.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 13
-    }
-  },
-  "src/__tests__/chatsListGitWorktree.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 5
-    }
-  },
-  "src/__tests__/createPrDialog.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/createWorktreeDialog.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/__tests__/designHistoryStore.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
   "src/__tests__/designLogger.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    },
     "local/no-try-catch": {
       "count": 1
     }
   },
   "src/__tests__/designSseStore.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 7
-    },
     "local/no-try-catch": {
       "count": 1
     }
   },
-  "src/__tests__/documents.api.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/documents.cacheFirst.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/documents.store.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/__tests__/documents.workspaceAndOpen.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 10
-    }
-  },
-  "src/__tests__/fakes/fakeTabChannel.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/formatCompact.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/frontendLogClient.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 7
-    }
-  },
-  "src/__tests__/helpers.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/imagePreview.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/kanbanApi.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 5
-    }
-  },
-  "src/__tests__/kanbanApiCreateTask.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
   "src/__tests__/kanbanSse.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 15
-    },
     "local/no-try-catch": {
       "count": 1
     }
   },
   "src/__tests__/kanbanSseMirrorMove.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 8
-    },
     "local/no-try-catch": {
-      "count": 1
-    }
-  },
-  "src/__tests__/kanbanStore.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 6
-    }
-  },
-  "src/__tests__/notifications.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/pabrikConfigFormThinking.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/parseSpawnSubAgentArgs.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/perUserStorageIsolation.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/projectsListProcessingSpinner.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/recentFoldersStore.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/routerCatchAll.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/sendChatMessage.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/setup.ts": {
-    "local/max-comment-lines": {
-      "count": 6
-    }
-  },
-  "src/__tests__/sidebarActiveState.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 9
-    }
-  },
-  "src/__tests__/sidebarHandleSelectTaskUrl.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 6
-    }
-  },
-  "src/__tests__/sidebarKanbanSortUrl.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/sidebarSingleActive.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 6
-    }
-  },
-  "src/__tests__/sseBus.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/sseBusOnStateChange.spec.ts": {
-    "local/max-comment-lines": {
       "count": 1
     }
   },
   "src/__tests__/sseClient.deeplog.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 13
-    },
     "local/no-try-catch": {
-      "count": 1
-    }
-  },
-  "src/__tests__/sseClient.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 17
-    }
-  },
-  "src/__tests__/sseIsInputOutput.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 6
-    }
-  },
-  "src/__tests__/stripTags.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/stubs/monaco-editor.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/tabDraft.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/tabTarget.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/tabsSettingsToggle.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/tabsStore.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/taskDeleteConfirmSingleOwner.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/toolCallsJsonWireShape.guard.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/type-scale.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 6
-    }
-  },
-  "src/__tests__/unifiedSseBuffer.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 13
-    }
-  },
-  "src/__tests__/unifiedSseGitFileStage.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/unifiedSseGitPrState.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/useContextMenu.dismiss.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/useDesignHandlers.reparent.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/useDesignHistory.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/useLayerDragDrop.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/usePabrikConfig.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/useProfileDelete.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/useSubAgentPeek.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 9
-    }
-  },
-  "src/__tests__/useTabShortcuts.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/userScope.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/views/ChatView.autofocusOnMount.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/views/ChatView.cacheFirstRemoteLoad.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/views/ChatView.fullEventStick.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/views/ChatView.scrollRestore.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 10
-    }
-  },
-  "src/__tests__/views/ChatView.scrollRestoreLands.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 7
-    }
-  },
-  "src/__tests__/views/ChatView.streamingStick.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/views/ChatView.tallBubbleAutoStick.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 8
-    }
-  },
-  "src/__tests__/workspaceItemPinnedReorder.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/workspaceItemProcessingSpinner.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/__tests__/workspaceItemTask.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 8
-    }
-  },
-  "src/__tests__/workspaceItemTaskCard.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 12
-    }
-  },
-  "src/__tests__/workspaceItemTaskNotification.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 7
-    }
-  },
-  "src/__tests__/workspaceItemTaskRename.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/workspaceItemTaskSpinner.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/workspaceListItemDragDrop.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 12
-    }
-  },
-  "src/__tests__/workspaces.store.activeTaskWorkspaceItemId.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/workspacesStore.tags.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/workspacesStoreActiveWorkspace.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/workspacesStoreAddKanbanTask.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/workspacesStoreDeleteDesignPage.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/workspacesStoreDesignPages.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/workspacesStoreFetchDedup.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/workspacesStoreFetchDesignElements.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/workspacesStoreGroup.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/workspacesStoreInit.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 19
-    }
-  },
-  "src/__tests__/workspacesStoreItemReorder.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/workspacesStoreLazyLoad.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/workspacesStoreMarkTouched.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/workspacesStoreMoveBatch.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/__tests__/workspacesStoreNormalizeTaskDates.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/workspacesStoreNormalizeTaskImageUrls.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/workspacesStorePerColumnPagination.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/__tests__/workspacesStorePinTask.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/workspacesStoreRefreshTask.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/workspacesStoreRenameDesignPage.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/workspacesStoreRenameTask.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/workspacesStoreReorder.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/workspacesStoreReparent.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/workspacesStoreRunAgent.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/workspacesStoreRunAgentImageUrls.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/workspacesStoreRunAllAgents.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/workspacesStoreSessionEvents.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 12
-    }
-  },
-  "src/__tests__/workspacesStoreSingleGeometry.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/workspacesStoreStartAgent.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/workspacesStoreStopAllAgents.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/workspacesStoreTaskCache.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/workspacesStoreTaskTypes.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/workspacesStoreTaskUpdate.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/workspacesStoreTranslateResize.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/workspacesStoreUngroup.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/__tests__/worktreeMenu.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/__tests__/worktreeMenuCreate.spec.ts": {
-    "local/max-comment-lines": {
       "count": 1
     }
   },
   "src/api/__tests__/backgroundProcesses.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    },
     "local/no-try-catch": {
-      "count": 1
-    }
-  },
-  "src/api/__tests__/gitStatus.spec.ts": {
-    "local/max-comment-lines": {
       "count": 1
     }
   },
   "src/api/__tests__/sseSkills.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    },
     "local/no-try-catch": {
       "count": 1
     }
   },
-  "src/api/__tests__/taskMedia.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/api/__tests__/terminalApi.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
   "src/api/index.ts": {
-    "local/max-comment-lines": {
-      "count": 285
-    },
     "local/no-silent-fallback-catch": {
       "count": 4
     },
@@ -1706,9 +56,6 @@
     }
   },
   "src/components/AppLayout.vue": {
-    "local/max-comment-lines": {
-      "count": 118
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -1717,35 +64,7 @@
     }
   },
   "src/components/FilePickerDialog.vue": {
-    "local/max-comment-lines": {
-      "count": 15
-    },
     "local/no-try-catch": {
-      "count": 1
-    }
-  },
-  "src/components/WorkerElapsedChip.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/__tests__/AppLayout.translateResize.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/__tests__/WorkerElapsedChip.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/chat/AgentErrorCard.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/chat/ChatAttachments.vue": {
-    "local/max-comment-lines": {
       "count": 1
     }
   },
@@ -1754,58 +73,12 @@
       "count": 1
     }
   },
-  "src/components/chat/__tests__/ChatAttachments.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/chat/activePill.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/components/chat/chatScrollSlider.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/design/AddDesignDialog.vue": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/components/design/AddDesignElementDialog.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/design/DesignContextMenu.vue": {
-    "local/max-comment-lines": {
-      "count": 6
-    }
-  },
   "src/components/design/DesignElement.vue": {
-    "local/max-comment-lines": {
-      "count": 28
-    },
     "local/no-try-catch": {
       "count": 1
     }
   },
-  "src/components/design/DesignElementPreview.vue": {
-    "local/max-comment-lines": {
-      "count": 5
-    }
-  },
-  "src/components/design/DesignHistoryButtons.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
   "src/components/design/DesignView.vue": {
-    "local/max-comment-lines": {
-      "count": 64
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -1813,126 +86,17 @@
       "count": 10
     }
   },
-  "src/components/design/LayerRow.vue": {
-    "local/max-comment-lines": {
-      "count": 9
-    }
-  },
-  "src/components/design/LayersPanel.vue": {
-    "local/max-comment-lines": {
-      "count": 11
-    }
-  },
   "src/components/design/PropertiesPanel.vue": {
-    "local/max-comment-lines": {
-      "count": 9
-    },
     "local/no-try-catch": {
       "count": 2
-    }
-  },
-  "src/components/design/__tests__/AddDesignElementDialog.create.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/components/design/__tests__/DesignElement.drag.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 18
-    }
-  },
-  "src/components/design/__tests__/DesignView.nudge.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/components/design/__tests__/DesignView.pageSync.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/components/design/__tests__/DesignView.pinch.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/components/design/__tests__/DesignView.secondGroupDrag.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 7
-    }
-  },
-  "src/components/design/__tests__/DesignView.snap.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/design/__tests__/DesignView.translate.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/components/design/useSnapGuides.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/components/dialogs/AddAgentDialog.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/dialogs/AddItemDialog.vue": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/components/dialogs/AddKanbanDialog.vue": {
-    "local/max-comment-lines": {
-      "count": 4
     }
   },
   "src/components/dialogs/AddMemoryDialog.vue": {
-    "local/max-comment-lines": {
-      "count": 8
-    },
     "local/no-try-catch": {
-      "count": 1
-    }
-  },
-  "src/components/dialogs/AddRoutineItemDialog.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/dialogs/AddTaskDialog.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/dialogs/AddTaskPickerDialog.vue": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/components/dialogs/AgentKnowledgeDetailDialog.vue": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/components/dialogs/AgentKnowledgeDialog.vue": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/components/dialogs/AgentSystemPromptDialog.vue": {
-    "local/max-comment-lines": {
       "count": 1
     }
   },
   "src/components/dialogs/CopyKanbanSpecDialog.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -1941,76 +105,17 @@
     }
   },
   "src/components/dialogs/CreatePrDialog.vue": {
-    "local/max-comment-lines": {
-      "count": 2
-    },
     "local/no-try-catch": {
-      "count": 3
-    }
-  },
-  "src/components/dialogs/CreateWorktreeDialog.vue": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/components/dialogs/RenameDesignPageModal.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/dialogs/RenameTaskModal.vue": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/components/dialogs/RenameWorkspaceModal.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/dialogs/WorkspaceModal.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/file/FileInput.search.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/components/file/FileInput.skillPicker.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/components/file/FileInput.toolPicker.spec.ts": {
-    "local/max-comment-lines": {
       "count": 3
     }
   },
   "src/components/file/FileInput.vue": {
-    "local/max-comment-lines": {
-      "count": 25
-    },
     "local/no-try-catch": {
       "count": 2
-    }
-  },
-  "src/components/file/FolderExplorer.gitSigns.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
     }
   },
   "src/components/file/FolderExplorer.vue": {
-    "local/max-comment-lines": {
-      "count": 2
-    },
     "local/no-try-catch": {
-      "count": 2
-    }
-  },
-  "src/components/git/ForgeIcon.vue": {
-    "local/max-comment-lines": {
       "count": 2
     }
   },
@@ -2020,9 +125,6 @@
     }
   },
   "src/components/git/GitCommits.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -2031,55 +133,16 @@
     }
   },
   "src/components/git/GitFileViewer.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    },
     "local/no-try-catch": {
-      "count": 1
-    }
-  },
-  "src/components/git/__tests__/GitFileViewer.color.spec.ts": {
-    "local/max-comment-lines": {
       "count": 1
     }
   },
   "src/components/kanban/FilePreviewModal.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    },
     "local/no-try-catch": {
       "count": 1
     }
   },
-  "src/components/kanban/GitBaseBranchSelect.vue": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/components/kanban/KanbanCard.vue": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/components/kanban/KanbanColumn.vue": {
-    "local/max-comment-lines": {
-      "count": 26
-    }
-  },
-  "src/components/kanban/KanbanColumnEditor.vue": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/components/kanban/KanbanDescriptionEditor.search.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
   "src/components/kanban/KanbanDescriptionEditor.vue": {
-    "local/max-comment-lines": {
-      "count": 12
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -2088,50 +151,16 @@
     }
   },
   "src/components/kanban/KanbanPrList.vue": {
-    "local/max-comment-lines": {
-      "count": 2
-    },
     "local/no-try-catch": {
       "count": 1
-    }
-  },
-  "src/components/kanban/KanbanRowView.vue": {
-    "local/max-comment-lines": {
-      "count": 7
-    }
-  },
-  "src/components/kanban/KanbanTagsInput.vue": {
-    "local/max-comment-lines": {
-      "count": 7
-    }
-  },
-  "src/components/kanban/KanbanTaskContextMenu.vue": {
-    "local/max-comment-lines": {
-      "count": 5
     }
   },
   "src/components/kanban/KanbanTaskDetail.vue": {
-    "local/max-comment-lines": {
-      "count": 66
-    },
     "local/no-try-catch": {
       "count": 2
     }
   },
-  "src/components/kanban/KanbanTaskRow.elapsed.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/kanban/KanbanTaskRow.vue": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
   "src/components/kanban/KanbanView.vue": {
-    "local/max-comment-lines": {
-      "count": 64
-    },
     "local/no-silent-fallback-catch": {
       "count": 7
     },
@@ -2140,23 +169,10 @@
     }
   },
   "src/components/kanban/MarkdownDescription.vue": {
-    "local/max-comment-lines": {
-      "count": 5
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
     "local/no-try-catch": {
-      "count": 1
-    }
-  },
-  "src/components/kanban/buildTaskCreateMessage.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/memory/MemoriesSettings.vue": {
-    "local/max-comment-lines": {
       "count": 1
     }
   },
@@ -2166,38 +182,21 @@
     }
   },
   "src/components/pabrik/LlmConfigForm.vue": {
-    "local/max-comment-lines": {
-      "count": 7
-    },
     "local/no-try-catch": {
       "count": 1
     }
   },
   "src/components/pabrik/LlmConfigModal.vue": {
-    "local/max-comment-lines": {
-      "count": 3
-    },
     "local/no-try-catch": {
       "count": 1
     }
   },
   "src/components/pabrik/McpServerModal.vue": {
-    "local/max-comment-lines": {
-      "count": 5
-    },
     "local/no-try-catch": {
       "count": 2
     }
   },
-  "src/components/pabrik/McpServersSection.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
   "src/components/pabrik/PabrikConfigEditor.vue": {
-    "local/max-comment-lines": {
-      "count": 31
-    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
@@ -2205,86 +204,17 @@
       "count": 13
     }
   },
-  "src/components/pabrik/PabrikGeneralSection.vue": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/components/pabrik/ProfilesSection.vue": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/components/pabrik/SettingsSkeleton.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/pabrik/SkillEvalsSection.vue": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/components/pabrik/SubAgentPeekHost.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/pabrik/SubAgentPeekPanel.vue": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/components/pabrik/ToolsSection.vue": {
-    "local/max-comment-lines": {
-      "count": 5
-    }
-  },
-  "src/components/pabrik/WebSearchSection.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/pabrik/mcpServers.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/pabrik/webSearchProviders.ts": {
-    "local/max-comment-lines": {
-      "count": 9
-    }
-  },
   "src/components/preview/BackgroundCommandsPopup.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    },
     "local/no-try-catch": {
       "count": 3
-    }
-  },
-  "src/components/preview/Bash.vue": {
-    "local/max-comment-lines": {
-      "count": 1
     }
   },
   "src/components/preview/CompactionCard.vue": {
-    "local/max-comment-lines": {
-      "count": 5
-    },
     "local/no-try-catch": {
       "count": 1
     }
   },
-  "src/components/preview/ImagePreview.vue": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
   "src/components/preview/PreviewContentRenderer.vue": {
-    "local/max-comment-lines": {
-      "count": 5
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -2293,81 +223,17 @@
     }
   },
   "src/components/preview/ShellTool.vue": {
-    "local/max-comment-lines": {
-      "count": 2
-    },
     "local/no-try-catch": {
       "count": 1
-    }
-  },
-  "src/components/preview/SkillsSettings.vue": {
-    "local/max-comment-lines": {
-      "count": 2
     }
   },
   "src/components/preview/UseSkill.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    },
     "local/no-try-catch": {
-      "count": 1
-    }
-  },
-  "src/components/preview/__tests__/BackgroundCommandsPopup.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/preview/__tests__/Glob.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/components/preview/__tests__/ShellTool.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/components/preview/__tests__/SkillsSettings.create.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/preview/__tests__/UseSkill.inprogress.spec.ts": {
-    "local/max-comment-lines": {
       "count": 1
     }
   },
   "src/components/settings/SettingsShell.vue": {
-    "local/max-comment-lines": {
-      "count": 7
-    },
     "local/no-try-catch": {
-      "count": 1
-    }
-  },
-  "src/components/shell/ChatRowContextMenu.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/shell/GitBranchMenu.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/shell/ListSkeleton.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/shell/OpenInNewTabMenu.vue": {
-    "local/max-comment-lines": {
-      "count": 7
-    }
-  },
-  "src/components/shell/RightSideBarSkillList.vue": {
-    "local/max-comment-lines": {
       "count": 1
     }
   },
@@ -2377,88 +243,21 @@
     }
   },
   "src/components/shell/Sidebar.vue": {
-    "local/max-comment-lines": {
-      "count": 55
-    },
     "local/no-try-catch": {
       "count": 6
     }
   },
-  "src/components/shell/SidebarSkeleton.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/shell/SkillDetail.vue": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/components/shell/SpinnerIcon.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/shell/SseStatusBadge.vue": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/components/shell/TopLoadingBar.vue": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/components/shell/__tests__/RightSideBarSkillList.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/components/shell/__tests__/SkillDetail.autoImprove.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/shell/__tests__/SkillDetail.edit.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/shell/__tests__/SkillDetail.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/tool_outputs/AddSkill.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
   "src/components/tool_outputs/AskUser.vue": {
-    "local/max-comment-lines": {
-      "count": 7
-    },
     "local/no-try-catch": {
       "count": 2
     }
   },
-  "src/components/tool_outputs/EditSkill.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
   "src/components/tool_outputs/GenerateImage.vue": {
-    "local/max-comment-lines": {
-      "count": 5
-    },
     "local/no-try-catch": {
       "count": 2
     }
   },
   "src/components/tool_outputs/GetPlan.vue": {
-    "local/max-comment-lines": {
-      "count": 3
-    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
@@ -2466,23 +265,12 @@
       "count": 2
     }
   },
-  "src/components/tool_outputs/KanbanMove.vue": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
   "src/components/tool_outputs/ListDirectory.vue": {
-    "local/max-comment-lines": {
-      "count": 2
-    },
     "local/no-try-catch": {
       "count": 1
     }
   },
   "src/components/tool_outputs/ListSubAgent.vue": {
-    "local/max-comment-lines": {
-      "count": 5
-    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
@@ -2499,9 +287,6 @@
     }
   },
   "src/components/tool_outputs/McpTool.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    },
     "local/no-try-catch": {
       "count": 1
     }
@@ -2512,17 +297,11 @@
     }
   },
   "src/components/tool_outputs/PresentFiles.vue": {
-    "local/max-comment-lines": {
-      "count": 7
-    },
     "local/no-try-catch": {
       "count": 5
     }
   },
   "src/components/tool_outputs/ReadCompactedMessages.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -2531,56 +310,22 @@
     }
   },
   "src/components/tool_outputs/ReadWorkspaceSession.vue": {
-    "local/max-comment-lines": {
-      "count": 7
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
     "local/no-try-catch": {
       "count": 2
-    }
-  },
-  "src/components/tool_outputs/RemoveSkill.vue": {
-    "local/max-comment-lines": {
-      "count": 1
     }
   },
   "src/components/tool_outputs/SaveMemory.vue": {
-    "local/max-comment-lines": {
-      "count": 4
-    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
     "local/no-try-catch": {
-      "count": 2
-    }
-  },
-  "src/components/tool_outputs/Search.vue": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/components/tool_outputs/SearchSkills.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/tool_outputs/SetPullRequest.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/tool_outputs/SkillList.vue": {
-    "local/max-comment-lines": {
       "count": 2
     }
   },
   "src/components/tool_outputs/SpawnSubAgent.vue": {
-    "local/max-comment-lines": {
-      "count": 5
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -2589,9 +334,6 @@
     }
   },
   "src/components/tool_outputs/TextReplace.vue": {
-    "local/max-comment-lines": {
-      "count": 4
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -2600,9 +342,6 @@
     }
   },
   "src/components/tool_outputs/UpdatePlan.vue": {
-    "local/max-comment-lines": {
-      "count": 3
-    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
@@ -2611,9 +350,6 @@
     }
   },
   "src/components/tool_outputs/UsedTools.vue": {
-    "local/max-comment-lines": {
-      "count": 2
-    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
@@ -2622,9 +358,6 @@
     }
   },
   "src/components/tool_outputs/WebSearch.vue": {
-    "local/max-comment-lines": {
-      "count": 5
-    },
     "local/no-try-catch": {
       "count": 2
     }
@@ -2637,113 +370,12 @@
       "count": 1
     }
   },
-  "src/components/tool_outputs/__tests__/AskUser.multi-card.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/tool_outputs/__tests__/AskUser.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/components/tool_outputs/__tests__/GenerateImage.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
   "src/components/tool_outputs/__tests__/GetPlan.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    },
     "local/no-try-catch": {
       "count": 1
     }
   },
-  "src/components/tool_outputs/__tests__/ListDirectory.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/tool_outputs/__tests__/ListSearchProviders.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/tool_outputs/__tests__/ListSubAgent.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/tool_outputs/__tests__/LoadMemory.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/tool_outputs/__tests__/McpTool.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/tool_outputs/__tests__/PresentFiles.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/components/tool_outputs/__tests__/ProgressiveTool.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/tool_outputs/__tests__/ReadWorkspaceSession.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/components/tool_outputs/__tests__/SaveMemory.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/tool_outputs/__tests__/Search.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 6
-    }
-  },
-  "src/components/tool_outputs/__tests__/SearchSkills.successArgs.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/tool_outputs/__tests__/SetPullRequest.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/tool_outputs/__tests__/SkillList.autoImprove.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/tool_outputs/__tests__/SpawnSubAgent.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/components/tool_outputs/__tests__/TextReplace.diffFallback.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/tool_outputs/__tests__/TextReplace.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
   "src/components/tool_outputs/__tests__/UpdatePlan.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 6
-    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
@@ -2751,34 +383,13 @@
       "count": 3
     }
   },
-  "src/components/tool_outputs/__tests__/UsedTools.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/tool_outputs/__tests__/WebSearch.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
   "src/components/tool_outputs/_shared/DiffView.vue": {
-    "local/max-comment-lines": {
-      "count": 12
-    },
     "local/no-try-catch": {
       "count": 2
     }
   },
   "src/components/tool_outputs/_shared/ToolCardHeader.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    },
     "local/no-try-catch": {
-      "count": 1
-    }
-  },
-  "src/components/tool_outputs/_shared/ToolParameters.spec.ts": {
-    "local/max-comment-lines": {
       "count": 1
     }
   },
@@ -2787,35 +398,7 @@
       "count": 2
     }
   },
-  "src/components/tool_outputs/_shared/__tests__/DiffView.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 8
-    }
-  },
-  "src/components/tool_outputs/_shared/__tests__/ToolCardHeader.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/tool_outputs/_shared/__tests__/myersDiff.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/components/tool_outputs/_shared/__tests__/toolOutputParser.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 5
-    }
-  },
-  "src/components/tool_outputs/_shared/myersDiff.ts": {
-    "local/max-comment-lines": {
-      "count": 5
-    }
-  },
   "src/components/tool_outputs/_shared/toolOutputParser.ts": {
-    "local/max-comment-lines": {
-      "count": 24
-    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
@@ -2823,33 +406,12 @@
       "count": 5
     }
   },
-  "src/components/ui/UiIcon.vue": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/components/ui/__tests__/SkillAutoImproveToggle.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/ui/icons.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
   "src/components/views/AgentView.vue": {
-    "local/max-comment-lines": {
-      "count": 5
-    },
     "local/no-try-catch": {
       "count": 1
     }
   },
   "src/components/views/ChatView.vue": {
-    "local/max-comment-lines": {
-      "count": 191
-    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
@@ -2857,29 +419,13 @@
       "count": 30
     }
   },
-  "src/components/views/Chats.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
   "src/components/views/ChatsList.vue": {
-    "local/max-comment-lines": {
-      "count": 26
-    },
     "local/no-try-catch": {
       "count": 9
     }
   },
   "src/components/views/CodeEditor.vue": {
-    "local/max-comment-lines": {
-      "count": 6
-    },
     "local/no-try-catch": {
-      "count": 1
-    }
-  },
-  "src/components/views/CodeViewerStage.vue": {
-    "local/max-comment-lines": {
       "count": 1
     }
   },
@@ -2889,9 +435,6 @@
     }
   },
   "src/components/views/KanbanSettingsView.vue": {
-    "local/max-comment-lines": {
-      "count": 8
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -2900,9 +443,6 @@
     }
   },
   "src/components/views/KanbanToolsPanel.vue": {
-    "local/max-comment-lines": {
-      "count": 3
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -2911,17 +451,11 @@
     }
   },
   "src/components/views/LocalMemoryDetailView.vue": {
-    "local/max-comment-lines": {
-      "count": 2
-    },
     "local/no-try-catch": {
       "count": 4
     }
   },
   "src/components/views/RoutineView.vue": {
-    "local/max-comment-lines": {
-      "count": 2
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -2930,190 +464,7 @@
     }
   },
   "src/components/views/WorkspaceItemMemoriesView.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    },
     "local/no-try-catch": {
-      "count": 1
-    }
-  },
-  "src/components/views/WorkspaceSettingsView.vue": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/components/views/__tests__/CenterDiffSection.collapse.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/components/views/__tests__/ChatAppBarParity.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/components/views/__tests__/ChatView.centerDiff.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/views/__tests__/ChatView.centerStack.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/views/__tests__/ChatView.centerSync.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/views/__tests__/ChatView.chunk-stream.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/views/__tests__/ChatView.codeViewer.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/views/__tests__/ChatView.emptyStateGate.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/components/views/__tests__/ChatView.openInEditorButton.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/components/views/__tests__/ChatView.prOpen.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/views/__tests__/ChatView.prSidebar.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/views/__tests__/ChatView.skillsLive.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/views/__tests__/ChatView.staleDiffGuard.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/views/__tests__/ChatView.stream-resume.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/views/__tests__/ChatView.subagent-progress.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/components/views/__tests__/ChatView.tool-parameters.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/components/views/__tests__/ChatView.tool-width.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/views/__tests__/ChatView.worktreeSidebar.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/views/__tests__/CodeEditor.displayPath.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/views/__tests__/CodeEditor.gitGutter.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/views/__tests__/CodeEditor.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/components/views/__tests__/CodeViewerStage.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/views/__tests__/DiffCommentBox.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/views/__tests__/SidebarDiffPanel.batch.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/views/__tests__/SidebarDiffPanel.branch.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/views/__tests__/SidebarDiffPanel.chrome.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/components/views/__tests__/SidebarDiffPanel.counts.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/views/__tests__/SidebarDiffPanel.list.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/views/__tests__/SidebarDiffPanel.prConflict.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/views/__tests__/SidebarDiffPanel.restore.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/views/__tests__/SidebarDiffPanel.stage.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/components/views/__tests__/SidebarDiffView.color.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/components/views/__tests__/SidebarDiffView.reviewed.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/views/__tests__/SidebarDiffView.split.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/views/__tests__/pairSplitRows.spec.ts": {
-    "local/max-comment-lines": {
       "count": 1
     }
   },
@@ -3122,20 +473,7 @@
       "count": 1
     }
   },
-  "src/components/views/__tests__/wholeFileDiff.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/views/chat_right_sidebar/CenterDiffSection.vue": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
   "src/components/views/chat_right_sidebar/ChatRightSidebar.vue": {
-    "local/max-comment-lines": {
-      "count": 3
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -3144,9 +482,6 @@
     }
   },
   "src/components/views/chat_right_sidebar/DiffCommentBox.vue": {
-    "local/max-comment-lines": {
-      "count": 2
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -3154,41 +489,17 @@
       "count": 10
     }
   },
-  "src/components/views/chat_right_sidebar/DiffCounts.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/views/chat_right_sidebar/DiffThreads.vue": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/components/views/chat_right_sidebar/MergeBox.vue": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
   "src/components/views/chat_right_sidebar/SidebarDiffPanel.vue": {
-    "local/max-comment-lines": {
-      "count": 35
-    },
     "local/no-try-catch": {
       "count": 17
     }
   },
   "src/components/views/chat_right_sidebar/SidebarDiffView.vue": {
-    "local/max-comment-lines": {
-      "count": 5
-    },
     "local/no-try-catch": {
       "count": 1
     }
   },
   "src/components/views/chat_right_sidebar/SkillEvalsPanel.vue": {
-    "local/max-comment-lines": {
-      "count": 4
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -3196,15 +507,7 @@
       "count": 4
     }
   },
-  "src/components/views/chat_right_sidebar/SplitDiffTable.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
   "src/components/views/chat_right_sidebar/TerminalTab.vue": {
-    "local/max-comment-lines": {
-      "count": 5
-    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
@@ -3212,15 +515,7 @@
       "count": 12
     }
   },
-  "src/components/views/chat_right_sidebar/pairSplitRows.ts": {
-    "local/max-comment-lines": {
-      "count": 5
-    }
-  },
   "src/components/views/chat_right_sidebar/parseUnifiedDiff.ts": {
-    "local/max-comment-lines": {
-      "count": 5
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -3229,119 +524,29 @@
     }
   },
   "src/components/views/chat_right_sidebar/useChatRightSidebar.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    },
     "local/no-try-catch": {
       "count": 4
     }
   },
-  "src/components/views/chat_right_sidebar/wholeFileDiff.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/components/workspace/DesignPageRow.vue": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/components/workspace/DocumentsList.vue": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/components/workspace/DocumentsView.vue": {
-    "local/max-comment-lines": {
-      "count": 5
-    }
-  },
-  "src/components/workspace/ProjectsList.vue": {
-    "local/max-comment-lines": {
-      "count": 14
-    }
-  },
-  "src/components/workspace/SecretsSection.vue": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/components/workspace/WorkspaceItem.vue": {
-    "local/max-comment-lines": {
-      "count": 35
-    }
-  },
   "src/components/workspace/WorkspaceItemTaskCard.vue": {
-    "local/max-comment-lines": {
-      "count": 25
-    },
     "local/no-try-catch": {
       "count": 2
     }
   },
   "src/components/workspace/WorkspaceItemTaskRow.vue": {
-    "local/max-comment-lines": {
-      "count": 13
-    },
     "local/no-try-catch": {
       "count": 1
-    }
-  },
-  "src/components/workspace/WorkspaceSwitcher.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/components/workspace/WorktreeMenu.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/composables/__tests__/useChatScrollRestore.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/composables/__tests__/useCodeEditor.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/composables/__tests__/useCodeEditorSession.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/composables/__tests__/useKanbanColumnScrollRestore.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/composables/__tests__/useKanbanScrollRestore.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 9
     }
   },
   "src/composables/useChatScrollRestore.ts": {
-    "local/max-comment-lines": {
-      "count": 9
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
     "local/no-try-catch": {
       "count": 2
-    }
-  },
-  "src/composables/useCodeEditor.ts": {
-    "local/max-comment-lines": {
-      "count": 6
     }
   },
   "src/composables/useCodeEditorSession.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -3349,35 +554,7 @@
       "count": 6
     }
   },
-  "src/composables/useContextMenu.ts": {
-    "local/max-comment-lines": {
-      "count": 6
-    }
-  },
-  "src/composables/useCurrentMainView.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/composables/useCurrentMainView.ts": {
-    "local/max-comment-lines": {
-      "count": 7
-    }
-  },
-  "src/composables/useDesignContextMenu.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/composables/useDesignDragDebounce.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
   "src/composables/useDesignHandlers.ts": {
-    "local/max-comment-lines": {
-      "count": 14
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -3386,25 +563,16 @@
     }
   },
   "src/composables/useDesignHistory.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    },
     "local/no-try-catch": {
       "count": 1
     }
   },
   "src/composables/useDocumentTitle.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    },
     "local/no-try-catch": {
       "count": 1
     }
   },
   "src/composables/useKanbanColumnScrollRestore.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -3413,9 +581,6 @@
     }
   },
   "src/composables/useKanbanScrollRestore.ts": {
-    "local/max-comment-lines": {
-      "count": 8
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -3424,9 +589,6 @@
     }
   },
   "src/composables/useKanbanTagSuggestions.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -3434,15 +596,7 @@
       "count": 1
     }
   },
-  "src/composables/useLayerDragDrop.ts": {
-    "local/max-comment-lines": {
-      "count": 5
-    }
-  },
   "src/composables/usePabrikConfig.ts": {
-    "local/max-comment-lines": {
-      "count": 5
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -3451,318 +605,42 @@
     }
   },
   "src/composables/useProfileDelete.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    },
     "local/no-try-catch": {
       "count": 1
     }
   },
   "src/composables/useSettingsSection.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    },
     "local/no-try-catch": {
       "count": 5
     }
   },
   "src/composables/useSubAgentPeek.ts": {
-    "local/max-comment-lines": {
-      "count": 8
-    },
     "local/no-try-catch": {
       "count": 1
-    }
-  },
-  "src/composables/useTabShortcuts.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/composables/useTaskActions.ts": {
-    "local/max-comment-lines": {
-      "count": 7
     }
   },
   "src/helpers/VirtualScroller.vue": {
-    "local/max-comment-lines": {
-      "count": 73
-    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
     "local/no-try-catch": {
       "count": 2
-    }
-  },
-  "src/helpers/__tests__/VirtualScroller.scrollToPosition.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/helpers/__tests__/appUrl.staleGuard.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/helpers/__tests__/authMe.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/helpers/__tests__/buildTaskUrlQuery.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/helpers/__tests__/chatViewAtBottomStick.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 10
-    }
-  },
-  "src/helpers/__tests__/chatViewContentShiftRestick.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 12
-    }
-  },
-  "src/helpers/__tests__/folderDiffCache.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/helpers/__tests__/fpsOverlay.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/helpers/__tests__/gitStatusCache.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/helpers/__tests__/gitStatusMap.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/helpers/__tests__/gitlabPrSurface.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/helpers/__tests__/lineGutter.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/helpers/__tests__/markdown.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/helpers/__tests__/mediaUrls.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/helpers/__tests__/prStatusCache.conflict.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/helpers/__tests__/prStatusCache.invalidation.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/helpers/__tests__/prStatusCache.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/helpers/__tests__/prefetchOlderMessages.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/helpers/__tests__/renderResponse.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 6
-    }
-  },
-  "src/helpers/__tests__/scrollLoggerGate.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/helpers/__tests__/subagentProgress.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/helpers/__tests__/taskMediaCache.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/helpers/__tests__/toolPayloadPreview.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/helpers/__tests__/virtualScrollerBuffer.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 8
-    }
-  },
-  "src/helpers/__tests__/virtualScrollerContentObserver.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 5
-    }
-  },
-  "src/helpers/__tests__/virtualScrollerFullViewport.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/helpers/__tests__/virtualScrollerGlitchAudit.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/helpers/__tests__/virtualScrollerPerf.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/helpers/__tests__/virtualScrollerPerfWiring.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 7
-    }
-  },
-  "src/helpers/__tests__/virtualScrollerPrependDrift.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 6
-    }
-  },
-  "src/helpers/__tests__/virtualScrollerProgrammaticScroll.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 6
-    }
-  },
-  "src/helpers/__tests__/virtualScrollerScrollAnchor.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 23
-    }
-  },
-  "src/helpers/__tests__/virtualScrollerScrollEmit.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 7
-    }
-  },
-  "src/helpers/__tests__/virtualScrollerStableKeys.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/helpers/__tests__/virtualScrollerTailEstimate.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/helpers/__tests__/virtualScrollerTailGap.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/helpers/__tests__/virtualScrollerTallBubbleAutoStick.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 8
-    }
-  },
-  "src/helpers/__tests__/virtualScrollerTransform.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/helpers/__tests__/workspacesCache.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/helpers/appUrl.ts": {
-    "local/max-comment-lines": {
-      "count": 10
     }
   },
   "src/helpers/authMe.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
     "local/no-try-catch": {
-      "count": 5
-    }
-  },
-  "src/helpers/autoStickGate.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/helpers/buildItemIdWithChat.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/helpers/buildTaskUrlQuery.ts": {
-    "local/max-comment-lines": {
-      "count": 6
-    }
-  },
-  "src/helpers/chatHistoryRetry.ts": {
-    "local/max-comment-lines": {
-      "count": 5
-    }
-  },
-  "src/helpers/codeHighlight.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/helpers/codeHighlight.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/helpers/configSource.ts": {
-    "local/max-comment-lines": {
       "count": 5
     }
   },
   "src/helpers/designLogger.ts": {
-    "local/max-comment-lines": {
-      "count": 16
-    },
     "local/no-try-catch": {
       "count": 4
     }
   },
-  "src/helpers/effectRuntime.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/helpers/elapsedDuration.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
   "src/helpers/extractParam.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
@@ -3770,79 +648,20 @@
       "count": 2
     }
   },
-  "src/helpers/folderDiffCache.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/helpers/forgeWording.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/helpers/formatCompact.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/helpers/formatTaskTimestamp.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/helpers/fpsOverlay.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
   "src/helpers/frontendLogClient.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    },
     "local/no-try-catch": {
       "count": 2
     }
   },
   "src/helpers/gitStatusCache.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
     "local/no-try-catch": {
       "count": 3
-    }
-  },
-  "src/helpers/gitStatusMap.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/helpers/iframeAutoResize.ts": {
-    "local/max-comment-lines": {
-      "count": 7
-    }
-  },
-  "src/helpers/isBackgroundCommandOutput.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/helpers/isBackgroundCommandOutput.ts": {
-    "local/max-comment-lines": {
-      "count": 8
-    }
-  },
-  "src/helpers/lineGutter.ts": {
-    "local/max-comment-lines": {
-      "count": 1
     }
   },
   "src/helpers/markdown.ts": {
-    "local/max-comment-lines": {
-      "count": 7
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -3850,33 +669,12 @@
       "count": 3
     }
   },
-  "src/helpers/mediaUrls.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
   "src/helpers/mergeWording.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    },
     "local/no-try-catch": {
       "count": 2
     }
   },
-  "src/helpers/openInNewTab.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/helpers/parseAgentErrorHeadline.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
   "src/helpers/parseSpawnSubAgentArgs.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
@@ -3885,95 +683,41 @@
     }
   },
   "src/helpers/prStatusCache.ts": {
-    "local/max-comment-lines": {
-      "count": 17
-    },
     "local/no-try-catch": {
       "count": 1
     }
   },
-  "src/helpers/prefetchOlderMessages.ts": {
-    "local/max-comment-lines": {
-      "count": 7
-    }
-  },
-  "src/helpers/relativeTime.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
   "src/helpers/renderResponse.ts": {
-    "local/max-comment-lines": {
-      "count": 15
-    },
     "local/no-try-catch": {
       "count": 2
     }
   },
   "src/helpers/scrollLogger.ts": {
-    "local/max-comment-lines": {
-      "count": 32
-    },
     "local/no-try-catch": {
       "count": 1
     }
   },
   "src/helpers/sseBus.ts": {
-    "local/max-comment-lines": {
-      "count": 37
-    },
     "local/no-try-catch": {
       "count": 5
     }
   },
   "src/helpers/sseClient.ts": {
-    "local/max-comment-lines": {
-      "count": 85
-    },
     "local/no-try-catch": {
       "count": 10
     }
   },
   "src/helpers/sseTabChannel.ts": {
-    "local/max-comment-lines": {
-      "count": 8
-    },
     "local/no-try-catch": {
       "count": 4
     }
   },
-  "src/helpers/stripAnsiEscapes.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/helpers/stripAnsiEscapes.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/helpers/stripTags.ts": {
-    "local/max-comment-lines": {
-      "count": 6
-    }
-  },
-  "src/helpers/subagentProgress.ts": {
-    "local/max-comment-lines": {
-      "count": 8
-    }
-  },
   "src/helpers/tabTarget.ts": {
-    "local/max-comment-lines": {
-      "count": 15
-    },
     "local/no-try-catch": {
       "count": 1
     }
   },
   "src/helpers/taskMediaCache.ts": {
-    "local/max-comment-lines": {
-      "count": 5
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -3981,20 +725,7 @@
       "count": 6
     }
   },
-  "src/helpers/toolPayloadPreview.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/helpers/unwrapToolOutput.json.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
   "src/helpers/unwrapToolOutput.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -4003,9 +734,6 @@
     }
   },
   "src/helpers/userScope.ts": {
-    "local/max-comment-lines": {
-      "count": 6
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -4013,54 +741,20 @@
       "count": 2
     }
   },
-  "src/helpers/virtualScrollerPerf.ts": {
-    "local/max-comment-lines": {
-      "count": 7
-    }
-  },
-  "src/helpers/virtualScrollerScrollAnchor.ts": {
-    "local/max-comment-lines": {
-      "count": 13
-    }
-  },
-  "src/helpers/virtualScrollerThreshold.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
   "src/helpers/windowId.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    },
     "local/no-try-catch": {
-      "count": 1
-    }
-  },
-  "src/helpers/workspaceScope.ts": {
-    "local/max-comment-lines": {
       "count": 1
     }
   },
   "src/helpers/workspacesCache.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
     "local/no-try-catch": {
       "count": 3
-    }
-  },
-  "src/main.ts": {
-    "local/max-comment-lines": {
-      "count": 1
     }
   },
   "src/router/index.ts": {
-    "local/max-comment-lines": {
-      "count": 7
-    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
@@ -4068,31 +762,17 @@
       "count": 3
     }
   },
-  "src/stores/agentError.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
   "src/stores/agentToolToggle.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    },
     "local/no-try-catch": {
       "count": 1
     }
   },
   "src/stores/agentTools.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    },
     "local/no-try-catch": {
       "count": 1
     }
   },
   "src/stores/designHistory.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -4100,41 +780,17 @@
       "count": 2
     }
   },
-  "src/stores/designSse.ts": {
-    "local/max-comment-lines": {
-      "count": 15
-    }
-  },
   "src/stores/documents.ts": {
-    "local/max-comment-lines": {
-      "count": 6
-    },
     "local/no-try-catch": {
       "count": 4
     }
   },
   "src/stores/kanbanSse.ts": {
-    "local/max-comment-lines": {
-      "count": 18
-    },
     "local/no-try-catch": {
       "count": 1
     }
   },
-  "src/stores/loading.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/stores/navigation.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
   "src/stores/recentFolders.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -4142,15 +798,7 @@
       "count": 2
     }
   },
-  "src/stores/secrets.ts": {
-    "local/max-comment-lines": {
-      "count": 10
-    }
-  },
   "src/stores/tabs.ts": {
-    "local/max-comment-lines": {
-      "count": 10
-    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
@@ -4159,9 +807,6 @@
     }
   },
   "src/stores/workspaces.ts": {
-    "local/max-comment-lines": {
-      "count": 182
-    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
@@ -4169,20 +814,7 @@
       "count": 51
     }
   },
-  "src/sync/ChatEngineDb.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
-  "src/sync/DocumentEngineDb.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    }
-  },
   "src/sync/IndexedDbStore.ts": {
-    "local/max-comment-lines": {
-      "count": 4
-    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
@@ -4190,55 +822,7 @@
       "count": 2
     }
   },
-  "src/sync/SessionEngineDb.ts": {
-    "local/max-comment-lines": {
-      "count": 3
-    }
-  },
-  "src/sync/SyncEngine.ts": {
-    "local/max-comment-lines": {
-      "count": 7
-    }
-  },
-  "src/sync/SyncError.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/sync/SyncStore.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/sync/SyncTypes.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/sync/TaskEngineDb.ts": {
-    "local/max-comment-lines": {
-      "count": 2
-    }
-  },
-  "src/sync/__tests__/runtime.spec.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
-  "src/sync/runtime.ts": {
-    "local/max-comment-lines": {
-      "count": 6
-    }
-  },
-  "src/theme/kanagawa-dragon.ts": {
-    "local/max-comment-lines": {
-      "count": 1
-    }
-  },
   "src/views/LoginView.vue": {
-    "local/max-comment-lines": {
-      "count": 1
-    },
     "local/no-try-catch": {
       "count": 3
     }
