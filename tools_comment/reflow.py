@@ -177,25 +177,35 @@ def group_sentences(sents, width):
 
 
 def emit_slash(groups, indent):
+    """Emit the groups as ONE contiguous comment block.
+
+    NO blank line between groups. A blank line would end the block, which is
+    how the three-line ceiling was being dodged in the first place — and
+    `local/no-floating-comments` now reports exactly that shape. The groups are
+    therefore emitted back to back, and the caller is responsible for the block
+    being over the ceiling: that is the honest signal that the prose needs
+    editing, not splitting.
+    """
     width = W - len(indent) - 3
     out = []
-    for gi, g in enumerate(groups):
-        if gi:
-            out.append('')
+    for g in groups:
         for l in wrap(' '.join(g), width):
             out.append((indent + '// ' + l).rstrip())
     return out
 
 
 def emit_jsdoc(groups, indent):
+    """Emit the groups as ONE contiguous JSDoc block — no blank lines.
+
+    See `emit_slash`: a blank line ends the block, which is the dodge, so the
+    groups are emitted back to back.
+    """
     # `/** ` is 4 cols, ` * ` is 3, and the closing line also carries ` */`.
     first_w = W - len(indent) - 4
     cont_w = W - len(indent) - 3
     close_w = W - len(indent) - 6
     out = []
-    for gi, g in enumerate(groups):
-        if gi:
-            out.append('')
+    for g in groups:
         lines = wrap(' '.join(g), first_w)
         if len(lines) == 1:
             out.append(f'{indent}/** {lines[0]} */')
@@ -292,10 +302,11 @@ def process(path, ranges, apply_changes):
         if bad:
             skipped.append((start, bad))
             continue
+        # The pieces are joined with NO blank line. A blank line between two
+        # comment tokens ends the first block, which is the split-to-cheat
+        # shape `local/no-floating-comments` reports.
         new_block = []
-        for pi, p in enumerate(pieces):
-            if pi:
-                new_block.append('')
+        for p in pieces:
             new_block.extend(p)
         if new_block == block:
             skipped.append((start, 'no-change'))
