@@ -398,12 +398,10 @@ const buildHtmlSrcdoc = (block: string): string => {
   )
 }
 
-/**
- * The reporter script inside each frame posts its content height; grow the
+/** The reporter script inside each frame posts its content height; grow the
  * frame to its FULL height (no cap) so no inner scrollbar appears — the
  * outer chat scroller owns scrolling. `contentWindow` identity is the only
- * handle a null-origin sandbox leaves the parent.
- */
+ * handle a null-origin sandbox leaves the parent. */
 const onHtmlFrameResize = (event: MessageEvent): void => {
   const reported = readAutoResizeHeight(event, CHAT_HTML_FRAME_RESIZE_SOURCE)
   if (reported === null) return
@@ -600,14 +598,12 @@ const readStoredDiffMode = (): 'unified' | 'split' => {
   return 'unified'
 }
 
-/**
- * Read `?diffmode=` at SETUP time, unlike `syncDiffParam` (a click handler).
+/** Read `?diffmode=` at SETUP time, unlike `syncDiffParam` (a click handler).
  * That makes the read optional-router-safe: ~30 ChatView specs mount the
  * component with no router installed, where `useRoute()` is undefined and a
  * bare `route.query` throws inside setup, failing the whole mount. With no
  * router there is no URL to read, and no URL to keep in sync either — so the
- * default is the correct answer, not a swallowed error.
- */
+ * default is the correct answer, not a swallowed error. */
 const readDiffModeParam = (): 'unified' | 'split' | null => {
   const v = route?.query?.diffmode
   return v === 'unified' || v === 'split' ? v : null
@@ -662,12 +658,10 @@ function toggleCollapse(path: string) {
   syncCollapseParam()
 }
 
-/**
- * Whole file is per section — 40 whole-file requests and a wall of text is
+/** Whole file is per section — 40 whole-file requests and a wall of text is
  * not what "show me this file" means. The untracked case is refused UP FRONT:
  * a new file's diff already IS the whole file, so the control stays locked at
- * "Whole file" and no request is ever made.
- */
+ * "Whole file" and no request is ever made. */
 function toggleWholeFile(path: string) {
   if (wholeFilePaths.has(path)) wholeFilePaths.delete(path)
   else wholeFilePaths.add(path)
@@ -901,12 +895,10 @@ function onPeekOpenFull(sessionId: string) {
   router.replace({ path: '/app', query: { view: 'chat', session: sessionId } })
 }
 
-/**
- * A `read_workspace_session` search hit pointed at a different conversation.
+/** A `read_workspace_session` search hit pointed at a different conversation.
  * The card is presentation-only, so the navigation decision lives here.
  * Mirrors `ChatsList.setActive`: canonical path URL when a workspace is in
- * scope, legacy query form only as a fallback.
- */
+ * scope, legacy query form only as a fallback. */
 const workspacesStore = useWorkspacesStore()
 
 function onOpenWorkspaceSession(sessionId: string): void {
@@ -960,14 +952,11 @@ interface VirtualScrollerExposed {
    * every later stick for the rest of the mount.
    */
   bottomScrollTop: () => number
-  /**
-   * Where the bottom sat when the stick LAST acted (end of the last measure
+  /** Where the bottom sat when the stick LAST acted (end of the last measure
    * pass, or the last `scrollToBottom`), or null before anything positioned
    * the list. A getter on the child, so it always reads live.
-   *
    * `handleVirtualScroll` prefers this over a live `bottomScrollTop()` — see
-   * `atBottomEdge` below for why the live read is a moving target.
-   */
+   * `atBottomEdge` below for why the live read is a moving target. */
   readonly settledBottom?: number | null
   /** Whether a real height has replaced an estimate yet. False while the model
    * is pure `defaultItemHeight` guesswork, which is exactly the window the
@@ -1849,12 +1838,10 @@ const isInitializing = computed(
     (!sessionId.value || (isRemoteLoadPending.value && messageGroups.value.length === 0)),
 )
 
-/**
- * Group key of the group containing a message id (2026-09-06
+/** Group key of the group containing a message id (2026-09-06
  * virtual-scroller shrink fix). Used at the streaming->DB swap site to
  * transfer the measured height to the new key. Null when the message
- * is not in any group (already filtered, empty chat).
- */
+ * is not in any group (already filtered, empty chat). */
 const groupKeyForMessageId = (messageId: string): string | null => {
   if (!messageId) return null
   const g = messageGroups.value.find((grp) => grp.messages.some((m) => m.id === messageId))
@@ -2246,20 +2233,16 @@ let prefetchAutoChain = 0
 /** Last skip reason logged, so a fling inside the radius doesn't spam one line per frame. */
 let lastPrefetchSkip: string | null = null
 
-/**
- * How many consecutive gesture-less commits may chain before REFILL stops.
+/** How many consecutive gesture-less commits may chain before REFILL stops.
  * A commit normally restores the anchor far below the band (so no chain), but a
  * tall viewport / short page can leave the viewport inside the band and pull
- * pages back-to-back. Bound it; a fresh user scroll resets the budget.
- */
+ * pages back-to-back. Bound it; a fresh user scroll resets the budget. */
 const MAX_PREFETCH_AUTO_CHAIN = 3
 
-/**
- * Shared log context for the prefetch path — the same scroller/wrapper geometry
+/** Shared log context for the prefetch path — the same scroller/wrapper geometry
  * every other scroll log carries. One helper, so the five prefetch log lines
  * (`armed` / `committed` / `skipped` / `dropped` / `failed`) can never disagree
- * about the geometry they report.
- */
+ * about the geometry they report. */
 const prefetchLogCtx = (
   reason: ScrollReason,
   caller: string,
@@ -2277,13 +2260,10 @@ const prefetchLogCtx = (
   extra,
 })
 
-/**
- * Map REST rows into the view's `Message` shape.
- *
+/** Map REST rows into the view's `Message` shape.
  * Shared by the initial load AND the scroll-back prefetch so a pull of older
  * history can never drift from the initial page's wire shape (the #291 lesson:
- * two mappers for one endpoint = two shapes).
- */
+ * two mappers for one endpoint = two shapes). */
 const toChatMessages = (
   rows: Awaited<ReturnType<typeof api.getChatHistory>>['messages'] | undefined,
 ): Message[] =>
@@ -2333,13 +2313,10 @@ const currentLiveMessages = (): Message[] =>
     (message) => liveMessageIds.has(message.id) || message.id.startsWith('streaming-'),
   )
 
-/**
- * Fetch ONE older page and measure the round trip.
- *
+/** Fetch ONE older page and measure the round trip.
  * Network + mapping only: mutates no component state except the fetch-duration
  * estimate. Used by the speculative ARM (buffered, never rendered directly) and
- * by the foreground path when no buffer is armed.
- */
+ * by the foreground path when no buffer is armed. */
 const fetchOlderPage = async (cursor: string | null): Promise<BufferedOlderPage> => {
   const startedAt = performance.now()
   // Cache-first older page: serve from IndexedDB when it holds rows older than the current oldest,
@@ -2673,12 +2650,10 @@ const commitOlderPage = async (
   }
 }
 
-/**
- * Evaluate the prefetch decision for the CURRENT scroll geometry and arm if it
+/** Evaluate the prefetch decision for the CURRENT scroll geometry and arm if it
  * says so. Called from `handleVirtualScroll` (per user gesture) and once after
  * the initial load settles (so a chat opened near the top pre-arms without
- * waiting for a scroll event — at the bottom it is a no-op, out of radius).
- */
+ * waiting for a scroll event — at the bottom it is a no-op, out of radius). */
 const evaluateOlderPrefetch = () => {
   if (!sessionId.value || isPendingSession.value) return
   const container = virtualScrollerRef.value?.containerRef
@@ -3184,14 +3159,11 @@ const runHistoryLoadAttempt = async () => {
   // the top arms on its first upward scroll — still ~1.5 viewports early.
 }
 
-/**
- * The promise-shaped attempt above, as an `Effect`.
- *
+/** The promise-shaped attempt above, as an `Effect`.
  * `Effect.tryPromise` is the sanctioned bridge (see `sync/SessionEngineDb.ts`
  * for the same shape): it is where a rejection becomes a typed
  * `ChatHistoryError` instead of an unhandled throw, so the retry loop and the
- * error state can both see it.
- */
+ * error state can both see it. */
 const runHistoryLoadAttemptEffect = (): Effect.Effect<void, ChatHistoryError> =>
   Effect.tryPromise({
     try: runHistoryLoadAttempt,

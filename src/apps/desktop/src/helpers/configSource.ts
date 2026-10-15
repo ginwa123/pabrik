@@ -39,13 +39,10 @@ export type ConfigScope = 'user' | 'workspace'
  */
 export const WORKSPACE_AGENT_SECTIONS = ['profiles', 'mcp', 'tools', 'evals'] as const
 
-/**
- * Does the WORKSPACE settings page render this section?
- *
+/** Does the WORKSPACE settings page render this section?
  * The complement of `WORKSPACE_AGENT_SECTIONS`, for callers that hold a section
  * id from somewhere else (the editor's remembered tab, a deep link) and must
- * decide whether it has a home in workspace scope at all.
- */
+ * decide whether it has a home in workspace scope at all. */
 export function isWorkspaceAgentSection(id: string): boolean {
   return (WORKSPACE_AGENT_SECTIONS as readonly string[]).includes(id)
 }

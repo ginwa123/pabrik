@@ -19,12 +19,10 @@ import { computed, ref } from 'vue'
 import type { PabrikConfig } from '../api'
 import { userConfigSource, type PabrikConfigSource } from '../helpers/configSource'
 
-/**
- * @param source where the config is read from and written to. Defaults to the
+/** @param source where the config is read from and written to. Defaults to the
  * user-level config, which is what every existing caller wants; the workspace
  * scope passes `workspaceConfigSource(id)` instead. See
- * `helpers/configSource.ts` for why the two are not interchangeable.
- */
+ * `helpers/configSource.ts` for why the two are not interchangeable. */
 export function usePabrikConfig(source: PabrikConfigSource = userConfigSource()) {
   const config = ref<PabrikConfig | null>(null)
   const loaded = ref(false)
@@ -63,14 +61,12 @@ export function usePabrikConfig(source: PabrikConfigSource = userConfigSource())
     takeSnapshot()
   }
 
-  /**
-   * Set the config directly and take a snapshot of it. Use this when
+  /** Set the config directly and take a snapshot of it. Use this when
    * the orchestrator needs to layer in legacy data (e.g.
    * localStorage fallback) before the API response arrives, instead
    * of using the composable's `load()` which fetches the API itself.
    * The provided value is what `dirty` will compare future edits
-   * against.
-   */
+   * against. */
   function setConfig(c: PabrikConfig) {
     config.value = c
     loaded.value = true

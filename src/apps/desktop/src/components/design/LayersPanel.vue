@@ -164,12 +164,10 @@ const layerTree = computed<LayerTreeNode[]>(() => {
   return byParent.get(null) ?? []
 })
 
-/**
- * Per-element collapse state. A `Set` because collapse is binary
+/** Per-element collapse state. A `Set` because collapse is binary
  * per-id. Held as `ref(new Set)` so a replacement (not a mutation)
  * triggers Vue 3 reactivity. The Set is passed DOWN to `<LayerRow>`
- * by reference (read-only in the child).
- */
+ * by reference (read-only in the child). */
 const collapsedIds = ref<Set<string>>(new Set())
 
 const toggleCollapse = (elementId: string): void => {
@@ -206,13 +204,11 @@ function findNode(
   return null
 }
 
-/**
- * Deep-clone the tree so we can swap siblings without mutating the
+/** Deep-clone the tree so we can swap siblings without mutating the
  * `layerTree` computed (which is owned by Vue's reactivity and
  * should be treated as immutable). The clone preserves `element`
  * references (no need to copy those — only the tree structure
- * mutates).
- */
+ * mutates). */
 // ─── Drag-and-drop state (Chunk 4 Task 4.2) ────────────────────────────
 //
 // LayersPanel owns the drag state machine via `useLayerDragDrop`.
@@ -250,14 +246,11 @@ function cloneTree(nodes: LayerTreeNode[]): LayerTreeNode[] {
   }))
 }
 
-/**
- * Move the element at `elementId` up by one (toward the top of the
+/** Move the element at `elementId` up by one (toward the top of the
  * panel). In a tree, "up" means swapping with the previous SIBLING
  * within the same parent's children array. For top-level elements,
  * the parent is the panel itself (the top-level `layerTree`).
- *
- * Emits `reorder` with the new top-to-bottom depth-first id list.
- */
+ * Emits `reorder` with the new top-to-bottom depth-first id list. */
 const handleMoveUp = (elementId: string): void => {
   if (props.readonly) return
   const found = findNode(layerTree.value, elementId)

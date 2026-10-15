@@ -11,12 +11,10 @@ import {
   type WebSearchProviderRow,
 } from '../components/pabrik/webSearchProviders'
 
-/**
- * `key` may arrive from the API as a MASK rather than as the secret.
+/** `key` may arrive from the API as a MASK rather than as the secret.
  * `MASKED` stands in for the shape of such a value (leading chars, dots,
  * trailing chars) — the point is that the frontend cannot tell it apart
- * from a real credential, and therefore must never rewrite it.
- */
+ * from a real credential, and therefore must never rewrite it. */
 const MASKED = 'sk••••••7f2'
 
 const TINYFISH: PabrikWebSearchProvider = {

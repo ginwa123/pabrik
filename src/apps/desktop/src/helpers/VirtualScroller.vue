@@ -185,14 +185,12 @@ const props = withDefaults(
      * `0` disables the cap (sizer is always the full model total).
      */
     maxTailGap?: number
-    /**
-     * Debug chat id for VirtualScroller internal logging (2026-09-02).
+    /** Debug chat id for VirtualScroller internal logging (2026-09-02).
      * When provided, the scroller creates its own scrollLogger and emits
      * sizer-recomputed / measure-compensation / scroll-to-bottom-target
      * lines with the same chatId tag as ChatView, so you can correlate
      * sizerHeight flips with spacer-resize-stick in one grep.
-     * When omitted, internal logging is silent (no perf cost).
-     */
+     * When omitted, internal logging is silent (no perf cost). */
     debugChatId?: string
   }>(),
   {
@@ -821,13 +819,11 @@ const renderedCount = computed(() => {
   return Math.max(0, end - start)
 })
 
-/**
- * The {start, end} range of items currently rendered. Exposed as
+/** The {start, end} range of items currently rendered. Exposed as
  * a single object so the parent can read both fields in one
  * reactive read (avoiding the start-vs-end skew that would happen
  * if they were two separate computeds and a scroll fired between
- * reads).
- */
+ * reads). */
 const effectiveRange = computed(() => {
   const { start, end } = visibleRange.value
   return { start, end }

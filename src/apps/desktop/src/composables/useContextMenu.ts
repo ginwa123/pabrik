@@ -68,12 +68,10 @@ export function useContextMenu(options: { width?: number; height?: number } = {}
     attachDismissListeners()
   }
 
-  /**
-   * Pull a (x, y) inside the viewport, keeping the menu's estimated
+  /** Pull a (x, y) inside the viewport, keeping the menu's estimated
    * footprint visible. Exported as a pure function so a host that
    * computes its own position (e.g. the ContextMenu-key path, which
-   * anchors at a card's bounding-rect centre) can reuse the same rule.
-   */
+   * anchors at a card's bounding-rect centre) can reuse the same rule. */
   function clampToViewport(x: number, y: number): { x: number; y: number } {
     const maxX = Math.max(8, window.innerWidth - MENU_W - 8)
     const maxY = Math.max(8, window.innerHeight - MENU_H - 8)

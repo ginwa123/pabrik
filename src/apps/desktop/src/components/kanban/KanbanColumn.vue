@@ -49,13 +49,10 @@ import { useKanbanColumnScrollRestore } from '../../composables/useKanbanColumnS
 import { useWorkspacesStore } from '../../stores/workspaces'
 import type { KanbanColumn, Task } from '../../stores/workspaces'
 
-/**
- * Minimal view of <VirtualScroller>'s `defineExpose` surface.
- *
+/** Minimal view of <VirtualScroller>'s `defineExpose` surface.
  * Local on purpose: the component does not export its exposed type, and this
  * component needs exactly one member of it. `containerRef` arrives as the
- * HTMLElement itself, not a ref — `defineExpose` auto-unwraps.
- */
+ * HTMLElement itself, not a ref — `defineExpose` auto-unwraps. */
 interface ColumnScrollerExposed {
   containerRef: HTMLElement | null
 }

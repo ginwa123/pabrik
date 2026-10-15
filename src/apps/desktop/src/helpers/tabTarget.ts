@@ -33,12 +33,10 @@ export interface Tab {
   path: string
   query: TabQuery
   createdAt: number
-  /**
-   * True when the tab's identity was decided without knowing the workspace
+  /** True when the tab's identity was decided without knowing the workspace
    * item's type (a cold-boot deep link, before the tree loaded). Such a tab
    * may be adopted — i.e. re-keyed — once the real type arrives, so the
-   * strip does not end up with two tabs for one target.
-   */
+   * strip does not end up with two tabs for one target. */
   provisional?: boolean
 }
 
@@ -62,12 +60,10 @@ export const TABS_VERSION = 1
 const SETTINGS_PATH = '/app/settings'
 const KANBAN_SETTINGS_RE = /^\/app\/kanban\/([^/]+)\/settings\/?$/
 
-/**
- * Views that are full-surface overlays over whatever was there before
+/** Views that are full-surface overlays over whatever was there before
  * (`AppLayout.vue` mounts them `absolute inset-0 z-10` with their own
  * Back button). They are not destinations, so they never become tabs —
- * the strip stays behind them untouched.
- */
+ * the strip stays behind them untouched. */
 const OVERLAY_VIEWS = ['gitfile', 'skill', 'code-editor']
 
 /** `ChatsList` emits this as an event flag, not as a view. */

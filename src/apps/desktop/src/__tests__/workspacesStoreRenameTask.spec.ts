@@ -1,10 +1,7 @@
-/**
- * Unit tests for the workspaces store's `renameTask` action.
- *
+/** Unit tests for the workspaces store's `renameTask` action.
  * Covers the optimistic-update + rollback contract, the navigation
  * store sync when the renamed task is the active one, and the
- * early-return guards for empty / unchanged names.
- */
+ * early-return guards for empty / unchanged names. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

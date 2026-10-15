@@ -84,12 +84,10 @@ export class SessionEngineDb extends BaseSyncEngine<SessionRow, SessionCtx> {
     return this.fetchDeltaPage(cursor, limit, ctx)
   }
 
-  /**
-   * Page-1 revalidate: the backend cursor only pages older, so a stored
+  /** Page-1 revalidate: the backend cursor only pages older, so a stored
    * cursor is useless for "what's new" — always fetch the head of the
    * list desc and let the caller merge by id. `_cursor` is accepted for
-   * the base-class contract and ignored.
-   */
+   * the base-class contract and ignored. */
   fetchDeltaPage(
     _cursor: string | null,
     limit: number,
@@ -117,13 +115,10 @@ export class SessionEngineDb extends BaseSyncEngine<SessionRow, SessionCtx> {
     )
   }
 
-  /**
-   * Background refresh for a cached mount: fetch page 1, persist it.
-   *
+  /** Background refresh for a cached mount: fetch page 1, persist it.
    * Now honest about failure — a rejected fetch surfaces as
    * `SyncRemoteError` instead of the old `catch { return null }`, so a
-   * caller can tell "no new sessions" from "the sidebar could not refresh".
-   */
+   * caller can tell "no new sessions" from "the sidebar could not refresh". */
   loadDelta(ctx: SessionCtx, limit: number): Effect.Effect<SessionDelta, SyncError> {
     // A generator's `this` is its own, so capture the engine outside.
     // oxlint-disable-next-line typescript-eslint/no-this-alias -- see SyncEngine.syncOnMount

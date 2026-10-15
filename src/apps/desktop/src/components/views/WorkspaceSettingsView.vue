@@ -31,14 +31,11 @@ const route = useRoute()
 const secretsStore = useSecretsStore()
 const workspacesStore = useWorkspacesStore()
 
-/**
- * The workspace this settings page belongs to.
- *
+/** The workspace this settings page belongs to.
  * Read from the route param, not from `parseAppPath`: `/app/{ws}/settings`
  * is not one of the shapes `helpers/appUrl.ts` knows. Falls back to the
  * active workspace so the page still works if it is ever mounted without
- * the param.
- */
+ * the param. */
 const workspaceId = computed<string>(() => {
   const fromPath = route?.params?.workspaceId
   if (typeof fromPath === 'string' && fromPath.length > 0) return fromPath
@@ -52,13 +49,10 @@ const workspaceName = computed<string>(() => {
   return workspaceId.value || 'this workspace'
 })
 
-/**
- * The four sections that moved here from the User-scope Pabrik page.
- *
+/** The four sections that moved here from the User-scope Pabrik page.
  * They render through ONE long-lived `PabrikConfigEditor` rather than one
  * instance per section: switching between them must not remount the editor,
- * or every unsaved edit would be thrown away by a nav click.
- */
+ * or every unsaved edit would be thrown away by a nav click. */
 const isAgentSection = computed<boolean>(() =>
   (WORKSPACE_AGENT_SECTIONS as readonly string[]).includes(route?.params ? sectionFromRoute() : ''),
 )
@@ -104,12 +98,10 @@ onBeforeRouteUpdate((to) => {
   loadSecretsFor(next)
 })
 
-/**
- * Hand a new credential to the store, which forwards it to the API and
+/** Hand a new credential to the store, which forwards it to the API and
  * keeps nothing. This handler deliberately does not stash the payload on
  * any reactive state — the emit already delivered it and the component has
- * already cleared its inputs.
- */
+ * already cleared its inputs. */
 async function handleAdd(payload: { name: string; value: string }): Promise<void> {
   if (!workspaceId.value) return
   await secretsStore.createSecret(workspaceId.value, payload.name, payload.value)

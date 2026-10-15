@@ -51,12 +51,10 @@ const props = withDefaults(
     collapsedIds: string[]
     runAllBusyByColumn?: Record<string, boolean>
     stopAllBusyByColumn?: Record<string, boolean>
-    /**
-     * Row height. `comfortable` is the two-line record (name +
+    /** Row height. `comfortable` is the two-line record (name +
      * metadata); `compact` drops back to a single line for boards with
      * hundreds of tasks. The parent owns persistence — this component
-     * only forwards it, so the preference survives a layout switch.
-     */
+     * only forwards it, so the preference survives a layout switch. */
     density?: KanbanRowDensity
   }>(),
   {

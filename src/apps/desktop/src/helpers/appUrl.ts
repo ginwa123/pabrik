@@ -90,12 +90,10 @@ const RESERVED_FIRST_SEGMENTS = new Set(['chat', 'doc', 'task', 'settings', 'kan
 const nonEmpty = (v: string | null | undefined): v is string =>
   typeof v === 'string' && v.length > 0
 
-/**
- * Build a router location for the given target. Always emits the
+/** Build a router location for the given target. Always emits the
  * canonical no-trailing-slash path. Throws when the combination is
  * incoherent (chatTaskId without projectId, chatSessionId without
- * workspaceId, or a chatSessionId alongside a project).
- */
+ * workspaceId, or a chatSessionId alongside a project). */
 export function buildAppUrl(input: AppUrlTarget): AppUrlLocation {
   const workspaceId = (input.workspaceId ?? '').toString().trim()
   const chatSessionId = (input.chatSessionId ?? '').toString().trim()
@@ -158,12 +156,10 @@ export function buildSettingsUrl(
   return { path: `/app/${id}/settings`, query }
 }
 
-/**
- * Parse an app path into its kind + ids. Trailing slashes are ignored
+/** Parse an app path into its kind + ids. Trailing slashes are ignored
  * (canonical form has none). Anything that is not one of the five app
  * shapes — settings, kanban-settings, legacy routes, unknown — comes
- * back as `{ kind: 'other', path }` so callers can fall through.
- */
+ * back as `{ kind: 'other', path }` so callers can fall through. */
 export function parseAppPath(rawPath: string): ParsedAppPath {
   const path = normalizeAppPath(rawPath)
   if (path === '/app') return { kind: 'landing' }

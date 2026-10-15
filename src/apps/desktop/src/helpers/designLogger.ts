@@ -216,12 +216,10 @@ export interface DesignContext {
    * frame / multi-select move). The single most useful invariant —
    * `drag:start:group=true` vs `false` tells you which wire fired. */
   isGroup?: boolean
-  /**
-   * Whether the start fired dragStartPositions = null (the reset on
+  /** Whether the start fired dragStartPositions = null (the reset on
    * every drag). Lets us distinguish "this drag has a clean baseline"
    * (`fresh=true`) from "we reused the previous drag's baseline"
-   * (`fresh=false` — the suspected second-drag bug).
-   */
+   * (`fresh=false` — the suspected second-drag bug). */
   snapshotFresh?: boolean
   snapshotSize?: number
 
@@ -254,12 +252,10 @@ export interface DesignContext {
 
 // ─── Throttling ────────────────────────────────────────────────────────────
 
-/**
- * Drag pointermoves fire at 60+ Hz. Without throttling, the
+/** Drag pointermoves fire at 60+ Hz. Without throttling, the
  * `drag:throttled-emit` lines would flood the console. Coalesce them
  * to the most recent per-gesture-id, flushing 200 ms after the last
- * fired (trailing edge so the final position is never lost).
- */
+ * fired (trailing edge so the final position is never lost). */
 const DEBUG_THROTTLE_MS = 200
 
 interface PendingEmit {

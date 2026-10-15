@@ -71,13 +71,10 @@ export function splitLines(s: string): string[] {
   return lines
 }
 
-/**
- * Compute the shortest edit script via LCS DP.
- *
+/** Compute the shortest edit script via LCS DP.
  * Strategy: compute LCS lengths matrix `dp[i][j]` = LCS length of
  * `before[0..i)` and `after[0..j)`. Walk back from `dp[N][M]` to construct
- * the SES in reverse order.
- */
+ * the SES in reverse order. */
 export function myersDiff(before: string[], after: string[]): DiffOp[] {
   const N = before.length
   const M = after.length
@@ -210,14 +207,11 @@ export function computeInlineWordChanges(before: string, after: string): InlineC
   return out
 }
 
-/**
- * Convert a SES into a row-based split view (left = before, right = after).
+/** Convert a SES into a row-based split view (left = before, right = after).
  * Equal lines produce matched rows; insert ops leave the before cell empty;
  * delete ops leave the after cell empty.
- *
  * Adjacent delete+insert pairs are paired into single rows so the change
- * appears as one logical row pair (visually like a real diff).
- */
+ * appears as one logical row pair (visually like a real diff). */
 export function computeSplitView(before: string[], after: string[]): SplitRow[] {
   const ops = myersDiff(before, after)
   const rows: SplitRow[] = []

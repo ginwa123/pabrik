@@ -1,11 +1,8 @@
-/**
- * ChatView autofocus on mount — clicking a sidebar session remounts
+/** ChatView autofocus on mount — clicking a sidebar session remounts
  * ChatView (`AppLayout :key="activeChatId"`) and the message box should
  * hold focus once history has loaded, so the user types immediately.
- *
  * Plan: docs/superpowers/plans/2026-09-09-chat-input-autofocus-on-session-switch.md
- * Task 3: ChatView focuses FileInput after session mount/load.
- */
+ * Task 3: ChatView focuses FileInput after session mount/load. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'

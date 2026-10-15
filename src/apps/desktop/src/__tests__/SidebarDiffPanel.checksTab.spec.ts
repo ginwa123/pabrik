@@ -1,11 +1,8 @@
-/**
- * The Checks tab's URL contract.
- *
+/** The Checks tab's URL contract.
  * Every view switch must land in the URL, or refresh / Back-Forward /
  * shared links lose the view. The commits tab first shipped as a local
  * boolean and had exactly that bug; the Checks tab reuses the same
- * `?panel=` union rather than inventing a second param.
- */
+ * `?panel=` union rather than inventing a second param. */
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'

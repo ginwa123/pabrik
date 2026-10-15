@@ -1,11 +1,8 @@
-/**
- * P1 performance helpers for VirtualScroller.vue
+/** P1 performance helpers for VirtualScroller.vue
  * (task_1787551495337_9, "make virtual scroller more smooth").
- *
  * Pure functions/classes only — no DOM, no Vue imports — so every branch
  * is unit-testable without mounting (same convention as
- * virtualScrollerScrollAnchor.ts / virtualScrollerThreshold.ts).
- */
+ * virtualScrollerScrollAnchor.ts / virtualScrollerThreshold.ts). */
 
 /**
  * Round a measured height to an integer pixel value ≥ 1.
@@ -117,12 +114,10 @@ export class AdaptiveItemHeightEstimator {
     }
   }
 
-  /**
-   * How many observations are currently held (0..`maxSamples`). Used by the
+  /** How many observations are currently held (0..`maxSamples`). Used by the
    * scroller to decide when the estimate is well-founded enough to freeze —
    * freezing the moment the window is full means the frozen value IS the live
-   * median at that instant, so freezing itself moves nothing.
-   */
+   * median at that instant, so freezing itself moves nothing. */
   get sampleCount(): number {
     return this.samples.length
   }
@@ -132,14 +127,11 @@ export class AdaptiveItemHeightEstimator {
     return this.frozen !== null
   }
 
-  /**
-   * Stop `estimate()` from moving. The current value is kept forever (until
+  /** Stop `estimate()` from moving. The current value is kept forever (until
    * `reset()`), even as `observe()` keeps recording samples.
-   *
    * Call this once the estimate is well-founded — see the class docstring for
    * the scroll jump a moving placeholder causes. Idempotent: freezing twice
-   * keeps the FIRST frozen value, so a late caller cannot reopen the window.
-   */
+   * keeps the FIRST frozen value, so a late caller cannot reopen the window. */
   freeze(): void {
     if (this.frozen !== null) return
     this.frozen = this.estimate()

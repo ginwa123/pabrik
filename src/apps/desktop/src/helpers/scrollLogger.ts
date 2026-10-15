@@ -198,12 +198,10 @@ export interface ScrollContext {
   origin: ScrollOrigin
   /** What triggered this log line. */
   reason: ScrollReason
-  /**
-   * Diagnostic snapshot of the scroll container element. Always
+  /** Diagnostic snapshot of the scroll container element. Always
    * present — see `ContainerInfo` for what each field tells you.
    * Without this, a `scrollHeight: 0` reading is just a useless
-   * zero; with it, you can see *which* check failed.
-   */
+   * zero; with it, you can see *which* check failed. */
   containerInfo: ContainerInfo
   /**
    * Which function in ChatView produced this log line, e.g.
@@ -221,28 +219,22 @@ export interface ScrollContext {
    * streaming-path bug.
    */
   caller?: string
-  /**
-   * Diagnostic snapshot of the VirtualScroller **component** (see
+  /** Diagnostic snapshot of the VirtualScroller **component** (see
    * `ScrollerState` doc). Tells you whether the ref binding is
    * even valid — the most common reason for `containerInfo.null`
    * is that the component is unmounted and the ref is null, which
-   * is a completely different bug from "container exists but 0×0".
-   */
+   * is a completely different bug from "container exists but 0×0". */
   scrollerState?: ScrollerState
-  /**
-   * Diagnostic snapshot of the outer flex wrapper (see
+  /** Diagnostic snapshot of the outer flex wrapper (see
    * `WrapperState` doc). Tells you whether the layout chain
    * reached the scroller's parent. Crucial for distinguishing
    * "wrapper is sized but scroller isn't" from "wrapper itself
-   * is 0 high" — the two cases need different fixes.
-   */
+   * is 0 high" — the two cases need different fixes. */
   wrapperState?: WrapperState
-  /**
-   * Short stack trace captured ONLY when the container is null or
+  /** Short stack trace captured ONLY when the container is null or
    * on warn/error. The single most useful field for "where did
    * this come from?" — points directly to the line in ChatView
-   * that called the logger with a stale ref.
-   */
+   * that called the logger with a stale ref. */
   stack?: string
   /** Free-form extras (caller, delta, etc.). */
   extra?: Record<string, unknown>
@@ -387,12 +379,9 @@ export interface ScrollLogger {
   markProgrammatic: (count?: number) => void
 }
 
-/**
- * Create a scroll logger bound to a chat id.
- *
+/** Create a scroll logger bound to a chat id.
  * @param chatId  The chat session id (used to correlate logs across
- *                components and to label every line).
- */
+ *                components and to label every line). */
 export const createScrollLogger = (chatId: string): ScrollLogger => {
   // Auto-derive the context fields the caller usually can't be bothered
   // to pass. We re-read the container on every call because the geometry
@@ -704,12 +693,10 @@ const resolveBottomEdge = (
   return Number.isFinite(edge) ? edge : domEdge
 }
 
-/**
- * Build the diagnostic `WrapperState` block for the outer flex
+/** Build the diagnostic `WrapperState` block for the outer flex
  * wrapper. Tells you whether the layout chain reached the
  * scroller's parent. Like `buildContainerInfo`, only pays the
- * `getComputedStyle` cost when dimensions are weird.
- */
+ * `getComputedStyle` cost when dimensions are weird. */
 const buildWrapperState = (wrapperRef: { value: unknown } | null | undefined): WrapperState => {
   if (!wrapperRef) {
     return { refNull: true, offsetHeight: 0, clientHeight: 0, offsetParent: null }
@@ -751,12 +738,10 @@ const buildWrapperState = (wrapperRef: { value: unknown } | null | undefined): W
 export const buildScrollContext = (
   container: HTMLElement | null | undefined,
   fallback: Pick<ScrollContext, 'chatId' | 'messages' | 'isAtBottom'> & {
-    /**
-     * The VirtualScroller ref from ChatView. Optional — when omitted,
+    /** The VirtualScroller ref from ChatView. Optional — when omitted,
      * `scrollerState` is not populated. Pass the full ref object
      * (`virtualScrollerRef`), NOT `virtualScrollerRef.value` — the
-     * logger inspects both the ref and the component instance.
-     */
+     * logger inspects both the ref and the component instance. */
     virtualScrollerRef?: { value: unknown } | null
     /** The outer flex wrapper ref from ChatView. Optional — when
      * omitted, `wrapperState` is not populated. */

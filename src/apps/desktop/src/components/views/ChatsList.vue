@@ -994,12 +994,10 @@ onUpdated(() => {
   }
 })
 
-/**
- * Ctrl/Cmd+click, middle click and the context menu open a chat in a
+/** Ctrl/Cmd+click, middle click and the context menu open a chat in a
  * real browser tab (window.open) instead of navigating — the browser
  * gesture. A plain click keeps the previous behaviour. Path-based
- * (plan: 2026-09-22-revamp-ui-chats): /app/{ws}/chat/{sid}.
- */
+ * (plan: 2026-09-22-revamp-ui-chats): /app/{ws}/chat/{sid}. */
 const openChatInNewTab = (item: { id: string }) => {
   const wsId = scopedWorkspaceId.value
   if (wsId) {

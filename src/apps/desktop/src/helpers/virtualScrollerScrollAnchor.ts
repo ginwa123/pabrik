@@ -140,19 +140,15 @@ export interface AnchorCompensationResult {
   newScrollTop: geometry_px
   /** True when the clamp at 0 bit (residual jump is unavoidable). */
   clamped: boolean
-  /**
-   * True when `maxScrollTop` cut the target down. The write is still made — as
+  /** True when `maxScrollTop` cut the target down. The write is still made — as
    * far as the container can go — but the view could NOT be held exactly, so a
    * caller that sees this should treat the pass as lossy (the next one will
-   * re-derive the reader's position from wherever this left them).
-   */
+   * re-derive the reader's position from wherever this left them). */
   clampedToMax: boolean
-  /**
-   * Which rule produced `newScrollTop`. `'bottom'` means the reader was at the
+  /** Which rule produced `newScrollTop`. `'bottom'` means the reader was at the
    * bottom and the pass targeted the bottom edge instead of the anchor; the
    * `shiftPx` reported alongside it is the model delta that was absorbed, not
-   * a move the reader can observe.
-   */
+   * a move the reader can observe. */
   target: 'anchor' | 'bottom'
 }
 

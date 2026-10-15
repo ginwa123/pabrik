@@ -1,9 +1,7 @@
-/**
- * Type-level tests for the `PabrikConfig` interface. These compile-time
+/** Type-level tests for the `PabrikConfig` interface. These compile-time
  * guards ensure new optional fields stay optional (matching the
  * project's existing convention) so callers that omit the field do
- * not break.
- */
+ * not break. */
 import { describe, expect, it } from 'vitest'
 import type { PabrikConfig } from '../api'
 

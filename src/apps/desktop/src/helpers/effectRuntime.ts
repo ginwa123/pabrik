@@ -26,13 +26,10 @@ export function describeCause(cause: Cause.Cause<unknown>): string {
   return Cause.pretty(cause)
 }
 
-/**
- * Run `effect` and hand back its `Exit` — never a fallback value, never a
+/** Run `effect` and hand back its `Exit` — never a fallback value, never a
  * throw. The caller matches on it, so "failed" stays visible in the type.
- *
  * Failures are logged in dev; the `Exit` is still returned so the caller can
- * surface them in the UI.
- */
+ * surface them in the UI. */
 export async function runEffectExit<A, E>(
   effect: Effect.Effect<A, E>,
   op: string,
@@ -44,13 +41,10 @@ export async function runEffectExit<A, E>(
   return exit
 }
 
-/**
- * Run `effect` for its value, degrading to `fallback` on failure.
- *
+/** Run `effect` for its value, degrading to `fallback` on failure.
  * Use ONLY when the fallback is a genuinely equivalent answer. "The cache had
  * no new rows" is fine; "the server is unreachable" is not — that one needs
- * `runEffectExit` so the reason can reach the UI.
- */
+ * `runEffectExit` so the reason can reach the UI. */
 export async function runEffectOr<A, E>(
   effect: Effect.Effect<A, E>,
   fallback: A,

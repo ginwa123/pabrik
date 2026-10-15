@@ -166,12 +166,10 @@ function fetchShared(): Promise<AuthMeResult> {
   return inflight
 }
 
-/**
- * Cached `/me` for navigation guards and chrome (sidebar/login).
+/** Cached `/me` for navigation guards and chrome (sidebar/login).
  * Fresh cache hits never touch the network; stale entries are served
  * instantly with a background revalidate; cold starts share one live
- * fetch across concurrent callers.
- */
+ * fetch across concurrent callers. */
 export async function getAuthMeCached(): Promise<AuthMeResult> {
   const cached = readEntry()
   if (cached) {

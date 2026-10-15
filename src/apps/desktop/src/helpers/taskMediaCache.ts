@@ -45,12 +45,10 @@ const MAX_ENTRIES = 100
 
 let memCache: Map<string, CachedTaskMedia> | null = null
 
-/**
- * Normalizes one stored entry into paintable media. Requires arrays of
+/** Normalizes one stored entry into paintable media. Requires arrays of
  * non-empty strings; filters out anything else. Returns null when
  * nothing paintable remains, so corrupt entries can never produce a
- * broken `<img>` where the badge should be.
- */
+ * broken `<img>` where the badge should be. */
 function normalizeEntry(raw: unknown): CachedTaskMedia | null {
   if (!raw || typeof raw !== 'object') return null
   const e = raw as Record<string, unknown>

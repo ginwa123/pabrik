@@ -52,14 +52,12 @@ const baseHttpServer: McpServerModalValue = {
   cwd: '',
 }
 
-/**
- * Both branches of McpServerModal use <Teleport to="body">: the HTTP
+/** Both branches of McpServerModal use <Teleport to="body">: the HTTP
  * branch delegates to <LlmConfigModal>, the stdio branch has its own
  * bespoke centered dialog with backdrop + close ✕. Tests MUST use
  * `document.body.querySelector` for teleported elements (NOT
  * `wrapper.find`) and `mount({ attachTo: document.body })` so the
- * teleported DOM lands on the same body the queries walk.
- */
+ * teleported DOM lands on the same body the queries walk. */
 function mountModal(
   value: McpServerModalValue,
   mode: 'add' | 'edit' = 'add',

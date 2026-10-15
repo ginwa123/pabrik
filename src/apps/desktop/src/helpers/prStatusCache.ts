@@ -69,13 +69,11 @@ export function isPrConflictValue(mergeable: string, merge_state: string): boole
 
 const cache = new Map<string, CacheEntry>()
 const inflight = new Map<string, Promise<PrInfo>>()
-/**
- * Per-key generation, bumped by `invalidatePrStatus`. A fetch captures the
+/** Per-key generation, bumped by `invalidatePrStatus`. A fetch captures the
  * value it started under and refuses to write its answer if the generation
  * moved — deleting the in-flight slot alone is not enough, because the pending
  * promise's own continuation would put the now-stale answer straight back into
- * the cache.
- */
+ * the cache. */
 const epoch = new Map<string, number>()
 
 function bumpEpoch(k: string): void {
@@ -182,12 +180,10 @@ export function invalidatePrStatus(cwd: string, branch: string): void {
   }
 }
 
-/**
- * Provider is part of the key because one repo directory can hold
+/** Provider is part of the key because one repo directory can hold
  * branches pointing at different forges, and a GitLab answer must never
  * be served to a caller that asked for GitHub (the status vocabulary
- * differs too — GitHub reports CONFLICTING, GitLab `conflicted`).
- */
+ * differs too — GitHub reports CONFLICTING, GitLab `conflicted`). */
 function cacheKey(cwd: string, branch: string, provider: string): string {
   return `${cwd}::${branch}::${provider}`
 }

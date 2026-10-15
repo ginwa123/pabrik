@@ -51,20 +51,16 @@ import {
 import ToolParameters from './_shared/ToolParameters.vue'
 
 const props = defineProps<{
-  /**
-   * The inner `<data>` XML from the generate_image tool's
+  /** The inner `<data>` XML from the generate_image tool's
    * `<tool>` envelope (already unwrapped by the parent's
    * `tryUnwrapToolOutput` pipeline). Always XML — never JSON —
    * because the backend's `wrapToolOutput` always wraps the impl's
-   * `<generate_image>...</generate_image>` response verbatim.
-   */
+   * `<generate_image>...</generate_image>` response verbatim. */
   content: unknown
-  /**
-   * The JSON-stringified tool-call arguments (e.g.
+  /** The JSON-stringified tool-call arguments (e.g.
    * `'{"prompt":"a cat",...}'`). Used to display the prompt in the
    * header for at-a-glance context — the agent asked for "X" and the
-   * card shows "X" without the user having to expand.
-   */
+   * card shows "X" without the user having to expand. */
   parameters?: string
   /** Whether the row is already expanded in the parent chat (the
    * "tool call loading placeholder" optimization — see AGENTS.md). */

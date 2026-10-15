@@ -49,14 +49,12 @@ interface MockEventSource {
   addEventListener: (type: string, listener: EventListenerOrEventListenerObject) => void
   removeEventListener: (type: string, listener: EventListenerOrEventListenerObject) => void
   emit(type: 'open' | 'error' | 'message' | string, data?: string): void
-  /**
-   * Simulate the server's `connected` named event. This is what
+  /** Simulate the server's `connected` named event. This is what
    * the SseClient uses as the canonical "stream is live" signal
    * (per the backend convention in `docs/sse-reconnect-plan.md`).
    * Native `EventSource` does not fire `connected` automatically
    * — the SERVER sends it via `event: connected\ndata: ...`. Our
-   * mock helper stands in for that server behavior.
-   */
+   * mock helper stands in for that server behavior. */
   simulateOpen(payload?: string): void
   /** All listeners, by type. */
   _listeners: Map<string, Set<EventListenerOrEventListenerObject>>

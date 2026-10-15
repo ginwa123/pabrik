@@ -608,13 +608,10 @@ const loadPrStatus = async () => {
   }
 }
 
-/**
- * A merge landed (or was accepted) — re-read NOW.
- *
+/** A merge landed (or was accepted) — re-read NOW.
  * The poll would pick it up within 30 s, but the user just took a destructive
  * action and the badge has to agree with it immediately; a PR still reading
- * "Open" one second after "Confirm and merge" looks like the merge failed.
- */
+ * "Open" one second after "Confirm and merge" looks like the merge failed. */
 const onMerged = () => {
   void loadPrStatus()
 }
@@ -945,14 +942,11 @@ const onCommitFileClick = async (payload: { commit: api.GitCommit; file: api.Git
 /** Which of the three worktree lists a path can sit in. */
 type StageList = 'staged' | 'unstaged' | 'untracked'
 
-/**
- * Where a path belongs after a stage/unstage.
- *
+/** Where a path belongs after a stage/unstage.
  * Unstaging a file that was ONLY staged leaves it modified in the worktree;
  * unstaging one that was untracked-and-just-staged puts it back under
  * Untracked. The backend's porcelain parse makes the same call: `??` →
- * untracked, anything else with a worktree status → modified.
- */
+ * untracked, anything else with a worktree status → modified. */
 function nextStageList(from: StageList, action: 'staged' | 'unstaged'): StageList {
   if (action === 'staged') return 'staged'
   return from === 'untracked' ? 'untracked' : 'unstaged'
@@ -1089,14 +1083,11 @@ const unstageFile = async (file: api.GitFileChange) => {
   }
 }
 
-/**
- * Apply one `git_file_stage` SSE event: move the row it names and re-prime
+/** Apply one `git_file_stage` SSE event: move the row it names and re-prime
  * only that file's diff and counts.
- *
  * Deliberately does NOT call `loadGitStatus()` — that is the whole point of
  * the channel. The manual ↻ refresh and the commit flow keep the full
- * reload path.
- */
+ * reload path. */
 function applyFileStageEvent(event: api.GitFileStageEvent): void {
   // A failed git command must not move anything: the row stays where it is
   // and the user sees the file still listed on the side they left it.

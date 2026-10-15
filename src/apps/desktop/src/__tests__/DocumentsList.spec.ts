@@ -73,12 +73,10 @@ async function makeRouter(path = '/app/ws_1', query: Record<string, string> = {}
   return router
 }
 
-/**
- * The list is cache-first now (IndexedDB paint, then revalidate), so the
+/** The list is cache-first now (IndexedDB paint, then revalidate), so the
  * DOM settles on a promise boundary rather than a microtask. Two
  * `nextTick()`s no longer reach the painted rows — this does, and it is
- * the same flush `SidebarDiffPanel.tabs.spec.ts` uses.
- */
+ * the same flush `SidebarDiffPanel.tabs.spec.ts` uses. */
 async function settle(): Promise<void> {
   await flushPromises()
   await nextTick()

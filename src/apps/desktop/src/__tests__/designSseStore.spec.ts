@@ -36,14 +36,11 @@ import { useDesignSseStore } from '../stores/designSse'
 import { useWorkspacesStore } from '../stores/workspaces'
 import { makeLocalStorageStub } from './helpers'
 
-/**
- * Test-only stub SseClient. Tracks state-listener callbacks so tests
+/** Test-only stub SseClient. Tracks state-listener callbacks so tests
  * can drive the bus's `state` ShallowRef transitions to exercise
  * the `onConnected → fetchInitialDesign` watcher.
- *
  * Same shape as the kanban test's stub — the bus's SseClient vtable
- * is shared across all channel subscribers.
- */
+ * is shared across all channel subscribers. */
 function makeStubClient(initial: SseState): SseClient {
    
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

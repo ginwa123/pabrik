@@ -61,13 +61,11 @@ const syncRunParam = (runId: string) => {
 
 const selectedRunId = ref<string>(readRunParam())
 
-/**
- * Empty-state shortcut to the toggle that actually controls this panel.
+/** Empty-state shortcut to the toggle that actually controls this panel.
  * `?section=evals` is the URL-backed tab param PabrikConfigEditor.vue reads, so
  * the destination is deep-linkable and survives a refresh. `push`, not
  * `replace`: leaving the chat to change a setting is a real navigation step
- * the user may want to Back out of.
- */
+ * the user may want to Back out of. */
 function openSettings() {
   // `evals` is a WORKSPACE-scoped section (Migration 105), so the shortcut has
   // to carry the workspace in the path the way the settings nav does. Pushing

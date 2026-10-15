@@ -279,12 +279,10 @@ export const useKanbanSseStore = defineStore('kanbanSse', () => {
       }) ?? null
   }
 
-  /**
-   * Tear down the kanban-event handlers. Called on AppLayout unmount
+  /** Tear down the kanban-event handlers. Called on AppLayout unmount
    * (and at the end of each test). Mirrors the pre-migration
    * `closeKanbanSse` contract but for the bus listener instead of a
-   * self-managed SseClient.
-   */
+   * self-managed SseClient. */
   function closeKanbanSse(): void {
     if (offKanban) {
       offKanban()

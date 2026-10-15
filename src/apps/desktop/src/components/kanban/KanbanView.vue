@@ -478,13 +478,10 @@ const emit = defineEmits<{
   // KanbanColumnEditor in the right mode.
   requestRenameColumn: [columnId: string]
   requestDeleteColumn: [columnId: string]
-  /**
-   * Fired when the user renames the kanban via the inline pencil
+  /** Fired when the user renames the kanban via the inline pencil
    * on the header title. Mirrors KanbanSettingsDialog's
    * rename-item emit so AppLayout handles both with one handler.
-   *
-   * Plan: docs/superpowers/plans/2026-06-30-edit-workspace-item-name.md
-   */
+   * Plan: docs/superpowers/plans/2026-06-30-edit-workspace-item-name.md */
   renameItem: [name: string]
   // Chat pane (kanban-embed-chatview plan, Task 2+4). Fired when ChatView's header close button is
   // clicked. AppLayout's handler clears activeTask + navigates to view=workspace (URL is the source

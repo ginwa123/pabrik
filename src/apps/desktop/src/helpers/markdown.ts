@@ -35,13 +35,10 @@ import { marked } from 'marked'
 const escapeHtmlChars = (text: string): string =>
   text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
-/**
- * Block-level markdown → HTML, for `v-html`.
- *
+/** Block-level markdown → HTML, for `v-html`.
  * `''` for blank input so callers can `v-if` the host on the result. A
  * parse throw falls back to an escaped `<p>` rather than throwing inside a
- * render — a broken question must not blank the card.
- */
+ * render — a broken question must not blank the card. */
 export const renderMarkdownHtml = (source: string | null | undefined): string => {
   if (!source) return ''
   try {
@@ -161,14 +158,11 @@ const flattenTokens = (tokens: readonly unknown[], sep: string): string => {
   return parts.join(sep)
 }
 
-/**
- * Strip markdown syntax, keep the words. Blank → `''`.
- *
+/** Strip markdown syntax, keep the words. Blank → `''`.
  * Whitespace collapses to single spaces, so a multi-line question's first
  * 60 characters read as one line in a header pill. A real lexer pass (not
  * a regex) means nested emphasis inside a list item and tables come out
- * right instead of leaving stray `*` behind.
- */
+ * right instead of leaving stray `*` behind. */
 export const stripMarkdownSyntax = (source: string | null | undefined): string => {
   if (!source) return ''
   try {

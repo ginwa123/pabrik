@@ -15,14 +15,12 @@ export interface KanbanColumn {
   id: string
   workspace_item_id: string
   name: string
-  /**
-   * Free-text description of the column's meaning. Empty string
+  /** Free-text description of the column's meaning. Empty string
    * when no description has been set. Mirrors the
    * `KanbanColumn` interface in `api/index.ts` so test fixtures
    * that import this type see the same shape. Optional for
    * backwards compat with legacy column literals in test files
-   * (see pabrik-frontend-task-literal-typing-rule).
-   */
+   * (see pabrik-frontend-task-literal-typing-rule). */
   description?: string | null
   position: number
   created_at: string
@@ -437,14 +435,11 @@ export function registerRecentLocalMutations(ids: string[], expiryMs: number): v
   }
 }
 
-/**
- * True iff `elementId` was mutated by this client within the last
+/** True iff `elementId` was mutated by this client within the last
  * `RECENT_MUTATION_TTL_MS` milliseconds. Read by the SSE handler to
  * decide whether to skip the GET fan-out for an incoming event.
- *
  * Exported for `stores/designSse.ts`. Side effect: expired entries are
- * lazily GC'd on read.
- */
+ * lazily GC'd on read. */
 export function isRecentLocalMutation(elementId: string): boolean {
   const exp = recentLocalMutations.get(elementId)
   if (exp === undefined) return false

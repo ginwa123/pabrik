@@ -166,12 +166,10 @@ function navigate(path: string, query: Record<string, string> = {}) {
   route.fullPath = path + (qs ? `?${qs}` : '')
 }
 
-/**
- * The documents list is cache-first now, and `documentEngineDb` is a module
+/** The documents list is cache-first now, and `documentEngineDb` is a module
  * singleton whose IndexedDB fallback is a module-level Map — so rows cached
  * by one test are still primed by the next one. Every test here asserts a
- * COLD start, so each one begins from an empty cache.
- */
+ * COLD start, so each one begins from an empty cache. */
 async function clearDocumentsCache(workspaceId: string): Promise<void> {
   const { documentEngineDb } = await import('../sync/DocumentEngineDb')
   const { runSyncVoid } = await import('../sync/runtime')

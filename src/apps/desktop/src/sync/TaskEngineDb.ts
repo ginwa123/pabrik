@@ -1,11 +1,8 @@
-/**
- * Task-list child of the generic sync engine.
- *
+/** Task-list child of the generic sync engine.
  * The cache is local-only. Each context stores the complete first-page
  * response keyed by the same request shape used by the store. Revalidation
  * calls the existing task-list endpoint again; it does not send a new
- * backend cursor or introduce a backend delta-query contract.
- */
+ * backend cursor or introduce a backend delta-query contract. */
 import { Effect } from 'effect'
 import * as api from '../api'
 import type { Task } from '../api'

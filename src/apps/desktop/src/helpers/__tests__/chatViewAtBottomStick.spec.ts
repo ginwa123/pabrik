@@ -137,12 +137,10 @@ function decideIsAtBottomStableAnchor(args: DecisionInput): boolean {
   return newIsAtBottom || retainedThroughGrowth
 }
 
-/**
- * The PRE-FIX decision: same code, but the gap came from
+/** The PRE-FIX decision: same code, but the gap came from
  * `scrollHeight - scrollTop - clientHeight`. Kept so the regression stays
  * described in executable form — every test below that says "flips false" is
- * really saying "this is what the DOM ruler did".
- */
+ * really saying "this is what the DOM ruler did". */
 function decideIsAtBottomDomRuler(args: DecisionInput & { domGap: number }): boolean {
   return decideIsAtBottom({ ...args, distanceFromBottom: args.domGap })
 }

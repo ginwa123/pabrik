@@ -62,24 +62,19 @@ export function growFrameToContent(height: number, min: number = MIN_FRAME_HEIGH
   return Math.max(min, height)
 }
 
-/**
- * CSS snippet injected into every HTML srcdoc shell so the frame document
+/** CSS snippet injected into every HTML srcdoc shell so the frame document
  * itself never shows scrollbars. The parent sizes the iframe element to
  * the content height (see growFrameToContent), so page-level scrolling
  * inside the frame is never needed — inner `pre` blocks keep their own
- * `overflow-x:auto` for wide code.
- */
+ * `overflow-x:auto` for wide code. */
 export const FRAME_NO_SCROLLBAR_STYLE =
   'html,body{overflow:hidden!important;scrollbar-width:none!important}' +
   'html::-webkit-scrollbar,body::-webkit-scrollbar{display:none!important}'
 
-/**
- * Read a sender's reported height out of a `message` event.
- *
+/** Read a sender's reported height out of a `message` event.
  * Returns `null` for anything that isn't this protocol (a different
  * `source` tag, a non-object payload, a missing/NaN height) so callers can
- * bail before touching the DOM.
- */
+ * bail before touching the DOM. */
 export function readAutoResizeHeight(event: MessageEvent, source: string): number | null {
   const data: unknown = event.data
   if (!data || typeof data !== 'object') return null

@@ -17,12 +17,10 @@ function tryParseInt(s: string): number | null {
   return isNaN(n) ? null : n
 }
 
-/**
- * One `@@ -a,b +c,d @@` header. Module-level and shared by
+/** One `@@ -a,b +c,d @@` header. Module-level and shared by
  * `parseUnifiedDiff` and `countDiffLines` on purpose: two copies of this
  * pattern drift the moment either is edited, and then the row counts stop
- * matching the diff they sit next to.
- */
+ * matching the diff they sit next to. */
 const HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)?$/
 
 // Pure extraction of GitFileViewer.vue parseUnifiedDiff logic so the

@@ -99,14 +99,12 @@ const dotGlyph = computed(() => {
 
 // ── the method, remembered per repo ───────────────────────────────────────
 const repoKey = computed(() => repoKeyFor(props.prUrl, props.cwd))
-/**
- * The method shown and used. No watcher: a `watch` that copies the remembered
+/** The method shown and used. No watcher: a `watch` that copies the remembered
  * value into a ref is banned here (local/no-watch), and it is not needed — the
  * remembered value is a pure function of the repo key, so a `computed` reads it
  * lazily. A pick is tagged with the key it belongs to, so a different change
  * request on the same mounted box falls back to ITS repo's memory instead of
- * carrying the previous choice over.
- */
+ * carrying the previous choice over. */
 const picked = ref<{ key: string; method: MergeMethod } | null>(null)
 const method = computed<MergeMethod>(() => {
   const key = repoKey.value

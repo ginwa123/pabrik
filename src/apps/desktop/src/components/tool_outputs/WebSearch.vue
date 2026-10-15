@@ -64,12 +64,10 @@ const parsed = computed<ParsedWebSearch>(() => {
   return { ...p, success: false, error: parseWebSearchErrorText(text) }
 })
 
-/**
- * The provider, preferring the envelope's own word for it and falling back to
+/** The provider, preferring the envelope's own word for it and falling back to
  * the name the call asked for — a `configured` failure names no provider at
  * all, and a card that then says "unknown" loses the only fact it has.
- * `||`, not `??`: an envelope may carry `"provider":""`, which is no name.
- */
+ * `||`, not `??`: an envelope may carry `"provider":""`, which is no name. */
 interface WebSearchArgs {
   provider?: string
   curl?: string
@@ -136,13 +134,10 @@ function firstText(record: Record<string, unknown>, keys: string[]): string {
   return ''
 }
 
-/**
- * The ranked list, or null when the payload is not the `results` convention.
- *
+/** The ranked list, or null when the payload is not the `results` convention.
  * The check is deliberately narrow: a TOP-LEVEL `results` whose every member
  * is an object. Brave nests the same array under `web`, SearxNG returns a
- * bare array — both are real payloads and both render as formatted JSON.
- */
+ * bare array — both are real payloads and both render as formatted JSON. */
 const rows = computed<ResultRow[] | null>(() => {
   const raw = asRecord(parsed.value.response).results
   if (!Array.isArray(raw)) return null

@@ -447,24 +447,20 @@ function scroll(el: HTMLElement, top: number) {
   el.dispatchEvent(new Event('scroll'))
 }
 
-/**
- * Dispatch a scroll event WITHOUT moving the viewport — for "the user
+/** Dispatch a scroll event WITHOUT moving the viewport — for "the user
  * keeps scrolling and the position genuinely didn't change" (a real
  * repeated event reports the current, already-compensated position;
  * writing `el.scrollTop` here would manually undo the compensation the
- * test is trying to observe).
- */
+ * test is trying to observe). */
 function dispatchScroll(el: HTMLElement) {
   el.dispatchEvent(new Event('scroll'))
 }
 
-/**
- * Give the rendered children fake offsetHeights: `tallPx` for items
+/** Give the rendered children fake offsetHeights: `tallPx` for items
  * above `anchorIndex`, `estimatePx` for the rest. Returns the expected
  * compensation total for the above-anchor set. Pass `onlyIndex` to
  * make exactly ONE above-anchor item tall (the "single long message"
- * case); the rest keep the estimate.
- */
+ * case); the rest keep the estimate. */
 function mockChildHeights(
   el: HTMLElement,
   anchorIndex: number,

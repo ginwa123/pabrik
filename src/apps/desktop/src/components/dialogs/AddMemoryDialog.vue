@@ -46,13 +46,11 @@ import UiIcon from '../ui/UiIcon.vue'
 
 const props = withDefaults(defineProps<{
   show: boolean
-  /**
-   * The initial cwd to scope the new memory to. Used as the starting
+  /** The initial cwd to scope the new memory to. Used as the starting
    * value of the local `cwd` ref; the user can change it via the
    * folder picker before submitting. Typically passed by the parent
    * as the workspace's first folder item's path, but any valid
-   * absolute path works.
-   */
+   * absolute path works. */
   cwd: string
   /**
    * 'standalone' (default) — the legacy flow: this dialog calls
@@ -103,13 +101,11 @@ const notificationStore = useNotificationStore()
 
 // ─── Validation ─────────────────────────────────────────────────────────────
 
-/**
- * Mirrors `memories.isValidMemoryName` from
+/** Mirrors `memories.isValidMemoryName` from
  * `src/modules/agent/tools/memories.zig:372` — kept in sync so the
  * dialog rejects obvious typos before hitting the server. The
  * server is the source of truth; if the two ever drift, the
- * server-side check returns 400.
- */
+ * server-side check returns 400. */
 function isValidMemoryName(rawName: string): boolean {
   const trimmed = rawName.trim()
   if (trimmed.length === 0) return false

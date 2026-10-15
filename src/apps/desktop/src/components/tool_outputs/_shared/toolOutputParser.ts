@@ -167,12 +167,10 @@ function boolField(o: Record<string, unknown>, key: string, defaultValue = false
   return defaultValue
 }
 
-/**
- * Normalized view of whatever a tool card's `content` prop carries:
+/** Normalized view of whatever a tool card's `content` prop carries:
  * either the bare `data` object (ChatView's success path) or a full
  * envelope JSON string/object (ChatView's error fallback, `m.content`).
- * Empty or unparseable input yields null data with no error (running state).
- */
+ * Empty or unparseable input yields null data with no error (running state). */
 export interface NormalizedToolContent {
   data: unknown
   error: string | null
@@ -496,12 +494,10 @@ export function parseCommand(data: unknown): ParsedBash {
   return parseBash(data)
 }
 
-/**
- * Dispatcher: parse a tool result based on the `toolName` it was registered
+/** Dispatcher: parse a tool result based on the `toolName` it was registered
  * under. 'bash' / 'pwsh' / 'run_command' (legacy alias) / 'command'
  * (unified shell) all use the same payload. New shells with divergent
- * payload shapes must add their own branch here.
- */
+ * payload shapes must add their own branch here. */
 export function parseShell(toolName: string, data: unknown): ParsedBash {
   switch (toolName) {
     case 'bash':
@@ -572,13 +568,11 @@ export function parseSearch(data: unknown): ParsedSearch {
   }
 }
 
-/**
- * One row of a `search_skills` page. Identity is the name ALONE: the page
+/** One row of a `search_skills` page. Identity is the name ALONE: the page
  * is one workspace's skills, so there is no tier to tag and no path to
  * hand back. A row that arrived with the old `scope` / `path` keys still
  * parses — the extra keys are simply not read, which keeps a cached
- * transcript from rendering blank rows.
- */
+ * transcript from rendering blank rows. */
 export interface SkillSearchRow {
   name: string
   description: string
@@ -900,14 +894,11 @@ export interface WebSearchProviderRef {
 export interface ParsedWebSearchError {
   /** The backend's sentence, verbatim. */
   message: string
-  /**
-   * Which reasons this envelope claims, in a fixed order so two renderings
+  /** Which reasons this envelope claims, in a fixed order so two renderings
    * of the same failure never disagree.
-   *
    * `transport` is the residual: it is the one failure with no key of its
    * own, so a flagless error is reported as it. Every other flag is read
-   * off a key the backend sets.
-   */
+   * off a key the backend sets. */
   flags: WebSearchErrorFlag[]
   /** True only for `configured:false` — nothing is set up in Settings yet. */
   configured: boolean
@@ -987,14 +978,12 @@ export function parseWebSearchError(o: Record<string, unknown>): ParsedWebSearch
   }
 }
 
-/**
- * The exec wrapper reports a failure in TWO places: the envelope's `error`
+/** The exec wrapper reports a failure in TWO places: the envelope's `error`
  * field, and — for the reasons the model can recover from on its own — the
  * whole inner JSON envelope as that field's TEXT. When it is a text
  * envelope, read the flags out of it; when it is a plain sentence, report
  * the sentence and no flag, because a message with no reason key is not
- * evidence of a transport failure.
- */
+ * evidence of a transport failure. */
 export function parseWebSearchErrorText(text: string): ParsedWebSearchError {
   const o = asRecord(text)
   if (typeof o.error === 'string' && Object.keys(o).length > 1) return parseWebSearchError(o)

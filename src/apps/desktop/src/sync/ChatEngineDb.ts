@@ -119,12 +119,10 @@ export class ChatEngineDb extends BaseSyncEngine<ChatMessage, ChatCtx> {
     return this.fetchDeltaPage(cursor, limit, ctx)
   }
 
-  /**
-   * Newer-than-cursor fetch plus the session metadata the endpoint
+  /** Newer-than-cursor fetch plus the session metadata the endpoint
    * piggybacks. A stored cursor means the cache already holds everything
    * before it, so ask ascending for just the tail; cold start (no cursor)
-   * keeps the desc full load.
-   */
+   * keeps the desc full load. */
   fetchDeltaPage(
     cursor: string | null,
     limit: number,
@@ -161,14 +159,11 @@ export class ChatEngineDb extends BaseSyncEngine<ChatMessage, ChatCtx> {
     )
   }
 
-  /**
-   * Background refresh for a cached mount: fetch the tail, persist it,
+  /** Background refresh for a cached mount: fetch the tail, persist it,
    * advance the cursor. `preserveIds` prevents a response that started
    * before a live SSE update from overwriting that newer row.
-   *
    * Now honest about failure — the old `catch { return null }` made a
-   * backend outage indistinguishable from "no new messages".
-   */
+   * backend outage indistinguishable from "no new messages". */
   loadDelta(
     ctx: ChatCtx,
     limit: number,

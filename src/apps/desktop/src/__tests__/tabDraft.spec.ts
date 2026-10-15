@@ -8,12 +8,10 @@ import { __resetWindowIdForTests } from '../helpers/windowId'
 import { useTabsStore } from '../stores/tabs'
 import { makeLocalStorageStub } from './helpers'
 
-/**
- * Task 5 of the tab-mode plan: drafts must survive the remount that every
+/** Task 5 of the tab-mode plan: drafts must survive the remount that every
  * tab switch performs (AppLayout keys each view by the active tab), while
  * `GitFileViewer`'s FileInput — which passes no `draftKey` — must stay
- * completely unwired.
- */
+ * completely unwired. */
 
 function installStorage(): void {
   Object.defineProperty(globalThis, 'localStorage', {

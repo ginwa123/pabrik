@@ -79,33 +79,25 @@ import { fileDownloadUrl } from '../../api'
 
 const props = withDefaults(
   defineProps<{
-    /**
-     * The inner `<data>` XML from the present_files tool's `<tool>`
+    /** The inner `<data>` XML from the present_files tool's `<tool>`
      * envelope (already unwrapped by the parent's
-     * `tryUnwrapToolOutput` pipeline). Always XML — never JSON.
-     */
+     * `tryUnwrapToolOutput` pipeline). Always XML — never JSON. */
     content: unknown
-    /**
-     * The session id — threaded into the download/preview URLs as
+    /** The session id — threaded into the download/preview URLs as
      * `?session_id=` so the backend can sandbox paths to the session
-     * working directory. Falls back to `chatId` at the call site.
-     */
+     * working directory. Falls back to `chatId` at the call site. */
     sessionId: string
-    /**
-     * Whether the row is already expanded in the parent chat.
+    /** Whether the row is already expanded in the parent chat.
      * Defaults to expanded — presented files are the payload, not metadata.
      * Uses withDefaults (not `?? true`): Vue coerces an absent Boolean
-     * prop to false, so `??` would never fire.
-     */
+     * prop to false, so `??` would never fire. */
     expanded?: boolean
     /**
      * Session working directory (for the header's open-in-editor hint).
      */
     cwd?: string
-    /**
-     * The JSON-stringified tool-call arguments. Rendered collapsed via
-     * ToolParameters for parity with the other cards.
-     */
+    /** The JSON-stringified tool-call arguments. Rendered collapsed via
+     * ToolParameters for parity with the other cards. */
     parameters?: string
   }>(),
   { expanded: true },

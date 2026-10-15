@@ -87,13 +87,11 @@ const props = defineProps<{
 
 const isExpanded = ref(false)
 
-/**
- * Envelope `<parameters>` for this tool message.
+/** Envelope `<parameters>` for this tool message.
  * `list_sub_agent` takes no input, so this is `{}` on the real wire and
  * <ToolParameters> renders nothing (its hasArgs guard skips '' / '{}').
  * Derived here — NOT threaded as a prop — because this component takes
- * `:message` (whole role=tool message), never `:content`/`:parameters`.
- */
+ * `:message` (whole role=tool message), never `:content`/`:parameters`. */
 const envelopeParams = computed(
   () => tryUnwrapToolOutput(props.message.content)?.parameters ?? '{}',
 )
@@ -124,12 +122,10 @@ function strOrNull(v: unknown): string | null {
   return null
 }
 
-/**
- * Unwrap the message content to the inner `data` record. Accepts the full
+/** Unwrap the message content to the inner `data` record. Accepts the full
  * JSON envelope string (normal wire shape) or a bare data-object JSON
  * string (defensive fallback for direct callers). Returns null when the
- * content is not parseable JSON at all.
- */
+ * content is not parseable JSON at all. */
 function innerDataOf(
   content: string,
 ): { data: Record<string, unknown>; error: string | null } | null {

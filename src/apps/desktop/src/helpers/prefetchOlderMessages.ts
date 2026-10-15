@@ -40,26 +40,20 @@ export const FETCH_EMA_ALPHA = 0.4
 export const FETCH_SAMPLE_MIN_MS = 60
 export const FETCH_SAMPLE_MAX_MS = 1200
 
-/**
- * Arm radius in px: `max(800, 1.5 × containerHeight)`.
- *
+/** Arm radius in px: `max(800, 1.5 × containerHeight)`.
  * Delegates to `computeLoadMoreThreshold` so the "biggest of an absolute
  * floor and a viewport proportion" rule lives in exactly one place. Because
  * `max(800, 1.5h) > max(200, 0.5h)` for every `h ≥ 0`, the arm radius is
- * always strictly larger than the commit band (asserted in the spec).
- */
+ * always strictly larger than the commit band (asserted in the spec). */
 export function armRadiusPx(containerHeight: number): number {
   return computeLoadMoreThreshold(ARM_RADIUS_FLOOR_PX, ARM_RADIUS_RATIO, containerHeight)
 }
 
-/**
- * Exponential moving average of observed `getChatHistory` durations.
- *
+/** Exponential moving average of observed `getChatHistory` durations.
  * Recorded (and logged) even while the v1 trigger is distance-only, so the
  * PR can report "the page needed X ms and the user was given Y ms of head
  * start" — and so the velocity term can be switched on without re-deriving
- * state. Non-finite or out-of-range samples are ignored.
- */
+ * state. Non-finite or out-of-range samples are ignored. */
 export function nextFetchEstimate(prevMs: number, measuredMs: number): number {
   const prev = Number.isFinite(prevMs) && prevMs > 0 ? prevMs : PREFETCH_SAMPLE_INIT_MS
   if (!Number.isFinite(measuredMs) || measuredMs <= 0) return prev
@@ -119,13 +113,10 @@ export interface PrefetchDecision {
   skip?: PrefetchSkip
 }
 
-/**
- * Decide whether to arm a prefetch of the next older page.
- *
+/** Decide whether to arm a prefetch of the next older page.
  * Order matters: terminal states (no session, no more pages, already
  * buffered/fetching/committing) short-circuit first, then the optional
- * velocity term (which can arm from further out), then the distance margin.
- */
+ * velocity term (which can arm from further out), then the distance margin. */
 export function decidePrefetchOlder(input: PrefetchInput): PrefetchDecision {
   const armRadius =
     Number.isFinite(input.armRadiusPx) && input.armRadiusPx > 0

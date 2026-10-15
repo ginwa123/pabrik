@@ -41,12 +41,10 @@ export const useDocumentsStore = defineStore('documents', () => {
   const saving = ref(false)
   /** Last failure message, or null. Rendered by the view — never write-only. */
   const error = ref<string | null>(null)
-  /**
-   * True once a list has been fetched for SOME workspace. Distinguishes
+  /** True once a list has been fetched for SOME workspace. Distinguishes
    * "not loaded yet" (render nothing) from "loaded, and there are none"
    * (render the empty state) — without it a fresh sidebar shows a
-   * misleading "No documents yet" before the first request returns.
-   */
+   * misleading "No documents yet" before the first request returns. */
   const loaded = ref(false)
 
   const count = computed(() => documents.value.length)
@@ -190,12 +188,10 @@ export const useDocumentsStore = defineStore('documents', () => {
     }
   }
 
-  /**
-   * Fetch a single document for the editor. The list response already
+  /** Fetch a single document for the editor. The list response already
    * carries every body, so this is a no-op when the row is cached and
    * only reaches the network for a deep link opened before the sidebar
-   * list loaded.
-   */
+   * list loaded. */
   async function loadDocument(workspaceId: string, documentId: string): Promise<Document | null> {
     if (!workspaceId || !documentId) return null
     error.value = null

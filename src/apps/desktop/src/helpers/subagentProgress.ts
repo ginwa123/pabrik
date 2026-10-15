@@ -39,13 +39,11 @@ export type ProgressStatus = 'launched' | 'completed' | 'failed'
 /** Sub-agent lifecycle status as exposed to UI rendering. */
 export type SubAgentRowStatus = 'running' | 'done' | 'failed'
 
-/**
- * Wire shape of one `role="subagent_progress"` SSE event, as parsed
+/** Wire shape of one `role="subagent_progress"` SSE event, as parsed
  * from `JSON.parse(raw)` in the SSE bus handler. All fields except
  * `status`/`agent_index`/`total_agents` are optional because the
  * `launched` event arrives first (with no response) and later events
- * add the completion details.
- */
+ * add the completion details. */
 export interface SubAgentProgressEvent {
   /** MUST be `'subagent_progress'`. The bus handler uses this to
    * route into `applyProgressEvent` instead of the regular

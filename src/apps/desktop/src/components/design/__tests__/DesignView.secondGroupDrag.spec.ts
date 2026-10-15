@@ -85,14 +85,11 @@ describe('DesignView second group drag (regression)', () => {
     vi.restoreAllMocks()
   })
 
-  /**
-   * Find the DesignElement that represents `group` in the mounted DesignView, hook its
+  /** Find the DesignElement that represents `group` in the mounted DesignView, hook its
    * `addEventListener` so we can intercept the pointermove/pointerup handlers, then fire a complete
    * gesture.
-   *
    * The group renders BEFORE its child (because the group has lower // eslint-disable-next-line
-   * @typescript-eslint/no-explicit-any
-   */
+   * @typescript-eslint/no-explicit-any */
 
   /**
    * `position` and the v-for is `for element in elements`). /

@@ -63,12 +63,10 @@ const props = withDefaults(
   defineProps<{
     contentType: 'markdown' | 'text' | 'code' | 'image' | 'html'
     args: PreviewArgs
-    /**
-     * Layout variant (kept for backward compat). Only `'inline'`
+    /** Layout variant (kept for backward compat). Only `'inline'`
      * is used — compact chat-bubble layout that auto-resizes to fit
      * the iframe's content height, plus an "Open in new tab" button
-     * for HTML content.
-     */
+     * for HTML content. */
     variant?: 'side' | 'inline'
   }>(),
   { variant: 'inline' },

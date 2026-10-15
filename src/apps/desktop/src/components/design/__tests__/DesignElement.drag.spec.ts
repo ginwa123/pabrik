@@ -368,23 +368,18 @@ describe('DesignElement drag', () => {
     expect(wrapper.emitted('delete')).toBeUndefined()
   })
 
-  /**
-   * REGRESSION (2026-08-06, design-mode-moves-so-fast v2): the wire `dx` was historically the
+  /** REGRESSION (2026-08-06, design-mode-moves-so-fast v2): the wire `dx` was historically the
    * CUMULATIVE cursor delta from drag-start (`dx = e.clientX - startClientX`). The backend
    * interprets `dx` as "set x = x + dx", so each throttled emit compounded: after N //
-   * eslint-disable-next-line @typescript-eslint/no-explicit-any
-   */
+   * eslint-disable-next-line @typescript-eslint/no-explicit-any */
 
   /** ticks of cursor movement d, the element ended up at d·N·(N+1)/2 // eslint-disable-next-line
    * @typescript-eslint/no-explicit-any */
 
-  /**
-   * instead of d — making the element visibly leap ahead of the cursor (the "moves so fast" user
+  /** instead of d — making the element visibly leap ahead of the cursor (the "moves so fast" user
    * complaint).
-   *
    * The fix sends the INCREMENTAL dx (delta since last emit). Each // eslint-disable-next-line
-   * @typescript-eslint/no-explicit-any
-   */
+   * @typescript-eslint/no-explicit-any */
 
   /**
    * emit carries only the cursor movement SINCE the previous emit. The backend still ADDs, but the

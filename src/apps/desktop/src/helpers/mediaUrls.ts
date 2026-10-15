@@ -21,12 +21,10 @@
 
 export const MEDIA_URLS_WIRE_DELIMITER = '||'
 
-/**
- * Join staged attachments into the wire string. Empty / blank entries are
+/** Join staged attachments into the wire string. Empty / blank entries are
  * dropped so a staged-but-cleared attachment cannot turn into a stray `||`
  * (which the split tolerates, but which would still show up in raw DB dumps and
- * in the `queue_queued` SSE frame).
- */
+ * in the `queue_queued` SSE frame). */
 export function joinMediaUrlsWire(urls?: readonly string[]): string {
   return (urls ?? [])
     .map((u) => u.trim())
@@ -34,14 +32,11 @@ export function joinMediaUrlsWire(urls?: readonly string[]): string {
     .join(MEDIA_URLS_WIRE_DELIMITER)
 }
 
-/**
- * Decode a wire `image_url` / `video_url` / `image_urls` string into the list of
+/** Decode a wire `image_url` / `video_url` / `image_urls` string into the list of
  * URLs a renderer can `<img :src>`.
- *
  * Returns `undefined` — not `[]` — when there is nothing to render, so the
  * caller's `v-if="image_urls?.length > 0"` hides the attachment row entirely
- * instead of drawing an empty container.
- */
+ * instead of drawing an empty container. */
 export function splitMediaUrlsWire(joined?: string | null): string[] | undefined {
   if (!joined) return undefined
   const parts = joined

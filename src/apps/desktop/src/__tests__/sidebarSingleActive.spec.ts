@@ -176,13 +176,11 @@ describe('Sidebar — URL-driven single-active contract', () => {
     vi.restoreAllMocks()
   })
 
-  /**
-   * Helper: pre-populate the workspaces store with the design-workspace
+  /** Helper: pre-populate the workspaces store with the design-workspace
    * fixture (1 design item with 2 design pages). The store's
    * `expandedItemIds` and `designPagesByItemId` caches must be set so
    * the design pages render (otherwise the `<DesignPageRow>` for
-   * `page_42` never mounts).
-   */
+   * `page_42` never mounts). */
   function seedWorkspaceFixture() {
     const ws = useWorkspacesStore()
      

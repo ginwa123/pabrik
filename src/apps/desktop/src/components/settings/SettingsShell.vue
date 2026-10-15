@@ -42,12 +42,10 @@ const USER_SECTIONS: readonly SettingsSectionItem[] = [
   { id: 'general', label: 'General', icon: 'settings' },
 ]
 
-/**
- * Presentation for each moved config section. A `Record` keyed by the section
+/** Presentation for each moved config section. A `Record` keyed by the section
  * ids, not a parallel hand-written list: adding an id to
  * `WORKSPACE_AGENT_SECTIONS` without a label here is then a TYPE error, which
- * is what stops the nav and the workspace view drifting into a dead nav item.
- */
+ * is what stops the nav and the workspace view drifting into a dead nav item. */
 const AGENT_SECTION_META: Record<
   (typeof WORKSPACE_AGENT_SECTIONS)[number],
   { label: string; icon: UiIconName }

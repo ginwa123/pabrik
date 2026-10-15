@@ -40,13 +40,10 @@ export function formatElapsedDuration(ms: number): string {
   return `${Math.floor(hour / 24)}d ${(hour % 24).toString().padStart(2, '0')}h`
 }
 
-/**
- * True when a worker's last heartbeat is old enough to read as stalled.
- *
+/** True when a worker's last heartbeat is old enough to read as stalled.
  * The threshold sits below the 600s the backend's `cleanup_stale_worker`
  * cron uses to delete the row, so the UI can warn before the run is
- * reaped rather than reporting a disappearance after the fact.
- */
+ * reaped rather than reporting a disappearance after the fact. */
 export function isWorkerStale(lastActivityMs: number, nowMs: number): boolean {
   if (!Number.isFinite(lastActivityMs) || !Number.isFinite(nowMs)) return false
   return nowMs - lastActivityMs >= WORKER_STALE_SECONDS * 1000

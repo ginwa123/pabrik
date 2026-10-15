@@ -93,12 +93,10 @@ describe('ProjectsList item drag-and-drop', () => {
     })
   })
 
-  /**
-   * Build a fake DragEvent with a writable dataTransfer. JSDOM does
+  /** Build a fake DragEvent with a writable dataTransfer. JSDOM does
    * not provide the browser's `DataTransfer` class, so we use a
    * minimal in-memory stub that implements just the surface our
-   * component touches (`setData` / `getData`).
-   */
+   * component touches (`setData` / `getData`). */
   function makeDragStore() {
     const store = new Map<string, string>()
     return {

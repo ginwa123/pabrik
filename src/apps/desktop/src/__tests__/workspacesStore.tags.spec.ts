@@ -1,10 +1,7 @@
-/**
- * workspacesStore — kanban task tags passthrough (Migration 067).
+/** workspacesStore — kanban task tags passthrough (Migration 067).
  * Covers: addTask forwards tags; updateTaskDetails forwards tags;
  * updateTaskDetails rollback restores tags on API error.
- *
- * Plan: docs/superpowers/plans/2026-07-28-kanban-task-tags.md (Task 13)
- */
+ * Plan: docs/superpowers/plans/2026-07-28-kanban-task-tags.md (Task 13) */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'

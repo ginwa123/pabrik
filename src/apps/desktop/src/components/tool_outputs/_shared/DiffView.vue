@@ -65,13 +65,11 @@ const props = withDefaults(defineProps<Props>(), {
   initialMode: 'split',
 })
 
-/**
- * Emitted when the user clicks a line-number cell in the diff.
+/** Emitted when the user clicks a line-number cell in the diff.
  * Payload is the 1-based line number in the file (the `after`-side line
  * for split view, the actual row's new-line number for unified view).
  * Parents should wire this to the code-editor open handler so the user
- * can land on the exact line they were inspecting.
- */
+ * can land on the exact line they were inspecting. */
 const emit = defineEmits<{
   'jump-to-line': [line: number]
 }>()
@@ -119,12 +117,10 @@ const hasChanges = computed(() => changeCount.value > 0)
  * derived from the file path. Plaintext disables token spans. */
 const effectiveLanguage = computed(() => props.language ?? detectLanguage(props.filePath ?? ''))
 
-/**
- * Split one line into colored token spans. Plaintext (or an empty line)
+/** Split one line into colored token spans. Plaintext (or an empty line)
  * returns a single text node — identical output to the old plain-text
  * rendering. Tokens render as framework text nodes, never HTML strings,
- * so `old_str` content cannot inject markup.
- */
+ * so `old_str` content cannot inject markup. */
 function renderHighlighted(text: string, language: string): VNode[] {
   const tokens = highlightLine(text, language)
   if (tokens.length === 1 && tokens[0]!.type === 'plain') {
@@ -305,13 +301,11 @@ function renderSplitRow(row: SplitRow, idx: number, side: 'before' | 'after', la
 // renderUnifiedRow now render token-colored spans (via renderHighlighted)
 // on top of the row bg instead.
 
-/**
- * Renders the unified-view rows: line numbers, diff prefix, and content,
+/** Renders the unified-view rows: line numbers, diff prefix, and content,
  * all in a single column. Same shared-wrapper sizing approach as
  * DiffSplitSide — see the comment above that component for why this
  * matters for background consistency on short rows and for keeping
- * horizontal scroll working.
- */
+ * horizontal scroll working. */
 const DiffUnifiedSide = defineComponent({
   name: 'DiffUnifiedSide',
   props: {

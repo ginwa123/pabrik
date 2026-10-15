@@ -46,13 +46,11 @@ function mountScroller() {
   })
 }
 
-/**
- * Dispatch a real scroll event on the scroller's root element with
+/** Dispatch a real scroll event on the scroller's root element with
  * a known `scrollTop`. jsdom does not lay out, so we set the
  * layout-affecting properties explicitly so the geometry reads in
  * `onScroll` (target.clientHeight, target.scrollHeight) return
- * realistic values.
- */
+ * realistic values. */
 function dispatchScroll(wrapper: ReturnType<typeof mountScroller>, scrollTop: number) {
   const el = wrapper.element as HTMLElement
   Object.defineProperty(el, 'clientHeight', { value: 800, configurable: true })

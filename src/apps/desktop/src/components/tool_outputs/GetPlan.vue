@@ -117,12 +117,10 @@ function strOrNull(v: unknown): string | null {
   return null
 }
 
-/**
- * Unwrap the message content to the inner `data` record. Accepts the full
+/** Unwrap the message content to the inner `data` record. Accepts the full
  * JSON envelope string (normal wire shape) or a bare data-object JSON
  * string (defensive fallback for direct callers). Returns null when the
- * content is not parseable JSON at all.
- */
+ * content is not parseable JSON at all. */
 function innerDataOf(content: string): { data: Record<string, unknown>; error: string | null } | null {
   const unwrapped = tryUnwrapToolOutput(content)
   if (unwrapped) {

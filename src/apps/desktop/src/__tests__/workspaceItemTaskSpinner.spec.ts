@@ -1,10 +1,8 @@
-/**
- * Regression tests for the per-task activity marker. WorkspaceItem must
+/** Regression tests for the per-task activity marker. WorkspaceItem must
  * read from the same processingState ref App.vue provides. The circle
  * spinner was removed — the elapsed time pill is now the only marker,
  * so these tests assert the chip shows while the worker runs and no
- * spinner element exists at all.
- */
+ * spinner element exists at all. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, type Ref } from 'vue'

@@ -1,10 +1,7 @@
-/**
- * Behavioural tests for the persistent git-status cache (SWR paint).
- *
+/** Behavioural tests for the persistent git-status cache (SWR paint).
  * The cache's contract: keyed by cwd, survives reloads (localStorage),
  * fail-silent on every storage failure, and never returns a shape that
- * ChatView's chip cannot render (corrupt/foreign JSON → null).
- */
+ * ChatView's chip cannot render (corrupt/foreign JSON → null). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { GitStatus } from '@/api'

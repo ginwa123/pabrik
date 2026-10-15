@@ -123,14 +123,11 @@ const jsonText = ref('')
 /** Has the textarea's content been folded into the in-memory config? */
 const jsonApplied = ref(false)
 
-/**
- * What is wrong with the textarea, or null when it is applicable.
- *
+/** What is wrong with the textarea, or null when it is applicable.
  * Live, not on-submit: the Apply button is disabled and the reason is on
  * screen while the user types, so an invalid paste never looks like it
  * worked. Never reformats the text - rewriting what somebody is typing is
- * the fastest way to lose an edit.
- */
+ * the fastest way to lose an edit. */
 const jsonProblem = computed<string | null>(() => {
   const text = jsonText.value.trim()
   if (text.length === 0) return 'Nothing to apply — the JSON is empty.'
@@ -209,12 +206,10 @@ const activeTab = computed<Tab>({
   },
 })
 
-/**
- * Turning tab mode off must leave no trace: the route funnel stops
+/** Turning tab mode off must leave no trace: the route funnel stops
  * creating/normalising tabs, and the now-meaningless `?tab=` is dropped
  * from the URL. Guarded because this component also mounts in tests
- * without a router installed.
- */
+ * without a router installed. */
 function onToggleBrowserTabs(value: boolean) {
   tabsStore.setEnabled(value)
   if (value || !router || !route) return
@@ -612,12 +607,10 @@ function profilesToRecord(list: ProfileRow[]): Record<string, PabrikProfile> {
 
 // ─── Modal state ──────────────────────────────────────────────────────────
 type ProfileModalState = { mode: 'add' | 'edit'; value: LlmConfigModalValue } | null
-/**
- * Where a sub-agent is being added/edited. Plan
+/** Where a sub-agent is being added/edited. Plan
  * 2026-09-04-subagents-per-profile: per-profile only — the `scope`
  * always carries the owning profile name (the old `{ kind: 'top' }`
- * global scope is gone with the Sub-agents tab).
- */
+ * global scope is gone with the Sub-agents tab). */
 type SubAgentScope = { kind: 'profile'; profileName: string }
 type SubAgentModalState = {
   mode: 'add' | 'edit'
@@ -1121,13 +1114,10 @@ function confirmDeleteProfile() {
 }
 
 // ─── Loading ─────────────────────────────────────────────────────────────
-/**
- * Re-read the effective config through the source.
- *
+/** Re-read the effective config through the source.
  * The mount path's only load path. (It used to be shared with a
  * reset/copy control; that control is gone - the boot seeding IS the
- * migration, so there is nothing left to reset to or copy in.)
- */
+ * migration, so there is nothing left to reset to or copy in.) */
 async function reload() {
   try {
     const data = await source.load()

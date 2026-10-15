@@ -87,12 +87,10 @@ function strField(o: Record<string, unknown>, key: string): string {
   return ''
 }
 
-/**
- * Resolve `content` to the ask_user `data` object. Accepts the bare data
+/** Resolve `content` to the ask_user `data` object. Accepts the bare data
  * object (ChatView's success path), a full envelope object, or either form
  * as a JSON string (ChatView's error fallback hands us the raw envelope
- * string). Returns the envelope error when the call failed.
- */
+ * string). Returns the envelope error when the call failed. */
 function resolveData(content: unknown): {
   data: Record<string, unknown> | null
   error: string | null
@@ -412,12 +410,10 @@ const optionLabels = computed<string[]>(() =>
   options.value.map((option) => stripMarkdownSyntax(option)),
 )
 
-/**
- * The one-line `primary` and the resolved answer chip must stay TEXT —
+/** The one-line `primary` and the resolved answer chip must stay TEXT —
  * the header pill is a single truncated line, and the answer chip's text
  * is the very string POSTed back to the model. Strip the syntax, keep the
- * words, and keep `options` / `answer` themselves raw for the wire.
- */
+ * words, and keep `options` / `answer` themselves raw for the wire. */
 const primary = computed(() => {
   const header = stripMarkdownSyntax(parsed.value.header)
   if (header) return header

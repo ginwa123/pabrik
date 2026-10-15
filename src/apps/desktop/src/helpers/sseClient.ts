@@ -252,21 +252,17 @@ export interface SseClientOptions {
    * 30 000 ms. The "Reconnecting…" badge can use this to give
    * the user a sense of how long the next attempt will take. */
   maxDelayMs?: number
-  /**
-   * Hard cap on reconnect attempts. After this many failed retries
+  /** Hard cap on reconnect attempts. After this many failed retries
    * (post-open), state becomes `failed` and no further retries
    * are scheduled. The first attempt does NOT count against this
    * cap (a 4xx on the first try already goes to `failed`
    * immediately). Default: `Infinity` (an SSE stream is expected
-   * to live the lifetime of the page).
-   */
+   * to live the lifetime of the page). */
   maxAttempts?: number
-  /**
-   * Random source for jitter. Override in tests to make the
+  /** Random source for jitter. Override in tests to make the
    * backoff schedule deterministic. Default: `Math.random`.
    * Jitter formula: `delay = exp * (0.5 + 0.5 * random())`
-   * (full-jitter pattern, AWS-style).
-   */
+   * (full-jitter pattern, AWS-style). */
   random?: () => number
   /** Pause the retry timer while `document.hidden === true`.
    * The retry fires immediately on `visibilitychange → visible`.
@@ -276,12 +272,10 @@ export interface SseClientOptions {
    * `true`. The event target is `window` (override with
    * `onlineTarget` for tests). */
   reconnectOnOnline?: boolean
-  /**
-   * Override the `EventSource` constructor. Default:
+  /** Override the `EventSource` constructor. Default:
    * `globalThis.EventSource`. Tests pass a mock factory here so
    * they can fire synthetic `open` / `error` / `message` events
-   * without a real network.
-   */
+   * without a real network. */
   EventSourceCtor?: typeof EventSource
   /** Override the `visibilitychange` target. Default: `document`.
    * Tests may pass a mock to control visibility. */
@@ -376,13 +370,11 @@ export interface SseClient {
    * Synchronous read of the current state. Returns the most recently emitted state. /
    */
   getState(): SseState
-  /**
-   * Subscribe to state transitions. Returns an unsubscribe
+  /** Subscribe to state transitions. Returns an unsubscribe
    * function. Subscribers are NOT called for the state that was
    * current at the time of subscription — only for transitions
    * that happen AFTER subscribing. (If you need the current state
-   * at subscription time, call `getState()` too.)
-   */
+   * at subscription time, call `getState()` too.) */
   onStateChange(cb: (s: SseState, info: SseStateInfo) => void): () => void
 }
 

@@ -46,12 +46,10 @@ const agentChatViewSrc = templateOf(src('AgentChatView.vue'))
 const standardTaskChatViewSrc = templateOf(src('StandardTaskChatView.vue'))
 const appBarSrc = src('ChatAppBar.vue')
 
-/**
- * The bar's rendered markup, normalised. Vue leaves `<!--v-if-->`
+/** The bar's rendered markup, normalised. Vue leaves `<!--v-if-->`
  * markers where a slot rendered nothing, and the indentation of a
  * slotted-but-empty `extras` differs from an absent slot — neither is
- * a visual difference, so both are stripped before comparing.
- */
+ * a visual difference, so both are stripped before comparing. */
 const barHtml = (w: { get: (s: string) => { html: () => string } }) =>
   templateOf(w.get('[data-testid="chat-app-bar"]').html()).replace(/>\s+</g, '><').trim()
 

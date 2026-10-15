@@ -41,12 +41,10 @@ const props = withDefaults(
     isAgentRunning?: boolean
     /** Shown in the menu's title bar so the user can confirm the target. */
     taskName?: string
-    /**
-     * The board's columns, already ordered. Empty (or a single entry)
+    /** The board's columns, already ordered. Empty (or a single entry)
      * hides the "Move to column" row entirely — a submenu with one
      * dead item is worse than no submenu. The sidebar-row host and
-     * legacy/unloaded boards pass nothing.
-     */
+     * legacy/unloaded boards pass nothing. */
     columns?: KanbanColumn[]
     /** Id of the column this task currently lives in; marked in the submenu. */
     currentColumnId?: string | null

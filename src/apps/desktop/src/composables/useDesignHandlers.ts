@@ -28,20 +28,16 @@ export interface UseDesignHandlersArgs {
   workspaceId: string | { value: string } | (() => string)
   itemId: string | { value: string } | (() => string)
   pageId: string | { value: string } | (() => string)
-  /**
-   * Reactive Set of currently-selected element ids. The composable
+  /** Reactive Set of currently-selected element ids. The composable
    * reads `selectedIds.value.size` to enforce the 2+ rule and
    * replaces `selectedIds.value = new Set()` after a successful
    * group. Pass it as a ref/computed so changes from DesignView
-   * propagate here.
-   */
+   * propagate here. */
   selectedIds: { value: Set<string> }
-  /**
-   * Optional override for the browser prompt. The default uses
+  /** Optional override for the browser prompt. The default uses
    * `window.prompt` (the first-cut implementation; Figma uses an
    * inline rename affordance — see plan §7.1 for the follow-up).
-   * Tests pass a stub to avoid blocking on the real prompt.
-   */
+   * Tests pass a stub to avoid blocking on the real prompt. */
   promptForName?: (defaultValue: string) => string | null
 }
 
@@ -92,13 +88,11 @@ export function useDesignHandlers(args?: UseDesignHandlersArgs) {
     }
   }
 
-  /**
-   * NEW (2026-08-06, split-move-resize plan) — translate (move) a
+  /** NEW (2026-08-06, split-move-resize plan) — translate (move) a
    * single element by a (dx, dy) delta. Routes to POST /translate.
    * The backend cascades the delta to every transitive descendant
    * when the target is a `group`/`frame` — callers don't need to
-   * know about the cascade. For leaves the cascade is a no-op.
-   */
+   * know about the cascade. For leaves the cascade is a no-op. */
   async function translateElement(
     workspaceId: string,
     itemId: string,
@@ -139,13 +133,11 @@ export function useDesignHandlers(args?: UseDesignHandlersArgs) {
     }
   }
 
-  /**
-   * NEW (2026-08-06, split-move-resize plan) — resize a single
+  /** NEW (2026-08-06, split-move-resize plan) — resize a single
    * element with absolute x/y/width/height/rotation fields. Routes
    * to POST /resize. Resize NEVER cascades (Figma convention —
    * only the dragged element's bounding box changes; children keep
-   * their own positions).
-   */
+   * their own positions). */
   async function resizeElement(
     workspaceId: string,
     itemId: string,

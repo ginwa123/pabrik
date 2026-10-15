@@ -1,10 +1,7 @@
-/**
- * Tests for FileInput's composer toolbar slot (V1 single-card ChatView).
- *
+/** Tests for FileInput's composer toolbar slot (V1 single-card ChatView).
  * The parent (ChatView) projects its status row into `#toolbar` so input +
  * status render as one card. The strip renders ONLY when the slot is
- * provided — hosts without a toolbar see no extra chrome.
- */
+ * provided — hosts without a toolbar see no extra chrome. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

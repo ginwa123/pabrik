@@ -2021,14 +2021,11 @@ const handleKanbanRequestRenameColumn = (columnId: string) => {
   showKanbanColumnEditor.value = true
 }
 
-/**
- * Forward a kanban rename (from either the Settings dialog header
+/** Forward a kanban rename (from either the Settings dialog header
  * pencil or the KanbanView header pencil) to the store. Both
  * children emit `rename-item` with the trimmed new name; the
  * store action optimistic-updates + rolls back on error.
- *
- * Plan: docs/superpowers/plans/2026-06-30-edit-workspace-item-name.md
- */
+ * Plan: docs/superpowers/plans/2026-06-30-edit-workspace-item-name.md */
 const handleKanbanRenameItem = (newName: string) => {
   if (!activeWorkspaceItem.value) return
   const ws = activeWorkspace.value
@@ -2444,12 +2441,10 @@ const handleDesignUpdateElement = async (
   await designHandlers.updateElement(ws.id, item.id, elementId, patch)
 }
 
-/**
- * NEW (2026-08-06, split-move-resize plan) — handler for the
+/** NEW (2026-08-06, split-move-resize plan) — handler for the
  * `translateElement` event fired by DesignView during a single-element
  * drag (move mode). Routes to useDesignHandlers.translateElement →
- * POST /translate. Backend handles cascade-to-descendants for groups.
- */
+ * POST /translate. Backend handles cascade-to-descendants for groups. */
 const handleDesignTranslateElement = async (
   elementId: string,
   dx: number,
@@ -2461,12 +2456,10 @@ const handleDesignTranslateElement = async (
   await designHandlers.translateElement(ws.id, item.id, elementId, dx, dy)
 }
 
-/**
- * NEW (2026-08-06, split-move-resize plan) — handler for the
+/** NEW (2026-08-06, split-move-resize plan) — handler for the
  * `resizeElement` event fired by DesignView during a resize gesture.
  * Routes to useDesignHandlers.resizeElement → POST /resize. Resize
- * never cascades (Figma convention).
- */
+ * never cascades (Figma convention). */
 const handleDesignResizeElement = async (
   elementId: string,
   patch: Partial<{
@@ -2922,12 +2915,10 @@ onMounted(() => {
   syncFromRoute()
 })
 
-/**
- * Shortcuts and the live title feed are window-scoped wiring, so they live
+/** Shortcuts and the live title feed are window-scoped wiring, so they live
  * here and are torn down with the layout. Every handler re-applies the URL
  * through `applyActiveTabToUrl`, so the shortcut map can never leave the
- * URL pointing at a tab the user is no longer on.
- */
+ * URL pointing at a tab the user is no longer on. */
 const stopTabShortcuts = useTabShortcuts({
   isEnabled: () => tabsStore.enabled,
   tabCount: () => tabsStore.tabCount,

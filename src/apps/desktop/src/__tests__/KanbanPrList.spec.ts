@@ -1,11 +1,8 @@
-/**
- * Behavioural tests for KanbanPrList — the board-level
+/** Behavioural tests for KanbanPrList — the board-level
  * change-request list.
- *
  * The critical distinction (PR-#719 bug class): a failed forge call
  * must render `pr-list-error`, never the empty state. An empty list
- * is ONLY rendered when the request resolved with `changes: []`.
- */
+ * is ONLY rendered when the request resolved with `changes: []`. */
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { defineComponent } from 'vue'

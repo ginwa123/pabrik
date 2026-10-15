@@ -194,14 +194,11 @@ const PENDING: MergeWording = {
   canMerge: false,
 }
 
-/**
- * The box's whole state, from the two fields the poll already carries.
- *
+/** The box's whole state, from the two fields the poll already carries.
  * `merged` and `closed` short-circuit first: a merged PR's mergeable state is
  * meaningless (GitHub reports UNKNOWN for it), and rendering "Merge status is
  * being calculated" over a merged pull request is the class of lie this
- * module exists to prevent.
- */
+ * module exists to prevent. */
 export function mergeWording(s: MergeSignals): MergeWording {
   const status = (s.status || '').trim().toLowerCase()
   if (status === 'merged') {
@@ -263,14 +260,11 @@ export function repoKeyFor(prUrl: string, fallback: string): string {
   return path ? path.replace(/\.git$/, '') : fallback
 }
 
-/**
- * The last method used for this repo, or `squash`.
- *
+/** The last method used for this repo, or `squash`.
  * Squash is the default because it is what this project actually does: every
  * merged PR in this repo so far was squashed, so a merge commit as the
  * default would be wrong more often than right. The choice is remembered per
- * repo, so the second merge onwards is one click.
- */
+ * repo, so the second merge onwards is one click. */
 export function rememberedMethod(key: string): MergeMethod {
   try {
     if (typeof localStorage === 'undefined') return 'squash'

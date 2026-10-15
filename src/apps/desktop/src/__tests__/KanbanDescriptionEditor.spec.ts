@@ -240,12 +240,10 @@ describe('KanbanDescriptionEditor — create-mode image paste (no taskId)', () =
     return new File([TINY_PNG], name, { type: 'image/png' })
   }
 
-  /**
-   * Build a minimal DataTransferItem-like object. jsdom doesn't expose
+  /** Build a minimal DataTransferItem-like object. jsdom doesn't expose
    * DataTransferItem constructor in the test env, so we use the closest
    * shape and rely on the handler's duck-typing checks (kind, type,
-   * getAsFile()).
-   */
+   * getAsFile()). */
   function fakeImageItem(
     file: File,
   ): {
@@ -260,12 +258,10 @@ describe('KanbanDescriptionEditor — create-mode image paste (no taskId)', () =
     }
   }
 
-  /**
-   * Build a synthetic ClipboardEvent with a fake clipboardData. jsdom
+  /** Build a synthetic ClipboardEvent with a fake clipboardData. jsdom
    * doesn't expose a ClipboardEvent constructor (DOM v0.x), so we use
    * `new Event('paste', …)` and define `clipboardData` as a property.
-   * Mirrors the same pattern used in FileInput.spec.ts.
-   */
+   * Mirrors the same pattern used in FileInput.spec.ts. */
   function fakeClipboardEvent(file: File): ClipboardEvent {
     const item = fakeImageItem(file)
     const dataTransfer = {

@@ -208,12 +208,10 @@ export const useTabsStore = defineStore('tabs', () => {
     if (touched) persist()
   }
 
-  /**
-   * Find the tab this target already has: the canonical key first, then — only
+  /** Find the tab this target already has: the canonical key first, then — only
    * for a tab whose identity was provisional — the other reading of the same
    * URL. Without the provisional guard, two legitimately distinct tabs (an item
-   * and one of its task chats on a standalone item type) would be merged.
-   */
+   * and one of its task chats on a standalone item type) would be merged. */
   function findExisting(variants: string[]): Tab | null {
     const canonical = variants[0]
     if (canonical) {
@@ -418,12 +416,10 @@ export const useTabsStore = defineStore('tabs', () => {
     return tab
   }
 
-  /**
-   * The funnel. Returns the navigation to apply for the current URL:
+  /** The funnel. Returns the navigation to apply for the current URL:
    * create a tab, focus an existing one, honour a `?tab=` that names
    * exactly this target, or (when disabled / an overlay) leave the
-   * target alone.
-   */
+   * target alone. */
   function syncFromTarget(
     path: string,
     query: Record<string, unknown>,
@@ -484,12 +480,10 @@ export const useTabsStore = defineStore('tabs', () => {
     })
   }
 
-  /**
-   * Live tab titles. The backend already announces renames on the `session`
+  /** Live tab titles. The backend already announces renames on the `session`
    * channel (`SessionEvent { action, id, name }`), so a chat tab keeps up
    * with the auto-rename-on-first-message cascade without polling. Guarded
-   * because the bus is not installed until App.vue mounts.
-   */
+   * because the bus is not installed until App.vue mounts. */
   let offTitleFeed: (() => void) | null = null
 
   function initTitleFeed(): void {
@@ -512,14 +506,12 @@ export const useTabsStore = defineStore('tabs', () => {
     offTitleFeed = null
   }
 
-  /**
-   * Follow a session-id change *in place*. `ChatsList` mints a synthetic
+  /** Follow a session-id change *in place*. `ChatsList` mints a synthetic
    * `session-<timestamp>` id for a brand-new chat; when the real id arrives
    * (the `update-chat-id` path), a tab still keyed on the old id is a dead
    * pointer — and the route funnel would add a second tab for the same chat.
    * Ids are stable across a rename, so the strip (and the user's muscle
-   * memory) sees one tab that simply became the real chat.
-   */
+   * memory) sees one tab that simply became the real chat. */
   function renameChatTab(oldSessionId: string, newSessionId: string): boolean {
     if (!oldSessionId || !newSessionId || oldSessionId === newSessionId) return false
     const oldKey = `chat:${oldSessionId}`

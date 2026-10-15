@@ -1,9 +1,7 @@
-/**
- * Unit tests for `formatCompactTokens` (helpers/formatCompact.ts) — the
+/** Unit tests for `formatCompactTokens` (helpers/formatCompact.ts) — the
  * compact number readout used by the ChatView V1 composer toolbar's token
  * status (`82,679 → 82.7k`). Exact numbers stay in the tooltip; this only
- * covers the shortened display form.
- */
+ * covers the shortened display form. */
 import { describe, expect, it } from 'vitest'
 import { formatCompactTokens } from '@/helpers/formatCompact'
 

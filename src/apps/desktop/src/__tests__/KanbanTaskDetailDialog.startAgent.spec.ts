@@ -35,13 +35,11 @@ describe('KanbanTaskDetailDialog — Start agent', () => {
     findAllInDom('[data-testid="kanban-task-detail-dialog"]').forEach((el) => el.remove())
   })
 
-  /**
-   * Mount the dialog with optional props and an optional `processingState`
+  /** Mount the dialog with optional props and an optional `processingState`
    * provider. The `processingState` map mirrors the one App.vue
    * provides — a Record<sessionId, boolean> where `true` means a
    * worker is currently running for that session. Assigns to the
-   * outer `wrapper` so the afterEach hook can unmount it.
-   */
+   * outer `wrapper` so the afterEach hook can unmount it. */
   function mountDialog(
     propsOverride: Record<string, unknown> = {},
     processingState: Record<string, boolean> | undefined = undefined,

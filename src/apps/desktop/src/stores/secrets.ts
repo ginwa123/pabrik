@@ -53,13 +53,10 @@ export function describeSecretsError(error: SecretsRequestError): string {
   return `secrets ${error.op} failed: ${error.reason}`
 }
 
-/**
- * Lift a rejecting promise into an Effect that fails in its error channel.
- *
+/** Lift a rejecting promise into an Effect that fails in its error channel.
  * This is the same `Effect.tryPromise` wrapper `sync/DocumentEngineDb.ts`
  * uses for its remote fetch; the difference is only the error type, which
- * here describes a network call rather than a cache.
- */
+ * here describes a network call rather than a cache. */
 function request<A>(op: string, run: () => Promise<A>): Effect.Effect<A, SecretsRequestError> {
   return Effect.tryPromise({
     try: run,
@@ -101,25 +98,20 @@ export const useSecretsStore = defineStore('secrets', () => {
   const saving = ref(false)
   /** Last failure message, or null. Rendered by the view — never write-only. */
   const error = ref<string | null>(null)
-  /**
-   * True once a list has been fetched for SOME workspace. Distinguishes
+  /** True once a list has been fetched for SOME workspace. Distinguishes
    * "not loaded yet" (render nothing) from "loaded, and there are none"
    * (render the empty state) — without it a fresh view shows a misleading
    * "No secrets yet" before the first request returns, and shows it again
-   * on every failed reload.
-   */
+   * on every failed reload. */
   const loaded = ref(false)
 
   const count = computed(() => secrets.value.length)
 
-  /**
-   * Fetch the list for a workspace.
-   *
+  /** Fetch the list for a workspace.
    * A failure leaves whatever was last painted on screen and records
    * `error`; it never blanks the list. Blanking on failure would turn a
    * transient outage into data loss in the user's eyes — and would make
-   * the empty state render for a workspace that has three secrets.
-   */
+   * the empty state render for a workspace that has three secrets. */
   async function fetchSecrets(workspaceId: string): Promise<void> {
     if (!workspaceId) return
     loading.value = true
@@ -197,13 +189,10 @@ export const useSecretsStore = defineStore('secrets', () => {
     return result.value.secret
   }
 
-  /**
-   * Replace a secret's credential in place ("rotate").
-   *
+  /** Replace a secret's credential in place ("rotate").
    * Same discipline as `createSecret`: the new value goes into the PATCH
    * body and is dropped. The response replaces the row, so the UI shows
-   * the new `updated_at` and never the new value.
-   */
+   * the new `updated_at` and never the new value. */
   async function rotateSecret(
     workspaceId: string,
     secretId: string,

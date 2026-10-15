@@ -19,22 +19,18 @@
  */
 import { Effect, Schedule } from 'effect'
 
-/**
- * Per-attempt budget. Deliberately far above `apiFetch`'s 15 s default:
+/** Per-attempt budget. Deliberately far above `apiFetch`'s 15 s default:
  * the transcript page is `PAGE_SIZE = 1000` rows and routinely carries
  * base64 `image_urls` plus tool JSON, for which the constant's own comment
  * warns about "slow TTFB". Not `0` (unbounded) — a genuinely hung backend
  * would then park the skeleton forever, which is the failure mode the
- * default timeout exists to prevent.
- */
+ * default timeout exists to prevent. */
 export const INITIAL_HISTORY_TIMEOUT_MS = 45_000
 
-/**
- * Delay BEFORE each attempt, in order. The first entry is `0` — the initial
+/** Delay BEFORE each attempt, in order. The first entry is `0` — the initial
  * load must not wait. Each later entry is the backoff after that attempt
  * failed, so the full schedule is 4 attempts spanning ~7.75 s of waiting plus
- * however long each attempt itself takes.
- */
+ * however long each attempt itself takes. */
 export const INITIAL_HISTORY_RETRY_DELAYS_MS: readonly number[] = [0, 750, 2000, 5000]
 
 /** The `Schedule` half of the policy: `len(delaysMs) - 1` retries, separated

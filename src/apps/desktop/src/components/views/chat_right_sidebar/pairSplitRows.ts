@@ -20,12 +20,10 @@ export interface SplitRow {
   newText: string | null
   /** True for the paired change rows — both sides are tinted from this flag. */
   isChanged: boolean
-  /**
-   * Indexes into the SOURCE `ParsedDiffLine[]` this row was built from, in
+  /** Indexes into the SOURCE `ParsedDiffLine[]` this row was built from, in
    * source order. Review-comment threads anchor to a source line index, so
    * this is what lets a thread keep its position when the user flips between
-   * unified and split.
-   */
+   * unified and split. */
   sourceIndexes: number[]
 }
 
@@ -112,14 +110,11 @@ export function pairSplitRows(lines: ParsedDiffLine[]): SplitRow[] {
   return rows
 }
 
-/**
- * Map every source line index to the split row that carries it.
- *
+/** Map every source line index to the split row that carries it.
  * `SidebarDiffView` anchors review threads to a source index; this is how the
  * split render finds the right row for a thread the user left in unified mode
  * (and vice versa). A row's indexes are unique and rows never share one, so
- * the map is exact.
- */
+ * the map is exact. */
 export function splitRowIndexBySourceIndex(rows: SplitRow[]): Map<number, number> {
   const map = new Map<number, number>()
   rows.forEach((row, rowIndex) => {

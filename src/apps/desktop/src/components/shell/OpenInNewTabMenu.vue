@@ -35,12 +35,10 @@ withDefaults(
     showPin?: boolean
     /** Current pinned state — flips the pin row label. */
     isPinned?: boolean
-    /**
-     * Show the "Run agent" row for task-row hosts. Starts a worker on
+    /** Show the "Run agent" row for task-row hosts. Starts a worker on
      * the task's existing session without queueing a new user message.
      * Opt-in like `showPin` — the file / workspace-item hosts that
-     * share this menu have no agent to run.
-     */
+     * share this menu have no agent to run. */
     showRunAgent?: boolean
     /** A worker is already running on this task. Hides the "Run agent"
      * row (the backend answers 409 in that state) and reveals

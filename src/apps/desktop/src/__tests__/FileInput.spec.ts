@@ -42,12 +42,10 @@ function mockSearchResults(
   })
 }
 
-/**
- * Set the textarea's value and explicitly position the cursor at the
+/** Set the textarea's value and explicitly position the cursor at the
  * end, then dispatch `input` so the component's `autoResize` handler
  * runs and updates `cursorPos`. jsdom does not always move
- * `selectionStart` to the end of a programmatically-set `.value`.
- */
+ * `selectionStart` to the end of a programmatically-set `.value`. */
 async function typeInTextarea(
   textareaWrapper: ReturnType<VueWrapper['find']>,
   value: string,
@@ -228,12 +226,10 @@ describe('FileInput — paste image (Ctrl+V) attaches to preview', () => {
     delete (navigator as unknown as { clipboard?: unknown }).clipboard
   })
 
-  /**
-   * Build a minimal DataTransferItem-like object. jsdom doesn't expose
+  /** Build a minimal DataTransferItem-like object. jsdom doesn't expose
    * DataTransferItem constructor in the test env, so we use the closest
    * shape and rely on the handler's duck-typing checks (kind, type,
-   * getAsFile()).
-   */
+   * getAsFile()). */
   function fakeImageItem(
     type = 'image/png',
     withName = '',

@@ -1,9 +1,7 @@
-/**
- * Unit tests for the `useProfileDelete` composable. Mocks the
+/** Unit tests for the `useProfileDelete` composable. Mocks the
  * `api.deleteProfile` module function (NOT `global.fetch`) so we can
  * assert the composable's optimistic-update + rollback behavior in
- * isolation.
- */
+ * isolation. */
 import { ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 

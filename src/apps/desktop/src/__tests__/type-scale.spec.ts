@@ -75,12 +75,10 @@ function walk(dir: string, out: string[] = []): string[] {
 const COMPONENT_FILES = walk(SRC).filter((p) => !p.endsWith('.spec.ts'))
 const CSS = readFileSync(join(SRC, 'style.css'), 'utf8')
 
-/**
- * Only the TEMPLATE and the class strings of a component are under
+/** Only the TEMPLATE and the class strings of a component are under
  * contract — a spec file legitimately contains `text-xs` inside the regex
  * that hunts for banned classes, and this file's own doc comment names the
- * old spellings. So specs are excluded from the scan.
- */
+ * old spellings. So specs are excluded from the scan. */
 function collect(pick: (line: string) => string | null): Record<string, string[]> {
   const found: Record<string, string[]> = {}
   for (const file of COMPONENT_FILES) {

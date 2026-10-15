@@ -17,14 +17,12 @@ import { resolve } from 'node:path'
 
 const src = readFileSync(resolve(__dirname, '../ChatView.vue'), 'utf8')
 
-/**
- * Slice the template window for one dispatcher branch: the `<Tag`
+/** Slice the template window for one dispatcher branch: the `<Tag`
  * occurrence whose tag body carries the branch content
  * (`:content="innerToolData(msg)"`, or `:message="msg"` for the
  * plan cards) — NOT a `<script>`-section comment that merely names
  * the component (e.g. the `<TextReplace>` comment). Window ends at
- * the branch's self-closing `/>`.
- */
+ * the branch's self-closing `/>`. */
 function branchWindow(marker: string): string {
   let from = 0
   for (;;) {

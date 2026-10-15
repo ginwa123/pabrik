@@ -80,13 +80,11 @@ interface ScrollHarness {
   scrollerRef: Ref<VirtualScrollerTestExposed | null>
 }
 
-/**
- * Hand-typed mirror of VirtualScroller's exposed methods that this
+/** Hand-typed mirror of VirtualScroller's exposed methods that this
  * test uses. The Vue 3 SFC can't be referenced via
  * `InstanceType<typeof VirtualScroller>` — SFCs are functions, not
  * classes. The same approach ChatView.vue uses for
- * `VirtualScrollerExposed` (see ChatView.vue:453-464).
- */
+ * `VirtualScrollerExposed` (see ChatView.vue:453-464). */
 interface VirtualScrollerTestExposed {
   scrollToPosition: (scrollTop: number, behavior?: ScrollBehavior) => void
 }

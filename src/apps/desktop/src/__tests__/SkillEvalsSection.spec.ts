@@ -3,12 +3,10 @@ import { describe, expect, it } from 'vitest'
 
 import SkillEvalsSection from '../components/pabrik/SkillEvalsSection.vue'
 
-/**
- * `skill_evals.enabled` is the ONLY real control for `run_skill_eval` —
+/** `skill_evals.enabled` is the ONLY real control for `run_skill_eval` —
  * the per-agent tool checkbox cannot turn it on (the exec path re-reads
  * this flag and returns `{"status":"disabled"}`). So this section is the
- * user-facing switch, and these tests pin the states it can show.
- */
+ * user-facing switch, and these tests pin the states it can show. */
 function mountSection(enabled: boolean, loaded = true) {
   return mount(SkillEvalsSection, {
     props: { modelValue: { enabled }, loaded },

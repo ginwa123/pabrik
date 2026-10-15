@@ -34,14 +34,11 @@ import type { PabrikWebSearchProvider } from '../../api'
 /** The literal placeholder `curl` must contain when a key is set. */
 export const KEY_PLACEHOLDER = '{key}'
 
-/**
- * Editable row model for one provider.
- *
+/** Editable row model for one provider.
  * `id` is stable UI identity and is NEVER written to config.json — the
  * map key is `name`. It exists because `name` is an editable text input:
  * keying Vue's `:key` on it would destroy and rebuild the input node on
- * every keystroke, dropping focus mid-word.
- */
+ * every keystroke, dropping focus mid-word. */
 export interface WebSearchProviderRow {
   /** Stable per-row identity (Vue `:key`, error lookup). Not on the wire. */
   id: string
@@ -105,12 +102,10 @@ export function parseWebSearchProviders(
   return out
 }
 
-/**
- * Write the editable list back to the config's `web_search` map.
+/** Write the editable list back to the config's `web_search` map.
  * `undefined` means "omit the key entirely" — the same signal the
  * sibling `serializeMcpServers` uses, and the one `usePabrikConfig`'s
- * diff reads as "no change".
- */
+ * diff reads as "no change". */
 export function serializeWebSearchProviders(
   rows: WebSearchProviderRow[],
 ): Record<string, PabrikWebSearchProvider> | undefined {

@@ -15,12 +15,9 @@
 /** The literal separator between the bare item id and the chat task id. */
 export const CHAT_SUFFIX = '/chat/'
 
-/**
- * Combine a workspace item id with an optional chat task id.
- *
+/** Combine a workspace item id with an optional chat task id.
  * Throws if `itemId` itself already contains the `/chat/` substring
- * (defensive — item ids never contain slashes in this codebase).
- */
+ * (defensive — item ids never contain slashes in this codebase). */
 export function buildItemIdWithChat(itemId: string, chatTaskId: string | null): string {
   if (typeof itemId !== 'string' || itemId.length === 0) {
     throw new Error(`buildItemIdWithChat: itemId must be a non-empty string`)

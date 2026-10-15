@@ -52,22 +52,18 @@ export interface SyncMountResult<T> {
   fromCache: boolean
   /** The revalidated delta, or `null` when the revalidation failed. */
   delta: SyncDelta<T> | null
-  /**
-   * Why the revalidation failed, when it did. `null` means the delta fetch
+  /** Why the revalidation failed, when it did. `null` means the delta fetch
    * succeeded — including the "it succeeded and returned no rows" case that
    * the previous `catch { return { items: cached, fromCache, delta } }` made
-   * indistinguishable from failure.
-   */
+   * indistinguishable from failure. */
   error: SyncError | null
 }
 
 export abstract class BaseSyncEngine<T extends Syncable, C = string> {
-  /**
-   * @param storeName Object-store name this engine reads and writes.
+  /** @param storeName Object-store name this engine reads and writes.
    * @param store     Local-cache implementation; specs substitute a fake.
    *                 Defaults to a fresh IndexedDB-backed store per engine,
-   *                 matching the isolation the pre-port constructors had.
-   */
+   *                 matching the isolation the pre-port constructors had. */
   constructor(
     protected readonly storeName: string,
     protected readonly store: SyncStoreShape = makeIndexedDbSyncStore(),
@@ -116,14 +112,11 @@ export abstract class BaseSyncEngine<T extends Syncable, C = string> {
       .pipe(Effect.map((rows) => rows.slice().sort(this.compareFn.bind(this)) as T[]))
   }
 
-  /**
-   * Cache-then-delta: return cached rows immediately when present, then fetch
+  /** Cache-then-delta: return cached rows immediately when present, then fetch
    * the network delta, merge (dedupe by id), persist, and advance the cursor.
-   *
    * Never fails — a broken cache or an unreachable backend degrades to the
    * painted cache — but `error` now records why, which the previous bare
-   * `catch` discarded.
-   */
+   * `catch` discarded. */
   syncOnMount(ctx: C, limit: number): Effect.Effect<SyncMountResult<T>> {
     // `Effect.gen` takes a generator function, and a generator's `this` is its own — so `this` has
     // to be captured outside. It cannot be destructured instead: the engine API lives on the
